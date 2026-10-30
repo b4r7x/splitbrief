@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { clearSessionScopedStores } from './session-stores.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../stores/workflow/run-view.js';
 import { conversationScrollStore } from '../../stores/workflow/conversation-scroll.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 
 describe('clearSessionScopedStores', () => {
   it('resets the lifecycle, conversation scroll and review stores', () => {
-    lifecycleStore.__testReset({ cancelled: true, queueDepth: 7, phase: 'final-review' });
+    runViewStore.__testReset({ phase: 'final-review' });
+    lifecycleStore.__testReset({ cancelled: true, queueDepth: 7 });
     conversationScrollStore.__testReset({ scrollOffset: 12 });
     reviewStore.setReviewFile('spec.md');
 

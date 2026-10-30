@@ -227,7 +227,7 @@ describe('e2e: seat silence warning', { timeout: 240_000 }, () => {
     expect(events.some((event) => event.type === 'workflow_complete')).toBe(true);
 
     for (const event of events.slice(0, stalledIndex + 1)) addEvent(event);
-    expect(lifecycleStore.get().phase).toBe('implementing');
+    expect(runViewStore.get().phase).toBe('implementing');
     expect(operationsStore.get().active).toMatchObject({ callId, role: 'implementer' });
     expect(lifecycleStore.get().stall).toMatchObject({ since: stalled.ts });
 

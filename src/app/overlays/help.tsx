@@ -26,7 +26,7 @@ import {
 import { configStore } from '../../stores/project/config.js';
 import { controlsStore } from '../../stores/ui/controls.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../stores/workflow/run-view.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { clamp } from '../../utils/math.js';
 import { assertNever } from '../../utils/type-guards.js';
@@ -86,7 +86,7 @@ export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
   const rows = terminalSizeStore.use((s) => s.rows);
   const inputMode = controlsStore.use((s) => s.inputMode);
   const config = configStore.use((s) => s.config);
-  const phase = lifecycleStore.use((s) => s.phase);
+  const phase = runViewStore.use((s) => s.phase);
   const openRunAtRest = routerStore.use(isOpenRunAtRest);
   const applyUnfinished = routerStore.use(isApplyUnfinishedAtRest);
 

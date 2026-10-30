@@ -97,7 +97,7 @@ export function InputFooter({
   const reviewerSeat = reviewer
     ? formatSeatIdentity({ seat: reviewer, displayName: displayNames.review ?? displayNames.plan })
     : '';
-  const activeStage = getActiveRailStage(lifecycle.phase);
+  const activeStage = getActiveRailStage(runView.phase);
   const stageText = activeStage ? formatStageLabel(activeStage.stage) : '';
   const fractionText = stageFractionText(taskListView);
 
@@ -120,11 +120,11 @@ export function InputFooter({
     waiting || !display.animate
       ? null
       : deriveLiveStatus({
-          phase: lifecycle.phase,
+          phase: runView.phase,
           status: lifecycle.status,
           cancelled: lifecycle.cancelled,
           startedAt: lifecycle.startedAt,
-          phaseFirstSeenTs: lifecycle.phaseFirstSeenTs,
+          phaseFirstSeen: runView.phaseFirstSeen,
           waitedMs: lifecycle.waitedMs ?? {},
           resumedAt: lifecycle.resumedAt ?? null,
           reviewerLabel: reviewerSeat === '' ? null : reviewerSeat,
@@ -182,8 +182,8 @@ export function InputFooter({
     { text: `${glyph('statusPending')} Interrupted`, tone: stateTone('attention') },
     { text: ' — finishing current step…', tone: 'textDim' },
   ];
-  const runningBriefId = selectRunningBrief(tasks, lifecycle.phase).current?.id ?? null;
-  const seat = phaseStage(lifecycle.phase);
+  const runningBriefId = selectRunningBrief(tasks, runView.phase).current?.id ?? null;
+  const seat = phaseStage(runView.phase);
   const resumingLead: ConversationRowSegment[] = [
     { text: `${frame} `, tone: stateTone('running') },
     { text: 'Resuming ', tone: 'text' },
@@ -287,7 +287,7 @@ export function InputFooter({
   const queuedCopy =
     lifecycle.queueDepth > 0 && (atRestStatus === null || atRestStatus === 'open')
       ? queueCopy({
-          seat: messageSeat(lifecycle.phase, selectScheduledReview(operations)),
+          seat: messageSeat(runView.phase, selectScheduledReview(operations)),
           taskId: runningBriefId,
           count: lifecycle.queueDepth,
         })

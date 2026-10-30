@@ -13,6 +13,7 @@ import { conversationScrollStore } from '../../../../stores/workflow/conversatio
 import { streamingOutputStore } from '../../../../stores/workflow/streaming-output.js';
 import { transcriptTailStore } from '../../../../stores/workflow/transcript-tail.js';
 import { lifecycleStore } from '../../../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../../../stores/workflow/run-view.js';
 import { formatTaskHeading, tasksStore } from '../../../../stores/workflow/tasks.js';
 import { useSections } from '../../../../stores/workflow/actions/sections.js';
 import { useStores } from '../../../../stores/use-stores.js';
@@ -73,6 +74,7 @@ export function ConversationFlow({
     terminalSize,
     recovery,
     approval,
+    runView,
   ] = useStores(
     conversationScrollStore,
     streamingOutputStore,
@@ -82,6 +84,7 @@ export function ConversationFlow({
     terminalSizeStore,
     recoveryNoticeStore,
     approvalPromptStore,
+    runViewStore,
   );
   const display = deriveWorkflowDisplay({
     status: lifecycle.status,
@@ -103,7 +106,7 @@ export function ConversationFlow({
     }) > 0;
   const pendingTasks = queuedBriefs({
     tasks,
-    phase: lifecycle.phase,
+    phase: runView.phase,
     sidebarShowsTasks,
     closed: closedAtRest,
   });

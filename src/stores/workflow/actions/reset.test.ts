@@ -5,6 +5,7 @@ import { eventsStore } from '../events.js';
 import { tasksStore } from '../tasks.js';
 import { tokensStore } from '../tokens.js';
 import { lifecycleStore } from '../lifecycle.js';
+import { runViewStore } from '../run-view.js';
 import { stopStore } from '../stop.js';
 import { approvalPromptStore, openApprovalPrompt } from '../../approval-prompt/prompt.js';
 import { makePlannerStatus } from '#testing/helpers/events/planner.js';
@@ -71,7 +72,7 @@ describe('resetWorkflow', () => {
     expect(tasksStore.get().currentTask).toBe(0);
     expect(tasksStore.get().totalTasks).toBe(0);
     expect(tokensStore.get().completedTaskCount).toBe(0);
-    expect(lifecycleStore.get().phase).toBe('idle');
+    expect(runViewStore.get().phase).toBe('idle');
     expect(lifecycleStore.get().cancelled).toBe(false);
     expect(lifecycleStore.get().queueDepth).toBe(0);
   });

@@ -39,6 +39,7 @@ import { addEvent } from '../../stores/workflow/actions/event.js';
 import { resetWorkflow } from '../../stores/workflow/actions/reset.js';
 import { eventsStore } from '../../stores/workflow/events.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../stores/workflow/run-view.js';
 import { selectRunningBrief, tasksStore } from '../../stores/workflow/tasks.js';
 import { tokensStore } from '../../stores/workflow/tokens.js';
 import { operationsStore } from '../../stores/workflow/operations/state.js';
@@ -732,7 +733,7 @@ describe('hydrateRun', () => {
     const live = {
       events: eventsStore.get().events.map((event) => event.type),
       tasks: tasksStore.get().taskMap.get('T001')?.status,
-      phase: lifecycleStore.get().phase,
+      phase: runViewStore.get().phase,
     };
     resetWorkflow();
 
@@ -749,7 +750,7 @@ describe('hydrateRun', () => {
       'replay_complete',
     ]);
     expect(tasksStore.get().taskMap.get('T001')?.status).toBe(live.tasks);
-    expect(lifecycleStore.get().phase).toBe(live.phase);
+    expect(runViewStore.get().phase).toBe(live.phase);
   });
 
   it('lays the saved state over the replay: the brief list and the spend come from it', async () => {
@@ -811,7 +812,7 @@ describe('hydrateRun', () => {
       }),
     );
     expect(rows).toEqual([]);
-    expect(lifecycleStore.get().phase).toBe('implementing');
+    expect(runViewStore.get().phase).toBe('implementing');
   });
 
   it('shows the call a crashed process left open as interrupted, and its brief as no longer working', async () => {

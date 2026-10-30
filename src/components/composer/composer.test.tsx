@@ -23,6 +23,7 @@ import { getInputHistoryDocuments, inputHistoryStore } from '../../stores/ui/inp
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { attachmentsStore } from '../../stores/workflow/attachments.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../stores/workflow/run-view.js';
 import { stopStore } from '../../stores/workflow/stop.js';
 import { tokensStore } from '../../stores/workflow/tokens.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
@@ -46,10 +47,8 @@ describe('Composer send now', () => {
   it.each(['running', 'parked'] as const)(
     'sends ctrl+enter to onSendNow while %s',
     async (status) => {
-      lifecycleStore.__testReset({
-        phase: 'implementing',
-        status: status === 'running' ? 'running' : 'paused',
-      });
+      runViewStore.__testReset({ phase: 'implementing' });
+      lifecycleStore.__testReset({ status: status === 'running' ? 'running' : 'paused' });
       if (status === 'parked') stopStore.__testReset({ phase: 'parked' });
       const queued: string[] = [];
       const sent: string[] = [];
@@ -80,7 +79,8 @@ describe('Composer send now', () => {
   );
 
   it('preserves a rejected send-now draft for retry and records only the accepted submission', async () => {
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
     const queued: string[] = [];
     const sent: string[] = [];
     let accepted = false;
@@ -125,7 +125,8 @@ describe('Composer send now', () => {
   });
 
   it('keeps plain Enter on onSubmit when onSendNow exists', async () => {
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
     const queued: string[] = [];
     const sent: string[] = [];
     const ui = renderFeature(
@@ -174,7 +175,8 @@ describe('Composer send now', () => {
   });
 
   it('ignores ctrl+enter on an empty draft while running', async () => {
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
     const submissions: string[] = [];
     const empty: string[] = [];
     const ui = renderFeature(
@@ -203,7 +205,8 @@ describe('Composer send now', () => {
   it.each(['command', 'reference'] as const)(
     'lets open %s suggestions handle ctrl+enter without steering',
     async (suggestions) => {
-      lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+      runViewStore.__testReset({ phase: 'implementing' });
+      lifecycleStore.__testReset({ status: 'running' });
       configStore.__testReset({ config: makeConfig(), projectDir: '/tmp/composer-project' });
       const sent: string[] = [];
       const queued: string[] = [];
@@ -246,7 +249,8 @@ describe('Composer send now', () => {
   );
 
   it('dispatches a runtime command on ctrl+enter when suggestions are closed', async () => {
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
     const sent: string[] = [];
     const queued: string[] = [];
     const dispatched: string[] = [];
@@ -336,7 +340,8 @@ describe('Composer file submission', () => {
   it.each(['text', 'image'] as const)(
     'sends ctrl+enter with an outside %s attachment and preserves a refused draft',
     async (kind) => {
-      lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+      runViewStore.__testReset({ phase: 'implementing' });
+      lifecycleStore.__testReset({ status: 'running' });
       const file = join(externalDir, kind === 'text' ? 'note.md' : 'shot.png');
       writeFileSync(file, kind === 'text' ? 'Keep the existing API.' : 'image');
       const onSubmit = vi.fn();

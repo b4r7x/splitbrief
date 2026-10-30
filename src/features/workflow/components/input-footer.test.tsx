@@ -17,6 +17,7 @@ import { routerStore } from '../../../stores/navigation/router.js';
 import { preparationStore } from '../../../stores/navigation/preparation.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
@@ -146,7 +147,8 @@ describe('InputFooter', () => {
 
   it('shows neutral API waiting beside the input until the first response, and honors cancellation', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({ status: 'running', phase: 'implementing' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
     const operation = runningOn('lm-studio');
     operationsStore.__testReset({
       active: {
@@ -174,11 +176,8 @@ describe('InputFooter', () => {
     expect(streaming.lastFrame()).not.toContain('Waiting for response');
     streaming.unmount();
 
-    lifecycleStore.__testReset({
-      status: 'cancelled',
-      phase: 'implementing',
-      reason: 'user_cancelled',
-    });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'cancelled', reason: 'user_cancelled' });
     const cancelled = renderFeature(<InputFooter />);
     expect(cancelled.lastFrame()).toContain('Stopped by you');
     expect(cancelled.lastFrame()).not.toMatch(/Waiting for response|unloaded/);
@@ -188,11 +187,8 @@ describe('InputFooter', () => {
 
   it('leads with the animated live status instead of the stage marker while running', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({
-      status: 'running',
-      phase: 'researching',
-      startedAt: Date.now() - 144_000,
-    });
+    runViewStore.__testReset({ phase: 'researching' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: Date.now() - 144_000 });
 
     const ui = renderFeature(<InputFooter />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
@@ -204,14 +200,13 @@ describe('InputFooter', () => {
     terminalSizeStore.reset();
   });
 
-  it('derives the elapsed live-status time from lifecycle.phaseFirstSeenTs, not the events store', () => {
+  it('derives the elapsed live-status time from the run view phaseFirstSeen, not the events store', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({
-      status: 'running',
+    runViewStore.__testReset({
       phase: 'implementing',
-      startedAt: Date.now() - 300_000,
-      phaseFirstSeenTs: { implementing: Date.now() - 30_000 },
+      phaseFirstSeen: { implementing: Date.now() - 30_000 },
     });
+    lifecycleStore.__testReset({ status: 'running', startedAt: Date.now() - 300_000 });
 
     const ui = renderFeature(<InputFooter />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
@@ -224,12 +219,11 @@ describe('InputFooter', () => {
 
   it('says one verb for the planning session and names an old chain briefs call', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({
-      status: 'running',
+    runViewStore.__testReset({
       phase: 'planning',
-      startedAt: Date.now() - 90_000,
-      phaseFirstSeenTs: { planning: Date.now() - 30_000 },
+      phaseFirstSeen: { planning: Date.now() - 30_000 },
     });
+    lifecycleStore.__testReset({ status: 'running', startedAt: Date.now() - 90_000 });
 
     addEvent(makePlannerStatus({ phase: 'planning', call: 'plan', ts: Date.now() }));
     const plan = renderFeature(<InputFooter />);
@@ -249,11 +243,8 @@ describe('InputFooter', () => {
   it('keeps the time spent waiting on the user out of the live elapsed', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     const now = Date.now();
-    lifecycleStore.__testReset({
-      status: 'running',
-      phase: 'researching',
-      startedAt: now - 300_000,
-    });
+    runViewStore.__testReset({ phase: 'researching' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: now - 300_000 });
     markWaitStarted(now - 200_000);
     markWaitEnded(now - 80_000);
 
@@ -293,12 +284,11 @@ describe('InputFooter', () => {
   it('starts the stage clock again when a run parked in this process resumes', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     const now = Date.now();
-    lifecycleStore.__testReset({
-      status: 'running',
+    runViewStore.__testReset({
       phase: 'implementing',
-      startedAt: now - 3_600_000,
-      phaseFirstSeenTs: { implementing: now - 3_000_000 },
+      phaseFirstSeen: { implementing: now - 3_000_000 },
     });
+    lifecycleStore.__testReset({ status: 'running', startedAt: now - 3_600_000 });
     markWaitStarted(now - 2_900_000);
     markWaitEnded(now - 2_800_000);
     markWorkflowPaused();
@@ -371,11 +361,8 @@ describe('InputFooter', () => {
 
   it('keeps the live lead below the Form-B rail width', () => {
     terminalSizeStore.__testReset({ cols: 24, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({
-      status: 'running',
-      phase: 'specifying',
-      startedAt: Date.now() - 1_000,
-    });
+    runViewStore.__testReset({ phase: 'specifying' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: Date.now() - 1_000 });
 
     const ui = renderFeature(<InputFooter />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
@@ -389,7 +376,8 @@ describe('InputFooter', () => {
 
   it('falls back to the ● stage lead when the workflow is not running', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({ phase: 'researching', status: 'complete' });
+    runViewStore.__testReset({ phase: 'researching' });
+    lifecycleStore.__testReset({ status: 'complete' });
 
     const ui = renderFeature(<InputFooter />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
@@ -416,19 +404,22 @@ describe('InputFooter', () => {
       ],
     });
 
-    lifecycleStore.__testReset({ status: 'running', phase: 'implementing', startedAt: Date.now() });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: Date.now() });
     const running = renderFeature(<InputFooter />);
     const runningFrame = stripAnsiStyles(running.lastFrame() ?? '');
     expect(runningFrame).toMatch(/Implementing…/);
     running.unmount();
 
-    lifecycleStore.__testReset({ status: 'complete', phase: 'implementing' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'complete' });
     const atRest = renderFeature(<InputFooter />);
     const atRestFrame = stripAnsiStyles(atRest.lastFrame() ?? '');
     expect(atRestFrame).toContain('1/3');
     atRest.unmount();
 
-    lifecycleStore.__testReset({ status: 'paused', phase: 'implementing' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'paused' });
     stopStore.request('stop-now');
     stopStore.park('mid-brief', 'T002', null);
     const parked = renderFeature(<InputFooter />);
@@ -454,7 +445,8 @@ describe('InputFooter', () => {
       config: makeConfig({ workflow: { git: { createBranch: true } } }),
       projectDir: '/tmp/splitbrief-test',
     });
-    lifecycleStore.__testReset({ phase: 'researching', status: 'complete' });
+    runViewStore.__testReset({ phase: 'researching' });
+    lifecycleStore.__testReset({ status: 'complete' });
 
     const ui = renderFeature(<InputFooter />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
@@ -469,7 +461,8 @@ describe('InputFooter', () => {
 
   it('renders the active rail stage and task fraction in the byline when not running', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'complete' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'complete' });
     tasksStore.__testReset({
       currentTask: 3,
       totalTasks: 7,
@@ -491,7 +484,8 @@ describe('InputFooter', () => {
 
   it('quotes no estimate of the time left while briefs build', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
     tasksStore.__testReset({
       currentTask: 3,
       totalTasks: 4,
@@ -514,7 +508,8 @@ describe('InputFooter', () => {
 
   it('a user-cancelled run leads with the cancelled glyph, never the stage-done pip', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({ phase: 'implementing', cancelled: true });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ cancelled: true });
     tasksStore.__testReset({
       currentTask: 1,
       totalTasks: 1,
@@ -533,11 +528,8 @@ describe('InputFooter', () => {
 
   it('a run that stopped for any other reason leads with the failed glyph and word', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({
-      phase: 'implementing',
-      status: 'cancelled',
-      reason: 'workflow_cancelled',
-    });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'cancelled', reason: 'workflow_cancelled' });
 
     const ui = renderFeature(<InputFooter />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
@@ -576,7 +568,8 @@ describe('InputFooter', () => {
 
   it('does not duplicate cost information already shown in the cost status line', () => {
     terminalSizeStore.__testReset({ cols: 48, rows: 24, isSmall: true });
-    lifecycleStore.__testReset({ phase: 'implementing', cancelled: true });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ cancelled: true });
     tasksStore.__testReset({
       currentTask: 1,
       totalTasks: 4,
@@ -604,7 +597,8 @@ describe('InputFooter', () => {
 
   it('a parked brief replaces the spinner with the resume keys', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({ status: 'paused', phase: 'implementing' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'paused' });
     stopStore.request('stop-now');
     stopStore.park('mid-brief', 'T002', null, ['src/a.ts']);
 
@@ -622,7 +616,8 @@ describe('InputFooter', () => {
 
   it('the stopping lead reports the wait until the brief parks', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({ status: 'running', phase: 'implementing' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
     stopStore.request('stop-now');
     stopStore.markTerminating();
 
@@ -642,11 +637,8 @@ describe('InputFooter', () => {
 
   it('a stalled call with no build block on screen states its silence on the byline', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({
-      status: 'running',
-      phase: 'implementing',
-      startedAt: Date.now() - 120_000,
-    });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: Date.now() - 120_000 });
     addEvent(
       makeRunnerCallStalled({
         ts: Date.now() - 5_000,
@@ -668,11 +660,8 @@ describe('InputFooter', () => {
 
   it('a stalled call beside the build block leaves the silence to the block', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({
-      status: 'running',
-      phase: 'implementing',
-      startedAt: Date.now() - 120_000,
-    });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: Date.now() - 120_000 });
     addEvent(
       makeRunnerCallStalled({
         ts: Date.now() - 5_000,
@@ -698,11 +687,8 @@ describe('InputFooter', () => {
 
   it('a silent runner that only reports finished tools earns a hint beside the warning', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({
-      status: 'running',
-      phase: 'implementing',
-      startedAt: Date.now() - 120_000,
-    });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: Date.now() - 120_000 });
     addEvent(
       makeRunnerCallStalled({
         ts: Date.now() - 5_000,
@@ -725,11 +711,8 @@ describe('InputFooter', () => {
   // tool, so the byline beside it shows the normal live status, with no warning and no hint.
   it('leaves an open tool through a silence to the block beside it', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({
-      status: 'running',
-      phase: 'implementing',
-      startedAt: Date.now() - 120_000,
-    });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: Date.now() - 120_000 });
     addEvent(
       makeRunnerCallStarted({ ts: Date.now() - 90_000, callId: 'call-1', runnerName: 'opencode' }),
     );
@@ -753,11 +736,8 @@ describe('InputFooter', () => {
 
   it('a runner that streams tool use live gets the warning without the hint', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({
-      status: 'running',
-      phase: 'implementing',
-      startedAt: Date.now() - 120_000,
-    });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: Date.now() - 120_000 });
     addEvent(
       makeRunnerCallStalled({
         ts: Date.now() - 5_000,
@@ -898,7 +878,8 @@ describe('InputFooter', () => {
 
   it('queued count renders as an info byline segment that survives narrow widths', () => {
     chalk.level = 3;
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'complete', queueDepth: 2 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'complete', queueDepth: 2 });
 
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     const wide = renderFeature(<InputFooter />);
@@ -928,7 +909,8 @@ describe('InputFooter', () => {
 
   it('keeps the short queued count beside a long check at 60 columns', () => {
     terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: false });
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', queueDepth: 1 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', queueDepth: 1 });
     tasksStore.__testReset({
       currentTask: 1,
       totalTasks: 1,
@@ -953,7 +935,8 @@ describe('InputFooter', () => {
 
   it('keeps the queued byline until the attached BUILD call delivers the message', async () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', queueDepth: 1 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', queueDepth: 1 });
     tasksStore.__testReset({
       currentTask: 1,
       totalTasks: 1,
@@ -984,7 +967,8 @@ describe('InputFooter', () => {
 
   it('names the brief the queue waits for while a brief is building', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', queueDepth: 1 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', queueDepth: 1 });
     tasksStore.__testReset({
       currentTask: 1,
       totalTasks: 2,
@@ -1004,7 +988,8 @@ describe('InputFooter', () => {
 
   it('names REVIEW for the queue while a task review runs inside the build phase', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', queueDepth: 1 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', queueDepth: 1 });
     tasksStore.__testReset({
       currentTask: 1,
       totalTasks: 2,
@@ -1033,7 +1018,8 @@ describe('InputFooter', () => {
 
   it('byline stage labels are Title Case', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({ phase: 'planning', status: 'complete' });
+    runViewStore.__testReset({ phase: 'planning' });
+    lifecycleStore.__testReset({ status: 'complete' });
 
     const ui = renderFeature(<InputFooter />);
     const frame = ui.lastFrame() ?? '';
@@ -1118,7 +1104,8 @@ describe('InputFooter', () => {
 
   // A seat saved during the plan card read `Finishing the run` where the card waited for an answer.
   it('a seat saved while the plan card waits keeps the wait on the byline', () => {
-    lifecycleStore.__testReset({ status: 'running', phase: 'planning' });
+    runViewStore.__testReset({ phase: 'planning' });
+    lifecycleStore.__testReset({ status: 'running' });
     requestSeatChangeAtBoundary();
     const ui = renderFeature(<InputFooter width={120} waiting />);
     const frame = stripAnsiStyles(ui.lastFrame());
@@ -1131,7 +1118,8 @@ describe('InputFooter', () => {
   });
 
   it('a seat saved under a running brief keeps the live status and claims no finish', () => {
-    lifecycleStore.__testReset({ status: 'running', phase: 'implementing' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
     tasksStore.__testReset({
       tasks: [{ id: 'T001', title: 'first', status: 'in_progress' }],
       currentTask: 1,
@@ -1149,7 +1137,8 @@ describe('InputFooter', () => {
 
   it('paints waiting with warning', () => {
     chalk.level = 3;
-    lifecycleStore.__testReset({ status: 'running', phase: 'planning' });
+    runViewStore.__testReset({ phase: 'planning' });
+    lifecycleStore.__testReset({ status: 'running' });
     const ui = renderFeature(<InputFooter width={120} waiting />);
     expect(ui.lastFrame()).toContain(
       paint(defaultTheme.warning, `${glyph('statusPending')} Waiting for your answer`).replace(
@@ -1162,12 +1151,11 @@ describe('InputFooter', () => {
 
   it('paints the live review spinner accent, its seat reviewer and its clock dim', () => {
     chalk.level = 3;
-    lifecycleStore.__testReset({
-      status: 'running',
+    runViewStore.__testReset({
       phase: 'final-review',
-      startedAt: Date.now() - 42_000,
-      phaseFirstSeenTs: { 'final-review': Date.now() - 42_000 },
+      phaseFirstSeen: { 'final-review': Date.now() - 42_000 },
     });
+    lifecycleStore.__testReset({ status: 'running', startedAt: Date.now() - 42_000 });
     const ui = renderFeature(<InputFooter width={120} />);
     expect(ui.lastFrame()).toContain(
       paint(defaultTheme.accent, `${spinnerFrames()[0]} `).replace('\u001b[39m', ''),
@@ -1225,7 +1213,8 @@ describe('InputFooter', () => {
   });
   it('paints the stopping clock with textDim without changing its separators', () => {
     chalk.level = 3;
-    lifecycleStore.__testReset({ status: 'running', phase: 'implementing' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
     stopStore.__testReset({
       intent: 'stop-now',
       phase: 'terminating',
@@ -1242,7 +1231,8 @@ describe('InputFooter', () => {
 
   it('carries state, stage and fraction tones in the waiting byline', () => {
     chalk.level = 3;
-    lifecycleStore.__testReset({ status: 'running', phase: 'final-review' });
+    runViewStore.__testReset({ phase: 'final-review' });
+    lifecycleStore.__testReset({ status: 'running' });
     tasksStore.__testReset({
       totalTasks: 5,
       tasks: [
@@ -1274,7 +1264,8 @@ describe('InputFooter', () => {
     { phase: 'planning', brief: null, expected: 'Resuming the plan' },
   ] as const)('says $expected while a continued run starts again', ({ phase, brief, expected }) => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({ status: 'paused', phase });
+    runViewStore.__testReset({ phase });
+    lifecycleStore.__testReset({ status: 'paused' });
     if (brief !== null) {
       tasksStore.__testReset({
         currentTask: 2,
@@ -1296,7 +1287,8 @@ describe('InputFooter', () => {
 
   it('paints a running reviewer check mark accent and only its seat words reviewer', () => {
     chalk.level = 3;
-    lifecycleStore.__testReset({ status: 'running', phase: 'final-review' });
+    runViewStore.__testReset({ phase: 'final-review' });
+    lifecycleStore.__testReset({ status: 'running' });
     operationsStore.__testReset({
       suiteStage: {
         id: 'V1',

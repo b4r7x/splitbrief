@@ -1,7 +1,7 @@
 import { routerStore } from '../../../stores/navigation/router.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
-import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { operationsStore, selectRunningSuite } from '../../../stores/workflow/operations/state.js';
 import {
   briefAfter,
@@ -21,7 +21,7 @@ export function useStopByline(): StopByline | null {
   const stop = stopStore.use((s) => s);
   const tasks = tasksStore.use((s) => s);
   const view = selectTaskListView(tasks);
-  const phase = lifecycleStore.use((s) => s.phase);
+  const phase = runViewStore.use((s) => s.phase);
   const brief = selectRunningBrief(tasks, phase);
   // A pause armed on a brief outlives it: once the brief finishes, the run's own position still
   // names it until the boundary suite hands it on, so a finished slot is what it is finishing.

@@ -11,7 +11,7 @@ import { deriveRunStatus } from '../../core/sessions/run-status.js';
 import { WorkflowStateSchema } from '../../core/schemas/workflow.js';
 import { resetWorkflow } from '../../stores/workflow/actions/reset.js';
 import { eventsStore } from '../../stores/workflow/events.js';
-import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../stores/workflow/run-view.js';
 import { tasksStore } from '../../stores/workflow/tasks.js';
 import { hydrateRun } from './run-history.js';
 
@@ -57,7 +57,7 @@ describe('a run the old step chain made', () => {
     expect(types[0]).toBe('replay_started');
     expect(types.at(-1)).toBe('replay_complete');
     expect(types.filter((type) => type === 'artifact_written')).toHaveLength(4);
-    expect(lifecycleStore.get().phase).toBe('implementing');
+    expect(runViewStore.get().phase).toBe('implementing');
     expect(tasksStore.get().tasks.map((task) => task.id)).toEqual(['T001', 'T008', 'T009']);
   });
 

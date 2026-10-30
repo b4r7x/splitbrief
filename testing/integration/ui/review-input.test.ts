@@ -8,6 +8,7 @@ import { addEvent } from '../../../src/stores/workflow/actions/event.js';
 import { resetWorkflow } from '../../../src/stores/workflow/actions/reset.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
 import { lifecycleStore } from '../../../src/stores/workflow/lifecycle.js';
+import { runViewStore } from '../../../src/stores/workflow/run-view.js';
 import { reviewStore } from '../../../src/stores/workflow/review.js';
 import { terminalSequences } from '../../../src/lib/terminal/control.js';
 import { setActiveTerminalHandover } from '../../../src/lib/terminal/editor-handover.js';
@@ -133,7 +134,8 @@ describe('createReviewInputHandler – queueing during a brief', () => {
 
 describe('createReviewInputHandler – pending un-parked boundary interrupt', () => {
   it('typed text shows the pending-interrupt notice instead of the input-disabled error', async () => {
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'interrupted' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'interrupted' });
     const enqueue = vi.fn(() => ({ status: 'accepted' as const, messageId: 'msg-1' }));
     setQueueHandler(enqueue);
 
@@ -148,7 +150,8 @@ describe('createReviewInputHandler – pending un-parked boundary interrupt', ()
   });
 
   it('typed text is not queued as a planner message during the un-parked window', async () => {
-    lifecycleStore.__testReset({ phase: 'researching', status: 'interrupted' });
+    runViewStore.__testReset({ phase: 'researching' });
+    lifecycleStore.__testReset({ status: 'interrupted' });
     const enqueue = vi.fn(() => ({ status: 'accepted' as const, messageId: 'msg-1' }));
     setQueueHandler(enqueue);
 
@@ -224,7 +227,8 @@ describe('createReviewInputHandler – idle / other phases', () => {
   });
 
   it('shows review feedback instead of silently ignoring normal input during plan review', async () => {
-    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
     const enqueue = vi.fn(() => ({ status: 'accepted' as const, messageId: 'msg-1' }));
     setQueueHandler(enqueue);
 
@@ -239,7 +243,8 @@ describe('createReviewInputHandler – idle / other phases', () => {
   });
 
   it('uses brief-specific command metadata while a brief review prompt is opening', async () => {
-    lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
+    runViewStore.__testReset({ phase: 'reviewing-briefs' });
+    lifecycleStore.__testReset({ status: 'running' });
     const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
 
     await handleInput(plainUserMessage('why is nothing happening'));
@@ -280,7 +285,8 @@ describe('createReviewInputHandler – brief review edit mode', () => {
   it.each(['e', 'edit', 'E', 'edit-file'])(
     'opens plan.json in the editor overlay for %s at the plan card',
     async (command) => {
-      lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+      runViewStore.__testReset({ phase: 'reviewing-plan' });
+      lifecycleStore.__testReset({ status: 'running' });
       await writeFile(join(tmpDir, 'plan.json'), '{}\n', 'utf-8');
       reviewStore.setReviewFile(join(tmpDir, 'plan.md'));
       const resolve = vi.fn();
@@ -298,7 +304,8 @@ describe('createReviewInputHandler – brief review edit mode', () => {
   );
 
   it('settles the plan card with an external edit of plan.json', async () => {
-    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
     reviewStore.setReviewFile(join(tmpDir, 'plan.md'));
     stubReviewEditor('true');
     const resolve = vi.fn();
@@ -315,7 +322,8 @@ describe('createReviewInputHandler – brief review edit mode', () => {
   });
 
   it('keeps external editor behavior for non-brief reviews', async () => {
-    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
     reviewStore.setReviewFile(join(tmpDir, 'plan.md'));
     stubReviewEditor('/definitely/missing-splitbrief-editor');
 
@@ -326,7 +334,8 @@ describe('createReviewInputHandler – brief review edit mode', () => {
   });
 
   it('surfaces non-zero editor exit status and keeps the plan card unresolved', async () => {
-    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
     reviewStore.setReviewFile(join(tmpDir, 'plan.md'));
     stubReviewEditor(await writeFakeEditor(42));
     const resolve = vi.fn();
@@ -339,7 +348,8 @@ describe('createReviewInputHandler – brief review edit mode', () => {
   });
 
   it('brackets the async editor spawn with terminal handover and resumes stdin', async () => {
-    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
     reviewStore.setReviewFile(join(tmpDir, 'plan.md'));
     stubReviewEditor('true');
 
@@ -376,7 +386,8 @@ describe('createReviewInputHandler – brief review edit mode', () => {
   });
 
   it('tells the user to quit the app while macOS open waits for a review edit', async () => {
-    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
     reviewStore.setReviewFile(join(tmpDir, 'plan.md'));
     vi.stubEnv('VISUAL', '/usr/bin/open -W -t');
     const child = new EventEmitter();
@@ -399,7 +410,8 @@ describe('createReviewInputHandler – brief review edit mode', () => {
   });
 
   it('restores the handover and resumes stdin when the editor spawn fails', async () => {
-    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
     reviewStore.setReviewFile(join(tmpDir, 'plan.md'));
     stubReviewEditor('/definitely/missing-splitbrief-editor');
 
@@ -442,7 +454,8 @@ describe('openReviewFileExternally – edit lifecycle feedback', () => {
   }
 
   it('announces the editor before the handover and reports a no-change close', async () => {
-    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
     await writeFile(join(tmpDir, 'plan.json'), '{}\n', 'utf-8');
     reviewStore.setReviewFile(join(tmpDir, 'plan.md'));
     stubReviewEditor('true');
@@ -465,7 +478,8 @@ describe('openReviewFileExternally – edit lifecycle feedback', () => {
   });
 
   it('resolves a changed plan.json edit with an applying signal', async () => {
-    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
     await writeFile(join(tmpDir, 'plan.json'), '{}\n', 'utf-8');
     reviewStore.setReviewFile(join(tmpDir, 'plan.md'));
     stubReviewEditor(
@@ -485,7 +499,8 @@ describe('openReviewFileExternally – edit lifecycle feedback', () => {
   });
 
   it('keeps an unchanged plan card open with a no-change signal', async () => {
-    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
     await writeFile(join(tmpDir, 'plan.json'), '{}\n', 'utf-8');
     reviewStore.setReviewFile(join(tmpDir, 'plan.md'));
     stubReviewEditor('true');
@@ -500,7 +515,8 @@ describe('openReviewFileExternally – edit lifecycle feedback', () => {
   });
 
   it('reports a SIGINT editor death as a user cancel, not a failure', async () => {
-    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
     await writeFile(join(tmpDir, 'plan.json'), '{}\n', 'utf-8');
     reviewStore.setReviewFile(join(tmpDir, 'plan.md'));
     stubReviewEditor(
@@ -517,7 +533,8 @@ describe('openReviewFileExternally – edit lifecycle feedback', () => {
   });
 
   it('still applies an edit saved before the editor died by SIGINT', async () => {
-    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
     await writeFile(join(tmpDir, 'plan.json'), '{}\n', 'utf-8');
     reviewStore.setReviewFile(join(tmpDir, 'plan.md'));
     stubReviewEditor(
@@ -538,7 +555,8 @@ process.kill(process.pid, 'SIGINT');`,
   });
 
   it('resolves the plan card with an edit saved before a non-zero exit', async () => {
-    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
     await writeFile(join(tmpDir, 'plan.json'), '{}\n', 'utf-8');
     reviewStore.setReviewFile(join(tmpDir, 'plan.md'));
     stubReviewEditor(
@@ -560,7 +578,8 @@ process.exit(2);`,
   });
 
   it('reports a non-zero exit that saved nothing as an unapplied edit', async () => {
-    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
     await writeFile(join(tmpDir, 'plan.json'), '{}\n', 'utf-8');
     reviewStore.setReviewFile(join(tmpDir, 'plan.md'));
     stubReviewEditor(await writeScriptEditor('editor-fail.js', 'process.exit(3);'));
@@ -575,7 +594,8 @@ process.exit(2);`,
   });
 
   it('keeps an edit the editor saved before dying by a non-SIGINT signal', async () => {
-    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
     await writeFile(join(tmpDir, 'plan.json'), '{}\n', 'utf-8');
     reviewStore.setReviewFile(join(tmpDir, 'plan.md'));
     stubReviewEditor(
@@ -597,7 +617,8 @@ process.kill(process.pid, 'SIGTERM');`,
   });
 
   it('reports a non-SIGINT signal death that saved nothing as an editor failure', async () => {
-    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
     await writeFile(join(tmpDir, 'plan.json'), '{}\n', 'utf-8');
     reviewStore.setReviewFile(join(tmpDir, 'plan.md'));
     stubReviewEditor(
@@ -612,7 +633,8 @@ process.kill(process.pid, 'SIGTERM');`,
   });
 
   it('ignores a second edit request while the editor is already out', async () => {
-    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
     await writeFile(join(tmpDir, 'plan.json'), '{}\n', 'utf-8');
     reviewStore.setReviewFile(join(tmpDir, 'plan.md'));
     const runLog = join(tmpDir, 'editor-runs.log');
@@ -632,7 +654,8 @@ setTimeout(() => process.exit(0), 150);`,
   });
 
   it('does not open the editor when the gate settles during the opening-signal window', async () => {
-    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
     await writeFile(join(tmpDir, 'plan.json'), '{}\n', 'utf-8');
     reviewStore.setReviewFile(join(tmpDir, 'plan.md'));
     const runLog = join(tmpDir, 'editor-runs.log');
@@ -653,7 +676,8 @@ setTimeout(() => process.exit(0), 150);`,
   });
 
   it('does not resolve a review gate that replaced the edited one while the editor was out', async () => {
-    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
     const reviewFile = join(tmpDir, 'plan.md');
     await writeFile(join(tmpDir, 'plan.json'), '{}\n', 'utf-8');
     const laterReviewFile = join(tmpDir, 'tasks.md');
@@ -678,7 +702,8 @@ const waiting = setInterval(() => {
       await vi.waitFor(async () => {
         expect(await readFile(editorOutFile, 'utf-8')).toBe('ready');
       });
-      lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+      runViewStore.__testReset({ phase: 'reviewing-plan' });
+      lifecycleStore.__testReset({ status: 'running' });
       reviewStore.setReviewFile(laterReviewFile);
     } finally {
       await writeFile(releaseFile, 'release');
@@ -695,7 +720,8 @@ const waiting = setInterval(() => {
 
 describe('createReviewInputHandler – question mode', () => {
   it('question submission clears the interrupted state before resolving', async () => {
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'interrupted' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'interrupted' });
     const document = createDraftDocument('steer toward smaller diffs');
     composerLiveStore.setDraft(document);
     const resolved: Array<{ value: unknown; status: string }> = [];

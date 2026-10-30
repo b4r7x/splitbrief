@@ -31,7 +31,7 @@ import { isLivePhase } from '../../../src/core/phases.js';
 import { createRuntimeCommands } from '../../../src/core/runtime/commands/registry.js';
 import { bylineParts } from '../../../src/features/workflow/closed/byline.js';
 import { hydrateRun } from '../../../src/features/workflow/run-history.js';
-import { lifecycleStore } from '../../../src/stores/workflow/lifecycle.js';
+import { runViewStore } from '../../../src/stores/workflow/run-view.js';
 import { deriveSummaryView } from '../../../src/features/workflow/closed/view-model.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -494,7 +494,7 @@ describe('run rejection after a source CLI run', () => {
     const { ref, record, commands } = openRun(fixture);
     expect(record.status.kind).toBe('open');
     await hydrateRun(record);
-    const { phase } = lifecycleStore.get();
+    const { phase } = runViewStore.get();
     expect(phase).toBe(loadState(ref)?.phase);
     expect(isLivePhase(phase)).toBe(true);
     const reject = () =>

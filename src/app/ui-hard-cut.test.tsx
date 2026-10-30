@@ -15,6 +15,7 @@ import { configStore } from '../stores/project/config.js';
 import { routerStore, type RouteData } from '../stores/navigation/router.js';
 import { eventsStore } from '../stores/workflow/events.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
+import { runViewStore } from '../stores/workflow/run-view.js';
 import { overlayStore } from '../stores/ui/overlay.js';
 import { terminalSizeStore } from '../stores/ui/terminal-size.js';
 import { Layout } from './layout.js';
@@ -152,12 +153,11 @@ const cases: ReadonlyArray<{
           }),
         ],
       });
-      lifecycleStore.__testReset({
+      runViewStore.__testReset({
         phase: 'researching',
-        status: 'running',
-        startedAt: Date.now() - 1_000,
-        phaseFirstSeenTs: { researching: Date.now() - 1_000 },
+        phaseFirstSeen: { researching: Date.now() - 1_000 },
       });
+      lifecycleStore.__testReset({ status: 'running', startedAt: Date.now() - 1_000 });
 
       const transcript = renderFeature(
         <ConversationFlow height={8} conversationWidth={80} contentWidth={80} />,

@@ -2,6 +2,7 @@ import { CREW_SEAT_LABELS, cutSeatIdentity, type CrewSeatId } from '../../../cor
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import { stateTone } from '../../../core/theme/state-tone.js';
 import { isImplementerPhase } from '../../../core/phases.js';
+import type { Phase } from '../../../core/schemas/enums.js';
 import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import {
@@ -96,14 +97,14 @@ function runnerTool(runnerName: string): string {
 function activityLine(
   input: DeriveBuildProgressInput,
 ): Pick<BuildProgress, 'activity' | 'activitySpans' | 'activityIdentity'> {
-  const command = runningCommand(input.operations, input.lifecycle.phase);
+  const command = runningCommand(input.operations, input.runView.phase);
   if (command !== null) return activityResult(command.spans);
   const operation = input.operations.active;
   const identity =
     operation === null
       ? null
       : formatRecordedSeatIdentity({ ...operation, role: runnerActivityModelRole(operation.role) });
-  if (input.lifecycle.phase === 'final-review' || operation?.role === 'review') {
+  if (input.runView.phase === 'final-review' || operation?.role === 'review') {
     const parts = reviewActivityParts(operation, identity);
     return activityResult(
       reviewActivitySpans(parts),
@@ -114,9 +115,7 @@ function activityLine(
     return activityResult([
       {
         text:
-          input.lifecycle.phase === 'escalating'
-            ? 'Waiting for the consult answer'
-            : 'Between calls',
+          input.runView.phase === 'escalating' ? 'Waiting for the consult answer' : 'Between calls',
         tone: 'textDim',
       },
     ]);
@@ -177,7 +176,7 @@ function activityResult(
  */
 function runningCommand(
   operations: OperationsState,
-  phase: LifecycleState['phase'],
+  phase: Phase,
 ): { spans: readonly BuildProgressSpan[]; startedTs: number } | null {
   const suite = selectRunningSuite(operations);
   if (suite !== null)
@@ -256,7 +255,7 @@ function freshnessResult(
 function freshnessOf(
   input: DeriveBuildProgressInput,
 ): Pick<BuildProgress, 'freshness' | 'freshnessSpans' | 'silent'> {
-  const command = runningCommand(input.operations, input.lifecycle.phase);
+  const command = runningCommand(input.operations, input.runView.phase);
   if (command !== null) {
     return freshnessResult(
       [
@@ -280,7 +279,7 @@ function freshnessOf(
   const lastTs = input.lifecycle.lastRunnerEventTs ?? null;
   if (lastTs === null) {
     return freshnessResult(
-      [{ text: input.lifecycle.phase === 'final-review' ? '' : 'no update yet', tone: 'textDim' }],
+      [{ text: input.runView.phase === 'final-review' ? '' : 'no update yet', tone: 'textDim' }],
       false,
     );
   }
@@ -301,7 +300,7 @@ function baseRun(input: DeriveBuildProgressInput): readonly BuildProgressSpan[] 
 
 export function deriveBuildProgress(input: DeriveBuildProgressInput): BuildProgress {
   const view = selectTaskListView(input.tasks);
-  const retrying = isImplementerPhase(input.lifecycle.phase) && input.tasks.currentAttempt >= 2;
+  const retrying = isImplementerPhase(input.runView.phase) && input.tasks.currentAttempt >= 2;
   const wait = input.runView.seatWait;
   const waitParts = wait?.live ? seatWaitParts(wait.tool, wait.wait.resetAt, input.now) : null;
   return {

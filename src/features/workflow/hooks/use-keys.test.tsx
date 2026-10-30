@@ -15,6 +15,7 @@ import { conversationScrollStore } from '../../../stores/workflow/conversation-s
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { inputHeightStore } from '../../../stores/ui/input-height.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { activityBatchKey } from '../conversation-rows/activity-batch-key.js';
@@ -508,7 +509,8 @@ describe('useWorkflowKeys', () => {
   it('PageDown, End, and the wheel reach the final markdown row at reviewing-briefs', async () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 25, isSmall: false });
     inputHeightStore.__testReset({ rows: 3 });
-    lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
+    runViewStore.__testReset({ phase: 'reviewing-briefs' });
+    lifecycleStore.__testReset({ status: 'running' });
     reviewStore.setReviewFile(resolve('docs/WORKFLOW-CONVERSATION-SCROLL.md'));
     controlsStore.setInputMode('review');
     const bodyHeight = getWorkflowViewportHeight({ rows: 25, inputRows: 3 });

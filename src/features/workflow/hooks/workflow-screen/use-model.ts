@@ -42,6 +42,7 @@ import { composerLiveStore } from '../../../../stores/ui/composer-live.js';
 import { stopStore } from '../../../../stores/workflow/stop.js';
 import { departureStore } from '../../../../stores/workflow/departure.js';
 import { reviewStore } from '../../../../stores/workflow/review.js';
+import { runViewStore } from '../../../../stores/workflow/run-view.js';
 import { approvalPromptStore } from '../../../../stores/approval-prompt/prompt.js';
 import { useStores } from '../../../../stores/use-stores.js';
 import {
@@ -85,8 +86,9 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
   const inputMode = useInputMode();
   const review = createReviewInputHandler(inputMode, deps?.reviewInput);
 
-  const [{ cancelled, phase, restored }, { filePath: reviewFilePath }] = useStores(
+  const [{ cancelled, restored }, { phase }, { filePath: reviewFilePath }] = useStores(
     lifecycleStore,
+    runViewStore,
     reviewStore,
   );
   const recoveryOpen = recoveryNoticeStore.use((s) => s.issue !== null);

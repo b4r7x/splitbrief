@@ -238,6 +238,17 @@ describe('createStdoutTextSink', () => {
     ]);
   });
 
+  it('writes no phase line for the replay markers, which carry the phase of the reading', () => {
+    const lines = collect([
+      { type: 'workflow_started', ts, phase: 'implementing', feature: 'add a widget' },
+      { type: 'replay_started', ts, phase: 'planning', totalEvents: 2 },
+      { type: 'replay_complete', ts, phase: 'planning', totalEvents: 2, durationMs: 1 },
+      { type: 'workflow_complete', ts, phase: 'complete', completedTasks: 0 },
+    ]);
+
+    expect(lines).toEqual(['phase: implementing', 'phase: complete', 'done: 0 tasks']);
+  });
+
   it('prints one stalled line at the warn and nothing when the stall clears', () => {
     const call = {
       phase: 'implementing',

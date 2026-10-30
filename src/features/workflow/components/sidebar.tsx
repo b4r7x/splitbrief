@@ -15,6 +15,7 @@ import {
   tasksStore,
 } from '../../../stores/workflow/tasks.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { configStore } from '../../../stores/project/config.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import {
@@ -160,11 +161,12 @@ function rowSpec(status: WorkflowTask['status'], t: Theme, restMark: RailHalt | 
 
 function SidebarWaiting() {
   const t = useTheme();
-  const [lifecycle, controls, approval, recovery] = useStores(
+  const [lifecycle, controls, approval, recovery, { phase }] = useStores(
     lifecycleStore,
     controlsStore,
     approvalPromptStore,
     recoveryNoticeStore,
+    runViewStore,
   );
   const display = deriveWorkflowDisplay({
     status: lifecycle.status,
@@ -185,7 +187,7 @@ function SidebarWaiting() {
     return <Text color={t.textDim}>{`${LIST_INDENT}No tasks yet`}</Text>;
   }
 
-  const stage = getActiveRailStage(lifecycle.phase)?.stage ?? '';
+  const stage = getActiveRailStage(phase)?.stage ?? '';
   const seat = stage === '' ? null : railStageSeat(stage);
   return (
     <Box flexDirection="column">

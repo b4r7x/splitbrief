@@ -11,6 +11,7 @@ import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
@@ -166,7 +167,8 @@ describe('Header — seat line', () => {
     (variant) => {
       chalk.level = 3;
       const theme = resolveTheme({ variant, level: 3, terminalBackground: undefined });
-      lifecycleStore.__testReset({ status: 'running', phase: 'final-review' });
+      runViewStore.__testReset({ phase: 'final-review' });
+      lifecycleStore.__testReset({ status: 'running' });
       terminalSizeStore.__testReset({ cols: 200, rows: 50, isSmall: false });
       const seatLine = formatCollapsedSeatSpansFromIdentities({
         plan: 'Astra',
@@ -319,11 +321,8 @@ describe('Header — seat line', () => {
   it('keeps BUILD without a reset or swap offer until the halt clears on a constrained rail', async () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: true });
     configStore.__testReset({ projectDir: '/tmp/p', config: HALTED_CREW_CONFIG });
-    lifecycleStore.__testReset({
-      phase: 'implementing',
-      status: 'running',
-      startedAt: Date.now(),
-    });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: Date.now() });
     recoveryNoticeStore.open({
       seat: 'build',
       ranOn: null,
@@ -353,8 +352,8 @@ describe('Header — seat line', () => {
   it('keeps BUILD for an open halted record at rest with no open notice', async () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: true });
     configStore.__testReset({ projectDir: '/tmp/p', config: HALTED_CREW_CONFIG });
+    runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({
-      phase: 'implementing',
       status: 'paused',
       startedAt: 0,
       endedAt: 5_000,
@@ -405,7 +404,8 @@ describe('Header — seat line', () => {
   });
 
   it('drops the seat line when the rail crowds the bar', async () => {
-    lifecycleStore.__testReset({ phase: 'planning', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'planning' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     terminalSizeStore.__testReset({ cols: 52, rows: 24, isSmall: true });
     configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
 
@@ -421,7 +421,8 @@ describe('Header — seat line', () => {
 describe('Header — rail', () => {
   it('renders the phase rail in place of any task title', async () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({ phase: 'planning', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'planning' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
 
     const instance = render(<Header />);
     await tick();
@@ -438,11 +439,8 @@ describe('Header — rail', () => {
     resetStores();
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
     configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
-    lifecycleStore.__testReset({
-      phase: 'specifying',
-      status: 'running',
-      startedAt: Date.now(),
-    });
+    runViewStore.__testReset({ phase: 'specifying' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: Date.now() });
 
     // The library's fixed 100-column stdout would lay the bar out at a width its store never
     // named, so the exact-geometry probe mounts through the viewport-aware harness, inside the
@@ -467,8 +465,8 @@ describe('Header — rail', () => {
 
   it('does not repeat the cancelled status word that the rail already owns', async () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 24, isSmall: false });
+    runViewStore.__testReset({ phase: 'researching' });
     lifecycleStore.__testReset({
-      phase: 'researching',
       status: 'cancelled',
       cancelled: true,
       startedAt: 0,
@@ -488,7 +486,8 @@ describe('Header — rail', () => {
   it('shows no clock for the whole run, running or done', async () => {
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
     vi.setSystemTime(65_000);
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
 
     const instance = render(<Header />);
     await vi.advanceTimersByTimeAsync(2_000);
@@ -496,7 +495,8 @@ describe('Header — rail', () => {
     expect(clockText(instance.lastFrame())).toBeUndefined();
     instance.unmount();
 
-    lifecycleStore.__testReset({ phase: 'complete', status: 'complete', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'complete' });
+    lifecycleStore.__testReset({ status: 'complete', startedAt: 0 });
     const done = render(<Header />);
     expect(clockText(done.lastFrame())).toBeUndefined();
     done.unmount();

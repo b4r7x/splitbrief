@@ -35,6 +35,7 @@ import {
   spendSeatChange,
 } from './handlers.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../stores/workflow/run-view.js';
 import { eventsStore } from '../../stores/workflow/events.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
@@ -103,7 +104,8 @@ describe('requestStopNow', () => {
     stopStore.__testReset();
     lifecycleStore.reset();
     eventsStore.reset();
-    lifecycleStore.__testReset({ phase: 'planning' });
+    runViewStore.__testReset({ phase: 'planning' });
+    lifecycleStore.__testReset({ status: 'running' });
   });
 
   afterEach(() => {
@@ -226,7 +228,8 @@ describe('requestEndRun', () => {
     stopStore.__testReset();
     lifecycleStore.reset();
     eventsStore.reset();
-    lifecycleStore.__testReset({ phase: 'planning' });
+    runViewStore.__testReset({ phase: 'planning' });
+    lifecycleStore.__testReset({ status: 'running' });
   });
 
   afterEach(() => {
@@ -367,7 +370,8 @@ describe('requestSteer', () => {
     ['stop', requestStopNow],
     ['end run', requestEndRun],
   ] as const)('an explicit %s supersedes a pending steer', (_name, stop) => {
-    lifecycleStore.__testReset({ phase: 'implementing', cancelled: false });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ cancelled: false });
     setStopHandler(vi.fn());
     setCancelHandler(vi.fn());
     createAbortHandlerScope()(vi.fn());
@@ -616,7 +620,8 @@ describe('consumeBoundaryInterrupt', () => {
   beforeEach(() => {
     clearAllHandlers();
     lifecycleStore.reset();
-    lifecycleStore.__testReset({ phase: 'planning' });
+    runViewStore.__testReset({ phase: 'planning' });
+    lifecycleStore.__testReset({ status: 'running' });
   });
 
   afterEach(() => {
@@ -639,7 +644,8 @@ describe('requestClearQueue', () => {
     clearAllHandlers();
     lifecycleStore.reset();
     eventsStore.reset();
-    lifecycleStore.__testReset({ phase: 'planning', queueDepth: 2 });
+    runViewStore.__testReset({ phase: 'planning' });
+    lifecycleStore.__testReset({ queueDepth: 2, status: 'running' });
   });
 
   afterEach(() => {

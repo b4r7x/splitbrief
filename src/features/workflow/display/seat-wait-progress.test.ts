@@ -7,6 +7,7 @@ import {
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { seatWaitSentence } from '../../../core/sessions/seat-wait-line.js';
 import { EMPTY_RUN_VIEW, type RunView } from '../../../core/run-view/reduce.js';
+import type { Phase } from '../../../core/schemas/enums.js';
 import type { LifecycleState } from '../../../stores/workflow/lifecycle.js';
 import type { OperationsState } from '../../../stores/workflow/operations/state.js';
 import type { TasksState, WorkflowTask } from '../../../stores/workflow/tasks.js';
@@ -30,18 +31,14 @@ function tasksState(
   };
 }
 
-function lifecycleState(
-  overrides: { phase?: LifecycleState['phase']; lastRunnerEventTs?: number | null } = {},
-): LifecycleState {
+function lifecycleState(overrides: { lastRunnerEventTs?: number | null } = {}): LifecycleState {
   return {
-    phase: overrides.phase ?? 'implementing',
     status: 'running',
     interruptParked: false,
     cancelled: false,
     queueDepth: 0,
     queuedMessageIds: new Set(),
     steerableCall: null,
-    phaseFirstSeenTs: {},
     stall: null,
     lastRunnerEventTs: overrides.lastRunnerEventTs ?? null,
     attemptStartedTs: null,
@@ -56,8 +53,12 @@ function operationsState(overrides: Partial<OperationsState> = {}): OperationsSt
   return { active: null, last: null, byCallId: new Map(), validationStage: null, ...overrides };
 }
 
-function waitView(resetAt: string, live = true): RunView {
-  return { seatWait: { tool: 'codex', wait: { seat: 'build', resetAt }, live } };
+function waitView(resetAt: string, live = true, phase: Phase = 'implementing'): RunView {
+  return {
+    phase,
+    phaseFirstSeen: {},
+    seatWait: { tool: 'codex', wait: { seat: 'build', resetAt }, live },
+  };
 }
 
 function testInput(overrides: Partial<DeriveBuildProgressInput> = {}): DeriveBuildProgressInput {
@@ -65,7 +66,7 @@ function testInput(overrides: Partial<DeriveBuildProgressInput> = {}): DeriveBui
     tasks: tasksState(),
     lifecycle: lifecycleState(),
     operations: operationsState(),
-    runView: EMPTY_RUN_VIEW,
+    runView: { ...EMPTY_RUN_VIEW, phase: 'implementing' },
     now: NOW,
     ...overrides,
   };
@@ -76,7 +77,7 @@ describe('seat wait in the build block', () => {
     const resetAt = new Date(NOW + 10 * 60 * 1000).toISOString();
     const progress = deriveBuildProgress(
       testInput({
-        lifecycle: lifecycleState({ phase: 'implementing', lastRunnerEventTs: null }),
+        lifecycle: lifecycleState({ lastRunnerEventTs: null }),
         runView: waitView(resetAt),
         operations: operationsState({ active: null }),
         now: NOW,
@@ -104,8 +105,8 @@ describe('seat wait in the build block', () => {
     const resetAt = new Date(NOW + 10 * 60 * 1000).toISOString();
     const progress = deriveBuildProgress(
       testInput({
-        lifecycle: lifecycleState({ phase: 'final-review', lastRunnerEventTs: null }),
-        runView: waitView(resetAt),
+        lifecycle: lifecycleState({ lastRunnerEventTs: null }),
+        runView: waitView(resetAt, true, 'final-review'),
         operations: operationsState({ active: null }),
         now: NOW,
       }),
@@ -131,7 +132,7 @@ describe('seat wait in the build block', () => {
   it('returns Between calls when no seat waits on implementing', () => {
     const progress = deriveBuildProgress(
       testInput({
-        lifecycle: lifecycleState({ phase: 'implementing', lastRunnerEventTs: null }),
+        lifecycle: lifecycleState({ lastRunnerEventTs: null }),
         operations: operationsState({ active: null }),
         now: NOW,
       }),
@@ -149,7 +150,7 @@ describe('seat wait in the build block', () => {
   it('shows Between calls when the wait deadline has passed', () => {
     const progress = deriveBuildProgress(
       testInput({
-        lifecycle: lifecycleState({ phase: 'implementing', lastRunnerEventTs: null }),
+        lifecycle: lifecycleState({ lastRunnerEventTs: null }),
         runView: waitView(new Date(NOW - 60 * 1000).toISOString()),
         operations: operationsState({ active: null }),
         now: NOW,
@@ -162,7 +163,7 @@ describe('seat wait in the build block', () => {
   it('falls back when the reset of the wait is invalid and produces null sentence', () => {
     const progress = deriveBuildProgress(
       testInput({
-        lifecycle: lifecycleState({ phase: 'implementing', lastRunnerEventTs: null }),
+        lifecycle: lifecycleState({ lastRunnerEventTs: null }),
         runView: waitView('invalid'),
         operations: operationsState({ active: null }),
         now: NOW,
@@ -175,7 +176,7 @@ describe('seat wait in the build block', () => {
   it('shows Between calls when a stop kept the wait and no process waits on it', () => {
     const progress = deriveBuildProgress(
       testInput({
-        lifecycle: lifecycleState({ phase: 'implementing', lastRunnerEventTs: null }),
+        lifecycle: lifecycleState({ lastRunnerEventTs: null }),
         runView: waitView(new Date(NOW + 10 * 60 * 1000).toISOString(), false),
         operations: operationsState({ active: null }),
         now: NOW,

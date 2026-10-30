@@ -16,6 +16,7 @@ import { getChromeContentWidth, WORKFLOW_GUTTER_X, type RailForm } from '../layo
 import type { readClipboardImage as readSystemClipboardImage } from '../../../core/attachments/clipboard-image.js';
 import type { listProjectFiles as listFiles } from '../../../lib/file-listing.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { selectRunningBrief, tasksStore } from '../../../stores/workflow/tasks.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import {
@@ -133,7 +134,7 @@ export function WorkflowFooter({
   // The width the composer box actually renders at — the terminal inside the gutter — so the
   // input's own wrap math budgets the same cells the box paints.
   const composerWidth = getChromeContentWidth(terminalSizeStore.use((s) => s.cols));
-  const phase = lifecycleStore.use((state) => state.phase);
+  const phase = runViewStore.use((state) => state.phase);
   const running = lifecycleStore.use((state) => state.status === 'running');
   const steerableSeat = lifecycleStore.use((state) => state.steerableCall?.seat ?? null);
   const taskId = tasksStore.use((state) => selectRunningBrief(state, phase).current?.id);

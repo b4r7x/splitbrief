@@ -29,6 +29,7 @@ import { loadEvents } from '../workflow/actions/load.js';
 import { resetWorkflow } from '../workflow/actions/reset.js';
 import { eventsStore } from '../workflow/events.js';
 import { lifecycleStore } from '../workflow/lifecycle.js';
+import { runViewStore } from '../workflow/run-view.js';
 import { operationsStore } from '../workflow/operations/state.js';
 import { tasksStore } from '../workflow/tasks.js';
 import { tokensStore } from '../workflow/tokens.js';
@@ -330,7 +331,7 @@ describe('handleSessionSelect with a history read in flight', () => {
     expect(JSON.stringify(eventsStore.get().events)).toContain('run B');
     expect(tasksStore.get().taskMap.get('T001')?.title).toBe('run B');
     expect(tokensStore.get().tokenUsage?.plannerInput).toBe('run B'.length);
-    expect(lifecycleStore.get().phase).toBe('implementing');
+    expect(runViewStore.get().phase).toBe('implementing');
   });
 
   it.each([

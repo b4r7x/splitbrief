@@ -154,7 +154,7 @@ Several sinks can subscribe to the bus. The JSONL, logger and call-evidence sink
 
 **Stdout JSON sink** (`src/engine/events/sinks/stdout-json.ts`) — writes public NDJSON records to stdout. Live events pass the same payload bounds as every other external consumer before they are wrapped as `{ "type": "event", "data": <EngineEvent> }`; readiness, recovery, final-review, warning, and error records use their own top-level `type`. Only subscribed in `--json` headless mode.
 
-**Stdout text sink** (`src/engine/events/sinks/stdout-text.ts`) — the `--plain` projection of the same stream: `phase:`, `task <id>:`, `stalled:`, `review:` and `done:` lines and nothing else, so a script can read a run with `grep`. Cost is reported in tokens, not dollars, because a sink holds no price catalog. Only subscribed in `--plain` headless mode, and exactly one of the two stdout sinks is ever installed — `attachRunSinks()` picks by `opts.plain`. Under `--plain` one more sink writes each `warning` and `info` event's bounded message to stderr.
+**Stdout text sink** (`src/engine/events/sinks/stdout-text.ts`) — the `--plain` projection of the same stream: `phase:`, `task <id>:`, `stalled:`, `review:` and `done:` lines and nothing else, so a script can read a run with `grep`. It folds each event into its own run view with `reduceRunView`, the same fold the TUI reads, and writes a `phase:` line when the view's phase changes. Cost is reported in tokens, not dollars, because a sink holds no price catalog. Only subscribed in `--plain` headless mode, and exactly one of the two stdout sinks is ever installed — `attachRunSinks()` picks by `opts.plain`. Under `--plain` one more sink writes each `warning` and `info` event's bounded message to stderr.
 
 Each `review_completed` prints one `review:` line with its scope, task anchor when present, verdict, and available blocking count. `workflow_complete` prints the run's `done:` line. It prints no review line.
 
@@ -219,11 +219,12 @@ The full path from engine to pixel:
    - `eventsStore` — appends the TUI-safe event-log projection
    - `tasksStore` — updates task progress (status, counts)
    - `tokensStore` — updates cost and token usage
-   - `lifecycleStore` — updates phase, queue depth, terminal workflow timing
+   - `runViewStore` — folds the event into the run view: the phase, when the run first entered each phase, and the seat wait (`reduceRunView`, `src/core/run-view/reduce.ts`). This fold runs before the cancellation gate, so a late event still moves the view
+   - `lifecycleStore` — updates run status, queue depth, terminal workflow timing; it reads a phase change from the run view's fold of the same event
    - `operationsStore` — updates active/last runner operation lifecycle for compact status
 4. React components using `store.use(s => s.tasks)` re-render when their selector output changes
 
-**Ordering invariant:** safe retained event log, then tasks, then tokens, then lifecycle, then operations. Strictly synchronous — no await, no setTimeout, no microtask scheduling between them. `addEvent()` computes the safe event-log projection first, then passes the original raw event to the operational stores in the same call. React 19 + Ink batch synchronous store updates, so subscribers observe one consistent commit with all workflow stores updated together.
+**Ordering invariant:** run view, then the cancellation gate, then safe retained event log, tasks, tokens, lifecycle and operations. Strictly synchronous — no await, no setTimeout, no microtask scheduling between them. After the gate, `addEvent()` computes the safe event-log projection, then passes the original raw event to the operational stores in the same call. React 19 + Ink batch synchronous store updates, so subscribers observe one consistent commit with all workflow stores updated together.
 
 `cost_update` events take a fast path: they skip the event log and task store and only update tokens. This avoids growing the event log with high-frequency cost ticks.
 

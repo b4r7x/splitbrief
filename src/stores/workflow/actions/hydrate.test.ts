@@ -6,6 +6,7 @@ import { resetWorkflow } from './reset.js';
 import { tasksStore } from '../tasks.js';
 import { tokensStore } from '../tokens.js';
 import { lifecycleStore } from '../lifecycle.js';
+import { runViewStore } from '../run-view.js';
 import { configStore } from '../../project/config.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { makeCostUpdate, makeTaskStart, makeRetry } from '#testing/helpers/events/task.js';
@@ -130,7 +131,7 @@ describe('hydrateFromState', () => {
         },
       ],
     });
-    expect(lifecycleStore.get().phase).toBe('implementing');
+    expect(runViewStore.get().phase).toBe('implementing');
     expect(lifecycleStore.get().queueDepth).toBe(1);
     expect(tasksStore.get().currentTask).toBe(3);
     expect(tasksStore.get().totalTasks).toBe(3);
@@ -188,11 +189,11 @@ describe('hydrateFromState', () => {
     });
 
     expect(lifecycleStore.get().status).toBe('complete');
-    expect(lifecycleStore.get().phase).toBe('complete');
+    expect(runViewStore.get().phase).toBe('complete');
     expect(lifecycleStore.get().endedAt).toBe(1_120_000);
   });
 
-  it('keeps the phase timestamps the replayed log recorded', () => {
+  it('takes the saved phase and keeps the phase timestamps the replayed log recorded', () => {
     addEvent({ type: 'workflow_started', ts: 5_000, phase: 'planning', feature: 'f' });
 
     hydrateFromState({
@@ -209,7 +210,8 @@ describe('hydrateFromState', () => {
       messageQueue: [],
     });
 
-    expect(lifecycleStore.get().phaseFirstSeenTs.planning).toBe(5_000);
+    expect(runViewStore.get().phaseFirstSeen.planning).toBe(5_000);
+    expect(runViewStore.get().phase).toBe('implementing');
   });
 
   it('prices resumed reviewer tokens with the identity the run started on', () => {

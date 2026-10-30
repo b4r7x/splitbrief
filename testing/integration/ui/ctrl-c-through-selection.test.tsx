@@ -15,6 +15,7 @@ import { feedbackStore } from '../../../src/stores/ui/feedback.js';
 import { controlsStore } from '../../../src/stores/ui/controls.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { lifecycleStore } from '../../../src/stores/workflow/lifecycle.js';
+import { runViewStore } from '../../../src/stores/workflow/run-view.js';
 import { stopStore } from '../../../src/stores/workflow/stop.js';
 
 const CTRL_C = '\x03';
@@ -50,10 +51,8 @@ function setup(
       run: makeRunRecord({ ref: { projectDir, sessionId } }),
       execution: running === 'at-rest' ? { kind: 'at-rest' } : { kind: 'local', prepared },
     });
-    lifecycleStore.__testReset({
-      status: running === 'at-rest' ? 'paused' : 'running',
-      phase: 'implementing',
-    });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: running === 'at-rest' ? 'paused' : 'running' });
   }
   const exit = vi.fn();
   const stop = vi.fn(() => {

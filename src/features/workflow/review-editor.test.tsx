@@ -9,6 +9,7 @@ import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../stores/workflow/run-view.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import { openReviewEditor } from './review-editor.js';
@@ -16,7 +17,8 @@ import { openReviewEditor } from './review-editor.js';
 const SESSION_ID = '2026-07-08-inline-trigger';
 
 function armReview(phase: Phase) {
-  lifecycleStore.__testReset({ phase });
+  runViewStore.__testReset({ phase });
+  lifecycleStore.__testReset();
   overlayStore.close();
   terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
 }

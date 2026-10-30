@@ -9,6 +9,7 @@ import { conversationScrollStore } from '../../../../stores/workflow/conversatio
 import { streamingOutputStore } from '../../../../stores/workflow/streaming-output.js';
 import { eventsStore } from '../../../../stores/workflow/events.js';
 import { lifecycleStore } from '../../../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../../../stores/workflow/run-view.js';
 import { tasksStore } from '../../../../stores/workflow/tasks.js';
 import { addEvent } from '../../../../stores/workflow/actions/event.js';
 import { taskId } from '../../../../core/schemas/task.js';
@@ -284,7 +285,8 @@ describe('ConversationFlow', () => {
         120,
       );
       for (const status of ['running', 'paused'] as const) {
-        lifecycleStore.__testReset({ status, phase: 'implementing' });
+        runViewStore.__testReset({ phase: 'implementing' });
+        lifecycleStore.__testReset({ status });
         ui.rerender(<ConversationFlow height={20} conversationWidth={120} contentWidth={120} />);
         const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
         expect(lines.find((line) => line.includes('Abandoned brief'))).toContain(
@@ -318,7 +320,8 @@ describe('ConversationFlow', () => {
         20,
         120,
       );
-      lifecycleStore.__testReset({ status, phase: 'implementing' });
+      runViewStore.__testReset({ phase: 'implementing' });
+      lifecycleStore.__testReset({ status });
       ui.rerender(<ConversationFlow height={20} conversationWidth={120} contentWidth={120} />);
       const headers = stripAnsiStyles(ui.lastFrame() ?? '')
         .split('\n')
@@ -359,7 +362,8 @@ describe('ConversationFlow', () => {
         40,
         120,
       );
-      lifecycleStore.__testReset({ status, phase: 'implementing' });
+      runViewStore.__testReset({ phase: 'implementing' });
+      lifecycleStore.__testReset({ status });
       ui.rerender(<ConversationFlow height={40} conversationWidth={120} contentWidth={120} />);
       const headers = stripAnsiStyles(ui.lastFrame() ?? '')
         .split('\n')
@@ -799,7 +803,8 @@ describe('ConversationFlow', () => {
   });
 
   it('uses one space after Queued, Delivered and Pending labels', () => {
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
     tasksStore.__testReset({
       tasks: [{ id: taskId('T004'), title: 'Next brief', status: 'pending' }],
     });
@@ -869,7 +874,8 @@ describe('ConversationFlow', () => {
         { id: taskId('T002'), title: 'next brief', status: 'pending' },
       ],
     });
-    lifecycleStore.__testReset({ status: 'running', phase: 'implementing' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
     terminalSizeStore.__testReset({ cols: 90, rows: 30, isSmall: true });
 
     const ui = renderConversation(events, 12, 90);
@@ -1033,7 +1039,8 @@ describe('ConversationFlow', () => {
       renderableCountAtScroll: events.length,
       heightAtScroll: 28,
     });
-    lifecycleStore.__testReset({ status: 'running', phase: 'researching' });
+    runViewStore.__testReset({ phase: 'researching' });
+    lifecycleStore.__testReset({ status: 'running' });
     const ui = renderConversation(events, 6, 90);
     const framesBefore = ui.frames.length;
 
@@ -1073,7 +1080,8 @@ describe('ConversationFlow', () => {
     const batchKey = 'activity-batch:0:call-1';
 
     conversationScrollStore.__testReset({ expandedActivityBatches: new Set([batchKey]) });
-    lifecycleStore.__testReset({ status: 'running', phase: 'researching' });
+    runViewStore.__testReset({ phase: 'researching' });
+    lifecycleStore.__testReset({ status: 'running' });
     const running = renderConversation(events, 12, 90);
     const runningFrame = running.lastFrame() ?? '';
     expect(runningFrame).toContain(LIVE_MARK);
@@ -1084,11 +1092,8 @@ describe('ConversationFlow', () => {
 
   it('keeps the live status out of the transcript while a stage runs', () => {
     const events = makeActivityReads(['src/a.ts', 'src/b.ts']);
-    lifecycleStore.__testReset({
-      status: 'running',
-      phase: 'researching',
-      startedAt: Date.now() - 5_000,
-    });
+    runViewStore.__testReset({ phase: 'researching' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: Date.now() - 5_000 });
     const ui = renderConversation(events, 12, 90);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
@@ -1099,7 +1104,8 @@ describe('ConversationFlow', () => {
 
   it('keeps the live header on a single-event activity group instead of a lone item row', () => {
     const events = makeActivityReads(['src/only.ts']);
-    lifecycleStore.__testReset({ status: 'running', phase: 'researching', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'researching' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     const ui = renderConversation(events, 12, 90);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
@@ -1159,7 +1165,8 @@ describe('ConversationFlow', () => {
         file: 'src/running.ts',
       }),
     ];
-    lifecycleStore.__testReset({ status: 'running', phase: 'implementing' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
     conversationScrollStore.__testReset({ scrollOffset: Number.MAX_SAFE_INTEGER });
     hoverStore.clear();
     const ui = renderConversation(events, 10, 90);

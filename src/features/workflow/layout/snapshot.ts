@@ -21,6 +21,7 @@ import { streamingOutputStore } from '../../../stores/workflow/streaming-output.
 import { transcriptTailStore } from '../../../stores/workflow/transcript-tail.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
@@ -78,7 +79,7 @@ function readWorkflowPromptRows(): number {
     approvalState,
     questionHint,
     review: {
-      artifact: documentReview ? reviewArtifactForPhase(lifecycleStore.get().phase) : null,
+      artifact: documentReview ? reviewArtifactForPhase(runViewStore.get().phase) : null,
       confirms: reviewStore.get().confirms,
       budgetRows: getReviewPanelBudget({
         rows: terminalSizeStore.get().rows,
@@ -100,7 +101,7 @@ function readProgressRows(promptRows: number): number {
   const lifecycle = lifecycleStore.get();
   const route = routerStore.get();
   return getProgressRows({
-    phase: lifecycle.phase,
+    phase: runViewStore.get().phase,
     cols: terminalSizeStore.get().cols,
     cancelled: lifecycle.cancelled,
     halted: recoveryNoticeStore.get().issue !== null,
@@ -114,7 +115,7 @@ function readRailFraction(): string {
   const tasks = tasksStore.get();
   const lifecycle = lifecycleStore.get();
   return resolveRailFraction({
-    phase: lifecycle.phase,
+    phase: runViewStore.get().phase,
     tasks,
     cancelled: lifecycle.cancelled,
     buildBlockShown: readProgressRows(readWorkflowPromptRows()) > 0,
@@ -128,7 +129,7 @@ export interface RailSnapshot {
 
 export function readRailSnapshot(): RailSnapshot {
   const { cols } = terminalSizeStore.get();
-  const phase = lifecycleStore.get().phase;
+  const phase = runViewStore.get().phase;
   const cancelled = lifecycleStore.get().cancelled;
   const fraction = readRailFraction();
   const form = selectRailForm({ phase, cols });
@@ -167,7 +168,7 @@ function readConversationLayoutSnapshot(): ConversationLayoutSnapshot {
   const sidebarShowsTasks = getWorkflowSidebarWidth({ cols, sidebarVisible }) > 0;
   const pendingTasks = queuedBriefs({
     tasks: tasksStore.get(),
-    phase: lifecycleStore.get().phase,
+    phase: runViewStore.get().phase,
     sidebarShowsTasks,
     closed: routeClosedAtRest(routerStore.get()),
   });

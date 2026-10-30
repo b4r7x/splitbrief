@@ -16,6 +16,7 @@ import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { inputHeightStore } from '../../../stores/ui/input-height.js';
 import { _resetMouseZones, registerMouseZone } from '../../../lib/terminal/mouse-zones.js';
@@ -202,7 +203,8 @@ describe('workflow pointer handling', () => {
 
   it('blocks hover, transcript actions, and row zones behind an open completion menu', () => {
     routerStore.init(WORKFLOW_ROUTE);
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     seedDiff();
     const snapshot = readConversationScrollSnapshot();
     const windowIndex = transcriptRows().findIndex((row) => rowText(row).includes('ctrl+d'));
@@ -233,7 +235,8 @@ describe('workflow pointer handling', () => {
 
   it('click on the active rail stage scrolls the transcript to the bottom without setting focus', () => {
     routerStore.init(WORKFLOW_ROUTE);
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     seedTallTranscript();
     const snapshot = readConversationScrollSnapshot();
     conversationScrollStore.__testReset({
@@ -253,7 +256,8 @@ describe('workflow pointer handling', () => {
   it('routes distinct rail stages to distinct transcript scroll destinations', () => {
     routerStore.init(WORKFLOW_ROUTE);
     terminalSizeStore.__testReset({ cols: 120, rows: 40 });
-    lifecycleStore.__testReset({ phase: 'final-review', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'final-review' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     seedTallTranscript();
     const maxOffset = readConversationScrollSnapshot().maxOffset;
     expect(maxOffset).toBeGreaterThanOrEqual(2);
@@ -285,7 +289,8 @@ describe('workflow pointer handling', () => {
 
   it('clears hover on a move over the click-only rail', () => {
     routerStore.init(WORKFLOW_ROUTE);
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     const railZone = readRailSnapshot().zones[0];
     if (!railZone) throw new Error('expected a rail zone');
     hoverStore.set(5);
@@ -296,7 +301,8 @@ describe('workflow pointer handling', () => {
 
   it('clears hover on a move over empty space', () => {
     routerStore.init(WORKFLOW_ROUTE);
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     hoverStore.set(3);
     dispatchWorkflowPointer(pointerEvent('move', 1, 1));
 
@@ -305,7 +311,8 @@ describe('workflow pointer handling', () => {
 
   it('sets a conversation hover on a move over the transcript', () => {
     routerStore.init(WORKFLOW_ROUTE);
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     const snapshot = readConversationScrollSnapshot();
     dispatchWorkflowPointer(
       pointerEvent('move', snapshot.contentRect.left, snapshot.contentRect.top),
@@ -316,7 +323,8 @@ describe('workflow pointer handling', () => {
 
   it('clears stale transcript hover and blocks transcript actions when review owns the body without a file', () => {
     routerStore.init(WORKFLOW_ROUTE);
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     seedDiff();
     const snapshot = readConversationScrollSnapshot();
     const windowIndex = transcriptRows().findIndex((row) => rowText(row).includes('ctrl+d'));
@@ -336,7 +344,8 @@ describe('workflow pointer handling', () => {
 
   it('routes hover and press to the visible transcript in normal mode despite stale brief review state', () => {
     routerStore.init(WORKFLOW_ROUTE);
-    lifecycleStore.__testReset({ phase: 'reviewing-briefs', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'reviewing-briefs' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     reviewStore.setReviewFile('briefs.md', 12);
     controlsStore.setInputMode('normal');
     seedDiff();
@@ -357,7 +366,8 @@ describe('workflow pointer handling', () => {
 
   it('clears hover on an invalid move even inside the throttle window', () => {
     routerStore.init(WORKFLOW_ROUTE);
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     const snapshot = readConversationScrollSnapshot();
     const { left, top } = snapshot.contentRect;
     dispatchWorkflowPointer(pointerEvent('move', left, top));
@@ -369,7 +379,8 @@ describe('workflow pointer handling', () => {
 
   it('click on a +N more activity row expands the batch', () => {
     routerStore.init(WORKFLOW_ROUTE);
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     const batchKey = seedActivityBatch();
     const snapshot = readConversationScrollSnapshot();
     const windowIndex = transcriptRows().findIndex((row) => row.kind === 'activity-more');
@@ -385,7 +396,8 @@ describe('workflow pointer handling', () => {
 
   it('click on the collapse activity row collapses the expanded batch', () => {
     routerStore.init(WORKFLOW_ROUTE);
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     const batchKey = seedActivityBatch();
     conversationScrollStore.toggleActivityBatch(batchKey);
     expect(conversationScrollStore.get().expandedActivityBatches.has(batchKey)).toBe(true);
@@ -403,7 +415,8 @@ describe('workflow pointer handling', () => {
 
   it('click on a collapsed diff hint row expands the diff', () => {
     routerStore.init(WORKFLOW_ROUTE);
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     seedDiff();
     const snapshot = readConversationScrollSnapshot();
     const windowIndex = transcriptRows().findIndex((row) => rowText(row).includes('ctrl+d'));
@@ -421,7 +434,8 @@ describe('workflow pointer handling', () => {
 
   it('resolves an activity disclosure click while a stage is live and the transcript is scrolled to the bottom', () => {
     routerStore.init(WORKFLOW_ROUTE);
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     seedLiveDisclosureTranscript();
     const snapshot = readConversationScrollSnapshot();
     expect(snapshot.maxOffset).toBeGreaterThan(0);
@@ -444,7 +458,8 @@ describe('workflow pointer handling', () => {
 
   it('click on a plain transcript row sets no focus and toggles nothing', () => {
     routerStore.init(WORKFLOW_ROUTE);
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     seedTallTranscript();
     const snapshot = readConversationScrollSnapshot();
 
@@ -458,7 +473,8 @@ describe('workflow pointer handling', () => {
 
   it('throttles a redundant valid hover update arriving within the window', () => {
     routerStore.init(WORKFLOW_ROUTE);
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     const snapshot = readConversationScrollSnapshot();
     const { left, top } = snapshot.contentRect;
     dispatchWorkflowPointer(pointerEvent('move', left, top));

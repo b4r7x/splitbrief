@@ -5,6 +5,8 @@ import { deriveLiveStatus } from '../../../src/features/workflow/display/live-ac
 import { addEvent } from '../../../src/stores/workflow/actions/event.js';
 import { resetWorkflow } from '../../../src/stores/workflow/actions/reset.js';
 import { lifecycleStore, type LifecycleState } from '../../../src/stores/workflow/lifecycle.js';
+import { runViewStore } from '../../../src/stores/workflow/run-view.js';
+import type { RunView } from '../../../src/core/run-view/reduce.js';
 
 const PHASE_SEQUENCE: readonly Phase[] = [
   'researching',
@@ -27,9 +29,9 @@ function plannerText(ts: number, phase: Phase): EngineEventOf<'planner_text'> {
   };
 }
 
-// Ingests a whole workflow through the store dispatcher so phaseFirstSeenTs is derived exactly the
+// Ingests a whole workflow through the store dispatcher so phaseFirstSeen is derived exactly the
 // way the footer sees it. The resulting map is O(#phases) regardless of eventCount.
-function lifecycleAfterWorkflow(eventCount: number): LifecycleState {
+function storesAfterWorkflow(eventCount: number): { lifecycle: LifecycleState; view: RunView } {
   resetWorkflow();
   addEvent({ type: 'workflow_started', ts: 1, phase: 'researching', feature: 'live status perf' });
   const perPhase = Math.ceil(eventCount / PHASE_SEQUENCE.length);
@@ -37,18 +39,24 @@ function lifecycleAfterWorkflow(eventCount: number): LifecycleState {
     const phase = PHASE_SEQUENCE[Math.floor(index / perPhase)] ?? 'implementing';
     addEvent(plannerText(index + 2, phase));
   }
-  return lifecycleStore.get();
+  return { lifecycle: lifecycleStore.get(), view: runViewStore.get() };
 }
 
 // Derivation loops finish in microseconds, where a single sample is at the mercy of GC and
 // scheduler jitter; the ratio assertion compares the best of five samples instead.
-function derivationLoopMs(state: LifecycleState): number {
+function derivationLoopMs({
+  lifecycle: state,
+  view,
+}: {
+  lifecycle: LifecycleState;
+  view: RunView;
+}): number {
   const input = {
-    phase: state.phase,
+    phase: view.phase,
     status: state.status,
     cancelled: state.cancelled,
     startedAt: state.startedAt,
-    phaseFirstSeenTs: state.phaseFirstSeenTs,
+    phaseFirstSeen: view.phaseFirstSeen,
     waitedMs: state.waitedMs ?? {},
     resumedAt: state.resumedAt ?? null,
     reviewerLabel: null,
@@ -76,10 +84,10 @@ function derivationLoopMs(state: LifecycleState): number {
 
 describe.skipIf(process.env.SPLITBRIEF_PERF !== '1')('input footer live status perf', () => {
   it('derives live status per tick in time independent of event count', () => {
-    const small = lifecycleAfterWorkflow(1_000);
-    const large = lifecycleAfterWorkflow(10_000);
-    expect(Object.keys(small.phaseFirstSeenTs).length).toBe(PHASE_SEQUENCE.length);
-    expect(Object.keys(large.phaseFirstSeenTs).length).toBe(PHASE_SEQUENCE.length);
+    const small = storesAfterWorkflow(1_000);
+    const large = storesAfterWorkflow(10_000);
+    expect(Object.keys(small.view.phaseFirstSeen).length).toBe(PHASE_SEQUENCE.length);
+    expect(Object.keys(large.view.phaseFirstSeen).length).toBe(PHASE_SEQUENCE.length);
 
     const smallMs = derivationLoopMs(small);
     const largeMs = derivationLoopMs(large);

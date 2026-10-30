@@ -12,6 +12,7 @@ import { reviewKeysStore } from '../../stores/ui/review-keys.js';
 import { editorStore } from '../../stores/ui/editor.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../stores/workflow/run-view.js';
 import { addEvent } from '../../stores/workflow/actions/event.js';
 import { tasksStore } from '../../stores/workflow/tasks.js';
 import { reviewStore } from '../../stores/workflow/review.js';
@@ -51,7 +52,8 @@ describe('openReviewFileExternally stale-owner feedback', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'review-parser-test-'));
     feedbackStore.reset();
     reviewStore.reset();
-    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
     vi.stubEnv('VISUAL', 'mock-editor');
     setActiveTerminalHandover({
       fullscreen: false,
@@ -239,7 +241,8 @@ describe('review input ownership', () => {
   beforeEach(() => {
     feedbackStore.reset();
     reviewStore.reset();
-    lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
+    runViewStore.__testReset({ phase: 'reviewing-briefs' });
+    lifecycleStore.__testReset({ status: 'running' });
   });
 
   afterEach(() => {
@@ -295,7 +298,8 @@ describe('review input effects', () => {
     composerDraftStore.reset();
     reviewKeysStore.reset();
     clearAllHandlers();
-    lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
+    runViewStore.__testReset({ phase: 'reviewing-briefs' });
+    lifecycleStore.__testReset({ status: 'running' });
     tasksStore.__testReset();
     vi.stubEnv('VISUAL', 'mock-editor');
     // The handover is the last thing that runs before the editor is spawned, so a paused
@@ -322,7 +326,8 @@ describe('review input effects', () => {
   it.each(['e', 'edit', 'edit-file'])(
     'opens plan.json in the editor overlay for %s and never reaches the terminal handover',
     async (command) => {
-      lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+      runViewStore.__testReset({ phase: 'reviewing-plan' });
+      lifecycleStore.__testReset({ status: 'running' });
       const reviewFile = join(tempDir, 'plan.md');
       writeFileSync(reviewFile, '# Plan\n');
       writeFileSync(join(tempDir, 'plan.json'), '{}\n');
@@ -361,7 +366,8 @@ describe('review input effects', () => {
   });
 
   it('sends free text typed at the plan card back to the planner as a correction', async () => {
-    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
     const reviewFile = join(tempDir, 'plan.md');
     writeFileSync(reviewFile, 'Greet people by name\n');
     reviewStore.setReviewFile(reviewFile);
@@ -380,7 +386,8 @@ describe('review input effects', () => {
   });
 
   it('opens the comment draft for a bare c instead of sending the letter to the planner', async () => {
-    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
     const reviewFile = join(tempDir, 'plan.md');
     writeFileSync(reviewFile, 'Greet people by name\n');
     reviewStore.setReviewFile(reviewFile);
@@ -394,7 +401,8 @@ describe('review input effects', () => {
   });
 
   it('sends the whole draft as the correction after Request changes, a command word included', async () => {
-    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
     const reviewFile = join(tempDir, 'plan.md');
     writeFileSync(reviewFile, 'Greet people by name\n');
     reviewStore.setReviewFile(reviewFile);
@@ -453,7 +461,8 @@ describe('review input effects', () => {
   ])(
     'queues live planner input through the supplied enqueue — $label',
     async ({ outcome, feedback }) => {
-      lifecycleStore.__testReset({ phase: 'researching' });
+      runViewStore.__testReset({ phase: 'researching' });
+      lifecycleStore.__testReset({ status: 'running' });
       const registered = vi.fn(() => ({ status: 'accepted' as const, messageId: 'from-the-run' }));
       setQueueHandler(registered);
       const effects = makeEffects(async () => outcome);
@@ -475,7 +484,8 @@ describe('review input effects', () => {
   ] as const)(
     'confirms tool-boundary delivery to %s using the call attached at submit',
     async (phase, seat, target) => {
-      lifecycleStore.__testReset({ phase, status: 'running' });
+      runViewStore.__testReset({ phase });
+      lifecycleStore.__testReset({ status: 'running' });
       tasksStore.__testReset({
         currentTask: 1,
         totalTasks: 1,
@@ -497,7 +507,8 @@ describe('review input effects', () => {
   );
 
   it('keeps queue feedback when the attached call belongs to another seat', async () => {
-    lifecycleStore.__testReset({ phase: 'final-review', status: 'running' });
+    runViewStore.__testReset({ phase: 'final-review' });
+    lifecycleStore.__testReset({ status: 'running' });
     addEvent({ type: 'steerable_call', ts: 1, phase: 'final-review', seat: 'plan' });
     const effects = makeEffects(async () => ({ status: 'accepted', messageId: 'm-1' }));
     await createReviewInputHandler(makeInputMode('normal'), effects).handleInput(
@@ -507,7 +518,8 @@ describe('review input effects', () => {
   });
 
   it('queues a correction typed during a brief instead of refusing it', async () => {
-    lifecycleStore.__testReset({ phase: 'implementing' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
     tasksStore.__testReset({
       currentTask: 1,
       totalTasks: 1,
@@ -530,7 +542,8 @@ describe('review input effects', () => {
   });
 
   it('confirms a message queued during the final review is for the reviewer', async () => {
-    lifecycleStore.__testReset({ phase: 'final-review' });
+    runViewStore.__testReset({ phase: 'final-review' });
+    lifecycleStore.__testReset({ status: 'running' });
     const effects = makeEffects(async () => ({ status: 'accepted' as const, messageId: 'm-1' }));
 
     await createReviewInputHandler(makeInputMode('normal'), effects).handleInput(
@@ -548,7 +561,8 @@ describe('review input effects', () => {
   });
 
   it('restores the draft when the queue refuses a correction typed during a brief', async () => {
-    lifecycleStore.__testReset({ phase: 'implementing' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
     const effects = makeEffects(async () => ({
       status: 'rejected' as const,
       reason: 'queue-full' as const,
@@ -568,7 +582,8 @@ describe('review input effects', () => {
   });
 
   it('keeps the registered queue handler when no effects are supplied', async () => {
-    lifecycleStore.__testReset({ phase: 'specifying' });
+    runViewStore.__testReset({ phase: 'specifying' });
+    lifecycleStore.__testReset({ status: 'running' });
     const registered = vi.fn(() => ({ status: 'accepted' as const, messageId: 'from-the-run' }));
     setQueueHandler(registered);
 
@@ -584,7 +599,8 @@ describe('review input effects', () => {
   });
 
   it('opens the external editor on the gate edit file', async () => {
-    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
     const reviewFile = join(tempDir, 'plan.json');
     writeFileSync(reviewFile, '# spec\n');
     reviewStore.setReviewFile(reviewFile);
@@ -648,7 +664,8 @@ describe('attachment transport', () => {
   );
 
   it('queues the full message and restores the submitted image atoms on rejection', async () => {
-    lifecycleStore.__testReset({ phase: 'implementing' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
     const image = {
       id: 'att-1',
       kind: 'image' as const,

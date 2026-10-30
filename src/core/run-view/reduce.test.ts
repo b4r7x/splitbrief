@@ -13,6 +13,7 @@ const SAVED: SeatWait = {
 
 const started = (fields: Record<string, unknown> = {}) => ({
   type: 'seat_wait_started',
+  ts: 1_000,
   seat: 'build',
   resetAt: RESET_AT,
   tool: 'OpenAI Codex CLI',
@@ -20,11 +21,17 @@ const started = (fields: Record<string, unknown> = {}) => ({
 });
 const ended = (fields: Record<string, unknown> = {}) => ({
   type: 'seat_wait_ended',
+  ts: 2_000,
   seat: 'build',
   ...fields,
 });
 
-function fold(events: readonly { type: string }[]): RunView {
+function at(type: string, ts: number, phase?: string): { type: string; ts: number } {
+  const event = { type, ts, phase };
+  return event;
+}
+
+function fold(events: readonly { type: string; ts: number }[]): RunView {
   return events.reduce(reduceRunView, EMPTY_RUN_VIEW);
 }
 
@@ -80,12 +87,62 @@ describe('reduceRunView seat wait', () => {
   it('returns the same view for an end with no wait and for an unrelated event', () => {
     expect(reduceRunView(EMPTY_RUN_VIEW, ended({ kept: true }))).toBe(EMPTY_RUN_VIEW);
     const view = fold([started({ wait: SAVED })]);
-    expect(reduceRunView(view, { type: 'task_started' })).toBe(view);
+    expect(reduceRunView(view, { type: 'task_started', ts: 3_000 })).toBe(view);
   });
 
   it('is live again when a kept wait starts once more', () => {
     expect(
       fold([started({ wait: SAVED }), ended({ kept: true }), started({ wait: SAVED })]),
-    ).toEqual({ seatWait: { tool: 'OpenAI Codex CLI', wait: SAVED, live: true } });
+    ).toEqual({
+      ...EMPTY_RUN_VIEW,
+      seatWait: { tool: 'OpenAI Codex CLI', wait: SAVED, live: true },
+    });
+  });
+});
+
+describe('reduceRunView phase', () => {
+  it('moves to the phase an event names and dates each phase once, at its first event', () => {
+    const view = fold([
+      at('workflow_started', 1_000, 'planning'),
+      at('task_started', 2_000, 'implementing'),
+      at('task_validating', 3_000, 'validating-task'),
+      at('task_started', 4_000, 'implementing'),
+    ]);
+
+    expect(view.phase).toBe('implementing');
+    expect(view.phaseFirstSeen).toEqual({
+      planning: 1_000,
+      implementing: 2_000,
+      'validating-task': 3_000,
+    });
+  });
+
+  it('dates the phases again from a new run start', () => {
+    const view = fold([
+      at('workflow_started', 1_000, 'planning'),
+      at('task_started', 2_000, 'implementing'),
+      at('workflow_started', 5_000, 'planning'),
+    ]);
+
+    expect(view).toEqual({
+      ...EMPTY_RUN_VIEW,
+      phase: 'planning',
+      phaseFirstSeen: { planning: 5_000 },
+    });
+  });
+
+  it('does not move for the replay markers, idle, or an event without a phase', () => {
+    const view = fold([at('task_started', 1_000, 'implementing')]);
+
+    expect(reduceRunView(view, at('replay_started', 2_000, 'planning'))).toBe(view);
+    expect(reduceRunView(view, at('replay_complete', 3_000, 'planning'))).toBe(view);
+    expect(reduceRunView(view, at('planner_status', 4_000, 'idle'))).toBe(view);
+    expect(reduceRunView(view, at('heartbeat', 5_000))).toBe(view);
+  });
+
+  it('returns the same view for a phase it already stands in', () => {
+    const view = fold([at('task_started', 1_000, 'implementing')]);
+
+    expect(reduceRunView(view, at('task_started', 2_000, 'implementing'))).toBe(view);
   });
 });

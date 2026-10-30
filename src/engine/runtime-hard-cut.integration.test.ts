@@ -14,7 +14,7 @@ import {
   type TerminalHandoverConfig,
 } from '../lib/terminal/editor-handover.js';
 import { eventsStore } from '../stores/workflow/events.js';
-import { lifecycleStore } from '../stores/workflow/lifecycle.js';
+import { runViewStore } from '../stores/workflow/run-view.js';
 import { addEvent } from '../stores/workflow/actions/event.js';
 import { resetWorkflow } from '../stores/workflow/actions/reset.js';
 import { tasksStore } from '../stores/workflow/tasks.js';
@@ -194,7 +194,7 @@ describe('runtime hard cut', () => {
         action: 'modify',
       },
     ]);
-    expect(lifecycleStore.get().phase).toBe('implementing');
+    expect(runViewStore.get().phase).toBe('implementing');
   });
 
   it('terminal-handover', () => {

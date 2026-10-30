@@ -51,6 +51,7 @@ import { useRunLoop } from './use-run-loop.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
@@ -824,7 +825,8 @@ describe('useRunLoop', () => {
   it("clears stale store state and applies the resume phase from startWorkflow's authoritative reset", async () => {
     // Seed the lifecycle store with stale data; startWorkflow's own reset is the
     // single authoritative reset.
-    lifecycleStore.__testReset({ cancelled: true, queueDepth: 7, phase: 'final-review' });
+    runViewStore.__testReset({ phase: 'final-review' });
+    lifecycleStore.__testReset({ cancelled: true, queueDepth: 7 });
     const sessionId = '2026-08-14-resume-reset';
     const resume: WorkflowState = {
       ...createInitialState('add auth'),
@@ -847,13 +849,14 @@ describe('useRunLoop', () => {
       const lifecycle = lifecycleStore.get();
       expect(lifecycle.cancelled).toBe(false);
       expect(lifecycle.queueDepth).toBe(0);
-      expect(lifecycle.phase).toBe('reviewing-spec');
+      expect(runViewStore.get().phase).toBe('reviewing-spec');
     });
     inst.unmount();
   });
 
   it('clears session state before a missing persisted resume exits', async () => {
-    lifecycleStore.__testReset({ cancelled: true, queueDepth: 7, phase: 'final-review' });
+    runViewStore.__testReset({ phase: 'final-review' });
+    lifecycleStore.__testReset({ cancelled: true, queueDepth: 7 });
     eventsStore.__testReset({
       events: [
         {
@@ -874,7 +877,7 @@ describe('useRunLoop', () => {
 
     const inst = renderHarness({ prepared, runWorkflow: runWorkflowStub });
     await vi.waitFor(() => {
-      expect(lifecycleStore.get().phase).toBe('idle');
+      expect(runViewStore.get().phase).toBe('idle');
       expect(lifecycleStore.get().cancelled).toBe(false);
     });
 
@@ -885,7 +888,8 @@ describe('useRunLoop', () => {
   });
 
   it('clears session state before an invalid persisted resume exits', async () => {
-    lifecycleStore.__testReset({ cancelled: true, queueDepth: 9, phase: 'implementing' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ cancelled: true, queueDepth: 9 });
     const sessionId = '2026-08-14-invalid-resume';
     const prepared = preparedExecution({
       projectDir,
@@ -902,7 +906,7 @@ describe('useRunLoop', () => {
 
     const inst = renderHarness({ prepared, runWorkflow: runWorkflowStub });
     await vi.waitFor(() => {
-      expect(lifecycleStore.get().phase).toBe('idle');
+      expect(runViewStore.get().phase).toBe('idle');
       expect(eventsStore.get().events).toEqual([
         expect.objectContaining({
           type: 'error',
@@ -1099,7 +1103,8 @@ describe('useRunLoop', () => {
     // error instead of trying to resume.
     const runner = captureRunner.current;
     if (!runner) throw new Error('expected captureRunner.current to be populated');
-    lifecycleStore.__testReset({ cancelled: true, queueDepth: 4, phase: 'final-review' });
+    runViewStore.__testReset({ phase: 'final-review' });
+    lifecycleStore.__testReset({ cancelled: true, queueDepth: 4 });
     eventsStore.__testReset({
       events: [
         {
@@ -1462,7 +1467,8 @@ describe('useRunLoop', () => {
     await vi.waitFor(() => {
       expect(runWorkflowStub).toHaveBeenCalledTimes(1);
     });
-    lifecycleStore.__testReset({ phase: 'implementing' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
     configStore.__testReset({
       projectDir,
       config: makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }),
@@ -1505,7 +1511,8 @@ describe('useRunLoop', () => {
     await vi.waitFor(() => {
       expect(runWorkflowStub).toHaveBeenCalledTimes(1);
     });
-    lifecycleStore.__testReset({ phase: 'implementing' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
     requestBoundaryPause();
     configStore.__testReset({
       projectDir,
@@ -1578,7 +1585,8 @@ describe('useRunLoop', () => {
       await vi.waitFor(() => {
         expect(run.engine).toHaveBeenCalledTimes(1);
       });
-      lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+      runViewStore.__testReset({ phase: 'implementing' });
+      lifecycleStore.__testReset({ status: 'running' });
       run.letBriefRun();
       await vi.waitFor(() => {
         expect(stopStore.get().phase).toBe('parked');
@@ -1725,7 +1733,8 @@ describe('useRunLoop', () => {
       await vi.waitFor(() => {
         expect(brief.engine).toHaveBeenCalledTimes(1);
       });
-      lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+      runViewStore.__testReset({ phase: 'implementing' });
+      lifecycleStore.__testReset({ status: 'running' });
 
       configStore.__testReset({
         projectDir,
@@ -1758,7 +1767,8 @@ describe('useRunLoop', () => {
       await vi.waitFor(() => {
         expect(brief.engine).toHaveBeenCalledTimes(1);
       });
-      lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+      runViewStore.__testReset({ phase: 'implementing' });
+      lifecycleStore.__testReset({ status: 'running' });
 
       const current = configStore.get().config;
       if (current === null) throw new Error('expected a loaded config');
@@ -1823,7 +1833,8 @@ describe('useRunLoop', () => {
       await vi.waitFor(() => {
         expect(brief.engine).toHaveBeenCalledTimes(1);
       });
-      lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+      runViewStore.__testReset({ phase: 'implementing' });
+      lifecycleStore.__testReset({ status: 'running' });
 
       brief.reachBoundary();
       await vi.waitFor(() => {
@@ -1843,7 +1854,8 @@ describe('useRunLoop', () => {
       await vi.waitFor(() => {
         expect(brief.engine).toHaveBeenCalledTimes(1);
       });
-      lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+      runViewStore.__testReset({ phase: 'implementing' });
+      lifecycleStore.__testReset({ status: 'running' });
 
       configStore.__testReset({
         projectDir,
@@ -2311,7 +2323,8 @@ describe('useRunLoop', () => {
         expect(overlayStore.get().active).toBe('implementer-picker');
       });
       // A run is `running` while its halt waits on the panel.
-      lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+      runViewStore.__testReset({ phase: 'implementing' });
+      lifecycleStore.__testReset({ status: 'running' });
       const intents: string[] = [];
       const offStop = stopStore.subscribe(() => intents.push(stopStore.get().intent));
       configStore.__testReset({
@@ -2368,7 +2381,8 @@ describe('useRunLoop', () => {
         await vi.waitFor(() => {
           expect(controlsStore.get().inputMode).toBe('question');
         });
-        lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+        runViewStore.__testReset({ phase: 'implementing' });
+        lifecycleStore.__testReset({ status: 'running' });
         // A save from Settings while the panel is open, not the panel's own swap.
         configStore.__testReset({ projectDir, config: CODEX_SEAT_SAVED });
         await answerRecoveryPanel(captureRunner, typed);
@@ -2405,7 +2419,8 @@ describe('useRunLoop', () => {
       await vi.waitFor(() => {
         expect(run.entered).toHaveLength(1);
       });
-      lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+      runViewStore.__testReset({ phase: 'implementing' });
+      lifecycleStore.__testReset({ status: 'running' });
       configStore.__testReset({ projectDir, config: CODEX_SEAT_SAVED });
       expect(stopStore.get()).toMatchObject({ intent: 'none', seatChange: true });
       savedNow();
@@ -2445,7 +2460,8 @@ describe('useRunLoop', () => {
       await vi.waitFor(() => {
         expect(controlsStore.get().inputMode).toBe('question');
       });
-      lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+      runViewStore.__testReset({ phase: 'implementing' });
+      lifecycleStore.__testReset({ status: 'running' });
       configStore.__testReset({ projectDir, config: CODEX_SEAT_SAVED });
       await answerRecoveryPanel(captureRunner, 'retry');
       await vi.waitFor(() => {
@@ -2490,7 +2506,8 @@ describe('useRunLoop', () => {
       await vi.waitFor(() => {
         expect(controlsStore.get().inputMode).toBe('question');
       });
-      lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+      runViewStore.__testReset({ phase: 'implementing' });
+      lifecycleStore.__testReset({ status: 'running' });
       writeConfig(projectDir, CODEX_SEAT_SAVED);
       await answerRecoveryPanel(captureRunner, 'retry');
       await vi.waitFor(() => {
@@ -2521,7 +2538,8 @@ describe('useRunLoop', () => {
       await vi.waitFor(() => {
         expect(controlsStore.get().inputMode).toBe('question');
       });
-      lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+      runViewStore.__testReset({ phase: 'implementing' });
+      lifecycleStore.__testReset({ status: 'running' });
       configStore.__testReset({ projectDir, config: CLAUDE_CODE_SEAT_SAVED });
       await answerRecoveryPanel(captureRunner, 'switch');
       await vi.waitFor(() => {
@@ -2580,7 +2598,8 @@ describe('useRunLoop', () => {
         await vi.waitFor(() => {
           expect(controlsStore.get().inputMode).toBe('question');
         });
-        lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+        runViewStore.__testReset({ phase: 'implementing' });
+        lifecycleStore.__testReset({ status: 'running' });
         configStore.__testReset({ projectDir, config: savedConfig });
         await answerRecoveryPanel(captureRunner, 'switch');
         await vi.waitFor(() => {
@@ -2626,7 +2645,8 @@ describe('useRunLoop', () => {
       await vi.waitFor(() => {
         expect(controlsStore.get().inputMode).toBe('question');
       });
-      lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+      runViewStore.__testReset({ phase: 'implementing' });
+      lifecycleStore.__testReset({ status: 'running' });
       await answerRecoveryPanel(captureRunner, 'switch');
       await vi.waitFor(() => {
         expect(overlayStore.get().active).toBe('implementer-picker');
@@ -2678,7 +2698,8 @@ describe('useRunLoop', () => {
       await vi.waitFor(() => {
         expect(controlsStore.get().inputMode).toBe('question');
       });
-      lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+      runViewStore.__testReset({ phase: 'implementing' });
+      lifecycleStore.__testReset({ status: 'running' });
       configStore.__testReset({ projectDir, config: makeConfig({ planner, reviewer }) });
       await answerRecoveryPanel(captureRunner, 'switch');
       await vi.waitFor(() => {
@@ -2730,7 +2751,8 @@ describe('useRunLoop', () => {
         await vi.waitFor(() => {
           expect(run.entered).toHaveLength(1);
         });
-        lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+        runViewStore.__testReset({ phase: 'implementing' });
+        lifecycleStore.__testReset({ status: 'running' });
         requestBoundaryPause();
         configStore.__testReset({ projectDir, config: CODEX_SEAT_SAVED });
         savedNow();
@@ -2821,7 +2843,8 @@ describe('useRunLoop', () => {
         await vi.waitFor(() => {
           expect(controlsStore.get().inputMode).toBe('question');
         });
-        lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+        runViewStore.__testReset({ phase: 'implementing' });
+        lifecycleStore.__testReset({ status: 'running' });
         configStore.__testReset({ projectDir, config: CLAUDE_CODE_SEAT_SAVED });
         await openHaltPicker(halt.captureRunner);
         // The picker unmounts when its overlay closes; the take is still read as a take.
@@ -2845,7 +2868,8 @@ describe('useRunLoop', () => {
         await vi.waitFor(() => {
           expect(controlsStore.get().inputMode).toBe('question');
         });
-        lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+        runViewStore.__testReset({ phase: 'implementing' });
+        lifecycleStore.__testReset({ status: 'running' });
         configStore.__testReset({ projectDir, config: claudeWithCustomModels });
         await openHaltPicker(halt.captureRunner);
         // Up twice from the focused row lands on the last custom model, My B.
@@ -2885,7 +2909,8 @@ describe('useRunLoop', () => {
           await vi.waitFor(() => {
             expect(halt.run.entered).toHaveLength(1);
           });
-          lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+          runViewStore.__testReset({ phase: 'implementing' });
+          lifecycleStore.__testReset({ status: 'running' });
           configStore.__testReset({ projectDir, config: savedUnderBrief });
           expect(stopStore.get()).toMatchObject({ intent: 'none', seatChange: true });
           savedNow();
@@ -3062,7 +3087,8 @@ describe('useRunLoop', () => {
       await vi.waitFor(() => {
         expect(controlsStore.get().inputMode).toBe('question');
       });
-      lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+      runViewStore.__testReset({ phase: 'implementing' });
+      lifecycleStore.__testReset({ status: 'running' });
       const current = configStore.get().config;
       if (current === null) throw new Error('expected a loaded config');
       const saved = await configStore.save({

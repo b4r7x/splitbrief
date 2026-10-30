@@ -8,6 +8,7 @@ import { controlsStore } from '../../src/stores/ui/controls.js';
 import { terminalSizeStore } from '../../src/stores/ui/terminal-size.js';
 import { eventsStore, mergeEventLog } from '../../src/stores/workflow/events.js';
 import { lifecycleStore } from '../../src/stores/workflow/lifecycle.js';
+import { runViewStore } from '../../src/stores/workflow/run-view.js';
 import { operationsStore } from '../../src/stores/workflow/operations/state.js';
 import { conversationScrollStore } from '../../src/stores/workflow/conversation-scroll.js';
 import { readConversationScrollSnapshot } from '../../src/features/workflow/layout/snapshot.js';
@@ -61,7 +62,7 @@ it.each([
   const lifecycle = await setupProjection(projection);
   try {
     expect(operationsStore.get().active).toBeNull();
-    expect(selectRunningBrief(tasksStore.get(), lifecycleStore.get().phase).current).toBeNull();
+    expect(selectRunningBrief(tasksStore.get(), runViewStore.get().phase).current).toBeNull();
     expect(tasksStore.get().tasks.filter((task) => task.status === 'done')).toHaveLength(1);
   } finally {
     await lifecycle.teardown();

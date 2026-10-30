@@ -11,6 +11,7 @@ import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { markCancellationRequested } from '../../../stores/workflow/actions/interrupt.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import { runSeatIdentity } from '../../../core/providers/seat-identity.js';
 import { seatAxisWords } from '../../../core/runners/effort-channel.js';
@@ -608,7 +609,7 @@ describe('a stop inside a call', () => {
     addEvent({
       type: 'turn_interrupted',
       ts: 7_500,
-      phase: lifecycleStore.get().phase,
+      phase: runViewStore.get().phase,
       source,
       at: 'mid-step',
       step,

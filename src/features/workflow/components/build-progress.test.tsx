@@ -13,6 +13,7 @@ import { configStore } from '../../../stores/project/config.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { markWorkflowPaused } from '../../../stores/workflow/actions/pause.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { BuildProgressBlock } from './build-progress.js';
@@ -42,7 +43,8 @@ function colorOpen(color: string | undefined): string {
 beforeEach(() => {
   resetAllStores();
   configStore.__testReset({ projectDir: '/tmp/project', config: makeConfig() });
-  lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+  runViewStore.__testReset({ phase: 'implementing' });
+  lifecycleStore.__testReset({ status: 'running' });
   tasksStore.__testReset({
     totalTasks: 3,
     currentAttempt: 1,

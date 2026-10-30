@@ -19,6 +19,7 @@ const { configStore } = await import('../../../src/stores/project/config.js');
 const { terminalSizeStore } = await import('../../../src/stores/ui/terminal-size.js');
 const { routerStore } = await import('../../../src/stores/navigation/router.js');
 const { lifecycleStore } = await import('../../../src/stores/workflow/lifecycle.js');
+const { runViewStore } = await import('../../../src/stores/workflow/run-view.js');
 
 describe('WorkflowScreen prepared-route stability', () => {
   let projectDir = '';
@@ -71,7 +72,8 @@ describe('WorkflowScreen prepared-route stability', () => {
     expect(call[0].prepared).toBe(prepared);
     expect(ui.lastFrame() ?? '').not.toContain('Checking readiness');
 
-    lifecycleStore.__testReset({ phase: 'researching', status: 'running' });
+    runViewStore.__testReset({ phase: 'researching' });
+    lifecycleStore.__testReset({ status: 'running' });
     await tick(20);
     expect(readFileSync(target, 'utf8')).toBe(readinessBeforeMount);
 

@@ -3,6 +3,7 @@ import { addEvent } from './event.js';
 import { markWorkflowPaused } from './pause.js';
 import { resetWorkflow } from './reset.js';
 import { lifecycleStore } from '../lifecycle.js';
+import { runViewStore } from '../run-view.js';
 
 describe('markWorkflowPaused', () => {
   beforeEach(() => resetWorkflow());
@@ -12,10 +13,7 @@ describe('markWorkflowPaused', () => {
 
     markWorkflowPaused();
 
-    expect(lifecycleStore.get()).toMatchObject({
-      status: 'paused',
-      phase: 'implementing',
-      cancelled: false,
-    });
+    expect(lifecycleStore.get()).toMatchObject({ status: 'paused', cancelled: false });
+    expect(runViewStore.get().phase).toBe('implementing');
   });
 });

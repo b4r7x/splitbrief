@@ -9,6 +9,7 @@ import type { StepRef } from '../../../core/schemas/run-step.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { requestBoundaryPause, requestSeatChangeAtBoundary } from '../handlers.js';
@@ -98,7 +99,8 @@ describe('useStopByline', () => {
   });
 
   it('names the brief the pause outlived once the running brief has finished', () => {
-    lifecycleStore.__testReset({ phase: 'implementing' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
     tasksStore.__testReset({
       tasks: [
         { id: 'T001', title: 'first', status: 'done' },
@@ -116,7 +118,8 @@ describe('useStopByline', () => {
   });
 
   it('a seat saved while the plan is made keeps the run status and names when it changes', () => {
-    lifecycleStore.__testReset({ status: 'running', phase: 'planning' });
+    runViewStore.__testReset({ phase: 'planning' });
+    lifecycleStore.__testReset({ status: 'running' });
     requestSeatChangeAtBoundary();
     const ui = renderFeature(<LeadAndHint />);
 
@@ -125,7 +128,8 @@ describe('useStopByline', () => {
   });
 
   it('a seat saved under a running brief names that brief and claims no finish', () => {
-    lifecycleStore.__testReset({ status: 'running', phase: 'implementing' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
     tasksStore.__testReset({
       tasks: [
         { id: 'T001', title: 'first', status: 'in_progress' },
@@ -142,7 +146,8 @@ describe('useStopByline', () => {
   });
 
   it('a seat saved in the final review names a fix brief or the next run, with no brief left', () => {
-    lifecycleStore.__testReset({ status: 'running', phase: 'final-review' });
+    runViewStore.__testReset({ phase: 'final-review' });
+    lifecycleStore.__testReset({ status: 'running' });
     tasksStore.__testReset({
       tasks: [{ id: 'T001', title: 'first', status: 'done' }],
       currentTask: 1,
@@ -156,7 +161,8 @@ describe('useStopByline', () => {
   });
 
   it('the operator pause keeps its own words beside a seat change', () => {
-    lifecycleStore.__testReset({ status: 'running', phase: 'implementing' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
     tasksStore.__testReset({
       tasks: [{ id: 'T001', title: 'first', status: 'in_progress' }],
       currentTask: 1,

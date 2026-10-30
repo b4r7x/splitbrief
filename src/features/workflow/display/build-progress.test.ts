@@ -7,8 +7,10 @@ import {
   type DeriveBuildProgressInput,
 } from './build-progress.js';
 import { getChromeContentWidth, buildProgressRowCount } from '../layout/chrome-rows.js';
-import { EMPTY_RUN_VIEW } from '../../../core/run-view/reduce.js';
+import { EMPTY_RUN_VIEW, type RunView } from '../../../core/run-view/reduce.js';
+import type { Phase } from '../../../core/schemas/enums.js';
 import { lifecycleStore, type LifecycleState } from '../../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
 import type {
   OperationsState,
   RunningOperation,
@@ -70,7 +72,11 @@ it.each([
     addEvent({ type: 'review_step', ts: NOW - 1_000, phase, step: 'verdict' });
     const progressNow = () =>
       deriveBuildProgress(
-        input({ lifecycle: lifecycleStore.get(), operations: operationsStore.get() }),
+        input({
+          lifecycle: lifecycleStore.get(),
+          runView: runViewStore.get(),
+          operations: operationsStore.get(),
+        }),
       );
     const reviewer = 'Review · OpenAI Codex CLI · GPT-5 · high';
     expect(progressNow().activity).toBe(`${reviewer} · reviewing changes`);
@@ -118,7 +124,7 @@ it.each([
 it('names the plan render in Review and uses its clock for freshness', () => {
   const progress = deriveBuildProgress(
     input({
-      lifecycle: lifecycleState({ phase: 'final-review' }),
+      runView: phaseView('final-review'),
       operations: operationsState({
         suiteStage: {
           id: 'R1',
@@ -146,21 +152,15 @@ function tasksState(tasks: WorkflowTask[], overrides: Partial<TasksState> = {}):
 }
 
 function lifecycleState(
-  overrides: {
-    lastRunnerEventTs?: number | null;
-    stall?: LifecycleState['stall'];
-    phase?: Extract<LifecycleState, { status: 'running' }>['phase'];
-  } = {},
+  overrides: { lastRunnerEventTs?: number | null; stall?: LifecycleState['stall'] } = {},
 ): LifecycleState {
   const state: LifecycleState = {
-    phase: 'implementing',
     status: 'running',
     interruptParked: false,
     cancelled: false,
     queueDepth: 0,
     queuedMessageIds: new Set(),
     steerableCall: null,
-    phaseFirstSeenTs: {},
     stall: null,
     lastRunnerEventTs: NOW,
     attemptStartedTs: NOW,
@@ -206,6 +206,10 @@ function completedOperation(overrides: Partial<TerminalOperation> = {}): Termina
   };
 }
 
+function phaseView(phase: Phase): RunView {
+  return { ...EMPTY_RUN_VIEW, phase };
+}
+
 function input(overrides: Partial<DeriveBuildProgressInput> = {}): DeriveBuildProgressInput {
   return {
     tasks: tasksState([
@@ -214,7 +218,7 @@ function input(overrides: Partial<DeriveBuildProgressInput> = {}): DeriveBuildPr
     ]),
     lifecycle: lifecycleState(),
     operations: operationsState(),
-    runView: EMPTY_RUN_VIEW,
+    runView: phaseView('implementing'),
     now: NOW,
     ...overrides,
   };
@@ -351,6 +355,7 @@ describe('deriveBuildProgress', () => {
         input({
           operations: operationsState({ active: runningOperation({ runnerName: 'opencode' }) }),
           lifecycle: lifecycleStore.get(),
+          runView: runViewStore.get(),
         }),
       );
       expect(stalled.freshness).toBe('No output for 5:10 · tools report when done');
@@ -360,6 +365,7 @@ describe('deriveBuildProgress', () => {
         input({
           operations: operationsState({ active: runningOperation({ runnerName: 'opencode' }) }),
           lifecycle: lifecycleStore.get(),
+          runView: runViewStore.get(),
         }),
       );
       expect(cleared.silent).toBe(false);
@@ -589,7 +595,7 @@ describe('deriveBuildProgress', () => {
     for (const role of ['planner', 'escalation'] as const) {
       const progress = deriveBuildProgress(
         input({
-          lifecycle: lifecycleState({ phase: 'escalating' }),
+          runView: phaseView('escalating'),
           operations: operationsState({
             active: runningOperation({ role, taskId: 'T003', runnerName: 'claude' }),
           }),
@@ -677,22 +683,22 @@ describe('deriveBuildProgress', () => {
 
   it('names the build state between calls', () => {
     expect(deriveBuildProgress(input()).activity).toBe('Between calls');
-    expect(
-      deriveBuildProgress(input({ lifecycle: lifecycleState({ phase: 'validating-task' }) }))
-        .activity,
-    ).toBe('Between calls');
-    expect(
-      deriveBuildProgress(input({ lifecycle: lifecycleState({ phase: 'escalating' }) })).activity,
-    ).toBe('Waiting for the consult answer');
-    expect(
-      deriveBuildProgress(input({ lifecycle: lifecycleState({ phase: 'final-review' }) })).activity,
-    ).toBe('Review · reviewing changes');
+    expect(deriveBuildProgress(input({ runView: phaseView('validating-task') })).activity).toBe(
+      'Between calls',
+    );
+    expect(deriveBuildProgress(input({ runView: phaseView('escalating') })).activity).toBe(
+      'Waiting for the consult answer',
+    );
+    expect(deriveBuildProgress(input({ runView: phaseView('final-review') })).activity).toBe(
+      'Review · reviewing changes',
+    );
   });
 
   it('says reviewing changes and shows no "no update yet" in final review between calls', () => {
     const progress = deriveBuildProgress(
       input({
-        lifecycle: lifecycleState({ phase: 'final-review', lastRunnerEventTs: null }),
+        lifecycle: lifecycleState({ lastRunnerEventTs: null }),
+        runView: phaseView('final-review'),
         operations: operationsState({ active: null }),
       }),
     );
@@ -723,7 +729,7 @@ describe('deriveBuildProgress', () => {
 
     const reviewProg = deriveBuildProgress(
       input({
-        lifecycle: lifecycleState({ phase: 'final-review' }),
+        runView: phaseView('final-review'),
         operations: operationsState({
           active: {
             ...unnamed,
@@ -751,7 +757,7 @@ describe('deriveBuildProgress', () => {
   ] as const)('names %s during Review without a reviewer seat', (role, label) => {
     const progress = deriveBuildProgress(
       input({
-        lifecycle: lifecycleState({ phase: 'final-review' }),
+        runView: phaseView('final-review'),
         operations: operationsState({
           active: runningOperation({ role, phase: 'final-review', runnerName: 'codex' }),
         }),
@@ -836,7 +842,8 @@ describe('deriveBuildProgress', () => {
   it('lets the running check clock stand as freshness, never the age of the last seat word', () => {
     const progress = deriveBuildProgress(
       input({
-        lifecycle: lifecycleState({ phase: 'final-review', lastRunnerEventTs: NOW - 847_000 }),
+        lifecycle: lifecycleState({ lastRunnerEventTs: NOW - 847_000 }),
+        runView: phaseView('final-review'),
         operations: operationsState({
           suiteStage: {
             id: 'V2',
@@ -864,7 +871,7 @@ describe('deriveBuildProgress', () => {
   it('names the fix check a brief runs again and its own clock', () => {
     const progress = deriveBuildProgress(
       input({
-        lifecycle: lifecycleState({ phase: 'implementing' }),
+        runView: phaseView('implementing'),
         operations: operationsState({
           suiteStage: {
             id: 'V1',
@@ -891,7 +898,11 @@ describe('deriveBuildProgress', () => {
       check: { id: 'K2', command: 'node --test test/sleep.test.mjs' },
     });
     const progress = deriveBuildProgress(
-      input({ lifecycle: lifecycleStore.get(), operations: operationsStore.get() }),
+      input({
+        lifecycle: lifecycleStore.get(),
+        runView: runViewStore.get(),
+        operations: operationsStore.get(),
+      }),
     );
     resetWorkflow();
 
@@ -915,7 +926,7 @@ describe('deriveBuildProgress', () => {
     // The reviewer check V2 waits on the same command at the run base.
     const progress = deriveBuildProgress(
       input({
-        lifecycle: lifecycleState({ phase: 'final-review' }),
+        runView: phaseView('final-review'),
         operations: operationsState({
           suiteStage: {
             id: 'V2',
@@ -949,7 +960,7 @@ describe('deriveBuildProgress', () => {
   it('leads with a reviewer check that runs beside the base run of its id, and keeps the base clock on the counts line', () => {
     const progress = deriveBuildProgress(
       input({
-        lifecycle: lifecycleState({ phase: 'final-review' }),
+        runView: phaseView('final-review'),
         operations: operationsState({
           suiteStage: {
             id: 'V1',
@@ -1018,7 +1029,7 @@ describe('buildProgressRows', () => {
   ] as const)('keeps the %s running lead accent and metadata dim for %s', (phase, suite, lead) => {
     const progress = deriveBuildProgress(
       input({
-        lifecycle: lifecycleState({ phase }),
+        runView: phaseView(phase),
         operations: operationsState({ suiteStage: { ...suite, stageStartedTs: NOW - 42_000 } }),
       }),
     );
@@ -1137,7 +1148,7 @@ describe('buildProgressRows', () => {
   it('colors a final review identity and its lead as the reviewer seat', () => {
     const progress = deriveBuildProgress(
       input({
-        lifecycle: lifecycleState({ phase: 'final-review' }),
+        runView: phaseView('final-review'),
         operations: operationsState({
           active: runningOperation({ role: 'review', phase: 'final-review' }),
         }),
@@ -1182,7 +1193,7 @@ describe('buildProgressRows', () => {
   ] as const)('colors seat words in the running $suite.moment check', ({ suite, labelSpans }) => {
     const progress = deriveBuildProgress(
       input({
-        lifecycle: lifecycleState({ phase: 'final-review' }),
+        runView: phaseView('final-review'),
         operations: operationsState({ suiteStage: { ...suite, stageStartedTs: NOW - 12_000 } }),
       }),
     );
@@ -1202,7 +1213,7 @@ describe('buildProgressRows', () => {
   it('colors the Review seat and running render lead without a command', () => {
     const progress = deriveBuildProgress(
       input({
-        lifecycle: lifecycleState({ phase: 'final-review' }),
+        runView: phaseView('final-review'),
         operations: operationsState({
           suiteStage: {
             id: 'R1',
@@ -1227,7 +1238,7 @@ describe('buildProgressRows', () => {
   it('keeps Reviewer and its separator tones when the check command is cut', () => {
     const progress = deriveBuildProgress(
       input({
-        lifecycle: lifecycleState({ phase: 'final-review' }),
+        runView: phaseView('final-review'),
         operations: operationsState({
           suiteStage: {
             id: 'V1',
@@ -1464,7 +1475,7 @@ describe('the build block during the final review', () => {
         ],
         { currentAttempt: 1 },
       ),
-      lifecycle: lifecycleState({ phase: 'final-review' }),
+      runView: phaseView('final-review'),
       operations: operationsState({
         active: runningOperation({ role: 'review', phase: 'final-review', runnerName: 'codex' }),
         last: completedOperation({ runnerName: 'opencode' }),
@@ -1475,7 +1486,7 @@ describe('the build block during the final review', () => {
   it('names the review seat as the sidebar spells it: tool, model and axis words', () => {
     const progress = deriveBuildProgress(
       input({
-        lifecycle: lifecycleState({ phase: 'final-review' }),
+        runView: phaseView('final-review'),
         operations: operationsState({
           active: runningOperation({
             role: 'review',

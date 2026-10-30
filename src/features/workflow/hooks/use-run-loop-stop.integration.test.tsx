@@ -47,6 +47,7 @@ import { controlsStore } from '../../../stores/ui/controls.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import {
@@ -771,11 +772,8 @@ describe('run-loop stop completion', () => {
     await vi.waitFor(() => expect(mounted?.lastFrame()).toBe('normal'));
     expect(overlayStore.get().active).toBe('none');
     expect(stopStore.get()).toMatchObject({ intent: 'none', phase: 'idle' });
-    expect(lifecycleStore.get()).toMatchObject({
-      phase: 'complete',
-      status: 'complete',
-      cancelled: false,
-    });
+    expect(lifecycleStore.get()).toMatchObject({ status: 'complete', cancelled: false });
+    expect(runViewStore.get().phase).toBe('complete');
   });
 
   it.each([

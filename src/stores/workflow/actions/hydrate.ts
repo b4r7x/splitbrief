@@ -11,6 +11,8 @@ import {
   type TokensState,
 } from '../tokens.js';
 import { _lifecycleInternal, type LifecycleState } from '../lifecycle.js';
+import { _runViewInternal } from '../run-view.js';
+import { settleRunView } from '../../../core/run-view/settle.js';
 
 /**
  * The saved state, laid over the stores the replayed log already rebuilt. The log is the narrative
@@ -19,6 +21,7 @@ import { _lifecycleInternal, type LifecycleState } from '../lifecycle.js';
  * never claims to be running, whatever the last event on the log happened to be.
  */
 export function hydrateFromState(state: WorkflowState): void {
+  _runViewInternal.set((view) => settleRunView(view, state));
   _lifecycleInternal.set((current) => lifecycleFromState(current, state));
   _tasksInternal.set((current) => ({ ...current, ...tasksStateFromState(state) }));
   _tokensInternal.set((current) => ({ ...current, ...tokensStateFromState(state) }));
@@ -35,7 +38,6 @@ function lifecycleFromState(current: LifecycleState, state: WorkflowState): Life
     queueDepth: queuedMessageIds.size,
     queuedMessageIds,
     steerableCall: null,
-    phaseFirstSeenTs: current.phaseFirstSeenTs,
     stall: null,
     lastRunnerEventTs: current.lastRunnerEventTs ?? null,
     attemptStartedTs: current.attemptStartedTs ?? null,
@@ -46,13 +48,12 @@ function lifecycleFromState(current: LifecycleState, state: WorkflowState): Life
   if (state.phase === 'complete') {
     return {
       ...base,
-      phase: state.phase,
       status: 'complete',
       endedAt: state.completedAt === undefined ? null : timestampFromIso(state.completedAt),
       durationMs: null,
     };
   }
-  return { ...base, phase: state.phase, status: 'paused', endedAt: null, durationMs: null };
+  return { ...base, status: 'paused', endedAt: null, durationMs: null };
 }
 
 function tasksStateFromState(

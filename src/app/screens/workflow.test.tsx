@@ -72,7 +72,7 @@ const { feedbackStore } = await import('../../stores/ui/feedback.js');
 const { composerLiveStore } = await import('../../stores/ui/composer-live.js');
 const { stopStore } = await import('../../stores/workflow/stop.js');
 const { COMMANDS_ONLY_NOTICE } = await import('../../components/composer/composer.js');
-const { lifecycleStore } = await import('../../stores/workflow/lifecycle.js');
+const { runViewStore } = await import('../../stores/workflow/run-view.js');
 
 const FIXED_TS = 1_783_958_400_000;
 const SHIFT_ENTER = '\x1b[13;2u';
@@ -151,7 +151,7 @@ function sonnetBuildConfig() {
 
 /** The Ctrl+K palette over the screen, fed by the real command registry, as the app root mounts it. */
 function WithPalette({ children }: { children: ReactNode }) {
-  const phase = lifecycleStore.use((state) => state.phase);
+  const phase = runViewStore.use((state) => state.phase);
   const { commands, handleRuntimeCommand } = useRuntimeCommands({ exit: () => {}, phase });
   const active = overlayStore.use((state) => state.active);
   return (
@@ -2432,7 +2432,7 @@ describe('WorkflowScreen when the final review passes', () => {
     const header = (frame: string) => stripAnsiStyles(frame).split('\n')[0] ?? '';
     const done = glyph('stageDone');
     await vi.waitFor(() => {
-      expect(lifecycleStore.get().phase).toBe('complete');
+      expect(runViewStore.get().phase).toBe('complete');
     });
     await flushEffects();
 
