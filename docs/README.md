@@ -48,7 +48,7 @@ These enforce consistency across the codebase. Read the relevant one before touc
 
 | Rule | Doc |
 |------|-----|
-| Zero runtime classes, ESM `.js` imports, kebab-case files | [CODE-STANDARD.md §6](./CODE-STANDARD.md#6-the-hard-conventions-enforced--summarized-linked) |
+| Zero runtime classes, ESM `.js` imports, kebab-case files | [CODE-STANDARD.md](./CODE-STANDARD.md) |
 | Where to put files, directory length thresholds | [STRUCTURE.md](./STRUCTURE.md) |
 | `utils/` vs `lib/` vs `core/` vs `engine/` vs `features/` | [LAYERS.md](./LAYERS.md) |
 | Zero re-export-only `index.ts` | [NO-BARRELS.md](./NO-BARRELS.md) |
@@ -73,12 +73,11 @@ Specialized subsystem docs linked from the main chapters above.
 ## Direction and history
 
 - [VISION.md](./VISION.md) — Product north star
-- [DIRECTION.md](./DIRECTION.md) — UX principles, engineering decisions
+- [DIRECTION.md](./DIRECTION.md) — UX principles, engineering decisions, [implementer direction](./DIRECTION.md#implementer-direction)
 - [FUTURE.md](./FUTURE.md) — Open questions, longer-horizon backlog
 - [FEATURES.md](./FEATURES.md) — Feature catalog
 - [CHANGELOG.md](../CHANGELOG.md) — Release notes
 - [MIGRATION.md](./MIGRATION.md) — Migration guides: the 2026-04-20 EventBus release and the 2026-09 run contract
-- [IMPLEMENTER-DIRECTION.md](./IMPLEMENTER-DIRECTION.md) — Implementer direction
 
 ## Project-level
 
