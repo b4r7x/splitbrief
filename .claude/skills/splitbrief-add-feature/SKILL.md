@@ -41,7 +41,6 @@ Keep asking until you can state the feature in one sentence that both you and th
 Before writing anything, grep:
 
 - `docs/CONCEPTS.md` — is there a term that already covers this, or contradicts it?
-- `docs/WORKFLOW.md` Part 2 "Still open" — is this one of the deferred items?
 - `docs/FUTURE.md` — is this deferred with a different design in mind?
 - `notes/superpowers/specs/` (and `notes/specs/` dated handoffs) — is there an in-flight spec that overlaps?
 
@@ -124,9 +123,5 @@ If the user asks for a feature that contradicts the project identity:
 
 - Multi-agent coordination (we have exactly two roles)
 - Parallel task execution (tasks are sequential)
-- Tool-call output from the implementer (small models can't produce it reliably)
-- Implementer mid-task interjection (small models lose coherence)
-- Non-TypeScript language support (validator pipeline is TS-shaped)
-- Windows-specific features (not tested)
 
-…stop and explain, pointing to the relevant section of `docs/VISION.md` or `docs/ARCHITECTURE.md` → "What is deliberately not in this repo". Do not paper over the conflict.
+…stop and explain, pointing to the relevant section of `docs/VISION.md` → "What SPLITBRIEF is NOT" or `docs/DIRECTION.md` → "What we will NOT build". Do not paper over the conflict.

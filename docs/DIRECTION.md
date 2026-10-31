@@ -1,6 +1,6 @@
 # SPLITBRIEF — Product & Engineering Direction
 
-What SPLITBRIEF optimizes for, where it's going, and what tradeoffs we accept. Read `VISION.md` for identity and competitive framing; this doc is about **how we build**. Point-in-time status — what was built when, and what is still open — lives in the dated [Historical Appendix](#historical-appendix-2026-05-01) and the issue tracker, not in the durable sections above it.
+What SPLITBRIEF optimizes for, where it's going, and what tradeoffs we accept. Read `VISION.md` for identity and competitive framing; this doc is about **how we build**. Point-in-time status — what was built when, and what is still open — lives in the issue tracker.
 
 ---
 
@@ -78,7 +78,7 @@ Design goals:
 
 ---
 
-## Architecture decisions (2026-05-01 audit)
+## Architecture decisions
 
 ### AD-1: Events layer is foundational
 
@@ -106,33 +106,13 @@ Inline up to 2 repetitions. Extract on the 3rd. The routing decision spread (8 f
 
 All path-confinement checks (rejecting `..` traversals, absolute paths, Windows paths) must route through `assertPathConfined`. Duplicating the logic across files means inconsistent platform handling and silent security divergence.
 
-### AD-7: Append-only tree session model — superseded
-
-Superseded: the append-only session tree was removed. A session is a JSONL event log plus `summary.json` under `.splitbrief/sessions/<id>/`.
-
 ### AD-8: Branch summarization on recovery
 
-When execution branches (a recovery decision sends execution back to an earlier point), call an LLM to summarize the abandoned branch using a structured format:
-
-```
-## Goal
-## Progress: Done / In Progress / Blocked
-## Key Decisions
-## Constraints Discovered
-## Next Steps
-```
+When execution branches (a recovery decision sends execution back to an earlier point), call an LLM to summarize the abandoned branch in a structured format: Goal, Progress (Done / In Progress / Blocked), Key Decisions, Constraints Discovered, Next Steps.
 
 Inject the summary with preamble: "A previous agent attempt was abandoned. Summary of what was tried:" — so the next attempt automatically knows what didn't work without carrying full token cost.
 
 Track `readFiles` and `modifiedFiles` across compactions. Use an incremental UPDATE prompt: when compacting again, pass previous summary to LLM and ask to merge, not regenerate.
-
-### AD-9: Custom entries for heterogeneous orchestration state — superseded
-
-Superseded with AD-7: there are no tree entry types; the session log records engine events.
-
-### AD-10: Tree navigation with active-path markers — superseded
-
-Superseded with AD-7: there is no plan-tree viewer.
 
 ### AD-11: Unified autocomplete
 
@@ -166,58 +146,6 @@ The niche has direct competitors now (`VISION.md`). Any single row here can be m
 
 ---
 
-## Historical appendix (2026-05-01)
-
-Kept verbatim as a dated record. Some rows below name commands and features that have since been removed; they are history, not the current surface.
-
-Point-in-time tracker content captured during the 2026-05-01 audit. These tables are a snapshot, not durable direction — scores were self-assigned against a private audit with no checkable rubric, and the open/done status drifts as work lands. Live status belongs in the issue tracker; this section is kept only as a dated historical record. Durable direction is the UX Principles, Architecture Decisions, and Competitive Advantages above.
-
-### Open at the time (2026-05-01)
-
-These were specced in DIRECTION but not yet built as of the audit. Each is a standalone feature, implementable independently. Current status lives in the issue tracker.
-
-1. **Unified autocomplete** (AD-11) — `/` for slash commands, `@` for file paths, Tab for per-command argument completion. One fuzzy-ranked dropdown for all discovery.
-2. **Structured compaction follow-ups** (AD-12, partial) — Core structured/freeform transcript compaction exists. Remaining direction: tree-session compaction entries and read-file tracking across branches.
-3. **External `$EDITOR` integration** — Open user's editor for writing long feature descriptions. Pasting multi-paragraph specs into terminal input is painful.
-4. **HTML/Markdown session export** — Export workflow results as shareable artifact. For sharing reports, demonstrating value, onboarding teammates.
-
-### Area ratings (post-implementation, 2026-05-01)
-
-| Area | Score | Status |
-|---|---|---|
-| First-run experience | 9/10 | `splitbrief "feature"` shorthand, `@file` syntax, `--help` with examples |
-| Core feedback loop | 9/10 | Planner heartbeat, streaming partial output from API implementers |
-| Error UX | 7/10 | Crash diagnostics excellent; recovery prompts lack consequence descriptions |
-| Session management | 9/10 | `splitbrief continue` resolves by numeric alias, id, or the active pointer (the separate `last`, `ps` and `attach` commands were retired) |
-| Planning phase UX | 9/10 | Per-task reject+regen, contextual footer keybindings |
-| Spend visibility | 9/10 | Cost row on a closed run (the separate `splitbrief stats` command was retired) |
-| Streaming output | 9/10 | Live partial output during API implementer generation |
-| Configuration | 6/10 | Progressive disclosure missing, three approval escape hatches |
-
-### Specific feature targets (status as of 2026-05-01)
-
-| Feature | What it does | Status |
-|---|---|---|
-| `splitbrief "feature"` shorthand | Bare positional arg = `splitbrief start "feature"`, resolving the mode the usual way | ✅ |
-| `@file` syntax | `splitbrief "refactor auth" @context.md @screenshot.png` enriches planner context | ✅ |
-| `--help` with 14 real examples | Not just flag descriptions — concrete command examples with explanations | ✅ |
-| `splitbrief continue` | Smart command: attaches if running, resumes if interrupted | ✅ |
-| `splitbrief last` | Attach or resume the most recent session | Retired — `splitbrief continue 1` targets the most recent session, and the bare form resumes the active pointer |
-| `splitbrief stats` | Cumulative spend across all sessions | Retired — per-run spend lives on the run screen |
-| Planner heartbeat | Token counter or phase hint during long waits | ✅ |
-| Streaming partial output | Last N lines from API implementer in real-time | ✅ |
-| Per-task reject + regen | Flag tasks, press `R` to send back to planner | ✅ |
-| Contextual footer keybindings | Footer changes based on cursor position | ✅ |
-| Recovery consequence text | "retry-task: re-runs prompt, costs ~$0.02" | — |
-| Auto-expand active diffs | Diffs expanded for running task, collapsed for completed | — |
-| Unify approval flags | `--auto` and `--approve` removed; `workflow.approve: none` skips the plan card; `--yolo` is removed | ✅ |
-| Session numeric aliases | `splitbrief continue 1` instead of the full `20250412-143022-abc` id | ✅ (on `continue`; the `attach` command was retired) |
-| HTML/Markdown session export | Export workflow results as shareable artifact | — |
-| External `$EDITOR` integration | Open editor for long feature descriptions | — |
-| Agent/profile cycling keybind | Ctrl+P cycles implementer profiles | — |
-
----
-
 ## What we will NOT build
 
 These are conscious anti-goals, not TODO items:
@@ -227,3 +155,4 @@ These are conscious anti-goals, not TODO items:
 - **Model registry** — We delegate model management to the providers (ollama, LM Studio). No model catalog, no download management.
 - **OAuth/login flows** — Authentication belongs to the child agents (claude-code, codex). We pass API keys in config.
 - **Parallel same-checkout writes** — Git doesn't support this safely. Worktrees or sequential execution only.
+- **Confinement for checks and seats, and per-action approval** — no OS sandbox or network proxy around checks or seats, no `workflow.approve: each` or `yolo`, and no per-action approval inside a seat (the Agent Client Protocol, a bridge to Claude Code's permission prompts, the Codex app-server). A check sandbox must keep every language's toolchain, cache and registry working, so it needs its own design; it would wrap the spawn in `runCommand` (`src/lib/process/spawn/run-command.ts`). What a check can reach today: [CONFIGURATION.md](./CONFIGURATION.md#what-a-check-can-reach).

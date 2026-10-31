@@ -328,33 +328,6 @@ Commands that move data in or out: clipboard copies and image attachments. `cate
 
 ---
 
-## Removed
-
-These names no longer exist. Typing one prints `"<name> was removed: <pointer>"` instead of `Unknown command`, for one release (`REMOVED_COMMANDS` in `src/core/runtime/commands/types.ts`).
-
-| Removed | Pointer |
-|---|---|
-| `/attach` | `images are attached with /image <path>` — see [`/image`](#image-pathlistremove). |
-| `/detach` | `images are removed with /image remove <index\|id>` — see [`/image`](#image-pathlistremove). |
-| `/effort` | `effort is chosen with the model: /crew plan, then ⏎` — reasoning effort is chosen with the model in the seat picker; delivery per runner kind is documented in [`CONFIGURATION.md`](./CONFIGURATION.md). |
-| `/repomap` | `the repo map rebuilds itself on each planning run, with no manual step` — background on the map in [`REPOMAP.md`](./REPOMAP.md). |
-| `/accept-run` | `a run is accepted with /run accept` — see [`/run`](#run-acceptreject). |
-| `/reject-run` | `a run is rejected with /run reject confirm` — see [`/run`](#run-acceptreject). |
-| `/config` | `the same settings open with /settings` — see [`/settings`](#settings). |
-| `/planner` | `the PLAN seat is chosen with /crew plan` — see [`/crew`](#crew-planbuildreview). |
-| `/implementer` | `the BUILD seat is chosen with /crew build` — see [`/crew`](#crew-planbuildreview). |
-| `/reviewer` | `the REVIEW seat is chosen with /crew review` — see [`/crew`](#crew-planbuildreview). |
-| `/compact-transcript` | `the transcript compacts itself as the context window fills` — compaction is automatic; the format is `workflow.compactionFormat` in [`CONFIGURATION.md`](./CONFIGURATION.md). |
-| `/export` | `a run leaves its artifacts in .splitbrief/sessions/<id>/` — there is no HTML report; read the session directory. |
-| `/handoff` | `a run leaves its artifacts in .splitbrief/sessions/<id>/` — there is no handoff pack; read the session directory. |
-| `/yolo` | `only a write to a protected path asks` — `approval.enabled` loads with one retirement notice and is ignored; `--yolo` is removed; see `approval` in [`CONFIGURATION.md`](./CONFIGURATION.md#9-approval). |
-| `/mode` | `every run plans in one session` — there are no workflow modes; see [WORKFLOW.md](./WORKFLOW.md#3-the-planning-session). |
-| `/revise-spec` | `request changes on the plan` — on the plan card, the Request changes row (or a typed `comment <text>`) sends the correction to the planning session. |
-| `/revise-plan` | `request changes on the plan` — on the plan card, the Request changes row (or a typed `comment <text>`) sends the correction to the planning session. |
-| `/approval` | `a protected write asks once per run` — there are no sticky grants to list or clear; see [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#protected-path-confirmation). |
-
----
-
 ## Keyboard shortcuts
 
 Most slash commands have no dedicated keybinding — open the command palette with `Ctrl+K` and type. The keys below are bound directly in the input handlers (`src/app/keys.ts`, `src/features/workflow/hooks/use-keys.ts`) and run without going through the slash dispatcher.

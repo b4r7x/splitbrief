@@ -32,7 +32,7 @@ Read in this order from the target folder (layout is heterogeneous — read what
 
 Also re-read these project docs if it's been a while:
 - `docs/CONCEPTS.md` — for any terms referenced in the spec.
-- `docs/ARCHITECTURE.md` — especially the "Directory map" and "Where to add things" sections.
+- `docs/STRUCTURE.md` "Top-level layout" and `docs/EXTENDING.md` — where each kind of code goes.
 
 ### Step 2 — Check dependencies
 

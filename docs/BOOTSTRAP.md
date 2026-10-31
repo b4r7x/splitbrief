@@ -72,7 +72,7 @@ The draft remains editable during preparation; start and continue wait for curre
 
 `awaitDiscovery` covers the discovery promise returned at mount. Model-catalog and live detection work also have separately tracked background promises. `awaitBackgroundDiscovery()` settles these promises for tests that remove temporary cache directories. Initial render does not wait for them.
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md#data-flow-one-task) for the cleanup order, process exit, and caller-requested unmount.
+See [Shutdown and cleanup order](#shutdown-and-cleanup-order) for process exit and caller-requested unmount.
 
 The models.dev cache shares one pending read per cache key between the catalog seed and live detection.
 Its private worker parses JSON and validates the catalog, so the main thread can render and handle keys during parsing.
@@ -178,6 +178,12 @@ The filtered stdin skips late terminal replies.
 `renderApp()` then sets up Ink's fullscreen rendering and mounts `<App />`. Components subscribe via `store.use()` and see seeded project state and UI chrome on the first render; discovery results arrive through store updates.
 
 If a component calls `store.use()` on a field that was never set by `initStores()`, that is a contract violation: either the store has a sensible default, or `initStores()` populates the field.
+
+---
+
+## Shutdown and cleanup order
+
+TUI quit tears down stores and cancels the current preparation. Detection shutdown refuses new cache saves and refreshes, cancels refresh lanes, and waits for accepted saves. Cleanup then drains registered processes, waits for workflow shutdown, and restores the terminal. `renderApp()` then ends the process with the selected exit code. A caller-requested unmount returns after cleanup so the caller can report an error. The process registry owns child termination timing.
 
 ---
 

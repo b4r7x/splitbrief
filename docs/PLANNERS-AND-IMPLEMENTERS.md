@@ -124,7 +124,23 @@ Two presets exist for common patterns:
 - `CONVERSATIONAL_CAPS` -- every capability. Used by the Claude Code planner only; other CLI tools use `ONE_SHOT_API_CAPS` with `supportsSessionResume` / `supportsEffort` overridden from their adapter.
 - `ONE_SHOT_API_CAPS` -- conversational planning off, session resume off, effort/images off. Used verbatim by API backends, and as the override base by every non-Claude CLI tool.
 
-When a capability is missing, the orchestrator falls back. No session resume means context is rebuilt from the JSONL log. No conversational planning means no inline Q&A. No image support means attachments are dropped with a `planner_attachments_dropped` event.
+| Backend | Conv. planning | Session resume | Effort | Images | Self-summary |
+|---------|:---:|:---:|:---:|:---:|:---:|
+| `cli` claude-code | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `cli` codex | ✗ | ✓ | ✓ | ✓ | ✓ |
+| `cli` copilot | ✗ | ✗ | ✓ | ✓ | ✓ |
+| `cli` opencode / kilo-code | ✗ | ✗ | ✗ | ✓ | ✓ |
+| `cli` cursor | ✗ | ✗ | ✗ | ✗ | ✓ |
+| `cli` command-code / antigravity | ✗ | ✗ | ✓ | ✗ | ✓ |
+| `api` (any OAI-compat) | ✗ | ✗ | ✗ | ✗ | ✓ |
+| `shell` (default) | ✗ | ✗ | ✗ | ✗ | ✗ |
+| `agent` (default) | ✗ | ✗ | ✗ | ✗ | ✗ |
+
+The `api` row is `ONE_SHOT_API_CAPS`, so `supportsEffort` and `supportsImages` are `false` for every OpenAI-compatible endpoint, whatever the model behind it accepts on the wire. The flag says what the orchestrator will use, not what the model can do.
+
+Adding a new capability means extending `PlannerCapabilities`, setting it per backend, and adding the fallback branch in the orchestrator. No backend-identity `if` chains.
+
+When a capability is missing, the orchestrator falls back. No session resume means context is rebuilt from the JSONL log. No conversational planning needs no fallback: every planner returns its questions in the planning session's typed answer, and the orchestrator does not read this flag. No image support means attachments are dropped with a `planner_attachments_dropped` event.
 
 ---
 

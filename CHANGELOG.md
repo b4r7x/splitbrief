@@ -89,7 +89,7 @@
 - Sticky approvals, `.splitbrief/approvals.json`, `splitbrief approval` and `--yolo`.
 - Budget gates, cost prediction, savings figures and price-based implementer routing; `Ctrl+G` and `/cost`. Spend is reported as one plain figure when prices are known.
 - The summary screen, the standalone Crew overlay and the mode selector.
-- The runtime commands `/redo-task`, `/effort`, `/repomap`, `/attach`, `/detach`, `/mode`, `/revise-spec`, `/revise-plan`, `/approval`, `/compact-transcript`, `/export`, `/handoff` and `/yolo`, and the aliases `/config`, `/planner`, `/implementer`, `/reviewer`, `/accept-run` and `/reject-run`. Each name prints a pointer to its replacement for one release.
+- The runtime commands `/redo-task`, `/effort`, `/repomap`, `/attach`, `/detach`, `/mode`, `/revise-spec`, `/revise-plan`, `/approval`, `/compact-transcript`, `/export`, `/handoff` and `/yolo`, and the aliases `/config`, `/planner`, `/implementer`, `/reviewer`, `/accept-run` and `/reject-run`. Each name except `/redo-task` prints its replacement or says why it is gone, for one release.
 - The rollback of an interrupted brief on shutdown: partial changes are kept, and the session says where the run stopped.
 - The `esc esc` interrupt ladder. `esc` opens the stop sheet, and `ctrl+c` stops a live run.
 - Runs no longer copy the sign-in files of the GitHub Copilot editor plugins, which the Copilot CLI does not read.

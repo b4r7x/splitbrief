@@ -48,6 +48,30 @@ New actions: `CLOSE_RUN`, `INTERRUPT_STEP`, `RESUME_STEP`, `BEGIN_PLANNING`. New
 
 The summary screen is gone, and with it the `summary` route, `loadSummaryContext` and `resume-verdict.ts`. A run that stops stays on the run screen; a closed run grows a ledger block at the tail of its own transcript. The cost drilldown overlay, its `Ctrl+G` binding and the `/cost` command are also gone.
 
+### Removed commands and flags
+
+Each removed name fails with a message that names its replacement or says why it is gone.
+
+| Was | Now |
+|---|---|
+| `splitbrief approval list` / `clear` | Nothing. A write to a protected path asks once per run, so there are no grants to list or clear |
+| `--mode` | Nothing. Every run plans in one session |
+| `--approve` | `workflow.approve` (`plan` or `none`) in the config |
+| `/attach`, `/detach` | `/image <path>`, `/image remove <index\|id>` |
+| `/effort` | The seat picker: `/crew plan`, then ⏎ on the model |
+| `/repomap` | Nothing. The repo map rebuilds itself on each planning run |
+| `/accept-run`, `/reject-run` | `/run accept`, `/run reject confirm` |
+| `/config` | `/settings` |
+| `/planner`, `/implementer`, `/reviewer` | `/crew plan`, `/crew build`, `/crew review` |
+| `/compact-transcript` | Nothing. The transcript compacts itself as the context window fills; `workflow.compactionFormat` sets the format |
+| `/export`, `/handoff` | Nothing. A run leaves its artifacts in `.splitbrief/sessions/<id>/` |
+| `/yolo` | Nothing. Only a write to a protected path asks |
+| `/mode` | Nothing. Every run plans in one session |
+| `/revise-spec`, `/revise-plan` | Request changes on the plan card, or a typed `comment <text>` |
+| `/approval` | Nothing. A write to a protected path asks once per run |
+
+`--mode` and `--approve` fail with exit code 1 before any work starts. A flag value is skipped, so `--planner-args --mode` still reaches the planner tool's own `--mode`.
+
 ---
 
 ## EventBus architecture (2026-04-20 release)

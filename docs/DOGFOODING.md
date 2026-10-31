@@ -178,7 +178,3 @@ A second case sends `SIGKILL` to the group instead of `SIGINT`: the CLI reports 
 The bundled `scripts/watch-run.mjs` polls the session log once per second and preserves its byte cursor between calls. Errors, failed validation, retries, warnings, and recovery events wake the supervisor. The supervisor stops the run; the watcher does not enforce an engine-level barrier. A tool defect that blocks the run, including a false tripwire alarm, ends the run: End run, fix, verify with the gates, rebuild, let the maintainer commit, then start a new run. A cosmetic defect goes to the debt list and the run goes on. A weak seat output is corrected in the composer, not in code. Model mistakes and correctly reported provider limits retain normal CLI recovery.
 
 The watcher source follows the existing script library convention in `skills/splitbrief-run/scripts/`; `skills:sync` copies it into the installed babysit skill. No source-library path is needed at runtime. The four pipeline skills still use generated contract blocks; the babysit procedure is handwritten and its frontmatter and script mirror are checked by `skills:check`.
-
-## 9. Record of the 2026-09-21 run
-
-Found and fixed in-session: React ran its development build because the CLI never set `NODE_ENV` (4 GB heap in 23 minutes, `src/node-env.ts`); a planner reply split across messages lost everything but its last message (`reconcileFinalText`); the 96 KB declared-artifact bound rejected a 140 KB `tasks.md` after the call had finished.

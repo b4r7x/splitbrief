@@ -379,7 +379,7 @@ TypeScript 6.x, ESM only, Ink 6.8 + React 19 for the TUI. Tests are colocated wi
 
 ## Extensibility
 
-- **EventBus architecture** — engine emits typed `EngineEvent` values; UI, persistence, and hooks subscribe as independent sinks. See [docs/ARCHITECTURE.md](https://github.com/b4r7x/splitbrief/blob/main/docs/ARCHITECTURE.md#eventbus).
+- **EventBus architecture** — engine emits typed `EngineEvent` values; UI, persistence, and hooks subscribe as independent sinks. See [docs/ENGINE.md](https://github.com/b4r7x/splitbrief/blob/main/docs/ENGINE.md#eventbus).
 - **Workflow hooks** — fire shell commands at workflow events (`pre_task`, `post_validation`, etc.). See [docs/HOOKS-CONFIG.md](https://github.com/b4r7x/splitbrief/blob/main/docs/HOOKS-CONFIG.md).
 - **Repo-map context** — ranked symbol summary auto-injected into the planner prompt so it can compile a sharper Task Brief. Tree-sitter + PageRank + SQLite cache for fast incremental updates. See [docs/REPOMAP.md](https://github.com/b4r7x/splitbrief/blob/main/docs/REPOMAP.md).
 - **Headless mode** — `splitbrief start --json "feature"` emits each engine event as NDJSON to stdout and skips the TUI. The plan card is approved unattended; a write to a protected path fails closed, because no one is there to confirm it.
