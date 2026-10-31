@@ -132,6 +132,7 @@ When a function immediately fans its positional args into an options object for 
 ## 5. Naming & file naming
 
 - **kebab-case** files and folders (`models-dev.ts`, `lm-studio.ts`); single word where natural (`pricing.ts`).
+- **ESM with `.js` extension** in every import: `'./config.js'`, not `'./config'`.
 - **File name matches its primary export / responsibility.** `platform.ts` exporting only `assertNotWindows` oversells; `format.ts` holding one generic `capitalize` is mislocated and misnamed. A single-export file reads `verb-of-noun` (`build-routing-event-fields.ts` → `buildRoutingEventFields`).
 - **No `dir/dir.ts` stutter.** A folder's entry file names its responsibility, not the folder: `run/workflow.ts`, `escalation/handle.ts`, `commands/dispatch.ts`/`registry.ts` — never `run/run.ts`, `escalation/escalation.ts`, or `commands/commands.ts`.
 - **No two sibling exports sharing a name with different signatures.** Two `formatContextFit` / two `buildSelectionKey` in one feature force readers to disambiguate by file — rename to distinct intent names.
@@ -148,7 +149,7 @@ These are non-negotiable and (where noted) gated automatically. Do not re-derive
 | Convention | Doc | Auto-gate |
 |---|---|---|
 | Zero runtime classes — production source uses pure functions + module-scoped state; errors via factory bag; a test fixture may use class syntax only when class behavior is under test | [ERRORS.md](./ERRORS.md), [CLAUDE.md](https://github.com/b4r7x/splitbrief/blob/main/CLAUDE.md) | INVARIANTS #8 |
-| ESM `.js` extension in every relative import | [CLAUDE.md](https://github.com/b4r7x/splitbrief/blob/main/CLAUDE.md) | INVARIANTS #16 |
+| ESM `.js` extension in every relative import | [§5](#5-naming--file-naming) | INVARIANTS #16 |
 | Zero barrels / disguised barrels | [NO-BARRELS.md](./NO-BARRELS.md) | INVARIANTS #1, #1b |
 | External stores via `useSyncExternalStore` — state lives in `src/stores/`, not React Context; zero memoization (`useMemo`/`useCallback`/`React.memo`) | [STORES-AND-UI.md](./STORES-AND-UI.md#store-rules) | INVARIANTS #3 |
 | No `forwardRef` / `useImperativeHandle` — extract to a store | [STORES-AND-UI.md](./STORES-AND-UI.md#store-rules) | INVARIANTS #3 |
