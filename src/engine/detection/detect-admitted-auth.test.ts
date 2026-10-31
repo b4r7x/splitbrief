@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import {
   CLI_TOOL_CATALOG,
-  CLI_TOOL_IDS,
+  LISTED_CLI_TOOL_IDS,
   defaultCliAuthChannel,
   type CliAuthChannelId,
   type CliToolId,
@@ -25,7 +25,7 @@ const HOST_STATE_ENV = [
 
 function defaultAuthChannels(): Partial<Record<CliToolId, CliAuthChannelId>> {
   const channels: Partial<Record<CliToolId, CliAuthChannelId>> = {};
-  for (const id of CLI_TOOL_IDS) channels[id] = defaultCliAuthChannel(id).id;
+  for (const id of LISTED_CLI_TOOL_IDS) channels[id] = defaultCliAuthChannel(id).id;
   return channels;
 }
 
@@ -51,7 +51,9 @@ describe('all-admitted-tools auth detection', () => {
         state: result.diagnostic.state,
         auth: result.auth,
       })),
-    ).toEqual(CLI_TOOL_IDS.map((tool) => ({ tool, state: 'unavailable', auth: 'not-checked' })));
+    ).toEqual(
+      LISTED_CLI_TOOL_IDS.map((tool) => ({ tool, state: 'unavailable', auth: 'not-checked' })),
+    );
     expect(probedTools).toEqual([]);
   });
 

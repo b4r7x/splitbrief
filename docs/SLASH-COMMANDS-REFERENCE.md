@@ -124,7 +124,7 @@ Commands that decide who does the work and how: the three seats and tool detecti
 
 ### `/refresh`
 
-- **Purpose**: Re-run tool detection — probes the system for the catalog's installed CLIs (`CLI_TOOL_IDS` in `src/core/runners/cli-tool-catalog.ts`: claude-code, codex, opencode, copilot, kilo-code, cursor, command-code, antigravity), reachable API endpoints (Ollama, LM Studio, llama.cpp), and refreshes the availability cache so newly installed tools become selectable in the seat pickers.
+- **Purpose**: Re-run tool detection — probes the system for the catalog's installed CLIs (`LISTED_CLI_TOOL_IDS` in `src/core/runners/cli-tool-catalog.ts`: claude-code, codex, opencode, kilo-code, cursor, command-code, antigravity) and any other CLI tool your config names, reachable API endpoints (Ollama, LM Studio, llama.cpp), and refreshes the availability cache so newly installed tools become selectable in the seat pickers.
 - **Screens**: all.
 - **Args**: none.
 - **Example**: `/refresh`
@@ -302,7 +302,7 @@ Commands that move data in or out: clipboard copies and image attachments. `cate
   | PLAN seat | Images |
   |---|---|
   | `cli` Claude Code | yes, as image content blocks on stdin |
-  | `cli` Codex, OpenCode, Copilot, Kilo Code | yes, as a file flag |
+  | `cli` Codex, OpenCode, Kilo Code | yes, as a file flag |
   | `cli` Cursor, Command Code, Antigravity | no |
   | `api` | only when detection reports the model as vision-capable; a model that detection did not report cannot |
   | `shell`, `agent` | no |

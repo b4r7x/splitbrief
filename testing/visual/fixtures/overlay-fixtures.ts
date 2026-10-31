@@ -920,17 +920,19 @@ const PLANNER_HIGH_EFFORT = {
   model: 'claude-sonnet-4',
   effort: 'high',
 } as const;
-/** Kilo spends its effort on `--variant`, Copilot on `--effort`: the two channels this crew block
- * has no other scenario for. */
+/** Kilo spends its effort on `--variant`, Command Code on `--effort`: the two channels this crew
+ * block has no other scenario for. */
 const PLANNER_KILO_SEAT = {
   kind: 'cli',
   tool: 'kilo-code',
   model: 'openai/gpt-5.6',
+  variant: 'high',
 } as const;
-const BUILD_COPILOT_SEAT = {
+const BUILD_COMMAND_CODE_SEAT = {
   kind: 'cli',
-  tool: 'copilot',
-  model: 'gpt-5.6-luna',
+  tool: 'command-code',
+  model: 'deepseek/deepseek-v4-flash',
+  effort: 'high',
 } as const;
 
 const createHelpFixture: FixtureFactory = () =>
@@ -1108,10 +1110,10 @@ const createSettingsInheritedEffortFixture: FixtureFactory = () =>
     seed: seedConfig({ planner: PLANNER_HIGH_EFFORT }),
     focus: 'seat:review',
   });
-const createSettingsCrewKiloCopilotFixture: FixtureFactory = () =>
+const createSettingsCrewKiloCommandCodeFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'settings',
-    seed: seedConfig({ planner: PLANNER_KILO_SEAT, implementer: BUILD_COPILOT_SEAT }),
+    seed: seedConfig({ planner: PLANNER_KILO_SEAT, implementer: BUILD_COMMAND_CODE_SEAT }),
     focus: 'seat:plan',
   });
 /** The seat most configs hold: a Claude alias, labelled from the bundled table, at its top level. */
@@ -1464,11 +1466,11 @@ const createPlannerPickerClaudeCustomTwinFixture: FixtureFactory = () =>
     },
     focus: 'tool:claude-code',
   });
-const createPlannerPickerCopilotFixture: FixtureFactory = () =>
+/** The picker offers no Copilot row, so a seat on Copilot has no current row. */
+const createPlannerPickerUnlistedSeatFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'planner-picker',
     seed: seedCopilotNativeListing,
-    focus: 'tool:copilot',
   });
 const createPlannerPickerCommandCodeFixture: FixtureFactory = () =>
   createOverlayFixture({
@@ -2740,7 +2742,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-settings-fallback-host-model'), createSettingsFallbackHostModelFixture],
   [scenarioId('overlay-settings-fallback-filtered'), createSettingsFallbackFilteredFixture],
   [scenarioId('overlay-settings-inherited-effort'), createSettingsInheritedEffortFixture],
-  [scenarioId('overlay-settings-crew-kilo-copilot'), createSettingsCrewKiloCopilotFixture],
+  [scenarioId('overlay-settings-crew-kilo-command-code'), createSettingsCrewKiloCommandCodeFixture],
   [scenarioId('overlay-settings-claude-alias'), createSettingsClaudeAliasFixture],
   [scenarioId('overlay-settings-crew-api-twin'), createSettingsCrewApiTwinFixture],
   [scenarioId('overlay-settings-floor-full'), createSettingsFloorFullFixture],
@@ -2791,7 +2793,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
     scenarioId('overlay-planner-picker-claude-custom-twin'),
     createPlannerPickerClaudeCustomTwinFixture,
   ],
-  [scenarioId('overlay-planner-picker-copilot'), createPlannerPickerCopilotFixture],
+  [scenarioId('overlay-planner-picker-unlisted-seat'), createPlannerPickerUnlistedSeatFixture],
   [scenarioId('overlay-planner-picker-command-code'), createPlannerPickerCommandCodeFixture],
   [scenarioId('overlay-planner-picker-codex'), createPlannerPickerCodexFixture],
   [scenarioId('overlay-planner-picker-antigravity'), createPlannerPickerAntigravityFixture],

@@ -1,7 +1,7 @@
 import type { Config } from '../../core/schemas/config.js';
 import { readActiveRunnerLens } from '../../core/config/accessors/active-runner.js';
 import { contentIdentityId } from '../../core/config/accessors/content-identity.js';
-import { crewCliTools } from '../../core/crew/seats.js';
+import { crewCliTools, probedCliTools } from '../../core/crew/seats.js';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import {
   projectRunnerDiscoveryContext,
@@ -140,7 +140,7 @@ function configuredProviderDetection(
 }
 
 /**
- * Every admitted CLI is probed on the channel a fresh config would name for it,
+ * Every probed CLI is probed on the channel a fresh config would name for it,
  * so the status a not-yet-selected tool shows is the status of the selection the
  * picker would actually write; an active runner context overrides only its own
  * tool with the channel the config resolved for it. Only defined channels are
@@ -148,9 +148,10 @@ function configuredProviderDetection(
  */
 function admittedCliAuthChannels(
   contexts: ActiveRunnerContexts,
+  tools: readonly CliToolId[],
 ): Partial<Record<CliToolId, CliAuthChannelId>> {
   const channels: Partial<Record<CliToolId, CliAuthChannelId>> = {};
-  for (const id of CLI_TOOL_IDS) channels[id] = defaultCliAuthChannel(id).id;
+  for (const id of tools) channels[id] = defaultCliAuthChannel(id).id;
   for (const context of [contexts.planner, contexts.implementer]) {
     if (
       context.kind === 'cli' &&
@@ -164,7 +165,7 @@ function admittedCliAuthChannels(
 }
 
 /**
- * One context per catalog-capable tool: a model listing belongs to the
+ * One context per probed catalog-capable tool: a model listing belongs to the
  * executable and the user's credentials, not to the seat that will use it. A
  * tool an active runner already uses contributes that runner's real context
  * (planner first); every other tool gets a synthesized complete context on
@@ -174,21 +175,24 @@ function admittedCliAuthChannels(
  */
 function catalogDiscoveryContexts(
   contexts: ActiveRunnerContexts,
+  tools: readonly CliToolId[],
 ): readonly RunnerDiscoveryContext[] {
-  return NATIVE_CLI_CATALOG_TOOL_IDS.map((tool): RunnerDiscoveryContext => {
-    const active = [contexts.planner, contexts.implementer].find(
-      (context) => context.kind === 'cli' && context.id === tool,
-    );
-    if (active !== undefined) return active;
-    return {
-      role: 'implementer',
-      kind: 'cli',
-      id: tool,
-      authChannel: defaultCliAuthChannel(tool).id,
-      credentialPresent: false,
-      configGeneration: contexts.implementer.configGeneration,
-    };
-  });
+  return NATIVE_CLI_CATALOG_TOOL_IDS.filter((tool) => includes(tools, tool)).map(
+    (tool): RunnerDiscoveryContext => {
+      const active = [contexts.planner, contexts.implementer].find(
+        (context) => context.kind === 'cli' && context.id === tool,
+      );
+      if (active !== undefined) return active;
+      return {
+        role: 'implementer',
+        kind: 'cli',
+        id: tool,
+        authChannel: defaultCliAuthChannel(tool).id,
+        credentialPresent: false,
+        configGeneration: contexts.implementer.configGeneration,
+      };
+    },
+  );
 }
 
 function sourceContext(
@@ -231,17 +235,19 @@ export function createProductionDetectionDeps(
 ): ProductionDetectionDeps {
   const contexts = activeRunnerContexts(input.config);
   const providerProbes = configuredProviderProbes({ config: input.config, contexts });
+  const tools = probedCliTools(input.config);
   return {
     detectAll: ({ signal }) =>
       detectAll({
-        authChannels: admittedCliAuthChannels(contexts),
+        tools,
+        authChannels: admittedCliAuthChannels(contexts, tools),
         detectConfiguredProviderOutcomes: configuredProviderDetection(providerProbes),
         signal,
       }),
     fetchModelsDevCatalog: ({ mode, signal }) => fetchModelsDevCatalogWithCache({ mode, signal }),
     discoverAllCliTools: ({ mode, signal }) =>
       discoverAllCliTools({
-        contexts: catalogDiscoveryContexts(contexts),
+        contexts: catalogDiscoveryContexts(contexts, tools),
         projectDir: input.projectDir,
         crewTools: crewCliTools(input.config),
         refresh: mode,

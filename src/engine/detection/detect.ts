@@ -1,7 +1,7 @@
 import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection.js';
 import {
   CLI_TOOL_CATALOG,
-  CLI_TOOL_IDS,
+  LISTED_CLI_TOOL_IDS,
   PROVIDER_ORACLE_TOOL_IDS,
   selectCliAuthChannel,
   type CliAuthChannelId,
@@ -248,7 +248,7 @@ export async function detectAvailableCliReadiness(
     now: options.now ?? Date.now,
     signal: options.signal,
   };
-  const tools = options.tools ?? CLI_TOOL_IDS;
+  const tools = options.tools ?? LISTED_CLI_TOOL_IDS;
   return Promise.all(
     tools.map((tool) =>
       detectCliToolReadiness(tool, {
@@ -271,7 +271,7 @@ export async function detectAvailableCliTools(
     now: options.now ?? Date.now,
     signal: options.signal,
   };
-  const tools = options.tools ?? CLI_TOOL_IDS;
+  const tools = options.tools ?? LISTED_CLI_TOOL_IDS;
   return Promise.all(
     tools.map((tool) =>
       detectCliTool(tool, {
@@ -304,6 +304,7 @@ export interface DetectAllOptions {
       ) => Promise<readonly ConfiguredProviderOutcome[]>)
     | undefined;
   detectCliTools?: ((input: DetectCliToolsOptions) => Promise<CliToolDetection[]>) | undefined;
+  tools?: readonly CliToolId[] | undefined;
   authChannel?: CliAuthChannelId | undefined;
   authChannels?: Partial<Record<CliToolId, CliAuthChannelId | undefined>> | undefined;
   signal?: AbortSignal | undefined;
@@ -317,6 +318,7 @@ export async function detectAll(options: DetectAllOptions = {}): Promise<DetectA
       ? (options.detectProviders ?? detectAvailableProviders)({ signal: options.signal })
       : Promise.resolve([]),
     (options.detectCliTools ?? detectAvailableCliTools)({
+      tools: options.tools,
       authChannel: options.authChannel,
       authChannels: options.authChannels,
       signal: options.signal,

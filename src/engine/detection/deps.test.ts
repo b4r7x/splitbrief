@@ -7,6 +7,7 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import {
   CLI_TOOL_CATALOG,
   CLI_TOOL_IDS,
+  LISTED_CLI_TOOL_IDS,
   type CliToolId,
 } from '../../core/runners/cli-tool-catalog.js';
 import { createProductionDetectionDeps } from './deps.js';
@@ -329,6 +330,19 @@ function shellRolesConfig() {
   });
 }
 
+// Copilot is unlisted: detection probes it only for a config that names it.
+function copilotFallbackConfig() {
+  return makeConfig({
+    planner: { kind: 'shell', command: 'printf planner' },
+    implementer: {
+      kind: 'shell',
+      command: 'printf implementer',
+      model: 'shell-model',
+      fallback: { tool: 'copilot' },
+    },
+  });
+}
+
 describe('all-admitted-tools auth channels', () => {
   it.runIf(process.platform !== 'win32')(
     'probes every admitted CLI on its default channel when no CLI runner is active',
@@ -342,7 +356,7 @@ describe('all-admitted-tools auth channels', () => {
         credentialEnv: { ANTHROPIC_API_KEY: 'sk-ant-fixture-not-a-real-key' },
         run: async () => {
           const result = await createProductionDetectionDeps({
-            config: shellRolesConfig(),
+            config: copilotFallbackConfig(),
             projectDir: '/projects/all-admitted-tools',
           }).detectAll({ signal: new AbortController().signal });
 
@@ -389,7 +403,7 @@ describe('all-admitted-tools auth channels', () => {
         sessionState: [],
         run: async () => {
           const result = await createProductionDetectionDeps({
-            config: shellRolesConfig(),
+            config: copilotFallbackConfig(),
             projectDir: '/projects/absent-session-state',
           }).detectAll({ signal: new AbortController().signal });
 
@@ -398,12 +412,33 @@ describe('all-admitted-tools auth channels', () => {
             auth: 'unauthenticated',
             diagnostic: { state: 'unauthenticated' },
           });
-          for (const tool of CLI_TOOL_IDS.filter((id) => id !== 'copilot')) {
+          for (const tool of LISTED_CLI_TOOL_IDS) {
             expect(byTool.get(tool)).toMatchObject({
               auth: 'not-checked',
               diagnostic: { state: 'unavailable' },
             });
           }
+        },
+      });
+    },
+    30_000,
+  );
+
+  it.runIf(process.platform !== 'win32')(
+    'gives no Copilot row for a config that does not name Copilot',
+    async () => {
+      await withAdmittedCliHost({
+        shims: ['copilot'],
+        sessionState: [],
+        run: async () => {
+          const result = await createProductionDetectionDeps({
+            config: shellRolesConfig(),
+            projectDir: '/projects/unlisted-copilot',
+          }).detectAll({ signal: new AbortController().signal });
+
+          expect(result.cliTools.map((detection) => detection.tool)).toEqual([
+            ...LISTED_CLI_TOOL_IDS,
+          ]);
         },
       });
     },

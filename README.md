@@ -90,7 +90,6 @@ Then bring a planner — the stronger of the two:
 # Claude Code (default planner): install from https://claude.ai/code — uses your existing subscription
 # Cursor Agent CLI: install from https://cursor.com/cli
 npm install -g @openai/codex      # Codex
-npm install -g @github/copilot    # Copilot
 npm install -g @kilocode/cli      # Kilo Code
 npm install -g command-code       # Command Code (binary `cmd`)
 # OpenCode: install from https://opencode.ai
@@ -186,7 +185,7 @@ version: 3
 
 planner:
   kind: cli
-  tool: claude-code          # claude-code | codex | opencode | copilot | kilo-code | cursor | command-code | antigravity
+  tool: claude-code          # claude-code | codex | opencode | kilo-code | cursor | command-code | antigravity
 
 implementer:
   kind: api                  # or `kind: cli` with a `tool:`, to run a CLI tool on a smaller model
@@ -212,14 +211,13 @@ SPLITBRIEF leaves Git staging and commits to you.
 
 ### Planner backends
 
-Eleven planner backends — eight CLI tools, plus `api`, `shell`, and `agent`:
+Ten planner backends — seven CLI tools, plus `api`, `shell`, and `agent`:
 
 | Tool | Kind | Output Format | Notes |
 |------|------|---------------|-------|
 | `claude-code` | cli | stream-json | Default. Uses existing subscription |
 | `codex` | cli | jsonl | OpenAI Codex CLI |
 | `opencode` | cli | jsonl | OpenCode CLI |
-| `copilot` | cli | json | GitHub Copilot CLI |
 | `kilo-code` | cli | json | Kilo Code CLI |
 | `cursor` | cli | stream-json | Cursor Agent CLI |
 | `command-code` | cli | json | Command Code CLI (binary `cmd`) |
@@ -293,7 +291,7 @@ Any planner CLI tool can also be used as an implementer:
 ```yaml
 implementer:
   kind: cli
-  tool: claude-code           # or codex, opencode, copilot, kilo-code, cursor, command-code, antigravity
+  tool: claude-code           # or codex, opencode, kilo-code, cursor, command-code, antigravity
                               # omit model to let the tool pick its own default
 ```
 

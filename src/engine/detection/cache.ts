@@ -26,7 +26,7 @@ import { CLI_AUTH_CHANNEL_IDS, type CliToolId } from '../../core/runners/cli-too
 
 const CACHE_FILENAME = 'detection-cache.json';
 const DEFAULT_TTL_MS = 5 * 60 * 1_000;
-const DETECTION_CACHE_VERSION = 6;
+export const DETECTION_CACHE_VERSION = 7;
 const MAX_CACHE_ENTRIES = 100;
 // The generated key embeds a percent-encoded project path plus two runner
 // contexts; a PATH_MAX-sized path alone can expand beyond 12 KiB.

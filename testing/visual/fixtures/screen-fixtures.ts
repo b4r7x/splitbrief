@@ -1290,7 +1290,7 @@ function createDraftNotRemovedFixture(): FixtureLifecycle {
 
 // A hand edit that names a tool with a typo, read by home's refresh.
 const CONFIG_EDIT_REFUSED_MESSAGE =
-  'SPLITBRIEF keeps the config it loaded before · Configuration errors in .splitbrief/config.yaml: planner.tool: Invalid option: expected one of "claude-code"|"codex"|"opencode"|"copilot"|"kilo-code"|"cursor"|"command-code"|"antigravity"';
+  'SPLITBRIEF keeps the config it loaded before · Configuration errors in .splitbrief/config.yaml: planner.tool: Invalid option: expected one of "claude-code"|"codex"|"opencode"|"kilo-code"|"cursor"|"command-code"|"antigravity"';
 
 function createConfigEditRefusedFixture(): FixtureLifecycle {
   const home = createHomeFixture();

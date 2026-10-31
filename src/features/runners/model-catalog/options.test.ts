@@ -9,6 +9,7 @@ import {
 import {
   CLI_TOOL_CATALOG,
   IMPLEMENTER_CLI_TOOL_IDS,
+  isListedCliTool,
   PLANNER_CLI_TOOL_IDS,
 } from '../../../core/runners/cli-tool-catalog.js';
 import { SEAT_PICKER_ROLES } from '../../../core/runners/seat-roles.js';
@@ -68,14 +69,14 @@ describe('role membership', () => {
     expect(plannerIds).toEqual(
       expect.arrayContaining([
         'custom-command',
-        ...PLANNER_CLI_TOOL_IDS,
+        ...PLANNER_CLI_TOOL_IDS.filter(isListedCliTool),
         ...PLANNER_API_PROVIDER_IDS,
       ]),
     );
     expect(implementerIds).toEqual(
       expect.arrayContaining([
         'custom-command',
-        ...IMPLEMENTER_CLI_TOOL_IDS,
+        ...IMPLEMENTER_CLI_TOOL_IDS.filter(isListedCliTool),
         ...IMPLEMENTER_API_PROVIDER_IDS,
       ]),
     );
@@ -99,6 +100,18 @@ describe('role membership', () => {
       expect(cursor.kind).toBe('cli');
       expect(cursor.displayName).toBe(CLI_TOOL_CATALOG.cursor.displayName);
       expect(cursor.modelCapability.showsDiscovered).toBe(true);
+    }
+  });
+
+  it('offers no Copilot row in any seat role', () => {
+    const descriptors = assemblePickerDescriptors();
+    const detections = { cliTools: [], providers: [] };
+
+    for (const role of SEAT_PICKER_ROLES) {
+      const ids = buildPickerOptions(role, descriptors, detections, undefined).map(
+        (item) => item.id,
+      );
+      expect(ids, role).not.toContain('copilot');
     }
   });
 

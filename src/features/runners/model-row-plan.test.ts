@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 import { formatContextLength } from '../../core/formatting.js';
-import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
 import {
   nativeCliCatalogToDetectedModels,
   parseAntigravityModelCatalog,
@@ -54,10 +54,11 @@ function capturedRows(toolId: CliToolId): RightRow[] {
   });
   const item = buildPickerOptions(
     'planner',
-    assemblePickerDescriptors(),
+    [{ kind: 'cli', descriptor: CLI_TOOL_CATALOG[toolId] }],
     { cliTools: [cliDetectionFor('ready', toolId)], providers: [], providerOutcomes: [] },
     undefined,
   ).find((option) => option.id === toolId);
+  if (item === undefined) throw new Error(`no planner option for ${toolId}`);
   const models = buildRightModels({ role: 'planner', customModels: [], currentItem: item, cache });
   return buildRightRows({
     models,

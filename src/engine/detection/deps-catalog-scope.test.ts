@@ -183,10 +183,11 @@ describe.runIf(process.platform !== 'win32')('native catalog discovery scope', (
     ).toHaveLength(1);
 
     expect(forTool('codex')).toHaveLength(1);
-    for (const tool of ['kilo-code', 'copilot']) {
-      expect(forTool(tool).map((attempt) => attempt.outcome.kind)).toEqual(['not-run']);
-      expect(existsSync(join(shimDir, `${tool}.args`))).toBe(false);
-    }
+    expect(forTool('kilo-code').map((attempt) => attempt.outcome.kind)).toEqual(['not-run']);
+    expect(existsSync(join(shimDir, 'kilo-code.args'))).toBe(false);
+    // Copilot is unlisted, and this config does not name it.
+    expect(forTool('copilot')).toEqual([]);
+    expect(existsSync(join(shimDir, 'copilot.args'))).toBe(false);
     expect(forTool('claude-code')).toEqual([]);
   });
 
@@ -208,11 +209,11 @@ describe.runIf(process.platform !== 'win32')('native catalog discovery scope', (
       'cursor-agent': versionShim('cursor-agent', '2026.09.01-abc1234', [
         "printf '%s\\n' 'gpt-5.4'",
       ]),
-      copilot: versionShim('copilot', 'GitHub Copilot CLI 1.0.77.', [
-        "printf '%s\\n' 'model: gpt-5.4'",
-      ]),
       agy: versionShim('agy', '1.2.2', ["printf '%s\\t%s\\n' 'gemini-3-pro' 'Gemini 3 Pro'"]),
     } as const;
+    const copilotLog = versionShim('copilot', 'GitHub Copilot CLI 1.0.77.', [
+      "printf '%s\\n' 'model: gpt-5.4'",
+    ]);
 
     const deps = createProductionDetectionDeps({
       config: makeConfig({ planner: { kind: 'cli', tool: 'codex' } }),
@@ -223,12 +224,11 @@ describe.runIf(process.platform !== 'win32')('native catalog discovery scope', (
       signal: new AbortController().signal,
     });
 
-    expect(attempts).toHaveLength(7);
+    expect(attempts).toHaveLength(6);
     expect(attempts.map((attempt) => attempt.connection.tool).toSorted()).toEqual([
       'antigravity',
       'codex',
       'command-code',
-      'copilot',
       'cursor',
       'kilo-code',
       'opencode',
@@ -245,6 +245,7 @@ describe.runIf(process.platform !== 'win32')('native catalog discovery scope', (
       );
       expect(catalogLines.length, name).toBeLessThanOrEqual(1);
     }
+    expect(existsSync(copilotLog)).toBe(false);
   });
 });
 

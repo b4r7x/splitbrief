@@ -9,6 +9,7 @@ import {
   CLI_TOOL_IDS,
   cliModelPolicyViolations,
   getCliModelPolicy,
+  LISTED_CLI_TOOL_IDS,
   type CliAuthChannelId,
 } from '../../runners/cli-tool-catalog.js';
 import {
@@ -312,7 +313,7 @@ function buildCliConfig(
   const tool = opts.tool ?? (opts.existing?.kind === 'cli' ? opts.existing.tool : undefined);
   if (!tool) throw configError.runnerMissingField({ role, kind: 'cli', field: 'tool' });
   if (!includes(CLI_TOOL_IDS, tool)) {
-    throw configError.unknownCliTool(tool, CLI_TOOL_IDS);
+    throw configError.unknownCliTool(tool, LISTED_CLI_TOOL_IDS);
   }
 
   const target = { kind: 'cli' as const, id: tool };

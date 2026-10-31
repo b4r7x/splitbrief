@@ -29,7 +29,11 @@ import {
   PLANNER_API_PROVIDER_IDS,
 } from '../../../src/core/providers/api-provider-catalog.js';
 import { getProviderDisplayName } from '../../../src/core/providers/catalog.js';
-import { CLI_TOOL_IDS, PLANNER_CLI_TOOL_IDS } from '../../../src/core/runners/cli-tool-catalog.js';
+import {
+  CLI_TOOL_IDS,
+  isListedCliTool,
+  PLANNER_CLI_TOOL_IDS,
+} from '../../../src/core/runners/cli-tool-catalog.js';
 import {
   buildRightModels,
   countModelOptions,
@@ -246,7 +250,7 @@ describe('runner picker semantics integration', () => {
       expect(plannerCatalog.map((item) => item.id)).toEqual(
         expect.arrayContaining([
           'custom-command',
-          ...PLANNER_CLI_TOOL_IDS,
+          ...PLANNER_CLI_TOOL_IDS.filter(isListedCliTool),
           ...PLANNER_API_PROVIDER_IDS,
         ]),
       );

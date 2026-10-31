@@ -458,6 +458,8 @@ Full config schemas and YAML examples are in [CONFIGURATION.md](./CONFIGURATION.
 
 Spawns a CLI tool as a subprocess. Supported tools: `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code`, `antigravity`.
 
+Copilot is present but hidden: a config that names it runs, and no surface offers it (`UNLISTED_CLI_TOOL_IDS` in `src/core/runners/cli-tool-catalog.ts`). Turning it back on is one edit: that list becomes `[]`.
+
 Every planner call declares its transport before dispatch: the current call's final response (`stdout-final`) or an exact declared-file lease. The candidate is that call's authoritative final output; session files, project-root artifacts, markdown-linked paths, prose mentions, stderr, and earlier attempts are evidence at most, never content. Claude Code continues a session it already minted with `--resume`. Output is parsed line by line via each tool's protocol parser; a configured `outputFormat` cannot replace a structured terminal contract.
 
 The implementer writes files directly (`writesFiles: 'direct'`) inside the run's isolation directory, and change detection runs there. Claude Code uses the shared `invokeCliAdapter()` transport. A CLI configured with a smaller model than the planner's is one of the two canonical implementer setups -- see [Write modes](#write-modes).

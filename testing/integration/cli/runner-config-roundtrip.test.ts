@@ -157,15 +157,15 @@ const crossTargetCases: readonly CrossTargetCase[] = [
   },
   {
     label: 'subscription destination with the model omitted',
-    optionId: 'copilot',
+    optionId: 'command-code',
     model: null,
-    expected: { kind: 'cli', tool: 'copilot', effort: 'high' },
+    expected: { kind: 'cli', tool: 'command-code', effort: 'high' },
   },
   {
     label: 'automatic selection as the explicit auto sentinel',
-    optionId: 'copilot',
+    optionId: 'command-code',
     model: { id: AUTOMATIC_MODEL },
-    expected: { kind: 'cli', tool: 'copilot', model: AUTOMATIC_MODEL, effort: 'high' },
+    expected: { kind: 'cli', tool: 'command-code', model: AUTOMATIC_MODEL, effort: 'high' },
   },
   {
     label: 'local destination',

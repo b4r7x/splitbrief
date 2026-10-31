@@ -2893,9 +2893,10 @@ function usageLimitRecoveryIssue(
       currentTool: '',
       from: { tool: 'ollama', model: BASE_IMPLEMENTER.model },
       fallback: SEAT_FALLBACK,
-      detectedTools: ['opencode', 'codex', 'claude-code', 'cursor', 'copilot', 'kilo-code'].map(
-        (tool) => ({ tool, ready: true }),
-      ),
+      detectedTools: ['opencode', 'codex', 'claude-code', 'cursor', 'kilo-code'].map((tool) => ({
+        tool,
+        ready: true,
+      })),
     },
     createdAt: new Date(FIXED_TS).toISOString(),
     ...overrides,

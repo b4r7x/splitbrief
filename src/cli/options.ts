@@ -5,6 +5,7 @@ import {
   CLI_TOOL_CATALOG,
   IMPLEMENTER_CLI_TOOL_IDS,
   isCliToolId,
+  isListedCliTool,
 } from '../core/runners/cli-tool-catalog.js';
 import type { CliEffortChannel } from '../core/runners/effort-channel.js';
 import {
@@ -18,11 +19,13 @@ import type { EffortLevel, RecoveryAction } from '../core/schemas/enums.js';
 import type { SeatSwapCandidate } from '../core/schemas/recovery/schemas.js';
 import { SEAT_DOWN_POLICIES, type SeatDownPolicy } from '../core/types/config-options.js';
 
-const IMPLEMENTER_TOOL_IDS = [
+const LISTED_PLANNER_TOOL_IDS = PLANNER_TOOL_IDS.filter(isListedCliTool);
+
+const LISTED_IMPLEMENTER_TOOL_IDS = [
   ...IMPLEMENTER_CLI_TOOL_IDS,
   ...IMPLEMENTER_API_PROVIDER_IDS,
   ...META_PROVIDER_IDS,
-];
+].filter(isListedCliTool);
 
 export const ALLOW_REPO_RUNNERS_HELP =
   'Grant this run the shell/agent runner commands the project config declares (headless use)';
@@ -216,7 +219,7 @@ export function addWorkflowOptions(cmd: Command): Command {
     .option('--provider <provider>', 'Override implementer provider (alias for --implementer)')
     .option(
       '--planner <tool>',
-      `Planner tool or API provider; a CLI tool id always selects the CLI (custom API providers are YAML-only) (${PLANNER_TOOL_IDS.join(', ')})`,
+      `Planner tool or API provider; a CLI tool id always selects the CLI (custom API providers are YAML-only) (${LISTED_PLANNER_TOOL_IDS.join(', ')})`,
     )
     .option('--planner-model <model>', 'Planner model (CLI and API planners)')
     .option('--planner-command <cmd>', 'Custom planner command (when --planner=shell)')
@@ -239,7 +242,7 @@ export function addWorkflowOptions(cmd: Command): Command {
     )
     .option(
       '--implementer <provider>',
-      `Implementer provider or CLI tool; a CLI tool id always selects the CLI (custom API providers are YAML-only) (${IMPLEMENTER_TOOL_IDS.join(', ')})`,
+      `Implementer provider or CLI tool; a CLI tool id always selects the CLI (custom API providers are YAML-only) (${LISTED_IMPLEMENTER_TOOL_IDS.join(', ')})`,
     )
     .option('--implementer-model <model>', 'Implementer model')
     .option('--implementer-command <cmd>', 'Custom implementer command (when --implementer=shell)')
@@ -266,7 +269,7 @@ export function addWorkflowOptions(cmd: Command): Command {
     )
     .option(
       '--reviewer <tool>',
-      `Reviewer tool or API provider; a CLI tool id always selects the CLI (custom API providers are YAML-only) (${PLANNER_TOOL_IDS.join(', ')})`,
+      `Reviewer tool or API provider; a CLI tool id always selects the CLI (custom API providers are YAML-only) (${LISTED_PLANNER_TOOL_IDS.join(', ')})`,
     )
     .option('--reviewer-model <model>', 'Reviewer model (CLI and API reviewers)')
     .option('--reviewer-command <cmd>', 'Custom reviewer command (when --reviewer=shell)')
