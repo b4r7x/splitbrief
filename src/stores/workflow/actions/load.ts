@@ -5,9 +5,8 @@ import { updateOperations } from '../operations/reducer.js';
 import { _operationsInternal } from '../operations/state.js';
 import { _runViewInternal, runViewStore } from '../run-view.js';
 import { reduceRunView } from '../../../core/run-view/reduce.js';
-import { _tasksInternal } from '../tasks.js';
 import { _tokensInternal, updateTokens } from '../tokens.js';
-import { reduceLifecycle, reduceTasks } from './event.js';
+import { reduceLifecycle } from './event.js';
 import { resetWorkflowHistory } from './reset.js';
 
 // Hydration counterpart of addEvent: the same reducers, folded over a replayed log and committed
@@ -29,7 +28,6 @@ export function loadEvents(events: EngineEvent[]): void {
   }
 
   _eventsInternal.set((state) => ({ ...state, events: mergeEventLog(reduced) }));
-  _tasksInternal.set((state) => reduced.reduce(reduceTasks, state));
   _tokensInternal.set((state) => events.reduce(updateTokens, state));
   _lifecycleInternal.set(lifecycle);
   _operationsInternal.set((state) => reduced.reduce(updateOperations, state));

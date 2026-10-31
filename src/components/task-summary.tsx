@@ -18,7 +18,8 @@ import {
 import { countNoun } from '../utils/pluralize.js';
 import { glyph, type GlyphName } from '../lib/glyphs.js';
 import { ROW_LEADING } from './row-leading.js';
-import { formatTaskHeading, type WorkflowTask } from '../stores/workflow/tasks.js';
+import { formatTaskHeading } from '../core/run-view/brief-labels.js';
+import type { WorkflowTask } from '../core/run-view/briefs.js';
 import { stateTone, type StateTone } from '../core/theme/state-tone.js';
 
 // The transcript's leading: the shared one-cell pad the hover bar paints into, then the marker and

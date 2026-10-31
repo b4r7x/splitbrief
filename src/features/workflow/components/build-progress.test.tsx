@@ -7,14 +7,13 @@ import {
   makeRunnerCallStarted,
   makeRunnerCallStalled,
 } from '#testing/helpers/events/runner-call.js';
-import { resetAllStores } from '#testing/helpers/stores.js';
+import { resetAllStores, seedBriefs } from '#testing/helpers/stores.js';
 import { defaultTheme, ThemeText as Text } from '../../../components/theme.js';
 import { configStore } from '../../../stores/project/config.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { markWorkflowPaused } from '../../../stores/workflow/actions/pause.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
-import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { BuildProgressBlock } from './build-progress.js';
 
@@ -45,7 +44,7 @@ beforeEach(() => {
   configStore.__testReset({ projectDir: '/tmp/project', config: makeConfig() });
   runViewStore.__testReset({ phase: 'implementing' });
   lifecycleStore.__testReset({ status: 'running' });
-  tasksStore.__testReset({
+  seedBriefs({
     totalTasks: 3,
     currentAttempt: 1,
     tasks: [
@@ -87,7 +86,7 @@ describe('BuildProgressBlock', () => {
     expect(first.lastFrame() ?? '').not.toContain('ETA');
     first.unmount();
 
-    tasksStore.__testReset({ ...tasksStore.get(), currentAttempt: 2 });
+    seedBriefs({ ...runViewStore.get().briefs, currentAttempt: 2 });
     const retry = renderFeature(<BuildProgressBlock cols={120} />);
     expect(stripAnsiStyles(retry.lastFrame() ?? '')).toContain('1/3 briefs passed · attempt 2');
     retry.unmount();

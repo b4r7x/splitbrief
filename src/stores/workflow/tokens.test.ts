@@ -3,7 +3,7 @@ import { tokensStore, updateTokens } from './tokens.js';
 import { addEvent } from './actions/event.js';
 import { markCancellationRequested } from './actions/interrupt.js';
 import { resetWorkflow } from './actions/reset.js';
-import { makeTaskComplete, makeCostUpdate, makeTaskSkipped } from '#testing/helpers/events/task.js';
+import { makeCostUpdate } from '#testing/helpers/events/task.js';
 import { taskId } from '../../core/schemas/task.js';
 import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
 import type { EngineEvent } from '../../engine/events/types.js';
@@ -37,10 +37,6 @@ function makeTaskTokens(overrides?: Partial<TaskTokensEvent>): EngineEvent {
     retryCount: 0,
     ...overrides,
   };
-}
-
-function makeTaskReset(id = 'T001'): EngineEvent {
-  return { type: 'task_reset', ts: Date.now(), phase: 'implementing', taskId: taskId(id) };
 }
 
 describe('tokensStore — cost-update', () => {
@@ -159,22 +155,6 @@ describe('tokensStore — final-review phase attribution', () => {
   });
 });
 
-describe('tokensStore — task-complete counters', () => {
-  beforeEach(() => resetWorkflow());
-
-  it('does not count workflow lifecycle events as completed tasks', () => {
-    addEvent({ type: 'workflow_started', ts: Date.now(), phase: 'idle', feature: 'test' });
-
-    expect(tokensStore.get().completedTaskCount).toBe(0);
-  });
-
-  it('counts skipped tasks as completed task slots', () => {
-    addEvent(makeTaskSkipped());
-
-    expect(tokensStore.get().completedTaskCount).toBe(1);
-  });
-});
-
 describe('tokensStore — per-task attempt accumulation', () => {
   beforeEach(() => resetWorkflow());
 
@@ -250,44 +230,5 @@ describe('tokensStore — per-task attempt accumulation', () => {
       implementerTokens: 0,
       implementerCacheReadTokens: 1_000_000,
     });
-  });
-
-  it('task_reset undoes the prior completion count so a redo does not double-count', () => {
-    addEvent(makeTaskComplete({ method: 'local' }));
-    addEvent(makeTaskTokens({ method: 'local', implementerTokens: 100 }));
-    expect(tokensStore.get().completedTaskCount).toBe(1);
-
-    addEvent(makeTaskReset());
-    expect(tokensStore.get().completedTaskCount).toBe(0);
-
-    addEvent(makeTaskComplete({ method: 'local' }));
-    addEvent(makeTaskTokens({ method: 'local', implementerTokens: 200, retryCount: 0 }));
-    expect(tokensStore.get().completedTaskCount).toBe(1);
-
-    const record = tokensStore.get().perTask['T001'];
-    expect(record?.attempts).toHaveLength(2);
-    expect(record?.totalTokens).toBe(300);
-  });
-
-  it('task_reset undoes an escalated completion when the last attempt escalated', () => {
-    addEvent(makeTaskComplete({ method: 'escalated-full' }));
-    addEvent(
-      makeTaskTokens({ method: 'escalated-full', implementerTokens: 0, escalationTokens: 80 }),
-    );
-    expect(tokensStore.get().completedTaskCount).toBe(1);
-
-    addEvent(makeTaskReset());
-    expect(tokensStore.get().completedTaskCount).toBe(0);
-  });
-
-  it('task_reset for a never-completed task leaves earlier tasks counted (recovery retry path)', () => {
-    addEvent(makeTaskComplete({ method: 'local', taskId: taskId('T001') }));
-    addEvent(makeTaskTokens({ taskId: taskId('T001'), method: 'local', implementerTokens: 100 }));
-    expect(tokensStore.get().completedTaskCount).toBe(1);
-
-    addEvent(makeTaskReset('T002'));
-
-    const s = tokensStore.get();
-    expect(s.completedTaskCount).toBe(1);
   });
 });

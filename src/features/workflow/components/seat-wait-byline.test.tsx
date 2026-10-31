@@ -11,7 +11,7 @@ import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js'
 import { configStore } from '../../../stores/project/config.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
-import { tasksStore } from '../../../stores/workflow/tasks.js';
+import { seedBriefs } from '#testing/helpers/stores.js';
 import { _runViewInternal, runViewStore } from '../../../stores/workflow/run-view.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { hydrateFromState } from '../../../stores/workflow/actions/hydrate.js';
@@ -50,7 +50,7 @@ describe('seatWait byline', () => {
       },
     });
     lifecycleStore.__testReset();
-    tasksStore.__testReset();
+    seedBriefs();
     runViewStore.reset();
   });
 
@@ -59,7 +59,7 @@ describe('seatWait byline', () => {
     configStore.__testReset();
     routerStore.init({ screen: 'home' });
     lifecycleStore.__testReset();
-    tasksStore.__testReset();
+    seedBriefs();
     runViewStore.reset();
     terminalSizeStore.reset();
   });
@@ -94,7 +94,7 @@ describe('seatWait byline', () => {
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'paused' });
     seedWait('codex', resetAt);
-    tasksStore.__testReset({
+    seedBriefs({
       currentTask: 2,
       totalTasks: 2,
       tasks: [
@@ -150,7 +150,7 @@ describe('seatWait byline', () => {
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'paused' });
     seedWait('codex', resetAt, false);
-    tasksStore.__testReset({
+    seedBriefs({
       currentTask: 2,
       totalTasks: 2,
       tasks: [
@@ -169,7 +169,7 @@ describe('seatWait byline', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'paused' });
-    tasksStore.__testReset({
+    seedBriefs({
       currentTask: 2,
       totalTasks: 2,
       tasks: [
@@ -189,7 +189,7 @@ describe('seatWait byline', () => {
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'paused' });
     seedWait('codex', resetAt);
-    tasksStore.__testReset({
+    seedBriefs({
       currentTask: 2,
       totalTasks: 2,
       tasks: [

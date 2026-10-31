@@ -1,5 +1,5 @@
 import type { Phase } from '../../../core/schemas/enums.js';
-import { selectTaskListView, type TasksState } from '../../../stores/workflow/tasks.js';
+import { selectTaskListView, type RunBriefs } from '../../../core/run-view/briefs.js';
 import { resolveGlyphTier } from '../../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import {
@@ -88,7 +88,7 @@ export function buildRailFraction(stage: RailStage, passed: number, total: numbe
 // 'cancelled' (not 'active'), so it resolves to '' and the rail paints the cancelled suffix instead.
 export function resolveRailFraction(input: {
   phase: Phase;
-  tasks: TasksState;
+  tasks: RunBriefs;
   cancelled: boolean;
   buildBlockShown: boolean;
 }): string {

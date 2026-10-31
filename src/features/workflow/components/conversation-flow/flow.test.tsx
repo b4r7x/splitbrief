@@ -10,7 +10,7 @@ import { streamingOutputStore } from '../../../../stores/workflow/streaming-outp
 import { eventsStore } from '../../../../stores/workflow/events.js';
 import { lifecycleStore } from '../../../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../../../stores/workflow/run-view.js';
-import { tasksStore } from '../../../../stores/workflow/tasks.js';
+import { seedBriefs } from '#testing/helpers/stores.js';
 import { addEvent } from '../../../../stores/workflow/actions/event.js';
 import { taskId } from '../../../../core/schemas/task.js';
 import { CREW_SEAT_LABELS } from '../../../../core/crew/identity.js';
@@ -256,7 +256,7 @@ describe('ConversationFlow', () => {
     conversationScrollStore.reset();
     streamingOutputStore.__testReset();
     lifecycleStore.__testReset();
-    tasksStore.__testReset();
+    seedBriefs();
     controlsStore.__testReset();
     terminalSizeStore.__testReset({ cols: 90, rows: 30, isSmall: true });
   });
@@ -672,7 +672,9 @@ describe('ConversationFlow', () => {
     expect(frame).not.toContain('Completed');
     expect(frame).not.toContain('briefs passed');
     expect(frame).toContain('T001');
-    expect(tasksStore.get().tasks.find((task) => task.id === 'T001')?.status).toBe('in_progress');
+    expect(runViewStore.get().briefs.tasks.find((task) => task.id === 'T001')?.status).toBe(
+      'in_progress',
+    );
     expect(frame).not.toContain('+0 earlier');
 
     ui.unmount();
@@ -770,7 +772,7 @@ describe('ConversationFlow', () => {
 
   it('renders pending tasks as queued ○ rows below the live transcript', () => {
     const events = makeActivityReads(['src/a.ts']);
-    tasksStore.__testReset({
+    seedBriefs({
       tasks: [{ id: taskId('T002'), title: 'wire login route', status: 'pending' }],
     });
     terminalSizeStore.__testReset({ cols: 90, rows: 30, isSmall: true });
@@ -786,7 +788,7 @@ describe('ConversationFlow', () => {
 
   it('heads the not-started briefs with the word the task status uses, not the message queue word', () => {
     const events = makeActivityReads(['src/a.ts']);
-    tasksStore.__testReset({
+    seedBriefs({
       tasks: [{ id: taskId('T002'), title: 'wire login route', status: 'pending' }],
     });
     terminalSizeStore.__testReset({ cols: 90, rows: 30, isSmall: true });
@@ -805,7 +807,7 @@ describe('ConversationFlow', () => {
   it('uses one space after Queued, Delivered and Pending labels', () => {
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'running' });
-    tasksStore.__testReset({
+    seedBriefs({
       tasks: [{ id: taskId('T004'), title: 'Next brief', status: 'pending' }],
     });
     const ui = renderConversation(
@@ -842,7 +844,7 @@ describe('ConversationFlow', () => {
   it('says how many briefs the pending block cannot show, inside its own row budget', () => {
     const events = makeActivityReads(['src/a.ts']);
     const titles = ['one', 'two', 'three', 'four', 'five', 'six'].map((word) => `brief ${word}`);
-    tasksStore.__testReset({
+    seedBriefs({
       tasks: titles.map((title, index) => ({
         id: taskId(`T00${index + 2}`),
         title,
@@ -867,14 +869,16 @@ describe('ConversationFlow', () => {
 
   it('leaves the brief a recovery set back to pending out of the pending block while the run is on it', () => {
     const events = makeActivityReads(['src/a.ts']);
-    tasksStore.__testReset({
-      currentTask: 1,
-      tasks: [
-        { id: taskId('T001'), title: 'retried brief', status: 'pending' },
-        { id: taskId('T002'), title: 'next brief', status: 'pending' },
-      ],
+    runViewStore.__testReset({
+      phase: 'implementing',
+      briefs: {
+        currentTask: 1,
+        tasks: [
+          { id: taskId('T001'), title: 'retried brief', status: 'pending' },
+          { id: taskId('T002'), title: 'next brief', status: 'pending' },
+        ],
+      },
     });
-    runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'running' });
     terminalSizeStore.__testReset({ cols: 90, rows: 30, isSmall: true });
 
@@ -890,7 +894,7 @@ describe('ConversationFlow', () => {
 
   it('keeps the queued block while the sidebar is suppressed below its column breakpoint', () => {
     const events = makeActivityReads(['src/a.ts']);
-    tasksStore.__testReset({
+    seedBriefs({
       tasks: [{ id: taskId('T002'), title: 'wire login route', status: 'pending' }],
     });
     controlsStore.setSidebar(true);
@@ -905,7 +909,7 @@ describe('ConversationFlow', () => {
 
   it('stands the queued block down while the sidebar renders the same pending list', () => {
     const events = makeActivityReads(['src/a.ts']);
-    tasksStore.__testReset({
+    seedBriefs({
       tasks: [{ id: taskId('T002'), title: 'wire login route', status: 'pending' }],
     });
     controlsStore.setSidebar(true);
@@ -922,7 +926,7 @@ describe('ConversationFlow', () => {
 
   it('gives the transcript the rows the queued block no longer reserves', () => {
     const events = Array.from({ length: 12 }, (_, index) => makePlannerText(index));
-    tasksStore.__testReset({
+    seedBriefs({
       tasks: [
         { id: taskId('T002'), title: 'wire login route', status: 'pending' },
         { id: taskId('T003'), title: 'wire logout route', status: 'pending' },

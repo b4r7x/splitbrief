@@ -13,7 +13,7 @@ import {
 } from './hit-test.js';
 import type { WorkflowContentRect } from './rect.js';
 import { getChromeContentWidth, WORKFLOW_GUTTER_X } from './chrome-rows.js';
-import { tasksStore } from '../../../stores/workflow/tasks.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
 
 function zoneByIndex(zones: RailStageZone[], index: number): RailStageZone {
   const zone = zones.find((z) => z.index === index);
@@ -219,7 +219,7 @@ describe('resolveRailFraction', () => {
     expect(
       resolveRailFraction({
         phase: 'implementing',
-        tasks: { ...tasksStore.get(), currentTask: 3, totalTasks: 7 },
+        tasks: { ...runViewStore.get().briefs, currentTask: 3, totalTasks: 7 },
         cancelled: false,
         buildBlockShown: false,
       }),
@@ -230,7 +230,7 @@ describe('resolveRailFraction', () => {
     expect(
       resolveRailFraction({
         phase: 'implementing',
-        tasks: { ...tasksStore.get(), currentTask: 3, totalTasks: 7 },
+        tasks: { ...runViewStore.get().briefs, currentTask: 3, totalTasks: 7 },
         cancelled: true,
         buildBlockShown: false,
       }),
@@ -241,7 +241,7 @@ describe('resolveRailFraction', () => {
     expect(
       resolveRailFraction({
         phase: 'final-review',
-        tasks: { ...tasksStore.get(), currentTask: 7, totalTasks: 7 },
+        tasks: { ...runViewStore.get().briefs, currentTask: 7, totalTasks: 7 },
         cancelled: false,
         buildBlockShown: false,
       }),

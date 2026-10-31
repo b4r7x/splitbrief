@@ -8,7 +8,7 @@ import { conversationScrollStore } from '../../../src/stores/workflow/conversati
 import { eventsStore } from '../../../src/stores/workflow/events.js';
 import { lifecycleStore } from '../../../src/stores/workflow/lifecycle.js';
 import { streamingOutputStore } from '../../../src/stores/workflow/streaming-output.js';
-import { tasksStore } from '../../../src/stores/workflow/tasks.js';
+import { seedBriefs } from '#testing/helpers/stores.js';
 import { hoverStore } from '../../../src/stores/ui/hover.js';
 import { glyph } from '../../../src/lib/glyphs.js';
 import { resetConversationRowsProjectionCache } from '../../../src/features/workflow/conversation-rows/projection-cache.js';
@@ -43,7 +43,7 @@ describe.skipIf(process.env.SPLITBRIEF_PERF !== '1')('conversation flow hover pe
     conversationScrollStore.reset();
     streamingOutputStore.__testReset();
     lifecycleStore.__testReset();
-    tasksStore.__testReset();
+    seedBriefs();
     hoverStore.clear();
 
     const events = largeConversation(4_000);

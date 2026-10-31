@@ -13,7 +13,7 @@ import {
 import { glyph } from '../lib/glyphs.js';
 import { getTerminalCellWidth } from '../utils/display-text.js';
 import { getMethodDisplay } from '../core/sessions/display.js';
-import { taskTargetParts } from '../stores/workflow/tasks.js';
+import { taskTargetParts } from '../core/run-view/brief-labels.js';
 import { stageSummaryRow } from '../features/workflow/components/conversation-flow/stage-summary.js';
 
 const originalForceColor = vi.hoisted(() => {

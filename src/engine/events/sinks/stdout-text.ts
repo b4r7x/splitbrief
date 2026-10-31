@@ -3,7 +3,7 @@ import { fixCheckVerdict } from '../../../core/review/fix-task.js';
 import { stuckAnswerWords } from '../../../core/review/stuck.js';
 import { setAsideLine } from '../../../core/review/verdict.js';
 import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
-import { EMPTY_RUN_VIEW, reduceRunView } from '../../../core/run-view/reduce.js';
+import { EMPTY_RUN_VIEW, reduceRunView, type RunView } from '../../../core/run-view/reduce.js';
 import { seatWaitParts } from '../../../core/sessions/seat-wait-line.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { checksSummary } from '../../../core/validation/checks-summary.js';
@@ -118,6 +118,10 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
   return `${label} ${event.id}: ${event.passed === true ? 'passed' : 'failed'}${reused} (${event.command})`;
 }
 
+function briefChecks(view: RunView, taskId: string): string {
+  return checksSummary(view.briefs.checks.get(taskId) ?? []);
+}
+
 /**
  * The `--plain` projection: a few line shapes and nothing else, so a script can
  * read a run with `grep` and a human can read it without a JSON parser. The
@@ -164,7 +168,6 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
  */
 export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSink {
   const output = opts.output ?? process.stdout;
-  const checks = new Map<string, string>();
   let view = EMPTY_RUN_VIEW;
 
   function write(line: string): void {
@@ -189,9 +192,6 @@ export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSin
             `attached files: ${bounded.attachedInputs.map((input) => `${stripTerminalControls(input.path)} (${input.kind})`).join('; ')}`,
           );
         return;
-      case 'checks_run':
-        checks.set(bounded.taskId, checksSummary(bounded.results));
-        return;
       case 'seat_wait_started': {
         // A start the view did not take (no tool) writes nothing.
         const wait = view.seatWait === previous.seatWait ? null : view.seatWait;
@@ -212,11 +212,11 @@ export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSin
         write(stalledLine(bounded));
         return;
       case 'task_completed':
-        write(`task ${bounded.taskId}: done (${checks.get(bounded.taskId) ?? 'no checks'})`);
+        write(`task ${bounded.taskId}: done (${briefChecks(view, bounded.taskId)})`);
         return;
       case 'task_full_fail':
         write(
-          `task ${bounded.taskId}: failed (${bounded.reason ?? checks.get(bounded.taskId) ?? 'no checks'})`,
+          `task ${bounded.taskId}: failed (${bounded.reason ?? briefChecks(view, bounded.taskId)})`,
         );
         return;
       case 'task_skipped':
@@ -258,7 +258,7 @@ export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSin
         return;
       case 'workflow_complete': {
         // The run's count from its state: a continue completes only the briefs it had left.
-        write(`done: ${bounded.completedTasks ?? 0} tasks`);
+        write(`done: ${view.briefs.completedTasks ?? 0} tasks`);
         return;
       }
       default:

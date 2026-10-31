@@ -532,6 +532,24 @@ describe('createStdoutTextSink', () => {
     ]);
   });
 
+  it('a failed task with no reason reads the checks its brief last ran', () => {
+    const lines = collect([
+      {
+        type: 'checks_run',
+        ts,
+        phase: 'implementing',
+        taskId: taskId('T002'),
+        results: [
+          { id: 'K1', status: 'pass' },
+          { id: 'K2', status: 'fail' },
+        ],
+      },
+      { type: 'task_full_fail', ts, phase: 'implementing', taskId: taskId('T002') },
+    ]);
+
+    expect(lines).toEqual(['phase: implementing', 'task T002: failed (1 of 2 checks passed)']);
+  });
+
   it('a task that ran no check reads no checks', () => {
     const lines = collect([
       {

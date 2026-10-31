@@ -14,7 +14,7 @@ import { streamingOutputStore } from '../../../../stores/workflow/streaming-outp
 import { transcriptTailStore } from '../../../../stores/workflow/transcript-tail.js';
 import { lifecycleStore } from '../../../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../../../stores/workflow/run-view.js';
-import { formatTaskHeading, tasksStore } from '../../../../stores/workflow/tasks.js';
+import { formatTaskHeading } from '../../../../core/run-view/brief-labels.js';
 import { useSections } from '../../../../stores/workflow/actions/sections.js';
 import { useStores } from '../../../../stores/use-stores.js';
 import type { ConversationRowBlock } from '../../conversation-rows/types.js';
@@ -69,7 +69,6 @@ export function ConversationFlow({
     },
     streaming,
     lifecycle,
-    tasks,
     controls,
     terminalSize,
     recovery,
@@ -79,7 +78,6 @@ export function ConversationFlow({
     conversationScrollStore,
     streamingOutputStore,
     lifecycleStore,
-    tasksStore,
     controlsStore,
     terminalSizeStore,
     recoveryNoticeStore,
@@ -105,7 +103,7 @@ export function ConversationFlow({
       sidebarVisible: controls.sidebarVisible,
     }) > 0;
   const pendingTasks = queuedBriefs({
-    tasks,
+    tasks: runView.briefs,
     phase: runView.phase,
     sidebarShowsTasks,
     closed: closedAtRest,

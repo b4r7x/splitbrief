@@ -39,7 +39,7 @@ import { runViewStore } from '../stores/workflow/run-view.js';
 import { queueCopy } from '../features/workflow/queue-copy.js';
 import { messageSeat } from '../core/queue-state.js';
 import { operationsStore, selectScheduledReview } from '../stores/workflow/operations/state.js';
-import { selectRunningBrief, tasksStore } from '../stores/workflow/tasks.js';
+import { selectRunningBrief } from '../core/run-view/briefs.js';
 import { projectFilesStore } from '../stores/ui/project-files.js';
 import { skillsStore } from '../stores/project/skills.js';
 import { refreshSkills } from './refresh-skills.js';
@@ -399,10 +399,10 @@ export function buildCommandContext({
     },
     endRun: requestEndRun,
     getQueueCopy: (count) => {
-      const { phase } = runViewStore.get();
+      const { phase, briefs } = runViewStore.get();
       return queueCopy({
         seat: messageSeat(phase, selectScheduledReview(operationsStore.get())),
-        taskId: selectRunningBrief(tasksStore.get(), phase).current?.id,
+        taskId: selectRunningBrief(briefs, phase).current?.id,
         count: count ?? lifecycleStore.get().queueDepth,
       });
     },
@@ -423,7 +423,7 @@ export function buildCommandContext({
     scrollConversation: (target) => scrollConversation(target, workflow.readScrollMetrics),
     toggleLatestActivityBatch: () => toggleLatestActivityBatch(workflow.getRowActions),
     toggleLatestDiff: () => toggleLatestDiff(workflow.getRowActions),
-    listBriefs: () => tasksStore.get().tasks.map(({ id, status }) => ({ id, status })),
+    listBriefs: () => runViewStore.get().briefs.tasks.map(({ id, status }) => ({ id, status })),
     copyTarget: (target) => copyTarget(target, workflow.resolveCopyValue),
     toggleSidebar: () => {
       // The layout owns the breakpoint: at exactly 120 columns `isSmall` is false while

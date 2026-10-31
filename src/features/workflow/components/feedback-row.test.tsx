@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Text } from 'ink';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
-import { resetAllStores } from '#testing/helpers/stores.js';
+import { resetAllStores, seedBriefs } from '#testing/helpers/stores.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
@@ -14,7 +14,6 @@ import { REVIEW_HINT } from '../review-commands.js';
 import { KEY_LEGEND_LEADING } from '../../../core/key-legend.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { formatCopyResult } from '../../../core/runtime/commands/types.js';
-import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { clearAllHandlers, requestSeatChangeAtBoundary } from '../handlers.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { FeedbackRow, RUNNING_LEGEND } from './feedback-row.js';
@@ -271,7 +270,7 @@ describe('FeedbackRow', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'running' });
-    tasksStore.__testReset({
+    seedBriefs({
       tasks: [{ id: 'T001', title: 'first', status: 'in_progress' }],
       currentTask: 1,
       totalTasks: 1,

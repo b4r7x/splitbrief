@@ -20,7 +20,7 @@ import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
-import { tasksStore } from '../../../stores/workflow/tasks.js';
+import { seedBriefs } from '#testing/helpers/stores.js';
 import {
   operationsStore,
   type RunningOperation,
@@ -91,7 +91,7 @@ describe('InputFooter', () => {
     });
     conversationScrollStore.__testReset();
     lifecycleStore.__testReset();
-    tasksStore.__testReset();
+    seedBriefs();
     tokensStore.__testReset();
     operationsStore.__testReset();
   });
@@ -106,7 +106,7 @@ describe('InputFooter', () => {
     stopStore.__testReset();
     conversationScrollStore.__testReset();
     lifecycleStore.__testReset();
-    tasksStore.__testReset();
+    seedBriefs();
     tokensStore.__testReset();
     operationsStore.__testReset();
   });
@@ -394,31 +394,31 @@ describe('InputFooter', () => {
   // it parked.
   it('names no retired git automation while running or at rest, and keeps progress and pause', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    tasksStore.__testReset({
-      currentTask: 2,
-      totalTasks: 3,
-      tasks: [
-        { id: 'T001', title: 'T1', status: 'done' as const },
-        { id: 'T002', title: 'T2', status: 'in_progress' as const },
-        { id: 'T003', title: 'T3', status: 'pending' as const },
-      ],
-    });
 
-    runViewStore.__testReset({ phase: 'implementing' });
+    runViewStore.__testReset({
+      phase: 'implementing',
+      briefs: {
+        currentTask: 2,
+        totalTasks: 3,
+        tasks: [
+          { id: 'T001', title: 'T1', status: 'done' as const },
+          { id: 'T002', title: 'T2', status: 'in_progress' as const },
+          { id: 'T003', title: 'T3', status: 'pending' as const },
+        ],
+      },
+    });
     lifecycleStore.__testReset({ status: 'running', startedAt: Date.now() });
     const running = renderFeature(<InputFooter />);
     const runningFrame = stripAnsiStyles(running.lastFrame() ?? '');
     expect(runningFrame).toMatch(/Implementing…/);
     running.unmount();
 
-    runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'complete' });
     const atRest = renderFeature(<InputFooter />);
     const atRestFrame = stripAnsiStyles(atRest.lastFrame() ?? '');
     expect(atRestFrame).toContain('1/3');
     atRest.unmount();
 
-    runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'paused' });
     stopStore.request('stop-now');
     stopStore.park('mid-brief', 'T002', null);
@@ -463,7 +463,7 @@ describe('InputFooter', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'complete' });
-    tasksStore.__testReset({
+    seedBriefs({
       currentTask: 3,
       totalTasks: 7,
       tasks: [
@@ -486,7 +486,7 @@ describe('InputFooter', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'running' });
-    tasksStore.__testReset({
+    seedBriefs({
       currentTask: 3,
       totalTasks: 4,
       tasks: [
@@ -510,7 +510,7 @@ describe('InputFooter', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ cancelled: true });
-    tasksStore.__testReset({
+    seedBriefs({
       currentTask: 1,
       totalTasks: 1,
       tasks: [{ id: 'T001', title: 'T1', status: 'done' as const }],
@@ -570,7 +570,7 @@ describe('InputFooter', () => {
     terminalSizeStore.__testReset({ cols: 48, rows: 24, isSmall: true });
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ cancelled: true });
-    tasksStore.__testReset({
+    seedBriefs({
       currentTask: 1,
       totalTasks: 4,
       tasks: [{ id: 'T001', title: 'T1', status: 'done' as const }],
@@ -786,7 +786,7 @@ describe('InputFooter', () => {
         execution: { kind: 'at-rest' },
       });
       hydrateFromState(state);
-      tasksStore.__testReset({
+      seedBriefs({
         currentTask: 1,
         totalTasks: 1,
         tasks: [{ id: 'T003', title: 'Running brief', status: 'in_progress' }],
@@ -911,7 +911,7 @@ describe('InputFooter', () => {
     terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: false });
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'running', queueDepth: 1 });
-    tasksStore.__testReset({
+    seedBriefs({
       currentTask: 1,
       totalTasks: 1,
       tasks: [{ id: 'T003', title: 'Running brief', status: 'in_progress' }],
@@ -937,7 +937,7 @@ describe('InputFooter', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'running', queueDepth: 1 });
-    tasksStore.__testReset({
+    seedBriefs({
       currentTask: 1,
       totalTasks: 1,
       tasks: [{ id: 'T003', title: 'Running brief', status: 'in_progress' }],
@@ -969,7 +969,7 @@ describe('InputFooter', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'running', queueDepth: 1 });
-    tasksStore.__testReset({
+    seedBriefs({
       currentTask: 1,
       totalTasks: 2,
       tasks: [
@@ -990,7 +990,7 @@ describe('InputFooter', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'running', queueDepth: 1 });
-    tasksStore.__testReset({
+    seedBriefs({
       currentTask: 1,
       totalTasks: 2,
       tasks: [
@@ -1120,7 +1120,7 @@ describe('InputFooter', () => {
   it('a seat saved under a running brief keeps the live status and claims no finish', () => {
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'running' });
-    tasksStore.__testReset({
+    seedBriefs({
       tasks: [{ id: 'T001', title: 'first', status: 'in_progress' }],
       currentTask: 1,
       totalTasks: 1,
@@ -1233,7 +1233,7 @@ describe('InputFooter', () => {
     chalk.level = 3;
     runViewStore.__testReset({ phase: 'final-review' });
     lifecycleStore.__testReset({ status: 'running' });
-    tasksStore.__testReset({
+    seedBriefs({
       totalTasks: 5,
       tasks: [
         { id: 'T001', title: 'One', status: 'done' },
@@ -1267,7 +1267,7 @@ describe('InputFooter', () => {
     runViewStore.__testReset({ phase });
     lifecycleStore.__testReset({ status: 'paused' });
     if (brief !== null) {
-      tasksStore.__testReset({
+      seedBriefs({
         currentTask: 2,
         totalTasks: 2,
         tasks: [

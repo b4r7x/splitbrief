@@ -1,5 +1,4 @@
 import { eventsStore } from '../../src/stores/workflow/events.js';
-import { tasksStore } from '../../src/stores/workflow/tasks.js';
 import { tokensStore } from '../../src/stores/workflow/tokens.js';
 import { lifecycleStore } from '../../src/stores/workflow/lifecycle.js';
 import { stopStore } from '../../src/stores/workflow/stop.js';
@@ -38,12 +37,12 @@ import { projectFilesStore } from '../../src/stores/ui/project-files.js';
 import { questionPromptStore } from '../../src/stores/question-prompt/prompt.js';
 import { operationsStore } from '../../src/stores/workflow/operations/state.js';
 import { runViewStore } from '../../src/stores/workflow/run-view.js';
+import type { RunBriefs } from '../../src/core/run-view/briefs.js';
 import { recoveryNoticeStore } from '../../src/stores/workflow/recovery-notice.js';
 import { __testDiscardPending as discardPendingSessionDrafts } from '../../src/stores/ui/session-drafts.js';
 
 export function resetAllStores(): void {
   eventsStore.reset();
-  tasksStore.reset();
   tokensStore.reset();
   lifecycleStore.reset();
   stopStore.reset();
@@ -84,4 +83,9 @@ export function resetAllStores(): void {
   operationsStore.reset();
   runViewStore.reset();
   discardPendingSessionDrafts();
+}
+
+/** The run view's briefs, seeded over the rest of the view a test already set. */
+export function seedBriefs(briefs: Partial<RunBriefs> = {}): void {
+  runViewStore.__testReset({ ...runViewStore.get(), briefs });
 }

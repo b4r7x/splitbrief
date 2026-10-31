@@ -170,7 +170,7 @@ Each CLI subcommand has its own handler in `src/cli/commands/`. The commands tha
    - `createHookSink` (`src/engine/hooks/sink.ts`) dispatches matching `post_*`/`on_*` workflow hooks fire-and-forget. `pre_*` hooks are run synchronously at the orchestrator call site via `run-pre.ts`.
 
    `saveState()` writes to `.splitbrief/sessions/<id>/state.json` on every phase transition.
-7. TUI components subscribe to slices of workflow stores via `store.use(selector)` and re-render only when their slice changes. The phase and the time the run first entered each phase live on the run view (`runViewStore`, folded by `reduceRunView` in `src/core/run-view/reduce.ts`). The live screen, a run at rest and the `--plain` sink read that one fold; a run read back from disk takes the saved phase of `state.json` through `settleRunView`.
+7. TUI components subscribe to slices of workflow stores via `store.use(selector)` and re-render only when their slice changes. The phase, the time the run first entered each phase, the seat wait and the briefs live on the run view (`runViewStore`, folded by `reduceRunView` in `src/core/run-view/reduce.ts`). The live screen, a run at rest and the `--plain` sink read that one fold; a run read back from disk takes the saved phase and brief list of `state.json` through `settleRunView`.
 8. For user-gated moments (approval, clarification, continuation, and protected-write confirmations), the engine `await`s callbacks such as `callbacks.onApprovalNeeded(…)`, `callbacks.onPlannerReply(…)`, `callbacks.onContinuationNeeded(…)` and `callbacks.onTieredApproval(…)`. These gating callbacks are **not** the same channel as event emission — events fan out through the `EventBus` (pub/sub, fire-and-forget); gates remain discrete async request/response pairs supplied by the workflow caller (CLI TUI for interactive runs, `runHeadless` stubs for `--json`). The UI fulfils gates by switching input mode and resolving the awaited promise.
 9. **Queue**: Enter with text appends a message to `WorkflowState.messageQueue` during a live run. `phaseStage(phase)` names its seat: PLAN, BUILD, or REVIEW. The lifecycle store counts message ids until their first delivery to any seat. `ctrl+⏎` with text stops now and continues with the text, like `/steer <text>`. See [Message queue](./ENGINE.md#message-queue) for delivery rules, corrections, retries, and verdicts.
 10. **Stop**: `ctrl+c` stops active work; another press quits after cleanup. `esc` opens the inline stop menu; another `esc` stops resumably. The state records `interruptedStep`, including whether the stop cut a call or landed at a boundary. `/resume` continues it. `/end` uses the shared close path, preserving unapplied workspace work first. See [WORKFLOW.md](./WORKFLOW.md#4-abort--continue--queue) and [Global keys](./SLASH-COMMANDS-REFERENCE.md#global-any-screen).
@@ -221,7 +221,7 @@ Full rationale in `docs/STORES.md`. Short version:
 - ThemeContext follows the detected terminal background; stores own all other state.
 - No `useMemo`, `useCallback`, `React.memo`, `forwardRef`, `useImperativeHandle` — stores make them unnecessary.
 - Stores are module-scoped singletons built on `useSyncExternalStore`.
-- Components subscribe to slices from the relevant workflow store, for example `tasksStore.use(s => s.currentTask)`.
+- Components subscribe to slices from the relevant workflow store, for example `runViewStore.use((s) => s.briefs)`.
 - The engine publishes `EngineEvent` values via the `EventBus`; `tuiSink` forwards them to `workflow/actions.addEvent` — no prop drilling, no callback chains.
 - Tests reset stores in `beforeEach(() => store.reset())`.
 
@@ -529,8 +529,11 @@ src/
 │   ├── providers/                 catalog, known-models, model-selection,
 │   │                              provenance, seat-identity
 │   ├── run-view/                  reduce (reduceRunView: the phase, when each
-│   │                              phase began and the seat wait, one fold of
-│   │                              the log), settle (the saved phase wins)
+│   │                              phase began, the seat wait and the briefs,
+│   │                              one fold of the log), briefs (reduceBriefs
+│   │                              and the brief selectors), brief-labels,
+│   │                              events (the engine events the view folds),
+│   │                              settle (the saved phase and briefs win)
 │   ├── runners/                   capabilities (what a CLI tool can be told
 │   │                              to run), cli-tool-catalog, runner-billing
 │   ├── schemas/                   All Zod schemas (see §6 storage)
@@ -725,8 +728,10 @@ src/
 │   │                              composer-draft, command-palette-mru,
 │   │                              persistence, terminal-size, terminal-background
 │   └── workflow/                  actions, attachments,
-│                                  conversation-scroll, events, lifecycle,
-│                                  operations, review, stop, tasks, tokens
+│                                  conversation-scroll, departure, events,
+│                                  lifecycle, operations, recovery-notice,
+│                                  result-menu, review, run-view, stop,
+│                                  streaming-output, tokens, transcript-tail
 │
 ├── features/                      TUI feature slices — components/hooks/helpers
 │                                  (page entries are FLAT pages under app/)

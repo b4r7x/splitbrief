@@ -1,10 +1,6 @@
 import { isApplyUnfinishedAtRest, routerStore } from '../../../stores/navigation/router.js';
 import { composerLiveStore } from '../../../stores/ui/composer-live.js';
-import {
-  selectRunningBrief,
-  selectTaskListView,
-  tasksStore,
-} from '../../../stores/workflow/tasks.js';
+import { selectRunningBrief, selectTaskListView } from '../../../core/run-view/briefs.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
@@ -227,8 +223,8 @@ export function readStopMenuRows(): StopRow[] {
         consequence: 'return to sessions once cleanup and saving finish',
       },
     ];
-  const tasks = tasksStore.get();
-  const brief = selectRunningBrief(tasks, runViewStore.get().phase);
+  const { briefs, phase } = runViewStore.get();
+  const brief = selectRunningBrief(briefs, phase);
   const rows = stopSheetRows({
     currentTaskId: brief.current?.id ?? null,
     nextTaskId: brief.next?.id ?? null,
@@ -251,15 +247,15 @@ export function readStopMenuRows(): StopRow[] {
  * no others. Without a stop to say so, a brief that started or failed may have written.
  */
 function runHasChanges(): boolean {
-  const tasks = tasksStore.get();
-  const view = selectTaskListView(tasks);
+  const { briefs, phase } = runViewStore.get();
+  const view = selectTaskListView(briefs);
   if (view.finished > 0) return true;
   const route = routerStore.get();
   const record =
     route.screen === 'workflow' && route.execution.kind === 'at-rest' ? route.run : null;
   const kept = stopKeptFiles(stopStore.get().parked, record);
   if (kept !== null) return kept.length > 0;
-  return selectRunningBrief(tasks, runViewStore.get().phase).current !== null || view.failed > 0;
+  return selectRunningBrief(briefs, phase).current !== null || view.failed > 0;
 }
 
 /**

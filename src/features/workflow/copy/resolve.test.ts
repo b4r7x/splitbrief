@@ -6,7 +6,7 @@ import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { configStore } from '../../../stores/project/config.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
-import { tasksStore } from '../../../stores/workflow/tasks.js';
+import { seedBriefs } from '#testing/helpers/stores.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { routerStore } from '../../../stores/navigation/router.js';
@@ -15,7 +15,7 @@ import { resolveCopyValue } from './resolve.js';
 beforeEach(() => {
   eventsStore.__testReset();
   tokensStore.__testReset();
-  tasksStore.__testReset();
+  seedBriefs();
   modelCacheStore.reset();
   configStore.__testReset();
   reviewStore.reset();

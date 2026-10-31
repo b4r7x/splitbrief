@@ -14,7 +14,6 @@ import { configStore } from '../../../stores/project/config.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { operationsStore } from '../../../stores/workflow/operations/state.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
-import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { formatRecoveryHeadline } from '../../../core/recovery/headline.js';
@@ -116,7 +115,6 @@ async function sidebarBuildRow(): Promise<string> {
 
 function buildBlockActivity(): string {
   return deriveBuildProgress({
-    tasks: tasksStore.get(),
     lifecycle: lifecycleStore.get(),
     operations: operationsStore.get(),
     runView: runViewStore.get(),
@@ -283,7 +281,7 @@ describe.each(SEATS)('a $kind seat reads one name on every surface', (seat) => {
           backendKind: seat.kind,
         },
         config,
-        tasks: tasksStore.get(),
+        tasks: runViewStore.get().briefs,
         lifecycle: { status: 'running' },
         phase: 'implementing',
         halted: false,

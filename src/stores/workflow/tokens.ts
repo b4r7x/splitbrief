@@ -69,7 +69,6 @@ export interface TokensState {
   tokenUsage: TokenUsage | null;
   perPhase: Partial<Record<Phase, PhaseTokens>>;
   perTask: Record<string, PerTaskTokens>;
-  completedTaskCount: number;
   /** The seats this run pass holds: the run is priced on them, and the chrome names them. */
   passSeats: SeatIdentity | null;
 }
@@ -78,7 +77,6 @@ const initial: TokensState = {
   tokenUsage: null,
   perPhase: {},
   perTask: {},
-  completedTaskCount: 0,
   passSeats: null,
 };
 
@@ -223,30 +221,8 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     }
 
     case 'task_completed':
-      return {
-        ...state,
-        completedTaskCount: state.completedTaskCount + 1,
-      };
-
-    case 'task_reset': {
-      // task_reset fires on two paths: a review redo (the task completed, so undo its
-      // completion count before the next task_completed) and a recovery retry of the current,
-      // not-yet-completed task (nothing to undo). A recorded attempt only exists when the
-      // task previously completed, so gate the decrement on the prior attempt.
-      // Per-attempt token rows are kept across resets.
-      const attempts = state.perTask[event.taskId]?.attempts ?? [];
-      const last = attempts.at(-1);
-      let { completedTaskCount } = state;
-      if (last && completedTaskCount > 0) completedTaskCount -= 1;
-      return { ...state, completedTaskCount };
-    }
-
+    case 'task_reset':
     case 'task_skipped':
-      return {
-        ...state,
-        completedTaskCount: state.completedTaskCount + 1,
-      };
-
     case 'workflow_started':
     case 'workflow_resumed':
     case 'workflow_complete':

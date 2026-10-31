@@ -3,7 +3,6 @@ import { addEvent } from './event.js';
 import { markCancellationRequested } from './interrupt.js';
 import { resetWorkflow } from './reset.js';
 import { eventsStore } from '../events.js';
-import { tasksStore } from '../tasks.js';
 import { tokensStore } from '../tokens.js';
 import { lifecycleStore } from '../lifecycle.js';
 import { runViewStore } from '../run-view.js';
@@ -11,7 +10,13 @@ import { operationsStore } from '../operations/state.js';
 import { loadEvents } from './load.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import { makePlannerStatus } from '#testing/helpers/events/planner.js';
-import { makeRetry, makeTaskStart, makeTaskComplete } from '#testing/helpers/events/task.js';
+import {
+  makeRetry,
+  makeTaskStart,
+  makeTaskComplete,
+  makeTaskTokens,
+  makeReviewFixInsertedEvents,
+} from '#testing/helpers/events/task.js';
 
 describe('addEvent — cross-bucket isolation', () => {
   beforeEach(() => resetWorkflow());
@@ -19,10 +24,39 @@ describe('addEvent — cross-bucket isolation', () => {
   it('preserves unrelated sub-store fields on generic events', () => {
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'running' });
-    tokensStore.__testReset({ completedTaskCount: 4 });
+    tokensStore.__testReset({
+      passSeats: { plannerTool: 'claude-code', implementerTool: 'codex' },
+    });
     addEvent(makeRetry());
     expect(runViewStore.get().phase).toBe('implementing');
-    expect(tokensStore.get().completedTaskCount).toBe(4);
+    expect(tokensStore.get().passSeats).toEqual({
+      plannerTool: 'claude-code',
+      implementerTool: 'codex',
+    });
+  });
+});
+
+describe('addEvent — a republished plan', () => {
+  beforeEach(() => resetWorkflow());
+
+  it('republishing keeps statuses, routes, files, focus and tokens without adding transcript rows', () => {
+    const events = makeReviewFixInsertedEvents();
+    for (const event of events) addEvent(event);
+    const before = runViewStore.get().briefs;
+    const tokens = tokensStore.get();
+    const log = eventsStore.get().events;
+    const announcement = events.findLast((event) => event.type === 'tasks_planned');
+    if (announcement === undefined) throw new Error('Missing inserted announcement');
+    addEvent(announcement);
+    addEvent(announcement);
+    expect(runViewStore.get().briefs).toEqual(before);
+    expect(tokensStore.get()).toBe(tokens);
+    expect(eventsStore.get().events).toBe(log);
+    expect(runViewStore.get().briefs.taskMap.get('T006')).toMatchObject({
+      status: 'in_progress',
+      files: ['src/library/task-6.ts', 'src/library/task-6.test.ts'],
+      route: { profile: 'local', runner: 'ollama', model: 'qwen2.5-coder:7b' },
+    });
   });
 });
 
@@ -227,16 +261,17 @@ describe('addEvent — cancelled gate', () => {
     expect(eventsStore.get().events.filter((e) => e.type === 'error')).toEqual([]);
   });
 
-  it('does not mutate tasks store after cancel', () => {
+  it('settles a brief the stop cut on the run view after cancel and keeps it out of the log', () => {
+    addEvent(makeTaskStart({ total: 1 }));
     markCancellationRequested();
-    addEvent(makeTaskStart({ index: 0, total: 1 }));
-    expect(tasksStore.get().currentTask).toBe(0);
-    expect(tasksStore.get().totalTasks).toBe(0);
+    addEvent(makeTaskComplete({ method: 'local' }));
+    expect(runViewStore.get().briefs.taskMap.get('T001')?.status).toBe('done');
+    expect(eventsStore.get().events.some((e) => e.type === 'task_completed')).toBe(false);
   });
 
   it('does not mutate tokens store after cancel', () => {
     markCancellationRequested();
-    addEvent(makeTaskComplete({ method: 'local' }));
-    expect(tokensStore.get().completedTaskCount).toBe(0);
+    addEvent(makeTaskTokens());
+    expect(tokensStore.get().perTask).toEqual({});
   });
 });

@@ -12,7 +12,7 @@ import { controlsStore } from '../../../stores/ui/controls.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
-import { tasksStore } from '../../../stores/workflow/tasks.js';
+import { seedBriefs } from '#testing/helpers/stores.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { configStore } from '../../../stores/project/config.js';
@@ -70,7 +70,7 @@ function resetStores(): void {
   controlsStore.__testReset();
   approvalPromptStore.__testReset();
   lifecycleStore.reset();
-  tasksStore.__testReset();
+  seedBriefs();
   tokensStore.__testReset();
   eventsStore.__testReset();
   configStore.__testReset();

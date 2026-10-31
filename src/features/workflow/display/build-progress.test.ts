@@ -16,7 +16,7 @@ import type {
   RunningOperation,
   TerminalOperation,
 } from '../../../stores/workflow/operations/state.js';
-import { tasksStore, type TasksState, type WorkflowTask } from '../../../stores/workflow/tasks.js';
+import { EMPTY_BRIEFS, type RunBriefs, type WorkflowTask } from '../../../core/run-view/briefs.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { makeRetry, makeTaskStart } from '#testing/helpers/events/task.js';
@@ -140,10 +140,10 @@ it('names the plan render in Review and uses its clock for freshness', () => {
   expect(progress.freshness).toBe('running 0:12');
 });
 
-function tasksState(tasks: WorkflowTask[], overrides: Partial<TasksState> = {}): TasksState {
+function tasksState(tasks: WorkflowTask[], overrides: Partial<RunBriefs> = {}): RunBriefs {
   return {
+    ...EMPTY_BRIEFS,
     currentTask: 1,
-    currentAttempt: 1,
     totalTasks: tasks.length,
     taskMap: new Map(tasks.map((task) => [task.id, task])),
     tasks,
@@ -210,17 +210,21 @@ function phaseView(phase: Phase): RunView {
   return { ...EMPTY_RUN_VIEW, phase };
 }
 
-function input(overrides: Partial<DeriveBuildProgressInput> = {}): DeriveBuildProgressInput {
+// `tasks` stands apart from the run view it seeds, so a test that swaps the view keeps the default briefs.
+function input({
+  tasks = tasksState([
+    { id: 'T001', title: 'One', status: 'done' },
+    { id: 'T002', title: 'Two', status: 'in_progress' },
+  ]),
+  runView = phaseView('implementing'),
+  ...overrides
+}: Partial<DeriveBuildProgressInput> & { tasks?: RunBriefs } = {}): DeriveBuildProgressInput {
   return {
-    tasks: tasksState([
-      { id: 'T001', title: 'One', status: 'done' },
-      { id: 'T002', title: 'Two', status: 'in_progress' },
-    ]),
     lifecycle: lifecycleState(),
     operations: operationsState(),
-    runView: phaseView('implementing'),
     now: NOW,
     ...overrides,
+    runView: { ...runView, briefs: tasks },
   };
 }
 
@@ -477,12 +481,12 @@ describe('deriveBuildProgress', () => {
     resetWorkflow();
     addEvent(makeTaskStart({ taskId: taskId('T001'), lineageAttempt: 6 }));
 
-    const resumed = deriveBuildProgress(input({ tasks: tasksStore.get() }));
+    const resumed = deriveBuildProgress(input({ tasks: runViewStore.get().briefs }));
     expect(resumed.attempt).toBe(6);
     expect(buildProgressRows(resumed, getChromeContentWidth(120))[0]?.text).toContain('attempt 6');
 
     addEvent(makeRetry({ taskId: taskId('T001'), attempt: 1, lineageAttempt: 7 }));
-    const retried = deriveBuildProgress(input({ tasks: tasksStore.get() }));
+    const retried = deriveBuildProgress(input({ tasks: runViewStore.get().briefs }));
     expect(retried.attempt).toBe(7);
     addEvent({
       type: 'implementer_generate_running',
@@ -491,7 +495,7 @@ describe('deriveBuildProgress', () => {
       taskId: taskId('T001'),
       lineageAttempt: 8,
     });
-    const consulted = deriveBuildProgress(input({ tasks: tasksStore.get() }));
+    const consulted = deriveBuildProgress(input({ tasks: runViewStore.get().briefs }));
     expect(consulted.attempt).toBe(8);
     expect(buildProgressRows(consulted, getChromeContentWidth(120))[0]?.text).toContain(
       'attempt 8',
@@ -502,7 +506,7 @@ describe('deriveBuildProgress', () => {
       phase: 'implementing',
       taskId: taskId('T001'),
     });
-    expect(tasksStore.get()).toMatchObject({ currentAttempt: 8 });
+    expect(runViewStore.get().briefs).toMatchObject({ currentAttempt: 8 });
     resetWorkflow();
   });
 

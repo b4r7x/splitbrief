@@ -211,24 +211,24 @@ graph LR
     Bus --> Log["createLoggerSink"]
     Bus --> Hook["hookSink → user hooks"]
     TUI --> Events["eventsStore"]
-    TUI --> Tasks["tasksStore"]
+    TUI --> RunView["runViewStore"]
     TUI --> Tokens["tokensStore"]
     TUI --> Lifecycle["lifecycleStore"]
     TUI --> Operations["operationsStore"]
     Events --> React["React re-renders"]
-    Tasks --> React
+    RunView --> React
     Tokens --> React
     Lifecycle --> React
     Operations --> React
 ```
 
-**`addEvent()`** in `src/stores/workflow/actions/event.ts` is the bridge between engine events and React state. It updates five stores in a fixed order: events, tasks, tokens, lifecycle, operations. This ordering is strictly synchronous — no `await`, no `setTimeout`, no microtask scheduling. React 19 with Ink batches synchronous store updates so subscribers observe one consistent commit with all five stores updated.
+**`addEvent()`** in `src/stores/workflow/actions/event.ts` is the bridge between engine events and React state. It updates five stores in a fixed order: the run view (phase, seat wait and briefs), events, tokens, lifecycle, operations. This ordering is strictly synchronous — no `await`, no `setTimeout`, no microtask scheduling. React 19 with Ink batches synchronous store updates so subscribers observe one consistent commit with all five stores updated.
 
 One optimization: `cost_update` events take a fast path that only touches the tokens store, skipping the other writes.
 
-If the lifecycle store's `cancelled` flag is set, `addEvent()` drops every event that `acceptsEventAfterCancellation()` does not admit. That function admits `workflow_cancelled`, `turn_interrupted`, `review_completed`, and the `runner_call_*` events that settle a call (completion, error, warning, usage, session id and artifact), so a call cut by the stop still settles. This prevents other late-arriving events from a cancelled workflow from polluting the display.
+The run view folds every event before this check, so a brief the stop cut still settles on it. If the lifecycle store's `cancelled` flag is set, `addEvent()` then drops every event that `acceptsEventAfterCancellation()` does not admit. That function admits `workflow_cancelled`, `turn_interrupted`, `review_completed`, and the `runner_call_*` events that settle a call (completion, error, warning, usage, session id and artifact), so a call cut by the stop still settles. This prevents other late-arriving events from a cancelled workflow from polluting the display.
 
-React components subscribe to individual store slices via `store.use(selector)`. A component that only reads `tasksStore.use(s => s.currentTask)` won't re-render when the token count changes. The store system makes selector-based subscriptions automatic — no `useMemo` or `useCallback` needed.
+React components subscribe to individual store slices via `store.use(selector)`. A component that only reads `runViewStore.use((s) => s.briefs)` won't re-render when the token count changes. The store system makes selector-based subscriptions automatic — no `useMemo` or `useCallback` needed.
 
 ---
 

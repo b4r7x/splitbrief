@@ -14,7 +14,7 @@ import { overlayStore } from '../../stores/ui/overlay.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
 import { addEvent } from '../../stores/workflow/actions/event.js';
-import { tasksStore } from '../../stores/workflow/tasks.js';
+import { seedBriefs } from '#testing/helpers/stores.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { setActiveTerminalHandover } from '../../lib/terminal/editor-handover.js';
 import { terminalSequences } from '../../lib/terminal/control.js';
@@ -300,7 +300,7 @@ describe('review input effects', () => {
     clearAllHandlers();
     runViewStore.__testReset({ phase: 'reviewing-briefs' });
     lifecycleStore.__testReset({ status: 'running' });
-    tasksStore.__testReset();
+    seedBriefs();
     vi.stubEnv('VISUAL', 'mock-editor');
     // The handover is the last thing that runs before the editor is spawned, so a paused
     // stdin is the proof a real process was about to take the terminal.
@@ -486,7 +486,7 @@ describe('review input effects', () => {
     async (phase, seat, target) => {
       runViewStore.__testReset({ phase });
       lifecycleStore.__testReset({ status: 'running' });
-      tasksStore.__testReset({
+      seedBriefs({
         currentTask: 1,
         totalTasks: 1,
         tasks: [{ id: 'T003', title: 'Running brief', status: 'in_progress' }],
@@ -520,7 +520,7 @@ describe('review input effects', () => {
   it('queues a correction typed during a brief instead of refusing it', async () => {
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'running' });
-    tasksStore.__testReset({
+    seedBriefs({
       currentTask: 1,
       totalTasks: 1,
       tasks: [{ id: 'T003', title: 'Running brief', status: 'in_progress' }],

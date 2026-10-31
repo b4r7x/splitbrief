@@ -3,7 +3,7 @@ import type { Config } from '../../../core/schemas/config.js';
 import { formatCollapsedSeatSpans, seatLineText } from '../../../core/crew/identity.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import type { ActiveOperation } from '../../../stores/workflow/operations/state.js';
-import type { TasksState, WorkflowTask } from '../../../stores/workflow/tasks.js';
+import { EMPTY_BRIEFS, type RunBriefs, type WorkflowTask } from '../../../core/run-view/briefs.js';
 import { deriveRunningSeats } from './running-seats.js';
 
 function makeTestConfig(overrides: Partial<Config> = {}): Config {
@@ -35,18 +35,10 @@ function makeOperation(overrides: Partial<ActiveOperation> = {}): ActiveOperatio
   } as ActiveOperation;
 }
 
-const NO_BRIEF: TasksState = {
-  currentTask: 0,
-  currentAttempt: 1,
-  totalTasks: 0,
-  taskMap: new Map(),
-  tasks: [],
-};
-
-function briefTasks(brief: Partial<WorkflowTask>): TasksState {
+function briefTasks(brief: Partial<WorkflowTask>): RunBriefs {
   const task: WorkflowTask = { id: 'T021', title: 'Brief', status: 'in_progress', ...brief };
   return {
-    ...NO_BRIEF,
+    ...EMPTY_BRIEFS,
     currentTask: 1,
     totalTasks: 1,
     taskMap: new Map([[task.id, task]]),
@@ -61,7 +53,7 @@ function derive(
 ): ReturnType<typeof deriveRunningSeats> {
   return deriveRunningSeats({
     active: null,
-    tasks: NO_BRIEF,
+    tasks: EMPTY_BRIEFS,
     lifecycle: { status: 'running' },
     phase: 'implementing',
     halted: false,

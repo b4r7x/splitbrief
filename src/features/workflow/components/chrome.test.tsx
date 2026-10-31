@@ -5,7 +5,7 @@ import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
-import { resetAllStores } from '#testing/helpers/stores.js';
+import { resetAllStores, seedBriefs } from '#testing/helpers/stores.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
@@ -15,7 +15,6 @@ import { eventsStore } from '../../../stores/workflow/events.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
-import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import { clearAllHandlers, setResumeHandler } from '../handlers.js';
 import { configStore } from '../../../stores/project/config.js';
@@ -186,7 +185,7 @@ describe('WorkflowFooter', () => {
     async (phase, placeholder) => {
       runViewStore.__testReset({ phase });
       lifecycleStore.__testReset({ status: 'running' });
-      tasksStore.__testReset({
+      seedBriefs({
         currentTask: 1,
         totalTasks: 1,
         tasks: [{ id: 'T003', title: 'Running brief', status: 'in_progress' }],
@@ -224,7 +223,7 @@ describe('WorkflowFooter', () => {
       terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: false });
       runViewStore.__testReset({ phase });
       lifecycleStore.__testReset({ status: 'running' });
-      tasksStore.__testReset({
+      seedBriefs({
         currentTask: 1,
         totalTasks: 1,
         tasks: [{ id: 'T003', title: 'Running brief', status: 'in_progress' }],

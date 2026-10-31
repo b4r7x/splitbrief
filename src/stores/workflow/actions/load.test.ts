@@ -6,7 +6,7 @@ import { eventsStore, MAX_EVENTS } from '../events.js';
 import { lifecycleStore } from '../lifecycle.js';
 import { runViewStore } from '../run-view.js';
 import { operationsStore } from '../operations/state.js';
-import { selectRunningBrief, tasksStore } from '../tasks.js';
+import { selectRunningBrief } from '../../../core/run-view/briefs.js';
 import { makeReviewFixInsertedEvents } from '#testing/helpers/events/task.js';
 import { tokensStore } from '../tokens.js';
 import { stopStore } from '../stop.js';
@@ -24,7 +24,6 @@ function event(candidate: Record<string, unknown>): EngineEvent {
 function snapshot(): Record<string, unknown> {
   return {
     events: eventsStore.get().events,
-    tasks: tasksStore.get(),
     tokens: tokensStore.get(),
     lifecycle: lifecycleStore.get(),
     operations: operationsStore.get(),
@@ -158,7 +157,7 @@ describe('loadEvents', () => {
     const live = snapshot();
     loadEvents(fixture);
     expect(snapshot()).toEqual(live);
-    expect(tasksStore.get().tasks.map((task) => task.id)).toEqual([
+    expect(runViewStore.get().briefs.tasks.map((task) => task.id)).toEqual([
       'T001',
       'T002',
       'T003',
@@ -167,7 +166,7 @@ describe('loadEvents', () => {
       'T007',
       'T005',
     ]);
-    expect(selectRunningBrief(tasksStore.get(), 'implementing')).toMatchObject({
+    expect(selectRunningBrief(runViewStore.get().briefs, 'implementing')).toMatchObject({
       current: { id: 'T006' },
       next: { id: 'T007' },
     });
@@ -388,8 +387,8 @@ describe('loadEvents', () => {
     ]);
 
     expect(snapshot()).not.toEqual(afterFirst);
-    expect(tasksStore.get().tasks.map((task) => task.id)).toEqual(['T009']);
-    expect(tasksStore.get().totalTasks).toBe(1);
+    expect(runViewStore.get().briefs.tasks.map((task) => task.id)).toEqual(['T009']);
+    expect(runViewStore.get().briefs.totalTasks).toBe(1);
     expect(Object.keys(tokensStore.get().perTask)).toEqual(['T009']);
     expect(tokensStore.get().tokenUsage).toBeNull();
     expect(runViewStore.get().phaseFirstSeen).toEqual({

@@ -43,7 +43,7 @@ Existing example to follow: `src/cli/commands/start/register.ts`.
 2. Add a typed publish helper in `src/engine/orchestrator/events.ts`
    - Pattern: `export function publishMyEvent(bus: EventBus, phase: Phase, payload): void { bus.publish({ type: 'my_event', ts: Date.now(), phase, ...payload }); }`
 3. If the event should update UI state: handle it in `src/stores/workflow/actions/event.ts` inside `addEvent()`
-   - The ordering invariant is: events store, then tasks store, then tokens store, then lifecycle store, then operations store (all synchronous)
+   - The ordering invariant is: run view (`runViewStore`, `src/stores/workflow/run-view.ts`), then the cancellation gate, then events store, then tokens store, then lifecycle store, then operations store (all synchronous)
 4. If the event should appear in the workflow conversation: add a case in `src/features/workflow/conversation-rows/event-rows/dispatch.ts`
 
 ---

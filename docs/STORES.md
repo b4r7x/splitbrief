@@ -63,8 +63,7 @@ src/stores/
 │   └── persistence.ts        # Disk I/O for inputHistoryStore (hydrate + debounced save)
 ├── workflow/                 # State that only exists during a workflow run
 │   ├── events.ts             # Event log (mergeEvent + MAX_EVENTS)
-│   ├── tasks.ts              # Task map + counters
-│   ├── tokens.ts             # Token usage + completion count
+│   ├── tokens.ts             # Token usage
 │   ├── lifecycle.ts          # Phase, cancelled, queued ids and count
 │   ├── operations/           # Active / last runner operation (state.ts, reducer.ts, …)
 │   ├── actions/              # Composite writes across sub-stores (event, load, hydrate, interrupt, resume, pause, reset, sections, wait)
@@ -227,11 +226,10 @@ routerStore.navigate({ to: 'home' });
 | `editorStore` | `ui/editor.ts` | `{ status: 'closed' }` or an open editor session | `openRaw()`, `dispatch()`, `setLayout()`, `scrollBy()`, `beginSubmit()`, `close()` |
 | `externalEditRequestStore` | `ui/external-edit-request.ts` | the one pending Ctrl+O request | `request()`, `requestApply()`, `consume()` |
 | `eventsStore` | `workflow/events.ts` | `{ events: EngineEvent[] }` | internal writes via `actions.addEvent` |
-| `tasksStore` | `workflow/tasks.ts` | `{ currentTask, currentAttempt, attemptAllowance, totalTasks, taskMap, tasks }` | internal writes via `actions.addEvent` |
-| `tokensStore` | `workflow/tokens.ts` | `{ tokenUsage, perPhase, perTask, completedTaskCount, passSeats }` | internal writes via `actions.addEvent` |
+| `tokensStore` | `workflow/tokens.ts` | `{ tokenUsage, perPhase, perTask, passSeats }` | internal writes via `actions.addEvent` |
 | `lifecycleStore` | `workflow/lifecycle.ts` | `{ status, cancelled, queueDepth, queuedMessageIds, steerableCall, startedAt, endedAt, durationMs, reason, plannerCall, plannerCallStartedTs, waitingSince, waitedMs, resumedAt }` — `plannerCall` is the call the run is on when the engine names one, `plannerCallStartedTs` is where the byline clock of that call starts, `waitingSince` / `waitedMs` keep time spent waiting on the user out of the stage clock, `resumedAt` keeps a resumed run's park out of it | internal writes via `actions.addEvent` / local cancel intent |
 | `operationsStore` | `workflow/operations/state.ts` | `{ active, last, byCallId }` compact runner lifecycle/status | internal writes via `actions.addEvent` / local cancel intent |
-| `runViewStore` | `workflow/run-view.ts` | `{ phase, phaseFirstSeen, seatWait }` — what the run's log says about the run, folded once by `reduceRunView` for the live screen, the run at rest and `--plain`; `phaseFirstSeen` is when the run first entered each phase; `settleRunView` lays the saved phase of `state.json` over it | internal writes via `actions.addEvent` / `actions.loadEvents` / `actions.hydrateFromState` |
+| `runViewStore` | `workflow/run-view.ts` | `{ phase, phaseFirstSeen, seatWait, briefs }` — what the run's log says about the run, folded once by `reduceRunView` for the live screen, the run at rest and `--plain`; `phaseFirstSeen` is when the run first entered each phase; `briefs` (`RunBriefs`, `src/core/run-view/briefs.ts`) is the brief list, the brief the run is on, its attempt, the brief count, each brief's last checks and the completed count of the last `workflow_complete`; `settleRunView` lays the saved phase and brief list of `state.json` over it | internal writes via `actions.addEvent` / `actions.loadEvents` / `actions.hydrateFromState` |
 | `stopStore` | `workflow/stop.ts` | `{ intent, phase, requestedAt, parked, error? }` — the run's stop intent and where its termination stands | `request(intent)`, phase marks (`markTerminating()`, `markSettling()`, `markForcing()`), `park()`, `resume(steer)`, `end()`, `fail()` |
 | `departureStore` | `workflow/departure.ts` | `{ kind: 'home' \| 'quit', run } \| null` — the one departure that waits for a stop's cleanup or an Apply to settle; a quit replaces a queued home | `queue(departure)`, `take()`, `reset()` |
 | `conversationScrollStore` | `workflow/conversation-scroll.ts` | `{ scrollOffset, expandedDiffs, ... }` | `scrollUp()`, `scrollDown()`, `scrollToBottom()`, `toggleDiff()`, `toggleActivityBatch()` |
@@ -258,14 +256,14 @@ routerStore.navigate({ to: 'home' });
 
 | Export | Purpose |
 |---|---|
-| `addEvent(event: EngineEvent)` | Single ingress for engine events. Called by `addTuiEvent` (`src/features/workflow/tui-sink.ts`, registered on the engine `EventBus` as the TUI sink), **not** directly by the orchestrator. `cost_update` still updates tokens after cancellation. After local cancel, terminal runner events and final telemetry are accepted while UI noise is ignored. The run view folds first, before the cancellation gate, so the end a stop writes for a seat wait still reaches it. Normal fan-out order is then events → tasks → tokens → lifecycle → operations. Strictly synchronous. |
+| `addEvent(event: EngineEvent)` | Single ingress for engine events. Called by `addTuiEvent` (`src/features/workflow/tui-sink.ts`, registered on the engine `EventBus` as the TUI sink), **not** directly by the orchestrator. `cost_update` still updates tokens after cancellation. After local cancel, terminal runner events and final telemetry are accepted while UI noise is ignored. The run view folds first, before the cancellation gate, so the end a stop writes for a seat wait, and the end of a brief the stop cut, still reach it. Normal fan-out order is then events → tokens → lifecycle → operations. Strictly synchronous. |
 | `markCancellationRequested(intent?)` | Local UI intent for immediate feedback. Terminalizes lifecycle and running operations with frozen duration, but does **not** append a fake event or rewrite `planner_status` to success. The canonical history event is still engine-published `workflow_cancelled`. |
 | `resetWorkflow()` | Resets the workflow sub-stores (plus the stop, recovery-notice and streaming-output stores, and closes the approval and reviewer-checks prompts) **and invalidates the memo caches** (`cachedEvents`, `cachedSections`, through `clearSectionsCache()`) so subscribers observe a clean slate. It only clears: nothing is synthesized here. Cache invalidation is symmetric with sub-store reset — missing it leaks pre-reset sections into the first post-reset `useSections()` call. |
 | `loadEvents(events)` (`load.ts`) | The hydration counterpart of `addEvent`: resets first, then folds a whole replayed log through the same reducers and commits each store once. |
 | `hydrateFromState(state)` (`hydrate.ts`) | Lays the saved state over whatever the replay rebuilt — the phase, the brief list, the spend and the queued count. It never claims a run read back from disk is running: an open run hydrates as `paused`, a finished one as `complete`. |
 | `getSections()` / `useSections()` | Memoized derivation of conversation sections from `eventsStore.events`. Cache lives file-local. |
 
-**Reducers live with their owner sub-store** — `events.ts` exports `mergeEvent` + `MAX_EVENTS`, `tasks.ts` exports `updateTaskMap` + `updateTaskCounts`, `tokens.ts` exports `updateTokens`, `lifecycle.ts` exports `updatePhase` + `updateQueueDepth` + `updateStall`, and `operations/reducer.ts` exports `updateOperations`. The run view's reducer, `reduceRunView`, lives in `src/core/run-view/reduce.ts`, because the `--plain` sink folds it too. They are pure functions and can be tested directly.
+**Reducers live with their owner sub-store** — `events.ts` exports `mergeEvent` + `MAX_EVENTS`, `tokens.ts` exports `updateTokens`, `lifecycle.ts` exports `updatePhase` + `updateQueueDepth` + `updateStall`, and `operations/reducer.ts` exports `updateOperations`. The run view's reducer, `reduceRunView`, lives in `src/core/run-view/reduce.ts`, and its brief fold, `reduceBriefs`, in `src/core/run-view/briefs.ts`, because the `--plain` sink folds them too. They are pure functions and can be tested directly.
 
 `lifecycle.ts` derives the queued count, `queueDepth`, from `queuedMessageIds`. `message_queued` adds its id. `message_injected_native` or `queue_drained` removes that id at its first delivery to any seat. A repeated delivery id changes nothing and cannot lower another message's count. `queue_cleared` removes cleared entries from the set. Older drain events without ids retain count-based replay compatibility.
 
@@ -308,7 +306,7 @@ Store selectors make them unnecessary. Components subscribe to specific slices a
 
 ### Cross-module writes within a store group
 
-Workflow sub-stores (`events`, `tasks`, `tokens`, `lifecycle`, `operations`, `run-view`) are written exclusively by `workflow/actions/`. Each sub-store exports a package-private mutator (`_eventsInternal`, `_tasksInternal`, etc.) that only the action modules import. Consumers must go through `addEvent`, `markCancellationRequested`, or `resetWorkflow`. The raw `set` is not part of the facade — tests bypass actions via `__testReset`.
+Workflow sub-stores (`events`, `tokens`, `lifecycle`, `operations`, `run-view`) are written exclusively by `workflow/actions/`. Each sub-store exports a package-private mutator (`_eventsInternal`, `_runViewInternal`, etc.) that only the action modules import. Consumers must go through `addEvent`, `markCancellationRequested`, or `resetWorkflow`. The raw `set` is not part of the facade — tests bypass actions via `__testReset`.
 
 ### Test escape hatches
 
@@ -317,7 +315,7 @@ A small number of stores ship test-only exports so tests and visual fixtures can
 | Symbol | Shape | Who may import |
 |---|---|---|
 | `__testReset(next?)` on a store facade | Replaces current state with `{ ...initial, ...next }` | `*.test.ts` / `*.test.tsx` files, and the visual-gallery fixtures under `testing/visual/fixtures/` (`screen-fixtures.ts` resets `terminalSizeStore` and `configStore`) |
-| `_<name>Internal = { set }` (e.g. `_lifecycleInternal`, `_operationsInternal`, `_eventsInternal`, `_tasksInternal`, `_tokensInternal`) | Exposes the raw store setter | `src/stores/workflow/actions/` for the production write path; tests that need to reach a state the public actions cannot produce (e.g. `src/app/keys.test.tsx` forcing a mid-workflow phase) |
+| `_<name>Internal = { set }` (e.g. `_lifecycleInternal`, `_operationsInternal`, `_eventsInternal`, `_runViewInternal`, `_tokensInternal`) | Exposes the raw store setter | `src/stores/workflow/actions/` for the production write path; tests that need to reach a state the public actions cannot produce (e.g. `src/app/keys.test.tsx` forcing a mid-workflow phase) |
 | `__testSetClaudeCodeModelOptions(options)` on `modelCacheStore` | A value pin, not a state reset: it stores an override that `getClaudeCodeModelOptions()` prefers over the real read | `*.test.ts` / `*.test.tsx` files, and `testing/visual/fixtures/screen-fixtures.ts`, which pins the Claude Code option cache so a capture does not read the developer's `~/.claude.json` |
 
 **Rule.** Production code outside `workflow/actions/` MUST NOT import any of these symbols. Reviewers reject PRs that add new call sites in `src/` outside that one module. Tests and the visual-gallery fixtures are the only other sanctioned callers.

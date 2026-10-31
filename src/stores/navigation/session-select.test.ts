@@ -31,7 +31,6 @@ import { eventsStore } from '../workflow/events.js';
 import { lifecycleStore } from '../workflow/lifecycle.js';
 import { runViewStore } from '../workflow/run-view.js';
 import { operationsStore } from '../workflow/operations/state.js';
-import { tasksStore } from '../workflow/tasks.js';
 import { tokensStore } from '../workflow/tokens.js';
 import { routerStore } from './router.js';
 import { preparationStore } from './preparation.js';
@@ -137,7 +136,7 @@ function onScreen() {
   return {
     route: routerStore.get(),
     events: eventsStore.get(),
-    tasks: tasksStore.get(),
+    runView: runViewStore.get(),
     lifecycle: lifecycleStore.get(),
     tokens: tokensStore.get(),
     operations: operationsStore.get(),
@@ -154,7 +153,7 @@ function countWrites(): () => number {
   unsubscribers = [
     routerStore,
     eventsStore,
-    tasksStore,
+    runViewStore,
     lifecycleStore,
     tokensStore,
     operationsStore,
@@ -329,7 +328,7 @@ describe('handleSessionSelect with a history read in flight', () => {
     const route = routerStore.get();
     expect(route.screen === 'workflow' && route.run.ref.sessionId).toBe('sess-b');
     expect(JSON.stringify(eventsStore.get().events)).toContain('run B');
-    expect(tasksStore.get().taskMap.get('T001')?.title).toBe('run B');
+    expect(runViewStore.get().briefs.taskMap.get('T001')?.title).toBe('run B');
     expect(tokensStore.get().tokenUsage?.plannerInput).toBe('run B'.length);
     expect(runViewStore.get().phase).toBe('implementing');
   });

@@ -8,12 +8,8 @@ import {
   truncateTerminalDisplayText,
   segmentsForRowText,
 } from '../../../utils/display-text.js';
-import {
-  type WorkflowTask,
-  selectTaskListView,
-  taskRowLabel,
-  tasksStore,
-} from '../../../stores/workflow/tasks.js';
+import { type WorkflowTask, selectTaskListView } from '../../../core/run-view/briefs.js';
+import { taskRowLabel } from '../../../core/run-view/brief-labels.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { configStore } from '../../../stores/project/config.js';
@@ -294,7 +290,7 @@ function packPieces(pieces: readonly string[], width: number): string[] {
 export function Sidebar({ width, height, recordedCrew }: SidebarProps) {
   const tooShortForBorder = height !== undefined && height < 2;
   const t = useTheme();
-  const view = tasksStore.use(selectTaskListView);
+  const view = selectTaskListView(runViewStore.use((s) => s.briefs));
   const config = configStore.use((s) => s.config);
   const running = useRunningSeats();
   const displayNames = useCrewDisplayNames(config);

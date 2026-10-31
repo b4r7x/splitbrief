@@ -3,7 +3,8 @@ import { addTuiEvent } from './tui-sink.js';
 import { createEventBus } from '../../engine/events/bus.js';
 import type { EngineEventOf, EngineEvent } from '../../engine/events/types.js';
 import { eventsStore } from '../../stores/workflow/events.js';
-import { selectRunningBrief, tasksStore } from '../../stores/workflow/tasks.js';
+import { selectRunningBrief } from '../../core/run-view/briefs.js';
+import { runViewStore } from '../../stores/workflow/run-view.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { resetWorkflow } from '../../stores/workflow/actions/reset.js';
 import { markCancellationRequested } from '../../stores/workflow/actions/interrupt.js';
@@ -38,9 +39,9 @@ describe('tuiSink', () => {
 
     bus.publish(makeTaskStart({ index: 2, total: 5 }));
 
-    expect(tasksStore.get().currentTask).toBe(1);
-    expect(selectRunningBrief(tasksStore.get(), 'implementing').current?.id).toBe('T001');
-    expect(tasksStore.get().totalTasks).toBe(5);
+    expect(runViewStore.get().briefs.currentTask).toBe(1);
+    expect(selectRunningBrief(runViewStore.get().briefs, 'implementing').current?.id).toBe('T001');
+    expect(runViewStore.get().briefs.totalTasks).toBe(5);
   });
 
   it('respects the store cancel gate after local cancellation intent', () => {

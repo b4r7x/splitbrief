@@ -1,12 +1,12 @@
 import type { Phase } from '../../../core/schemas/enums.js';
 import {
   selectRunningBrief,
-  type TasksState,
+  type RunBriefs,
   type WorkflowTask,
-} from '../../../stores/workflow/tasks.js';
+} from '../../../core/run-view/briefs.js';
 
 export function queuedBriefs(input: {
-  tasks: TasksState;
+  tasks: RunBriefs;
   phase: Phase;
   sidebarShowsTasks: boolean;
   closed: boolean;

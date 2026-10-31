@@ -4,14 +4,13 @@ import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { renderFeature } from '#testing/helpers/ink.js';
-import { resetAllStores } from '#testing/helpers/stores.js';
+import { resetAllStores, seedBriefs } from '#testing/helpers/stores.js';
 import type { StepRef } from '../../../core/schemas/run-step.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
-import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { requestBoundaryPause, requestSeatChangeAtBoundary } from '../handlers.js';
 import { useStopByline } from './use-stop-byline.js';
 
@@ -101,7 +100,7 @@ describe('useStopByline', () => {
   it('names the brief the pause outlived once the running brief has finished', () => {
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'running' });
-    tasksStore.__testReset({
+    seedBriefs({
       tasks: [
         { id: 'T001', title: 'first', status: 'done' },
         { id: 'T002', title: 'second', status: 'done' },
@@ -130,7 +129,7 @@ describe('useStopByline', () => {
   it('a seat saved under a running brief names that brief and claims no finish', () => {
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'running' });
-    tasksStore.__testReset({
+    seedBriefs({
       tasks: [
         { id: 'T001', title: 'first', status: 'in_progress' },
         { id: 'T002', title: 'second', status: 'pending' },
@@ -148,7 +147,7 @@ describe('useStopByline', () => {
   it('a seat saved in the final review names a fix brief or the next run, with no brief left', () => {
     runViewStore.__testReset({ phase: 'final-review' });
     lifecycleStore.__testReset({ status: 'running' });
-    tasksStore.__testReset({
+    seedBriefs({
       tasks: [{ id: 'T001', title: 'first', status: 'done' }],
       currentTask: 1,
       totalTasks: 1,
@@ -163,7 +162,7 @@ describe('useStopByline', () => {
   it('the operator pause keeps its own words beside a seat change', () => {
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'running' });
-    tasksStore.__testReset({
+    seedBriefs({
       tasks: [{ id: 'T001', title: 'first', status: 'in_progress' }],
       currentTask: 1,
       totalTasks: 1,

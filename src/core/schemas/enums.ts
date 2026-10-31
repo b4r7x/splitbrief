@@ -69,6 +69,7 @@ export const TaskStatusSchema = z.enum(TASK_STATUSES);
 export type TaskStatus = z.infer<typeof TaskStatusSchema>;
 
 export const FileActionSchema = z.enum(['create', 'modify']);
+export type FileAction = z.infer<typeof FileActionSchema>;
 
 const TASK_COMPLETION_METHODS = [
   'local',
