@@ -112,7 +112,7 @@ describe('a run the old step chain made', () => {
       'reviewing-spec',
       {
         kind: 'open',
-        stop: { kind: 'waiting-for-you', on: { kind: 'gate', gate: 'spec', reopens: false } },
+        stop: { kind: 'waiting-for-you', on: { kind: 'gate', gate: 'spec' } },
         resumeAt: { kind: 'gate', gate: 'spec' },
       },
     ],

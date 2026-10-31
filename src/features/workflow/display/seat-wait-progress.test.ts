@@ -48,10 +48,9 @@ function operationsState(overrides: Partial<OperationsState> = {}): OperationsSt
 
 function waitView(resetAt: string, live = true, phase: Phase = 'implementing'): RunView {
   return {
+    ...EMPTY_RUN_VIEW,
     phase,
-    phaseFirstSeen: {},
     seatWait: { tool: 'codex', wait: { seat: 'build', resetAt }, live },
-    halt: null,
     briefs: BRIEFS,
   };
 }

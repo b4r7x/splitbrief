@@ -117,7 +117,7 @@ type ApplyInput = {
 export function runApply(input: ApplyInput): Promise<ApplyResult> {
   const asking = askOverrideConfirmation(input);
   if (asking !== undefined) return Promise.resolve(asking);
-  const applying = applyRun(input);
+  const applying = announcedApply(input);
   void trackActiveApply(
     applying.then(
       (result) => (result.outcome === 'review' ? undefined : heldLiveness(input.wctx)),
@@ -125,6 +125,16 @@ export function runApply(input: ApplyInput): Promise<ApplyResult> {
     ),
   );
   return applying;
+}
+
+/** The log names when an Apply starts and ends, so a window that shows the run counts its clock. */
+async function announcedApply(input: ApplyInput): Promise<ApplyResult> {
+  input.wctx.bus.publish({ type: 'apply_started', ts: Date.now() });
+  try {
+    return await applyRun(input);
+  } finally {
+    input.wctx.bus.publish({ type: 'apply_finished', ts: Date.now() });
+  }
 }
 
 /**

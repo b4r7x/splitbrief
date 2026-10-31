@@ -34,7 +34,7 @@ import {
 import { closedTranscriptBlock } from '../../features/workflow/closed/block.js';
 import { calloutRowsBlock } from '../../features/workflow/conversation-rows/callout-block.js';
 import { sectionSpacerBlock } from '../../features/workflow/conversation-rows/build.js';
-import { openRoundQuestions } from '../../features/workflow/at-rest.js';
+import { applyRunning, openRoundQuestions } from '../../features/workflow/at-rest.js';
 import { unansweredQuestionsRowBlock } from '../../features/workflow/conversation-rows/event-rows/answered-questions.js';
 import { recordedCrewHeader } from '../../features/workflow/closed/header.js';
 import {
@@ -373,14 +373,15 @@ export function WorkflowScreen({
         });
   // A round Esc closed stays on screen until the reply answers it; an open run at rest shows the
   // round it waits at. Neither repeats a question the panel is showing.
+  const viewQuestions = runViewStore.use((view) => view.questions);
   const roundBlock = unansweredQuestionsRowBlock({
     keyPrefix: 'open-round',
     questions:
-      questionState.unanswered.length > 0
-        ? questionState.unanswered
-        : model.atRestRecord !== undefined && !model.closed
-          ? openRoundQuestions(model.atRestRecord)
-          : [],
+      model.closed || (plannerQuestions?.length ?? 0) > 0
+        ? []
+        : model.atRestRecord === undefined
+          ? (viewQuestions ?? [])
+          : openRoundQuestions(model.atRestRecord, viewQuestions),
     width: contentWidth,
   });
   const transcriptTail = [
@@ -392,9 +393,6 @@ export function WorkflowScreen({
   // The at-rest and Apply bylines carry no pip, so they open on the text column and their budget is
   // what is left of the chrome row past the mark slot.
   const bylineWidth = Math.max(1, getChromeContentWidth(cols) - MARK_SLOT_CELLS);
-  // The record carries no Apply start, so the clock counts from when this screen first saw it.
-  const [applySince, setApplySince] = useState<number | null>(null);
-  useLayoutEffect(() => setApplySince(model.applying ? Date.now() : null), [model.applying]);
   const config = configStore.useConfig();
   const atRestStatus = model.atRestRecord?.status;
   const viewWait = runViewStore.use((view) => view.seatWait);
@@ -406,11 +404,23 @@ export function WorkflowScreen({
       : viewWait;
   // A wait's text goes when its reset passes, so the byline needs the clock while one shows.
   const showsWait = wait !== null && seatWaitParts(wait.tool, wait.wait.resetAt) !== null;
-  const now = useSharedClock({ active: model.applying || showsWait });
+  // The run's log names when an Apply started, here or in another process. A log written before it
+  // did leaves another process's Apply to the running line, which has no clock to get wrong.
+  const applyClock = runViewStore.use((view) => view.apply);
+  const planCard = runViewStore.use((view) => view.planCard);
+  const failure = runViewStore.use((view) => view.failure);
+  const applying =
+    model.applying ||
+    (model.atRestRecord !== undefined &&
+      applyRunning(model.atRestRecord) &&
+      applyClock?.until === null);
+  const now = useSharedClock({ active: applying || showsWait });
   const queuedDeparture = departureStore.use((state) => state?.kind ?? null);
-  const apply = model.applying
+  // This process's Apply reads 0:00 until the bus delivers its start.
+  const apply = applying
     ? {
-        elapsedMs: applySince === null ? 0 : Math.max(0, now - applySince),
+        elapsedMs:
+          applyClock === null ? 0 : Math.max(0, (applyClock.until ?? now) - applyClock.since),
         queued: queuedDeparture,
       }
     : undefined;
@@ -424,6 +434,8 @@ export function WorkflowScreen({
         : openRunBylineParts({
             status: atRestStatus,
             wait,
+            planCard,
+            failure,
             continuable: model.continuable,
             width: bylineWidth,
             now,

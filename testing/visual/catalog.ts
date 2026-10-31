@@ -2669,6 +2669,23 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-at-rest-other-process-applying-clock',
+      title: 'Workflow · a ready run another process applies, with its Apply clock',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'at-rest-other-process-applying-clock',
+        title: 'Apply clock of another process',
+        kind: 'ready',
+        marker: 'Applying to your checkout',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-ready-composer-focus',
       title: 'Workflow · a ready run with the composer focused',
       surface: screenSurface('workflow'),

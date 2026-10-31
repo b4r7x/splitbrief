@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { PlannerConversation } from '../../../src/core/schemas/workflow.js';
 import { groupEventsIntoSections } from '../../../src/core/sections/event-sections.js';
 import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
+import { EMPTY_RUN_VIEW } from '../../../src/core/run-view/reduce.js';
+import { settleRunView } from '../../../src/core/run-view/settle.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { rowText } from '../../../src/features/workflow/conversation-rows/row-format/rows.js';
 import { deriveSummaryView } from '../../../src/features/workflow/closed/view-model.js';
@@ -168,6 +170,7 @@ async function resumedRows(target: StopContinueFixture, sessionId: string): Prom
 
 /** What the stopped byline says once the stop settled the run at rest on its re-read record. */
 function settledStopLead(target: StopContinueFixture, sessionId: string): string {
+  const record = readRunRecord({ projectDir: target.projectDir, sessionId });
   const byline = stopByline({
     intent: 'stop-now',
     phase: 'parked',
@@ -180,7 +183,11 @@ function settledStopLead(target: StopContinueFixture, sessionId: string): string
     elapsedMs: 0,
     questionPending: false,
     suite: null,
-    record: readRunRecord({ projectDir: target.projectDir, sessionId }),
+    record,
+    stopKept:
+      record.hydration.kind === 'loaded'
+        ? settleRunView(EMPTY_RUN_VIEW, record.hydration.state).stopKept
+        : [],
   });
   return byline?.parts.map((part) => part.text).join('') ?? '';
 }

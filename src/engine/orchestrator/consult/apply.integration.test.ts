@@ -271,14 +271,20 @@ describe('applyConsultAnswer', () => {
       .trim()
       .split('\n')
       .map((line) => JSON.parse(line));
-    expect(entries).toHaveLength(2);
+    expect(entries).toHaveLength(3);
     expect(entries[0]).toMatchObject({
+      kind: 'event',
+      type: 'planner_questions_asked',
+      phase: 'escalating',
+      data: { questions: [{ type: 'choice', options: ['redis', 'memory'], default: 'memory' }] },
+    });
+    expect(entries[1]).toMatchObject({
       kind: 'message',
       role: 'user',
       phase: 'escalating',
       text: 'memory',
     });
-    expect(entries[1]).toMatchObject({
+    expect(entries[2]).toMatchObject({
       type: 'user_message',
       phase: 'escalating',
       data: { text: 'memory', qa: [{ question: 'Which store?', answer: 'memory' }] },

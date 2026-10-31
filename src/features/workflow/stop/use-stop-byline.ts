@@ -21,14 +21,15 @@ export function useStopByline(): StopByline | null {
   const tasks = runViewStore.use((s) => s.briefs);
   const view = selectTaskListView(tasks);
   const phase = runViewStore.use((s) => s.phase);
+  const stopKept = runViewStore.use((s) => s.stopKept);
   const brief = selectRunningBrief(tasks, phase);
   // A pause armed on a brief outlives it: once the brief finishes, the run's own position still
   // names it until the boundary suite hands it on, so a finished slot is what it is finishing.
   const finishedTaskId = selectFinishedBrief(tasks)?.id ?? null;
   const questionPending = controlsStore.use((s) => s.inputMode === 'question');
   const suiteStage = operationsStore.use(selectRunningSuite);
-  // A stop that ended the run loop settles it at rest, and the record it re-read says where it
-  // stopped and what it kept.
+  // A stop that ended the run loop settles it at rest: the record it re-read says where it
+  // stopped, and the run view what it kept.
   const record = routerStore.use((s) =>
     s.screen === 'workflow' && s.execution.kind === 'at-rest' ? s.run : null,
   );
@@ -62,5 +63,6 @@ export function useStopByline(): StopByline | null {
           },
     error: stop.error,
     record,
+    stopKept,
   });
 }

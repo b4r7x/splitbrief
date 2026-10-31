@@ -696,9 +696,15 @@ describe('runWorkflow — smoke', () => {
       };
     }
 
+    // The status says the run failed; the saved failure carries its message.
     const failedWith = (message: string) => ({
-      kind: 'open',
-      stop: { kind: 'stopped', on: { kind: 'failed', message } },
+      status: { kind: 'open', stop: { kind: 'stopped', on: { kind: 'failed' } } },
+      state: { lastFailure: { message } },
+    });
+    // A run record carries the saved state under its hydration.
+    const recordFailedWith = (message: string) => ({
+      status: failedWith(message).status,
+      hydration: { kind: 'loaded', state: { lastFailure: { message } } },
     });
 
     it('a phase write of a brief it cannot confirm', async () => {
@@ -711,7 +717,7 @@ describe('runWorkflow — smoke', () => {
 
       expect(run.errors).toEqual([unconfirmed(sessionId)]);
       expect(run.plainCause).toBe(unconfirmed(sessionId));
-      expect(run.status).toMatchObject(failedWith(unconfirmed(sessionId)));
+      expect(run).toMatchObject(failedWith(unconfirmed(sessionId)));
     });
 
     it('the first write of the run it cannot confirm', async () => {
@@ -723,7 +729,7 @@ describe('runWorkflow — smoke', () => {
       );
 
       expect(run.stderr).toBe(`Could not start the run: ${unconfirmed(sessionId)}\n`);
-      expect(run.status).toMatchObject(failedWith(unconfirmed(sessionId)));
+      expect(run).toMatchObject(failedWith(unconfirmed(sessionId)));
     });
 
     it('the approval level a resume saves, when it cannot confirm it', async () => {
@@ -746,7 +752,7 @@ describe('runWorkflow — smoke', () => {
       );
 
       expect(run.state?.approve).toBe('none');
-      expect(run.status).toMatchObject(failedWith(unconfirmed(sessionId)));
+      expect(run).toMatchObject(failedWith(unconfirmed(sessionId)));
       expect(`${run.errors.join('\n')}${run.stderr}`).not.toMatch(/durability|persist/);
     });
 
@@ -825,7 +831,7 @@ describe('runWorkflow — smoke', () => {
       );
 
       expect(run.stderr).toBe(`Could not start the run: ${line(sessionId)}\n`);
-      expect(run.status).toMatchObject(failedWith(line(sessionId)));
+      expect(run).toMatchObject(failedWith(line(sessionId)));
     });
 
     it('a write that fails before anything reaches the disk', async () => {
@@ -839,7 +845,7 @@ describe('runWorkflow — smoke', () => {
 
       expect(run.errors).toEqual([message]);
       expect(run.plainCause).toBe(message);
-      expect(run.status).toMatchObject(failedWith(message));
+      expect(run).toMatchObject(failedWith(message));
     });
 
     it('End run on the plan card, when it cannot confirm the close', async () => {
@@ -904,7 +910,7 @@ describe('runWorkflow — smoke', () => {
         );
 
         expect(run.errors).toEqual([line(sessionId)]);
-        expect(run.status).toMatchObject(failedWith(line(sessionId)));
+        expect(run).toMatchObject(failedWith(line(sessionId)));
       },
     );
 
@@ -928,7 +934,7 @@ describe('runWorkflow — smoke', () => {
 
         expect(run.errors).toEqual(['Implementation failed: boom', line(sessionId)]);
         expect(run.state?.pendingRecovery).toBeUndefined();
-        expect(run.status).toMatchObject(failedWith(line(sessionId)));
+        expect(run).toMatchObject(failedWith(line(sessionId)));
       },
     );
 
@@ -993,7 +999,7 @@ describe('runWorkflow — smoke', () => {
           ...run,
           ref,
           dir,
-          record: readRunRecord(ref).status,
+          record: readRunRecord(ref),
           row: listSessions(projectDir).find((session) => session.id === sessionId),
         };
       }
@@ -1015,11 +1021,11 @@ describe('runWorkflow — smoke', () => {
           expect(run.errors.at(-1)).toBe(cause);
           expect(run.plainCause).toBe(cause);
           // The live record and the listing read it the way a saved failure reads.
-          expect(run.record).toMatchObject(failedWith(cause));
+          expect(run.record).toMatchObject(recordFailedWith(cause));
           expect(run.row).toMatchObject({ status: 'open', stop: 'stopped' });
           // Reopened in this process, after the lock went stale, it still reads failed.
           vi.useFakeTimers({ now: Date.now() + 60_000, toFake: ['Date'] });
-          expect(readRunRecord(run.ref).status).toMatchObject(failedWith(cause));
+          expect(readRunRecord(run.ref)).toMatchObject(recordFailedWith(cause));
           vi.useRealTimers();
           // The stderr line says the failure did not reach the disk.
           expect(run.stderr).toContain(
@@ -1061,7 +1067,7 @@ describe('runWorkflow — smoke', () => {
 
           expect(run.thrown).toBeUndefined();
           expect(run.errors.at(-1)).toBe(line);
-          expect(readRunRecord(ref).status).toMatchObject(failedWith(line));
+          expect(readRunRecord(ref)).toMatchObject(recordFailedWith(line));
           expect(run.status).toMatchObject({
             kind: 'open',
             stop: { kind: 'stopped' },
@@ -1107,7 +1113,7 @@ describe('runWorkflow — smoke', () => {
         const cause = notSaved(sessionId, 'i/o error');
         expect(again.errors.at(-1)).toBe(cause);
         expect(again.state?.lastFailure?.message).toBe(cause);
-        expect(readRunRecord(run.ref).status).toMatchObject(failedWith(cause));
+        expect(readRunRecord(run.ref)).toMatchObject(recordFailedWith(cause));
       });
 
       it('a continue after planning failed on a save plans again and builds once', async () => {
@@ -1362,7 +1368,7 @@ describe('runWorkflow — smoke', () => {
           expect(run.thrown).toBeUndefined();
           expect(run.errors).toEqual([cause]);
           expect(run.state?.pendingRecovery).toBeUndefined();
-          expect(readRunRecord({ projectDir, sessionId }).status).toMatchObject(failedWith(cause));
+          expect(readRunRecord({ projectDir, sessionId })).toMatchObject(recordFailedWith(cause));
         },
       );
 
@@ -1393,7 +1399,7 @@ describe('runWorkflow — smoke', () => {
 
       expect(run.errors).toEqual([unconfirmed(sessionId)]);
       expect(run.plainCause).toBe(unconfirmed(sessionId));
-      expect(run.status).toMatchObject(failedWith(unconfirmed(sessionId)));
+      expect(run).toMatchObject(failedWith(unconfirmed(sessionId)));
       expect(`${run.errors.join('\n')}${run.stderr}`).not.toMatch(/durability|persist/);
     });
 
@@ -1449,7 +1455,7 @@ describe('runWorkflow — smoke', () => {
         expect(run.errors).toEqual([line(sessionId)]);
         expect(run.plainCause).toBe(line(sessionId));
         expect(run.state?.pendingRecovery).toBeUndefined();
-        expect(run.status).toMatchObject(failedWith(line(sessionId)));
+        expect(run).toMatchObject(failedWith(line(sessionId)));
         if (label === 'a brief') expect(implement).toHaveBeenCalledTimes(1);
       },
     );

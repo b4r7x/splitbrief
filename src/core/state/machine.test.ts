@@ -421,9 +421,6 @@ describe('transition', () => {
     expect(deriveRunStatus({ state: all, liveness: 'not-alive' })).toMatchObject({
       stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } },
     });
-    expect(deriveRunStatus({ state: all, liveness: 'not-alive' })).not.toHaveProperty(
-      'stop.on.kept',
-    );
 
     const unstopped = createInitialState('feat');
     expect(transition(unstopped, { type: 'RECORD_REJECT', removed: ['a.ts'], booked: [] })).toBe(

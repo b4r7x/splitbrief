@@ -233,7 +233,7 @@ The full path from engine to pixel:
 1. Engine calls `bus.publish({ type: 'task_completed', ... })`
 2. TUI sink calls `addEvent(event)` from `src/stores/workflow/actions/event.ts`
 3. `addEvent` dispatches to workflow sub-stores synchronously:
-   - `runViewStore` — folds the event into the run view: the phase, when the run first entered each phase, the seat wait, the halt and the briefs (`reduceRunView`, `src/core/run-view/reduce.ts`). `recovery_prompted` carries the halt (`issue`) and the step the run resumes at (`at`); `recovery_resolved` with the same id, `workflow_cancelled`, `workflow_complete` and `workflow_started` clear it. This fold runs before the cancellation gate, so a late event still moves the view
+   - `runViewStore` — folds the event into the run view: the phase, when the run first entered each phase, the seat wait, the halt, the briefs, what the run asks, why it stopped and the Apply clock (`reduceRunView`, `src/core/run-view/reduce.ts`). `planner_questions_asked` sets the open question round and the next `user_message` clears it; `plan_card_opened` opens the plan card and `plan_approved`, `plan_rejected` or `plan_regenerated` closes it; `turn_interrupted` sets the files the stop kept and `run_failed` the error the run stopped on, and `workflow_resumed` clears both; `apply_started` starts the Apply clock and `apply_finished` stops it; `workflow_started` clears all of them. `recovery_prompted` carries the halt (`issue`) and the step the run resumes at (`at`); `recovery_resolved` with the same id, `workflow_cancelled`, `workflow_complete` and `workflow_started` clear it. This fold runs before the cancellation gate, so a late event still moves the view
    - `eventsStore` — appends the TUI-safe event-log projection
    - `tokensStore` — updates cost and token usage
    - `lifecycleStore` — updates run status, queue depth, terminal workflow timing; it reads a phase change from the run view's fold of the same event
@@ -564,11 +564,25 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 
 // A resumable stop parked the run
 { type: 'turn_interrupted'; source?: 'user' | 'watchdog';
-  at?: StepCut; step?: StepRef; cause?: 'seat-change' }
+  at?: StepCut; step?: StepRef; cause?: 'seat-change'; kept?: string[] }
 // `at` says where the stop landed: inside the call, or on a boundary (between two briefs,
 // or at a gate). `step` is the step the stop parked. `cause` marks a boundary park that only
-// changes a seat, where the run stops so the next brief starts on the new seat. Older logs
-// omit `at`, `step` and `cause`.
+// changes a seat, where the run stops so the next brief starts on the new seat. `kept` lists
+// the declared files a brief cut mid-step had changed; it is absent when the stop kept none.
+// Older logs omit `at`, `step`, `cause` and `kept`.
+
+// The error that stopped the run, as `state.lastFailure` records it for the step it retries
+{ type: 'run_failed'; step: StepRef; message: string }
+
+// The questions of a planner round, published before the run waits for the answer
+{ type: 'planner_questions_asked'; questions: ClarificationQuestion[] }
+
+// The plan card opened and waits for the operator
+{ type: 'plan_card_opened' }
+
+// Apply began to write the reviewed result to the checkout, and Apply ended (no `phase`)
+{ type: 'apply_started' }
+{ type: 'apply_finished' }
 
 // Operational message — `warning` and `info` have the same shape without `resetAt`;
 // `resetAt` is the ISO instant a usage-limit halt's quota comes back. `info` is a status

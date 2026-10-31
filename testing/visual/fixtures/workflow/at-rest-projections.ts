@@ -932,7 +932,7 @@ const AT_REST_WAITING_GATE = record({
   sessionId: 'visual-at-rest-waiting-gate',
   status: {
     kind: 'open',
-    stop: { kind: 'waiting-for-you', on: { kind: 'gate', gate: 'spec', reopens: false } },
+    stop: { kind: 'waiting-for-you', on: { kind: 'gate', gate: 'spec' } },
     resumeAt: { kind: 'gate', gate: 'spec' },
   },
   state: savedState({ phase: 'reviewing-spec', briefs: [] }),
@@ -2716,7 +2716,7 @@ const FAILED_UNSAVED = record({
   sessionId: 'visual-at-rest-failed-unsaved',
   status: {
     kind: 'open',
-    stop: { kind: 'stopped', on: { kind: 'failed', message: UNSAVED_FAILURE_MESSAGE } },
+    stop: { kind: 'stopped', on: { kind: 'failed' } },
     resumeAt: { kind: 'brief', taskId: BRIEFS.wire.id, attempt: 0 },
   },
   state: savedState({
@@ -2756,7 +2756,7 @@ const PLAN_UNSAVED = record({
   sessionId: 'visual-at-rest-plan-unsaved',
   status: {
     kind: 'open',
-    stop: { kind: 'stopped', on: { kind: 'failed', message: PLAN_UNSAVED_MESSAGE } },
+    stop: { kind: 'stopped', on: { kind: 'failed' } },
     resumeAt: { kind: 'planner', call: 'plan' },
   },
   state: savedState({
@@ -3024,6 +3024,15 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   atRestProjection({
     id: 'workflow-at-rest-other-process-applying',
     route: { record: APPLYING, log: READY_LOG },
+  }),
+  // The other process's Apply began 6 seconds before the gallery clock. The replay folds the log in
+  // its file order, so the start counts after the ready log whatever its time.
+  atRestProjection({
+    id: 'workflow-at-rest-other-process-applying-clock',
+    route: {
+      record: APPLYING,
+      log: [...READY_LOG, { type: 'apply_started', ts: VISUAL_FIXTURE_EPOCH + 36_000 }],
+    },
   }),
   atRestProjection({
     id: 'workflow-ready-composer-focus',

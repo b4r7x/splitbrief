@@ -35,14 +35,12 @@ export interface RunRecordDeps {
   readCheckpoint: (ref: SessionRef) => RunCheckpoint | null;
 }
 
-function unreadableState(hydration: OwnedResumeState): RunStatus {
-  const message =
-    hydration.kind === 'invalid' ? hydration.message : 'Session has no saved state to read.';
+function unreadableState(): RunStatus {
   // The record reports what it found; whether an unreadable run is still offered
   // as resumable is the caller's decision, not this loader's.
   return {
     kind: 'open',
-    stop: { kind: 'stopped', on: { kind: 'failed', message } },
+    stop: { kind: 'stopped', on: { kind: 'failed' } },
     resumeAt: { kind: 'planner', call: 'plan' },
   };
 }
@@ -59,7 +57,7 @@ export function loadRunRecord(ref: SessionRef, deps: RunRecordDeps): RunRecord {
     hydration,
     status:
       state === null
-        ? unreadableState(hydration)
+        ? unreadableState()
         : deriveRunStatus({
             state,
             liveness: deps.liveness(ref),

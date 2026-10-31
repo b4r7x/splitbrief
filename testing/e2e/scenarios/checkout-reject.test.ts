@@ -32,6 +32,8 @@ import { createRuntimeCommands } from '../../../src/core/runtime/commands/regist
 import { bylineParts } from '../../../src/features/workflow/closed/byline.js';
 import { hydrateRun } from '../../../src/features/workflow/run-history.js';
 import { runViewStore } from '../../../src/stores/workflow/run-view.js';
+import { EMPTY_RUN_VIEW } from '../../../src/core/run-view/reduce.js';
+import { settleRunView } from '../../../src/core/run-view/settle.js';
 import { deriveSummaryView } from '../../../src/features/workflow/closed/view-model.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -261,6 +263,10 @@ function parkedBylineText(record: RunRecord, kept: readonly string[]): string {
       questionPending: false,
       suite: null,
       record,
+      stopKept:
+        record.hydration.kind === 'loaded'
+          ? settleRunView(EMPTY_RUN_VIEW, record.hydration.state).stopKept
+          : [],
     })
       ?.parts.map((part) => part.text)
       .join('') ?? ''
@@ -721,6 +727,8 @@ else {
       openRunBylineParts({
         status: reopened.status,
         wait: null,
+        planCard: false,
+        failure: null,
         continuable: true,
         width: 120,
         now: Date.now(),

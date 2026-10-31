@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
+import type { ClarificationQuestion } from '../schemas/question.js';
+import { taskId } from '../schemas/task.js';
 import { EMPTY_BRIEFS } from './briefs.js';
 import { EMPTY_RUN_VIEW, type RunView } from './reduce.js';
 import { settleRunView } from './settle.js';
@@ -98,5 +100,66 @@ describe('settleRunView', () => {
       currentTask: 0,
       totalTasks: 0,
     });
+  });
+});
+
+describe('settleRunView ask and stop', () => {
+  const round: ClarificationQuestion[] = [{ id: 'module', type: 'input', text: 'Which module?' }];
+  const conversation = {
+    call: 'plan' as const,
+    text: 'Before the plan',
+    answers: [],
+    questions: round,
+  };
+
+  it('takes the round the saved state waits on, and none once it is answered', () => {
+    const waiting = makeWorkflowState({
+      phase: 'planning',
+      pendingPlannerConversation: { ...conversation, answered: false },
+    });
+    expect(settleRunView(LOGGED, waiting).questions).toEqual(round);
+    const answered = makeWorkflowState({
+      phase: 'planning',
+      pendingPlannerConversation: { ...conversation, answered: true },
+    });
+    expect(settleRunView(LOGGED, answered).questions).toBeNull();
+  });
+
+  it('reopens the card of a typed plan the state is parked at', () => {
+    const plan = {
+      summary: 'One task.',
+      decisions: [],
+      criteria: [{ id: 'C1', text: 'Works.', checkIds: ['K1'] }],
+      checks: [],
+      validation: null,
+    };
+    expect(
+      settleRunView(LOGGED, makeWorkflowState({ phase: 'reviewing-plan', plan })).planCard,
+    ).toBe(true);
+    expect(settleRunView(LOGGED, makeWorkflowState({ phase: 'reviewing-spec' })).planCard).toBe(
+      false,
+    );
+  });
+
+  it('takes the files the saved stop kept and the error the saved failure names', () => {
+    const settled = settleRunView(
+      LOGGED,
+      makeWorkflowState({
+        phase: 'implementing',
+        interruptedStep: {
+          step: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
+          source: 'user',
+          cut: 'mid-step',
+          kept: ['src/a.ts'],
+          at: '2026-09-01T00:00:00.000Z',
+        },
+        lastFailure: {
+          step: { kind: 'planner', call: 'plan' },
+          message: 'Disk full',
+          at: '2026-09-01T00:00:00.000Z',
+        },
+      }),
+    );
+    expect(settled).toMatchObject({ stopKept: ['src/a.ts'], failure: 'Disk full' });
   });
 });

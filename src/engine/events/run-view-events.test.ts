@@ -2,8 +2,11 @@ import { expectTypeOf, it } from 'vitest';
 import type {
   ChecksRunEvent,
   ImplementerGenerateRunningEvent,
+  PlannerQuestionsAskedEvent,
   RecoveryPromptedEvent,
   RecoveryResolvedEvent,
+  RunFailedEvent,
+  RunRejectedEvent,
   SeatWaitEndedEvent,
   SeatWaitStartedEvent,
   TaskCompletedEvent,
@@ -14,6 +17,7 @@ import type {
   TaskSkippedEvent,
   TaskStartedEvent,
   TasksPlannedEvent,
+  TurnInterruptedEvent,
   WorkflowCompleteEvent,
   WorkflowResumedEvent,
 } from '../../core/run-view/events.js';
@@ -41,4 +45,11 @@ it('gives the run view every field it folds from each engine event', () => {
 it('gives the run view every field it folds from the halt events', () => {
   expectTypeOf<EngineEventOf<'recovery_prompted'>>().toExtend<RecoveryPromptedEvent>();
   expectTypeOf<EngineEventOf<'recovery_resolved'>>().toExtend<RecoveryResolvedEvent>();
+});
+
+it('gives the run view every field it folds from the ask and stop events', () => {
+  expectTypeOf<EngineEventOf<'planner_questions_asked'>>().toExtend<PlannerQuestionsAskedEvent>();
+  expectTypeOf<EngineEventOf<'turn_interrupted'>>().toExtend<TurnInterruptedEvent>();
+  expectTypeOf<EngineEventOf<'run_failed'>>().toExtend<RunFailedEvent>();
+  expectTypeOf<EngineEventOf<'run_rejected'>>().toExtend<RunRejectedEvent>();
 });

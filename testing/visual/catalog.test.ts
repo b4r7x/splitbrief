@@ -76,6 +76,7 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-at-rest-applying-home-queued', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-at-rest-applying-quit-queued', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-at-rest-other-process-applying', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-at-rest-other-process-applying-clock', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-continuous-transcript', ['120x40', '80x24', '60x18', '160x45', '200x50']],
   ['workflow-continuous-transcript-ready', ['120x40', '80x24', '60x18', '160x45', '200x50']],
   ['workflow-recovery-balance-spent', ['120x40', '80x24', '60x18', '160x45', '200x50']],

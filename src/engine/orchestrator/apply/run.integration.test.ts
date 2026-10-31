@@ -260,7 +260,11 @@ describe('runApply', { timeout: 60_000 }, () => {
         expect(result.outcome).toBe('applied');
         expect(read(run.dir, 'a.txt')).toBe(lines('ONE', 'two', 'three', 'four', 'five'));
         expect(existsSync(run.ws)).toBe(false);
-        expect(events.at(-1)?.type).toBe('workspace_closed');
+        expect(events[0]?.type).toBe('apply_started');
+        expect(events.slice(-2).map((event) => event.type)).toEqual([
+          'workspace_closed',
+          'apply_finished',
+        ]);
         expect(git('worktree', 'list', '--porcelain')).not.toContain(basename(run.ws));
         expect(git('branch', '--list', branch).trim()).toBe('');
         expect(
@@ -296,7 +300,11 @@ describe('runApply', { timeout: 60_000 }, () => {
             event.message.startsWith(`Could not remove the run workspace at ${run.ws}:`),
         ),
       ).toHaveLength(1);
-      expect(events.at(-1)?.type).toBe('workspace_closed');
+      expect(events[0]?.type).toBe('apply_started');
+      expect(events.slice(-2).map((event) => event.type)).toEqual([
+        'workspace_closed',
+        'apply_finished',
+      ]);
       expect(deriveRunStatus({ state: savedState(run), liveness: 'not-alive' })).toEqual({
         kind: 'closed',
         as: 'applied',

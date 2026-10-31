@@ -196,6 +196,10 @@ export function openRunBylineParts(
     status: RunStatus;
     /** The seat wait the run's log states, already dropped for an open run whose seat moved. */
     wait: ViewSeatWait | null;
+    /** The run view's `planCard`: a gate stop on a typed plan's card reopens it. */
+    planCard: boolean;
+    /** The run view's `failure`: the message of the error the run stopped on. */
+    failure: string | null;
     continuable: boolean;
     width: number;
     now: number;
@@ -238,10 +242,14 @@ export function openRunBylineParts(
   if (!input.continuable) return fitByline(UNREADABLE_BYLINE, width);
   // A halt, a question and a gate wait for you and keep their own line.
   if (status.stop.kind === 'stopped' && wait !== null) return fitByline(waitByline(wait), width);
-  return fitByline(openByline(status.stop, status.resumeAt), width);
+  return fitByline(openByline(status.stop, status.resumeAt, input), width);
 }
 
-function openByline(stop: StopReason, resumeAt: StepRef): Byline {
+function openByline(
+  stop: StopReason,
+  resumeAt: StepRef,
+  { planCard, failure }: Readonly<{ planCard: boolean; failure: string | null }>,
+): Byline {
   switch (stop.on.kind) {
     case 'paused':
       return {
@@ -255,7 +263,7 @@ function openByline(stop: StopReason, resumeAt: StepRef): Byline {
     case 'gate':
       return {
         reason: [{ text: `Waiting at ${stepWord(resumeAt)}`, tone: stateTone('attention') }],
-        action: stop.on.reopens ? '⏎ to reopen it' : '⏎ to continue',
+        action: planCard ? '⏎ to reopen it' : '⏎ to continue',
       };
     case 'question':
       return {
@@ -275,8 +283,12 @@ function openByline(stop: StopReason, resumeAt: StepRef): Byline {
       return {
         reason: [
           { text: 'Stopped by an error', tone: stateTone('failed') },
-          { text: SOFT_SEP, tone: 'textDim' },
-          ...separatedSpans(stop.on.message, 'text'),
+          ...(failure === null
+            ? []
+            : [
+                { text: SOFT_SEP, tone: 'textDim' } satisfies ConversationRowSegment,
+                ...separatedSpans(failure, 'text'),
+              ]),
         ],
         action: '⏎ to retry the step',
       };

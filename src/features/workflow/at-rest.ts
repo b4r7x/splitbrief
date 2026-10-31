@@ -43,15 +43,20 @@ export function recordPhase(record: RunRecord): Phase {
   return 'planning';
 }
 
-/** The questions of the round an open run waits at; a run that waits on nothing else has none. */
-export function openRoundQuestions(record: RunRecord): readonly ClarificationQuestion[] {
-  const { status, hydration } = record;
+/**
+ * The questions of the round an open run waits at, as the run view folded them; a run that waits on
+ * nothing else has none.
+ */
+export function openRoundQuestions(
+  record: RunRecord,
+  questions: readonly ClarificationQuestion[] | null,
+): readonly ClarificationQuestion[] {
+  const { status } = record;
   const waitsAtQuestion =
     status.kind === 'open' &&
     status.stop.kind === 'waiting-for-you' &&
     status.stop.on.kind === 'question';
-  if (!waitsAtQuestion || hydration.kind !== 'loaded') return [];
-  return hydration.state.pendingPlannerConversation?.questions ?? [];
+  return waitsAtQuestion && questions !== null ? questions : [];
 }
 
 /**

@@ -256,6 +256,8 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     case 'plan_approved':
     case 'plan_rejected':
     case 'plan_regenerated':
+    case 'plan_card_opened':
+    case 'planner_questions_asked':
     case 'briefs_approved':
     case 'briefs_rejected':
     case 'rewind_to_spec':
@@ -313,6 +315,9 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     case 'planner_attachments_dropped':
     case 'build_images_as_paths':
     case 'workspace_closed':
+    case 'run_failed':
+    case 'apply_started':
+    case 'apply_finished':
     case 'approval_prompted':
     case 'approval_granted':
     case 'approval_rejected':
