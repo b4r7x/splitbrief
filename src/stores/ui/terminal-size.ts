@@ -35,7 +35,7 @@ function reset(): void {
   store.reset();
 }
 
-// Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
+// Test escape hatch — see docs/STORES-AND-UI.md#test-escape-hatches. Do not use outside tests.
 function __testReset(next?: Partial<TerminalSize>): void {
   if (unsubscribeResize) unsubscribeResize();
   store.set(next ? { ...measure(), ...next } : measure());

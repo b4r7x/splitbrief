@@ -2,7 +2,7 @@
 
 > **This document is about React hooks.** It is not the same as the workflow lifecycle hook system (user-declared `pre_task` / `post_task` / `on_complete` / etc. commands fired on engine events). For that, see [`docs/HOOKS-CONFIG.md`](./HOOKS-CONFIG.md). The two concepts share the word "hook" and nothing else.
 
-SPLITBRIEF organizes React hooks by the **scope of consumption**, not by "what kind of hook it is". The same principle that shapes [`docs/STORES.md`](./STORES.md) and [`docs/NO-BARRELS.md`](./NO-BARRELS.md) applies here: put code where its consumers live, avoid flat dumping grounds, avoid fake hooks.
+SPLITBRIEF organizes React hooks by the **scope of consumption**, not by "what kind of hook it is". The same principle that shapes [`docs/STORES-AND-UI.md`](./STORES-AND-UI.md) and [`docs/NO-BARRELS.md`](./NO-BARRELS.md) applies here: put code where its consumers live, avoid flat dumping grounds, avoid fake hooks.
 
 ## Principle
 
@@ -18,7 +18,7 @@ This is the same rule [bulletproof-react](https://github.com/alan2207/bulletproo
 | Hook used by 2+ features | `src/hooks/` (shared) |
 | Hook that is a UI primitive (filterable list, async highlight, fixed-item selector) | `src/hooks/` (shared) |
 | Module named `use-*` that has no React dependency (pure function disguised as a hook) | Not a hook. Move to `src/utils/`, `src/core/`, or the feature that owns it. |
-| State that needs to cross multiple components or survive unmounts | Not a hook. Use a store (`src/stores/`). See [`STORES.md`](./STORES.md). |
+| State that needs to cross multiple components or survive unmounts | Not a hook. Use a store (`src/stores/`). See [`STORES-AND-UI.md`](./STORES-AND-UI.md). |
 
 **Single-consumer hooks colocated with their component are acceptable** when the hook's sole job is to decompose that component's internals (e.g. `src/features/runners/two-column-picker/use-nav-state.ts`). They are private implementation details of the component, not part of any public surface.
 
@@ -97,7 +97,7 @@ const config = configStore.useConfig();
 export function useConfig() { return configStore.useConfig(); }
 ```
 
-See [`STORES.md`](./STORES.md) for the full "don't create wrapper hooks around `store.use()`" rule.
+See [`STORES-AND-UI.md`](./STORES-AND-UI.md#reading-and-writing-stores) for how components read a store with `store.use()`.
 
 ### Use `useStores(...)` for multi-store flat reads
 
@@ -148,7 +148,7 @@ It is a pure function, not a hook. Hooks imply React lifecycle. Keeping pure hel
 ## References
 
 - [`STRUCTURE.md`](./STRUCTURE.md) — companion doc on folder organization; defines the feature layout this hook doc lives inside.
-- [`STORES.md`](./STORES.md) — companion doc on state architecture; the same colocation principle motivates both.
+- [`STORES-AND-UI.md`](./STORES-AND-UI.md) — companion doc on state architecture; the same colocation principle motivates both.
 - [`NO-BARRELS.md`](./NO-BARRELS.md) — no `index.ts` re-exporters anywhere in `src/` except where the file is the real implementation.
 - [bulletproof-react — project structure](https://github.com/alan2207/bulletproof-react/blob/master/docs/project-structure.md) — source of the "shared vs feature-scoped" rule.
 - [React docs — Reusing Logic with Custom Hooks](https://react.dev/learn/reusing-logic-with-custom-hooks) — official guidance on when to extract.

@@ -186,7 +186,7 @@ export async function diffTaskResult(taskId: TaskId) { ... }
 
 ## `stores/` — external state
 
-See [`STORES.md`](./STORES.md) for full architecture. In layer terms: stores are the sanctioned cross-boundary channel between `engine/` (writes) and `features/` (reads). They depend on `utils/`, `core/`, and optionally `lib/`. They never import React (only `use-stores.ts` consumers do, and those are hook-level).
+See [`STORES-AND-UI.md`](./STORES-AND-UI.md) for full architecture. In layer terms: stores are the sanctioned cross-boundary channel between `engine/` (writes) and `features/` (reads). They depend on `utils/`, `core/`, and optionally `lib/`. They never import React (only `use-stores.ts` consumers do, and those are hook-level).
 
 Stores may import engine **types only** (`import type`) — for example `EngineEvent` from `engine/events/types.ts`, the detection types under `engine/detection/`, and the prepared-execution types from `engine/runners/prepared-execution.ts`. No engine values cross into `stores/`.
 
@@ -320,6 +320,6 @@ engine/implementers/   # mirror of planners/ — same port+adapter pattern
 - [`PRINCIPLES.md`](./PRINCIPLES.md) — one-page index of all architectural rules
 - [`STRUCTURE.md`](./STRUCTURE.md) — file tree, feature anatomy, placement rules, folder colocation
 - [`TYPES.md`](./TYPES.md) — type placement, Zod schema conventions
-- [`STORES.md`](./STORES.md) — state architecture
+- [`STORES-AND-UI.md`](./STORES-AND-UI.md) — state architecture
 - [`NO-BARRELS.md`](./NO-BARRELS.md) — why `index.ts` re-exports are banned
 - [`FUTURE.md`](./FUTURE.md) — deferred features (not yet built)

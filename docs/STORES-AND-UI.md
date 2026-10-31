@@ -6,15 +6,25 @@ How state flows from the engine to the screen. Read this before adding a store, 
 
 ## The store factory
 
-`src/stores/create-store.ts` creates a store from an initial value or factory function. Each store exposes five methods:
+SPLITBRIEF uses its own external store, built on React's `useSyncExternalStore`, in one short file. It gives the core of Zustand with zero dependencies: the project needs no middleware (devtools, persist, immer), partial merge semantics, custom equality functions or SSR support. The dependency count stays at zero and the whole implementation stays visible.
 
-- `get()` -- synchronous read. Used by non-React UI/CLI glue and store actions.
-- `set(updater)` -- replace state or pass a function `(prev) => next`. Skips notification when the new value is reference-equal (`Object.is`) to the old one, so updaters must return new objects to trigger subscribers.
-- `subscribe(listener)` -- register a callback, returns an unsubscribe function.
-- `use(selector)` -- React hook. Wraps `useSyncExternalStore`. Caches the selected value per render -- if the store state reference and selector function haven't changed, it returns the cached result without re-running the selector.
-- `reset()` -- restore to initial state.
+`src/stores/create-store.ts` creates a store from an initial value or factory function: `const store = createStore<State>(initialState)`. It returns a `Store<T>` with five methods:
+
+- `get()` -- `() => T`, synchronous read. Used by non-React UI/CLI glue and store actions.
+- `set(updater)` -- `(updater: T | (prev: T) => T) => void`, replace state or pass a function `(prev) => next`. Skips notification when the new value is reference-equal (`Object.is`) to the old one, so updaters must return new objects to trigger subscribers.
+- `subscribe(listener)` -- `(listener: () => void) => () => void`, register a callback, returns an unsubscribe function.
+- `use(selector)` -- `<S>(selector: (s: T) => S) => S`, React hook. Wraps `useSyncExternalStore(subscribe, getSnapshot)`. `getSnapshot` caches the selected value per state and selector -- if the store state reference and selector function haven't changed, it returns the cached result without re-running the selector. This is concurrent-mode safe, with no tearing.
+- `reset()` -- restore to initial state (a factory initial runs again), with the same `Object.is` bailout as `set()`.
+
+State is a closure variable, not React state, so changes are synchronous. Listeners are kept in a `Set<Listener>`: no duplicates, O(1) add and remove.
 
 Stores are module-scoped singletons. Import the store, call its methods. No providers, no prop drilling.
+
+Design decisions:
+
+- **Not React Context.** Context re-renders all consumers when any part of its value changes. External stores with selectors re-render only when the selected slice changes, and need no provider nesting.
+- **Module-scoped singletons.** The app is a single CLI process: exactly one instance of each store, shared by React components, UI glue and store actions. No dependency injection, no second instance.
+- **No `useMemo` / `useCallback` / `React.memo`.** Components subscribe to specific slices and re-render only when those slices change. Action functions are module-level closures with stable identity.
 
 `storeBase(store)` strips `set` from the public surface, exposing only `use`, `get`, `subscribe`, `reset`. The `set` method is kept in a private `_<name>Internal` export (for example `_runViewInternal`) so only the store's own actions file can write to it.
 
@@ -22,6 +32,28 @@ Stores are module-scoped singletons. Import the store, call its methods. No prov
 
 Every colour is a theme token from `src/core/theme/palette.ts`. Seat words use `CREW_SEAT_ROLES`; state words and marks use `stateTone(StateMeaning)` from `src/core/theme/state-tone.ts`. Cause prose keeps `text`, and secondary text and separators use `textDim`. Dark `textDim` is `#9fa7bf`. The `dimError`, `dimSuccess` and `validator` tokens are removed. `resolveTheme` maps tokens to readable truecolor, 256-index or ANSI values against the detected background. Components paint no faint (SGR 2) or fixed colours.
 Every `Text` in `src` is `ThemeText`, which drops an `undefined` colour so the terminal's own colour shows.
+
+### Initialization
+
+Stores that need data from disk are loaded **synchronously before React renders**:
+
+```
+CLI (commander parses args)
+  → initStoresForTuiMount(projectDir, opts)   // src/cli/bootstrap/init.ts
+      1. configStore.load(projectDir, overrides)
+      2. sessionsStore.load(projectDir)
+      3. hook trust check
+      4. discovery, returned as awaitDiscovery and not awaited:
+         detection hydrate + refresh, then discoverSkills(projectDir) → skillsStore.setAvailable(skills)
+  → routerStore.init(route)           // set initial screen
+  → render(<App />)                   // React starts here, while discovery continues
+```
+
+`initStores()` runs the same steps and awaits discovery too; `splitbrief init` and the interactive `continue` path use it.
+
+If stores were loaded inside React hooks (for example in a `useEffect`), there would be a render cycle where the store is empty, which needs loading flags and conditional rendering. Because the stores load before React boots, components always see initialized data. `configStore.useConfig()` throws if config is null: a fail-fast safety net for this contract.
+
+Skill discovery also runs again after boot: both sites that open the skills overlay (`Ctrl+S` in `src/app/keys.ts`, and the `/skills` command through `ctx.refreshSkills()`) call `refreshSkills()` from `src/app/refresh-skills.ts`, which re-runs `discoverSkills(projectDir)` and feeds `skillsStore.setAvailable()`. It is a helper called from the open sites, not a mount-time effect inside the overlay.
 
 ---
 
@@ -57,6 +89,12 @@ This is the only event path from engine to UI. UI composition boundaries may cal
 
 Store modules may import engine types with `import type` (`EngineEvent`, detection service types), but they must not import engine values. Engine modules do not import store values; they publish events and receive explicit inputs.
 
+The engine does not write workflow stores directly and does not import `workflow/actions.addEvent`. It publishes on the `EventBus` (`wctx.bus.publish(event)`); the TUI sink, `addTuiEvent`, is subscribed at workflow init and forwards each bounded `EngineEvent` to `addEvent`. The direction is **engine → bus → sink → store → UI**:
+
+- Engine code publishes events; sinks write to stores; UI components subscribe and re-render only when their selected slice changes.
+- Non-event cross-cutting writes (abort and queue handler registration) go through the `sinks` surface on the workflow context. The engine does not import stores to observe cancellation; it receives an `AbortSignal` from the caller.
+- Engine modules live in `src/engine/` and have zero React, Ink or store imports. They publish `EngineEvent` values and return data. Nothing in `src/engine/` calls `store.use()`, `store.get()` or store actions.
+
 `runner_call_*` events are part of that same event stream. `addEvent()` projects the event-log copy before retaining it: raw `runner_call_text_delta`, tool-use, session-id, artifact, warning, and error events are not stored in `eventsStore.events`. A `runner_call_completed` is stored stripped: it keeps the call id, role, task and timing, and drops the usage, the native session id and the runner, model and invocation metadata. The transcript reads it only to know that the call ended, and it renders no row. The same original event still reaches the operational stores in the same synchronous dispatch. `operationsStore` consumes runner-call lifecycle events as the canonical active-operation lifecycle for the status row: start, terminal status, duration, partial output flag, runner/model metadata, grouped warnings, and usage. Terminal operation fields are frozen once a call is cancelled/completed/failed, so late abort or warning telemetry cannot mutate the visible cancelled row. The engine separately projects safe `runner_call_activity` events from structured tool/action/artifact progress; conversation rows render that already-redacted activity surface as compact task/activity children. Raw runner text/tool/session/artifact payload events stay silent in conversation rows, and `tokensStore` does not count runner-call usage directly. `cost_update` remains the canonical user-facing token/cost projection, which avoids double-counting.
 
 Cancellation has the same shape in every path. UI cancel first records a local cancellation intent so the screen stops spinning immediately, then the engine publishes `workflow_cancelled` with a reason such as `user_cancelled`. Both paths terminalize running operations with `endedAt` and `durationMs`; late `runner_call_error(status: aborted)` or final cost events are accepted idempotently.
@@ -67,66 +105,123 @@ When the workflow needs a human decision -- approve the plan, answer a question,
 
 ## Store groups
 
+`src/stores/` has one directory per domain, plus the factory (`create-store.ts`) and the multi-store hook (`use-stores.ts`). There are **zero barrels** (`index.ts` files; see [NO-BARRELS.md](./NO-BARRELS.md)): consumers import directly from the store file. Files that are not stores sit beside the stores they serve: `ui/session-drafts.ts` (per-session `draft.json` load, save and flush, functions only), `ui/persistence.ts`, `project/config-persistence.ts`, `project/save-feedback.ts`, `discovery/detection-adapter.ts`, `workflow/operations/` (`state.ts`, `reducer.ts`, …) and `workflow/actions/`.
+
 ### Workflow -- `src/stores/workflow/`
 
 Runtime state of the active workflow run.
 
 The ready card says that run changes await Apply. A seat switch can save the crew in `.splitbrief/config.yaml` before Apply. See [Seat down](./APPROVAL-AND-RECOVERY.md#seat-down) for this write.
 
-- **eventsStore** -- the TUI-safe event log. Array of projected `EngineEvent` objects, merged and capped. It keeps structural workflow/task events, safe planner/validation messages, and safe `runner_call_activity` display events. It does not retain raw runner text, tool-use, session-id, artifact, warning, or error payloads. It keeps each `runner_call_completed` stripped of its usage, native session id and runner, model and invocation metadata, so the transcript can tell when a call ended. When capped, ordinary activity/log events are evicted before structural task/config events so completed-task summaries and active task grouping remain reconstructable. Consecutive text chunks merge until an implementer message marks its first chunk with `messageStart` or a call's end separates the text of two calls; older events without the marker keep their original merge behavior. Command updates and results replace the outstanding `running` row anywhere in the log, even across warnings. A `full_suite` matches by `suiteCommandKey`; a `validate` matches by task id. Live and replay logs share `commandReplacementIndex`, so each command run keeps one row.
-- **lifecycleStore** -- run status (`running`, `paused`, `interrupted`, `complete`, `cancelled`), cancellation flag, run clocks, queued count, and attached steerable call. It holds no phase: it reads each phase change from the run view.
-- **tokensStore** -- token usage, cost, pricing context, per-phase breakdowns.
-- **runViewStore** -- the run view: what the run's log says about the run, folded once by `reduceRunView` (`src/core/run-view/reduce.ts`). It holds the current phase (`planning`, `reviewing-plan`, `implementing`, etc.), `phaseFirstSeen` (the time the run first entered each phase), the seat wait, live or kept by a stop, the halt the run waits on with the step it resumes at (`recovery_prompted` sets it; its `recovery_resolved`, a cancel, a completion or a new start clears it), and the briefs (`RunBriefs`, `src/core/run-view/briefs.ts`): the task map, the ordered task list, the current task, attempt and total, the checks each brief last ran, and the completed count of the last `workflow_complete`. `addEvent` folds each live event into it before the cancellation gate, and `loadEvents` folds a replayed log, so the live screen, a run at rest and `--plain` read one fold. The replay markers carry the phase of the reading, not of the run, and `idle` is where a run stands before its first phase, so neither moves the phase. `hydrateFromState` lays the saved state over the folded log with `settleRunView` (`src/core/run-view/settle.ts`): the phase and the pending halt in `state.json` win, because every step saves the state before it publishes its event, and the brief list is the saved tasks, each with its saved status. The header rail, the composer byline, the build progress block, the sidebar and the runtime commands read the phase here.
-- **operationsStore** -- active/last normalized runner operation. Terminal states carry frozen `endedAt` / `durationMs`, and running states stay compact. Runner warnings are kept only while the call is running and only when their surface is `status`, `activity`, or `transcript`. They are grouped by fingerprint/code/source/surface with count, first/last timestamps, latest message, and max severity.
-- **conversationScrollStore** -- scroll offset for the conversation view.
-- **stopStore** -- the run's stop state: the `intent` the operator chose (`none` / `stop-now` / `pause-after-brief` / `end-run` / `quit`), the `phase` it has reached (`idle` → `requested` → `terminating` → `forcing` → `parked` / `ended`), when it was asked for, and the parked brief with the resolver that resumes it. A final review that passes before a stop lands closes a run without a workspace complete and makes a workspace run ready to apply, and nothing was stopped: the store goes back to `idle` once a queued leave or quit has gone, so the closed run's own byline shows and no stop menu opens, and the lifecycle is laid from the saved state, so it reads the completion rather than the cancellation End run marked at the keypress. There is no armed-intent ladder: one press opens the sheet, one row applies. After End run the store stays `ended`, so the stop sheet still offers Back to sessions, and the byline is the closed run's own (`bylineParts`): the stop ladder adds no line.
-- **streamingOutputStore** -- live code lines from `extracted-code` implementers (`api` and `shell`). Direct writers narrate in transcript rows.
-- **transcriptTailStore** -- the rows and scroll units the blocks after the run's own events add, so the keyboard scrolls the document the screen painted rather than stopping at the last event.
-- **reviewStore** -- which file is under review, the scroll offset, and the rendered Markdown row height.
-- **attachmentsStore** -- files attached to the next user message.
+- **eventsStore** -- the TUI-safe event log. Array of projected `EngineEvent` objects, merged and capped. It keeps structural workflow/task events, safe planner/validation messages, and safe `runner_call_activity` display events. It does not retain raw runner text, tool-use, session-id, artifact, warning, or error payloads. It keeps each `runner_call_completed` stripped of its usage, native session id and runner, model and invocation metadata, so the transcript can tell when a call ended. When capped, ordinary activity/log events are evicted before structural task/config events so completed-task summaries and active task grouping remain reconstructable. Consecutive text chunks merge until an implementer message marks its first chunk with `messageStart` or a call's end separates the text of two calls; older events without the marker keep their original merge behavior. Command updates and results replace the outstanding `running` row anywhere in the log, even across warnings. A `full_suite` matches by `suiteCommandKey`; a `validate` matches by task id. Live and replay logs share `commandReplacementIndex`, so each command run keeps one row. Shape `{ events: EngineEvent[] }`; written only through `actions.addEvent`.
+- **lifecycleStore** -- run status (`idle`, `running`, `paused`, `interrupted`, `complete`, `cancelled`), cancellation flag, run clocks, queued count, and attached steerable call. It holds no phase: it reads each phase change from the run view. Shape `{ status, interruptParked, cancelled, queueDepth, queuedMessageIds, steerableCall, stall, startedAt, endedAt, durationMs, reason, lastRunnerEventTs, attemptStartedTs, plannerCall, plannerCallStartedTs, waitingSince, waitedMs, resumedAt, restored }`: `interruptParked` tells a parked prompt that owns the composer from an interrupt that has not reached a call boundary yet, `stall` is the silent call, `lastRunnerEventTs` is the run's last sign of life, `attemptStartedTs` is where the attempt now running began, `plannerCall` is the call the run is on when the engine names one, `plannerCallStartedTs` is where the byline clock of that call starts, `waitingSince` / `waitedMs` keep time spent waiting on the user out of the stage clock, `resumedAt` keeps a resumed run's park out of it, and `restored` marks a state read back from disk that the engine has not moved since. Written through `actions.addEvent` and the local cancel intent.
+- **tokensStore** -- token usage, cost, pricing context, per-phase breakdowns. Shape `{ tokenUsage, perPhase, perTask, passSeats }`; written only through `actions.addEvent`.
+- **runViewStore** -- the run view: what the run's log says about the run, folded once by `reduceRunView` (`src/core/run-view/reduce.ts`). It holds the current phase (`planning`, `reviewing-plan`, `implementing`, etc.), `phaseFirstSeen` (the time the run first entered each phase), the seat wait, live or kept by a stop, the halt the run waits on with the step it resumes at (`recovery_prompted` sets it; its `recovery_resolved`, a cancel, a completion or a new start clears it), and the briefs (`RunBriefs`, `src/core/run-view/briefs.ts`): the task map, the ordered task list, the current task, attempt and total, the checks each brief last ran, and the completed count of the last `workflow_complete`. `addEvent` folds each live event into it before the cancellation gate, and `loadEvents` folds a replayed log, so the live screen, a run at rest and `--plain` read one fold. The replay markers carry the phase of the reading, not of the run, and `idle` is where a run stands before its first phase, so neither moves the phase. `hydrateFromState` lays the saved state over the folded log with `settleRunView` (`src/core/run-view/settle.ts`): the phase and the pending halt in `state.json` win, because every step saves the state before it publishes its event, and the brief list is the saved tasks, each with its saved status. The header rail, the composer byline, the build progress block, the sidebar and the runtime commands read the phase here. Shape `{ phase, phaseFirstSeen, seatWait, halt, briefs }`; written through `actions.addEvent`, `actions.loadEvents` and `actions.hydrateFromState`.
+- **operationsStore** -- active/last normalized runner operation. Terminal states carry frozen `endedAt` / `durationMs`, and running states stay compact. Runner warnings are kept only while the call is running and only when their surface is `status`, `activity`, or `transcript`. They are grouped by fingerprint/code/source/surface with count, first/last timestamps, latest message, and max severity. Shape `{ active, last, byCallId }` (`operations/state.ts`); written through `actions.addEvent` and the local cancel intent.
+- **conversationScrollStore** -- scroll offset for the conversation view. Shape `{ scrollOffset, expandedDiffs, … }`. Actions: `scrollUp()`, `scrollDown()`, `scrollToBottom()`, `toggleDiff()`, `toggleActivityBatch()`.
+- **stopStore** -- the run's stop state: the `intent` the operator chose (`none` / `stop-now` / `pause-after-brief` / `end-run` / `quit`), the `phase` it has reached (`idle` → `requested` → `terminating` → `forcing` → `parked` / `ended`), when it was asked for, and the parked brief with the resolver that resumes it. A final review that passes before a stop lands closes a run without a workspace complete and makes a workspace run ready to apply, and nothing was stopped: the store goes back to `idle` once a queued leave or quit has gone, so the closed run's own byline shows and no stop menu opens, and the lifecycle is laid from the saved state, so it reads the completion rather than the cancellation End run marked at the keypress. There is no armed-intent ladder: one press opens the sheet, one row applies. After End run the store stays `ended`, so the stop sheet still offers Back to sessions, and the byline is the closed run's own (`bylineParts`): the stop ladder adds no line. Shape `{ intent, phase, requestedAt, parked, error? }`. Actions: `request(intent)`, the phase marks `markTerminating()`, `markSettling()` and `markForcing()`, `park()`, `resume(steer)`, `end()`, `fail()`.
+- **departureStore** -- the one departure that waits for a stop's cleanup or an Apply to settle: `{ kind: 'home' | 'quit', run } | null`. A quit replaces a queued home. Actions: `queue(departure)`, `take()`, `reset()`.
+- **streamingOutputStore** -- live code lines from `extracted-code` implementers (`api` and `shell`). Direct writers narrate in transcript rows. Shape `{ taskId, lines, active }`. Actions: `startStreaming()`, `replaceLines()`, `stopStreaming()`.
+- **transcriptTailStore** -- the rows and scroll units the blocks after the run's own events add, so the keyboard scrolls the document the screen painted rather than stopping at the last event. Shape `{ rowCount, renderableUnits }`. `setMetrics()` is written by the transcript and read by the keyboard, so both measure one document.
+- **resultMenuStore** -- the measured result menu height, including Apply confirmation: `number | null`. `setHeight()` and `reset()` are written by the workflow screen and read by the scroll snapshot.
+- **recoveryNoticeStore** -- `{ open, asking }`: whether the recovery panel waits on the operator (its question, a note or the picker it opened), and whether the question on screen is the panel's own, not a note an action asks for. The halt itself is the run view's. `open()`, `ask(asking)` and `clear()` are written by the TUI recovery driver.
+- **reviewStore** -- which file is under review, the scroll offset, and the rendered Markdown row height. Shape `{ filePath, scrollOffset, renderedLineCount, … }`. Actions: `setReviewFile()`, `setReviewArtifact()`, `setScrollOffset()`, `setRenderedLineCount()`, `clearReview()`, `clearReviewIfOwner()`, plus brief source, path and confirm setters.
+- **attachmentsStore** -- files attached to the next user message. Shape `{ pending: Attachment[] }`. Actions: `add()`, `remove()`, `replacePendingImages()`, `drain()`, `peek()`, with the `attachImage()` / `detachImage()` / `listAttachments()` helpers.
 
 Activity batch marks describe item severity. `buildActivityBatchViewModel` receives only projected `runner_call_activity` items; call outcomes do not reach the batch. Error items give the mark the failed tone, and warning items give it the attention tone. A batch with neither uses its seat tone, or `textDim` without a seat. It makes no claim that the call passed.
 
 On `turn_interrupted` or `workflow_cancelled`, the operations reducer clears every running command stage. The events store settles unfinished `full_suite` and older `validate` rows as `stopped`. The word `stopped` uses `warning`, and the metadata around it uses `textDim`. Both `mergeEvent` and `mergeEventLog` apply this rule. The engine publishes no command settlement for a stop, and live continuation and hydration retain no stale command clock.
 
+#### Workflow actions module
+
+`workflow/actions/` is not a store — it holds composite operations that orchestrate writes across workflow sub-stores (`event.ts`, `load.ts`, `hydrate.ts`, `interrupt.ts`, `resume.ts`, `pause.ts`, `reset.ts`, `sections.ts`, `wait.ts`). The TUI sink calls it for engine events, and UI command handlers call it for local intent such as cancellation. Direct `.set()` on sub-stores is reserved for test helpers.
+
+| Export | Purpose |
+|---|---|
+| `addEvent(event: EngineEvent)` | Single ingress for engine events. Called by `addTuiEvent` (`src/features/workflow/tui-sink.ts`, registered on the engine `EventBus` as the TUI sink), **not** directly by the orchestrator. `cost_update` still updates tokens after cancellation. After local cancel, terminal runner events and final telemetry are accepted while UI noise is ignored. The run view folds first, before the cancellation gate, so the end a stop writes for a seat wait, and the end of a brief the stop cut, still reach it. Normal fan-out order is then events → tokens → lifecycle → operations. Strictly synchronous. |
+| `markCancellationRequested(intent?)` | Local UI intent for immediate feedback. Terminalizes lifecycle and running operations with frozen duration, but does **not** append a fake event or rewrite `planner_status` to success. The canonical history event is still engine-published `workflow_cancelled`. |
+| `resetWorkflow()` | Resets the workflow sub-stores (plus the stop, recovery-notice and streaming-output stores, and closes the approval and reviewer-checks prompts) **and invalidates the memo caches** (`cachedEvents`, `cachedSections`, through `clearSectionsCache()`) so subscribers observe a clean slate. It only clears: nothing is synthesized here. Cache invalidation is symmetric with sub-store reset — missing it leaks pre-reset sections into the first post-reset `useSections()` call. |
+| `loadEvents(events)` (`load.ts`) | The hydration counterpart of `addEvent`: resets first, then folds a whole replayed log through the same reducers and commits each store once. |
+| `hydrateFromState(state)` (`hydrate.ts`) | Lays the saved state over whatever the replay rebuilt — the phase, the brief list, the spend and the queued count. It never claims a run read back from disk is running: an open run hydrates as `paused`, a finished one as `complete`. |
+| `getSections()` / `useSections()` | Memoized derivation of conversation sections from `eventsStore.events`. Cache lives file-local. |
+
+**Reducers live with their owner sub-store** — `events.ts` exports `mergeEvent` + `MAX_EVENTS`, `tokens.ts` exports `updateTokens`, `lifecycle.ts` exports `updatePhase` + `updateQueueDepth` + `updateStall`, and `operations/reducer.ts` exports `updateOperations`. The run view's reducer, `reduceRunView`, lives in `src/core/run-view/reduce.ts`, and its brief fold, `reduceBriefs`, in `src/core/run-view/briefs.ts`, because the `--plain` sink folds them too. They are pure functions and can be tested directly.
+
+`lifecycle.ts` derives the queued count, `queueDepth`, from `queuedMessageIds`. `message_queued` adds its id. `message_injected_native` or `queue_drained` removes that id at its first delivery to any seat. A repeated delivery id changes nothing and cannot lower another message's count. `queue_cleared` removes cleared entries from the set. Older drain events without ids retain count-based replay compatibility.
+
+`hydrateFromState(state)` restores ids through `isQueuedMessagePendingFirstDelivery`. It includes messages during native injection until confirmation. It excludes messages with an implementer, reviewer, native, or mid-call delivery record. A message that REVIEW read remains available to the next fix brief's BUILD call, but it no longer counts as queued. `/queue clear` preserves it as history. See [Queued count](./ENGINE.md#queued-count).
+
+The lifecycle store also holds `steerableCall: { seat: CrewSeatId; taskId?: string } | null`. `steerable_call` events set the receiving seat and brief, or clear the value when both fields are absent. Run start and hydration reset it to `null`; replay cannot imply that a stopped call accepts messages. This state changes the delivery copy, not the queued count.
+
+`message_queued` and `queue_drained` carry optional `seat` and `taskId` fields. A delivery into the running call adds `via: 'mid-call'` to `queue_drained`. The UI uses these fields to name the receiving seat and brief. Older events without these fields still render. The queued count includes only messages awaiting first delivery to any seat.
+
+`message_queued.steerable` is an optional boolean. The event records whether the queue captured a matching steerable call. The transcript uses it for the pending row's delivery timing.
+
+`operations/state.ts` and `operations/reducer.ts` own compact runner lifecycle for operation-state consumers: active/last call identity, terminal status, frozen timing, warning count/detail, usage, partial output, runner, and model. It does not decide what activity text belongs in chrome. Conversation rows render safe `runner_call_activity` events from the retained event log as batched per-call activity blocks; assistant/result text, prompts, task bodies, full descriptions, and raw tool payloads remain transcript-bearing and must not update status chrome.
+
 ### Navigation -- `src/stores/navigation/`
 
-- **routerStore** -- current screen (`home` | `workflow` | `setup`) plus screen-specific data. Validates transitions against a fixed map. The `workflow` route carries the run itself: a `RunRecord` (`src/core/sessions/run-record.ts`) and whether a process in this session is driving it (`execution: { kind: 'local'; prepared; steer? } | { kind: 'at-rest' }`). Every session selection lands there — `handleSessionSelect` reads the record, replays the history and navigates at rest, whatever the run did. At rest, the screen observes changes to the session's state, lock, log and summary files. `rereadRunAtRest` replays the saved history and calls `routerStore.updateRun({ run, execution? })` with the refreshed record. A superseded read publishes nothing. The run loop and commands also update the record in place.
+- **routerStore** -- current screen (`home` | `workflow` | `setup`) plus screen-specific data. Validates transitions against a fixed map. The `workflow` route carries the run itself: a `RunRecord` (`src/core/sessions/run-record.ts`) and whether a process in this session is driving it (`execution: { kind: 'local'; prepared; steer? } | { kind: 'at-rest' }`). Every session selection lands there — `handleSessionSelect` reads the record, replays the history and navigates at rest, whatever the run did. At rest, the screen observes changes to the session's state, lock, log and summary files. `rereadRunAtRest` replays the saved history and calls `routerStore.updateRun({ run, execution? })` with the refreshed record. A superseded read publishes nothing. The run loop and commands also update the record in place. Shape `RouteData`, a discriminated union on `screen`. Actions: `navigate({ to, … })`, `init()`, `updateRun()`.
+- **preparationStore** -- the readiness check before a run starts or continues: `{ kind: 'idle' | 'checking' | 'blocked' | 'failed', … }`. Actions: `submit()`, `cancel()`, `reset()`.
+- **sessionSelectStore** -- the session picker's selection and its error. Actions: `clearError()`, `reset()`; `handleSessionSelect()` and `continueRunInPlace()` drive it.
 
 ### UI -- `src/stores/ui/`
 
-- **overlayStore** -- active overlay type, overlay stack, exclusive flag.
-- **feedbackStore** -- user-facing feedback. Informational messages and transient errors auto-clear after 3 seconds and errors after 5 seconds, or after 60 ms per character when that is longer, so a long message stays until it can be read. A new message or a reset replaces the current one. The moment this process's Apply ends (`onActiveApplyChange`), the App root (`src/app/root.tsx`) clears a message that starts with `APPLY_RUNNING_REFUSAL`, and the same refusal in `sessionSelectStore.error`; any other message stays. On home the message wraps at word boundaries onto up to four even rows above the composer (`deriveHomeHintLines`, `src/components/composer/home-hint.ts`); only a message past the fourth row ends in an ellipsis. The composer height in `inputHeightStore` counts these rows, and `getHomeLayout` plans the body with it and with the `No config.` notice: the logo and the session rows give way first, and the crew block and the `N more` row stay.
-- **controlsStore** -- sidebar visibility, input mode echo.
-- **terminalSizeStore** -- reactive terminal cols/rows, subscribes to resize events.
-- **inputHeightStore** -- current composer height in rows.
-- **composerLiveStore** -- whether the composer is empty right now. Session draft persistence lives in `src/stores/ui/session-drafts.ts`, backed by each session’s `draft.json`; departure flushes pending writes before leaving or quitting. A flush writes every pending draft and then throws the first failure. One reporter, `reportDraftNotSaved`, records the cause and the file in `draftRefusalStore`, with the router selection when it holds a departure. The workflow screen renders that record as a Warning at the transcript tail, which `loadEvents` does not reset; home shows it in its wrapping feedback. The first Escape or quit is held; the next one in the same selection discards the pending drafts and leaves. A flush that saves everything clears the record. An empty draft removes the file instead of writing one, at once, without the wait. A removal that fails is its own error: the flush drops that entry without throwing, the session loads empty for the rest of the process, and `nameDraftsNotRemoved` names the file once per session, on the screen a leave lands on or on stderr after a quit (the `at-exit` diagnostic). The same module keeps the home composer's unsent draft in memory, one per project, with no file.
-- **inputHistoryStore** -- command history with disk persistence.
-- **commandPaletteMruStore** -- most-recently-used entries for the command palette.
-- **projectFilesStore** -- refresh invalidation tick for project-file completion; the composer owns the async file read and local suggestion list.
-- **pickerViewStore** -- the seat picker's sub-view, preserved left index, expanded model, option draft and text draft. See [The picker view state](#picker-view-state).
-- **composerDraftStore** -- a one-shot draft request (`{ epoch, value }`) aimed at the composer. Code outside the composer -- the palette's prefill of an `arg` command, a visual fixture -- sets the draft only through this store, never by reaching into the composer. The palette uses `requestCommand()`: the composer holds the draft the command replaces and puts it back once the composer is empty again (the command was sent or cleared). Text added to the command is never dropped: a second `requestCommand()` joins the edited command onto the held draft on its own line, and a workflow session saves the held draft with that command below it to `draft.json`; a command that still reads as it was filled in is not saved, even after an edit that put its text back. A send the queue refuses comes back through `requestPrepend()`: in front of what the composer holds now, joined on a new line, so neither the refused text nor the draft is lost.
+- **overlayStore** -- active overlay type, overlay stack, exclusive flag. Shape `{ active, exclusive, focus?, stack[] }`. Actions: `open()`, `close()`, `setExclusive()`.
+- **feedbackStore** -- user-facing feedback. Informational messages and transient errors auto-clear after 3 seconds and errors after 5 seconds, or after 60 ms per character when that is longer, so a long message stays until it can be read. A new message or a reset replaces the current one. The moment this process's Apply ends (`onActiveApplyChange`), the App root (`src/app/root.tsx`) clears a message that starts with `APPLY_RUNNING_REFUSAL`, and the same refusal in `sessionSelectStore.error`; any other message stays. On home the message wraps at word boundaries onto up to four even rows above the composer (`deriveHomeHintLines`, `src/components/composer/home-hint.ts`); only a message past the fourth row ends in an ellipsis. The composer height in `inputHeightStore` counts these rows, and `getHomeLayout` plans the body with it and with the `No config.` notice: the logo and the session rows give way first, and the crew block and the `N more` row stay. Shape `{ message: string | null, isError: boolean }`. Actions: `setMessage()`, `setError()`, `setTransientError()`, `reset()`.
+- **controlsStore** -- sidebar visibility, input mode echo. Shape `{ sidebarVisible: boolean, inputMode: 'normal' | 'review' | 'question' }`. Actions: `toggleSidebar()`, `setSidebar()`, `setInputMode()`, `clearInputMode()`.
+- **terminalSizeStore** -- reactive terminal cols/rows, subscribes to resize events. Shape `{ cols, rows, isSmall }`. Actions: `subscribeToResize()`, `reset()`.
+- **terminalBackgroundStore** -- the detected terminal background: `string | undefined`. Actions: `detected(hex)`, `reset()`.
+- **inputHeightStore** -- current composer height in rows. Shape `{ rows: number }`. Action: `setRows()`.
+- **composerLiveStore** -- whether the composer is empty right now. Session draft persistence lives in `src/stores/ui/session-drafts.ts`, backed by each session’s `draft.json`; departure flushes pending writes before leaving or quitting. A flush writes every pending draft and then throws the first failure. One reporter, `reportDraftNotSaved`, records the cause and the file in `draftRefusalStore`, with the router selection when it holds a departure. The workflow screen renders that record as a Warning at the transcript tail, which `loadEvents` does not reset; home shows it in its wrapping feedback. The first Escape or quit is held; the next one in the same selection discards the pending drafts and leaves. A flush that saves everything clears the record. An empty draft removes the file instead of writing one, at once, without the wait. A removal that fails is its own error: the flush drops that entry without throwing, the session loads empty for the rest of the process, and `nameDraftsNotRemoved` names the file once per session, on the screen a leave lands on or on stderr after a quit (the `at-exit` diagnostic). The same module keeps the home composer's unsent draft in memory, one per project, with no file. Shape `{ empty, text, document }`. Action: `setDraft()`.
+- **inputHistoryStore** -- command history with disk persistence. Shape `{ entries: string[] }`, pure in-memory state. Actions: `push()`, `pushDocumentSubmission()`, `hydrate()`. Disk I/O lives in `stores/ui/persistence.ts` (hydrate and debounced save), wired from `cli/bootstrap/project.ts`.
+- **commandPaletteMruStore** -- most-recently-used entries for the command palette. Shape `{ ids: string[] }`. Action: `record()`.
+- **projectFilesStore** -- refresh invalidation tick for project-file completion; the composer owns the async file read and local suggestion list. Shape `{ refreshEpoch: number }`. Action: `requestRefresh()`.
+- **completionStore** -- whether the composer's completion popup is open: `{ open: boolean }`. Action: `setOpen()`.
+- **hoverStore** -- the hovered conversation row index: `number | null`. Actions: `set()`, `clear()`.
+- **reviewKeysStore** -- whether the keys belong to a comment on a review gate: `{ commenting: boolean, requested: boolean }`. `requested` holds a change request that Request changes opened, also while its draft is empty. Actions: `setCommenting()`, `requestComment()`, `endComment()`.
+- **editorStore** -- the inline editor session: `{ status: 'closed' }` or an open session, with the owner-token write gate. Actions: `openRaw()`, `dispatch()`, `setLayout()`, `scrollBy()`, `beginSubmit()`, `close()`.
+- **externalEditRequestStore** -- the one pending Ctrl+O request, a one-shot intent bridge to the workflow effect. Actions: `request()`, `requestApply()`, `consume()`.
+- **pickerViewStore** -- the seat picker's sub-view, preserved left index, expanded model, option draft and text draft. See [The picker view state](#picker-view-state). Shape `{ view, preservedLeftIndex, expandedModelId, optionDraftId, … }`. Actions: `open()`, `close()`, `expand()`, `collapse()`, `setOptionDraftId()`, `setEffortDraft()`, `setAuthDraft()`, `setDraft()`, `setBrowseCatalog()`.
+- **composerDraftStore** -- a one-shot draft request (`{ epoch, value }`) aimed at the composer. Code outside the composer -- the palette's prefill of an `arg` command, a visual fixture -- sets the draft only through this store, never by reaching into the composer. The palette uses `requestCommand()`: the composer holds the draft the command replaces and puts it back once the composer is empty again (the command was sent or cleared). Text added to the command is never dropped: a second `requestCommand()` joins the edited command onto the held draft on its own line, and a workflow session saves the held draft with that command below it to `draft.json`; a command that still reads as it was filled in is not saved, even after an edit that put its text back. A send the queue refuses comes back through `requestPrepend()`: in front of what the composer holds now, joined on a new line, so neither the refused text nor the draft is lost. The pending request is a document, a command filled in over the draft, a refused send put back in front of the draft, or an image. Actions: `request()`, `requestCommand()`, `requestDocument()`, `requestPrepend()`, `requestImage()`, `clear()`.
 
 ### Project -- `src/stores/project/`
 
-- **configStore** -- loaded `Config` object, project directory, CLI overrides, disk persistence.
-- **skillsStore** -- available and selected skills, which every seat of the next run or continue carries; opening a run selects the skills it saved.
-- **detectionStore** -- detected tool availability (git, npm, language runtimes).
-- **sessionsStore** -- past session metadata. Home calls `refresh()` when it mounts and every `LOCKFILE_PING_INTERVAL_MS` (2 seconds) while it stays mounted, so a run another process starts, ends or makes ready to apply updates its row. `listSessions` (`src/core/sessions/io.ts`) reads a row again only when its state, summary or lock file changed, and a running row on every listing, because an owner killed without its exit handler changes no file. An unchanged listing returns the same rows, and `refresh()` then sets nothing. A folder in the sessions folder whose name is not a session id warns once, on the first listing that skips it, and again only after it was gone for a listing.
+- **configStore** -- loaded `Config` object, project directory, CLI overrides, disk persistence. Shape `{ config: Config | null, projectDir, overrides }` (`config-persistence.ts` writes it; `save-feedback.ts` reports a failed save). Actions: `load()`, `reloadIfChanged()`, `reloadShownConfig()` (the home tick, Settings and the seat picker open call it: an edit that does not load is named once), `refreshFromExecution()`, `save()`, `useConfig()`, `setContextLength()`.
+- **skillsStore** -- available and selected skills, which every seat of the next run or continue carries; opening a run selects the skills it saved. Shape `{ available: SkillMeta[], selected: Set<string> }`. Actions: `setAvailable()`, `setSelected()`, `toggleSelected()`.
+- **detectionStore** -- detected tool availability (git, npm, language runtimes). It is a view over the model cache's `detection` slice, `{ providers, cliTools, providerOutcomes, cliCatalogOutcomes, refresh }`, with no state of its own. Its actions `setDetection()`, `beginRefresh()`, `hydrate()`, `publishLane()`, `publish()` and `reset()` each forward to `modelCacheStore`.
+- **sessionsStore** -- past session metadata. Home calls `refresh()` when it mounts and every `LOCKFILE_PING_INTERVAL_MS` (2 seconds) while it stays mounted, so a run another process starts, ends or makes ready to apply updates its row. `listSessions` (`src/core/sessions/io.ts`) reads a row again only when its state, summary or lock file changed, and a running row on every listing, because an owner killed without its exit handler changes no file. An unchanged listing returns the same rows, and `refresh()` then sets nothing. A folder in the sessions folder whose name is not a session id warns once, on the first listing that skips it, and again only after it was gone for a listing. Shape `{ sessions, totalCount, projectDir }`. Actions: `load()`, `refresh()`.
 
 ### Discovery -- `src/stores/discovery/`
 
-- **modelCacheStore** -- provider model lists with TTL-based expiry.
+- **modelCacheStore** -- provider model lists with TTL-based expiry. The entry is `model-cache/state.ts`, with reconcile and lane helpers beside it; `detection-adapter.ts` sits next to the folder. Shape `{ detection, providers, configuredProviders, cliCatalogs, modelsDevCatalog, refresh, … }`. Actions: `setDetection()`, `beginRefresh()`, `hydrateDetection()`, `publishLane()`, `publish()`, `setProviderModels()`, `hydrateModelsDevCatalog()`, `reset()`.
+
+### Question prompt -- `src/stores/question-prompt/`
+
+- **questionPromptStore** (`prompt.ts`) -- the planner questions on screen, the answers so far, and the round Esc closed (`unanswered`), kept until its reply answers it. Shape `{ hint, questions, index, drafts, answers, focus, openedAt, complete, unanswered }`. Actions: `setHint()`, `setQuestions()`, `close()` (moves the open round to `unanswered`), `select()`, `setFocus()`, `previous()`, `answer()`, `takeAnswerBatch()`, `clearHint()`.
+
+### Channels -- `src/stores/channels/`
+
+Cross-store messaging channels: decoupled pub/sub and request/response wires that let one store signal another without a direct import cycle. `feedback.ts` carries feedback errors (`router` publishes, `ui/feedback` subscribes). `prompt.ts` exposes `createPromptChannel`, the request/response primitive with supersede and cancel semantics that backs `approvalPromptStore`.
 
 ### Approval -- `src/stores/approval-prompt/`
 
-Promise-based gates. `openApprovalPrompt(request)` returns a promise. The store holds the pending request and its `resolve` function. The UI renders the prompt, the user acts, the component calls `closeApprovalPrompt(response)`, and the promise resolves. The engine continues.
+Promise-based gates for the confirmation prompt (protected writes, custom-runner admission). `approvalPromptStore` (`prompt.ts`, built on `channels/prompt`) holds `{ status: 'idle' } | { status: 'pending', request, resolve }`. `openApprovalPrompt(request)` returns a promise. The store holds the pending request and its `resolve` function. The UI renders the prompt, the user acts, the component calls `closeApprovalPrompt(response)`, and the promise resolves. The engine continues.
 
 ---
 
-## The multi-store hook
+## Reading and writing stores
 
-`useStores()` from `src/stores/use-stores.ts` subscribes to multiple stores in one call. It returns proxied state objects that track which properties each component actually reads. On the next store update, it compares only the accessed properties -- if none changed, the component skips re-rendering.
+In React components, read with `store.use(selector)`. The component re-renders only when that slice changes:
+
+```ts
+const screen = routerStore.use(s => s.screen);
+const config = configStore.useConfig(); // typed non-null Config
+```
+
+Selectors should return primitives or stable references. Avoid selectors that create new objects or arrays on every call (for example `.filter()`) unless the data changes infrequently.
+
+`useStores()` from `src/stores/use-stores.ts` subscribes to multiple stores in one call. It returns proxied state objects that track which properties each component actually reads. On the next store update, it compares only the accessed properties -- if none changed, the component skips re-rendering. Reading `cols` but not `rows` means a change to `rows` alone does not re-render the component.
 
 ```ts
 const [router, overlay] = useStores(routerStore, overlayStore);
@@ -134,7 +229,15 @@ const [router, overlay] = useStores(routerStore, overlayStore);
 // (assuming those are the only properties read in JSX)
 ```
 
-Use `store.use(selector)` when reading one store. Use `useStores()` when reading two or more in the same component.
+Use `store.use(selector)` when reading one store. Use `useStores()` when reading two or more in the same component. The tracking uses only the Proxy `get` trap, so fall back to `store.use(selector)` when:
+
+- You use a computed or conditional selector: `overlayStore.use(s => s.active !== 'none')` (`src/app/screens/home.tsx`).
+- You need `Object.keys(x)`, `for...in`, spread (`{...x}`) or rest destructure (`{a, ...r}`) -- none are intercepted.
+- You read a field in an event handler or async callback (outside the render phase) -- those reads don't register.
+
+In non-React UI/CLI glue -- CLI code, action functions, async UI handlers -- read synchronously with `store.get()`: `const { projectDir } = configStore.get();`.
+
+Named actions are the only way to mutate state: `overlayStore.open('help')`, `addEvent(event)`, `routerStore.navigate({ to: 'home' })`.
 
 ---
 
@@ -204,13 +307,13 @@ A brief that a recovery restarted stays one section. When `task_started` opens a
 
 The placeholder, byline, transcript, and `/queue` output use `queueCopy` for the receiving seat. The function also supplies feedback, delivery timing, and clear confirmations. See [Input footer](./FEATURES.md#input-footer) for all seat copy, including `read after this tool` when a matching call is attached.
 
-The lifecycle store holds `steerableCall: { seat: CrewSeatId; taskId?: string } | null`. `steerable_call` sets this value, or clears it when both event fields are absent. Run start and hydration reset it to `null`. The UI sets `queueCopy`'s `steerable` input when the attached call's seat matches the receiving seat.
+The UI sets `queueCopy`'s `steerable` input when the seat of the attached call (`steerableCall`, see [Workflow actions module](#workflow-actions-module)) matches the receiving seat.
 
 The byline reads `1 queued for BUILD on T003`, or `1 queued` when space is narrow. It keeps the message in the queued count until the first delivery event removes its id. A repeated delivery id changes nothing. A reopened stopped run keeps the count beside its saved byline.
 
 Transcript rows read the optional `seat`, `taskId`, and `steerable` fields from `message_queued`. They read the optional `seat`, `taskId`, and `via` fields from `queue_drained`. The queued row uses the saved `steerable` value for delivery timing.
 
-Older events without these fields still render. [STORES.md](./STORES.md) describes the id set and hydration. [Queued count](./ENGINE.md#queued-count) defines first delivery, REVIEW messages retained for BUILD, and history that `/queue clear` preserves.
+Older events without these fields still render. [Workflow actions module](#workflow-actions-module) describes the id set and hydration. [Queued count](./ENGINE.md#queued-count) defines first delivery, REVIEW messages retained for BUILD, and history that `/queue clear` preserves.
 
 Raw activity expansion is an explicit boundary. `rawAvailable:true` means a safe display row has an expansion target in the persisted log; it does not mean raw text can be shown inline or shown without re-sanitizing. The transcript uses a `raw` marker only as an affordance. Default display payloads and expansion payloads canonicalize terminal controls before redaction.
 
@@ -329,6 +432,56 @@ The workflow screen takes no density, live or at rest: its rail, dividers, trans
 5. If the store reads disk on startup: add an init call in `src/cli/bootstrap/project.ts`.
 6. Reset in tests: `beforeEach(() => store.reset())`.
 
+Each domain store wraps the factory with named actions; raw `set` is never exported. Consumers import the store file directly, for example `import { eventsStore } from '../stores/workflow/events.js'`.
+
+```typescript
+// 1. Create internal store
+const store = createStore<DomainState>(initial);
+
+// 2. Define named action functions (closures over store)
+function doSomething(arg: string) {
+  store.set(s => ({ ...s, field: arg }));
+}
+
+// 3. Export facade — storeBase (use, get, subscribe, reset) + domain actions
+export const domainStore = { ...storeBase(store), doSomething };
+```
+
+This gives **encapsulated mutations** (consumers can't set arbitrary state), a **self-documenting API** (actions describe what they do) and **stable references** (action functions are module-level closures that never change identity).
+
+---
+
+## Store rules
+
+| Don't | Why |
+|-------|-----|
+| Call `store.set()` during React render | Causes infinite render loops |
+| Add `loaded: boolean` flags to stores | Init belongs in CLI entry point, not hooks |
+| Create React Context for shared state | Use stores instead |
+| Export raw `store.set()` from a facade | Breaks encapsulation — use named actions. Tests MAY use `__testReset(nextState?)` where no action fits; the `__` prefix signals internal/test-only and is the single sanctioned bypass. |
+| Use `configStore.get()` in components | Use `configStore.use(selector)` for reactive reads |
+| Add `useMemo` / `useCallback` / `React.memo` | Store selectors make them unnecessary |
+
+### Cross-module writes within a store group
+
+Workflow sub-stores (`events`, `tokens`, `lifecycle`, `operations`, `run-view`) are written exclusively by `workflow/actions/`. Each sub-store exports a package-private mutator (`_eventsInternal`, `_runViewInternal`, etc.) that only the action modules import. Consumers must go through `addEvent`, `markCancellationRequested`, or `resetWorkflow`. The raw `set` is not part of the facade — tests bypass actions via `__testReset`.
+
+### Test escape hatches
+
+A small number of stores ship test-only exports so tests and visual fixtures can arrange starting states that no domain action produces. There are three kinds: a state reset, a raw setter, and a value pin.
+
+| Symbol | Shape | Who may import |
+|---|---|---|
+| `__testReset(next?)` on a store facade | Replaces current state with `{ ...initial, ...next }` | `*.test.ts` / `*.test.tsx` files, and the visual-gallery fixtures under `testing/visual/fixtures/` (`screen-fixtures.ts` resets `terminalSizeStore` and `configStore`) |
+| `_<name>Internal = { set }` (e.g. `_lifecycleInternal`, `_operationsInternal`, `_eventsInternal`, `_runViewInternal`, `_tokensInternal`) | Exposes the raw store setter | `src/stores/workflow/actions/` for the production write path; tests that need to reach a state the public actions cannot produce (e.g. `testing/helpers/stores.ts` putting a halt on the run view through `_runViewInternal.set`) |
+| `__testSetClaudeCodeModelOptions(options)` on `modelCacheStore` | A value pin, not a state reset: it stores an override that `getClaudeCodeModelOptions()` prefers over the real read | `*.test.ts` / `*.test.tsx` files, and `testing/visual/fixtures/screen-fixtures.ts`, which pins the Claude Code option cache so a capture does not read the developer's `~/.claude.json` |
+
+**Rule.** Production code outside `workflow/actions/` MUST NOT import any of these symbols. Reviewers reject PRs that add new call sites in `src/` outside that one module. Tests and the visual-gallery fixtures are the only other sanctioned callers.
+
+**Why they exist.** `lifecycleStore` (and the other workflow sub-stores) expose no public setter — `addEvent` is the engine-event ingress, and `markCancellationRequested` is the local-intent ingress. A test that needs to assert behaviour while the run view is already at `phase: 'implementing'` cannot replay a full event stream to get there, so `runViewStore.__testReset` arranges the state directly (`src/app/keys.test.tsx`). Similarly, `_lifecycleInternal.set` lets the dispatcher write one slice without exposing generic mutation publicly.
+
+**Rejected alternative.** Adding a full `runViewStore.setPhase(...)` / generic `set()` action to the public facade. Rejected — it widens the public surface to solve a test-only problem, and makes it trivial for production code to bypass the dispatcher's invariants. The `__` / `_Internal` prefix is the signal that the symbol is off-limits outside tests and the dispatcher.
+
 ---
 
 ## Key store shapes
@@ -337,16 +490,33 @@ State types from the source files. Use `store.use(selector)` in React and `store
 
 ```ts
 // src/stores/workflow/lifecycle.ts
-interface LifecycleState {
-  phase: Phase;          // 'idle' | 'researching' | 'implementing' | ...
-  status: 'idle' | 'running' | 'complete' | 'cancelled';
-  cancelled: boolean;
+type LifecycleStatus = 'idle' | 'running' | 'interrupted' | 'paused' | 'complete' | 'cancelled';
+
+interface LifecycleBase {
   queueDepth: number;    // pending user messages
-  startedAt: number | null;
-  endedAt: number | null;
-  durationMs: number | null;
-  reason: string | null;
+  queuedMessageIds: ReadonlySet<string>;
+  steerableCall: { seat: CrewSeatId; taskId?: string } | null;
+  stall: LifecycleStall; // { since, silentMs, runnerName, backendKind? } | null
+  lastRunnerEventTs?: number | null;
+  attemptStartedTs?: number | null;
+  plannerCall?: PlannerCall | null;
+  plannerCallStartedTs?: number | null;
+  waitingSince?: number | null;
+  waitedMs?: Readonly<Partial<Record<Phase, number>>>;
+  resumedAt?: number | null;
+  restored?: boolean;
 }
+
+// One state type per status, each `LifecycleBase` plus
+// { status, interruptParked, cancelled, startedAt, endedAt, durationMs, reason }.
+// Only 'interrupted' can set interruptParked; only 'cancelled' has cancelled: true and a reason.
+type LifecycleState =
+  | IdleLifecycleState
+  | RunningLifecycleState
+  | InterruptedLifecycleState
+  | PausedLifecycleState
+  | CompleteLifecycleState
+  | CancelledLifecycleState;
 
 // src/stores/workflow/operations/state.ts
 type OperationStatus =

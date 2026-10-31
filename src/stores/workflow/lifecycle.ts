@@ -155,12 +155,12 @@ const initial: LifecycleState = {
 
 const store = createStore<LifecycleState>(initial);
 
-// Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
+// Test escape hatch — see docs/STORES-AND-UI.md#test-escape-hatches. Do not use outside tests.
 function __testReset(next?: LifecycleResetState): void {
   store.set(next ? lifecycleStateFromReset(next) : initial);
 }
 
-// Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
+// Test escape hatch — see docs/STORES-AND-UI.md#test-escape-hatches. Do not use outside tests.
 // Production use is limited to workflow/actions/ (the dispatcher).
 export const _lifecycleInternal = { set: store.set };
 

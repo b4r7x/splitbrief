@@ -308,7 +308,7 @@ function getDetectedContextLength(): number | undefined {
   return store.get().detectedContextLength;
 }
 
-// Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
+// Test escape hatch — see docs/STORES-AND-UI.md#test-escape-hatches. Do not use outside tests.
 function __testReset(next?: Partial<ConfigState>): void {
   saveQueue = Promise.resolve();
   const state = next ? { ...initial, ...next } : initial;

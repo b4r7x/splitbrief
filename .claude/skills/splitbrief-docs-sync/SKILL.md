@@ -24,7 +24,7 @@ In scope:
 - `docs/ARCHITECTURE.md`
 - `docs/WORKFLOW.md`
 - `docs/FUTURE.md`
-- `docs/STORES.md`
+- `docs/STORES-AND-UI.md`
 - `docs/API-KEYS.md`
 - `README.md`
 - `CLAUDE.md`

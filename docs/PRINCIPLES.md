@@ -24,8 +24,8 @@ Distilled from:
 | 9 | **No giant merged files** — if merging would produce a file with >300 LOC and >1 responsibility, use a folder instead. | [STRUCTURE.md](./STRUCTURE.md#file-length-thresholds) |
 | 10 | **No decorative comments** — no section banners (`// ═══ X ═══`). Organize by keeping related exports near each other — the ordering is the documentation. | [STRUCTURE.md](./STRUCTURE.md#no-decorative-comments) |
 | 11 | **Zero runtime classes** — production source uses pure functions + module-scoped state. Test fixtures may contain class syntax only when class behavior is under test. | [CLAUDE.md](https://github.com/b4r7x/splitbrief/blob/main/CLAUDE.md) |
-| 12 | **External stores via `useSyncExternalStore`** — state lives in `src/stores/`, not React Context. No `useMemo`, `useCallback`, or `React.memo`. | [STORES.md](./STORES.md) |
-| 13 | **No `forwardRef` / `useImperativeHandle`** — React 19 + stores cover every case. Extract state to a store instead. | [STORES.md](./STORES.md) |
+| 12 | **External stores via `useSyncExternalStore`** — state lives in `src/stores/`, not React Context. No `useMemo`, `useCallback`, or `React.memo`. | [STORES-AND-UI.md](./STORES-AND-UI.md#store-rules) |
+| 13 | **No `forwardRef` / `useImperativeHandle`** — React 19 + stores cover every case. Extract state to a store instead. | [STORES-AND-UI.md](./STORES-AND-UI.md#store-rules) |
 | 14 | **Prompts get their own folder** — never inlined into orchestrator or runner code. Currently `src/engine/spec/prompts/`. | [STRUCTURE.md](./STRUCTURE.md#prompts-folder) |
 | 15 | **Test behavior, not implementation** — no tests of trivial helpers, trivial hooks, mocks being called, or TS types. Behavior-bearing hooks may get colocated tests; trivial hooks are covered transitively by the consuming integration test. Test at meaningful consumer boundaries. | [STRUCTURE.md](./STRUCTURE.md#test-strategy), [HOOKS.md](./HOOKS.md), [TESTING.md](./TESTING.md) |
 | 16 | **No backwards-compatibility shims** — during refactors, update all import sites in the same change. No re-export shims to smooth migration (that would create barrels). | [NO-BARRELS.md](./NO-BARRELS.md) |
@@ -50,7 +50,7 @@ For the per-layer reference (what each layer contains, acceptance criteria, proh
 | [STRUCTURE.md](./STRUCTURE.md) | File tree, feature anatomy, folder colocation, splitting rules |
 | [TYPES.md](./TYPES.md) | Type placement, Zod vs TS split, `types.ts` naming |
 | [NO-BARRELS.md](./NO-BARRELS.md) | Why `index.ts` re-exports are banned |
-| [STORES.md](./STORES.md) | External store architecture |
+| [STORES-AND-UI.md](./STORES-AND-UI.md) | External store architecture |
 | [HOOKS.md](./HOOKS.md) | React hook placement and test policy |
 | [BOOTSTRAP.md](./BOOTSTRAP.md) | How the app starts; where to add bootstrap steps |
 | [ERRORS.md](./ERRORS.md) | Error factory pattern, domain predicate bags, zero-class rule for errors |

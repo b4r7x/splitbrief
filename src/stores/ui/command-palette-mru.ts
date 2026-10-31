@@ -16,7 +16,7 @@ function record(id: string): void {
   }));
 }
 
-// Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
+// Test escape hatch — see docs/STORES-AND-UI.md#test-escape-hatches. Do not use outside tests.
 function __testReset(): void {
   store.set(initial);
 }

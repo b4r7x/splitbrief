@@ -1,6 +1,6 @@
 # Application Bootstrap
 
-How the CLI starts up — from `bin` invocation to the first rendered frame. This is the companion to [`STORES.md`](./STORES.md) (what the stores are) and covers **how and when they get populated**.
+How the CLI starts up — from `bin` invocation to the first rendered frame. This is the companion to [`STORES-AND-UI.md`](./STORES-AND-UI.md) (what the stores are) and covers **how and when they get populated**.
 
 If you are adding a new startup step — reading a file, hydrating a store, probing an external tool — this is the authority on where that step goes.
 
@@ -202,6 +202,6 @@ TUI quit tears down stores and cancels the current preparation. Detection shutdo
 
 ## References
 
-- [STORES.md](./STORES.md) — full store architecture
+- [STORES-AND-UI.md](./STORES-AND-UI.md) — full store architecture
 - [STRUCTURE.md](./STRUCTURE.md#deep-modules-and-folder-colocation) — 150 LOC threshold and folder-colocation pattern
 - [LAYERS.md](./LAYERS.md) — `cli/` / `core/` / `stores/` boundaries

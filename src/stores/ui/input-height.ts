@@ -15,7 +15,7 @@ function normalizeRows(rows: number): number {
   return Math.max(1, Math.floor(rows));
 }
 
-// Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
+// Test escape hatch — see docs/STORES-AND-UI.md#test-escape-hatches. Do not use outside tests.
 function __testReset(next?: Partial<InputHeightState>): void {
   store.set(next ? { ...initial, ...next } : initial);
 }

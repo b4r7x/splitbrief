@@ -144,7 +144,7 @@ export function saveSessionDraft(ref: SessionRef, document: DraftDocument): void
   timer.unref();
 }
 
-// Test escape hatch — see docs/STORES.md#test-escape-hatches. Discards pending drafts without
+// Test escape hatch — see docs/STORES-AND-UI.md#test-escape-hatches. Discards pending drafts without
 // writing them, every home draft and every old file a flush could not remove, so suite isolation
 // never depends on the screens a previous test mounted.
 export function __testDiscardPending(): void {

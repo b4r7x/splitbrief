@@ -14,7 +14,7 @@ const initial: TranscriptTailState = { rowCount: 0, renderableUnits: 0 };
 
 const store = createStore<TranscriptTailState>(initial);
 
-// Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
+// Test escape hatch — see docs/STORES-AND-UI.md#test-escape-hatches. Do not use outside tests.
 function __testReset(next?: Partial<TranscriptTailState>): void {
   store.set(next ? { ...initial, ...next } : initial);
 }

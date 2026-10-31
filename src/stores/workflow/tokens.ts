@@ -82,12 +82,12 @@ const initial: TokensState = {
 
 const store = createStore<TokensState>(initial);
 
-// Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
+// Test escape hatch — see docs/STORES-AND-UI.md#test-escape-hatches. Do not use outside tests.
 function __testReset(next?: Partial<TokensState>): void {
   store.set(next ? { ...initial, ...next } : initial);
 }
 
-// Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
+// Test escape hatch — see docs/STORES-AND-UI.md#test-escape-hatches. Do not use outside tests.
 export const _tokensInternal = { set: store.set };
 
 export const tokensStore = {
