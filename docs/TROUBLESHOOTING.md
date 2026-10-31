@@ -204,7 +204,7 @@ Parity with runtime output is enforced by `testing/docs/troubleshooting.test.ts`
 
 **Prevention:** The CLAUDE.md core conventions require `.js` on every internal import. Configure your editor's TypeScript "auto import" feature to add `.js` automatically (VS Code: `"typescript.preferences.importModuleSpecifierEnding": "js"`).
 
-**See also:** [docs/PRINCIPLES.md](./PRINCIPLES.md), [docs/STRUCTURE.md](./STRUCTURE.md).
+**See also:** [docs/CODE-STANDARD.md](./CODE-STANDARD.md#6-the-hard-conventions-enforced--summarized-linked), [docs/STRUCTURE.md](./STRUCTURE.md).
 
 ---
 

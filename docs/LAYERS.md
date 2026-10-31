@@ -317,7 +317,7 @@ engine/implementers/   # mirror of planners/ — same port+adapter pattern
 ## References
 
 - [`STRUCTURE.md` §File placement decision tree](./STRUCTURE.md#file-placement-decision-tree) — the canonical "where does this file go?" flow
-- [`PRINCIPLES.md`](./PRINCIPLES.md) — one-page index of all architectural rules
+- [`CODE-STANDARD.md` §6](./CODE-STANDARD.md#6-the-hard-conventions-enforced--summarized-linked) — one-page index of all architectural rules
 - [`STRUCTURE.md`](./STRUCTURE.md) — file tree, feature anatomy, placement rules, folder colocation
 - [`TYPES.md`](./TYPES.md) — type placement, Zod schema conventions
 - [`STORES-AND-UI.md`](./STORES-AND-UI.md) — state architecture

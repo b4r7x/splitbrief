@@ -6,7 +6,7 @@ Thanks for considering a contribution. SPLITBRIEF is a small, opinionated codeba
 
 Read in order:
 
-1. [docs/PRINCIPLES.md](./docs/PRINCIPLES.md) — architectural rules at a glance.
+1. [docs/CODE-STANDARD.md §6](./docs/CODE-STANDARD.md#6-the-hard-conventions-enforced--summarized-linked) — architectural rules at a glance.
 2. [docs/CONCEPTS.md](./docs/CONCEPTS.md) — shared vocabulary (EventBus, EngineEvent, Phase, Hook, RepoMap).
 3. [docs/STRUCTURE.md](./docs/STRUCTURE.md) — where files live, file-placement decision tree.
 4. [docs/TESTING.md](./docs/TESTING.md) — test philosophy and placement.
@@ -76,7 +76,7 @@ Do not duplicate the gate list in new docs; update [docs/INVARIANTS.md](./docs/I
 - **Engine has zero React imports.** `src/engine/` must not import `ink`, `react`, or anything under `src/features/`, `src/components/`, `src/hooks/`.
 - **Use options objects for wide APIs.** Any function with 4+ parameters, or any exported/cross-boundary function with 3+ parameters, switches to a named options object; a bare `boolean` param or two adjacent same-typed params are banned regardless of count. Tiny local non-exported math/helper primitives are exempt. Canonical: [docs/CODE-STANDARD.md §4](./docs/CODE-STANDARD.md#4-parameter-design).
 
-Full rule index: [docs/PRINCIPLES.md](./docs/PRINCIPLES.md).
+Full rule index: [docs/CODE-STANDARD.md §6](./docs/CODE-STANDARD.md#6-the-hard-conventions-enforced--summarized-linked).
 
 ## Testing
 

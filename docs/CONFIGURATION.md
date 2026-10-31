@@ -881,8 +881,8 @@ codebase: {
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `enabled` | boolean | `true` | Emit `<repo-map>` block to planner |
-| `tokenBudget` | int 1..50000 | `4000` | Tokens reserved for the block. PageRank picks the top N symbols that fit. |
+| `enabled` | boolean | `true` | Adds the `## Repository Map` section to the planner prompt. |
+| `tokenBudget` | int 1..50000 | `4000` | Tokens for that section. Files go in by PageRank order, each as one whole block: its path and its symbol signatures. The highest-ranked file always goes in. A later file whose block does not fit the remaining budget is skipped, and a smaller file after it can still go in. |
 | `include` | string[] | every TypeScript, JavaScript, Python, Go and Rust file (`.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.cjs`, `.py`, `.go`, `.rs`; `ALL_KNOWN_EXTENSIONS`, `src/engine/codebase/languages.ts`) | Glob patterns relative to project root |
 | `exclude` | string[] | the directories `.git`, `.splitbrief`, `node_modules`, `.trees` and `dist` at any depth, and files that match `\.test\.tsx?$` | **Regex strings** (note: not globs), matched against project-relative file and directory paths. Your patterns add to the defaults; they do not replace them (`src/engine/codebase/discover-files.ts`). |
 
@@ -1627,7 +1627,7 @@ These offerings have no built-in provider ID, descriptor, endpoint policy or pic
 
 ## 19. See also
 
-- [PRINCIPLES.md](./PRINCIPLES.md) — one-page rule index
+- [CODE-STANDARD.md §6](./CODE-STANDARD.md#6-the-hard-conventions-enforced--summarized-linked) — one-page rule index
 - [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) — planner/implementer pipeline and runner matrix
 - [TESTING.md](./TESTING.md) — testing contract
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — runner contracts, orchestrator loop, event model
