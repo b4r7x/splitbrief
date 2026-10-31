@@ -9,7 +9,7 @@ import type { ImplementerOptions, RetryOptions } from '../../../src/engine/imple
 import { runTrackedWorkflow, settleTrackedWorkflows } from '#testing/helpers/tracked-workflow.js';
 import type { PlannerOutputCallbacks } from '../../../src/engine/planners/types.js';
 import { addEvent } from '../../../src/stores/workflow/actions/event.js';
-import { lifecycleStore } from '../../../src/stores/workflow/lifecycle.js';
+import { runViewStore } from '../../../src/stores/workflow/run-view.js';
 import {
   makeCallbacks,
   makeImplementer,
@@ -154,12 +154,12 @@ describe('the phase an escalated brief publishes', { timeout: 90_000 }, () => {
     expect(phaseLines).toEqual(PHASES.map((phase) => `phase: ${phase}`));
   });
 
-  it('moves the TUI lifecycle phase once per transition', async () => {
+  it('moves the TUI run view phase once per transition', async () => {
     const events = await runConsultedBrief();
     const trace: string[] = [];
     for (const event of events) {
       addEvent(event);
-      const { phase } = lifecycleStore.get();
+      const { phase } = runViewStore.get();
       if (phase !== trace.at(-1)) trace.push(phase);
     }
 

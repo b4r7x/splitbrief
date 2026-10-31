@@ -26,6 +26,7 @@ const { configStore } = await import('../../../src/stores/project/config.js');
 const { terminalSizeStore } = await import('../../../src/stores/ui/terminal-size.js');
 const { routerStore } = await import('../../../src/stores/navigation/router.js');
 const { lifecycleStore } = await import('../../../src/stores/workflow/lifecycle.js');
+const { runViewStore } = await import('../../../src/stores/workflow/run-view.js');
 const { editorStore } = await import('../../../src/stores/ui/editor.js');
 const { overlayStore } = await import('../../../src/stores/ui/overlay.js');
 const { reviewStore } = await import('../../../src/stores/workflow/review.js');
@@ -118,7 +119,8 @@ describe('WorkflowScreen review editing', () => {
         execution: { kind: 'local', prepared },
       });
       runWorkflow.mockImplementationOnce(async (opts) => {
-        lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+        runViewStore.__testReset({ phase: 'reviewing-plan' });
+        lifecycleStore.__testReset({ status: 'running' });
         await opts.callbacks.onApprovalNeeded('plan', planPath, []);
         return makeSummary({ feature: 'review footer review' });
       });
@@ -156,7 +158,8 @@ describe('WorkflowScreen review editing', () => {
       let approvalResult: ApprovalReviewResult | undefined;
 
       runWorkflow.mockImplementationOnce(async (opts) => {
-        lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+        runViewStore.__testReset({ phase: 'reviewing-plan' });
+        lifecycleStore.__testReset({ status: 'running' });
         approvalResult = await opts.callbacks.onApprovalNeeded('plan', planPath, []);
         return makeSummary();
       });
@@ -200,7 +203,8 @@ describe('WorkflowScreen review editing', () => {
       runWorkflow.mockImplementationOnce(async (opts) => {
         writeFileSync(planPath, '# Plan\n\nInline shortcut plan\n', 'utf-8');
         writeFileSync(join(dir, 'plan.json'), '{"summary":"inline plan json"}\n', 'utf-8');
-        lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+        runViewStore.__testReset({ phase: 'reviewing-plan' });
+        lifecycleStore.__testReset({ status: 'running' });
         // The run stays in flight while the gate waits, exactly as it does in production: a mock
         // that returned first would settle the route and take the gate off screen.
         await opts.callbacks.onApprovalNeeded('plan', planPath, []);
@@ -275,7 +279,8 @@ describe('WorkflowScreen review editing', () => {
       await tick(20);
 
       // The plan card shows plan.md; the edit it hands the external editor is plan.json.
-      lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+      runViewStore.__testReset({ phase: 'reviewing-plan' });
+      lifecycleStore.__testReset({ status: 'running' });
       const token = reviewStore.setReviewFile(reviewPath);
       externalEditRequestStore.request(token, '{}\n');
       await tick(20);

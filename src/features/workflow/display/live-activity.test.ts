@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { PHASES } from '../../../core/schemas/enums.js';
 import { deriveLiveStatus, stallRunnerHint } from './live-activity.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { makePlannerHeartbeat, makePlannerStatus } from '#testing/helpers/events/planner.js';
@@ -16,7 +17,7 @@ const base = {
   status: 'running' as const,
   cancelled: false,
   startedAt: 1000,
-  phaseFirstSeenTs: {},
+  phaseFirstSeen: {},
   waitedMs: {},
   resumedAt: null,
   reviewerLabel: null,
@@ -318,17 +319,17 @@ describe('deriveLiveStatus', () => {
     const build = deriveLiveStatus({
       ...base,
       phase: 'validating-task',
-      phaseFirstSeenTs: { implementing: 5_000 },
+      phaseFirstSeen: { implementing: 5_000 },
       waitedMs: { researching: 4_000, implementing: 500 },
     });
     expect(build?.waitedMs).toBe(500);
   });
 
-  it('uses the implementer tone during build and derives stage start from phaseFirstSeenTs', () => {
+  it('uses the implementer tone during build and derives stage start from phaseFirstSeen', () => {
     const status = deriveLiveStatus({
       ...base,
       phase: 'implementing',
-      phaseFirstSeenTs: { implementing: 5000 },
+      phaseFirstSeen: { implementing: 5000 },
     });
     expect(status?.parts).toEqual([{ text: 'Implementing…', tone: 'implementer' }]);
     expect(status?.stageStart).toBe(5000);
@@ -341,7 +342,7 @@ describe('deriveLiveStatus', () => {
     const status = deriveLiveStatus({
       ...base,
       phase: 'implementing',
-      phaseFirstSeenTs: { implementing: 5_000 },
+      phaseFirstSeen: { implementing: 5_000 },
       waitedMs: { implementing: 2_000 },
       suiteStage: { stage: 'test', command: 'npm test', moment, stageStartedTs: 90_000 },
     });
@@ -369,7 +370,7 @@ describe('deriveLiveStatus', () => {
     const status = deriveLiveStatus({
       ...base,
       phase: 'final-review',
-      phaseFirstSeenTs: { 'final-review': 5_000 },
+      phaseFirstSeen: { 'final-review': 5_000 },
       suiteStage: { id: 'V1', command: 'npm test', moment, stageStartedTs: 90_000 },
     });
     expect(status).toEqual({
@@ -402,7 +403,7 @@ describe('deriveLiveStatus', () => {
     const resumedMidStage = deriveLiveStatus({
       ...base,
       phase: 'planning',
-      phaseFirstSeenTs: { planning: 5_000 },
+      phaseFirstSeen: { planning: 5_000 },
       resumedAt: 90_000,
     });
     expect(resumedMidStage?.stageStart).toBe(90_000);
@@ -410,7 +411,7 @@ describe('deriveLiveStatus', () => {
     const openedAfterResume = deriveLiveStatus({
       ...base,
       phase: 'implementing',
-      phaseFirstSeenTs: { planning: 5_000, implementing: 120_000 },
+      phaseFirstSeen: { planning: 5_000, implementing: 120_000 },
       resumedAt: 90_000,
     });
     expect(openedAfterResume?.stageStart).toBe(120_000);
@@ -431,7 +432,7 @@ describe('deriveLiveStatus', () => {
     const planning = deriveLiveStatus({
       ...base,
       phase: 'planning',
-      phaseFirstSeenTs: { researching: 2_000, planning: 50_000 },
+      phaseFirstSeen: { researching: 2_000, planning: 50_000 },
       waitedMs: waits,
     });
     expect(planning?.stageStart).toBe(1000);
@@ -442,7 +443,7 @@ describe('deriveLiveStatus', () => {
     const planStage = {
       ...base,
       phase: 'planning' as const,
-      phaseFirstSeenTs: { planning: 5_000 },
+      phaseFirstSeen: { planning: 5_000 },
     };
 
     expect(
@@ -465,12 +466,13 @@ describe('deriveLiveStatus', () => {
   it('stays live while the planner rewrites a gate document from a change request', () => {
     const liveNow = () => {
       const lifecycle = lifecycleStore.get();
+      const view = runViewStore.get();
       return deriveLiveStatus({
         ...base,
-        phase: lifecycle.phase,
+        phase: view.phase,
         status: lifecycle.status,
         startedAt: lifecycle.startedAt,
-        phaseFirstSeenTs: lifecycle.phaseFirstSeenTs,
+        phaseFirstSeen: view.phaseFirstSeen,
         plannerCall: lifecycle.plannerCall ?? null,
         plannerCallStartedTs: lifecycle.plannerCallStartedTs ?? null,
       });
@@ -490,7 +492,7 @@ describe('deriveLiveStatus', () => {
     };
 
     regenerate('reviewing-plan', 'plan');
-    expect(lifecycleStore.get().phase).toBe('reviewing-plan');
+    expect(runViewStore.get().phase).toBe('reviewing-plan');
     expect(liveNow()).toEqual({
       parts: [{ text: 'Planning…', tone: 'planner' }],
       waitedMs: 0,
@@ -508,7 +510,7 @@ describe('deriveLiveStatus', () => {
     });
 
     regenerate('reviewing-briefs', 'tasks');
-    expect(lifecycleStore.get().phase).toBe('reviewing-briefs');
+    expect(runViewStore.get().phase).toBe('reviewing-briefs');
     expect(liveNow()).toEqual({
       parts: [{ text: 'Compiling briefs…', tone: 'planner' }],
       stageStart: 50_000,

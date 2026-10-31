@@ -51,6 +51,7 @@ import type { SkillMeta } from '../core/skills/types.js';
 import { addEvent } from '../stores/workflow/actions/event.js';
 import { conversationScrollStore } from '../stores/workflow/conversation-scroll.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
+import { runViewStore } from '../stores/workflow/run-view.js';
 import { queueCopy } from '../features/workflow/queue-copy.js';
 import { tasksStore } from '../stores/workflow/tasks.js';
 import { controlsStore } from '../stores/ui/controls.js';
@@ -184,7 +185,8 @@ describe('buildCommandContext', () => {
   });
 
   it('shows /queue with shared copy and counts each id only until first delivery', async () => {
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
     tasksStore.__testReset({
       currentTask: 2,
       totalTasks: 3,

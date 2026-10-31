@@ -17,6 +17,7 @@ import { sessionsStore } from '../../stores/project/sessions.js';
 import { skillsStore } from '../../stores/project/skills.js';
 import { tasksStore } from '../../stores/workflow/tasks.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../stores/workflow/run-view.js';
 import { commandPaletteMruStore } from '../../stores/ui/command-palette-mru.js';
 import { composerDraftStore } from '../../stores/ui/composer-draft.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
@@ -71,7 +72,7 @@ function createTestCommands(): RuntimeCommandDef[] {
     refreshSkills: async () => {},
     getQueueCopy: (count) =>
       queueCopy({
-        seat: phaseStage(lifecycleStore.get().phase),
+        seat: phaseStage(runViewStore.get().phase),
         count: count ?? lifecycleStore.get().queueDepth,
       }),
     clearQueue: () => ({ status: 'cleared', count: 0 }),
@@ -97,7 +98,7 @@ function createTestCommands(): RuntimeCommandDef[] {
 function runCommand(commands: RuntimeCommandDef[], raw: string) {
   return executeRuntimeCommand(commands, raw, {
     screen: routerStore.get().screen,
-    phase: lifecycleStore.get().phase,
+    phase: runViewStore.get().phase,
     plannerSupportsImages: true,
     openRunAtRest: false,
     applyUnfinished: false,
@@ -435,7 +436,7 @@ describe('CommandPaletteOverlay', () => {
         onRuntimeCommand={(raw) =>
           executeRuntimeCommand(commands, raw, {
             screen: routerStore.get().screen,
-            phase: lifecycleStore.get().phase,
+            phase: runViewStore.get().phase,
             plannerSupportsImages: true,
             openRunAtRest: false,
             applyUnfinished: false,
@@ -627,7 +628,8 @@ describe('CommandPaletteOverlay', () => {
     tasksStore.__testReset({
       tasks: [{ id: 'T001', title: 'uniquetasktitle123', status: 'in_progress' }],
     });
-    lifecycleStore.__testReset({ phase });
+    runViewStore.__testReset({ phase });
+    lifecycleStore.__testReset();
 
     const instance = renderCommandPalette();
     await tick(1);

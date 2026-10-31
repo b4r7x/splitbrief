@@ -7,6 +7,7 @@ import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { hydrateFromState } from '../../../stores/workflow/actions/hydrate.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { resetMarkdownConversationRowsCache } from '../conversation-rows/markdown-rows.js';
 import { resetConversationRowsProjectionCache } from '../conversation-rows/projection-cache.js';
 import { resetEventBlockCache } from '../conversation-rows/block-cache.js';
@@ -183,7 +184,7 @@ export function useRunLoop({
         addTuiEvent({
           type: 'error',
           ts: Date.now(),
-          phase: lifecycleStore.get().phase,
+          phase: runViewStore.get().phase,
           message: resumeFailureMessage(hydrated),
         });
         return;
@@ -453,7 +454,7 @@ export function useRunLoop({
             addTuiEvent({
               type: 'error',
               ts: Date.now(),
-              phase: lifecycleStore.get().phase,
+              phase: runViewStore.get().phase,
               message:
                 reprepared.kind === 'blocked'
                   ? `Cannot resume: ${readinessBlockerMessage(reprepared.report)}`
@@ -514,7 +515,7 @@ export function useRunLoop({
           addTuiEvent({
             type: 'error',
             ts: Date.now(),
-            phase: lifecycleStore.get().phase,
+            phase: runViewStore.get().phase,
             message: resumeFailureMessage(hydrated),
           });
           await settleRun(session.ref, true);
@@ -542,7 +543,7 @@ export function useRunLoop({
         feedbackStore.setError(message);
         return;
       }
-      addTuiEvent({ type: 'error', ts: Date.now(), phase: lifecycleStore.get().phase, message });
+      addTuiEvent({ type: 'error', ts: Date.now(), phase: runViewStore.get().phase, message });
       if (stopStore.get().intent !== 'none') {
         stopStore.fail(message);
         // Retry only cleanup and persistence, never the interrupted model call.

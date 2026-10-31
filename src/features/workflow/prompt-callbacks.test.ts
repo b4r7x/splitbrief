@@ -9,6 +9,7 @@ import {
 } from './hooks/use-input-mode.js';
 import { createDraftDocument } from '../../core/composer/document.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../stores/workflow/run-view.js';
 import { stopStore } from '../../stores/workflow/stop.js';
 import { tasksStore } from '../../stores/workflow/tasks.js';
 import { reviewStore } from '../../stores/workflow/review.js';
@@ -130,7 +131,8 @@ describe('buildPromptCallbacks onApprovalNeeded', () => {
 
 describe('buildPromptCallbacks onContinuationNeeded', () => {
   beforeEach(() => {
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
     stopStore.__testReset();
     tasksStore.__testReset({
       tasks: [{ id: 'T002', title: 'slice', status: 'in_progress' }],

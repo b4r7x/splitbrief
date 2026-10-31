@@ -10,6 +10,7 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { formatStageLabel } from '../../../core/phase-display.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
@@ -98,7 +99,8 @@ describe('Rail — Form B (horizontal pipeline)', () => {
   it('renders the three stages on one row, done and active filled and pending a ring', async () => {
     chalk.level = 3;
     terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
     const ui = renderRail('B');
     await tick();
@@ -126,13 +128,15 @@ describe('Rail — Form B (horizontal pipeline)', () => {
 
   it('distinguishes idle (no active marker) from a running first stage without color', async () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
-    lifecycleStore.__testReset({ phase: 'idle' });
+    runViewStore.__testReset({ phase: 'idle' });
+    lifecycleStore.__testReset();
     const idle = renderRail('B');
     await tick();
     const idleFrame = stripAnsiStyles(idle.lastFrame() ?? '');
     idle.unmount();
 
-    lifecycleStore.__testReset({ phase: 'specifying', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'specifying' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     const running = renderRail('B');
     await tick();
     const runningFrame = stripAnsiStyles(running.lastFrame() ?? '');
@@ -153,7 +157,8 @@ describe('Rail — Form B (horizontal pipeline)', () => {
     async (phase, status) => {
       const cols = 80;
       terminalSizeStore.__testReset({ cols, rows: 40, isSmall: false });
-      lifecycleStore.__testReset({ phase, status, startedAt: 0 });
+      runViewStore.__testReset({ phase });
+      lifecycleStore.__testReset({ status, startedAt: 0 });
       tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
       const ui = renderRail('B');
       await tick();
@@ -173,7 +178,8 @@ describe('Rail — Form B (horizontal pipeline)', () => {
 
   it('paints no background pill behind the active stage — weight carries it', async () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
     const ui = renderRail('B');
     await tick();
@@ -186,7 +192,8 @@ describe('Rail — Form B (horizontal pipeline)', () => {
 
   it('encodes the handoff without color: an arrow on each of the two role seams', async () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
     const ui = renderRail('B');
     await tick();
@@ -200,8 +207,8 @@ describe('Rail — Form B (horizontal pipeline)', () => {
 
   it('reserves no activity row and shows no active marker when cancelled', async () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
+    runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({
-      phase: 'implementing',
       status: 'cancelled',
       cancelled: true,
       startedAt: 0,
@@ -290,7 +297,8 @@ describe('Rail colors', () => {
   ] as const)('keeps the stopped run on Build in its seat tone in %s Form %s', (variant, form) => {
     chalk.level = 3;
     const theme = resolveTheme({ variant, level: 3, terminalBackground: undefined });
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'paused' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'paused' });
     const ui = renderFeature(
       <ThemeProvider theme={theme}>
         <Rail form={form} />
@@ -311,7 +319,8 @@ describe('Rail colors', () => {
       chalk.level = 3;
       const theme = resolveTheme({ variant, level: 3, terminalBackground: undefined });
       tasksStore.__testReset({ currentTask: 2, totalTasks: 5 });
-      lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+      runViewStore.__testReset({ phase: 'implementing' });
+      lifecycleStore.__testReset({ status: 'running' });
       const active = renderFeature(
         <ThemeProvider theme={theme}>
           <Rail form="C" />
@@ -349,7 +358,8 @@ describe('Rail — a passed review', () => {
   ] as const)('keeps every stage marked in form %s and never reads done', async (form, labels) => {
     chalk.level = 3;
     terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
-    lifecycleStore.__testReset({ phase: 'complete', status: 'complete', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'complete' });
+    lifecycleStore.__testReset({ status: 'complete', startedAt: 0 });
     tasksStore.__testReset({ currentTask: 12, totalTasks: 10, tasks: briefs(12) });
     eventsStore.__testReset({
       events: [{ type: 'workflow_complete', ts: 1, phase: 'complete', review: 'passed' }],
@@ -389,7 +399,8 @@ describe('Rail — a passed review', () => {
     ['C', 'ascii-mono', '*'],
   ] as const)('uses the done mark in form %s at %s', async (form, profile, mark) => {
     await withCaptureEnvironment({ viewport: { cols: 100, rows: 40 }, profile }, async () => {
-      lifecycleStore.__testReset({ phase: 'complete', status: 'complete' });
+      runViewStore.__testReset({ phase: 'complete' });
+      lifecycleStore.__testReset({ status: 'complete' });
       const ui = renderRail(form);
       await tick();
       const frame = stripAnsiStyles(ui.lastFrame());
@@ -403,13 +414,8 @@ describe('Rail — a passed review', () => {
 describe('Rail — completion after a failed review', () => {
   beforeEach(() => {
     terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
-    lifecycleStore.__testReset({
-      phase: 'complete',
-      status: 'complete',
-      startedAt: 0,
-      endedAt: 1,
-      durationMs: 1,
-    });
+    runViewStore.__testReset({ phase: 'complete' });
+    lifecycleStore.__testReset({ status: 'complete', startedAt: 0, endedAt: 1, durationMs: 1 });
   });
 
   it('never says done while the review failed, and marks the review stage failed', async () => {
@@ -439,13 +445,8 @@ describe('Rail — completion with a halt open', () => {
   // announced it; the rail reads the halt.
   it('marks the review failed while a recovery waits at the end of the run', async () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
-    lifecycleStore.__testReset({
-      phase: 'complete',
-      status: 'complete',
-      startedAt: 0,
-      endedAt: 1,
-      durationMs: 1,
-    });
+    runViewStore.__testReset({ phase: 'complete' });
+    lifecycleStore.__testReset({ status: 'complete', startedAt: 0, endedAt: 1, durationMs: 1 });
     recoveryNoticeStore.open({
       seat: null,
       ranOn: null,
@@ -470,13 +471,8 @@ describe('Rail — completion with a halt open', () => {
   // The review passed and Apply halted: the rail the run at rest painted stays when it continues.
   it('marks Apply failed and the review done while an Apply halt waits', async () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
-    lifecycleStore.__testReset({
-      phase: 'complete',
-      status: 'complete',
-      startedAt: 0,
-      endedAt: 1,
-      durationMs: 1,
-    });
+    runViewStore.__testReset({ phase: 'complete' });
+    lifecycleStore.__testReset({ status: 'complete', startedAt: 0, endedAt: 1, durationMs: 1 });
     eventsStore.__testReset({
       events: [{ type: 'workflow_complete', ts: 1, phase: 'complete', review: 'passed' }],
     });
@@ -544,7 +540,7 @@ describe('Rail — a live run resumed into its Apply step', () => {
     expect(raw.split('\u001b[1m')).toHaveLength(2);
     expect(
       measureRailCells({
-        phase: lifecycleStore.get().phase,
+        phase: runViewStore.get().phase,
         status: lifecycleStore.get().status,
         cancelled: false,
         form: 'B',
@@ -586,7 +582,8 @@ describe('Rail — Form C (narrow floor)', () => {
     'matches render, measure and hit-test with build block shown %s',
     async (buildBlockShown) => {
       terminalSizeStore.__testReset({ cols: 22, rows: 24, isSmall: true });
-      lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+      runViewStore.__testReset({ phase: 'implementing' });
+      lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
       for (const event of makeReviewFixInsertedEvents()) addEvent(event);
       if (!buildBlockShown) overlayStore.open('stop-sheet');
       const ui = renderRail('C', buildBlockShown);
@@ -637,7 +634,8 @@ describe('Rail — Form C (narrow floor)', () => {
 
   it('renders only the active stage and its fraction, no verb', async () => {
     terminalSizeStore.__testReset({ cols: 24, rows: 30, isSmall: false });
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
     const ui = renderRail('C');
     await tick();
@@ -654,7 +652,8 @@ describe('Rail — Form C (narrow floor)', () => {
   it('anchors the rendered active stage marker to its hit-test zone', async () => {
     const cols = 44;
     terminalSizeStore.__testReset({ cols, rows: 30, isSmall: false });
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
     const ui = renderRail('C');
     await tick();
@@ -676,8 +675,8 @@ describe('Rail — Form C (narrow floor)', () => {
   it('paints the cancelled suffix and keeps the narrow cancelled stage inside its zone', async () => {
     const cols = 44;
     terminalSizeStore.__testReset({ cols, rows: 30, isSmall: false });
+    runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({
-      phase: 'implementing',
       status: 'cancelled',
       cancelled: true,
       startedAt: 0,

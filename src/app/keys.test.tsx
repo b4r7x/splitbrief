@@ -16,6 +16,7 @@ import {
 import { createInitialState } from '../core/state/machine.js';
 import { routerStore } from '../stores/navigation/router.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
+import { runViewStore } from '../stores/workflow/run-view.js';
 import { stopStore } from '../stores/workflow/stop.js';
 import { composerLiveStore } from '../stores/ui/composer-live.js';
 import { createDraftDocument } from '../core/composer/document.js';
@@ -168,7 +169,8 @@ const STOP_LADDER_SETUP = () => {
     run: makeRunRecord(),
     execution: localExecution('test'),
   });
-  lifecycleStore.__testReset({ phase: 'implementing' });
+  runViewStore.__testReset({ phase: 'implementing' });
+  lifecycleStore.__testReset({ status: 'running' });
 };
 
 const STOP_LADDER_TEARDOWN = () => {
@@ -606,7 +608,8 @@ describe('useAppKeys: ESC stop ladder', () => {
   });
 
   it('esc in the plan card comment returns to the card rows, and the next esc opens the sheet', async () => {
-    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
     controlsStore.setInputMode('review');
     const exit = vi.fn();
     const ui = renderFeature(
@@ -646,7 +649,8 @@ describe('useAppKeys: ESC stop ladder', () => {
   });
 
   it('esc ends an empty Request changes and hands the keys back to the card rows', async () => {
-    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
     controlsStore.setInputMode('review');
     const ui = renderFeature(
       <>
@@ -682,7 +686,8 @@ describe('useAppKeys: ESC stop ladder', () => {
   ])(
     'a double esc (%s) in the plan card comment clears the comment and opens the sheet',
     async (_name, chunks) => {
-      lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+      runViewStore.__testReset({ phase: 'reviewing-plan' });
+      lifecycleStore.__testReset({ status: 'running' });
       controlsStore.setInputMode('review');
       const ui = renderFeature(
         <>
@@ -718,7 +723,8 @@ describe('useAppKeys: ESC stop ladder', () => {
   );
 
   it('a split escape sequence in the plan card comment keeps the comment', async () => {
-    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
     controlsStore.setInputMode('review');
     const ui = renderFeature(
       <>
@@ -750,7 +756,8 @@ describe('useAppKeys: ESC stop ladder', () => {
   });
 
   it('esc during validating-task opens sheet', async () => {
-    lifecycleStore.__testReset({ phase: 'validating-task' });
+    runViewStore.__testReset({ phase: 'validating-task' });
+    lifecycleStore.__testReset({ status: 'running' });
     const exit = vi.fn();
     const ui = renderFeature(<Harness exit={exit} />);
     await tick();
@@ -764,7 +771,8 @@ describe('useAppKeys: ESC stop ladder', () => {
   });
 
   it('esc on a continued run that has not reached its first call opens the stop sheet', async () => {
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'paused' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'paused' });
     const exit = vi.fn();
     const ui = renderFeature(<Harness exit={exit} />);
     await tick();
@@ -786,7 +794,8 @@ describe('useAppKeys: ESC stop ladder', () => {
   ] as const)(
     'esc on the $reason halt panel of a completed run opens the stop sheet',
     async ({ reason, at }) => {
-      lifecycleStore.__testReset({ phase: 'complete', status: 'complete' });
+      runViewStore.__testReset({ phase: 'complete' });
+      lifecycleStore.__testReset({ status: 'complete' });
       recoveryNoticeStore.open({
         seat: null,
         ranOn: null,

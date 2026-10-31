@@ -4,6 +4,7 @@ import { addEvent } from './event.js';
 import { resetWorkflow } from './reset.js';
 import { eventsStore, MAX_EVENTS } from '../events.js';
 import { lifecycleStore } from '../lifecycle.js';
+import { runViewStore } from '../run-view.js';
 import { operationsStore } from '../operations/state.js';
 import { selectRunningBrief, tasksStore } from '../tasks.js';
 import { makeReviewFixInsertedEvents } from '#testing/helpers/events/task.js';
@@ -27,6 +28,7 @@ function snapshot(): Record<string, unknown> {
     tokens: tokensStore.get(),
     lifecycle: lifecycleStore.get(),
     operations: operationsStore.get(),
+    runView: runViewStore.get(),
   };
 }
 
@@ -237,7 +239,7 @@ describe('loadEvents', () => {
     expect(events[0]).toMatchObject({ text: 'one two ' });
   });
 
-  it('takes phaseFirstSeenTs from the replayed timestamps', () => {
+  it('takes phaseFirstSeen from the replayed timestamps', () => {
     loadEvents([
       event({ type: 'workflow_started', ts: TS, phase: 'researching', feature: 'replay' }),
       event({ type: 'planner_status', ts: TS + 500, phase: 'planning', status: 'done' }),
@@ -255,7 +257,7 @@ describe('loadEvents', () => {
       event({ type: 'planner_status', ts: TS + 1_500, phase: 'implementing', status: 'running' }),
     ]);
 
-    expect(lifecycleStore.get().phaseFirstSeenTs).toEqual({
+    expect(runViewStore.get().phaseFirstSeen).toEqual({
       researching: TS,
       planning: TS + 500,
       implementing: TS + 900,
@@ -276,6 +278,60 @@ describe('loadEvents', () => {
     expect(snapshot()).toEqual(oneByOne);
   });
 
+  it('clears a stall only at the replayed event that changes the phase', () => {
+    loadEvents([
+      event({ type: 'workflow_started', ts: TS, phase: 'implementing', feature: 'replay' }),
+      event({
+        type: 'runner_call_stalled',
+        ts: TS + 1,
+        phase: 'implementing',
+        callId: 'call-1',
+        role: 'implementer',
+        backendKind: 'cli',
+        sequence: 1,
+        silentMs: 60_000,
+      }),
+      event({ type: 'planner_status', ts: TS + 2, phase: 'implementing', status: 'running' }),
+    ]);
+    expect(lifecycleStore.get().stall).not.toBeNull();
+
+    resetWorkflow();
+    loadEvents([
+      event({ type: 'workflow_started', ts: TS, phase: 'implementing', feature: 'replay' }),
+      event({
+        type: 'runner_call_stalled',
+        ts: TS + 1,
+        phase: 'implementing',
+        callId: 'call-1',
+        role: 'implementer',
+        backendKind: 'cli',
+        sequence: 1,
+        silentMs: 60_000,
+      }),
+      event({ type: 'planner_status', ts: TS + 2, phase: 'validating-task', status: 'running' }),
+    ]);
+    expect(lifecycleStore.get().stall).toBeNull();
+  });
+
+  it('starts an idle run at its first phase event when the log has no workflow_started', () => {
+    loadEvents([
+      event({
+        type: 'task_started',
+        ts: TS + 5,
+        phase: 'implementing',
+        taskId: 'T001',
+        title: 'one',
+        index: 0,
+        total: 1,
+        file: 'src/a.ts',
+        action: 'create',
+      }),
+    ]);
+
+    expect(lifecycleStore.get()).toMatchObject({ status: 'running', startedAt: TS + 5 });
+    expect(runViewStore.get().phase).toBe('implementing');
+  });
+
   it('replays rowless replay_started and replay_complete without touching the lifecycle', () => {
     loadEvents([
       event({ type: 'replay_started', ts: TS, phase: 'idle', totalEvents: 1 }),
@@ -289,8 +345,8 @@ describe('loadEvents', () => {
       'workflow_started',
       'replay_complete',
     ]);
-    expect(lifecycleStore.get().phase).toBe('researching');
-    expect(lifecycleStore.get().phaseFirstSeenTs).toEqual({ researching: TS + 1 });
+    expect(runViewStore.get().phase).toBe('researching');
+    expect(runViewStore.get().phaseFirstSeen).toEqual({ researching: TS + 1 });
   });
 
   it('replaces the event log rather than appending to it', () => {
@@ -336,7 +392,7 @@ describe('loadEvents', () => {
     expect(tasksStore.get().totalTasks).toBe(1);
     expect(Object.keys(tokensStore.get().perTask)).toEqual(['T009']);
     expect(tokensStore.get().tokenUsage).toBeNull();
-    expect(lifecycleStore.get().phaseFirstSeenTs).toEqual({
+    expect(runViewStore.get().phaseFirstSeen).toEqual({
       researching: TS + 1,
       implementing: TS + 2,
     });

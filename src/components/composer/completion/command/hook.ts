@@ -18,7 +18,7 @@ import {
   routerStore,
 } from '../../../../stores/navigation/router.js';
 import { inputHistoryStore } from '../../../../stores/ui/input-history.js';
-import { lifecycleStore } from '../../../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../../../stores/workflow/run-view.js';
 import type { CommandCompletionRow } from './menu.js';
 import { useCompletionSelection } from '../use-completion-selection.js';
 import { useCompletionNavigation } from '../use-completion-navigation.js';
@@ -80,7 +80,7 @@ export function useCommandCompletion({
   disabled,
   suppressed,
 }: UseCommandCompletionOptions): UseCommandCompletionResult {
-  const phase = lifecycleStore.use((s) => s.phase);
+  const phase = runViewStore.use((s) => s.phase);
   const config = configStore.use((s) => s.config);
   const openRunAtRest = routerStore.use(isOpenRunAtRest);
   const applyUnfinished = routerStore.use(isApplyUnfinishedAtRest);

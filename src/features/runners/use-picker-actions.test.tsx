@@ -26,6 +26,7 @@ import {
 } from '../../stores/navigation/preparation.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../stores/workflow/run-view.js';
 import { tasksStore } from '../../stores/workflow/tasks.js';
 import { CREW_SEAT_LABELS, PLANNER_INHERITANCE } from '../../core/crew/identity.js';
 import type { CliAuthMethod } from '../../core/runners/cli-tool-catalog.js';
@@ -626,7 +627,8 @@ describe('usePickerActions', () => {
       run: makeRunRecord({ ref: prepared.session.ref }),
       execution: { kind: 'local', prepared },
     });
-    lifecycleStore.__testReset({ phase, status });
+    runViewStore.__testReset({ phase });
+    lifecycleStore.__testReset({ status });
 
     const ui = renderFeature(
       <ConfirmOnKeyProbe role="implementer" selection={realPickerOption('implementer', 'codex')} />,

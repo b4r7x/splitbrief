@@ -17,6 +17,7 @@ import { readConversationRowActions } from '../features/workflow/conversation-ro
 import { readConversationScrollSnapshot } from '../features/workflow/layout/snapshot.js';
 import { getWorkflowSidebarWidth } from '../features/workflow/layout/rect.js';
 import { resolveCopyValue } from '../features/workflow/copy/resolve.js';
+import type { Phase } from '../core/schemas/enums.js';
 import type { WorkflowState } from '../core/schemas/workflow.js';
 import type { RunRecord } from '../core/sessions/run-record.js';
 import type { SessionRef } from '../core/types/session-ref.js';
@@ -34,6 +35,7 @@ import {
   routerStore,
 } from '../stores/navigation/router.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
+import { runViewStore } from '../stores/workflow/run-view.js';
 import { queueCopy } from '../features/workflow/queue-copy.js';
 import { messageSeat } from '../core/queue-state.js';
 import { operationsStore, selectScheduledReview } from '../stores/workflow/operations/state.js';
@@ -397,11 +399,11 @@ export function buildCommandContext({
     },
     endRun: requestEndRun,
     getQueueCopy: (count) => {
-      const lifecycle = lifecycleStore.get();
+      const { phase } = runViewStore.get();
       return queueCopy({
-        seat: messageSeat(lifecycle.phase, selectScheduledReview(operationsStore.get())),
-        taskId: selectRunningBrief(tasksStore.get(), lifecycle.phase).current?.id,
-        count: count ?? lifecycle.queueDepth,
+        seat: messageSeat(phase, selectScheduledReview(operationsStore.get())),
+        taskId: selectRunningBrief(tasksStore.get(), phase).current?.id,
+        count: count ?? lifecycleStore.get().queueDepth,
       });
     },
     clearQueue: workflow.requestClearQueue,
@@ -449,8 +451,6 @@ export function buildCommandContext({
     },
   });
 }
-
-type Phase = ReturnType<typeof lifecycleStore.get>['phase'];
 
 export function useRuntimeCommands({
   exit,

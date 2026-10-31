@@ -26,6 +26,7 @@ let projectDir = '';
 
 const { routerStore } = await import('../../../src/stores/navigation/router.js');
 const { lifecycleStore } = await import('../../../src/stores/workflow/lifecycle.js');
+const { runViewStore } = await import('../../../src/stores/workflow/run-view.js');
 const { openApprovalPrompt } = await import('../../../src/stores/approval-prompt/prompt.js');
 
 const PAST_GRACE = PROMPT_TYPEAHEAD_GRACE_MS + 30;
@@ -152,7 +153,8 @@ describe('WorkflowScreen key ownership', () => {
     const ui = mountWorkflow();
     await tick(20);
 
-    lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
+    runViewStore.__testReset({ phase: 'reviewing-briefs' });
+    lifecycleStore.__testReset({ status: 'running' });
     await flushEffects();
 
     ui.stdin.write('j');

@@ -23,7 +23,7 @@ import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { configStore } from '../../stores/project/config.js';
-import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../stores/workflow/run-view.js';
 import { tasksStore } from '../../stores/workflow/tasks.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
 import { COMMAND_CATEGORY_LABELS } from '../../core/runtime/commands/types.js';
@@ -73,7 +73,7 @@ export function CommandPaletteOverlay({ commands, onRuntimeCommand }: CommandPal
   const route = routerStore.use((s) => s);
   const screen = route.screen;
   const config = configStore.useConfig();
-  const phase = lifecycleStore.use((s) => s.phase);
+  const phase = runViewStore.use((s) => s.phase);
   const mruIds = commandPaletteMruStore.use((s) => s.ids);
   const tasks = tasksStore.use((s) => s.tasks);
   const sessions = sessionsStore.use((s) => s.sessions);

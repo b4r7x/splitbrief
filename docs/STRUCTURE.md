@@ -269,7 +269,8 @@ src/core/sessions/
 
 ```
 src/core/run-view/
-└── reduce.ts          # reduceRunView — the run view: one fold of session.jsonl that every surface reads
+├── reduce.ts          # reduceRunView — the run view: one fold of session.jsonl that every surface reads
+└── settle.ts          # settleRunView — the saved phase of state.json laid over the folded log
 ```
 
 ### `src/utils/` — generic primitives

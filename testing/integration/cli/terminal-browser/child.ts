@@ -189,7 +189,8 @@ async function startTracking(): Promise<void> {
     { listVisualScenarios },
     { eventsStore },
     { conversationScrollStore },
-    { _lifecycleInternal },
+    { _lifecycleInternal, lifecycleStore },
+    { _runViewInternal },
   ] = await Promise.all([
     import('react'),
     import('../../../../src/app/root.js'),
@@ -199,6 +200,7 @@ async function startTracking(): Promise<void> {
     import('../../../../src/stores/workflow/events.js'),
     import('../../../../src/stores/workflow/conversation-scroll.js'),
     import('../../../../src/stores/workflow/lifecycle.js'),
+    import('../../../../src/stores/workflow/run-view.js'),
   ]);
   const scenario = listVisualScenarios().find(
     (candidate) => candidate.id === 'workflow-implementation',
@@ -217,14 +219,11 @@ async function startTracking(): Promise<void> {
       _lifecycleInternal.set((current) =>
         current.status !== 'running'
           ? current
-          : {
-              ...current,
-              startedAt: now,
-              phaseFirstSeenTs: { implementing: now },
-              lastRunnerEventTs: now,
-              attemptStartedTs: now,
-            },
+          : { ...current, startedAt: now, lastRunnerEventTs: now, attemptStartedTs: now },
       );
+      if (lifecycleStore.get().status === 'running') {
+        _runViewInternal.set((view) => ({ ...view, phaseFirstSeen: { implementing: now } }));
+      }
       eventsStore.__testReset({
         events: [
           {

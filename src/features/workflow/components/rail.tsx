@@ -13,6 +13,7 @@ import { colorForTone } from '../../../core/theme/tone-color.js';
 import { lifecycleStore, type LifecycleState } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore, type TasksState } from '../../../stores/workflow/tasks.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
@@ -234,16 +235,17 @@ export function Rail({
   /** A run at rest paints the stages its record names, not the ones a live phase implies. */
   stages?: readonly RailStageState[] | undefined;
 }) {
-  const [{ cols }, lifecycle, tasks, eventsState, controls, approval, recovery] = useStores(
-    terminalSizeStore,
-    lifecycleStore,
-    tasksStore,
-    eventsStore,
-    controlsStore,
-    approvalPromptStore,
-    recoveryNoticeStore,
-  );
-  const phase = lifecycle.phase;
+  const [{ cols }, lifecycle, tasks, eventsState, controls, approval, recovery, { phase }] =
+    useStores(
+      terminalSizeStore,
+      lifecycleStore,
+      tasksStore,
+      eventsStore,
+      controlsStore,
+      approvalPromptStore,
+      recoveryNoticeStore,
+      runViewStore,
+    );
   const cancelled = lifecycle.cancelled;
   const resolved: RailForm = form ?? 'B';
   const contentWidth = getChromeContentWidth(cols);

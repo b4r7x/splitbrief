@@ -5,7 +5,7 @@ import { stopStore } from '../../../stores/workflow/stop.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
-import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { composerLiveStore } from '../../../stores/ui/composer-live.js';
 
 export function StopMenu({ height }: { height?: number | undefined }) {
@@ -13,7 +13,7 @@ export function StopMenu({ height }: { height?: number | undefined }) {
     tasksStore,
     stopStore,
     routerStore,
-    lifecycleStore,
+    runViewStore,
     recoveryNoticeStore,
     composerLiveStore,
   );

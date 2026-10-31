@@ -2,6 +2,7 @@ import { configStore } from '../../../stores/project/config.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { operationsStore } from '../../../stores/workflow/operations/state.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { parksCutCall, stopStore } from '../../../stores/workflow/stop.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
@@ -10,10 +11,11 @@ import { deriveRunningSeats, type RunningSeats } from '../display/running-seats.
 
 /** The seats the header and the sidebar name over the saved ones while the run is live. */
 export function useRunningSeats(): RunningSeats {
-  const [tasks, lifecycle, recoveryNotice] = useStores(
+  const [tasks, lifecycle, recoveryNotice, { phase }] = useStores(
     tasksStore,
     lifecycleStore,
     recoveryNoticeStore,
+    runViewStore,
   );
   const config = configStore.use((s) => s.config);
   const active = operationsStore.use((s) => s.active);
@@ -25,6 +27,7 @@ export function useRunningSeats(): RunningSeats {
         config,
         tasks,
         lifecycle,
+        phase,
         halted: recoveryNotice.issue !== null,
         cutCallParked,
         passSeats,

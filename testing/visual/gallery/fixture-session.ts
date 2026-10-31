@@ -33,6 +33,7 @@ import { projectFilesStore } from '../../../src/stores/ui/project-files.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { detachImage, listAttachments } from '../../../src/stores/workflow/attachments.js';
 import { lifecycleStore } from '../../../src/stores/workflow/lifecycle.js';
+import { runViewStore } from '../../../src/stores/workflow/run-view.js';
 import { selectRunningBrief, tasksStore } from '../../../src/stores/workflow/tasks.js';
 import { activeApply } from '../../../src/engine/orchestrator/session-lifecycle/shutdown.js';
 import { prepareWorkflowExecution } from '../../helpers/workflow-screen.js';
@@ -258,11 +259,11 @@ function createPreviewCommandContext(): RuntimeCommandContext {
     steerRun: () => false,
     endRun: () => false,
     getQueueCopy: (count) => {
-      const lifecycle = lifecycleStore.get();
+      const { phase } = runViewStore.get();
       return queueCopy({
-        seat: phaseStage(lifecycle.phase),
-        taskId: selectRunningBrief(tasksStore.get(), lifecycle.phase).current?.id,
-        count: count ?? lifecycle.queueDepth,
+        seat: phaseStage(phase),
+        taskId: selectRunningBrief(tasksStore.get(), phase).current?.id,
+        count: count ?? lifecycleStore.get().queueDepth,
       });
     },
     clearQueue: () => unavailable,

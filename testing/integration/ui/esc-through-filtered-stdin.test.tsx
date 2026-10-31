@@ -13,6 +13,7 @@ import { useWorkflowKeys } from '../../../src/features/workflow/hooks/use-keys.j
 import { FeedbackRow } from '../../../src/features/workflow/components/feedback-row.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { lifecycleStore } from '../../../src/stores/workflow/lifecycle.js';
+import { runViewStore } from '../../../src/stores/workflow/run-view.js';
 import { stopStore } from '../../../src/stores/workflow/stop.js';
 import { composerLiveStore } from '../../../src/stores/ui/composer-live.js';
 import { createDraftDocument } from '../../../src/core/composer/document.js';
@@ -68,7 +69,8 @@ describe('ESC through the real FilteredStdin pipeline (live workflow)', () => {
       execution: { kind: 'local', prepared },
     });
     // 'researching' is a live phase, which is what gates the ESC arming ladder.
-    lifecycleStore.__testReset({ phase: 'researching' });
+    runViewStore.__testReset({ phase: 'researching' });
+    lifecycleStore.__testReset({ status: 'running' });
   });
 
   afterEach(() => {

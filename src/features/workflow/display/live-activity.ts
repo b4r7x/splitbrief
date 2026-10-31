@@ -1,5 +1,6 @@
 import { PHASES, type Phase, type RunnerKind } from '../../../core/schemas/enums.js';
 import type { PlannerCall } from '../../../core/schemas/run-step.js';
+import type { PhaseFirstSeen } from '../../../core/run-view/reduce.js';
 import type { CliToolId } from '../../../core/runners/cli-tool-catalog.js';
 import {
   activeVerb,
@@ -62,7 +63,7 @@ export function deriveLiveStatus(input: {
   status: LifecycleState['status'];
   cancelled: boolean;
   startedAt: number | null;
-  phaseFirstSeenTs: Readonly<Partial<Record<Phase, number>>>;
+  phaseFirstSeen: PhaseFirstSeen;
   waitedMs: Readonly<Partial<Record<Phase, number>>>;
   resumedAt: number | null;
   reviewerLabel: string | null;
@@ -103,7 +104,7 @@ export function deriveLiveStatus(input: {
   if (RAIL_GATE_PHASES.has(input.phase) && input.plannerCall === null) return null;
   const activeIndex = getRailActiveIndex(input.phase);
   if (activeIndex < 0 || activeStage === null) return null;
-  const completionTimes = railStageCompletionTimesFromPhaseFirstSeen(input.phaseFirstSeenTs);
+  const completionTimes = railStageCompletionTimesFromPhaseFirstSeen(input.phaseFirstSeen);
   const stageOpened =
     activeIndex > 0 ? (completionTimes[activeIndex - 1] ?? 0) : (input.startedAt ?? 0);
   // A resumed run counts from its resume: the time it sat parked was no stage's work. While the

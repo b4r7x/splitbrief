@@ -13,6 +13,7 @@ import { glyph } from '../../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
@@ -56,7 +57,8 @@ describe('WorkflowHeader', () => {
     resetAllStores();
     routerStore.init(WORKFLOW_ROUTE);
     terminalSizeStore.__testReset({ cols: 100, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({ phase: 'researching', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'researching' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
   });
 
   afterEach(() => {
@@ -182,7 +184,8 @@ describe('WorkflowFooter', () => {
   ] as const)(
     'shows the queue destination in the composer while %s',
     async (phase, placeholder) => {
-      lifecycleStore.__testReset({ phase, status: 'running' });
+      runViewStore.__testReset({ phase });
+      lifecycleStore.__testReset({ status: 'running' });
       tasksStore.__testReset({
         currentTask: 1,
         totalTasks: 1,
@@ -201,7 +204,8 @@ describe('WorkflowFooter', () => {
   ] as const)(
     'keeps the %s invitation while a prompt owns the composer',
     async (mode, placeholder) => {
-      lifecycleStore.__testReset({ phase: 'planning', status: 'running' });
+      runViewStore.__testReset({ phase: 'planning' });
+      lifecycleStore.__testReset({ status: 'running' });
       const ui = renderFooter({ mode });
       await flushEffects();
       expect(ui.lastFrame()).toContain(placeholder);
@@ -218,7 +222,8 @@ describe('WorkflowFooter', () => {
     'keeps the steerable %s placeholder on one row at 60 columns',
     async (phase, seat, target) => {
       terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: false });
-      lifecycleStore.__testReset({ phase, status: 'running' });
+      runViewStore.__testReset({ phase });
+      lifecycleStore.__testReset({ status: 'running' });
       tasksStore.__testReset({
         currentTask: 1,
         totalTasks: 1,
@@ -236,7 +241,8 @@ describe('WorkflowFooter', () => {
   );
 
   it('keeps wave 1 copy when the attached call belongs to another seat', async () => {
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
     addEvent({ type: 'steerable_call', ts: 1, phase: 'implementing', seat: 'plan' });
     const ui = renderFooter();
     await flushEffects();
@@ -272,7 +278,8 @@ describe('WorkflowFooter', () => {
   });
 
   it('keeps the composer silent while stopping', async () => {
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
     stopStore.__testReset({ intent: 'stop-now', phase: 'requested' });
     const ui = renderFooter();
     await flushEffects();
@@ -282,7 +289,8 @@ describe('WorkflowFooter', () => {
   });
 
   it('routes ctrl+enter through steer to resume a stopped run with the draft', async () => {
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'paused' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'paused' });
     stopStore.__testReset({ phase: 'parked' });
     const resumed: string[] = [];
     const queued: string[] = [];
@@ -309,7 +317,8 @@ describe('WorkflowFooter', () => {
   });
 
   it('preserves the draft when ctrl+enter is rejected during stopping', async () => {
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
     stopStore.__testReset({ intent: 'stop-now', phase: 'terminating' });
     const queued: string[] = [];
     const ui = renderFooter({ handleInput: (submission) => queued.push(submission.message.text) });
@@ -355,7 +364,8 @@ describe('WorkflowFooter', () => {
   // the caret would contradict it, and the closed block and the rail already state the outcome.
   it('paints no done mark in the composer once the phase is complete', async () => {
     seedPricedRun();
-    lifecycleStore.__testReset({ phase: 'complete', status: 'complete', startedAt: 0, endedAt: 1 });
+    runViewStore.__testReset({ phase: 'complete' });
+    lifecycleStore.__testReset({ status: 'complete', startedAt: 0, endedAt: 1 });
     const ui = renderFooter();
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
@@ -380,7 +390,8 @@ describe('WorkflowFooter', () => {
   });
 
   it('omits the ⏎ hint while the workflow is still running', async () => {
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     const ui = renderFooter();
     await tick();
 
@@ -406,7 +417,8 @@ describe('WorkflowFooter', () => {
   });
 
   it('puts the border, the live pip and the legend mark on the mark column, the keys on the text one', async () => {
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     const ui = renderFooter();
     await tick();
 
@@ -498,7 +510,8 @@ describe('WorkflowFooter', () => {
   // The reachable production state behind the blank row: a question (or review gate) owns the run,
   // so the feedback row resolves no word — and the stop sheet hides that panel while it is up.
   it('paints no blank row above the stop sheet while a question owns the run', async () => {
-    lifecycleStore.__testReset({ phase: 'researching', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'researching' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     controlsStore.setInputMode('question');
     const ui = renderFeature(
       <WorkflowFooter
@@ -522,7 +535,8 @@ describe('WorkflowFooter', () => {
   // The sheet's own legend says what esc does while it is open; the running legend would say
   // `esc stop options` for a sheet already on screen.
   it('leaves the legend to the stop sheet while a build runs', async () => {
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     const ui = renderFeature(
       <WorkflowFooter
         handleInput={() => {}}

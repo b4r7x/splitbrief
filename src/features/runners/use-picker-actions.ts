@@ -6,7 +6,7 @@ import { routerStore } from '../../stores/navigation/router.js';
 import { preparationStore } from '../../stores/navigation/preparation.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
-import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../stores/workflow/run-view.js';
 import { selectSeatChangePoint, tasksStore } from '../../stores/workflow/tasks.js';
 import { takesSeatAtBoundary } from '../../stores/workflow/stop.js';
 import { usePickerProfile } from './picker-profile.js';
@@ -230,7 +230,7 @@ function runningSeatChangePoint(before: Config, after: Config): SeatChangePoint 
   }
   const route = routerStore.get();
   return route.screen === 'workflow' && route.execution.kind === 'local' && takesSeatAtBoundary()
-    ? selectSeatChangePoint(tasksStore.get(), lifecycleStore.get().phase)
+    ? selectSeatChangePoint(tasksStore.get(), runViewStore.get().phase)
     : undefined;
 }
 

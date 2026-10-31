@@ -4,6 +4,7 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { controlsStore } from '../../stores/ui/controls.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../stores/workflow/run-view.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import type { Screen } from '../../core/navigation/types.js';
 import { HelpOverlay } from './help.js';
@@ -74,7 +75,8 @@ describe('HelpOverlay', () => {
     expect(blocked.lastFrame() ?? '').not.toContain('/guarded');
     blocked.unmount();
 
-    lifecycleStore.__testReset({ phase: 'implementing' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
     const allowed = renderFeature(<HelpOverlay currentScreen="home" commands={[guarded]} />);
     await tick(20);
     expect(allowed.lastFrame() ?? '').toContain('/guarded');

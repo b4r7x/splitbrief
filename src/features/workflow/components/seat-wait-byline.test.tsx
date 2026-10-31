@@ -26,7 +26,10 @@ import { InputFooter } from './input-footer.js';
 const originalColorLevel = chalk.level;
 
 function seedWait(tool: string, resetAt: string, live = true): void {
-  _runViewInternal.set({ seatWait: { tool, wait: { seat: 'build', resetAt }, live } });
+  _runViewInternal.set((view) => ({
+    ...view,
+    seatWait: { tool, wait: { seat: 'build', resetAt }, live },
+  }));
 }
 
 describe('seatWait byline', () => {
@@ -73,10 +76,8 @@ describe('seatWait byline', () => {
   it('shows the sentence and hides Resuming the plan when seatWait is set in paused Plan', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     const resetAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-    lifecycleStore.__testReset({
-      status: 'paused',
-      phase: 'planning',
-    });
+    runViewStore.__testReset({ phase: 'planning' });
+    lifecycleStore.__testReset({ status: 'paused' });
     seedWait('claude', resetAt);
     const ui = renderFeature(<InputFooter width={120} />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
@@ -90,10 +91,8 @@ describe('seatWait byline', () => {
   it('hides Resuming T002 when seatWait is set in paused Build', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     const resetAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-    lifecycleStore.__testReset({
-      status: 'paused',
-      phase: 'implementing',
-    });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'paused' });
     seedWait('codex', resetAt);
     tasksStore.__testReset({
       currentTask: 2,
@@ -115,10 +114,8 @@ describe('seatWait byline', () => {
   it('hides Resuming the review when seatWait is set in paused Review', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     const resetAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-    lifecycleStore.__testReset({
-      status: 'paused',
-      phase: 'final-review',
-    });
+    runViewStore.__testReset({ phase: 'final-review' });
+    lifecycleStore.__testReset({ status: 'paused' });
     seedWait('gemini', resetAt);
     const ui = renderFeature(<InputFooter width={120} />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
@@ -132,12 +129,11 @@ describe('seatWait byline', () => {
   it('hides Implementing and hides a rising clock when seatWait is set in running Build', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     const resetAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-    lifecycleStore.__testReset({
-      status: 'running',
+    runViewStore.__testReset({
       phase: 'implementing',
-      startedAt: Date.now() - 42_000,
-      phaseFirstSeenTs: { implementing: Date.now() - 42_000 },
+      phaseFirstSeen: { implementing: Date.now() - 42_000 },
     });
+    lifecycleStore.__testReset({ status: 'running', startedAt: Date.now() - 42_000 });
     seedWait('codex', resetAt);
     const ui = renderFeature(<InputFooter width={120} />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
@@ -151,10 +147,8 @@ describe('seatWait byline', () => {
   it('keeps Resuming T002 when a stop kept the wait and no process waits on it', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     const resetAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-    lifecycleStore.__testReset({
-      status: 'paused',
-      phase: 'implementing',
-    });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'paused' });
     seedWait('codex', resetAt, false);
     tasksStore.__testReset({
       currentTask: 2,
@@ -173,10 +167,8 @@ describe('seatWait byline', () => {
 
   it('shows Resuming when no seat waits on paused Build', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({
-      status: 'paused',
-      phase: 'implementing',
-    });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'paused' });
     tasksStore.__testReset({
       currentTask: 2,
       totalTasks: 2,
@@ -194,10 +186,8 @@ describe('seatWait byline', () => {
   it('keeps Resuming T002 when the wait deadline has passed', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     const resetAt = new Date(Date.now() - 60 * 1000).toISOString();
-    lifecycleStore.__testReset({
-      status: 'paused',
-      phase: 'implementing',
-    });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'paused' });
     seedWait('codex', resetAt);
     tasksStore.__testReset({
       currentTask: 2,
@@ -217,10 +207,8 @@ describe('seatWait byline', () => {
   it('still shows its own text when a given byline is passed', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     const resetAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-    lifecycleStore.__testReset({
-      status: 'paused',
-      phase: 'implementing',
-    });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'paused' });
     seedWait('codex', resetAt);
     const ui = renderFeature(
       <InputFooter
@@ -238,10 +226,8 @@ describe('seatWait byline', () => {
     chalk.level = 3;
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     const resetAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-    lifecycleStore.__testReset({
-      status: 'paused',
-      phase: 'planning',
-    });
+    runViewStore.__testReset({ phase: 'planning' });
+    lifecycleStore.__testReset({ status: 'paused' });
     seedWait('claude', resetAt);
     const ui = renderFeature(<InputFooter width={120} />);
     const sentence = seatWaitSentence('claude', resetAt)!;

@@ -62,7 +62,8 @@ function derive(
   return deriveRunningSeats({
     active: null,
     tasks: NO_BRIEF,
-    lifecycle: { status: 'running', phase: 'implementing' },
+    lifecycle: { status: 'running' },
+    phase: 'implementing',
     halted: false,
     cutCallParked: false,
     passSeats: null,
@@ -257,7 +258,8 @@ describe('deriveRunningSeats', () => {
       active,
       config,
       tasks: briefTasks({ route: CODEX_ROUTE }),
-      lifecycle: { status: 'running', phase: 'escalating' },
+      lifecycle: { status: 'running' },
+      phase: 'escalating',
     });
     expect(derived.build?.seat).toMatchObject({ tool: 'codex', model: 'gpt-6-luna' });
   });
@@ -270,7 +272,8 @@ describe('deriveRunningSeats', () => {
     const derived = derive({
       config,
       tasks: briefTasks({ route: CODEX_ROUTE }),
-      lifecycle: { status: 'interrupted', phase: 'implementing' },
+      lifecycle: { status: 'interrupted' },
+      phase: 'implementing',
     });
     expect(derived.build?.seat).toMatchObject({ tool: 'codex', model: 'gpt-6-luna' });
   });
@@ -293,7 +296,8 @@ describe('deriveRunningSeats', () => {
     const derived = derive({
       config,
       tasks: briefTasks({ route: CODEX_ROUTE }),
-      lifecycle: { status: 'cancelled', phase: 'implementing' },
+      lifecycle: { status: 'cancelled' },
+      phase: 'implementing',
     });
     expect(derived).toEqual({});
   });
@@ -314,7 +318,8 @@ describe('deriveRunningSeats', () => {
     const derived = derive({
       config,
       tasks: briefTasks({ route: CODEX_ROUTE }),
-      lifecycle: { status: 'paused', phase: 'implementing' },
+      lifecycle: { status: 'paused' },
+      phase: 'implementing',
     });
     expect(derived).toEqual({});
   });
@@ -357,7 +362,7 @@ describe('deriveRunningSeats', () => {
       model: 'claude-3-5-sonnet',
     });
 
-    expect(derive({ active, config, lifecycle: { status: 'running', phase } })).toEqual({});
+    expect(derive({ active, config, lifecycle: { status: 'running' }, phase })).toEqual({});
   });
 
   it.each([
@@ -402,7 +407,7 @@ describe('deriveRunningSeats', () => {
     const config = makeTestConfig({ planner: { kind: 'shell', command: './plan.sh' } });
     const active = makeOperation({ runnerName: './plan.sh', axes: [], backendKind: 'shell' });
 
-    expect(derive({ active, config, lifecycle: { status: 'running', phase: 'planning' } })).toEqual(
+    expect(derive({ active, config, lifecycle: { status: 'running' }, phase: 'planning' })).toEqual(
       {},
     );
   });

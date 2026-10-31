@@ -6,6 +6,7 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { openApprovalPrompt } from '../../../stores/approval-prompt/prompt.js';
 import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
@@ -78,7 +79,8 @@ describe('FeedbackRow', () => {
   });
 
   it('names the keys a running build answers to when nothing else owns the row', () => {
-    lifecycleStore.__testReset({ status: 'running', phase: 'implementing' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
 
     const ui = renderFeature(<FeedbackRow />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
@@ -241,7 +243,8 @@ describe('FeedbackRow', () => {
   // The stop sheet names its own keys; the run's legend above it would offer `esc stop options`
   // for a sheet that is already open.
   it('leaves the legend to a panel under it', () => {
-    lifecycleStore.__testReset({ status: 'running', phase: 'implementing' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
     const ui = renderFeature(
       <>
         <Text>above</Text>
@@ -266,7 +269,8 @@ describe('FeedbackRow', () => {
 
   it('names when a saved seat changes, and keeps the keys a running build answers to', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({ status: 'running', phase: 'implementing' });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
     tasksStore.__testReset({
       tasks: [{ id: 'T001', title: 'first', status: 'in_progress' }],
       currentTask: 1,
@@ -310,7 +314,8 @@ describe('FeedbackRow', () => {
   });
 
   it('shows the running legend after Esc closes a planner question', () => {
-    lifecycleStore.__testReset({ status: 'running', phase: 'planning' });
+    runViewStore.__testReset({ phase: 'planning' });
+    lifecycleStore.__testReset({ status: 'running' });
     controlsStore.setInputMode('question');
     questionPromptStore.setQuestions([
       { id: 'module', type: 'choice', text: 'Which module?', options: ['a', 'b'] },
@@ -328,7 +333,8 @@ describe('FeedbackRow', () => {
   });
 
   it('shows the running legend after Esc closes a reviewer question', () => {
-    lifecycleStore.__testReset({ status: 'running', phase: 'final-review' });
+    runViewStore.__testReset({ phase: 'final-review' });
+    lifecycleStore.__testReset({ status: 'running' });
     controlsStore.setInputMode('question');
     questionPromptStore.setQuestions([
       { id: 'module', type: 'choice', text: 'Which module?', options: ['a', 'b'] },
@@ -346,7 +352,8 @@ describe('FeedbackRow', () => {
   });
 
   it('shows the running legend while waiting for an ordinary prose planner reply', () => {
-    lifecycleStore.__testReset({ status: 'running', phase: 'planning' });
+    runViewStore.__testReset({ phase: 'planning' });
+    lifecycleStore.__testReset({ status: 'running' });
     controlsStore.setInputMode('question');
     questionPromptStore.setQuestions([]);
 
@@ -361,7 +368,8 @@ describe('FeedbackRow', () => {
   });
 
   it('stays blank while a structured question panel is open', () => {
-    lifecycleStore.__testReset({ status: 'running', phase: 'planning' });
+    runViewStore.__testReset({ phase: 'planning' });
+    lifecycleStore.__testReset({ status: 'running' });
     controlsStore.setInputMode('question');
     questionPromptStore.setQuestions([
       { id: 'module', type: 'choice', text: 'Which module?', options: ['a', 'b'] },
@@ -376,7 +384,8 @@ describe('FeedbackRow', () => {
   });
 
   it('stays blank while a recovery panel is up', () => {
-    lifecycleStore.__testReset({ status: 'running', phase: 'planning' });
+    runViewStore.__testReset({ phase: 'planning' });
+    lifecycleStore.__testReset({ status: 'running' });
     controlsStore.setInputMode('question');
 
     const ui = renderFeature(<FeedbackRow inputHint="Type your answer…" />);
@@ -402,7 +411,8 @@ describe('FeedbackRow', () => {
 
   it('keeps whole keys and no ellipsis at 60 columns in prose-reply state', () => {
     terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: false });
-    lifecycleStore.__testReset({ status: 'running', phase: 'planning' });
+    runViewStore.__testReset({ phase: 'planning' });
+    lifecycleStore.__testReset({ status: 'running' });
     controlsStore.setInputMode('question');
     questionPromptStore.setQuestions([]);
 

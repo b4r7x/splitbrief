@@ -5,6 +5,7 @@ import { markInterruptResumed } from '../../stores/workflow/actions/resume.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../stores/workflow/run-view.js';
 import { requestEnqueue } from './handlers.js';
 import { openReviewEditor, reviewEditPath } from './review-editor.js';
 import {
@@ -286,7 +287,7 @@ export function createReviewInputHandler(
         }
         return;
       }
-      const phase = lifecycle.phase;
+      const { phase } = runViewStore.get();
       if (isLivePhase(phase) || isImplementerPhase(phase)) {
         const trimmed = text.trim();
         if (trimmed) {

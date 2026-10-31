@@ -31,7 +31,7 @@ const waitStarted: EngineEvent = {
   tool: 'OpenAI Codex CLI',
   wait: SAVED,
 };
-const LIVE = { seatWait: { tool: 'OpenAI Codex CLI', wait: SAVED, live: true } };
+const LIVE = { tool: 'OpenAI Codex CLI', wait: SAVED, live: true };
 
 describe('runViewStore', () => {
   beforeEach(() => {
@@ -41,7 +41,7 @@ describe('runViewStore', () => {
   it('folds each live event', () => {
     addEvent(runStarted);
     addEvent(waitStarted);
-    expect(runViewStore.get()).toEqual(LIVE);
+    expect(runViewStore.get().seatWait).toEqual(LIVE);
 
     addEvent({ type: 'seat_wait_ended', ts: 1_200, phase: 'implementing', seat: 'build' });
     expect(runViewStore.get().seatWait).toBeNull();
@@ -49,7 +49,7 @@ describe('runViewStore', () => {
 
   it('folds a replayed log', () => {
     loadEvents([runStarted, waitStarted]);
-    expect(runViewStore.get()).toEqual(LIVE);
+    expect(runViewStore.get().seatWait).toEqual(LIVE);
   });
 
   it('takes the end a stop writes after it cancels the run', () => {
@@ -63,7 +63,7 @@ describe('runViewStore', () => {
       seat: 'build',
       kept: true,
     });
-    expect(runViewStore.get()).toEqual({ seatWait: { ...LIVE.seatWait, live: false } });
+    expect(runViewStore.get().seatWait).toEqual({ ...LIVE, live: false });
   });
 
   it('clears with the run history', () => {

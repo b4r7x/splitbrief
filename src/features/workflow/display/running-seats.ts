@@ -1,4 +1,5 @@
 import type { Config } from '../../../core/schemas/config.js';
+import type { Phase } from '../../../core/schemas/enums.js';
 import {
   idsOf,
   isSeatIdentity,
@@ -93,16 +94,17 @@ export function deriveRunningSeats(input: {
   active: ActiveOperation | null | undefined;
   config: Config;
   tasks: TasksState;
-  lifecycle: Pick<LifecycleState, 'status' | 'phase'>;
+  lifecycle: Pick<LifecycleState, 'status'>;
+  phase: Phase;
   halted: boolean;
   cutCallParked: boolean;
   passSeats: SeatIdentity | null;
 }): RunningSeats {
-  const { active, config, tasks, lifecycle, halted, cutCallParked, passSeats } = input;
+  const { active, config, tasks, lifecycle, phase, halted, cutCallParked, passSeats } = input;
   const live =
     (lifecycle.status === 'running' || lifecycle.status === 'interrupted' || cutCallParked) &&
     !halted;
-  const brief = live ? selectRunningBrief(tasks, lifecycle.phase).current : null;
+  const brief = live ? selectRunningBrief(tasks, phase).current : null;
   const call = active?.status === 'running' && !isStatusFallback(active) ? active : null;
   const callSeatId = call === null ? null : seatForRunningCall(call);
 

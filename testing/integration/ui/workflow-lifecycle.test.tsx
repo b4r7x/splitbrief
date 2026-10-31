@@ -23,6 +23,7 @@ const { configStore } = await import('../../../src/stores/project/config.js');
 const { terminalSizeStore } = await import('../../../src/stores/ui/terminal-size.js');
 const { routerStore } = await import('../../../src/stores/navigation/router.js');
 const { lifecycleStore } = await import('../../../src/stores/workflow/lifecycle.js');
+const { runViewStore } = await import('../../../src/stores/workflow/run-view.js');
 const { createInitialState, transition } = await import('../../../src/core/state/machine.js');
 const { saveState } = await import('../../../src/core/state/persistence.js');
 const { requestBoundaryPause, requestResume } = await import(
@@ -171,8 +172,8 @@ describe('WorkflowScreen lifecycle', () => {
       await tick(20);
       expect(runWorkflow).toHaveBeenCalledTimes(1);
 
+      runViewStore.__testReset({ phase: 'researching' });
       lifecycleStore.__testReset({
-        phase: 'researching',
         status: 'cancelled',
         cancelled: true,
         reason: 'user_cancelled',
@@ -314,8 +315,8 @@ describe('WorkflowScreen lifecycle', () => {
       await tick(20);
       expect(runWorkflow).toHaveBeenCalledTimes(1);
 
+      runViewStore.__testReset({ phase: 'planning' });
       lifecycleStore.__testReset({
-        phase: 'planning',
         status: 'cancelled',
         cancelled: true,
         reason: 'user_cancelled',

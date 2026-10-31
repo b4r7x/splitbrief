@@ -18,6 +18,7 @@ import { inputHeightStore } from '../../../stores/ui/input-height.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
@@ -262,7 +263,8 @@ describe('readConversationScrollSnapshot', () => {
         run: makeRunRecord({ status: { kind: 'closed', as: 'complete' } }),
       });
     }
-    lifecycleStore.__testReset({ phase: closed ? 'complete' : 'implementing' });
+    runViewStore.__testReset({ phase: closed ? 'complete' : 'implementing' });
+    lifecycleStore.__testReset();
     tasksStore.__testReset({
       currentTask: 1,
       totalTasks: 1,
@@ -402,10 +404,12 @@ describe('readConversationScrollSnapshot', () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 30, isSmall: false });
     inputHeightStore.__testReset({ rows: 3 });
 
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     const active = readConversationScrollSnapshot();
 
-    lifecycleStore.__testReset({ phase: 'idle' });
+    runViewStore.__testReset({ phase: 'idle' });
+    lifecycleStore.__testReset();
     const idle = readConversationScrollSnapshot();
 
     // The build block is the only chrome a live phase adds; the status byline costs nothing.
@@ -418,7 +422,8 @@ describe('readConversationScrollSnapshot', () => {
   it('measures the transcript around the build progress block', () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 30, isSmall: false });
     inputHeightStore.__testReset({ rows: 3 });
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
 
     const progressRows = getProgressRows({ phase: 'implementing', cols: 80 });
     const snap = readConversationScrollSnapshot();
@@ -435,7 +440,8 @@ describe('readConversationScrollSnapshot', () => {
   it('gives the block rows back to an open gate, as the screen does', () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 30, isSmall: false });
     inputHeightStore.__testReset({ rows: 3 });
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     approvalPromptStore.__testReset({
       status: 'pending',
       request: makeConfirmRequest('delete generated files'),
@@ -457,12 +463,8 @@ describe('readConversationScrollSnapshot', () => {
   it('cancelled runs paint no block, so the body reclaims its rows', () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 30, isSmall: false });
     inputHeightStore.__testReset({ rows: 3 });
-    lifecycleStore.__testReset({
-      phase: 'implementing',
-      status: 'running',
-      startedAt: 0,
-      cancelled: true,
-    });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0, cancelled: true });
 
     const snap = readConversationScrollSnapshot();
 
@@ -473,7 +475,8 @@ describe('readConversationScrollSnapshot', () => {
   it('gives the block rows back to a parked stop, which has no attempt in flight', () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 30, isSmall: false });
     inputHeightStore.__testReset({ rows: 3 });
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
 
     const running = readConversationScrollSnapshot();
     const blockRows = getProgressRows({ phase: 'implementing', cols: 80 });
@@ -711,7 +714,8 @@ describe('readRailSnapshot', () => {
     'matches the compact hit zone with build block shown %s',
     (buildBlockShown) => {
       terminalSizeStore.__testReset({ cols: 20, rows: 24, isSmall: true });
-      lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+      runViewStore.__testReset({ phase: 'implementing' });
+      lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
       for (const event of makeReviewFixInsertedEvents()) addEvent(event);
       tasksStore.__testReset({ ...tasksStore.get(), currentTask: 100 });
       if (!buildBlockShown) overlayStore.open('stop-sheet');
@@ -730,7 +734,8 @@ describe('readRailSnapshot', () => {
 
   it('returns clickable zones for the active streaming rail', () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 30, isSmall: false });
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
 
     const snap = readRailSnapshot();
 
@@ -741,7 +746,8 @@ describe('readRailSnapshot', () => {
 
   it('exposes only the active-stage zone in Form C at a narrow width', () => {
     terminalSizeStore.__testReset({ cols: 20, rows: 30, isSmall: true });
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     // 18 content cells cannot fit the three-stage marker+connector line, so the rail drops to Form C.
     tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
 
@@ -753,7 +759,8 @@ describe('readRailSnapshot', () => {
 
   it('maps an old researching phase to the Plan Form-C zone', () => {
     terminalSizeStore.__testReset({ cols: 20, rows: 30, isSmall: true });
-    lifecycleStore.__testReset({ phase: 'researching', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'researching' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     routerStore.init({
       screen: 'workflow',
       run: makeRunRecord(),
@@ -772,16 +779,13 @@ describe('readRailSnapshot', () => {
 
   it('selects the rail form from width alone, independent of the live fraction', () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 30, isSmall: false });
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
     const live = readRailSnapshot();
 
-    lifecycleStore.__testReset({
-      phase: 'implementing',
-      status: 'running',
-      startedAt: 0,
-      cancelled: true,
-    });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0, cancelled: true });
     const cancelled = readRailSnapshot();
 
     expect(live.zones).toHaveLength(3);
@@ -809,7 +813,8 @@ describe('readReviewContentHeight', () => {
   it('budgets no block for a run at rest, which the screen paints without one', () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 30, isSmall: false });
     inputHeightStore.__testReset({ rows: 3 });
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     routerStore.init({ screen: 'workflow', run: makeRunRecord(), execution: { kind: 'at-rest' } });
 
     try {
@@ -824,7 +829,8 @@ describe('readReviewContentHeight', () => {
   it('keeps the review body on the same rows as the transcript while the block paints', () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 40, isSmall: false });
     inputHeightStore.__testReset({ rows: 3 });
-    lifecycleStore.__testReset({ phase: 'final-review', status: 'running', startedAt: 0 });
+    runViewStore.__testReset({ phase: 'final-review' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     reviewStore.setRenderedLineCount(0);
 
     const progressRows = getProgressRows({ phase: 'final-review', cols: 80 });

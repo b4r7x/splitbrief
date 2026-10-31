@@ -106,7 +106,7 @@ export function getActiveRailStage(phase: Phase): RailStageState | null {
   return getRailStages(phase).find((state) => state.status === 'active') ?? null;
 }
 
-// Wall-clock completion time per stage, derived from the lifecycle's per-phase first-seen map: a
+// Wall-clock completion time per stage, derived from the run view's per-phase first-seen map: a
 // stage is done at the earliest first-seen timestamp among phases that advance the active index
 // past it, 0 when none has. Equivalent to scanning the event log for the first phase-advancing
 // event because event `ts` is monotonic, so a phase's first-seen ts is already its earliest.

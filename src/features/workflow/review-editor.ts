@@ -4,7 +4,7 @@ import { editorStore } from '../../stores/ui/editor.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
-import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../stores/workflow/run-view.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { labelError } from '../../utils/format-errors.js';
 import { PLAN_JSON_FILE } from '../../core/paths.js';
@@ -13,7 +13,7 @@ import { reviewArtifactForPhase } from './prompt-rows/approval.js';
 /** The file an edit at the plan card goes to: plan.json beside the plan.md it shows. */
 export function reviewEditPath(): string | null {
   const { filePath } = reviewStore.get();
-  if (filePath === null || reviewArtifactForPhase(lifecycleStore.get().phase) === null) return null;
+  if (filePath === null || reviewArtifactForPhase(runViewStore.get().phase) === null) return null;
   return join(dirname(filePath), PLAN_JSON_FILE);
 }
 

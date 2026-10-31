@@ -165,7 +165,6 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
 export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSink {
   const output = opts.output ?? process.stdout;
   const checks = new Map<string, string>();
-  let lastPhase: string | null = null;
   let view = EMPTY_RUN_VIEW;
 
   function write(line: string): void {
@@ -180,17 +179,9 @@ export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSin
 
   return (event) => {
     const bounded = boundEngineEventForConsumer(event, 'stdout-text');
-    const phase = 'phase' in bounded && typeof bounded.phase === 'string' ? bounded.phase : null;
-    // `idle` is the state a run sits in before it enters its first phase: a
-    // pre-start warning or an init error carries it, and the contract lists
-    // only phases the run actually enters.
-    if (phase !== null && phase !== 'idle' && phase !== lastPhase) {
-      lastPhase = phase;
-      write(`phase: ${phase}`);
-    }
-
     const previous = view;
     view = reduceRunView(view, bounded);
+    if (view.phase !== previous.phase) write(`phase: ${view.phase}`);
     switch (bounded.type) {
       case 'user_message':
         if (bounded.attachedInputs !== undefined && bounded.attachedInputs.length > 0)
@@ -203,7 +194,7 @@ export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSin
         return;
       case 'seat_wait_started': {
         // A start the view did not take (no tool) writes nothing.
-        const wait = view === previous ? null : view.seatWait;
+        const wait = view.seatWait === previous.seatWait ? null : view.seatWait;
         const parts = wait === null ? null : seatWaitParts(wait.tool, wait.wait.resetAt);
         if (wait !== null && parts !== null) write(`waiting: ${wait.tool}${SOFT_SEP}${parts[1]}`);
         return;

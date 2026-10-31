@@ -8,7 +8,7 @@ import { useRuntimeCommands } from './command-context.js';
 import { useAppMouse } from './mouse.js';
 import { routerStore } from '../stores/navigation/router.js';
 import { overlayStore } from '../stores/ui/overlay.js';
-import { lifecycleStore } from '../stores/workflow/lifecycle.js';
+import { runViewStore } from '../stores/workflow/run-view.js';
 import { useStores } from '../stores/use-stores.js';
 import { sessionSelectStore } from '../stores/navigation/session-select.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
@@ -61,7 +61,7 @@ export function App({ workflowDeps, interactionDeps }: AppProps = {}) {
   const [{ screen }, { active: overlayActive }, { phase }] = useStores(
     routerStore,
     overlayStore,
-    lifecycleStore,
+    runViewStore,
   );
   const { exit } = useApp();
   const { commands, handleRuntimeCommand } = useRuntimeCommands({

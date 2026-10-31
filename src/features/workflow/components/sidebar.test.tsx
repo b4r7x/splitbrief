@@ -12,6 +12,7 @@ import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { configStore } from '../../../stores/project/config.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { tasksStore, type WorkflowTask } from '../../../stores/workflow/tasks.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
@@ -268,7 +269,8 @@ describe('Sidebar — passed count', () => {
 
   it('shows the waiting placeholder while a stage runs with no tasks', async () => {
     tasksStore.__testReset({ tasks: [] });
-    lifecycleStore.__testReset({ phase: 'researching', startedAt: Date.now() - 65_000 });
+    runViewStore.__testReset({ phase: 'researching' });
+    lifecycleStore.__testReset({ startedAt: Date.now() - 65_000, status: 'running' });
 
     const ui = renderFeature(<Sidebar width={30} />);
     await tick();
@@ -289,7 +291,8 @@ describe('Sidebar — passed count', () => {
     let ui: ReturnType<typeof renderFeature> | null = null;
     try {
       tasksStore.__testReset({ tasks: [] });
-      lifecycleStore.__testReset({ phase: 'researching', startedAt: 0 });
+      runViewStore.__testReset({ phase: 'researching' });
+      lifecycleStore.__testReset({ startedAt: 0, status: 'running' });
 
       ui = renderFeature(<Sidebar width={30} />);
       const firstFrame = stripAnsiStyles(ui.lastFrame() ?? '');
@@ -329,11 +332,8 @@ describe('Sidebar — passed count', () => {
 
   it('sidebar shows a static interrupted line without spinner frames', async () => {
     tasksStore.__testReset({ tasks: [] });
-    lifecycleStore.__testReset({
-      phase: 'researching',
-      status: 'interrupted',
-      startedAt: Date.now() - 5_000,
-    });
+    runViewStore.__testReset({ phase: 'researching' });
+    lifecycleStore.__testReset({ status: 'interrupted', startedAt: Date.now() - 5_000 });
 
     const ui = renderFeature(<Sidebar width={30} />);
     await tick();
@@ -712,7 +712,8 @@ describe('Sidebar — persistent task list', () => {
 
   it('lines the empty state up with the column the task titles use', async () => {
     tasksStore.__testReset({ tasks: [] });
-    lifecycleStore.__testReset({ phase: 'researching', startedAt: Date.now() - 65_000 });
+    runViewStore.__testReset({ phase: 'researching' });
+    lifecycleStore.__testReset({ startedAt: Date.now() - 65_000, status: 'running' });
 
     const ui = renderFeature(<Sidebar width={34} />);
     await tick();
@@ -1118,7 +1119,8 @@ describe('Sidebar concept colors', () => {
 
   it('colors Planner and interrupted separately', () => {
     chalk.level = 3;
-    lifecycleStore.__testReset({ status: 'interrupted', phase: 'planning' });
+    runViewStore.__testReset({ phase: 'planning' });
+    lifecycleStore.__testReset({ status: 'interrupted' });
     const ui = renderFeature(<Sidebar width={60} />);
     expect(ui.lastFrame()).toContain(
       paint(defaultTheme.planner, 'Planner').replace('\u001b[39m', ''),
@@ -1132,7 +1134,8 @@ describe('Sidebar concept colors', () => {
 
   it('keeps the planning stage in the planner color without the removed local share', () => {
     chalk.level = 3;
-    lifecycleStore.__testReset({ status: 'running', phase: 'planning' });
+    runViewStore.__testReset({ phase: 'planning' });
+    lifecycleStore.__testReset({ status: 'running' });
     const ui = renderFeature(<Sidebar width={60} />);
     expect(ui.lastFrame()).toContain(paint(defaultTheme.planner, 'Plan').replace('\u001b[39m', ''));
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('local');
