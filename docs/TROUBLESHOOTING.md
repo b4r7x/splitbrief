@@ -214,7 +214,7 @@ The native `better-sqlite3` binding is missing or was built for a different Node
 
 Run `npm rebuild better-sqlite3` in the SPLITBRIEF installation directory to restore the cache. Reinstalling dependencies with lifecycle scripts disabled can leave the native binding absent.
 
-**See also:** [REPOMAP.md](./REPOMAP.md#cache).
+**See also:** [CONFIGURATION.md §Repo-map cache](./CONFIGURATION.md#repo-map-cache).
 
 ---
 
@@ -441,7 +441,7 @@ Files can be inside or outside the project. Relative paths use the project root.
 
 **Prevention:** Keep `workflow.approve: plan` (the default) for real feature work, so you read the plan before any code is written.
 
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md), [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md), [docs/REPOMAP.md](./REPOMAP.md).
+**See also:** [docs/WORKFLOW.md](./WORKFLOW.md), [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md), [docs/CONFIGURATION.md](./CONFIGURATION.md#7-codebase) §7 `codebase`.
 
 ---
 
@@ -478,7 +478,7 @@ Files can be inside or outside the project. Relative paths use the project root.
 
 **Prevention:** When onboarding a new repo, run a single `start` and inspect the repo-map size; tune limits so the planner-relevant code fits.
 
-**See also:** [docs/REPOMAP.md](./REPOMAP.md), [docs/CONFIGURATION.md](./CONFIGURATION.md).
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md#7-codebase) §7 `codebase`.
 
 ---
 

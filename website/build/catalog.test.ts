@@ -15,7 +15,6 @@ const userGuides = [
   'TROUBLESHOOTING',
   'API-KEYS',
   'HOOKS-CONFIG',
-  'REPOMAP',
   'SKILLS',
   'APPROVAL-AND-RECOVERY',
   'TASK-CONTRACT',

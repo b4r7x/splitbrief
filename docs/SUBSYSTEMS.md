@@ -40,11 +40,79 @@ The run ledger (`run-ledger.json`) tracks the snapshots used by checkout rejecti
 
 `src/engine/codebase/`
 
-Token-budgeted codebase summary fed to every planner call. `src/engine/codebase/repomap.ts` is the entry point: `buildRepoMap(projectDir, opts)`.
+Token-budgeted codebase summary fed to every planner call. `src/engine/codebase/repomap.ts` is the entry point: `buildRepoMap(projectDir, opts)`. What the map contains, its config fields, its cache rules and the opt-out are in [CONFIGURATION.md §7 `codebase`](./CONFIGURATION.md#7-codebase).
 
-The pipeline: discover source files -> parse them with tree-sitter (`src/engine/codebase/parse.ts`, grammars for TypeScript, JavaScript, Python, Go, Rust via `src/engine/codebase/languages.ts`) -> build an import graph from symbols and references (`src/engine/codebase/graph.ts`) -> score with PageRank (`src/engine/codebase/pagerank.ts`, files imported by many others rank higher, explicit focus files get a rank boost) -> trim to fit the token budget (`src/engine/codebase/budget.ts`). Feature text is scanned for mentioned filenames (`src/engine/codebase/extract-mentioned-filenames.ts`) which get added to focus files.
+### Ranking
 
-Parse results are cached in SQLite at `.splitbrief/repomap.sqlite` via `src/engine/codebase/cache.ts`; stale rows are re-parsed on each planning run, so there is no manual rebuild step. Default budget is 4000 tokens. Deep-dive: `docs/REPOMAP.md`.
+Files are ranked by [PageRank](https://en.wikipedia.org/wiki/PageRank) over the file→file import graph (damping 0.85, max 100 iterations). Edges are directed from importer to imported. Edges are unweighted: one import of a file makes one edge. So files imported by many others rank higher.
+
+#### Personalization vector
+
+A personalization vector biases the walk toward files the user already cares about. SPLITBRIEF scans the feature prompt for file paths and basenames (e.g. `auth.ts`, `validation.ts`). Each matched file gets an equal share of the teleport mass. So "edit auth.ts and wire it into login" makes `auth.ts` and its import neighborhood rank first. When the prompt names no file, the teleport mass is uniform. The `focusFiles` option of `buildRepoMap` adds its files to the matched files.
+
+Every other file still receives rank through its inbound imports and through the uniform share of the rank that files without resolved imports give back. So a central file that the prompt does not name (e.g. `state/machine.ts`) stays in the map.
+
+Mentioned-file extraction lives in `src/engine/codebase/extract-mentioned-filenames.ts`. The PageRank implementation is in `src/engine/codebase/pagerank.ts` — pure JS, no native deps.
+
+### Implementation
+
+Module: `src/engine/codebase/`. The entry point `repomap.ts` discovers the files (`discover-files.ts`) and then runs a four-step pipeline:
+
+1. **Parse** — `src/engine/codebase/parse.ts` wraps `web-tree-sitter` with language-specific WASM grammars loaded lazily from the `LanguageConfig` registry. For each discovered file it extracts `tags.scm`-equivalent captures (function declarations, classes, types, etc.) according to the language's node types. A file whose language is not in the registry is not parsed and does not appear. A known language whose grammar does not load falls back to filename-only inclusion (empty symbols and imports). Output is `FileNode { symbols, imports, sizeBytes, mtimeMs }`. The parse step is fronted by the cache (see [Cache schema](#cache-schema)) — actual tree-sitter work only runs on misses.
+2. **Graph build** — `src/engine/codebase/graph.ts` turns the parsed `imports` of each file into a directed file→file graph. Only relative import specifiers (those that start with `.`) are resolved, through the language's candidate file names. Package imports, path aliases and unresolved imports are dropped. Edges are unweighted.
+3. **PageRank** — `src/engine/codebase/pagerank.ts` runs PageRank over the graph with a personalization vector built from the files the user's prompt names (see [Ranking](#ranking)).
+4. **Budget-aware emit** — `src/engine/codebase/format.ts` and `src/engine/codebase/budget.ts` walk files in descending rank order, emitting one block of signature lines per file. A rolling token estimate (chars / 4) skips each block that does not fit the remaining `tokenBudget`. The first block always fits, so the highest-ranked file always appears.
+
+Other files:
+
+- `src/engine/codebase/discover-files.ts` — the file walk with the default and configured excludes.
+- `src/engine/codebase/languages.ts` — the `LanguageConfig` registry and `ALL_KNOWN_EXTENSIONS`.
+- `src/engine/codebase/cache.ts` — SQLite-backed parse cache (see [Cache schema](#cache-schema)).
+- `src/engine/codebase/cache-path.ts` — the cache folder and the `repomap.sqlite` path.
+- `src/engine/codebase/types.ts` — `SymbolRef`, `FileNode`.
+- `src/engine/codebase/extract-mentioned-filenames.ts` — basename extraction for personalization.
+- `src/engine/codebase/repomap.ts` — `buildRepoMap(projectDir, opts)` entry, the only file the orchestrator imports.
+
+### Cache schema
+
+`src/engine/codebase/cache.ts` keeps one row per file in `.splitbrief/repomap.sqlite`:
+
+```sql
+CREATE TABLE files (
+  path TEXT PRIMARY KEY,
+  mtime_ms INTEGER NOT NULL,
+  size_bytes INTEGER NOT NULL,
+  symbols_json TEXT NOT NULL,
+  imports_json TEXT NOT NULL,
+  parse_version INTEGER NOT NULL
+);
+```
+
+On read, `cache.ts` compares the row's `(mtime_ms, size_bytes, parse_version)` to the file's stat and the compiled-in `parse_version` constant. A hit deserializes `symbols_json` and `imports_json` and skips the parse. A changed mtime or size re-parses the file and upserts the row. A bumped `parse_version` makes every row stale. The rules a user sees are in [CONFIGURATION.md §Repo-map cache](./CONFIGURATION.md#repo-map-cache).
+
+### Integration
+
+`planTurnText()` in `src/engine/orchestrator/planning/session.ts` is the single caller. It builds the prompt of every planning turn, for a run and for `splitbrief spec`. It calls `buildRepoMap(projectDir, { featureText, tokenBudget, include, exclude })`. `featureText` is the user's request, and the other values come from the `codebase` config (`tokenBudget` defaults to 4000).
+
+`buildPlanSessionPrompt()` in `src/engine/spec/prompts/plan-session.ts` puts the result in a `## Repository Map` section of the planning prompt. An empty repo-map adds no section. The planner then answers that prompt in one typed call, validated against `PlanAnswerSchema`.
+
+An `api` planner reads no files of its own. For it, `planTurnText()` also builds the project context with `apiPlanningPacket()` (`src/engine/orchestrator/planning/api-packet.ts`). The packet attaches the current source of the files the request names, and then optional source files in repo-map order, so the highest-ranked files come first. The whole turn is measured against the seat's context window.
+
+The implementer does not see the repo-map. It is planner-side context only, so `tasks.md` remains transport for Task Briefs and implementer prompts stay unchanged.
+
+Setting `codebase.enabled: false` skips `buildRepoMap` completely; the planner runs without the section.
+
+### Design decisions
+
+Alternatives considered and rejected:
+
+- **A — TypeScript Compiler API (`ts-morph` / `typescript`).** Native to our stack, but 10–20× slower than tree-sitter for tag extraction and pulls the full TS compiler (~30 MB) at runtime just to list symbols. Overkill — we don't need semantic resolution. **Rejected.**
+- **B — Aider's repomap via subprocess.** Zero implementation effort, but requires Python in the user's environment, adds cross-process serialization, and breaks the "single TS binary" UX. The algorithm is small enough (PageRank ~50 LOC, tree-sitter wrapper ~100 LOC) to own. **Rejected.**
+- **C — Embedding-based retrieval (Voyage / OpenAI embeddings).** Semantically smarter than symbol matching, but adds per-call cost, network round-trip, vendor lock-in, and an index-sync problem. Local-only users get nothing. **Rejected.** A `codebase.kind: "embeddings"` adapter remains possible.
+- **D — Skip caching, parse every run.** Simpler, no SQLite, but ~3s on every `splitbrief start` for a 200-file repo is unacceptable repeated cost. **Rejected.**
+- **E — TypeScript Language Server (tsserver) over LSP.** Zero new parsing code, but requires a long-running subprocess with a complex lifecycle, heavy startup overhead, and is TS-only by design anyway. Out of proportion for the gain. **Rejected.**
+
+Trade-offs accepted: ~3 MB of new runtime deps (`web-tree-sitter` + TS grammar WASM + `better-sqlite3`), a native module via `better-sqlite3` (prebuilt binaries cover macOS/Linux). Non-TS files are supported via a language registry (JavaScript, Python, Go, Rust) with lazy grammar loading; a known language whose grammar does not load falls back to filename-only inclusion.
 
 ---
 

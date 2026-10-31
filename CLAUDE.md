@@ -74,7 +74,7 @@ Read the canonical doc **before** touching the matching area. Every link below e
 | Work with API keys | [docs/API-KEYS.md](./docs/API-KEYS.md) |
 | Develop SPLITBRIEF with SPLITBRIEF itself: run the built CLI on this repo, end the run on a tool defect, fix, rebuild, start a new run | [docs/DOGFOODING.md](./docs/DOGFOODING.md) — the dogfooding procedure, the stop/continue smoke |
 | Work with workflow hooks | [docs/HOOKS-CONFIG.md](./docs/HOOKS-CONFIG.md) |
-| Tune the planner repo-map | [docs/REPOMAP.md](./docs/REPOMAP.md) |
+| Tune the planner repo-map | [docs/CONFIGURATION.md](./docs/CONFIGURATION.md#7-codebase) — fields, cache, opt-out; internals in [docs/SUBSYSTEMS.md](./docs/SUBSYSTEMS.md#3-repo-map) |
 | Install the pipeline as agent skills | [docs/SKILLS.md](./docs/SKILLS.md) — four pipeline skills, grammar; maintaining them: [CONTRIBUTING.md](./CONTRIBUTING.md#maintaining-the-agent-skills) — contract sources, generated blocks, sync script |
 | Look up release history | [CHANGELOG.md](./CHANGELOG.md) |
 | Continue the 2026-10 finish-pipeline work (S9 verification, S11, plan close) in any session or after a context compaction | `.nuke/2026-10-03-finish-pipeline/HANDOFF.md` — read it first; the state is in `LOG.md` next to it (local, untracked folder) |

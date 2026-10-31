@@ -113,7 +113,7 @@ The queue handler shares one run-scoped `SteeringPort` with foreground BUILD, pl
 
 An older run parked in a retired planning phase or at an older gate continues as this one session; the session reads the run's earlier research, spec, plan and `tasks.md` as "Earlier Planning".
 
-Each planning turn takes its prompt from `planTurnText()` (`src/engine/orchestrator/planning/session.ts`). It builds a repo map via `buildRepoMap()` (`src/engine/codebase/repomap.ts`) — a PageRank-weighted summary of the codebase focused on the files the feature names — and `buildPlanSessionPrompt()` puts it in a `## Repository Map` section. It does this for every planning session, `splitbrief spec` included. This gives the planner structural context without sending the entire codebase. See [REPOMAP.md](./REPOMAP.md#integration).
+Each planning turn takes its prompt from `planTurnText()` (`src/engine/orchestrator/planning/session.ts`). It builds a repo map via `buildRepoMap()` (`src/engine/codebase/repomap.ts`) — a PageRank-weighted summary of the codebase focused on the files the feature names — and `buildPlanSessionPrompt()` puts it in a `## Repository Map` section. It does this for every planning session, `splitbrief spec` included. This gives the planner structural context without sending the entire codebase. See [SUBSYSTEMS.md §Integration](./SUBSYSTEMS.md#integration).
 
 PLAN reads pending messages at its next planner call. A Claude Code planner can also receive them in its native session when no call is attached or the offer is deferred. Native injection runs only in plan phases. An uncertain offer skips native injection. See [Message queue](./ENGINE.md#message-queue) for delivery rules.
 

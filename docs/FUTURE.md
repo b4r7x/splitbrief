@@ -166,7 +166,7 @@ Follow-ups from the workflow hook system — see [HOOKS-CONFIG.md §Design decis
 
 ## Repo-map v2 (mixed)
 
-Follow-ups from the repo-map subsystem — see [REPOMAP.md §Design decisions](./REPOMAP.md#design-decisions). It supports multiple tree-sitter grammars plus PageRank; these are the axes along which it will grow.
+Follow-ups from the repo-map subsystem — see [SUBSYSTEMS.md §Design decisions](./SUBSYSTEMS.md#design-decisions). It supports multiple tree-sitter grammars plus PageRank; these are the axes along which it will grow.
 
 - **[Won't] Embeddings-based retrieval.** Optional `codebase.kind: 'embeddings'` with a pluggable provider (Voyage, OpenAI, a local embedding model). Semantically richer than symbol matching; deferred because of per-call cost, index-sync work, and the cost/latency profile for local-only users. The symbol-graph path stays the default.
 - **[Should] Grammar version bumps.** Procedure to increment the `parse_version` column in `.splitbrief/repomap.sqlite` and force a global cache rebuild when the tree-sitter grammar changes. Today bumping the compiled-in constant invalidates every row on the next planning run, but a migration note in release notes and an automatic bump on install is cleaner.
