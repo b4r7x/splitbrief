@@ -37,6 +37,7 @@ import { pickerViewStore } from '../../src/stores/ui/picker-view.js';
 import { projectFilesStore } from '../../src/stores/ui/project-files.js';
 import { questionPromptStore } from '../../src/stores/question-prompt/prompt.js';
 import { operationsStore } from '../../src/stores/workflow/operations/state.js';
+import { runViewStore } from '../../src/stores/workflow/run-view.js';
 import { recoveryNoticeStore } from '../../src/stores/workflow/recovery-notice.js';
 import { __testDiscardPending as discardPendingSessionDrafts } from '../../src/stores/ui/session-drafts.js';
 
@@ -81,5 +82,6 @@ export function resetAllStores(): void {
   projectFilesStore.reset();
   questionPromptStore.reset();
   operationsStore.reset();
+  runViewStore.reset();
   discardPendingSessionDrafts();
 }

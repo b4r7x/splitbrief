@@ -76,6 +76,7 @@ import {
 } from '../../features/workflow/prompt-rows/approval.js';
 import { reviewKeysStore } from '../../stores/ui/review-keys.js';
 import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
+import { runViewStore } from '../../stores/workflow/run-view.js';
 import { questionOptions, questionPromptStore } from '../../stores/question-prompt/prompt.js';
 import {
   formatRecoveryPrompt,
@@ -89,7 +90,7 @@ import type { listProjectFiles } from '../../lib/file-listing.js';
 import { createDraftDocument } from '../../core/composer/document.js';
 import { prepareDraftSubmission, type DraftSubmission } from '../../core/composer/submission.js';
 import { plannerSupportsImages } from '../../core/runners/capabilities.js';
-import { atRestRunStatus } from '../../core/sessions/run-status.js';
+import { seatWaitMoved } from '../../core/sessions/held-seat.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { configStore } from '../../stores/project/config.js';
 import { attachmentsStore } from '../../stores/workflow/attachments.js';
@@ -401,16 +402,16 @@ export function WorkflowScreen({
   const [applySince, setApplySince] = useState<number | null>(null);
   useLayoutEffect(() => setApplySince(model.applying ? Date.now() : null), [model.applying]);
   const config = configStore.useConfig();
-  const atRestStatus =
-    model.atRestRecord === undefined ? undefined : atRestRunStatus(model.atRestRecord, config);
-  // A wait's text goes when its reset passes, so the byline needs the clock while one shows.
+  const atRestStatus = model.atRestRecord?.status;
+  const viewWait = runViewStore.use((view) => view.seatWait);
+  // An open run continues with this window's crew, so its saved wait on a tool the seat no longer
+  // runs waits no more. A run another process drives waits on the crew that process loaded.
   const wait =
-    atRestStatus?.kind === 'running'
-      ? atRestStatus.seatWait
-      : atRestStatus?.kind === 'open' && atRestStatus.stop.on.kind === 'seat-wait'
-        ? atRestStatus.stop.on
-        : undefined;
-  const showsWait = wait !== undefined && seatWaitParts(wait.tool, wait.resetAt) !== null;
+    viewWait === null || (atRestStatus?.kind === 'open' && seatWaitMoved(viewWait.wait, config))
+      ? null
+      : viewWait;
+  // A wait's text goes when its reset passes, so the byline needs the clock while one shows.
+  const showsWait = wait !== null && seatWaitParts(wait.tool, wait.wait.resetAt) !== null;
   const now = useSharedClock({ active: model.applying || showsWait });
   const queuedDeparture = departureStore.use((state) => state?.kind ?? null);
   const apply = model.applying
@@ -428,6 +429,7 @@ export function WorkflowScreen({
         ? bylineParts(model.closedView, bylineWidth)
         : openRunBylineParts({
             status: atRestStatus,
+            wait,
             continuable: model.continuable,
             width: bylineWidth,
             now,

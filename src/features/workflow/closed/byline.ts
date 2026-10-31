@@ -6,6 +6,7 @@ import { haltOf, recoveryHaltLabel } from '../../../core/recovery/halt.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { recoveryHeadlineParts, recoveryMenuActionLabel } from '../recovery-prompt.js';
 import { seatWaitParts } from '../../../core/sessions/seat-wait-line.js';
+import type { ViewSeatWait } from '../../../core/run-view/reduce.js';
 import { fitKeyLegend } from '../../../core/key-legend.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import {
@@ -193,6 +194,8 @@ export function applyByline(apply: ApplyByline, width: number): readonly Convers
 export function openRunBylineParts(
   input: Readonly<{
     status: RunStatus;
+    /** The seat wait the run's log states, already dropped for an open run whose seat moved. */
+    wait: ViewSeatWait | null;
     continuable: boolean;
     width: number;
     now: number;
@@ -200,14 +203,14 @@ export function openRunBylineParts(
   }>,
 ): readonly ConversationRowSegment[] {
   const { status, width, now } = input;
+  // A wait whose reset has passed reads as the stop it now is.
+  const wait =
+    input.wait === null ? null : seatWaitParts(input.wait.tool, input.wait.wait.resetAt, now);
   if (status.kind === 'running' && input.apply !== undefined)
     return applyByline(input.apply, width);
   if (status.kind === 'running') {
-    const wait =
-      status.seatWait === undefined
-        ? null
-        : seatWaitParts(status.seatWait.tool, status.seatWait.resetAt, now);
-    if (wait !== null) return fitByline(waitByline(wait), width);
+    // Another process waits on it now; a wait a steer cut there shows the running line.
+    if (input.wait?.live === true && wait !== null) return fitByline(waitByline(wait), width);
     return fitStatusByline(
       RUNNING_BYLINE.reason,
       RUNNING_BYLINE.action,
@@ -233,10 +236,12 @@ export function openRunBylineParts(
     return fitByline({ reason: null, action: HOME_AGAIN }, width);
   }
   if (!input.continuable) return fitByline(UNREADABLE_BYLINE, width);
-  return fitByline(openByline(status.stop, status.resumeAt, now), width);
+  // A halt, a question and a gate wait for you and keep their own line.
+  if (status.stop.kind === 'stopped' && wait !== null) return fitByline(waitByline(wait), width);
+  return fitByline(openByline(status.stop, status.resumeAt), width);
 }
 
-function openByline(stop: StopReason, resumeAt: StepRef, now: number): Byline {
+function openByline(stop: StopReason, resumeAt: StepRef): Byline {
   switch (stop.on.kind) {
     case 'paused':
       return {
@@ -275,21 +280,14 @@ function openByline(stop: StopReason, resumeAt: StepRef, now: number): Byline {
         ],
         action: '⏎ to retry the step',
       };
-    // A wait whose reset has passed reads as the stop it now is.
-    case 'seat-wait': {
-      const wait = seatWaitParts(stop.on.tool, stop.on.resetAt, now);
-      return wait === null ? interruptedByline(resumeAt) : waitByline(wait);
-    }
     default:
-      return interruptedByline(resumeAt);
+      return {
+        reason: [
+          { text: `Stopped ${stopPoint(resumeAt, undefined)}`, tone: stateTone('attention') },
+        ],
+        action: '⏎ to continue',
+      };
   }
-}
-
-function interruptedByline(resumeAt: StepRef): Byline {
-  return {
-    reason: [{ text: `Stopped ${stopPoint(resumeAt, undefined)}`, tone: stateTone('attention') }],
-    action: '⏎ to continue',
-  };
 }
 
 function waitByline([waiting, resets]: readonly [string, string]): Byline {

@@ -6068,6 +6068,12 @@ const liveSeatWaitProjection: WorkflowFixtureProjection = {
       seat: 'build',
       tool: 'OpenAI Codex CLI',
       resetAt: new Date(FIXED_TS + 9 * 60_000).toISOString(),
+      wait: {
+        seat: 'build',
+        resetAt: new Date(FIXED_TS + 9 * 60_000).toISOString(),
+        tool: 'codex',
+        kind: 'cli',
+      },
     },
   ],
 };

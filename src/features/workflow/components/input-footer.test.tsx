@@ -1197,6 +1197,7 @@ describe('InputFooter', () => {
         },
         resumeAt: { kind: 'planner', call: 'plan' },
       },
+      wait: null,
       continuable: true,
       width: 120,
       now: Date.now(),

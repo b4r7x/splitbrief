@@ -9,7 +9,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import type { RunnerConfig } from '../../../core/config/accessors/runner-config.js';
 import { CREW_SEAT_IDS, seatIdsOf } from '../../../core/crew/identity.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { deriveRunStatus } from '../../../core/sessions/run-status.js';
+import { seatWaitToolWord } from '../../../core/sessions/seat-wait-line.js';
 import type { SeatAttempt } from '../../runners/transient.js';
 import { transitionAndSave } from '../state-ops.js';
 import {
@@ -106,7 +106,11 @@ describe('runSeatCall', () => {
     });
     const starts = events.filter((event) => event.type === 'seat_wait_started');
     expect(starts).toHaveLength(1);
-    expect(starts[0]).toMatchObject({ seat: 'build', tool: 'OpenAI Codex CLI' });
+    expect(starts[0]).toMatchObject({
+      seat: 'build',
+      tool: 'OpenAI Codex CLI',
+      wait: loadState(ref)?.seatWait,
+    });
     expect(events.filter((event) => event.type === 'seat_wait_ended')).toHaveLength(0);
 
     await vi.advanceTimersByTimeAsync(300_000);
@@ -118,6 +122,7 @@ describe('runSeatCall', () => {
     const ends = events.filter((event) => event.type === 'seat_wait_ended');
     expect(ends).toHaveLength(1);
     expect(ends[0]).toMatchObject({ seat: 'build' });
+    expect(ends[0]).not.toHaveProperty('kept');
   });
 
   it('leaves a two-hour reset to the runner-usage-limit halt without waiting', async () => {
@@ -227,9 +232,10 @@ describe('waitForSeatReset', () => {
     await expect(pending).rejects.toThrow('stopped');
     // The wait survives the stop: a resume reads it back and keeps waiting.
     expect(loadState(ref)?.seatWait?.resetAt).toBe('2026-01-01T00:05:00.000Z');
-    // A steer re-runs the call at once, so the live wait line must not outlive the abort.
+    // A steer re-runs the call at once, so the live wait line must not outlive the abort; the
+    // end says the saved wait stays.
     expect(events.filter((event) => event.type === 'seat_wait_ended')).toEqual([
-      expect.objectContaining({ seat: 'build' }),
+      expect.objectContaining({ seat: 'build', kept: true }),
     ]);
   });
 });
@@ -435,13 +441,7 @@ const HALTED: readonly { name: string; runner: RunnerConfig; word: string }[] = 
 
 /** The tool the open-run byline names for a run that waits on a seat. */
 function waitWord(state: WorkflowState | null): string | undefined {
-  if (state === null) return undefined;
-  const status = deriveRunStatus({ state, liveness: 'not-alive' });
-  return status.kind === 'open' &&
-    status.stop.kind === 'stopped' &&
-    status.stop.on.kind === 'seat-wait'
-    ? status.stop.on.tool
-    : undefined;
+  return state?.seatWait === undefined ? undefined : seatWaitToolWord(state, state.seatWait);
 }
 
 describe('the seat wait names the runner it waits on', () => {

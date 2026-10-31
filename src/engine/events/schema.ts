@@ -26,6 +26,7 @@ import {
   CONSULT_ACTION_KINDS,
   ConsultRecordSchema,
   SeatSwitchCauseSchema,
+  SeatWaitSchema,
 } from '../../core/schemas/workflow.js';
 import { CONSULT_REASONS } from '../../core/schemas/consult.js';
 import {
@@ -648,9 +649,13 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     resetAt: z.string(),
     /** The tool the wait is on, in the catalog's words; absent on logs written before the field. */
     tool: z.string().optional(),
+    /** The wait as `state.json` saved it; absent on logs written before the field. */
+    wait: SeatWaitSchema.optional(),
   }),
   phaseEvent('seat_wait_ended').extend({
     seat: z.enum(CREW_SEAT_IDS),
+    /** A stop or a steer cut the live wait, and the saved wait stays for the next continue. */
+    kept: z.literal(true).optional(),
   }),
   phaseEvent('seat_switched').extend({
     switchId: z.string().optional(),

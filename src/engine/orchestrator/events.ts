@@ -1,6 +1,7 @@
 import {
   type ConsultRecord,
   fixCyclesOf,
+  type SeatWait,
   type WorkflowState,
 } from '../../core/schemas/workflow.js';
 import type { Check, CheckResult, CheckStatus, Task, TaskId } from '../../core/schemas/task.js';
@@ -429,24 +430,26 @@ export function publishChecksRun(
   });
 }
 
-export function publishSeatWaitStarted(
-  ctx: BusContext,
-  seat: CrewSeatId,
-  resetAt: string,
-  tool: string,
-): void {
+export function publishSeatWaitStarted(ctx: BusContext, wait: SeatWait, tool: string): void {
   ctx.bus.publish({
     type: 'seat_wait_started',
     ts: Date.now(),
     phase: ctx.phase,
-    seat,
-    resetAt,
+    seat: wait.seat,
+    resetAt: wait.resetAt,
     tool,
+    wait,
   });
 }
 
-export function publishSeatWaitEnded(ctx: BusContext, seat: CrewSeatId): void {
-  ctx.bus.publish({ type: 'seat_wait_ended', ts: Date.now(), phase: ctx.phase, seat });
+export function publishSeatWaitEnded(ctx: BusContext, seat: CrewSeatId, kept?: true): void {
+  ctx.bus.publish({
+    type: 'seat_wait_ended',
+    ts: Date.now(),
+    phase: ctx.phase,
+    seat,
+    ...(kept !== undefined && { kept }),
+  });
 }
 
 export function publishSeatSwitched(

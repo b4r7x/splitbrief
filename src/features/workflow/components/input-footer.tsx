@@ -51,6 +51,7 @@ import { queueCopy } from '../queue-copy.js';
 import { messageSeat } from '../../../core/queue-state.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { deriveWorkflowDisplay } from '../display/workflow-status.js';
 import { stateTone } from '../../../core/theme/state-tone.js';
 
@@ -68,7 +69,7 @@ export function InputFooter({
   byline?: readonly ConversationRowSegment[] | undefined;
 }) {
   const t = useTheme();
-  const [lifecycle, { cols }, tasks, operations, controls, approval, recovery] = useStores(
+  const [lifecycle, { cols }, tasks, operations, controls, approval, recovery, runView] = useStores(
     lifecycleStore,
     terminalSizeStore,
     tasksStore,
@@ -76,6 +77,7 @@ export function InputFooter({
     controlsStore,
     approvalPromptStore,
     recoveryNoticeStore,
+    runViewStore,
   );
   const worktreeName = routerStore.use((s) =>
     s.screen === 'workflow' && s.execution.kind === 'local'
@@ -222,10 +224,8 @@ export function InputFooter({
           },
         ];
   const stalledHint = stall === null ? null : silenceTail(operations.active, stall);
-  const seatWait =
-    lifecycle.seatWait !== null
-      ? seatWaitSentence(lifecycle.seatWait.tool, lifecycle.seatWait.resetAt)
-      : null;
+  const wait = runView.seatWait;
+  const seatWait = wait?.live ? seatWaitSentence(wait.tool, wait.wait.resetAt) : null;
   const seatWaitLead: ConversationRowSegment[] =
     seatWait === null
       ? []

@@ -7,6 +7,7 @@ import {
   type DeriveBuildProgressInput,
 } from './build-progress.js';
 import { getChromeContentWidth, buildProgressRowCount } from '../layout/chrome-rows.js';
+import { EMPTY_RUN_VIEW } from '../../../core/run-view/reduce.js';
 import { lifecycleStore, type LifecycleState } from '../../../stores/workflow/lifecycle.js';
 import type {
   OperationsState,
@@ -161,7 +162,6 @@ function lifecycleState(
     steerableCall: null,
     phaseFirstSeenTs: {},
     stall: null,
-    seatWait: null,
     lastRunnerEventTs: NOW,
     attemptStartedTs: NOW,
     startedAt: NOW,
@@ -214,6 +214,7 @@ function input(overrides: Partial<DeriveBuildProgressInput> = {}): DeriveBuildPr
     ]),
     lifecycle: lifecycleState(),
     operations: operationsState(),
+    runView: EMPTY_RUN_VIEW,
     now: NOW,
     ...overrides,
   };

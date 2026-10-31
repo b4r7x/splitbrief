@@ -3,7 +3,7 @@ import type { ClarificationQuestion } from '../../../../src/core/schemas/questio
 import type { EvidenceLedger, EvidenceTask } from '../../../../src/core/schemas/evidence.js';
 import type { RunRecord } from '../../../../src/core/sessions/run-record.js';
 import { deriveRunStatus, type RunStatus } from '../../../../src/core/sessions/run-status.js';
-import type { WorkflowState } from '../../../../src/core/schemas/workflow.js';
+import type { SeatWait, WorkflowState } from '../../../../src/core/schemas/workflow.js';
 import type { EngineEvent } from '../../../../src/engine/events/types.js';
 import { makeTask } from '../../../helpers/factories/task.js';
 import { makeMessage } from '../../../helpers/queue.js';
@@ -786,6 +786,12 @@ const AT_REST_PROMPT_TOO_LARGE = record({
  * A brief routed to a Codex profile hit its usage limit and the run waits for the reset; the saved
  * BUILD seat is Ollama, so the byline names the tool the wait is on, not the saved one.
  */
+const CODEX_WAIT: SeatWait = {
+  seat: 'build',
+  tool: 'codex',
+  kind: 'cli',
+  resetAt: '2026-09-14T17:00:00.000Z',
+};
 const SEAT_WAIT_STATE = savedState({
   phase: 'implementing',
   currentTaskIndex: 1,
@@ -794,8 +800,27 @@ const SEAT_WAIT_STATE = savedState({
     { id: BRIEFS.wire.id, status: 'in_progress' },
     { id: BRIEFS.routeTests.id, status: 'pending' },
   ],
-  seatWait: { seat: 'build', tool: 'codex', kind: 'cli', resetAt: '2026-09-14T17:00:00.000Z' },
+  seatWait: CODEX_WAIT,
 });
+
+/** The log of a wait: its start, and the end a stop writes when it keeps the wait. */
+function seatWaitLog(wait: SeatWait, kept: boolean): readonly EngineEvent[] {
+  const ts = Date.parse(STARTED_AT_ISO) + 60_000;
+  const started: EngineEvent = {
+    type: 'seat_wait_started',
+    ts,
+    phase: 'implementing',
+    seat: wait.seat,
+    resetAt: wait.resetAt,
+    tool: 'OpenAI Codex CLI',
+    wait,
+  };
+  if (!kept) return [started];
+  return [
+    started,
+    { type: 'seat_wait_ended', ts: ts + 1_000, phase: 'implementing', seat: wait.seat, kept: true },
+  ];
+}
 const AT_REST_SEAT_WAIT = record({
   sessionId: 'visual-at-rest-seat-wait',
   status: deriveRunStatus({ state: SEAT_WAIT_STATE, liveness: 'not-alive' }),
@@ -813,16 +838,11 @@ const AT_REST_SEAT_WAIT_ELSEWHERE = record({
  * The same wait after `/crew` moved BUILD off the Codex tool the wait holds: the run stopped, and
  * the byline names no wait on a tool the seat no longer runs.
  */
+const SEAT_MOVED_WAIT: SeatWait = { ...CODEX_WAIT, holds: { tool: 'codex', kind: 'cli' } };
 const SEAT_MOVED_STATE: WorkflowState = {
   ...SEAT_WAIT_STATE,
   awaitingContinue: true,
-  seatWait: {
-    seat: 'build',
-    tool: 'codex',
-    kind: 'cli',
-    resetAt: '2026-09-14T17:00:00.000Z',
-    holds: { tool: 'codex', kind: 'cli' },
-  },
+  seatWait: SEAT_MOVED_WAIT,
 };
 const AT_REST_SEAT_MOVED = record({
   sessionId: 'visual-at-rest-seat-moved',
@@ -2884,11 +2904,17 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   }),
   atRestProjection({ id: 'workflow-at-rest-quick', route: { record: AT_REST_QUICK } }),
   atRestProjection({ id: 'workflow-at-rest-halted', route: { record: AT_REST_HALTED } }),
-  atRestProjection({ id: 'workflow-at-rest-seat-wait', route: { record: AT_REST_SEAT_WAIT } }),
-  atRestProjection({ id: 'workflow-at-rest-seat-moved', route: { record: AT_REST_SEAT_MOVED } }),
+  atRestProjection({
+    id: 'workflow-at-rest-seat-wait',
+    route: { record: AT_REST_SEAT_WAIT, log: seatWaitLog(CODEX_WAIT, true) },
+  }),
+  atRestProjection({
+    id: 'workflow-at-rest-seat-moved',
+    route: { record: AT_REST_SEAT_MOVED, log: seatWaitLog(SEAT_MOVED_WAIT, true) },
+  }),
   atRestProjection({
     id: 'workflow-at-rest-seat-wait-elsewhere',
-    route: { record: AT_REST_SEAT_WAIT_ELSEWHERE },
+    route: { record: AT_REST_SEAT_WAIT_ELSEWHERE, log: seatWaitLog(CODEX_WAIT, false) },
   }),
   atRestProjection({
     id: 'workflow-at-rest-halted-chosen',

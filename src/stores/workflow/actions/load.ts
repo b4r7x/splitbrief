@@ -3,6 +3,8 @@ import { _eventsInternal, mergeEventLog } from '../events.js';
 import { _lifecycleInternal } from '../lifecycle.js';
 import { updateOperations } from '../operations/reducer.js';
 import { _operationsInternal } from '../operations/state.js';
+import { _runViewInternal } from '../run-view.js';
+import { reduceRunView } from '../../../core/run-view/reduce.js';
 import { _tasksInternal } from '../tasks.js';
 import { _tokensInternal, updateTokens } from '../tokens.js';
 import { reduceLifecycle, reduceTasks } from './event.js';
@@ -22,4 +24,5 @@ export function loadEvents(events: EngineEvent[]): void {
   _tokensInternal.set((state) => events.reduce(updateTokens, state));
   _lifecycleInternal.set((state) => reduced.reduce(reduceLifecycle, state));
   _operationsInternal.set((state) => reduced.reduce(updateOperations, state));
+  _runViewInternal.set((view) => reduced.reduce(reduceRunView, view));
 }

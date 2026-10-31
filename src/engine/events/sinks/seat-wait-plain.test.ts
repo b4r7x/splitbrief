@@ -96,4 +96,37 @@ describe('seat wait plain output', () => {
     };
     expect(collect([startEmptyTool])).toEqual([]);
   });
+
+  it('writes the line again when a wait a stop kept starts once more', () => {
+    const start: EngineEventOf<'seat_wait_started'> = {
+      type: 'seat_wait_started',
+      ts,
+      phase: 'idle',
+      seat: 'build',
+      resetAt,
+      tool: 'OpenAI Codex CLI',
+    };
+    const kept: EngineEventOf<'seat_wait_ended'> = {
+      type: 'seat_wait_ended',
+      ts,
+      phase: 'idle',
+      seat: 'build',
+      kept: true,
+    };
+    const lines = collect([start, kept, start]);
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toBe(lines[0]);
+  });
+
+  it('writes no second line for a start with a blank tool during a wait', () => {
+    const start: EngineEventOf<'seat_wait_started'> = {
+      type: 'seat_wait_started',
+      ts,
+      phase: 'idle',
+      seat: 'build',
+      resetAt,
+      tool: 'OpenAI Codex CLI',
+    };
+    expect(collect([start, { ...start, tool: '  ' }])).toEqual(collect([start]));
+  });
 });
