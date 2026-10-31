@@ -54,7 +54,7 @@ These enforce consistency across the codebase. Read the relevant one before touc
 | Zero re-export-only `index.ts` | [NO-BARRELS.md](./NO-BARRELS.md) |
 | Error taxonomy, error at boundaries | [ERRORS.md](./ERRORS.md) |
 | Where to put types, Zod schema placement | [TYPES.md](./TYPES.md) |
-| Store conventions, zero memoization | [STORES.md](./STORES.md) |
+| Store conventions, zero memoization | [STORES-AND-UI.md](./STORES-AND-UI.md#store-rules) |
 | React hook conventions | [HOOKS.md](./HOOKS.md) |
 | Pre-merge grep gates | [INVARIANTS.md](./INVARIANTS.md) |
 | The SOTA review bar: judgment calls no grep gate catches | [CODE-STANDARD.md](./CODE-STANDARD.md) |

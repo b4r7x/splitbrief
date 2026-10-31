@@ -14,7 +14,7 @@ export type ApprovalPromptState =
 const initial: ApprovalPromptState = { status: 'idle' };
 const store = createStore<ApprovalPromptState>(initial);
 
-// Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
+// Test escape hatch — see docs/STORES-AND-UI.md#test-escape-hatches. Do not use outside tests.
 function __testReset(next?: ApprovalPromptState): void {
   store.set(next ?? initial);
 }

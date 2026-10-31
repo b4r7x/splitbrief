@@ -13,7 +13,7 @@ Read this when you are about to write or review code and want to know "is this g
 | Error factory + domain bag, zero-class rule | [ERRORS.md](./ERRORS.md) |
 | React hook placement & test policy | [HOOKS.md](./HOOKS.md) |
 | Zero barrels | [NO-BARRELS.md](./NO-BARRELS.md) |
-| External stores, zero memoization | [STORES.md](./STORES.md) |
+| External stores, zero memoization | [STORES-AND-UI.md](./STORES-AND-UI.md#the-store-factory) |
 | Behavior-not-implementation tests | [TESTING.md](./TESTING.md) |
 | Automated pre-merge grep gates | [INVARIANTS.md](./INVARIANTS.md) |
 
@@ -151,8 +151,8 @@ These are non-negotiable and (where noted) gated automatically. Do not re-derive
 | Zero runtime classes (errors via factory bag) | [ERRORS.md](./ERRORS.md), [CLAUDE.md](https://github.com/b4r7x/splitbrief/blob/main/CLAUDE.md) | INVARIANTS #8 |
 | ESM `.js` extension in every relative import | [CLAUDE.md](https://github.com/b4r7x/splitbrief/blob/main/CLAUDE.md) | INVARIANTS #16 |
 | Zero barrels / disguised barrels | [NO-BARRELS.md](./NO-BARRELS.md) | INVARIANTS #1, #1b |
-| Zero memoization (`useMemo`/`useCallback`/`React.memo`) | [STORES.md](./STORES.md) | INVARIANTS #3 |
-| No `forwardRef` / `useImperativeHandle` — extract to a store | [STORES.md](./STORES.md) | INVARIANTS #3 |
+| Zero memoization (`useMemo`/`useCallback`/`React.memo`) | [STORES-AND-UI.md](./STORES-AND-UI.md#store-rules) | INVARIANTS #3 |
+| No `forwardRef` / `useImperativeHandle` — extract to a store | [STORES-AND-UI.md](./STORES-AND-UI.md#store-rules) | INVARIANTS #3 |
 | Engine imports no React/Ink/`features`/`components`/`hooks`/`cli` | [LAYERS.md](./LAYERS.md) | INVARIANTS #12, #12b, #12c |
 | Errors at boundaries via `error()` + domain bag (no raw `throw new Error`) | [ERRORS.md](./ERRORS.md) | INVARIANTS #4 |
 | No unsafe `!` / broad `as` outside the sanctioned list | [CLAUDE.md](https://github.com/b4r7x/splitbrief/blob/main/CLAUDE.md) | review |
@@ -215,4 +215,4 @@ Run top to bottom on any diff. The mechanical rows are mostly covered by `npm ru
 - [PRINCIPLES.md](./PRINCIPLES.md) — one-page rule index (this doc tightens rule 22).
 - [STRUCTURE.md](./STRUCTURE.md) — file tree, folder colocation, file-length triggers.
 - [LAYERS.md](./LAYERS.md) — layer boundaries and import direction.
-- [TYPES.md](./TYPES.md) · [ERRORS.md](./ERRORS.md) · [HOOKS.md](./HOOKS.md) · [NO-BARRELS.md](./NO-BARRELS.md) · [STORES.md](./STORES.md) · [TESTING.md](./TESTING.md) · [INVARIANTS.md](./INVARIANTS.md) — the canonical authorities this standard consolidates.
+- [TYPES.md](./TYPES.md) · [ERRORS.md](./ERRORS.md) · [HOOKS.md](./HOOKS.md) · [NO-BARRELS.md](./NO-BARRELS.md) · [STORES-AND-UI.md](./STORES-AND-UI.md) · [TESTING.md](./TESTING.md) · [INVARIANTS.md](./INVARIANTS.md) — the canonical authorities this standard consolidates.

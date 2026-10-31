@@ -1,6 +1,6 @@
 # Project Structure
 
-How `src/` is organized on disk. For data flow between layers (CLI → stores → engine/UI), see [`ARCHITECTURE.md`](./ARCHITECTURE.md). For state patterns, see [`STORES.md`](./STORES.md). For hook placement rules, see [`HOOKS.md`](./HOOKS.md).
+How `src/` is organized on disk. For data flow between layers (CLI → stores → engine/UI), see [`ARCHITECTURE.md`](./ARCHITECTURE.md). For state patterns, see [`STORES-AND-UI.md`](./STORES-AND-UI.md). For hook placement rules, see [`HOOKS.md`](./HOOKS.md).
 
 SPLITBRIEF organizes UI code by **business domain**, not by technical layer. A feature is a self-contained business concept — its internals (components, hooks, pure helpers, tests) live in one folder under `src/features/`. The **entry** of each surface is a FLAT page in the `src/app/` shell that *composes* that feature. Cross-cutting primitives (shared UI, shared hooks, low-level utilities) live flat at `src/` root.
 
@@ -37,7 +37,7 @@ src/
 ├── cli/                                     # CLI subcommand handlers
 ├── core/                                    # domain logic (config, types, state, formatting)
 ├── engine/                                  # workflow orchestrator (zero React)
-├── stores/                                  # external stores — see STORES.md
+├── stores/                                  # external stores — see STORES-AND-UI.md
 ├── components/                              # shared UI (cross-feature)
 ├── hooks/                                   # shared hooks (cross-feature) — see HOOKS.md
 ├── lib/                                     # infrastructure wrappers (git, fs, process, terminal) — see LAYERS.md
@@ -410,7 +410,7 @@ Does the code import React / Ink?
                                           └── hooks/ (≥2 hook files)
 
 Is it global state with subscribers?
-└── YES → src/stores/<domain>/  (see STORES.md)
+└── YES → src/stores/<domain>/  (see STORES-AND-UI.md)
 
 Is it a pure, zero-dep, framework-agnostic primitive?
   (no SPLITBRIEF literals, no Node APIs beyond stdlib types, npm-publishable in isolation)
@@ -463,7 +463,7 @@ If you need shared behavior across features, it belongs in `src/components/`, `s
 
 When one surface needs UI owned by another (e.g. the `setup` page reaching the `runners` picker), the page imports the other domain's context-free feature and coordinates the rest through stores: `src/app/screens/setup.tsx` and `src/app/overlays/settings.tsx` both render `src/features/crew/`, and each opens the picker by calling `crewActivate` from `src/features/crew/rows.ts`, which performs the `overlayStore.open` for the selected seat. Keep the feature folder named for the domain (`runners`, `crew`); component names do not create folder names.
 
-The one sanctioned cross-cutting channel between features is **stores**. Feature A can write to `workflowStore`, and feature B can read from it — that is the same engine→UI pattern already described in [`STORES.md`](./STORES.md).
+The one sanctioned cross-cutting channel between features is **stores**. Feature A can write to `workflowStore`, and feature B can read from it — that is the same engine→UI pattern already described in [`STORES-AND-UI.md`](./STORES-AND-UI.md#engine-to-ui----the-event-path).
 
 ## Shared components
 
@@ -706,7 +706,7 @@ See [CLAUDE.md](https://github.com/b4r7x/splitbrief/blob/main/CLAUDE.md) for the
 - [`PRINCIPLES.md`](./PRINCIPLES.md) — one-page index of all architectural rules.
 - [`CODE-STANDARD.md`](./CODE-STANDARD.md) — the SOTA review bar; consolidates the file-length triggers here into the split recipe and the reviewer checklist.
 - [`HOOKS.md`](./HOOKS.md) — hook placement rules; companion to this doc.
-- [`STORES.md`](./STORES.md) — state architecture; same colocation principle.
+- [`STORES-AND-UI.md`](./STORES-AND-UI.md) — state architecture; same colocation principle.
 - [`TYPES.md`](./TYPES.md) — type placement and Zod schema conventions.
 - [`NO-BARRELS.md`](./NO-BARRELS.md) — project-wide barrel policy.
 - [bulletproof-react — project structure](https://github.com/alan2207/bulletproof-react/blob/master/docs/project-structure.md) — source pattern.

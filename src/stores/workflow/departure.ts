@@ -25,7 +25,7 @@ function take(): Departure | null {
   return queued;
 }
 
-// Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
+// Test escape hatch — see docs/STORES-AND-UI.md#test-escape-hatches. Do not use outside tests.
 function __testReset(next: Departure | null = null): void {
   store.set(next);
 }

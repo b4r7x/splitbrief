@@ -70,7 +70,7 @@ Do not duplicate the gate list in new docs; update [docs/INVARIANTS.md](./docs/I
 - **ESM with `.js` extension** in imports: `import x from './foo.js'`, never `./foo`.
 - **kebab-case** for file and folder names.
 - **No barrels.** No re-export-only `index.ts` anywhere in `src/` or `testing/` — see [docs/NO-BARRELS.md](./docs/NO-BARRELS.md).
-- **No memoization.** No `useMemo`, `useCallback`, `React.memo`, `forwardRef`, `useImperativeHandle` — see [docs/STORES.md](./docs/STORES.md).
+- **No memoization.** No `useMemo`, `useCallback`, `React.memo`, `forwardRef`, `useImperativeHandle` — see [docs/STORES-AND-UI.md](./docs/STORES-AND-UI.md#store-rules).
 - **No decorative comments.** No section banners. Ordering documents, not banners.
 - **No unsafe assertions.** No incidental `!` or broad `as` in production. Sanctioned exceptions listed in [CLAUDE.md](./CLAUDE.md).
 - **Engine has zero React imports.** `src/engine/` must not import `ink`, `react`, or anything under `src/features/`, `src/components/`, `src/hooks/`.

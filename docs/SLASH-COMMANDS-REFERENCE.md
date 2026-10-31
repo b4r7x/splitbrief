@@ -500,5 +500,5 @@ Alphabetical, for fast lookup.
 - [`docs/WORKFLOW.md`](./WORKFLOW.md) — workflow phases, the planning session, and the plan card.
 - [`docs/CONCEPTS.md`](./CONCEPTS.md) — shared vocabulary (phase, queue, run status, stop reason, step, etc.).
 - [`docs/ARCHITECTURE.md`](./ARCHITECTURE.md) — how the TUI, stores, engine, and runners are layered.
-- [`docs/STORES.md`](./STORES.md) — `configStore`, `overlayStore`, `feedbackStore`, `lifecycleStore`, `routerStore`, `attachmentsStore`.
+- [`docs/STORES-AND-UI.md`](./STORES-AND-UI.md#store-groups) — `configStore`, `overlayStore`, `feedbackStore`, `lifecycleStore`, `routerStore`, `attachmentsStore`.
 - [`src/core/runtime/commands/`](https://github.com/b4r7x/splitbrief/tree/main/src/core/runtime/commands) — `dispatch.test.ts`, `lookup.test.ts`, and split `registry-*.test.ts` suites (`registry-configuration.test.ts`, `registry-recovery.test.ts`, `registry-conversation.test.ts`, `registry-copy.test.ts`, `registry-snapshots.test.ts`, …) cover the phase / screen / arg matrix.

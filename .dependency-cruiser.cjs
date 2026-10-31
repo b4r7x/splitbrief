@@ -44,7 +44,7 @@ module.exports = {
     {
       name: 'stores-engine-type-only',
       comment:
-        'src/stores/ is the engine<->UI channel (STORES.md). The only sanctioned edge into engine is type-only; a value import is forbidden.',
+        'src/stores/ is the engine<->UI channel (STORES-AND-UI.md). The only sanctioned edge into engine is type-only; a value import is forbidden.',
       severity: 'error',
       from: { path: '^src/stores/' },
       to: { path: '^src/engine/', dependencyTypesNot: ['type-only'] },

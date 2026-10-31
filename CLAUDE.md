@@ -39,7 +39,7 @@ Read the canonical doc **before** touching the matching area. Every link below e
 | Understand the workflow state machine | [docs/WORKFLOW.md](./docs/WORKFLOW.md) — phases, transitions, the planning session |
 | Understand the orchestrator and EventBus | [docs/ENGINE.md](./docs/ENGINE.md) — orchestrator, sinks, callbacks vs events |
 | Understand planner/implementer/reviewer pipeline | [docs/PLANNERS-AND-IMPLEMENTERS.md](./docs/PLANNERS-AND-IMPLEMENTERS.md) — runner kinds, the three seats, Task Brief, token accounting |
-| Understand stores and UI | [docs/STORES-AND-UI.md](./docs/STORES-AND-UI.md) — store factory, screens, overlays |
+| Understand stores and UI, or touch anything under `src/stores/` | [docs/STORES-AND-UI.md](./docs/STORES-AND-UI.md) — store factory, store rules, screens, overlays |
 | Understand approval gates and recovery | [docs/APPROVAL-AND-RECOVERY.md](./docs/APPROVAL-AND-RECOVERY.md) — plan card, protected-path confirmation, escalation, drift |
 | Understand supporting subsystems | [docs/SUBSYSTEMS.md](./docs/SUBSYSTEMS.md) — hooks, snapshots, repo-map, runtime commands, detection, compaction, evidence ledger |
 | Understand how the code is laid out and what exists today | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — layer diagram and design rationale, plus a verified inventory of events, commands, paths and public API |
@@ -57,7 +57,6 @@ Read the canonical doc **before** touching the matching area. Every link below e
 | Hit a problem | [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md) — symptoms & fixes |
 | Add or move any file | [docs/STRUCTURE.md](./docs/STRUCTURE.md) — file tree, feature anatomy |
 | Decide `utils/` vs `lib/` vs `core/` vs `engine/` vs `features/` | [docs/LAYERS.md](./docs/LAYERS.md) |
-| Touch anything under `src/stores/` | [docs/STORES.md](./docs/STORES.md) |
 | Add or move a type | [docs/TYPES.md](./docs/TYPES.md) |
 | Create an `index.ts` | [docs/NO-BARRELS.md](./docs/NO-BARRELS.md) — zero barrels, enforced |
 | Add or refactor a React hook | [docs/HOOKS.md](./docs/HOOKS.md) |
@@ -94,7 +93,7 @@ These are the rules that apply everywhere; deeper specifications live in the lin
 - **Error at boundaries.** Internal functions propagate; callers decide. See [ERRORS.md](./docs/ERRORS.md).
 - **No unsafe assertions.** No incidental `!` or broad `as` in production. Sanctioned exceptions: `src/utils/type-guards.ts`, `src/stores/create-store.ts`, `src/stores/use-stores.ts`, the `as AppError` factory cast in `src/utils/error.ts`, `Map.get(...)!` in `src/engine/codebase/graph.ts` and `src/engine/codebase/pagerank.ts` (Map.get after pre-population — invariant documented inline), `as unknown` for path-walking arbitrary shapes in `src/engine/hooks/substitute.ts` (recursive Record traversal), and `src/lib/terminal/filtered-stdin/create.ts` (bridged `PassThrough` stdin that satisfies the TTY members Ink reads).
 - **Zero barrels.** No re-export-only `index.ts` anywhere in `src/`. `find src -name 'index.ts'` must return nothing. See [NO-BARRELS.md](./docs/NO-BARRELS.md).
-- **Zero memoization.** No `useMemo`, `useCallback`, or `React.memo`. Store selectors make them unnecessary. See [STORES.md](./docs/STORES.md).
+- **Zero memoization.** No `useMemo`, `useCallback`, or `React.memo`. Store selectors make them unnecessary. See [STORES-AND-UI.md](./docs/STORES-AND-UI.md#store-rules).
 - **No imperative handles.** No `forwardRef` / `useImperativeHandle`. Extract state to a store instead.
 - **Zero engine → React imports.** `src/engine/` must not import from `ink`, `react`, or `src/features/`, `src/components/`, `src/hooks/`.
 - **Zero failing gates.** `npm run release-check` (format:check → typecheck → lint → test → test:integration → build → e2e → invariants → skills:check) must pass before any PR; `npm run test-ci` is the exhaustive form that additionally enforces the coverage thresholds.
