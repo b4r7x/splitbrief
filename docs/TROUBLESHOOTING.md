@@ -8,6 +8,90 @@ Stable `stateId` and runner `state` values with copyable remediations are indexe
 
 Use the reported preparation error; a zero-blocker readiness count does not explain a session-ownership failure. Start and continue must acquire current ownership independently of discovery. A live or unknown competing owner is not permission to take over.
 
+When no entry matches:
+
+1. Reproduce with a small run: `splitbrief start --json "minimal repro"` with `workflow.approve: none` in the config. It runs one planning session and no plan card, so it is easy to script.
+2. Read the session log. The last event before the failure usually names the failing phase or task:
+   ```bash
+   cat .splitbrief/active
+   jq . .splitbrief/sessions/$(cat .splitbrief/active)/session.jsonl | less
+   ```
+3. Run headless. `splitbrief start --json …` separates the engine from the TUI, so you see the events without Ink rendering errors.
+4. If the defect looks like an architecture regression (the engine imports React, barrels come back), run the pre-merge grep gates in [INVARIANTS.md](./INVARIANTS.md).
+
+---
+
+## Diagnostic modes
+
+### Event log (JSONL sink)
+
+Every run writes its full `EngineEvent` stream to:
+
+```
+.splitbrief/sessions/<session-id>/session.jsonl
+```
+
+One JSON object per line. Written by `src/engine/events/sinks/jsonl.ts` through the protected session-log appender in `src/core/sessions/log-writer.ts`. See `src/engine/events/schema.ts` (`EngineEventSchema`) for the full event union -- `workflow_*`, `planner_*`, `task_*`, `validate`, `escalate`, `cost_update`, `error`, `warning`, and more.
+
+Inspect with `jq`:
+
+```bash
+# All events across sessions
+cat .splitbrief/sessions/*/session.jsonl | jq .
+
+# Only failures
+jq 'select(.type == "task_full_fail" or .type == "error")' \
+  .splitbrief/sessions/<id>/session.jsonl
+
+# Brief, plan and task check results
+jq 'select(.type == "checks_run") | {taskId, results: .data.results}' \
+  .splitbrief/sessions/<id>/session.jsonl
+
+# Reviewer check results
+jq 'select(.type == "full_suite" and .data.status != "running") | .data | {id, command, moment, status, passed, detail}' \
+  .splitbrief/sessions/<id>/session.jsonl
+
+# Cost accumulation
+jq 'select(.type == "cost_update")' .splitbrief/sessions/<id>/session.jsonl
+
+# Runner-call warnings with grouping fields
+jq 'select(.type == "runner_call_warning") | {callId: .data.callId, phase, warning: .data.warning}' \
+  .splitbrief/sessions/<id>/session.jsonl
+```
+
+Stderr is diagnostic by default. A `call_stderr_delta` from the raw runner stream is not projected into `session.jsonl` as a `runner_call_warning` and does not create a primary warning row. Actionable warnings appear as `runner_call_warning` and carry `code`, `severity`, `source`, `surface`, `fingerprint`, `message`, and optional `rawRef`. Repeated warnings are grouped in the TUI by fingerprint/code/source/surface.
+
+### Active session pointer
+
+`.splitbrief/active` stores the active session id. If commands like `splitbrief status` or `splitbrief resume` report "no active session", the pointer is missing or stale — start a new workflow or manually `cat .splitbrief/active`.
+
+### Headless mode (`--json`)
+
+For CI or programmatic inspection, bypass the Ink TUI entirely and emit NDJSON `EngineEvent` records to stdout:
+
+```bash
+splitbrief start --json "feature description" 2>/dev/null | jq .
+```
+
+Implementation: `src/cli/headless.ts` wires a `createStdoutJsonSink()` (`src/engine/events/sinks/stdout-json.ts`) in place of the TUI. The JSONL sink still writes the on-disk session log.
+
+`--json` requires a feature argument on `start`. `resume` and `continue` pick an open run up from its saved state.
+
+### Debug environment variables
+
+SPLITBRIEF has no `debug` package or namespace logger. The diagnostic surface is:
+
+| Variable | Effect | Source |
+|---|---|---|
+| `SPLITBRIEF_CONTEXT_LENGTH` | Override detected implementer context length (integer) | `src/engine/providers/capabilities.ts` |
+| `CI` | Suppresses fullscreen TUI (`--no-fullscreen` is equivalent) | `src/cli/setup.ts` |
+
+For finer-grained traces, use the event log. The API-key-bearing env vars SPLITBRIEF reads are listed in [CONFIGURATION.md §Provider authentication](./CONFIGURATION.md#provider-authentication) — a missing credential fails config load for an API seat and shows as a readiness blocker for a CLI seat.
+
+### Terminal diagnostics
+
+Direct terminal diagnostics are sanitized before printing. `warnStderr`, `warnError`, process-output errors, and generic CLI error formatting strip ANSI/OSC/control sequences, redact shared secret patterns including JWT-like tokens, and bound diagnostic text before writing to stderr. First-party styling may wrap the sanitized text after that; untrusted subprocess/provider text should not be styled before sanitization.
+
 ---
 
 ## Run readiness and doctor diagnostics
@@ -366,10 +450,15 @@ Files can be inside or outside the project. Relative paths use the project root.
 **Likely cause:** An `api` planner has three deadlines. The total call has 10 minutes (`TIMEOUTS.reviewerMs`). The first response must arrive within 120 s. A 60 s stream-idle guard applies between chunks. A cold-loading local model (Ollama or LM Studio loads the model into memory) usually hits the first-response deadline. Non-`api` planners (`cli`, `shell`, `agent`) have no default limit. The **inactivity watchdog** warns after 5 minutes of no output. Beside the build block, the byline shows the normal live status. Where no block is painted, the byline reads `⚠ No output for 5:00`. The call continues until it ends or you press Esc. Set `idleKillMs` to cut a silent call, or `planner.timeout` to put a wall-clock cap on the whole call; both are opt-in.
 
 **Fix:**
-1. Warm the model before the run so the first token arrives within 120s — e.g. issue one throwaway request to your local server, or pre-pull the model so it is resident.
-2. Set `planner.timeout` (milliseconds) in `.splitbrief/config.yaml` to put a total wall-clock budget on each planner call (Opus planning passes can take several minutes). This caps the whole call; it does not extend the 60s idle guard.
-3. If the planner is genuinely stuck (no token activity), check provider status pages and your network; restart the run.
-4. Reduce `codebase.tokenBudget` so the prompt is smaller and the call returns sooner.
+1. Read the end of the session log. The last event names the phase that was active:
+   ```bash
+   tail -20 .splitbrief/sessions/<id>/session.jsonl | jq .
+   ```
+   When `cost_update` events stop arriving, the subprocess is live but produces no tokens. Check the remote provider status.
+2. Warm the model before the run so the first token arrives within 120s — e.g. issue one throwaway request to your local server, or pre-pull the model so it is resident.
+3. Set `planner.timeout` (milliseconds) in `.splitbrief/config.yaml` to put a total wall-clock budget on each planner call (Opus planning passes can take several minutes). This caps the whole call; it does not extend the 60s idle guard.
+4. If the planner is genuinely stuck (no token activity), check provider status pages and your network; restart the run. For an `api` planner, check that its `apiBase` is reachable. For a `cli` planner, check that the tool is on `PATH`.
+5. Reduce `codebase.tokenBudget` so the prompt is smaller and the call returns sooner.
 
 **Prevention:** Keep local models warm so the first response arrives within the 120s first-response deadline, and set `planner.timeout` as a total-call ceiling for high-latency planners.
 
@@ -720,7 +809,7 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 
 **Prevention:** Keep `validation.test_command` minimal but reliable. Keep the project's own scripts and CI configuration current: the planner reads them to name the project gate.
 
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/DEBUGGING.md](./DEBUGGING.md).
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [Diagnostic modes](#diagnostic-modes).
 
 ---
 
@@ -878,18 +967,19 @@ A killed process's `base-<pid>-*` tree under `$XDG_STATE_HOME/splitbrief/bases/`
 
 **Prevention:** Use a runner that streams tool use live (Claude Code's `stream-json`) for the role where you want per-tool progress, and keep OpenCode for the role where a batched report is acceptable.
 
-**See also:** [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md), [docs/DEBUGGING.md](./DEBUGGING.md).
+**See also:** [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md), [Diagnostic modes](#diagnostic-modes).
 
 ---
 
 ### Symptom: `splitbrief resume` says the run is closed
 
-**Likely cause:** A closed run is the one thing continuing refuses. `state.json` records `closed: { at, as: 'ended' }` — written by **End run** on the stop sheet or a document gate, the `end-run` recovery action, or `/end` — or the run reached `complete` with a passing final review. Closing a run clears `.splitbrief/active`, so `resume` with no argument finds nothing at all.
+**Likely cause:** A closed run is the one thing continuing refuses. `state.json` records `closed: { at, as: 'ended' }` — written by **End run** on the stop sheet or a document gate, the `end-run` recovery action, or `/end` — or the run reached `complete` with a passing final review. Closing a run clears `.splitbrief/active`, so `resume` with no argument stops with `no active session to resume.`
 
 **Fix:**
 1. Open `/sessions` in the TUI to browse runs. Use `splitbrief status` to check the active run.
 2. Its files are still on disk and its session directory is intact — read `summary.json`, `review.md` and the evidence ledger, or open it with `/sessions` and read the `Closed ─` block at the tail of its transcript.
 3. To carry the work on, start a new run: `splitbrief start "<what is left>"`. A closed run is a record, not a workspace.
+4. To continue an older run that is still open, name it: `splitbrief continue <session-id>`.
 
 **Prevention:** Use **Stop now** or **Pause after this brief** when you mean to come back. Only **End run** closes; the stop sheet's footer says so.
 
@@ -939,7 +1029,7 @@ A killed process's `base-<pid>-*` tree under `$XDG_STATE_HOME/splitbrief/bases/`
 
 **Prevention:** Prefer clean TUI cancellation or `splitbrief continue` for interrupted work.
 
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md), [docs/DEBUGGING.md](./DEBUGGING.md).
+**See also:** [docs/WORKFLOW.md](./WORKFLOW.md), [Diagnostic modes](#diagnostic-modes).
 
 ---
 
@@ -1315,7 +1405,7 @@ Copied images remain in `~/.splitbrief/clipboard/` so history and runs retain re
 
 **Prevention:** Treat hooks as deterministic and idempotent; test them in isolation before wiring them into the workflow.
 
-**See also:** [docs/HOOKS-CONFIG.md](./HOOKS-CONFIG.md), [docs/DEBUGGING.md](./DEBUGGING.md).
+**See also:** [docs/HOOKS-CONFIG.md](./HOOKS-CONFIG.md), [Diagnostic modes](#diagnostic-modes).
 
 ---
 
@@ -1331,6 +1421,20 @@ Copied images remain in `~/.splitbrief/clipboard/` so history and runs retain re
 **Prevention:** Always use absolute paths in hook commands; never assume the interactive shell's `PATH`.
 
 **See also:** [docs/HOOKS-CONFIG.md](./HOOKS-CONFIG.md).
+
+---
+
+### Symptom: `Hook config is not trusted and no TTY available`
+
+**Likely cause:** `.splitbrief/config.yaml` declares `hooks:`, but `~/.splitbrief/trust/hooks.json` holds no receipt for this checkout at the current hook config hash, and stdin is not a TTY (CI).
+
+**Fix:**
+1. Run interactively once to trust the hooks (`splitbrief start`).
+2. Or pass `--allow-hooks` on every CI run.
+
+**Prevention:** An edit to the hook config invalidates the trust and triggers a new prompt. Trust the hooks again after each edit.
+
+**See also:** [docs/HOOKS-CONFIG.md](./HOOKS-CONFIG.md#trust-model).
 
 ---
 
@@ -1393,7 +1497,7 @@ Copied images remain in `~/.splitbrief/clipboard/` so history and runs retain re
 
 **Prevention:** In CI, redirect stdout and stderr to distinct files.
 
-**See also:** [docs/DEBUGGING.md](./DEBUGGING.md), [docs/CONFIGURATION.md](./CONFIGURATION.md).
+**See also:** [Headless mode](#headless-mode---json), [docs/CONFIGURATION.md](./CONFIGURATION.md).
 
 ---
 
@@ -1425,11 +1529,27 @@ Copied images remain in `~/.splitbrief/clipboard/` so history and runs retain re
 
 **Prevention:** Bake the drift gate into your CI workflow definition so it is uniform across branches.
 
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md), [docs/DEBUGGING.md](./DEBUGGING.md).
+**See also:** [docs/WORKFLOW.md](./WORKFLOW.md), [Diagnostic modes](#diagnostic-modes).
 
 ---
 
 ## Config
+
+### Symptom: `Configuration errors in .splitbrief/config.yaml:`
+
+**Likely cause:** The YAML failed schema validation. The message lists each failing path. The loader throws `ConfigError` (`src/core/config/errors.ts`), and `loadConfigOrExit` in `src/cli/setup.ts` exits with code 1.
+
+**Fix:**
+1. Check that `version: 3` is present. No other version loads (see the next entry).
+2. Check that the top-level `planner` and `implementer` blocks have a valid `kind`.
+3. Check that the fields each kind requires are set. For example, `kind: api` requires `provider`, `service`, `offering` and `apiBase`.
+4. Remove unknown keys in `workflow`, `codebase` and `hooks`; those sections are strict. Removed fields (`workflow.autoApproveSpec`, `workflow.autoApprovePlan`, top-level `workflow.commitStrategy`) fail here rather than being ignored. The retired planning keys do not fail: `workflow.mode`, `workflow.task_review`, `workflow.brief_review`, `workflow.speckit`, `approval.tiers` and the `workflow.approve` values `all`, `spec` and `default` each load with one notice.
+
+**Prevention:** Run `splitbrief doctor` after you edit the config by hand.
+
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) — the full schema.
+
+---
 
 ### Symptom: Config rejected with a Zod schema error mentioning `version`
 
@@ -1458,3 +1578,46 @@ Copied images remain in `~/.splitbrief/clipboard/` so history and runs retain re
 **Prevention:** Put durable settings in `.splitbrief/config.yaml`. Keep CLI flags for one-off runs and environment variables for secrets or process-level behavior.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/BOOTSTRAP.md](./BOOTSTRAP.md).
+
+---
+
+### Symptom: config load fails with `API key exfiltration risk`
+
+**Likely cause:** An `api` runner points at an endpoint SPLITBRIEF does not own, and its key comes from the environment. The endpoint is a custom or unknown `provider`, or a known provider with an `apiBase` of a different origin than its official one. Sending an env-held key to an arbitrary host would leak it. Both variants are errors, and the config does not load:
+
+- `Custom/unknown provider <x> <role> cannot use env apiKey reference env:<VAR> with apiBase <url> (API key exfiltration risk). Use an inline apiKey for this custom provider.`
+- `<Provider> <role> with custom endpoint <url> cannot use <VAR> without an inline apiKey (API key exfiltration risk).`
+
+**Fix:**
+1. For a custom or unknown `provider`, give the seat an inline `apiKey: sk-...`. An `env:` reference is never accepted there, whatever the `apiBase`.
+2. For a known provider pointed at a foreign `apiBase`, set an inline `apiKey` for that endpoint. Or drop the `apiBase` override, so the provider's official endpoint and its env var apply.
+
+**Prevention:** Use env-held keys only with the official endpoints of known providers. Source: `src/core/config/credentials.ts`.
+
+**See also:** [docs/API-KEYS.md](./API-KEYS.md), [docs/CONFIGURATION.md](./CONFIGURATION.md#13-environment-variables).
+
+---
+
+### Symptom: `The file's group or other users can change .splitbrief/config.yaml`
+
+**Likely cause:** The group or other users can write the config file (mode & 0o022). SPLITBRIEF still loads it. Source: `src/core/config/load/io.ts`.
+
+**Fix:**
+
+```bash
+chmod 600 .splitbrief/config.yaml
+chmod 700 .splitbrief
+```
+
+**Prevention:** `splitbrief init` writes the file at `0600`. Keep that mode when you copy or restore the file.
+
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md).
+
+---
+
+## Getting help
+
+- [WORKFLOW.md](./WORKFLOW.md) — the expected behavior of each phase.
+- [CHANGELOG.md](../CHANGELOG.md) — recent changes that can cause a regression.
+- [ARCHITECTURE.md](./ARCHITECTURE.md) — the system diagram and the planner and implementer contracts.
+- Open an issue with the session id (`.splitbrief/active`), the contents of `.splitbrief/sessions/<id>/session.jsonl`, and your `.splitbrief/config.yaml` with every `apiKey` value removed.

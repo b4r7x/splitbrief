@@ -54,7 +54,7 @@ Read the canonical doc **before** touching the matching area. Every link below e
 | Look up a runtime command (`/name`) | [docs/SLASH-COMMANDS-REFERENCE.md](./docs/SLASH-COMMANDS-REFERENCE.md) — runtime commands |
 | Configure SPLITBRIEF | [docs/CONFIGURATION.md](./docs/CONFIGURATION.md) — config reference |
 | Run end-to-end scenarios / find a recipe | [docs/USAGE-EXAMPLES.md](./docs/USAGE-EXAMPLES.md) — recipes |
-| Hit a problem | [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md) — symptoms & fixes |
+| Hit a problem or debug a failing workflow | [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md) — symptoms & fixes, diagnostic modes |
 | Add or move any file | [docs/STRUCTURE.md](./docs/STRUCTURE.md) — file tree, feature anatomy |
 | Decide `utils/` vs `lib/` vs `core/` vs `engine/` vs `features/` | [docs/LAYERS.md](./docs/LAYERS.md) |
 | Add or move a type | [docs/TYPES.md](./docs/TYPES.md) |
@@ -72,7 +72,6 @@ Read the canonical doc **before** touching the matching area. Every link below e
 | Browse the whole docs folder | [docs/README.md](./docs/README.md) — the docs index, grouped by task |
 | Contribute to this project | [CONTRIBUTING.md](./CONTRIBUTING.md) |
 | Work with API keys | [docs/API-KEYS.md](./docs/API-KEYS.md) |
-| Debug a failing workflow | [docs/DEBUGGING.md](./docs/DEBUGGING.md) |
 | Develop SPLITBRIEF with SPLITBRIEF itself: run the built CLI on this repo, end the run on a tool defect, fix, rebuild, start a new run | [docs/DOGFOODING.md](./docs/DOGFOODING.md) — the dogfooding procedure, the stop/continue smoke |
 | Work with workflow hooks | [docs/HOOKS-CONFIG.md](./docs/HOOKS-CONFIG.md) |
 | Tune the planner repo-map | [docs/REPOMAP.md](./docs/REPOMAP.md) |

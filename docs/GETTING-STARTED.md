@@ -291,7 +291,7 @@ These features are active by default unless noted:
 | Read the Task Brief contract | [docs/TASK-CONTRACT.md](./TASK-CONTRACT.md) |
 | Tune the planner's repo-map context | [docs/REPOMAP.md](./REPOMAP.md) |
 | Wire up workflow lifecycle hooks | [docs/HOOKS-CONFIG.md](./HOOKS-CONFIG.md) |
-| Debug a failing run | [docs/DEBUGGING.md](./DEBUGGING.md) |
+| Debug a failing run | [docs/TROUBLESHOOTING.md](./TROUBLESHOOTING.md#diagnostic-modes) |
 | Understand the architecture end-to-end | [docs/ARCHITECTURE.md](./ARCHITECTURE.md) |
 | See what is intentionally out of scope | [docs/FUTURE.md](./FUTURE.md) |
 

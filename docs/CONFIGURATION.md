@@ -1587,5 +1587,5 @@ These offerings have no built-in provider ID, descriptor, endpoint policy or pic
 - [REPOMAP.md](./REPOMAP.md) — `codebase.*` semantics, PageRank, cache
 - [API-KEYS.md](./API-KEYS.md) — secret handling and redaction
 - [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) — runtime overrides and palette commands
-- [DEBUGGING.md](./DEBUGGING.md) — diagnosing config load failures
+- [TROUBLESHOOTING.md](./TROUBLESHOOTING.md#config) — diagnosing config load failures
 - [ERRORS.md](./ERRORS.md) — `ConfigError` shape and exit codes

@@ -17,7 +17,6 @@ const userGuides = [
   'HOOKS-CONFIG',
   'REPOMAP',
   'SKILLS',
-  'DEBUGGING',
   'APPROVAL-AND-RECOVERY',
   'TASK-CONTRACT',
   'MIGRATION',
