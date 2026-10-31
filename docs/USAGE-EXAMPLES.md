@@ -634,7 +634,7 @@ The same data lives in `.splitbrief/sessions/<id>/summary.json` once the run fin
 
 **Variations:** Filter for failures: `jq 'select(.type == "task_full_fail" or .type == "error")' events.ndjson`.
 
-**See also:** [docs/DEBUGGING.md](./DEBUGGING.md) §Event log, [docs/CONFIGURATION.md](./CONFIGURATION.md), recipe 7.
+**See also:** [docs/TROUBLESHOOTING.md](./TROUBLESHOOTING.md#event-log-jsonl-sink) §Event log, [docs/CONFIGURATION.md](./CONFIGURATION.md), recipe 7.
 
 ---
 
@@ -1024,5 +1024,5 @@ Nothing is written under `.splitbrief/sessions/`, and `.splitbrief/active` is un
 - [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) — full reference for the runtime slash commands.
 - [docs/HOOKS-CONFIG.md](./HOOKS-CONFIG.md) — hook events, payloads, security model.
 - [docs/ARCHITECTURE.md](./ARCHITECTURE.md) — canonical inventory of CLI commands, runners, sinks, paths.
-- [docs/DEBUGGING.md](./DEBUGGING.md) — JSONL inspection, headless mode.
+- [docs/TROUBLESHOOTING.md](./TROUBLESHOOTING.md#diagnostic-modes) — JSONL inspection, headless mode.
 - [docs/TASK-CONTRACT.md](./TASK-CONTRACT.md) — Task Brief schema, drift-report rules, evidence vocabulary.

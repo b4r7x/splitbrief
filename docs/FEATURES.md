@@ -831,4 +831,4 @@ Offered only when the PLAN seat can receive images; on a seat without vision the
 - [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) — slash command reference, dispatch, phase guards.
 - [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) — workflow hooks: events, schemas, trust, security.
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — code-level inventory, event union, persistence layout.
-- [API-KEYS.md](./API-KEYS.md), [REPOMAP.md](./REPOMAP.md), [DEBUGGING.md](./DEBUGGING.md).
+- [API-KEYS.md](./API-KEYS.md), [REPOMAP.md](./REPOMAP.md), [TROUBLESHOOTING.md](./TROUBLESHOOTING.md#diagnostic-modes).

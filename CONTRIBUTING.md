@@ -204,7 +204,7 @@ Version lives in [`package.json`](./package.json); notable changes are recorded 
 
 ## Getting help
 
-- [docs/DEBUGGING.md](./docs/DEBUGGING.md) for common issues and diagnostic flags.
+- [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md) for common issues and the [diagnostic modes](./docs/TROUBLESHOOTING.md#diagnostic-modes).
 - When opening an issue, include the session id and, if possible, `.splitbrief/sessions/<id>/session.jsonl`.
 - Do not open a public issue for a vulnerability. Report it privately as [SECURITY.md](./SECURITY.md) describes.
 - Everyone who takes part follows the [Code of Conduct](./CODE_OF_CONDUCT.md).
