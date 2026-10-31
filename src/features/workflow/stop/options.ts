@@ -3,7 +3,6 @@ import { composerLiveStore } from '../../../stores/ui/composer-live.js';
 import { selectRunningBrief, selectTaskListView } from '../../../core/run-view/briefs.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
-import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { getTerminalCellWidth, segmentsForRowText } from '../../../utils/display-text.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { wrappedProseSegments } from '../conversation-rows/row-format/text.js';
@@ -231,7 +230,7 @@ export function readStopMenuRows(): StopRow[] {
     hasChanges: runHasChanges(),
     boundaryPauseRequested: stop.intent === 'pause-after-brief',
   });
-  const issue = recoveryNoticeStore.get().issue;
+  const issue = runViewStore.get().halt?.issue ?? null;
   // A halt offers only the actions it accepts: an unfinished Apply's halt refuses End run.
   return issue === null
     ? rows

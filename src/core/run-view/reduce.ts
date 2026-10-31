@@ -3,6 +3,7 @@ import type { Phase } from '../schemas/enums.js';
 import type { SeatWait } from '../schemas/workflow.js';
 import { EMPTY_BRIEFS, reduceBriefs, type RunBriefs } from './briefs.js';
 import type { SeatWaitEndedEvent, SeatWaitStartedEvent } from './events.js';
+import { reduceHalt, type RunHalt } from './halt.js';
 
 /** A seat waiting for a usage reset, as the run's log last stated it. */
 export interface ViewSeatWait {
@@ -22,6 +23,7 @@ export interface RunView {
   readonly phase: Phase;
   readonly phaseFirstSeen: PhaseFirstSeen;
   readonly seatWait: ViewSeatWait | null;
+  readonly halt: RunHalt | null;
   readonly briefs: RunBriefs;
 }
 
@@ -29,6 +31,7 @@ export const EMPTY_RUN_VIEW: RunView = {
   phase: 'idle',
   phaseFirstSeen: {},
   seatWait: null,
+  halt: null,
   briefs: EMPTY_BRIEFS,
 };
 
@@ -50,8 +53,10 @@ function isSeatWaitEnded<T extends EventTypeCarrier>(event: T): event is T & Sea
  */
 export function reduceRunView(view: RunView, event: RunViewEvent): RunView {
   const next = reduceSeatWait(reducePhase(view, event), event);
+  const halt = reduceHalt(next.halt, event);
   const briefs = reduceBriefs(next.briefs, event);
-  return briefs === next.briefs ? next : { ...next, briefs };
+  if (halt === next.halt && briefs === next.briefs) return next;
+  return { ...next, halt, briefs };
 }
 
 /**

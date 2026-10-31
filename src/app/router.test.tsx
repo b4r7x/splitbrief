@@ -7,7 +7,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeCtx } from '#testing/helpers/runtime-commands.js';
-import { resetAllStores } from '#testing/helpers/stores.js';
+import { resetAllStores, setRunHalt } from '#testing/helpers/stores.js';
 import { SOFT_SEP } from '../core/separators.js';
 import { CREW_SEAT_LABELS } from '../core/crew/identity.js';
 import { PICKER_ROLE_SEAT_IDS } from '../core/runners/seat-roles.js';
@@ -22,7 +22,6 @@ import { composerLiveStore } from '../stores/ui/composer-live.js';
 import { overlayStore } from '../stores/ui/overlay.js';
 import { terminalSizeStore } from '../stores/ui/terminal-size.js';
 import { conversationScrollStore } from '../stores/workflow/conversation-scroll.js';
-import { recoveryNoticeStore } from '../stores/workflow/recovery-notice.js';
 import { tokensStore } from '../stores/workflow/tokens.js';
 import type { WorkflowScreenDeps } from '../features/workflow/hooks/workflow-screen/use-model.js';
 import { Router } from './router.js';
@@ -301,6 +300,7 @@ describe('Router usage overlay over a halted run', () => {
     configStore.__testReset({ projectDir: '/tmp/project', config: makeConfig() });
     terminalSizeStore.__testReset({ cols: 120, rows: 40 });
     routerStore.init({ screen: 'workflow', run: HALTED_RUN, execution: { kind: 'at-rest' } });
+    setRunHalt({ issue: CONTEXT_HALT, at: { kind: 'review', cycle: 0 } });
     tokensStore.__testReset({ tokenUsage: { ...ZERO_TOKEN_USAGE, reviewerInput: 2_100 } });
     conversationScrollStore.__testReset({ scrollOffset: 7, renderableCountAtScroll: 19 });
   });
@@ -361,16 +361,9 @@ describe('Router usage overlay over a halted run', () => {
 
   it('reads a halt this session still holds, before the run has been written back', async () => {
     // The record is the run as it was last read from disk: not halted, because the halt was raised
-    // after it. The panel this process is holding open is where the issue is, and the page reads it
+    // after it. The run view holds the halt from the event that raised it, and the page reads it
     // there through the same decoder.
     routerStore.init({ screen: 'workflow', run: REPLAYED_RUN, execution: { kind: 'at-rest' } });
-    recoveryNoticeStore.open({
-      seat: null,
-      ranOn: null,
-      resetAt: null,
-      issue: CONTEXT_HALT,
-      at: { kind: 'review', cycle: 0 },
-    });
 
     const ui = renderFeature(<WorkflowRoute deps={{}} />, { cols: 120, rows: 40 });
     await tick(20);

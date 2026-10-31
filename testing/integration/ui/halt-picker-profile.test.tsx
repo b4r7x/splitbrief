@@ -30,6 +30,7 @@ import { detectionStore } from '../../../src/stores/project/detection.js';
 import { overlayStore } from '../../../src/stores/ui/overlay.js';
 import { pickerViewStore } from '../../../src/stores/ui/picker-view.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
+import { hydrateFromState } from '../../../src/stores/workflow/actions/hydrate.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 
@@ -96,6 +97,11 @@ function haltedOnSmallProfile() {
     resumeState: state,
     active: reactivateExistingSession(ref),
   });
+  routerStore.init({
+    screen: 'workflow',
+    run: makeRunRecord({ ref }),
+    execution: { kind: 'at-rest' },
+  });
   const pending = createRecoveryDriver({
     prepared,
     configOfRun: sourceConfig,
@@ -104,7 +110,7 @@ function haltedOnSmallProfile() {
     retentionNoticeHandled: { current: false },
     sink: addTuiEvent,
     setInlineResume: () => {},
-  })({ state, controller: new AbortController(), republishPrompt: false });
+  })({ state, controller: new AbortController(), republishPrompt: true });
   return { ref, state, sourceConfig, pending };
 }
 
@@ -192,6 +198,7 @@ describe('the halt picker of a named BUILD profile', () => {
       }),
       execution: { kind: 'at-rest' },
     });
+    hydrateFromState(state);
     overlayStore.open('implementer-picker', 'tool:claude-code');
     pickerViewStore.open({ kind: 'custom-model' });
     const ui = renderFeature(<ToolModelPicker slot="seat" role="implementer" />);

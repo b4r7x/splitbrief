@@ -6,6 +6,7 @@ import { resolveTheme } from '../../../core/theme/resolve.js';
 import { paint } from '../../../core/theme/paint.js';
 import { render } from 'ink-testing-library';
 import { renderFeature, tick, flushEffects } from '#testing/helpers/ink.js';
+import { setRunHalt } from '#testing/helpers/stores.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
@@ -17,7 +18,6 @@ import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { configStore } from '../../../stores/project/config.js';
 import { routerStore } from '../../../stores/navigation/router.js';
-import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
@@ -29,7 +29,6 @@ import {
 } from '../../../core/crew/identity.js';
 import { WORKFLOW_GUTTER_X } from '../layout/chrome-rows.js';
 import { getHeaderLayout, Header } from './header.js';
-import { seatIdsOf } from '../../../core/crew/identity.js';
 
 const originalColorLevel = chalk.level;
 /** Today's local 17:00: the note the bar shows for a same-day reset is the bare clock, in every timezone the suite runs in. */
@@ -39,13 +38,24 @@ const RESET_AT = (() => {
   return at.getTime();
 })();
 
-/** The halt behind the bar's note; the header reads only the seat and the clock beside it. */
+/** The halt behind the bar's note: its seat, the seat the call ran on, and the clock it resets on. */
 const QUOTA_HALT = makeRecoveryIssue({
   reason: 'runner-usage-limit',
+  seat: 'build',
+  resetAt: new Date(RESET_AT).toISOString(),
   availableActions: ['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run'],
   recommendedAction: 'switch-seat',
-  switchSeat: { seat: 'build', candidates: [{ tool: 'opencode' }] },
+  switchSeat: {
+    seat: 'build',
+    from: { tool: 'ollama', model: 'qwen2.5-coder:7b' },
+    candidates: [{ tool: 'opencode' }],
+  },
 });
+
+/** The run the bar belongs to; the note needs it to read the seat a halt ran on. */
+function openRun(): void {
+  routerStore.navigate({ to: 'workflow', execution: { kind: 'at-rest' }, run: makeRunRecord() });
+}
 
 const BUILD_HALT = makeRecoveryIssue({
   reason: 'runner-usage-limit',
@@ -65,7 +75,7 @@ function clockText(frame: string | undefined): string | undefined {
 
 function resetStores(): void {
   routerStore.reset();
-  recoveryNoticeStore.reset();
+  setRunHalt(null);
   terminalSizeStore.reset();
   controlsStore.__testReset();
   approvalPromptStore.__testReset();
@@ -279,13 +289,8 @@ describe('Header — seat line', () => {
     resetStores();
     terminalSizeStore.__testReset({ cols: 160, rows: 24, isSmall: false });
     configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
-    recoveryNoticeStore.open({
-      seat: 'build',
-      ranOn: seatIdsOf(makeConfig().implementer),
-      resetAt: RESET_AT,
-      issue: QUOTA_HALT,
-      at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
-    });
+    openRun();
+    setRunHalt({ issue: QUOTA_HALT, at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 } });
 
     const instance = render(<Header />);
     await tick();
@@ -300,19 +305,14 @@ describe('Header — seat line', () => {
     resetStores();
     terminalSizeStore.__testReset({ cols: 160, rows: 24, isSmall: false });
     configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
-    recoveryNoticeStore.open({
-      seat: 'build',
-      ranOn: seatIdsOf(makeConfig().implementer),
-      resetAt: RESET_AT,
-      issue: QUOTA_HALT,
-      at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
-    });
+    openRun();
+    setRunHalt({ issue: QUOTA_HALT, at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 } });
 
     const instance = render(<Header />);
     await tick();
     expect(stripAnsiStyles(instance.lastFrame() ?? '')).toContain('resets 17:00');
 
-    recoveryNoticeStore.clear();
+    setRunHalt(null);
     await tick();
     expect(stripAnsiStyles(instance.lastFrame() ?? '')).not.toContain('resets');
     instance.unmount();
@@ -323,13 +323,7 @@ describe('Header — seat line', () => {
     configStore.__testReset({ projectDir: '/tmp/p', config: HALTED_CREW_CONFIG });
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'running', startedAt: Date.now() });
-    recoveryNoticeStore.open({
-      seat: 'build',
-      ranOn: null,
-      resetAt: null,
-      issue: BUILD_HALT,
-      at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
-    });
+    setRunHalt({ issue: BUILD_HALT, at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 } });
 
     const ui = renderFeature(
       <Box paddingX={WORKFLOW_GUTTER_X}>
@@ -341,7 +335,7 @@ describe('Header — seat line', () => {
     expect(stripAnsiStyles(ui.lastFrame())).toContain('BUILD DeepSeek V4.1 Flash via deepseek');
     expect(stripAnsiStyles(ui.lastFrame())).not.toContain('resets');
 
-    recoveryNoticeStore.clear();
+    setRunHalt(null);
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame());
     expect(frame).toContain('PLAN Sonnet 4 · REVIEW = PLAN');
@@ -349,7 +343,7 @@ describe('Header — seat line', () => {
     ui.unmount();
   });
 
-  it('keeps BUILD for an open halted record at rest with no open notice', async () => {
+  it('keeps BUILD for the halt settled on a run at rest', async () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: true });
     configStore.__testReset({ projectDir: '/tmp/p', config: HALTED_CREW_CONFIG });
     runViewStore.__testReset({ phase: 'implementing' });
@@ -370,6 +364,7 @@ describe('Header — seat line', () => {
         },
       }),
     });
+    setRunHalt({ issue: BUILD_HALT, at: { kind: 'brief', taskId: taskId('T001'), attempt: 1 } });
 
     const ui = renderFeature(
       <Box paddingX={WORKFLOW_GUTTER_X}>
@@ -387,13 +382,8 @@ describe('Header — seat line', () => {
     resetStores();
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
     configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
-    recoveryNoticeStore.open({
-      seat: 'build',
-      ranOn: seatIdsOf(makeConfig().implementer),
-      resetAt: RESET_AT,
-      issue: QUOTA_HALT,
-      at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
-    });
+    openRun();
+    setRunHalt({ issue: QUOTA_HALT, at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 } });
 
     const instance = render(<Header />);
     await tick();

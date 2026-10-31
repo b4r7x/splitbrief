@@ -1041,7 +1041,12 @@ const checkpointPredicates = [
   [checkpointId('recovery-no-fallback'), includesAll(WORKFLOW_FIXTURE_TEXT.recovery)],
   [checkpointId('recovery-fallback-used'), includesAll(WORKFLOW_FIXTURE_TEXT.recovery)],
   [checkpointId('recovery-fallback-not-installed'), includesAll(WORKFLOW_FIXTURE_TEXT.recovery)],
-  [checkpointId('recovery-plan'), includesAll(WORKFLOW_FIXTURE_TEXT.recoveryPlan)],
+  [
+    checkpointId('recovery-plan'),
+    (context) =>
+      includesAll(WORKFLOW_FIXTURE_TEXT.recoveryPlan)(context) &&
+      (context.viewport.cols < 160 || includesAll('Planning stopped')(context)),
+  ],
   [
     checkpointId('recovery-plan-checks'),
     (context) =>

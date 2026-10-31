@@ -87,6 +87,7 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-approval-confirm', ['120x40', '80x24', '60x18', '120x16', '120x14', '120x12']],
   ['workflow-approval-confirm-secret', ['120x40', '80x24', '60x18', '120x16', '120x14', '120x12']],
   ['workflow-recovery-plan-input-too-large', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-recovery-plan-seat', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-recovery-review-model-not-listed', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-seat-switched', ['120x40', '80x24', '60x18', '160x45', '64x20', '56x18']],
   ['workflow-seat-switched-manual', ['120x40', '80x24', '60x18', '160x45']],
@@ -512,6 +513,21 @@ describe('visual catalog', () => {
       const frame = stripAnsiStyles(await handle.waitForCheckpoint());
       expect(frame).toContain('attempt 7');
       expect(frame.split('\n').some((row) => /Register.*failed/.test(row))).toBe(true);
+    } finally {
+      await handle.unmount();
+    }
+  });
+
+  it('marks planning stopped in the sidebar beside a plan-seat halt', async () => {
+    const scenario = findVisualScenario('workflow-recovery-plan-seat');
+    if (scenario === undefined) throw new Error('Missing plan-seat scenario');
+    const checkpoint = scenario.checkpoints[0];
+    const wide = scenario.viewports.find((size) => size.cols > 120);
+    if (checkpoint === undefined || wide === undefined) throw new Error('Missing wide checkpoint');
+    const handle = await mountGalleryScenario({ scenario, checkpoint, viewport: wide });
+    try {
+      const frame = stripAnsiStyles(await handle.waitForCheckpoint());
+      expect(frame).toContain('Planning stopped');
     } finally {
       await handle.unmount();
     }

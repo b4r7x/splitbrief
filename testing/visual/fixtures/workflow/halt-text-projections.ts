@@ -61,6 +61,7 @@ export const reviewContractProjection: WorkflowFixtureProjection = {
         { bus, phase: 'final-review' },
         VISUAL_WORKFLOW_SESSION_ID,
         reviewContractRecoveryIssue,
+        { kind: 'review', cycle: 0 },
       );
     });
   },

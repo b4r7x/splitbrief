@@ -14,9 +14,9 @@ import { settleRunView } from '../../../core/run-view/settle.js';
 
 /**
  * The saved state, laid over the stores the replayed log already rebuilt. The log is the narrative
- * and the state is the record of where the run stands, so three facts come from the state and win:
- * the phase, the brief list, and what the run has spent. A run read back from disk is at rest — it
- * never claims to be running, whatever the last event on the log happened to be.
+ * and the state is the record of where the run stands, so four facts come from the state and win:
+ * the phase, the halt, the brief list, and what the run has spent. A run read back from disk is at
+ * rest — it never claims to be running, whatever the last event on the log happened to be.
  */
 export function hydrateFromState(state: WorkflowState): void {
   _runViewInternal.set((view) => settleRunView(view, state));

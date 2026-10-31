@@ -10,6 +10,7 @@ import { createEventBus } from '../events/bus.js';
 import type { EngineEvent } from '../events/types.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import { formatRecoveryHeadline } from '../../core/recovery/headline.js';
 import { formatResumeCommand } from '../../core/recovery/resume-command.js';
 import { makeBusRecorder, makePlanner } from '#testing/helpers/orchestrator-factories.js';
@@ -44,20 +45,7 @@ function setupProject(): { projectDir: string; sessionId: string } {
 }
 
 function makeState(overrides?: Partial<WorkflowState>): WorkflowState {
-  return {
-    stateVersion: 1,
-    phase: 'implementing',
-    feature: 'test',
-    currentTaskIndex: 0,
-    attempt: 0,
-    tasks: [],
-    plannerSessionId: null,
-    startedAt: new Date().toISOString(),
-    tokenUsage: makeUsage(),
-    awaitingContinue: false,
-    messageQueue: [],
-    ...overrides,
-  };
+  return { ...createInitialState('test'), phase: 'implementing', ...overrides };
 }
 
 function makeQueuedMessage(): QueuedMessage {
@@ -545,14 +533,14 @@ describe('a state saved as v3', () => {
 });
 
 describe('raisePendingRecovery', () => {
-  it('persists the issue, publishes recovery_prompted, and notifies setTrackedState', () => {
+  it('persists the issue, publishes recovery_prompted at the step the run resumes at, and notifies setTrackedState', () => {
     const { projectDir, sessionId } = setupProject();
     try {
       const bus = createEventBus();
       const events: EngineEvent[] = [];
       bus.subscribe((event) => events.push(event));
       const issue = makeRecoveryIssue();
-      const state = createInitialState('feature');
+      const state = makeState({ tasks: [makeTask({ id: 'T001' })] });
       let tracked: WorkflowState | undefined;
 
       const next = raisePendingRecovery({ projectDir, sessionId, bus }, state, issue, (s) => {
@@ -568,6 +556,8 @@ describe('raisePendingRecovery', () => {
         reason: issue.reason,
         headline: formatRecoveryHeadline(issue),
         resumeCommand: formatResumeCommand(sessionId, issue),
+        issue,
+        at: { kind: 'brief', taskId: 'T001', attempt: 0 },
       });
     } finally {
       cleanupTempDir(projectDir);

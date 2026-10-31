@@ -1,10 +1,9 @@
-import { haltedIssue } from '../../core/sessions/run-status.js';
 import { usageDetailsForRun } from '../../features/workflow/spend-text.js';
 import { deriveUsageDetails } from '../../features/workflow/usage-details-model.js';
 import { UsageDetails } from '../../features/workflow/usage-details.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
-import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
+import { runViewStore } from '../../stores/workflow/run-view.js';
 import { tokensStore } from '../../stores/workflow/tokens.js';
 import { operationsStore } from '../../stores/workflow/operations/state.js';
 import { configStore } from '../../stores/project/config.js';
@@ -15,11 +14,10 @@ import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
  * exactly as a live one writes it. The money comes from the run's own recorded summary whenever it
  * has one — that is the breakdown priced at the rates the calls actually ran at, and re-pricing it
  * from today's catalog would state a different number than the run earned. A run still going has no
- * summary yet, so it is priced live. A halt is read from wherever it currently is: the notice store
- * while this process holds the panel open on it, the run's own record once it has been written back
- * — `deriveRunStatus` carries the pending issue — so the diagnosis reads the same on a halt just
- * raised and on one reopened days later. It is one issue and one decoder either way. The page
- * starts nothing; closing leaves the run, the draft and the transcript where they were.
+ * summary yet, so it is priced live. A halt is read from the run view, which a live run folds from
+ * its log and a run at rest settles from its saved state, so the diagnosis reads the same on a halt
+ * just raised and on one reopened days later. The page starts nothing; closing leaves the run, the
+ * draft and the transcript where they were.
  */
 export function UsageOverlay() {
   const tokens = tokensStore.use((state) => state);
@@ -28,17 +26,14 @@ export function UsageOverlay() {
   // Call events refresh the existing operation store before the next render.
   operationsStore.use((state) => state.byCallId);
   modelCacheStore.use((state) => state);
-  const open = recoveryNoticeStore.use((state) => state.issue);
-  const saved = routerStore.use((state) =>
-    state.screen === 'workflow' ? haltedIssue(state.run.status) : null,
-  );
+  const halt = runViewStore.use((state) => state.halt);
   const usage = usageDetailsForRun({ route, tokens, config, modelCache: modelCacheStore });
 
   return (
     <UsageDetails
       view={deriveUsageDetails({
         ...usage,
-        recovery: open ?? saved,
+        recovery: halt?.issue ?? null,
       })}
       onClose={() => overlayStore.close()}
     />

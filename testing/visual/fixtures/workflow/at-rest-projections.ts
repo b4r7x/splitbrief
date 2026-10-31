@@ -4,6 +4,7 @@ import type { EvidenceLedger, EvidenceTask } from '../../../../src/core/schemas/
 import type { RunRecord } from '../../../../src/core/sessions/run-record.js';
 import { deriveRunStatus, type RunStatus } from '../../../../src/core/sessions/run-status.js';
 import type { SeatWait, WorkflowState } from '../../../../src/core/schemas/workflow.js';
+import type { RecoveryIssue } from '../../../../src/core/schemas/recovery/schemas.js';
 import type { EngineEvent } from '../../../../src/engine/events/types.js';
 import { makeTask } from '../../../helpers/factories/task.js';
 import { makeMessage } from '../../../helpers/queue.js';
@@ -727,6 +728,7 @@ const AT_REST_HALTED = record({
       { id: BRIEFS.wire.id, status: 'in_progress' },
       { id: BRIEFS.routeTests.id, status: 'pending' },
     ],
+    pendingRecovery: SEAT_DOWN_HALT,
   }),
 });
 
@@ -738,35 +740,31 @@ const LIMITED_IMPLEMENTER = {
   fallback: { tool: 'claude-code' },
 } as const;
 
+const PROMPT_TOO_LARGE_HALT = buildRunnerInputTooLargeRecoveryIssue({
+  id: 'visual-prompt-too-large',
+  task: makeTask({
+    id: BRIEFS.wire.id,
+    title: BRIEFS.wire.title,
+    suggestedFiles: [BRIEFS.wire.file],
+  }),
+  phase: 'implementing',
+  runner: LIMITED_IMPLEMENTER,
+  toolMessage: CODEX_INPUT_TOO_LARGE,
+  attempts: 1,
+  seatSwap: {
+    seat: 'build',
+    currentTool: 'codex',
+    fallback: LIMITED_IMPLEMENTER.fallback,
+    detectedTools: [{ ...LIMITED_IMPLEMENTER.fallback, ready: true }],
+  },
+  createdAt: STARTED_AT_ISO,
+});
+
 const AT_REST_PROMPT_TOO_LARGE = record({
   sessionId: 'visual-at-rest-prompt-too-large',
   status: {
     kind: 'open',
-    stop: {
-      kind: 'waiting-for-you',
-      on: {
-        kind: 'halt',
-        issue: buildRunnerInputTooLargeRecoveryIssue({
-          id: 'visual-prompt-too-large',
-          task: makeTask({
-            id: BRIEFS.wire.id,
-            title: BRIEFS.wire.title,
-            suggestedFiles: [BRIEFS.wire.file],
-          }),
-          phase: 'implementing',
-          runner: LIMITED_IMPLEMENTER,
-          toolMessage: CODEX_INPUT_TOO_LARGE,
-          attempts: 1,
-          seatSwap: {
-            seat: 'build',
-            currentTool: 'codex',
-            fallback: LIMITED_IMPLEMENTER.fallback,
-            detectedTools: [{ ...LIMITED_IMPLEMENTER.fallback, ready: true }],
-          },
-          createdAt: STARTED_AT_ISO,
-        }),
-      },
-    },
+    stop: { kind: 'waiting-for-you', on: { kind: 'halt', issue: PROMPT_TOO_LARGE_HALT } },
     resumeAt: { kind: 'brief', taskId: BRIEFS.wire.id, attempt: 1 },
   },
   state: savedState({
@@ -779,6 +777,7 @@ const AT_REST_PROMPT_TOO_LARGE = record({
     ],
     implementerTool: LIMITED_IMPLEMENTER.tool,
     implementerModel: LIMITED_IMPLEMENTER.model,
+    pendingRecovery: PROMPT_TOO_LARGE_HALT,
   }),
 });
 
@@ -851,6 +850,11 @@ const AT_REST_SEAT_MOVED = record({
 });
 
 /** The same halt with Try again chosen and saved, and the process killed before it ran. */
+const SEAT_DOWN_HALT_CHOSEN: RecoveryIssue = {
+  ...SEAT_DOWN_HALT,
+  status: 'applying',
+  selectedAction: 'retry-same-worker',
+};
 const AT_REST_HALTED_CHOSEN = record({
   sessionId: 'visual-at-rest-halted-chosen',
   status: {
@@ -859,7 +863,7 @@ const AT_REST_HALTED_CHOSEN = record({
       kind: 'waiting-for-you',
       on: {
         kind: 'halt',
-        issue: { ...SEAT_DOWN_HALT, status: 'applying', selectedAction: 'retry-same-worker' },
+        issue: SEAT_DOWN_HALT_CHOSEN,
       },
     },
     resumeAt: { kind: 'brief', taskId: BRIEFS.wire.id, attempt: 2 },
@@ -872,11 +876,32 @@ const AT_REST_HALTED_CHOSEN = record({
       { id: BRIEFS.wire.id, status: 'in_progress' },
       { id: BRIEFS.routeTests.id, status: 'pending' },
     ],
+    pendingRecovery: SEAT_DOWN_HALT_CHOSEN,
   }),
 });
 
 /** The log carries the rows the halt wrote: the error that states the evidence and the recovery card. */
 export const LEFT_ISOLATION_LOG = 'testing/fixtures/session-log/left-isolation.jsonl';
+
+const LEFT_ISOLATION_HALT: RecoveryIssue = {
+  id: 'visual-left-isolation',
+  reason: 'implementer-left-isolation',
+  phase: 'implementing',
+  status: 'awaiting-user',
+  seat: 'build',
+  taskId: BRIEFS.wire.id,
+  files: [BRIEFS.wire.file],
+  affectedTaskIds: [BRIEFS.wire.id],
+  message: `${BRIEFS.wire.id} left the isolation directory · Google Antigravity CLI searched ~ (outside the workspace) with run_command: find ~ -name "form.ts" 2>/dev/null`,
+  details: [
+    'Google Antigravity CLI searched ~ (outside the workspace) with run_command: find ~ -name "form.ts" 2>/dev/null',
+    "Your checkout gets the run's changes only through Apply.",
+  ],
+  facts: { tool: 'Google Antigravity CLI' },
+  availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
+  recommendedAction: 'retry-same-worker',
+  createdAt: STARTED_AT_ISO,
+};
 
 const AT_REST_LEFT_ISOLATION = record({
   sessionId: 'visual-at-rest-left-isolation',
@@ -886,25 +911,7 @@ const AT_REST_LEFT_ISOLATION = record({
       kind: 'waiting-for-you',
       on: {
         kind: 'halt',
-        issue: {
-          id: 'visual-left-isolation',
-          reason: 'implementer-left-isolation',
-          phase: 'implementing',
-          status: 'awaiting-user',
-          seat: 'build',
-          taskId: BRIEFS.wire.id,
-          files: [BRIEFS.wire.file],
-          affectedTaskIds: [BRIEFS.wire.id],
-          message: `${BRIEFS.wire.id} left the isolation directory · Google Antigravity CLI searched ~ (outside the workspace) with run_command: find ~ -name "form.ts" 2>/dev/null`,
-          details: [
-            'Google Antigravity CLI searched ~ (outside the workspace) with run_command: find ~ -name "form.ts" 2>/dev/null',
-            "Your checkout gets the run's changes only through Apply.",
-          ],
-          facts: { tool: 'Google Antigravity CLI' },
-          availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
-          recommendedAction: 'retry-same-worker',
-          createdAt: STARTED_AT_ISO,
-        },
+        issue: LEFT_ISOLATION_HALT,
       },
     },
     resumeAt: { kind: 'brief', taskId: BRIEFS.wire.id, attempt: 0 },
@@ -917,6 +924,7 @@ const AT_REST_LEFT_ISOLATION = record({
       { id: BRIEFS.wire.id, status: 'in_progress' },
       { id: BRIEFS.routeTests.id, status: 'pending' },
     ],
+    pendingRecovery: LEFT_ISOLATION_HALT,
   }),
 });
 

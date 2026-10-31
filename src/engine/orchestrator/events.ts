@@ -17,7 +17,7 @@ import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
 import type { ConsultReason } from '../../core/schemas/consult.js';
 import type { AnsweredQuestion, ClarificationQuestion } from '../../core/schemas/question.js';
 import type { AttachedInput } from '../../core/schemas/attachment.js';
-import type { PlannerCall } from '../../core/schemas/run-step.js';
+import type { PlannerCall, StepRef } from '../../core/schemas/run-step.js';
 import type { CrewSeatId } from '../../core/crew/identity.js';
 import type { SeatIdentity } from '../../core/providers/seat-identity.js';
 import type { EngineEvent, EngineEventOf, EventBus } from '../events/types.js';
@@ -555,6 +555,7 @@ export function publishRecoveryPrompted(
   ctx: BusContext,
   sessionId: string,
   issue: RecoveryIssue,
+  at: StepRef,
 ): void {
   const ts = Date.now();
   const headlineSpans = [...formatRecoveryHeadlineSpans(issue, ts)];
@@ -572,6 +573,8 @@ export function publishRecoveryPrompted(
     affectedTaskIds: issue.affectedTaskIds,
     availableActions: issue.availableActions,
     recommendedAction: issue.recommendedAction,
+    issue,
+    at,
   });
 }
 

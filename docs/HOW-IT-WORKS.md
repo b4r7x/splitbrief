@@ -222,7 +222,7 @@ graph LR
     Operations --> React
 ```
 
-**`addEvent()`** in `src/stores/workflow/actions/event.ts` is the bridge between engine events and React state. It updates five stores in a fixed order: the run view (phase, seat wait and briefs), events, tokens, lifecycle, operations. This ordering is strictly synchronous — no `await`, no `setTimeout`, no microtask scheduling. React 19 with Ink batches synchronous store updates so subscribers observe one consistent commit with all five stores updated.
+**`addEvent()`** in `src/stores/workflow/actions/event.ts` is the bridge between engine events and React state. It updates five stores in a fixed order: the run view (phase, seat wait, halt and briefs), events, tokens, lifecycle, operations. This ordering is strictly synchronous — no `await`, no `setTimeout`, no microtask scheduling. React 19 with Ink batches synchronous store updates so subscribers observe one consistent commit with all five stores updated.
 
 One optimization: `cost_update` events take a fast path that only touches the tokens store, skipping the other writes.
 

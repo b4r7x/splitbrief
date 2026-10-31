@@ -87,6 +87,7 @@ import { workflowOptsToCLIOverrides } from '../../../core/config/runtime/overrid
 import type { PrepareExecutionFn, RunWorkflowFn } from './use-run-loop.js';
 import { runSeatCall } from '../../../engine/orchestrator/escalation/seat-wait.js';
 import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js';
+import { raisePendingRecovery } from '../../../engine/orchestrator/state-ops.js';
 import { seatIdentitiesFromConfig, writeSeatIdentities } from '../../../core/state/seats.js';
 import { readActiveRunner } from '../../../core/config/accessors/active-runner.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
@@ -2964,10 +2965,12 @@ describe('useRunLoop', () => {
           });
           let entryState: WorkflowState | undefined;
           const run = recordedEngine({
-            1: async () => {
-              const halted = makeImplState([makeTask({ id: 'T001', status: 'failed' })], {
-                ...RUN_CREW,
-                pendingRecovery: makeRecoveryIssue({
+            1: async (options) => {
+              const ref = { projectDir, sessionId };
+              raisePendingRecovery(
+                { ...ref, bus: createRecoveryBus({ ...ref, sink: options.tuiSink }) },
+                makeImplState([makeTask({ id: 'T001', status: 'failed' })], RUN_CREW),
+                makeRecoveryIssue({
                   reason: 'runner-usage-limit',
                   seat: 'build',
                   selectedImplementerProfile: 'small',
@@ -2975,8 +2978,7 @@ describe('useRunLoop', () => {
                   recommendedAction: 'switch-seat',
                   switchSeat: { seat: 'build', candidates: [{ tool: 'claude-code' }] },
                 }),
-              });
-              saveState({ projectDir, sessionId }, halted);
+              );
               return makeSummary();
             },
             2: async (options) => {

@@ -4,12 +4,8 @@ import type { ReactNode } from 'react';
 import { Box } from 'ink';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
-import {
-  recoveryNoticeStore,
-  type RecoveryNoticeState,
-} from '../../../stores/workflow/recovery-notice.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { configStore } from '../../../stores/project/config.js';
-import { routerStore } from '../../../stores/navigation/router.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
@@ -23,13 +19,14 @@ import {
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
 import type { CrewSeatId, SeatLineSpan } from '../../../core/crew/identity.js';
-import { haltedIssue } from '../../../core/sessions/run-status.js';
+import type { RunHalt } from '../../../core/run-view/halt.js';
 import { formatResetNote } from '../../../core/recovery/reset-clock.js';
 import type { RailStageState } from '../../../core/rail-stages.js';
 import { getChromeContentWidth, type RailForm } from '../layout/chrome-rows.js';
 import { Rail } from './rail.js';
 import { useRailCells } from '../hooks/use-rail-cells.js';
 import { useRunningSeats } from '../hooks/use-running-seats.js';
+import { useHaltRanOn } from '../hooks/use-halt-ran-on.js';
 
 interface HeaderProps {
   railForm?: RailForm | undefined;
@@ -50,16 +47,20 @@ export interface HeaderLayout {
 }
 
 /**
- * An open halt annotates its own seat, only while it names both the seat and a reset, and only
+ * A halt annotates its own seat, only while it names both the seat and a reset, and only
  * while that seat shows the tool and model the halted call ran on: a seat saved since, or the
  * default BUILD seat beside a named profile that halted, has no limit to wait for.
  */
 function seatResetNotes(
-  notice: Pick<RecoveryNoticeState, 'seat' | 'ranOn' | 'resetAt'>,
+  halt: RunHalt | null,
+  ranOn: SeatIds | null,
   shown: Readonly<Record<CrewSeatId, SeatIds>>,
 ): Partial<Record<CrewSeatId, string>> | undefined {
-  const { seat, ranOn, resetAt } = notice;
-  if (seat === null || ranOn === null || resetAt === null) return undefined;
+  const seat = halt?.issue.seat;
+  const resetAt = Date.parse(halt?.issue.resetAt ?? '');
+  if (seat === undefined || ranOn === null || !Number.isFinite(resetAt)) {
+    return undefined;
+  }
   const onScreen = shown[seat];
   if (!isSeatIdentity(onScreen, ranOn) && !isSeatIdentity(ranOn, onScreen)) return undefined;
   return { [seat]: formatResetNote(resetAt) };
@@ -85,14 +86,10 @@ export function Header({
   stages,
   seatLine: givenSeatLine,
 }: HeaderProps) {
-  const [{ cols }, recoveryNotice] = useStores(terminalSizeStore, recoveryNoticeStore);
+  const [{ cols }, { halt }] = useStores(terminalSizeStore, runViewStore);
   const config = configStore.use((s) => s.config);
   const running = useRunningSeats();
-  const savedHalt = routerStore.use((state) =>
-    state.screen === 'workflow' && state.execution.kind === 'at-rest'
-      ? haltedIssue(state.run.status)
-      : null,
-  );
+  const ranOn = useHaltRanOn();
   const displayNames = useCrewDisplayNames(config);
   const planDisplay = running.plan !== undefined ? running.plan.displayName : displayNames.plan;
   const buildDisplay = running.build !== undefined ? running.build.displayName : displayNames.build;
@@ -110,7 +107,7 @@ export function Header({
   };
   const seatNotes =
     seats &&
-    seatResetNotes(recoveryNotice, {
+    seatResetNotes(halt, ranOn, {
       plan: idsOf(seats.plan),
       build: idsOf(seats.build),
       review: idsOf(seats.review ?? seats.plan),
@@ -121,7 +118,7 @@ export function Header({
         build: seats.build,
         reviewer: seats.review,
         budget: seatRoom,
-        haltedSeat: recoveryNotice.seat ?? savedHalt?.seat,
+        haltedSeat: halt?.issue.seat,
         displayNames: {
           ...(planDisplay !== undefined && { planner: planDisplay, plan: planDisplay }),
           ...(buildDisplay !== undefined && { build: buildDisplay }),

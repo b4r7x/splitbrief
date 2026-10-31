@@ -1,12 +1,11 @@
 import { afterEach, beforeEach, describe, it, expect, onTestFinished } from 'vitest';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
-import { resetAllStores } from '#testing/helpers/stores.js';
+import { resetAllStores, setRunHalt } from '#testing/helpers/stores.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { composerLiveStore } from '../../../stores/ui/composer-live.js';
 import { createDraftDocument } from '../../../core/composer/document.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
-import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
@@ -277,13 +276,7 @@ describe('readStopMenuRows during an unfinished Apply', () => {
   });
 
   it('offers no End run at a live halt whose actions refuse it', () => {
-    recoveryNoticeStore.open({
-      seat: 'build',
-      ranOn: null,
-      resetAt: null,
-      issue: applyPartial,
-      at: { kind: 'review', cycle: 0 },
-    });
+    setRunHalt({ issue: applyPartial, at: { kind: 'review', cycle: 0 } });
 
     expect(readStopMenuRows().map((row) => row.id)).toEqual(['stop-now']);
   });
@@ -400,10 +393,7 @@ describe('readStopMenuRows at a recovery halt', () => {
       file: 'a.ts',
       action: 'create',
     });
-    recoveryNoticeStore.open({
-      seat: 'build',
-      ranOn: null,
-      resetAt: null,
+    setRunHalt({
       issue: makeRecoveryIssue({ reason: 'runner-usage-limit', taskId: taskId('T001') }),
       at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
     });
@@ -414,7 +404,7 @@ describe('readStopMenuRows at a recovery halt', () => {
   });
 
   it('offers pause after the running brief once the halt notice is cleared', () => {
-    recoveryNoticeStore.clear();
+    setRunHalt(null);
 
     expect(readStopMenuRows().map((row) => row.id)).toEqual([
       'stop-now',

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
-import { resetAllStores } from '#testing/helpers/stores.js';
+import { resetAllStores, setRunHalt } from '#testing/helpers/stores.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
@@ -9,7 +9,6 @@ import { configStore } from '../../../stores/project/config.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { markCancellationRequested } from '../../../stores/workflow/actions/interrupt.js';
-import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
@@ -410,10 +409,7 @@ describe.each(PLAN_SAVES)('PLAN saved during the run ($save)', ({ pass, saved })
 
   it('a halt names the saved seat', async () => {
     planUntilCard();
-    recoveryNoticeStore.open({
-      seat: null,
-      ranOn: null,
-      resetAt: null,
+    setRunHalt({
       issue: makeRecoveryIssue({ seat: 'plan' }),
       at: { kind: 'planner', call: 'plan' },
     });
@@ -558,10 +554,7 @@ it('a halt on the brief names the saved BUILD seat over the run pass seat', asyn
   } as EngineEvent);
   addEvent(passConfig(810, 'implementing', crewConfig({ implementer: CODEX })));
   save({});
-  recoveryNoticeStore.open({
-    seat: null,
-    ranOn: null,
-    resetAt: null,
+  setRunHalt({
     issue: makeRecoveryIssue({ taskId: taskId('T001') }),
     at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
   });
@@ -898,10 +891,7 @@ describe('a stop inside a call', () => {
     runBrief({ implementer: CODEX }, CODEX);
     save({});
     void stopInside(BRIEF_STEP);
-    recoveryNoticeStore.open({
-      seat: null,
-      ranOn: null,
-      resetAt: null,
+    setRunHalt({
       issue: makeRecoveryIssue({ taskId: taskId('T001') }),
       at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
     });

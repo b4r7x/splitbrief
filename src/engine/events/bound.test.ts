@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { formatTaskId } from '../../core/schemas/task.js';
 import { boundEngineEventForConsumer } from './bound.js';
 import type { EngineEvent } from './types.js';
@@ -87,6 +88,39 @@ describe('boundEngineEventForConsumer', () => {
 
     expect(bounded.type).toBe('planner_text');
     expect(Buffer.byteLength(JSON.stringify(bounded), 'utf8')).toBeLessThanOrEqual(512 * 1024);
+  });
+
+  it('keeps the halt a recovery prompt carries, with its long detail cut and its secret redacted', () => {
+    const issue = makeRecoveryIssue({
+      message: 'token sk-abcdefghijklmnopqrst failed',
+      details: ['x'.repeat(200 * 1024)],
+    });
+    const at = { kind: 'review', cycle: 0 } as const;
+    const bounded = boundEngineEventForConsumer(
+      {
+        type: 'recovery_prompted',
+        ts: 58,
+        phase: 'final-review',
+        issueId: issue.id,
+        reason: issue.reason,
+        headline: issue.message,
+        resumeCommand: 'splitbrief resume',
+        files: issue.files,
+        affectedTaskIds: issue.affectedTaskIds,
+        availableActions: issue.availableActions,
+        recommendedAction: issue.recommendedAction,
+        issue,
+        at,
+      },
+      'tui',
+    );
+
+    if (bounded.type !== 'recovery_prompted')
+      throw new Error(`expected the prompt, got ${bounded.type}`);
+    expect(bounded.at).toEqual(at);
+    expect(bounded.issue?.id).toBe(issue.id);
+    expect(bounded.issue?.message).toBe('token sk-***REDACTED*** failed');
+    expect(Buffer.byteLength(bounded.issue?.details[0] ?? '', 'utf8')).toBeLessThan(200 * 1024);
   });
 
   it('replaces an event that stays oversized after bounding with a payload warning', () => {

@@ -1,50 +1,26 @@
-import type { CrewSeatId, SeatIds } from '../../core/crew/identity.js';
-import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
-import type { StepRef } from '../../core/schemas/run-step.js';
 import { createStore, storeBase } from '../create-store.js';
 
 /**
- * The halt the run is parked on while the operator answers it. The recovery panel owns the
- * conversation; this is what the rest of the screen may read from it — the seat and reset clock the
- * header keeps showing on the seat that halted, and the issue itself for a surface that states the halt's own facts. A run
- * read back from disk carries the same issue on its record; this is the same issue before the run
- * is written back, not a second spelling of it.
+ * The recovery panel of the run this process drives, while it waits on the operator. The halt
+ * itself is the run view's (`runViewStore`), live and at rest; this holds only what the panel
+ * does with it.
  */
 export interface RecoveryNoticeState {
-  seat: CrewSeatId | null;
-  /** The tool and model the halted call ran on: the reset clock belongs to that seat alone. */
-  ranOn: SeatIds | null;
-  resetAt: number | null;
-  issue: RecoveryIssue | null;
-  /** Where the run resumes, as its record names it: a halt reads on one stage live and at rest. */
-  at: StepRef | null;
+  /** The panel waits on the operator: its question, its note, or the picker it opened. */
+  open: boolean;
+  /** The question on screen is the panel's own, not the note an action asks for. */
+  asking: boolean;
 }
 
-const initial: RecoveryNoticeState = {
-  seat: null,
-  ranOn: null,
-  resetAt: null,
-  issue: null,
-  at: null,
-};
+const initial: RecoveryNoticeState = { open: false, asking: false };
 const store = createStore<RecoveryNoticeState>(initial);
 
-function open(
-  notice: Readonly<{
-    seat: CrewSeatId | null;
-    ranOn: SeatIds | null;
-    resetAt: number | null;
-    issue: RecoveryIssue;
-    at: StepRef;
-  }>,
-): void {
-  store.set({
-    seat: notice.seat,
-    ranOn: notice.ranOn,
-    resetAt: notice.resetAt,
-    issue: notice.issue,
-    at: notice.at,
-  });
+function open(): void {
+  store.set({ open: true, asking: false });
+}
+
+function ask(asking: boolean): void {
+  store.set({ open: true, asking });
 }
 
 function clear(): void {
@@ -54,5 +30,6 @@ function clear(): void {
 export const recoveryNoticeStore = {
   ...storeBase(store),
   open,
+  ask,
   clear,
 };

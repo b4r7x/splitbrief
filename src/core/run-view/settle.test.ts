@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { EMPTY_BRIEFS } from './briefs.js';
@@ -21,6 +22,32 @@ describe('settleRunView', () => {
 
   it('reads a closed run as complete when its log stopped before the end', () => {
     expect(settleRunView(LOGGED, makeWorkflowState({ phase: 'complete' })).phase).toBe('complete');
+  });
+
+  it('keeps the view when the log and the state agree', () => {
+    expect(settleRunView(LOGGED, makeWorkflowState({ phase: 'implementing' }))).toEqual(LOGGED);
+  });
+
+  it('takes the saved halt and the step it resumes at over a log that never prompted it', () => {
+    const issue = makeRecoveryIssue();
+    const state = makeWorkflowState({
+      phase: 'implementing',
+      tasks: [makeTask({ id: 'T002' })],
+      attempt: 1,
+      pendingRecovery: issue,
+    });
+    expect(settleRunView(LOGGED, state).halt).toEqual({
+      issue,
+      at: { kind: 'brief', taskId: 'T002', attempt: 1 },
+    });
+  });
+
+  it('clears a logged halt the saved state no longer holds', () => {
+    const halted: RunView = {
+      ...LOGGED,
+      halt: { issue: makeRecoveryIssue(), at: { kind: 'review', cycle: 0 } },
+    };
+    expect(settleRunView(halted, makeWorkflowState({ phase: 'implementing' })).halt).toBeNull();
   });
 
   it('lays the saved brief list over the logged one and keeps the logged attempt and checks', () => {

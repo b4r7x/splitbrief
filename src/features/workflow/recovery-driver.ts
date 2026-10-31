@@ -8,11 +8,8 @@ import {
 } from '../../core/navigation/types.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { RecoveryAction } from '../../core/schemas/enums.js';
-import type { StepRef } from '../../core/schemas/run-step.js';
-import type { RecoveryIssue, SeatSwapCandidate } from '../../core/schemas/recovery/schemas.js';
+import type { SeatSwapCandidate } from '../../core/schemas/recovery/schemas.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
-import type { SessionRef } from '../../core/types/session-ref.js';
-import { haltedSeatIds } from '../../core/state/seats.js';
 import type { UserMessageInput } from '../../core/types/user-input.js';
 import { recoveryActionLabel } from '../../core/recovery/action-label.js';
 import { leavesWordsUnread } from '../../core/recovery/typed-words.js';
@@ -87,23 +84,6 @@ interface RecoveryDriverOptions {
   /** Where the panel's own events land on screen; the engine adds the session log. */
   sink: EventSink;
   setInlineResume: (state: WorkflowState) => void;
-}
-
-/**
- * The open halt, published for the rest of the screen while the operator reads the panel: the
- * issue itself, the step the run resumes at, and what the header annotates the bar with — the
- * halted seat, the tool and model it ran on, and, when the runner named one, the clock its quota
- * comes back on.
- */
-function openRecoveryNotice(issue: RecoveryIssue, at: StepRef, ref: SessionRef): void {
-  const resetAt = issue.resetAt === undefined ? Number.NaN : Date.parse(issue.resetAt);
-  recoveryNoticeStore.open({
-    seat: issue.seat ?? null,
-    ranOn: haltedSeatIds(ref, issue),
-    resetAt: Number.isFinite(resetAt) ? resetAt : null,
-    issue,
-    at,
-  });
 }
 
 /**
@@ -343,9 +323,9 @@ export function createRecoveryDriver(
         ) {
           kept.push(configured);
         }
-        // The picker reads the open halt and saves to the profile it names, also when a
+        // The picker reads the halt on the view and saves to the profile it names, also when a
         // reopened run replays this switch at once.
-        openRecoveryNotice(issue, at, ref);
+        recoveryNoticeStore.open();
         const candidate = await pickSwappedSeat(
           offer.seat,
           offered,
@@ -421,9 +401,9 @@ export function createRecoveryDriver(
       }
     }
 
-    // The halt is open only while it waits on the operator: an action the entry applies at once
-    // — a reopened run's selected action, words only revise can carry — paints no halt.
-    openRecoveryNotice(issue, at, ref);
+    // The panel is open only while it waits on the operator: an action the entry applies at once
+    // — a reopened run's selected action, words only revise can carry — opens no panel.
+    recoveryNoticeStore.open();
 
     if (!retentionNoticeHandled.current) {
       await publishRetainedWorkspaceNotice({ ...ref, state, bus });
@@ -431,12 +411,14 @@ export function createRecoveryDriver(
     }
     if (controller.signal.aborted || abortedRef.current) return { shouldRun: false, state };
 
-    if (republishPrompt) publishRecoveryPrompted({ bus, phase: state.phase }, sessionId, issue);
+    if (republishPrompt) publishRecoveryPrompted({ bus, phase: state.phase }, sessionId, issue, at);
 
     while (true) {
+      recoveryNoticeStore.ask(true);
       const { message: answer, document } = await inputMode.setQuestionMode(
         formatRecoveryPrompt(issue),
       );
+      recoveryNoticeStore.ask(false);
       if (controller.signal.aborted || abortedRef.current) {
         return { shouldRun: false, state };
       }

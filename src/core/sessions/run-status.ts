@@ -44,11 +44,6 @@ export function processWentAway(status: RunStatus): boolean {
   );
 }
 
-export function haltedIssue(status: RunStatus): RecoveryIssue | null {
-  if (status.kind !== 'open' || status.stop.on.kind !== 'halt') return null;
-  return status.stop.on.issue;
-}
-
 const PHASE_GATE: Partial<Record<Phase, GateName>> = {
   'reviewing-spec': 'spec',
   'reviewing-plan': 'plan',

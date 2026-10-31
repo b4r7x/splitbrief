@@ -31,6 +31,7 @@ import {
 import { CONSULT_REASONS } from '../../core/schemas/consult.js';
 import {
   readSavedRecoveryActions,
+  RecoveryIssueSchema,
   SeatSwapCandidateSchema,
   TaskReviewRecoverySchema,
 } from '../../core/schemas/recovery/schemas.js';
@@ -326,6 +327,9 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     headline: z.string(),
     headlineSpans: z.array(z.object({ text: z.string(), seat: recoverySeat })).optional(),
     resumeCommand: z.string(),
+    /** The halt itself and the step the run resumes at; a log written before them has neither. */
+    issue: RecoveryIssueSchema.optional(),
+    at: StepRefSchema.optional(),
   }),
   phaseEvent('recovery_action_selected').extend({
     issueId: z.string(),

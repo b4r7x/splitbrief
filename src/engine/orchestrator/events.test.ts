@@ -356,8 +356,9 @@ describe('recovery events carry headline spans', () => {
         seat,
         phase: 'implementing',
       });
-      publishRecoveryPrompted({ bus, phase: issue.phase }, 'session', issue);
-      expect(events[0]).toMatchObject({ type: 'recovery_prompted' });
+      const at = { kind: 'brief', taskId: TASK, attempt: 0 } as const;
+      publishRecoveryPrompted({ bus, phase: issue.phase }, 'session', issue, at);
+      expect(events[0]).toMatchObject({ type: 'recovery_prompted', issue, at });
       expect(events[0]).not.toHaveProperty('seat');
       expect(parseEngineEvent(events[0])).not.toHaveProperty('seat');
       expect(parseEngineEvent(events[0])).toMatchObject({

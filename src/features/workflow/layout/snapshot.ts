@@ -26,7 +26,6 @@ import { stopStore } from '../../../stores/workflow/stop.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
-import { formatRecoveryPrompt } from '../recovery-prompt.js';
 import { reviewArtifactForPhase } from '../prompt-rows/approval.js';
 import { getWorkflowPromptRows } from '../prompt-rows/workflow.js';
 import type { ConversationRowBlock } from '../conversation-rows/types.js';
@@ -66,12 +65,10 @@ function readWorkflowPromptRows(): number {
   if (resultMenuRows !== null) return resultMenuRows;
   const controls = controlsStore.get();
   const approvalState = approvalPromptStore.get();
-  const recoveryIssue = recoveryNoticeStore.get().issue;
+  const recoveryIssue = runViewStore.get().halt?.issue ?? null;
   const questionHint = controls.inputMode === 'question' ? questionPromptStore.get().hint : null;
   const recoveryPrompt =
-    recoveryIssue !== null &&
-    questionHint !== null &&
-    questionHint === formatRecoveryPrompt(recoveryIssue);
+    recoveryIssue !== null && recoveryNoticeStore.get().asking && questionHint !== null;
   // A tiered gate takes the zone from the review panel, so the two are never budgeted together.
   const documentReview = controls.inputMode === 'review' && approvalState.status !== 'pending';
   return getWorkflowPromptRows({
@@ -103,7 +100,7 @@ function readProgressRows(promptRows: number): number {
     phase: runViewStore.get().phase,
     cols: terminalSizeStore.get().cols,
     cancelled: lifecycle.cancelled,
-    halted: recoveryNoticeStore.get().issue !== null,
+    halted: runViewStore.get().halt !== null,
     promptRows,
     atRest: route.screen === 'workflow' && route.execution.kind === 'at-rest',
     parked: stopStore.get().phase === 'parked',

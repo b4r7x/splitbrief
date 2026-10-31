@@ -77,6 +77,7 @@ import { tokensStore } from '../../../src/stores/workflow/tokens.js';
 import { routerStore, type RouteData } from '../../../src/stores/navigation/router.js';
 import { prepareWorkflowExecution } from '../../helpers/workflow-screen.js';
 import { makeRunRecord } from '../../helpers/factories/run-record.js';
+import { setRunHalt } from '../../helpers/stores.js';
 import { makePlanProposal } from '../../helpers/factories/plan.js';
 import { scenarioId } from '../contracts/identifiers.js';
 import { cliDetectionFor } from '../../helpers/factories/detection.js';
@@ -2161,7 +2162,7 @@ const USAGE_CONTEXT_HALT: RecoveryIssue = {
   createdAt: '2026-09-14T00:00:00.000Z',
 };
 
-/** The same run, stopped on that halt: `deriveRunStatus` is what carries the issue to the page. */
+/** The same run, stopped on that halt. */
 function usageContextRoute(): RouteData {
   return {
     screen: 'workflow',
@@ -2371,6 +2372,8 @@ const USAGE_CONTEXT_CREW: VisualConfigOverrides = {
 function seedUsageContextCounters(): void {
   seedUsageCounters();
   seedVisualConfig(USAGE_CONTEXT_CREW);
+  // The run view holds the halt, as the settle step lays it from the saved state at rest.
+  setRunHalt({ issue: USAGE_CONTEXT_HALT, at: { kind: 'review', cycle: 0 } });
 }
 
 /** Two seats that reported different amounts of what they spent: neither is filled out for it. */

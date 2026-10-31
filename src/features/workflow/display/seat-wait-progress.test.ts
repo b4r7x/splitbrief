@@ -51,6 +51,7 @@ function waitView(resetAt: string, live = true, phase: Phase = 'implementing'): 
     phase,
     phaseFirstSeen: {},
     seatWait: { tool: 'codex', wait: { seat: 'build', resetAt }, live },
+    halt: null,
     briefs: BRIEFS,
   };
 }

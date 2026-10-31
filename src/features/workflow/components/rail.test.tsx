@@ -5,6 +5,7 @@ import { resolveTheme } from '../../../core/theme/resolve.js';
 import { paint } from '../../../core/theme/paint.js';
 import { Box } from 'ink';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { setRunHalt } from '#testing/helpers/stores.js';
 import { withCaptureEnvironment } from '#testing/visual/gallery/environment.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { formatStageLabel } from '../../../core/phase-display.js';
@@ -19,7 +20,6 @@ import { makeReviewFixInsertedEvents } from '#testing/helpers/events/task.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { skillsStore } from '../../../stores/project/skills.js';
-import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { getRailStages, type RailStageStatus } from '../../../core/rail-stages.js';
 import {
@@ -449,10 +449,7 @@ describe('Rail — completion with a halt open', () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
     runViewStore.__testReset({ phase: 'complete' });
     lifecycleStore.__testReset({ status: 'complete', startedAt: 0, endedAt: 1, durationMs: 1 });
-    recoveryNoticeStore.open({
-      seat: null,
-      ranOn: null,
-      resetAt: null,
+    setRunHalt({
       issue: makeRecoveryIssue({
         reason: 'review-failed',
         availableActions: ['revise', 'end-run'],
@@ -467,7 +464,7 @@ describe('Rail — completion with a halt open', () => {
     expect(frame).not.toContain('done');
     expect(frame).toContain(`${glyph('statusFailed')} Review`);
     ui.unmount();
-    recoveryNoticeStore.reset();
+    setRunHalt(null);
   });
 
   // The review passed and Apply halted: the rail the run at rest painted stays when it continues.
@@ -478,10 +475,7 @@ describe('Rail — completion with a halt open', () => {
     eventsStore.__testReset({
       events: [{ type: 'workflow_complete', ts: 1, phase: 'complete', review: 'passed' }],
     });
-    recoveryNoticeStore.open({
-      seat: null,
-      ranOn: null,
-      resetAt: null,
+    setRunHalt({
       issue: makeRecoveryIssue({
         reason: 'apply-conflict',
         phase: 'complete',
@@ -510,7 +504,7 @@ describe('Rail — completion with a halt open', () => {
       }),
     ).toBe(getTerminalCellWidth(frame.trim()));
     ui.unmount();
-    recoveryNoticeStore.reset();
+    setRunHalt(null);
   });
 });
 
@@ -524,7 +518,7 @@ describe('Rail — a live run resumed into its Apply step', () => {
   });
 
   afterEach(() => {
-    recoveryNoticeStore.reset();
+    setRunHalt(null);
   });
 
   it('keeps every stage done and shows Apply as the stage it runs', async () => {
@@ -557,10 +551,7 @@ describe('Rail — a live run resumed into its Apply step', () => {
   });
 
   it('marks Apply failed when Apply halts after the resume', async () => {
-    recoveryNoticeStore.open({
-      seat: null,
-      ranOn: null,
-      resetAt: null,
+    setRunHalt({
       issue: makeRecoveryIssue({
         reason: 'apply-partial',
         phase: 'complete',

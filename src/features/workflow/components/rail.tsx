@@ -41,7 +41,6 @@ import {
 import type { EngineEvent } from '../../../engine/events/types.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
-import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { deriveWorkflowDisplay } from '../display/workflow-status.js';
 
 // Done and active share the filled mark, so the three marks a live rail paints are one family of
@@ -235,16 +234,14 @@ export function Rail({
   /** A run at rest paints the stages its record names, not the ones a live phase implies. */
   stages?: readonly RailStageState[] | undefined;
 }) {
-  const [{ cols }, lifecycle, eventsState, controls, approval, recovery, { phase, briefs }] =
-    useStores(
-      terminalSizeStore,
-      lifecycleStore,
-      eventsStore,
-      controlsStore,
-      approvalPromptStore,
-      recoveryNoticeStore,
-      runViewStore,
-    );
+  const [{ cols }, lifecycle, eventsState, controls, approval, { phase, briefs, halt }] = useStores(
+    terminalSizeStore,
+    lifecycleStore,
+    eventsStore,
+    controlsStore,
+    approvalPromptStore,
+    runViewStore,
+  );
   const cancelled = lifecycle.cancelled;
   const resolved: RailForm = form ?? 'B';
   const contentWidth = getChromeContentWidth(cols);
@@ -252,14 +249,14 @@ export function Rail({
     status: lifecycle.status,
     cancelled,
     pendingQuestion: controls.inputMode !== 'normal',
-    pendingRecovery: recovery.issue !== null,
+    pendingRecovery: halt !== null,
     pendingApproval: approval.status === 'pending',
   });
   const completeStages = completePhaseStages(
     phase,
     lifecycle.status,
     eventsState.events,
-    recovery.at,
+    halt?.at ?? null,
   );
   const stages = [
     ...(givenStages ??
