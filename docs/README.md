@@ -64,7 +64,6 @@ These enforce consistency across the codebase. Read the relevant one before touc
 Specialized subsystem docs linked from the main chapters above.
 
 - [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) — Workflow hook schema, dispatch, substitution, trust model
-- [REPOMAP.md](./REPOMAP.md) — Repo-map: PageRank, token budgeting, SQLite cache
 - [TASK-CONTRACT.md](./TASK-CONTRACT.md) — Plan contract, Task Brief schema, plan checks, evidence
 - [BOOTSTRAP.md](./BOOTSTRAP.md) — Startup steps and ordering
 - [API-KEYS.md](./API-KEYS.md) — Provider keys and secret hygiene

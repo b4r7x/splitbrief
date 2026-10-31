@@ -579,7 +579,7 @@ The entries below describe how the tree changed from the earlier pre-release lay
 ### Added
 
 - **Workflow hooks** — 11 lifecycle hooks (`pre_task`, `post_commit` and others), as shell commands or JavaScript modules, with a trust prompt and `--allow-hooks` for CI. Two built-in hooks: `prettier-on-change` and `block-secrets`. ([HOOKS-CONFIG.md](./docs/HOOKS-CONFIG.md))
-- **Repo map** — a symbol summary of the codebase goes to the planner, built with tree-sitter and PageRank and cached in SQLite. ([REPOMAP.md](./docs/REPOMAP.md))
+- **Repo map** — a symbol summary of the codebase goes to the planner, built with tree-sitter and PageRank and cached in SQLite. ([CONFIGURATION.md](./docs/CONFIGURATION.md#7-codebase))
 - **Headless `--json` mode** — `splitbrief start --json "..."` and `splitbrief resume --json` print every engine event as NDJSON on stdout, without the TUI. Review gates are approved unattended; file-write approvals fail closed unless configured or granted.
 - **OpenTelemetry sink** — opt-in spans for the workflow, its phases and tasks (`otel.enabled: true`). *Since removed.*
 - The `/repomap rebuild` slash command clears the repo-map cache.

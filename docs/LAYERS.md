@@ -178,7 +178,7 @@ export async function diffTaskResult(taskId: TaskId) { ... }
   - `sinks/stdout-json.ts` — public NDJSON emitter for `splitbrief start --json` / headless mode (`event` envelope plus bounded/redacted payload policy)
   - `sinks/stdout-text.ts` — plain-line emitter for `splitbrief start --plain`
 - `engine/hooks/` — workflow hook runtime: `dispatch.ts` (subprocess `command` hooks; inserts a `--` end-of-options guard before any arg whose leading characters come from an interpolated `${event.*}` value, so untrusted event fields cannot inject flags into the trusted command's argv), `substitute.ts` (safe `${event.*}` regex substitution — values are emitted verbatim as distinct argv elements, never shell-evaluated), `run-pre.ts` (sequential `pre_*` runner with deny short-circuit), `sink.ts` (bus sink for `post_*`/`on_*` fire-and-forget), `types.ts`
-- `engine/codebase/` — repo-map pipeline (`discover-files`, `languages`, `parse`, `cache`, `cache-path`, `graph`, `pagerank`, `format`, `budget`, `extract-mentioned-filenames`, `repomap.ts` entry, `types.ts`) — produces the token-budgeted codebase summary injected into the planner prompt. See [REPOMAP.md](./REPOMAP.md).
+- `engine/codebase/` — repo-map pipeline (`discover-files`, `languages`, `parse`, `cache`, `cache-path`, `graph`, `pagerank`, `format`, `budget`, `extract-mentioned-filenames`, `repomap.ts` entry, `types.ts`) — produces the token-budgeted codebase summary injected into the planner prompt. See [SUBSYSTEMS.md §Repo-map](./SUBSYSTEMS.md#3-repo-map).
 
 **Prohibited imports:** `features/`, `components/`, `hooks/`, `cli/`, `react`, `ink`. Grep gate in [`INVARIANTS.md`](./INVARIANTS.md).
 

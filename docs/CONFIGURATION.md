@@ -2,7 +2,7 @@
 
 Complete reference for `.splitbrief/config.yaml` — the single declarative file that wires SPLITBRIEF to your planner, reviewer, implementer, validation tools, workflow gates, and hooks.
 
-This document is a field-by-field reference. For the planning session and plan approval see [WORKFLOW.md](./WORKFLOW.md); for hook plumbing see [HOOKS-CONFIG.md](./HOOKS-CONFIG.md); for repo-map tuning see [REPOMAP.md](./REPOMAP.md).
+This document is a field-by-field reference. For the planning session and plan approval see [WORKFLOW.md](./WORKFLOW.md); for hook plumbing see [HOOKS-CONFIG.md](./HOOKS-CONFIG.md); for repo-map tuning see [§7 `codebase`](#7-codebase).
 
 ---
 
@@ -481,7 +481,7 @@ The first-response deadline defaults to 120000 ms and stream-idle to 60000 ms. `
 - *Mid-tier API* — a below-frontier model behind your own custom endpoint.
 - *Frontier* — the same model class as the planner when you want its quality for the implementer step too.
 
-**See also:** §2 `planner`, §16 (retired keys), [REPOMAP.md](./REPOMAP.md) (codebase context the implementer never sees, only the planner).
+**See also:** §2 `planner`, §16 (retired keys), §7 `codebase` (codebase context the implementer never sees, only the planner).
 
 ### Optional `implementerProfiles`
 
@@ -843,9 +843,30 @@ A config that still carries the block loads with one notice and changes nothing:
 
 ## 7. `codebase`
 
-Repo-map context block injected into planner prompts. Detailed semantics: [REPOMAP.md](./REPOMAP.md).
+Repo-map context block injected into planner prompts. On every workflow start the planner sees a token-budgeted **repo-map** of your project's source: file paths, top-level signatures and exports, without spending context tokens on file reads. Without it, cheap planners (Ollama, DeepSeek, etc.) miss existing helpers and propose duplicates, and every planner spends tokens reading files a summary covers; the map costs ~4000 tokens per workflow and saves orders of magnitude more on planning-session reads. The design follows [Aider's repomap](https://aider.chat/docs/repomap.html), tuned for a planner that compiles Task Briefs and decides when extra structure is worth paying for.
+
+### What the repo-map contains
+
+For each file, sorted by [PageRank](./SUBSYSTEMS.md#ranking) over the import graph:
+
+```
+src/core/state/machine.ts:
+  export function createInitialState(feature: string, now: Date = new Date()): WorkflowState
+  function setTaskStatus(state: WorkflowState, taskId: TaskId, status: TaskStatus): WorkflowState
+  export function briefCorrections(state: WorkflowState, taskId: TaskId): readonly string[]
+
+src/core/schemas/enums.ts:
+  export const PhaseSchema = z.enum(PHASES);
+  export type Phase = z.infer<typeof PhaseSchema>;
+```
+
+Only signatures (top-level declarations) appear. Bodies are elided. The highest-ranked file always appears. A later file whose block does not fit the remaining budget is skipped, and a smaller file after it can still fit.
+
+Five languages are known: TypeScript (`.ts`, `.tsx`), JavaScript (`.js`, `.jsx`, `.mjs`, `.cjs`), Python (`.py`), Go (`.go`) and Rust (`.rs`). A file in another language is not parsed and does not appear. Files larger than 100 KB are not parsed.
 
 ### Schema
+
+Source: `src/core/schemas/codebase.ts`.
 
 ```ts
 codebase: {
@@ -868,22 +889,50 @@ codebase: {
 YAML:
 
 ```yaml
+# .splitbrief/config.yaml — all fields optional
 codebase:
-  enabled: true
-  tokenBudget: 6000
-  include:
+  enabled: true              # default true; false disables the repo-map
+  tokenBudget: 6000          # default 4000; tokens reserved in the planner prompt
+  include:                   # globs; default: every file with a known language extension
     - "src/**/*.ts"
     - "src/**/*.tsx"
     - "lib/**/*.ts"
-  exclude:
+  exclude:                   # extra regex strings, added to the defaults
     - "\\.test\\.tsx?$"
     - "/__fixtures__/"
     - "^dist/"
+    - "^generated/"
 ```
 
 **When to use:** raise `tokenBudget` for sprawling codebases where the planner needs broader context; lower it for monorepos where you want to scope the planner tightly via `include`. Disable entirely with `enabled: false` for prompt experiments.
 
-**See also:** [REPOMAP.md](./REPOMAP.md).
+### Repo-map cache
+
+Parsed symbols and imports are cached in SQLite at `${projectDir}/.splitbrief/repomap.sqlite` via `better-sqlite3`. One row per file.
+
+If the native SQLite binding is missing or incompatible with the current Node runtime, the same parser builds the repo-map without caching. Planning continues with its code overview. The transcript shows one short notice; the full diagnostic is recorded in the session log. Cache path and permission failures do not enter this fallback. To restore caching after changing Node versions, run `npm rebuild better-sqlite3` in the installation directory.
+
+On read, the cache compares each row's file modification time, file size and parser version to the file on disk and to the parser built into SPLITBRIEF:
+
+- **Hit:** the modification time and the size match the current file **and** the parser version matches → the stored symbols and imports are used, and the file is not parsed.
+- **Miss (file changed):** the modification time or the size differs → the file is parsed again, and its row is replaced.
+- **Miss (parser changed):** a SPLITBRIEF release changed the parser (a grammar upgrade, capture changes) → every row is stale, and each file is parsed again on its next read.
+
+So grammar upgrades need no manual cleanup, and neither does anything else: every planning run re-reads the cache and parses again whatever is stale, so there is no manual rebuild step.
+
+Cold parse on a 200-file repo: ~3s on M1. Warm hit: <100ms (mtime check + JSON load). The cache compares only the modification time and the size, so it misses a file whose content changed while both stayed the same. In that case delete `${projectDir}/.splitbrief/repomap.sqlite` by hand, along with the `-shm` and `-wal` files that WAL mode leaves beside it; the next planning run parses from scratch.
+
+### Opt-out
+
+```yaml
+# .splitbrief/config.yaml
+codebase:
+  enabled: false
+```
+
+The planner prompt then has no `## Repository Map` section. Use this if you have token-tight planners and prefer to lean on `Read` tool calls instead.
+
+**See also:** [SUBSYSTEMS.md §Repo-map](./SUBSYSTEMS.md#3-repo-map) — how the map is ranked, built and passed to the planner.
 
 ---
 
@@ -1584,7 +1633,7 @@ These offerings have no built-in provider ID, descriptor, endpoint policy or pic
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — runner contracts, orchestrator loop, event model
 - [WORKFLOW.md](./WORKFLOW.md) — the planning session and plan approval in depth
 - [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) — hook events, `HookEntry` schema, trust model
-- [REPOMAP.md](./REPOMAP.md) — `codebase.*` semantics, PageRank, cache
+- [SUBSYSTEMS.md §Repo-map](./SUBSYSTEMS.md#3-repo-map) — PageRank ranking, the build pipeline, the cache schema
 - [API-KEYS.md](./API-KEYS.md) — secret handling and redaction
 - [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) — runtime overrides and palette commands
 - [TROUBLESHOOTING.md](./TROUBLESHOOTING.md#config) — diagnosing config load failures

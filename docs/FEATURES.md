@@ -761,7 +761,7 @@ codebase:
   exclude: ["\\.test\\.tsx?$"]
 ```
 
-The map rebuilds itself on each planning run when the cache is stale; there is no manual rebuild step. Full details: [REPOMAP.md](./REPOMAP.md).
+The map rebuilds itself on each planning run when the cache is stale; there is no manual rebuild step. Full details: [CONFIGURATION.md §7](./CONFIGURATION.md#7-codebase).
 
 ### Text selection and copying
 
@@ -831,4 +831,4 @@ Offered only when the PLAN seat can receive images; on a seat without vision the
 - [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) — slash command reference, dispatch, phase guards.
 - [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) — workflow hooks: events, schemas, trust, security.
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — code-level inventory, event union, persistence layout.
-- [API-KEYS.md](./API-KEYS.md), [REPOMAP.md](./REPOMAP.md), [TROUBLESHOOTING.md](./TROUBLESHOOTING.md#diagnostic-modes).
+- [API-KEYS.md](./API-KEYS.md), [CONFIGURATION.md §7](./CONFIGURATION.md#7-codebase), [TROUBLESHOOTING.md](./TROUBLESHOOTING.md#diagnostic-modes).
