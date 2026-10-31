@@ -122,48 +122,6 @@ Labels are opinions, not contracts. Contributors can argue for re-labeling via P
 
 ---
 
-## ~~**[Should]** Non-TypeScript language support~~ ✅ Done
-
-**Why we want it.** Obvious: not all users are on TS projects.
-
-**What was built.**
-
-- The planner names the project gate in the plan: the commands that the project's own scripts or CI run to verify a change. Before the final review SPLITBRIEF runs them as the reviewer checks under the reviewer command policy, which runs any installed program of any language and refuses only what breaks a danger rule (shell syntax, a program run by path, inline code, a download-and-run launcher, a setup command, a script this run changed). Every refused command gets a named row. Plan `cmd` checks keep the allowlist of the five registry stacks. A planner `test` check resolves its command through `config → manifest → discovered → stack default → none`; with none it is `not-runnable`.
-- Heuristic detection reads project marker files (`Cargo.toml`, `go.mod`, `pyproject.toml`, `package.json`) to infer language and validation tools.
-- The planning session asks the planner to identify the project's test toolchain (`language`, `test`, `testPattern`), which is persisted to `WorkflowState.discoveredValidation`.
-- Planner and implementer prompts are language-aware: TypeScript keeps ESM-with-`.js` guidance, while Python, Go, Rust, JavaScript, and generic contexts avoid TypeScript-specific wording.
-- A `test` check with no command at any layer is `not-runnable` with its reason instead of erroring; a required one halts with `required-checks-unrunnable`.
-- Default TS projects (`package.json` with `typescript` devDependency) preserve identical behavior to before.
-
-**Remaining.** Deeper language-specific planning heuristics can still be added as usage patterns emerge.
-
----
-
-## **[Won't]** Confinement for checks and seats, and per-action approval
-
-Today a check runs the project's own code with your user's permissions in the run workspace. SPLITBRIEF isolates its working directory, its environment (secrets dropped), its time, its output and its process group, but not the file system, the network or other processes ([CONFIGURATION.md §What a check can reach](./CONFIGURATION.md#what-a-check-can-reach)). The `claude-code` implementer runs its shell in Claude Code's own sandbox and stops when that sandbox cannot start. The other seats are as [PLANNERS-AND-IMPLEMENTERS.md §Posture, trust, and auth](./PLANNERS-AND-IMPLEMENTERS.md#posture-trust-and-auth) says.
-
-**Why we want it.** A reviewer check, a base re-run or a fix check runs test files and scripts the implementer wrote. Only an OS boundary stops such code from reading `~/.ssh` or calling the network.
-
-**What it would look like.** These items are out of scope for now:
-
-- An OS sandbox or confinement for checks or seats: for example bubblewrap or Seatbelt around each check, or a container per run.
-- A network proxy that limits what checks and seats can reach.
-- `workflow.approve: each` or `yolo`: an approval for each brief, or none at all.
-- Per-action approval inside a seat: the Agent Client Protocol (ACP), a bridge to Claude Code's permission prompts, or the Codex app-server.
-
-**Why deferred.** The minimal leak fixes shipped first: a sanitized environment for every command SPLITBRIEF runs itself, `sandbox.failIfUnavailable: true` for the `claude-code` implementer, and a plan card that shows each gate command before the build. A sandbox for checks must keep every language's toolchain, cache and registry working; that needs its own design and measurements on macOS and Linux.
-
-Checks inherit defined environment variables and drop credential names, selectors and helpers. No pass-through option is needed.
-
-The changed-definition refusal compares these definitions with the run base: the scripts in every `package.json`, the `scripts` and `scripts-aliases` of `composer.json`, `Makefile`, `justfile`, `Rakefile` and `rakelib`, the Gradle and Maven wrappers, and interpreter scripts. SPLITBRIEF does not compare build manifests (`pom.xml`, `build.gradle`, `composer.json` as a dependency manifest, `Gemfile`, `mix.exs`, `build.rs`). A dependency change edits these files, and a refusal would block the check that verifies it. The refusal guards against a swapped check definition. It does not establish trusted execution.
-
-**Where to start when we do it.**
-
-- `runCommand` (`src/lib/process/spawn/run-command.ts`) is the one function every check routes through; a sandbox wraps its spawn there.
-
----
-
 ## **[Could]** Windows support
 
 **Why we want it.** Many devs still use Windows.
@@ -211,5 +169,4 @@ Follow-ups from the workflow hook system — see [HOOKS-CONFIG.md §Design decis
 Follow-ups from the repo-map subsystem — see [REPOMAP.md §Design decisions](./REPOMAP.md#design-decisions). It supports multiple tree-sitter grammars plus PageRank; these are the axes along which it will grow.
 
 - **[Won't] Embeddings-based retrieval.** Optional `codebase.kind: 'embeddings'` with a pluggable provider (Voyage, OpenAI, a local embedding model). Semantically richer than symbol matching; deferred because of per-call cost, index-sync work, and the cost/latency profile for local-only users. The symbol-graph path stays the default.
-- ~~**[Should] Non-TypeScript language support.** Python, Go, Rust via their respective tree-sitter grammars. Each language needs its own `tags.scm`-equivalent extractor and a validator pipeline fit for the language.~~ ✅ Done
 - **[Should] Grammar version bumps.** Procedure to increment the `parse_version` column in `.splitbrief/repomap.sqlite` and force a global cache rebuild when the tree-sitter grammar changes. Today bumping the compiled-in constant invalidates every row on the next planning run, but a migration note in release notes and an automatic bump on install is cleaner.

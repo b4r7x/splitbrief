@@ -20,6 +20,7 @@ What a run spent is reported after it finishes, when the prices are known. It is
 - **NOT Claude Squad / Overstory** — we don't manage multiple parallel agent sessions
 - **NOT a multi-agent coordinator** — two roles (planner + implementer) filling three seats (plan, build, review), clear hierarchy
 - **NOT a swarm manager** — no dynamic agent count, agent racing, or same-checkout parallel writing
+- **NOT a parallel task runner** — briefs run one at a time, so validation and git stay linear
 - **NOT a generic orchestration framework** — opinionated workflow centered on Task Briefs, compiled from one checked plan per run
 - **NOT a kanban board or project-management system** — no boards, tickets, or cross-team task tracking
 - **NOT a plan archive** — sessions are execution records scoped to one workflow each, not a long-lived store of past plans

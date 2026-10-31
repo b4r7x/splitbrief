@@ -773,13 +773,6 @@ splitbrief continue 2026-05-01-add-auth --action end-run
 
 ---
 
-## Removed commands and flags
-
-- `splitbrief approval list|clear` was removed with the sticky grants it managed. `splitbrief approval` now fails with exit code 1: `unknown command 'approval' — a protected write asks once per run; there are no grants to list or clear`.
-- `--mode` and `--approve` were removed. Passing either to any command fails with exit code 1 before any work starts: `--mode was removed: every run plans in one session`, `--approve was removed: set workflow.approve (plan or none) in the config` (`RETIRED_FLAGS`, `src/cli/unknown-command.ts`). A flag value is skipped, so `--planner-args --mode` still reaches the planner tool's own `--mode`.
-
----
-
 ## Cross-cutting reference
 
 ### Diagnostic state IDs and support
@@ -890,7 +883,7 @@ A quota halt ends the first line with the clock its limit resets on, spelled whe
 
 ### Planning session
 
-There are no workflow modes. Every run plans in one session: one typed planner call, plus one per question round (at most two rounds of at most three questions), plus at most one repair when the plan fails its checks. The plan card then waits for approval unless `workflow.approve: none`. `--mode` was removed; see [Removed commands and flags](#removed-commands-and-flags). Detailed semantics in [WORKFLOW.md](./WORKFLOW.md#3-the-planning-session).
+There are no workflow modes. Every run plans in one session: one typed planner call, plus one per question round (at most two rounds of at most three questions), plus at most one repair when the plan fails its checks. The plan card then waits for approval unless `workflow.approve: none`. `--mode` was removed; see [MIGRATION.md](./MIGRATION.md#removed-commands-and-flags). Detailed semantics in [WORKFLOW.md](./WORKFLOW.md#3-the-planning-session).
 
 ### Runner kinds (`--planner` / `--implementer`)
 

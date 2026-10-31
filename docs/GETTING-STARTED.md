@@ -285,7 +285,7 @@ These features are active by default unless noted:
 | End-to-end how-tos and cookbook recipes | [docs/USAGE-EXAMPLES.md](./USAGE-EXAMPLES.md) |
 | Every CLI command and flag | [docs/CLI-REFERENCE.md](./CLI-REFERENCE.md) |
 | Every slash command and keybinding | [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) |
-| Current engine shape (what is actually wired up) | [docs/ARCHITECTURE.md#part-2--current-state-the-what](./ARCHITECTURE.md#part-2--current-state-the-what) |
+| Current engine shape (what is actually wired up) | [docs/ARCHITECTURE.md](./ARCHITECTURE.md) |
 | Understand every workflow phase and transition | [docs/WORKFLOW.md](./WORKFLOW.md) |
 | Configure something | [docs/CONFIGURATION.md](./CONFIGURATION.md) |
 | Read the Task Brief contract | [docs/TASK-CONTRACT.md](./TASK-CONTRACT.md) |

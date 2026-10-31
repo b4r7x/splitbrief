@@ -65,7 +65,7 @@ Fix divergences in the doc, not the code (code is authoritative).
 
 ### 3. Capability matrix
 
-`docs/ARCHITECTURE.md` "Capability matrix" shows per-backend capability values. Compare with `src/engine/planners/*.ts` — each backend's declared `capabilities` struct. Table rows must match.
+`docs/PLANNERS-AND-IMPLEMENTERS.md` "Planner capabilities" shows per-backend capability values. Compare with `src/engine/planners/*.ts` — each backend's declared `capabilities` struct. Table rows must match.
 
 ### 4. Path references
 

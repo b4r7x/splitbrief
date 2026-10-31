@@ -28,6 +28,8 @@ graph TD
 
 After setup, the handler calls `initStoresForTuiMount()` and then `renderApp()`. Discovery continues while Ink mounts, so the first screen paints before the runner refresh ends.
 
+Before `renderApp()`, the handler sets the first route with `routerStore.init(route)` (`src/stores/navigation/router.ts`). A `workflow` route carries the `RunRecord` and its `execution`. `resume` and `continue` enter the workflow with a `local` execution, and `init` opens setup. `spec`, `status`, `review` and `doctor` mount no TUI; `start`, `resume` and `continue` mount none under `--json` or `--plain`.
+
 ---
 
 ## Store bootstrap

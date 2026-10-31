@@ -242,7 +242,7 @@ The demotions cost one import-path rewrite each; the benefit is that `src/compon
 | `lib/bar.ts` contains `"claude-code"` | Infra wrapper knows domain | Extract the domain part to `core/` or `engine/` |
 | `core/baz.ts` imports from `engine/` | Wrong direction | Invert: `engine/` should depend on `core/`, not the other way |
 | `features/A/x.ts` imports from `features/B/y.ts` | Features must be independent | Promote the shared code to `core/`, `stores/`, `components/`, or `hooks/` |
-| `src/engine/**` importing from `src/features/**` | Engine must be UI-agnostic | Resolved 2026-04-19 via event bus (bridge sink deleted — zero engine→features imports remain) — see [ARCHITECTURE.md §Design decisions](./ARCHITECTURE.md#design-decisions--why-eventbus) |
+| `src/engine/**` importing from `src/features/**` | Engine must be UI-agnostic | Resolved 2026-04-19 via event bus (bridge sink deleted — zero engine→features imports remain) — see [ENGINE.md §Design decisions](./ENGINE.md#design-decisions--why-eventbus) |
 | New `utils/` file with 1 consumer | Not shared yet | Keep it inside the consumer until ≥2 users exist |
 | Re-export barrel (`utils/index.ts`) | Indirection with no added value | Delete it — consumers import from source |
 

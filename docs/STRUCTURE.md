@@ -65,7 +65,7 @@ There is no `src/screens/` directory. Each surface's entry is a FLAT page under 
 
 ## Layer inventory — non-feature folders
 
-Representative contents of the non-feature folders that have more than a handful of files. Feature folders are catalogued in [Feature inventory](#feature-inventory); use `rg --files <folder>` for the exact current inventory.
+Representative contents of the non-feature folders that have more than a handful of files. Use `rg --files src/features` for the feature folders and `rg --files <folder>` for the exact current inventory.
 
 ### `src/cli/` — CLI entry + subcommand handlers
 
@@ -356,6 +356,34 @@ Rules:
 - **Pure helpers** (non-React modules) sit at the feature root as flat files (`handlers.ts`, `keyboard.ts`, `layout.ts`). They get the `.ts` extension and their tests colocate when they carry behavior (`layout.test.ts`).
 - **No `index.ts` barrels** inside a feature. The surface's entry is a FLAT page in `src/app/` (`app/screens/<x>.tsx` | `app/overlays/<x>.tsx`); feature folders hold only internals. See [`NO-BARRELS.md`](./NO-BARRELS.md).
 
+### Example: the inline editor feature
+
+The `editor` surface is a headless pure editing kernel feeding one thin Ink surface: a full-surface editor for the plan card's `plan.json`, whose save runs the plan checks (`plan-save.ts`). Its decision logic lives in pure `src/core/` modules so the Ink glue carries no branch logic:
+
+```
+src/features/editor/                  # feature internals (imported by app/overlays/editor.tsx)
+├── editor-buffer-view.tsx            # full-surface exclusive-overlay editor
+├── plan-save.ts                      # plan.json save check: parsePlanJson + checkPlan
+├── editor-line-segments.ts          # visual-row segmentation for rendering
+├── editor-viewport.ts               # viewport-scroll math for the editor surface
+└── use-editor-keys.ts               # useInput wiring over resolveEditorKeyAction
+
+src/features/workflow/review-editor.ts # Ctrl+E / e opener: plan.json in the editor overlay (owner-token capture)
+
+src/app/overlays/editor.tsx           # FLAT overlay page (exclusive; sets overlayStore.setExclusive)
+src/stores/ui/editor.ts               # editorStore singleton (openRaw, owner-token write gate)
+src/stores/ui/external-edit-request.ts # one-shot Ctrl+O intent bridge (features/editor → store ← workflow effect); non-gated, carries the CAS ownerToken
+src/core/editor/editor-state.ts       # EditorEvent / EditorMotion types + pure editing-state reducer
+src/core/editor/grapheme-motions.ts   # grapheme + display-width caret/selection motions
+src/core/keybindings/editor.ts        # resolveEditorKeyAction — the single-owner editor keymap
+
+src/features/workflow/components/frame-panel.tsx  # shared single-line-border frame (border + ◇ dir/base title + top Divider); one shape for the raw editor overlay and ReviewView
+```
+
+The raw editor overlay and `ReviewView` share `FramePanel` (in `features/workflow/components/`). It draws its top rule with the shared `Divider` from `src/components/divider.tsx`, a features→components import that the boundaries allow. The overlay consumes it page→feature (`app/overlays/editor.tsx → features/workflow/components/frame-panel`); `ReviewView` consumes it same-slice. The `Ctrl+O` external-editor escape hatch never lets `features/editor` import `features/workflow`: `features/editor` emits an intent into `stores/ui/external-edit-request.ts` and the workflow effect in `features/workflow/hooks/workflow-screen/use-inline-edit.ts` consumes it and runs the existing `review-parser` handoff (`features/editor → store ← workflow effect`, gate 9 clean).
+
+Colocated tests sit next to each source file (`editor-state.test.ts`, `grapheme-motions.test.ts`, `editor.test.ts`, `editor-line-segments.test.ts`, `editor-buffer-view.test.tsx`, `external-edit-request.test.ts`, `frame-panel.test.tsx`, `src/stores/ui/editor.test.ts`). The keymap in `src/core/keybindings/editor.ts` is the single source of truth for editor chords; the documented keymap in [`SLASH-COMMANDS-REFERENCE.md`](./SLASH-COMMANDS-REFERENCE.md#inline-editor-planjson) is asserted against it by `src/core/keybindings/editor.test.ts` so the two cannot drift. `Ctrl+O` maps to `{ kind: 'open-external' }` (open the file in the external editor): the overlay pre-saves the buffer (owner-token guarded) then hands off.
+
 ## File placement decision tree
 
 This is the **canonical decision tree** for any new module. For the per-layer reference (what each layer contains, acceptance criteria, anti-patterns), see [`LAYERS.md`](./LAYERS.md).
@@ -576,57 +604,6 @@ Features are small and irregular. A template would over-prescribe (minimal featu
 2. **Shared earns its place.** A module enters `src/components/`, `src/hooks/`, or `src/utils/` only when used by ≥2 features. Premature sharing is as costly as premature abstraction.
 3. **The `app/` shell is the only cross-feature composition point.** Pages (`app/screens|overlays`) compose features; `app/router.tsx` wires them together. If you find yourself wiring feature A's output into feature B's input anywhere else — or importing one page from another — re-examine the boundary.
 4. **Changes to one feature should touch one folder.** If a feature change requires edits in multiple top-level directories, something crossed a boundary that shouldn't have.
-
-## Feature inventory
-
-| Surface | Responsibility | Entry page | Feature folder |
-|---|---|---|---|
-| `workflow` | The run, live and at rest — conversation flow, event cards, sidebar, input mode, keyboard, runner lifecycle, history replay, and a closed run's ledger (`features/workflow/closed/`) | `app/screens/workflow.tsx` | `features/workflow/` |
-| `home` | Landing screen — banner, seat block, recent sessions, input | `app/screens/home.tsx` | `features/home/` |
-| `setup` | First-run crew setup — ready-made crews above the seat block | `app/screens/setup.tsx` | dissolved (page only) |
-| `palette` | Command palette overlay — source assembly, filtering, MRU ranking | `app/overlays/palette.tsx` | `features/palette/` |
-| `settings` | Settings overlay — the crew section plus the field editor for config | `app/overlays/settings.tsx` | `features/settings/` (items + presentation + hooks) |
-| `crew` | No page of its own — rows + renderers consumed by the settings and setup pages | — | `features/crew/` |
-| `runners` | Seat picker — tool + model selection for each seat picker role | `app/overlays/runners.tsx` | `features/runners/` |
-| `editor` | Inline `plan.json` editor for the plan card — headless editing kernel with a save check | `app/overlays/editor.tsx` | `features/editor/` |
-| `help` | Global help overlay — keyboard and command reference | `app/overlays/help.tsx` | dissolved (page only) |
-| `sessions` | Sessions picker — select a past session to resume | `app/overlays/sessions.tsx` | dissolved (page only) |
-| `skills` | Skills picker — toggle available skills for a workflow | `app/overlays/skills.tsx` | dissolved (page only) |
-| `usage` | Token and cost details of a run (`/usage`) | `app/overlays/usage.tsx` | `features/workflow/` (`usage-details.tsx`, `usage-details-model.ts`) |
-| `start-preparation` | No page of its own — the readiness panel shown while a run starts, used by the home and setup pages and `app/session-preparation.tsx` | — | `features/start-preparation/` |
-| `stop` | Inline stop menu above the workflow composer | `app/screens/workflow.tsx` | `features/workflow/stop/` |
-
-Each surface's entry page is what `src/app/router.tsx` imports (and `app/layout.tsx` wraps). Internal structure is documented by inspection — there is no catalog per-feature.
-
-### Inline editor feature layout
-
-The `editor` surface is a headless pure editing kernel feeding one thin Ink surface: a full-surface editor for the plan card's `plan.json`, whose save runs the plan checks (`plan-save.ts`). Its decision logic lives in pure `src/core/` modules so the Ink glue carries no branch logic:
-
-```
-src/features/editor/                  # feature internals (imported by app/overlays/editor.tsx)
-├── editor-buffer-view.tsx            # full-surface exclusive-overlay editor
-├── plan-save.ts                      # plan.json save check: parsePlanJson + checkPlan
-├── editor-line-segments.ts          # visual-row segmentation for rendering
-├── editor-viewport.ts               # viewport-scroll math for the editor surface
-└── use-editor-keys.ts               # useInput wiring over resolveEditorKeyAction
-
-src/features/workflow/review-editor.ts # Ctrl+E / e opener: plan.json in the editor overlay (owner-token capture)
-
-src/app/overlays/editor.tsx           # FLAT overlay page (exclusive; sets overlayStore.setExclusive)
-src/stores/ui/editor.ts               # editorStore singleton (openRaw, owner-token write gate)
-src/stores/ui/external-edit-request.ts # one-shot Ctrl+O intent bridge (features/editor → store ← workflow effect); non-gated, carries the CAS ownerToken
-src/core/editor/editor-state.ts       # EditorEvent / EditorMotion types + pure editing-state reducer
-src/core/editor/grapheme-motions.ts   # grapheme + display-width caret/selection motions
-src/core/keybindings/editor.ts        # resolveEditorKeyAction — the single-owner editor keymap
-
-src/features/workflow/components/frame-panel.tsx  # shared single-line-border frame (border + ◇ dir/base title + top Divider); one shape for the raw editor overlay and ReviewView
-```
-
-The raw editor overlay and `ReviewView` share `FramePanel` (in `features/workflow/components/`). It draws its top rule with the shared `Divider` from `src/components/divider.tsx`, a features→components import that the boundaries allow. The overlay consumes it page→feature (`app/overlays/editor.tsx → features/workflow/components/frame-panel`); `ReviewView` consumes it same-slice. The `Ctrl+O` external-editor escape hatch never lets `features/editor` import `features/workflow`: `features/editor` emits an intent into `stores/ui/external-edit-request.ts` and the workflow effect in `features/workflow/hooks/workflow-screen/use-inline-edit.ts` consumes it and runs the existing `review-parser` handoff (`features/editor → store ← workflow effect`, gate 9 clean).
-
-Colocated tests sit next to each source file (`editor-state.test.ts`, `grapheme-motions.test.ts`, `editor.test.ts`, `editor-line-segments.test.ts`, `editor-buffer-view.test.tsx`, `external-edit-request.test.ts`, `frame-panel.test.tsx`, `src/stores/ui/editor.test.ts`). The keymap in `src/core/keybindings/editor.ts` is the single source of truth for editor chords; the documented keymap in [`SLASH-COMMANDS-REFERENCE.md`](./SLASH-COMMANDS-REFERENCE.md#inline-editor-planjson) is asserted against it by `src/core/keybindings/editor.test.ts` so the two cannot drift. `Ctrl+O` maps to `{ kind: 'open-external' }` (open the file in the external editor): the overlay pre-saves the buffer (owner-token guarded) then hands off.
-
-**Ratified kernel-contract amendments** (recorded as intentional): (1) `EditorState.affinity: 'upstream' | 'downstream'` — a 1-bit field so a caret on a soft-wrap seam resolves to the correct visual row (`'upstream'` is the default and reproduces prior behavior everywhere except exactly on a seam); (2) `EditorKeyAction` gains `{ kind: 'open-external' }` for the `Ctrl+O` escape hatch; (3) `followCaretScroll` (`src/core/editor/editor-state.ts`) reads `state.affinity` instead of the `upstream` default so a downstream seam's painted lower-row caret is not clipped at the viewport's bottom edge (model ≡ paint). The two delete-line reads in `deleteRange` (`editor-state.ts`) keep the `upstream` default.
 
 ## Screaming folders
 

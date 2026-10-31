@@ -82,7 +82,7 @@ This is the "god object" of the orchestrator. It's created once in `initializeWo
 
 ## EventBus
 
-`src/engine/events/bus.ts`. Created by `createEventBus()`.
+`src/engine/events/bus.ts`. Created by `createEventBus()`. The bus decouples event producers (planner adapters, implementer base, orchestrator phases) from consumers (UI, audit log, hooks).
 
 ```ts
 function createEventBus(): EventBus {
@@ -95,6 +95,23 @@ function createEventBus(): EventBus {
 **Crash isolation.** Each sink call is wrapped in try/catch. If one sink throws (disk full, render error, hostile hook), the other sinks still run. The error is swallowed intentionally — sinks that care about their own failures can publish a warning event before throwing.
 
 **External ownership.** The bus is usually created inside `initializeWorkflow()`, but can be passed in as `opts.eventBus` by a caller that owns the bus itself.
+
+### Design decisions — Why EventBus
+
+The bus replaces an earlier design that split events across two independent shapes — `TuiEvent` (consumed by the UI through `callbacks.onEvent`) and `OrchestratorEvent` (persisted to `session.jsonl` via `appendEvent`) — plus ad-hoc side-effects (`abortStore.markPending`, `feedbackStore.setError`, queue handler install). Three forces drove the collapse:
+
+- **Layer violation.** `TuiEvent` lived in `src/features/workflow/types.ts` and was imported by seven files under `src/engine/`, breaking the "engine never imports from features/" rule and making headless runs impossible without dragging the UI type tree along.
+- **Two sources of truth.** Adding an event meant touching `TuiEvent`, `OrchestratorEventPayloadMap`, and an emit helper that called both. Drift was silent — a typo meant the JSONL log and the UI disagreed on what happened.
+- **Closed for extension.** `--json` stdout, session replay, and future subscribers all needed the same stream. With direct `callbacks.onEvent` + `appendEvent` call sites, there was nowhere to attach them.
+
+The bus is synchronous by design so fan-out order matches the pre-bus `addEvent` → `appendEvent` back-to-back sequence that `workflow/actions/event.ts` and `src/core/sessions/log-writer.ts` rely on. Event `type` values use snake_case to match the on-disk JSONL convention (what users grep against); the old kebab-case `TuiEvent` names were dropped.
+
+**Rejected alternatives:**
+
+- **Keep two shapes plus a third union for non-UI consumers.** Triples the sources of truth and leaves the `engine → features` layer violation intact.
+- **Fold `TuiEvent` into `OrchestratorEvent`, keep direct `appendEvent` + `callbacks.onEvent` calls.** Fixes type drift but every new consumer (headless, replay) becomes another direct call site scattered through the orchestrator — same architectural rigidity.
+- **Node's `EventEmitter`.** Untyped payloads (`emit('x', anything)`) and async-by-default reverse the type-safety and ordering guarantees we rely on.
+- **Pre-built lib (mitt, nanoevents, rxjs Subject).** A two-method interface with one ordering rule is ~30 LOC; a dependency costs more than it saves, same reasoning as the in-house `createStore` vs Zustand.
 
 ### EngineEvent
 
