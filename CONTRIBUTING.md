@@ -98,7 +98,7 @@ No commit-message format is enforced. Keep the first line concise; reference iss
 
 ## Adding a runner kind
 
-Planner and implementer both dispatch on a required `kind` discriminant across four variants: `cli`, `api`, `shell`, `agent`. The factory lives at `src/engine/runners/factory.ts` — `createPlanner(config)` / `createImplementer(config)`. New integrations plug in here.
+Planner and implementer both dispatch on a required `kind` discriminant across four variants: `cli`, `api`, `shell`, `agent`. The factory lives at `src/engine/runners/factory.ts` — `createPlanner(config, options)` / `createImplementer(config, options)`. New integrations plug in here.
 
 Full config schemas and YAML examples: [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
 

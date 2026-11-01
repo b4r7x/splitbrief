@@ -674,7 +674,7 @@ Path encoding: a snapshot blob name is the SHA-256 hex of the file's relative pa
 
 ## 7. Runner abstraction (4 kinds)
 
-The `kind` discriminant is required in every planner / reviewer / implementer config. Factory: `src/engine/runners/factory.ts` — `createPlanner(config)` / `createReviewer(config, options)` / `createImplementer(config)` are async and dispatch on `kind` through memoized dynamic imports. The `reviewer:` block is optional; with none configured the planner holds the review seat. Pairs of files match by role:
+The `kind` discriminant is required in every planner / reviewer / implementer config. Factory: `src/engine/runners/factory.ts` — `createPlanner(config, options)` / `createReviewer(config, options)` / `createImplementer(config, options)` are async and dispatch on `kind` through memoized dynamic imports. The `reviewer:` block is optional; with none configured the planner holds the review seat. Pairs of files match by role:
 
 | `kind` | Planner file | Implementer file | Implementer write mode | Examples |
 |---|---|---|---|---|

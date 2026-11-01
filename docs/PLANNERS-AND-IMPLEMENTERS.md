@@ -441,6 +441,17 @@ Pricing lookup keeps its ladder — cached models.dev first, then runtime metada
 
 ## Four runner kinds in practice
 
+Planner, reviewer and implementer all accept four runner kinds. The `kind` field is the discriminant and is always required. The reviewer is optional: with no `reviewer:` block the planner holds the review seat (`resolveReviewerRunner`, the only module that branches on `config.reviewer`). Configs declare `version: 3`, the only accepted version; any other value fails the load.
+
+| `kind` | What it is | Example |
+|---|---|---|
+| `cli` | Known tool subprocess | The tools in [cli](#cli) |
+| `api` | OpenAI-compatible HTTP endpoint | Ollama, LM Studio, or any OpenAI-compatible custom endpoint |
+| `shell` | Arbitrary command (stdin → stdout; no shell/network sandbox) | Custom scripts |
+| `agent` | Subprocess that writes files directly (no stdout extraction; no shell/network sandbox) | Custom file-writing tools |
+
+Full config schemas and YAML examples are in [CONFIGURATION.md](./CONFIGURATION.md).
+
 ### cli
 
 `src/engine/planners/cli.ts`, `src/engine/implementers/cli.ts`

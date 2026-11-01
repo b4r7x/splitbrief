@@ -161,6 +161,8 @@ If a caller needs a custom message that the factory's default would not produce 
 
 ## Call sites
 
+Error at boundaries. Internal functions propagate; callers decide.
+
 ### Throwing
 
 ```ts
