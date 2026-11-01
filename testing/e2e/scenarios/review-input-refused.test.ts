@@ -137,7 +137,7 @@ describe('e2e: the review tool refuses its input as too long', { timeout: 240_00
     expect(issue?.availableActions).toEqual(['accept-as-is', 'end-run']);
     expect(issue?.availableActions).not.toContain('retry-same-worker');
     expect(issue?.message).toMatch(
-      /^Review input is [\d,]+ characters; .+ refused it as too large$/,
+      /^Review input is [\d,]+ characters; .+ refused it as too large\.$/,
     );
     // The refusal is a halt on the first call: nothing sent the same prompt again.
     expect(readFileSync(reviewCalls, 'utf8')).toBe('review\n');

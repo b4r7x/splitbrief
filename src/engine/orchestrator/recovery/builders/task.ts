@@ -989,10 +989,11 @@ export function inputTooLargeDetail(
   figures: PromptSize,
   tool: string,
   toolWords: string | null,
+  subject = 'The prompt',
 ): string {
   return figures.size === null && figures.limit === null && toolWords !== null
     ? toolReported(tool, toolWords)
-    : `${inputTooLargeSentence('The prompt', figures, tool)}.`;
+    : `${inputTooLargeSentence(subject, figures, tool)}.`;
 }
 
 /**

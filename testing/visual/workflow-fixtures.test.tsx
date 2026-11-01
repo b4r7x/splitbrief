@@ -236,7 +236,7 @@ describe('workflow visual fixtures', () => {
     [
       'workflow-recovery-review-prompt-too-large',
       'Review input too large for OpenAI Codex CLI',
-      'Review input is 1,106,026 characters; OpenAI Codex CLI takes at most 1,048,576',
+      'Review input is 1,106,026 characters; OpenAI Codex CLI takes at most 1,048,576.',
       'Change REVIEW tool',
     ],
     [
@@ -269,9 +269,8 @@ describe('workflow visual fixtures', () => {
     const frame = stripTerminalControls(await renderProjection(projection), {
       preserveLineBreaks: true,
     }).replace(/[│\s]+/g, ' ');
-    expect(frame).toContain(
-      'Seat down · Prompt too large for OpenAI Codex CLI on T001 after 1 attempt',
-    );
+    expect(frame).toContain('Seat down · Prompt too large for OpenAI Codex CLI on T001');
+    expect(frame).not.toContain('after 1 attempt');
     expect(frame).not.toContain('Recovery Prompt too large');
   });
 

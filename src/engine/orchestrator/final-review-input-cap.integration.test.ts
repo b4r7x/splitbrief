@@ -290,8 +290,9 @@ describe('final review input cap', () => {
     const task = makeTask({ id: 'T001', suggestedFiles: ['src/big.ts'], action: 'modify' });
     await completeTask(ref, task, { 'src/big.ts': 'export const start = 1;\n' });
     const { reviewer, invoke } = refusingReviewer(CODEX_INPUT_TOO_LARGE);
+    const { bus, events } = makeBusRecorder();
 
-    const result = await review(ref, doneState(task), reviewer);
+    const result = await review(ref, doneState(task), reviewer, bus);
 
     expect(invoke).toHaveBeenCalledTimes(1);
     expect(result.failure).toMatchObject({
@@ -310,6 +311,13 @@ describe('final review input cap', () => {
     expect(issue?.details.join('\n')).not.toContain('Largest diffs');
     if (issue === undefined) throw new Error('no pending recovery');
     expect(formatRecoveryHeadline(issue)).toContain('Review input');
+    const errorEvent = events.find(
+      (event) => event.type === 'error' && event.code === 'review_input_too_large',
+    );
+    if (errorEvent?.type !== 'error') throw new Error('no final-review error event');
+    expect(errorEvent.message).toBe(
+      'Review input is 1,106,026 characters; OpenAI Codex CLI takes at most 1,048,576.',
+    );
   });
 
   it('halts before calling a codex reviewer whose prompt is over its cap after the trim, and records the trim', async () => {
@@ -462,7 +470,9 @@ describe('final review input cap', () => {
     expect(skipped.state.phase).toBe('complete');
     expect(skipped.state.reviewStatus).not.toBe('passed');
     expect(skipped.state.review).toBeUndefined();
-    expect(skipped.state.acceptedAsIs?.findings).toEqual([issue?.message]);
+    expect(skipped.state.acceptedAsIs?.findings).toEqual([
+      'Review input is 1,106,026 characters; OpenAI Codex CLI takes at most 1,048,576.',
+    ]);
     expect(skipped.state.acceptedAsIs?.note).toBe('Reviewed the diff by hand.');
     expect(awaitsApply(skipped.state)).toBe(true);
   });

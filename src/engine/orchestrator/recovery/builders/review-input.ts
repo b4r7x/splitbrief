@@ -1,17 +1,18 @@
 import { join } from 'node:path';
 import type { Phase } from '../../../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../../../core/schemas/recovery/schemas.js';
+import { capitalize } from '../../../../utils/capitalize.js';
 import type { FinalReviewFailure } from '../../final-review.js';
-import { inputTooLargeFacts, inputTooLargeSentence } from '../../../runners/input-limit.js';
+import { inputTooLargeFacts } from '../../../runners/input-limit.js';
 import { haltActions } from './actions.js';
 import { compactFacts, createRecoveryIssue, type RecoveryBuilderBase } from './issue.js';
-import { switchSeatOffer, type SeatSwapContext } from './task.js';
+import { inputTooLargeDetail, switchSeatOffer, type SeatSwapContext } from './task.js';
 
 export function reviewInputTooLargeMessage(
   failure: Extract<FinalReviewFailure, { kind: 'input-too-large' }>,
   tool: string,
 ): string {
-  return inputTooLargeSentence('Review input', failure.figures, tool);
+  return inputTooLargeDetail(failure.figures, tool, null, 'Review input');
 }
 
 export function buildReviewInputTooLargeRecoveryIssue(
@@ -34,12 +35,14 @@ export function buildReviewInputTooLargeRecoveryIssue(
     affectedTaskIds: [],
     message: reviewInputTooLargeMessage(opts.failure, opts.tool),
     details: [
-      `A retry sends the same input. ${new Intl.ListFormat('en-GB', { type: 'disjunction' }).format(
-        [
-          switchSeat === undefined ? '' : 'Change the REVIEW tool to one that takes it',
-          opts.acceptAsIs ? 'Skip the review with a note (recorded, not a verification)' : '',
-          'End the run (a workspace run saves its changes in run.patch)',
-        ].filter((choice) => choice !== ''),
+      `A retry sends the same input. ${capitalize(
+        new Intl.ListFormat('en-GB', { type: 'disjunction' }).format(
+          [
+            switchSeat === undefined ? '' : 'change the REVIEW tool to one that takes it',
+            opts.acceptAsIs ? 'skip the review with a note (recorded, not a verification)' : '',
+            'end the run (a workspace run saves its changes in run.patch)',
+          ].filter((choice) => choice !== ''),
+        ),
       )}.`,
       `The reviewer reads the change from ${changeFile} in the run workspace, not from the prompt; the prompt holds the plan, the briefs and the evidence.${
         figures.limit === null
