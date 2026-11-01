@@ -45,6 +45,27 @@ function askingConsult(): string {
 }`;
 }
 
+const REASON = 'No locale service exists in this repository.';
+
+const CANNOT = JSON.stringify({
+  answer: {
+    diagnosis: 'The greeting needs a locale service.',
+    action: 'cannot',
+    reason: REASON,
+    next: 'skip-brief',
+  },
+});
+
+/** The planner answers the consult that the brief cannot be done. */
+function cannotConsult(): string {
+  return `(prompt) => {
+  const heading = prompt.split('\\n').find((line) => line.startsWith('# '));
+  return heading === '# Consult on a failing task' || heading === '# Consult continued'
+    ? ${JSON.stringify(CANNOT)}
+    : undefined;
+}`;
+}
+
 let fixture: StopContinueFixture | undefined;
 let ui: ReturnType<typeof renderFeature> | undefined;
 
@@ -89,6 +110,59 @@ describe('e2e: a halt panel too short for its text', () => {
 
     expect(frame).toMatch(/… \d+ more lines/);
     expect(frame).toContain('Skip task');
+    expect(frame).toContain('End run');
+    expect(frame).toContain('↑↓ select · ⏎ confirm');
+  });
+
+  it.each([
+    [60, 18],
+    [80, 24],
+    [100, 20],
+  ])('keeps a long question that wraps on a %dx%d panel', async (cols, rows) => {
+    const opened = await openConsultHalt();
+
+    terminalSizeStore.__testReset({ cols, rows, isSmall: true });
+    await flushEffects();
+    const frame = stripAnsiStyles(opened.screen.lastFrame());
+
+    expect(frame).toContain('Needs you · T001 needs your answer');
+    expect(frame).toContain('Question: greet.ts needs');
+    expect(frame).toMatch(/… \d+ more lines/);
+    expect(frame).toContain('Decide for me');
+    expect(frame).toContain('End run');
+    expect(frame).toContain('↑↓ select · ⏎ confirm');
+  });
+
+  it('keeps the task and its files under the long question at 80x24', async () => {
+    const opened = await openConsultHalt();
+
+    terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: true });
+    await flushEffects();
+    const frame = stripAnsiStyles(opened.screen.lastFrame());
+
+    const question = frame.indexOf('Question: greet.ts needs');
+    expect(question).toBeGreaterThan(-1);
+    expect(question).toBeLessThan(frame.indexOf('Task T001'));
+    expect(frame).toContain('Files src/greet.ts');
+  });
+
+  it.each([
+    [60, 18, 'wraps'],
+    [100, 20, 'fits'],
+  ])('keeps the row of a cannot answer on a %dx%d panel, where it %s', async (cols, rows) => {
+    fixture = createStopContinueFixture(blockedImplementerScript, { consult: cannotConsult });
+    const halted = await cli(fixture, ['start', 'smoke']);
+    expect(halted.exitCode, `${halted.stdout}\n${halted.stderr}`).toBe(1);
+    const opened = await openHaltedRun(fixture, { heading: 'Needs you' });
+    ui = opened.screen;
+
+    terminalSizeStore.__testReset({ cols, rows, isSmall: true });
+    await flushEffects();
+    const frame = stripAnsiStyles(opened.screen.lastFrame());
+
+    expect(frame).toContain('T001: the planner says it cannot be done');
+    expect(frame).toContain('Planner said: No locale service exists');
+    expect(frame).toContain('Decide for me');
     expect(frame).toContain('End run');
     expect(frame).toContain('↑↓ select · ⏎ confirm');
   });

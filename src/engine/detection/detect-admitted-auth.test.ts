@@ -1,6 +1,7 @@
 import { chmod, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { freezeProbeDeadlines } from '#testing/helpers/fake-timers.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import {
   CLI_TOOL_CATALOG,
@@ -28,6 +29,8 @@ function defaultAuthChannels(): Partial<Record<CliToolId, CliAuthChannelId>> {
   for (const id of LISTED_CLI_TOOL_IDS) channels[id] = defaultCliAuthChannel(id).id;
   return channels;
 }
+
+freezeProbeDeadlines();
 
 describe('all-admitted-tools auth detection', () => {
   it('keeps an unresolvable tool unavailable without any auth probe', async () => {

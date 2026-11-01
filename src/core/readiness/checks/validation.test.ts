@@ -30,6 +30,25 @@ describe('buildValidationChecks End-of-run checks', () => {
     expect(checks.some((c) => c.id === 'validation.end-checks-off')).toBe(false);
   });
 
+  it('states that the plan gate runs before the final review only', () => {
+    const checks = buildValidationChecks(makeConfig(), packageScripts, tempDir);
+
+    expect(checks.find((c) => c.id === 'validation.configured')?.details?.[0]).toBe(
+      'Before the final review, SPLITBRIEF runs the project gate that the plan names. A task review runs no gate.',
+    );
+  });
+
+  it('states that plan and task checks still run with End-of-run checks off', () => {
+    const config = makeConfig({ validation: { endChecks: false } });
+
+    const checks = buildValidationChecks(config, packageScripts, tempDir);
+
+    const detail = checks.find((c) => c.id === 'validation.configured')?.details?.[0];
+    expect(detail).toMatch(/no reviewer check runs/iu);
+    expect(detail).toMatch(/plan and task checks still run/iu);
+    expect(detail).not.toMatch(/runs no command/iu);
+  });
+
   it('reports End-of-run checks off and warns that nothing verifies the change', () => {
     const config = makeConfig({ validation: { endChecks: false } });
 
@@ -40,6 +59,9 @@ describe('buildValidationChecks End-of-run checks', () => {
     expect(configured?.metadata?.['endChecks']).toBe(false);
     const off = checks.find((c) => c.id === 'validation.end-checks-off');
     expect(off?.severity).toBe('warning');
+    expect(off?.summary).toBe(
+      'End-of-run checks are off: SPLITBRIEF runs no project gate before the final review.',
+    );
     expect(off?.fix).toContain('validation.end_checks: true');
   });
 

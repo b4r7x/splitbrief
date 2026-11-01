@@ -804,7 +804,7 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 **Fix:**
 1. Open `evidence.json` for the run; the checks log lists the exact failing command, its exit code and its output.
 2. If the failure is a real implementation bug, let the retry or the review fix cycle run — the implementer sees the previous failure as feedback.
-3. If a plan check is misconfigured (wrong command, missing dependency), request changes on the plan card or fix `validation.test_command` in `.splitbrief/config.yaml`. A reviewer check comes from the reviewer: correct it with a note on the review.
+3. If a plan check is misconfigured (wrong command, missing dependency), request changes on the plan card or fix `validation.test_command` in `.splitbrief/config.yaml`. A reviewer check is a command of the project gate that the plan names: request changes on the plan card before the build starts. After that the gate stays as the plan named it. On a failed review, choose **Fix again** and say in your note that the command is wrong: the reviewer judges the change again with your note.
 4. As a last resort, set `validation.end_checks: false` to run no reviewer check while you debug — you are then responsible for running the checks manually.
 
 **Prevention:** Keep `validation.test_command` minimal but reliable. Keep the project's own scripts and CI configuration current: the planner reads them to name the project gate.

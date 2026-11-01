@@ -87,6 +87,9 @@ import { workflowOptsToCLIOverrides } from '../../../core/config/runtime/overrid
 import type { PrepareExecutionFn, RunWorkflowFn } from './use-run-loop.js';
 import { runSeatCall } from '../../../engine/orchestrator/escalation/seat-wait.js';
 import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js';
+import { publishRecoveryPrompted } from '../../../engine/orchestrator/events.js';
+import { resumeStep } from '../../../core/sessions/run-status.js';
+import { addTuiEvent } from '../tui-sink.js';
 import { raisePendingRecovery } from '../../../engine/orchestrator/state-ops.js';
 import { seatIdentitiesFromConfig, writeSeatIdentities } from '../../../core/state/seats.js';
 import { readActiveRunner } from '../../../core/config/accessors/active-runner.js';
@@ -324,9 +327,9 @@ function engineEntryAfterHalt() {
   return { engine, seen: () => seen };
 }
 
-async function answerRecoveryPanel(
+async function answerRecovery(
   captureRunner: NonNullable<HarnessProps['captureRunner']>,
-  text: string,
+  answer: QuestionAnswer,
 ): Promise<void> {
   await vi.waitFor(() => {
     expect(controlsStore.get().inputMode).toBe('question');
@@ -334,7 +337,23 @@ async function answerRecoveryPanel(
   await tick(60);
   const runner = captureRunner.current;
   if (!runner) throw new Error('expected captureRunner.current to be populated');
-  runner.answer(plainAnswer(text));
+  runner.answer(answer);
+}
+
+/** A row of the panel: the menu sends its key with the mark only a row carries. */
+function answerRecoveryPanel(
+  captureRunner: NonNullable<HarnessProps['captureRunner']>,
+  key: string,
+): Promise<void> {
+  return answerRecovery(captureRunner, { ...plainAnswer(key), row: true });
+}
+
+/** Words typed in the composer beside the panel. */
+function typeRecoveryAnswer(
+  captureRunner: NonNullable<HarnessProps['captureRunner']>,
+  text: string,
+): Promise<void> {
+  return answerRecovery(captureRunner, plainAnswer(text));
 }
 
 function userMessageEvents() {
@@ -748,7 +767,7 @@ describe('useRunLoop', () => {
     const save = vi.spyOn(configStore, 'save');
     const run = recordedEngine({ 1: async () => makeSummary() });
     const inst = renderHarness({ prepared, captureRunner, runWorkflow: run.engine });
-    await answerRecoveryPanel(captureRunner, 'switch');
+    await answerRecoveryPanel(captureRunner, 'w');
     await vi.waitFor(() => expect(overlayStore.get().active).toBe('implementer-picker'));
     configStore.__testReset({
       projectDir,
@@ -1300,7 +1319,7 @@ describe('useRunLoop', () => {
     });
 
     const inst = renderHarness({ prepared, captureRunner, runWorkflow: runWorkflowStub });
-    await answerRecoveryPanel(captureRunner, 'add a default');
+    await typeRecoveryAnswer(captureRunner, 'add a default');
     await vi.waitFor(() => {
       expect(seen).toEqual(['add a default']);
     });
@@ -1311,6 +1330,37 @@ describe('useRunLoop', () => {
     });
     expect(runWorkflowStub).toHaveBeenCalledTimes(2);
 
+    inst.unmount();
+  });
+
+  it('leaves the live lifecycle alone at a halt whose prompt event reached the view', async () => {
+    const sessionId = '2026-10-31-live-halt';
+    const ref = { projectDir, sessionId };
+    const issue = makeRecoveryIssue();
+    const state = makeImplState([makeTask({ id: 'T001', status: 'failed' })], {
+      ...RUN_CREW,
+      pendingRecovery: issue,
+    });
+    const inst = renderHarness({
+      prepared: preparedExecution({ projectDir, sessionId, feature: state.feature }),
+      runWorkflow: async () => {
+        saveState(ref, state);
+        lifecycleStore.__testReset({ status: 'running' });
+        publishRecoveryPrompted(
+          { bus: createRecoveryBus({ ...ref, sink: addTuiEvent }), phase: state.phase },
+          sessionId,
+          issue,
+          resumeStep(state),
+        );
+        return makeSummary();
+      },
+    });
+
+    await vi.waitFor(() => expect(controlsStore.get().inputMode).toBe('question'));
+
+    expect(runViewStore.get().halt?.issue.id).toBe(issue.id);
+    expect(lifecycleStore.get().status).toBe('running');
+    expect(lifecycleStore.get().restored).toBeUndefined();
     inst.unmount();
   });
 
@@ -2192,7 +2242,7 @@ describe('useRunLoop', () => {
       });
 
       const inst = renderHarness({ prepared, captureRunner, runWorkflow: run.engine });
-      await answerRecoveryPanel(captureRunner, 'skip');
+      await answerRecoveryPanel(captureRunner, 's');
       await vi.waitFor(() => {
         expect(run.returned()).toBe(2);
       });
@@ -2251,7 +2301,7 @@ describe('useRunLoop', () => {
         runWorkflow: run.engine,
         prepareExecution: haltedSeatSignedOut,
       });
-      await answerRecoveryPanel(captureRunner, 'switch');
+      await answerRecoveryPanel(captureRunner, 'w');
       await vi.waitFor(() => {
         expect(overlayStore.get().active).toBe('implementer-picker');
       });
@@ -2319,7 +2369,7 @@ describe('useRunLoop', () => {
       });
 
       const inst = renderHarness({ prepared, captureRunner, runWorkflow: run.engine });
-      await answerRecoveryPanel(captureRunner, 'switch');
+      await answerRecoveryPanel(captureRunner, 'w');
       await vi.waitFor(() => {
         expect(overlayStore.get().active).toBe('implementer-picker');
       });
@@ -2386,7 +2436,7 @@ describe('useRunLoop', () => {
         lifecycleStore.__testReset({ status: 'running' });
         // A save from Settings while the panel is open, not the panel's own swap.
         configStore.__testReset({ projectDir, config: CODEX_SEAT_SAVED });
-        await answerRecoveryPanel(captureRunner, typed);
+        await typeRecoveryAnswer(captureRunner, typed);
         await vi.waitFor(() => {
           expect(run.returned()).toBe(2);
         });
@@ -2542,7 +2592,7 @@ describe('useRunLoop', () => {
       runViewStore.__testReset({ phase: 'implementing' });
       lifecycleStore.__testReset({ status: 'running' });
       configStore.__testReset({ projectDir, config: CLAUDE_CODE_SEAT_SAVED });
-      await answerRecoveryPanel(captureRunner, 'switch');
+      await answerRecoveryPanel(captureRunner, 'w');
       await vi.waitFor(() => {
         expect(overlayStore.get().active).toBe('implementer-picker');
       });
@@ -2602,7 +2652,7 @@ describe('useRunLoop', () => {
         runViewStore.__testReset({ phase: 'implementing' });
         lifecycleStore.__testReset({ status: 'running' });
         configStore.__testReset({ projectDir, config: savedConfig });
-        await answerRecoveryPanel(captureRunner, 'switch');
+        await answerRecoveryPanel(captureRunner, 'w');
         await vi.waitFor(() => {
           expect(overlayStore.get().active).toBe('implementer-picker');
         });
@@ -2648,7 +2698,7 @@ describe('useRunLoop', () => {
       });
       runViewStore.__testReset({ phase: 'implementing' });
       lifecycleStore.__testReset({ status: 'running' });
-      await answerRecoveryPanel(captureRunner, 'switch');
+      await answerRecoveryPanel(captureRunner, 'w');
       await vi.waitFor(() => {
         expect(overlayStore.get().active).toBe('implementer-picker');
       });
@@ -2702,7 +2752,7 @@ describe('useRunLoop', () => {
       runViewStore.__testReset({ phase: 'implementing' });
       lifecycleStore.__testReset({ status: 'running' });
       configStore.__testReset({ projectDir, config: makeConfig({ planner, reviewer }) });
-      await answerRecoveryPanel(captureRunner, 'switch');
+      await answerRecoveryPanel(captureRunner, 'w');
       await vi.waitFor(() => {
         expect(overlayStore.get().active).toBe('implementer-picker');
       });
@@ -2729,7 +2779,7 @@ describe('useRunLoop', () => {
 
     it.each([
       ['Try again', 'retry'],
-      ['Change BUILD tool', 'switch'],
+      ['Change BUILD tool', 'w'],
     ])(
       'keeps the pause the operator asked for when %s takes a seat saved under the same brief',
       async (_answer, typed) => {
@@ -2758,7 +2808,7 @@ describe('useRunLoop', () => {
         configStore.__testReset({ projectDir, config: CODEX_SEAT_SAVED });
         savedNow();
         await answerRecoveryPanel(captureRunner, typed);
-        if (typed === 'switch') {
+        if (typed === 'w') {
           await vi.waitFor(() => {
             expect(overlayStore.get().active).toBe('implementer-picker');
           });
@@ -2822,7 +2872,7 @@ describe('useRunLoop', () => {
       async function openHaltPicker(
         captureRunner: NonNullable<HarnessProps['captureRunner']>,
       ): Promise<void> {
-        await answerRecoveryPanel(captureRunner, 'switch');
+        await answerRecoveryPanel(captureRunner, 'w');
         await vi.waitFor(() => {
           expect(overlayStore.get().active).toBe('implementer-picker');
         });
@@ -3445,7 +3495,7 @@ describe('useRunLoop — a seat wait after the seat changed', () => {
     const seatWait = loadState(ref)?.seatWait;
     if (waited) {
       requestStopNow();
-      await vi.waitFor(() => expect(settledRun()).not.toBeNull(), { timeout: 5000 });
+      await vi.waitFor(() => expect(run.returned()).toBe(run.entered.length), { timeout: 5000 });
     }
     inst.unmount();
     return { waited, seatWait };

@@ -2372,3 +2372,75 @@ describe('task execution review steering', () => {
     },
   );
 });
+
+describe('runTasksAndReview resume after a stopped stuck-review planner round', {
+  timeout: 120_000,
+}, () => {
+  it('runs the rewritten fix brief of the planner round a stop cut, then reviews again', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
+    const controller = new AbortController();
+    const first = runOptions({
+      projectDir,
+      sessionId,
+      state: stuckReviewState(tasks, head, ['finding:F1']),
+      review: (prompt) =>
+        failedReviewVerdict(prompt, 'src/alpha.ts still crashes', { taskId: 'T001' }),
+      consult: () => {
+        controller.abort();
+        throw new Error('The call was stopped.');
+      },
+      signal: controller.signal,
+      onComplete: vi.fn(),
+    });
+    const stopped = await runTasksAndReview(first.options);
+    expect(stopped.completed).toBe(false);
+    const saved = loadState({ projectDir, sessionId });
+    if (saved === null) throw new Error('expected a saved state');
+    expect(saved.pendingTriage?.plannerConsult).toBe(true);
+    expect(saved.pendingRecovery).toBeUndefined();
+    expect(first.reviewPrompts).toHaveLength(1);
+
+    const consultPrompts: string[] = [];
+    const onComplete = vi.fn();
+    const resumed = runOptions({
+      projectDir,
+      sessionId,
+      state: saved,
+      review: (prompt) => passingReviewVerdict(prompt),
+      consult: (prompt) => {
+        consultPrompts.push(prompt);
+        return {
+          answer: {
+            diagnosis: 'The fix brief edits the wrong file',
+            action: 'rewrite-task',
+            task: makeTaskSpec({
+              id: 'T001',
+              title: 'Preserve the error in src/beta.ts',
+              suggestedFiles: ['src/beta.ts'],
+              checks: [],
+              criteria: [],
+            }),
+          },
+        };
+      },
+      onComplete,
+    });
+    const result = await runTasksAndReview(resumed.options);
+
+    expect(consultPrompts).toHaveLength(1);
+    expect(consultPrompts[0]).toContain('F1: src/alpha.ts still crashes');
+    const built = vi
+      .mocked(resumed.implementer.implement)
+      .mock.calls.map((call) => call[0].task.title);
+    expect(built).toEqual(['Preserve the error in src/beta.ts']);
+    const rewritten = result.state.tasks.find(
+      (task) => task.title === 'Preserve the error in src/beta.ts',
+    );
+    expect(rewritten).toMatchObject({ status: 'done', fix: { cycle: 3 } });
+    expect(resumed.reviewPrompts).toHaveLength(1);
+    expect(result.completed).toBe(true);
+    expect(result.state.reviewStatus).toBe('passed');
+    expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+});

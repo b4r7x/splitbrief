@@ -555,7 +555,7 @@ Stop options · Changes stay.
 **You'll see** the byline report the stop while it happens, then the park:
 
 ```
-⠙ Stopping T002 · Waiting for processes to exit · 0:02
+⠙ Stopping T002 · Waiting for processes to exit 0:02
   esc back after stop · ctrl+c quit after stop
 ◌ Stopped at T002 · Partial changes kept
   ⏎ resume · /stop options · esc back to sessions · ctrl+c quit

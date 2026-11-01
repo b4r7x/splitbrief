@@ -534,6 +534,8 @@ export function useRunLoop({
         stateForRun = saved;
         setInlineResume({ prepared, state: saved });
         recoveryPromptAlreadyPublished = true;
+        // The event bound swaps an oversized prompt event for a warning: the view has no halt yet.
+        if (runViewStore.get().halt === null) hydrateFromState(saved);
       }
     } catch (err) {
       if (abortedRef.current) return;

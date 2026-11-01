@@ -16,9 +16,12 @@ import { runViewStore } from '../../../stores/workflow/run-view.js';
 import type { WorkflowTask } from '../../../core/run-view/briefs.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
+import { hydrateFromState } from '../../../stores/workflow/actions/hydrate.js';
 import { Sidebar } from './sidebar.js';
 import { routerStore } from '../../../stores/navigation/router.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
+import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { taskId } from '../../../core/schemas/task.js';
 import chalk from 'chalk';
 import { defaultTheme } from '../../../components/theme.js';
@@ -340,6 +343,47 @@ describe('Sidebar — passed count', () => {
     expect(frame).not.toMatch(/\bPlan\b/);
 
     ui.unmount();
+  });
+
+  it('marks planning stopped for a run at rest that halted in planning', async () => {
+    const halt = makeRecoveryIssue({
+      reason: 'plan-checks-failed',
+      phase: 'planning',
+      seat: 'plan',
+      taskId: undefined,
+      taskTitle: undefined,
+      files: [],
+      affectedTaskIds: [],
+      availableActions: ['retry-same-worker', 'revise', 'end-run'],
+      recommendedAction: 'revise',
+    });
+    lifecycleStore.__testReset({
+      status: 'paused',
+      startedAt: 0,
+      endedAt: 5_000,
+      durationMs: 5_000,
+    });
+    routerStore.init({
+      screen: 'workflow',
+      run: makeRunRecord({
+        status: {
+          kind: 'open',
+          stop: { kind: 'waiting-for-you', on: { kind: 'halt', issue: halt } },
+          resumeAt: { kind: 'planner', call: 'plan' },
+        },
+      }),
+      execution: { kind: 'at-rest' },
+    });
+    hydrateFromState(makeWorkflowState({ phase: 'planning', tasks: [], pendingRecovery: halt }));
+
+    const ui = renderFeature(<Sidebar width={40} />);
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('Planning stopped');
+
+    ui.unmount();
+    routerStore.init({ screen: 'home' });
   });
 
   it('keeps the crew footer visible when the task list is long', async () => {

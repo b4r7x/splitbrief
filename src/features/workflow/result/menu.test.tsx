@@ -15,7 +15,13 @@ const originalColorLevel = chalk.level;
 const DOWN = '\x1b[B';
 
 function renderMenu(
-  input: { override?: boolean; findings?: string[]; focused?: boolean; height?: number } = {},
+  input: {
+    override?: boolean;
+    findings?: string[];
+    note?: string;
+    focused?: boolean;
+    height?: number;
+  } = {},
 ) {
   const onCommand = vi.fn<(raw: string) => void>();
   const onShowDiff = vi.fn<() => void>();
@@ -26,6 +32,7 @@ function renderMenu(
       <ResultMenu
         override={input.override ?? false}
         findings={input.findings ?? []}
+        note={input.note}
         files={4}
         focused={input.focused ?? true}
         height={input.height}
@@ -213,6 +220,40 @@ describe('ResultMenu', () => {
     expect(onCommand).not.toHaveBeenCalled();
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Show diff');
     ui.unmount();
+  });
+
+  it('lists the open findings under a long note at 80 and 60 columns', async () => {
+    const note = Array.from(
+      { length: 12 },
+      (_, index) => `Reason ${index + 1}: the documented form behaviour stays as it is.`,
+    ).join(' ');
+    for (const { cols, rows, height, noteRows } of [
+      { cols: 80, rows: 24, height: 16, noteRows: 8 },
+      { cols: 60, rows: 18, height: 10, noteRows: 1 },
+    ]) {
+      terminalSizeStore.__testReset({ cols, rows, isSmall: cols < 80 });
+      const { ui } = renderMenu({
+        override: true,
+        findings: ['missing null check', 'stale doc'],
+        note,
+        height,
+      });
+      await flushEffects();
+      ui.stdin.write('\r');
+      await vi.waitFor(() =>
+        expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Apply with 2 open findings?'),
+      );
+      const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+      const title = lines.findIndex((line) => line.includes('Apply with 2 open findings?'));
+      const firstFinding = lines.findIndex((line) => line.includes('- missing null check'));
+
+      expect(firstFinding - title - 1).toBe(noteRows);
+      expect(lines[firstFinding - 1]).toContain('…');
+      expect(lines[firstFinding + 1]).toContain('- stale doc');
+      expect(lines[firstFinding + 2]).toContain('Apply as is');
+      expect(lines.join('\n')).not.toContain('more open finding');
+      ui.unmount();
+    }
   });
 
   it('keeps the title in view when a finding carries a line break', async () => {

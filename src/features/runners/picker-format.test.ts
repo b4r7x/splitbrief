@@ -236,6 +236,10 @@ describe('formatCatalogDiagnostic', () => {
       'Model detection has not run yet. Press ctrl+r to refresh',
     ],
     [
+      { kind: 'not-run-retained' },
+      `Models from an earlier check${SOFT_SEP}ctrl+r detects this tool's models`,
+    ],
+    [
       {
         kind: 'probe-failed',
         failure: 'command-failed',
@@ -509,6 +513,7 @@ describe('formatToolsByline', () => {
     );
     expect(line({ kind: 'not-probed' })).toBe('Model detection has not run yet');
     expect(line({ kind: 'not-probed' }, 3)).toBe('Bundled model list');
+    expect(line({ kind: 'not-run-retained' }, 3)).toBe('Models from an earlier check');
   });
 
   it('leaves the sign-in step to a signed-out remediation and names no retry under any remediation', () => {

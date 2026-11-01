@@ -10,10 +10,8 @@ import { QuestionPrompt } from './components/question-prompt.js';
 import {
   clipPromptBodyRows,
   countPromptBodyRows,
-  fitRecommendedText,
   promptBodyRows,
   type PromptBodyLine,
-  splitActionRow,
 } from './prompt-body-rows.js';
 import {
   getQuestionPromptRows,
@@ -271,28 +269,6 @@ describe('promptBodyRows', () => {
     Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
   });
 
-  it('splits the serialized action row into its key and text', () => {
-    expect(splitActionRow('[c]  continue')).toEqual({ key: 'c', text: 'continue' });
-    expect(splitActionRow('[w2] switch BUILD')).toEqual({ key: 'w2', text: 'switch BUILD' });
-    expect(splitActionRow('plain')).toEqual({ key: '', text: 'plain' });
-  });
-
-  it('fits a recommended text by dropping trailing middot parts before truncating', () => {
-    expect(fitRecommendedText('end run · closes this run, changes kept', 20)).toBe('end run');
-    expect(fitRecommendedText('continue', 20)).toBe('continue');
-  });
-
-  it('counts one row per action after the serialized key is split', () => {
-    const prompt = [
-      'recovery needed',
-      '',
-      '[r]  retry same worker',
-      '[s]  skip task',
-      '[a]  abort',
-    ].join('\n');
-    expect(countPromptBodyRows(prompt, 80)).toBe(5);
-  });
-
   it('counts a one-line prompt body plus chrome for question panel height', () => {
     expect(
       getQuestionPromptRows('Task interrupted. Enter instructions to continue:', PANEL_WIDTH),
@@ -369,7 +345,7 @@ describe('promptBodyRows', () => {
     expect(panelFrameRows[1]).toContain(passHeadlinePrefix());
   });
 
-  it('keeps every action row when the panel is shorter than the prompt', () => {
+  it('marks the facts a panel cuts on the last kept fact row', () => {
     const prompt = [
       'recovery needed · Ollama hit its usage limit.',
       '',
@@ -377,48 +353,14 @@ describe('promptBodyRows', () => {
       'task T901 · Project deterministic workflow activity',
       'files src/a.ts',
       'worker local-fixture',
-      '',
-      '[r]  retry same worker',
-      '[w1]  switch BUILD to OpenCode CLI',
-      '[w2]  switch BUILD to OpenAI Codex CLI · gpt-5-codex',
-      '[a]  abort',
     ].join('\n');
-    const rows = promptBodyRows(prompt, BODY_WIDTH);
-    const clipped = clipPromptBodyRows(rows, 7);
-
-    expect(clipped).toHaveLength(7);
-    expect(clipped.filter((row) => row.kind === 'action')).toHaveLength(4);
-    expect(clipped[0]?.kind).toBe('headline');
-    expect(clipped[1]).toEqual({ kind: 'facts-line', text: '  … 4 more lines' });
-    expect(clipped[2]?.kind).toBe('blank');
-
-    const rendered = renderedPromptBodyRows(prompt, 7);
-    expect(rendered.some((row) => row.includes('a    abort'))).toBe(true);
-    expect(rendered.some((row) => row.includes('… 4 more lines'))).toBe(true);
-  });
-
-  it('marks the facts a panel cuts above its action rows on the last kept fact row', () => {
-    const prompt = [
-      'recovery needed · Ollama hit its usage limit.',
-      '',
-      'resets 17:00',
-      'task T901 · Project deterministic workflow activity',
-      'files src/a.ts',
-      'worker local-fixture',
-      '',
-      '[r]  retry same worker',
-      '[a]  abort',
-    ].join('\n');
-    const clipped = clipPromptBodyRows(promptBodyRows(prompt, BODY_WIDTH), 7);
+    const clipped = clipPromptBodyRows(promptBodyRows(prompt, BODY_WIDTH), 4);
 
     expect(clipped).toEqual([
       expect.objectContaining({ kind: 'headline' }),
       { kind: 'facts-line', text: '  resets 17:00' },
       { kind: 'facts-line', text: '  task T901 · Project deterministic workflow activity' },
       { kind: 'facts-line', text: '  … 2 more lines' },
-      { kind: 'blank' },
-      expect.objectContaining({ kind: 'action', key: 'r' }),
-      expect.objectContaining({ kind: 'action', key: 'a' }),
     ]);
   });
 
@@ -428,31 +370,17 @@ describe('promptBodyRows', () => {
       '',
       `first fact ${LONG_TOKEN}`,
       `second fact ${LONG_TOKEN}`,
-      '',
-      '[r]  retry same worker',
-      '[a]  abort',
     ].join('\n');
     const rows = promptBodyRows(prompt, BODY_WIDTH);
-    const clipped = clipPromptBodyRows(rows, 6);
+    const clipped = clipPromptBodyRows(rows, 3);
 
-    expect(clipped).toHaveLength(6);
     expect(clipped).toEqual([
       expect.objectContaining({ kind: 'headline' }),
       { kind: 'facts-line', text: '  … 4 more lines' },
       { kind: 'blank' },
-      { kind: 'blank' },
-      expect.objectContaining({ kind: 'action', key: 'r' }),
-      expect.objectContaining({ kind: 'action', key: 'a' }),
     ]);
-    const summaryRows = clipped
-      .slice(
-        0,
-        clipped.findIndex((row) => row.kind === 'action'),
-      )
-      .filter((row) => row.kind !== 'blank');
-    expect(summaryRows.at(-1)).toEqual({ kind: 'facts-line', text: '  … 4 more lines' });
 
-    const rendered = renderedPromptBodyRows(prompt, 6);
+    const rendered = renderedPromptBodyRows(prompt, 3);
     expect(rendered.some((row) => row.includes('… 4 more lines'))).toBe(true);
     expect(rendered.some((row) => row.includes('first fact'))).toBe(false);
   });
@@ -482,35 +410,26 @@ describe('promptBodyRows', () => {
       '',
       `first fact ${LONG_TOKEN}`,
       `second fact ${LONG_TOKEN}`,
-      '',
-      '[r]  retry same worker',
-      '[a]  abort',
     ].join('\n');
     const rows = promptBodyRows(prompt, BODY_WIDTH);
     const facts = rows.filter(
       (row): row is Extract<PromptBodyLine, { kind: 'facts-line' }> => row.kind === 'facts-line',
     );
-    const clipped = clipPromptBodyRows(rows, 7);
+    const clipped = clipPromptBodyRows(rows, 4);
 
-    expect(clipped).toHaveLength(7);
     expect(clipped).toEqual([
       expect.objectContaining({ kind: 'headline' }),
       facts[0],
       facts[1],
       { kind: 'facts-line', text: '  … 2 more lines' },
-      { kind: 'blank' },
-      expect.objectContaining({ kind: 'action', key: 'r' }),
-      expect.objectContaining({ kind: 'action', key: 'a' }),
     ]);
-    const summaryRows = clipped.slice(0, clipped.findIndex((row) => row.kind === 'action') - 1);
-    expect(summaryRows.at(-1)).toEqual({ kind: 'facts-line', text: '  … 2 more lines' });
 
-    const rendered = renderedPromptBodyRows(prompt, 7);
+    const rendered = renderedPromptBodyRows(prompt, 4);
     expect(rendered.some((row) => row.includes('… 2 more lines'))).toBe(true);
     expect(rendered.some((row) => row.includes('first fact'))).toBe(true);
   });
 
-  it('marks the bottom rows a summary with no action rows loses, and keeps its headline', () => {
+  it('marks the bottom rows a summary loses, and keeps its headline', () => {
     const summary = recoveryPromptSummaryRows(
       makeRecoveryIssue({
         message: 'T901 failed',
@@ -563,12 +482,6 @@ describe('promptBodyRows', () => {
     expect(clipPromptBodyRows(promptBodyRows(prompt, BODY_WIDTH), 1)).toEqual([
       expect.objectContaining({ kind: 'headline', mark: '… 3 more lines' }),
     ]);
-    const withActions = `${prompt}\n\n[r]  retry same worker\n[a]  abort`;
-    expect(clipPromptBodyRows(promptBodyRows(withActions, BODY_WIDTH), 3)).toEqual([
-      expect.objectContaining({ kind: 'headline', mark: '… 3 more lines' }),
-      expect.objectContaining({ kind: 'action', key: 'r' }),
-      expect.objectContaining({ kind: 'action', key: 'a' }),
-    ]);
   });
 
   it('counts one cut line in the singular', () => {
@@ -588,7 +501,7 @@ describe('promptBodyRows', () => {
   });
 
   it('leaves a prompt that fits its panel untouched', () => {
-    const prompt = 'recovery needed · halt\n\nresets 17:00\n\n[a]  abort';
+    const prompt = 'recovery needed · halt\n\nresets 17:00';
     const rows = promptBodyRows(prompt, BODY_WIDTH);
 
     expect(clipPromptBodyRows(rows, rows.length + 4)).toEqual(rows);

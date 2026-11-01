@@ -4,6 +4,7 @@ import type { ConversationRowSegment } from '../conversation-rows/types.js';
 import { countNoun, pluralize } from '../../../utils/pluralize.js';
 import { oneLineDisplayText } from '../../../utils/display-text.js';
 import { stopMenuLayout } from '../stop/options.js';
+import { wrappedProseSegments } from '../conversation-rows/row-format/text.js';
 
 export type ResultRowId = 'apply' | 'show-diff' | 'discard' | 'confirm-apply' | 'back';
 
@@ -84,11 +85,25 @@ export function resultMenuFindingLines(findings: readonly string[], budget: numb
   return [...lines.slice(0, shown), `+${hidden} more ${pluralize(hidden, 'open finding')}`];
 }
 
+/** The note of the Accept as is, wrapped at the words. The menu cuts a note taller than its box. */
+export function resultMenuNoteLines(note: string | undefined, cols: number): string[] {
+  if (note === undefined) return [];
+  return wrappedProseSegments(
+    [{ text: note, tone: 'text' }],
+    stopMenuLayout([], cols).width - 4,
+  ).map((line) =>
+    line
+      .map((part) => part.text)
+      .join('')
+      .trimEnd(),
+  );
+}
+
 /** The rows the menu paints: the sheet, plus the note and one row per open finding while it asks. */
 export function resultMenuHeight(input: ResultMenuInput, cols: number): number {
   const sheet = stopMenuLayout(resultMenuRows(input), cols).height;
   if (!input.confirming) return sheet;
-  return sheet + (input.note === undefined ? 0 : 1) + input.findings.length;
+  return sheet + resultMenuNoteLines(input.note, cols).length + input.findings.length;
 }
 
 export function resultMenuTitle(input: ResultMenuInput): readonly ConversationRowSegment[] {

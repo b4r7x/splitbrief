@@ -1,7 +1,6 @@
 import { parseShellCommand } from '../../../utils/parse-shell-command.js';
 import { shellQuoteArg } from '../../../utils/shell-quote.js';
 import { resolveEndChecks } from '../../config/runtime/resolve.js';
-import { CREW_SEAT_LABELS } from '../../crew/identity.js';
 import { readManifestCommands } from '../../validation/manifest-commands.js';
 import { detectStack } from '../../validation/stacks/registry.js';
 import { resolveTestCommand, type ResolvedCommand } from '../../validation/stage-command.js';
@@ -42,8 +41,8 @@ export function buildValidationChecks(
       summary: `End-of-run checks: ${endChecks ? 'on' : 'off'}.`,
       details: [
         endChecks
-          ? `Before each review, ${CREW_SEAT_LABELS.review} chooses the commands that verify the change, and SPLITBRIEF runs them.`
-          : 'SPLITBRIEF runs no command before a review; only the plan checks run.',
+          ? 'Before the final review, SPLITBRIEF runs the project gate that the plan names. A task review runs no gate.'
+          : 'No reviewer check runs. Plan and task checks still run.',
         ...(testCommand === null
           ? [
               'No test command found.',

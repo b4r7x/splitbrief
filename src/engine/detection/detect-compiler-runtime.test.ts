@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { chmod, realpath, stat, utimes, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { freezeProbeDeadlines } from '#testing/helpers/fake-timers.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import type { RunnerDiscoveryContext } from '../../core/config/accessors/runner-discovery-context.js';
 import {
@@ -119,6 +120,8 @@ async function staleDigestReceipt(
   return result.data;
 }
 
+freezeProbeDeadlines();
+
 describe('detection runtime binding', () => {
   it('derives the same namespace for the same receipt and none for a metadata-only identity', async () => {
     await withTempDir('detect-runtime-namespace', async (directory) => {
@@ -169,7 +172,7 @@ describe('detection runtime binding', () => {
     });
   });
 
-  itUnix('keeps an incompatible runtime unsupported with zero catalog dispatch', async () => {
+  itUnix('reports an incompatible runtime as not run with zero catalog dispatch', async () => {
     await withTempDir('detect-unsupported-runtime', async (directory) => {
       const marker = join(directory, 'catalog-ran');
       const shim = await installShim(
@@ -186,13 +189,13 @@ describe('detection runtime binding', () => {
         now: () => 2_000,
       });
 
-      expect(evidence.catalog).toEqual({ kind: 'unsupported' });
+      expect(evidence.catalog).toEqual({ kind: 'not-run' });
       expect(existsSync(marker)).toBe(false);
     });
   });
 
   itUnix(
-    'keeps an unverified prerelease runtime unsupported with zero catalog dispatch',
+    'reports an unverified prerelease runtime as not run with zero catalog dispatch',
     async () => {
       await withTempDir('detect-unverified-runtime', async (directory) => {
         const marker = join(directory, 'catalog-ran');
@@ -213,7 +216,7 @@ describe('detection runtime binding', () => {
           now: () => 3_000,
         });
 
-        expect(evidence.catalog).toEqual({ kind: 'unsupported' });
+        expect(evidence.catalog).toEqual({ kind: 'not-run' });
         expect(existsSync(marker)).toBe(false);
       });
     },

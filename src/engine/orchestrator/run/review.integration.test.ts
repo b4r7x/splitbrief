@@ -482,6 +482,82 @@ describe('review answer follower', () => {
     expect(result.state.tasks.map((task) => task.id)).toEqual(['T001', 'T002']);
   });
 
+  /** A planner whose consult call throws, or answers with a broken typed object each time. */
+  function failingPlanner(answer: 'throw' | 'broken'): { planner: Planner; prompts: string[] } {
+    const prompts: string[] = [];
+    const planner = makePlanner({
+      typedCall: (ctx: TypedCallContext) => ({
+        seat: ctx.seat,
+        typedOutput: 'fallback',
+        canResume: false,
+        invoke: async ({ prompt }) => {
+          prompts.push(prompt);
+          if (answer === 'throw') throw new Error('The planner process stopped unexpectedly.');
+          return makeRunnerCallResult({ status: 'completed', text: '{}' });
+        },
+      }),
+    });
+    return { planner, prompts };
+  }
+
+  async function followStuck(planner: Planner) {
+    const ref = setupProject();
+    const state = afterCycle(['finding:F1']);
+    saveState(ref, state);
+    const callbacks = makeCallbacks().callbacks;
+    const { bus, events } = makeBusRecorder();
+    const result = await followReviewAnswer({
+      wctx: makeWctx({ ...ref, bus, callbacks, planner }),
+      state,
+      callbacks,
+      setTrackedState: vi.fn(),
+      candidate: undefined,
+      fixWork: fixF1,
+    }).then(
+      (followed) => followed,
+      (err: unknown) => ({ threw: err instanceof Error ? err.message : String(err) }),
+    );
+    return { ref, result, events };
+  }
+
+  it('halts as a PLAN call failure when the planner call on a stuck review fails', async () => {
+    const { planner, prompts } = failingPlanner('throw');
+    const { ref, result, events } = await followStuck(planner);
+    expect(result).toMatchObject({
+      state: { pendingRecovery: { reason: 'planner-call-failed', seat: 'plan' } },
+    });
+    expect(result).toMatchObject({ next: 'stop' });
+    if (!('state' in result)) throw new Error('the follower threw');
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain('F1: Preserve the error');
+    expect(loadState(ref)?.pendingRecovery).toMatchObject({
+      reason: 'planner-call-failed',
+      seat: 'plan',
+    });
+    expect(result.state.tasks.map((task) => task.id)).toEqual(['T001', 'T002']);
+    expect(result.state.fixCycles?.used).toBe(2);
+    expect(events.flatMap((event) => (event.type === 'error' ? [event.message] : []))).toEqual([
+      expect.stringContaining('Planner call on the stuck review failed'),
+    ]);
+  });
+
+  it('halts as a PLAN protocol error when the planner answers a stuck review with a broken object', async () => {
+    const { planner, prompts } = failingPlanner('broken');
+    const { ref, result } = await followStuck(planner);
+    expect(result).toMatchObject({
+      state: { pendingRecovery: { reason: 'seat-protocol-error', seat: 'plan' } },
+    });
+    expect(result).toMatchObject({ next: 'stop' });
+    if (!('state' in result)) throw new Error('the follower threw');
+    expect(prompts).toHaveLength(2);
+    expect(loadState(ref)?.pendingRecovery).toMatchObject({
+      reason: 'seat-protocol-error',
+      seat: 'plan',
+    });
+    expect(result.state.tasks.map((task) => task.id)).toEqual(['T001', 'T002']);
+    expect(result.state.fixCycles?.used).toBe(2);
+  });
+
   it.each([
     ['the last cycle moved a blocker', afterCycle(['finding:F1', 'finding:F2'])],
     ['the last cycle met a new blocker', afterCycle(['finding:F2'])],

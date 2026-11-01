@@ -51,6 +51,7 @@ import {
 } from '../../../src/stores/ui/session-drafts.js';
 import { stateOpsError } from '../../../src/engine/orchestrator/state-ops.js';
 import { formatNeedsSignInSaveFeedback } from '../../../src/features/runners/picker-format.js';
+import type { CliToolDetection } from '../../../src/core/discovery/detection.js';
 import type { ScopedCliCatalogAttempt } from '../../../src/engine/detection/cli-catalog-outcomes.js';
 import type { PreparedExecution } from '../../../src/engine/runners/prepared-execution.js';
 import { trackActiveApply } from '../../../src/engine/orchestrator/session-lifecycle/shutdown.js';
@@ -781,6 +782,35 @@ function seedOpencodeSignedOutProbeTimeout(): void {
   });
 }
 
+function seedCodexVersionTimeout(signedIn: boolean): void {
+  const unreadVersion = {
+    authChannel: 'session',
+    installedVersion: null,
+    compatibility: 'unverified',
+  } as const;
+  seedConfig({ planner: { kind: 'cli', tool: 'codex', model: 'gpt-6-astra' } })();
+  publishVisualDiscovery({
+    cliTools: [
+      signedIn
+        ? cliDetectionFor('unverified', 'codex', { ...unreadVersion, auth: 'authenticated' })
+        : cliDetectionFor('unauthenticated', 'codex', unreadVersion),
+    ],
+    cliModels: [
+      catalogAttempt({
+        tool: 'codex',
+        outcome: { kind: signedIn ? 'timeout' : 'missing-credential' },
+      }),
+    ],
+  });
+}
+
+function publishCodexListingNotRun(detection: CliToolDetection): void {
+  publishVisualDiscovery({
+    cliTools: [detection],
+    cliModels: [catalogAttempt({ tool: 'codex', outcome: { kind: 'not-run' } })],
+  });
+}
+
 function seedOpencodeCommandFailedStale(): void {
   const models = opencodeApiModels().filter((model) =>
     ['opencode-go/deepseek-v4.1-flash', 'opencode-go/glm-5.3', 'opencode-go/kimi-k2.6'].includes(
@@ -1412,6 +1442,89 @@ const createPlannerPickerSignedOutProbeTimeoutFixture: FixtureFactory = () =>
     overlay: 'planner-picker',
     seed: seedOpencodeSignedOutProbeTimeout,
     focus: OPENCODE_FOCUS,
+  });
+const createPickerVersionTimeoutSignedOutFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => seedCodexVersionTimeout(false),
+    focus: 'tool:codex',
+  });
+const createPickerVersionTimeoutSignedInFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => seedCodexVersionTimeout(true),
+    focus: 'tool:codex',
+  });
+const createPickerSignedOutStaleFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      seedCodexNativeListing();
+      publishVisualDiscovery({
+        cliTools: [
+          cliDetectionFor('unauthenticated', 'codex', {
+            authChannel: 'session',
+            installedVersion: '0.155.1',
+          }),
+        ],
+        cliModels: [catalogAttempt({ tool: 'codex', outcome: { kind: 'missing-credential' } })],
+      });
+    },
+    focus: 'tool:codex',
+  });
+const createPickerReadyStaleFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      seedCodexNativeListing();
+      publishVisualDiscovery({
+        cliTools: [cliDetectionFor('ready', 'codex', { installedVersion: '0.155.1' })],
+        cliModels: [
+          catalogAttempt({
+            tool: 'codex',
+            outcome: { kind: 'success', value: codexDebugModels().slice(1) },
+          }),
+        ],
+      });
+    },
+    focus: 'tool:codex',
+  });
+const createPickerOlderToolFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      seedConfig({ planner: { kind: 'cli', tool: 'codex', model: 'gpt-6-astra' } })();
+      publishCodexListingNotRun(
+        cliDetectionFor('incompatible', 'codex', { installedVersion: '0.0.1' }),
+      );
+    },
+    focus: 'tool:codex',
+  });
+const createPickerOlderToolStaleFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      seedCodexNativeListing();
+      publishCodexListingNotRun(
+        cliDetectionFor('incompatible', 'codex', { installedVersion: '0.0.1' }),
+      );
+    },
+    focus: 'tool:codex',
+  });
+const createPickerUnreadVersionFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      seedConfig({ planner: { kind: 'cli', tool: 'codex', model: 'gpt-6-astra' } })();
+      publishCodexListingNotRun(
+        cliDetectionFor('unverified', 'codex', {
+          authChannel: 'session',
+          installedVersion: null,
+          auth: 'authenticated',
+        }),
+      );
+    },
+    focus: 'tool:codex',
   });
 const createPlannerPickerCommandFailedStaleFixture: FixtureFactory = () =>
   createOverlayFixture({
@@ -2818,6 +2931,19 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
     scenarioId('overlay-picker-signed-out-probe-timeout'),
     createPlannerPickerSignedOutProbeTimeoutFixture,
   ],
+  [
+    scenarioId('overlay-picker-version-timeout-signed-out'),
+    createPickerVersionTimeoutSignedOutFixture,
+  ],
+  [
+    scenarioId('overlay-picker-version-timeout-signed-in'),
+    createPickerVersionTimeoutSignedInFixture,
+  ],
+  [scenarioId('overlay-picker-signed-out-stale'), createPickerSignedOutStaleFixture],
+  [scenarioId('overlay-picker-ready-stale'), createPickerReadyStaleFixture],
+  [scenarioId('overlay-picker-older-tool'), createPickerOlderToolFixture],
+  [scenarioId('overlay-picker-older-tool-stale'), createPickerOlderToolStaleFixture],
+  [scenarioId('overlay-picker-unread-version'), createPickerUnreadVersionFixture],
   [scenarioId('overlay-local-connection-ollama'), () => localConnectionFixture()],
   [
     scenarioId('overlay-local-connection-lmstudio'),

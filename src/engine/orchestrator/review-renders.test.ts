@@ -336,6 +336,73 @@ describe('reviewRenders', () => {
     expect(renders.images).toEqual([]);
   });
 
+  it('attaches the render a review verify ran, over an earlier run of the same check', () => {
+    const projectDir = createTempDir('review-renders');
+    const before = join(projectDir, 'pre-review.png');
+    const verified = join(projectDir, 'verify.png');
+    writePng(before);
+    writePng(verified);
+    const ledger: EvidenceLedger = {
+      ...ledgerWithChecks([{ ...checkEntry(RENDER_A, [before]), ts: '2026-01-01T00:00:00.000Z' }]),
+      verifyChecks: [{ ...checkEntry(RENDER_A, [verified]), ts: '2026-01-01T00:01:00.000Z' }],
+    };
+
+    const renders = reviewRenders({
+      ledger,
+      registry: registryOf(renderCheck(RENDER_A, 'dashboard')),
+      projectDir,
+      currentCandidateId: CANDIDATE,
+      seatSupportsImages: true,
+    });
+
+    expect(renders.attachedCheckIds).toEqual([RENDER_A]);
+    expect(renders.images).toHaveLength(1);
+    expect(renders.images[0]?.path.endsWith('verify.png')).toBe(true);
+    expect(renders.section).toContain(verified);
+    expect(renders.section).not.toContain(before);
+  });
+
+  it('attaches a render that only a review verify ran on the current candidate', () => {
+    const projectDir = createTempDir('review-renders');
+    const verified = join(projectDir, 'verify.png');
+    writePng(verified);
+
+    const renders = reviewRenders({
+      ledger: { ...ledgerWithChecks([]), verifyChecks: [checkEntry(RENDER_A, [verified])] },
+      registry: registryOf(renderCheck(RENDER_A, 'dashboard')),
+      projectDir,
+      currentCandidateId: CANDIDATE,
+      seatSupportsImages: true,
+    });
+
+    expect(renders.missingCheckIds).toEqual([]);
+    expect(renders.attachedCheckIds).toEqual([RENDER_A]);
+    expect(renders.images).toHaveLength(1);
+    expect(renders.section).toContain(verified);
+  });
+
+  it('ignores a render a review verify ran on an older candidate', () => {
+    const projectDir = createTempDir('review-renders');
+    const older = join(projectDir, 'older-verify.png');
+    writePng(older);
+
+    const renders = reviewRenders({
+      ledger: {
+        ...ledgerWithChecks([]),
+        verifyChecks: [checkEntry(RENDER_A, [older], 'candidate-old')],
+      },
+      registry: registryOf(renderCheck(RENDER_A, 'dashboard')),
+      projectDir,
+      currentCandidateId: CANDIDATE,
+      seatSupportsImages: true,
+    });
+
+    expect(renders.missingCheckIds).toEqual([RENDER_A]);
+    expect(renders.attachedCheckIds).toEqual([]);
+    expect(renders.images).toEqual([]);
+    expect(renders.section).not.toContain(older);
+  });
+
   it('treats a render check with no entry for the current candidate as missing', () => {
     const projectDir = createTempDir('review-renders');
     const png = join(projectDir, 'dashboard.png');

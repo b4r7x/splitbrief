@@ -151,7 +151,7 @@ async function haltFrames(input: {
         save(config);
         frames.push(await seatLine());
       }
-      return plainAnswer('end-run');
+      return { ...plainAnswer('a'), row: true };
     },
     resolve: () => {},
     resetMode: () => {},
@@ -394,7 +394,7 @@ describe('the reset note where a seat is not its own', () => {
         hint: '',
         questionEpoch: 0,
         setReviewMode: async () => ({ approved: false }),
-        setQuestionMode: async () => plainAnswer('switch-seat'),
+        setQuestionMode: async () => ({ ...plainAnswer('w'), row: true }),
         resolve: () => {},
         resetMode: () => {},
       },

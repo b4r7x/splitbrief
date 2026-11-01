@@ -51,8 +51,38 @@ describe('boundHeadlessJsonRecord', () => {
 
     expect(boundedRecord).toMatchObject({
       type: 'warning',
-      message: expect.stringContaining('omitted oversized readiness_report record'),
+      message: expect.stringContaining('Omitted oversized readiness_report record'),
     });
+  });
+
+  it('turns a record that fails its schema into a warning record', () => {
+    expect(
+      boundHeadlessJsonRecord({
+        type: 'final_review_failed',
+        sessionId: 'sess-1',
+        blocking: Number.NaN,
+      }),
+    ).toEqual({ type: 'warning', message: 'Omitted invalid final_review_failed record' });
+  });
+
+  it('keeps the halt on an oversized recovery_required record and leaves out its files', () => {
+    const halt = {
+      type: 'recovery_required' as const,
+      sessionId: 'sess-1',
+      halt: 'needs-you' as const,
+      reason: 'apply-conflict' as const,
+      status: 'awaiting-user' as const,
+      message: 'Apply found 7000 conflicting files',
+      availableActions: ['retry-same-worker' as const, 'end-run' as const],
+      recommendedAction: 'retry-same-worker' as const,
+      resumeCommand: 'splitbrief continue sess-1 --action retry',
+    };
+    const files = Array.from(
+      { length: 7000 },
+      (_value, index) => `src/generated/module-${String(index).padStart(5, '0')}/index.ts`,
+    );
+
+    expect(boundHeadlessJsonRecord({ ...halt, files })).toEqual(halt);
   });
 
   it('carries the halt and the recovery status through so a machine consumer can tell them apart', () => {

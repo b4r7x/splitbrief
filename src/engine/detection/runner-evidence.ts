@@ -12,6 +12,7 @@ import type {
 import {
   CLI_TOOL_CATALOG,
   CLI_TOOL_IDS,
+  signInOutranksUnreadVersion,
   type CliCompatibility,
 } from '../../core/runners/cli-tool-catalog.js';
 import { classifyCliAdmittedVersion } from '../../core/runners/cli-version.js';
@@ -632,11 +633,25 @@ async function probeResolvedCliEvidence(
     version: declaredEvidence.version,
     compatibility: CLI_TOOL_CATALOG[context.id].compatibility,
   });
+  const credential = credentialFromCliAuth(context, declaredEvidence.auth);
   let catalog: ProbeOutcome<readonly DetectedModel[]>;
   if (!catalogRequested) {
     catalog = { kind: 'not-run' };
-  } else if (executableFact.kind !== 'trusted' || compatibility.kind !== 'compatible') {
+  } else if (executableFact.kind !== 'trusted') {
     catalog = { kind: 'unsupported' };
+  } else if (
+    signInOutranksUnreadVersion({
+      tool: context.id,
+      installedVersion:
+        declaredEvidence.version.kind === 'success' ? declaredEvidence.version.value : null,
+      signedOut: credential === 'absent',
+    })
+  ) {
+    catalog = { kind: 'missing-credential' };
+  } else if (declaredEvidence.version.kind === 'timeout') {
+    catalog = { kind: 'timeout' };
+  } else if (compatibility.kind !== 'compatible') {
+    catalog = { kind: 'not-run' };
   } else {
     try {
       catalog = await probeContextCatalog({
@@ -662,7 +677,7 @@ async function probeResolvedCliEvidence(
     installation: 'installed',
     executable: executableFact,
     compatibility,
-    credential: credentialFromCliAuth(context, declaredEvidence.auth),
+    credential,
     auth: declaredEvidence.auth,
     catalog,
     modelRun: modelRunFromCatalog(context, base, catalog),

@@ -295,6 +295,66 @@ describe('skill-blocks', () => {
     expect(gates).not.toContain('### End-of-run checks');
   });
 
+  it('states that a brief runs its own checks at end cadence, except a render check', () => {
+    const rules = renderBlock('gate-rules') ?? '';
+    expect(rules).toContain(
+      'At workflow.review: end, run the brief checks after each brief, except a render check.',
+    );
+    expect(rules).toContain(
+      'A consult `verify` runs only the checks it names, and on a fix brief the failed checks that brief answers.',
+    );
+    expect(rules).toContain(
+      'At workflow.review: task, run the brief checks and the checks of its due criteria after each brief.',
+    );
+    expect(rules).not.toContain('an ordinary brief runs no check');
+    for (const skill of ['splitbrief', 'splitbrief-brief', 'splitbrief-run', 'splitbrief-review']) {
+      const gates = readFileSync(`skills/${skill}/references/gates.md`, 'utf8');
+      expect(gates, skill).toContain(
+        "At cadence=end, after each task, run its own checks. A red required check goes to that task's retry ladder.",
+      );
+      expect(gates, skill).toContain(
+        "At cadence=task, after each task, run its checks and the due checks. A red required check goes to that task's retry ladder.",
+      );
+      expect(gates, skill).not.toContain('At cadence=end, an ordinary task runs no check.');
+    }
+    for (const skill of ['splitbrief', 'splitbrief-run', 'splitbrief-review']) {
+      const protocol = readFileSync(`skills/${skill}/references/run-protocol.md`, 'utf8');
+      expect(protocol, skill).toContain(
+        "At end cadence, run the task's own checks, except a render check.",
+      );
+      expect(protocol, skill).not.toContain('At end cadence, run none.');
+      expect(protocol, skill).toMatch(/^\d+\. Mark the task done only after those checks pass\./mu);
+      expect(protocol, skill).not.toContain('At task cadence, mark the task done');
+    }
+    const babysit = readFileSync('skills/splitbrief-babysit/SKILL.md', 'utf8');
+    expect(babysit).toContain('With `end`, a brief runs its own checks, except renders.');
+    expect(babysit).not.toContain('an ordinary brief runs no check');
+  });
+
+  it('states the check cadence in the opening of the gates reference the way its rules do', () => {
+    for (const skill of ['splitbrief', 'splitbrief-brief', 'splitbrief-run', 'splitbrief-review']) {
+      const gates = readFileSync(`skills/${skill}/references/gates.md`, 'utf8');
+      expect
+        .soft(gates, skill)
+        .not.toContain('At cadence=task the registered checks run after each brief');
+    }
+  });
+
+  it('drops the stale consult from every skill and dispatches on the current files', () => {
+    expect(renderBlock('consult-table') ?? '').not.toMatch(/stale/iu);
+    const files = readdirSync('skills', { recursive: true, encoding: 'utf8' });
+    for (const file of files.filter((path) => path.endsWith('.md'))) {
+      const text = readFileSync(join('skills', file), 'utf8');
+      expect(text, file).not.toMatch(/stale consult|stale-input|input hashes/iu);
+    }
+    for (const skill of ['splitbrief', 'splitbrief-run', 'splitbrief-review']) {
+      const protocol = readFileSync(`skills/${skill}/references/run-protocol.md`, 'utf8');
+      expect(protocol, skill).toContain(
+        '1. Refresh suggested/context code and read-only Plan context from disk.',
+      );
+    }
+  });
+
   it('returns verdict and fix work in one schema-valid review answer', () => {
     const packet = renderBlock('review-packet') ?? '';
     const example = packet.split('\n').find((line) => line.trim().startsWith('{"tasks":'));

@@ -471,6 +471,27 @@ describe('workflow visual fixtures', () => {
     },
   );
 
+  it("shows the planner's cannot answer on the skipped brief as cannot be done", async () => {
+    const scenario = findVisualScenario('workflow-closed-decided-skip');
+    const checkpoint = scenario?.checkpoints[0];
+    if (!scenario || !checkpoint) throw new Error('Missing decided-skip scenario');
+    const ui = await mountGalleryScenario({
+      scenario,
+      checkpoint,
+      viewport: viewport({ cols: 120, rows: 40 }),
+    });
+    try {
+      const frame = stripTerminalControls(await ui.waitForCheckpoint(), {
+        preserveLineBreaks: true,
+      });
+      expect(frame).toContain(
+        'PLAN → T002: cannot be done · The form file is generated; every attempt is overwritten by the build.',
+      );
+    } finally {
+      await ui.unmount();
+    }
+  });
+
   it('models the smoke narration as marked chunks and retains the completed brief body', () => {
     const projection = workflowFixtureProjections.get(scenarioId('workflow-continuous-transcript'));
     if (!projection) throw new Error('Missing continuous transcript scenario');

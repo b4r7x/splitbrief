@@ -19,18 +19,16 @@ import { countPromptBodyRows, promptBodyRows } from './prompt-body-rows.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import {
   correctionActionFor,
-  formatActionRow,
   formatMiddotList,
   formatRecoveryPrompt,
   getRecoveryPromptActions,
-  isActionRowLine,
   parseRecoveryActionAnswer,
   passHeadlinePrefix,
+  recommendedRecoveryAction,
   recoveryComposerHint,
+  RECOVERY_EMPTY_ENTER_NOTICE,
   recoveryMenuParts,
   recoveryPromptSummaryRows,
-  recommendedRowPrefix,
-  switchSeatCandidateForAnswer,
 } from './recovery-prompt.js';
 
 async function renderPromptBody(prompt: string): Promise<string> {
@@ -68,7 +66,7 @@ const baseIssue: RecoveryIssue = {
 };
 
 function recoveryMenuText(action: RecoveryAction, issue: RecoveryIssue): string {
-  return recoveryMenuParts(action, issue)
+  return recoveryMenuParts(action, issue, false)
     .map((part) => part.text)
     .join('');
 }
@@ -213,7 +211,7 @@ it('fits the Files row of an Apply cut off with 2000 files left in well under a 
 });
 
 it('carries the action seat and consequence before formatting the label', () => {
-  expect(recoveryMenuParts('switch-seat', makeRecoveryIssue({ seat: 'build' }))).toEqual([
+  expect(recoveryMenuParts('switch-seat', makeRecoveryIssue({ seat: 'build' }), false)).toEqual([
     { text: 'Change ', tone: 'text' },
     { text: 'BUILD', tone: 'implementer' },
     { text: ' tool', tone: 'text' },
@@ -223,7 +221,9 @@ it('carries the action seat and consequence before formatting the label', () => 
 });
 
 it('keeps a fix action hint dim', () => {
-  expect(recoveryMenuParts('revise', makeRecoveryIssue({ reason: 'review-failed' }))).toEqual([
+  expect(
+    recoveryMenuParts('revise', makeRecoveryIssue({ reason: 'review-failed' }), false),
+  ).toEqual([
     { text: 'Fix again', tone: 'text' },
     { text: ' · ', tone: 'textDim' },
     { text: 'runs another fix cycle with your note', tone: 'textDim' },
@@ -245,11 +245,38 @@ it.each([
     'puts back the files Apply replaced and removes the ones it created',
   ],
 ] as const)('keeps the %s %s action consequence dim', (reason, action, label, consequence) => {
-  expect(recoveryMenuParts(action, makeRecoveryIssue({ reason }))).toEqual([
+  expect(recoveryMenuParts(action, makeRecoveryIssue({ reason }), false)).toEqual([
     { text: label, tone: 'text' },
     { text: ' · ', tone: 'textDim' },
     { text: consequence, tone: 'textDim' },
   ]);
+});
+
+it.each([
+  ['prose', `Question: ${'greet.ts needs a locale table, and no brief names it. '.repeat(20)}`],
+  ['a long path', `Question: read ${'src/feature/'.repeat(40)}greet.ts`],
+  ['wide words', `Question: ${'世界の言語を読む、'.repeat(30)}`],
+])('fits asked %s on the rows it is given, at every width', (_label, asked) => {
+  for (let width = 24; width <= 100; width += 1) {
+    for (const askedRows of [1, 2, 3, 5]) {
+      const issue = makeRecoveryIssue({ details: [asked], files: [] });
+      const rows = promptBodyRows(recoveryPromptSummaryRows(issue, width, askedRows), width);
+      const task = rows.findIndex((row) => row.kind === 'facts-line' && row.text.includes('Task'));
+      const facts = rows.slice(2, task).flatMap((row) => (row.kind === 'facts-line' ? [row] : []));
+      expect(facts, `${width}/${askedRows}`).toHaveLength(askedRows);
+      expect(facts.at(-1)?.text.endsWith('…'), `${width}/${askedRows}`).toBe(true);
+    }
+  }
+});
+
+it('End run names its kept changes only after a brief finished', () => {
+  const issue = makeRecoveryIssue({ reason: 'apply-conflict' });
+  expect(recoveryMenuParts('end-run', issue, true)).toEqual([
+    { text: 'End run', tone: 'text' },
+    { text: ' · ', tone: 'textDim' },
+    { text: 'closes this run, keeps its changes', tone: 'textDim' },
+  ]);
+  expect(recoveryMenuParts('end-run', issue, false)).toEqual([{ text: 'End run', tone: 'text' }]);
 });
 
 it('preserves the canonical retry cause when an old message starts with its seat', () => {
@@ -364,29 +391,13 @@ describe('recovery prompt', () => {
     }
   });
 
-  it('gives each tool a quota-blocked seat can switch to its own row', async () => {
-    const issue = usageLimitIssue([{ tool: 'claude-code', model: 'sonnet' }, { tool: 'opencode' }]);
-
-    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
-
-    expect(visible).toContain('w1   switch BUILD to Claude Code CLI · Sonnet 5');
-    expect(visible).toContain('w2   switch BUILD to OpenCode CLI');
-    expect(visible).toContain('r    retry same worker');
-    expect(visible).toContain('a    end run');
-    expect(visible).not.toContain('opencode,');
-  });
-
-  it("offers the seat's own tool as a model to pick, never as a switch to the tool it runs", async () => {
+  it("offers a different tool first as a tool change, also when the seat's own tool follows", () => {
     const issue: RecoveryIssue = {
       ...usageLimitIssue([{ tool: 'claude-code' }, { tool: 'opencode' }]),
       facts: { tool: 'OpenCode CLI' },
     };
 
-    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
-
-    expect(visible).toContain('w1   switch BUILD to Claude Code CLI');
-    expect(visible).toContain('w2   pick another BUILD model');
-    expect(visible).not.toContain('switch BUILD to OpenCode CLI');
+    expect(recoveryMenuText('switch-seat', issue)).toBe('Change BUILD tool · restarts this brief');
   });
 
   it("names the menu row a model pick when the seat's own tool is the only offer", () => {
@@ -400,17 +411,7 @@ describe('recovery prompt', () => {
     );
   });
 
-  it('keeps the bare seat key when only one tool is offered', async () => {
-    const issue = usageLimitIssue([{ tool: 'opencode' }]);
-
-    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
-
-    expect(visible).toContain('w   switch BUILD to OpenCode CLI');
-    expect(visible).not.toContain('w1');
-    expect(parseRecoveryActionAnswer('w2', issue)).toBeNull();
-  });
-
-  it('reads a usage-limit halt as seat down with its rows and no pause', async () => {
+  it('reads a usage-limit halt as seat down with its actions and no pause', async () => {
     const issue: RecoveryIssue = {
       ...usageLimitIssue([{ tool: 'opencode' }]),
       facts: { tool: 'Ollama' },
@@ -419,45 +420,21 @@ describe('recovery prompt', () => {
     const visible = await renderPromptBody(formatRecoveryPrompt(issue));
 
     expect(visible).toContain('Seat down · Usage limit on Ollama');
-    expect(visible).toContain('r   retry same worker');
-    expect(visible).toContain('w   switch BUILD to OpenCode CLI');
-    expect(visible).toContain('s   skip task');
-    expect(visible).toContain('a   end run · closes this run, changes kept');
     expect(visible).not.toContain('pause');
+    expect(
+      getRecoveryPromptActions(issue).map((action) => recoveryMenuText(action, issue)),
+    ).toEqual(['Try again', 'Change BUILD tool · restarts this brief', 'Skip task', 'End run']);
   });
 
-  it('counts the ready tools that did not fit the offer', async () => {
-    const issue = usageLimitIssue([
-      { tool: 'claude-code', model: 'sonnet' },
-      { tool: 'opencode' },
-      { tool: 'cursor' },
-      { tool: 'copilot' },
-      { tool: 'kilo-code' },
-    ]);
-
-    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
-
-    expect(visible).toContain('w3   switch BUILD to Cursor Agent CLI');
-    expect(visible).toContain('(2 more ready tools detected)');
-    expect(visible).not.toContain('w4');
-  });
-
-  it('reads a numbered seat key back as the candidate its row named', () => {
+  it('reads the seat key whatever the offer holds, and no numbered key', () => {
     const issue = usageLimitIssue([{ tool: 'claude-code', model: 'sonnet' }, { tool: 'opencode' }]);
 
     expect(parseRecoveryActionAnswer('w', issue)).toBe('switch-seat');
-    expect(parseRecoveryActionAnswer('w2', issue)).toBe('switch-seat');
-    expect(parseRecoveryActionAnswer('', issue)).toBe('switch-seat');
+    expect(parseRecoveryActionAnswer('w2', issue)).toBeNull();
     expect(parseRecoveryActionAnswer('w3', issue)).toBeNull();
-    expect(switchSeatCandidateForAnswer('w2', issue.switchSeat)).toEqual({ tool: 'opencode' });
-    expect(switchSeatCandidateForAnswer('w', issue.switchSeat)).toEqual({
-      tool: 'claude-code',
-      model: 'sonnet',
-    });
-    expect(switchSeatCandidateForAnswer('w9', issue.switchSeat)).toBeUndefined();
   });
 
-  it('builds a compact retry-exhausted recovery prompt with only available actions', async () => {
+  it('builds a compact retry-exhausted summary with only available actions', async () => {
     const prompt = formatRecoveryPrompt(baseIssue);
     const visible = await renderPromptBody(prompt);
 
@@ -468,10 +445,13 @@ describe('recovery prompt', () => {
       'Last check test failed: npm test -- auth failed in src/auth/session.test.ts',
     );
     expect(visible).not.toMatch(/\bWorker\b/);
-    expect(visible).toContain('r   retry same worker recommended');
-    expect(visible).toContain('s   skip task');
-    expect(visible).toContain('a   end run · closes this run, changes kept');
     expect(visible).not.toContain('continue');
+    expect(getRecoveryPromptActions(baseIssue)).toEqual([
+      'retry-same-worker',
+      'skip-current-task',
+      'end-run',
+    ]);
+    expect(recommendedRecoveryAction(baseIssue)).toBe('retry-same-worker');
   });
 
   it.each(['default', 'local-fixture'])(
@@ -506,37 +486,79 @@ describe('recovery prompt', () => {
     expect(prompt).not.toContain('again after one repair.');
   });
 
-  it('serializes the rows into a flat prompt with the recommended accent marker', () => {
+  it('serializes the headline and facts into a flat prompt with no action row', () => {
     const prompt = formatRecoveryPrompt(baseIssue);
 
     expect(prompt).toContain('Needs you · T003 failed after 3 attempts');
-    expect(prompt).toContain('▌ [r]  retry same worker');
-    expect(prompt).toContain('[s]  skip task');
-    expect(prompt).not.toContain('[c]  continue');
-  });
-
-  it('shares one action-row shape between the builder and the parser detector', () => {
-    const row = formatActionRow('r', 'retry same worker');
-
-    expect(row).toBe('[r]  retry same worker');
-    expect(isActionRowLine(row)).toBe(true);
-    expect(isActionRowLine(`${recommendedRowPrefix()}${row}`)).toBe(true);
-    expect(isActionRowLine('Task T003 · Patch auth validation')).toBe(false);
+    expect(prompt).toContain('Task T003 · Patch auth validation');
+    expect(prompt).not.toMatch(/^\S* ?\[/m);
   });
 
   it('parses answers into typed recovery actions', () => {
     expect(parseRecoveryActionAnswer('r', baseIssue)).toBe('retry-same-worker');
-    expect(parseRecoveryActionAnswer('skip', baseIssue)).toBe('skip-current-task');
-    expect(parseRecoveryActionAnswer('abort', baseIssue)).toBe('end-run');
+    expect(parseRecoveryActionAnswer('s', baseIssue)).toBe('skip-current-task');
+    expect(parseRecoveryActionAnswer('a', baseIssue)).toBe('end-run');
   });
 
-  it('marks the recommended action and applies it only for empty Enter', async () => {
-    const issue: RecoveryIssue = { ...baseIssue, recommendedAction: 'skip-current-task' };
-    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
+  it.each([
+    'skip',
+    'skip task',
+    'end',
+    'end run',
+    'abort',
+    'quit',
+    'q',
+    'restore',
+    'later',
+    'wait',
+    'accept',
+    'continue',
+    'cont',
+  ])('reads the word %s as no action', (word) => {
+    const issue: RecoveryIssue = {
+      ...baseIssue,
+      availableActions: [
+        'retry-same-worker',
+        'restore-backup',
+        'retry-later',
+        'accept-as-is',
+        'continue',
+        'skip-current-task',
+        'end-run',
+      ],
+    };
 
-    expect(visible).toContain('s   skip task recommended');
-    expect(parseRecoveryActionAnswer('', issue)).toBe('skip-current-task');
-    expect(parseRecoveryActionAnswer('   ', issue)).toBe('skip-current-task');
+    expect(parseRecoveryActionAnswer(word, issue)).toBeNull();
+  });
+
+  it('marks the recommended action', () => {
+    const issue: RecoveryIssue = { ...baseIssue, recommendedAction: 'skip-current-task' };
+
+    expect(recommendedRecoveryAction(issue)).toBe('skip-current-task');
+  });
+
+  it('reads an empty answer as no action', () => {
+    const issue: RecoveryIssue = { ...baseIssue, recommendedAction: 'skip-current-task' };
+
+    expect(parseRecoveryActionAnswer('', issue)).toBeNull();
+    expect(parseRecoveryActionAnswer('   ', issue)).toBeNull();
+  });
+
+  it('tells the user that an empty Enter sent nothing', () => {
+    expect(RECOVERY_EMPTY_ENTER_NOTICE).toBe('Nothing to send. Tab to choose an action.');
+    expect(recoveryComposerHint(baseIssue, false)).toBe(
+      'Type a correction, or tab to choose an action…',
+    );
+    expect(
+      recoveryComposerHint(
+        {
+          ...baseIssue,
+          availableActions: ['skip-current-task', 'end-run'],
+          recommendedAction: 'skip-current-task',
+        },
+        false,
+      ),
+    ).toBe('Tab to choose an action…');
   });
 
   it('returns null for unknown or unavailable non-empty input so the caller re-prompts', () => {
@@ -545,7 +567,7 @@ describe('recovery prompt', () => {
     expect(parseRecoveryActionAnswer('nope', baseIssue)).toBeNull();
   });
 
-  it('recommends the first listed action when the saved recommendation is not offered', async () => {
+  it('recommends the first listed action when the saved recommendation is not offered', () => {
     const issue: RecoveryIssue = {
       ...baseIssue,
       id: 'rec_unoffered',
@@ -553,10 +575,7 @@ describe('recovery prompt', () => {
       recommendedAction: 'retry-same-worker',
     };
 
-    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
-
-    expect(visible).toContain('s   skip task recommended');
-    expect(parseRecoveryActionAnswer('', issue)).toBe('skip-current-task');
+    expect(recommendedRecoveryAction(issue)).toBe('skip-current-task');
   });
 
   it('parses continue only when the issue allows it', () => {
@@ -578,6 +597,28 @@ describe('recovery prompt', () => {
     expect(parseRecoveryActionAnswer('c', { ...issue, availableActions: ['end-run'] })).toBeNull();
   });
 
+  it('offers Decide for me as its own row and reads back only its key, never a typed word', () => {
+    const issue: RecoveryIssue = {
+      ...baseIssue,
+      availableActions: ['decide-for-me', 'skip-current-task', 'end-run'],
+      recommendedAction: 'skip-current-task',
+    };
+
+    expect(recoveryMenuText('decide-for-me', issue)).toBe('Decide for me');
+    for (const answer of ['d', 'D']) {
+      expect(parseRecoveryActionAnswer(answer, issue)).toBe('decide-for-me');
+    }
+    for (const answer of ['decide', 'decide for me', 'decide-for-me', '  Decide  ']) {
+      expect(parseRecoveryActionAnswer(answer, issue)).toBeNull();
+    }
+    expect(
+      parseRecoveryActionAnswer('d', {
+        ...issue,
+        availableActions: ['skip-current-task', 'end-run'],
+      }),
+    ).toBeNull();
+  });
+
   it('offers only the actions the issue carries, with its details under the headline', async () => {
     const issue: RecoveryIssue = {
       id: 'rec_overflow',
@@ -597,10 +638,13 @@ describe('recovery prompt', () => {
 
     expect(visible).toContain('Seat down · Context overflowed on T004');
     expect(visible).toContain('Blocked step: before T004');
-    expect(visible).toContain('r   retry same worker recommended');
-    expect(visible).toContain('s   skip task');
-    expect(visible).toContain('a   end run · closes this run, changes kept');
     expect(visible).not.toContain('continue');
+    expect(getRecoveryPromptActions(issue)).toEqual([
+      'retry-same-worker',
+      'skip-current-task',
+      'end-run',
+    ]);
+    expect(recommendedRecoveryAction(issue)).toBe('retry-same-worker');
     expect(parseRecoveryActionAnswer('c', issue)).toBeNull();
   });
 
@@ -634,26 +678,23 @@ describe('recovery prompt', () => {
   });
 
   it('spells the run-level answers in the words the gate uses', () => {
-    const prompt = formatRecoveryPrompt({
+    const issue: RecoveryIssue = {
       ...baseIssue,
       reason: 'plan-checks-failed',
       taskId: undefined,
       availableActions: ['retry-same-worker', 'revise', 'end-run'],
       recommendedAction: 'revise',
-    });
+    };
 
-    expect(prompt).toContain(
-      `${recommendedRowPrefix()}[v]  revise · send the planner a correction`,
-    );
-    expect(prompt).toContain('[a]  end run · closes this run, changes kept');
+    expect(recommendedRecoveryAction(issue)).toBe('revise');
+    expect(recoveryMenuText('revise', issue)).toBe('Send a correction');
+    expect(recoveryMenuText('end-run', issue)).toBe('End run');
   });
 
   it.each([
     ['v', 'revise'],
     ['revise', 'revise'],
     ['a', 'end-run'],
-    ['end', 'end-run'],
-    ['abort', 'end-run'],
   ] as const)('parses %s as %s when the halt offers it', (answer, action) => {
     const issue: RecoveryIssue = {
       ...baseIssue,
@@ -665,13 +706,10 @@ describe('recovery prompt', () => {
     expect(parseRecoveryActionAnswer(answer, issue)).toBe(action);
   });
 
-  it('uses ascii recommended-row and pass-headline prefixes when the glyph tier is ascii', () => {
+  it('uses the ascii pass-headline prefix when the glyph tier is ascii', () => {
     const prev = process.env.TERM;
     process.env.TERM = 'dumb';
     try {
-      expect(formatRecoveryPrompt(baseIssue)).toContain(
-        `${glyph('liveBar', 'ascii')} [r]  retry same worker`,
-      );
       expect(passHeadlinePrefix()).toBe(`${glyph('check', 'ascii')} `);
     } finally {
       process.env.TERM = prev;
@@ -724,7 +762,8 @@ describe('recovery prompt', () => {
   }
 
   it('names the plan seat that was never called, and the sections it never got', async () => {
-    const visible = await renderPromptBody(formatRecoveryPrompt(apiContextIssue()));
+    const issue = apiContextIssue();
+    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
 
     expect(visible).toContain(
       'Seat down · Nothing was sent to PLAN · required evidence was missing',
@@ -733,12 +772,12 @@ describe('recovery prompt', () => {
     expect(visible).toContain(
       'Pick a plan seat with a larger context in /crew plan, then choose Try again.',
     );
-    expect(visible).toContain('r   retry PLAN recommended');
-    expect(visible).toContain('a   end run · closes this run, changes kept');
+    expect(recoveryMenuText('retry-same-worker', issue)).toBe('Try again');
+    expect(recommendedRecoveryAction(issue)).toBe('retry-same-worker');
+    expect(getRecoveryPromptActions(issue)).toEqual(['retry-same-worker', 'end-run']);
     // The figures are the details view's; the panel states the cause and nothing numeric.
     expect(visible).not.toMatch(/148,?000|156,?000|32,?768/);
     expect(visible).not.toMatch(/blocking|0 finding/i);
-    expect(visible).not.toContain('skip task');
     // The boundary's sentence repeats the list the detail row already carries.
     expect(visible.match(/evidence\.json/g)).toHaveLength(1);
   });
@@ -765,14 +804,14 @@ describe('recovery prompt', () => {
     const visible = await renderPromptBody(formatRecoveryPrompt(issue));
 
     expect(visible).toContain('Nothing was sent to REVIEW · larger than the context window');
-    expect(visible).toContain('r   retry REVIEW');
+    expect(recoveryMenuText('retry-same-worker', issue)).toBe('Try again');
     expect(visible).toContain('/crew review');
     expect(visible).not.toMatch(/blocking/i);
     expect(visible).not.toMatch(/412,?000|32,?768/);
     expect(visible).not.toMatch(/review fix|repair/i);
   });
 
-  it('names the seat on a review call that never landed, and keeps the retry key', async () => {
+  it('keeps the ordinary headline and the retry key on a review call that never landed', async () => {
     const issue = apiContextIssue({
       id: 'rec_review_call_failed',
       reason: 'review-failed',
@@ -789,25 +828,22 @@ describe('recovery prompt', () => {
     // No context diagnosis, so the halt keeps the ordinary headline — only the retry is seat-level.
     expect(visible).toContain('Needs you · The review call did not land: socket hang up');
     expect(visible).not.toContain('/crew');
-    expect(visible).toContain('r   retry REVIEW');
+    expect(recoveryMenuText('retry-same-worker', issue)).toBe('Try again');
     expect(parseRecoveryActionAnswer('r', issue)).toBe('retry-same-worker');
     expect(parseRecoveryActionAnswer('retry', issue)).toBe('retry-same-worker');
   });
 
-  it('leaves a halt that names a brief calling its retry what it is: a replay of that brief', async () => {
+  it('leaves a halt that names a brief calling its retry what it is: a replay of that brief', () => {
     const withBrief = apiContextIssue({
       id: 'rec_api_context_brief',
       taskId: taskId('T003'),
       taskTitle: 'Patch auth validation',
     });
 
-    const visible = await renderPromptBody(formatRecoveryPrompt(withBrief));
-
-    expect(visible).toContain('r   retry same worker');
-    expect(visible).not.toContain('retry PLAN');
-    expect(await renderPromptBody(formatRecoveryPrompt(baseIssue))).toContain(
-      'r   retry same worker',
+    expect(recoveryMenuText('retry-same-worker', withBrief)).toBe(
+      'Try again · restarts this brief',
     );
+    expect(recoveryMenuText('retry-same-worker', baseIssue)).toBe('Try again');
   });
 
   // At its widest the retry-exhausted builder ends on the two voices and the verdict. A tighter
@@ -899,8 +935,8 @@ describe('recovery prompt', () => {
     expect(visible).toContain('Needs you · Final review failed with 2 blocking findings');
     expect(visible).not.toContain('Nothing was sent');
     expect(visible).not.toContain('retry');
-    expect(formatRecoveryPrompt(issue)).toContain(
-      'fix again · runs another fix cycle with your note',
+    expect(recoveryMenuText('revise', issue)).toBe(
+      'Fix again · runs another fix cycle with your note',
     );
   });
 
@@ -944,12 +980,8 @@ describe('recovery prompt', () => {
       'Restore backup · puts back the files Apply replaced and removes the ones it created',
     );
     expect(getRecoveryPromptActions(offered)).toContain('restore-backup');
-    const partialVisible = await renderPromptBody(formatRecoveryPrompt(offered));
-    expect(partialVisible).toContain('restore backup');
-    for (const answer of ['u', 'restore', 'restore backup', 'restore-backup']) {
-      expect(parseRecoveryActionAnswer(answer, offered)).toBe('restore-backup');
-    }
-    expect(parseRecoveryActionAnswer('restore', conflict)).toBeNull();
+    expect(parseRecoveryActionAnswer('u', offered)).toBe('restore-backup');
+    expect(parseRecoveryActionAnswer('u', conflict)).toBeNull();
     const reconciled: RecoveryIssue = {
       ...offered,
       details: [
@@ -964,9 +996,6 @@ describe('recovery prompt', () => {
     const visible = await renderPromptBody(formatRecoveryPrompt(conflict));
     expect(visible).toContain('Needs you · Apply found 2 conflicting files');
     expect(visible).toContain('a.txt · both sides changed the same lines');
-    expect(visible).toContain('re-run Apply');
-    expect(visible).not.toContain('retry same worker');
-    expect(visible).not.toContain('restarts this brief');
   });
 
   it('lists every file of a wide Apply conflict with the place to resolve it', async () => {

@@ -548,7 +548,12 @@ export function buildRetryExhaustedRecoveryIssue(
       cannotNext: opts.cannotNext ?? undefined,
     }),
     availableActions: actions,
-    recommendedAction: chooseRecommended(actions),
+    recommendedAction: chooseRecommended(
+      actions,
+      opts.cannot === undefined
+        ? []
+        : [opts.cannotNext === 'end-run' ? 'end-run' : 'skip-current-task'],
+    ),
     createdAt: opts.createdAt,
   });
 }

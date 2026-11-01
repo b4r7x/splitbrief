@@ -52,6 +52,7 @@ import {
   isPickerItemDisabled,
   modelBylineAxes,
   pickerListingSource,
+  withRetry,
   wrapOnWords,
   type ModelCatalogDiagnostic,
 } from './picker-format.js';
@@ -70,12 +71,12 @@ import { inheritsPlannerSeat } from './config-transforms.js';
 const MAX_STALE_MODEL_COPY_COUNT = 99;
 
 /** Rows a failed refresh left behind are not a count the byline can claim. */
-function staleModelCopy(staleCount: number): string | undefined {
+function staleModelCopy(staleCount: number, remedied: boolean): string | undefined {
   if (staleCount <= 0) return undefined;
   const count = Math.min(staleCount, MAX_STALE_MODEL_COPY_COUNT);
   const label = staleCount > MAX_STALE_MODEL_COPY_COUNT ? `${count}+` : String(count);
   const noun = staleCount === 1 ? 'model' : 'models';
-  return `${label} stale ${noun} retained. Refresh detection.`;
+  return withRetry(`${label} stale ${noun} retained`, '. Refresh detection.', remedied);
 }
 
 /** The remedy the card may spend before its own copy needs the rest of the budget. */
@@ -303,11 +304,10 @@ export function PickerView({
         if (remedy !== undefined) return remedy;
       }
     }
-    const stale = staleModelCopy(catalog.modelCounts.stale);
     // A status remediation takes the first row: a runner the picker cannot run says how to fix it,
-    // then on its own row what it is, so the advice never runs into the facts. The retained-stale
-    // line is already a refresh instruction, so a remediation ahead of it would only push it out.
-    const reason = stale === undefined ? tool.status.remediation : null;
+    // then on its own row what it is, so the advice never runs into the facts.
+    const reason = tool.status.remediation;
+    const stale = staleModelCopy(catalog.modelCounts.stale, reason !== null);
     const spent =
       stale === undefined ? 0 : getTerminalCellWidth(stale) + getTerminalCellWidth(SOFT_SEP);
 

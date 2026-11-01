@@ -1,9 +1,6 @@
-import { SOFT_SEP } from '../../core/separators.js';
 import {
   ELLIPSIS,
-  getTerminalCellWidth,
   sanitizeTerminalDisplayText,
-  truncateTerminalDisplayText,
   segmentsForRowText,
 } from '../../utils/display-text.js';
 import { countNoun } from '../../utils/pluralize.js';
@@ -13,17 +10,13 @@ import type { ConversationRowSegment } from './conversation-rows/types.js';
 import {
   FACT_INDENT,
   FAILED_REVIEW_MARKER,
-  isActionRowLine,
   passHeadlinePrefix,
   type PromptRow,
   promptRowsToString,
-  recommendedRowPrefix,
 } from './recovery-prompt.js';
 
 const MIN_PROMPT_WIDTH = 1;
 const GRID_MIN_WIDTH = 52;
-const RECOMMENDED_TAIL = ' recommended';
-const ACTION_ROW_PREFIX = /^\[(.+?)\]\s*/;
 
 export type PromptBodyLine =
   | { kind: 'blank' }
@@ -36,9 +29,7 @@ export type PromptBodyLine =
     }
   | { kind: 'headline'; row: Extract<PromptRow, { kind: 'headline' }>; mark?: string }
   | { kind: 'facts-line'; text: string; continuation?: boolean }
-  | { kind: 'facts-grid-pair'; left: string; right: string }
-  | { kind: 'action'; key: string; keyWidth: number; text: string; recommended: boolean }
-  | { kind: 'note'; text: string };
+  | { kind: 'facts-grid-pair'; left: string; right: string };
 
 const BLANK_ROW: PromptBodyLine = { kind: 'blank' };
 
@@ -50,19 +41,6 @@ function normalizeFactLines(items: readonly string[]): string[] {
   return items
     .flatMap((text) => clean(text, true).split('\n'))
     .filter((line) => line.trim().length > 0);
-}
-
-export function splitActionRow(text: string): { key: string; text: string } {
-  const match = ACTION_ROW_PREFIX.exec(text);
-  if (match === null) return { key: '', text };
-  return { key: match[1] ?? '', text: text.slice(match[0].length) };
-}
-
-export function fitRecommendedText(text: string, room: number): string {
-  const tailWidth = getTerminalCellWidth(RECOMMENDED_TAIL);
-  if (getTerminalCellWidth(text) + tailWidth <= room) return text;
-  const head = text.split(SOFT_SEP)[0] ?? '';
-  return truncateTerminalDisplayText(head, Math.max(0, room - tailWidth));
 }
 
 // Prompts cross the question-mode UI channel as flat strings (the channel is typed
@@ -89,43 +67,17 @@ function parseHeadline(headline: string): Extract<PromptRow, { kind: 'headline' 
 function parsePromptRows(prompt: string): PromptRow[] {
   const lines = clean(prompt, true).split('\n');
   const headline = parseHeadline(lines[0] ?? '');
-  const body = lines.slice(1);
-  const actionStart = body.findIndex(isActionRowLine);
-  const factLines = normalizeFactLines(actionStart === -1 ? body : body.slice(0, actionStart));
-  const actionLines = actionStart === -1 ? [] : body.slice(actionStart);
+  const factLines = normalizeFactLines(lines.slice(1));
 
-  if (factLines.length === 0 && actionLines.length === 0) {
+  if (factLines.length === 0) {
     return headline.tone === 'text' ? [{ kind: 'message', text: headline.text }] : [headline];
   }
 
-  const rows: PromptRow[] = [headline];
-  if (factLines.length > 0) {
-    rows.push(
-      { kind: 'blank' },
-      { kind: 'facts', items: factLines, grid: headline.tone === 'pass' },
-    );
-  }
-  if (actionLines.length > 0) {
-    rows.push({ kind: 'blank' });
-    for (const line of actionLines) {
-      if (line.trim().length === 0) {
-        rows.push({ kind: 'blank' });
-        continue;
-      }
-      if (!isActionRowLine(line)) {
-        rows.push({ kind: 'note', text: line });
-        continue;
-      }
-      const rowPrefix = recommendedRowPrefix();
-      const recommended = line.startsWith(rowPrefix);
-      rows.push({
-        kind: 'action',
-        text: recommended ? line.slice(rowPrefix.length) : line,
-        recommended,
-      });
-    }
-  }
-  return rows;
+  return [
+    headline,
+    { kind: 'blank' },
+    { kind: 'facts', items: factLines, grid: headline.tone === 'pass' },
+  ];
 }
 
 function wrappedMessageLines(text: string, width: number): PromptBodyLine[] {
@@ -174,7 +126,7 @@ function factRows(row: Extract<PromptRow, { kind: 'facts' }>, width: number): Pr
   return rows;
 }
 
-function promptBodyLinesForRow(row: PromptRow, width: number, keyWidth: number): PromptBodyLine[] {
+function promptBodyLinesForRow(row: PromptRow, width: number): PromptBodyLine[] {
   switch (row.kind) {
     case 'blank':
       return [{ kind: 'blank' }];
@@ -184,12 +136,6 @@ function promptBodyLinesForRow(row: PromptRow, width: number, keyWidth: number):
       return [{ kind: 'headline', row }];
     case 'facts':
       return factRows(row, width);
-    case 'action': {
-      const { key, text } = splitActionRow(row.text);
-      return [{ kind: 'action', key, keyWidth, text, recommended: row.recommended }];
-    }
-    case 'note':
-      return [{ kind: 'note', text: row.text }];
     default:
       return assertNever(row);
   }
@@ -229,24 +175,14 @@ export function promptBodyRows(
       return result;
     });
   }
-  const keyWidth = rows.reduce(
-    (widest, row) =>
-      row.kind === 'action'
-        ? Math.max(widest, getTerminalCellWidth(splitActionRow(row.text).key))
-        : widest,
-    0,
-  );
-  return rows.flatMap((row) => promptBodyLinesForRow(row, promptWidth, keyWidth));
+  return rows.flatMap((row) => promptBodyLinesForRow(row, promptWidth));
 }
 
 /**
  * What a panel too short for its prompt keeps: the headline that says what
- * happened and every action row, because a halt whose choices are scrolled off
- * screen is a halt the operator cannot answer. Blank rows give way first, then
- * facts from the bottom; the last kept fact row says how many lines are cut, and
- * with no room for a fact row the headline carries that count, so no text leaves
- * the panel unmarked. Above action rows the last slot stays blank so the facts do
- * not run into the keys.
+ * happened. Blank rows give way first, then facts from the bottom; the last kept
+ * fact row says how many lines are cut, and with no room for a fact row the
+ * headline carries that count, so no text leaves the panel unmarked.
  */
 export function clipPromptBodyRows(
   rows: readonly PromptBodyLine[],
@@ -254,15 +190,10 @@ export function clipPromptBodyRows(
 ): PromptBodyLine[] {
   if (height <= 0) return [];
   if (rows.length <= height) return [...rows];
-  const actionStart = rows.findIndex((row) => row.kind === 'action');
-  const factEnd = actionStart <= 0 ? rows.length : actionStart;
   const head = rows.slice(0, 1);
-  const tail = rows.slice(factEnd).slice(0, Math.max(0, height - head.length));
-  const facts = rows.slice(1, factEnd).filter((row) => row.kind !== 'blank');
-  const available = height - head.length - tail.length;
-  const gap = tail.length > 0 && available > 1 ? [BLANK_ROW] : [];
-  const room = available - gap.length;
-  if (facts.length <= room) return [...head, ...facts, ...gap, ...tail];
+  const facts = rows.slice(1).filter((row) => row.kind !== 'blank');
+  const room = height - head.length;
+  if (facts.length <= room) return [...head, ...facts];
   const kept = facts.slice(0, Math.max(0, room - 1));
   const initialKeptLength = kept.length;
   const isContinuation = (row: PromptBodyLine | undefined): boolean =>
@@ -279,19 +210,10 @@ export function clipPromptBodyRows(
   const mark = `${ELLIPSIS} ${countNoun(facts.length - kept.length, 'more line')}`;
   if (room > 0) {
     const padding = Array.from({ length: freed }, () => BLANK_ROW);
-    return [
-      ...head,
-      ...kept,
-      { kind: 'facts-line', text: `${FACT_INDENT}${mark}` },
-      ...padding,
-      ...gap,
-      ...tail,
-    ];
+    return [...head, ...kept, { kind: 'facts-line', text: `${FACT_INDENT}${mark}` }, ...padding];
   }
   const [first] = head;
-  const marked =
-    first?.kind === 'headline' || first?.kind === 'message-line' ? [{ ...first, mark }] : head;
-  return [...marked, ...tail];
+  return first?.kind === 'headline' || first?.kind === 'message-line' ? [{ ...first, mark }] : head;
 }
 
 export function countPromptBodyRows(prompt: string | readonly PromptRow[], width: number): number {

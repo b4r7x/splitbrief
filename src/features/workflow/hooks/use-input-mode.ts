@@ -13,6 +13,8 @@ import type { DraftDocument } from '../../../core/schemas/draft-document.js';
 export interface QuestionAnswer {
   message: UserMessageInput;
   document: DraftDocument;
+  /** The answer came from a menu row, not from the composer. */
+  row?: true;
 }
 
 /** The answer of plain text, such as a letter picked on a menu. */

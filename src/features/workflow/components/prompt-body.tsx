@@ -2,12 +2,7 @@ import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import type { ReactNode } from 'react';
 import { Box } from 'ink';
 import { assertNever } from '../../../utils/type-guards.js';
-import {
-  clipPromptBodyRows,
-  fitRecommendedText,
-  promptBodyRows,
-  type PromptBodyLine,
-} from '../prompt-body-rows.js';
+import { clipPromptBodyRows, promptBodyRows, type PromptBodyLine } from '../prompt-body-rows.js';
 import { stateTone } from '../../../core/theme/state-tone.js';
 import { FACT_INDENT, passHeadlinePrefix, type PromptRow } from '../recovery-prompt.js';
 import { TextSpans } from '../../../components/text-spans.js';
@@ -15,9 +10,6 @@ import { TextSpans } from '../../../components/text-spans.js';
 type Theme = ReturnType<typeof useTheme>;
 
 const MIN_PROMPT_WIDTH = 1;
-const ACTION_LEAD = '  ';
-const ACTION_GAP = '   ';
-const RECOMMENDED_TAIL = ' recommended';
 
 function renderHeadline(
   row: Extract<PromptBodyLine, { kind: 'headline' }>['row'],
@@ -135,28 +127,6 @@ function renderPromptRows(rows: PromptBodyLine[], width: number, t: Theme): Reac
               {row.right}
             </Text>
           </Box>,
-        );
-        break;
-      case 'action': {
-        const indent = ACTION_LEAD.length + row.keyWidth + ACTION_GAP.length;
-        const room = Math.max(1, width - indent);
-        const text = row.recommended ? fitRecommendedText(row.text, room) : row.text;
-        nodes.push(
-          <Text key={key()} wrap="truncate">
-            {ACTION_LEAD}
-            <Text color={t.textDim}>{row.key.padEnd(row.keyWidth)}</Text>
-            {ACTION_GAP}
-            {text}
-            {row.recommended ? <Text color={t.textDim}>{RECOMMENDED_TAIL}</Text> : null}
-          </Text>,
-        );
-        break;
-      }
-      case 'note':
-        nodes.push(
-          <Text key={key()} wrap="truncate" color={t.textDim}>
-            {`      ${row.text}`}
-          </Text>,
         );
         break;
       default:

@@ -20,6 +20,7 @@ import { configStore } from '../../../src/stores/project/config.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { composerLiveStore } from '../../../src/stores/ui/composer-live.js';
+import { feedbackStore } from '../../../src/stores/ui/feedback.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { readSession } from '../../../src/core/sessions/io.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
@@ -275,6 +276,84 @@ describe('recovery menu and composer keyboard ownership', () => {
   );
 });
 
+describe('the note question of a failed review', () => {
+  it('resolves the halt on an empty Enter, with no refusal notice', async () => {
+    const ref = { projectDir, sessionId: 'recover-review-failed-empty-note' };
+    ensureSessionDir(projectDir, ref.sessionId);
+    saveState(
+      ref,
+      makeWorkflowState({
+        ...RUN_CREW,
+        phase: 'final-review',
+        pendingRecovery: makeRecoveryIssue({
+          reason: 'review-failed',
+          seat: 'build',
+          phase: 'final-review',
+          taskId: undefined,
+          taskTitle: undefined,
+          selectedImplementerProfile: undefined,
+          files: [],
+          affectedTaskIds: [],
+          message: 'The final review found 1 blocking finding.',
+          details: [],
+          availableActions: ['revise', 'end-run'],
+          recommendedAction: 'revise',
+        }),
+      }),
+    );
+    const saved = loadState(ref);
+    if (saved === null) throw new Error('Missing fixture state');
+    const config = makeConfig();
+    const prepared = prepareWorkflowExecution({
+      ...ref,
+      config,
+      feature: saved.feature,
+      resumeState: saved,
+    });
+    configStore.__testReset({ config, projectDir });
+    terminalSizeStore.__testReset({ cols: 100, rows: 30, isSmall: false });
+    routerStore.navigate({
+      to: 'workflow',
+      run: makeRunRecord({ ref, feature: saved.feature }),
+      execution: { kind: 'local', prepared },
+    });
+    const runWorkflow = vi.fn(() => new Promise<Summary>(() => {}));
+    ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={() => {}} deps={{ runWorkflow }} />,
+    );
+    const screen = ui;
+    await vi.waitFor(() =>
+      expect(stripAnsiStyles(screen.lastFrame())).toContain(
+        'Fix again · runs another fix cycle with your note',
+      ),
+    );
+    await flushEffects();
+
+    screen.stdin.write('v');
+    await vi.waitFor(() =>
+      expect(stripAnsiStyles(screen.lastFrame())).toContain('What should the fix change?'),
+    );
+    await flushEffects();
+    expect(composerLiveStore.get().empty).toBe(true);
+    screen.stdin.write('\r');
+
+    await vi.waitFor(() => expect(runWorkflow).toHaveBeenCalledOnce());
+    expect(feedbackStore.get()).toMatchObject({ isError: false });
+    const resumed = loadState(ref);
+    expect(resumed?.phase).toBe('final-review');
+    expect(resumed?.pendingRecovery).toBeUndefined();
+    const replay = await readRunEvents(ref);
+    expect(
+      replay.events.flatMap((event) =>
+        event.type === 'recovery_action_selected' ? [[event.reason, event.action]] : [],
+      ),
+    ).toEqual([['review-failed', 'revise']]);
+    expect(
+      replay.events.flatMap((event) => (event.type === 'recovery_resolved' ? [event.action] : [])),
+    ).toEqual(['revise']);
+  });
+});
+
 describe('a sentence on the panel of an Apply halt', () => {
   async function openApplyPartialHalt(sessionId: string) {
     const ref = { projectDir, sessionId };
@@ -384,7 +463,7 @@ describe('a sentence on the panel of an Apply halt', () => {
     expect(loadState(ref)?.pendingRecovery?.status).toBe('awaiting-user');
   });
 
-  it('runs Restore backup from u typed in the composer', async () => {
+  it('refuses u typed in the composer on a partial Apply', async () => {
     const { ref, screen, runWorkflow } = await openApplyPartialHalt('apply-partial-key');
 
     screen.stdin.write('\t');
@@ -393,8 +472,20 @@ describe('a sentence on the panel of an Apply halt', () => {
     await flushEffects();
     screen.stdin.write('\r');
 
+    await vi.waitFor(() =>
+      expect(stripAnsiStyles(screen.lastFrame())).toContain('This halt takes no typed correction'),
+    );
+    await vi.waitFor(() => expect(composerLiveStore.get().text).toBe('u'));
+    expect(runWorkflow).not.toHaveBeenCalled();
+    expect(loadState(ref)?.pendingRecovery?.status).toBe('awaiting-user');
+  });
+
+  it('runs Restore backup from u with the menu focused', async () => {
+    const { ref, screen, runWorkflow } = await openApplyPartialHalt('apply-partial-row');
+
+    screen.stdin.write('u');
+
     await vi.waitFor(() => expect(runWorkflow).toHaveBeenCalledOnce());
-    expect(stripAnsiStyles(screen.lastFrame())).not.toContain('Cannot send');
     expect(loadState(ref)?.pendingRecovery).toMatchObject({
       status: 'applying',
       selectedAction: 'restore-backup',

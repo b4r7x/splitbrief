@@ -169,7 +169,7 @@ export function fullSuiteSegments(
     ]);
   }
   const split =
-    (event.moment === 'pre-review' || event.moment === 'base') &&
+    (event.moment === 'pre-review' || event.moment === 'base' || event.moment === 'verify') &&
     event.passed === false &&
     event.newFailures !== undefined &&
     event.preExisting !== undefined
@@ -247,7 +247,9 @@ export function fullSuiteTone(
       ? stateTone('attention')
       : stateTone('failed');
   }
-  return event.moment === 'pre-review' && event.newFailures === 0 && (event.notVerified ?? 0) === 0
+  return (event.moment === 'pre-review' || event.moment === 'verify') &&
+    event.newFailures === 0 &&
+    (event.notVerified ?? 0) === 0
     ? stateTone('attention')
     : stateTone('failed');
 }

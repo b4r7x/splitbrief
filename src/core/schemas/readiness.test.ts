@@ -153,6 +153,30 @@ describe('CLI runner readiness', () => {
     ).toBe('unverified');
   });
 
+  it.each(['unauthenticated', 'keyring'] as const)(
+    'reports a signed-out tool with an unread version as unauthenticated: %s',
+    (auth) => {
+      expect(
+        deriveCliReadiness(
+          readyFacts({ installedVersion: null, compatibility: 'unverified', auth }),
+        ).status,
+      ).toBe('unauthenticated');
+    },
+  );
+
+  it('keeps a provider-listing tool with an unread version unverified', () => {
+    expect(
+      deriveCliReadiness(
+        readyFacts({
+          tool: 'opencode',
+          installedVersion: null,
+          compatibility: 'unverified',
+          auth: 'unauthenticated',
+        }),
+      ).status,
+    ).toBe('unverified');
+  });
+
   it('remediates unknown authentication without pointing at the tested version', () => {
     // The copy must not promise that re-running a cheap check can verify a
     // session: a local status read proves presence, never validity.

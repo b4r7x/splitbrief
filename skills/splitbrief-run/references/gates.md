@@ -1,6 +1,6 @@
 # Gates
 
-Validation belongs to the session. At cadence=task the registered checks run after each brief; before the final review the project gate the plan names runs.
+Validation belongs to the session. After each brief its own checks run, and at cadence=task the due checks too; before the final review every registered check runs, then the project gate the plan names.
 Never accept the implementer's claim as recorded evidence.
 
 ## Test check command, first match

@@ -17,8 +17,6 @@ export interface RecoveryActionChoiceContext {
   haltedTool?: string | undefined;
   /** The seat the halt stopped, where no offer names it — a recovery event carries only this. */
   seat?: CrewSeatId | undefined;
-  /** The seat a retry re-issues when the halt names no brief; absent when it replays one. */
-  seatRetry?: CrewSeatId | undefined;
   resetAt?: string | undefined;
 }
 
@@ -26,10 +24,7 @@ export interface RecoveryActionChoiceContext {
  * A candidate with no model on the halted tool keeps the tool: taking it
  * opens that tool's picker to choose another model.
  */
-export function keepsHaltedTool(
-  candidate: SeatSwapCandidate,
-  haltedTool: string | undefined,
-): boolean {
+function keepsHaltedTool(candidate: SeatSwapCandidate, haltedTool: string | undefined): boolean {
   return candidate.model === undefined && formatSeatCandidateIdentity(candidate) === haltedTool;
 }
 
@@ -47,12 +42,7 @@ export function recoveryActionParts(
         return [{ text: 'Run the checks again' }];
       if (context.reason === 'apply-partial' || context.reason === 'apply-conflict')
         return [{ text: 'Re-run Apply' }];
-      return context.seatRetry === undefined
-        ? [{ text: 'Try again' }]
-        : [
-            { text: 'Try again with ' },
-            { text: CREW_SEAT_LABELS[context.seatRetry], seat: context.seatRetry },
-          ];
+      return [{ text: 'Try again' }];
     case 'restore-backup':
       return [{ text: 'Restore backup' }];
     case 'retry-later': {

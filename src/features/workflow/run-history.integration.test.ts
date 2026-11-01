@@ -272,6 +272,36 @@ describe('hydrateRun', () => {
     expect(historyRows(eventsStore.get().events)).toContain('src/validate.ts');
   });
 
+  it('restores the files of a done report with one bad field', async () => {
+    const start = RUN[1];
+    if (start?.type !== 'task_started') throw new Error('Missing task start');
+    writeLog([
+      start,
+      {
+        type: 'planner_text',
+        ts: 2100,
+        phase: 'implementing',
+        role: 'implementer',
+        text: '{"status":"done","filesChanged":["src/report.ts"],"touchedNotSuggested":"none","notes":null,"decisions":[]}',
+      },
+      {
+        type: 'implementer_generate_done',
+        ts: 2300,
+        phase: 'implementing',
+        taskId: start.taskId,
+        file: start.file,
+        duration: 100,
+      },
+    ]);
+    await hydrateRun(makeRunRecord({ ref: { projectDir, sessionId: SESSION_ID } }));
+    expect(
+      eventsStore.get().events.find((event) => event.type === 'implementer_generate_done'),
+    ).toHaveProperty('files', ['src/report.ts']);
+    const rows = historyRows(eventsStore.get().events);
+    expect(rows.some((row) => row.startsWith('src/report.ts'))).toBe(true);
+    expect(rows).toContain('Report  done · 0 decisions');
+  });
+
   it('settles a truncated review on resume before T002 starts and finishes its call', async () => {
     writeLog([
       ...RUN,

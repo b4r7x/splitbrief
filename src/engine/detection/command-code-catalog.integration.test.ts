@@ -1,6 +1,7 @@
 import { chmod, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { expireDeadlineAfterFile, freezeProbeDeadlines } from '#testing/helpers/fake-timers.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
 import { detectRunnerEvidence } from './runner-evidence.js';
@@ -15,7 +16,9 @@ const listing = [
 ].join('\n');
 
 describe.runIf(process.platform !== 'win32')('Command Code catalog completion', () => {
-  it.concurrent.each([
+  freezeProbeDeadlines();
+
+  it.each([
     {
       label: 'complete listing with delayed exit',
       stdout: listing,
@@ -78,9 +81,9 @@ describe.runIf(process.platform !== 'win32')('Command Code catalog completion', 
             "const fs = require('node:fs');",
             "if (process.argv.includes('--version') || process.argv.includes('-v')) { console.log('1.54.2'); process.exit(0); }",
             "if (!process.argv.includes('--list-models')) process.exit(1);",
-            `fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));`,
             `process.stdout.write(${JSON.stringify(stdout)});`,
             `process.stderr.write(${JSON.stringify(stderr)});`,
+            `fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));`,
             exit === null ? 'setInterval(() => {}, 1000);' : `process.exitCode = ${exit};`,
           ].join('\n'),
         );
@@ -89,7 +92,7 @@ describe.runIf(process.platform !== 'win32')('Command Code catalog completion', 
           command: shim,
           projectDir: '/neutral/project',
         });
-        const evidence = await detectRunnerEvidence({
+        const pending = detectRunnerEvidence({
           context: {
             role: 'planner',
             kind: 'cli',
@@ -101,6 +104,8 @@ describe.runIf(process.platform !== 'win32')('Command Code catalog completion', 
           includeCatalog: true,
           now: () => 200,
         });
+        if (exit === null) await expireDeadlineAfterFile(pidFile);
+        const evidence = await pending;
         expect(evidence.catalog.kind).toBe(expected);
         if (evidence.catalog.kind === 'success') {
           expect(evidence.catalog.value.map((model) => model.id)).toEqual([

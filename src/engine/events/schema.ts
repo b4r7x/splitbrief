@@ -793,9 +793,10 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     waitsOnBase: z.literal(true).optional(),
     passed: z.boolean().optional(),
     /**
-     * On a red reviewer check's done event (on base done events in an older run), the red run's
-     * failure keys that are new, also red at the run base, or red at the run base too without proof
-     * that it is the same failure (`notVerified`).
+     * On a red reviewer check's or verify check's done event (on base done events in an older run),
+     * the red run's failure keys that are new, also red at the run base, or red at the run base too
+     * without proof that it is the same failure (`notVerified`). A verify check names no failure
+     * keys and no `notVerified`.
      */
     newFailures: z.number().int().nonnegative().optional(),
     preExisting: z.number().int().nonnegative().optional(),

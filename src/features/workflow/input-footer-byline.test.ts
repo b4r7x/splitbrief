@@ -321,7 +321,7 @@ describe('the stop byline through the footer', () => {
   };
 
   it('names the wait while processes are asked to exit', () => {
-    expect(stopLine(running)).toContain('Stopping T002 · Waiting for processes to exit · 0:04');
+    expect(stopLine(running)).toContain('Stopping T002 · Waiting for processes to exit 0:04');
     expect(stopLine(running)).toContain('esc back after stop · ctrl+c quit after stop');
   });
 
@@ -333,7 +333,7 @@ describe('the stop byline through the footer', () => {
 
   it('names the run, not the brief, while the run is ending', () => {
     expect(stopLine({ ...running, intent: 'end-run' })).toContain(
-      'Ending run · Waiting for processes to exit · 0:04',
+      'Ending run · Waiting for processes to exit 0:04',
     );
   });
 
@@ -414,51 +414,5 @@ it('keeps the fitted lead and dim clock apart without changing the string projec
     });
     expect(byline.at(-1)).toEqual({ text: ' 0:42', tone: 'textDim' });
     expect(fullByline(byline)).toMatch(/ 0:42$/);
-  }
-});
-
-it('preserves fitting when a stop clock already belongs to the lead string', () => {
-  const cases: Array<{
-    cols: number;
-    expected: string;
-    lastSegment: ConversationRowSegment;
-  }> = [
-    {
-      cols: 40,
-      expected: '○ Stopping the run · Finishing …',
-      lastSegment: { text: 'Finishing …', tone: 'textDim' },
-    },
-    {
-      cols: 60,
-      expected: '○ Stopping the run · Finishing cleanup and saving …',
-      lastSegment: { text: ' …', tone: 'textDim' },
-    },
-    {
-      cols: 80,
-      expected: '○ Stopping the run · Finishing cleanup and saving · 2:51:54',
-      lastSegment: { text: '2:51:54', tone: 'textDim' },
-    },
-    {
-      cols: 120,
-      expected: '○ Stopping the run · Finishing cleanup and saving · 2:51:54',
-      lastSegment: { text: '2:51:54', tone: 'textDim' },
-    },
-  ];
-
-  for (const { cols, expected, lastSegment } of cases) {
-    const structured = buildInputFooterByline({
-      cols,
-      lead: [
-        { text: '○ Stopping', tone: 'warning' },
-        { text: ' the run', tone: 'text' },
-        { text: ' · ', tone: 'textDim' },
-        { text: 'Finishing cleanup and saving', tone: 'textDim' },
-        { text: ' · ', tone: 'textDim' },
-        { text: '2:51:54', tone: 'textDim' },
-      ],
-      queuedText: null,
-    });
-    expect(fullByline(structured)).toBe(expected);
-    expect(structured.at(-1)).toEqual(lastSegment);
   }
 });

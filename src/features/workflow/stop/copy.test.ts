@@ -111,9 +111,8 @@ describe('stopByline', () => {
         { text: ' T002', tone: 'text' },
         { text: ' · ', tone: 'textDim' },
         { text: 'Waiting for processes to exit', tone: 'textDim' },
-        { text: ' · ', tone: 'textDim' },
-        { text: '0:03', tone: 'textDim' },
       ],
+      clock: '0:03',
     });
   });
 
@@ -128,9 +127,8 @@ describe('stopByline', () => {
         { text: ' T002', tone: 'text' },
         { text: ' · ', tone: 'textDim' },
         { text: 'Waiting for processes to exit', tone: 'textDim' },
-        { text: ' · ', tone: 'textDim' },
-        { text: '2:51:54', tone: 'textDim' },
       ],
+      clock: '2:51:54',
     });
   });
 
@@ -165,6 +163,42 @@ describe('stopByline', () => {
         { text: ' to finish T002', tone: 'text' },
       ],
     });
+  });
+
+  it.each([
+    ['terminating', 'Stopping the review · Waiting for processes to exit'],
+    ['settling', 'Stopping the review · Finishing cleanup and saving'],
+    ['forcing', 'Stopping the review · Forcing remaining processes to exit'],
+  ] as const)(
+    'names the review, not the passed brief, in a %s stop of the final review',
+    (phase, lead) => {
+      const byline = stopByline(
+        input({
+          intent: 'stop-now',
+          phase,
+          workflowPhase: 'final-review',
+          currentTaskId: null,
+          finishedTaskId: 'T003',
+        }),
+      );
+      expect(byline?.parts.map((part) => part.text).join('')).toBe(lead);
+      expect(byline?.clock).toBe(phase === 'forcing' ? undefined : '0:03');
+    },
+  );
+
+  it('names the run brief in a stop outside the final review, and the run with no brief', () => {
+    const stop = input({ intent: 'stop-now', phase: 'terminating' });
+    const text = (byline: ReturnType<typeof stopByline>) =>
+      byline?.parts.map((part) => part.text).join('');
+
+    expect(text(stopByline(stop))).toBe('Stopping T002 · Waiting for processes to exit');
+    expect(
+      text(stopByline({ ...stop, workflowPhase: 'final-review', currentTaskId: 'T002' })),
+    ).toBe('Stopping T002 · Waiting for processes to exit');
+    expect(text(stopByline({ ...stop, currentTaskId: null }))).toBe(
+      'Stopping the run · Waiting for processes to exit',
+    );
+    expect(stopByline(stop)?.clock).toBe('0:03');
   });
 
   it('names the brief the pause outlived, which the run has just finished', () => {
@@ -519,19 +553,21 @@ describe('stopByline', () => {
   });
 
   it('names the wait while a run is ending', () => {
-    expect(
-      stopByline(input({ intent: 'end-run', phase: 'terminating' }))
-        ?.parts.map((part) => part.text)
-        .join(''),
-    ).toBe('Ending run · Waiting for processes to exit · 0:03');
+    const byline = stopByline(input({ intent: 'end-run', phase: 'terminating' }));
+    expect(byline?.parts.map((part) => part.text).join('')).toBe(
+      'Ending run · Waiting for processes to exit',
+    );
+    expect(byline?.clock).toBe('0:03');
   });
 
   it('formats the ending run lead clock as h:mm:ss when over an hour', () => {
-    expect(
-      stopByline(input({ intent: 'end-run', phase: 'terminating', elapsedMs: 10_314_000 }))
-        ?.parts.map((part) => part.text)
-        .join(''),
-    ).toBe('Ending run · Waiting for processes to exit · 2:51:54');
+    const byline = stopByline(
+      input({ intent: 'end-run', phase: 'terminating', elapsedMs: 10_314_000 }),
+    );
+    expect(byline?.parts.map((part) => part.text).join('')).toBe(
+      'Ending run · Waiting for processes to exit',
+    );
+    expect(byline?.clock).toBe('2:51:54');
   });
 
   it('says it is saving the session on the way out', () => {
@@ -550,9 +586,8 @@ it('does not claim a live process during cleanup or persistence', () => {
     { text: ' T002', tone: 'text' },
     { text: ' · ', tone: 'textDim' },
     { text: 'Finishing cleanup and saving', tone: 'textDim' },
-    { text: ' · ', tone: 'textDim' },
-    { text: '0:03', tone: 'textDim' },
   ]);
+  expect(byline?.clock).toBe('0:03');
   expect(byline?.parts.map((part) => part.text).join('')).toContain('Finishing cleanup and saving');
   expect(byline?.parts.map((part) => part.text).join('')).not.toContain('processes');
 });

@@ -407,6 +407,27 @@ describe('fullSuiteRow for a reviewer check', () => {
     );
   });
 
+  it('splits a red verify check at the run base in the words and tones of a reviewer check', () => {
+    const red = reviewCheck({
+      id: 'V6',
+      moment: 'verify',
+      status: 'done',
+      passed: false,
+      duration: 1_000,
+    });
+    const allOld = { ...red, newFailures: 0, preExisting: 1 };
+    const mixed = { ...red, newFailures: 1, preExisting: 1 };
+
+    expect(fullSuiteRow(allOld)).toBe(
+      "Verify V6 · npm test · pre-existing · 1.0s · the failure also fails before this run's changes",
+    );
+    expect(fullSuiteRow(mixed)).toBe('Verify V6 · npm test · 1 new, 1 pre-existing · 1.0s');
+    expect(fullSuiteRow(red)).toBe('Verify V6 · npm test · failed · 1.0s');
+    expect(fullSuiteTone(allOld)).toBe('warning');
+    expect(fullSuiteTone(mixed)).toBe('error');
+    expect(fullSuiteTone(red)).toBe('error');
+  });
+
   it.each(['pre-review', 'base', 'brief', 'plan', 'verify'] as const)(
     'renders a stopped %s check in the warning tone',
     (moment) => {

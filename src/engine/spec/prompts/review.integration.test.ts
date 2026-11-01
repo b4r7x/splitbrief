@@ -273,6 +273,7 @@ describe('buildFinalReviewPrompt', () => {
     expect(result).toContain('## Consult Log');
     expect(result).toContain('try another approach');
     expect(result).toContain('## Triage Log');
+    expect(result).toContain('- F2: already fixed');
     expect(result).toContain('## Planning Answers');
     expect(result).toContain('- Which greeting? → hello');
   });
@@ -373,6 +374,46 @@ describe('buildFinalReviewPrompt', () => {
       'Verify a render only when its current-candidate images are attached and you critique the scenario.',
     );
     expect(bare).not.toContain('Never claim a render was verified.');
+  });
+
+  it('tells the final and the task reviewer not to restate a red pending input', () => {
+    const input = {
+      pendingInputs: [],
+      fixCycle: 1,
+      spec: SPEC,
+      taskBriefs: TASK_BRIEFS,
+      diff: DIFF,
+    };
+    for (const prompt of [
+      buildFinalReviewPrompt(input),
+      buildFinalReviewPrompt({ ...input, reviewKind: 'task' }),
+    ]) {
+      expect(prompt).toContain(
+        'A red pending input already blocks the review: do not restate it as a new finding.',
+      );
+      expect(prompt).toContain(
+        "When a failed criterion or a task not met needs a finding for that input, give the input's id to one such finding only.",
+      );
+      expect(prompt).toContain("A blocking finding under a pending input's id follows this rule.");
+    }
+  });
+
+  it('tells the final and the task reviewer to keep the id of a finding a fix cycle left open', () => {
+    const input = {
+      pendingInputs: [],
+      fixCycle: 1,
+      spec: SPEC,
+      taskBriefs: TASK_BRIEFS,
+      diff: DIFF,
+    };
+    for (const prompt of [
+      buildFinalReviewPrompt(input),
+      buildFinalReviewPrompt({ ...input, reviewKind: 'task' }),
+    ]) {
+      expect(prompt).toContain(
+        'A finding a fix cycle left open keeps its id, and a new finding never takes an id the triage log names.',
+      );
+    }
   });
 
   it('drops the containment sentence that made a missing render at most a Note', () => {
@@ -502,6 +543,36 @@ describe('buildFinalReviewPrompt', () => {
     expect(result).toContain(
       'report it as pre-existing and raise no finding against this run for it',
     );
+  });
+
+  it('tells the final reviewer that the checks log carries the project gate the plan names', () => {
+    const prompt = buildFinalReviewPrompt({
+      pendingInputs: [],
+      fixCycle: 1,
+      spec: SPEC,
+      taskBriefs: TASK_BRIEFS,
+      diff: DIFF,
+    });
+
+    expect(prompt).toContain(
+      "The Checks Log section and the Reviewer checks section carry the run's command output: the checks of the plan and the tasks, and the project gate the plan names.",
+    );
+    expect(prompt).not.toContain('the commands you chose for this review');
+  });
+
+  it('does not tell the task reviewer that the project gate ran', () => {
+    const prompt = buildFinalReviewPrompt({
+      pendingInputs: [],
+      fixCycle: 1,
+      spec: SPEC,
+      taskBriefs: TASK_BRIEFS,
+      diff: DIFF,
+      reviewKind: 'task',
+    });
+
+    expect(prompt).toContain('A task review runs no project gate');
+    expect(prompt).not.toContain('the Reviewer checks section');
+    expect(prompt).not.toContain('the commands you chose for this review');
   });
 
   it('still instructs how to handle missing validation evidence when none is provided', () => {

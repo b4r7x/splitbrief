@@ -15,6 +15,7 @@ import { formatKeyHints, SELECT_HINT } from '../prompt-rows/approval.js';
 import { PromptBody } from './prompt-body.js';
 import {
   correctionActionFor,
+  isAskedDetail,
   recoveryPromptSummaryRows,
   getRecoveryPromptActions,
   recoveryActionKey,
@@ -22,9 +23,16 @@ import {
   recoveryMenuParts,
   recommendedRecoveryAction,
 } from '../recovery-prompt.js';
-import { countPromptBodyRows } from '../prompt-body-rows.js';
+import {
+  clipPromptBodyRows,
+  countPromptBodyRows,
+  promptBodyRows,
+  type PromptBodyLine,
+} from '../prompt-body-rows.js';
 import { isCommandDraft } from '../../../core/composer/submission.js';
 import { composerLiveStore } from '../../../stores/ui/composer-live.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
+import { selectTaskListView } from '../../../core/run-view/briefs.js';
 
 interface ActionItem {
   action: RecoveryAction;
@@ -41,11 +49,11 @@ interface RecoveryMenuProps {
   onResolve: (answer: string) => void;
 }
 
-function actionItems(issue: RecoveryIssue): ActionItem[] {
+function actionItems(issue: RecoveryIssue, briefFinished: boolean): ActionItem[] {
   return getRecoveryPromptActions(issue).map((action) => ({
     action,
     key: recoveryActionKey(action),
-    parts: recoveryMenuParts(action, issue),
+    parts: recoveryMenuParts(action, issue, briefFinished),
   }));
 }
 
@@ -92,7 +100,8 @@ export function RecoveryMenu({
   onResolve,
 }: RecoveryMenuProps) {
   const t = useTheme();
-  const actions = actionItems(issue);
+  const briefFinished = runViewStore.use((view) => selectTaskListView(view.briefs).finished > 0);
+  const actions = actionItems(issue, briefFinished);
   const recommended = recommendedRecoveryAction(issue);
   const keyWidth = actions.reduce((width, item) => Math.max(width, item.key.length), 0);
   const initialAction = Math.max(
@@ -100,22 +109,37 @@ export function RecoveryMenu({
     actions.findIndex((item) => item.action === recommended),
   );
   const innerWidth = Math.max(1, width - 4);
-  const summary = recoveryPromptSummaryRows(issue, innerWidth);
-  const summaryRows = countPromptBodyRows(summary, innerWidth);
+  const fullSummary = recoveryPromptSummaryRows(issue, innerWidth);
+  const fullRows = promptBodyRows(fullSummary, innerWidth);
   const minimumListRows = Math.min(4, Math.max(actions.length, 1));
   // A short panel keeps its content before its chrome: the headline (it carries the cut mark when
   // it is the only summary row), the selected action with one mark row that names every side
   // hiding actions, and the legend. Then the border, a second summary row for the mark, the other
-  // actions, and the divider, in that order.
+  // actions, and the divider, in that order. A cut that would hide the row the halt asks the user
+  // to read puts that row first, whole while it fits, and the rows after it give way. The summary
+  // then takes the divider's row, or a list row on a panel with no divider. The list scrolls, so
+  // every action stays reachable.
   const listFloor = Math.min(2, minimumListRows);
   const framed = clampedBoxRows >= 1 + listFloor + 1 + 2;
   const innerHeight = Math.max(1, clampedBoxRows - (framed ? 2 : 0));
   const besideList = innerHeight - listFloor - 1;
-  const summaryHeight = Math.min(
-    Math.max(1, summaryRows),
+  const fittedHeight = Math.min(
+    Math.max(1, fullRows.length),
     Math.max(1, Math.min(2, besideList), innerHeight - minimumListRows - 2),
   );
-  const divided = innerHeight - summaryHeight - minimumListRows - 1 > 0;
+  const fittedDivided = innerHeight - fittedHeight - minimumListRows - 1 > 0;
+  const askedRow = (row: PromptBodyLine): boolean =>
+    row.kind === 'facts-line' && isAskedDetail(row.text.trimStart());
+  const askedFirst =
+    besideList > fittedHeight &&
+    fullRows.some(askedRow) &&
+    !clipPromptBodyRows(fullRows, fittedHeight).some(askedRow);
+  const summary = askedFirst
+    ? recoveryPromptSummaryRows(issue, innerWidth, fittedHeight - 1)
+    : fullSummary;
+  const takesSummaryRow = askedFirst && countPromptBodyRows(summary, innerWidth) > fittedHeight;
+  const summaryHeight = takesSummaryRow ? fittedHeight + 1 : fittedHeight;
+  const divided = fittedDivided && !takesSummaryRow;
   const listBudget = Math.max(1, innerHeight - summaryHeight - 1 - (divided ? 1 : 0));
 
   // Every action resolves the prompt, `switch-seat` included: the driver answers it by opening

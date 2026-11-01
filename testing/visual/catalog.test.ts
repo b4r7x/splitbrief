@@ -85,6 +85,8 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-recovery-model-not-listed', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-recovery-model-refused', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-recovery-retry-exhausted', ['120x40', '80x24', '60x18', '140x16', '140x14', '140x12']],
+  ['workflow-recovery-long-question', ['120x40', '80x24', '60x18', '100x20']],
+  ['workflow-recovery-long-question-draft', ['60x18']],
   ['workflow-approval-confirm', ['120x40', '80x24', '60x18', '120x16', '120x14', '120x12']],
   ['workflow-approval-confirm-secret', ['120x40', '80x24', '60x18', '120x16', '120x14', '120x12']],
   ['workflow-recovery-plan-input-too-large', ['120x40', '80x24', '60x18', '160x45']],
@@ -141,6 +143,58 @@ describe('visual catalog', () => {
       expect(frame).toContain('Fallback');
       expect(frame.match(/OpenAI Codex CLI · GPT-6-Luna/g)?.length).toBeGreaterThanOrEqual(2);
       expect(frame).not.toContain('GPT-6 Luna');
+    } finally {
+      await handle.unmount();
+    }
+  });
+
+  it.each([
+    ['overlay-picker-version-timeout-signed-out', 'Auth required', 'Sign in to OpenAI Codex CLI'],
+    ['overlay-picker-version-timeout-signed-in', 'Unverified', 'Model detection timed out'],
+  ])('names the next step after a slow version probe in %s', async (id, state, step) => {
+    const scenario = findVisualScenario(id);
+    const checkpoint = scenario?.checkpoints[0];
+    const viewport = scenario?.viewports.find((size) => size.cols === 120);
+    if (!scenario || !checkpoint || !viewport) throw new Error('Missing version timeout scenario');
+    const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
+    try {
+      const frame = stripAnsiStyles(await handle.waitForCheckpoint());
+      expect(frame).toContain(state);
+      expect(frame).toContain(step);
+      expect(frame).not.toContain('does not support model listing');
+    } finally {
+      await handle.unmount();
+    }
+  });
+
+  it.each([
+    [
+      'overlay-picker-older-tool',
+      'Install the tested OpenAI Codex CLI version',
+      'Bundled model list',
+    ],
+    [
+      'overlay-picker-older-tool-stale',
+      'Install the tested OpenAI Codex CLI version',
+      'Models from an earlier check',
+    ],
+    ['overlay-picker-unread-version', 'Verify OpenAI Codex CLI against', 'Bundled model list'],
+    [
+      'overlay-picker-signed-out-stale',
+      'Sign in to OpenAI Codex CLI, then ctrl+r.',
+      '7 stale models retained',
+    ],
+  ])('names the remedy and no listing verdict in %s', async (id, remedy, footer) => {
+    const scenario = findVisualScenario(id);
+    const checkpoint = scenario?.checkpoints[0];
+    const viewport = scenario?.viewports.find((size) => size.cols === 120);
+    if (!scenario || !checkpoint || !viewport) throw new Error('Missing older tool scenario');
+    const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
+    try {
+      const frame = stripAnsiStyles(await handle.waitForCheckpoint());
+      expect(frame).toContain(remedy);
+      expect(frame).toContain(footer);
+      expect(frame).not.toContain('does not support model listing');
     } finally {
       await handle.unmount();
     }

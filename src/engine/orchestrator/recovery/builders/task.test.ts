@@ -145,6 +145,36 @@ describe('buildRetryExhaustedRecoveryIssue', () => {
     expectValidRecoveryIssue(issue);
   });
 
+  it.each([
+    ['skip-brief', 'skip-current-task'],
+    ['end-run', 'end-run'],
+  ] as const)('recommends the step the planner named on a cannot with next %s', (next, step) => {
+    const issue = buildRetryExhaustedRecoveryIssue({
+      task: makeTask({ id: 'T012' }),
+      createdAt,
+      validationSummary: 'the planner says it cannot be done',
+      attempts: 3,
+      allowRetryOverride: true,
+      cannot: 'The SDK has no payment API.',
+      cannotNext: next,
+    });
+
+    expect(issue.availableActions).toContain('retry-same-worker');
+    expect(issue.recommendedAction).toBe(step);
+  });
+
+  it('keeps Try again as the recommendation with no cannot from the planner', () => {
+    const issue = buildRetryExhaustedRecoveryIssue({
+      task: makeTask({ id: 'T012' }),
+      createdAt,
+      validationSummary: 'lint failed after all attempts',
+      attempts: 3,
+      allowRetryOverride: true,
+    });
+
+    expect(issue.recommendedAction).toBe('retry-same-worker');
+  });
+
   it('offers retry only when allowRetryOverride is explicit', () => {
     const override = buildRetryExhaustedRecoveryIssue({
       task: makeTask({ id: 'T012' }),

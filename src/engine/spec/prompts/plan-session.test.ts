@@ -97,6 +97,14 @@ describe('buildPlanSessionPrompt', () => {
     );
   });
 
+  it('tells the planner that SPLITBRIEF runs the project gate before the final review', () => {
+    const prompt = buildPlanSessionPrompt(input);
+    expect(prompt).toContain(
+      'and SPLITBRIEF runs the checks itself, and the project gate before the final review.',
+    );
+    expect(prompt).not.toContain('the reviewer chooses the commands that verify the change');
+  });
+
   it('explains that a test check runs the discovered command on its file', () => {
     expect(buildPlanSessionPrompt(input)).toContain(
       'A `test` check runs that command on its file.',

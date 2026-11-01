@@ -145,7 +145,24 @@ describe('boundEngineEventForConsumer', () => {
       ts: 60,
       category: 'payload-bounds',
       code: 'payload_omitted',
+      message: expect.stringMatching(/^Omitted oversized tasks_planned event exceeding \d+ bytes$/),
     });
     expect(JSON.stringify(bounded)).not.toContain('xxxxxxxxxx');
+  });
+
+  it('replaces an event that fails its schema after bounding with a payload warning', () => {
+    const event: EngineEvent = {
+      type: 'tasks_planned',
+      ts: 61,
+      phase: 'planning',
+      tasks: [],
+      total: Number.NaN,
+    };
+
+    expect(boundEngineEventForConsumer(event, 'session-log')).toMatchObject({
+      type: 'warning',
+      code: 'payload_omitted',
+      message: 'Omitted invalid tasks_planned event',
+    });
   });
 });

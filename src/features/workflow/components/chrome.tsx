@@ -66,6 +66,7 @@ export function WorkflowHeader({
 export function WorkflowFooter({
   handleInput,
   onEmptySubmit,
+  emptyAnswerNotice,
   onRuntimeCommand,
   commands,
   mode,
@@ -95,6 +96,7 @@ export function WorkflowFooter({
 }: {
   handleInput: (submission: Extract<DraftSubmission, { ok: true }>) => void;
   onEmptySubmit?: (() => void) | undefined;
+  emptyAnswerNotice?: string | undefined;
   onRuntimeCommand: (command: string) => void;
   commands: RuntimeCommandDef[];
   mode: InputMode;
@@ -178,6 +180,7 @@ export function WorkflowFooter({
         readClipboardImage={readClipboardImage}
         listProjectFiles={listProjectFiles}
         onEmptySubmit={onEmptySubmit}
+        emptyAnswerNotice={emptyAnswerNotice}
         onRuntimeCommand={onRuntimeCommand}
         commands={commands}
         mode={mode}

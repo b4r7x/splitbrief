@@ -27,6 +27,18 @@ describe('PlanAnswerSchema', () => {
     expect(PlanAnswerSchema.safeParse(four).success).toBe(false);
   });
 
+  it('refuses a gate with more than six commands', () => {
+    const plan = makePlanProposal();
+    const gate = (count: number) =>
+      Array.from({ length: count }, (_, i) => `npm run gate-${i + 1}`);
+    const six = { result: { ...plan, gate: gate(6) } };
+    expect(PlanAnswerSchema.safeParse(six).success).toBe(true);
+
+    const parsed = PlanAnswerSchema.safeParse({ result: { ...plan, gate: gate(7) } });
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.issues[0]?.path).toEqual(['result', 'gate']);
+  });
+
   it('spells every task path as the write gate spells a changed file', () => {
     const plan = makePlanProposal({
       tasks: [

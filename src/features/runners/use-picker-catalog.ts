@@ -107,6 +107,7 @@ function laneOf(source: DiscoverySourceRefresh): CatalogLane {
  */
 function deriveCatalogDiagnostic(
   item: PickerOption | undefined,
+  staleRows: number,
 ): ModelCatalogDiagnostic | undefined {
   if (item === undefined || item.kind !== 'cli' || !includes(CLI_TOOL_IDS, item.id)) {
     return undefined;
@@ -116,6 +117,7 @@ function deriveCatalogDiagnostic(
   const runtime = modelCacheStore.getCliCatalogRuntime({ tool });
   if (runtime === null || runtime === undefined) return { kind: 'not-probed' };
   if (runtime.failure === undefined) return undefined;
+  if (runtime.failure === 'not-run' && staleRows > 0) return { kind: 'not-run-retained' };
   if (runtime.failure === 'command-failed') {
     return { kind: 'probe-failed', failure: runtime.failure, cause: runtime.failureCause };
   }
@@ -328,7 +330,7 @@ export function usePickerCatalog(
   const seatAxisIndex = seatAxisFocused ? rowIndexForEffortAxis(rightRows) : -1;
   const modelCounts = countModelOptions(rightModels);
   const catalogDiagnostic =
-    modelCounts.confirmed > 0 ? undefined : deriveCatalogDiagnostic(currentItem);
+    modelCounts.confirmed > 0 ? undefined : deriveCatalogDiagnostic(currentItem, modelCounts.stale);
 
   // Every reset of the model column must land on the configured model, or
   // moving the tool cursor and confirming silently rewrites it with the pinned

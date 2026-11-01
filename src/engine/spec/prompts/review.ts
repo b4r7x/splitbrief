@@ -358,6 +358,9 @@ export function buildFinalReviewPrompt(opts: FinalReviewPromptInput): string {
       ? REVIEW_INSTRUCTIONS.replace(
           'Review the implementation diff against every acceptance criterion and requirement in the spec and task briefs.',
           'Review the implementation diff against each due acceptance criterion and the requirements of the reviewed tasks.',
+        ).replace(
+          "The Checks Log section and the Reviewer checks section carry the run's command output: the checks of the plan and the tasks, and the project gate the plan names.",
+          "The Checks Log section carries the run's command output: the checks of the plan and the tasks. A task review runs no project gate: a reviewer check in the Checks Log comes from an earlier final review or from a fix task.",
         )
       : REVIEW_INSTRUCTIONS;
   const reviewChecklist =

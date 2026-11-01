@@ -5,13 +5,14 @@ import { formatTaskHeading, taskTargetLabel } from '../../../core/run-view/brief
 import { formatTaskStartedParts } from './event-format.js';
 import type { ConversationRow, ConversationRowBlock, ConversationRowSegment } from './types.js';
 import { segmentedRow } from './row-format/rows.js';
-import { sanitizeRowDisplayText, wrappedRowTexts } from './row-format/text.js';
+import { sanitizeRowDisplayText } from './row-format/text.js';
+import { wrapPathAware } from '../../../utils/wrap.js';
 import { wrapWidthFor } from './row-markers.js';
 import { compositeBlock, wrappedSegmentsBlock } from './row-block-compose.js';
 
-// A wrapped continuation carries the space it broke on, and when the break lands before a
-// separator it carries that too — `· sonnet` on its own row reads as a new bullet, not as the tail
-// of the row above. The continuation marker already says the row continues, so the break debris goes.
+// A break before a separator opens the continuation on that separator, and a break inside the gap
+// before the path opens it on a space — `· sonnet` on its own row reads as a new bullet, not as the
+// tail of the row above. The continuation marker already says the row continues, so the debris goes.
 const LEADING_BREAK = /^\s+(?:·\s+)?|^·\s+/;
 
 function withoutLeadingBreak(segments: ConversationRowSegment[]): ConversationRowSegment[] {
@@ -110,24 +111,26 @@ export function taskStartedRowBlock(input: {
   ];
   const protectedFullText = parts.map((part) => part.text).join('');
 
-  const wrapped = wrappedRowTexts(protectedFullText, wrapWidthFor('task-header', input.width)).map(
-    (line) => (placeholder === null ? line : line.replaceAll(placeholder, ' ')),
+  const wrapped = wrapPathAware(protectedFullText, wrapWidthFor('task-header', input.width)).split(
+    '\n',
   );
   if (wrapped.length === 0) return null;
 
   const rows: ConversationRow[] = [];
   let offset = 0;
   for (let lineIndex = 0; lineIndex < wrapped.length; lineIndex += 1) {
-    const line = wrapped[lineIndex] ?? '';
-    const lineEnd = offset + line.length;
-    const segments = segmentsForRowText(parts, line, offset);
+    const protectedLine = wrapped[lineIndex] ?? '';
+    const line = placeholder === null ? protectedLine : protectedLine.replaceAll(placeholder, ' ');
+    // The wrapper drops the space it breaks on, so a line starts where the full text says it does.
+    const lineStart = protectedFullText.indexOf(protectedLine, offset);
+    const segments = segmentsForRowText(parts, line, lineStart);
     const row = segmentedRow(
       `${input.keyPrefix}-${lineIndex}`,
       lineIndex === 0 ? segments : withoutLeadingBreak(segments),
       'task-header',
     );
     rows.push(lineIndex === 0 ? row : { ...row, headerContinuation: true });
-    offset = lineEnd;
+    offset = lineStart + line.length;
   }
 
   // The marker lives on the first row — every later row is a continuation and draws the message

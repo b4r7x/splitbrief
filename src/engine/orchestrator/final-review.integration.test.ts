@@ -6,8 +6,8 @@ import { scriptedTypedCall } from '#testing/helpers/typed-planner.js';
 import { TEST_METADATA, TEST_SINKS } from '#testing/helpers/orchestrator-factories.js';
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { execSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import {
@@ -2424,6 +2424,80 @@ describe('runFinalReviewPhase', () => {
     expect(diff).toContain(prohibitedMarker);
     expect(diff).not.toContain('diff truncated');
   });
+
+  it.each(['.splitbrief', '.splitbrief/reviews'] as const)(
+    'calls no reviewer and writes no change file outside when %s in the workspace links out',
+    async (link) => {
+      const { projectDir, sessionId, runStartHead } = setupProject();
+      writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nAdd auth.\n', null);
+      const workspaceDir = createTempDir('final-review-workspace');
+      const outside = createTempDir('final-review-outside');
+      dirs.push(workspaceDir, outside);
+      createTestGitRepo(workspaceDir);
+      const outsideFile = join(outside, reviewChangeFile(sessionId).slice('.splitbrief/'.length));
+      mkdirSync(dirname(outsideFile));
+      writeFileSync(outsideFile, 'the file outside\n');
+      if (link === '.splitbrief') {
+        symlinkSync(outside, join(workspaceDir, '.splitbrief'));
+      } else {
+        mkdirSync(join(workspaceDir, '.splitbrief'));
+        symlinkSync(dirname(outsideFile), join(workspaceDir, link));
+      }
+      const { reviewer, prompts } = makeReviewer();
+      const { bus } = makeBusRecorder();
+
+      const result = await runFinalReviewPhase({
+        projectDir,
+        workspaceDir,
+        sessionId,
+        config: makeNoValidationConfig(),
+        callbacks: makeCallbacks().callbacks,
+        bus,
+        state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+        reviewer,
+        metadata: TEST_METADATA,
+        summaryBase: SUMMARY_BASE,
+      });
+
+      expect(prompts).toHaveLength(0);
+      expect(result.reviewStatus).toBe('failed');
+      expect(result.failure).toMatchObject({ code: 'path-confined-escape' });
+      expect(readFileSync(outsideFile, 'utf8')).toBe('the file outside\n');
+    },
+  );
+
+  it('keeps the file outside byte for byte when the change file in the workspace links out', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nAdd auth.\n', null);
+    const workspaceDir = createTempDir('final-review-workspace');
+    const outside = createTempDir('final-review-outside');
+    dirs.push(workspaceDir, outside);
+    createTestGitRepo(workspaceDir);
+    const outsideFile = join(outside, 'target.txt');
+    writeFileSync(outsideFile, 'the file outside\n');
+    const changeFile = join(workspaceDir, reviewChangeFile(sessionId));
+    mkdirSync(dirname(changeFile), { recursive: true });
+    symlinkSync(outsideFile, changeFile);
+    const { reviewer, prompts } = makeReviewer();
+
+    const result = await runFinalReviewPhase({
+      projectDir,
+      workspaceDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks: makeCallbacks().callbacks,
+      bus: makeBusRecorder().bus,
+      state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+    });
+
+    expect(readFileSync(outsideFile, 'utf8')).toBe('the file outside\n');
+    expect(prompts).toHaveLength(0);
+    expect(result.reviewStatus).toBe('failed');
+    expect(result.failure).toMatchObject({ code: 'path-confined-escape' });
+  });
 });
 
 describe('review record', () => {
@@ -2555,4 +2629,81 @@ describe('review record', () => {
     expect(starts).toEqual(['T001']);
     expect(result.state.tasks.map((task) => task.status)).toEqual(['done', 'skipped']);
   }, 90_000);
+});
+
+describe('a review that a stop cuts after the reviewer answered', () => {
+  it('asks the reviewer again when the run continues', async () => {
+    const logDir = createTempDir('verify-runs');
+    dirs.push(logDir);
+    const runsLog = join(logDir, 'runs.log');
+    const script = (id: string, exitCode: number) =>
+      `import { appendFileSync } from 'node:fs';\nappendFileSync(${JSON.stringify(runsLog)}, '${id}\\n');\nprocess.exitCode = ${exitCode};\n`;
+    const project = setupProject({ 'v1.mjs': script('V1', 1), 'v2.mjs': script('V2', 0) });
+    const { reviewer, prompts } = makeReviewer((prompt) => ({
+      ...passingReviewVerdict(prompt),
+      findings: [
+        {
+          id: 'F1',
+          kind: 'unverified',
+          severity: 'blocking',
+          taskId: 'T001',
+          file: null,
+          line: null,
+          text: 'the greeting drops the name',
+          acceptance: 'The greeting names the person',
+          checkIds: ['V1', 'V2'],
+          criterionId: null,
+        },
+      ],
+    }));
+    const state: WorkflowState = {
+      ...allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], project.runStartHead),
+      plan: { ...GATE_PLAN, gate: ['node v1.mjs', 'node v2.mjs'] },
+    };
+    const ref = { projectDir: project.projectDir, sessionId: project.sessionId };
+    const review = (signal?: AbortSignal) => {
+      const { bus } = makeBusRecorder();
+      const run = () =>
+        runFinalReviewPhase({
+          projectDir: project.projectDir,
+          workspaceDir: project.projectDir,
+          sessionId: project.sessionId,
+          config: makeNoValidationConfig({ validation: { endChecks: true } }),
+          callbacks: makeCallbacks().callbacks,
+          bus,
+          state: loadState(ref) ?? state,
+          reviewer,
+          metadata: TEST_METADATA,
+          summaryBase: SUMMARY_BASE,
+          ...(signal !== undefined && { signal }),
+        });
+      return { bus, run };
+    };
+    const controller = new AbortController();
+    const first = review(controller.signal);
+    // The Stop lands after the reviewer answered, while the verify step runs the checks it named.
+    first.bus.subscribe((event) => {
+      if (
+        event.type === 'full_suite' &&
+        event.moment === 'verify' &&
+        event.id === 'V2' &&
+        event.status === 'running'
+      )
+        controller.abort(new DOMException('Stopped.', 'AbortError'));
+    });
+
+    const stopped = await first.run();
+
+    expect(stopped.verdict).toBeNull();
+    expect(prompts).toHaveLength(1);
+    expect(readFileSync(runsLog, 'utf8')).toBe('V1\n');
+
+    const continued = await review().run();
+
+    expect(prompts).toHaveLength(2);
+    expect(continued.reviewStatus).toBe('written');
+    expect(reviewedChange(project.projectDir, project.sessionId)).not.toContain(
+      reviewChangeFile(project.sessionId),
+    );
+  });
 });

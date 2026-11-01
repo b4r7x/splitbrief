@@ -63,6 +63,24 @@ describe('formatResumeCommand', () => {
     );
   });
 
+  it.each([
+    ['skip-current-task', 'skip'],
+    ['end-run', 'end-run'],
+  ] as const)(
+    'names the %s step of a cannot halt, which runs headless',
+    (recommendedAction, flag) => {
+      const issue = makeRecoveryIssue({
+        reason: 'retry-exhausted',
+        facts: { cannot: 'The SDK has no payment API.', cannotBy: 'planner' },
+        availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
+        recommendedAction,
+      });
+
+      expect(formatResumeCommand('s1', issue)).toBe(`splitbrief continue s1 --action ${flag}`);
+      expect(continuesHeadless(issue)).toBe(true);
+    },
+  );
+
   // The recovery panel offers every action; `continue` opens it, so the line names the row there.
   it.each([
     ['no-progress', 'continue', 'Continue'],

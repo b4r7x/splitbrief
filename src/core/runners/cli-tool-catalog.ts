@@ -845,6 +845,21 @@ export const PROVIDER_ORACLE_TOOL_IDS = Object.freeze([
   'kilo-code',
 ] as const satisfies readonly CliToolId[]);
 
+/**
+ * A version the probe could not read says nothing about the tool, so it does not outrank a sign-in
+ * found absent. A provider-listing tool still calls a provider with no stored credential, so for
+ * that tool an absent sign-in decides nothing here.
+ */
+export function signInOutranksUnreadVersion(
+  input: Readonly<{ tool: string; installedVersion: string | null; signedOut: boolean }>,
+): boolean {
+  return (
+    input.installedVersion === null &&
+    input.signedOut &&
+    !PROVIDER_ORACLE_TOOL_IDS.some((id) => id === input.tool)
+  );
+}
+
 export function cliModelPolicyViolations(
   policy: CliModelPolicy,
   selection: CliModelSelection,

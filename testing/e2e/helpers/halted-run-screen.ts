@@ -13,13 +13,12 @@ import type { SessionRef } from '../../../src/core/types/session-ref.js';
 import type { PreparedExecution } from '../../../src/engine/runners/prepared-execution.js';
 import type { RunWorkflowFn } from '../../../src/features/workflow/hooks/use-run-loop.js';
 import { hydrateRun } from '../../../src/features/workflow/run-history.js';
-import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { configStore } from '../../../src/stores/project/config.js';
 import { flushSessionDrafts, saveSessionDraft } from '../../../src/stores/ui/session-drafts.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
-import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { prepareWorkflowExecution } from '#testing/helpers/workflow-screen.js';
 import type { StopContinueFixture } from './stop-continue-fixture.js';
 
@@ -108,7 +107,6 @@ export async function openHaltedRun(
     screen.unmount();
     throw err;
   }
-  await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
   await flushEffects();
   return { screen, ref, state, runWorkflow };
 }

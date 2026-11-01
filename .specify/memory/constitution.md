@@ -1,5 +1,15 @@
 <!--
 Sync Impact Report
+- Version change: 4.6.0 → 4.6.1. PATCH: Principle V wording matches the brief gate. With `end`, each brief runs its own checks except `render` checks, a consult `verify` runs only the checks it names, and a fix brief also runs the failed checks it answers.
+- Modified principles: V.
+- Updated sections: Governance.
+- Templates checked: plan-template.md, spec-template.md and tasks-template.md remain compatible. They set no brief gate rule.
+- Docs and skills: none. The workflow and features docs already state this rule.
+- Follow-up TODOs: none.
+-->
+
+<!--
+Sync Impact Report
 - Version change: 4.5.0 → 4.6.0. MINOR: Principle V moves the run base comparison off the review's critical path. The project gate MUST run once at the run base, during the build, one base process at a time; its results are stored. A red reviewer check is compared with that result, and the review waits for a base command that has not finished; it never runs it a second time.
 - Modified principles: V.
 - Updated sections: Governance.
@@ -349,9 +359,10 @@ ability to run anything itself is a bonus that improves first-pass rate,
 never a substitute for either. A task MUST NOT be accepted because the
 implementer reports success.
 
-Task completion MUST follow `workflow.review`. With `end`, an ordinary brief
-runs no check; it runs only the checks a caller names, such as a consult
-`verify`. With `task`, each task MUST pass its own checks and its required
+Task completion MUST follow `workflow.review`. With `end`, each brief runs its
+own checks except `render` checks; a consult `verify` runs only the checks it
+names, and a fix brief also runs the failed checks it answers. With `task`, each
+task MUST pass its own checks and its required
 due checks before its scheduled review. Before the final review every
 registered check runs, including renders. The planner MUST name the project
 gate in the plan: at most 6 commands that the project's own scripts or CI run
@@ -582,4 +593,4 @@ MUST be documented in the plan.md Complexity Tracking table with:
 the violation, why it is needed, and why the simpler alternative
 was rejected.
 
-**Version**: 4.6.0 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-10-29
+**Version**: 4.6.1 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-11-01

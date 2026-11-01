@@ -43,10 +43,14 @@ const DETECTION_NOT_RUN = 'Model detection has not run yet';
 // Detection has not run *and* the panel beside the byline is listing rows: those rows are the
 // bundled list, so the byline names which list the user is reading instead of denying it exists.
 const BUNDLED_LIST = 'Bundled model list';
+// Detection did not run and the rows beside the byline came from an earlier listing: name that list.
+const EARLIER_LIST = 'Models from an earlier check';
+const DETECT_RETRY = `${SOFT_SEP}ctrl+r detects this tool's models`;
 
 /** Why a native CLI catalog probe produced no confirmed models. */
 export type ModelCatalogDiagnostic =
   | Readonly<{ kind: 'not-probed' }>
+  | Readonly<{ kind: 'not-run-retained' }>
   | Readonly<{ kind: 'unsupported' }>
   | Readonly<{
       kind: 'probe-failed';
@@ -138,7 +142,7 @@ function noListingSentence(toolName: string): string {
  * alone cannot sign the tool in or install it, and a CLI remediation that a recheck settles ends on
  * ctrl+r itself, so the catalog line names no retry of its own.
  */
-function withRetry(failure: string, retry: string, remedied: boolean): string {
+export function withRetry(failure: string, retry: string, remedied: boolean): string {
   return remedied ? failure : `${failure}${retry}`;
 }
 
@@ -160,6 +164,8 @@ export function formatCatalogDiagnostic(
   remedied: boolean,
 ): string {
   if (diagnostic.kind === 'not-probed') return detectionNotRunCopy(remedied);
+  if (diagnostic.kind === 'not-run-retained')
+    return withRetry(EARLIER_LIST, DETECT_RETRY, remedied);
   if (diagnostic.kind === 'unsupported') return noListingSentence(toolName);
   switch (diagnostic.failure) {
     case 'unsupported':
@@ -565,7 +571,7 @@ export function bylineDiagnostic(input: {
   // Rows are listed and detection has not run: they are the bundled list. Saying detection has not
   // run would contradict the column beside it, so name the list the user is reading instead.
   if (input.modelCount > 0 && isDetectionNotRun(diagnostic)) {
-    return withRetry(BUNDLED_LIST, `${SOFT_SEP}ctrl+r detects this tool's models`, remedied);
+    return withRetry(BUNDLED_LIST, DETECT_RETRY, remedied);
   }
   if (diagnostic.kind !== 'probe-failed' || diagnostic.failure !== 'command-failed') {
     return formatCatalogDiagnostic(diagnostic, input.toolName, remedied);

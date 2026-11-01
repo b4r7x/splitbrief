@@ -17,10 +17,6 @@ describe('recoveryActionLabel for a seat swap', () => {
       { text: seat.toUpperCase(), seat },
       { text: ' tool' },
     ]);
-    expect(recoveryActionParts('retry-same-worker', { seatRetry: seat })).toEqual([
-      { text: 'Try again with ' },
-      { text: seat.toUpperCase(), seat },
-    ]);
   });
 
   it('names a model pick when the first offer keeps the halted tool', () => {

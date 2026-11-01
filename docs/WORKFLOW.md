@@ -601,8 +601,8 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
     No command runs before the first task.
     review: end runs each brief's own checks after it, except render checks, and
     the reviewer checks at the final review over the run workspace.
-    review: task also runs due checks after each task, then a task review whose
-    reviewer checks run the tests related to the task's changed files.
+    review: task also runs due checks after each task, then a task review,
+    which runs no gate.
     validation.end_checks: false runs no reviewer check; one row says so.
     The project gate runs once at the run base, beside the build: when the run
     loop starts, SPLITBRIEF runs each gate command (V1, V2, …) there with the

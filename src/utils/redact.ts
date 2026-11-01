@@ -11,7 +11,10 @@ interface RedactionRule {
 
 const GLUED_SENSITIVE_KEY_NAMES = 'CLIENTSECRET|CLIENTTOKEN|PRIVATETOKEN|AUTHTOKEN';
 
-const SENSITIVE_KEY_NAME = `(?:(?:[A-Z0-9]+[_.-])*(?:API[_-]?KEY|TOKENS?|PASSWORD|PASSWD|SECRETS?|CREDENTIALS?|AUTHORIZATION|X[_-]API[_-]?KEY|ACCESS[_-]?TOKEN|REFRESH[_-]?TOKEN)(?:[_.-][A-Z0-9]+)*|${GLUED_SENSITIVE_KEY_NAMES})`;
+// A key with the noun CREDENTIAL or CREDENTIALS and a final STORE segment names
+// the backend that keeps credentials, so its value stays readable. With any other
+// noun, a final STORE segment stays sensitive.
+const SENSITIVE_KEY_NAME = `(?:(?:[A-Z0-9]+[_.-])*(?:API[_-]?KEY|TOKENS?|PASSWORD|PASSWD|SECRETS?|CREDENTIALS?(?![_.-]STORE["']?\\s*[:=])|AUTHORIZATION|X[_-]API[_-]?KEY|ACCESS[_-]?TOKEN|REFRESH[_-]?TOKEN)(?:[_.-][A-Z0-9]+)*|${GLUED_SENSITIVE_KEY_NAMES})`;
 
 // Wider than the assigned-secret matcher above: a bare `KEY` or `AUTH` segment
 // names a credential when it is an environment variable, while the same word in
