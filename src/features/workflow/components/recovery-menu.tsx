@@ -9,6 +9,7 @@ import { ListRow } from '../../../components/list-row.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
 import { colorForTone } from '../../../core/theme/tone-color.js';
 import { ListViewport } from '../../../components/pickers/list-viewport.js';
+import { isItemIndexVisible } from '../../../components/pickers/scroll-window.js';
 import { useStaticSelector } from '../../../hooks/use-static-selector.js';
 import { slashHandoffPending } from '../slash-handoff.js';
 import { formatKeyHints, SELECT_HINT } from '../prompt-rows/approval.js';
@@ -112,8 +113,8 @@ export function RecoveryMenu({
   const fullSummary = recoveryPromptSummaryRows(issue, innerWidth);
   const fullRows = promptBodyRows(fullSummary, innerWidth);
   const minimumListRows = Math.min(4, Math.max(actions.length, 1));
-  // A short panel keeps its content before its chrome: the headline (it carries the cut mark when
-  // it is the only summary row), the selected action with one mark row that names every side
+  // A short panel keeps its content before its chrome: the selected action, the headline (it
+  // carries the cut mark when it is the only summary row), one mark row that names every side
   // hiding actions, and the legend. Then the border, a second summary row for the mark, the other
   // actions, and the divider, in that order. A cut that would hide the row the halt asks the user
   // to read puts that row first, whole while it fits, and the rows after it give way. The summary
@@ -121,7 +122,9 @@ export function RecoveryMenu({
   // every action stays reachable.
   const listFloor = Math.min(2, minimumListRows);
   const framed = clampedBoxRows >= 1 + listFloor + 1 + 2;
-  const innerHeight = Math.max(1, clampedBoxRows - (framed ? 2 : 0));
+  const innerHeight = clampedBoxRows - (framed ? 2 : 0);
+  const summaryShown = innerHeight >= 2;
+  const legendShown = innerHeight >= 4;
   const besideList = innerHeight - listFloor - 1;
   const fittedHeight = Math.min(
     Math.max(1, fullRows.length),
@@ -140,7 +143,8 @@ export function RecoveryMenu({
   const takesSummaryRow = askedFirst && countPromptBodyRows(summary, innerWidth) > fittedHeight;
   const summaryHeight = takesSummaryRow ? fittedHeight + 1 : fittedHeight;
   const divided = fittedDivided && !takesSummaryRow;
-  const listBudget = Math.max(1, innerHeight - summaryHeight - 1 - (divided ? 1 : 0));
+  const listBudget =
+    innerHeight - (summaryShown ? summaryHeight : 0) - (legendShown ? 1 : 0) - (divided ? 1 : 0);
 
   // Every action resolves the prompt, `switch-seat` included: the driver answers it by opening
   // the seat's own picker on the offered tool, which is the one place a seat's tool and model are
@@ -154,6 +158,7 @@ export function RecoveryMenu({
     isActive: focused,
     keyOf: (item) => item.action,
     shouldHandleInput: () => !slashHandoffPending(),
+    isIndexActionable: () => listBudget > 0,
     onSelect: chooseAction,
   });
 
@@ -164,7 +169,16 @@ export function RecoveryMenu({
       if (input.length === 1 && !key.ctrl && !key.meta) {
         const letter = input.toLowerCase();
         const item = actions.find((entry) => recoveryActionKey(entry.action) === letter);
-        if (item !== undefined) chooseAction(item);
+        if (
+          item !== undefined &&
+          isItemIndexVisible({
+            items: actions,
+            selectedIndex: actionSelection.selectedIndex,
+            itemIndex: actions.indexOf(item),
+            rowBudget: listBudget,
+          })
+        )
+          chooseAction(item);
         return;
       }
       if (key.tab || (key.shift && key.tab)) {
@@ -202,7 +216,7 @@ export function RecoveryMenu({
     <Box
       flexDirection="column"
       width={width}
-      height={Math.max(2, clampedBoxRows)}
+      height={clampedBoxRows}
       {...(framed && {
         borderStyle: borderStyleFor('single'),
         borderColor: focused ? t.accent : t.border,
@@ -212,7 +226,7 @@ export function RecoveryMenu({
       overflow="hidden"
       flexShrink={0}
     >
-      <PromptBody prompt={summary} height={summaryHeight} width={innerWidth} />
+      {summaryShown && <PromptBody prompt={summary} height={summaryHeight} width={innerWidth} />}
       {divided && <Text color={t.border}>{'─'.repeat(Math.max(1, innerWidth))}</Text>}
       <Box flexDirection="column" flexGrow={1} overflow="hidden">
         <ActionList
@@ -225,9 +239,11 @@ export function RecoveryMenu({
           focused={focused}
         />
       </Box>
-      <Text color={t.textDim} wrap="truncate-end">
-        {legend}
-      </Text>
+      {legendShown && (
+        <Text color={t.textDim} wrap="truncate-end">
+          {legend}
+        </Text>
+      )}
     </Box>
   );
 }

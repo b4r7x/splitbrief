@@ -59,6 +59,7 @@ import {
   getWorkflowSidebarWidth,
   getWorkflowViewportHeight,
 } from '../../features/workflow/layout/rect.js';
+import { getChromeHeight } from '../../features/workflow/layout/chrome-rows.js';
 import {
   getChromeContentWidth,
   getProgressRows,
@@ -221,7 +222,8 @@ export function WorkflowScreen({
     }
     if (reviewArtifact !== null && message.displayText.trim() === '') {
       // An open change request takes ⏎ as `send`, and an empty one has nothing to send.
-      if (reviewCommenting) return;
+      // With no row in view there is no row for ⏎ to take.
+      if (reviewCommenting || promptBoxRows === 0) return;
       const row = reviewDocumentOptions(reviewArtifact)[reviewSelectedRef.current];
       // The comment row hands the keyboard to the composer the same way a typed `c` does: one
       // empty change request, so there is one way into a review comment and not two.
@@ -328,7 +330,11 @@ export function WorkflowScreen({
     progressRows,
     promptRows: requestedPromptRows,
   });
-  const promptBoxRows = model.promptPending ? Math.max(1, promptRows) : promptRows;
+  // An open panel keeps a row while the chrome fits; the header gives its row up first.
+  const promptBoxRows =
+    rows < getChromeHeight(inputRows, progressRows)
+      ? 0
+      : Math.max(Math.min(1, requestedPromptRows), promptRows);
   const contentHeight = getWorkflowViewportHeight({
     rows,
     inputRows,

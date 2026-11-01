@@ -193,7 +193,8 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
   if (
     projection.scenarioId === 'workflow-ready-override-confirm' ||
     projection.scenarioId === 'workflow-ready-planner-accept-confirm' ||
-    projection.scenarioId === 'workflow-ready-planner-accept-long-note'
+    projection.scenarioId === 'workflow-ready-planner-accept-long-note' ||
+    projection.scenarioId === 'workflow-ready-planner-accept-short'
   ) {
     return () => ({ ...base(), afterMount: (write) => write.press('\r') });
   }
@@ -798,6 +799,11 @@ const checkpointPredicates = [
   [checkpointId('selection-copy'), includesAll('End run', 'Edit plan.json')],
   [checkpointId('approval-confirm'), includesAll('Confirm with a reason')],
   [checkpointId('approval-confirm-secret'), includesAll('Confirm with a reason')],
+  [checkpointId('approval-confirm-short'), includesAll('Confirm')],
+  [checkpointId('plan-card-short'), includesAll('Approve plan')],
+  [checkpointId('question-short'), includesAll('Reviewer/planner seat')],
+  [checkpointId('planner-question-short'), includesAll('Reviewer/planner seat')],
+  [checkpointId('recovery-short'), includesAll('Try again')],
   [checkpointId('plan-card'), planCardReady],
   [
     checkpointId('plan-card-commenting'),
@@ -1034,6 +1040,7 @@ const checkpointPredicates = [
     checkpointId('ready-planner-accept-long-note'),
     includesAll('Apply with 2 open findings?', "Planner's note:", 'Apply as is'),
   ],
+  [checkpointId('ready-planner-accept-short'), includesAll('Apply as is')],
   [checkpointId('closed-applied'), includesAll()],
   [checkpointId('closed-pre-existing'), includesAll('V2 pre-existing')],
   // A finding wraps at words, so at 60x18 the earlier failed review scrolls above the viewport.
@@ -1182,6 +1189,11 @@ const checkpointPredicates = [
   [
     checkpointId('masked-question'),
     includesAll('T901 needs your answer', 'Question: Deploy needs Authorization: Bearer'),
+  ],
+  [checkpointId('open-quote'), includesAll('T901 needs your answer', 'Question: The docs say')],
+  [
+    checkpointId('open-quote-title'),
+    includesAll('T901 needs your answer', 'Question: Should activity.ts'),
   ],
   [checkpointId('cannot'), includesAll('T901: the planner says it cannot be done')],
   [checkpointId('many-files'), includesAll(WORKFLOW_FIXTURE_TEXT.retryExhausted)],

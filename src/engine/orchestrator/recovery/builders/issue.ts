@@ -7,6 +7,7 @@ import type {
 } from '../../../../core/schemas/recovery/schemas.js';
 import type { Task, TaskId } from '../../../../core/schemas/task.js';
 import { uniqueSortedIds, uniqueSorted } from '../../../../utils/collections.js';
+import { sanitizeTerminalDisplayText } from '../../../../utils/display-text.js';
 import { truncateByChars } from '../../../../utils/truncate.js';
 
 export const MAX_SUMMARY_LENGTH = 320;
@@ -23,8 +24,10 @@ export interface TaskRecoveryContext {
   selectedImplementerProfile?: string | undefined;
 }
 
+/** The mask runs first: a cut can drop the closing quote or the key shape the mask reads. */
 export function summarizeText(input: string): string {
-  return truncateByChars(input.trim().replace(/\s+/g, ' '), MAX_SUMMARY_LENGTH);
+  const masked = sanitizeTerminalDisplayText(input, { preserveLineBreaks: true });
+  return truncateByChars(masked.trim().replace(/\s+/g, ' '), MAX_SUMMARY_LENGTH);
 }
 
 export function buildRecoveryIssueId(opts: {

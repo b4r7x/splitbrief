@@ -285,6 +285,18 @@ describe('isItemIndexVisible', () => {
   });
 });
 
+describe('isItemIndexVisible for a row that is not the selected row', () => {
+  const list = { items: ['alpha', 'beta', 'gamma', 'delta'], selectedIndex: 0, rowBudget: 2 };
+
+  it('is false for a row out of the window', () => {
+    expect(isItemIndexVisible({ ...list, itemIndex: 3 })).toBe(false);
+  });
+
+  it('is true for a row in the window', () => {
+    expect(isItemIndexVisible({ ...list, selectedIndex: 3, itemIndex: 3 })).toBe(true);
+  });
+});
+
 describe('decoration slots', () => {
   it('renders before and after slots around their item and counts them in the budget', () => {
     const window = computeListDisplayWindow({

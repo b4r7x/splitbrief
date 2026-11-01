@@ -10,7 +10,7 @@ import {
 } from '../../../src/core/approval/types.js';
 import {
   CONFIRM_REASON_UNSTATED,
-  approvalTitle,
+  formatApprovalActionDescription,
 } from '../../../src/features/workflow/prompt-rows/approval.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
 import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
@@ -94,15 +94,24 @@ describe('WorkflowScreen key ownership', () => {
   it('keeps a pending approval prompt answerable on a terminal too short to render it', async () => {
     // rows=6 with the default 3-row composer leaves no middle budget, so the prompt clamps to
     // zero rows. The handler must still be registered or the prompt deadlocks unanswerably.
+    // With no row in view `y` confirms nothing; a denial takes no row.
     const ui = mountWorkflow(6);
     await tick(20);
 
     const decision = openApprovalPrompt(confirmRequest());
     await tick(PAST_GRACE);
     await flushEffects();
+    let settled = false;
+    void decision.then(() => {
+      settled = true;
+    });
 
     ui.stdin.write('y');
-    await expect(decision).resolves.toEqual(CONFIRMED);
+    await tick(20);
+    expect(settled).toBe(false);
+
+    ui.stdin.write('x');
+    await expect(decision).resolves.toEqual({ decision: 'deny', reason: 'user_denied' });
 
     ui.unmount();
   });
@@ -236,14 +245,16 @@ describe('WorkflowScreen key ownership', () => {
       ] as const;
 
       it.each(cases)(
-        'paints the %s title and every option, and only an option row answers',
+        'paints the %s action and every option, and only an option row answers',
         async (_, request, options) => {
           const panel = await openPanel(rows, request);
           const optionRows = options.map(panel.rowOf);
           expect(optionRows).not.toContain(0);
-          const titleRow = panel.rowOf(approvalTitle(request.actionClass));
-          expect(panel.panelRows()).toContain(titleRow);
-          panel.click(titleRow);
+          const actionRow = panel.rowOf(
+            formatApprovalActionDescription(request.actionDescription).split('\n')[0] ?? '',
+          );
+          expect(panel.panelRows()).toContain(actionRow);
+          panel.click(actionRow);
           for (const row of panel.panelRows()) {
             if (!optionRows.includes(row)) panel.click(row);
           }

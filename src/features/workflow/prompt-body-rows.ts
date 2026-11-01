@@ -64,8 +64,8 @@ function parseHeadline(headline: string): Extract<PromptRow, { kind: 'headline' 
   return { kind: 'headline', tone: 'text', text: headline };
 }
 
-function parsePromptRows(prompt: string): PromptRow[] {
-  const lines = clean(prompt, true).split('\n');
+function parsePromptRows(masked: string): PromptRow[] {
+  const lines = masked.split('\n');
   const headline = parseHeadline(lines[0] ?? '');
   const factLines = normalizeFactLines(lines.slice(1));
 
@@ -146,7 +146,12 @@ export function promptBodyRows(
   width: number,
 ): PromptBodyLine[] {
   const promptWidth = Math.max(MIN_PROMPT_WIDTH, width);
-  const rows = parsePromptRows(typeof prompt === 'string' ? prompt : promptRowsToString(prompt));
+  // Rows are masked one by one, so that a quote in one row cannot pair with a quote in another.
+  const rows = parsePromptRows(
+    typeof prompt === 'string'
+      ? clean(prompt, true)
+      : promptRowsToString(prompt, (row) => clean(row, true)),
+  );
   const headline = rows[0];
   const sourceHeadline = typeof prompt === 'string' ? undefined : prompt[0];
   if (

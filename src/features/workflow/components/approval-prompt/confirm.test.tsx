@@ -481,7 +481,7 @@ describe('short-viewport clamp on the confirm panel', () => {
     await tick(20);
     const lines = stripColor(ui.lastFrame()).replace(/\n$/, '').split('\n');
     expect(lines).toHaveLength(4);
-    expect(lines[0]).toContain(approvalTitle('package_change'));
+    expect(lines[0]).toContain('package.json');
     expect(lines[1]).toBe(`  ${CONFIRM_QUESTION}`);
     expect(lines[2]?.startsWith(`  ${glyph('prompt')} `)).toBe(true);
     expect(lines[3]).toBe(`  ${CONFIRM_REASON_OPTIONAL}`);
@@ -611,6 +611,19 @@ describe('runner trust panel', () => {
 
     ui.stdin.write('y');
     await expect(pending).resolves.toMatchObject({ decision: 'confirm', phrase: CONFIRM_PHRASE });
+    ui.unmount();
+  });
+});
+
+describe('a confirm prompt in a short terminal', () => {
+  it.each([1, 2, 3, 4, 5])('names the action in %i rows', async (height) => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 12, isSmall: true });
+    void openApprovalPrompt(makeConfirmRequest('write package.json', 'package_change'));
+    const ui = render(<ApprovalPrompt clampedBoxRows={height} />);
+    await flushEffects();
+    const frame = stripColor(ui.lastFrame());
+    expect(frame).toContain('write package.json');
+    expect(frame).toContain('Confirm');
     ui.unmount();
   });
 });

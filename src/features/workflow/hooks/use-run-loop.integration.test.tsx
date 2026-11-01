@@ -3359,6 +3359,26 @@ describe('useRunLoop — a seat wait after the seat changed', () => {
     return eventsStore.get().events.filter((event) => event.type === 'seat_wait_started').length;
   }
 
+  /** How each wait so far ended: true for a wait a stop cut and the saved state keeps. */
+  function seatWaitEnds(): (true | undefined)[] {
+    return eventsStore
+      .get()
+      .events.flatMap((event) => (event.type === 'seat_wait_ended' ? [event.kept] : []));
+  }
+
+  /** Settles when entry `entries` of `run` has returned, or has begun a wait past `waitsBefore`. */
+  async function entrySettled(
+    run: ReturnType<typeof recordedEngine>,
+    entries: number,
+    waitsBefore: number,
+  ): Promise<void> {
+    await vi.waitFor(() => expect(run.entered).toHaveLength(entries), { timeout: 5000 });
+    await vi.waitFor(
+      () => expect(run.returned() === run.entered.length || seatWaits() > waitsBefore).toBe(true),
+      { timeout: 5000 },
+    );
+  }
+
   function mount(
     input: Readonly<{
       sessionId: string;
@@ -3472,9 +3492,9 @@ describe('useRunLoop — a seat wait after the seat changed', () => {
 
     requestStopNow();
     await vi.waitFor(() => expect(settledRun()).not.toBeNull(), { timeout: 5000 });
-    await tick(50);
     writeConfig(projectDir, input.continued);
     const enteredBefore = run.entered.length;
+    let waitsBefore = seatWaits();
     if (input.where === 'same') {
       configStore.__testReset({ projectDir, config: input.continued });
       captureRunner.current?.handleResume();
@@ -3483,14 +3503,13 @@ describe('useRunLoop — a seat wait after the seat changed', () => {
       clearAllHandlers();
       stopStore.__testReset();
       resetWorkflow();
+      waitsBefore = seatWaits();
       const reopened = loadState(ref);
       if (reopened === null) throw new Error('expected the saved state');
       run = recordedEngine({});
       inst = mount({ sessionId, config: input.continued, state: reopened, captureRunner, run });
     }
-    const entered = input.where === 'same' ? enteredBefore + 1 : 1;
-    await vi.waitFor(() => expect(run.entered.length).toBe(entered), { timeout: 5000 });
-    await tick(400);
+    await entrySettled(run, input.where === 'same' ? enteredBefore + 1 : 1, waitsBefore);
     const waited = run.returned() < run.entered.length;
     const seatWait = loadState(ref)?.seatWait;
     if (waited) {
@@ -3632,10 +3651,11 @@ describe('useRunLoop — a seat wait after the seat changed', () => {
       });
       await vi.waitFor(() => expect(run.entered).toHaveLength(1), { timeout: 5000 });
       await vi.waitFor(() => expect(seatWaits()).toBe(1), { timeout: 5000 });
-      await tick(400);
       expect(run.returned()).toBe(0);
       requestStopNow();
       await vi.waitFor(() => expect(settledRun()).not.toBeNull(), { timeout: 5000 });
+      expect(seatWaitEnds()).toEqual([true]);
+      expect(loadState(ref)?.seatWait?.seat).toBe('build');
       inst.unmount();
     },
     20_000,
@@ -3669,12 +3689,12 @@ describe('useRunLoop — a seat wait after the seat changed', () => {
       configStore.__testReset({ projectDir, config: configs.tool });
       await answerRecoveryPanel(captureRunner, 'l');
       await vi.waitFor(() => expect(seatWaits()).toBe(1), { timeout: 5000 });
-      await tick(400);
       expect(run.entered).toHaveLength(1);
       expect(run.returned()).toBe(0);
-      expect(loadState(ref)?.seatWait?.seat).toBe(seat);
       requestStopNow();
       await vi.waitFor(() => expect(settledRun()).not.toBeNull(), { timeout: 5000 });
+      expect(seatWaitEnds()).toEqual([true]);
+      expect(loadState(ref)?.seatWait?.seat).toBe(seat);
       inst.unmount();
     },
     20_000,
@@ -3744,21 +3764,21 @@ describe('useRunLoop — a seat wait after the seat changed', () => {
     });
   }
 
-  /** Whether the entry the loop is in waits on the seat, read after a released entry had time to return. */
+  /** Whether the entry the loop is in waits on the seat, read once the entry has settled. */
   async function entryWaits(
     ref: Readonly<{ projectDir: string; sessionId: string }>,
     run: ReturnType<typeof recordedEngine>,
     entries: number,
+    waitsBefore: number,
   ) {
-    await vi.waitFor(() => expect(run.entered).toHaveLength(entries), { timeout: 5000 });
-    await tick(400);
+    await entrySettled(run, entries, waitsBefore);
     return run.returned() < run.entered.length && loadState(ref)?.seatWait !== undefined;
   }
 
-  async function stopWait(): Promise<void> {
+  async function stopWait(run: ReturnType<typeof recordedEngine>): Promise<void> {
     requestStopNow();
+    await vi.waitFor(() => expect(run.returned()).toBe(run.entered.length), { timeout: 5000 });
     await vi.waitFor(() => expect(settledRun()).not.toBeNull(), { timeout: 5000 });
-    await tick(50);
   }
 
   /**
@@ -3811,12 +3831,13 @@ describe('useRunLoop — a seat wait after the seat changed', () => {
       if (input.saved !== undefined) await saveSeat(input.saved);
       await answerRecoveryPanel(captureRunner, 'l');
     }
-    const waited = await entryWaits(ref, run, 1);
+    const waited = await entryWaits(ref, run, 1, 0);
     let continuedWaited: boolean | undefined;
     if (waited && input.continued !== undefined) {
-      await stopWait();
+      await stopWait(run);
       if (input.savedAfterStop !== undefined) await saveSeat(input.savedAfterStop);
       const before = run.entered.length;
+      let waitsBefore = seatWaits();
       if (input.continued.where === 'same') {
         captureRunner.current?.handleResume();
       } else {
@@ -3824,6 +3845,7 @@ describe('useRunLoop — a seat wait after the seat changed', () => {
         clearAllHandlers();
         stopStore.__testReset();
         resetWorkflow();
+        waitsBefore = seatWaits();
         const reopened = loadState(ref);
         if (reopened === null) throw new Error('expected the saved state');
         run = recordedEngine({});
@@ -3839,9 +3861,10 @@ describe('useRunLoop — a seat wait after the seat changed', () => {
         ref,
         run,
         input.continued.where === 'same' ? before + 1 : 1,
+        waitsBefore,
       );
     }
-    if (run.returned() < run.entered.length) await stopWait();
+    if (run.returned() < run.entered.length) await stopWait(run);
     inst.unmount();
     return { waited, ...(continuedWaited !== undefined && { continuedWaited }) };
   }
@@ -4108,9 +4131,9 @@ describe('useRunLoop — a seat wait after the seat changed', () => {
     await vi.waitFor(() => expect(controlsStore.get().inputMode).toBe('question'));
     writeConfig(projectDir, configs.tool);
     await answerRecoveryPanel(captureRunner, 'l');
-    expect(await entryWaits(ref, run, 1)).toBe(true);
+    expect(await entryWaits(ref, run, 1, 0)).toBe(true);
     expect(loadState(ref)?.seatWait?.holds).toMatchObject({ tool: 'claude-code', kind: 'cli' });
-    await stopWait();
+    await stopWait(run);
     inst.unmount();
   }, 20_000);
 

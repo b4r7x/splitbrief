@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { listRowLead } from '../../../components/list-row.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
@@ -123,6 +125,31 @@ describe('StopSheet', () => {
     expect(frame).toContain('start T003');
     expect(frame).not.toContain('\u2026');
     expect(frame.split('\n').length).toBeLessThanOrEqual(10);
+    ui.unmount();
+  });
+
+  it('marks a wrapped row once, on its first line', async () => {
+    terminalSizeStore.__testReset({ cols: 40, rows: 18, isSmall: true });
+    overlayStore.open('stop-sheet');
+    const ui = renderFeature(
+      <StopSheet rows={stopSheetRows(RUNNING_BRIEF)} height={8} footer={null} />,
+    );
+    await tick();
+    const marks = (ui.lastFrame() ?? '').split(listRowLead('active').trimEnd()).length - 1;
+
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Stop now');
+    expect(marks).toBe(1);
+    ui.unmount();
+  });
+
+  it('starts an unframed row on the composer text column', async () => {
+    overlayStore.open('stop-sheet');
+    const ui = renderFeature(
+      <StopSheet rows={stopSheetRows(RUNNING_BRIEF)} height={3} footer={null} />,
+    );
+    await tick();
+
+    expect(stripAnsiStyles(ui.lastFrame() ?? '').split('\n')[0]).toMatch(/^ {2}\S/);
     ui.unmount();
   });
 

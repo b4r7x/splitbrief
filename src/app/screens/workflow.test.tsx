@@ -25,6 +25,7 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import type { ApprovalReviewResult } from '../../core/approval/types.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
+import type { RecoveryAction } from '../../core/schemas/enums.js';
 import type { SeatWait } from '../../core/schemas/workflow.js';
 import type { EngineEvent } from '../../engine/events/types.js';
 import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init.js';
@@ -39,6 +40,7 @@ import {
 import { getWorkflowContentRect } from '../../features/workflow/layout/rect.js';
 import { WorkflowScreen } from './workflow.js';
 import { questionPromptStore } from '../../stores/question-prompt/prompt.js';
+import { openApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
 import { CommandPaletteOverlay } from '../overlays/palette.js';
 import { useRuntimeCommands } from '../command-context.js';
 import {
@@ -74,6 +76,7 @@ const { composerLiveStore } = await import('../../stores/ui/composer-live.js');
 const { stopStore } = await import('../../stores/workflow/stop.js');
 const { COMMANDS_ONLY_NOTICE } = await import('../../components/composer/composer.js');
 const { runViewStore } = await import('../../stores/workflow/run-view.js');
+const { useAppKeys } = await import('../keys.js');
 
 const FIXED_TS = 1_783_958_400_000;
 const SHIFT_ENTER = '\x1b[13;2u';
@@ -148,6 +151,11 @@ function builtOnOtherCrew(): Summary {
 /** The crew saved after that run built: BUILD on Sonnet. */
 function sonnetBuildConfig() {
   return makeConfig({ implementer: { kind: 'cli', tool: 'claude-code', model: 'sonnet' } });
+}
+
+function AppKeysWith({ children }: { children: ReactNode }) {
+  useAppKeys({ exit: () => undefined });
+  return <>{children}</>;
 }
 
 /** The Ctrl+K palette over the screen, fed by the real command registry, as the app root mounts it. */
@@ -1384,12 +1392,16 @@ describe('WorkflowScreen showing a run at rest', () => {
     ui.unmount();
   });
 
-  function renderDependencyBlockedHalt(onRuntimeCommand = vi.fn()) {
+  function renderDependencyBlockedHalt(
+    onRuntimeCommand = vi.fn(),
+    size: { cols: number; rows: number } = { cols: 80, rows: 24 },
+    availableActions: RecoveryAction[] = ['skip-current-task', 'end-run'],
+  ) {
     const issue = makeRecoveryIssue({
       reason: 'dependency-blocked',
       phase: 'implementing',
-      availableActions: ['skip-current-task', 'end-run'],
-      recommendedAction: 'skip-current-task',
+      availableActions,
+      recommendedAction: availableActions[0] ?? 'skip-current-task',
     });
     const halted = makeWorkflowState({
       phase: 'implementing',
@@ -1432,8 +1444,105 @@ describe('WorkflowScreen showing a run at rest', () => {
           }}
         />
       </WithPalette>,
+      size,
     );
   }
+
+  describe('a recovery menu in a short terminal', () => {
+    const openHalt = async (rows: number, actions?: RecoveryAction[]) => {
+      terminalSizeStore.__testReset({ cols: 80, rows });
+      const ui = renderDependencyBlockedHalt(vi.fn(), { cols: 80, rows }, actions);
+      await flushEffects();
+      ui.stdin.write('\r');
+      await tick(PROMPT_TYPEAHEAD_GRACE_MS + 60);
+      await flushEffects();
+      return ui;
+    };
+
+    it.each([9, 10, 11, 12])('shows the row Enter acts on at %i rows', async (rows) => {
+      const ui = await openHalt(rows);
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame).toContain('Skip task');
+      expect(frame).not.toContain('confirmmended');
+      ui.unmount();
+    });
+
+    it('runs nothing on Enter with no row for the menu', async () => {
+      const ui = await openHalt(7);
+      const before = runWorkflow.mock.calls.length;
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('Skip task');
+      ui.stdin.write('\r');
+      await flushEffects();
+      await tick(60);
+      expect(runWorkflow.mock.calls.length).toBe(before);
+      ui.unmount();
+    });
+
+    it.each([9, 10])('ends no run on the letter of a row out of view at %i rows', async (rows) => {
+      const ui = await openHalt(rows);
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('End run');
+      ui.stdin.write('a');
+      await flushEffects();
+      await tick(60);
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('Run ended');
+
+      const before = runWorkflow.mock.calls.length;
+      ui.stdin.write('s');
+      await flushEffects();
+      await tick(60);
+      expect(runWorkflow.mock.calls.length).toBe(before + 1);
+      ui.unmount();
+    });
+
+    const fourActions: RecoveryAction[] = [
+      'retry-same-worker',
+      'revise',
+      'skip-current-task',
+      'end-run',
+    ];
+
+    it('takes the letter of a row in view when other rows are cut', async () => {
+      const ui = await openHalt(16, fourActions);
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame).toMatch(/r\s+Try again/);
+      expect(frame).not.toContain('End run');
+      const before = runWorkflow.mock.calls.length;
+      ui.stdin.write('r');
+      await flushEffects();
+      await tick(60);
+      expect(runWorkflow.mock.calls.length).toBe(before + 1);
+      ui.unmount();
+    });
+
+    it('ends no run on the letter of a row cut from a longer list', async () => {
+      const ui = await openHalt(14, fourActions);
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('End run');
+      ui.stdin.write('a');
+      await flushEffects();
+      await tick(60);
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('Run ended');
+      ui.unmount();
+    });
+
+    it('keeps the mark of the cut rows over the key legend at 80 x 11', async () => {
+      const ui = await openHalt(11, fourActions);
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame).toContain('↓ more');
+      expect(frame).not.toContain('⏎ confirm');
+      ui.unmount();
+    });
+
+    it('keeps a row of the menu in view at 80 x 8, and Enter takes it', async () => {
+      const ui = await openHalt(8);
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip task');
+      const before = runWorkflow.mock.calls.length;
+      ui.stdin.write('\r');
+      await flushEffects();
+      await tick(60);
+      expect(runWorkflow.mock.calls.length).toBe(before + 1);
+      ui.unmount();
+    });
+  });
 
   it('hints at the panel alone on a halt that takes no typed correction', async () => {
     const ui = renderDependencyBlockedHalt();
@@ -2143,13 +2252,175 @@ describe('WorkflowScreen showing a run at rest', () => {
     ui.stdin.write('\r');
     await flushEffects();
 
-    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(frame).toContain('Apply with 8 open findings?');
-    expect(frame).toContain("Planner's note: word0");
-    expect(frame).toMatch(/word\d+ ?…/);
-    expect(frame).toContain('+8 more open findings');
-    expect(frame).toContain('Apply as is · write the changes; these findings stay open');
-    expect(frame).toContain('Back · return to the result menu');
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    expect(lines.length).toBeLessThanOrEqual(24);
+    const rows = lines.map((row) => row.replace(/^[\s|]+|[\s|]+$/g, ''));
+    const titleRow = rows.indexOf('Apply with 8 open findings?');
+    expect(titleRow).toBeGreaterThanOrEqual(0);
+    expect(rows[titleRow + 1]).toMatch(/^Planner's note: word0 /);
+    const firstFinding = rows.indexOf('- Open finding 1 needs a fix');
+    expect(rows[firstFinding - 1]).toMatch(/word\d+ ?…$/);
+    expect(rows.slice(firstFinding, firstFinding + 8)).toEqual([
+      '- Open finding 1 needs a fix',
+      '- Open finding 2 needs a fix',
+      '- Open finding 3 needs a fix',
+      '- Open finding 4 needs a fix',
+      '+4 more open findings',
+      'Apply as is · write the changes; these findings stay open',
+      'Back · return to the result menu',
+      '↑↓ select · ⏎ confirm · tab type a command',
+    ]);
+    ui.unmount();
+  });
+
+  it.each([
+    { rows: 14, title: true, legend: true },
+    { rows: 13, title: true, legend: false },
+    { rows: 12, title: true, legend: false },
+    { rows: 11, title: true, legend: false },
+    { rows: 10, title: false, legend: false },
+  ])(
+    'keeps both actions of the confirmation at $rows rows, with no row painted over another',
+    async ({ rows, title, legend }) => {
+      terminalSizeStore.__testReset({ cols: 80, rows });
+      const note = Array.from({ length: 200 }, (_, index) => `word${index}`).join(' ');
+      const findings = Array.from(
+        { length: 8 },
+        (_, index) => `Open finding ${index + 1} needs a fix`,
+      );
+      readyRun(true, findings, note);
+
+      const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />, {
+        cols: 80,
+        rows,
+      });
+      await flushEffects();
+      ui.stdin.write('\r');
+      await flushEffects();
+
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame).toMatch(/Apply as is · write the changes; these findings stay open\s*\|?\n/);
+      expect(frame).toMatch(/Back · return to the result menu\s*\|?\n/);
+      expect(frame.includes('Apply with 8 open findings?')).toBe(title);
+      expect(frame.includes('tab type a command')).toBe(legend);
+      expect(frame).not.toMatch(/stay open\S/);
+      ui.unmount();
+    },
+  );
+
+  it.each([14, 13, 12, 11])(
+    'keeps the three rows of the result menu whole at %i rows',
+    async (rows) => {
+      terminalSizeStore.__testReset({ cols: 80, rows });
+      readyRun(true, ['Open finding 1 needs a fix']);
+
+      const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />, {
+        cols: 80,
+        rows,
+      });
+      await flushEffects();
+
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame).toContain('Apply as is · write the changes with the open findings; asks once');
+      expect(frame).toContain('Show diff · open the run’s changes as a patch');
+      expect(frame).toContain('Discard · close the run; save its changes in run.patch');
+      ui.unmount();
+    },
+  );
+
+  it.each([
+    { cols: 80, rows: 11 },
+    { cols: 80, rows: 10 },
+    { cols: 80, rows: 9 },
+    { cols: 60, rows: 12 },
+    { cols: 60, rows: 10 },
+    { cols: 40, rows: 12 },
+    { cols: 40, rows: 10 },
+  ])(
+    'shows the row Enter acts on at $cols x $rows, and Enter runs that row',
+    async ({ cols, rows }) => {
+      terminalSizeStore.__testReset({ cols, rows, isSmall: cols < 80 });
+      readyRun(true, ['Open finding 1 needs a fix']);
+      const onRuntimeCommand = vi.fn();
+      const ui = renderFeature(
+        <WorkflowScreen commands={[]} onRuntimeCommand={onRuntimeCommand} />,
+        { cols, rows },
+      );
+      await flushEffects();
+      const frame = () => stripAnsiStyles(ui.lastFrame() ?? '');
+
+      expect(frame()).toMatch(/\| Apply as is · /);
+      ui.stdin.write('\u001B[B');
+      await flushEffects();
+      expect(frame()).toMatch(/\| Show diff · /);
+      ui.stdin.write('\u001B[B');
+      await flushEffects();
+      expect(frame()).toMatch(/\| Discard · /);
+      ui.stdin.write('\r');
+      await flushEffects();
+      expect(onRuntimeCommand).toHaveBeenCalledWith('/run reject confirm');
+      ui.unmount();
+    },
+  );
+
+  it('runs no row of the result menu at 80 x 7, and the composer still runs a command', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 7 });
+    readyRun(true, ['Open finding 1 needs a fix']);
+    const onRuntimeCommand = vi.fn();
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={onRuntimeCommand} />, {
+      cols: 80,
+      rows: 7,
+    });
+    await flushEffects();
+
+    for (const key of ['\u001B[B', '\u001B[B', '\r']) {
+      ui.stdin.write(key);
+      await flushEffects();
+    }
+    expect(onRuntimeCommand).not.toHaveBeenCalled();
+
+    for (const key of ['\t', ...'/settings', '\r']) {
+      ui.stdin.write(key);
+      await flushEffects();
+    }
+    await vi.waitFor(() => expect(onRuntimeCommand).toHaveBeenCalledWith('/settings'));
+    ui.unmount();
+  });
+
+  it('leaves for home on Esc at 80 x 7, with no row of the result menu in view', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 7 });
+    readyRun(true, ['Open finding 1 needs a fix']);
+    const ui = renderFeature(
+      <AppKeysWith>
+        <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />
+      </AppKeysWith>,
+      { cols: 80, rows: 7 },
+    );
+    await flushEffects();
+
+    ui.stdin.write('\u001B');
+    await vi.waitFor(() => expect(routerStore.get().screen).toBe('home'));
+    ui.unmount();
+  });
+
+  it('runs no row of the confirmation when a resize to 80 x 7 takes the rows from view', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 24 });
+    readyRun(true, ['Open finding 1 needs a fix']);
+    const onRuntimeCommand = vi.fn();
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={onRuntimeCommand} />, {
+      cols: 80,
+      rows: 24,
+    });
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('pick Apply as is or Back');
+
+    terminalSizeStore.__testReset({ cols: 80, rows: 7 });
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+    expect(onRuntimeCommand).not.toHaveBeenCalled();
     ui.unmount();
   });
 
@@ -2794,6 +3065,19 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
     ui.stdin.write('\r');
   }
 
+  const down = '\u001B[B';
+  const up = '\u001B[A';
+
+  async function pressKeys(
+    ui: ReturnType<typeof renderFeature>,
+    keys: readonly string[],
+  ): Promise<void> {
+    for (const key of keys) {
+      ui.stdin.write(key);
+      await flushEffects();
+    }
+  }
+
   it('runs a slash command typed over the stop sheet and names the sheet in the placeholder', async () => {
     navigatePreparedWorkflow(projectDir, 'panel slash');
     runWorkflow.mockImplementation(async (opts) => {
@@ -2823,6 +3107,412 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
     ui.unmount();
   });
 
+  it.each([
+    { cols: 80, rows: 15 },
+    { cols: 80, rows: 14 },
+    { cols: 80, rows: 12 },
+    { cols: 80, rows: 11 },
+    { cols: 80, rows: 10 },
+    { cols: 80, rows: 9 },
+    { cols: 60, rows: 12 },
+    { cols: 60, rows: 10 },
+    { cols: 40, rows: 12 },
+  ])(
+    'keeps the row of the stop sheet in view at $cols x $rows, with no row painted over another',
+    async ({ cols, rows }) => {
+      terminalSizeStore.__testReset({ cols, rows, isSmall: cols < 80 });
+      navigatePreparedWorkflow(projectDir, 'panel slash');
+      runWorkflow.mockImplementation(async (opts) => {
+        startBrief(opts);
+        return pendingWorkflow();
+      });
+      const ui = renderFeature(
+        <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+        { cols, rows },
+      );
+      const frame = () => stripAnsiStyles(ui.lastFrame() ?? '');
+      await vi.waitFor(() => expect(frame()).toContain('Message BUILD on T001'));
+      overlayStore.open('stop-sheet');
+      await flushEffects();
+
+      expect(frame()).toMatch(/\| Stop now · /);
+      expect(frame()).not.toMatch(/tab close\S/);
+      ui.stdin.write('\u001B[B');
+      await flushEffects();
+      expect(frame()).toMatch(/\| Pause after this brief/);
+      ui.stdin.write('\u001B[B');
+      await flushEffects();
+      expect(frame()).toMatch(/\| End run/);
+      ui.unmount();
+    },
+  );
+
+  async function openShortStopSheet(ui: ReturnType<typeof renderFeature>): Promise<void> {
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Message BUILD on T001');
+    });
+    overlayStore.open('stop-sheet');
+    await flushEffects();
+  }
+
+  it('runs no row of the stop sheet at 80 x 7, and tab still closes it', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 7 });
+    navigatePreparedWorkflow(projectDir, 'panel slash');
+    runWorkflow.mockImplementation(async (opts) => {
+      startBrief(opts);
+      return pendingWorkflow();
+    });
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+      { cols: 80, rows: 7 },
+    );
+    await openShortStopSheet(ui);
+
+    await pressKeys(ui, [down, down, '\r']);
+    expect(stopStore.get().intent).toBe('none');
+    expect(overlayStore.get().active).toBe('stop-sheet');
+
+    await pressKeys(ui, ['\t']);
+    expect(overlayStore.get().active).not.toBe('stop-sheet');
+    ui.unmount();
+  });
+
+  it('stops on Esc at 80 x 7, with no row of the stop sheet in view', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 7 });
+    navigatePreparedWorkflow(projectDir, 'panel slash');
+    runWorkflow.mockImplementation(async (opts) => {
+      startBrief(opts);
+      return pendingWorkflow();
+    });
+    const ui = renderFeature(
+      <AppKeysWith>
+        <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />
+      </AppKeysWith>,
+      { cols: 80, rows: 7 },
+    );
+    await openShortStopSheet(ui);
+
+    await pressKeys(ui, ['\u001B']);
+    await vi.waitFor(() => expect(stopStore.get().intent).not.toBe('none'));
+    expect(overlayStore.get().active).not.toBe('stop-sheet');
+    ui.unmount();
+  });
+
+  it.each([
+    { cols: 80, rows: 15 },
+    { cols: 80, rows: 14 },
+    { cols: 80, rows: 13 },
+    { cols: 80, rows: 12 },
+    { cols: 80, rows: 11 },
+    { cols: 80, rows: 10 },
+    { cols: 80, rows: 9 },
+    { cols: 60, rows: 14 },
+    { cols: 60, rows: 12 },
+    { cols: 60, rows: 10 },
+  ])(
+    'keeps every row of a planner question in view at $cols x $rows, and Enter takes the marked row',
+    async ({ cols, rows }) => {
+      terminalSizeStore.__testReset({ cols, rows, isSmall: cols < 80 });
+      const replies: unknown[] = [];
+      askPlannerQuestion(replies);
+      const ui = renderFeature(
+        <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+        { cols, rows },
+      );
+      const frame = () => stripAnsiStyles(ui.lastFrame() ?? '');
+      await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+      await flushEffects();
+
+      expect(frame()).toMatch(/\| src\/auth\.ts/);
+      expect(frame()).not.toContain('+-|');
+      await pressKeys(ui, [down]);
+      expect(frame()).toMatch(/\| src\/session\.ts/);
+      await pressKeys(ui, [down]);
+      expect(frame()).toMatch(/\| Write your own answer/);
+      await pressKeys(ui, [down]);
+      expect(frame()).toMatch(/\| Decide for me/);
+      await pressKeys(ui, [up, up, '\r']);
+      await vi.waitFor(() => expect(replies).toHaveLength(1));
+      expect(replies[0]).toMatchObject({
+        qa: [{ question: 'Which module should change?', answer: 'src/session.ts' }],
+      });
+      ui.unmount();
+    },
+  );
+
+  it.each([
+    { cols: 80, rows: 10 },
+    { cols: 80, rows: 9 },
+    { cols: 80, rows: 8 },
+    { cols: 60, rows: 10 },
+  ])(
+    'keeps every row of a confirm prompt in view at $cols x $rows, and Enter takes the marked row',
+    async ({ cols, rows }) => {
+      terminalSizeStore.__testReset({ cols, rows, isSmall: cols < 80 });
+      navigatePreparedWorkflow(projectDir, 'panel slash');
+      runWorkflow.mockImplementation(async (opts) => {
+        startBrief(opts);
+        return pendingWorkflow();
+      });
+      const ui = renderFeature(
+        <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+        { cols, rows },
+      );
+      const frame = () => stripAnsiStyles(ui.lastFrame() ?? '');
+      await tick(30);
+      const answer = openApprovalPrompt({
+        tier: 'confirm',
+        actionClass: 'destructive',
+        actionDescription: 'write .github/workflows/ci.yml',
+        phase: 'implementing',
+      });
+      await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+      await flushEffects();
+
+      expect(frame()).toMatch(/\|\s+Confirm/);
+      await pressKeys(ui, [down]);
+      expect(frame()).toMatch(/\| r\s+Confirm with a reason/);
+      await pressKeys(ui, [down]);
+      expect(frame()).toMatch(/\| x\s+Deny/);
+      await pressKeys(ui, ['\r']);
+      await expect(answer).resolves.toMatchObject({ decision: 'deny' });
+      ui.unmount();
+    },
+  );
+
+  it.each([
+    { cols: 80, rows: 9 },
+    { cols: 80, rows: 8 },
+  ])('keeps the reason in view at $cols x $rows while it is typed', async ({ cols, rows }) => {
+    terminalSizeStore.__testReset({ cols, rows, isSmall: false });
+    navigatePreparedWorkflow(projectDir, 'panel slash');
+    runWorkflow.mockImplementation(async (opts) => {
+      startBrief(opts);
+      return pendingWorkflow();
+    });
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+      { cols, rows },
+    );
+    await tick(30);
+    const answer = openApprovalPrompt({
+      tier: 'confirm',
+      actionClass: 'destructive',
+      actionDescription: 'write .github/workflows/ci.yml',
+      phase: 'implementing',
+    });
+    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+    await flushEffects();
+
+    await pressKeys(ui, [down, '\r', ...'ok by me']);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('ok by me');
+    await pressKeys(ui, ['\r']);
+    await expect(answer).resolves.toMatchObject({ decision: 'confirm', reason: 'ok by me' });
+    ui.unmount();
+  });
+
+  describe('a confirm prompt in a short terminal', () => {
+    const openConfirm = async (rows: number) => {
+      terminalSizeStore.__testReset({ cols: 80, rows });
+      navigatePreparedWorkflow(projectDir, 'panel slash');
+      runWorkflow.mockImplementation(async (opts) => {
+        startBrief(opts);
+        return pendingWorkflow();
+      });
+      const ui = renderFeature(
+        <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+        { cols: 80, rows },
+      );
+      await tick(30);
+      const answered = vi.fn();
+      void openApprovalPrompt({
+        tier: 'confirm',
+        actionClass: 'package_change',
+        actionDescription: 'write package.json',
+        phase: 'implementing',
+      }).then(answered);
+      await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+      await flushEffects();
+      return { ui, answered, frame: () => stripAnsiStyles(ui.lastFrame() ?? '') };
+    };
+
+    it('moves back to Confirm on y with Confirm out of view at 80 x 9', async () => {
+      const { ui, answered, frame } = await openConfirm(9);
+      await pressKeys(ui, [down, down]);
+      expect(frame()).toMatch(/\| x\s+Deny/);
+      expect(frame()).not.toContain('Confirm');
+
+      await pressKeys(ui, ['y']);
+      await tick(30);
+      expect(answered).not.toHaveBeenCalled();
+      expect(frame()).toMatch(/\| y\s+Confirm/);
+
+      terminalSizeStore.__testReset({ cols: 80, rows: 24 });
+      await flushEffects();
+      expect(frame()).toContain('confirms this write');
+      ui.unmount();
+    });
+
+    it('moves to the reason row on r with that row out of view at 80 x 9', async () => {
+      const { ui, answered, frame } = await openConfirm(9);
+      await pressKeys(ui, [down, down, 'r']);
+      expect(frame()).toMatch(/\| r\s+Confirm with a reason/);
+
+      await pressKeys(ui, ['r', ...'ok', '\r']);
+      await vi.waitFor(() =>
+        expect(answered).toHaveBeenCalledWith(
+          expect.objectContaining({ decision: 'confirm', reason: 'ok' }),
+        ),
+      );
+      ui.unmount();
+    });
+
+    it('names the action in the reason step at 80 x 9', async () => {
+      const { ui, frame } = await openConfirm(9);
+      await pressKeys(ui, [down, '\r']);
+      expect(frame()).toContain('write package.json');
+      ui.unmount();
+    });
+
+    it('answers nothing at 80 x 7, where no row of the prompt is in view', async () => {
+      const { ui, answered, frame } = await openConfirm(7);
+      expect(frame()).not.toContain('Confirm');
+      await pressKeys(ui, ['\r', 'y']);
+      await tick(30);
+      expect(answered).not.toHaveBeenCalled();
+      ui.unmount();
+    });
+  });
+
+  it('answers nothing at 80 x 7, where no row of a planner question is in view', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 7 });
+    const replies: unknown[] = [];
+    askPlannerQuestion(replies);
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+      { cols: 80, rows: 7 },
+    );
+    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+    await flushEffects();
+
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('src/auth.ts');
+    await pressKeys(ui, ['\r']);
+    await tick(30);
+    expect(replies).toEqual([]);
+    ui.unmount();
+  });
+
+  function reachPlanGate(
+    onOutcome: (outcome: ApprovalReviewResult) => void,
+    confirms = ['delete generated files'],
+  ): void {
+    const reviewPath = join(projectDir, 'plan.md');
+    writeFileSync(reviewPath, 'Greet people by name.', 'utf8');
+    navigatePreparedWorkflow(projectDir, 'panel slash');
+    runWorkflow.mockImplementation(async (opts) => {
+      publishEvent(opts, {
+        type: 'workflow_started',
+        ts: FIXED_TS,
+        phase: 'reviewing-plan',
+        feature: 'panel slash',
+      });
+      onOutcome(await opts.callbacks.onApprovalNeeded('plan', reviewPath, confirms));
+      return pendingWorkflow();
+    });
+  }
+
+  it.each([
+    { cols: 80, rows: 12 },
+    { cols: 80, rows: 11 },
+    { cols: 80, rows: 10 },
+    { cols: 80, rows: 9 },
+    { cols: 60, rows: 12 },
+    { cols: 60, rows: 11 },
+    { cols: 60, rows: 10 },
+  ])(
+    'keeps every row of the plan gate in view at $cols x $rows, and Enter takes the marked row',
+    async ({ cols, rows }) => {
+      terminalSizeStore.__testReset({ cols, rows, isSmall: cols < 80 });
+      let outcome: ApprovalReviewResult | undefined;
+      reachPlanGate((result) => {
+        outcome = result;
+      });
+      const ui = renderFeature(
+        <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+        { cols, rows },
+      );
+      const frame = () => stripAnsiStyles(ui.lastFrame() ?? '');
+      await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+      await flushEffects();
+
+      expect(frame()).toMatch(/\| Approve plan/);
+      await pressKeys(ui, [down]);
+      expect(frame()).toMatch(/\| Request changes/);
+      await pressKeys(ui, [down]);
+      expect(frame()).toMatch(/\| Edit plan\.json/);
+      await pressKeys(ui, [down]);
+      expect(frame()).toMatch(/\| End run/);
+      expect(frame()).not.toContain('at to change)');
+      await pressKeys(ui, ['\r']);
+      await vi.waitFor(() => expect(outcome).toEqual({ approved: false, action: 'end-run' }));
+      ui.unmount();
+    },
+  );
+
+  it('says what approving confirms in a one-row plan gate', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 9 });
+    reachPlanGate(() => undefined, ['delete generated files', 'rewrite the lockfile']);
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+      { cols: 80, rows: 9 },
+    );
+    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+    await flushEffects();
+
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toMatch(
+      /\| Approve plan.*confirms 2 protected operations/,
+    );
+    ui.unmount();
+  });
+
+  it('cuts the count in a one-row plan gate instead of wrapping it', async () => {
+    terminalSizeStore.__testReset({ cols: 48, rows: 9 });
+    reachPlanGate(() => undefined, ['delete generated files', 'rewrite the lockfile']);
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+      { cols: 48, rows: 9 },
+    );
+    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+    await flushEffects();
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toMatch(/\| Approve plan and start the build · c.*…/);
+    expect(frame).not.toContain('operations');
+    ui.unmount();
+  });
+
+  it('runs no row of the plan gate at 80 x 7, and a typed comment still goes to the planner', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 7 });
+    let outcome: ApprovalReviewResult | undefined;
+    reachPlanGate((result) => {
+      outcome = result;
+    });
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+      { cols: 80, rows: 7 },
+    );
+    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+    await flushEffects();
+
+    await pressKeys(ui, [down, down, down, '\r']);
+    await flushEffects();
+    expect(outcome).toBeUndefined();
+
+    await pressKeys(ui, [...'rename it', '\r']);
+    await vi.waitFor(() => expect(outcome).toMatchObject({ approved: false, action: 'revise' }));
+    ui.unmount();
+  });
+
   it('does not stop on an Enter read in the same stdin dispatch as a slash typed over the stop sheet', async () => {
     navigatePreparedWorkflow(projectDir, 'panel slash');
     runWorkflow.mockImplementation(async (opts) => {
@@ -2846,6 +3536,55 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
     expect(stopStore.get().intent).toBe('none');
     expect(overlayStore.get().active).not.toBe('stop-sheet');
     ui.unmount();
+  });
+
+  describe('a planner question in a short terminal', () => {
+    const openQuestion = async (rows: number, replies: unknown[]) => {
+      terminalSizeStore.__testReset({ cols: 80, rows });
+      askPlannerQuestion(replies);
+      const ui = renderFeature(
+        <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+        { cols: 80, rows },
+      );
+      await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+      await flushEffects();
+      return ui;
+    };
+
+    it.each([11, 13, 15])('names the question beside its choices at %i rows', async (rows) => {
+      const ui = await openQuestion(rows, []);
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame).toContain('Which module should change?');
+      expect(frame).toContain('src/auth.ts');
+      ui.unmount();
+    });
+
+    it('names the question on the row of the choice in a one-row box', async () => {
+      const ui = await openQuestion(9, []);
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toMatch(
+        /\| src\/auth\.ts.*Which module should change\?/,
+      );
+      ui.unmount();
+    });
+
+    it.each([11, 13])(
+      'sends no answer for a choice scrolled out of view at %i rows',
+      async (rows) => {
+        const replies: unknown[] = [];
+        const ui = await openQuestion(rows, replies);
+        ui.stdin.write('\u001B[5~');
+        await flushEffects();
+        ui.stdin.write('\u001B[5~');
+        await flushEffects();
+        expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('src/auth.ts');
+        ui.stdin.write('\r');
+        await flushEffects();
+        await tick(60);
+        expect(replies).toEqual([]);
+        expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('src/auth.ts');
+        ui.unmount();
+      },
+    );
   });
 
   it('runs a slash command typed over the planner question without answering it', async () => {

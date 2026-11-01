@@ -53,7 +53,7 @@ function renderedPromptBodyRows(prompt: string, count: number): string[] {
 }
 
 describe('promptBodyRows', () => {
-  it('matches string rows for a recovery detail ending in spaces and a terminal reset', () => {
+  it('drops the spaces before a terminal reset that ends a recovery detail', () => {
     const rows = promptBodyRows(trailingControlSummary, 20);
     expect(rows).toEqual([
       {
@@ -71,18 +71,11 @@ describe('promptBodyRows', () => {
       },
       { kind: 'blank' },
       { kind: 'facts-line', text: '  abcdefghijklmnopqr' },
-      { kind: 'facts-line', text: '  ', continuation: true },
     ]);
-    expect(rows.slice(1)).toEqual(
-      promptBodyRows(promptRowsToString(trailingControlSummary), 20).slice(1),
-    );
   });
 
-  it('counts four recovery summary rows when the final detail ends in a terminal reset', () => {
-    expect(countPromptBodyRows(trailingControlSummary, 20)).toBe(4);
-    expect(countPromptBodyRows(trailingControlSummary, 20)).toBe(
-      countPromptBodyRows(promptRowsToString(trailingControlSummary), 20),
-    );
+  it('counts three recovery summary rows when the final detail ends in a terminal reset', () => {
+    expect(countPromptBodyRows(trailingControlSummary, 20)).toBe(3);
   });
 
   it('keeps first-line spans and hangs non-blank headline continuations as facts', () => {

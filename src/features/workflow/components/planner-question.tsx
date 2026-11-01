@@ -13,8 +13,11 @@ import { borderStyleFor } from '../../../lib/glyphs.js';
 import { listRowLead } from '../../../components/list-row.js';
 import { formatKeyHints, SELECT_HINT } from '../prompt-rows/approval.js';
 import { fitKeyLegend } from '../../../core/key-legend.js';
+import { SOFT_SEP } from '../../../core/separators.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../lib/terminal/typeahead-grace.js';
+import { truncateTerminalDisplayText } from '../../../utils/display-text.js';
 import { clamp } from '../../../utils/math.js';
+import { stopMenuChrome } from '../stop/options.js';
 
 export function PlannerQuestion({
   width,
@@ -41,10 +44,12 @@ export function PlannerQuestion({
   const focused = state.focus === 'menu';
   const writing = state.focus === 'answer';
   const choices = question ? questionOptions(question) : [];
-  const showAnswer = choices.length === 0 || writing;
+  const showAnswer = writing || (choices.length === 0 && height > QUESTION_ANSWER_ROWS);
+  const answerRows = showAnswer ? QUESTION_ANSWER_ROWS : 0;
   const innerWidth = Math.max(1, width - 4);
   const rows = question ? questionRows(question, state.index, innerWidth) : [];
-  const bodyHeight = Math.max(1, height - 5 - (showAnswer ? QUESTION_ANSWER_ROWS : 0));
+  const chrome = stopMenuChrome(height, 1 + answerRows);
+  const bodyHeight = Math.max(chrome.extraRows, chrome.listRows - answerRows);
   const maxOffset = Math.max(0, rows.length - bodyHeight);
   const visibleOffset = clamp(offset, 0, maxOffset);
 
@@ -92,6 +97,8 @@ export function PlannerQuestion({
         questionPromptStore.select(clamp(selection + (key.downArrow ? 1 : -1), 0, menu.length - 1));
       else if (key.home) setOffset(0);
       else if (key.end) setOffset(maxOffset);
+      else if (key.return && (first < visibleOffset || first >= visibleOffset + bodyHeight))
+        setOffset(first);
       else if (key.return) {
         const count = questionOptions(active).length;
         if (selection === decideRowIndex(active)) onDecide();
@@ -107,6 +114,12 @@ export function PlannerQuestion({
   );
 
   if (!question) return null;
+  const asked = visibleOffset > 0 ? `${SOFT_SEP}${rows[0]?.text}` : '';
+  // One row holds the option and the question together, so a long option leaves the question half.
+  const rowText = (text: string): string =>
+    chrome.titled || asked === ''
+      ? text
+      : truncateTerminalDisplayText(text.trimEnd(), Math.ceil(innerWidth / 2));
   const finalQuestion = state.index === (state.questions?.length ?? 0) - 1;
   const next = finalQuestion ? 'send answers' : 'next';
   const reply = { key: 'esc', verb: 'type a reply' };
@@ -136,15 +149,20 @@ export function PlannerQuestion({
       width={width}
       height={height}
       flexDirection="column"
-      borderStyle={borderStyleFor('single')}
-      borderColor={focused || writing ? t.accent : t.border}
-      paddingX={1}
+      {...(chrome.framed && {
+        borderStyle: borderStyleFor('single'),
+        borderColor: focused || writing ? t.accent : t.border,
+      })}
+      paddingX={chrome.framed ? 1 : 2}
       flexShrink={0}
       overflow="hidden"
     >
-      <Text color={t.textDim}>
-        Question {state.index + 1} of {state.questions?.length}
-      </Text>
+      {chrome.titled && (
+        <Text color={t.textDim} wrap="truncate-end">
+          Question {state.index + 1} of {state.questions?.length}
+          {asked}
+        </Text>
+      )}
       <Box height={bodyHeight} flexDirection="column" flexShrink={0} overflow="hidden">
         {rows.slice(visibleOffset, visibleOffset + bodyHeight).map((row, index) => (
           <Text
@@ -158,11 +176,16 @@ export function PlannerQuestion({
             {row.option === undefined
               ? ''
               : listRowLead(focused && row.first && row.option === selected ? 'active' : 'default')}
-            {row.text || (row.defaultLabel ? '' : ' ')}
+            {rowText(row.text) || (row.defaultLabel ? '' : ' ')}
             {row.defaultLabel && (
               <Text color={t.textDim} bold={false}>
                 {' '}
                 {row.defaultLabel}
+              </Text>
+            )}
+            {!chrome.titled && (
+              <Text color={t.textDim} bold={false}>
+                {asked}
               </Text>
             )}
           </Text>
@@ -206,12 +229,14 @@ export function PlannerQuestion({
           </Box>
         </Box>
       )}
-      <Text color={t.textDim}>
-        {maxOffset > 0
-          ? `${visibleOffset > 0 ? '↑ more · ' : ''}${visibleOffset < maxOffset ? '↓ more · ' : ''}pgup/pgdn scroll`
-          : ' '}
-      </Text>
-      <Text color={t.textDim}>{legend}</Text>
+      {chrome.extraRows > 0 && (
+        <Text color={t.textDim}>
+          {maxOffset > 0
+            ? `${visibleOffset > 0 ? '↑ more · ' : ''}${visibleOffset < maxOffset ? '↓ more · ' : ''}pgup/pgdn scroll`
+            : ' '}
+        </Text>
+      )}
+      {chrome.legend && <Text color={t.textDim}>{legend}</Text>}
     </Box>
   );
 }

@@ -103,6 +103,14 @@ describe('ResultMenu', () => {
     ui.unmount();
   });
 
+  it('starts an unframed row on the composer text column', async () => {
+    const { ui } = renderMenu({ height: 3 });
+    await tick();
+
+    expect(stripAnsiStyles(ui.lastFrame() ?? '').split('\n')[0]).toMatch(/^ {2}\S/);
+    ui.unmount();
+  });
+
   it('drops whole facts from a title too wide for the row', async () => {
     terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
     const { ui } = renderMenu({ override: true, findings: ['missing null check', 'stale doc'] });

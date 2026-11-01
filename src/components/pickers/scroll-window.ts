@@ -244,6 +244,8 @@ function trimEdgeDecorations<T>(content: ListDisplaySlot<T>[]): ListDisplaySlot<
 export function isItemIndexVisible<T>(opts: {
   items: T[];
   selectedIndex: number;
+  /** The row to look for, when it is not the selected row. */
+  itemIndex?: number | undefined;
   rowBudget: number;
   section?: ListSectionOptions<T> | undefined;
   decorations?: ListDecorationOptions<T> | undefined;
@@ -258,7 +260,8 @@ export function isItemIndexVisible<T>(opts: {
     ...(opts.decorations ? { decorations: opts.decorations } : {}),
     ...(opts.pinnedHead === undefined ? {} : { pinnedHead: opts.pinnedHead }),
   });
-  return visibleSlots.some((slot) => slot.kind === 'item' && slot.itemIndex === opts.selectedIndex);
+  const itemIndex = opts.itemIndex ?? opts.selectedIndex;
+  return visibleSlots.some((slot) => slot.kind === 'item' && slot.itemIndex === itemIndex);
 }
 
 export function computeListDisplayWindow<T>(opts: ListDisplayWindowInput<T>) {

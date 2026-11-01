@@ -3326,6 +3326,8 @@ const longQuestionRecoveryProjection: WorkflowFixtureProjection = {
   ),
 };
 
+const OPEN_QUOTE_ERROR = `cannot find module ./foo and the build stopped ${'with more words here '.repeat(4).trimEnd()}`;
+
 /** A question that quotes a header, cut inside the masked value on a short panel. */
 const maskedQuestionRecoveryProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-recovery-masked-question'),
@@ -3342,6 +3344,53 @@ const maskedQuestionRecoveryProjection: WorkflowFixtureProjection = {
       question:
         'Deploy needs Authorization: Bearer abcDEF123456789012345 on every call. Should activity.ts read it from the environment, or wait for the owner?',
       validationSummary: FIXTURE_TYPECHECK_ERROR,
+      attempts: 3,
+      allowRetryOverride: true,
+      selectedImplementerProfile: 'default',
+      createdAt: new Date(FIXED_TS).toISOString(),
+    }),
+  ),
+};
+
+/** A question with an open quote above a long error. */
+const openQuoteQuestionRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-recovery-open-quote'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  events: [],
+  config: AGY_CREW,
+  resumeState: haltedResumeState(
+    buildRetryExhaustedRecoveryIssue({
+      id: 'rec_visual_open_quote',
+      task: HALTED_TASK,
+      phase: 'escalating',
+      question:
+        'The docs say password: "x for the build. Should activity.ts read it from the environment?',
+      validationSummary: OPEN_QUOTE_ERROR,
+      attempts: 3,
+      allowRetryOverride: true,
+      selectedImplementerProfile: 'default',
+      createdAt: new Date(FIXED_TS).toISOString(),
+    }),
+  ),
+};
+
+/** A task title with an open quote above the question. */
+const openQuoteTitleRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-recovery-open-quote-title'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  events: [],
+  config: AGY_CREW,
+  resumeState: haltedResumeState(
+    buildRetryExhaustedRecoveryIssue({
+      id: 'rec_visual_open_quote_title',
+      task: { ...HALTED_TASK, title: 'Rotate password: "x and the token store' },
+      phase: 'escalating',
+      question: 'Should activity.ts read the new value from the environment?',
+      validationSummary: OPEN_QUOTE_ERROR,
       attempts: 3,
       allowRetryOverride: true,
       selectedImplementerProfile: 'default',
@@ -3383,6 +3432,25 @@ const retryExhaustedRecoveryProjection: WorkflowFixtureProjection = {
   events: [],
   config: AGY_CREW,
   resumeState: haltedResumeState(retryExhaustedRecoveryIssue),
+};
+
+/** A halt with four actions, the longest menu a short terminal has to fit. */
+const shortRecoveryProjection: WorkflowFixtureProjection = {
+  ...retryExhaustedRecoveryProjection,
+  scenarioId: scenarioId('workflow-recovery-short'),
+  resumeState: haltedResumeState(
+    buildRetryExhaustedRecoveryIssue({
+      id: 'rec_visual_short',
+      task: HALTED_TASK,
+      phase: 'escalating',
+      validationSummary: FIXTURE_TYPECHECK_ERROR,
+      attempts: 5,
+      allowRetryOverride: true,
+      question: 'Which field holds the stop?',
+      selectedImplementerProfile: 'default',
+      createdAt: new Date(FIXED_TS).toISOString(),
+    }),
+  ),
 };
 
 /** The retry-exhausted halt on a brief whose files are many and long. */
@@ -7483,7 +7551,9 @@ const projections = [
   reviewProjection,
   approvalConfirmProjection,
   approvalConfirmSecretProjection,
+  { ...approvalConfirmProjection, scenarioId: scenarioId('workflow-approval-confirm-short') },
   planCardProjection,
+  { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-short') },
   { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-commenting') },
   { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-request-empty') },
   {
@@ -7511,6 +7581,8 @@ const projections = [
   { ...planCardProjection, scenarioId: scenarioId('workflow-selection-copy') },
   tasksCardProjection,
   questionProjection,
+  { ...questionProjection, scenarioId: scenarioId('workflow-question-short') },
+  { ...questionProjection, scenarioId: scenarioId('workflow-planner-question-short') },
   questionOverflowProjection,
   questionDefaultProjection,
   questionInputProjection,
@@ -7555,6 +7627,7 @@ const projections = [
   fallbackUsedRecoveryProjection,
   fallbackNotInstalledRecoveryProjection,
   retryExhaustedRecoveryProjection,
+  shortRecoveryProjection,
   unansweredQuestionRecoveryProjection,
   longQuestionRecoveryProjection,
   {
@@ -7562,6 +7635,8 @@ const projections = [
     scenarioId: scenarioId('workflow-recovery-long-question-draft'),
   },
   maskedQuestionRecoveryProjection,
+  openQuoteQuestionRecoveryProjection,
+  openQuoteTitleRecoveryProjection,
   cannotRecoveryProjection,
   manyFilesRecoveryProjection,
   {

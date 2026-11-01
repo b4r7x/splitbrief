@@ -23,7 +23,6 @@ import {
   elidePathMiddle,
   getTerminalCellWidth,
   oneLineDisplayText,
-  sanitizeTerminalDisplayText,
   truncateTerminalDisplayText,
 } from '../../utils/display-text.js';
 import { wrapHard } from '../../utils/wrap.js';
@@ -226,15 +225,13 @@ export function recoveryPromptSummaryRows(
   const details = formatDetailLines(issue);
   const room = width - getTerminalCellWidth(FACT_INDENT);
   const asked = details.filter(isAskedDetail);
-  const after = [...subject, ...details.filter((detail) => !isAskedDetail(detail))];
   const facts =
     askedRows === undefined
       ? [...subject, ...details]
       : [
-          ...asked.map((detail, index) =>
-            fitAskedDetail(detail, room, askedRows, [...asked.slice(index + 1), ...after]),
-          ),
-          ...after,
+          ...asked.map((detail) => fitAskedDetail(detail, room, askedRows)),
+          ...subject,
+          ...details.filter((detail) => !isAskedDetail(detail)),
         ];
 
   const parts = formatRecoveryHeaderParts(issue);
@@ -248,31 +245,20 @@ export function recoveryPromptSummaryRows(
 }
 
 /**
- * The asked row as it wraps at `room`. Past `rows` rows, the last row ends on `…`. The panel masks
- * its prompt whole, then row by row. A cut value can lose its exemption or pair its open quote with
- * a quote in `after`, the rows below it, so a cut stands only when both passes leave it as it is.
+ * The asked row as it wraps at `room`, on at most `rows` rows. A value can lose its exemption from
+ * the mask when it is cut, and grow the row. So the row is the longest cut that the mask leaves as
+ * it is, the whole text first; a shorter cut ends on `…`.
  */
-function fitAskedDetail(
-  detail: string,
-  room: number,
-  rows: number,
-  after: readonly string[],
-): string {
+function fitAskedDetail(detail: string, room: number, rows: number): string {
   const text = oneLineDisplayText(detail);
-  const lines = wrapHard(text, room).split('\n');
-  if (lines.length <= rows) return text;
-  const whole = lines.slice(0, rows - 1).join('');
-  const rest = lines.slice(rows - 1).join('');
-  const below = after.join('\n');
-  for (let cells = room; cells > 1; cells -= 1) {
-    const fitted = `${whole}${truncateTerminalDisplayText(rest, cells)}`;
-    const [shown = ''] = sanitizeTerminalDisplayText(`${fitted}\n${below}`, {
-      preserveLineBreaks: true,
-    }).split('\n');
-    if (oneLineDisplayText(shown) === fitted && wrapHard(fitted, room).split('\n').length <= rows)
+  let cells = room * rows;
+  while (cells > 1) {
+    const fitted = truncateTerminalDisplayText(text, cells);
+    if (oneLineDisplayText(fitted) === fitted && wrapHard(fitted, room).split('\n').length <= rows)
       return fitted;
+    cells = getTerminalCellWidth(fitted) - 1;
   }
-  return `${whole}${ELLIPSIS}`;
+  return ELLIPSIS;
 }
 
 function promptRowToLines(row: PromptRow): string[] {
@@ -294,8 +280,11 @@ function promptRowToLines(row: PromptRow): string[] {
   }
 }
 
-export function promptRowsToString(rows: readonly PromptRow[]): string {
-  const lines = rows.flatMap(promptRowToLines);
+export function promptRowsToString(
+  rows: readonly PromptRow[],
+  mask: (row: string) => string = (row) => row,
+): string {
+  const lines = rows.flatMap(promptRowToLines).map(mask);
   return lines
     .filter((line, index) => line.length > 0 || lines[index - 1] !== '')
     .join('\n')

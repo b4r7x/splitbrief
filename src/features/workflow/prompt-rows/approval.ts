@@ -124,6 +124,10 @@ export const REVIEW_CONFIRMS_INDENT = 2;
  * Listed operations stay whole, moving below the introduction when needed; any operation wider
  * than the line uses the counted text.
  */
+export function reviewConfirmsCount(confirms: readonly string[]): string {
+  return `confirms ${countNoun(confirms.length, 'protected operation')}`;
+}
+
 function reviewConfirmsText(
   confirms: readonly string[],
   width: number,
@@ -135,10 +139,7 @@ function reviewConfirmsText(
     (operation, index) => `${operation}${index < confirms.length - 1 ? ',' : ''}`,
   );
   if (form === 'counted' || units.some((unit) => getTerminalCellWidth(unit) > lineWidth)) {
-    return wrapPathAwareText(
-      `Approving also confirms ${countNoun(confirms.length, 'protected operation')}`,
-      lineWidth,
-    );
+    return wrapPathAwareText(`Approving also ${reviewConfirmsCount(confirms)}`, lineWidth);
   }
   const lines: string[] = [];
   let line = 'Approving also confirms:';
@@ -221,6 +222,28 @@ export function reviewDocumentForm(input: {
         input.budgetRows - (form.framed || form.legend ? REVIEW_DECORATION_ROWS : 0),
     ) ?? fewest
   );
+}
+
+/**
+ * What a form keeps in a box of `boxRows`. The marked option is the row Enter takes, so the options
+ * scroll instead of leaving, and the confirms line stays until it would take the last row.
+ */
+export function reviewDocumentFit(input: {
+  form: ReviewDocumentForm;
+  artifact: ReviewArtifact;
+  cols: number;
+  boxRows: number;
+}) {
+  const { form, artifact, cols, boxRows } = input;
+  const width = approvalTextWidth(cols);
+  const confirmsRows = form.confirmsText === null ? 0 : form.confirmsText.split('\n').length;
+  const confirms = confirmsRows > 0 && boxRows > confirmsRows;
+  const optionRows = reviewDocumentOptions(artifact).reduce(
+    (rows, option) => rows + reviewDocumentRowLines(option, width).length,
+    0,
+  );
+  const missingRows = Math.max(0, reviewDocumentFormRows(form, artifact, cols) - boxRows);
+  return { confirms, listRows: optionRows - missingRows + (confirms ? 0 : confirmsRows) };
 }
 
 export function getReviewDocumentPromptRows(
@@ -414,15 +437,18 @@ export interface ConfirmPanelFit {
  * row. A region too short for the framed panel without its blank rows drops the border and is
  * filled in this order:
  * the option rows, the title, the legend, the disclosure, the label, the irreversible note, the
- * blank row above the options, the blank row above the legend. The label restates the title, so
- * it gives way before any disclosure line. The disclosure gives way from the bottom, a whole line
- * at a time, because the first lines name what runs. A row under the kept lines counts the cut
+ * blank row above the options, the blank row above the legend. The panel never asks blind: two
+ * rows or more keep the first line of the action ahead of that order, cut to the rows it gets, and
+ * one row carries it after the option. The label restates the title, so it gives way before any
+ * disclosure line. The disclosure gives way from the bottom, a whole line at a time, because the
+ * first lines name what runs. A row under the kept lines counts the cut
  * rows, with a blank row under it, as `clipPromptBodyRows` keeps the facts off the keys. With
  * fewer than three rows for the text, or with every disclosure line in view and only the label
  * cut, the title carries the count, so no row holds the count alone. A row the whole lines leave
  * free goes to the label. A region too short for the option rows and the title drops the title,
- * then the option rows that do not fit, so no row paints or answers outside the region. The reason
- * step takes the option rows' place and keeps its legend on the same terms.
+ * then cuts the option rows to the ones that fit. The cut list follows the mark, so no row paints
+ * or answers outside the region. The reason step takes the option rows' place and keeps its legend
+ * on the same terms.
  */
 export function fitConfirmPanel(input: {
   actionClass: ActionClass;
@@ -462,8 +488,9 @@ export function fitConfirmPanel(input: {
   }
   const optionRows = rows.options.reduce((total, optionRow) => total + optionRow, 0);
   const bodyRows = input.boxRows - cardRows(frame, NO_CARD_SPACING);
+  const actionRows = bodyRows >= 2 ? 1 : 0;
   // The reason step replaces the option rows, so a taller one keeps its rows too.
-  let room = bodyRows - (rows.answer - optionRows);
+  let room = bodyRows - actionRows - (rows.answer - optionRows);
   let options = 0;
   for (const optionRow of rows.options) {
     if (optionRow > room) break;
@@ -474,13 +501,17 @@ export function fitConfirmPanel(input: {
   if (title) room -= rows.title;
   const legend = room >= rows.legend;
   if (legend) room -= rows.legend;
+  room += actionRows;
   const textRoom = Math.max(0, room);
   // A count on its own row keeps a blank row under it, so it does not run into the options.
   const countRow = subjectRows.length > textRoom && textRoom >= 3;
   const lineRoom = countRow ? textRoom - 2 : textRoom;
   const subject: string[] = [];
   for (const line of lines) {
-    if (subject.length + line.length > lineRoom) break;
+    if (subject.length + line.length > lineRoom) {
+      if (subject.length === 0) subject.push(...line.slice(0, lineRoom));
+      break;
+    }
     subject.push(...line);
   }
   while (subject.at(-1)?.trim() === '') subject.pop();

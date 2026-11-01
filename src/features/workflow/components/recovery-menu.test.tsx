@@ -7,6 +7,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { renderFeature, flushEffects } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { listRowLead } from '../../../components/list-row.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
@@ -16,12 +17,17 @@ import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { clampWorkflowPromptRows } from '../layout/rect.js';
 import { RecoveryMenu } from './recovery-menu.js';
+import {
+  buildRetryExhaustedRecoveryIssue,
+  buildReviewFailedRecoveryIssue,
+} from '../../../engine/orchestrator/recovery/builders/task.js';
 import type { RecoveryAction } from '../../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import {
   getRecoveryPromptActions,
   recoveryActionKey,
   recoveryMenuParts,
+  recoveryPromptSummaryRows,
 } from '../recovery-prompt.js';
 
 afterEach(() => {
@@ -728,6 +734,107 @@ it.each([
   },
 );
 
+const LONG_QUOTED_ERROR = `Last error: cannot find module "./foo" ${'and the build stopped with more words here '.repeat(4)}`;
+
+it.each([
+  [
+    'a question that fits',
+    'Question: Should "password": "please rotate it now',
+    18,
+    'please rotate',
+  ],
+  [
+    'a Planner said row',
+    'Planner said: the brief stops at password: "x and I cannot read it',
+    20,
+    'x and I',
+  ],
+  [
+    'a question cut past its first row',
+    `Question: "password": "please rotate ${'then more words '.repeat(14)}`,
+    20,
+    'please rotate',
+  ],
+])(
+  'keeps %s on a short panel when its open quote pairs with a long row below',
+  async (_label, asked, terminalRows, shown) => {
+    const ui = mountBox(
+      makeRecoveryIssue({
+        details: [asked, LONG_QUOTED_ERROR, 'Attempts: 2'],
+        availableActions: FOUR_ACTIONS,
+        recommendedAction: 'retry-same-worker',
+      }),
+      panelBoxRows(terminalRows),
+    );
+    await flushEffects();
+    const rows = frameRows(ui);
+    const label = asked.slice(0, asked.indexOf(':') + 2);
+    expect(rows.find((row) => row.includes(label)) ?? '', rows.join('\n')).toContain(shown);
+    ui.unmount();
+  },
+);
+
+it.each([
+  ['a review headline', 18, 'no locale service exists', 'R1: cannot find module "./foo"'],
+  ['a review headline', 40, 'no locale service exists', 'R1: cannot find module "./foo"'],
+  ['a review headline', 40, 'no "locale" service exists', 'R1: blocked'],
+])(
+  'keeps Planner said on a panel from %s of %i terminal rows with an open quote',
+  async (_label, terminalRows, cannot, below) => {
+    const ui = mountBox(
+      buildReviewFailedRecoveryIssue({
+        createdAt: '2026-09-24T00:00:00.000Z',
+        blocking: 1,
+        noProgress: ['password: "x and more'],
+        cannot,
+        details: [below],
+      }),
+      panelBoxRows(terminalRows),
+    );
+    await flushEffects();
+    const rows = frameRows(ui);
+    expect(rows.join('\n')).toContain(`Planner said: ${cannot}`);
+    expect(rows.join('\n')).not.toContain('x and more');
+    ui.unmount();
+  },
+);
+
+it.each([
+  ['a task title', { taskTitle: 'Rotate password: "x and more' }, 'Files src/auth/session.ts'],
+  ['a file name', { files: ['password: "x y.ts'] }, 'Task T001'],
+])('keeps the question on a tall panel below %s with an open quote', async (_label, patch, row) => {
+  const ui = mountBox(
+    makeRecoveryIssue({
+      ...patch,
+      details: ['Question: which file holds the locales?', LONG_QUOTED_ERROR],
+      availableActions: FOUR_ACTIONS,
+      recommendedAction: 'retry-same-worker',
+    }),
+    panelBoxRows(40),
+  );
+  await flushEffects();
+  const frame = frameRows(ui).join('\n');
+  expect(frame).toContain('Question: which file holds the locales?');
+  expect(frame).toContain(row);
+  ui.unmount();
+});
+
+it('keeps the row below a question with an open quote on a tall panel', async () => {
+  const ui = mountBox(
+    makeRecoveryIssue({
+      details: ['Question: which password: "x goes first?', LONG_QUOTED_ERROR],
+      availableActions: FOUR_ACTIONS,
+      recommendedAction: 'retry-same-worker',
+    }),
+    panelBoxRows(40),
+  );
+  await flushEffects();
+  const frame = frameRows(ui).join('\n');
+  expect(frame).toContain('Question: which password: "x goes first?');
+  expect(frame).toContain('Last error: cannot find module "./foo"');
+  ui.unmount();
+});
+
 function panelBoxRows(terminalRows: number): number {
   // A one-line composer takes three rows; the panel takes every row the screen chrome leaves.
   return clampWorkflowPromptRows({
@@ -737,11 +844,11 @@ function panelBoxRows(terminalRows: number): number {
   });
 }
 
-async function mountPanel(issue: RecoveryIssue, terminalRows: number) {
+async function mountPanel(issue: RecoveryIssue, terminalRows: number, terminalCols = 140) {
   const ui = renderFeature(
     <RecoveryMenu
       issue={issue}
-      width={getChromeContentWidth(140)}
+      width={getChromeContentWidth(terminalCols)}
       clampedBoxRows={panelBoxRows(terminalRows)}
       focused
       onFocusChange={() => {}}
@@ -1019,4 +1126,121 @@ it.each([12, 14])('counts one cut line in the singular at 140x%s', async (termin
   expect(frame).toContain('… 1 more line');
   expect(frame).not.toContain('1 more lines');
   ui.unmount();
+});
+
+async function panelAt120(issue: RecoveryIssue, terminalRows: number): Promise<string> {
+  const ui = await mountPanel(issue, terminalRows, 120);
+  const frame = frameRows(ui).join('\n');
+  ui.unmount();
+  return frame;
+}
+
+const PEM_BLOCK = '-----BEGIN PRIVATE KEY-----\nMIIEvQIBCANARYbODY\n-----END PRIVATE KEY-----';
+
+it('keeps every row below the asked row when one of them has an open quote', async () => {
+  const frame = await panelAt120(
+    makeRecoveryIssue({
+      details: [
+        'Question: which file holds the locales?',
+        'Last error: cannot read password: "x in config',
+        'Attempts: 2',
+        'Implementer said: I ran "npm test" and stopped',
+      ],
+    }),
+    40,
+  );
+  expect(frame).toContain('Last error: cannot read password: "x in config');
+  expect(frame).toContain('Attempts: 2');
+  expect(frame).toContain('Implementer said: I ran "npm test" and stopped');
+  expect(frame).not.toContain('***REDACTED***');
+});
+
+it('keeps the rows of a halt with no asked row when one has an open quote', async () => {
+  const frame = await panelAt120(
+    makeRecoveryIssue({
+      details: [
+        'Last error: cannot read password: "x in config',
+        'Attempts: 2',
+        'Implementer said: I ran "npm test"',
+      ],
+    }),
+    40,
+  );
+  expect(frame).toContain('Attempts: 2');
+  expect(frame).toContain('Implementer said: I ran "npm test"');
+  expect(frame).not.toContain('***REDACTED***');
+});
+
+it('keeps the title and the Files row on a short panel when the title has an open quote', async () => {
+  const frame = await panelAt120(
+    buildRetryExhaustedRecoveryIssue({
+      id: 'rec_short_title',
+      task: makeTask({
+        id: 'T901',
+        title: 'Rotate password: "x and the token store',
+        suggestedFiles: ['src/a.ts'],
+      }),
+      phase: 'escalating',
+      question: 'Should activity.ts read the new value from the environment?',
+      validationSummary: `cannot find module "./foo" and the build stopped ${'with more words here '.repeat(4).trimEnd()}`,
+      attempts: 3,
+      allowRetryOverride: true,
+      selectedImplementerProfile: 'default',
+      createdAt: '2026-09-24T00:00:00.000Z',
+    }),
+    20,
+  );
+  expect(frame).toContain('Rotate password: "x and the token store');
+  expect(frame).toContain('Files src/a.ts');
+  expect(frame).not.toContain('***REDACTED***');
+});
+
+it('holds a title of 10000 characters with an open quote and a quote below', () => {
+  const issue = makeRecoveryIssue({
+    taskTitle: `Rotate password: "x ${'word '.repeat(2000)}`,
+    details: ['Question: which file?', 'Last error: cannot find module "./foo"'],
+  });
+  const rows = recoveryPromptSummaryRows(issue, 108);
+  expect(JSON.stringify(rows[2])).toContain('Rotate password: \\"x word word');
+});
+
+it('does not merge a row that ends on Bearer with the row below', async () => {
+  const frame = await panelAt120(
+    makeRecoveryIssue({ details: ['Last error: sent Authorization: Bearer', 'Attempts: 2'] }),
+    40,
+  );
+  expect(frame).toContain('Attempts: 2');
+});
+
+it.each([
+  ['a two-line title', { taskTitle: `Rotate\n${PEM_BLOCK}` }],
+  [
+    'a message',
+    {
+      reason: 'seat-protocol-error',
+      seat: 'review',
+      attempts: undefined,
+      message: `Tool said\n${PEM_BLOCK}`,
+    },
+  ],
+] as const)('keeps a PEM block masked in %s', async (_label, patch) => {
+  const frame = await panelAt120(
+    makeRecoveryIssue({
+      ...patch,
+      details: ['Question: which key?', 'Last error: cannot find "foo"'],
+    }),
+    40,
+  );
+  expect(frame).not.toContain('CANARY');
+});
+
+it('keeps a quoted value that spans two lines of one row masked', async () => {
+  const frame = await panelAt120(
+    makeRecoveryIssue({
+      taskTitle: 'Rotate password: "CANARYa\nCANARYb tail" done',
+      details: ['Question: which key?'],
+    }),
+    40,
+  );
+  expect(frame).not.toContain('CANARY');
 });

@@ -3040,6 +3040,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-fallback-picker-custom-model'), createFallbackPickerCustomModelFixture],
   [scenarioId('overlay-fallback-picker-same-seat'), createFallbackPickerSameSeatFixture],
   [scenarioId('workflow-stop-sheet'), createStopSheetFixture],
+  [scenarioId('workflow-stop-sheet-short'), () => createStopSheetFixture()],
   [scenarioId('workflow-stop-menu-parked'), createParkedStopMenuFixture],
   [scenarioId('workflow-stop-menu-parked-first-brief'), createParkedFirstBriefStopMenuFixture],
   [

@@ -75,6 +75,7 @@ import { SOFT_SEP } from '../../../../core/separators.js';
 import { stripRecoveryResetClause } from '../../../../core/recovery/reset-clock.js';
 import { HAND_BACK_PANEL_CHARS } from '../../../../core/pipeline-spec/ladder.js';
 import { uniqueSortedIds, uniqueSorted } from '../../../../utils/collections.js';
+import { sanitizeTerminalDisplayText } from '../../../../utils/display-text.js';
 import { includes } from '../../../../utils/type-guards.js';
 import type { RecoveryBuilderBase, TaskRecoveryContext } from './issue.js';
 import { compactFacts, createRecoveryIssue } from './issue.js';
@@ -496,7 +497,8 @@ function lastErrorDetail(validation: ReturnType<typeof summarizeValidation>): st
 
 /** The end of a hand-back, where an implementer that stopped says why. */
 function handBackQuote(handBack: string): string {
-  const collapsed = handBack.trim().replace(/\s+/g, ' ');
+  const masked = sanitizeTerminalDisplayText(handBack, { preserveLineBreaks: true });
+  const collapsed = masked.trim().replace(/\s+/g, ' ');
   return collapsed.length <= HAND_BACK_PANEL_CHARS
     ? collapsed
     : `…${collapsed.slice(collapsed.length - HAND_BACK_PANEL_CHARS)}`;

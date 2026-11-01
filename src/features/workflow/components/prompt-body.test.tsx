@@ -166,12 +166,11 @@ describe('PromptBody', () => {
       );
       try {
         const frame = ui.lastFrame();
-        expect(height).toBe(4);
+        expect(height).toBe(3);
         expect(stripAnsiStyles(frame).split('\n')).toEqual([
           'Seat down · Provide…',
           '',
           '  abcdefghijklmnopqr',
-          '  ',
         ]);
         expect(frame).toContain(
           paint(theme[stateTone('attention')], 'Seat down').replace('\u001b[39m', ''),
