@@ -27,6 +27,7 @@ function subscribeToResize(): () => void {
     process.stdout.off('resize', handler);
     unsubscribeResize = null;
   };
+  handler();
   return unsubscribeResize;
 }
 

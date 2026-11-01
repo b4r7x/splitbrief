@@ -131,6 +131,7 @@ function DiscoveryPanel({ width }: { width: number }) {
 
   return (
     <Box
+      width={width}
       borderStyle={borderStyleFor('round')}
       borderColor={stalled ? (failedOutcome ? theme.error : theme.warning) : theme.accent}
       paddingX={2}

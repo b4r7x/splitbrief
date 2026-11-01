@@ -991,7 +991,7 @@ const checkpointPredicates = [
   [
     checkpointId('at-rest-applying-closed-quit-queued'),
     (context) =>
-      includesAll('/ for a command…')(context) &&
+      includesAll('/ for a command…', 'Quits when')(context) &&
       excludesAll('for home', 'esc home')(context) &&
       activeApply() !== undefined &&
       departureStore.get()?.kind === 'quit',
