@@ -14,7 +14,7 @@ import type {
 import type { AuthFact } from '../../core/discovery/runner-evidence.js';
 import {
   CLI_TOOL_CATALOG,
-  CLI_TOOL_IDS,
+  LISTED_CLI_TOOL_IDS,
   type CliAuthChannelId,
 } from '../../core/runners/cli-tool-catalog.js';
 import { deriveCliReadiness } from '../../core/schemas/readiness.js';
@@ -204,7 +204,7 @@ describe('legacy CLI detection presentation', () => {
     vi.unstubAllEnvs();
   });
 
-  it('returns one canonical result per catalog CLI without selecting a default channel', async () => {
+  it('returns one canonical result per listed CLI without selecting a default channel', async () => {
     const results = await detectAvailableCliTools({
       projectDir: '/neutral/project',
       resolveExecutable: async () => executable,
@@ -213,8 +213,8 @@ describe('legacy CLI detection presentation', () => {
       now: () => 1_700_000_000_000,
     });
 
-    expect(results.map((result) => result.tool)).toEqual(CLI_TOOL_IDS);
-    expect(results.map((result) => result.auth)).toEqual(CLI_TOOL_IDS.map(() => 'unknown'));
+    expect(results.map((result) => result.tool)).toEqual(LISTED_CLI_TOOL_IDS);
+    expect(results.map((result) => result.auth)).toEqual(LISTED_CLI_TOOL_IDS.map(() => 'unknown'));
   });
 
   it('admits an explicitly selected API-key channel without borrowing a session channel', async () => {

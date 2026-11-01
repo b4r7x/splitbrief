@@ -12,6 +12,8 @@ import {
   CUSTOM_ONLY_CLI_TOOL_DEFINITIONS,
   EXCLUDED_CLI_TOOL_IDS,
   IMPLEMENTER_CLI_TOOL_IDS,
+  isListedCliTool,
+  LISTED_CLI_TOOL_IDS,
   NATIVE_CLI_CATALOG_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
   cliAuthChannelHostStateAccess,
@@ -54,6 +56,12 @@ function resolveRepoPath(relativePath: string): string {
 }
 
 describe('CLI tool catalog', () => {
+  it('lists every catalog tool except the unlisted Copilot', () => {
+    expect(LISTED_CLI_TOOL_IDS).toEqual(CLI_TOOL_IDS.filter((id) => id !== 'copilot'));
+    expect(isListedCliTool('copilot')).toBe(false);
+    expect(isListedCliTool('ollama')).toBe(true);
+  });
+
   it.each([
     ['claude-code', 'stdin', true],
     ['codex', 'flag', true],

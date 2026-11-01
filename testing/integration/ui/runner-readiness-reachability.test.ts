@@ -11,6 +11,7 @@ import {
   CLI_TOOL_CATALOG,
   CLI_TOOL_IDS,
   defaultCliAuthChannel,
+  LISTED_CLI_TOOL_IDS,
 } from '../../../src/core/runners/cli-tool-catalog.js';
 import {
   deriveCliReadiness,
@@ -91,12 +92,12 @@ describe('CLI readiness reachability from the real detection producer', () => {
     cleanupTempDir(configHome);
   });
 
-  it('admits every catalog CLI tool as ready and selectable on a best-case probe', async () => {
+  it('admits every listed CLI tool as ready and selectable on a best-case probe', async () => {
     const options = await cliPickerOptions('planner');
     const byId = new Map(options.map((option) => [option.id, option]));
 
-    expect([...byId.keys()].toSorted()).toEqual([...CLI_TOOL_IDS].toSorted());
-    for (const tool of CLI_TOOL_IDS) {
+    expect([...byId.keys()].toSorted()).toEqual([...LISTED_CLI_TOOL_IDS].toSorted());
+    for (const tool of LISTED_CLI_TOOL_IDS) {
       const option = byId.get(tool);
       expect(option?.status).toEqual({ state: 'ready', remediation: null });
       expect(option?.available).toBe(true);
@@ -150,7 +151,7 @@ describe('CLI readiness reachability from the real detection producer', () => {
       },
     });
 
-    expect(enabledArguments.length).toBe(CLI_TOOL_IDS.length);
+    expect(enabledArguments.length).toBe(LISTED_CLI_TOOL_IDS.length);
     expect(enabledArguments.every((enabled) => enabled === undefined)).toBe(true);
   });
 });

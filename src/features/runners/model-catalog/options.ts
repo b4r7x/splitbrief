@@ -11,7 +11,7 @@ import { hasAutomaticModelDefault } from '../../../core/providers/model-selectio
 import type { CliEffortChannel } from '../../../core/runners/effort-channel.js';
 import {
   CLI_TOOL_CATALOG,
-  CLI_TOOL_IDS,
+  LISTED_CLI_TOOL_IDS,
   type CliToolDescriptor,
 } from '../../../core/runners/cli-tool-catalog.js';
 import {
@@ -265,7 +265,7 @@ export function sortPickerOptions(
 
 export function assemblePickerDescriptors(): readonly RunnerPickerDescriptor[] {
   const meta: RunnerPickerDescriptor[] = [{ kind: 'custom-command' }];
-  const cli: RunnerPickerDescriptor[] = CLI_TOOL_IDS.map((id) => ({
+  const cli: RunnerPickerDescriptor[] = LISTED_CLI_TOOL_IDS.map((id) => ({
     kind: 'cli',
     descriptor: CLI_TOOL_CATALOG[id],
   }));

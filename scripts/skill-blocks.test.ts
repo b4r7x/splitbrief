@@ -40,7 +40,6 @@ const SENTINELS: Record<string, string> = {
   'recipe:claude-code': `"blockReadsOutsideWorkingDirectories":true}}'\\'' < $P`,
   'recipe:codex': '--sandbox read-only',
   'recipe:opencode': '--agent plan < $P',
-  'recipe:copilot': '--allow-all --output-format json < $P',
   'recipe:kilo-code': '--agent code --auto',
   'recipe:cursor': '--mode plan --trust',
   'recipe:command-code': '--yolo -m $M --effort $E',

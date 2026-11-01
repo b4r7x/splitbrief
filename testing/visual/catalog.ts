@@ -5125,8 +5125,8 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: 'Settings',
       },
       {
-        id: 'overlay-settings-crew-kilo-copilot',
-        title: 'Overlay · settings · Kilo plan seat, Copilot build seat',
+        id: 'overlay-settings-crew-kilo-command-code',
+        title: 'Overlay · settings · Kilo plan seat, Command Code build seat',
         marker: 'Settings',
       },
       {
@@ -5318,8 +5318,8 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: PICKER_TITLE_MARKER,
       },
       {
-        id: 'overlay-planner-picker-copilot',
-        title: 'Overlay · planner picker · GitHub Copilot models',
+        id: 'overlay-planner-picker-unlisted-seat',
+        title: 'Overlay · planner picker · seat on a tool the picker does not offer',
         marker: PICKER_TITLE_MARKER,
       },
       {

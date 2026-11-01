@@ -678,7 +678,7 @@ The `kind` discriminant is required in every planner / reviewer / implementer co
 
 | `kind` | Planner file | Implementer file | Implementer write mode | Examples |
 |---|---|---|---|---|
-| `cli` | `planners/cli.ts` (+ specialization in `claude-code.ts`) | `implementers/cli.ts` | `direct` | claude-code, codex, opencode, copilot, kilo-code, cursor, command-code, antigravity |
+| `cli` | `planners/cli.ts` (+ specialization in `claude-code.ts`) | `implementers/cli.ts` | `direct` | claude-code, codex, opencode, copilot (hidden), kilo-code, cursor, command-code, antigravity |
 | `api` | `planners/api.ts` | `implementers/api.ts` | `extracted-code` | ollama, lm-studio, llama-cpp (any OpenAI-compatible) |
 | `shell` | `planners/command-invoke.ts` | `implementers/command-invoke.ts` | `extracted-code` | arbitrary subprocess, stdin-prompt → stdout-response, no shell/network sandbox |
 | `agent` | `planners/command-invoke.ts` | `implementers/command-invoke.ts` | `direct` | subprocess that writes files directly, no stdout extraction or shell/network sandbox |

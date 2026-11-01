@@ -5,7 +5,7 @@ import { configPath, IGNORE_RULE_ADDED, readConfigDocument } from '../core/confi
 import { selectInitialCrew } from '../core/crew/default.js';
 import type { CLIOverrides } from '../core/config/runtime/overrides/schema.js';
 import type { Config } from '../core/schemas/config.js';
-import { CLI_TOOL_IDS, defaultCliAuthChannel } from '../core/runners/cli-tool-catalog.js';
+import { defaultCliAuthChannel, LISTED_CLI_TOOL_IDS } from '../core/runners/cli-tool-catalog.js';
 import { detectAll, detectAvailableCliTools } from '../engine/detection/detect.js';
 import { checkCrewAvailability, selectDetectedDefaultCrew } from '../engine/detection/crew.js';
 import { readConfiguredCliRoutes } from './commands/start/readiness.js';
@@ -92,7 +92,7 @@ export async function ensureHeadlessConfig(input: {
   const detection = await detectAll({
     detectCliTools: (options) => detectAvailableCliTools({ ...options, projectDir }),
     authChannels: Object.fromEntries(
-      CLI_TOOL_IDS.map((tool) => [tool, defaultCliAuthChannel(tool).id]),
+      LISTED_CLI_TOOL_IDS.map((tool) => [tool, defaultCliAuthChannel(tool).id]),
     ),
   });
   const detected = selectDetectedDefaultCrew(detection);

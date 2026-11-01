@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { IMPLEMENTER_CLI_TOOL_IDS, PLANNER_CLI_TOOL_IDS } from '../runners/cli-tool-catalog.js';
+import {
+  IMPLEMENTER_CLI_TOOL_IDS,
+  isListedCliTool,
+  PLANNER_CLI_TOOL_IDS,
+} from '../runners/cli-tool-catalog.js';
 import { ImplementerConfigSchema, ImplementerProfileConfigSchema } from './implementer-config.js';
 import { PlannerConfigSchema } from './planner-config.js';
 import { ReviewerConfigSchema } from './reviewer-config.js';
@@ -168,7 +172,7 @@ describe('createRunnerConfigSchema', () => {
     }
   });
 
-  it('rejects the removed aider CLI tool by name, listing the catalog tools for that seat', () => {
+  it('rejects the removed aider CLI tool by name, listing the listed tools for that seat', () => {
     for (const [schema, supported] of [
       [createRunnerConfigSchema(GenerationCommonFields), IMPLEMENTER_CLI_TOOL_IDS],
       [createPlannerConfigSchema(GenerationCommonFields), PLANNER_CLI_TOOL_IDS],
@@ -178,7 +182,24 @@ describe('createRunnerConfigSchema', () => {
       expect(result.error?.issues).toContainEqual(
         expect.objectContaining({
           path: ['tool'],
-          message: `CLI tool "aider" was removed; supported tools are ${supported.join(', ')}.`,
+          message: `CLI tool "aider" was removed; supported tools are ${supported.filter(isListedCliTool).join(', ')}.`,
+        }),
+      );
+    }
+  });
+
+  it('names only the listed tools when a seat names an unknown CLI tool', () => {
+    for (const [schema, supported] of [
+      [createRunnerConfigSchema(GenerationCommonFields), IMPLEMENTER_CLI_TOOL_IDS],
+      [createPlannerConfigSchema(GenerationCommonFields), PLANNER_CLI_TOOL_IDS],
+    ] as const) {
+      const result = schema.safeParse({ kind: 'cli', tool: 'claude-cdoe' });
+      expect(result.success).toBe(false);
+      const listed = supported.filter(isListedCliTool).map((id) => `"${id}"`);
+      expect(result.error?.issues).toContainEqual(
+        expect.objectContaining({
+          path: ['tool'],
+          message: `Invalid option: expected one of ${listed.join('|')}`,
         }),
       );
     }

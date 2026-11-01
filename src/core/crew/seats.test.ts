@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import type { CrewSeatId } from './identity.js';
-import { crewCliTools, deriveCrewSeats, type CrewSeat } from './seats.js';
+import { LISTED_CLI_TOOL_IDS } from '../runners/cli-tool-catalog.js';
+import { crewCliTools, deriveCrewSeats, probedCliTools, type CrewSeat } from './seats.js';
 
 function seatOf<Id extends CrewSeatId>(
   seats: readonly CrewSeat[],
@@ -97,5 +98,28 @@ describe('crewCliTools', () => {
 
   it('names no tool the config does not run', () => {
     expect([...crewCliTools(makeConfig())]).toEqual(['claude-code']);
+  });
+});
+
+describe('probedCliTools', () => {
+  it('probes the listed tools for a config that does not name Copilot', () => {
+    expect(probedCliTools(makeConfig())).toEqual(LISTED_CLI_TOOL_IDS);
+  });
+
+  it('adds Copilot in catalog order for a config whose fallback is Copilot', () => {
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'claude-code', fallback: { tool: 'copilot' } },
+    });
+
+    expect(probedCliTools(config)).toEqual([
+      'claude-code',
+      'codex',
+      'opencode',
+      'copilot',
+      'kilo-code',
+      'cursor',
+      'command-code',
+      'antigravity',
+    ]);
   });
 });

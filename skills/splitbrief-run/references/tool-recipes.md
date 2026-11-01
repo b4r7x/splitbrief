@@ -68,17 +68,6 @@ Timeouts:
 <!-- /generated -->
 - terminal record: none — exit 0; error envelope as opencode.
 
-## copilot — GitHub Copilot CLI
-
-- binary `copilot` · version `copilot --version` · auth: no cheap probe — an auth signature in the first spawn's log halts · models: no listing · effort `low|medium|high`
-<!-- generated: recipe:copilot -->
-- implementer: `nohup sh -c 'copilot --model $M --effort $E --allow-all --output-format json < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- implementer (no model): `nohup sh -c 'copilot --allow-all --output-format json < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- reviewer: `nohup sh -c 'copilot --model $M --effort $E --plan --allow-all-tools --no-ask-user --output-format json < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- reviewer (no model): `nohup sh -c 'copilot --plan --allow-all-tools --no-ask-user --output-format json < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-<!-- /generated -->
-- terminal record: none — exit 0. The implementer and the reviewer both print JSON records, one per line.
-
 ## cursor — Cursor CLI
 
 - binary `cursor-agent` (`agent` is the same binary) · version `cursor-agent --version` · auth `cursor-agent status` · models `cursor-agent --list-models` · effort: part of the model id (`gpt-5.3-codex-high`); an `@effort` on a cursor seat is refused at preflight with `cursor carries effort in the model id`

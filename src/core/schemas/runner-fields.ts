@@ -8,6 +8,7 @@ import {
   PLANNER_CLI_TOOL_IDS,
   cliModelPolicyViolations,
   isCliToolId,
+  isListedCliTool,
 } from '../runners/cli-tool-catalog.js';
 import {
   runnerRoleForActiveRole,
@@ -60,13 +61,14 @@ export const REMOVED_RUNNER_KINDS = Object.freeze(['agent-sdk'] as const);
 
 // The tool enums reject a removed id before any refinement runs, so the named
 // message has to come from a guard that sits in front of them. The supported
-// list is the caller's catalog slice, so it cannot drift from the enum it pipes into.
+// list is the caller's catalog slice, so it cannot drift from the enum it pipes into;
+// it names only the listed tools.
 function removedCliToolGuard(supportedToolIds: readonly string[]) {
   return z.string().superRefine((tool, ctx) => {
     if (!includes(REMOVED_CLI_TOOL_IDS, tool)) return;
     ctx.addIssue({
       code: 'custom',
-      message: `CLI tool "${tool}" was removed; supported tools are ${supportedToolIds.join(', ')}.`,
+      message: `CLI tool "${tool}" was removed; supported tools are ${supportedToolIds.filter(isListedCliTool).join(', ')}.`,
     });
   });
 }

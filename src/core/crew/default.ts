@@ -4,7 +4,7 @@ import type { SavedCatalogOf } from '../discovery/catalog-read-merge.js';
 import type { CliToolDetection, ProviderDetection } from '../discovery/detection.js';
 import { routeAuthState } from '../runners/route-auth.js';
 import { seatRouteModel } from '../providers/automatic-model.js';
-import { CLI_TOOL_IDS, cliToolSupportsRole } from '../runners/cli-tool-catalog.js';
+import { cliToolSupportsRole, LISTED_CLI_TOOL_IDS } from '../runners/cli-tool-catalog.js';
 import type { Config } from '../schemas/config.js';
 import { resolveEffectiveConfig } from '../config/runtime/effective-config.js';
 import type { CLIOverrides } from '../config/runtime/overrides/schema.js';
@@ -82,7 +82,7 @@ export function selectDefaultCrew(detection: CrewDetection): Config | null {
   const ready = new Set(
     detection.cliTools.filter((tool) => tool.diagnostic.state === 'ready').map((tool) => tool.tool),
   );
-  const planOrder = ['claude-code', 'codex', ...CLI_TOOL_IDS] as const;
+  const planOrder = ['claude-code', 'codex', ...LISTED_CLI_TOOL_IDS] as const;
   const plan = planOrder.find((tool) => ready.has(tool) && cliToolSupportsRole(tool, 'planner'));
   if (plan === undefined) return null;
 
@@ -92,7 +92,7 @@ export function selectDefaultCrew(detection: CrewDetection): Config | null {
   );
   const defaultModel = getRunnerModelName(config.implementer);
   const model = local?.models?.find((entry) => entry.id === defaultModel) ?? local?.models?.[0];
-  const buildOrder = ['opencode', 'codex', 'claude-code', ...CLI_TOOL_IDS] as const;
+  const buildOrder = ['opencode', 'codex', 'claude-code', ...LISTED_CLI_TOOL_IDS] as const;
   const build = buildOrder.find(
     (tool) => ready.has(tool) && cliToolSupportsRole(tool, 'implementer'),
   );

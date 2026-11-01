@@ -16,10 +16,12 @@ import { detectionContextsForCurrentConfig } from './store-publication.js';
 import type { DetectionCacheSnapshot, RememberedCliCatalog } from './cache.js';
 import type { ConfiguredProviderOutcome } from './provider-outcomes.js';
 import {
+  DETECTION_CACHE_VERSION,
   invalidateCache,
   loadDetectionCacheSnapshot,
   loadRememberedCliRuntime,
   loadRememberedPresentationSnapshot,
+  loadRememberedSnapshot,
   saveDetectionCache,
 } from './cache.js';
 
@@ -165,7 +167,7 @@ describe('detection cache', () => {
     expect(raw).not.toContain('/private/local-cli-path-canary');
     expect(raw).not.toContain('credential-private-remediation-canary');
     expect(JSON.parse(raw)).toEqual({
-      version: 6,
+      version: DETECTION_CACHE_VERSION,
       contextKey: CACHE_CONTEXT,
       fetchedAt: 1_786_000_000_000,
       validatedAt: 1_786_000_001_000,
@@ -307,7 +309,10 @@ describe('detection cache', () => {
     await mkdir(cacheDir, { recursive: true });
     await writeFile(
       cachePath,
-      JSON.stringify({ version: 6, ...cacheSnapshot({ cliCatalogs: [previousCatalog] }) }),
+      JSON.stringify({
+        version: DETECTION_CACHE_VERSION,
+        ...cacheSnapshot({ cliCatalogs: [previousCatalog] }),
+      }),
       'utf8',
     );
     const previous = await loadDetectionCacheSnapshot({
@@ -943,7 +948,7 @@ describe('detection cache', () => {
     await writeFile(
       join(dir, 'detection-cache.json'),
       JSON.stringify({
-        version: 6,
+        version: DETECTION_CACHE_VERSION,
         contextKey: CACHE_CONTEXT,
         fetchedAt: 1_786_000_000_000,
         validatedAt: 1_786_000_001_000,
@@ -1011,7 +1016,7 @@ describe('detection cache', () => {
     await writeFile(
       join(dir, 'detection-cache.json'),
       JSON.stringify({
-        version: 6,
+        version: DETECTION_CACHE_VERSION,
         contextKey: CACHE_CONTEXT,
         fetchedAt: 1_786_000_000_000,
         validatedAt: 1_786_000_001_000,
@@ -1052,7 +1057,7 @@ describe('detection cache', () => {
     await writeFile(
       join(dir, 'detection-cache.json'),
       JSON.stringify({
-        version: 6,
+        version: DETECTION_CACHE_VERSION,
         contextKey: CACHE_CONTEXT,
         fetchedAt: 1_786_000_000_000,
         validatedAt: 1_786_000_001_000,
@@ -1134,12 +1139,44 @@ describe('detection cache', () => {
     await expect(readFile(cachePath, 'utf8')).resolves.toBe(payload);
   });
 
-  it('rejects a version-6 remembered catalog that still carries a role', async () => {
+  it('remembers no tool from a version-6 cache that still lists Copilot ready', async () => {
     const dir = join(tempDir, SPLITBRIEF_DIR);
     await mkdir(dir, { recursive: true });
     const cachePath = join(dir, 'detection-cache.json');
     const payload = JSON.stringify({
       version: 6,
+      contextKey: CACHE_CONTEXT,
+      fetchedAt: 1_786_000_000_000,
+      validatedAt: 1_786_000_001_000,
+      generation: 12,
+      requestId: 27,
+      providers: [],
+      cliTools: [
+        {
+          tool: 'copilot',
+          trust: 'trusted',
+          installedVersion: '1.0.77',
+          testedVersion: '1.0.77',
+          compatibility: 'compatible',
+          auth: 'authenticated',
+          diagnosticState: 'ready',
+          probedAt: 1_786_000_000_000,
+          fingerprint: { dev: 1, ino: 2, size: 3, mtimeMs: 4 },
+        },
+      ],
+    });
+    await writeFile(cachePath, payload, 'utf8');
+
+    await expect(loadRememberedSnapshot(tempDir)).resolves.toBeNull();
+    await expect(readFile(cachePath, 'utf8')).resolves.toBe(payload);
+  });
+
+  it('rejects a remembered catalog that still carries a role', async () => {
+    const dir = join(tempDir, SPLITBRIEF_DIR);
+    await mkdir(dir, { recursive: true });
+    const cachePath = join(dir, 'detection-cache.json');
+    const payload = JSON.stringify({
+      version: DETECTION_CACHE_VERSION,
       contextKey: CACHE_CONTEXT,
       fetchedAt: 1_786_000_000_000,
       validatedAt: 1_786_000_001_000,

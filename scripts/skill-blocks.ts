@@ -10,6 +10,7 @@ import { HALT_SIGNATURES } from '../src/core/pipeline-spec/halts.js';
 import { DEFAULT_LOCAL_RETRIES } from '../src/core/pipeline-spec/retries.js';
 import { PROTECTED_PATHS_TEXT } from '../src/core/pipeline-spec/scope.js';
 import { TIMEOUTS } from '../src/core/pipeline-spec/timeouts.js';
+import { isListedCliTool } from '../src/core/runners/cli-tool-catalog.js';
 import type { CliEffortChannel } from '../src/core/runners/effort-channel.js';
 import {
   CONSULT_ANSWER_JSON_SCHEMA,
@@ -136,6 +137,7 @@ function seatLines(
 }
 
 function toolRecipe(toolId: string): string | null {
+  if (!isListedCliTool(toolId)) return null;
   const implementer = Object.entries(CLI_IMPLEMENTER_ADAPTERS).find(([id]) => id === toolId)?.[1];
   const planner = Object.entries(CLI_PLANNER_ADAPTERS).find(([id]) => id === toolId)?.[1];
   if (implementer === undefined || planner === undefined) return null;
@@ -639,7 +641,9 @@ const BLOCKS: Record<string, () => string> = {
 
 export const GENERATED_BLOCK_IDS: readonly string[] = [
   ...Object.keys(BLOCKS),
-  ...Object.keys(CLI_IMPLEMENTER_ADAPTERS).map((id) => `recipe:${id}`),
+  ...Object.keys(CLI_IMPLEMENTER_ADAPTERS)
+    .filter(isListedCliTool)
+    .map((id) => `recipe:${id}`),
 ];
 
 export function renderBlock(id: string): string | null {

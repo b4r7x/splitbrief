@@ -12,6 +12,8 @@ import {
   CLI_TOOL_IDS,
   EXCLUDED_CLI_TOOL_IDS,
   IMPLEMENTER_CLI_TOOL_IDS,
+  isListedCliTool,
+  LISTED_CLI_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
   cliToolSupportsRole,
 } from '../../../src/core/runners/cli-tool-catalog.js';
@@ -182,7 +184,7 @@ describe('runner catalog parity by role', () => {
       )
       .map((entry) => entry.descriptor.id);
 
-    expect(descriptorCliIds).toEqual([...CLI_TOOL_IDS]);
+    expect(descriptorCliIds).toEqual([...LISTED_CLI_TOOL_IDS]);
     expect(descriptorApiIds).toEqual([...KNOWN_API_PROVIDER_IDS]);
     expect(new Set(descriptorCliIds).size).toBe(descriptorCliIds.length);
     expect(new Set(descriptorApiIds).size).toBe(descriptorApiIds.length);
@@ -192,7 +194,7 @@ describe('runner catalog parity by role', () => {
       expect(new Set(pickerIds).size).toBe(pickerIds.length);
 
       const admissionRole = role === 'reviewer' ? 'planner' : role;
-      const expectedCliIds = ADMITTED_IDS[admissionRole].cli;
+      const expectedCliIds = ADMITTED_IDS[admissionRole].cli.filter(isListedCliTool);
       const expectedApiIds = ADMITTED_IDS[admissionRole].api;
       const expectedMetaIds = ['custom-command'];
 
@@ -208,6 +210,7 @@ describe('runner catalog parity by role', () => {
       expect(pickerIds.filter((id) => id === 'custom-command')).toHaveLength(1);
       expect(pickerIds).not.toContain('shell');
       expect(pickerIds).not.toContain('agent');
+      expect(pickerIds).not.toContain('copilot');
 
       const implementerOnlyCli = IMPLEMENTER_CLI_TOOL_IDS.filter(
         (id) => !PLANNER_CLI_TOOL_IDS.includes(id),

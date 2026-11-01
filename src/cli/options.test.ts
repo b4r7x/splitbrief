@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { Command, InvalidArgumentError } from 'commander';
 import { IMPLEMENTER_API_PROVIDER_IDS } from '../core/providers/api-provider-catalog.js';
-import { IMPLEMENTER_CLI_TOOL_IDS } from '../core/runners/cli-tool-catalog.js';
+import { IMPLEMENTER_CLI_TOOL_IDS, isListedCliTool } from '../core/runners/cli-tool-catalog.js';
 import { EFFORT_LEVELS, META_PROVIDER_IDS, PLANNER_TOOL_IDS } from '../core/schemas/enums.js';
 import type { WorkflowOpts } from '../core/types/config-options.js';
 import {
@@ -235,17 +235,17 @@ describe('--allow-repo-runners', () => {
 
 describe('runner selection help', () => {
   it.each([
-    { label: 'Planner tool', admitted: [...PLANNER_TOOL_IDS] },
-    { label: 'Reviewer tool', admitted: [...PLANNER_TOOL_IDS] },
+    { label: 'Planner tool', admitted: PLANNER_TOOL_IDS.filter(isListedCliTool) },
+    { label: 'Reviewer tool', admitted: PLANNER_TOOL_IDS.filter(isListedCliTool) },
     {
       label: 'Implementer provider',
       admitted: [
         ...IMPLEMENTER_CLI_TOOL_IDS,
         ...IMPLEMENTER_API_PROVIDER_IDS,
         ...META_PROVIDER_IDS,
-      ],
+      ].filter(isListedCliTool),
     },
-  ])('$label enumerates every id the catalog admits', ({ label, admitted }) => {
+  ])('$label enumerates every id the catalog lists', ({ label, admitted }) => {
     expect(idsListedInHelp(label)).toEqual(admitted);
   });
 
@@ -254,7 +254,6 @@ describe('runner selection help', () => {
       'claude-code',
       'codex',
       'opencode',
-      'copilot',
       'kilo-code',
       'cursor',
       'command-code',
@@ -269,7 +268,6 @@ describe('runner selection help', () => {
       'claude-code',
       'codex',
       'opencode',
-      'copilot',
       'kilo-code',
       'cursor',
       'command-code',

@@ -109,7 +109,7 @@ There is no separate results screen. A run stays on the screen it was already on
 
 The planner, the implementer and the reviewer are pluggable. The same four backend kinds work for each seat:
 
-**cli** — Spawns a CLI tool as a subprocess. Claude Code, Codex, OpenCode, Copilot, Kilo Code, Cursor, Command Code, Antigravity.
+**cli** — Spawns a CLI tool as a subprocess. Claude Code, Codex, OpenCode, Kilo Code, Cursor, Command Code, Antigravity.
 
 **api** — Calls an OpenAI-compatible HTTP endpoint. Ollama, LM Studio, llama.cpp, custom endpoint.
 

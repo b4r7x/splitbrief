@@ -9,6 +9,7 @@ import {
 import {
   CLI_TOOL_IDS,
   IMPLEMENTER_CLI_TOOL_IDS,
+  isListedCliTool,
   PLANNER_CLI_TOOL_IDS,
 } from '../runners/cli-tool-catalog.js';
 
@@ -30,10 +31,22 @@ export const PLANNER_TOOL_IDS = [
 export type ProviderId = (typeof PROVIDER_IDS)[number];
 export type PlannerToolId = (typeof PLANNER_TOOL_IDS)[number];
 
-export const PlannerCliToolIdSchema = z.enum(PLANNER_CLI_TOOL_IDS);
+// An unlisted tool still parses; the message names only the tools a user can pick.
+function listedToolsMessage(ids: readonly string[]): string {
+  const values = ids.filter(isListedCliTool).map((id) => `"${id}"`);
+  return `Invalid option: expected one of ${values.join('|')}`;
+}
+
+export const PlannerCliToolIdSchema = z.enum(
+  PLANNER_CLI_TOOL_IDS,
+  listedToolsMessage(PLANNER_CLI_TOOL_IDS),
+);
 export type PlannerCliToolId = z.infer<typeof PlannerCliToolIdSchema>;
 
-export const ImplementerCliToolIdSchema = z.enum(IMPLEMENTER_CLI_TOOL_IDS);
+export const ImplementerCliToolIdSchema = z.enum(
+  IMPLEMENTER_CLI_TOOL_IDS,
+  listedToolsMessage(IMPLEMENTER_CLI_TOOL_IDS),
+);
 export type ImplementerCliToolId = z.infer<typeof ImplementerCliToolIdSchema>;
 
 export const PlannerApiProviderIdSchema = z.enum(PLANNER_API_PROVIDER_IDS);
@@ -243,7 +256,7 @@ const OUTPUT_FORMATS = ['stream-json', 'jsonl', 'text', 'opencode'] as const;
 export const OutputFormatSchema = z.enum(OUTPUT_FORMATS);
 export type OutputFormat = z.infer<typeof OutputFormatSchema>;
 
-export const CliToolIdSchema = z.enum(CLI_TOOL_IDS);
+export const CliToolIdSchema = z.enum(CLI_TOOL_IDS, listedToolsMessage(CLI_TOOL_IDS));
 
 export const RUNNER_KINDS = ['cli', 'api', 'shell', 'agent'] as const;
 export const RunnerKindSchema = z.enum(RUNNER_KINDS);

@@ -1,5 +1,5 @@
 import { AUTOMATIC_MODEL, normalizeConfiguredModel } from '../providers/automatic-model.js';
-import { typedEntries } from '../../utils/type-guards.js';
+import { includes, typedEntries } from '../../utils/type-guards.js';
 import { classifyCliAdmittedVersion, type CliVersionScheme } from './cli-version.js';
 import type { CliEffortChannel } from './effort-channel.js';
 import type { RunnerBillingPosture } from './runner-billing.js';
@@ -792,6 +792,15 @@ function assembleCliToolCatalog(
 export const CLI_TOOL_TRUST = assembleCliToolTrust();
 export const CLI_TOOL_CATALOG = assembleCliToolCatalog(CLI_TOOL_TRUST);
 export const CLI_TOOL_IDS = Object.freeze(typedEntries(CLI_TOOL_CATALOG).map(([id]) => id));
+
+// Runs when a config names it; no surface offers it.
+const UNLISTED_CLI_TOOL_IDS: readonly CliToolId[] = ['copilot'];
+
+export function isListedCliTool(id: string): boolean {
+  return !includes(UNLISTED_CLI_TOOL_IDS, id);
+}
+
+export const LISTED_CLI_TOOL_IDS = Object.freeze(CLI_TOOL_IDS.filter(isListedCliTool));
 
 /**
  * The only admitted CLIs with a structural, non-interactive native model

@@ -1,6 +1,7 @@
 import { resolveImplementerProfiles } from '../config/accessors/implementer-profiles.js';
 import { resolveReviewerRunner } from '../config/accessors/reviewer-runner.js';
 import type { RunnerConfig } from '../config/accessors/runner-config.js';
+import { CLI_TOOL_IDS, isListedCliTool, type CliToolId } from '../runners/cli-tool-catalog.js';
 import type { ActiveRunnerRole } from '../runners/seat-roles.js';
 import { runnerBillingPosture, type RunnerBillingPosture } from '../runners/runner-billing.js';
 import type { Config } from '../schemas/config.js';
@@ -90,6 +91,12 @@ export function crewCliTools(config: Config): ReadonlySet<string> {
       ...(runner.fallback === undefined ? [] : [runner.fallback.tool]),
     ]),
   );
+}
+
+/** The CLI tools detection probes: every listed tool, and every tool the config runs. */
+export function probedCliTools(config: Config): readonly CliToolId[] {
+  const crew = crewCliTools(config);
+  return CLI_TOOL_IDS.filter((tool) => isListedCliTool(tool) || crew.has(tool));
 }
 
 /**

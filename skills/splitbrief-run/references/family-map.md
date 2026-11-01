@@ -24,7 +24,7 @@ The skills execute in the working tree. They require no SPLITBRIEF CLI, run work
 | `--yes` | Requires `--ask`; retains approval and permits ordinary gate-tooling repairs after approval. |
 | `--status` | Inspect a saved run through `splitbrief-run`; return without dispatch. |
 
-Tools are `claude`, `codex`, `opencode`, `copilot`, `kilo`, `cursor`, `cmd`, and `agy`.
+Tools are `claude`, `codex`, `opencode`, `kilo`, `cursor`, `cmd`, and `agy`.
 Split each seat on the first `:` and last `@`.
 For `impl=opencode:opencode-go/kimi-k3@high`, the tool is `opencode`, model is `opencode-go/kimi-k3`, and effort is `high`.
 Normalize natural phrasing. Print the normalized crew, cadence, and selected stages before dispatch.

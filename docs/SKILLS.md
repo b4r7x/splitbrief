@@ -63,7 +63,7 @@ The family routing table lives only in [family-map.md](../skills/splitbrief/refe
 
 Choose one of the four entry names for `<skill>`. `--status` applies to `splitbrief-run`.
 
-- Tools: `claude`, `codex`, `opencode`, `copilot`, `kilo`, `cursor`, `cmd`, `agy`.
+- Tools: `claude`, `codex`, `opencode`, `kilo`, `cursor`, `cmd`, `agy`.
 - Split a seat on the first `:` and the last `@`.
 - `impl=opencode:opencode-go/kimi-k3@high` selects tool `opencode`, model `opencode-go/kimi-k3` and effort `high`.
 - `review=` selects a seat. `cadence=` selects timing. Keep the keys separate.

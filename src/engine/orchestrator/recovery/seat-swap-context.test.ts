@@ -220,6 +220,48 @@ describe('loadSeatSwapContext', () => {
     expect(switchSeatOffer(context)).toBeUndefined();
   });
 
+  it('offers no Copilot from a version-6 cache that remembered it ready', async () => {
+    const projectDir = createTempDir('seat-swap-v6-copilot');
+    dirs.push(projectDir);
+    mkdirSync(getSplitbriefPath(projectDir), { recursive: true });
+    writeFileSync(
+      getSplitbriefPath(projectDir, 'detection-cache.json'),
+      JSON.stringify({
+        version: 6,
+        contextKey: 'readiness-remembered',
+        fetchedAt: 1_786_000_000_000,
+        validatedAt: 1_786_000_001_000,
+        generation: 1,
+        requestId: 1,
+        providers: [],
+        cliTools: [
+          {
+            tool: 'copilot',
+            trust: 'trusted',
+            installedVersion: '1.0.77',
+            testedVersion: '1.0.77',
+            compatibility: 'compatible',
+            auth: 'authenticated',
+            diagnosticState: 'ready',
+            probedAt: 1_786_000_000_000,
+            fingerprint: { dev: 1, ino: 2, size: 3, mtimeMs: 4 },
+          },
+        ],
+      }),
+    );
+
+    const context = await loadSeatSwapContext({
+      modelCache: undefined,
+      projectDir,
+      seat: 'build',
+      runner: { kind: 'cli', tool: 'codex' },
+      config: makeConfig(),
+    });
+
+    expect(switchSeatOffer(context)).toBeUndefined();
+    expect(context?.detectedTools).toEqual([]);
+  });
+
   it.each([
     {
       label: 'a list that names the project and serves it as configured',

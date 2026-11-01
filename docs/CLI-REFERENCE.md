@@ -99,7 +99,7 @@ splitbrief start [feature] [files...] \
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--planner <tool>` | string | from config | Planner tool: `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code`, `antigravity`, `ollama`, `lm-studio`, `llama-cpp`, `shell`, `agent`. The flag's help text is derived from `PLANNER_TOOL_IDS` (`src/core/schemas/enums.ts`), so `splitbrief start --help` always prints the admitted set. A CLI tool id here always selects the CLI; an API provider that reuses a CLI tool's id is configured in `.splitbrief/config.yaml` (`kind: api`) and cannot be selected by this flag. |
+| `--planner <tool>` | string | from config | Planner tool: `claude-code`, `codex`, `opencode`, `kilo-code`, `cursor`, `command-code`, `antigravity`, `ollama`, `lm-studio`, `llama-cpp`, `shell`, `agent`. `splitbrief start --help` prints the same list. A CLI tool id here always selects the CLI; an API provider that reuses a CLI tool's id is configured in `.splitbrief/config.yaml` (`kind: api`) and cannot be selected by this flag. |
 | `--planner-model <model>` | string | from config | Planner model (CLI and API planners). |
 | `--planner-command <cmd>` | string | from config | Custom planner command (when `--planner=shell`). |
 | `--planner-api-base <url>` | string | from config | Planner API base URL. Applies only to `api` runners; ignored (with a stderr warning) for other kinds. |
@@ -108,7 +108,7 @@ splitbrief start [feature] [files...] \
 | `--planner-output-format <format>` | enum | from config | Planner output format: `stream-json`, `jsonl`, `text`, or `opencode`. Applies to `cli`, `shell`, and `agent` runners. |
 | `--planner-context-length <tokens>` | number | from config | Planner context length in tokens. Consumed only by the `api` planner kind, where it sizes the request's `max_tokens` output budget; other kinds delegate the budget to their backend and ignore it. |
 | `--planner-effort <level>` | enum | — | Planner effort hint: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. The seat's tool accepts a subset and reports what it rejects; dropped with a warning on seats that cannot send it. |
-| `--implementer <provider>` | string | from config | Implementer provider: `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code`, `antigravity`, `ollama`, `lm-studio`, `llama-cpp`, `shell`, `agent`. The flag's help text is derived from the catalog's implementer role admission (`src/cli/options.ts`), so `splitbrief start --help` always prints the admitted set. A CLI tool id here always selects the CLI; an API provider that reuses a CLI tool's id is configured in `.splitbrief/config.yaml` (`kind: api`) and cannot be selected by this flag. |
+| `--implementer <provider>` | string | from config | Implementer provider: `claude-code`, `codex`, `opencode`, `kilo-code`, `cursor`, `command-code`, `antigravity`, `ollama`, `lm-studio`, `llama-cpp`, `shell`, `agent`. `splitbrief start --help` prints the same list. A CLI tool id here always selects the CLI; an API provider that reuses a CLI tool's id is configured in `.splitbrief/config.yaml` (`kind: api`) and cannot be selected by this flag. |
 | `--implementer-model <model>` | string | from config | Implementer model identifier. |
 | `--implementer-command <cmd>` | string | from config | Custom implementer command (when `--implementer=shell`). |
 | `--implementer-api-base <url>` | string | from config | Implementer API base URL. Applies only to `api` runners; ignored (with a stderr warning) for other kinds. |
@@ -116,7 +116,7 @@ splitbrief start [feature] [files...] \
 | `--implementer-args <arg>` | string | from config | Append one implementer CLI/shell argument. Repeatable; each use adds another argument. Applies to `cli`, `shell`, and `agent` runners. |
 | `--implementer-output-format <format>` | enum | from config | Implementer output format: `stream-json`, `jsonl`, `text`, or `opencode`. Applies to `cli`, `shell`, and `agent` runners. |
 | `--implementer-context-length <tokens>` | number | from config | Implementer context length in tokens. |
-| `--reviewer <tool>` | string | from config | Reviewer tool. Same admitted set as `--planner` — the flag's help text is derived from `PLANNER_TOOL_IDS` too. Without any `--reviewer-*` flag and without a `reviewer` block in config, the planner keeps the review seat. A CLI tool id here always selects the CLI; an API provider that reuses a CLI tool's id is configured in `.splitbrief/config.yaml` (`kind: api`) and cannot be selected by this flag. |
+| `--reviewer <tool>` | string | from config | Reviewer tool. Same tools as `--planner`. Without any `--reviewer-*` flag and without a `reviewer` block in config, the planner keeps the review seat. A CLI tool id here always selects the CLI; an API provider that reuses a CLI tool's id is configured in `.splitbrief/config.yaml` (`kind: api`) and cannot be selected by this flag. |
 | `--reviewer-model <model>` | string | from config | Reviewer model (CLI and API reviewers). |
 | `--reviewer-command <cmd>` | string | from config | Custom reviewer command (when `--reviewer=shell`). |
 | `--reviewer-api-base <url>` | string | from config | Reviewer API base URL. Applies only to `api` runners; ignored (with a stderr warning) for other kinds. |
@@ -889,7 +889,7 @@ There are no workflow modes. Every run plans in one session: one typed planner c
 
 | `kind` | What it is | Examples |
 |---|---|---|
-| `cli` | Known tool subprocess | `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code`, `antigravity` (binary `agy`) |
+| `cli` | Known tool subprocess | `claude-code`, `codex`, `opencode`, `kilo-code`, `cursor`, `command-code`, `antigravity` (binary `agy`) |
 | `api` | OpenAI-compatible HTTP endpoint | `ollama`, `lm-studio`, `llama-cpp` |
 | `shell` | Arbitrary command (stdin → stdout), no shell/network sandbox | Custom scripts via `--planner-command` / `--implementer-command` |
 | `agent` | Subprocess that writes files directly, no stdout extraction or shell/network sandbox | Custom file-writing tools |
