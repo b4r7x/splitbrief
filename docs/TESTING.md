@@ -624,8 +624,8 @@ When a testing rule appears in multiple docs, the canonical source is cited firs
 | Ink tested at the feature seam | this doc | `STRUCTURE.md` §Test strategy |
 | Fakes vs fixtures split | this doc §Where does this test go? | `STRUCTURE.md` §Test strategy |
 | Static as a trophy tier (no Zod shape tests) | this doc §When NOT to write a test | — |
-| Test behavior, not implementation | this doc §Core rules, §Forbidden patterns | `PRINCIPLES.md` rule 15 |
-| Neutral test voice | this doc §Core rules | `STRUCTURE.md` §No decorative comments, `PRINCIPLES.md` rule 10 |
+| Test behavior, not implementation | this doc §Core rules, §Forbidden patterns | `CODE-STANDARD.md` §6 |
+| Neutral test voice | this doc §Core rules | `STRUCTURE.md` §No decorative comments, `CODE-STANDARD.md` §6 |
 | Test escape hatches (`__testReset`, `_*Internal`) | `STORES-AND-UI.md` §Test escape hatches, §Cross-module writes within a store group | — |
 | Testing helper rules (no barrels, promote on 2+ consumers) | this doc §Where does this test go? | — |
 | Hook test rules (trivial covered transitively, non-trivial dedicated) | `HOOKS.md` §Rules of thumb | this doc §Non-trivial hooks, `STRUCTURE.md` §Test strategy |
@@ -892,5 +892,5 @@ Run it after a move, rename or deletion pass: `tsc` reports the same breakage, b
 - Skill: `test-behavior-not-implementation` — Kent C. Dodds Testing Trophy + TkDodo's testing principles. The spine of these rules.
 - Skill: `react-senior-guide` — React 19 patterns, hook contracts, anti-pattern checklist.
 - [`STRUCTURE.md`](./STRUCTURE.md) — file tree, test strategy summary, colocation rule, file-length thresholds.
-- [`PRINCIPLES.md`](./PRINCIPLES.md) — rule 15: test behavior, not implementation.
+- [`CODE-STANDARD.md` §6](./CODE-STANDARD.md#6-the-hard-conventions-enforced--summarized-linked) — test behavior, not implementation.
 - [`LAYERS.md`](./LAYERS.md) — layer boundaries that define what counts as a "boundary" test.

@@ -329,6 +329,6 @@ Fix: Zod → `core/schemas/`, TS-only → with producer or in consumer folder.
 - [LAYERS.md](./LAYERS.md) — runtime code layering
 - [STRUCTURE.md](./STRUCTURE.md) — file tree and folder shape
 - [NO-BARRELS.md](./NO-BARRELS.md) — why `index.ts` re-exports are banned
-- [PRINCIPLES.md](./PRINCIPLES.md) — one-page index of all architectural rules
+- [CODE-STANDARD.md §6](./CODE-STANDARD.md#6-the-hard-conventions-enforced--summarized-linked) — one-page index of all architectural rules
 - [Zod Documentation](https://zod.dev/) — schema library
 - [TypeScript — type-only imports](https://www.typescriptlang.org/docs/handbook/release-notes/typescript-3-8.html#type-only-imports-and-export)

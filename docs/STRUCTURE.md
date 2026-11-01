@@ -703,8 +703,7 @@ See [CLAUDE.md](https://github.com/b4r7x/splitbrief/blob/main/CLAUDE.md) for the
 
 ## References
 
-- [`PRINCIPLES.md`](./PRINCIPLES.md) — one-page index of all architectural rules.
-- [`CODE-STANDARD.md`](./CODE-STANDARD.md) — the SOTA review bar; consolidates the file-length triggers here into the split recipe and the reviewer checklist.
+- [`CODE-STANDARD.md`](./CODE-STANDARD.md) — the SOTA review bar and, in [§6](./CODE-STANDARD.md#6-the-hard-conventions-enforced--summarized-linked), the one-page index of all architectural rules; consolidates the file-length triggers here into the split recipe and the reviewer checklist.
 - [`HOOKS.md`](./HOOKS.md) — hook placement rules; companion to this doc.
 - [`STORES-AND-UI.md`](./STORES-AND-UI.md) — state architecture; same colocation principle.
 - [`TYPES.md`](./TYPES.md) — type placement and Zod schema conventions.

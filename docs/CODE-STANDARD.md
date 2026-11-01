@@ -8,13 +8,12 @@ Read this when you are about to write or review code and want to know "is this g
 |---|---|
 | Layer boundaries & import direction | [LAYERS.md](./LAYERS.md) |
 | File tree, feature anatomy, folder colocation, file-length triggers | [STRUCTURE.md](./STRUCTURE.md) |
-| The one-page rule index | [PRINCIPLES.md](./PRINCIPLES.md) |
-| Type placement, Zod vs TS, `z.infer` colocation | [TYPES.md](./TYPES.md) |
+| Type placement, Zod vs TS, `z.infer` colocation, `types.ts` naming | [TYPES.md](./TYPES.md) |
 | Error factory + domain bag, zero-class rule | [ERRORS.md](./ERRORS.md) |
 | React hook placement & test policy | [HOOKS.md](./HOOKS.md) |
 | Zero barrels | [NO-BARRELS.md](./NO-BARRELS.md) |
 | External stores, zero memoization | [STORES-AND-UI.md](./STORES-AND-UI.md#the-store-factory) |
-| Behavior-not-implementation tests | [TESTING.md](./TESTING.md) |
+| Test placement, forbidden patterns, fakes vs mocks, behavior-not-implementation tests | [TESTING.md](./TESTING.md) |
 | Automated pre-merge grep gates | [INVARIANTS.md](./INVARIANTS.md) |
 
 **Mental model.** Most *mechanical* rules are already enforced by `npm run test-ci` → [INVARIANTS.md](./INVARIANTS.md) (barrels, memo/`forwardRef`, raw `throw new Error`, runtime classes, `.js` import extension, engine→React). This doc exists for everything a grep cannot decide. When the standard and a mechanical gate overlap, the gate wins on enforcement; this doc explains the intent and the judgment around it.
@@ -101,7 +100,7 @@ Counter-rule: do **not** collapse scattered small files into one 460-LOC file wi
 
 ## 4. Parameter design
 
-This is the single most violated standard in the codebase, so the bar is explicit. It **tightens [PRINCIPLES.md](./PRINCIPLES.md) rule 22** — these are the operative thresholds:
+This is the single most violated standard in the codebase, so the bar is explicit. These are the operative thresholds:
 
 | Trigger | Requirement |
 |---|---|
@@ -112,7 +111,7 @@ This is the single most violated standard in the codebase, so the bar is explici
 
 The boolean-trap and transposition-hazard rows are **count-independent hard flags**: `createOpenAICompatProvider(id, baseURL, apiKeyEnv, false, overrides)` is a violation because of the bare `false` and the three adjacent strings, not because of arity.
 
-**Exemption** (carried from rule 22): a tiny *local, non-exported* math/helper primitive may stay positional (`row(key, text, width)`, `clamp(v, min, max)` *if* min/max are not transposable in practice). Exported = no exemption.
+**Exemption:** a tiny *local, non-exported* math/helper primitive may stay positional (`row(key, text, width)`, `clamp(v, min, max)` *if* min/max are not transposable in practice). Exported = no exemption.
 
 **Split oversized option objects by concern** — do not pass a 12-field grab bag. Recurring (projectDir, sessionId, state, bus) prefix → extract a `WorkflowContext`/`SessionRef` and pass `(ctx, { … })`.
 
@@ -144,25 +143,50 @@ When a function immediately fans its positional args into an options object for 
 
 ## 6. The hard conventions (enforced — summarized, linked)
 
-These are non-negotiable and (where noted) gated automatically. Do not re-derive them; follow the canonical doc.
+These are non-negotiable and (where noted) gated automatically. Do not re-derive them; follow the canonical doc. This table is the one-page rule index: each row links the doc that specifies the rule in full.
 
 | Convention | Doc | Auto-gate |
 |---|---|---|
-| Zero runtime classes (errors via factory bag) | [ERRORS.md](./ERRORS.md), [CLAUDE.md](https://github.com/b4r7x/splitbrief/blob/main/CLAUDE.md) | INVARIANTS #8 |
+| Zero runtime classes — production source uses pure functions + module-scoped state; errors via factory bag; a test fixture may use class syntax only when class behavior is under test | [ERRORS.md](./ERRORS.md), [CLAUDE.md](https://github.com/b4r7x/splitbrief/blob/main/CLAUDE.md) | INVARIANTS #8 |
 | ESM `.js` extension in every relative import | [CLAUDE.md](https://github.com/b4r7x/splitbrief/blob/main/CLAUDE.md) | INVARIANTS #16 |
 | Zero barrels / disguised barrels | [NO-BARRELS.md](./NO-BARRELS.md) | INVARIANTS #1, #1b |
-| Zero memoization (`useMemo`/`useCallback`/`React.memo`) | [STORES-AND-UI.md](./STORES-AND-UI.md#store-rules) | INVARIANTS #3 |
+| External stores via `useSyncExternalStore` — state lives in `src/stores/`, not React Context; zero memoization (`useMemo`/`useCallback`/`React.memo`) | [STORES-AND-UI.md](./STORES-AND-UI.md#store-rules) | INVARIANTS #3 |
 | No `forwardRef` / `useImperativeHandle` — extract to a store | [STORES-AND-UI.md](./STORES-AND-UI.md#store-rules) | INVARIANTS #3 |
 | Engine imports no React/Ink/`features`/`components`/`hooks`/`cli` | [LAYERS.md](./LAYERS.md) | INVARIANTS #12, #12b, #12c |
 | Errors at boundaries via `error()` + domain bag (no raw `throw new Error`) | [ERRORS.md](./ERRORS.md) | INVARIANTS #4 |
 | No unsafe `!` / broad `as` outside the sanctioned list | [CLAUDE.md](https://github.com/b4r7x/splitbrief/blob/main/CLAUDE.md) | review |
-| No decorative comments / section banners | [STRUCTURE.md](./STRUCTURE.md#no-decorative-comments) | review |
+| No decorative comments / section banners (`// ═══ X ═══`) — keep related exports near each other; the ordering is the documentation | [STRUCTURE.md](./STRUCTURE.md#no-decorative-comments) | review |
+| Screaming architecture — folder names say what the code does in the domain (`planning/`, `escalation/`, `validation/`), never which technical layer (`services/`, `use-cases/`, `controllers/`) | [STRUCTURE.md](./STRUCTURE.md#screaming-folders) | review |
+| Deep modules — small public surface, large hidden implementation; aim for a folder with 5+ internal files and one entry point | [STRUCTURE.md](./STRUCTURE.md#deep-modules-and-folder-colocation) | review |
+| Folder colocation for internal helpers — when a file grows, create a folder named after it and move its helpers in beside the entry file (`planning/run.ts` + siblings); no underscore prefix | [STRUCTURE.md](./STRUCTURE.md#deep-modules-and-folder-colocation) | review |
+| Ports + adapters in the same folder — an interface (`types.ts`) and its implementations (`cli.ts`, `api.ts`, `shell.ts`, …) live together; never move the port to a separate `ports/` folder | [LAYERS.md](./LAYERS.md#ports-and-adapters) | review |
+| Runtime vs compile-time split — Zod schemas (runtime validation) in `src/core/schemas/`; TypeScript types (compile-time only) inline or in a folder-local `types.ts`; a type inferred from a schema (`z.infer<>`) lives with the schema | [TYPES.md](./TYPES.md) | INVARIANTS #2 |
+| Type placement, three-case rule — one consumer → inline; several consumers in one folder → `types.ts` in that folder; cross-folder → with the producer (the file that creates values of the type) | [TYPES.md](./TYPES.md#three-case-rule--where-does-a-typescript-type-go) | review |
+| Screaming types — a type lives where its domain meaning is created, not in a central `core/types/` grab-bag; only truly cross-cutting types (fan-in > 30, ≥3 top-level folders) stay in `core/types/` | [TYPES.md](./TYPES.md#screaming-types) | review |
+| No giant merged files — when a merge would produce a file with >300 LOC and >1 responsibility, use a folder instead (§3) | [STRUCTURE.md](./STRUCTURE.md#file-length-thresholds) | review |
+| Prompts get their own folder (`src/engine/spec/prompts/`) — never inlined into orchestrator or runner code | [STRUCTURE.md](./STRUCTURE.md#prompts-folder) | review |
+| Test behavior, not implementation — no tests of trivial helpers, trivial hooks, mocks being called, or TS types; a behavior-bearing hook may get a colocated test, a trivial hook is covered by the consuming integration test; test at meaningful consumer boundaries | [STRUCTURE.md](./STRUCTURE.md#test-strategy), [HOOKS.md](./HOOKS.md), [TESTING.md](./TESTING.md) | review |
+| No backwards-compatibility shims — a refactor updates every import site in the same change; no re-export shim to smooth a migration (that would create a barrel) | [NO-BARRELS.md](./NO-BARRELS.md) | review |
+| DRY at the third occurrence — two copies of a pattern may stay local; a third triggers an extraction (§7) | this doc | review |
+| EventBus port — the engine emits all events through `src/engine/events/bus.ts`; UI, persistence, observability and hooks attach as sinks. `EngineEvent` is the single source of truth; `TuiEvent`, `OrchestratorEvent` and `callbacks.onEvent` are gone. **Event sinks are synchronous** (registered in order, throw isolated per sink) and **hook dispatch is sequential per event** (`pre_*` runs one hook at a time, deny short-circuits; `post_*`/`on_*` runs without awaiting) | [ENGINE.md](./ENGINE.md#eventbus) | INVARIANTS #10, #11, #13, #52 |
+| Repo-map context — the planner sees a token-budgeted symbol summary of the codebase per workflow: PageRank ranking, SQLite cache, opt-out via `codebase.enabled: false` | [CONFIGURATION.md §7](./CONFIGURATION.md#7-codebase) | none |
+| Hook system — user-extensible workflow lifecycle commands (unrelated to React hooks) fire at workflow events (`pre_task`, `post_commit`, etc.); a trust prompt prevents RCE | [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) | none |
+| One run contract — a run is a durable record whose status is derived once by `deriveRunStatus`; an open run stays continuable, `idle` is the pre-`START` phase and nothing resets to it, gates never reject, and continuing is one path (`continueRun`). Spend is a reported fact, never a gate or a routing input | [WORKFLOW.md](./WORKFLOW.md), [CONCEPTS.md](./CONCEPTS.md) | INVARIANTS #49–#51 |
+| Parameter objects for wide APIs — options object at ≥4 parameters, or ≥3 when exported or cross-boundary; no bare `boolean`, no two adjacent same-typed params; split oversized option objects by concern | this doc §4 | review |
 
 **Type-safety judgment items (not fully gated):**
 - **Single-source every closed set.** A union/enum (conflict kinds, context-fit, hook-event names, recovery outcomes) defined once — as a Zod `z.enum` over an `as const` tuple in `core/schemas/`, with the TS type via `z.infer`. Re-spelling the same literals in a second file (TS union ↔ Zod ↔ `Set`) is a drift hazard. Engine/UI copies must derive *from* the core schema, never the reverse.
 - **Exhaustive `switch` over a closed union ends in `assertNever`.** A value-returning switch with a pass-through `default: return x` silently degrades when the union grows. (`noImplicitReturns` is enabled in `tsconfig.json`; void switches still need an explicit exhaustiveness arm.)
 - **Narrow, don't assert.** Use the existing `isRecord` type guard instead of `as Record<string, unknown>`; re-validate hand-rebuilt shapes through their Zod schema instead of `as Config`. Reuse `BackendTokenUsageSchema` from its canonical owner, `src/engine/calls/usage.ts`, or `TaskIdSchema` rather than re-typing a token-usage shape or using a bare `string` for a branded ID.
 - **No config object built from fake data to satisfy a type.** Fabricating `{ name: 'unknown', runtime: 'node' }` just to call an engine function means the function's parameter is too wide — narrow it or thread the real value.
+
+---
+
+## Where does X go?
+
+For file placement, see [`STRUCTURE.md` §File placement decision tree](./STRUCTURE.md#file-placement-decision-tree) — the canonical flow covers Zod schemas, TypeScript types, React/Ink components, stores, pure primitives, infrastructure wrappers, domain logic, orchestration, CLI prep, and the barrel / length-threshold guardrails.
+
+For the per-layer reference (what each layer contains, acceptance criteria, prohibited imports, anti-patterns), see [`LAYERS.md`](./LAYERS.md).
 
 ---
 
@@ -186,13 +210,13 @@ Run top to bottom on any diff. The mechanical rows are mostly covered by `npm ru
 - [ ] No type satisfied by fabricated dummy data (§6).
 
 **DRY, dead code, naming**
-- [ ] No third copy of a pattern — extract at the 3rd occurrence ([PRINCIPLES.md](./PRINCIPLES.md) rule 17). Two copies may stay local; check an existing helper isn't simply mislayered first.
+- [ ] No third copy of a pattern — extract at the 3rd occurrence (§6). Two copies may stay local; check an existing helper isn't simply mislayered first.
 - [ ] No newly-dead exports (unused `export`, unused type alias, write-only field, unreachable switch arm, param the caller always overwrites). Drop `export` on module-private symbols; delete genuinely unused code (no "future use").
 - [ ] File name matches its primary export; no stutter; no duplicate sibling names; no misleading directory (§5).
 - [ ] No raw octal perms / magic literals where a named constant exists (`SECURE_FILE_MODE`, `SPLITBRIEF_DIR`).
 
 **Tests**
-- [ ] Tests assert observable behavior, not implementation — no `vi.mock` of `./` siblings, no `toHaveBeenCalledTimes` unless the call count *is* the contract ([TESTING.md](./TESTING.md), STRUCTURE rule 15).
+- [ ] Tests assert observable behavior, not implementation — no `vi.mock` of `./` siblings, no `toHaveBeenCalledTimes` unless the call count *is* the contract ([TESTING.md](./TESTING.md), §6).
 - [ ] No coupling to exact glyphs, spacing, or verbatim user-facing copy in rendered-frame assertions — assert stable signals (the id is flagged, an action exists), not `'▸ /usage'` or `'[3|]'`.
 - [ ] No `as any` fakes standing in for a real typed contract; no test of a trivial helper/wiring (`typeof x === 'function'`).
 - [ ] Check which reviewer check failures were marked pre-existing (also red at the run base). Confirm the review packet names them next to raw pass counts and records their keys in the Checks Log.
@@ -212,7 +236,17 @@ Run top to bottom on any diff. The mechanical rows are mostly covered by `npm ru
 
 ## References
 
-- [PRINCIPLES.md](./PRINCIPLES.md) — one-page rule index (this doc tightens rule 22).
 - [STRUCTURE.md](./STRUCTURE.md) — file tree, folder colocation, file-length triggers.
 - [LAYERS.md](./LAYERS.md) — layer boundaries and import direction.
 - [TYPES.md](./TYPES.md) · [ERRORS.md](./ERRORS.md) · [HOOKS.md](./HOOKS.md) · [NO-BARRELS.md](./NO-BARRELS.md) · [STORES-AND-UI.md](./STORES-AND-UI.md) · [TESTING.md](./TESTING.md) · [INVARIANTS.md](./INVARIANTS.md) — the canonical authorities this standard consolidates.
+- [BOOTSTRAP.md](./BOOTSTRAP.md) — how the app starts; where to add a bootstrap step.
+- [ARCHITECTURE.md](./ARCHITECTURE.md) — high-level data flow (CLI → stores → engine/UI).
+- [CLAUDE.md](https://github.com/b4r7x/splitbrief/blob/main/CLAUDE.md) — build and test commands, coding conventions, editorial rules.
+- The rules distil these sources: John Ousterhout — *A Philosophy of Software Design* (deep modules); screaming architecture (Milan Jovanović, Uncle Bob); ports-and-adapters (hexagonal); research on comparable AI CLIs (cline, continue, opencode, codex) in Q1 2026; the design decisions of the 2026-04 restructure.
+- [Google TypeScript Style Guide](https://google.github.io/styleguide/tsguide.html)
+- [AWS Prescriptive TypeScript Best Practices](https://docs.aws.amazon.com/prescriptive-guidance/latest/best-practices-cdk-typescript-iac/typescript-best-practices.html)
+- [Sandor Dargo — Deep vs Shallow Modules](https://www.sandordargo.com/blog/2023/01/25/deep-vs-shallow-modules)
+- [Milan Jovanović — Screaming Architecture](https://www.milanjovanovic.tech/blog/screaming-architecture)
+- [TkDodo — Please Stop Using Barrel Files](https://tkdodo.eu/blog/please-stop-using-barrel-files)
+- [Anthropic — Effective Harnesses for Long-Running Agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents)
+- Source trees: [cline](https://github.com/cline/cline/tree/main/src/core), [continue](https://github.com/continuedev/continue/tree/main/core), [opencode](https://github.com/sst/opencode/tree/dev/packages/opencode/src), [codex-rs](https://github.com/openai/codex/tree/main/codex-rs)

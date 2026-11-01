@@ -110,7 +110,7 @@ If yes to both, the file is a disguised barrel regardless of its name. Delete it
 
 ## References
 
-- [PRINCIPLES.md](./PRINCIPLES.md) — one-page rule index
+- [CODE-STANDARD.md §6](./CODE-STANDARD.md#6-the-hard-conventions-enforced--summarized-linked) — one-page rule index
 - [NO-BARRELS.md](./NO-BARRELS.md) — no re-export-only files anywhere in `src/`
 - [TYPES.md](./TYPES.md) — type placement, `z.infer` colocation
 - [LAYERS.md](./LAYERS.md) — layer boundaries, `simple-git` single-source rule
