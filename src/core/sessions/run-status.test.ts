@@ -119,28 +119,6 @@ describe('deriveRunStatus', () => {
     ).toMatchObject({ stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } } });
   });
 
-  it('carries the files the stop found the cut brief had changed', () => {
-    const interruptedStep = {
-      step: { kind: 'brief', taskId: taskId('T002'), attempt: 0 },
-      source: 'user',
-      cut: 'mid-step',
-      at: '2026-09-01T00:00:00.000Z',
-    } as const;
-    expect(
-      stopOf({
-        phase: 'implementing',
-        interruptedStep: { ...interruptedStep, kept: ['src/a.ts'] },
-      }),
-    ).toMatchObject({
-      stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step', kept: ['src/a.ts'] } },
-    });
-    // A state written before the stop recorded its files claims none.
-    expect(stopOf({ phase: 'implementing', interruptedStep })).toMatchObject({
-      stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } },
-    });
-    expect(stopOf({ phase: 'implementing', interruptedStep })).not.toHaveProperty('stop.on.kept');
-  });
-
   it('reads an interrupted step with no partial as paused at a boundary', () => {
     const status = stopOf({
       phase: 'implementing',
@@ -167,11 +145,11 @@ describe('deriveRunStatus', () => {
     ['reviewing-briefs', 'briefs'],
   ] as const)('reports %s as waiting on the %s gate', (phase, gate) => {
     expect(stopOf({ phase })).toMatchObject({
-      stop: { kind: 'waiting-for-you', on: { kind: 'gate', gate, reopens: false } },
+      stop: { kind: 'waiting-for-you', on: { kind: 'gate', gate } },
     });
   });
 
-  it('reports a recorded failure with its message', () => {
+  it('reports a recorded failure', () => {
     const status = stopOf({
       phase: 'idle',
       lastFailure: {
@@ -181,7 +159,7 @@ describe('deriveRunStatus', () => {
       },
     });
     expect(status).toMatchObject({
-      stop: { kind: 'stopped', on: { kind: 'failed', message: 'Planning failed.' } },
+      stop: { kind: 'stopped', on: { kind: 'failed' } },
     });
   });
 
@@ -262,7 +240,7 @@ describe('deriveRunStatus', () => {
       liveness: 'not-alive',
     });
     expect(status).toMatchObject({
-      stop: { kind: 'waiting-for-you', on: { kind: 'gate', gate: 'plan', reopens: true } },
+      stop: { kind: 'waiting-for-you', on: { kind: 'gate', gate: 'plan' } },
       resumeAt: { kind: 'gate', gate: 'plan' },
     });
   });

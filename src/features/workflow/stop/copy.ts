@@ -45,8 +45,10 @@ export interface StopBylineInput {
     readonly elapsedMs: number;
   } | null;
   readonly error?: string | undefined;
-  /** The run's record once the stop has settled it at rest: where it stopped, and what it kept. */
+  /** The run's record once the stop has settled it at rest: where it stopped. */
   readonly record?: RunRecord | null | undefined;
+  /** The run view's `stopKept`: the files the stop of a run at rest kept from the brief it cut. */
+  readonly stopKept: readonly string[];
 }
 
 export interface StopByline {
@@ -102,7 +104,7 @@ function subject(input: StopBylineInput): string {
  */
 function stoppedLead(input: StopBylineInput, tone: StateTone): ConversationRowSegment[] {
   const status = input.record?.status;
-  const kept = (stopKeptFiles(input.parked, input.record)?.length ?? 0) > 0;
+  const kept = (stopKeptFiles(input.parked, input.record, input.stopKept)?.length ?? 0) > 0;
   if (status?.kind !== 'open') {
     const brief = input.parked?.taskId ?? input.currentTaskId;
     if (brief === null) return stopLeadParts('Stopped', tone);
@@ -135,13 +137,12 @@ function stoppedLead(input: StopBylineInput, tone: StateTone): ConversationRowSe
 export function stopKeptFiles(
   parked: StopBylineInput['parked'],
   record: RunRecord | null | undefined,
+  kept: readonly string[],
 ): readonly string[] | null {
   const status = record?.status;
   if (status?.kind === 'open') {
     if (status.stop.on.kind !== 'paused') return null;
-    return status.resumeAt.kind === 'brief' && status.stop.on.at === 'mid-step'
-      ? (status.stop.on.kept ?? [])
-      : [];
+    return status.resumeAt.kind === 'brief' && status.stop.on.at === 'mid-step' ? kept : [];
   }
   if (parked === null) return null;
   return parked.kind === 'mid-brief' ? parked.kept : [];

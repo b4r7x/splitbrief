@@ -945,6 +945,12 @@ describe('WorkflowScreen showing a run at rest', () => {
       execution: preparedExecution(projectDir, 'continued run'),
     }));
     runWorkflow.mockImplementation(async (opts) => {
+      publishEvent(opts, {
+        type: 'planner_questions_asked',
+        ts: FIXED_TS,
+        phase: 'planning',
+        questions,
+      });
       void opts.callbacks.onPlannerReply?.({
         call: 'plan',
         text: questionsText(questions),

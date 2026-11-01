@@ -523,7 +523,8 @@ describe('Esc in a planner question', () => {
   /**
    * Asks `rounds` in order; each round waits for its reply before the next one opens. `inGrace`
    * freezes the clock at the moment the panel opens, so the first key lands inside its typeahead
-   * grace; `running: false` leaves the run without a running planner, where Esc has no stop sheet.
+   * grace; `running: false` leaves the run without a running planner and publishes no phase event,
+   * so Esc has no stop sheet.
    */
   async function askRounds(
     rounds: readonly (readonly ClarificationQuestion[])[],
@@ -547,16 +548,33 @@ describe('Esc in a planner question', () => {
         });
       }
       for (const questions of rounds) {
-        replies.push(
-          await options.callbacks.onPlannerReply?.({
-            call: 'research',
-            text: '',
-            answers: [],
-            answered: false,
+        // The engine names a round's questions on the bus before it waits on the reply.
+        if (opts.running !== false && questions.length > 0) {
+          options.tuiSink?.({
+            type: 'planner_questions_asked',
+            ts: Date.now(),
+            phase: 'researching',
             questions: [...questions],
-            ...opts.conversation,
-          }),
-        );
+          });
+        }
+        const reply = await options.callbacks.onPlannerReply?.({
+          call: 'research',
+          text: '',
+          answers: [],
+          answered: false,
+          questions: [...questions],
+          ...opts.conversation,
+        });
+        replies.push(reply);
+        // The engine records the reply on the bus, which settles the round.
+        if (opts.running !== false && reply !== undefined) {
+          options.tuiSink?.({
+            type: 'user_message',
+            ts: Date.now(),
+            phase: 'researching',
+            text: ('message' in reply ? reply.message : reply).text,
+          });
+        }
       }
       return new Promise<Summary>(() => {});
     };

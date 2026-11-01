@@ -295,6 +295,13 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
      * next brief starts on the new seat. Absent for a pause the operator asked for.
      */
     cause: z.literal('seat-change').optional(),
+    /** The declared files a brief cut mid-step had changed; absent when it kept none. */
+    kept: stringArray.optional(),
+  }),
+  /** The error that stopped the run, as the state records it for the step the run retries. */
+  phaseEvent('run_failed').extend({
+    step: StepRefSchema,
+    message: z.string(),
   }),
   phaseEvent('workflow_config').extend({
     /** Written by runs before modes were retired; read only to replay them. */
@@ -441,6 +448,8 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   phaseEvent('spec_approved'),
   phaseEvent('spec_rejected'),
   phaseEvent('spec_regenerated').extend({ comment: z.string() }),
+  /** The plan card opened and waits for the operator's approval. */
+  phaseEvent('plan_card_opened'),
   phaseEvent('plan_approved'),
   phaseEvent('plan_rejected'),
   phaseEvent('plan_regenerated').extend({ comment: z.string() }),
@@ -478,6 +487,10 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     snapshotId: z.string(),
     conflictedPaths: stringArray,
   }),
+  /** Apply began to write the reviewed result to the checkout; the apply review runs inside it. */
+  noPhaseEvent('apply_started'),
+  /** Apply ended, whatever its outcome. */
+  noPhaseEvent('apply_finished'),
   /**
    * `/run reject confirm` put back the run's recorded changes: the files it put back or removed
    * (`removed` is the part of `restored` the run had created), the paths it left as the user
@@ -862,6 +875,10 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     taskId: z.string().optional(),
   }),
   phaseEvent('queue_cleared').extend({ count: z.number().int().nonnegative() }),
+  /** The questions the run waits on the operator to answer, before the answer arrives. */
+  phaseEvent('planner_questions_asked').extend({
+    questions: z.array(ClarificationQuestionSchema).min(1),
+  }),
   phaseEvent('user_message').extend({
     text: z.string(),
     qa: z.array(AnsweredQuestionSchema).optional(),

@@ -23,8 +23,6 @@ export interface QuestionPromptState {
   focus: 'menu' | 'answer' | 'composer';
   openedAt: number;
   complete: boolean;
-  /** The round Esc closed, kept on screen until the reply answers it or another prompt opens. */
-  unanswered: readonly ClarificationQuestion[];
 }
 
 /** The default as the card shows it: a confirm's boolean reads Yes or No. */
@@ -64,7 +62,6 @@ const initial: QuestionPromptState = {
   focus: 'composer',
   openedAt: 0,
   complete: false,
-  unanswered: [],
 };
 const store = createStore<QuestionPromptState>(initial);
 
@@ -96,7 +93,6 @@ function close(): void {
     ...initial,
     hint: state.hint,
     questions: [],
-    unanswered: state.questions ?? [],
   }));
 }
 

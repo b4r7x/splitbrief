@@ -262,6 +262,7 @@ export async function withContinuationLoop<T>(
       source,
       at: 'mid-step',
       step,
+      ...(kept.length > 0 && { kept: [...kept] }),
     });
     const userText = await onContinuationNeeded(partialOutput, 'mid-step', kept);
     throwIfAborted(ctx.signal);

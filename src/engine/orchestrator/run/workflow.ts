@@ -172,13 +172,24 @@ async function runScopedWorkflow(
   };
 
   // Why the run stopped belongs on the state, not in a status the exit path picks:
-  // the session record and every resume decision derive from it afterwards.
-  const recordFailure = (state: WorkflowState, message: string): WorkflowState =>
-    recordLastFailure({ projectDir, sessionId }, state, {
-      step: resumeStep(state),
+  // the session record and every resume decision derive from it afterwards. The log names it too,
+  // so every surface that shows the run reads it from one fold.
+  const recordFailure = (state: WorkflowState, message: string): WorkflowState => {
+    const step = resumeStep(state);
+    const next = recordLastFailure({ projectDir, sessionId }, state, {
+      step,
       message,
       at: nowIso(),
     });
+    (wctx?.bus ?? workflowBus)?.publish({
+      type: 'run_failed',
+      ts: Date.now(),
+      phase: next.phase,
+      step,
+      message,
+    });
+    return next;
+  };
 
   // Every other abort parks the step it cut, so the run reads `open · paused`.
   // A crash that never reached this point still reads `interrupted`, which is

@@ -6,6 +6,7 @@ import { routerStore } from '../../../stores/navigation/router.js';
 import { composerLiveStore } from '../../../stores/ui/composer-live.js';
 import { createDraftDocument } from '../../../core/composer/document.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
@@ -449,21 +450,20 @@ describe('Session options after a stop cut a brief', () => {
   });
 
   it('reads the kept files from the record of a stopped run at rest', () => {
-    const atRest = (kept?: readonly string[]) =>
+    const atRest = (kept: readonly string[] = []) => {
       routerStore.init({
         screen: 'workflow',
         run: makeRunRecord({
           status: {
             kind: 'open',
-            stop: {
-              kind: 'stopped',
-              on: { kind: 'paused', at: 'mid-step', ...(kept !== undefined && { kept }) },
-            },
+            stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } },
             resumeAt: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
           },
         }),
         execution: { kind: 'at-rest' },
       });
+      runViewStore.__testReset({ stopKept: kept });
+    };
 
     atRest();
     expect(readStopSheetFooter()).toBeNull();

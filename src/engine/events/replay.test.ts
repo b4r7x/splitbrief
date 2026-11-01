@@ -59,6 +59,11 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
     at: 'boundary',
     step: { kind: 'gate', gate: 'plan' },
   },
+  run_failed: {
+    phase: 'planning',
+    step: { kind: 'planner', call: 'plan' },
+    message: 'the planner exited with code 1',
+  },
   workflow_config: {
     phase: 'researching',
     mode: 'standard',
@@ -191,6 +196,7 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
   spec_approved: { phase: 'reviewing-spec' },
   spec_rejected: { phase: 'reviewing-spec' },
   spec_regenerated: { phase: 'specifying', comment: 'tighten the scope' },
+  plan_card_opened: { phase: 'reviewing-plan' },
   plan_approved: { phase: 'reviewing-plan' },
   plan_rejected: { phase: 'reviewing-plan' },
   plan_regenerated: { phase: 'planning', comment: 'split the second brief' },
@@ -218,6 +224,8 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
     forced: false,
   },
   snapshot_restore_conflict: { snapshotId: 'snap-1', conflictedPaths: ['src/b.ts'] },
+  apply_started: {},
+  apply_finished: {},
   run_rejected: {
     restored: ['src/a.ts', 'src/c.ts'],
     removed: ['src/c.ts'],
@@ -412,6 +420,10 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
   queue_drained: { phase: 'implementing', count: 1, ids: ['msg-1'] },
   steerable_call: { phase: 'implementing', seat: 'build', taskId: 'T001' },
   queue_cleared: { phase: 'implementing', count: 1 },
+  planner_questions_asked: {
+    phase: 'researching',
+    questions: [{ id: 'log', type: 'input', text: 'Which log?', default: 'session.jsonl' }],
+  },
   user_message: { phase: 'implementing', text: 'keep going' },
   planner_attachments_dropped: {
     phase: 'researching',

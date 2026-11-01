@@ -167,12 +167,21 @@ describe('bylineText', () => {
 });
 
 describe('openRunByline', () => {
-  const OPEN = { continuable: true, wait: null, width: WIDE, now: NOW } as const;
+  const OPEN = {
+    continuable: true,
+    wait: null,
+    planCard: false,
+    failure: null,
+    width: WIDE,
+    now: NOW,
+  } as const;
 
   it('points a run ready to apply at its result menu', () => {
     expect(
       openRunByline({
         wait: null,
+        planCard: false,
+        failure: null,
         continuable: false,
         now: NOW,
         width: WIDE,
@@ -185,6 +194,8 @@ describe('openRunByline', () => {
     expect(
       openRunByline({
         wait: null,
+        planCard: false,
+        failure: null,
         continuable: false,
         now: NOW,
         width: WIDE,
@@ -296,9 +307,10 @@ describe('openRunByline', () => {
     expect(
       openRunByline({
         ...OPEN,
+        planCard: true,
         status: {
           kind: 'open',
-          stop: { kind: 'waiting-for-you', on: { kind: 'gate', gate: 'plan', reopens: true } },
+          stop: { kind: 'waiting-for-you', on: { kind: 'gate', gate: 'plan' } },
           resumeAt: { kind: 'gate', gate: 'plan' },
         },
       }),
@@ -313,7 +325,7 @@ describe('openRunByline', () => {
           ...OPEN,
           status: {
             kind: 'open',
-            stop: { kind: 'waiting-for-you', on: { kind: 'gate', gate, reopens: false } },
+            stop: { kind: 'waiting-for-you', on: { kind: 'gate', gate } },
             resumeAt: { kind: 'gate', gate },
           },
         }),
@@ -410,9 +422,10 @@ describe('openRunByline', () => {
     expect(
       openRunByline({
         ...OPEN,
+        failure: 'Planning failed.',
         status: {
           kind: 'open',
-          stop: { kind: 'stopped', on: { kind: 'failed', message: 'Planning failed.' } },
+          stop: { kind: 'stopped', on: { kind: 'failed' } },
           resumeAt: { kind: 'planner', call: 'spec' },
         },
       }),
@@ -500,15 +513,14 @@ describe('openRunByline', () => {
     expect(
       openRunByline({
         wait: null,
+        planCard: false,
+        failure: null,
         continuable: false,
         now: NOW,
         width: WIDE,
         status: {
           kind: 'open',
-          stop: {
-            kind: 'stopped',
-            on: { kind: 'failed', message: 'Session has no saved state to read.' },
-          },
+          stop: { kind: 'stopped', on: { kind: 'failed' } },
           resumeAt: { kind: 'planner', call: 'research' },
         },
       }),
@@ -550,6 +562,8 @@ describe('openRunByline', () => {
       expect(
         openRunByline({
           wait: null,
+          planCard: false,
+          failure: null,
           continuable: false,
           now: NOW,
           width,
@@ -584,9 +598,7 @@ describe('openRunByline', () => {
       },
       resumeAt: { kind: 'brief', taskId: taskId('T002'), attempt: 1 },
     };
-    expect(openRunByline({ wait: null, continuable: true, status, width: 40, now: NOW })).toBe(
-      'Seat down · ⏎ to decide',
-    );
+    expect(openRunByline({ ...OPEN, status, width: 40 })).toBe('Seat down · ⏎ to decide');
   });
 
   it('sheds the reason before the action when the line will not fit', () => {
@@ -595,9 +607,7 @@ describe('openRunByline', () => {
       stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } },
       resumeAt: { kind: 'brief', taskId: taskId('T003'), attempt: 0 },
     } as const;
-    expect(openRunByline({ wait: null, continuable: true, status, width: 30, now: NOW })).toBe(
-      'Type a correction or ⏎ to con…',
-    );
+    expect(openRunByline({ ...OPEN, status, width: 30 })).toBe('Type a correction or ⏎ to con…');
   });
 });
 
@@ -606,6 +616,8 @@ describe('openRunByline on a halt whose action was chosen', () => {
   function haltByline(issue: RecoveryIssue): string {
     return openRunByline({
       wait: null,
+      planCard: false,
+      failure: null,
       continuable: true,
       now: NOW,
       width: WIDE,
@@ -688,6 +700,8 @@ describe('openRunByline on a halt whose action was chosen', () => {
     const issue = makeRecoveryIssue({ status: 'applying', selectedAction: 'retry-same-worker' });
     const parts = openRunBylineParts({
       wait: null,
+      planCard: false,
+      failure: null,
       continuable: true,
       now: NOW,
       width: 30,
@@ -725,16 +739,12 @@ describe('fitted byline parts', () => {
   it.each([
     [{ kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } }, 'Stopped at the plan', 'warning'],
     [
-      { kind: 'waiting-for-you', on: { kind: 'gate', gate: 'plan', reopens: true } },
+      { kind: 'waiting-for-you', on: { kind: 'gate', gate: 'plan' } },
       'Waiting at the plan',
       'warning',
     ],
     [{ kind: 'waiting-for-you', on: { kind: 'question' } }, 'Waiting for your answer', 'warning'],
-    [
-      { kind: 'stopped', on: { kind: 'failed', message: 'Disk full' } },
-      'Stopped by an error · Disk full',
-      'error',
-    ],
+    [{ kind: 'stopped', on: { kind: 'failed' } }, 'Stopped by an error · Disk full', 'error'],
     [{ kind: 'stopped', on: { kind: 'interrupted' } }, 'Stopped at the plan', 'warning'],
   ] as const)('keeps %s structured and preserves its joined text', (stop, reason, reasonTone) => {
     const input = {
@@ -744,6 +754,8 @@ describe('fitted byline parts', () => {
         resumeAt: { kind: 'planner', call: 'plan' },
       },
       wait: null,
+      planCard: false,
+      failure: 'Disk full',
       continuable: true,
       now: NOW,
       width: WIDE,
@@ -777,14 +789,30 @@ describe('fitted byline parts', () => {
       resumeAt: { kind: 'brief', taskId: taskId('T002'), attempt: 1 },
     };
     expect(
-      openRunBylineParts({ wait: null, status, continuable: true, width: 40, now: NOW }),
+      openRunBylineParts({
+        wait: null,
+        planCard: false,
+        failure: null,
+        status,
+        continuable: true,
+        width: 40,
+        now: NOW,
+      }),
     ).toEqual([
       { text: 'Seat down', tone: 'warning' },
       { text: ' · ', tone: 'textDim' },
       { text: '⏎ to decide', tone: 'textDim' },
     ]);
     expect(
-      openRunBylineParts({ wait: null, status, continuable: true, width: 12, now: NOW }),
+      openRunBylineParts({
+        wait: null,
+        planCard: false,
+        failure: null,
+        status,
+        continuable: true,
+        width: 12,
+        now: NOW,
+      }),
     ).toEqual([{ text: '⏎ to decide', tone: 'textDim' }]);
   });
 
@@ -794,7 +822,15 @@ describe('fitted byline parts', () => {
     [{ kind: 'running' }, 'accent'],
   ] as const)('colors %s from its state', (status, reasonTone) => {
     expect(
-      openRunBylineParts({ wait: null, status, continuable: true, width: WIDE, now: NOW })[0],
+      openRunBylineParts({
+        wait: null,
+        planCard: false,
+        failure: null,
+        status,
+        continuable: true,
+        width: WIDE,
+        now: NOW,
+      })[0],
     ).toEqual({
       text:
         status.kind === 'running'
@@ -898,9 +934,11 @@ it('keeps status receipt text and fitting while coloring Apply undone and Ended'
 it('keeps the separator inside a failed reason dim', () => {
   const parts = openRunBylineParts({
     wait: null,
+    planCard: false,
+    failure: 'Disk full',
     status: {
       kind: 'open',
-      stop: { kind: 'stopped', on: { kind: 'failed', message: 'Disk full' } },
+      stop: { kind: 'stopped', on: { kind: 'failed' } },
       resumeAt: { kind: 'planner', call: 'plan' },
     },
     continuable: true,
@@ -920,6 +958,8 @@ it('keeps the review seat in an at-rest halt title', () => {
   const issue = makeRecoveryIssue({ reason: 'planner-call-failed', seat: 'review' });
   const parts = openRunBylineParts({
     wait: null,
+    planCard: false,
+    failure: null,
     status: {
       kind: 'open',
       stop: { kind: 'waiting-for-you', on: { kind: 'halt', issue } },

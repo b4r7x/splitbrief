@@ -26,6 +26,7 @@ function input(overrides: Partial<StopBylineInput> = {}): StopBylineInput {
     elapsedMs: 3_000,
     questionPending: false,
     suite: null,
+    stopKept: [],
     ...overrides,
   };
 }
@@ -53,8 +54,8 @@ it('keeps a check seat word and separators distinct during a requested pause', (
 });
 
 /**
- * A stop the run settled from: the park names no brief, and the record says where it stopped and
- * which files the cut brief kept.
+ * A stop the run settled from: the park names no brief, the record says where it stopped, and the
+ * run view which files the cut brief kept.
  */
 function settled(
   resumeAt: StepRef,
@@ -69,10 +70,11 @@ function settled(
     record: makeRunRecord({
       status: {
         kind: 'open',
-        stop: { kind: 'stopped', on: { kind: 'paused', at, ...(kept !== undefined && { kept }) } },
+        stop: { kind: 'stopped', on: { kind: 'paused', at } },
         resumeAt,
       },
     }),
+    stopKept: kept ?? [],
   });
 }
 

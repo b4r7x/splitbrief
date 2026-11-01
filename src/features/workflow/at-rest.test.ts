@@ -75,7 +75,7 @@ describe('atRestRailStages', () => {
       'gate',
       {
         kind: 'waiting-for-you',
-        on: { kind: 'gate', gate: 'spec', reopens: false },
+        on: { kind: 'gate', gate: 'spec' },
       } satisfies StopReason,
       'cancelled',
     ],
@@ -97,11 +97,7 @@ describe('atRestRailStages', () => {
       { kind: 'stopped', on: { kind: 'interrupted' } } satisfies StopReason,
       'cancelled',
     ],
-    [
-      'failed',
-      { kind: 'stopped', on: { kind: 'failed', message: 'boom' } } satisfies StopReason,
-      'failed',
-    ],
+    ['failed', { kind: 'stopped', on: { kind: 'failed' } } satisfies StopReason, 'failed'],
   ])('wears the %s mark the stop earned', (_label, stop, expected) => {
     const stages = atRestRailStages(recordAt({ status: openWith(stop), phase: 'implementing' }));
     expect(stages[1]?.status).toBe(expected);
@@ -330,7 +326,7 @@ describe('atRestBriefMark', () => {
       'cancelled',
     ],
     ['a stop', openWith({ kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } }), 'cancelled'],
-    ['a failure', openWith({ kind: 'stopped', on: { kind: 'failed', message: 'x' } }), 'failed'],
+    ['a failure', openWith({ kind: 'stopped', on: { kind: 'failed' } }), 'failed'],
     [
       'a halt',
       openWith({ kind: 'waiting-for-you', on: { kind: 'halt', issue: makeRecoveryIssue() } }),
@@ -410,11 +406,7 @@ describe('atRestComposer', () => {
       { kind: 'waiting-for-you', on: { kind: 'halt', issue: makeRecoveryIssue() } },
       '⏎ to decide',
     ],
-    [
-      'failed',
-      { kind: 'stopped', on: { kind: 'failed', message: 'Planning failed.' } },
-      '⏎ to retry the step',
-    ],
+    ['failed', { kind: 'stopped', on: { kind: 'failed' } }, '⏎ to retry the step'],
   ] satisfies [string, StopReason, string][])(
     'leaves the ⏎ verb of a %s run to its byline',
     (_, stop, action) => {
@@ -423,6 +415,8 @@ describe('atRestComposer', () => {
       const byline = openRunBylineParts({
         status,
         wait: null,
+        planCard: false,
+        failure: null,
         continuable: true,
         width: 120,
         now: Date.now(),
@@ -495,7 +489,7 @@ describe('atRestComposer', () => {
   it('takes commands only when the saved state cannot be read', () => {
     const composer = atRestComposer(
       makeRunRecord({
-        status: openWith({ kind: 'stopped', on: { kind: 'failed', message: 'unreadable' } }),
+        status: openWith({ kind: 'stopped', on: { kind: 'failed' } }),
       }),
     );
     expect(composer.continuable).toBe(false);

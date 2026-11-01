@@ -990,6 +990,13 @@ const checkpointPredicates = [
       includesAll('Running in another process', '● Apply', '⏎ for home…')(context) &&
       excludesAll('Applying to your checkout', 'when Apply finishes', 'Ready to apply')(context),
   ],
+  // The log names when the other process's Apply began, so its clock counts from there.
+  [
+    checkpointId('at-rest-other-process-applying-clock'),
+    (context) =>
+      includesAll('Applying to your checkout · 0:06', '● Apply', '⏎ for home…')(context) &&
+      excludesAll('Running in another process', 'when Apply finishes', 'Ready to apply')(context),
+  ],
   [checkpointId('ready-composer-focus'), includesAll('Ready to apply')],
   [checkpointId('ready-slash-command'), includesAll('Ready to apply', '› /settings')],
   [checkpointId('ready-empty-diff'), includesAll('Ready to apply')],

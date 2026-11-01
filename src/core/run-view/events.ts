@@ -1,5 +1,6 @@
 import type { CrewSeatId } from '../crew/identity.js';
 import type { FileAction, RunnerKind, TaskCompletionMethod } from '../schemas/enums.js';
+import type { ClarificationQuestion } from '../schemas/question.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
 import type { StepRef } from '../schemas/run-step.js';
 import type { CheckResult } from '../schemas/task.js';
@@ -27,6 +28,17 @@ export type RecoveryPromptedEvent = {
   at?: StepRef | undefined;
 };
 export type RecoveryResolvedEvent = { type: 'recovery_resolved'; issueId: string };
+
+export type PlannerQuestionsAskedEvent = {
+  type: 'planner_questions_asked';
+  questions: readonly ClarificationQuestion[];
+};
+export type TurnInterruptedEvent = {
+  type: 'turn_interrupted';
+  kept?: readonly string[] | undefined;
+};
+export type RunFailedEvent = { type: 'run_failed'; message: string };
+export type RunRejectedEvent = { type: 'run_rejected'; restored: readonly string[] };
 
 export type TasksPlannedEvent = {
   type: 'tasks_planned';

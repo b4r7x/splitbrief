@@ -2679,24 +2679,31 @@ const repliedQuestionsProjection: WorkflowFixtureProjection = {
   ],
 };
 
+const UNANSWERED_ROUND: ClarificationQuestion[] = [
+  {
+    id: 'module',
+    type: 'choice',
+    text: 'Which module should change?',
+    options: ['src/auth.ts', 'src/session.ts'],
+    default: 'src/auth.ts',
+  },
+  { id: 'api', type: 'confirm', text: 'Keep the public API?', default: true },
+];
+
 const unansweredQuestionsProjection: WorkflowFixtureProjection = {
   ...questionProjection,
   scenarioId: scenarioId('workflow-question-unanswered'),
   questionPreview: 'closed',
-  question: {
-    prompt: 'Type your answer…',
-    answer: '',
-    questions: [
-      {
-        id: 'module',
-        type: 'choice',
-        text: 'Which module should change?',
-        options: ['src/auth.ts', 'src/session.ts'],
-        default: 'src/auth.ts',
-      },
-      { id: 'api', type: 'confirm', text: 'Keep the public API?', default: true },
-    ],
-  },
+  events: [
+    ...questionProjection.events,
+    {
+      type: 'planner_questions_asked',
+      ts: FIXED_TS + 200,
+      phase: 'planning',
+      questions: UNANSWERED_ROUND,
+    },
+  ],
+  question: { prompt: 'Type your answer…', answer: '', questions: UNANSWERED_ROUND },
 };
 
 const consultQuestionProjection: WorkflowFixtureProjection = {

@@ -317,6 +317,7 @@ describe('the stop byline through the footer', () => {
     elapsedMs: 4_000,
     questionPending: false,
     suite: null,
+    stopKept: [],
   };
 
   it('names the wait while processes are asked to exit', () => {

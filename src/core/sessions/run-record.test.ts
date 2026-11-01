@@ -49,10 +49,7 @@ describe('loadRunRecord', () => {
     expect(loaded.hydration.kind).toBe('missing');
     expect(loaded.status).toEqual({
       kind: 'open',
-      stop: {
-        kind: 'stopped',
-        on: { kind: 'failed', message: 'Session has no saved state to read.' },
-      },
+      stop: { kind: 'stopped', on: { kind: 'failed' } },
       resumeAt: { kind: 'planner', call: 'plan' },
     });
     expect(loaded.feature).toBe('');

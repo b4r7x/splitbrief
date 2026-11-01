@@ -246,13 +246,13 @@ export function readStopMenuRows(): StopRow[] {
  * no others. Without a stop to say so, a brief that started or failed may have written.
  */
 function runHasChanges(): boolean {
-  const { briefs, phase } = runViewStore.get();
+  const { briefs, phase, stopKept } = runViewStore.get();
   const view = selectTaskListView(briefs);
   if (view.finished > 0) return true;
   const route = routerStore.get();
   const record =
     route.screen === 'workflow' && route.execution.kind === 'at-rest' ? route.run : null;
-  const kept = stopKeptFiles(stopStore.get().parked, record);
+  const kept = stopKeptFiles(stopStore.get().parked, record, stopKept);
   if (kept !== null) return kept.length > 0;
   return selectRunningBrief(briefs, phase).current !== null || view.failed > 0;
 }

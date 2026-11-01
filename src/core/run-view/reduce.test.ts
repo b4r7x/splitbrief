@@ -195,3 +195,83 @@ describe('reduceRunView halt', () => {
     },
   );
 });
+
+const event = (type: string, ts: number, fields: Record<string, unknown> = {}) => ({
+  type,
+  ts,
+  ...fields,
+});
+
+describe('reduceRunView ask', () => {
+  const round = [{ id: 'module', type: 'input', text: 'Which module?' }];
+  const asked = event('planner_questions_asked', 1_000, { phase: 'planning', questions: round });
+
+  it('holds an asked round until the user sends the next message', () => {
+    expect(fold([asked]).questions).toEqual(round);
+    expect(fold([asked, event('user_message', 2_000, { text: '' })]).questions).toBeNull();
+  });
+
+  it('takes the next round over the first', () => {
+    const next = [{ id: 'api', type: 'confirm', text: 'Keep the API?' }];
+    const second = event('planner_questions_asked', 2_000, { questions: next });
+    expect(fold([asked, second]).questions).toEqual(next);
+  });
+
+  it('forgets the round of an earlier run start', () => {
+    expect(fold([asked, event('workflow_started', 2_000)]).questions).toBeNull();
+  });
+
+  it.each(['plan_approved', 'plan_rejected', 'plan_regenerated', 'workflow_started'])(
+    'closes an opened plan card on %s',
+    (type) => {
+      const opened = fold([event('plan_card_opened', 1_000)]);
+      expect(opened.planCard).toBe(true);
+      expect(reduceRunView(opened, event(type, 2_000)).planCard).toBe(false);
+    },
+  );
+});
+
+describe('reduceRunView stop', () => {
+  const cut = event('turn_interrupted', 1_000, { kept: ['a.ts', 'b.ts'] });
+
+  it('holds the files a stop kept, and none for a stop that kept nothing', () => {
+    expect(fold([cut]).stopKept).toEqual(['a.ts', 'b.ts']);
+    expect(fold([cut, event('turn_interrupted', 2_000)]).stopKept).toEqual([]);
+  });
+
+  it('drops a kept file a reject put back', () => {
+    const rejected = event('run_rejected', 2_000, { restored: ['a.ts', 'c.ts'] });
+    expect(fold([cut, rejected]).stopKept).toEqual(['b.ts']);
+    const view = fold([cut]);
+    expect(reduceRunView(view, event('run_rejected', 2_000, { restored: ['c.ts'] }))).toBe(view);
+  });
+
+  it('holds the error a failed step stopped on', () => {
+    expect(fold([event('run_failed', 1_000, { message: 'Disk full' })]).failure).toBe('Disk full');
+  });
+
+  it.each(['workflow_resumed', 'workflow_started'])('clears the stop on %s', (type) => {
+    const view = fold([cut, event('run_failed', 1_500, { message: 'Disk full' })]);
+    expect(reduceRunView(view, event(type, 2_000))).toMatchObject({ stopKept: [], failure: null });
+  });
+});
+
+describe('reduceRunView apply', () => {
+  it('starts the clock with the Apply and stops it when the Apply ends', () => {
+    const started = fold([event('apply_started', 1_000)]);
+    expect(started.apply).toEqual({ since: 1_000, until: null });
+    expect(reduceRunView(started, event('apply_finished', 4_000)).apply).toEqual({
+      since: 1_000,
+      until: 4_000,
+    });
+  });
+
+  it('changes nothing for an end with no start', () => {
+    expect(reduceRunView(EMPTY_RUN_VIEW, event('apply_finished', 4_000))).toBe(EMPTY_RUN_VIEW);
+  });
+
+  it('forgets the Apply of an earlier run start', () => {
+    const view = fold([event('apply_started', 1_000), event('workflow_started', 2_000)]);
+    expect(view.apply).toBeNull();
+  });
+});

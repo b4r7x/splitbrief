@@ -42,15 +42,13 @@ function leadAfterStopAt(resumeAt: StepRef, kept: readonly string[] = []): strin
     run: makeRunRecord({
       status: {
         kind: 'open',
-        stop: {
-          kind: 'stopped',
-          on: { kind: 'paused', at: 'mid-step', ...(kept.length > 0 && { kept }) },
-        },
+        stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } },
         resumeAt,
       },
     }),
     execution: { kind: 'at-rest' },
   });
+  runViewStore.__testReset({ stopKept: kept });
   stopStore.request('stop-now');
   stopStore.park('mid-brief', null, null);
   const ui = renderFeature(<Lead />);

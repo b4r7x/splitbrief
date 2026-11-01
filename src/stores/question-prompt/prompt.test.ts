@@ -219,26 +219,14 @@ it('keeps per-answer bodies and metadata in an exact one-shot batch', () => {
   expect(store.takeAnswerBatch()).toBeUndefined();
 });
 
-it('keeps the round Esc closed until the reply settles it or another round opens', () => {
-  const round: ClarificationQuestion[] = [
+it('closes the round and keeps its hint', () => {
+  store.setHint('Type your answer…');
+  store.setQuestions([
     { id: 'seat', type: 'choice', text: 'Which seat?', options: ['Planner', 'Builder'] },
     { id: 'files', type: 'input', text: 'Which files?' },
-  ];
-  store.setHint('Type your answer…');
-  store.setQuestions(round);
-  expect(store.get().unanswered).toEqual([]);
+  ]);
   store.answer(plainUserMessage('Planner'));
   store.close();
-  expect(store.get()).toMatchObject({ questions: [], unanswered: round, answers: [] });
+  expect(store.get()).toMatchObject({ questions: [], answers: [] });
   expect(store.get().hint).toBe('Type your answer…');
-
-  store.setQuestions([{ id: 'ready', type: 'confirm', text: 'Proceed?' }]);
-  expect(store.get().unanswered).toEqual([]);
-  store.close();
-  store.clearHint();
-  expect(store.get().unanswered).toEqual([]);
-  store.setQuestions(round);
-  store.close();
-  store.setHint('Reply to the planner…');
-  expect(store.get().unanswered).toEqual([]);
 });

@@ -790,6 +790,7 @@ export async function parkStoppedRun(
     source: 'user',
     at: cut,
     step,
+    ...(kept.length > 0 && { kept: [...kept] }),
   });
   return next;
 }

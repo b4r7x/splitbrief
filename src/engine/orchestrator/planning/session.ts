@@ -734,6 +734,7 @@ export async function runPlanApproval(
     if (correction === '') {
       try {
         const confirmations = planConfirmations(current.tasks, projectDir, current.plan);
+        bus.publish({ type: 'plan_card_opened', ts: Date.now(), phase: current.phase });
         const result = await wctx.callbacks.onApprovalNeeded(
           'plan',
           cardPath,

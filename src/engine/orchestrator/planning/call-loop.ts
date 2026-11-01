@@ -51,8 +51,9 @@ export function waitForPlannerReply(
 }
 
 /**
- * Puts a planner question to the user. After Decide for me the empty reply answers at once, so
- * every question takes its default; a reply that chose Decide for me records it for the run.
+ * Puts a planner question to the user, and names its structured questions on the bus. After Decide
+ * for me the empty reply answers at once, so every question takes its default; a reply that chose
+ * Decide for me records it for the run.
  */
 export async function askOperator(
   ctx: Pick<PlannerCallbacksContext, 'callbacks' | 'sinks' | 'signal' | 'bus'> & SessionRef,
@@ -60,6 +61,14 @@ export async function askOperator(
   asked: PlannerConversation,
 ): Promise<{ state: WorkflowState; reply: UserMessageInput | PlannerReplyAnswer | undefined }> {
   if (state.decideForMe === true) return { state, reply: plainUserMessage('') };
+  if (asked.questions.length > 0) {
+    ctx.bus.publish({
+      type: 'planner_questions_asked',
+      ts: Date.now(),
+      phase: state.phase,
+      questions: [...asked.questions],
+    });
+  }
   const reply = await waitForPlannerReply(ctx, asked);
   if (reply === undefined || !('decideForMe' in reply)) return { state, reply };
   return { state: recordDecideForMe(ctx, state), reply };
