@@ -3410,33 +3410,37 @@ describe('consult answer rows', () => {
   });
 
   it.each([
-    ['rewrite-task', [taskId('T006')], 'new fix brief T006'],
-    ['split-task', [taskId('T006'), taskId('T007')], 'new fix briefs T006, T007'],
-    ['guidance', [taskId('T006'), taskId('T007')], 'guidance for T006, T007'],
-    ['ask-user', null, 'asks you'],
-    ['verify', null, 're-runs K1'],
-    ['accept', null, 'accepts the blockers: It is public API'],
-    ['cannot', null, 'says it cannot be done'],
-  ] as const)('renders the planner answer to a stuck review as %s', (action, newTaskIds, words) => {
-    const rows = rowsFor({
-      type: 'consult_answered',
-      ts: 0,
-      phase: 'final-review',
-      taskId: taskId('T004'),
-      seat: 'plan',
-      reason: 'no-progress',
-      action,
-      diagnosis: 'The fix brief edits the wrong file.',
-      newTaskIds: newTaskIds === null ? null : [...newTaskIds],
-      ...(action === 'verify' && { checkIds: ['K1'] }),
-      ...(action === 'accept' && { note: 'It is public API' }),
-    });
+    ['rewrite-task', [taskId('T006')], 'new fix brief T006', undefined],
+    ['split-task', [taskId('T006'), taskId('T007')], 'new fix briefs T006, T007', undefined],
+    ['guidance', [taskId('T006'), taskId('T007')], 'guidance for T006, T007', undefined],
+    ['ask-user', null, 'asks you', undefined],
+    ['verify', null, 're-runs K1', undefined],
+    ['accept', null, 'accepts the blockers: It is public API', 'It is public API'],
+    ['cannot', null, 'says it cannot be done', undefined],
+    ['accept', null, 'accepts the blockers', undefined],
+  ] as const)(
+    'renders the planner answer to a stuck review as %s',
+    (action, newTaskIds, words, note) => {
+      const rows = rowsFor({
+        type: 'consult_answered',
+        ts: 0,
+        phase: 'final-review',
+        taskId: taskId('T004'),
+        seat: 'plan',
+        reason: 'no-progress',
+        action,
+        diagnosis: 'The fix brief edits the wrong file.',
+        newTaskIds: newTaskIds === null ? null : [...newTaskIds],
+        ...(action === 'verify' && { checkIds: ['K1'] }),
+        ...(note === undefined ? {} : { note }),
+      });
 
-    expect(rows.map(rowText)).toEqual([
-      `PLAN ${arrow} review stuck after T004: ${words} · The fix brief edits the wrong file.`,
-    ]);
-    expect(rows[0]?.segments[0]).toMatchObject({ text: 'PLAN', tone: 'planner' });
-  });
+      expect(rows.map(rowText)).toEqual([
+        `PLAN ${arrow} review stuck after T004 · ${words} · The fix brief edits the wrong file.`,
+      ]);
+      expect(rows[0]?.segments[0]).toMatchObject({ text: 'PLAN', tone: 'planner' });
+    },
+  );
 
   it.each([undefined, 'review'] as const)(
     'renders a decision-confirm as one row counting the confirmed decisions with seat %s',

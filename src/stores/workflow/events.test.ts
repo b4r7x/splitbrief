@@ -248,6 +248,50 @@ describe('eventsStore — append via addEvent', () => {
     expect((result[result.length - 1] as { taskId: string }).taskId).toBe('T999');
   });
 
+  it('keeps the opening request and a detached-HEAD warning past MAX_EVENTS activity events', () => {
+    const request: EngineEvent = {
+      type: 'user_message',
+      ts: 1,
+      phase: 'planning',
+      text: 'Show the checkout warning with the activity.',
+    };
+    const warning: EngineEvent = {
+      type: 'warning',
+      ts: 2,
+      phase: 'planning',
+      message: [
+        'Repository is in a detached HEAD state.',
+        'The run leaves its changes uncommitted in your working tree; a commit you make on a detached HEAD belongs to no branch and is easy to lose.',
+        'Fix: Check out a branch (e.g. `git switch -c splitbrief/work`) before you commit the changes.',
+      ].join('\n'),
+    };
+    const activities = Array.from({ length: MAX_EVENTS + 1 }, (_, index) =>
+      makeRunnerActivity({
+        ts: 3 + index,
+        sequence: index + 1,
+        activityId: `call-1:tool:${index + 1}`,
+      }),
+    );
+    const log: EngineEvent[] = [request, warning, ...activities];
+    const keptActivities = activities.slice(activities.length - (MAX_EVENTS - 2));
+    const expected = [request, warning, ...keptActivities];
+
+    const folded = log.reduce<EngineEvent[]>(mergeEvent, []);
+    for (const event of log) addEvent(event);
+    const live = eventsStore.get().events;
+    const replay = mergeEventLog(log);
+
+    expect(folded).toEqual(expected);
+    expect(live).toEqual(folded);
+    expect(replay).toEqual(folded);
+    expect(folded).toHaveLength(MAX_EVENTS);
+    expect(live).toHaveLength(MAX_EVENTS);
+    expect(replay).toHaveLength(MAX_EVENTS);
+    expect([folded[0], folded[1]]).toEqual([request, warning]);
+    expect([live[0], live[1]]).toEqual([request, warning]);
+    expect([replay[0], replay[1]]).toEqual([request, warning]);
+  });
+
   it('hard-caps all-structural task_started streams at MAX_EVENTS', () => {
     const first = makeTaskStart({
       taskId: taskId('T001'),
@@ -255,17 +299,17 @@ describe('eventsStore — append via addEvent', () => {
       title: 'first',
       total: MAX_EVENTS + 1,
     });
+    const log: EngineEvent[] = [first];
     let events = mergeEvent([], first);
     for (let i = 2; i <= MAX_EVENTS; i += 1) {
-      events = mergeEvent(
-        events,
-        makeTaskStart({
-          taskId: taskId(`T${String((i % 998) + 2).padStart(3, '0')}`),
-          index: i - 1,
-          title: `task-${i}`,
-          total: MAX_EVENTS + 1,
-        }),
-      );
+      const next = makeTaskStart({
+        taskId: taskId(`T${String((i % 998) + 2).padStart(3, '0')}`),
+        index: i - 1,
+        title: `task-${i}`,
+        total: MAX_EVENTS + 1,
+      });
+      log.push(next);
+      events = mergeEvent(events, next);
     }
     expect(events).toHaveLength(MAX_EVENTS);
 
@@ -275,10 +319,17 @@ describe('eventsStore — append via addEvent', () => {
       title: 'overflow',
       total: MAX_EVENTS + 1,
     });
+    log.push(overflow);
     const capped = mergeEvent(events, overflow);
     expect(capped).toHaveLength(MAX_EVENTS);
     expect(capped[0]).not.toBe(first);
     expect(capped[capped.length - 1]).toBe(overflow);
+
+    const replay = mergeEventLog(log);
+    expect(replay).toHaveLength(MAX_EVENTS);
+    expect(replay).toEqual(capped);
+    expect(replay[0]).not.toBe(first);
+    expect(replay[replay.length - 1]).toBe(overflow);
   });
 
   it('coalesces consecutive planner-text events', () => {

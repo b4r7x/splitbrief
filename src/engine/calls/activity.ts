@@ -4,6 +4,11 @@ import { stripTerminalControls } from '../../utils/display-text.js';
 import { sha256Hex } from '../../utils/sha256.js';
 import { projectRelativePathLabel } from '../../utils/path-links.js';
 import { assertNever, isRecord } from '../../utils/type-guards.js';
+import {
+  releaseCallActivityMemory,
+  releaseToolUseActivityMemory,
+  retainToolDeltaTarget,
+} from './activity-memory.js';
 import type { RunnerCallActivityKindSchema, RunnerCallActivityStageSchema } from './schema.js';
 import type { RunnerCallEvent, RunnerCallWarning } from './types.js';
 import { normalizeRunnerCallWarning, showsRunnerCallWarningOnPrimarySurface } from './warnings.js';
@@ -66,18 +71,28 @@ export function projectRunnerCallActivity(
       return null;
     case 'call_tool_use_delta': {
       const name = event.name ?? event.toolUseId ?? 'unknown';
-      return toolActivity({
+      const toolUseId = event.toolUseId;
+      const activity = toolActivity({
         callId: event.callId,
         sequence,
         stage: event.inputDelta.trim().length > 0 ? 'updated' : 'started',
-        toolUseId: event.toolUseId,
+        toolUseId,
         name,
         input: parseToolInputDelta(event.inputDelta),
         rootDir,
       });
+      if (activity === null || toolUseId === null) return activity;
+      const retained = retainToolDeltaTarget(event.callId, toolUseId, activity);
+      return {
+        ...activity,
+        kind: retained.kind,
+        label: retained.label,
+        redacted: retained.redacted,
+        ...(retained.target !== undefined && { target: retained.target }),
+      };
     }
-    case 'call_tool_use_done':
-      return toolActivity({
+    case 'call_tool_use_done': {
+      const activity = toolActivity({
         callId: event.callId,
         sequence,
         stage: 'completed',
@@ -86,6 +101,9 @@ export function projectRunnerCallActivity(
         input: event.toolUse.input,
         rootDir,
       });
+      releaseToolUseActivityMemory(event.callId, event.toolUse.id);
+      return activity;
+    }
     case 'call_session_id':
       return null;
     case 'call_artifact':
@@ -110,6 +128,7 @@ export function projectRunnerCallActivity(
         }),
       );
     case 'call_error':
+      releaseCallActivityMemory(event.callId);
       return buildActivity({
         activityId: `${event.callId}:terminal`,
         stage: event.status,
@@ -121,8 +140,10 @@ export function projectRunnerCallActivity(
       });
     // A success is told by its settled batch and the block after it; only a failure is news.
     case 'call_completed':
-    case 'call_runtime_status':
     case 'call_started':
+      releaseCallActivityMemory(event.callId);
+      return null;
+    case 'call_runtime_status':
     case 'call_usage':
     case 'call_stalled':
     case 'call_stall_cleared':
@@ -296,7 +317,11 @@ function toolUseDetails(
     return { kind: 'glob', label: `matching ${pattern}`, target: pattern };
   }
   if (isTaskTool(normalized, agentType)) {
-    return { kind: 'task', label: `task ${agentType ?? name}`, target: agentType ?? name };
+    return {
+      kind: 'task',
+      label: `task ${agentType ?? name}`,
+      ...(agentType !== undefined && { target: agentType }),
+    };
   }
 
   const target = safeCallTarget(url);
