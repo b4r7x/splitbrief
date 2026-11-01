@@ -5,6 +5,7 @@ import {
   RESULT_MENU_LEGEND,
   resultMenuFindingLines,
   resultMenuHeight,
+  resultMenuNoteLines,
   resultMenuRows,
   resultMenuTitle as titleParts,
   resultRowCommand,
@@ -170,7 +171,7 @@ describe('resultMenuHeight', () => {
     expect(resultMenuHeight(input, 120)).toBe(stopMenuLayout(resultMenuRows(input), 120).height);
   });
 
-  it('adds one row for the note while it asks', () => {
+  it('adds the row of a one-row note while it asks', () => {
     const asking = {
       override: true,
       findings: ['missing null check'],
@@ -183,6 +184,16 @@ describe('resultMenuHeight', () => {
     );
     const menu = { ...asking, confirming: false };
     expect(resultMenuHeight(menu, 120)).toBe(stopMenuLayout(resultMenuRows(menu), 120).height);
+  });
+
+  it('adds every wrapped row of a long note while it asks', () => {
+    const note = Array.from({ length: 40 }, (_, index) => `word${index}`).join(' ');
+    const asking = { override: true, findings: ['one', 'two'], note, confirming: true, files: 4 };
+    const noteRows = resultMenuNoteLines(note, 80).length;
+    expect(noteRows).toBeGreaterThan(1);
+    expect(resultMenuHeight(asking, 80)).toBe(
+      stopMenuLayout(resultMenuRows(asking), 80).height + noteRows + 2,
+    );
   });
 });
 

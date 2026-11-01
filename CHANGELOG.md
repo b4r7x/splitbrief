@@ -511,6 +511,9 @@
 - When the first tool check fails or cannot run and its card does not fit on home, the line above the input says so and how to retry, and the crew line stops saying it is still detecting tools.
 - Warnings now say in plain words what went wrong and name the file involved. They also say what SPLITBRIEF does next.
 - When you continue a run that stopped while your recovery choice was applied, the screen no longer shows the build as failed for a moment.
+- In a short terminal, the result menu, the stop sheet, the plan card, the recovery menu, planner questions and confirm prompts keep the row Enter acts on in view.
+- The panel of a halt no longer shows part of a secret that a long question, error or implementer note cut in two.
+- The output of a passing check no longer keeps part of a secret that color or the output limit split.
 
 ## [0.1.0] - 2026-08-07
 

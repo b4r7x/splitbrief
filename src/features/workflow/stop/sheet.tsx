@@ -2,14 +2,13 @@ import { plainUserMessage } from '../../../core/types/user-input.js';
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import { Box, useInput } from 'ink';
 import { borderStyleFor } from '../../../lib/glyphs.js';
-import { listRowLead } from '../../../components/list-row.js';
 import { fitKeyLegend } from '../../../core/key-legend.js';
 import { useStaticSelector } from '../../../hooks/use-static-selector.js';
 import { slashHandoffPending } from '../slash-handoff.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { assertNever } from '../../../utils/type-guards.js';
-import { TextSpans } from '../../../components/text-spans.js';
+import { MenuRows } from './menu-rows.js';
 import {
   cancelBoundaryPause,
   requestBoundaryPause,
@@ -22,6 +21,7 @@ import {
   STOP_SHEET_LEGEND,
   STOP_SHEET_PARKED_LEGEND,
   STOP_SHEET_TITLE,
+  stopMenuChrome,
   stopMenuLayout,
   type StopRow,
   type StopRowId,
@@ -70,6 +70,8 @@ export function StopSheet({
     rows.some((row) => row.id === 'leave') ? STOP_SHEET_PARKED_LEGEND : STOP_SHEET_LEGEND,
     Math.max(1, layout.width - 4),
   );
+  const boxHeight = height ?? layout.height;
+  const chrome = stopMenuChrome(boxHeight, layout.bodyRows);
 
   const { selectedIndex } = useStaticSelector<StopRow>({
     items: rows,
@@ -77,6 +79,7 @@ export function StopSheet({
     // brief, so the cursor is pinned to its row id rather than to a slot End run can slide into.
     keyOf: (row) => row.id,
     shouldHandleInput: () => !slashHandoffPending(),
+    isIndexActionable: () => chrome.listRows > 0,
     onSelect: (row) => {
       overlayStore.close();
       performStop(row.id);
@@ -90,33 +93,34 @@ export function StopSheet({
   return (
     <Box
       width={layout.width}
-      height={height ?? layout.height}
-      borderStyle={borderStyleFor('single')}
-      borderColor={t.accent}
-      paddingX={1}
+      height={boxHeight}
+      {...(chrome.framed && {
+        borderStyle: borderStyleFor('single'),
+        borderColor: t.accent,
+      })}
+      paddingX={chrome.framed ? 1 : 2}
       flexDirection="column"
       overflow="hidden"
       flexShrink={0}
     >
-      <Text color={t.textDim} wrap="truncate-end">
-        {fitKeyLegend(
-          footer === null ? title : `${title} · ${footer}`,
-          Math.max(1, layout.width - 4),
-        )}
-      </Text>
-      <Box height={layout.bodyRows} flexDirection="column" flexShrink={0}>
-        {layout.options.map(({ row, parts }, index) => (
-          <Box key={row.id} flexDirection="column">
-            {parts.map((line, lineIndex) => (
-              <Text key={lineIndex} color={index === selectedIndex ? t.accent : t.textDim}>
-                {listRowLead(index === selectedIndex && lineIndex === 0 ? 'active' : 'default')}
-                <TextSpans parts={line} selected={index === selectedIndex} />
-              </Text>
-            ))}
-          </Box>
-        ))}
+      {chrome.titled && (
+        <Text color={t.textDim} wrap="truncate-end">
+          {fitKeyLegend(
+            footer === null ? title : `${title} · ${footer}`,
+            Math.max(1, layout.width - 4),
+          )}
+        </Text>
+      )}
+      <Box height={chrome.listRows} flexDirection="column" flexShrink={0}>
+        <MenuRows
+          options={layout.options}
+          selectedIndex={selectedIndex}
+          marked
+          rowBudget={chrome.listRows}
+          width={layout.width - 4}
+        />
       </Box>
-      <Text color={t.textDim}>{legend}</Text>
+      {chrome.legend && <Text color={t.textDim}>{legend}</Text>}
     </Box>
   );
 }

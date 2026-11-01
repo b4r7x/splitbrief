@@ -2,11 +2,11 @@ import { segmentsForRowText } from '../../../utils/display-text.js';
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import { Box, useInput } from 'ink';
 import { borderStyleFor } from '../../../lib/glyphs.js';
-import { listRowLead } from '../../../components/list-row.js';
 import { fitKeyLegend } from '../../../core/key-legend.js';
 import { useStaticSelector } from '../../../hooks/use-static-selector.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { stopMenuLayout } from '../stop/options.js';
+import { stopMenuChrome, stopMenuLayout } from '../stop/options.js';
+import { MenuRows } from '../stop/menu-rows.js';
 import { slashHandoffPending } from '../slash-handoff.js';
 import { TextSpans } from '../../../components/text-spans.js';
 import {
@@ -57,12 +57,15 @@ function ResultMenuBody({
   const input = { override, findings, note, confirming, files };
   const rows = resultMenuRows(input);
   const layout = stopMenuLayout(rows, cols);
+  const boxHeight = height ?? resultMenuHeight(input, cols);
+  const chrome = stopMenuChrome(boxHeight, layout.bodyRows);
 
   const { selectedIndex } = useStaticSelector<ResultRow>({
     items: rows,
     isActive: focused,
     keyOf: (row) => row.id,
     shouldHandleInput: () => !slashHandoffPending(),
+    isIndexActionable: () => chrome.listRows > 0,
     onSelect: (row) => {
       if (row.id === 'apply' && override) {
         onConfirmingChange(true);
@@ -93,12 +96,14 @@ function ResultMenuBody({
     focused ? RESULT_MENU_LEGEND : RESULT_MENU_UNFOCUSED_LEGEND,
     Math.max(1, layout.width - 4),
   );
-  const boxHeight = height ?? resultMenuHeight(input, cols);
-  // Border, title and legend take four rows and the actions keep theirs. The findings take up to
-  // half of the rest, and the note the other rows; a note taller than that ends on an ellipsis.
-  const bodyRows = boxHeight - 4 - layout.bodyRows;
-  const noteRows = Math.max(1, bodyRows - Math.min(findings.length, Math.ceil(bodyRows / 2)));
-  const wrappedNote = confirming ? resultMenuNoteLines(note, cols) : [];
+  // The findings take up to half of the rows the chrome leaves, and the note the other rows; a note
+  // taller than that ends on an ellipsis.
+  const bodyRows = chrome.extraRows;
+  const noteRows = Math.max(
+    Math.min(1, bodyRows),
+    bodyRows - Math.min(findings.length, Math.ceil(bodyRows / 2)),
+  );
+  const wrappedNote = confirming && noteRows > 0 ? resultMenuNoteLines(note, cols) : [];
   const noteLines =
     wrappedNote.length <= noteRows
       ? wrappedNote
@@ -115,39 +120,37 @@ function ResultMenuBody({
     <Box
       width={layout.width}
       height={boxHeight}
-      borderStyle={borderStyleFor('single')}
-      borderColor={focused ? t.accent : t.border}
-      borderDimColor={!focused}
-      paddingX={1}
+      {...(chrome.framed && {
+        borderStyle: borderStyleFor('single'),
+        borderColor: focused ? t.accent : t.border,
+        borderDimColor: !focused,
+      })}
+      paddingX={chrome.framed ? 1 : 2}
       flexDirection="column"
       overflow="hidden"
       flexShrink={0}
     >
-      <Text color={t.textDim} wrap="truncate-end">
-        <TextSpans parts={segmentsForRowText(titleParts, title)} />
-      </Text>
+      {chrome.titled && (
+        <Text color={t.textDim} wrap="truncate-end">
+          <TextSpans parts={segmentsForRowText(titleParts, title)} />
+        </Text>
+      )}
       {findingLines.map((line, index) => (
         <Text key={index} color={t.text} wrap="truncate-end">
           {line}
         </Text>
       ))}
-      <Box height={layout.bodyRows} flexDirection="column" flexShrink={0}>
-        {layout.options.map(({ row, parts }, index) => {
-          // The mark follows the keyboard: while the composer holds it, ⏎ answers no row.
-          const marked = focused && index === selectedIndex;
-          return (
-            <Box key={row.id} flexDirection="column">
-              {parts.map((line, lineIndex) => (
-                <Text key={lineIndex} color={marked ? t.accent : t.textDim}>
-                  {listRowLead(marked && lineIndex === 0 ? 'active' : 'default')}
-                  <TextSpans parts={line} selected={marked} />
-                </Text>
-              ))}
-            </Box>
-          );
-        })}
+      <Box height={chrome.listRows} flexDirection="column" flexShrink={0}>
+        {/* The mark follows the keyboard: while the composer holds it, ⏎ answers no row. */}
+        <MenuRows
+          options={layout.options}
+          selectedIndex={selectedIndex}
+          marked={focused}
+          rowBudget={chrome.listRows}
+          width={layout.width - 4}
+        />
       </Box>
-      <Text color={t.textDim}>{legend}</Text>
+      {chrome.legend && <Text color={t.textDim}>{legend}</Text>}
     </Box>
   );
 }

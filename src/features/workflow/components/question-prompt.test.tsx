@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { Box } from 'ink';
 import { renderFeature, flushEffects } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
@@ -29,6 +30,37 @@ describe('QuestionPrompt', () => {
     expect(frame).not.toContain('clipboard');
     expect(frame).not.toContain('\u001b');
 
+    ui.unmount();
+  });
+
+  it.each([1, 2, 3])('keeps the first line of the prompt in view in %i rows', (rows) => {
+    const ui = renderFeature(
+      <Box height={rows} overflow="hidden" flexDirection="column">
+        <QuestionPrompt hint={MULTILINE_HINT} width={80} clampedBoxRows={rows} />
+      </Box>,
+    );
+
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Task review: T001 - Run command');
+    ui.unmount();
+  });
+
+  it('keeps the second line of the prompt in a 3-row box, from the composer text column', () => {
+    const ui = renderFeature(
+      <QuestionPrompt hint={MULTILINE_HINT} width={80} clampedBoxRows={3} />,
+    );
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Validation: npm test');
+    expect(frame.split('\n')[0]).toMatch(/^ {2}\S/);
+    ui.unmount();
+  });
+
+  it('takes no row when the terminal leaves it none', () => {
+    const ui = renderFeature(
+      <QuestionPrompt hint={MULTILINE_HINT} width={80} clampedBoxRows={0} />,
+    );
+
+    expect(ui.lastFrame() ?? '').toBe('');
     ui.unmount();
   });
 

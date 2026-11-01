@@ -1,12 +1,13 @@
 import { ThemeText as Text, useTheme } from '../../../../components/theme.js';
 import { Box } from 'ink';
 import { borderStyleFor } from '../../../../lib/glyphs.js';
-import { listRowLead } from '../../../../components/list-row.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import {
   REVIEW_COMMENT_HINTS,
   REVIEW_DOCUMENT_HINTS,
   REVIEW_CONFIRMS_INDENT,
+  reviewConfirmsCount,
+  reviewDocumentFit,
   reviewDocumentForm,
   reviewDocumentOptions,
   reviewDocumentRowLines,
@@ -14,7 +15,9 @@ import {
 } from '../../prompt-rows/approval.js';
 import { approvalTextWidth } from '../../prompt-rows/measure.js';
 import { fitKeyLegend } from '../../../../core/key-legend.js';
+import { SOFT_SEP } from '../../../../core/separators.js';
 import { MARK_SLOT_CELLS } from '../../../../components/row-leading.js';
+import { MenuRows } from '../../stop/menu-rows.js';
 
 export interface DocumentReviewPromptProps {
   artifact: ReviewArtifact;
@@ -42,9 +45,17 @@ export function DocumentReviewPrompt({
   const options = reviewDocumentOptions(artifact);
   const width = approvalTextWidth(cols);
   const form = reviewDocumentForm({ artifact, confirms, cols, budgetRows });
+  const fit = reviewDocumentFit({
+    form,
+    artifact,
+    cols,
+    boxRows: clampedBoxRows ?? Number.POSITIVE_INFINITY,
+  });
   // A comment being typed approves nothing, so where the legend was shed the confirms rows teach
   // the two keys that are still live instead.
   const commentLegendInConfirms = commenting && !form.legend;
+  // A panel with no row for the confirms line says it on the row that approves.
+  const confirmsOnRow = form.confirmsText !== null && !fit.confirms;
 
   return (
     <Box
@@ -57,7 +68,7 @@ export function DocumentReviewPrompt({
       overflow="hidden"
       flexShrink={0}
     >
-      {form.confirmsText === null ? null : (
+      {form.confirmsText === null || !fit.confirms ? null : (
         <Box
           paddingLeft={REVIEW_CONFIRMS_INDENT}
           height={form.confirmsText.split('\n').length}
@@ -72,19 +83,22 @@ export function DocumentReviewPrompt({
           )}
         </Box>
       )}
-      {options.map((option, index) => {
-        const active = commenting ? option.command === 'comment' : index === selectedIndex;
-        return (
-          <Text key={option.command}>
-            <Text color={active ? t.accent : t.textDim}>
-              {listRowLead(active ? 'active' : 'default')}
-            </Text>
-            <Text color={active ? t.accent : t.text}>
-              {reviewDocumentRowLines(option, width).join(`\n${' '.repeat(MARK_SLOT_CELLS)}`)}
-            </Text>
-          </Text>
-        );
-      })}
+      <MenuRows
+        options={options.map((option) => ({
+          parts: reviewDocumentRowLines(option, width).map((line, index) => [
+            { text: line, tone: 'text' as const },
+            ...(confirmsOnRow && index === 0 && option.command === 'approve'
+              ? [{ text: `${SOFT_SEP}${reviewConfirmsCount(confirms)}`, tone: 'warning' as const }]
+              : []),
+          ]),
+        }))}
+        selectedIndex={
+          commenting ? options.findIndex((option) => option.command === 'comment') : selectedIndex
+        }
+        marked
+        rowBudget={fit.listRows}
+        width={width}
+      />
       {form.framed ? <Text> </Text> : null}
       {/* Stripped of its frame the legend is bare text, so it opens on the text column rather than
           in the column the option cursors above it take. */}

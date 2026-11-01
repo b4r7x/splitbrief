@@ -257,18 +257,28 @@ describe('fitConfirmPanel', () => {
     expect(fitIn(4)).toMatchObject({
       title: true,
       label: false,
-      subject: [],
-      hidden: 6,
+      subject: ['A: one'],
+      hidden: 5,
       markRow: false,
       options: 2,
-      legend: true,
+      legend: false,
     });
-    expect(fitIn(3)).toMatchObject({ title: true, hidden: 6, options: 2, legend: false });
+    expect(fitIn(3)).toMatchObject({
+      title: false,
+      subject: ['A: one'],
+      options: 2,
+      legend: false,
+    });
   });
 
   it('drops the title last and paints only the option rows the region holds', () => {
-    expect(fitIn(2)).toMatchObject({ title: false, options: 2, legend: false });
-    expect(fitIn(1)).toMatchObject({ title: false, options: 1, legend: false });
+    expect(fitIn(2)).toMatchObject({
+      title: false,
+      subject: ['A: one'],
+      options: 1,
+      legend: false,
+    });
+    expect(fitIn(1)).toMatchObject({ title: false, subject: [], options: 1, legend: false });
   });
 });
 

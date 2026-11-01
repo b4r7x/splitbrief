@@ -40,7 +40,7 @@ import {
   typedCallPlanAndConsult,
 } from '#testing/helpers/typed-planner.js';
 
-// Cold-process proof harness. The host runs this file once per matrix cell:
+// Cold-process proof harness. parked-cold-matrix.test.ts runs this file once per matrix cell:
 //   F2B_PROOF_DIR=<fixture> F2B_PROOF_ENTRY=<n> F2B_PROOF_ROUTE=<initial|local|consult>
 // Each cell is one independent process over the fixture; entries 0..2 keep the
 // same retained stage, bytes, attempt, and canonical session log. Retirement is

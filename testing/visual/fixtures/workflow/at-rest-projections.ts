@@ -3118,6 +3118,10 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
     id: 'workflow-ready-planner-accept-long-note',
     route: { record: READY_PLANNER_ACCEPT_LONG_NOTE, log: READY_PLANNER_ACCEPT_LONG_NOTE_LOG },
   }),
+  atRestProjection({
+    id: 'workflow-ready-planner-accept-short',
+    route: { record: READY_PLANNER_ACCEPT_LONG_NOTE, log: READY_PLANNER_ACCEPT_LONG_NOTE_LOG },
+  }),
   atRestProjection({ id: 'workflow-closed-applied', route: { record: CLOSED_APPLIED } }),
   atRestProjection({
     id: 'workflow-closed-pre-existing',

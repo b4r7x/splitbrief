@@ -259,7 +259,10 @@ describe('resumeSeatWait', () => {
     expect(events.filter((event) => event.type === 'seat_wait_ended')).toHaveLength(0);
     expect(loadState(ref)?.seatWait?.seat).toBe('plan');
 
-    await vi.advanceTimersByTimeAsync(4 * 60_000);
+    await vi.advanceTimersByTimeAsync(4 * 60_000 - 2);
+    expect(events.filter((event) => event.type === 'seat_wait_ended')).toHaveLength(0);
+
+    await vi.advanceTimersByTimeAsync(2);
     const resumed = await pending;
     expect(resumed.seatWait).toBeUndefined();
     expect(loadState(ref)?.seatWait).toBeUndefined();

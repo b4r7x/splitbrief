@@ -26,6 +26,7 @@ import {
   STOP_SHEET_PARKED_LEGEND,
   readStopMenuRows,
   readStopSheetFooter,
+  stopMenuChrome,
   stopMenuLayout,
   stopSheetFooter,
   stopSheetRows,
@@ -138,6 +139,24 @@ describe('stopSheetRows', () => {
       'stop execution; close this run; keep changes',
     );
   });
+});
+
+describe('stopMenuChrome', () => {
+  it.each([
+    [0, 3, false, false, false, 0, 0],
+    [2, 3, false, false, false, 2, 0],
+    [3, 3, false, false, false, 3, 0],
+    [4, 3, false, true, false, 3, 0],
+    [5, 3, false, true, false, 3, 0],
+    [6, 3, true, true, false, 3, 0],
+    [7, 3, true, true, true, 3, 0],
+    [8, 3, true, true, true, 3, 1],
+  ])(
+    'fits a box of %i rows around %i rows',
+    (box, body, framed, titled, legend, listRows, extraRows) => {
+      expect(stopMenuChrome(box, body)).toEqual({ framed, titled, legend, listRows, extraRows });
+    },
+  );
 });
 
 describe('stopMenuLayout', () => {

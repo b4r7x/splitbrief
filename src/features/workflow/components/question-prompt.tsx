@@ -6,6 +6,7 @@ import { QUESTION_PROMPT_HORIZONTAL_CHROME } from '../prompt-rows/question.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import { PlannerQuestion } from './planner-question.js';
+import { stopMenuChrome } from '../stop/options.js';
 import { RecoveryMenu } from './recovery-menu.js';
 
 export function QuestionPrompt({
@@ -59,15 +60,18 @@ export function QuestionPrompt({
   if (questions && questions.length > 0 && planner)
     return <PlannerQuestion width={width} height={clampedBoxRows} {...planner} />;
   const innerWidth = Math.max(1, width - QUESTION_PROMPT_HORIZONTAL_CHROME);
-  const innerHeight = Math.max(1, clampedBoxRows - 2);
+  const { framed } = stopMenuChrome(clampedBoxRows, 1);
+  const innerHeight = clampedBoxRows - (framed ? 2 : 0);
   return (
     <Box
       flexDirection="column"
       width={width}
-      borderStyle={borderStyleFor('single')}
-      borderColor={t.border}
-      borderDimColor
-      paddingX={1}
+      {...(framed && {
+        borderStyle: borderStyleFor('single'),
+        borderColor: t.border,
+        borderDimColor: true,
+      })}
+      paddingX={framed ? 1 : 2}
       overflow="hidden"
       flexShrink={0}
     >

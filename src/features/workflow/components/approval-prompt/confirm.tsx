@@ -1,11 +1,12 @@
 import { ThemeText as Text, useTheme } from '../../../../components/theme.js';
 import { useRef, useState } from 'react';
 import { Box, useInput } from 'ink';
+import { ListViewport } from '../../../../components/pickers/list-viewport.js';
+import { isItemIndexVisible } from '../../../../components/pickers/scroll-window.js';
 import { RuleHeader } from '../../../../components/rule-header.js';
 import { OverlayPanel } from '../../../../components/overlays/overlay-panel.js';
 import { borderStyleFor, glyph } from '../../../../lib/glyphs.js';
 import { listRowLead } from '../../../../components/list-row.js';
-import { RowZone } from '../../../../components/pickers/row-zone.js';
 import { withMark } from '../prompt-body.js';
 import { closeApprovalPrompt } from '../../../../stores/approval-prompt/prompt.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
@@ -22,6 +23,7 @@ import {
   approvalOptionLabelText,
   approvalTitle,
   fitConfirmPanel,
+  formatApprovalActionDescription,
   getApprovalConfirmLabel,
   getConfirmOptions,
   isIrreversibleActionClass,
@@ -31,6 +33,7 @@ import { CONFIRM_PHRASE } from '../../../../core/approval/types.js';
 import type { TieredApprovalRequest } from '../../../../core/approval/types.js';
 import { navigateIndex } from '../../../../utils/indexing.js';
 import { fitKeyLegend } from '../../../../core/key-legend.js';
+import { SOFT_SEP } from '../../../../core/separators.js';
 import { ELLIPSIS } from '../../../../utils/display-text.js';
 import { countNoun } from '../../../../utils/pluralize.js';
 
@@ -87,6 +90,16 @@ export function ConfirmApprovalPrompt({
   const tone = irreversible ? t.error : t.warning;
   const title = approvalTitle(request.actionClass);
   const mark = `${ELLIPSIS} ${countNoun(fit.hidden, 'more line')}`;
+  // One row holds the action and the selected option together, so the panel never asks blind.
+  const rowAction =
+    fit.subject.length === 0
+      ? formatApprovalActionDescription(request.actionDescription).split('\n')[0]
+      : undefined;
+
+  const moveTo = (index: number): void => {
+    selectedIndexRef.current = index;
+    setSelectedIndex(index);
+  };
 
   const takeRow = (key: string): void => {
     if (key === 'r') {
@@ -139,13 +152,21 @@ export function ConfirmApprovalPrompt({
       }
       if (key.return) {
         const option = options[selectedIndexRef.current];
-        if (option !== undefined) takeRow(option.key);
+        if (option !== undefined && fit.options > 0) takeRow(option.key);
         return;
       }
 
       const letter = input.toLowerCase();
-      if (letter === 'r' && options.some((option) => option.key === 'r')) {
-        takeRow('r');
+      const letterRow = options.findIndex((option) => option.key === letter);
+      const inView = isItemIndexVisible({
+        items: [...options],
+        selectedIndex: selectedIndexRef.current,
+        itemIndex: letter === 'r' ? letterRow : 0,
+        rowBudget: fit.options,
+      });
+      if (letter === 'r' && letterRow >= 0) {
+        if (inView) takeRow('r');
+        else moveTo(letterRow);
         return;
       }
       if (letter === 'x' || letter === 'n') {
@@ -155,9 +176,8 @@ export function ConfirmApprovalPrompt({
       if (letter !== 'y') return;
       // A control-plane write costs the highlighted row, so `y` moves the highlight back to
       // Confirm and reports the miss instead of silently doing nothing.
-      if (irreversible) {
-        selectedIndexRef.current = 0;
-        setSelectedIndex(0);
+      if (irreversible || !inView) {
+        moveTo(0);
         setNudged(true);
       } else {
         confirmWith(CONFIRM_REASON_UNSTATED);
@@ -208,33 +228,37 @@ export function ConfirmApprovalPrompt({
       {confirmStep === 'choose' ? (
         <>
           <Box flexDirection="column" flexShrink={0}>
-            {options.slice(0, fit.options).map((option, index) => {
-              const active = index === selectedIndex;
-              const row = (
-                <Text key={option.key}>
-                  <Text color={active ? t.accent : t.textDim}>
-                    {listRowLead(active ? 'active' : 'default')}
+            <ListViewport
+              items={[...options]}
+              selectedIndex={selectedIndex}
+              getKey={(option) => option.key}
+              rowBudget={fit.options}
+              width={frame.width}
+              barColumn="padding"
+              rowZonePrefix="confirm-option"
+              rowZoneZ={PROMPT_ZONE_Z}
+              {...(isActive && {
+                onRowActivate: (index: number) => {
+                  const option = options[index];
+                  if (option !== undefined) takeRow(option.key);
+                },
+              })}
+              renderItem={(option, ctx) => (
+                <Text wrap="truncate-end">
+                  <Text color={ctx.isCursor ? t.accent : t.textDim}>
+                    {listRowLead(ctx.isCursor ? 'active' : 'default')}
                   </Text>
                   <Text color={t.textDim}>{approvalOptionKeyCell(option, keyWidth)}</Text>
                   {'   '}
-                  <Text color={active ? t.accent : t.text}>
+                  <Text color={ctx.isCursor ? t.accent : t.text}>
                     {approvalOptionLabelText({ option, keyWidth, width: frame.width })}
                   </Text>
+                  {rowAction !== undefined && (
+                    <Text color={t.text}>{`${SOFT_SEP}${rowAction}`}</Text>
+                  )}
                 </Text>
-              );
-              return isActive ? (
-                <RowZone
-                  key={option.key}
-                  zoneId={`confirm-option-${option.key}`}
-                  z={PROMPT_ZONE_Z}
-                  onActivate={() => takeRow(option.key)}
-                >
-                  {row}
-                </RowZone>
-              ) : (
-                row
-              );
-            })}
+              )}
+            />
           </Box>
           <Box flexGrow={1} minHeight={fit.gaps.legend ? 1 : 0} />
           {fit.legend &&
@@ -246,13 +270,14 @@ export function ConfirmApprovalPrompt({
         </>
       ) : (
         <>
-          <Text>{CONFIRM_QUESTION}</Text>
+          {fit.options >= 2 && <Text>{CONFIRM_QUESTION}</Text>}
           <Box height={1} overflow="hidden">
             <Text color={t.text}>{`${glyph('prompt')} `}</Text>
             <Text wrap="truncate-end">{reasonInput}</Text>
             <Text color={t.text}>{glyph('liveBar')}</Text>
+            {rowAction !== undefined && <Text color={t.textDim}>{`${SOFT_SEP}${rowAction}`}</Text>}
           </Box>
-          <Text color={t.textDim}>{CONFIRM_REASON_OPTIONAL}</Text>
+          {fit.options >= 3 && <Text color={t.textDim}>{CONFIRM_REASON_OPTIONAL}</Text>}
           <Box flexGrow={1} minHeight={fit.gaps.legend ? 1 : 0} />
           {fit.legend && <Text color={t.textDim}>{CONFIRM_REASON_HINTS}</Text>}
         </>

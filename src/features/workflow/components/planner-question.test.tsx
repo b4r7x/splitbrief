@@ -16,6 +16,7 @@ import {
   questionOptions,
   questionPromptStore as store,
 } from '../../../stores/question-prompt/prompt.js';
+import { QUESTION_ANSWER_ROWS } from '../prompt-rows/question.js';
 import { PlannerQuestion } from './planner-question.js';
 
 const originalForceColor = vi.hoisted(() => {
@@ -696,5 +697,46 @@ it.each<ClarificationQuestion>([
   store.setFocus('menu');
   await flushEffects();
   expect(stripAnsiStyles(ui.lastFrame())).toContain('Write your own answer…');
+  ui.unmount();
+});
+
+it('shows the answer field only in a box taller than it', async () => {
+  store.setQuestions([{ id: 'target', type: 'input', text: 'Which module should change?' }]);
+  store.setFocus('menu');
+  const shortBox = renderQuestion(80, QUESTION_ANSWER_ROWS);
+  await flushEffects();
+  expect(stripAnsiStyles(shortBox.lastFrame())).not.toContain('›');
+  shortBox.unmount();
+
+  const tallBox = renderQuestion(80, QUESTION_ANSWER_ROWS + 1);
+  await flushEffects();
+  expect(stripAnsiStyles(tallBox.lastFrame())).toContain('›');
+  tallBox.unmount();
+});
+
+it('starts an unframed row on the composer text column', async () => {
+  store.setQuestions([
+    { id: 'seat', type: 'choice', text: 'Which seat?', options: ['Planner', 'Builder'] },
+  ]);
+  const ui = renderQuestion(80, 3);
+  await flushEffects();
+  expect(stripAnsiStyles(ui.lastFrame()).split('\n')[0]).toMatch(/^ {2}\S/);
+  ui.unmount();
+});
+
+it('leaves half of a one-row panel to the question beside a long option', async () => {
+  store.setQuestions([
+    {
+      id: 'seat',
+      type: 'choice',
+      text: 'Which seat performs the review?',
+      options: ['A very long option that fills the whole row of the panel before it wraps once'],
+    },
+  ]);
+  const ui = renderQuestion(80, 1);
+  await flushEffects();
+  expect(stripAnsiStyles(ui.lastFrame())).toMatch(
+    /A very long option.*… · Which seat performs the review\?/,
+  );
   ui.unmount();
 });

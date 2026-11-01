@@ -269,6 +269,22 @@ it.each([
   }
 });
 
+it('cuts an asked row with an open quote by the room alone', () => {
+  const words = 'then more words '.repeat(12);
+  const question = `Question: Should we keep this? Should "password": "please rotate it now ${words}`;
+  const issue = makeRecoveryIssue({ details: [question, 'Last error: cannot find "foo"'] });
+  const facts = recoveryPromptSummaryRows(issue, 54, 2).find((row) => row.kind === 'facts');
+  expect(facts?.kind === 'facts' ? facts.items[0] : '').toBe(
+    'Question: Should we keep this? Should "password": "please rotate it now then more words then more wor…',
+  );
+});
+
+it('gives a panel too narrow for a cut the mark alone', () => {
+  const issue = makeRecoveryIssue({ details: ['Question: Which file?'] });
+  const facts = recoveryPromptSummaryRows(issue, 3, 1).find((row) => row.kind === 'facts');
+  expect(facts?.kind === 'facts' ? facts.items[0] : '').toBe('…');
+});
+
 it('End run names its kept changes only after a brief finished', () => {
   const issue = makeRecoveryIssue({ reason: 'apply-conflict' });
   expect(recoveryMenuParts('end-run', issue, true)).toEqual([

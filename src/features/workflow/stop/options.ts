@@ -98,6 +98,21 @@ export function stopMenuLayout<
   return { width, bodyRows, height: bodyRows + 4, options };
 }
 
+/**
+ * What a box of `boxHeight` rows paints around `bodyRows` action rows. The actions go first: a
+ * shorter box drops the legend, then the border, then the title, and then the list scrolls.
+ */
+export function stopMenuChrome(boxHeight: number, bodyRows: number) {
+  const spareRows = boxHeight - bodyRows;
+  return {
+    framed: spareRows >= 3,
+    titled: spareRows >= 1,
+    legend: spareRows >= 4,
+    listRows: Math.min(bodyRows, boxHeight),
+    extraRows: Math.max(0, spareRows - 4),
+  };
+}
+
 export interface StopSheetInput {
   readonly currentTaskId: string | null;
   readonly nextTaskId: string | null;

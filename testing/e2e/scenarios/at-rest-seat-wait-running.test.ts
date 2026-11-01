@@ -1,6 +1,5 @@
 import { mkdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
 import XtermHeadless from '@xterm/headless';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SESSION_LOG_FILE, sessionDir } from '../../../src/core/paths.js';
@@ -12,7 +11,6 @@ import {
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { saveState } from '../../../src/core/state/persistence.js';
 import { acquireLiveness } from '../../../src/engine/orchestrator/run/liveness.js';
-import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
 import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
@@ -85,10 +83,8 @@ describe('e2e: the run screen of a run another process holds, while that run wai
             await waitForText('Describe your feature');
             child.write('/sessions');
             await waitForText('/sessions');
-            await delay(PROMPT_TYPEAHEAD_GRACE_MS);
             child.write('\r');
             await waitForText('Sessions · 1');
-            await delay(PROMPT_TYPEAHEAD_GRACE_MS);
             child.write('\r');
             await waitForText('Running in another process');
             // The holder logs a wait on the open screen and never logs its end.

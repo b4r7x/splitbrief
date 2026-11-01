@@ -243,7 +243,7 @@ Enter with text queues a message and lets the current call continue. See [Messag
 
 ## Stop sheet
 
-The **stop menu** opens above the composer after `esc` during a live run, preserving the draft and visible transcript. It offers **Stop now**, **Pause after this brief** (or **Keep running** when requested), and **End run**. `↑↓` selects, `Enter` executes, a second `esc` stops now, and `Tab` dismisses. Stopping preserves partial changes and allows continuation; End run explicitly closes the run.
+The **stop menu** opens above the composer after `esc` during a live run, preserving the draft and visible transcript. It offers **Stop now**, **Pause after this brief** (or **Keep running** when requested), and **End run**. `↑↓` selects, `Enter` executes, a second `esc` stops now, and `Tab` dismisses. Stopping preserves partial changes and allows continuation; End run explicitly closes the run. In a short terminal the sheet drops its legend, border and title, and the list scrolls, so the row Enter acts on stays in view.
 
 ## Awaiting-continue
 

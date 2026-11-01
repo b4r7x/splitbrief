@@ -5,7 +5,7 @@ import {
   processOutputCapture,
   type ProcessOutputCapture,
 } from '../../../lib/process/errors.js';
-import { redactSecrets } from '../../../utils/redact.js';
+import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { truncateByTailLines } from '../../../utils/truncate.js';
 import { CAPTURE_LIMITS } from '../../../core/pipeline-spec/gates.js';
 import { relativeToDir } from './extract-failure-keys.js';
@@ -22,14 +22,10 @@ export type ValidationStepResult = ValidationResult & {
 export const MAX_VALIDATION_OUTPUT_CHARS = CAPTURE_LIMITS.outputChars;
 export const MAX_TEST_TAIL_LINES = CAPTURE_LIMITS.testTailLines;
 
-export function boundedOutputTail(text: string): string {
-  const tail =
-    text.length <= MAX_VALIDATION_OUTPUT_CHARS ? text : text.slice(-MAX_VALIDATION_OUTPUT_CHARS);
-  return redactSecrets(tail);
-}
-
-function sanitizeTestOutput(text: string): string {
-  return boundedOutputTail(truncateByTailLines(text, MAX_TEST_TAIL_LINES));
+/** The end of an output. The mask reads the whole text, so no cut can split a value it hides. */
+export function boundedOutputTail(text: string, maxLines = Number.POSITIVE_INFINITY): string {
+  const masked = sanitizeTerminalDisplayText(text, { preserveLineBreaks: true });
+  return truncateByTailLines(masked, maxLines).slice(-MAX_VALIDATION_OUTPUT_CHARS);
 }
 
 const MISSING_PROGRAM_LINE = /not found|No such file or directory/;
@@ -76,7 +72,7 @@ export async function runValidationStep(opts: {
     };
     return {
       passed: true,
-      output: sanitizeTestOutput(captureText(capture)),
+      output: boundedOutputTail(captureText(capture), MAX_TEST_TAIL_LINES),
       capture,
       command,
       exitCode: 0,
@@ -118,7 +114,7 @@ export async function runValidationStep(opts: {
           : truncateByTailLines(captureText(capture), MAX_TEST_TAIL_LINES).trim();
       return {
         passed: false,
-        output: sanitizeTestOutput(stdout),
+        output: boundedOutputTail(stdout, MAX_TEST_TAIL_LINES),
         capture,
         error: boundedOutputTail(detail),
         command,
