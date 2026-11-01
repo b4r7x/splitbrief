@@ -3,6 +3,7 @@ import { execSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Command } from 'commander';
+import { freezeProbeDeadlines } from '#testing/helpers/fake-timers.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
   activateCompatibleCliShim,
@@ -296,6 +297,8 @@ function syntheticCheck(
   };
 }
 
+freezeProbeDeadlines();
+
 describe('readiness diagnostic states', () => {
   it.each(READINESS_DIAGNOSTIC_STATE_IDS)(
     'maps %s to a stable state ID and copyable remediation',
@@ -380,6 +383,47 @@ describe('doctor command', () => {
     expect(readFileSync(configFile, 'utf-8')).toBe(beforeConfig);
     expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'active'))).toBe(false);
     expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'sessions'))).toBe(false);
+  });
+
+  it('warns in human readiness that End-of-run checks off run no project gate', async () => {
+    initGitRepo(tmp);
+    writeConfig(tmp, validConfigYaml().replace('validation:', 'validation:\n  endChecks: false'));
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await runDoctor(['--project', tmp]);
+
+    const output = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    expect(output).toContain('info     End-of-run checks: off.');
+    expect(output).toContain(
+      'End-of-run checks are off: SPLITBRIEF runs no project gate before the final review.',
+    );
+  });
+
+  it('states in human readiness that plan and task checks still run with End-of-run checks off', async () => {
+    initGitRepo(tmp);
+    writeConfig(tmp, validConfigYaml().replace('validation:', 'validation:\n  endChecks: false'));
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await runDoctor(['--project', tmp]);
+
+    const output = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    expect(output).toMatch(/no reviewer check runs/iu);
+    expect(output).toMatch(/plan and task checks still run/iu);
+  });
+
+  it('states in human readiness that the plan gate runs before the final review only', async () => {
+    initGitRepo(tmp);
+    writeConfig(tmp, validConfigYaml());
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await runDoctor(['--project', tmp]);
+
+    const output = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    expect(output).toContain('info     End-of-run checks: on.');
+    expect(output).toContain(
+      'Before the final review, SPLITBRIEF runs the project gate that the plan names. A task review runs no gate.',
+    );
+    expect(output).not.toContain('chooses the commands that verify the change');
   });
 
   it('reports a Setup-written crew in text and JSON without repeated facts or internal names', async () => {

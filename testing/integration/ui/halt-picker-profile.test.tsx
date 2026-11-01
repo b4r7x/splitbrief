@@ -46,7 +46,7 @@ function answerSwitchSeat(): UseInputModeResult {
     hint: '',
     questionEpoch: 0,
     setReviewMode: async () => ({ approved: false }),
-    setQuestionMode: async () => plainAnswer('switch-seat'),
+    setQuestionMode: async () => ({ ...plainAnswer('w'), row: true }),
     resolve: () => {},
     resetMode: () => {},
   };

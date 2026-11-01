@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import type { CliReadinessResult } from '../../../core/schemas/readiness.js';
+import { freezeProbeDeadlines } from '#testing/helpers/fake-timers.js';
 import { itUnix } from '#testing/helpers/planner-command-invoke.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import type { AuthFact } from '../../../core/discovery/runner-evidence.js';
@@ -264,6 +265,8 @@ async function probeOpencodeWithoutBridgedState(
   });
 }
 
+freezeProbeDeadlines();
+
 describe('CLI readiness probe', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -481,6 +484,7 @@ describe('CLI readiness probe', () => {
   );
 
   it('reaps a hanging probe before returning an unverified result', async () => {
+    vi.useRealTimers();
     const executable = await nodeExecutable();
     const startedAt = Date.now();
     const result = await probeCliReadiness({
@@ -496,6 +500,7 @@ describe('CLI readiness probe', () => {
   it.runIf(process.platform !== 'win32')(
     'reaps a caller-cancelled probe group and its descendant',
     async () => {
+      vi.useRealTimers();
       await withTempDir('readiness-probe-cancelled', async (directory) => {
         const executable = await nodeExecutable();
         const descendantPidFile = join(directory, 'cancelled-descendant.pid');
@@ -536,6 +541,7 @@ describe('CLI readiness probe', () => {
   it.runIf(process.platform !== 'win32')(
     'settles when a descendant escapes the probe group holding the inherited pipes',
     async () => {
+      vi.useRealTimers();
       const executable = await nodeExecutable();
       const result = await probeCliReadiness({
         tool: 'codex',
@@ -559,6 +565,7 @@ describe('CLI readiness probe', () => {
   it.runIf(process.platform !== 'win32')(
     'propagates a termination platform limitation without an unhandled rejection',
     async () => {
+      vi.useRealTimers();
       await withTempDir('readiness-probe-platform', async (directory) => {
         const executable = await nodeExecutable();
         const pidFile = join(directory, 'probe.pid');
@@ -616,6 +623,7 @@ describe('CLI readiness probe', () => {
   it.runIf(process.platform !== 'win32')(
     'reaps a timed-out probe group and its descendant',
     async () => {
+      vi.useRealTimers();
       await withTempDir('readiness-probe-descendant', async (directory) => {
         const executable = await nodeExecutable();
         const pidFile = join(directory, 'descendant.pid');
@@ -809,6 +817,7 @@ describe('CLI readiness probe', () => {
     });
 
     itUnix('names a hanging oracle command a timeout', async () => {
+      vi.useRealTimers();
       const result = await probeOpencode({
         oracleBody: 'setTimeout(() => process.exit(0), 5_000);',
         authTimeoutMs: 200,

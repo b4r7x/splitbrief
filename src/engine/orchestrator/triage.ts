@@ -228,14 +228,14 @@ export async function verifyClaimChecks(
     const run: CheckRunResult =
       check === undefined
         ? { checkId, status: 'unknown', output: `no check ${checkId}` }
-        : await runCheckWithRows({ check, prepare, notices, moment: 'verify' });
-    if (run.status !== 'fail' || run.failure.placeholder !== undefined) {
-      runs.push(run);
-      continue;
-    }
-    const atBase = preExistingChecks.find((entry) => entry.id === run.checkId)?.keys ?? [];
-    const preExisting = run.failure.keys.filter((key) => atBase.includes(key));
-    runs.push(preExisting.length > 0 ? { ...run, preExisting } : run);
+        : await runCheckWithRows({
+            check,
+            prepare,
+            notices,
+            moment: 'verify',
+            atBase: preExistingChecks.find((entry) => entry.id === checkId)?.keys,
+          });
+    runs.push(run);
   }
   await recordCheckRuns({
     projectDir: ctx.projectDir,

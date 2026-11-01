@@ -310,7 +310,7 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
         resolveExecutable: exactResolver,
       });
 
-      expect(attemptFor(attempts, tool)?.outcome).toEqual({ kind: 'unsupported' });
+      expect(attemptFor(attempts, tool)?.outcome).toEqual({ kind: 'not-run' });
       expect(loggedArgs(logPath)).toEqual(['--version|']);
     },
   );
@@ -400,7 +400,7 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
         });
 
         expect(attemptFor(attempts, tool)?.outcome.kind).toBe(
-          versionCase.admitted ? 'success' : 'unsupported',
+          versionCase.admitted ? 'success' : 'not-run',
         );
         expect(loggedArgs(logPath)).toEqual([
           '--version|',

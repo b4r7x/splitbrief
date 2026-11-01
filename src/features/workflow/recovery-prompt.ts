@@ -1,18 +1,7 @@
 import { RECOVERY_ACTIONS, type RecoveryAction } from '../../core/schemas/enums.js';
-import type {
-  RecoveryIssue,
-  SeatSwapCandidate,
-  SwitchSeatOffer,
-} from '../../core/schemas/recovery/schemas.js';
-import {
-  CREW_SEAT_LABELS,
-  formatSeatCandidateIdentity,
-  type CrewSeatId,
-} from '../../core/crew/identity.js';
+import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
 import { CREW_SEAT_ROLES } from '../../core/crew/seats.js';
-import { resolveModelDisplayName } from '../../engine/providers/model/display-names.js';
 import { isSeatLevelRetry } from '../../engine/orchestrator/recovery/actions.js';
-import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { recoveryFactString } from '../../core/schemas/recovery/facts.js';
 import { countNoun } from '../../utils/pluralize.js';
 import { glyph } from '../../lib/glyphs.js';
@@ -23,14 +12,21 @@ import {
   formatRecoveryHeadlineSpans,
 } from '../../core/recovery/headline.js';
 import {
-  keepsHaltedTool,
   recoveryActionLabel,
   recoveryActionParts,
   type RecoveryActionChoiceContext,
 } from '../../core/recovery/action-label.js';
 import { leavesWordsUnread } from '../../core/recovery/typed-words.js';
 import { formatTruncatedList } from '../../core/formatting.js';
-import { elidePathMiddle, getTerminalCellWidth } from '../../utils/display-text.js';
+import {
+  ELLIPSIS,
+  elidePathMiddle,
+  getTerminalCellWidth,
+  oneLineDisplayText,
+  sanitizeTerminalDisplayText,
+  truncateTerminalDisplayText,
+} from '../../utils/display-text.js';
+import { wrapHard } from '../../utils/wrap.js';
 import {
   readRecoveryContext,
   recoveryContextCauseWords,
@@ -48,27 +44,11 @@ const ACTION_ORDER = RECOVERY_ACTIONS;
 export const FACT_INDENT = '  ';
 const FILES_LABEL = 'Files ';
 
-export function recommendedRowPrefix(): string {
-  return `${glyph('liveBar')} `;
-}
-
 export function passHeadlinePrefix(): string {
   return `${glyph('check')} `;
 }
 
 export const FAILED_REVIEW_MARKER = ' failed review · ';
-
-const ACTION_ROW_PATTERN = /^\[.+?\]/;
-
-export function formatActionRow(key: string, text: string): string {
-  return `[${key}]  ${text}`;
-}
-
-export function isActionRowLine(line: string): boolean {
-  const prefix = recommendedRowPrefix();
-  const body = line.startsWith(prefix) ? line.slice(prefix.length) : line;
-  return ACTION_ROW_PATTERN.test(body);
-}
 
 export type PromptRow =
   | {
@@ -87,11 +67,7 @@ export type PromptRow =
     }
   | { kind: 'message'; text: string }
   | { kind: 'blank' }
-  | { kind: 'facts'; items: string[]; grid: boolean }
-  | { kind: 'action'; text: string; recommended: boolean }
-  | { kind: 'note'; text: string };
-
-type ActionRow = Extract<PromptRow, { kind: 'action' } | { kind: 'note' }>;
+  | { kind: 'facts'; items: string[]; grid: boolean };
 
 const ACTION_KEYS: Record<RecoveryAction, string> = {
   'retry-same-worker': 'r',
@@ -106,26 +82,26 @@ const ACTION_KEYS: Record<RecoveryAction, string> = {
   'end-run': 'a',
 };
 
-/** The one key an action answers to, on the picker row and as a typed letter. */
+/**
+ * The one key an action answers to on the picker row. The driver reads the same letter typed in
+ * the composer as words, unless it is the key of the halt's correction action.
+ */
 export function recoveryActionKey(action: RecoveryAction): string {
   return ACTION_KEYS[action];
 }
 
 export const ACTION_ALIASES: Record<RecoveryAction, string[]> = {
   'retry-same-worker': ['r', 'retry', 'retry same worker', 'retry-same-worker'],
-  'restore-backup': ['u', 'restore', 'restore backup', 'restore-backup'],
-  'switch-seat': ['w', 'switch', 'switch seat', 'switch-seat'],
-  'retry-later': ['l', 'later', 'retry later', 'wait', 'retry-later'],
+  'restore-backup': ['u'],
+  'switch-seat': ['w'],
+  'retry-later': ['l'],
   revise: ['v', 'revise', 'comment'],
-  'accept-as-is': ['k', 'accept', 'accept as is', 'accept-as-is'],
-  continue: ['c', 'continue', 'cont'],
-  'decide-for-me': ['d', 'decide', 'decide for me', 'decide-for-me'],
-  'skip-current-task': ['s', 'skip', 'skip task', 'skip-current-task'],
-  'end-run': ['a', 'end', 'end run', 'end-run', 'abort', 'quit', 'q'],
+  'accept-as-is': ['k'],
+  continue: ['c'],
+  'decide-for-me': ['d'],
+  'skip-current-task': ['s'],
+  'end-run': ['a'],
 };
-
-/** The numbered form of the seat key, as the prompt prints it for a second and third offer. */
-const SWITCH_SEAT_ROW_KEY = new RegExp(`^${ACTION_KEYS['switch-seat']}([1-9][0-9]?)$`);
 
 export function getRecoveryPromptActions(issue: RecoveryIssue): RecoveryAction[] {
   const allowed = new Set(issue.availableActions);
@@ -154,76 +130,22 @@ export function recoveryComposerHint(issue: RecoveryIssue, menuFocused: boolean)
   return correction ? 'Type a correction, or tab to choose an action…' : 'Tab to choose an action…';
 }
 
-const REVIEW_FAILED_REVISE_CONSEQUENCE = 'runs another fix cycle with your note';
+/** An empty ⏎ in the composer runs no action: words or a row do. */
+export const RECOVERY_EMPTY_ENTER_NOTICE = 'Nothing to send. Tab to choose an action.';
 
-function formatRecoveryActionText(
-  action: RecoveryAction,
-  context: RecoveryActionChoiceContext = {},
-): string {
-  const applyConsequence = applyRecoveryConsequence(action, context.reason);
-  if (applyConsequence !== undefined) {
-    const label = recoveryActionLabel(action, context);
-    return `${label.charAt(0).toLowerCase()}${label.slice(1)}${SOFT_SEP}${applyConsequence}`;
-  }
-  switch (action) {
-    case 'retry-same-worker':
-      return context.seatRetry === undefined
-        ? 'retry same worker'
-        : `retry ${CREW_SEAT_LABELS[context.seatRetry]}`;
-    case 'restore-backup':
-      return 'restore backup';
-    case 'switch-seat':
-      return 'switch the seat to another tool';
-    case 'retry-later': {
-      const label = recoveryActionLabel('retry-later', context);
-      return label.charAt(0).toLowerCase() + label.slice(1);
-    }
-    case 'revise':
-      return context.reason === 'review-failed'
-        ? `fix again${SOFT_SEP}${REVIEW_FAILED_REVISE_CONSEQUENCE}`
-        : 'revise · send the planner a correction';
-    case 'accept-as-is':
-      return context.reason === 'review-input-too-large'
-        ? 'skip review · ready to apply unreviewed; your note is recorded and Apply asks once'
-        : 'accept as is · ready to apply with the open findings; Apply lists them and asks once';
-    case 'continue':
-      return 'continue';
-    case 'decide-for-me':
-      return 'decide for me · the run asks nothing more';
-    case 'skip-current-task':
-      return 'skip task';
-    case 'end-run':
-      return 'end run · closes this run, changes kept';
-  }
-}
+const REVIEW_FAILED_REVISE_CONSEQUENCE = 'runs another fix cycle with your note';
 
 function applyRecoveryConsequence(
   action: RecoveryAction,
   reason: RecoveryActionChoiceContext['reason'],
 ): string | undefined {
   if (reason !== 'apply-conflict' && reason !== 'apply-partial') return undefined;
-  if (action === 'end-run') return 'closes this run, the checkout keeps what it has now';
   if (action === 'restore-backup' && reason === 'apply-partial')
     return 'puts back the files Apply replaced and removes the ones it created';
   if (action !== 'retry-same-worker') return undefined;
   return reason === 'apply-conflict'
     ? 'after you resolve the files in the workspace'
     : 'writes the files still missing';
-}
-
-/** How many of a seat's detected tools the halt offers; a longer list is a settings question. */
-export const OFFERED_SEAT_SWAP_CANDIDATES = 3;
-
-export function offeredSeatSwapCandidates(
-  offer: SwitchSeatOffer | undefined,
-): readonly SeatSwapCandidate[] {
-  return offer === undefined ? [] : offer.candidates.slice(0, OFFERED_SEAT_SWAP_CANDIDATES);
-}
-
-/** One offered tool needs no number; several are numbered from the seat's own key. */
-function switchSeatRowKey(index: number, offered: number): string {
-  const key = ACTION_KEYS['switch-seat'];
-  return offered === 1 ? key : `${key}${index + 1}`;
 }
 
 function recoveryMenuContext(issue: RecoveryIssue): RecoveryActionChoiceContext {
@@ -251,6 +173,7 @@ export function recoveryMenuActionLabel(action: RecoveryAction, issue: RecoveryI
 export function recoveryMenuParts(
   action: RecoveryAction,
   issue: RecoveryIssue,
+  briefFinished: boolean,
 ): ConversationRowSegment[] {
   const label = recoveryActionParts(action, recoveryMenuContext(issue)).map(
     (part): ConversationRowSegment => ({
@@ -258,7 +181,10 @@ export function recoveryMenuParts(
       tone: part.seat === undefined ? 'text' : CREW_SEAT_ROLES[part.seat],
     }),
   );
-  const consequence = recoveryMenuConsequence(action, issue);
+  const consequence =
+    action === 'end-run' && briefFinished
+      ? 'closes this run, keeps its changes'
+      : recoveryMenuConsequence(action, issue);
   return consequence === undefined
     ? label
     : [...label, { text: SOFT_SEP, tone: 'textDim' }, { text: consequence, tone: 'textDim' }];
@@ -282,135 +208,34 @@ function recoveryMenuConsequence(action: RecoveryAction, issue: RecoveryIssue): 
   return issue.phase === 'final-review' ? 'runs the review again' : 'runs this step again';
 }
 
-/** A switch-seat row; the halted tool offered without a model reads as the menu's model pick. */
-function switchSeatRowText(
-  seat: CrewSeatId,
-  candidate: SeatSwapCandidate,
-  haltedTool: string | undefined,
-): string {
-  if (keepsHaltedTool(candidate, haltedTool)) {
-    const label = recoveryActionLabel('switch-seat', {
-      switchSeat: { seat, candidates: [candidate] },
-      haltedTool,
-    });
-    return label.charAt(0).toLowerCase() + label.slice(1);
-  }
-  const displayName =
-    candidate.model === undefined
-      ? undefined
-      : resolveModelDisplayName({
-          providerId: candidate.tool,
-          model: candidate.model,
-          role: CREW_SEAT_ROLES[seat],
-          cache: modelCacheStore,
-        });
-  return `switch ${CREW_SEAT_LABELS[seat]} to ${formatSeatCandidateIdentity(candidate, displayName)}`;
-}
-
-/**
- * The tools a quota-blocked seat is offered get one row each, because a row is
- * what the operator presses: a comma-separated list behind a single key names
- * several destinations and says nothing about which one it takes. Tools past
- * the offer are counted in a note, never dropped silently.
- */
-function switchSeatRows(context: RecoveryActionChoiceContext, recommended: boolean): ActionRow[] {
-  const offer = context.switchSeat;
-  const offered = offeredSeatSwapCandidates(offer);
-  if (offer === undefined || offered.length === 0) {
-    return [
-      { kind: 'action', text: formatRecoveryActionChoice('switch-seat', context), recommended },
-    ];
-  }
-  const rows: ActionRow[] = offered.map((candidate, index) => ({
-    kind: 'action',
-    text: formatActionRow(
-      switchSeatRowKey(index, offered.length),
-      switchSeatRowText(offer.seat, candidate, context.haltedTool),
-    ),
-    recommended: recommended && index === 0,
-  }));
-  const hidden = offer.candidates.length - offered.length;
-  if (hidden > 0) {
-    rows.push({ kind: 'note', text: `(${countNoun(hidden, 'more ready tool')} detected)` });
-  }
-  return rows;
-}
-
-/**
- * Which offered tool an answer names: the bare seat key takes the first row,
- * `w2` the second, and a number past the offer takes nothing so an unknown key
- * is refused instead of silently swapping to a tool the operator never read.
- */
-export function switchSeatCandidateForAnswer(
-  input: string,
-  offer: SwitchSeatOffer | undefined,
-): SeatSwapCandidate | undefined {
-  const candidates = offer?.candidates ?? [];
-  const match = SWITCH_SEAT_ROW_KEY.exec(input.trim().toLowerCase());
-  if (match?.[1] === undefined) return candidates[0];
-  return candidates[Number.parseInt(match[1], 10) - 1];
-}
-
-function formatRecoveryActionChoice(
-  action: RecoveryAction,
-  context: RecoveryActionChoiceContext = {},
-): string {
-  return formatActionRow(ACTION_KEYS[action], formatRecoveryActionText(action, context));
-}
-
 export function formatMiddotList(values: string[], max: number): string {
   return formatTruncatedList(values, max);
 }
 
-function buildRecoveryActionRows(
-  actions: RecoveryAction[],
-  context: RecoveryActionChoiceContext,
-  recommended: RecoveryAction | undefined,
-): ActionRow[] {
-  const rows: ActionRow[] = [];
-  for (const action of actions) {
-    if (action === 'switch-seat') {
-      rows.push(...switchSeatRows(context, action === recommended));
-      continue;
-    }
-    rows.push({
-      kind: 'action',
-      text: formatRecoveryActionChoice(action, context),
-      recommended: action === recommended,
-    });
-  }
-  return rows;
-}
-
 /**
- * A halt that names no brief is about the seat, not a task: PLAN and REVIEW have nothing to reset,
- * so their retry re-issues the same step once the seat is corrected. Mirrors `isSeatLevelRetry`
- * (`src/engine/orchestrator/recovery/actions.ts`), which decides what the retry actually does;
- * both are keyed on the same two facts, so a row never offers a replay the applier will not run.
+ * The issue and its facts at the panel's text width; the menu under them holds the actions.
+ * `askedRows` puts the asked row before the task and its files, on at most that many rows, for a
+ * panel too short to reach it.
  */
-function seatLevelRetrySeat(issue: RecoveryIssue): CrewSeatId | undefined {
-  if (issue.taskId !== undefined) return undefined;
-  if (issue.seat !== 'plan' && issue.seat !== 'review') return undefined;
-  const contextCode = recoveryFactString(issue.facts, 'apiContextCode');
-  const reviewFailure = recoveryFactString(issue.facts, 'reviewFailureKind');
-  return contextCode === 'insufficient-context' || reviewFailure === 'call-failed'
-    ? issue.seat
-    : undefined;
-}
-
-/** `width` is the panel's text width; the Files row fits it on one row. */
-function buildRecoveryPromptRows(issue: RecoveryIssue, width: number): PromptRow[] {
-  const actions = getRecoveryPromptActions(issue);
-  const context: RecoveryActionChoiceContext = {
-    reason: issue.reason,
-    switchSeat: issue.switchSeat,
-    seat: issue.seat,
-    seatRetry: seatLevelRetrySeat(issue),
-    resetAt: issue.resetAt,
-    haltedTool: recoveryFactString(issue.facts, 'tool'),
-  };
-  const recommended = resolveRecommendedAction(issue, actions);
-  const facts = [...formatSubjectLines(issue, width), ...formatDetailLines(issue)];
+export function recoveryPromptSummaryRows(
+  issue: RecoveryIssue,
+  width: number,
+  askedRows?: number,
+): PromptRow[] {
+  const subject = formatSubjectLines(issue, width);
+  const details = formatDetailLines(issue);
+  const room = width - getTerminalCellWidth(FACT_INDENT);
+  const asked = details.filter(isAskedDetail);
+  const after = [...subject, ...details.filter((detail) => !isAskedDetail(detail))];
+  const facts =
+    askedRows === undefined
+      ? [...subject, ...details]
+      : [
+          ...asked.map((detail, index) =>
+            fitAskedDetail(detail, room, askedRows, [...asked.slice(index + 1), ...after]),
+          ),
+          ...after,
+        ];
 
   const parts = formatRecoveryHeaderParts(issue);
   const rows: PromptRow[] = [
@@ -419,11 +244,35 @@ function buildRecoveryPromptRows(issue: RecoveryIssue, width: number): PromptRow
   if (facts.length > 0) {
     rows.push({ kind: 'blank' }, { kind: 'facts', items: facts, grid: false });
   }
-  const actionRows = buildRecoveryActionRows(actions, context, recommended);
-  if (actionRows.length > 0) {
-    rows.push({ kind: 'blank' }, ...actionRows);
-  }
   return rows;
+}
+
+/**
+ * The asked row as it wraps at `room`. Past `rows` rows, the last row ends on `…`. The panel masks
+ * its prompt whole, then row by row. A cut value can lose its exemption or pair its open quote with
+ * a quote in `after`, the rows below it, so a cut stands only when both passes leave it as it is.
+ */
+function fitAskedDetail(
+  detail: string,
+  room: number,
+  rows: number,
+  after: readonly string[],
+): string {
+  const text = oneLineDisplayText(detail);
+  const lines = wrapHard(text, room).split('\n');
+  if (lines.length <= rows) return text;
+  const whole = lines.slice(0, rows - 1).join('');
+  const rest = lines.slice(rows - 1).join('');
+  const below = after.join('\n');
+  for (let cells = room; cells > 1; cells -= 1) {
+    const fitted = `${whole}${truncateTerminalDisplayText(rest, cells)}`;
+    const [shown = ''] = sanitizeTerminalDisplayText(`${fitted}\n${below}`, {
+      preserveLineBreaks: true,
+    }).split('\n');
+    if (oneLineDisplayText(shown) === fitted && wrapHard(fitted, room).split('\n').length <= rows)
+      return fitted;
+  }
+  return `${whole}${ELLIPSIS}`;
 }
 
 function promptRowToLines(row: PromptRow): string[] {
@@ -442,10 +291,6 @@ function promptRowToLines(row: PromptRow): string[] {
       return [row.text];
     case 'facts':
       return [...row.items];
-    case 'action':
-      return [row.recommended ? `${recommendedRowPrefix()}${row.text}` : row.text];
-    case 'note':
-      return [row.text];
   }
 }
 
@@ -459,20 +304,7 @@ export function promptRowsToString(rows: readonly PromptRow[]): string {
 
 /** The question-mode key of the halt; it has no panel width, so its Files row names every file. */
 export function formatRecoveryPrompt(issue: RecoveryIssue): string {
-  return promptRowsToString(buildRecoveryPromptRows(issue, Number.POSITIVE_INFINITY));
-}
-
-/**
- * The issue and its facts for the picker at the panel's text width; action rows are rendered as
- * real selectable rows.
- */
-export function recoveryPromptSummaryRows(issue: RecoveryIssue, width: number): PromptRow[] {
-  const rows = buildRecoveryPromptRows(issue, width).filter(
-    (row): row is Exclude<PromptRow, { kind: 'action' } | { kind: 'note' }> =>
-      row.kind !== 'action' && row.kind !== 'note',
-  );
-  while (rows.at(-1)?.kind === 'blank') rows.pop();
-  return rows;
+  return promptRowsToString(recoveryPromptSummaryRows(issue, Number.POSITIVE_INFINITY));
 }
 
 export function recommendedRecoveryAction(issue: RecoveryIssue): RecoveryAction | undefined {
@@ -483,28 +315,8 @@ export function parseRecoveryActionAnswer(
   input: string,
   issue: RecoveryIssue,
 ): RecoveryAction | null {
-  const actions = getRecoveryPromptActions(issue);
   const normalized = input.trim().toLowerCase();
-  if (normalized.length === 0) return resolveRecommendedAction(issue, actions) ?? null;
-  if (SWITCH_SEAT_ROW_KEY.test(normalized)) {
-    return numberedSwitchSeatAction(normalized, issue, actions);
-  }
-  return findAliasedActionAmong(normalized, actions) ?? null;
-}
-
-/**
- * A numbered seat key is only a key while the prompt printed it: one offered
- * tool is keyed bare, so `w2` there is a typo, not a choice.
- */
-function numberedSwitchSeatAction(
-  value: string,
-  issue: RecoveryIssue,
-  actions: readonly RecoveryAction[],
-): RecoveryAction | null {
-  if (!actions.includes('switch-seat')) return null;
-  const offered = issue.switchSeat?.candidates ?? [];
-  if (offered.length < 2) return null;
-  return switchSeatCandidateForAnswer(value, issue.switchSeat) === undefined ? null : 'switch-seat';
+  return findAliasedActionAmong(normalized, getRecoveryPromptActions(issue)) ?? null;
 }
 
 function findAliasedActionAmong(
@@ -632,6 +444,11 @@ function fitFileList(files: string[], room: number): string {
  * Apply conflicts and partial Apply keep every file detail and the workspace or backup path.
  */
 const MAX_DETAIL_LINES = 6;
+
+/** The line the halt asks the user to read: the planner's question, or why it cannot be done. */
+export function isAskedDetail(detail: string): boolean {
+  return detail.startsWith('Question: ') || detail.startsWith('Planner said: ');
+}
 
 function formatDetailLines(issue: RecoveryIssue): string[] {
   const dropQuotedReset = formatResetAt(issue.resetAt) !== undefined;

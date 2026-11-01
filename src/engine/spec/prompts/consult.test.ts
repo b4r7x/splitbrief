@@ -490,4 +490,17 @@ describe('buildConsultPrompt', () => {
     expect(resumed).toContain('a rewrite or a split never drops a criterion id');
     expect(resumed.length).toBeLessThan(full.length);
   });
+
+  it('names the decision ledger Decisions in the resumed turn', () => {
+    const resumed = buildConsultPrompt(
+      consultInput({
+        resumed: true,
+        plan: { ...plan, decisions: [{ text: 'Used node:crypto', taskId: taskId('T003') }] },
+      }),
+    );
+
+    expect(resumed).toContain('## Decisions\n');
+    expect(resumed).toContain('- Used node:crypto (T003)');
+    expect(resumed).not.toContain('Confirmed Decisions');
+  });
 });

@@ -413,7 +413,9 @@ describe('PickerView previews', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('Stale');
-    expect(frame).toContain('1 stale model retained. Refresh detection.');
+    expect(frame).toContain('Last confirmed openai catalog is stale. Refresh detection.');
+    expect(frame).toContain('1 stale model retained');
+    expect(frame).not.toContain('1 stale model retained. Refresh detection.');
     expect(frame).not.toContain('1 model detected');
 
     ui.rerender(
@@ -429,7 +431,7 @@ describe('PickerView previews', () => {
     );
     await flushEffects();
     const boundedFrame = ui.lastFrame() ?? '';
-    expect(boundedFrame).toContain('99+ stale models retained. Refresh detection.');
+    expect(boundedFrame).toContain('99+ stale models retained');
     expect(boundedFrame).not.toContain('100 stale models retained.');
     ui.unmount();
   });
@@ -559,6 +561,90 @@ describe('PickerView previews', () => {
       expect(rows[remedyRow]).toBe('Sign in to OpenCode CLI, then ctrl+r.');
       expect(rows[remedyRow + 1]).toMatch(/^OpenCode CLI/);
       expect(rows.join('\n')).not.toContain('to detect its models');
+    });
+  });
+
+  describe('a tool with rows from an earlier listing', () => {
+    const descriptor = CLI_TOOL_CATALOG.codex;
+    const staleRows: ModelOption[] = [
+      { id: 'gpt-6-astra', membership: 'stale', isStale: true, isDetected: false },
+    ];
+
+    async function footerRows(
+      status: PickerOption['status'],
+      catalogDiagnostic: PickerCatalog['catalogDiagnostic'],
+      cols = 80,
+    ): Promise<string[]> {
+      const codex = pickerItem({
+        id: 'codex',
+        displayName: 'OpenAI Codex CLI',
+        kind: 'cli',
+        roles: ['planner', 'implementer'],
+        modelPolicy: 'optional',
+        billing: 'subscription-included',
+        permissions: readyPermissions,
+        status,
+        available: status.state === 'ready',
+      });
+      const catalog: PickerCatalog = pickerCatalog({
+        browseCatalog: false,
+        items: [codex],
+        rightModels: staleRows,
+        currentItem: codex,
+        selectedItemId: codex.id,
+        focusModels: true,
+        roleLabel: 'Planner',
+        modelCounts: { ...zeroCounts, stale: 7 },
+        catalogDiagnostic,
+      });
+      terminalSizeStore.__testReset({ cols, rows: 40, isSmall: false });
+      const ui = renderFeature(
+        <PickerView slot="seat" role="planner" catalog={catalog} actions={makeActions()} />,
+      );
+      await flushEffects();
+      const rows = (ui.lastFrame() ?? '').split('\n').map((row) => row.trim());
+      ui.unmount();
+      return rows;
+    }
+
+    function statusFor(state: 'unauthenticated' | 'unavailable'): PickerOption['status'] {
+      return deriveCliStatus(descriptor, {
+        cliTools: [cliDetectionFor(state, 'codex', { authChannel: 'session' })],
+        providers: [],
+      });
+    }
+
+    it.each(['missing-credential', 'invalid-credential'] as const)(
+      'puts the sign-in step first when the listing failed with %s',
+      async (failure) => {
+        const rows = await footerRows(statusFor('unauthenticated'), {
+          kind: 'probe-failed',
+          failure,
+        });
+        const remedyRow = rows.findLastIndex((row) => row.includes('Sign in to OpenAI Codex CLI'));
+        expect(rows[remedyRow]).toBe('Sign in to OpenAI Codex CLI, then ctrl+r.');
+        expect(rows[remedyRow + 1]).toContain('7 stale models retained');
+        expect(rows.join('\n')).not.toContain('Refresh detection');
+      },
+    );
+
+    it.each([
+      ['unauthenticated', 'Sign in to OpenAI Codex CLI, then ctrl+r.'],
+      ['unavailable', 'Install OpenAI Codex CLI, then ctrl+r.'],
+    ] as const)(
+      'puts the remedy of an %s tool first before any live pass',
+      async (state, remedy) => {
+        const rows = await footerRows(statusFor(state), undefined);
+        const remedyRow = rows.lastIndexOf(remedy);
+        expect(remedyRow).toBeGreaterThanOrEqual(0);
+        expect(rows[remedyRow + 1]).toContain('7 stale models retained');
+        expect(rows.join('\n')).not.toContain('Refresh detection');
+      },
+    );
+
+    it('keeps the refresh step when the tool needs no other remedy', async () => {
+      const rows = await footerRows({ state: 'ready', remediation: null }, undefined, 160);
+      expect(rows.join('\n')).toContain('7 stale models retained. Refresh detection.');
     });
   });
 

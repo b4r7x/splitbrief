@@ -1,6 +1,7 @@
 import { chmod, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { freezeProbeDeadlines } from '#testing/helpers/fake-timers.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import type { RunnerDiscoveryContext } from '../../core/config/accessors/runner-discovery-context.js';
 import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
@@ -78,6 +79,8 @@ function bundledCatalogFixture(): string {
     ],
   });
 }
+
+freezeProbeDeadlines();
 
 describe('catalog probe output budget', () => {
   it.runIf(process.platform !== 'win32')(

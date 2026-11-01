@@ -500,6 +500,10 @@ describe('e2e: reviewer check base re-run', { timeout: 240_000 }, () => {
         finding,
       });
       expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
+      expect(run.stdout.split('\n').find((line) => line.startsWith('verify V1: '))).toMatch(
+        /^verify V1: pre-existing · reused, ran \d+:\d+ · the failure also fails before this run's changes \(/,
+      );
+      expect(run.stdout).not.toContain('verify V1: failed');
 
       expect(events.some((event) => event.type === 'review_fix_started')).toBe(false);
       expect(
@@ -533,6 +537,20 @@ describe('e2e: reviewer check base re-run', { timeout: 240_000 }, () => {
       const v1 = logged.filter((entry) => entry.id === 'V1');
       expect(v1).toHaveLength(2);
       for (const entry of v1) expect(entry.preExisting).toEqual([red.key]);
+
+      const packet = ReviewPacketSchema.parse(
+        JSON.parse(readFileSync(reviewPacketJsonPath(ref), 'utf8')),
+      );
+      const packetV1 = packet.checks.entries.filter((entry) => entry.id === 'V1');
+      expect(packetV1).toHaveLength(2);
+      expect(packetV1.find((entry) => entry.taskId === undefined)).toMatchObject({
+        command: red.command,
+        exitCode: 1,
+        preExisting: [red.key],
+      });
+      expect(readFileSync(reviewPacketMarkdownPath(ref), 'utf8').split('\n')).toContain(
+        `- V1 (exit 1): ${red.command}`,
+      );
     },
   );
 

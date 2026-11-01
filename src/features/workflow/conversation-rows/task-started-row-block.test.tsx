@@ -6,6 +6,7 @@ import { eventRows } from '#testing/helpers/event-rows.js';
 import { renderFeature } from '#testing/helpers/ink.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
 import { ConversationRowView } from '../components/conversation-flow/row-view.js';
+import { wrapWidthFor } from './row-markers.js';
 
 const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };
 const LIVE_MARK = glyph('statusInProgress');
@@ -109,5 +110,84 @@ describe('taskStartedRowBlock continuations', () => {
       expect(line).not.toMatch(/^\s*CLI\b/);
       expect(line).not.toMatch(/\bOpenCode\s*$/);
     }
+  });
+
+  const pathRows = (title: string, file: string, width: number) =>
+    eventRows({
+      event: makeTaskStart({
+        taskId: taskId('T901'),
+        title,
+        file,
+        files: [file, 'testing/visual/catalog.ts'],
+        action: 'modify',
+        tool: 'codex',
+        model: 'gpt-5',
+      }),
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width, viewportRows: 20, streaming },
+    });
+  const lineText = (row: { segments: readonly { text: string }[] }) =>
+    row.segments.map((segment) => segment.text).join('');
+
+  // The reproduction: at 60 columns the hard wrap filled the title row with `testing/vi` and left
+  // `sual/fixtures/…` on the next row.
+  it('breaks an over-long path at a slash and keeps each row on its own tone', () => {
+    const rows = pathRows(
+      'Project deterministic workflow activity',
+      'testing/visual/fixtures/workflow/projections.ts',
+      60,
+    );
+
+    expect(rows.map((row) => row.segments.map(({ text, tone }) => [text, tone]))).toEqual([
+      [
+        ['T901', 'text'],
+        [' Project deterministic workflow activity', 'text'],
+        [' ', 'textDim'],
+      ],
+      [['testing/visual/fixtures/workflow/', 'textDim']],
+      [['projections.ts (modify) · +1 file', 'textDim']],
+      [['OpenAI Codex CLI · GPT-5', 'implementer']],
+    ]);
+  });
+
+  it('keeps a path that fits one row whole', () => {
+    const lines = pathRows(
+      'Project deterministic workflow activity',
+      'testing/visual/fixtures/workflow/projections.ts',
+      80,
+    ).map((row) => lineText(row).trimEnd());
+
+    expect(lines).toContain('testing/visual/fixtures/workflow/projections.ts (modify) · +1 file');
+  });
+
+  it('cuts a path segment wider than the row at the row width', () => {
+    const name = `${'a'.repeat(70)}.ts`;
+    const lines = pathRows('Short title', `src/${name}`, 60).map(lineText);
+    const room = wrapWidthFor('task-header', 60) - 'src/'.length;
+
+    expect(lines.slice(0, 3)).toEqual([
+      'T901 Short title ',
+      `src/${'a'.repeat(room)}`,
+      `${'a'.repeat(70 - room)}.ts (modify) · +1 file`,
+    ]);
+  });
+
+  it('starts a continuation on its text when the title fills the row exactly', () => {
+    const wrapWidth = wrapWidthFor('task-header', 60);
+    const title = 'a'.repeat(wrapWidth - 'T901 '.length);
+    const rows = pathRows(title, 'src/a.ts', 60);
+
+    expect(rows.map((row) => row.segments.map(({ text, tone }) => [text, tone]))).toEqual([
+      [
+        ['T901', 'text'],
+        [` ${title}`, 'text'],
+      ],
+      [
+        ['src/a.ts (modify) · +1 file', 'textDim'],
+        [' · ', 'textDim'],
+        ['OpenAI Codex CLI · GPT-5', 'implementer'],
+      ],
+    ]);
   });
 });

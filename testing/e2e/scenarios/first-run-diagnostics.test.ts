@@ -216,6 +216,57 @@ describe('e2e: first-run diagnostics', () => {
     expect(readFileSync(configPath(target.projectDir), 'utf8')).toBe(saved);
   });
 
+  it('warns in doctor that End-of-run checks off run no project gate before the final review', async () => {
+    const target = freshProject();
+    const initialized = await cli(target, ['init', '--yes']);
+    expect(initialized.exitCode, initialized.stderr).toBe(0);
+    const initial = loadConfig(target.projectDir).config;
+    writeConfig(target.projectDir, {
+      ...initial,
+      validation: { ...initial.validation, endChecks: false },
+    });
+    const report = await cli(target, ['doctor']);
+    expect(report.stdout).toContain('End-of-run checks: off.');
+    expect(report.stdout).toContain(
+      'End-of-run checks are off: SPLITBRIEF runs no project gate before the final review.',
+    );
+  });
+
+  it('states in doctor that plan and task checks still run with End-of-run checks off', async () => {
+    const target = freshProject();
+    const initialized = await cli(target, ['init', '--yes']);
+    expect(initialized.exitCode, initialized.stderr).toBe(0);
+    const initial = loadConfig(target.projectDir).config;
+    writeConfig(target.projectDir, {
+      ...initial,
+      validation: { ...initial.validation, endChecks: false },
+    });
+
+    const report = await cli(target, ['doctor']);
+
+    expect(report.stdout).toContain('End-of-run checks: off.');
+    expect(report.stdout).toMatch(/no reviewer check runs/iu);
+    expect(report.stdout).toMatch(/plan and task checks still run/iu);
+  });
+
+  it('states in doctor text and JSON that the plan gate runs before the final review only', async () => {
+    const target = freshProject();
+    const initialized = await cli(target, ['init', '--yes']);
+    expect(initialized.exitCode, initialized.stderr).toBe(0);
+    const text = await cli(target, ['doctor']);
+    const json = await cli(target, ['doctor'], { json: true, timeoutMs: 60_000 });
+    const gateRule =
+      'Before the final review, SPLITBRIEF runs the project gate that the plan names. A task review runs no gate.';
+
+    expect(text.stdout).toContain('End-of-run checks: on.');
+    expect.soft(text.stdout).toContain(gateRule);
+    expect.soft(text.stdout).not.toContain('chooses the commands that verify the change');
+    const configured = JSON.parse(json.stdout).report.checks.find(
+      (check: { id: string }) => check.id === 'validation.configured',
+    );
+    expect.soft(configured.details[0]).toBe(gateRule);
+  });
+
   it('directs a tight CLI BUILD budget to Settings and clears the warning after the edit', async () => {
     const target = freshProject();
     const initial = loadConfig(target.projectDir).config;

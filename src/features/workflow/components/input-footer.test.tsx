@@ -5,7 +5,7 @@ import chalk from 'chalk';
 import { defaultTheme } from '../../../components/theme.js';
 import { paint } from '../../../core/theme/paint.js';
 import { openRunBylineParts } from '../closed/byline.js';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
@@ -1214,7 +1214,7 @@ describe('InputFooter', () => {
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(`${reason} · ${action}`);
     ui.unmount();
   });
-  it('paints the stopping clock with textDim without changing its separators', () => {
+  it('paints the stopping clock with textDim', () => {
     chalk.level = 3;
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'running' });
@@ -1225,10 +1225,45 @@ describe('InputFooter', () => {
     });
     const ui = renderFeature(<InputFooter width={120} />);
     const frame = ui.lastFrame();
-    expect(frame).toContain(paint(defaultTheme.textDim, ' · Waiting for processes to exit · 0:42'));
+    expect(frame).toContain(paint(defaultTheme.textDim, ' · Waiting for processes to exit 0:42'));
     expect(stripAnsiStyles(frame)).toContain(
-      'Stopping the run · Waiting for processes to exit · 0:42',
+      'Stopping the run · Waiting for processes to exit 0:42',
     );
+    ui.unmount();
+  });
+
+  it.each([
+    {
+      width: 60,
+      stop: 'terminating',
+      expected: 'Stopping the review · Waiting for processes to exit 0:42',
+    },
+    {
+      width: 60,
+      stop: 'settling',
+      expected: 'Stopping the review · Finishing cleanup and saving 0:42',
+    },
+    { width: 50, stop: 'terminating', expected: 'Stopping the review · Waiting for … 0:42' },
+    {
+      width: 50,
+      stop: 'settling',
+      expected: 'Stopping the review · Finishing cleanup … 0:42',
+    },
+  ] as const)('keeps the clock of a $stop stop of the review at $width columns', (row) => {
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(1_000_000);
+    runViewStore.__testReset({ phase: 'final-review' });
+    lifecycleStore.__testReset({ status: 'running' });
+    stopStore.__testReset({
+      intent: 'stop-now',
+      phase: row.stop,
+      requestedAt: 1_000_000 - 42_000,
+    });
+    const ui = renderFeature(<InputFooter width={row.width} />);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(row.expected);
     ui.unmount();
   });
 

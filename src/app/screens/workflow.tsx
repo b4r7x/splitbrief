@@ -77,7 +77,10 @@ import { reviewKeysStore } from '../../stores/ui/review-keys.js';
 import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
 import { questionOptions, questionPromptStore } from '../../stores/question-prompt/prompt.js';
-import { recoveryComposerHint } from '../../features/workflow/recovery-prompt.js';
+import {
+  recoveryComposerHint,
+  RECOVERY_EMPTY_ENTER_NOTICE,
+} from '../../features/workflow/recovery-prompt.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../lib/terminal/typeahead-grace.js';
 import { navigateIndex } from '../../utils/indexing.js';
 import { sessionSelectDeps } from '../prepare-resume.js';
@@ -440,6 +443,7 @@ export function WorkflowScreen({
             width: bylineWidth,
             now,
             apply,
+            confirming,
           });
   // A check running for this run owns Escape and says so on the byline, so the legend above the
   // composer does not offer it for going home at the same time. Neither does a quit queued behind
@@ -543,6 +547,7 @@ export function WorkflowScreen({
                 ? () => setResultFocus({ key: resultFocusKey, menu: true })
                 : model.onEmptySubmit
             }
+            emptyAnswerNotice={recoveryPromptOpen ? RECOVERY_EMPTY_ENTER_NOTICE : undefined}
             onRuntimeCommand={model.handleRuntimeCommand}
             commands={commands}
             mode={model.inputMode.mode}
@@ -648,7 +653,9 @@ export function WorkflowScreen({
             onRecoveryFocusChange={(menuFocused) => {
               setRecoveryFocus({ key: recoveryFocusKey, menu: menuFocused });
             }}
-            onRecoveryResolve={(answer) => model.inputMode.resolve(plainAnswer(answer))}
+            onRecoveryResolve={(answer) =>
+              model.inputMode.resolve({ ...plainAnswer(answer), row: true })
+            }
             questions={plannerQuestions}
             planner={
               structuredQuestion

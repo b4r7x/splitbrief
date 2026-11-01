@@ -204,6 +204,21 @@ describe('openRunByline', () => {
     ).toBe('Ready to apply as is · pick Apply as is, Show diff or Discard');
   });
 
+  it('names the two rows of the confirmation while Apply as is asks', () => {
+    expect(
+      openRunByline({
+        wait: null,
+        planCard: false,
+        failure: null,
+        continuable: false,
+        now: NOW,
+        width: WIDE,
+        status: { kind: 'ready-to-apply', override: true },
+        confirming: true,
+      }),
+    ).toBe('Ready to apply as is · pick Apply as is or Back');
+  });
+
   it('names the brief a paused run is holding, then the key that moves it', () => {
     expect(
       openRunByline({
@@ -474,6 +489,30 @@ describe('openRunByline', () => {
         },
       }),
     ).toBe('Waiting for your answer · type a reply or ⏎ to continue');
+  });
+
+  it.each<[string, Extract<RunStatus, { kind: 'open' }>, string]>([
+    [
+      'a gate',
+      {
+        kind: 'open',
+        stop: { kind: 'waiting-for-you', on: { kind: 'gate', gate: 'plan' } },
+        resumeAt: { kind: 'gate', gate: 'plan' },
+      },
+      'Waiting at the plan · ⏎ to continue',
+    ],
+    [
+      'a halt',
+      {
+        kind: 'open',
+        stop: { kind: 'waiting-for-you', on: { kind: 'halt', issue: makeRecoveryIssue() } },
+        resumeAt: { kind: 'planner', call: 'plan' },
+      },
+      'Needs you · T001 failed · ⏎ to decide',
+    ],
+  ])('keeps the line of %s that waits for you over a saved wait', (_name, status, line) => {
+    const resetAt = new Date(new Date(NOW).setHours(17, 0, 0, 0)).toISOString();
+    expect(openRunByline({ ...OPEN, wait: codexWait(resetAt, false), status })).toBe(line);
   });
 
   it('names the wait of a run another process holds as the live byline does', () => {

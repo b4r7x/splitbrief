@@ -32,6 +32,7 @@ import type { CliStartGate } from '../../../src/engine/runners/start-gate.js';
 import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTestGitRepo, startConflictingMerge } from '#testing/helpers/git.js';
+import { freezeProbeDeadlines } from '#testing/helpers/fake-timers.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import {
   prependPath,
@@ -488,6 +489,8 @@ function flagValues(args: readonly string[], flag: string): readonly (string | u
   return args.flatMap((arg, index) => (arg === flag ? [args[index + 1]] : []));
 }
 
+freezeProbeDeadlines();
+
 describe('implementer workspace argv', () => {
   it.each(ADMITTED_IMPLEMENTER_IDS)('%s names no directory but the seat directory', (toolId) => {
     const args = seatArgs(toolId, '/seat');
@@ -840,6 +843,7 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
   it.skipIf(process.platform === 'win32')(
     'aborts and reaps descendant processes',
     async () => {
+      vi.useRealTimers();
       const fixture = createFixture(toolId);
       installShim(fixture, 'abort-wait');
       resetCapture(fixture);

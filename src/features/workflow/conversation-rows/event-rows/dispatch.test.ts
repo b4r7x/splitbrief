@@ -3391,6 +3391,24 @@ describe('consult answer rows', () => {
     expect(rows.map(rowText)).toEqual([`PLAN ${arrow} T003: asks you`]);
   });
 
+  it('renders a cannot answer on a failing brief as the one row saying it cannot be done', () => {
+    const rows = rowsFor({
+      type: 'consult_answered',
+      ts: 0,
+      phase: 'escalating',
+      taskId: taskId('T003'),
+      reason: 'failed',
+      action: 'cannot',
+      diagnosis: 'The form file is generated; every attempt is overwritten.',
+      newTaskIds: null,
+    });
+
+    expect(rows.map(rowText)).toEqual([
+      `PLAN ${arrow} T003: cannot be done · The form file is generated; every attempt is overwritten.`,
+    ]);
+    expect(rows[0]?.segments[0]).toMatchObject({ text: 'PLAN', tone: 'planner' });
+  });
+
   it.each([
     ['rewrite-task', [taskId('T006')], 'new fix brief T006'],
     ['split-task', [taskId('T006'), taskId('T007')], 'new fix briefs T006, T007'],

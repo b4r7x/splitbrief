@@ -12,7 +12,7 @@ export function boundEngineEventForConsumer(
   if (bounded.oversized) {
     return boundsWarning(
       event,
-      `${context}: omitted oversized ${event.type} event exceeding ${bounded.maxBytes} bytes`,
+      `Omitted oversized ${event.type} event exceeding ${bounded.maxBytes} bytes`,
     );
   }
 
@@ -20,10 +20,7 @@ export function boundEngineEventForConsumer(
   const parsed = EngineEventSchema.safeParse(payload);
   if (parsed.success) return parsed.data;
 
-  return boundsWarning(
-    event,
-    `${context}: omitted invalid ${event.type} event after public payload normalization`,
-  );
+  return boundsWarning(event, `Omitted invalid ${event.type} event`);
 }
 
 function normalizeBoundedEventPayload(

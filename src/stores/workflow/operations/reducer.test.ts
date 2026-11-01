@@ -124,6 +124,21 @@ function runnerCompleted(
   };
 }
 
+function refusedAnswer(
+  ts: number,
+  category: 'reviewer' | 'planner',
+  phase: 'final-review' | 'planning',
+): EngineEventOf<'warning'> {
+  return {
+    type: 'warning',
+    ts,
+    phase,
+    message: `The ${category} seat answer did not match its contract.`,
+    category,
+    code: 'seat_answer_refused',
+  };
+}
+
 function runnerWarning(
   overrides?: Partial<Omit<EngineEventOf<'runner_call_warning'>, 'warning'>> & {
     warning?: RunnerCallWarningInput;
@@ -579,6 +594,79 @@ describe('operationsStore', () => {
       runnerStarted({ ts: 9_000, phase: 'final-review', role: 'review', taskId: undefined }),
     );
     expect(operationsStore.get().active?.answeringAgain).toBeUndefined();
+  });
+
+  const repairCuts: EngineEventOf<'turn_interrupted' | 'workflow_resumed'>[] = [
+    { type: 'turn_interrupted', ts: 3_600, phase: 'final-review', source: 'user', at: 'mid-step' },
+    { type: 'workflow_resumed', ts: 3_600, phase: 'final-review' },
+  ];
+
+  it.each(repairCuts)(
+    'drops a refused reviewer answer that a $type cut before its repair',
+    (cut) => {
+      const review = { phase: 'final-review', role: 'review', taskId: undefined } as const;
+      addEvent({
+        type: 'review_started',
+        ts: 1_000,
+        phase: 'final-review',
+        scope: 'final',
+        tool: 'lm-studio',
+      });
+      addEvent({ type: 'review_step', ts: 1_010, phase: 'final-review', step: 'verdict' });
+      addEvent(runnerStarted({ ...review, ts: 1_100, callId: 'call-1' }));
+      addEvent(runnerCompleted({ ...review, ts: 2_000, callId: 'call-1' }));
+      addEvent(refusedAnswer(2_001, 'reviewer', 'final-review'));
+      addEvent(runnerStarted({ ...review, ts: 2_100, callId: 'call-2' }));
+      expect(operationsStore.get().active).toMatchObject({
+        callId: 'call-2',
+        answeringAgain: true,
+      });
+
+      addEvent({
+        type: 'turn_interrupted',
+        ts: 2_200,
+        phase: 'final-review',
+        source: 'user',
+        at: 'mid-step',
+      });
+      addEvent(runnerStarted({ ...review, ts: 3_000, callId: 'call-3' }));
+      addEvent(runnerCompleted({ ...review, ts: 3_500, callId: 'call-3' }));
+      addEvent(refusedAnswer(3_501, 'reviewer', 'final-review'));
+      addEvent(cut);
+      addEvent(runnerStarted({ ...review, ts: 4_000, callId: 'call-4' }));
+      expect(operationsStore.get().active?.callId).toBe('call-4');
+      expect(operationsStore.get().active?.answeringAgain).toBeUndefined();
+    },
+  );
+
+  it('marks no reviewer call after a refused planner answer', () => {
+    const planner = { phase: 'planning', role: 'planner', taskId: undefined } as const;
+    addEvent(runnerStarted({ ...planner, ts: 1_000, callId: 'plan-1' }));
+    addEvent(runnerCompleted({ ...planner, ts: 1_500, callId: 'plan-1' }));
+    addEvent(refusedAnswer(1_501, 'planner', 'planning'));
+    addEvent(runnerStarted({ ...planner, ts: 1_600, callId: 'plan-2' }));
+    expect(operationsStore.get().active?.answeringAgain).toBeUndefined();
+    addEvent(runnerCompleted({ ...planner, ts: 2_000, callId: 'plan-2' }));
+
+    const review = { phase: 'final-review', role: 'review', taskId: undefined } as const;
+    addEvent({
+      type: 'review_started',
+      ts: 5_000,
+      phase: 'final-review',
+      scope: 'final',
+      tool: 'lm-studio',
+    });
+    addEvent(runnerStarted({ ...review, ts: 5_100, callId: 'review-1' }));
+    expect(operationsStore.get().active?.callId).toBe('review-1');
+    expect(operationsStore.get().active?.answeringAgain).toBeUndefined();
+
+    addEvent(runnerCompleted({ ...review, ts: 6_000, callId: 'review-1' }));
+    addEvent(refusedAnswer(6_001, 'reviewer', 'final-review'));
+    addEvent(runnerStarted({ ...review, ts: 6_100, callId: 'review-2' }));
+    expect(operationsStore.get().active).toMatchObject({
+      callId: 'review-2',
+      answeringAgain: true,
+    });
   });
 
   it('keeps planner_status on the planner role and closes it on done', () => {

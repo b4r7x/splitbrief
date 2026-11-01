@@ -1311,6 +1311,35 @@ const READY_PLANNER_ACCEPT = record({
   ledger: READY_LEDGER,
 });
 
+const PLANNER_ACCEPT_LONG_NOTE = Array.from(
+  { length: 12 },
+  (_, index) =>
+    `Reason ${index + 1}: re-validating on each keystroke is the documented form behaviour, and the retired code is kept for old clients.`,
+).join(' ');
+
+/** A note taller than the terminal: the title, the rows and the findings stay on screen. */
+const READY_PLANNER_ACCEPT_LONG_NOTE = record({
+  sessionId: 'visual-ready-planner-accept-long-note',
+  status: READY_OVERRIDE.status,
+  state: savedState({
+    phase: 'complete',
+    briefs: WORKSPACE_BRIEFS,
+    reviewStatus: 'failed',
+    acceptedAsIs: {
+      at: GENERATED_AT,
+      findings: [
+        'src/form.ts re-validates on every keystroke',
+        'docs/validation-errors.md names a retired code',
+      ],
+      note: PLANNER_ACCEPT_LONG_NOTE,
+      by: 'planner',
+    },
+    workspace: RUN_WORKSPACE,
+  }),
+  summary: workspaceSummary('visual-ready-planner-accept-long-note'),
+  ledger: READY_LEDGER,
+});
+
 /** The transcript names each brief's action the way the saved task the closed block reads names it. */
 function savedAction(state: WorkflowState, id: string): Task['action'] {
   const task = state.tasks.find((item) => item.id === id);
@@ -1410,6 +1439,11 @@ const READY_PLANNER_ACCEPT_LOG: readonly EngineEvent[] = READY_OVERRIDE_LOG.flat
           event,
         ]
       : [event],
+);
+
+const READY_PLANNER_ACCEPT_LONG_NOTE_LOG: readonly EngineEvent[] = READY_PLANNER_ACCEPT_LOG.map(
+  (event) =>
+    event.type === 'consult_answered' ? { ...event, note: PLANNER_ACCEPT_LONG_NOTE } : event,
 );
 
 /** The review passed and both sides changed two entries differently: the run waits at Apply. */
@@ -3079,6 +3113,10 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   atRestProjection({
     id: 'workflow-ready-planner-accept-confirm',
     route: { record: READY_PLANNER_ACCEPT, log: READY_PLANNER_ACCEPT_LOG },
+  }),
+  atRestProjection({
+    id: 'workflow-ready-planner-accept-long-note',
+    route: { record: READY_PLANNER_ACCEPT_LONG_NOTE, log: READY_PLANNER_ACCEPT_LONG_NOTE_LOG },
   }),
   atRestProjection({ id: 'workflow-closed-applied', route: { record: CLOSED_APPLIED } }),
   atRestProjection({

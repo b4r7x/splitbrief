@@ -1,7 +1,8 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import type { ReactNode } from 'react';
 import { REVIEW_FILE, sessionDir } from '../../core/paths.js';
 import { writeSpecFile } from '../../core/paths-io.js';
+import { writeLockfile } from '../../core/sessions/lockfile.js';
 import { buildReviewFailedRecoveryIssue } from '../../engine/orchestrator/recovery/builders/task.js';
 import { buildApplyConflictRecoveryIssue } from '../../engine/orchestrator/recovery/builders/apply.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
@@ -1210,6 +1211,65 @@ describe('WorkflowScreen showing a run at rest', () => {
     vi.useRealTimers();
   });
 
+  it('drops the wait of a run another process drives once its reset passes', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(FIXED_TS);
+    const wait: SeatWait = {
+      seat: 'build',
+      resetAt: new Date(FIXED_TS + 2_500).toISOString(),
+      tool: 'codex',
+      kind: 'cli',
+      holds: { tool: 'codex', kind: 'cli' },
+    };
+    // Another live process holds the run, so the screen's owner check keeps it running.
+    mkdirSync(sessionDir(projectDir, 'at-rest-session'), { recursive: true });
+    await writeLockfile(sessionDir(projectDir, 'at-rest-session'), {
+      pid: process.pid,
+      startTimeMs: 0,
+      lastAliveMs: FIXED_TS,
+      sessionId: 'at-rest-session',
+      feature: 'held elsewhere',
+    });
+    openRun({
+      status: { kind: 'running' },
+      hydration: {
+        kind: 'loaded',
+        state: makeWorkflowState({
+          phase: 'implementing',
+          tasks: [makeTask({ id: 'T003', status: 'in_progress' })],
+          seatWait: wait,
+        }),
+      },
+    });
+    loadEvents([
+      {
+        type: 'seat_wait_started',
+        ts: FIXED_TS - 1_000,
+        phase: 'implementing',
+        seat: wait.seat,
+        resetAt: wait.resetAt,
+        tool: 'OpenAI Codex CLI',
+        wait,
+      },
+    ]);
+
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
+    await flushEffects();
+    const waiting = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(waiting).toContain('Waiting for OpenAI Codex CLI');
+    expect(waiting).toContain('resets');
+    expect(waiting).not.toContain('Running in another process');
+
+    vi.advanceTimersByTime(3_000);
+    await flushEffects();
+    const passed = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(passed).toContain('Running in another process');
+    expect(passed).not.toContain('Waiting for');
+
+    ui.unmount();
+    vi.useRealTimers();
+  });
+
   it('drops a seat wait from the byline once its reset passes, and stops the clock', async () => {
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
     vi.setSystemTime(FIXED_TS);
@@ -1525,7 +1585,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     });
   }
 
-  function readyRun(override = false, findings = ['missing null check']) {
+  function readyRun(override = false, findings = ['missing null check'], plannerNote?: string) {
     return openRun({
       status: { kind: 'ready-to-apply', override },
       hydration: {
@@ -1539,7 +1599,11 @@ describe('WorkflowScreen showing a run at rest', () => {
             base: { snapshotId: 'workspace-base', head: null },
           },
           ...(override && {
-            acceptedAsIs: { at: '2026-09-14T00:00:00.000Z', findings },
+            acceptedAsIs: {
+              at: '2026-09-14T00:00:00.000Z',
+              findings,
+              ...(plannerNote !== undefined && { note: plannerNote, by: 'planner' as const }),
+            },
           }),
         }),
       },
@@ -2006,6 +2070,114 @@ describe('WorkflowScreen showing a run at rest', () => {
     expect(frame).toContain('Open finding 8 needs a fix');
     expect(frame).toContain('Back · return to the result menu');
     expect(frame).toContain('tab type a command');
+    ui.unmount();
+  });
+
+  it('reserves a row for the planner note above the override findings it paints', async () => {
+    terminalSizeStore.__testReset({ cols: 60, rows: 40 });
+    const findings = Array.from(
+      { length: 8 },
+      (_, index) => `Open finding ${index + 1} needs a fix`,
+    );
+    readyRun(true, findings, 'Kept as designed.');
+
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />, {
+      cols: 60,
+      rows: 40,
+    });
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    const rows = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    const title = rows.findIndex((row) => row.includes('Apply with 8 open findings?'));
+    expect(title).toBeGreaterThan(-1);
+    expect(rows[title + 1]).toContain("Planner's note: Kept as designed.");
+    for (const [index, finding] of findings.entries()) {
+      expect(rows[title + 2 + index]).toContain(`- ${finding}`);
+    }
+    expect(rows.join('\n')).not.toContain('more open finding');
+    ui.unmount();
+  });
+
+  it('shows every word of a long planner note on the override confirmation', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 24 });
+    const note =
+      'The findings ask for a design the plan does not take, the owner chose this design in the brief, and the last word of this note is keepsake.';
+    readyRun(true, ['Open finding 1 needs a fix'], note);
+
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />, {
+      cols: 80,
+      rows: 24,
+    });
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    const rows = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    const title = rows.findIndex((row) => row.includes('Apply with 1 open finding?'));
+    const finding = rows.findIndex((row) => row.includes('- Open finding 1 needs a fix'));
+    expect(title).toBeGreaterThan(-1);
+    const noteText = rows
+      .slice(title + 1, finding)
+      .map((row) => row.replace(/[│|]/g, '').trim())
+      .join(' ');
+    expect(noteText).toContain(note);
+    ui.unmount();
+  });
+
+  it('keeps the title, the rows and a count of the findings under a note taller than the terminal', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 24 });
+    const note = Array.from({ length: 200 }, (_, index) => `word${index}`).join(' ');
+    const findings = Array.from(
+      { length: 8 },
+      (_, index) => `Open finding ${index + 1} needs a fix`,
+    );
+    readyRun(true, findings, note);
+
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />, {
+      cols: 80,
+      rows: 24,
+    });
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Apply with 8 open findings?');
+    expect(frame).toContain("Planner's note: word0");
+    expect(frame).toMatch(/word\d+ ?…/);
+    expect(frame).toContain('+8 more open findings');
+    expect(frame).toContain('Apply as is · write the changes; these findings stay open');
+    expect(frame).toContain('Back · return to the result menu');
+    ui.unmount();
+  });
+
+  it('names the two rows of the confirmation on the byline, and the menu rows after Back', async () => {
+    readyRun(true, ['Open finding 1 needs a fix'], 'Kept as designed.');
+
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />, {
+      cols: 120,
+      rows: 40,
+    });
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
+      'Ready to apply as is · pick Apply as is, Show diff or Discard',
+    );
+
+    ui.stdin.write('\r');
+    await flushEffects();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Ready to apply as is · pick Apply as is or Back');
+    expect(frame).not.toContain('Show diff or Discard');
+
+    ui.stdin.write('\x1b[B');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
+      'Ready to apply as is · pick Apply as is, Show diff or Discard',
+    );
     ui.unmount();
   });
 

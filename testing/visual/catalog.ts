@@ -1199,6 +1199,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'composer', title: 'Review stage, verify check and clock' },
       ],
     }),
+    defineScenario({
+      id: 'workflow-review-verify-pre-existing',
+      title: 'Workflow · verify checks that fail before the run too',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-verify-pre-existing',
+        title: 'A pre-existing verify check and one with a new failure',
+        kind: 'review',
+        marker: 'Verify V2',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header and build progress' },
+        { id: 'transcript', title: 'Review transcript with the split verify rows' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
     ...(['', '-settled'] as const).map((suffix) =>
       defineScenario({
         id: `workflow-review-task-cadence${suffix}`,
@@ -2169,6 +2185,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-stopping-review',
+      title: 'Workflow · stopping the final review',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'stopping-review',
+        title: 'Stopping the final review',
+        kind: 'review',
+        marker: 'Stopping the review',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Review transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-at-rest-paused',
       title: 'Workflow · a paused run at rest',
       surface: screenSurface('workflow'),
@@ -2818,6 +2850,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-ready-planner-accept-long-note',
+      title: 'Workflow · Apply as is with a planner note taller than the terminal',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'ready-planner-accept-long-note',
+        title: "Apply as is confirmation with a capped planner's note",
+        kind: 'ready',
+        marker: "Planner's note:",
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-closed-applied',
       title: 'Workflow · applied to the checkout',
       surface: screenSurface('workflow'),
@@ -3267,6 +3315,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-recovery-empty-enter',
+      title: 'Workflow · empty Enter in the composer at a halt',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery-empty-enter',
+        title: 'The feedback line names what the composer takes',
+        kind: 'question',
+        marker: 'Change BUILD tool',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-recovery-balance-spent',
       title: 'Workflow · a spent balance on BUILD',
       surface: screenSurface('workflow'),
@@ -3679,6 +3743,56 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Recovery menu that shows the unanswered question',
         kind: 'question',
         marker: 'Needs you · T901 needs your answer',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-long-question',
+      title: 'Workflow · a panel too short for a long question keeps the whole question',
+      surface: screenSurface('workflow'),
+      viewports: [...REQUIRED_VIEWPORTS, viewport({ cols: 100, rows: 20 })],
+      checkpoint: {
+        id: 'long-question',
+        title: 'Recovery menu that keeps the whole question',
+        kind: 'question',
+        marker: 'Question: Projection',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-long-question-draft',
+      title: 'Workflow · a two-row draft keeps the question on a short panel',
+      surface: screenSurface('workflow'),
+      viewports: [viewport({ cols: 60, rows: 18 })],
+      checkpoint: {
+        id: 'long-question-draft',
+        title: 'Recovery menu that keeps the question over a two-row draft',
+        kind: 'question',
+        marker: 'Question: Projection',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-masked-question',
+      title: 'Workflow · a short panel cuts a question inside a masked value',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'masked-question',
+        title: 'Recovery menu that keeps a question with a masked value',
+        kind: 'question',
+        marker: 'Question: Deploy needs',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -5410,6 +5524,41 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'overlay-picker-signed-out-probe-timeout',
         title: 'Overlay · planner picker · a signed-out tool whose model listing timed out',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-picker-version-timeout-signed-out',
+        title: 'Overlay · planner picker · a signed-out tool whose version probe timed out',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-picker-version-timeout-signed-in',
+        title: 'Overlay · planner picker · a signed-in tool whose version probe timed out',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-picker-signed-out-stale',
+        title: 'Overlay · planner picker · a signed-out tool with rows from an earlier listing',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-picker-ready-stale',
+        title: 'Overlay · planner picker · a signed-in tool with rows from an earlier listing',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-picker-older-tool',
+        title: 'Overlay · planner picker · an older tool whose listing did not run',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-picker-older-tool-stale',
+        title: 'Overlay · planner picker · an older tool with rows from an earlier listing',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-picker-unread-version',
+        title: 'Overlay · planner picker · a tool whose version cannot be read',
         marker: PICKER_TITLE_MARKER,
       },
       ...(

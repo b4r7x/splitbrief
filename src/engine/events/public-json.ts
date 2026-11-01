@@ -92,6 +92,19 @@ export function boundHeadlessJsonRecord(
   record: HeadlessJsonRecord,
   opts: BoundHeadlessJsonRecordOptions = {},
 ): HeadlessJsonRecord {
+  const bounded = boundRecord(record, opts);
+  // A halt that names thousands of files still tells a script how to carry the run on.
+  if (bounded.type === 'warning' && record.type === 'recovery_required') {
+    const { files, ...withoutFiles } = record;
+    if (files?.length) return boundRecord(withoutFiles, opts);
+  }
+  return bounded;
+}
+
+function boundRecord(
+  record: HeadlessJsonRecord,
+  opts: BoundHeadlessJsonRecordOptions,
+): HeadlessJsonRecord {
   const context = opts.context ?? 'stdout-json';
   const boundedRecord =
     record.type === 'event'
@@ -102,7 +115,7 @@ export function boundHeadlessJsonRecord(
   if (boundedPayload.oversized) {
     return {
       type: 'warning',
-      message: `${context}: omitted oversized ${record.type} record exceeding ${boundedPayload.maxBytes} bytes`,
+      message: `Omitted oversized ${record.type} record exceeding ${boundedPayload.maxBytes} bytes`,
     };
   }
 
@@ -111,7 +124,7 @@ export function boundHeadlessJsonRecord(
 
   return {
     type: 'warning',
-    message: `${context}: omitted invalid ${record.type} record after public payload normalization`,
+    message: `Omitted invalid ${record.type} record`,
   };
 }
 

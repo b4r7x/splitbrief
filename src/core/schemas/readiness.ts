@@ -13,6 +13,7 @@ import {
   CLI_TOOL_CATALOG,
   cliAuthChannelHostStateAccess,
   cliAuthChannelPlatformSupported,
+  signInOutranksUnreadVersion,
 } from '../runners/cli-tool-catalog.js';
 import { CliToolIdSchema } from './enums.js';
 
@@ -177,10 +178,13 @@ export function deriveCliReadinessStatus(
   if (!facts.enabled) return 'disabled';
   if (facts.installation === 'unavailable' || facts.executable === null) return 'unavailable';
   if (facts.trust !== 'trusted') return 'untrusted';
-  if (facts.installedVersion === null) return 'unverified';
+  const signedOut = facts.auth === 'unauthenticated' || facts.auth === 'keyring';
+  if (facts.installedVersion === null) {
+    return signInOutranksUnreadVersion({ ...facts, signedOut }) ? 'unauthenticated' : 'unverified';
+  }
   if (facts.compatibility === 'incompatible') return 'incompatible';
   if (facts.compatibility !== 'compatible') return 'unverified';
-  if (facts.auth === 'unauthenticated' || facts.auth === 'keyring') return 'unauthenticated';
+  if (signedOut) return 'unauthenticated';
   if (facts.auth !== 'authenticated' && facts.auth !== 'not-required') return 'unverified';
   return 'ready';
 }

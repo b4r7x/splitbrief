@@ -1314,7 +1314,7 @@ describe('runHeadless — the seat-down policy and the record', () => {
       expect(() =>
         emitRecoveryAndFailIfPending({ state, sessionId: 'sess-cannot', writeRecord }),
       ).toThrow(
-        `Needs you (retry-exhausted): T002: the ${by} says it cannot be done\n${said}: ${reason}\nRecommended: retry-same-worker`,
+        `Needs you (retry-exhausted): T002: the ${by} says it cannot be done\n${said}: ${reason}\nRecommended: skip-current-task`,
       );
       expect(writeRecord).toHaveBeenCalledWith(
         expect.objectContaining({ type: 'recovery_required', cannot: reason }),

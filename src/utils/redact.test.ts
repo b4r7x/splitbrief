@@ -120,6 +120,11 @@ describe('redactSecrets', () => {
     `NRAK-${'A'.repeat(28)}`,
     `PMAK-${'a'.repeat(25)}-${'B'.repeat(34)}`,
     '{"secretariat":"public","tokenizer":"words","credentialsHelper":"safe"}',
+    'Set cli_auth_credentials_store = "file" in config.toml',
+    'mcp_oauth_credentials_store = "keyring"',
+    '{"cli_auth_credentials_store":"auto"}',
+    'credentials_store = "file"',
+    'credential_store: "file"',
     'Failed to refresh token: Permission denied',
     'Failed to refresh token: 401 Unauthorized',
     'Invalid API key: 403 Forbidden',
@@ -213,6 +218,39 @@ describe('redactSecrets', () => {
       `{"api_key":"***REDACTED***","password":"***REDACTED***","clientSecret":'***REDACTED***'}`,
     );
     expect(redactSecrets('password=p@$$w0rd!,;}]')).toBe('password=***REDACTED***');
+  });
+
+  it.each([
+    ['AWS_SECRET_ACCESS_KEY="abc"', 'AWS_SECRET_ACCESS_KEY="***REDACTED***"'],
+    ['SECRET_STORE_KEY="abc"', 'SECRET_STORE_KEY="***REDACTED***"'],
+    ['credentials_store_password = "x"', 'credentials_store_password = "***REDACTED***"'],
+  ])('redacts a key with a segment after the credential noun: %s', (message, expected) => {
+    expect(redactSecrets(message)).toBe(expected);
+  });
+
+  it.each([
+    ['SECRET_STORE=hunter2', 'SECRET_STORE=***REDACTED***'],
+    ['secret_store = "x"', 'secret_store = "***REDACTED***"'],
+    ['password_store = "pass"', 'password_store = "***REDACTED***"'],
+    ['api_key_store = "x"', 'api_key_store = "***REDACTED***"'],
+    ['token_store: "abc"', 'token_store: "***REDACTED***"'],
+    ['token_store: abc123', 'token_store: ***REDACTED***'],
+    ['{"token_store":"abc"}', '{"token_store":"***REDACTED***"}'],
+  ])('redacts a STORE key whose noun is not a credential: %s', (message, expected) => {
+    expect(redactSecrets(message)).toBe(expected);
+  });
+
+  it.each([
+    ['password = "swordfish"', 'password = "***REDACTED***"'],
+    ['credentials = "file"', 'credentials = "***REDACTED***"'],
+    ['cli_auth_credentials_stores = "file"', 'cli_auth_credentials_stores = "***REDACTED***"'],
+    [
+      'credentials_store = "sk-ant-api03-abcdefghijklmnop"',
+      'credentials_store = "sk-ant-***REDACTED***"',
+    ],
+    ['token_credentials_store = "x"', 'token_credentials_store = "***REDACTED***"'],
+  ])('keeps a credential beside the store backend keys redacted: %s', (message, expected) => {
+    expect(redactSecrets(message)).toBe(expected);
   });
 
   it('redacts prefixed tokens beside underscores without matching embedded identifiers', () => {

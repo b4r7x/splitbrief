@@ -2103,6 +2103,62 @@ const reviewVerifyProjection: WorkflowFixtureProjection = {
   },
 };
 
+// Two verify checks are red: one with only failures that the run base shows too, one with a new
+// failure beside them. The first reuses the result its reviewer check settled on above them.
+const reviewVerifyPreExistingProjection: WorkflowFixtureProjection = {
+  ...finalReviewProjection,
+  scenarioId: scenarioId('workflow-review-verify-pre-existing'),
+  get events(): EngineEvent[] {
+    const check = {
+      type: 'full_suite',
+      phase: 'final-review',
+      status: 'done',
+      passed: false,
+    } as const;
+    const redAtBase: EngineEvent = {
+      ...check,
+      ts: FIXED_TS + 500,
+      id: 'V1',
+      command: 'npm test',
+      moment: 'pre-review',
+      duration: 12_300,
+      newFailures: 0,
+      preExisting: 1,
+      preExistingKeys: ['src/legacy.ts(3,7): error TS2322: Type number is not assignable.'],
+    };
+    const verify = { ...check, ts: FIXED_TS + 30_000, moment: 'verify' } as const;
+    return [
+      ...reviewVerifyProjection.events
+        .slice(0, -2)
+        .map((event): EngineEvent => (event.type === 'review_checks' ? redAtBase : event)),
+      { ...verify, id: 'K1', command: 'npm run typecheck', passed: true, duration: 9_200 },
+      {
+        ...verify,
+        id: 'V1',
+        command: 'npm test',
+        reusedAt: new Date(FIXED_TS + 500).toISOString(),
+        newFailures: 0,
+        preExisting: 1,
+      },
+      {
+        ...verify,
+        id: 'V2',
+        command: 'npm run test:integration',
+        duration: 21_400,
+        newFailures: 1,
+        preExisting: 2,
+      },
+    ];
+  },
+};
+
+// The stop of a final review that runs after the last brief passed: the byline names the review.
+const stoppingReviewProjection: WorkflowFixtureProjection = {
+  ...finalReviewProjection,
+  scenarioId: scenarioId('workflow-stopping-review'),
+  stop: { intent: 'stop-now', phase: 'settling' },
+};
+
 // With End-of-run checks off nothing runs before the review, and one row says so.
 const reviewChecksOffProjection: WorkflowFixtureProjection = {
   ...finalReviewProjection,
@@ -3235,6 +3291,56 @@ const unansweredQuestionRecoveryProjection: WorkflowFixtureProjection = {
       phase: 'escalating',
       question:
         'Projection has no stop field. Should activity.ts read the stop from the run record instead, or should Projection gain a stop field?',
+      validationSummary: FIXTURE_TYPECHECK_ERROR,
+      attempts: 3,
+      allowRetryOverride: true,
+      selectedImplementerProfile: 'default',
+      createdAt: new Date(FIXED_TS).toISOString(),
+    }),
+  ),
+};
+
+/** A question long enough to wrap past the summary a short panel keeps. */
+const LONG_QUESTION =
+  'Projection has no stop field. The run record holds the stop, but three other screens read Projection, the tests pin its shape, and the brief names only activity.ts. Should activity.ts read the stop from the run record, or should Projection gain a stop field and all three screens move with it in this brief?';
+
+const longQuestionRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-recovery-long-question'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  events: [],
+  config: AGY_CREW,
+  resumeState: haltedResumeState(
+    buildRetryExhaustedRecoveryIssue({
+      id: 'rec_visual_long_question',
+      task: HALTED_TASK,
+      phase: 'escalating',
+      question: LONG_QUESTION,
+      validationSummary: FIXTURE_TYPECHECK_ERROR,
+      attempts: 3,
+      allowRetryOverride: true,
+      selectedImplementerProfile: 'default',
+      createdAt: new Date(FIXED_TS).toISOString(),
+    }),
+  ),
+};
+
+/** A question that quotes a header, cut inside the masked value on a short panel. */
+const maskedQuestionRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-recovery-masked-question'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  events: [],
+  config: AGY_CREW,
+  resumeState: haltedResumeState(
+    buildRetryExhaustedRecoveryIssue({
+      id: 'rec_visual_masked_question',
+      task: HALTED_TASK,
+      phase: 'escalating',
+      question:
+        'Deploy needs Authorization: Bearer abcDEF123456789012345 on every call. Should activity.ts read it from the environment, or wait for the owner?',
       validationSummary: FIXTURE_TYPECHECK_ERROR,
       attempts: 3,
       allowRetryOverride: true,
@@ -6365,6 +6471,17 @@ const usageLimitSeatSavedProjection: WorkflowFixtureProjection = {
   },
 };
 
+const recoveryEmptyEnterProjection: WorkflowFixtureProjection = {
+  ...usageLimitRecoveryProjection,
+  scenarioId: scenarioId('workflow-recovery-empty-enter'),
+  get events() {
+    return usageLimitRecoveryProjection.events;
+  },
+  get resumeState() {
+    return haltedResumeState(usageLimitRecoveryIssue());
+  },
+};
+
 const finalReviewSeatChangeProjection: WorkflowFixtureProjection = {
   ...finalReviewProjection,
   scenarioId: scenarioId('workflow-final-review-seat-change'),
@@ -7104,6 +7221,8 @@ const projections = [
   finalReviewProjection,
   finalReviewPlanCheckProjection,
   reviewVerifyProjection,
+  reviewVerifyPreExistingProjection,
+  stoppingReviewProjection,
   // The reviewer's first answer broke its contract; one row says why, and the second call answers again.
   {
     ...finalReviewProjection,
@@ -7437,6 +7556,12 @@ const projections = [
   fallbackNotInstalledRecoveryProjection,
   retryExhaustedRecoveryProjection,
   unansweredQuestionRecoveryProjection,
+  longQuestionRecoveryProjection,
+  {
+    ...longQuestionRecoveryProjection,
+    scenarioId: scenarioId('workflow-recovery-long-question-draft'),
+  },
+  maskedQuestionRecoveryProjection,
   cannotRecoveryProjection,
   manyFilesRecoveryProjection,
   {
@@ -7505,6 +7630,7 @@ const projections = [
   buildBriefCheckSeatChangeProjection,
   implementationShellSeatProjection,
   usageLimitSeatSavedProjection,
+  recoveryEmptyEnterProjection,
   finalReviewSeatChangeProjection,
   reviewCheckLongCommandProjection,
   reviewLegacySuiteProjection,
@@ -7633,7 +7759,7 @@ function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
     // implementer's JSON report, which the transcript reads as one summary line, or a start
     // warning, which readiness words as its summary, its details and its fix, or a plan
     // send-back, which lists the plan checks' own messages, or a fix check's failure text, which
-    // lists its bounded failure keys under the verdict.
+    // lists its bounded failure keys under the verdict, or the question written long to be cut.
     (value) =>
       value !== planCardProjection.review?.source &&
       value !== planCardProjection.review?.planJson &&
@@ -7644,6 +7770,7 @@ function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
       value !== ANSWERED_QUESTIONS_TEXT &&
       value !== RESUMED_REPORT_TEXT &&
       value !== FIX_CHECK_RETRY_TEXT &&
+      !value.includes(LONG_QUESTION) &&
       !retainedWorkspaceNotices.includes(value) &&
       !engineHaltText.includes(value) &&
       !startReadinessWarningText.includes(value) &&

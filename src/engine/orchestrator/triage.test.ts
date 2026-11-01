@@ -456,12 +456,13 @@ describe('review fix work', () => {
       preExistingChecks: NonNullable<ReviewRecord['preExistingChecks']>,
     ) => {
       const ref = setupProject(dirs);
-      return verifyClaimChecks(
+      const { bus, events } = makeBusRecorder();
+      const verification = await verifyClaimChecks(
         {
           ...ref,
           workspaceDir: ref.projectDir,
           config: makeConfig({}),
-          bus: makeBusRecorder().bus,
+          bus,
           runCommand: makeCommandRunner(result),
         },
         { ...triageState(), plan: GATE_PLAN },
@@ -469,6 +470,8 @@ describe('review fix work', () => {
         preExistingChecks,
         undefined,
       );
+      const row = events.findLast((event) => event.type === 'full_suite');
+      return { ...verification, row, recorded: readEvidenceLedger(ref)?.verifyChecks };
     };
     const red = (output: string) =>
       processError.exitCode({ command: 'npm test', code: 1, stderr: '', output });
@@ -495,6 +498,40 @@ describe('review fix work', () => {
     it('fails the claim when this review has no run base split for the check', async () => {
       const entry = await verifyV2(red(ADDS), []);
       expect(entry.status).toBe('fail');
+    });
+
+    it('settles the row of a red check with its counts and records the pre-existing keys', async () => {
+      const entry = await verifyV2(red(`${ADDS}${SUBTRACTS}`), RED_AT_BASE);
+      expect(entry.row).toMatchObject({
+        moment: 'verify',
+        status: 'done',
+        passed: false,
+        newFailures: 1,
+        preExisting: 1,
+      });
+      expect(entry.row).not.toHaveProperty('newKeys');
+      expect(entry.row).not.toHaveProperty('preExistingKeys');
+      expect(entry.recorded?.map((check) => check.preExisting)).toEqual([['src/a.test.ts::adds']]);
+    });
+
+    it('counts all failures as pre-existing on the row of a check red only at the run base', async () => {
+      const entry = await verifyV2(red(ADDS), RED_AT_BASE);
+      expect(entry.row).toMatchObject({ passed: false, newFailures: 0, preExisting: 1 });
+    });
+
+    it.each([
+      ['a red with no key at the run base', red(ADDS), []],
+      [
+        'a red that names no failure',
+        red('npm ERR! something broke\n'),
+        [{ id: 'V2', command: 'npm test', keys: ['exited with code 1'] }],
+      ],
+    ])('settles %s with no counts', async (_name, result, atBase) => {
+      const entry = await verifyV2(result, atBase);
+      expect(entry.status).toBe('fail');
+      expect(entry.row).toMatchObject({ moment: 'verify', status: 'done', passed: false });
+      expect(entry.row).not.toHaveProperty('newFailures');
+      expect(entry.row).not.toHaveProperty('preExisting');
     });
   });
 

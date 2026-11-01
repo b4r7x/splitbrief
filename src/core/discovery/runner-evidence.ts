@@ -1,4 +1,5 @@
 import type { CliProviderAuth, DetectedModel, ExecutableIdentity } from './detection.js';
+import { signInOutranksUnreadVersion } from '../runners/cli-tool-catalog.js';
 import type { RouteAuthState } from '../runners/route-auth.js';
 
 export type { ExecutableIdentity };
@@ -185,6 +186,17 @@ export function admitStart(options: StartAdmissionOptions): StartAdmission {
       evidence.compatibility.kind !== 'compatible' &&
       evidence.compatibility.kind !== 'not-applicable'
     ) {
+      if (
+        options.requiredFacts.includes('authentication') &&
+        signInOutranksUnreadVersion({
+          tool: evidence.runner.id,
+          installedVersion: evidence.compatibility.installedVersion,
+          signedOut: evidence.credential === 'absent',
+        })
+      ) {
+        const authAdmission = admitAuthentication(options);
+        if (authAdmission !== null) return authAdmission;
+      }
       return {
         kind: 'denied',
         reason: { kind: 'compatibility', fact: evidence.compatibility.kind },

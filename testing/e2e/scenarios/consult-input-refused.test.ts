@@ -5,13 +5,18 @@ import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
 import { detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
-import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { guidanceConsult, passingVerdict } from '#testing/helpers/typed-planner.js';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
+import {
+  installPlannerClaude,
+  type PlanSeatCall,
+  type PlanSeatRefusal,
+  REFUSED_CHARS,
+} from '../helpers/claude-plan-seat.js';
 import {
   cli,
   createStopContinueFixture,
@@ -20,8 +25,6 @@ import {
 } from '../helpers/stop-continue-fixture.js';
 
 const GENERATED_FILE = 'src/generated.json';
-/** The consult prompt size the fake planner tool refuses as too long. */
-const REFUSED_CHARS = 500_000;
 
 let fixture: StopContinueFixture | undefined;
 let restorePath: (() => void) | undefined;
@@ -83,96 +86,7 @@ if (attempt > 1) writeFileSync(${JSON.stringify(GREET)}, ${JSON.stringify(FILES[
 `;
 }
 
-type Refusal = 'oversized' | 'planner-session' | 'every-consult';
-
-/**
- * Claude Code as the PLAN seat, at a version that takes typed answers natively. The plan call opens the session `planner-session`; every other
- * call that resumes nothing opens `fresh-session`. A refused call ends the way Claude Code
- * refused an oversized prompt live: an `is_error` result that says only "Prompt is too long",
- * and exit 1. Each call is logged with its arguments, its prompt length and its kind.
- */
-function installPlannerClaude(binDir: string, calls: string, refusal: Refusal): void {
-  const review = passingVerdict({ kind: 'final', taskIds: [greeting.id], criterionIds: ['C1'] });
-  const consult = guidanceConsult('Write the greeting as the brief says.');
-  writeFakeNodeCli(
-    binDir,
-    'claude',
-    `const { appendFileSync, readFileSync } = require('node:fs');
-const args = process.argv.slice(2);
-if (args[0] === '--version') {
-  console.log('claude 2.1.296');
-  process.exit(0);
-}
-if (args[0] === 'auth') {
-  console.log(JSON.stringify({ loggedIn: true }));
-  process.exit(0);
-}
-const refusal = ${JSON.stringify(refusal)};
-const resumeAt = args.indexOf('--resume');
-const resumed = resumeAt === -1 ? null : args[resumeAt + 1];
-const emit = (entry) => console.log(JSON.stringify(entry));
-const answer = (prompt) => {
-  const kind = /^# (Final|Task) Implementation Review$/m.test(prompt)
-    ? 'review'
-    : /^# Consult (on a failing task|continued)$/m.test(prompt)
-      ? 'consult'
-      : args.includes('--json-schema')
-        ? 'plan'
-        : 'summary';
-  const session = resumed ?? (kind === 'plan' ? 'planner-session' : 'fresh-session');
-  appendFileSync(${JSON.stringify(calls)}, JSON.stringify({
-    kind,
-    args: args.filter((arg) => !arg.startsWith('{')),
-    resumed,
-    length: prompt.length,
-    namesGenerated: prompt.includes(${JSON.stringify(GENERATED_FILE)}),
-  }) + '\\n');
-  emit({ type: 'system', subtype: 'init', session_id: session });
-  if (args.includes('--input-format')) {
-    emit({ type: 'user', parent_tool_use_id: null, message: { role: 'user', content: prompt } });
-  }
-  const refused =
-    kind === 'consult' &&
-    ((refusal === 'oversized' && prompt.length > ${REFUSED_CHARS}) ||
-      (refusal === 'planner-session' && resumed === 'planner-session') ||
-      refusal === 'every-consult');
-  if (refused) {
-    emit({ type: 'result', is_error: true, result: 'Prompt is too long', session_id: session, usage: { input_tokens: 0, output_tokens: 0 } });
-    process.exitCode = 1;
-    return;
-  }
-  const typed = kind === 'plan' ? ${JSON.stringify(plan)} : kind === 'consult' ? ${JSON.stringify(consult)} : kind === 'review' ? ${JSON.stringify(review)} : null;
-  emit({
-    type: 'result',
-    session_id: session,
-    result: typed === null ? 'Summary complete' : JSON.stringify(typed),
-    ...(typed === null ? {} : { structured_output: typed }),
-    usage: { input_tokens: 10, output_tokens: 5 },
-  });
-};
-if (args.includes('--input-format')) {
-  const lines = require('node:readline').createInterface({ input: process.stdin });
-  lines.once('line', (line) => {
-    const content = JSON.parse(line).message.content;
-    answer(typeof content === 'string' ? content : JSON.stringify(content));
-    lines.close();
-    process.stdin.destroy();
-  });
-} else {
-  answer(readFileSync(0, 'utf8'));
-}`,
-  );
-}
-
-type Call = {
-  kind: string;
-  args: string[];
-  resumed: string | null;
-  length: number;
-  namesGenerated: boolean;
-};
-
-async function runWithPlannerClaude(refusal: Refusal) {
+async function runWithPlannerClaude(refusal: PlanSeatRefusal) {
   fixture = createStopContinueFixture(
     (projectDir) => implementerScript(join(projectDir, '..', 'attempts')),
     { isolation: 'worktree' },
@@ -185,7 +99,12 @@ async function runWithPlannerClaude(refusal: Refusal) {
   const binDir = join(target.tmpDir, 'bin');
   mkdirSync(binDir);
   const callsPath = join(target.tmpDir, 'planner-calls.jsonl');
-  installPlannerClaude(binDir, callsPath, refusal);
+  installPlannerClaude(binDir, callsPath, {
+    plan,
+    review: passingVerdict({ kind: 'final', taskIds: [greeting.id], criterionIds: ['C1'] }),
+    consult: guidanceConsult('Write the greeting as the brief says.'),
+    refusal,
+  });
   restorePath = activateSafeCliShimPath(binDir);
 
   const config = loadConfig(target.projectDir).config;
@@ -214,11 +133,14 @@ async function runWithPlannerClaude(refusal: Refusal) {
   const run = await cli(target, ['start', 'smoke'], { timeoutMs: 150_000 });
   const [sessionId] = readdirSync(sessionsRoot(target.projectDir));
   if (sessionId === undefined) throw new Error(`the run left no session: ${run.stderr}`);
-  const calls: Call[] = existsSync(callsPath)
+  const calls = existsSync(callsPath)
     ? readFileSync(callsPath, 'utf8')
         .split('\n')
         .filter(Boolean)
-        .map((line) => JSON.parse(line) as Call)
+        .map((line) => {
+          const { prompt, ...call } = JSON.parse(line) as PlanSeatCall;
+          return { ...call, namesGenerated: prompt.includes(GENERATED_FILE) };
+        })
     : [];
   return { run, state: readState(target, sessionId), calls };
 }

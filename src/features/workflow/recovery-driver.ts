@@ -48,7 +48,6 @@ import {
   correctionActionFor,
   formatRecoveryPrompt,
   parseRecoveryActionAnswer,
-  switchSeatCandidateForAnswer,
 } from './recovery-prompt.js';
 
 const NO_CORRECTION_MESSAGE = 'This halt takes no typed correction. Choose an action.';
@@ -295,13 +294,12 @@ export function createRecoveryDriver(
 
     const applyAction = async (
       action: RecoveryAction,
-      answer = '',
       comment?: UserMessageInput,
       steer?: UserMessageInput,
     ): Promise<PendingRecoveryResult | null> => {
       if (action === 'switch-seat') {
         const offer = issue.switchSeat;
-        const offered = switchSeatCandidateForAnswer(answer, offer);
+        const offered = offer?.candidates[0];
         if (offer === undefined || offered === undefined) {
           feedbackStore.setError('No other tool is offered for this seat.');
           return null;
@@ -367,7 +365,6 @@ export function createRecoveryDriver(
         const takesNote = selected === correctionAction || noteQuestion(selected) !== undefined;
         const applied = await applyAction(
           selected,
-          '',
           takesNote ? reentryCorrection : undefined,
           reentryCorrection,
         );
@@ -394,7 +391,7 @@ export function createRecoveryDriver(
     // a halt End run alone answers has no step to take them.
     if (reentryCorrection !== undefined && reentryCorrection.text.trim() !== '') {
       if (correctionAction === 'revise') {
-        const applied = await applyAction(correctionAction, '', reentryCorrection);
+        const applied = await applyAction(correctionAction, reentryCorrection);
         if (applied !== null) return applied;
       } else if (issue.availableActions.every((action) => action === 'end-run')) {
         feedbackStore.setError(NO_CORRECTION_MESSAGE);
@@ -415,14 +412,19 @@ export function createRecoveryDriver(
 
     while (true) {
       recoveryNoticeStore.ask(true);
-      const { message: answer, document } = await inputMode.setQuestionMode(
-        formatRecoveryPrompt(issue),
-      );
+      const {
+        message: answer,
+        document,
+        row,
+      } = await inputMode.setQuestionMode(formatRecoveryPrompt(issue));
       recoveryNoticeStore.ask(false);
       if (controller.signal.aborted || abortedRef.current) {
         return { shouldRun: false, state };
       }
       let action = parseRecoveryActionAnswer(answer.displayText, issue);
+      // Only a row picks an action. Words from the composer are the correction, or the halt
+      // refuses them. The correction action's own word runs it with no steer.
+      if (row !== true && action !== correctionAction) action = null;
       let correction: UserMessageInput | undefined;
       if (action === null && answer.text.trim() !== '') {
         if (correctionAction === undefined) {
@@ -464,12 +466,7 @@ export function createRecoveryDriver(
       if (controller.signal.aborted || abortedRef.current) {
         return { shouldRun: false, state };
       }
-      const applied = await applyAction(
-        action,
-        answer.displayText,
-        comment,
-        correction ?? reentryCorrection,
-      );
+      const applied = await applyAction(action, comment, correction ?? reentryCorrection);
       if (applied !== null) return applied;
     }
   }

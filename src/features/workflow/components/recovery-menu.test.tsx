@@ -12,6 +12,7 @@ import { listRowLead } from '../../../components/list-row.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { createDraftDocument } from '../../../core/composer/document.js';
 import { composerLiveStore } from '../../../stores/ui/composer-live.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { clampWorkflowPromptRows } from '../layout/rect.js';
 import { RecoveryMenu } from './recovery-menu.js';
@@ -23,7 +24,10 @@ import {
   recoveryMenuParts,
 } from '../recovery-prompt.js';
 
-afterEach(() => composerLiveStore.reset());
+afterEach(() => {
+  composerLiveStore.reset();
+  runViewStore.__testReset();
+});
 
 function mount(onResolve: (answer: string) => void, width = 80, issue = makeRecoveryIssue()) {
   return renderFeature(
@@ -570,6 +574,160 @@ it('marks the halt text an 80x24 panel cuts and keeps every action and the legen
   ui.unmount();
 });
 
+it.each([
+  ['Question: Which file holds the locales?', 'Attempts: 1'],
+  ['Planner said: No locale service exists in this repository.', 'Attempts: 2'],
+])(
+  'keeps %s after the task and the divider on a panel that reaches it',
+  async (asked, attempts) => {
+    const ui = renderFeature(
+      <RecoveryMenu
+        issue={makeRecoveryIssue({ details: [asked, 'Last error: blocked', attempts] })}
+        width={getChromeContentWidth(120)}
+        clampedBoxRows={panelBoxRows(40)}
+        focused
+        onFocusChange={() => {}}
+        onResolve={() => {}}
+      />,
+    );
+    await flushEffects();
+    const frame = stripAnsiStyles(ui.lastFrame());
+    expect(frame.indexOf('Task T001')).toBeGreaterThan(-1);
+    expect(frame.indexOf('Task T001')).toBeLessThan(frame.indexOf('Files src/auth/session.ts'));
+    expect(frame.indexOf('Files src/auth/session.ts')).toBeLessThan(frame.indexOf(asked));
+    expect(frame.indexOf(asked)).toBeLessThan(frame.indexOf('Last error: blocked'));
+    expect(frame).toContain('──────');
+    ui.unmount();
+  },
+);
+
+it("gives the divider's row to the whole question at 80 columns", async () => {
+  const ui = renderFeature(
+    <RecoveryMenu
+      issue={askedIssue(`Question: ${LONG_ASKED_TEXT}`, FOUR_ACTIONS, 'retry-same-worker')}
+      width={getChromeContentWidth(80)}
+      clampedBoxRows={panelBoxRows(24)}
+      focused
+      onFocusChange={() => {}}
+      onResolve={() => {}}
+    />,
+  );
+  await flushEffects();
+  const rows = frameRows(ui);
+  const question = rows.findIndex((row) => row.includes('Question: greet.ts needs'));
+  const task = rows.findIndex((row) => row.includes('Task T001'));
+  expect(question).toBeGreaterThan(-1);
+  expect(task - question).toBe(5);
+  expect(rows.some((row) => row.includes('──────'))).toBe(false);
+  expect(rows.filter((row) => /^[│|] [▌|]? +[rdsa] {3}/.test(row))).toHaveLength(4);
+  ui.unmount();
+});
+
+it('shows the whole question at 80 columns, and the rows after it give way', async () => {
+  const asked = `Question: ${LONG_ASKED_TEXT}`;
+  const ui = renderFeature(
+    <RecoveryMenu
+      issue={askedIssue(asked, FOUR_ACTIONS, 'retry-same-worker')}
+      width={getChromeContentWidth(80)}
+      clampedBoxRows={panelBoxRows(24)}
+      focused
+      onFocusChange={() => {}}
+      onResolve={() => {}}
+    />,
+  );
+  await flushEffects();
+  const rows = frameRows(ui);
+  expect(panelText(rows)).toContain(asked);
+  expect(rows.some((row) => row.includes('Task T001'))).toBe(true);
+  expect(rows.some((row) => /… \d+ more lines/.test(row))).toBe(true);
+  expect(rows.some((row) => row.includes('Attempts: 2'))).toBe(false);
+  ui.unmount();
+});
+
+it('cuts a question taller than the panel with … and keeps the action rows and the mark', async () => {
+  const asked = `Question: ${LONG_ASKED_TEXT}`;
+  const issue = askedIssue(asked, FOUR_ACTIONS, 'retry-same-worker');
+  const ui = renderFeature(
+    <RecoveryMenu
+      issue={issue}
+      width={getChromeContentWidth(60)}
+      clampedBoxRows={panelBoxRows(18)}
+      focused
+      onFocusChange={() => {}}
+      onResolve={() => {}}
+    />,
+  );
+  await flushEffects();
+  const rows = frameRows(ui);
+  const cut = rows.find((row) => row.includes('…') && !row.includes('more lines'));
+  expect(cut, rows.join('\n')).toBeDefined();
+  expect(compact(asked).startsWith(compact(shownQuestion(rows)))).toBe(true);
+  expect(shownQuestion(rows).length).toBeGreaterThan(40);
+  expect(rows.some((row) => /… \d+ more lines/.test(row))).toBe(true);
+  for (const action of FOUR_ACTIONS) expect(actionShown(rows, issue, action)).toBe(true);
+  ui.unmount();
+});
+
+it('redacts a key in the asked row before it cuts the row on a short panel', async () => {
+  const key = `sk-ant-api03-${'abcdEFGH1234'.repeat(5)}`;
+  const ui = renderFeature(
+    <RecoveryMenu
+      issue={makeRecoveryIssue({
+        details: [
+          `Question: use ${'x'.repeat(25)} ${key} here`,
+          'Last error: blocked',
+          'Attempts: 2',
+        ],
+      })}
+      width={getChromeContentWidth(60)}
+      clampedBoxRows={panelBoxRows(18)}
+      focused
+      onFocusChange={() => {}}
+      onResolve={() => {}}
+    />,
+  );
+  await flushEffects();
+  const frame = stripAnsiStyles(ui.lastFrame());
+  expect(frame).toContain('Question: use');
+  expect(frame).not.toContain('sk-ant-api');
+  ui.unmount();
+});
+
+const BLOCKED_ERROR = 'Last error: blocked';
+const DOUBLE_QUOTE = 'Last error: cannot find module "./foo"';
+const SINGLE_QUOTE = "Last error: no property 'stop' on 'Projection'";
+const PLANNER_QUOTE = 'Planner said: cannot find module "./foo"';
+
+it.each([
+  ['Authorization: Bearer abcDEF123456789012345', 15, BLOCKED_ERROR],
+  ['"password": "hunter2hunter2hunter2"', 15, BLOCKED_ERROR],
+  ['"password": "hunter2hunter2hunter2"', 20, BLOCKED_ERROR],
+  ['password: please rotate it', 28, BLOCKED_ERROR],
+  ['OPENAI_API_KEY=abcdefghijklmnop', 10, BLOCKED_ERROR],
+  ['OPENAI_API_KEY=abcdefghijklmnop', 14, BLOCKED_ERROR],
+  ['"token": "abcdefgh hijk"', 20, DOUBLE_QUOTE],
+  ["'api_token': 'abc'", 15, SINGLE_QUOTE],
+  ['"token": "abcdefgh hijk"', 20, PLANNER_QUOTE],
+])(
+  'keeps a cut question on a short panel when the panel masks %s at filler %i above %s',
+  async (value, filler, below) => {
+    const words = 'Should we keep this? '.repeat(2).slice(0, filler);
+    const ui = mountBox(
+      makeRecoveryIssue({
+        details: [`Question: ${words}${value} ${'then more words '.repeat(10)}`, below],
+        availableActions: FOUR_ACTIONS,
+        recommendedAction: 'retry-same-worker',
+      }),
+      panelBoxRows(18),
+    );
+    await flushEffects();
+    const rows = frameRows(ui);
+    expect(rows.find((row) => row.includes('Question: ')) ?? '', rows.join('\n')).toContain('…');
+    expect(rows.join('\n')).not.toContain('hunter2');
+    ui.unmount();
+  },
+);
+
 function panelBoxRows(terminalRows: number): number {
   // A one-line composer takes three rows; the panel takes every row the screen chrome leaves.
   return clampWorkflowPromptRows({
@@ -598,8 +756,23 @@ function frameRows(ui: ReturnType<typeof renderFeature>): string[] {
   return stripAnsiStyles(ui.lastFrame()).split('\n');
 }
 
+/** The panel's words with its border and indent gone, one space between rows. */
+function panelText(rows: readonly string[]): string {
+  return rows.map((row) => row.replace(/^[│|] */, '').replace(/ *[│|]$/, '')).join(' ');
+}
+
+/** The question as the panel shows it, up to the `…` that cuts it or the task row after it. */
+function shownQuestion(rows: readonly string[]): string {
+  const text = panelText(rows);
+  return text.slice(text.indexOf('Question: ')).split(/…|Task T001/)[0] ?? '';
+}
+
+function compact(text: string): string {
+  return text.replace(/\s/g, '');
+}
+
 function actionShown(rows: readonly string[], issue: RecoveryIssue, action: RecoveryAction) {
-  const label = recoveryMenuParts(action, issue)
+  const label = recoveryMenuParts(action, issue, false)
     .map((part) => part.text)
     .join('')
     .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -624,6 +797,145 @@ function expectHiddenActionsMarked(rows: readonly string[], issue: RecoveryIssue
     ).toBe(true);
   }
 }
+
+const LONG_ASKED_TEXT = `${'greet.ts needs a locale table, but the brief names no locale source. '.repeat(4)}Which file?`;
+const FOUR_ACTIONS: RecoveryAction[] = [
+  'retry-same-worker',
+  'decide-for-me',
+  'skip-current-task',
+  'end-run',
+];
+const THREE_ACTIONS: RecoveryAction[] = ['retry-same-worker', 'skip-current-task', 'end-run'];
+
+function askedIssue(asked: string, actions: RecoveryAction[], recommended: RecoveryAction) {
+  return makeRecoveryIssue({
+    details: [asked, 'Last error: blocked', 'Attempts: 2'],
+    availableActions: actions,
+    recommendedAction: recommended,
+  });
+}
+
+function mountBox(
+  issue: RecoveryIssue,
+  box: number,
+  onResolve: (answer: string) => void = () => {},
+) {
+  return renderFeature(
+    <RecoveryMenu
+      issue={issue}
+      width={getChromeContentWidth(60)}
+      clampedBoxRows={box}
+      focused
+      onFocusChange={() => {}}
+      onResolve={onResolve}
+    />,
+  );
+}
+
+it.each([
+  ['Question: ', 9, FOUR_ACTIONS],
+  ['Planner said: ', 9, FOUR_ACTIONS],
+  ['Question: ', 8, FOUR_ACTIONS],
+  ['Planner said: ', 8, THREE_ACTIONS],
+] as const)(
+  'keeps %s on a panel of %i rows with no divider, and marks the rest',
+  async (label, box, actions) => {
+    const issue = askedIssue(`${label}${LONG_ASKED_TEXT}`, [...actions], 'retry-same-worker');
+    const ui = mountBox(issue, box);
+    await flushEffects();
+    const rows = frameRows(ui);
+    expect(rows).toHaveLength(box);
+    const asked = rows.findIndex((row) => row.includes(label));
+    const mark = rows.findIndex((row) => row.includes('… 4 more lines'));
+    expect(asked, rows.join('\n')).toBe(2);
+    expect(mark, rows.join('\n')).toBe(3);
+    expect(rows.some((row) => row.includes('──────'))).toBe(false);
+    expect(rows.at(-2)).toContain('↑↓ select · ⏎ confirm');
+    expectHiddenActionsMarked(rows, issue);
+    ui.unmount();
+  },
+);
+
+it.each([
+  ['retry-same-worker', 9],
+  ['skip-current-task', 9],
+  ['end-run', 9],
+  ['retry-same-worker', 8],
+  ['skip-current-task', 8],
+  ['end-run', 8],
+] as const)(
+  'walks every action from %s on a panel of %i rows that keeps the asked row',
+  async (recommended, box) => {
+    const issue = askedIssue(`Question: ${LONG_ASKED_TEXT}`, FOUR_ACTIONS, recommended);
+    const answers: string[] = [];
+    const ui = mountBox(issue, box, (answer) => answers.push(answer));
+    await flushEffects();
+    const start = FOUR_ACTIONS.indexOf(recommended);
+    const cursor = () => frameRows(ui).filter((row) => /^[│|] [▌|] /.test(row));
+    expect(frameRows(ui).some((row) => row.includes('Question: '))).toBe(true);
+    for (let step = 1; step <= FOUR_ACTIONS.length; step += 1) {
+      ui.stdin.write('\u001b[B');
+      await flushEffects();
+      const action = FOUR_ACTIONS[(start + step) % FOUR_ACTIONS.length];
+      if (action === undefined) throw new Error('no action');
+      expect(cursor()).toHaveLength(1);
+      expect(cursor()[0]).toContain(` ${recoveryActionKey(action)}   `);
+    }
+    ui.stdin.write('\r');
+    await flushEffects();
+    expect(answers).toEqual([recoveryActionKey(recommended)]);
+    ui.unmount();
+  },
+);
+
+it.each([
+  ['a path wider than a row', `Question: Read ${'src/feature/'.repeat(30)}greet.ts or the brief?`],
+  ['a first word that fills a row', `Question: ${'x'.repeat(66)} holds ${LONG_ASKED_TEXT}`],
+])('keeps a question that starts with %s in reading order', async (_label, asked) => {
+  const issue = askedIssue(asked, FOUR_ACTIONS, 'retry-same-worker');
+  const ui = renderFeature(
+    <RecoveryMenu
+      issue={issue}
+      width={getChromeContentWidth(80)}
+      clampedBoxRows={panelBoxRows(24)}
+      focused
+      onFocusChange={() => {}}
+      onResolve={() => {}}
+    />,
+  );
+  await flushEffects();
+  const rows = frameRows(ui);
+  expect(compact(shownQuestion(rows)).length).toBeGreaterThan(5 * 60);
+  expect(compact(asked).startsWith(compact(shownQuestion(rows)))).toBe(true);
+  ui.unmount();
+});
+
+it('names the changes End run keeps once a brief finished', async () => {
+  const issue = askedIssue('Question: Which file?', FOUR_ACTIONS, 'retry-same-worker');
+  const row = async () => {
+    const ui = mountBox(issue, 14);
+    await flushEffects();
+    const end = frameRows(ui).find((text) => text.includes('End run'));
+    ui.unmount();
+    return end;
+  };
+  expect(await row()).not.toContain('keeps its changes');
+  runViewStore.__testReset({
+    briefs: { tasks: [{ id: 'T001', title: 'Done first', status: 'done' }] },
+  });
+  expect(await row()).toContain('End run · closes this run, keeps its changes');
+});
+
+it('leaves a 7-row panel on the headline and the cut mark', async () => {
+  const issue = askedIssue(`Question: ${LONG_ASKED_TEXT}`, FOUR_ACTIONS, 'retry-same-worker');
+  const ui = mountBox(issue, 7);
+  await flushEffects();
+  const rows = frameRows(ui);
+  expect(rows.some((row) => row.includes('Question: '))).toBe(false);
+  expect(rows[2]).toMatch(/… \d+ more lines/);
+  expect(rows.some((row) => row.includes('↓ more'))).toBe(true);
+  ui.unmount();
+});
 
 function retryExhaustedIssue() {
   return makeRecoveryIssue({

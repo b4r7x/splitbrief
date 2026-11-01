@@ -3,6 +3,8 @@ import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
+import { detectRunnerEvidence } from '../../detection/runner-evidence.js';
+import { freezeProbeDeadlines } from '#testing/helpers/fake-timers.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import type { CliProbeContract } from './contract.js';
 import { providerOracleAuthFact } from './provider-oracle.js';
@@ -90,6 +92,8 @@ async function seedHostSessionState(
 function hostAccountAuthScript(hostHome: string): string {
   return `console.log(process.env.HOME === ${JSON.stringify(hostHome)} && (process.env.USER ?? '').length > 0 ? 'verified' : 'missing')`;
 }
+
+freezeProbeDeadlines();
 
 describe('session-state presence readiness', () => {
   const hostPlatform = process.platform;
@@ -412,6 +416,38 @@ describe('session-state presence readiness', () => {
     },
   );
 
+  it.each(['keyring', 'auto'])(
+    'gives the Codex seat keyring evidence with no credential (%s store)',
+    async (store) => {
+      await withTempDir('readiness-codex-keyring-evidence', async (hostHome) => {
+        const executable = await nodeExecutable();
+        await mkdir(join(hostHome, '.codex'), { recursive: true });
+        await writeFile(
+          join(hostHome, '.codex', 'config.toml'),
+          `cli_auth_credentials_store = "${store}"\n`,
+        );
+        vi.stubEnv('HOME', hostHome);
+        vi.stubEnv('CODEX_HOME', '');
+
+        const evidence = await detectRunnerEvidence({
+          context: {
+            role: 'planner',
+            kind: 'cli',
+            id: 'codex',
+            authChannel: 'session',
+            credentialPresent: false,
+            configGeneration: 'keyring-chain',
+          },
+          resolveExecutable: async () => executable,
+          lookupProbe: () => sessionProbe(),
+          now: () => 1,
+        });
+
+        expect(evidence).toMatchObject({ auth: 'keyring', credential: 'absent' });
+      });
+    },
+  );
+
   it('asks for the API key on the Codex api-key channel when the session store is the keyring', async () => {
     await withTempDir('readiness-codex-keyring-api-key', async (hostHome) => {
       const executable = await nodeExecutable();
@@ -438,6 +474,61 @@ describe('session-state presence readiness', () => {
       );
     });
   });
+
+  it('reads the keyring store from the config under a set CODEX_HOME', async () => {
+    await withTempDir('readiness-codex-home-keyring', async (hostHome) => {
+      const executable = await nodeExecutable();
+      const codexHome = join(hostHome, 'codex-home');
+      await mkdir(join(hostHome, '.codex'), { recursive: true });
+      await mkdir(codexHome, { recursive: true });
+      await writeFile(
+        join(hostHome, '.codex', 'config.toml'),
+        'cli_auth_credentials_store = "file"\n',
+      );
+      await writeFile(join(codexHome, 'config.toml'), 'cli_auth_credentials_store = "keyring"\n');
+      vi.stubEnv('HOME', hostHome);
+      vi.stubEnv('CODEX_HOME', codexHome);
+
+      const result = await probeCliReadiness({
+        tool: 'codex',
+        executable,
+        authChannel: 'session',
+        probe: sessionProbe(),
+        classifyVersion: () => 'compatible',
+      });
+
+      expect(result).toMatchObject({ auth: 'keyring', status: 'unauthenticated' });
+    });
+  });
+
+  it.each(['file', 'auto'])(
+    'gives a Codex sign-in kept in auth.json no keyring text (%s store)',
+    async (store) => {
+      await withTempDir('readiness-codex-file-sign-in', async (hostHome) => {
+        const executable = await nodeExecutable();
+        await mkdir(join(hostHome, '.codex'), { recursive: true });
+        await writeFile(
+          join(hostHome, '.codex', 'config.toml'),
+          `cli_auth_credentials_store = "${store}"\n`,
+        );
+        await writeFile(join(hostHome, '.codex', 'auth.json'), '{"auth_mode":"chatgpt"}\n');
+        vi.stubEnv('HOME', hostHome);
+        vi.stubEnv('CODEX_HOME', '');
+
+        const result = await probeCliReadiness({
+          tool: 'codex',
+          executable,
+          authChannel: 'session',
+          probe: sessionProbe(),
+          classifyVersion: () => 'compatible',
+        });
+
+        expect(result.auth).not.toBe('keyring');
+        expect(result.status).toBe('ready');
+        expect(result.remediation ?? '').not.toContain('keyring');
+      });
+    },
+  );
 
   it('keeps a Codex file store with no auth.json signed out', async () => {
     await withTempDir('readiness-codex-file-store', async (hostHome) => {

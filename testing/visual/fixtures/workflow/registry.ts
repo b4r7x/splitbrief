@@ -181,9 +181,19 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
   if (projection.scenarioId === 'workflow-ready-slash-command') {
     return () => ({ ...base(), afterMount: (write) => write.press('/settings') });
   }
+  if (projection.scenarioId === 'workflow-recovery-empty-enter') {
+    return () => ({
+      ...base(),
+      afterMount: async (write) => {
+        await write.press('\t');
+        await write.press('\r');
+      },
+    });
+  }
   if (
     projection.scenarioId === 'workflow-ready-override-confirm' ||
-    projection.scenarioId === 'workflow-ready-planner-accept-confirm'
+    projection.scenarioId === 'workflow-ready-planner-accept-confirm' ||
+    projection.scenarioId === 'workflow-ready-planner-accept-long-note'
   ) {
     return () => ({ ...base(), afterMount: (write) => write.press('\r') });
   }
@@ -388,6 +398,15 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
       afterMount: async (write) => {
         await write.press('\t');
         await write.press(draft);
+      },
+    });
+  }
+  if (projection.scenarioId === 'workflow-recovery-long-question-draft') {
+    return () => ({
+      ...base(),
+      afterMount: async (write) => {
+        await write.press('\t');
+        await write.press('Read the stop from the run record and leave Projection untouched');
       },
     });
   }
@@ -703,6 +722,7 @@ const checkpointPredicates = [
     checkpointId('review-verify'),
     includesAll('Verify K1', 'Review · Verify K2 · npm test', 'running 0:12'),
   ],
+  [checkpointId('review-verify-pre-existing'), includesAll('Verify V1', 'Verify V2')],
   [
     checkpointId('review-render-running'),
     includesAll(
@@ -825,6 +845,7 @@ const checkpointPredicates = [
   [checkpointId('paused-cut-seat'), includesAll('⏎ resume', 'Stopped at T')],
   [checkpointId('paused-boundary'), includesAll('briefs complete', 'before T902')],
   [checkpointId('stopping'), includesAll('esc back after stop')],
+  [checkpointId('stopping-review'), includesAll('Stopping the review')],
   // A run at rest carries its own name: the marker is the session the record names, which the
   // closed block states in full and the open byline carries. Nothing else is width-stable — the
   // byline sheds its reason and then its alternative as the terminal narrows.
@@ -1009,6 +1030,10 @@ const checkpointPredicates = [
     checkpointId('ready-planner-accept-confirm'),
     includesAll('Apply with 2 open findings?', "Planner's note:"),
   ],
+  [
+    checkpointId('ready-planner-accept-long-note'),
+    includesAll('Apply with 2 open findings?', "Planner's note:", 'Apply as is'),
+  ],
   [checkpointId('closed-applied'), includesAll()],
   [checkpointId('closed-pre-existing'), includesAll('V2 pre-existing')],
   // A finding wraps at words, so at 60x18 the earlier failed review scrolls above the viewport.
@@ -1045,6 +1070,10 @@ const checkpointPredicates = [
   [checkpointId('replayed'), includesAll()],
   [checkpointId('failure'), includesAll(WORKFLOW_FIXTURE_TEXT.failure, 'Build failed')],
   [checkpointId('recovery'), includesAll(WORKFLOW_FIXTURE_TEXT.recovery)],
+  [
+    checkpointId('recovery-empty-enter'),
+    includesAll('Change BUILD tool', 'Nothing to send. Tab to choose an action.'),
+  ],
   [checkpointId('recovery-no-fallback'), includesAll(WORKFLOW_FIXTURE_TEXT.recovery)],
   [checkpointId('recovery-fallback-used'), includesAll(WORKFLOW_FIXTURE_TEXT.recovery)],
   [checkpointId('recovery-fallback-not-installed'), includesAll(WORKFLOW_FIXTURE_TEXT.recovery)],
@@ -1145,6 +1174,15 @@ const checkpointPredicates = [
   [checkpointId('plan-activity'), includesAll('src/core/crew/identity.ts')],
   [checkpointId('retry-exhausted'), includesAll(WORKFLOW_FIXTURE_TEXT.retryExhausted)],
   [checkpointId('unanswered-question'), includesAll('T901 needs your answer')],
+  [checkpointId('long-question'), includesAll('T901 needs your answer', 'Question: Projection')],
+  [
+    checkpointId('long-question-draft'),
+    includesAll('T901 needs your answer', 'Question: Projection', 'untouched'),
+  ],
+  [
+    checkpointId('masked-question'),
+    includesAll('T901 needs your answer', 'Question: Deploy needs Authorization: Bearer'),
+  ],
   [checkpointId('cannot'), includesAll('T901: the planner says it cannot be done')],
   [checkpointId('many-files'), includesAll(WORKFLOW_FIXTURE_TEXT.retryExhausted)],
   [

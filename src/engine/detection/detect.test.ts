@@ -3,6 +3,7 @@ import { chmod, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { env, platform } from 'node:process';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expireDeadlineAfterFile, freezeProbeDeadlines } from '#testing/helpers/fake-timers.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import type { RunnerDiscoveryContext } from '../../core/config/accessors/runner-discovery-context.js';
 import type {
@@ -198,6 +199,8 @@ function sequenceClock(values: readonly number[]): () => number {
   let index = 0;
   return () => values[Math.min(index++, values.length - 1)] ?? 0;
 }
+
+freezeProbeDeadlines();
 
 describe('legacy CLI detection presentation', () => {
   afterEach(() => {
@@ -727,7 +730,7 @@ describe('context-bound runner evidence', () => {
               now: () => 108,
             });
 
-            expect(evidence.catalog).toEqual({ kind: 'unsupported' });
+            expect(evidence.catalog).toEqual({ kind: 'not-run' });
             expect(evidence.compatibility).toMatchObject({
               kind: 'unknown',
               installedVersion: null,
@@ -748,6 +751,61 @@ describe('context-bound runner evidence', () => {
         });
       }
     },
+  );
+
+  it.runIf(platform !== 'win32')(
+    'leaves a provider-listing tool out of the sign-in rule when the version probe times out',
+    async () => {
+      await withTempDir('detect-oracle-version-timeout', async (directory) => {
+        const versionStarted = join(directory, 'version-started');
+        const script = join(directory, 'opencode');
+        await writeFile(
+          script,
+          [
+            '#!/bin/sh',
+            'if [ "$1" = "--version" ]; then',
+            `  : > ${JSON.stringify(versionStarted)}`,
+            '  exec tail -f /dev/null',
+            'fi',
+            'exit 1',
+            '',
+          ].join('\n'),
+        );
+        await chmod(script, 0o755);
+        const shim = await resolveCliExecutable({
+          command: script,
+          projectDir: '/neutral/project',
+        });
+
+        const home = join(directory, 'home');
+        vi.stubEnv('HOME', home);
+        vi.stubEnv('XDG_DATA_HOME', home);
+        vi.stubEnv('XDG_CONFIG_HOME', home);
+        try {
+          const pending = detectRunnerEvidence({
+            context: {
+              role: 'planner',
+              kind: 'cli',
+              id: 'opencode',
+              authChannel: 'provider-dependent',
+              credentialPresent: false,
+              configGeneration: 'test-config-generation',
+            },
+            resolveExecutable: async () => shim,
+            includeCatalog: true,
+            projectDir: '/neutral/project',
+          });
+          await expireDeadlineAfterFile(versionStarted);
+          const evidence = await pending;
+
+          expect(evidence.auth).toBe('missing');
+          expect(evidence.catalog).toEqual({ kind: 'timeout' });
+        } finally {
+          vi.unstubAllEnvs();
+        }
+      });
+    },
+    20_000,
   );
 
   it.runIf(platform !== 'win32')(

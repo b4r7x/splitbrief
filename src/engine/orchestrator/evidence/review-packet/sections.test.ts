@@ -10,7 +10,7 @@ import type { EvidenceLedger } from '../../../../core/schemas/evidence.js';
 import { taskId } from '../../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../../core/schemas/workflow.js';
 import { buildChanges, buildChecks, buildRun, buildValidation } from './sections.js';
-import { renderReviewPacketMarkdown } from './render.js';
+import { renderReviewPacketMarkdown, renderWholeChecksLog } from './render.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { NULL_CACHE } from '../../../providers/model/resolution.js';
 
@@ -165,6 +165,44 @@ describe('buildChecks', () => {
       id: 'test',
       preExisting: ['src/legacy.test.ts:5'],
     });
+  });
+
+  it('lists the checks a review ran to verify its claims, with no task', () => {
+    const task = makeTask({ id: 'T001' });
+    const base = createEvidenceLedger({ sessionId: 's', feature: 'feat', tasks: [task] });
+    const verifyRun = {
+      id: 'V1',
+      command: 'node legacy/report.mjs',
+      exitCode: 1,
+      output: 'legacy total expected 3',
+      preExisting: ['legacy/report.mjs:2:1'],
+      workspaceSnapshotId: 'snap-2',
+      ts: '2026-01-01T00:01:00.000Z',
+    };
+    const ledger: EvidenceLedger = {
+      ...base,
+      tasks: base.tasks.map((entry) => ({
+        ...entry,
+        checks: [{ id: 'K1', command: 'npm test', exitCode: 0, ts: '2026-01-01T00:00:00.000Z' }],
+      })),
+      verifyChecks: [verifyRun],
+    };
+
+    const checks = buildChecks({ ledger, events: [] });
+
+    expect(checks.entries).toEqual([
+      {
+        taskId: 'T001',
+        id: 'K1',
+        command: 'npm test',
+        exitCode: 0,
+        ts: '2026-01-01T00:00:00.000Z',
+      },
+      verifyRun,
+    ]);
+    expect(renderWholeChecksLog(checks).split('\n')).toContain(
+      '- V1 (exit 1): node legacy/report.mjs',
+    );
   });
 });
 

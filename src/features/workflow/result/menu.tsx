@@ -14,6 +14,7 @@ import {
   RESULT_MENU_UNFOCUSED_LEGEND,
   resultMenuFindingLines,
   resultMenuHeight,
+  resultMenuNoteLines,
   resultMenuRows,
   resultMenuTitle,
   resultRowCommand,
@@ -93,14 +94,17 @@ function ResultMenuBody({
     Math.max(1, layout.width - 4),
   );
   const boxHeight = height ?? resultMenuHeight(input, cols);
-  // Border, title and legend take four rows; the actions and the note keep theirs, the findings
-  // get the rest.
-  const noteLines = confirming && note !== undefined ? [note] : [];
+  // Border, title and legend take four rows and the actions keep theirs. The findings take up to
+  // half of the rest, and the note the other rows; a note taller than that ends on an ellipsis.
+  const bodyRows = boxHeight - 4 - layout.bodyRows;
+  const noteRows = Math.max(1, bodyRows - Math.min(findings.length, Math.ceil(bodyRows / 2)));
+  const wrappedNote = confirming ? resultMenuNoteLines(note, cols) : [];
+  const noteLines =
+    wrappedNote.length <= noteRows
+      ? wrappedNote
+      : [...wrappedNote.slice(0, noteRows - 1), `${wrappedNote[noteRows - 1]}…`];
   const findingLines = confirming
-    ? [
-        ...noteLines,
-        ...resultMenuFindingLines(findings, boxHeight - 4 - layout.bodyRows - noteLines.length),
-      ]
+    ? [...noteLines, ...resultMenuFindingLines(findings, bodyRows - noteLines.length)]
     : [];
   const titleParts = resultMenuTitle(input);
   const title = fitKeyLegend(

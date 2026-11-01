@@ -92,9 +92,16 @@ export function stopPoint(step: StepRef, at: StepCut | undefined): string {
   return `at ${stepWord(step)}`;
 }
 
-/** The run names its own brief where it has one, and says "the run" rather than nothing. */
+/**
+ * The run names its own brief where it has one, the review when the final review runs, and says
+ * "the run" rather than nothing.
+ */
 function subject(input: StopBylineInput): string {
-  return input.parked?.taskId ?? input.currentTaskId ?? input.finishedTaskId ?? 'the run';
+  const brief = input.parked?.taskId ?? input.currentTaskId;
+  if (brief === null && input.workflowPhase === 'final-review') {
+    return stepWord({ kind: 'review', cycle: 0 });
+  }
+  return brief ?? input.finishedTaskId ?? 'the run';
 }
 
 /**
@@ -249,11 +256,8 @@ export function stopByline(input: StopBylineInput): StopByline | null {
       : 'Finishing cleanup and saving';
   const clock = formatElapsedClock(input.elapsedMs);
   return byline(
-    [
-      ...stopLeadParts(state, tone, cause, progress),
-      { text: SOFT_SEP, tone: 'textDim' },
-      { text: clock, tone: 'textDim' },
-    ],
+    stopLeadParts(state, tone, cause, progress),
     `esc back after stop${SOFT_SEP}ctrl+c quit after stop`,
+    clock,
   );
 }

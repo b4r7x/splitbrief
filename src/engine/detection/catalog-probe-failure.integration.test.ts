@@ -1,6 +1,7 @@
 import { chmod, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { freezeProbeDeadlines } from '#testing/helpers/fake-timers.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import type { RunnerDiscoveryContext } from '../../core/config/accessors/runner-discovery-context.js';
 import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
@@ -64,6 +65,8 @@ async function catalogOutcomeFor(
     return evidence.catalog;
   });
 }
+
+freezeProbeDeadlines();
 
 describe('a catalog listing that exits non-zero', () => {
   it.runIf(process.platform !== 'win32')(

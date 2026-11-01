@@ -100,6 +100,12 @@
 
 ### Fixed
 
+- A slow tool no longer hides the sign-in step or claims that it cannot list models.
+- In the runner picker, a tool you signed out of keeps its earlier models and shows the sign-in step first. It no longer tells you to refresh detection.
+- An older tool, or a tool whose version cannot be read, no longer claims that it cannot list models, and the model picker no longer calls models from an earlier check the bundled list.
+- A word or a single letter typed in the composer at a halt no longer ends the run, skips the task or restores files. It goes as your correction, or the halt refuses it. Pick the row, or use `/end`.
+- An empty Enter in the composer at a halt no longer runs the recommended action. The feedback line says that nothing was sent and how to choose an action.
+- A halt with very many files now opens the recovery panel with its actions, as every other halt does.
 - A run that another window is applying now reads `Applying to your checkout` with the time since the Apply began, instead of `Running in another process`.
 - A `shell` or `agent` runner whose program changed after you trusted it, for example after an upgrade or a reinstall, can run again. In a terminal, SPLITBRIEF says that the program changed, shows its path and asks you to confirm it again; confirming replaces the old trust. A headless run accepts it with `--allow-repo-runners`. Before, the runner stayed blocked, and the confirmation and the flag that the message named did not help. A program that was removed now reads as missing, not as changed. `customCommands` runners now name the cause and the fix when they are refused.
 - A project gate command that runs the project's build wrapper, such as `./gradlew test` or `./mvnw verify`, now runs at the run base too. Before, it was refused there, so a failure your checkout already had counted as new.
@@ -168,6 +174,8 @@
 - A file error names the file from the project root, also from a subfolder, with --project and in a run workspace, and an unreadable kept workspace record says what failed.
 - The plan editor title names the file from the project root and shortens a long path in the middle.
 - On a short terminal, writing your own answer to a question no longer scrolls the question out of view.
+- On a short terminal, the panel of a halt shows the question or the planner's reason whole while it has rows for it, also while you type a correction of two or three rows.
+- After a brief finished, the End run row of a halt says that it closes the run and keeps its changes.
 - After you close a question with Esc, and while the planner or the reviewer waits for your reply, the key legend above the composer is no longer blank: it names the keys the run answers to.
 - On a question with no choices, ↑ in the answer field no longer moves you to the instruction box below it.
 - The Seat down title for two timeouts in a row on one brief no longer counts the attempts a second time.
@@ -294,6 +302,8 @@
 - A tool does not outlive a crashed SPLITBRIEF. A watchdog process ends every tool when SPLITBRIEF dies, also on `kill -9`. A tool that survives is stopped when SPLITBRIEF starts, when a run opens at rest and when a run ends.
 - `splitbrief continue <run> --action end-run` closes any open run; a ready run closes as discarded and keeps `run.patch`.
 - `splitbrief continue` on a closed run exits 1, with a JSON error under `--json`.
+- With `--json`, a halt that names thousands of files still writes its `recovery_required` record, with the reason, the actions and the command to continue, and leaves out `files`. Before, a warning replaced the record.
+- The warning for a record or an event too large to write now reads `Omitted oversized <name> record exceeding <n> bytes` or `Omitted oversized <name> event exceeding <n> bytes`, and the warning for an invalid one reads `Omitted invalid <name> record` or `Omitted invalid <name> event`. Before, both opened with an internal label.
 - Reject on a checkout run restores only the files that still hold what the run wrote, and names the files you changed since. It also works on a run that stopped or halted after a brief passed, and it refuses a closed run.
 - A file that Reject recreates gets its recorded mode, and a folder that Reject, Apply or a restore recreates gets the normal mode, not owner-only.
 - End run refuses an unfinished Apply until you restore or retry it.
@@ -469,6 +479,7 @@
 - The refusal for an `agent` runner from the project config now reads "an agent runner command". Before, it read "a agent runner command".
 - The panel that asks you to trust a `shell` or `agent` runner from the project config is now titled "Trust and run a configured runner:" and names the runner command. Before, it was titled "Network access:" and labelled "confirm file write".
 - The *Apply as is* confirmation lists each open finding on one row, so a finding written on two lines no longer covers the card title. Before, its second line pushed over the title.
+- The *Apply as is* confirmation lists the open findings under a long note, and the note ends on `…`. Before, the note took the rows and only a count of the findings showed.
 - `splitbrief start` over a run that is still running tells you to stop it, then run `splitbrief continue <id>`. Before, it told you to run `splitbrief resume`, which refuses a running run.
 - In the model picker, the key line says what ⏎ does on the highlighted row: `⏎ expand` on a collapsed model row. Before, it said `⏎ confirm` while ⏎ opened the row.
 - `/usage` no longer shows `$0.00` per million tokens for a model that has no published rate, and `/usage` and `/copy cost` call an amount a catalog estimate only when an amount is shown. Before, a run on a subscription tool read as free and claimed an estimate it never made.

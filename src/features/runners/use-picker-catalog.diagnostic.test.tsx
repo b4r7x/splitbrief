@@ -43,7 +43,8 @@ function cliCatalogAttempt(input: {
 
 function cliCatalogResult(
   attempts: readonly ScopedCliCatalogAttempt[],
-  cliTools: CliToolDetection[] = [],
+  cliTools: CliToolDetection[],
+  requestId: number,
 ): DetectionServiceResult {
   return {
     providers: [],
@@ -79,7 +80,7 @@ function cliCatalogResult(
           source: 'cli-models',
           contextKey: contexts.cliModels,
           generation: 1,
-          requestId: 1,
+          requestId,
           fetchedAt: 100,
           validatedAt: 100,
           stale: false,
@@ -95,9 +96,9 @@ function publishCliCatalogs(
   cliTools: CliToolDetection[] = [],
 ): void {
   const request = detectionStore.beginRefresh({ contexts });
-  expect(detectionStore.publish({ result: cliCatalogResult(attempts, cliTools), request })).toBe(
-    true,
-  );
+  expect(
+    detectionStore.publish({ result: cliCatalogResult(attempts, cliTools, request.id), request }),
+  ).toBe(true);
 }
 
 let captured: PickerCatalog['catalogDiagnostic'];
@@ -181,6 +182,25 @@ describe('usePickerCatalog catalog diagnostic', () => {
     const ui = renderFeature(<Probe role="planner" toolId="codex" />);
 
     expect(captured).toEqual({ kind: 'probe-failed', failure: 'command-failed', cause });
+    ui.unmount();
+  });
+
+  it('does not call rows kept from an earlier listing the bundled list', () => {
+    publishCliCatalogs([cliCatalogAttempt({ tool: 'codex', models: ['gpt-6-astra'] })]);
+    publishCliCatalogs([cliCatalogAttempt({ tool: 'codex', failure: 'not-run' })]);
+
+    const ui = renderFeature(<Probe role="planner" toolId="codex" />);
+
+    expect(captured).toEqual({ kind: 'not-run-retained' });
+    ui.unmount();
+  });
+
+  it('keeps a not-run listing with no earlier rows as not run', () => {
+    publishCliCatalogs([cliCatalogAttempt({ tool: 'codex', failure: 'not-run' })]);
+
+    const ui = renderFeature(<Probe role="planner" toolId="codex" />);
+
+    expect(captured).toEqual({ kind: 'probe-failed', failure: 'not-run' });
     ui.unmount();
   });
 

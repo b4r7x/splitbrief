@@ -1,6 +1,7 @@
 import { chmod, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { expireDeadlineAfterFile, freezeProbeDeadlines } from '#testing/helpers/fake-timers.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import type { RunnerDiscoveryContext } from '../../core/config/accessors/runner-discovery-context.js';
 import type { CliAuthChannelId } from '../../core/runners/cli-tool-catalog.js';
@@ -35,7 +36,11 @@ type Staged = Readonly<{ apiKey: string; session: 'bridged' | 'none' }>;
  * credentials its staged environment handed it, then answers like the tool:
  * logged in when it holds either one, and a one-model catalog.
  */
-async function installCodexShim(root: string, logDir: string) {
+async function installCodexShim(
+  root: string,
+  logDir: string,
+  versionLine = 'echo "codex-cli 0.146.0"; exit 0',
+) {
   const directory = join(root, 'bin');
   await mkdir(directory);
   const shim = join(directory, 'codex');
@@ -46,7 +51,7 @@ async function installCodexShim(root: string, logDir: string) {
       `tag=$(printf '%s' "$*" | tr ' ' '_')`,
       'if [ -f "$HOME/.codex/auth.json" ]; then session=bridged; else session=none; fi',
       `printf '%s\\n%s\\n' "\${OPENAI_API_KEY:-unset}" "$session" > ${JSON.stringify(logDir)}/"$tag"`,
-      'if [ "$1" = "--version" ]; then echo "codex-cli 0.146.0"; exit 0; fi',
+      `if [ "$1" = "--version" ]; then ${versionLine}; fi`,
       'if [ "$1" = "login" ] && [ "$2" = "status" ]; then',
       '  if [ -n "$OPENAI_API_KEY" ] || [ "$session" = bridged ]; then echo "Logged in"; exit 0; fi',
       '  echo "Not logged in" >&2; exit 1',
@@ -102,6 +107,8 @@ async function withCodexHost(
 }
 
 describe('one auth selection for readiness, catalog and dispatch', () => {
+  freezeProbeDeadlines();
+
   itUnix.each([
     ['session', { apiKey: 'unset', session: 'bridged' }],
     ['api-key', { apiKey: API_KEY, session: 'none' }],
@@ -159,6 +166,51 @@ describe('one auth selection for readiness, catalog and dispatch', () => {
         expect(evidence.catalog).toEqual({ kind: 'missing-credential' });
         expect(await stagedBy(logDir, 'login_status')).toBeUndefined();
         expect(await stagedBy(logDir, 'debug_models')).toBeUndefined();
+      });
+    },
+    60_000,
+  );
+
+  itUnix.each([
+    ['api-key', { session: true, apiKey: false }],
+    ['session', { session: false, apiKey: true }],
+  ] as const)(
+    'keeps the %s channel sign-in fact when the version probe gives no version',
+    async (channel, credentials) => {
+      await withCodexHost(credentials, async ({ root, logDir }) => {
+        const shim = await installCodexShim(root, logDir, 'exit 3');
+
+        const evidence = await detectRunnerEvidence({
+          context: codexContext(channel),
+          resolveExecutable: async () => shim,
+          includeCatalog: true,
+          projectDir: join(root, 'project'),
+        });
+
+        expect(evidence.auth).toBe('missing');
+        expect(evidence.catalog).toEqual({ kind: 'missing-credential' });
+      });
+    },
+    60_000,
+  );
+
+  itUnix(
+    'reports a model detection timeout for a signed-in channel when the version probe times out',
+    async () => {
+      await withCodexHost({ session: true, apiKey: false }, async ({ root, logDir }) => {
+        const shim = await installCodexShim(root, logDir, 'exec tail -f /dev/null');
+
+        const pending = detectRunnerEvidence({
+          context: codexContext('session'),
+          resolveExecutable: async () => shim,
+          includeCatalog: true,
+          projectDir: join(root, 'project'),
+        });
+        await expireDeadlineAfterFile(join(logDir, '--version'));
+        const evidence = await pending;
+
+        expect(evidence.auth).toBe('verified');
+        expect(evidence.catalog).toEqual({ kind: 'timeout' });
       });
     },
     60_000,

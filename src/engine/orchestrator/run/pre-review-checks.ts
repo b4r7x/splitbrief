@@ -35,6 +35,8 @@ export async function runCheckWithRows(input: {
   prepare: ReturnType<typeof createCheckRunner>;
   notices: { bus: EventBus; phase: Phase };
   moment: 'plan' | 'verify';
+  /** The failures this review saw red at the run base: a red keeps them as pre-existing. */
+  atBase?: readonly string[] | undefined;
 }): Promise<CheckRunResult> {
   const { check, notices } = input;
   const prepared = input.prepare(check);
@@ -44,6 +46,9 @@ export async function runCheckWithRows(input: {
   const run = await prepared.run();
   // A red that ran no command, such as a missing test file or npm script, names why on its row.
   const unranRed = run.status === 'fail' && run.command === undefined;
+  const failures =
+    run.status === 'fail' && run.failure.placeholder === undefined ? run.failure.keys : [];
+  const preExisting = failures.filter((key) => input.atBase?.includes(key));
   publishReviewCheck(notices, {
     ...identity,
     command: unranRed ? '' : (run.command ?? prepared.command),
@@ -55,10 +60,14 @@ export async function runCheckWithRows(input: {
             ? { duration: Date.now() - startedAt }
             : { reusedAt: run.reusedAt }),
           ...(unranRed && { detail: run.output }),
+          ...(preExisting.length > 0 && {
+            newFailures: failures.length - preExisting.length,
+            preExisting: preExisting.length,
+          }),
         }
       : unranCheckRow(run)),
   });
-  return run;
+  return preExisting.length > 0 ? { ...run, preExisting } : run;
 }
 
 /** A required check that did not pass: `fail` is a defect, everything else cannot run. */

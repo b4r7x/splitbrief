@@ -783,6 +783,42 @@ describe('Composer blocking-question isolation', () => {
     handler: () => {},
   };
 
+  it('refuses an empty answer with its notice when the mode names one, and keeps the answer unsent', async () => {
+    const onSubmit = vi.fn();
+    const ui = renderDockedComposer({
+      commands: [],
+      currentScreen: 'workflow',
+      mode: 'question',
+      hint: '',
+      emptyAnswerNotice: 'Tab to choose an action.',
+      onSubmit,
+      onRuntimeCommand: () => {},
+    });
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(feedbackStore.get().message).toBe('Tab to choose an action.');
+    ui.unmount();
+  });
+
+  it('sends an empty answer in question mode when no notice is named', async () => {
+    const onSubmit = vi.fn();
+    const ui = renderDockedComposer({
+      commands: [],
+      currentScreen: 'workflow',
+      mode: 'question',
+      hint: '',
+      onSubmit,
+      onRuntimeCommand: () => {},
+    });
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    ui.unmount();
+  });
+
   it('opens the command list for a slash typed as an answer', async () => {
     const ui = renderDockedComposer({
       commands: [SCROLL],

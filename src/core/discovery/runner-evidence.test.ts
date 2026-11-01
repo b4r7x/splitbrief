@@ -159,6 +159,47 @@ describe('runner evidence', () => {
     },
   );
 
+  it('names the sign-in before a version it could not read', () => {
+    const evidence: RunnerEvidence = {
+      ...freshEvidence({ auth: 'missing', credential: 'absent' }),
+      compatibility: { kind: 'unknown', installedVersion: null, testedVersion: '0.40.0' },
+    };
+
+    expect(startAdmission(evidence, ['compatible-version', 'authentication'])).toEqual({
+      kind: 'denied',
+      reason: { kind: 'authentication', fact: 'missing' },
+    });
+  });
+
+  it.each([
+    { kind: 'incompatible', installedVersion: '0.1.0', testedVersion: '0.40.0' },
+    { kind: 'unknown', installedVersion: 'nightly', testedVersion: '0.40.0' },
+  ] as const)('keeps the version denial for a version it read: $kind', (compatibility) => {
+    const evidence: RunnerEvidence = {
+      ...freshEvidence({ auth: 'missing', credential: 'absent' }),
+      compatibility,
+    };
+
+    expect(startAdmission(evidence, ['compatible-version', 'authentication'])).toEqual({
+      kind: 'denied',
+      reason: { kind: 'compatibility', fact: compatibility.kind },
+    });
+  });
+
+  it('keeps the version denial for a provider-listing tool', () => {
+    const base = freshEvidence({ auth: 'missing', credential: 'absent' });
+    const evidence: RunnerEvidence = {
+      ...base,
+      runner: { ...base.runner, id: 'opencode' },
+      compatibility: { kind: 'unknown', installedVersion: null, testedVersion: '0.40.0' },
+    };
+
+    expect(startAdmission(evidence, ['compatible-version', 'authentication'])).toEqual({
+      kind: 'denied',
+      reason: { kind: 'compatibility', fact: 'unknown' },
+    });
+  });
+
   it('admits a successful empty catalog', () => {
     const evidence: RunnerEvidence = {
       ...freshEvidence({ catalog: { kind: 'success', value: [] } }),

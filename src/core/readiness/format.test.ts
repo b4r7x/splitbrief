@@ -14,7 +14,11 @@ import {
   serializeReadinessCheckJson,
   startReadinessWarnings,
 } from './format.js';
-import { deriveCliReadiness, StartReadinessRecordSchema } from '../schemas/readiness.js';
+import {
+  codexKeyringSignInFix,
+  deriveCliReadiness,
+  StartReadinessRecordSchema,
+} from '../schemas/readiness.js';
 
 const RUN = { projectDir: '/tmp/project', sessionId: '2026-01-01-fix-the-readme' };
 
@@ -75,6 +79,21 @@ describe('readiness formatting', () => {
     for (const output of [formatReadinessReport(report), formatReadinessBlockers(report)]) {
       expect(output.match(/Make an initial commit/g)).toHaveLength(1);
     }
+  });
+
+  it('keeps the value of the keyring sign-in fix readable', () => {
+    const report = reportWith([
+      {
+        id: 'runner.codex',
+        severity: 'blocker',
+        summary: 'BUILD cannot start.',
+        fix: codexKeyringSignInFix('doctor'),
+      },
+    ]);
+
+    expect(formatReadinessReport(report)).toContain(
+      'Fix: Set cli_auth_credentials_store = "file" in config.toml',
+    );
   });
   const blockedReport = () =>
     buildReadinessReport({

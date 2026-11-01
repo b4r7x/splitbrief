@@ -50,6 +50,20 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
   if (event.id === undefined || event.status === 'running' || event.status === 'stopped')
     return null;
   const reused = event.reusedAt === undefined ? '' : `${SOFT_SEP}${reusedNote(event.reusedAt)}`;
+  // The split of a red reviewer or verify check; an older run carried it on its base re-run.
+  const split =
+    (event.moment === 'pre-review' || event.moment === 'base' || event.moment === 'verify') &&
+    event.passed === false &&
+    event.newFailures !== undefined &&
+    event.preExisting !== undefined
+      ? baseSplit({
+          newFailures: event.newFailures,
+          preExisting: event.preExisting,
+          notVerified: event.notVerified,
+          reason: event.detail,
+        })
+      : null;
+  const why = split === null || split.why === null ? '' : `${SOFT_SEP}${split.why}`;
   if (event.moment === 'plan' || event.moment === 'verify') {
     const label =
       event.scenario !== undefined
@@ -61,7 +75,8 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
     if (event.status === 'refused') return `${label}: refused${detail}`;
     if (event.status === 'not-run') return `${label}: not run${detail}`;
     const verdict =
-      event.passed === true ? (event.scenario === undefined ? 'passed' : 'rendered') : 'failed';
+      split?.verdict ??
+      (event.passed === true ? (event.scenario === undefined ? 'passed' : 'rendered') : 'failed');
     const clock =
       event.reusedAt !== undefined
         ? reused
@@ -70,7 +85,7 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
           : `${SOFT_SEP}${formatDuration(event.duration)}`;
     const command =
       event.scenario !== undefined ? '' : event.command === '' ? detail : ` (${event.command})`;
-    return `${label}: ${verdict}${clock}${command}`;
+    return `${label}: ${verdict}${clock}${why}${command}`;
   }
   const label =
     event.moment === 'base'
@@ -96,20 +111,7 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
     }).join(SOFT_SEP);
     return `${label} ${event.id}: ${verdict}${reused} (${event.command})`;
   }
-  // The split of a red reviewer check; an older run carried it on its base re-run.
-  if (
-    (event.moment === 'pre-review' || event.moment === 'base') &&
-    event.passed === false &&
-    event.newFailures !== undefined &&
-    event.preExisting !== undefined
-  ) {
-    const split = baseSplit({
-      newFailures: event.newFailures,
-      preExisting: event.preExisting,
-      notVerified: event.notVerified,
-      reason: event.detail,
-    });
-    const why = split.why === null ? '' : `${SOFT_SEP}${split.why}`;
+  if (split !== null) {
     const command = event.moment === 'base' ? '' : ` (${event.command})`;
     return `${label} ${event.id}: ${split.verdict}${reused}${why}${command}`;
   }

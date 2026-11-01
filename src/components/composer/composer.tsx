@@ -154,6 +154,8 @@ interface ComposerProps {
   homeNotice?: HomeNotice | undefined;
   boxHints?: ComposerBoxHints | undefined;
   onEmptySubmit?: (() => void) | undefined;
+  /** A question mode whose empty answer means nothing refuses it here and keeps the focus. */
+  emptyAnswerNotice?: string | undefined;
   onTab?: (() => void) | undefined;
   onEditShortcut?: (() => void) | undefined;
   onReviewBoundaryNavigate?: ((direction: 'up' | 'down') => boolean | undefined) | undefined;
@@ -206,6 +208,7 @@ function ComposerInput({
   homeNotice,
   boxHints,
   onEmptySubmit,
+  emptyAnswerNotice,
   onTab,
   onEditShortcut,
   onReviewBoundaryNavigate,
@@ -552,6 +555,10 @@ function ComposerInput({
     }
 
     if (mode !== 'normal') {
+      if (emptyAnswerNotice !== undefined && trimmed.parts.length === 0) {
+        feedbackStore.setError(emptyAnswerNotice);
+        return;
+      }
       if (send(document, false) && !submitKeepsDraft) clearDraft();
       return;
     }

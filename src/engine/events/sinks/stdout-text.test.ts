@@ -587,6 +587,49 @@ describe('createStdoutTextSink', () => {
     ]);
   });
 
+  it('splits the line of a red verify check at the run base, and only with both counts', () => {
+    const reusedAt = new Date().toISOString();
+    const red: EngineEventOf<'full_suite'> = {
+      type: 'full_suite',
+      ts,
+      phase: 'final-review',
+      status: 'done',
+      id: 'V6',
+      command: 'npm test',
+      moment: 'verify',
+      passed: false,
+      duration: 14_200,
+    };
+    expect(
+      collect([
+        { ...red, newFailures: 1, preExisting: 2 },
+        { ...red, newFailures: 0, preExisting: 1 },
+        { ...red, newFailures: 0, preExisting: 2 },
+        {
+          type: 'full_suite',
+          ts,
+          phase: 'final-review',
+          status: 'done',
+          id: 'V6',
+          command: 'npm test',
+          moment: 'verify',
+          passed: false,
+          reusedAt,
+          newFailures: 0,
+          preExisting: 1,
+        },
+        red,
+      ]),
+    ).toEqual([
+      'phase: final-review',
+      'verify V6: 1 new, 2 pre-existing · 14.2s (npm test)',
+      "verify V6: pre-existing · 14.2s · the failure also fails before this run's changes (npm test)",
+      "verify V6: pre-existing · 14.2s · all 2 failures also fail before this run's changes (npm test)",
+      `verify V6: pre-existing · ${reusedNote(reusedAt)} · the failure also fails before this run's changes (npm test)`,
+      'verify V6: failed · 14.2s (npm test)',
+    ]);
+  });
+
   it('marks a reused reviewer check, plan check and base re-run with the time it ran', () => {
     const reusedAt = new Date().toISOString();
     const note = reusedNote(reusedAt);
