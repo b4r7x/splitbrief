@@ -68,7 +68,7 @@ Read the canonical doc **before** touching the matching area. Every link below e
 | Orient yourself in the codebase | [docs/CODE-STANDARD.md §6](./docs/CODE-STANDARD.md#6-the-hard-conventions-enforced--summarized-linked) — one-page rule index |
 | Judge code against the SOTA review bar | [docs/CODE-STANDARD.md](./docs/CODE-STANDARD.md) — consolidated quality standard + reviewer checklist |
 | Check what has already been decided | `.specify/memory/constitution.md` — the ADRs of the 2026-08-04 realignment are folded into it, `docs/VISION.md` and the docs. `.nuke/2026-08-04-decisions.md` is the local decision record for that pass: untracked, present only in the working copy |
-| Check strategic direction | [docs/VISION.md](./docs/VISION.md), [docs/FUTURE.md](./docs/FUTURE.md), [docs/DIRECTION.md](./docs/DIRECTION.md) — how we build, [docs/IMPLEMENTER-DIRECTION.md](./docs/IMPLEMENTER-DIRECTION.md) — implementer direction |
+| Check strategic direction | [docs/VISION.md](./docs/VISION.md), [docs/FUTURE.md](./docs/FUTURE.md), [docs/DIRECTION.md](./docs/DIRECTION.md) — how we build, [docs/DIRECTION.md §Implementer direction](./docs/DIRECTION.md#implementer-direction) — implementer direction |
 | Browse the whole docs folder | [docs/README.md](./docs/README.md) — the docs index, grouped by task |
 | Contribute to this project | [CONTRIBUTING.md](./CONTRIBUTING.md) |
 | Work with API keys | [docs/API-KEYS.md](./docs/API-KEYS.md) |
