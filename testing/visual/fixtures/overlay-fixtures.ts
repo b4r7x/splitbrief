@@ -9,6 +9,7 @@ import type {
   ProviderCatalogFailureKind,
   ProviderCatalogOutcome,
 } from '../../../src/engine/providers/types.js';
+import { LISTED_CLI_TOOL_IDS } from '../../../src/core/runners/cli-tool-catalog.js';
 import type { SeatPickerRole } from '../../../src/core/runners/seat-roles.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import { commandPaletteMruStore } from '../../../src/stores/ui/command-palette-mru.js';
@@ -544,9 +545,9 @@ function seedConfigOnlyOpencode(): void {
 const OPENCODE_CONFIG_ROUTE = 'ollama-cloud/glm-5.3';
 
 /**
- * The one detection an oracle tool can carry with no `providerAuth` at all: the
- * probe stops before the credential listing when the executable's identity no
- * longer matches, so the cached routes render with their sign-in state unread.
+ * The executable identity no longer matches, so the probe stops before the
+ * credential listing. The picker shows the untrusted-tool card instead of the
+ * cached route rows.
  */
 function seedUnprobedOpencode(): void {
   seedOpencodeCatalog();
@@ -1526,6 +1527,78 @@ const createPickerUnreadVersionFixture: FixtureFactory = () =>
     },
     focus: 'tool:codex',
   });
+const createPickerToolNotInstalledFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      publishVisualDiscovery({
+        cliTools: [cliDetectionFor('unavailable', 'cursor')],
+      });
+    },
+    focus: 'tool:cursor',
+  });
+const createPickerToolUnverifiedFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      publishVisualDiscovery({
+        cliTools: [cliDetectionFor('unverified', 'kilo-code')],
+      });
+    },
+    focus: 'tool:kilo-code',
+  });
+const createPickerToolUnverifiedAuthFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      publishVisualDiscovery({
+        cliTools: [
+          cliDetectionFor('unverified', 'cursor', {
+            compatibility: 'compatible',
+            auth: 'unknown',
+          }),
+        ],
+      });
+    },
+    focus: 'tool:cursor',
+  });
+const createPickerToolIncompatibleFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      publishVisualDiscovery({
+        cliTools: [cliDetectionFor('incompatible', 'codex', { installedVersion: '0.0.1' })],
+      });
+    },
+    focus: 'tool:codex',
+  });
+const createPickerToolUntrustedFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      publishVisualDiscovery({
+        cliTools: [
+          cliDetectionFor('untrusted', 'opencode', {
+            executable: {
+              path: resolve(VISUAL_FIXTURE_PROJECT_DIR, 'opencode'),
+              fingerprint: { dev: 1, ino: 2, size: 3, mtimeMs: 4 },
+            },
+          }),
+        ],
+      });
+    },
+    focus: 'tool:opencode',
+  });
+const createPickerToolDisabledFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      publishVisualDiscovery({
+        cliTools: [cliDetectionFor('disabled', 'command-code')],
+      });
+    },
+    focus: 'tool:command-code',
+  });
 const createPlannerPickerCommandFailedStaleFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'planner-picker',
@@ -1678,6 +1751,38 @@ const createCustomFilterFixture: FixtureFactory = () => ({
   }),
   afterMount: async (write) => {
     for (const key of 'claude haiku') await write.press(key);
+  },
+});
+
+function seedToolOrderDetections(): void {
+  detectionStore.setDetection({
+    cliTools: LISTED_CLI_TOOL_IDS.map((id) => {
+      if (id === 'codex') return cliDetectionFor('ready', id);
+      if (id === 'claude-code') return cliDetectionFor('unauthenticated', id);
+      if (id === 'kilo-code') return cliDetectionFor('unverified', id);
+      return cliDetectionFor('unavailable', id);
+    }),
+    providers: [
+      { provider: 'ollama', available: true, isLocal: true },
+      { provider: 'lm-studio', available: false, isLocal: true },
+      { provider: 'llama-cpp', available: false, isLocal: true },
+    ],
+  });
+}
+
+const createToolOrderFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: seedToolOrderDetections,
+  });
+
+const createToolOrderFilterFixture: FixtureFactory = () => ({
+  ...createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: seedToolOrderDetections,
+  }),
+  afterMount: async (write) => {
+    for (const key of 'co') await write.press(key);
   },
 });
 // The launcher's read-only card is what the cursor opens on this row, so the
@@ -2925,6 +3030,8 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-picker-cursor-expanded'), createCursorExpandedFixture],
   [scenarioId('overlay-picker-cursor-haiku-expanded'), createCursorHaikuExpandedFixture],
   [scenarioId('overlay-picker-custom-launcher'), createCustomCommandLauncherFixture],
+  [scenarioId('overlay-picker-tool-order'), createToolOrderFixture],
+  [scenarioId('overlay-picker-tool-order-filter'), createToolOrderFilterFixture],
   [scenarioId('overlay-picker-local-server'), createLocalServerFixture],
   [scenarioId('overlay-picker-signed-out-tool'), createSignedOutToolFixture],
   [
@@ -2944,6 +3051,12 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-picker-older-tool'), createPickerOlderToolFixture],
   [scenarioId('overlay-picker-older-tool-stale'), createPickerOlderToolStaleFixture],
   [scenarioId('overlay-picker-unread-version'), createPickerUnreadVersionFixture],
+  [scenarioId('overlay-picker-tool-not-installed'), createPickerToolNotInstalledFixture],
+  [scenarioId('overlay-picker-tool-unverified'), createPickerToolUnverifiedFixture],
+  [scenarioId('overlay-picker-tool-unverified-auth'), createPickerToolUnverifiedAuthFixture],
+  [scenarioId('overlay-picker-tool-incompatible'), createPickerToolIncompatibleFixture],
+  [scenarioId('overlay-picker-tool-untrusted'), createPickerToolUntrustedFixture],
+  [scenarioId('overlay-picker-tool-disabled'), createPickerToolDisabledFixture],
   [scenarioId('overlay-local-connection-ollama'), () => localConnectionFixture()],
   [
     scenarioId('overlay-local-connection-lmstudio'),

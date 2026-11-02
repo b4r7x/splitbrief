@@ -70,11 +70,20 @@ export function useColumnState<T>(input: ColumnStateInput<T>): ColumnStateHook<T
     onCurrentItemChange?.(item);
   };
 
-  // The selection is an index, so a source list that re-sorts or re-filters
-  // under it moves to another item without any call below — re-notify on the
-  // key change.
+  // Follow the selected key across a reorder. Clamp and notify only when that key is gone.
   useLayoutEffect(() => {
-    if (currentItem === undefined || getKey(currentItem) === notifiedKey.current) return;
+    if (currentItem === undefined) return;
+    const remembered = notifiedKey.current;
+    if (remembered !== null && getKey(currentItem) === remembered) return;
+    if (remembered !== null) {
+      const realIndex = items.findIndex((item) => getKey(item) === remembered);
+      if (realIndex >= 0) {
+        const displayed = realIndex + virtualCount;
+        indexRef.current = displayed;
+        setIndexState(displayed);
+        return;
+      }
+    }
     notifyCurrentItem(currentItem);
   });
 
@@ -119,7 +128,7 @@ export function useColumnState<T>(input: ColumnStateInput<T>): ColumnStateHook<T
       indexRef.current = next;
       setIndexState(next);
       setFilterState('');
-      notifyCurrentItem(itemAt(next, sourceRef.current));
+      notifiedKey.current = null;
     },
   };
 }

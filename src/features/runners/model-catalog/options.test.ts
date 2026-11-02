@@ -10,6 +10,7 @@ import {
   CLI_TOOL_CATALOG,
   IMPLEMENTER_CLI_TOOL_IDS,
   isListedCliTool,
+  LISTED_CLI_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
 } from '../../../core/runners/cli-tool-catalog.js';
 import { SEAT_PICKER_ROLES } from '../../../core/runners/seat-roles.js';
@@ -529,20 +530,89 @@ describe('reviewer seat', () => {
   });
 });
 
-describe('launcher sort order', () => {
+describe('tool order', () => {
   const descriptors = assemblePickerDescriptors();
-  const detections = { cliTools: [], providers: [] };
+  const detections = {
+    cliTools: LISTED_CLI_TOOL_IDS.map((id) => {
+      if (id === 'codex') return cliDetectionFor('ready', id);
+      if (id === 'claude-code') return cliDetectionFor('unauthenticated', id);
+      if (id === 'kilo-code') return cliDetectionFor('unverified', id);
+      return cliDetectionFor('unavailable', id);
+    }),
+    providers: [
+      makeImplementerDetection('ollama', { available: true, isLocal: true }),
+      makeImplementerDetection('lm-studio', { available: false, isLocal: true }),
+      makeImplementerDetection('llama-cpp', { available: false, isLocal: true }),
+    ],
+  };
+  const emptyDetections = { cliTools: [], providers: [] };
+
+  function toolOrderIds(options: readonly PickerOption[], filterActive: boolean): string[] {
+    const name = new Map(options.map((item) => [item.id, item.displayName]));
+    const local = ['llama-cpp', 'lm-studio'].toSorted((left, right) =>
+      (name.get(left) ?? left).localeCompare(name.get(right) ?? right),
+    );
+    const body = [
+      'codex',
+      'claude-code',
+      'kilo-code',
+      'command-code',
+      'cursor',
+      'antigravity',
+      'opencode',
+      'ollama',
+      ...local,
+    ];
+    return filterActive ? [...body, 'custom-command'] : ['custom-command', ...body];
+  }
+
+  it('orders an idle tool list by group and readiness', () => {
+    for (const role of SEAT_PICKER_ROLES) {
+      const options = buildPickerOptions(role, descriptors, detections, undefined);
+      expect(options.find((item) => item.id === 'codex')?.status.state).toBe('ready');
+      expect(options.find((item) => item.id === 'claude-code')?.status.state).toBe(
+        'unauthenticated',
+      );
+      expect(options.find((item) => item.id === 'kilo-code')?.status.state).toBe('unverified');
+      expect(options.find((item) => item.id === 'cursor')?.status.state).toBe('unavailable');
+      expect(options.find((item) => item.id === 'ollama')?.status.state).toBe('ready');
+      expect(options.find((item) => item.id === 'lm-studio')?.status.state).toBe('unavailable');
+      expect(options.map((item) => item.id)).toEqual(toolOrderIds(options, false));
+    }
+  });
+
+  it('orders a filtered tool list by the same groups with the launcher last', () => {
+    for (const role of SEAT_PICKER_ROLES) {
+      const options = buildPickerOptions(role, descriptors, detections, undefined, {
+        filterActive: true,
+      });
+      expect(options.map((item) => item.id)).toEqual(toolOrderIds(options, true));
+    }
+  });
+
+  it('leaves a not-ready current row in its tier while filtering', () => {
+    const options = buildPickerOptions('planner', descriptors, detections, makeConfig().planner, {
+      filterActive: true,
+    });
+    const ids = options.map((item) => item.id);
+    const claude = options.find((item) => item.id === 'claude-code');
+    expect(claude?.isCurrent).toBe(true);
+    expect(claude?.status.state).toBe('unauthenticated');
+    expect(ids).toEqual(toolOrderIds(options, true));
+    expect(ids.indexOf('codex')).toBeLessThan(ids.indexOf('claude-code'));
+    expect(ids.indexOf('claude-code')).toBeLessThan(ids.indexOf('cursor'));
+  });
 
   it('launcher first when filter is empty', () => {
     for (const role of SEAT_PICKER_ROLES) {
-      const options = buildPickerOptions(role, descriptors, detections, undefined);
+      const options = buildPickerOptions(role, descriptors, emptyDetections, undefined);
       expect(options[0]?.kind).toBe('custom-command');
     }
   });
 
   it('launcher last while filtering', () => {
     for (const role of SEAT_PICKER_ROLES) {
-      const options = buildPickerOptions(role, descriptors, detections, undefined, {
+      const options = buildPickerOptions(role, descriptors, emptyDetections, undefined, {
         filterActive: true,
       });
       expect(options.at(-1)?.kind).toBe('custom-command');

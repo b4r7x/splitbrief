@@ -60,7 +60,7 @@ function recordedRunnerKind(
   return kinds.size === 1 ? [...kinds][0] : 'ambiguous';
 }
 
-const STATUS_LABEL_WIDTH = 'Feature:  '.length;
+const STATUS_LABEL_WIDTH = 'Escalated: '.length;
 
 /** A seat as the run state recorded it, and the role its own calls were recorded under. */
 type RecordedSeat = Readonly<{ seat: SeatIds; callRole: CallUsageEvidence['role'] }>;
@@ -120,7 +120,7 @@ export function registerStatusCommand(program: Command): void {
           );
         };
         console.log(
-          `${paint(theme.textDim, 'Feature:')}  ${chalk.bold(oneLineDisplayText(state.feature))}`,
+          `${paint(theme.textDim, 'Feature:'.padEnd(STATUS_LABEL_WIDTH))}${chalk.bold(oneLineDisplayText(state.feature))}`,
         );
         const status = deriveRunStatus({
           state,
@@ -140,14 +140,18 @@ export function registerStatusCommand(program: Command): void {
           readSessionSummary(ref),
         );
         console.log(
-          `${paint(theme.textDim, 'Status:')}   ${chalk.bold(sessionStatusWord(session))}`,
+          `${paint(theme.textDim, 'Status:'.padEnd(STATUS_LABEL_WIDTH))}${chalk.bold(sessionStatusWord(session))}`,
         );
         const brief = briefPosition(state);
         if (brief !== undefined) {
-          console.log(`${paint(theme.textDim, 'Task:')}     ${brief.position}/${brief.total}`);
+          console.log(
+            `${paint(theme.textDim, 'Task:'.padEnd(STATUS_LABEL_WIDTH))}${brief.position}/${brief.total}`,
+          );
         }
-        console.log(`${paint(theme.textDim, 'Started:')}  ${state.startedAt}`);
-        console.log(`${paint(theme.textDim, 'Session:')}  ${sessionId}`);
+        console.log(
+          `${paint(theme.textDim, 'Started:'.padEnd(STATUS_LABEL_WIDTH))}${state.startedAt}`,
+        );
+        console.log(`${paint(theme.textDim, 'Session:'.padEnd(STATUS_LABEL_WIDTH))}${sessionId}`);
 
         const plan: RecordedSeat | undefined = state.plannerTool
           ? {
@@ -196,17 +200,17 @@ export function registerStatusCommand(program: Command): void {
         const failed = getFailedTaskIds(state);
         if (completed.length > 0) {
           console.log(
-            `${paint(theme.textDim, 'Done:')}     ${paint(theme.success, String(completed.length))}`,
+            `${paint(theme.textDim, 'Done:'.padEnd(STATUS_LABEL_WIDTH))}${paint(theme.success, String(completed.length))}`,
           );
         }
         if (escalated.length > 0) {
           console.log(
-            `${paint(theme.textDim, 'Escalated:')} ${paint(theme.warning, String(escalated.length))}`,
+            `${paint(theme.textDim, 'Escalated:'.padEnd(STATUS_LABEL_WIDTH))}${paint(theme.warning, String(escalated.length))}`,
           );
         }
         if (failed.length > 0) {
           console.log(
-            `${paint(theme.textDim, 'Failed:')}   ${paint(theme.error, String(failed.length))}`,
+            `${paint(theme.textDim, 'Failed:'.padEnd(STATUS_LABEL_WIDTH))}${paint(theme.error, String(failed.length))}`,
           );
         }
       }

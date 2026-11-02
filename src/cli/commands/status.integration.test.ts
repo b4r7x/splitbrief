@@ -115,7 +115,7 @@ describe('status command', () => {
 
       await runStatus([]);
 
-      expect(captureOutput()).toContain(paint(plainTheme().textDim, 'Feature:'));
+      expect(captureOutput()).toContain(paint(plainTheme().textDim, 'Feature:   '));
       expect(plainTheme().textDim).toBe(
         resolveTheme({ variant: 'light', level: 3, terminalBackground: undefined }).textDim,
       );
@@ -128,7 +128,7 @@ describe('status command', () => {
 
       await runStatus([]);
 
-      expect(captureOutput()).toContain(paint(plainTheme().textDim, 'Feature:'));
+      expect(captureOutput()).toContain(paint(plainTheme().textDim, 'Feature:   '));
       expect(plainTheme().textDim).toMatch(
         /^(black|red|green|yellow|blue|magenta|cyan|white|gray)(Bright)?$/,
       );
@@ -148,7 +148,7 @@ describe('status command', () => {
     await runStatus([]);
     const out = captureOutput();
     expect(out).toContain('add auth');
-    expect(out).toContain('Status:   stopped');
+    expect(out).toContain('Status:    stopped');
   });
 
   it('reports the run while config.yaml does not load', async () => {
@@ -156,7 +156,7 @@ describe('status command', () => {
     writeFileSync(join(tmp, SPLITBRIEF_DIR, 'config.yaml'), 'version: 99\n');
 
     await runStatus([]);
-    expect(captureOutput()).toContain('Status:   stopped');
+    expect(captureOutput()).toContain('Status:    stopped');
   });
 
   it('keeps the words of a task written on two lines apart on its Feature line', async () => {
@@ -165,7 +165,7 @@ describe('status command', () => {
     await runStatus([]);
 
     expect(stripVTControlCharacters(captureOutput())).toContain(
-      'Feature:  Add fixtures, as one task',
+      'Feature:   Add fixtures, as one task',
     );
   });
 
@@ -178,7 +178,7 @@ describe('status command', () => {
 
     await runStatus([]);
 
-    expect(stripVTControlCharacters(captureOutput())).toContain('Task:     2/2');
+    expect(stripVTControlCharacters(captureOutput())).toContain('Task:      2/2');
   });
 
   it('prints no brief position for a run that has no briefs yet', async () => {
@@ -187,7 +187,7 @@ describe('status command', () => {
     await runStatus([]);
 
     const out = stripVTControlCharacters(captureOutput());
-    expect(out).toContain('Status:   stopped');
+    expect(out).toContain('Status:    stopped');
     expect(out).not.toContain('Task:');
   });
 
@@ -220,8 +220,8 @@ describe('status command', () => {
     await runStatus([]);
 
     const out = stripVTControlCharacters(captureOutput());
-    expect(out).toContain('PLAN:     opencode · GPT-5');
-    expect(out).toContain('REVIEW:   opencode · GPT-5');
+    expect(out).toContain('PLAN:      opencode · GPT-5');
+    expect(out).toContain('REVIEW:    opencode · GPT-5');
     expect(out).not.toContain('OpenCode CLI');
   });
 
@@ -246,8 +246,8 @@ describe('status command', () => {
     await runStatus([]);
 
     const out = stripVTControlCharacters(captureOutput());
-    expect(out).toContain('PLAN:     opencode · GPT-5');
-    expect(out).toContain('BUILD:    OpenCode CLI · GPT-5');
+    expect(out).toContain('PLAN:      opencode · GPT-5');
+    expect(out).toContain('BUILD:     OpenCode CLI · GPT-5');
   });
 
   it('keeps a seat tool word literal and its model pretty when its own calls recorded both kinds', async () => {
@@ -264,7 +264,7 @@ describe('status command', () => {
     await runStatus([]);
 
     const out = stripVTControlCharacters(captureOutput());
-    expect(out).toContain('PLAN:     opencode · GPT-5');
+    expect(out).toContain('PLAN:      opencode · GPT-5');
     expect(out).not.toContain('OpenCode CLI');
   });
 
@@ -277,7 +277,7 @@ describe('status command', () => {
     await runStatus([]);
 
     expect(stripVTControlCharacters(captureOutput())).toContain(
-      'PLAN:     Claude Code CLI · Sonnet 5.5',
+      'PLAN:      Claude Code CLI · Sonnet 5.5',
     );
   });
 
@@ -297,9 +297,9 @@ describe('status command', () => {
       .split('\n')
       .filter((line) => /^(PLAN|BUILD|REVIEW):/.test(line));
     expect(seats).toEqual([
-      'PLAN:     Claude Code CLI · Sonnet 5.5',
-      'BUILD:    OpenAI Codex CLI · GPT-6.1-Sol',
-      'REVIEW:   Claude Code CLI · Sonnet 5.5',
+      'PLAN:      Claude Code CLI · Sonnet 5.5',
+      'BUILD:     OpenAI Codex CLI · GPT-6.1-Sol',
+      'REVIEW:    Claude Code CLI · Sonnet 5.5',
     ]);
   });
 
@@ -319,7 +319,7 @@ describe('status command', () => {
     await runStatus([]);
 
     expect(stripVTControlCharacters(captureOutput()).split('\n')).toContain(
-      'REVIEW:   Claude Code CLI · Opus 5.5',
+      'REVIEW:    Claude Code CLI · Opus 5.5',
     );
   });
 
@@ -334,8 +334,8 @@ describe('status command', () => {
     await runStatus([]);
 
     const out = stripVTControlCharacters(captureOutput()).split('\n');
-    expect(out).toContain('PLAN:     Claude Code CLI · Sonnet 5.5');
-    expect(out).toContain('REVIEW:   Claude Code CLI · Sonnet 5.5 · max');
+    expect(out).toContain('PLAN:      Claude Code CLI · Sonnet 5.5');
+    expect(out).toContain('REVIEW:    Claude Code CLI · Sonnet 5.5 · max');
   });
 
   it('carries a PLAN seat switch to REVIEW when PLAN holds REVIEW', async () => {
@@ -363,8 +363,8 @@ describe('status command', () => {
     await runStatus([]);
 
     const out = stripVTControlCharacters(captureOutput()).split('\n');
-    expect(out).toContain('PLAN:     Claude Code CLI · Opus 5.5');
-    expect(out).toContain('REVIEW:   Claude Code CLI · Opus 5.5');
+    expect(out).toContain('PLAN:      Claude Code CLI · Opus 5.5');
+    expect(out).toContain('REVIEW:    Claude Code CLI · Opus 5.5');
   });
 
   it('uses the current recorded seat kind when earlier calls used the same name for a CLI', async () => {
@@ -392,7 +392,7 @@ describe('status command', () => {
     await runStatus([]);
 
     const out = stripVTControlCharacters(captureOutput());
-    expect(out).toContain('PLAN:     claude-code · Sonnet');
+    expect(out).toContain('PLAN:      claude-code · Sonnet');
     expect(out).not.toContain('Claude Code CLI');
     expect(out).not.toContain('Sonnet 5.5');
     expect(out).not.toContain('high');
@@ -416,7 +416,7 @@ describe('status command', () => {
     await runStatus([]);
 
     const out = stripVTControlCharacters(captureOutput());
-    expect(out).toContain('BUILD:    Claude Code CLI · Sonnet 5.5 · max');
+    expect(out).toContain('BUILD:     Claude Code CLI · Sonnet 5.5 · max');
     expect(out).not.toContain('high');
   });
 
@@ -439,7 +439,7 @@ describe('status command', () => {
       await runStatus([]);
 
       expect(stripVTControlCharacters(captureOutput()).split('\n')).toContain(
-        `BUILD:    Claude Code CLI · Sonnet 5.5 · ${effort}`,
+        `BUILD:     Claude Code CLI · Sonnet 5.5 · ${effort}`,
       );
     },
   );
@@ -480,7 +480,7 @@ describe('status command', () => {
       await runStatus([]);
 
       expect(stripVTControlCharacters(captureOutput()).split('\n')).toContain(
-        `BUILD:    Claude Code CLI · Sonnet 5.5${expected}`,
+        `BUILD:     Claude Code CLI · Sonnet 5.5${expected}`,
       );
     },
   );
@@ -526,7 +526,7 @@ describe('status command', () => {
       consoleSpy.mockClear();
       await runStatus([]);
       expect(stripVTControlCharacters(captureOutput()).split('\n')).toContain(
-        `BUILD:    Claude Code CLI · Sonnet 5.5 · ${structured ? 'low' : 'high'}`,
+        `BUILD:     Claude Code CLI · Sonnet 5.5 · ${structured ? 'low' : 'high'}`,
       );
     }
   });
@@ -574,8 +574,49 @@ describe('status command', () => {
       consoleSpy.mockClear();
       await runStatus([]);
       expect(stripVTControlCharacters(captureOutput()).split('\n')).toContain(
-        `BUILD:    ${scenario.identity}`,
+        `BUILD:     ${scenario.identity}`,
       );
+    }
+  });
+
+  it('aligns every status value when completed, escalated, and failed briefs are present', async () => {
+    writeActiveSession(tmp, '2026-11-02-aligned-counts', 'aligned counts', {
+      plannerTool: 'claude-code',
+      plannerModel: 'sonnet',
+      plannerKind: 'cli',
+      implementerTool: 'codex',
+      implementerModel: 'gpt-6.1-sol',
+      implementerKind: 'cli',
+      reviewerTool: 'claude-code',
+      reviewerModel: 'opus',
+      reviewerKind: 'cli',
+      tasks: [
+        makeTask({ id: 'T001', status: 'done' }),
+        makeTask({ id: 'T002', status: 'escalated' }),
+        makeTask({ id: 'T003', status: 'failed' }),
+      ],
+    });
+
+    await runStatus([]);
+
+    const lines = stripVTControlCharacters(captureOutput()).split('\n');
+    expect(lines.map((line) => line.slice(0, line.indexOf(':') + 1))).toEqual([
+      'Feature:',
+      'Status:',
+      'Task:',
+      'Started:',
+      'Session:',
+      'PLAN:',
+      'BUILD:',
+      'REVIEW:',
+      'Done:',
+      'Escalated:',
+      'Failed:',
+    ]);
+    for (const line of lines) {
+      const label = line.slice(0, line.indexOf(':') + 1);
+      expect(line.startsWith(label.padEnd(11))).toBe(true);
+      expect(line.charAt(11)).toMatch(/\S/);
     }
   });
 
@@ -598,7 +639,7 @@ describe('status command', () => {
       expect(line).not.toContain('\u001b[32m');
     }
     expect(stripVTControlCharacters(captureOutput())).toContain(
-      'BUILD:    OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go',
+      'BUILD:     OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go',
     );
   });
 });

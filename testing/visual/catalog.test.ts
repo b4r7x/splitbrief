@@ -1,3 +1,4 @@
+import { relative, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ACTIVE_OVERLAYS, ALL_SCREENS } from '../../src/core/navigation/types.js';
 import { formatAttachmentFailure } from '../../src/core/attachments/failure.js';
@@ -22,7 +23,11 @@ import {
 import { formatViewport, viewport } from './contracts/geometry.js';
 import { checkpointId, scenarioId } from './contracts/identifiers.js';
 import { overlayFixtureRegistry } from './fixtures/overlay-fixtures.js';
-import { screenFixtureRegistry } from './fixtures/screen-fixtures.js';
+import { screenFixtureRegistry, VISUAL_FIXTURE_PROJECT_DIR } from './fixtures/screen-fixtures.js';
+import {
+  assertProjectionBounds,
+  WORKFLOW_FIXTURE_BOUNDS,
+} from './fixtures/workflow/projections.js';
 import {
   workflowCheckpointPredicates,
   workflowFixtureRegistry,
@@ -34,6 +39,134 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 
 function sorted(values: Iterable<string>): string[] {
   return [...values].sort();
+}
+
+function plainFrame(frame: string): string {
+  return frame.replace(/[\u2500-\u257F]/g, ' ').replace(/\s+/g, ' ');
+}
+
+const CARD_TOP_LEFT = '\u256D';
+const CARD_TOP_RIGHT = '\u256E';
+const CARD_BOTTOM_LEFT = '\u2570';
+const CARD_BOTTOM_RIGHT = '\u256F';
+const CARD_HORIZONTAL = '\u2500';
+const CARD_VERTICAL = '\u2502';
+const CARD_EDGE = new Set([
+  CARD_TOP_LEFT,
+  CARD_TOP_RIGHT,
+  CARD_BOTTOM_LEFT,
+  CARD_BOTTOM_RIGHT,
+  CARD_VERTICAL,
+]);
+
+function rightCardRows(frame: string): string[] {
+  const lines = frame.split('\n');
+  const span = rightCardSpan(lines);
+  if (span === undefined) throw new Error('Right card borders are absent');
+  return lines
+    .slice(span.top + 1, span.bottom)
+    .map((line) => line.slice(span.left + 1, span.right));
+}
+
+function rightCardText(frame: string): string {
+  return rightCardRows(frame)
+    .join('\n')
+    .replace(/[\u2500-\u257F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function rightCardSpan(
+  lines: readonly string[],
+): { left: number; right: number; top: number; bottom: number } | undefined {
+  const horizontalRun = `${CARD_HORIZONTAL}*`;
+  const pattern = new RegExp(
+    [
+      `${CARD_TOP_LEFT}${horizontalRun}${CARD_TOP_RIGHT}`,
+      `${CARD_BOTTOM_LEFT}${horizontalRun}${CARD_BOTTOM_RIGHT}`,
+      `${CARD_VERTICAL}[^${CARD_VERTICAL}]*${CARD_VERTICAL}`,
+    ].join('|'),
+    'gu',
+  );
+  let anchor: { left: number; right: number; row: number } | undefined;
+  for (let row = 0; row < lines.length; row += 1) {
+    pattern.lastIndex = 0;
+    const boxes: Array<{ left: number; right: number }> = [];
+    for (const match of (lines[row] ?? '').matchAll(pattern)) {
+      const left = match.index;
+      if (left === undefined) continue;
+      boxes.push({ left, right: left + match[0].length - 1 });
+    }
+    const card = boxes.length < 2 ? undefined : boxes[boxes.length - 1];
+    if (card === undefined) continue;
+    anchor = { left: card.left, right: card.right, row };
+    break;
+  }
+  if (anchor === undefined) return undefined;
+  let top = anchor.row;
+  while (top > 0 && cardEdge(lines[top - 1] ?? '', anchor.left, anchor.right)) top -= 1;
+  let bottom = anchor.row;
+  while (
+    bottom + 1 < lines.length &&
+    cardEdge(lines[bottom + 1] ?? '', anchor.left, anchor.right)
+  ) {
+    bottom += 1;
+  }
+  const topLine = lines[top] ?? '';
+  const bottomLine = lines[bottom] ?? '';
+  if (topLine[anchor.left] !== CARD_TOP_LEFT || topLine[anchor.right] !== CARD_TOP_RIGHT) {
+    return undefined;
+  }
+  if (
+    bottomLine[anchor.left] !== CARD_BOTTOM_LEFT ||
+    bottomLine[anchor.right] !== CARD_BOTTOM_RIGHT
+  ) {
+    return undefined;
+  }
+  return { left: anchor.left, right: anchor.right, top, bottom };
+}
+
+function cardEdge(line: string, left: number, right: number): boolean {
+  const start = line[left];
+  const end = line[right];
+  return start !== undefined && end !== undefined && CARD_EDGE.has(start) && CARD_EDGE.has(end);
+}
+
+function twoColumnFrame(leftLines: readonly string[], rightLines: readonly string[]): string {
+  const columnWidth = (lines: readonly string[]): number =>
+    lines.reduce((width, line) => Math.max(width, line.length), 0);
+  const leftWidth = columnWidth(leftLines);
+  const rightWidth = columnWidth(rightLines);
+  const cap = (leftChar: string, rightChar: string, size: number): string =>
+    `${leftChar}${CARD_HORIZONTAL.repeat(size)}${rightChar}`;
+  const row = (text: string, size: number): string =>
+    `${CARD_VERTICAL}${text.padEnd(size)}${CARD_VERTICAL}`;
+  const joinColumns = (left: string, right: string): string => `${left}   ${right}`;
+  const body = Array.from({ length: Math.max(leftLines.length, rightLines.length) }, (_, index) =>
+    joinColumns(row(leftLines[index] ?? '', leftWidth), row(rightLines[index] ?? '', rightWidth)),
+  );
+  return [
+    joinColumns(
+      cap(CARD_TOP_LEFT, CARD_TOP_RIGHT, leftWidth),
+      cap(CARD_TOP_LEFT, CARD_TOP_RIGHT, rightWidth),
+    ),
+    ...body,
+    joinColumns(
+      cap(CARD_BOTTOM_LEFT, CARD_BOTTOM_RIGHT, leftWidth),
+      cap(CARD_BOTTOM_LEFT, CARD_BOTTOM_RIGHT, rightWidth),
+    ),
+  ].join('\n');
+}
+
+function expectConsecutiveToolRows(frame: string, names: readonly string[]): void {
+  const lines = frame.split('\n');
+  const start = lines.findIndex((line) => line.includes(names[0] ?? ''));
+  if (start < 0 || names[0] === undefined) throw new Error('tool row missing');
+  for (let offset = 0; offset < names.length; offset += 1) {
+    const name = names[offset];
+    if (name === undefined) throw new Error('tool row missing');
+    expect(lines[start + offset], name).toContain(name);
+  }
 }
 
 /** Scenarios whose surface cannot mount at the default matrix and say so in the catalog. */
@@ -138,6 +271,69 @@ afterEach(() => {
 });
 
 describe('visual catalog', () => {
+  it('joins wrapped card text without intervening tool names', () => {
+    const frame = twoColumnFrame(
+      [' Claude Code CLI ', ' OpenCode CLI '],
+      [' The review seat ', ' runs the planner '],
+    );
+    const card = rightCardText(frame);
+    expect(plainFrame(frame)).not.toContain('The review seat runs the planner');
+    expect(card).toContain('The review seat runs the planner');
+    expect(card).not.toContain('Claude Code CLI');
+    expect(card).not.toContain('OpenCode CLI');
+  });
+
+  it('does not satisfy a card assertion with text from the Tools column', () => {
+    const columns = twoColumnFrame(
+      [' Install the tested OpenAI Codex CLI version '],
+      [' Unavailable '],
+    );
+    const frame = `${columns}\nstale models retained`;
+    expect(plainFrame(frame)).toContain('Install the tested OpenAI Codex CLI version');
+    expect(rightCardText(frame)).not.toContain('Install the tested OpenAI Codex CLI version');
+    expect(rightCardText(frame)).toContain('Unavailable');
+    expect(plainFrame(frame)).toContain('stale models retained');
+  });
+
+  it('rejects unrelated oversized content in the streamed projection', () => {
+    const oversized = `unrelated ${'x'.repeat(WORKFLOW_FIXTURE_BOUNDS.maxStringLength)}`;
+    expect(() =>
+      assertProjectionBounds({
+        scenarioId: scenarioId('workflow-implementation-streamed-targets'),
+        feature: oversized,
+        events: [],
+        inputMode: 'normal',
+        sidebarVisible: false,
+      }),
+    ).toThrow('workflow-implementation-streamed-targets exceeds the string bound');
+  });
+
+  it('does not exempt streamed payloads in other projections', () => {
+    const absolute = resolve(VISUAL_FIXTURE_PROJECT_DIR, 'src/engine/calls/activity-memory.ts');
+    const relativeTarget = relative(VISUAL_FIXTURE_PROJECT_DIR, absolute);
+    const payload = JSON.stringify({ file_path: absolute });
+    const absoluteEscaped = JSON.stringify(absolute).slice(1, -1);
+    const relativeEscaped = JSON.stringify(relativeTarget).slice(1, -1);
+    const normalizedPayload = payload.split(absoluteEscaped).join(relativeEscaped);
+    const bound = WORKFLOW_FIXTURE_BOUNDS.maxStringLength;
+    const filler =
+      payload.length > bound && normalizedPayload.length <= bound
+        ? ''
+        : 'x'.repeat(Math.max(0, bound - normalizedPayload.length));
+    const value = `${payload}${filler}`;
+    expect(value.length).toBeGreaterThan(bound);
+    expect(normalizedPayload.length + filler.length).toBeLessThanOrEqual(bound);
+    expect(() =>
+      assertProjectionBounds({
+        scenarioId: scenarioId('workflow-planning'),
+        feature: value,
+        events: [],
+        inputMode: 'normal',
+        sidebarVisible: false,
+      }),
+    ).toThrow('workflow-planning exceeds the string bound');
+  });
+
   it('shows a catalog model with the same name in the Settings crew and fallback rows', async () => {
     const scenario = findVisualScenario('overlay-settings-fallback-catalog');
     const checkpoint = scenario?.checkpoints[0];
@@ -157,55 +353,206 @@ describe('visual catalog', () => {
 
   it.each([
     ['overlay-picker-version-timeout-signed-out', 'Auth required', 'Sign in to OpenAI Codex CLI'],
-    ['overlay-picker-version-timeout-signed-in', 'Unverified', 'Model detection timed out'],
+    ['overlay-picker-version-timeout-signed-in', 'Unverified', 'Verify OpenAI Codex CLI against'],
   ])('names the next step after a slow version probe in %s', async (id, state, step) => {
     const scenario = findVisualScenario(id);
     const checkpoint = scenario?.checkpoints[0];
-    const viewport = scenario?.viewports.find((size) => size.cols === 120);
-    if (!scenario || !checkpoint || !viewport) throw new Error('Missing version timeout scenario');
-    const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
+    if (!scenario || !checkpoint) throw new Error('Missing version timeout scenario');
+    for (const viewport of REQUIRED_VIEWPORTS) {
+      const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
+      try {
+        const frame = stripAnsiStyles(await handle.waitForCheckpoint());
+        const card = rightCardText(frame);
+        expect(card).toContain(state);
+        expect(card).toContain(step);
+        expect(card).toContain('Its models show here when it is ready.');
+        expect(card).toContain('Saved choice:');
+        expect(frame).not.toContain('does not support model listing');
+        expect(frame).not.toContain('Model detection timed out');
+        expect(frame).not.toContain('Bundled model list');
+      } finally {
+        await handle.unmount();
+      }
+    }
+  });
+
+  it.each([
+    ['overlay-picker-older-tool', 'Incompatible', 'Install the tested OpenAI Codex CLI version'],
+    [
+      'overlay-picker-older-tool-stale',
+      'Incompatible',
+      'Install the tested OpenAI Codex CLI version',
+    ],
+    ['overlay-picker-unread-version', 'Unverified', 'Verify OpenAI Codex CLI against'],
+    [
+      'overlay-picker-signed-out-stale',
+      'Auth required',
+      'Sign in to OpenAI Codex CLI, then ctrl+r.',
+    ],
+  ])('names the status and the remedy in %s', async (id, state, remedy) => {
+    const scenario = findVisualScenario(id);
+    const checkpoint = scenario?.checkpoints[0];
+    if (!scenario || !checkpoint) throw new Error('Missing readiness scenario');
+    for (const viewport of REQUIRED_VIEWPORTS) {
+      const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
+      try {
+        const frame = stripAnsiStyles(await handle.waitForCheckpoint());
+        const card = rightCardText(frame);
+        expect(card).toContain(state);
+        expect(card).toContain(remedy);
+        expect(card).toContain('Its models show here when it is ready.');
+        expect(card).toContain('Saved choice:');
+        expect(frame).not.toContain('does not support model listing');
+        expect(frame).not.toContain('Bundled model list');
+        expect(frame).not.toContain('Models from an earlier check');
+        expect(frame).not.toContain('stale models retained');
+        expect(frame).not.toContain('7 stale models retained');
+        expect(frame).not.toContain('Model detection timed out');
+      } finally {
+        await handle.unmount();
+      }
+    }
+  });
+
+  it.each([
+    {
+      id: 'overlay-picker-tool-not-installed',
+      title: 'Unavailable',
+      remedy: 'Install Cursor Agent CLI, then ctrl+r.',
+    },
+    {
+      id: 'overlay-picker-tool-unverified',
+      title: 'Unverified',
+      remedy: 'Verify Kilo Code CLI against tested version',
+    },
+    {
+      id: 'overlay-picker-tool-unverified-auth',
+      title: 'Unverified',
+      remedy: 'authentication cannot be verified without spending a call',
+      remedyFillsNarrowCard: true,
+    },
+    {
+      id: 'overlay-picker-tool-incompatible',
+      title: 'Incompatible',
+      remedy: 'Install the tested OpenAI Codex CLI version',
+    },
+    {
+      id: 'overlay-picker-tool-untrusted',
+      title: 'Untrusted',
+      remedy: 'Install OpenCode CLI outside the project',
+    },
+    {
+      id: 'overlay-picker-tool-disabled',
+      title: 'Disabled',
+      remedy: 'Enable Command Code CLI before selecting it',
+    },
+  ])('shows the $title card for $id', async ({ id, title, remedy, remedyFillsNarrowCard }) => {
+    const scenario = findVisualScenario(id);
+    const checkpoint = scenario?.checkpoints[0];
+    if (!scenario || !checkpoint) throw new Error(`Missing readiness card ${id}`);
+    for (const viewport of REQUIRED_VIEWPORTS) {
+      const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
+      try {
+        const frame = stripAnsiStyles(await handle.waitForCheckpoint());
+        const card = rightCardText(frame);
+        expect(card).toContain(title);
+        expect(card).toContain(remedy);
+        if (!remedyFillsNarrowCard || viewport.cols > 60) {
+          expect(card).toContain('Its models show here when it is ready.');
+        }
+        expect(frame).toContain('↑↓ select · esc cancel · ctrl+r refresh');
+        expect(frame).not.toContain('⏎');
+        expect(frame).not.toContain('Models');
+        expect(frame).not.toContain('Add custom model');
+        expect(frame).not.toContain('Saved choice:');
+        expect(frame).not.toContain('Bundled model list');
+        expect(frame).not.toContain('Models from an earlier check');
+      } finally {
+        await handle.unmount();
+      }
+    }
+  });
+
+  it.each(REQUIRED_VIEWPORTS)(
+    'shows the untrusted-tool card without route rows at $cols x $rows',
+    async (viewport) => {
+      const scenario = findVisualScenario('overlay-picker-routes-unchecked');
+      const checkpoint = scenario?.checkpoints[0];
+      if (!scenario || !checkpoint) throw new Error('Missing routes-unchecked scenario');
+      const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
+      try {
+        const frame = stripAnsiStyles(await handle.waitForCheckpoint());
+        const card = rightCardText(frame);
+        expect(card).toContain('Untrusted');
+        expect(card).toContain('Install OpenCode CLI outside the project');
+        expect(card).toContain('Its models show here when it is ready.');
+        expect(card).toContain('Saved choice:');
+        expect(frame).not.toContain('opencode-go');
+        expect(frame).not.toContain('needs sign-in');
+        expect(frame).toContain('↑↓ select · esc cancel · ctrl+r refresh');
+        expect(frame).not.toContain('⏎');
+      } finally {
+        await handle.unmount();
+      }
+    },
+  );
+
+  it('keeps the whole remedy on the unverified-auth card at 60x18', async () => {
+    const scenario = findVisualScenario('overlay-picker-tool-unverified-auth');
+    const checkpoint = scenario?.checkpoints[0];
+    if (!scenario || !checkpoint) throw new Error('Missing unverified-auth scenario');
+    const handle = await mountGalleryScenario({
+      scenario,
+      checkpoint,
+      viewport: viewport({ cols: 60, rows: 18 }),
+    });
     try {
-      const frame = stripAnsiStyles(await handle.waitForCheckpoint());
-      expect(frame).toContain(state);
-      expect(frame).toContain(step);
-      expect(frame).not.toContain('does not support model listing');
+      const card = rightCardText(stripAnsiStyles(await handle.waitForCheckpoint()));
+      expect(card).toContain('settles it');
     } finally {
       await handle.unmount();
     }
   });
 
-  it.each([
-    [
-      'overlay-picker-older-tool',
-      'Install the tested OpenAI Codex CLI version',
-      'Bundled model list',
-    ],
-    [
-      'overlay-picker-older-tool-stale',
-      'Install the tested OpenAI Codex CLI version',
-      'Models from an earlier check',
-    ],
-    ['overlay-picker-unread-version', 'Verify OpenAI Codex CLI against', 'Bundled model list'],
-    [
-      'overlay-picker-signed-out-stale',
-      'Sign in to OpenAI Codex CLI, then ctrl+r.',
-      '7 stale models retained',
-    ],
-  ])('names the remedy and no listing verdict in %s', async (id, remedy, footer) => {
-    const scenario = findVisualScenario(id);
+  it('ends the cut routes-unchecked card with an ellipsis at 60x18', async () => {
+    const scenario = findVisualScenario('overlay-picker-routes-unchecked');
     const checkpoint = scenario?.checkpoints[0];
-    const viewport = scenario?.viewports.find((size) => size.cols === 120);
-    if (!scenario || !checkpoint || !viewport) throw new Error('Missing older tool scenario');
-    const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
+    if (!scenario || !checkpoint) throw new Error('Missing routes-unchecked scenario');
+    const handle = await mountGalleryScenario({
+      scenario,
+      checkpoint,
+      viewport: viewport({ cols: 60, rows: 18 }),
+    });
     try {
-      const frame = stripAnsiStyles(await handle.waitForCheckpoint());
-      expect(frame).toContain(remedy);
-      expect(frame).toContain(footer);
-      expect(frame).not.toContain('does not support model listing');
+      const rows = rightCardRows(stripAnsiStyles(await handle.waitForCheckpoint()))
+        .map((row) => row.trim())
+        .filter((row) => row !== '');
+      expect(rows.at(-1)).toMatch(/…$/);
     } finally {
       await handle.unmount();
     }
   });
+
+  it.each(REQUIRED_VIEWPORTS)(
+    'keeps the ready tool models and the stale footer at $cols x $rows',
+    async (viewport) => {
+      const scenario = findVisualScenario('overlay-picker-ready-stale');
+      const checkpoint = scenario?.checkpoints[0];
+      if (!scenario || !checkpoint) throw new Error('Missing ready-stale scenario');
+      const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
+      try {
+        const frame = stripAnsiStyles(await handle.waitForCheckpoint());
+        const plain = plainFrame(frame);
+        expect(plain).toContain('GPT-6-Astra');
+        expect(plain).toContain('GPT-6-Sol');
+        expect(plain).toContain('stale models retained');
+        expect(plain).toContain('Models');
+        expect(plain).not.toContain('Its models show here when it is ready.');
+      } finally {
+        await handle.unmount();
+      }
+    },
+  );
 
   it.each([
     ['overlay-planner-picker-antigravity', 'medium'],
@@ -234,6 +581,56 @@ describe('visual catalog', () => {
       }
     } finally {
       await handle.unmount();
+    }
+  });
+
+  it('lists idle and filtered tools in one order without group rows', async () => {
+    const localNames = ['llama.cpp', 'LM Studio'].toSorted((left, right) =>
+      left.localeCompare(right),
+    );
+    const idleNames = [
+      '+ Add custom command…',
+      'OpenAI Codex CLI',
+      'Claude Code CLI',
+      'Kilo Code CLI',
+      'Command Code CLI',
+      'Cursor Agent CLI',
+      'Google Antigravity CLI',
+      'OpenCode CLI',
+      'Ollama',
+      ...localNames,
+    ];
+    const filteredNames = [
+      'OpenAI Codex CLI',
+      'Claude Code CLI',
+      'Kilo Code CLI',
+      'Command Code CLI',
+      'OpenCode CLI',
+      '+ Add custom command…',
+    ];
+    for (const [id, names] of [
+      ['overlay-picker-tool-order', idleNames],
+      ['overlay-picker-tool-order-filter', filteredNames],
+    ] as const) {
+      const scenario = findVisualScenario(id);
+      const checkpoint = scenario?.checkpoints[0];
+      const size = scenario?.viewports.find((item) => item.cols === 120);
+      if (!scenario || !checkpoint || !size) throw new Error(`Missing ${id}`);
+      const handle = await mountGalleryScenario({ scenario, checkpoint, viewport: size });
+      try {
+        const frame = stripAnsiStyles(await handle.waitForCheckpoint());
+        expectConsecutiveToolRows(frame, names);
+        expect(frame).not.toContain('Local connections');
+        expect(frame).not.toContain('CLI tools');
+        if (id === 'overlay-picker-tool-order-filter') {
+          expect(frame).not.toContain('Cursor Agent CLI');
+          expect(frame).not.toContain('Google Antigravity CLI');
+          expect(frame).not.toContain('llama.cpp');
+          expect(frame).not.toContain('LM Studio');
+        }
+      } finally {
+        await handle.unmount();
+      }
     }
   });
 

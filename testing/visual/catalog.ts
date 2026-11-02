@@ -5531,7 +5531,7 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       },
       {
         id: 'overlay-picker-routes-unchecked',
-        title: 'Overlay · planner picker · routes with no credential read',
+        title: 'Overlay · planner picker · an untrusted-tool card',
         marker: PICKER_TITLE_MARKER,
       },
       {
@@ -5675,6 +5675,16 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: PICKER_TITLE_MARKER,
       },
       {
+        id: 'overlay-picker-tool-order',
+        title: 'Overlay · planner picker · tool order',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-picker-tool-order-filter',
+        title: 'Overlay · planner picker · filtered tool order',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
         id: 'overlay-picker-local-server',
         title: 'Overlay · planner picker · a local server that is not running',
         marker: PICKER_TITLE_MARKER,
@@ -5723,6 +5733,42 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         id: 'overlay-picker-unread-version',
         title: 'Overlay · planner picker · a tool whose version cannot be read',
         marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-picker-tool-not-installed',
+        title: 'Overlay · planner picker · a tool that is not installed',
+        marker: PICKER_TITLE_MARKER,
+        viewports: REQUIRED_VIEWPORTS,
+      },
+      {
+        id: 'overlay-picker-tool-unverified',
+        title: 'Overlay · planner picker · a tool whose version is unverified',
+        marker: PICKER_TITLE_MARKER,
+        viewports: REQUIRED_VIEWPORTS,
+      },
+      {
+        id: 'overlay-picker-tool-unverified-auth',
+        title: 'Overlay · planner picker · a compatible tool whose sign-in is unknown',
+        marker: PICKER_TITLE_MARKER,
+        viewports: REQUIRED_VIEWPORTS,
+      },
+      {
+        id: 'overlay-picker-tool-incompatible',
+        title: 'Overlay · planner picker · a tool with an incompatible version',
+        marker: PICKER_TITLE_MARKER,
+        viewports: REQUIRED_VIEWPORTS,
+      },
+      {
+        id: 'overlay-picker-tool-untrusted',
+        title: 'Overlay · planner picker · an untrusted tool inside the project',
+        marker: PICKER_TITLE_MARKER,
+        viewports: REQUIRED_VIEWPORTS,
+      },
+      {
+        id: 'overlay-picker-tool-disabled',
+        title: 'Overlay · planner picker · a disabled tool',
+        marker: PICKER_TITLE_MARKER,
+        viewports: REQUIRED_VIEWPORTS,
       },
       ...(
         [

@@ -123,6 +123,12 @@ describe('usePickerCatalog fallback slot', () => {
 
     expect(catalog?.items.find((item) => item.id === 'codex')?.isCurrent).toBe(true);
     expect(catalog?.items.find((item) => item.id === 'claude-code')?.isCurrent).toBe(false);
+    expect(catalog?.savedRunner).toEqual({
+      kind: 'cli',
+      tool: 'codex',
+      model: 'gpt-5-codex',
+      effort: 'high',
+    });
     expect(catalog?.persistedModel).toBe('gpt-5-codex');
     expect(catalog?.customModels).toEqual([]);
     expect(catalog?.rightRows.some((row) => row.kind === 'auth')).toBe(false);
@@ -723,10 +729,30 @@ describe('usePickerCatalog', () => {
       }),
     });
 
-    const ui = renderFeature(<CatalogProbe role="implementer" />);
+    let savedRunner: ReturnType<typeof usePickerCatalog>['savedRunner'] | undefined;
+    function Probe() {
+      const catalog = usePickerCatalog('implementer', 'seat', 0, null);
+      savedRunner = catalog.savedRunner;
+      return (
+        <Text>
+          implementer:{catalog.currentItem?.id ?? 'none'}:{catalog.currentModel ?? 'none'}
+        </Text>
+      );
+    }
+
+    const ui = renderFeature(<Probe />);
     await tick(20);
 
     expect(ui.lastFrame()).toContain('implementer:ollama:qwen2.5-coder:7b');
+    expect(savedRunner).toMatchObject({
+      kind: 'api',
+      provider: 'ollama',
+      model: 'qwen2.5-coder:7b',
+    });
+    expect(savedRunner).not.toMatchObject({
+      provider: 'custom-endpoint',
+      model: 'custom-endpoint-model',
+    });
     ui.unmount();
   });
 
@@ -967,8 +993,16 @@ describe('usePickerCatalog', () => {
     ui.stdin.write('\u001B[B');
     await flushEffects();
 
+    const wrapped = ui.lastFrame() ?? '';
+    expect(wrapped).toContain('custom-command:');
+    expect(wrapped).not.toContain('ollama-only-model');
+
+    await flushEffects();
+    ui.stdin.write('\u001B[B');
+    await flushEffects();
+
     const next = ui.lastFrame() ?? '';
-    expect(next).toContain('codex:');
+    expect(next).toContain('claude-code:');
     expect(next).not.toContain('ollama-only-model');
     ui.unmount();
   });
@@ -1456,7 +1490,6 @@ describe('usePickerCatalog count', () => {
         source: undefined,
         unverifiedForPlan: false,
         diagnostic: undefined,
-        status: { state: 'ready', remediation: null },
         lane: 'ready',
         capabilities: [],
         billing: item.billing,

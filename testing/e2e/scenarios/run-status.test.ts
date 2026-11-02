@@ -70,10 +70,10 @@ process.exit(1);`,
 
         expect(result.exitCode, result.stderr).toBe(0);
         const output = stripTerminalControls(result.stdout);
-        expect(output).toContain(`Status:   ${word}`);
+        expect(output).toContain(`Status:    ${word}`);
         expect(output).not.toContain('Phase:');
         expect(output).not.toContain('awaiting continue');
-        expect(output).toContain('Feature:  Add a greeting, as one task');
+        expect(output).toContain('Feature:   Add a greeting, as one task');
         expect(readFileSync(gitCalls, 'utf8')).toContain('rev-parse');
       } finally {
         if (stopHeartbeat !== undefined) {

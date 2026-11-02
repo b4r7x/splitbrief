@@ -248,7 +248,6 @@ describe('usePickerCatalog catalog diagnostic', () => {
       source: listing.source,
       unverifiedForPlan: listing.unverifiedForPlan,
       diagnostic: capturedCatalog?.catalogDiagnostic,
-      status: { state: 'ready', remediation: null },
       lane: 'ready',
       capabilities: ['Network', 'Shell'],
       billing: 'provider-dependent',
@@ -256,11 +255,7 @@ describe('usePickerCatalog catalog diagnostic', () => {
     });
 
     expect(line).toBe(
-      formatCatalogDiagnostic(
-        { kind: 'probe-failed', failure: 'malformed' },
-        'OpenCode CLI',
-        false,
-      ),
+      formatCatalogDiagnostic({ kind: 'probe-failed', failure: 'malformed' }, 'OpenCode CLI'),
     );
     expect(line).not.toContain('Network');
     expect(line).not.toContain('Provider dependent');

@@ -218,4 +218,65 @@ describe('TwoColumnPicker terminal rows', () => {
     expect(leftChanges.at(-1)).toBe('alpha');
     ui.unmount();
   });
+
+  it('a disabled pane without a verb offers navigation and refresh without Enter', async () => {
+    const pane: TerminalPane = {
+      label: 'Offline tool',
+      lines: ['The tool has no models until it is ready.'],
+    };
+    const offline: Tool = { id: 'offline', displayName: 'Offline', disabled: true };
+    const hint = '↑↓ select · esc cancel · ctrl+r refresh';
+    const viewports = [
+      { cols: 120, rows: 40 },
+      { cols: 80, rows: 24 },
+      { cols: 60, rows: 18 },
+    ] as const;
+
+    for (const viewport of viewports) {
+      const confirms: Array<{ l: string; r: string | null }> = [];
+      terminalSizeStore.__testReset({
+        cols: viewport.cols,
+        rows: viewport.rows,
+        isSmall: viewport.cols < 120,
+      });
+      const ui = renderFeature(
+        <TwoColumnPicker<Tool, Model>
+          title="Reviewer"
+          leftProps={{
+            items: [offline, ...TOOLS],
+            getKey: (t) => t.id,
+            isDisabled: (t) => !!t.disabled,
+            terminalPane: (t) => (t.id === offline.id ? pane : undefined),
+            renderRow: (t, { isCursor }) => (
+              <Text>{`${isCursor ? '>' : ' '}${t.displayName}`}</Text>
+            ),
+          }}
+          rightProps={{
+            items: MODELS_BY_TOOL.alpha ?? [],
+            getKey: (m) => m.id,
+            renderRow: (m) => <Text>{m.displayName}</Text>,
+          }}
+          onConfirm={(left, right) => {
+            confirms.push({ l: left.id, r: right?.id ?? null });
+          }}
+          onCancel={() => {}}
+          onRefresh={() => {}}
+        />,
+        viewport,
+      );
+      await flushEffects();
+      const frame = ui.lastFrame() ?? '';
+
+      expect(frame, `${viewport.cols}`).toContain(pane.label);
+      expect(frame, `${viewport.cols}`).toContain(hint);
+      expect(frame, `${viewport.cols}`).not.toContain('⏎');
+
+      ui.stdin.write('\u001B[C');
+      await flushEffects();
+      ui.stdin.write('\r');
+      await flushEffects();
+      expect(confirms, `${viewport.cols}`).toEqual([]);
+      ui.unmount();
+    }
+  });
 });

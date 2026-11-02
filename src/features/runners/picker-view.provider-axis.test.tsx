@@ -96,6 +96,7 @@ function makeCatalog(input: {
     browseCatalog: false,
     roleLabel: input.roleLabel ?? 'Reviewer',
     plannerIdentity: 'Claude Code CLI · Claude Sonnet 4',
+    savedRunner: undefined,
     currentModel: undefined,
     persistedModel: undefined,
     modelCounts: zeroCounts,

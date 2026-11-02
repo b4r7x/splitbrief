@@ -67,6 +67,7 @@ export interface PickerCatalog {
   roleLabel: string;
   /** What the planner actually runs; the terminal panes name it. */
   plannerIdentity: string;
+  savedRunner: RunnerConfig | undefined;
   currentModel: string | undefined;
   persistedModel: string | undefined;
   /** Membership buckets for picker rendering and diagnostics. */
@@ -376,6 +377,7 @@ export function usePickerCatalog(
       const displayName = resolveSeatDisplayName(plannerRunner, 'planner', modelCacheStore);
       return formatSeatIdentity({ seat: plannerRunner, displayName });
     })(),
+    savedRunner: runnerConfig,
     currentModel,
     persistedModel,
     modelCounts,

@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { relative, resolve } from 'node:path';
 import { projectRunnerCallActivity } from '../../../../src/engine/calls/activity.js';
 import { reviewResumeProjection, reviewCheckCrashProjection } from './review-resume-projection.js';
 import {
@@ -6232,12 +6232,16 @@ const implementationToolRunningProjection: WorkflowFixtureProjection = {
 
 // A Claude Code build call streams a Read and a Task input in deltas. Only the first delta of each
 // names the file or the subagent; the later fragments name nothing, and both open rows keep it.
+const STREAMED_READ_PATH = resolve(
+  VISUAL_FIXTURE_PROJECT_DIR,
+  'src/engine/calls/activity-memory.ts',
+);
 const STREAMED_TOOL_DELTAS = [
   {
     toolUseId: 'visual-streamed-read',
     name: 'Read',
     inputDelta: JSON.stringify({
-      file_path: resolve(VISUAL_FIXTURE_PROJECT_DIR, 'src/engine/calls/activity-memory.ts'),
+      file_path: STREAMED_READ_PATH,
     }),
   },
   { toolUseId: 'visual-streamed-task', name: 'Task', inputDelta: '{"subagent_type":"Explore"}' },
@@ -7835,7 +7839,19 @@ function projectionStrings(value: unknown): string[] {
   return Object.values(value).flatMap(projectionStrings);
 }
 
-function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
+function measuredProjectionString(projection: WorkflowFixtureProjection, value: string): string {
+  if (projection.scenarioId !== implementationStreamedTargetsProjection.scenarioId) {
+    return value;
+  }
+  const relativeTarget = relative(VISUAL_FIXTURE_PROJECT_DIR, STREAMED_READ_PATH);
+  const absoluteEscaped = JSON.stringify(STREAMED_READ_PATH).slice(1, -1);
+  const relativeEscaped = JSON.stringify(relativeTarget).slice(1, -1);
+  const escaped = value.split(absoluteEscaped).join(relativeEscaped);
+  if (absoluteEscaped === STREAMED_READ_PATH) return escaped;
+  return escaped.split(STREAMED_READ_PATH).join(relativeTarget);
+}
+
+export function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
   if (projection.events.length > WORKFLOW_FIXTURE_BOUNDS.maxEventsPerFixture) {
     throw new Error(`Workflow fixture ${projection.scenarioId} exceeds the event bound`);
   }
@@ -7897,7 +7913,8 @@ function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
       !startReadinessWarningText.includes(value) &&
       value !== planSendBackWarning.message &&
       value !== planSendBackWarning.planCheck?.message &&
-      value.length > WORKFLOW_FIXTURE_BOUNDS.maxStringLength &&
+      measuredProjectionString(projection, value).length >
+        WORKFLOW_FIXTURE_BOUNDS.maxStringLength &&
       !projection.question?.questions?.some(
         (question) =>
           question.type === 'choice' &&

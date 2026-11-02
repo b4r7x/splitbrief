@@ -10,7 +10,10 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { formatSeatIdentity } from '../../core/crew/identity.js';
+import type { RunnerConfig } from '../../core/config/accessors/runner-config.js';
 import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool-catalog.js';
+import { cliReadinessRemediation } from '../../core/schemas/readiness.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { glyph } from '../../lib/glyphs.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
@@ -249,7 +252,7 @@ describe('PickerView previews', () => {
       items: [ollama],
       currentItem: ollama,
       selectedItemId: ollama.id,
-      rightModels: [],
+      rightModels: [{ id: 'llama3', displayName: 'Llama 3 Marker' }],
       roleLabel: 'PLAN',
       modelCounts: zeroCounts,
     });
@@ -263,6 +266,7 @@ describe('PickerView previews', () => {
     expect(frame).toContain('Local server');
     expect(frame).toContain('Run `ollama serve`');
     expect(frame).toContain('⏎ opens its address, its token and a check.');
+    expect(frame).not.toContain('Llama 3 Marker');
     ui.unmount();
   });
 
@@ -359,11 +363,7 @@ describe('PickerView previews', () => {
     await flushEffects();
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain(
-      formatCatalogDiagnostic(
-        { kind: 'probe-failed', failure: 'missing-credential' },
-        'Codex',
-        false,
-      ),
+      formatCatalogDiagnostic({ kind: 'probe-failed', failure: 'missing-credential' }, 'Codex'),
     );
     expect(frame).not.toContain('3 models');
     expect(frame).not.toContain('detected');
@@ -382,11 +382,8 @@ describe('PickerView previews', () => {
       billing: 'api-metered',
       dataUse: 'no-training',
       permissions: readyPermissions,
-      status: {
-        state: 'unavailable',
-        remediation: 'Last confirmed openai catalog is stale. Refresh detection.',
-      },
-      available: false,
+      status: { state: 'ready', remediation: null },
+      available: true,
     });
     const catalog: PickerCatalog = pickerCatalog({
       browseCatalog: false,
@@ -413,9 +410,7 @@ describe('PickerView previews', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('Stale');
-    expect(frame).toContain('Last confirmed openai catalog is stale. Refresh detection.');
-    expect(frame).toContain('1 stale model retained');
-    expect(frame).not.toContain('1 stale model retained. Refresh detection.');
+    expect(frame).toContain('1 stale model retained. Refresh detection.');
     expect(frame).not.toContain('1 model detected');
 
     ui.rerender(
@@ -446,11 +441,8 @@ describe('PickerView previews', () => {
       billing: 'api-metered',
       dataUse: 'no-training',
       permissions: readyPermissions,
-      status: {
-        state: 'unauthenticated',
-        remediation: 'Set ANTHROPIC_API_KEY, then refresh detection.',
-      },
-      available: false,
+      status: { state: 'ready', remediation: null },
+      available: true,
     });
 
     const catalog: PickerCatalog = pickerCatalog({
@@ -470,14 +462,9 @@ describe('PickerView previews', () => {
     );
     await flushEffects();
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('Auth required');
-    expect(frame).toContain('Set ANTHROPIC_API_KEY');
+    expect(frame).toContain('No models detected');
+    expect(frame).toContain('Press ctrl+r to refresh detection');
     expect(frame).toContain('metered');
-    // The byline gives the remedy its own row, so the advice never runs into the catalog facts.
-    const rows = frame.split('\n').map((row) => row.trim());
-    const remedyRow = rows.findIndex((row) => row.startsWith('Set ANTHROPIC_API_KEY'));
-    expect(rows[remedyRow]).toBe('Set ANTHROPIC_API_KEY, then refresh detection.');
-    expect(rows[remedyRow + 1]).toContain('Anthropic');
     ui.unmount();
   });
 
@@ -524,43 +511,37 @@ describe('PickerView previews', () => {
       return rows;
     }
 
-    it('keeps the sign-in step first when the listing timed out', async () => {
-      const rows = await bylineRows({ kind: 'probe-failed', failure: 'timeout' });
-      const frame = rows.join('\n');
-      const remedyRow = rows.findLastIndex((row) => row.includes('Sign in to OpenCode CLI'));
-      expect(remedyRow).toBeGreaterThanOrEqual(0);
-      expect(rows[remedyRow]).toContain('then ctrl+r.');
-      expect(rows[remedyRow + 1]).toBe('Model detection timed out');
-      expect(frame).not.toContain('splitbrief doctor');
-      expect(`${rows[remedyRow]} ${rows[remedyRow + 1]}`.match(/ctrl\+r/g)).toHaveLength(1);
-    });
+    it.each([
+      { kind: 'probe-failed', failure: 'timeout' },
+      { kind: 'probe-failed', failure: 'command-failed', cause: 'exit 1' },
+      { kind: 'probe-failed', failure: 'missing-credential' },
+    ] satisfies PickerCatalog['catalogDiagnostic'][])(
+      'shows the readiness card and hides the listing failure for %j',
+      async (diagnostic) => {
+        if (status.state === 'ready') throw new Error('a signed-out tool has no card');
+        const rows = await bylineRows(diagnostic);
+        const frame = rows.join('\n');
+        expect(frame).toContain('Auth required');
+        expect(frame).toContain(status.remediation);
+        expect(frame).toContain('Its models show here when it is ready.');
+        expect(frame).not.toContain('Model detection timed out');
+        expect(frame).not.toContain('could not list models');
+        expect(frame).not.toContain('to detect its models');
+        expect(frame).not.toContain('Saved choice:');
+        expect(frame).toContain('↑↓ select');
+        expect(frame).not.toContain('⏎');
+      },
+    );
 
-    it('keeps the sign-in step first when the listing command failed', async () => {
-      const rows = await bylineRows({
-        kind: 'probe-failed',
-        failure: 'command-failed',
-        cause: 'exit 1',
-      });
-      const frame = rows.join('\n');
-      const remedyRow = rows.findLastIndex((row) => row.includes('Sign in to OpenCode CLI'));
-      expect(remedyRow).toBeGreaterThanOrEqual(0);
-      expect(rows[remedyRow + 1]).toBe('OpenCode CLI could not list models: exit 1');
-      expect(frame).not.toContain('ctrl+r to retry');
-    });
-
-    it('fits the sign-in step on one row at 80 columns and keeps the failure under it', async () => {
+    it('keeps the sign-in step when the card wraps at 80 columns', async () => {
       const rows = await bylineRows({ kind: 'probe-failed', failure: 'timeout' }, 80);
-      const remedyRow = rows.findLastIndex((row) => row.includes('Sign in to OpenCode CLI'));
-      expect(rows[remedyRow]).toBe('Sign in to OpenCode CLI, then ctrl+r.');
-      expect(rows[remedyRow + 1]).toBe('Model detection timed out');
-    });
-
-    it('says sign in once when the listing found no credential', async () => {
-      const rows = await bylineRows({ kind: 'probe-failed', failure: 'missing-credential' }, 80);
-      const remedyRow = rows.findLastIndex((row) => row.includes('Sign in to OpenCode CLI'));
-      expect(rows[remedyRow]).toBe('Sign in to OpenCode CLI, then ctrl+r.');
-      expect(rows[remedyRow + 1]).toMatch(/^OpenCode CLI/);
-      expect(rows.join('\n')).not.toContain('to detect its models');
+      const frame = rows.join('\n');
+      expect(frame).toContain('Auth required');
+      expect(frame).toContain('Sign in to OpenCode CLI');
+      expect(frame).toContain('ctrl+r.');
+      expect(frame).toContain('Its models show here');
+      expect(frame).not.toContain('Model detection timed out');
+      expect(frame).not.toContain('Saved choice:');
     });
   });
 
@@ -573,7 +554,7 @@ describe('PickerView previews', () => {
     async function footerRows(
       status: PickerOption['status'],
       catalogDiagnostic: PickerCatalog['catalogDiagnostic'],
-      cols = 80,
+      cols = 140,
     ): Promise<string[]> {
       const codex = pickerItem({
         id: 'codex',
@@ -614,31 +595,30 @@ describe('PickerView previews', () => {
       });
     }
 
-    it.each(['missing-credential', 'invalid-credential'] as const)(
-      'puts the sign-in step first when the listing failed with %s',
-      async (failure) => {
-        const rows = await footerRows(statusFor('unauthenticated'), {
-          kind: 'probe-failed',
-          failure,
-        });
-        const remedyRow = rows.findLastIndex((row) => row.includes('Sign in to OpenAI Codex CLI'));
-        expect(rows[remedyRow]).toBe('Sign in to OpenAI Codex CLI, then ctrl+r.');
-        expect(rows[remedyRow + 1]).toContain('7 stale models retained');
-        expect(rows.join('\n')).not.toContain('Refresh detection');
-      },
-    );
-
-    it.each([
-      ['unauthenticated', 'Sign in to OpenAI Codex CLI, then ctrl+r.'],
-      ['unavailable', 'Install OpenAI Codex CLI, then ctrl+r.'],
-    ] as const)(
-      'puts the remedy of an %s tool first before any live pass',
-      async (state, remedy) => {
-        const rows = await footerRows(statusFor(state), undefined);
-        const remedyRow = rows.lastIndexOf(remedy);
-        expect(remedyRow).toBeGreaterThanOrEqual(0);
-        expect(rows[remedyRow + 1]).toContain('7 stale models retained');
-        expect(rows.join('\n')).not.toContain('Refresh detection');
+    it.each(['unauthenticated', 'unavailable'] as const)(
+      'shows a readiness card and no model byline for an %s tool',
+      async (state) => {
+        const status = statusFor(state);
+        if (status.state === 'ready') throw new Error('a not-ready tool has no card');
+        const diagnostics = [
+          undefined,
+          { kind: 'probe-failed', failure: 'missing-credential' },
+          { kind: 'probe-failed', failure: 'invalid-credential' },
+        ] satisfies PickerCatalog['catalogDiagnostic'][];
+        for (const diagnostic of diagnostics) {
+          const frame = (await footerRows(status, diagnostic)).join('\n');
+          expect(frame).toContain(status.remediation);
+          expect(frame).toContain('Its models show here when it is ready.');
+          expect(frame).not.toContain('stale models retained');
+          expect(frame).not.toContain('gpt-6-astra');
+          expect(frame).not.toContain('to detect its models');
+          expect(frame).not.toContain('sign-in was rejected');
+          expect(frame).not.toContain('Saved choice:');
+        }
+        const narrow = (await footerRows(status, undefined, 80)).join('\n');
+        expect(narrow).toContain('ctrl+r.');
+        expect(narrow).toContain('Its models show here');
+        expect(narrow).not.toContain('stale models retained');
       },
     );
 
@@ -646,6 +626,76 @@ describe('PickerView previews', () => {
       const rows = await footerRows({ state: 'ready', remediation: null }, undefined, 160);
       expect(rows.join('\n')).toContain('7 stale models retained. Refresh detection.');
     });
+  });
+
+  it('hides custom, auto, and bundled model rows on a not-ready CLI card', async () => {
+    const savedRunner: RunnerConfig = { kind: 'cli', tool: 'codex', model: 'gpt-5.4' };
+    const status = {
+      state: 'disabled' as const,
+      remediation: cliReadinessRemediation(
+        {
+          tool: 'codex',
+          installedVersion: CLI_TOOL_CATALOG.codex.compatibility.testedVersion,
+          testedVersion: CLI_TOOL_CATALOG.codex.compatibility.testedVersion,
+          compatibility: 'compatible',
+        },
+        'disabled',
+        'picker',
+      ),
+    };
+    const tool = pickerItem(
+      {
+        id: 'codex',
+        displayName: 'OpenAI Codex CLI',
+        kind: 'cli',
+        roles: ['planner', 'implementer'],
+        modelPolicy: 'optional',
+        billing: 'subscription-included',
+        permissions: readyPermissions,
+        status,
+        available: false,
+        isCurrent: true,
+      },
+      true,
+    );
+    const catalog: PickerCatalog = pickerCatalog({
+      browseCatalog: false,
+      items: [tool],
+      rightModels: [
+        { id: 'auto', displayName: 'Auto Marker' },
+        {
+          id: 'bundled-opus',
+          displayName: 'Bundled Opus Marker',
+          membership: 'bundled-suggestion',
+        },
+        { id: 'custom-marker', displayName: 'Custom Marker Model', isCustom: true },
+      ],
+      customModels: ['custom-marker'],
+      savedRunner,
+      currentItem: tool,
+      selectedItemId: tool.id,
+      roleLabel: 'Planner',
+      modelCounts: zeroCounts,
+    });
+    const ui = renderFeature(
+      <PickerView slot="seat" role="planner" catalog={catalog} actions={makeActions()} />,
+    );
+    await flushEffects();
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('Disabled');
+    expect(frame).toContain(status.remediation);
+    expect(frame).toContain('Its models show here when it is ready.');
+    expect(frame).toContain(`Saved choice: ${formatSeatIdentity({ seat: savedRunner })}`);
+    expect(frame).not.toContain('Bundled Opus Marker');
+    expect(frame).not.toContain('Custom Marker Model');
+    expect(frame).not.toContain('+ Add custom model');
+    expect(frame).not.toContain('tool decides');
+    expect(frame).not.toContain('Auto Marker');
+    expect(frame).toContain('↑↓ select');
+    expect(frame).toContain('esc cancel');
+    expect(frame).toContain('ctrl+r refresh');
+    expect(frame).not.toContain('⏎');
+    ui.unmount();
   });
 
   it('shows auto-only guidance without a custom model row', async () => {

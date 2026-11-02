@@ -1,5 +1,10 @@
 import { SOFT_SEP } from '../../core/separators.js';
-import { CREW_SEAT_LABELS, PLANNER_INHERITANCE } from '../../core/crew/identity.js';
+import type { RunnerConfig } from '../../core/config/accessors/runner-config.js';
+import {
+  CREW_SEAT_LABELS,
+  formatSeatIdentity,
+  PLANNER_INHERITANCE,
+} from '../../core/crew/identity.js';
 import { countNoun } from '../../utils/pluralize.js';
 import type { ProbeOutcomeKind } from '../../core/discovery/runner-evidence.js';
 import { isCliToolId, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
@@ -35,6 +40,7 @@ import {
   parseOptionSelection,
 } from './model-catalog/option-axis.js';
 import type { ModelOption } from './model-catalog/recency.js';
+import type { TerminalPane } from './two-column-picker/types.js';
 
 const DETECTING_MODELS_COPY = 'Detecting models…';
 // Detection has not run yet, whichever path noticed it: one state, one sentence, naming the key
@@ -116,6 +122,25 @@ export function formatPickerStatusLabel(status: PickerOptionStatus): string | un
   }
 }
 
+export function notReadyPane(input: {
+  status: PickerOptionStatus;
+  savedRunner: RunnerConfig | undefined;
+}): TerminalPane | undefined {
+  const title = formatPickerStatusLabel(input.status);
+  if (title === undefined || input.status.remediation === null) return undefined;
+  const lines: TerminalPane['lines'] = [
+    input.status.remediation,
+    '',
+    'Its models show here when it is ready.',
+  ];
+  if (input.savedRunner !== undefined) {
+    lines.push('', {
+      whole: `Saved choice: ${formatSeatIdentity({ seat: input.savedRunner })}`,
+    });
+  }
+  return { label: title, lines };
+}
+
 /** The sandbox posture leads: it is the one label that differs between tools, and a byline sheds from the end. */
 export function formatPermissionLabels(permissions: RunnerPermissionPosture): string[] {
   const labels: string[] = [];
@@ -137,35 +162,20 @@ function noListingSentence(toolName: string): string {
   return `${toolName} does not support model listing`;
 }
 
-/**
- * A tool the picker cannot run states its remediation on the row above the catalog line. A retry
- * alone cannot sign the tool in or install it, and a CLI remediation that a recheck settles ends on
- * ctrl+r itself, so the catalog line names no retry of its own.
- */
-export function withRetry(failure: string, retry: string, remedied: boolean): string {
-  return remedied ? failure : `${failure}${retry}`;
+function detectionNotRunCopy(): string {
+  return `${DETECTION_NOT_RUN}. Press ctrl+r to refresh`;
 }
 
-function detectionNotRunCopy(remedied: boolean): string {
-  return withRetry(DETECTION_NOT_RUN, '. Press ctrl+r to refresh', remedied);
-}
-
-function commandFailedCopy(toolName: string, cause: string, remedied: boolean): string {
-  return withRetry(
-    `${toolName} could not list models: ${cause}`,
-    `${SOFT_SEP}ctrl+r to retry`,
-    remedied,
-  );
+function commandFailedCopy(toolName: string, cause: string): string {
+  return `${toolName} could not list models: ${cause}${SOFT_SEP}ctrl+r to retry`;
 }
 
 export function formatCatalogDiagnostic(
   diagnostic: ModelCatalogDiagnostic,
   toolName: string,
-  remedied: boolean,
 ): string {
-  if (diagnostic.kind === 'not-probed') return detectionNotRunCopy(remedied);
-  if (diagnostic.kind === 'not-run-retained')
-    return withRetry(EARLIER_LIST, DETECT_RETRY, remedied);
+  if (diagnostic.kind === 'not-probed') return detectionNotRunCopy();
+  if (diagnostic.kind === 'not-run-retained') return `${EARLIER_LIST}${DETECT_RETRY}`;
   if (diagnostic.kind === 'unsupported') return noListingSentence(toolName);
   switch (diagnostic.failure) {
     case 'unsupported':
@@ -179,21 +189,17 @@ export function formatCatalogDiagnostic(
     // Unreachable is not unauthenticated: the network is what failed, so the remedy is the retry
     // every other reachability failure offers, never a sign-in the tool never asked for.
     case 'offline':
-      return withRetry(
-        'Model detection could not reach the network',
-        '. Press ctrl+r to retry',
-        remedied,
-      );
+      return 'Model detection could not reach the network. Press ctrl+r to retry';
     case 'timeout':
-      return withRetry('Model detection timed out', '. Press ctrl+r to retry', remedied);
+      return 'Model detection timed out. Press ctrl+r to retry';
     case 'malformed':
-      return `Unreadable model list${SOFT_SEP}${remedied ? '' : 'ctrl+r will not help; '}add a custom model or report the output`;
+      return `Unreadable model list${SOFT_SEP}ctrl+r will not help; add a custom model or report the output`;
     case 'command-failed':
-      return commandFailedCopy(toolName, diagnostic.cause, remedied);
+      return commandFailedCopy(toolName, diagnostic.cause);
     case 'cancelled':
-      return withRetry('Model detection was cancelled', '. Press ctrl+r to retry', remedied);
+      return 'Model detection was cancelled. Press ctrl+r to retry';
     case 'not-run':
-      return detectionNotRunCopy(remedied);
+      return detectionNotRunCopy();
   }
 }
 
@@ -208,13 +214,6 @@ export function formatModelCatalogGuidance(
   diagnostic?: ModelCatalogDiagnostic,
   refreshing = false,
 ): { headline: string; detail: string | undefined } {
-  if (item.status.state !== 'ready') {
-    return {
-      headline: formatPickerStatusLabel(item.status) ?? item.status.state,
-      detail: item.status.remediation,
-    };
-  }
-
   const guidance = readyModelGuidance(item, counts, diagnostic, refreshing);
   const providerSummary = formatConfiguredProviderSummary(item.status);
   if (providerSummary === undefined) return guidance;
@@ -504,9 +503,9 @@ export function customModelEntryCopy(
     : { placeholder: `e.g. ${first}`, examples: rest };
 }
 
-function laneStatus(lane: CatalogLane, remedied: boolean): string | undefined {
+function laneStatus(lane: CatalogLane): string | undefined {
   if (lane === 'pending') return CATALOG_LANE_PENDING;
-  if (lane === 'failed') return withRetry(CATALOG_FETCH_FAILED, `${SOFT_SEP}ctrl+r`, remedied);
+  if (lane === 'failed') return `${CATALOG_FETCH_FAILED}${SOFT_SEP}ctrl+r`;
   return undefined;
 }
 
@@ -552,38 +551,27 @@ export function bylineDiagnostic(input: {
   diagnostic: ModelCatalogDiagnostic | undefined;
   modelCount: number;
   toolName: string;
-  status: PickerOptionStatus;
   budget: number;
 }): string | undefined {
   const { diagnostic } = input;
   if (diagnostic === undefined) return undefined;
-  // A signed-out tool's remediation is already the sign-in step: the tool's facts take the row.
-  if (
-    input.status.state === 'unauthenticated' &&
-    diagnostic.kind === 'probe-failed' &&
-    (diagnostic.failure === 'missing-credential' || diagnostic.failure === 'invalid-credential')
-  ) {
-    return undefined;
-  }
-  const remedied = input.status.remediation !== null;
   // An alias lane by design is not a failure: claude-code lists rows and still reports `unsupported`.
   if (input.modelCount > 0 && diagnostic.kind === 'unsupported') return undefined;
   // Rows are listed and detection has not run: they are the bundled list. Saying detection has not
   // run would contradict the column beside it, so name the list the user is reading instead.
   if (input.modelCount > 0 && isDetectionNotRun(diagnostic)) {
-    return withRetry(BUNDLED_LIST, DETECT_RETRY, remedied);
+    return `${BUNDLED_LIST}${DETECT_RETRY}`;
   }
   if (diagnostic.kind !== 'probe-failed' || diagnostic.failure !== 'command-failed') {
-    return formatCatalogDiagnostic(diagnostic, input.toolName, remedied);
+    return formatCatalogDiagnostic(diagnostic, input.toolName);
   }
   let causeCells = getTerminalCellWidth(diagnostic.cause);
-  let fitted = commandFailedCopy(input.toolName, diagnostic.cause, remedied);
+  let fitted = commandFailedCopy(input.toolName, diagnostic.cause);
   while (causeCells > 0 && wrapOnWords(fitted, input.budget, 2).cut) {
     causeCells -= 1;
     fitted = commandFailedCopy(
       input.toolName,
       truncateTerminalDisplayText(diagnostic.cause, causeCells),
-      remedied,
     );
   }
   return fitted;
@@ -602,7 +590,6 @@ export function formatToolsByline(input: {
   source: string | undefined;
   unverifiedForPlan: boolean;
   diagnostic: ModelCatalogDiagnostic | undefined;
-  status: PickerOptionStatus;
   lane: CatalogLane;
   capabilities: readonly string[];
   billing: RunnerBillingPosture;
@@ -612,12 +599,11 @@ export function formatToolsByline(input: {
     diagnostic: input.diagnostic,
     modelCount: input.modelCount,
     toolName: input.toolName,
-    status: input.status,
     budget: input.budget,
   });
   if (status !== undefined) return status;
 
-  const lane = laneStatus(input.lane, input.status.remediation !== null);
+  const lane = laneStatus(input.lane);
   const provenance = lane ?? input.source;
   // The lane status replaces the source, so a lane that is not ready carries no trust clause.
   const trust =

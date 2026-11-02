@@ -14,6 +14,7 @@ import {
 } from '../../../src/features/runners/model-catalog/option-axis.js';
 import { mergeOptionFamilies } from '../../../src/features/runners/model-catalog/option-merge.js';
 import type { ModelOption } from '../../../src/features/runners/model-catalog/recency.js';
+import type { PickerOption } from '../../../src/features/runners/model-catalog/options.js';
 import { buildRightRows } from '../../../src/features/runners/model-catalog/rows.js';
 import { PickerView } from '../../../src/features/runners/picker-view.js';
 import type { PickerActions } from '../../../src/features/runners/use-picker-actions.js';
@@ -131,7 +132,12 @@ const actions: PickerActions = {
 function LivePicker() {
   const expandedModelId = pickerViewStore.use((s) => s.expandedModelId);
   const optionDraftId = pickerViewStore.use((s) => s.optionDraftId);
-  const tool = realPickerOption('planner', 'claude-code');
+  const detected = realPickerOption('planner', 'claude-code');
+  const tool: PickerOption = {
+    ...detected,
+    available: true,
+    status: { state: 'ready', remediation: null },
+  };
   const rightRows = buildRightRows({
     models: [FAMILY],
     expandedModelId,

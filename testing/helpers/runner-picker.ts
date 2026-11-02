@@ -98,6 +98,7 @@ type DerivedCatalogField =
   | 'initialRightIndex'
   | 'resolveRightIndex'
   | 'plannerIdentity'
+  | 'savedRunner'
   | 'catalogLane'
   | 'providerAuth'
   | 'toolCatalog'
@@ -168,6 +169,7 @@ export function pickerCatalog(fixture: CatalogFixture): PickerCatalog {
     initialRightIndex,
     resolveRightIndex: () => initialRightIndex,
     plannerIdentity: base.plannerIdentity ?? 'Claude Code CLI · Claude Sonnet 4',
+    savedRunner: base.savedRunner,
     catalogLane: base.catalogLane ?? 'ready',
     providerAuth: base.providerAuth,
     toolCatalog: base.toolCatalog,

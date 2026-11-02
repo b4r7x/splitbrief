@@ -139,8 +139,8 @@ function getHint(input: {
     return candidates.find((hint) => getTerminalCellWidth(hint) <= input.width) ?? compose([], []);
   };
   if (kind === 'terminal') {
-    const verb = input.terminalVerb ?? 'select';
-    return fitHint(`⏎ ${verb}`, false);
+    if (input.terminalVerb === undefined) return fitHint('', false);
+    return fitHint(`⏎ ${input.terminalVerb}`, false);
   }
   if (kind === 'expanded') {
     // The launcher is pinned above the expansion and answers for itself, so the
@@ -181,6 +181,21 @@ function wrapValueLine(text: string, width: number): string[] {
   return current === '' ? lines : [...lines, current];
 }
 
+function paneRowsThatFit(rows: readonly string[], slots: number): string[] {
+  if (slots <= 0) return [];
+  if (rows.length <= slots) return [...rows];
+  const dense = rows.filter((line) => line !== '');
+  if (dense.length <= slots) return dense;
+  return markCut(dense.slice(0, slots), dense.length);
+}
+
+function markCut(lines: string[], sourceLength: number): string[] {
+  if (lines.length >= sourceLength || lines.length === 0) return lines;
+  const last = lines.at(-1);
+  if (last === undefined || last.endsWith(ELLIPSIS)) return lines;
+  return [...lines.slice(0, -1), `${last}${ELLIPSIS}`];
+}
+
 /**
  * The read-only pane a terminal left row opens: fixed height matching
  * columnHeight so the right box never collapses.
@@ -195,12 +210,15 @@ function TerminalPaneCard({
   height: number;
 }) {
   const t = useTheme();
-  const rows = pane.lines.flatMap((line) =>
-    typeof line !== 'string'
-      ? wrapValueLine(line.whole, contentWidth)
-      : line === ''
-        ? ['']
-        : wrapOnWords(line, contentWidth, Number.POSITIVE_INFINITY).lines,
+  const rows = paneRowsThatFit(
+    pane.lines.flatMap((line) =>
+      typeof line !== 'string'
+        ? wrapValueLine(line.whole, contentWidth)
+        : line === ''
+          ? ['']
+          : wrapOnWords(line, contentWidth, Number.POSITIVE_INFINITY).lines,
+    ),
+    height - 3,
   );
   return (
     <Box
