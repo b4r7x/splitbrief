@@ -30,6 +30,7 @@ import type { Config } from '../../core/schemas/config.js';
 import { buildApiReviewContext, type ApiReviewContextInput } from './api-review-context.js';
 import { runFinalReviewPhase } from './final-review.js';
 import { estimateTokens } from '../../core/tokens/estimate.js';
+import { DIRECT_WRITER_TASK_RULE } from '../spec/prompts/plan-session.js';
 
 const universe = vi.hoisted(() => ({ fullDiff: '', changedFiles: [] as string[] }));
 const drift = vi.hoisted(() => ({ fails: false }));
@@ -83,6 +84,7 @@ function diffOfLength(path: string, chars: number): string {
 const WHOLE: ApiReviewContextInput = {
   pendingInputs: [],
   fixCycle: 1,
+  writesFiles: 'extracted-code',
   feature: 'Add a login route',
   spec: '# Spec\n\nAdd a login route.\n',
   taskBriefs: '## T001 — login route\n\nWrite it.\n',
@@ -109,6 +111,11 @@ function refused(overrides: Partial<ApiReviewContextInput> = {}) {
 }
 
 describe('the packet an API review seat is handed', () => {
+  it('writes the fix tasks for a coding agent under its task rule', () => {
+    expect(complete({ writesFiles: 'direct' }).text).toContain(DIRECT_WRITER_TASK_RULE);
+    expect(complete().text).not.toContain(DIRECT_WRITER_TASK_RULE);
+  });
+
   it('forwards the task review kind to the prompt', () => {
     expect(complete({ reviewKind: 'task' }).text).toContain('This is a task review.');
   });

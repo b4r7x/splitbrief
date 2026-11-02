@@ -3,18 +3,20 @@ import { makePlanProposal } from '#testing/helpers/factories/plan.js';
 import { PLAN_ANSWER_JSON_SCHEMA } from '../../../core/schemas/plan.js';
 import { buildLanguageContext } from './language-context.js';
 import {
+  DIRECT_WRITER_TASK_RULE,
   buildPlanSessionPrompt,
   planAnswersTurn,
   planHistory,
   planRepairTurn,
   planRevisedTurn,
+  type PlanSessionPromptInput,
 } from './plan-session.js';
 
-const input = {
+const input: PlanSessionPromptInput = {
   feature: 'Greet people by name',
   projectContext: 'repo facts',
   languageContext: buildLanguageContext('typescript'),
-  build: { model: 'deepseek-v4.1-flash', contextTokens: 128000 },
+  build: { model: 'deepseek-v4.1-flash', contextTokens: 128000, writesFiles: 'extracted-code' },
   approvesPlan: true,
 };
 
@@ -32,19 +34,40 @@ describe('buildPlanSessionPrompt', () => {
     );
   });
 
-  it('sizes the tasks for the BUILD model and its measured context', () => {
+  it('sizes the tasks for a BUILD model that returns code by its measured context', () => {
     const prompt = buildPlanSessionPrompt(input);
     expect(prompt).toContain('deepseek-v4.1-flash');
     expect(prompt).toContain('128,000 tokens');
+    expect(prompt).toContain(
+      'Each task reaches it with the current code of its suggested and context files, the instructions and the checks',
+    );
+    expect(prompt).toContain('Name the files; SPLITBRIEF attaches their current code.');
+    expect(prompt).not.toContain(DIRECT_WRITER_TASK_RULE);
   });
 
   it('names the configured implementer when its model has no catalog id', () => {
     const prompt = buildPlanSessionPrompt({
       ...input,
-      build: { model: undefined, contextTokens: 32768 },
+      build: { model: undefined, contextTokens: 32768, writesFiles: 'extracted-code' },
     });
     expect(prompt).toContain('the configured implementer');
     expect(prompt).toContain('32,768 tokens');
+  });
+
+  it('tells the planner what a coding agent gets, and sizes its tasks by search and writes', () => {
+    const prompt = buildPlanSessionPrompt({
+      ...input,
+      build: { model: 'claude-opus-5', contextTokens: 32768, writesFiles: 'direct' },
+    });
+    expect(prompt).toContain('`claude-opus-5`, a weaker model.');
+    expect(prompt.split(DIRECT_WRITER_TASK_RULE)).toHaveLength(2);
+    expect(prompt).not.toContain('current code of its suggested');
+    expect(prompt).toContain('- Do not copy code into a task. Name the files.\n');
+    expect(prompt).toContain(
+      '- `contextFiles`: the read-only files the implementer must see. SPLITBRIEF attaches their current code when it dispatches the task.',
+    );
+    expect(prompt).not.toContain('32,768 tokens');
+    expect(prompt).not.toContain("would not fit the implementer's context");
   });
 
   it('asks for every protected write as a protected operation', () => {
@@ -53,7 +76,7 @@ describe('buildPlanSessionPrompt', () => {
     expect(prompt).toContain('dependency manifests and lockfiles');
   });
 
-  it('sizes a task as one behaviour with its tests and callers, split only for context fit', () => {
+  it('sizes a task for a BUILD model that returns code as one behaviour, split only for context fit', () => {
     const prompt = buildPlanSessionPrompt(input);
     expect(prompt).toContain(
       'Each task completes one verifiable behaviour, including its tests and the caller changes it needs.',

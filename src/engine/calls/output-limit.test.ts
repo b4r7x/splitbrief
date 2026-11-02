@@ -10,6 +10,7 @@ import {
   runnerCallLimitWarning,
   runnerCallLineOutputLimit,
   runnerCallToolUseCountLimit,
+  runnerCallToolUseStopLimit,
 } from './output-limit.js';
 
 describe('formatLimitSize', () => {
@@ -94,27 +95,32 @@ describe('runnerCallItemLimit', () => {
 });
 
 describe('runnerCallToolUseCountLimit', () => {
+  it('writes the record bound as one sentence with no recent tool calls', () => {
+    const limit = runnerCallToolUseCountLimit();
+
+    expect(limit).toEqual({
+      code: 'runner_call_tool_use_count_limit',
+      message: `Only the first ${RUNNER_CALL_TOOL_USE_MAX_ITEMS} tool calls of this call are kept.`,
+    });
+  });
+});
+
+describe('runnerCallToolUseStopLimit', () => {
   const toolUses = [
     { id: 'tool-1', name: 'read_file', input: { path: 'a.ts' } },
     { id: 'tool-2', name: 'read_file', input: { path: 'b.ts' } },
   ];
 
-  it('writes the warning as one sentence with no recent tool calls', () => {
-    const limit = runnerCallToolUseCountLimit(toolUses);
+  it('names the configured number and keeps the recent tool calls in the call error', () => {
+    const limit = runnerCallToolUseStopLimit(10, toolUses);
+    const error = runnerCallLimitError(limit);
 
+    expect(error.code).toBe('runner_call_tool_use_stop');
     expect(limit.message).toBe(
-      `Only the first ${RUNNER_CALL_TOOL_USE_MAX_ITEMS} tool calls of this call are kept.`,
+      'The call reached the maxToolCalls limit of 10 tool calls and was stopped.',
     );
     expect(runnerCallLimitWarning(limit).message).not.toContain('Recent tool calls');
-  });
-
-  it('keeps the recent tool calls in the call error after the sentence', () => {
-    const error = runnerCallLimitError(runnerCallToolUseCountLimit(toolUses));
-
-    expect(error.code).toBe('runner_call_tool_use_count_limit');
-    expect(error.message).toContain(
-      `Only the first ${RUNNER_CALL_TOOL_USE_MAX_ITEMS} tool calls of this call are kept.`,
-    );
+    expect(error.message).toContain(limit.message);
     expect(error.message).toContain('Recent tool calls');
     expect(error.message).toContain('b.ts');
   });

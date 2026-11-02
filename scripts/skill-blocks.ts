@@ -314,6 +314,7 @@ function consultContract(): string {
     earlierConsults: [],
     otherTasks: [],
     operatorInstructions: [],
+    writesFiles: 'direct',
   });
   return [
     indent(prompt + fallbackInstruction(CONSULT_ANSWER_JSON_SCHEMA)),

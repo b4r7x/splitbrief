@@ -127,6 +127,7 @@ function buildSeat(wctx: PlanCheckContext): BuildSeat {
       wctx.modelCache,
       wctx.detectedContextLength,
     ).contextLength,
+    writesFiles: profile.capabilities.writesFiles,
   };
 }
 

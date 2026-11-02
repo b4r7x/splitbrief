@@ -11,12 +11,9 @@ import {
   runnerCallItemLimit,
   runnerCallLimitError,
   runnerCallLimitWarning,
-  runnerCallToolUseCountLimit,
   sanitizeRunnerCallRawPreview,
   RUNNER_CALL_ARTIFACT_MAX_ITEMS,
   RUNNER_CALL_STDERR_MAX_BYTES,
-  RUNNER_CALL_TOOL_USE_MAX_ITEMS,
-  RUNNER_CALL_TOOL_USE_SUMMARY_MAX_ITEMS,
   RUNNER_CALL_UNKNOWN_UPSTREAM_MAX_ITEMS,
   RUNNER_CALL_WARNING_MAX_ITEMS,
   type RunnerCallOutputLimit,
@@ -42,7 +39,6 @@ interface RunnerCallCollectionState {
   nativeSessionId: string | null;
   structured?: unknown;
   toolUses: RunnerCallResult['toolUses'];
-  recentToolUses: RunnerCallResult['toolUses'];
   artifacts: RunnerCallResult['artifacts'];
   warnings: RunnerCallWarning[];
   error: RunnerCallError | null;
@@ -55,11 +51,9 @@ interface RunnerCallCollectionState {
   toolDeltaLimiter: ReturnType<typeof createRunnerCallDeltaLimiter>;
   stderrPreview: string;
   stderrWarningEmitted: boolean;
-  toolUseDoneCount: number;
   artifactCount: number;
   warningCount: number;
   unknownUpstreamCount: number;
-  toolUseLimitExceeded: boolean;
 }
 
 export function collectRunnerCallResult(events: Iterable<RunnerCallEvent>): RunnerCallResult {
@@ -72,7 +66,6 @@ export function collectRunnerCallResult(events: Iterable<RunnerCallEvent>): Runn
     usage: null,
     nativeSessionId: null,
     toolUses: [],
-    recentToolUses: [],
     artifacts: [],
     warnings: [],
     error: null,
@@ -92,11 +85,9 @@ export function collectRunnerCallResult(events: Iterable<RunnerCallEvent>): Runn
     }),
     stderrPreview: '',
     stderrWarningEmitted: false,
-    toolUseDoneCount: 0,
     artifactCount: 0,
     warningCount: 0,
     unknownUpstreamCount: 0,
-    toolUseLimitExceeded: false,
   };
 
   for (const event of events) {
@@ -123,13 +114,6 @@ export function collectRunnerCallResult(events: Iterable<RunnerCallEvent>): Runn
       'runner-call-empty',
       'Cannot collect runner call result from an empty event stream',
     );
-  }
-
-  if (
-    state.toolUseLimitExceeded &&
-    (state.resultLimit === null || state.resultLimit.code === 'runner_call_tool_use_count_limit')
-  ) {
-    state.resultLimit = runnerCallToolUseCountLimit(state.recentToolUses);
   }
 
   const status = state.resultLimit !== null ? 'truncated' : (state.terminalStatus ?? 'incomplete');
@@ -289,15 +273,6 @@ function applyRunnerCallEvent(state: RunnerCallCollectionState, event: RunnerCal
     case 'call_tool_use_done':
       {
         const bounded = boundRunnerCallToolUse(event.toolUse);
-        state.recentToolUses.push(bounded.value);
-        if (state.recentToolUses.length > RUNNER_CALL_TOOL_USE_SUMMARY_MAX_ITEMS) {
-          state.recentToolUses.shift();
-        }
-        state.toolUseDoneCount += 1;
-        if (state.toolUseDoneCount > RUNNER_CALL_TOOL_USE_MAX_ITEMS) {
-          noteToolUseCountExceeded(state);
-          return;
-        }
         state.toolUses.push(bounded.value);
         if (bounded.limit !== null) noteLimit(state, bounded.limit, false);
       }
@@ -436,15 +411,6 @@ function noteLimit(
   if (state.emittedLimitWarningCodes.has(limit.code)) return;
   state.emittedLimitWarningCodes.add(limit.code);
   appendWarning(state, runnerCallLimitWarning(limit));
-}
-
-function noteToolUseCountExceeded(state: RunnerCallCollectionState): void {
-  const limit = runnerCallToolUseCountLimit(state.recentToolUses);
-  if (!state.emittedLimitWarningCodes.has(limit.code)) {
-    state.emittedLimitWarningCodes.add(limit.code);
-    appendWarning(state, runnerCallLimitWarning(limit));
-  }
-  if (state.context?.role === 'implementer') state.toolUseLimitExceeded = true;
 }
 
 function createTextLimiter(): ReturnType<typeof createRunnerCallDeltaLimiter> {

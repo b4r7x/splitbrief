@@ -404,7 +404,11 @@ describe('createRunnerCallRecorder', () => {
     expect(result.status).toBe('completed');
     expect(result.toolUses).toHaveLength(RUNNER_CALL_TOOL_USE_MAX_ITEMS);
     expect(result.warnings).toEqual([
-      expect.objectContaining({ code: 'runner_call_tool_use_count_limit' }),
+      expect.objectContaining({
+        code: 'runner_call_tool_use_count_limit',
+        severity: 'debug',
+        surface: 'debug',
+      }),
     ]);
   });
 
@@ -443,8 +447,7 @@ describe('createRunnerCallRecorder', () => {
     ).toHaveLength(1);
   });
 
-  it('ends an implementer call at the tool-use bound and names the last calls', () => {
-    const events: RunnerCallEvent[] = [];
+  it('keeps an implementer call completed past the tool-use record bound', () => {
     let limitCalls = 0;
     const recorder = createRunnerCallRecorder({
       context: { ...context, callId: 'call-impl', role: 'implementer' },
@@ -452,10 +455,8 @@ describe('createRunnerCallRecorder', () => {
       onLimit: () => {
         limitCalls += 1;
       },
-      onEvent: (event) => events.push(event),
     });
-    const total = RUNNER_CALL_TOOL_USE_MAX_ITEMS + 20;
-    for (let index = 0; index < total; index += 1) {
+    for (let index = 0; index < 300; index += 1) {
       recorder.toolUseDone({
         toolUse: { id: `tool-${index}`, name: 'Read', input: { path: `file-${index}.ts` } },
       });
@@ -463,20 +464,71 @@ describe('createRunnerCallRecorder', () => {
 
     const result = recorder.finishCompleted({ endedAt: 20 });
 
+    expect(limitCalls).toBe(0);
+    expect(result.status).toBe('completed');
+    expect(result.error).toBeNull();
+    expect(result.toolUses).toHaveLength(RUNNER_CALL_TOOL_USE_MAX_ITEMS);
+    expect(result.warnings).toEqual([
+      expect.objectContaining({
+        code: 'runner_call_tool_use_count_limit',
+        severity: 'debug',
+        surface: 'debug',
+      }),
+    ]);
+  });
+
+  it('stops a call at the tool use after its configured stop and names the last calls', () => {
+    let limitCalls = 0;
+    const recorder = createRunnerCallRecorder({
+      context: { ...context, callId: 'call-impl', role: 'implementer' },
+      startedAt: 1,
+      stopAfterToolUses: 10,
+      onLimit: () => {
+        limitCalls += 1;
+      },
+    });
+    for (let index = 0; index < 10; index += 1) {
+      recorder.toolUseDone({
+        toolUse: { id: `tool-${index}`, name: 'Read', input: { path: `file-${index}.ts` } },
+      });
+    }
+    expect(limitCalls).toBe(0);
+
+    recorder.toolUseDone({
+      toolUse: { id: 'tool-10', name: 'Read', input: { path: 'file-10.ts' } },
+    });
+    recorder.toolUseDone({
+      toolUse: { id: 'tool-11', name: 'Read', input: { path: 'file-11.ts' } },
+    });
+    const result = recorder.finishFailed({
+      status: 'aborted',
+      error: { code: 'aborted', message: 'Runner call stopped' },
+    });
+
     expect(limitCalls).toBe(1);
     expect(result.status).toBe('truncated');
     expect(result.partial).toBe(true);
-    expect(result.error?.code).toBe('runner_call_tool_use_count_limit');
+    expect(result.error?.code).toBe('runner_call_tool_use_stop');
     expect(result.error?.message).toContain(
-      `Only the first ${RUNNER_CALL_TOOL_USE_MAX_ITEMS} tool calls of this call are kept.`,
+      'The call reached the maxToolCalls limit of 10 tool calls and was stopped.',
     );
     expect(result.error?.message).toContain('Recent tool calls');
-    expect(result.error?.message).toContain(`file-${total - 1}.ts`);
+    expect(result.error?.message).toContain('file-10.ts');
     expect(result.error?.message).not.toContain('file-0.ts');
-    expect(result.warnings).toEqual([
-      expect.objectContaining({ code: 'runner_call_tool_use_count_limit' }),
-    ]);
-    expect(result.warnings[0]?.message).not.toContain('Recent tool calls');
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('stops a planner call at its configured tool-use stop as well', () => {
+    const recorder = createRunnerCallRecorder({ context, startedAt: 1, stopAfterToolUses: 2 });
+    for (let index = 0; index < 3; index += 1) {
+      recorder.toolUseDone({ toolUse: { id: `tool-${index}`, name: 'Read', input: {} } });
+    }
+
+    const result = recorder.finishIncomplete({ endedAt: 20 });
+
+    expect(result.status).toBe('truncated');
+    expect(result.error?.code).toBe('runner_call_tool_use_stop');
+    expect(result.error?.message).toContain('maxToolCalls limit of 2 tool calls');
   });
 
   // A tool announcement replays input that `toolUseDone` carries again, so a run with hundreds of

@@ -3,6 +3,7 @@ import type {
   ConsultSeat,
   ImplementerReport,
 } from '../../../core/schemas/consult.js';
+import type { ImplementerWriteMode } from '../../../core/schemas/implementer-config.js';
 import type { Plan } from '../../../core/schemas/plan.js';
 import type { Check, Task } from '../../../core/schemas/task.js';
 import type { AttemptFailure, ConsultRecord } from '../../../core/schemas/workflow.js';
@@ -17,7 +18,7 @@ import {
   workspaceReadInstructions,
   type PromptPart,
 } from './builder.js';
-import { TASK_CMD_CHECK_RULE } from './plan-session.js';
+import { DIRECT_WRITER_TASK_RULE, TASK_CMD_CHECK_RULE } from './plan-session.js';
 
 export type ConsultPromptInput = Readonly<{
   workspaceDir: string;
@@ -49,6 +50,8 @@ export type ConsultPromptInput = Readonly<{
    * brief, by queue, mid-call or on resume, and every answer to a question about it.
    */
   operatorInstructions: readonly string[];
+  /** How the default implementer writes files: a rewrite or a split is written for it. */
+  writesFiles: ImplementerWriteMode;
   /**
    * The planner's session already holds this run's plan and brief, so the new attempt's evidence
    * goes as a short turn instead of the whole prompt. A fix task's repair consult never sets it:
@@ -81,12 +84,13 @@ The answer rule: SPLITBRIEF gives the user's answer to an \`ask-user\` question 
 
 The criteria rule: a rewrite or a split never drops a criterion id; a split never splits a subtask. Every criterion id the task serves stays with its replacement, or with the union of the split tasks, and each replacement keeps a complete, verifiable brief. The checks rule: a defective check command may be repaired under the same check id, but a rewrite or a split never drops a check id that one of the task's criteria names; removing the requirement it checks needs \`ask-user\`. ${TASK_CMD_CHECK_RULE}`;
 
-function consultContract(task: Task): string {
+function consultContract(task: Task, writesFiles: ImplementerWriteMode): string {
   const role =
     task.fix === undefined
       ? "You are the run's planner."
       : "You are the run's planner. The review wrote this fix task for its findings, and you decide its repair.";
-  return `${role} ${CONSULT_CONTRACT_BODY}`;
+  const sizing = writesFiles === 'direct' ? ` ${DIRECT_WRITER_TASK_RULE}` : '';
+  return `${role} ${CONSULT_CONTRACT_BODY}${sizing}`;
 }
 
 const RESUME_CONTRACT = `Answer again with exactly one JSON object in the consult shape: \`answer.diagnosis\` and exactly one action. The call stays read-only. The operator rule still holds: no action undoes an operator instruction. The answer rule still holds: an answer only instructs the next attempt. Offer only choices that the next attempt can carry out. When the task cannot be done as asked, answer \`cannot\`. The criteria rule still holds: a rewrite or a split never drops a criterion id, and a split never splits a subtask. The checks rule still holds too: a defective check command may be repaired under the same check id, but removing a check id a served criterion names needs \`ask-user\`.`;
@@ -391,7 +395,7 @@ export function buildConsultPrompt(input: ConsultPromptInput): string {
   }
   sections.push(
     instructionsSection(
-      `${consultContract(input.task)}\n\n${workspaceReadInstructions(input.workspaceDir)}`,
+      `${consultContract(input.task, input.writesFiles)}\n\n${workspaceReadInstructions(input.workspaceDir)}`,
     ),
   );
 

@@ -22,6 +22,7 @@ type InvokeCliOptions = {
   onSessionId?: ((id: string) => void) | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   idle?: { warnMs?: number | undefined; killMs?: number | undefined } | undefined;
+  maxToolCalls?: number | undefined;
   toolUseGuard?: ToolUseGuard | undefined;
 };
 
@@ -162,6 +163,7 @@ export async function invokeCliAdapter(opts: InvokeCliOptions): Promise<RunnerCa
       warnMs: opts.idle?.warnMs ?? RUNNER_IDLE_WARN_MS,
       killMs: opts.idle?.killMs,
     },
+    maxToolCalls: opts.maxToolCalls,
     toolUseGuard: opts.toolUseGuard,
     onEvent: (rawEvent) => {
       const event: RunnerCallEvent =

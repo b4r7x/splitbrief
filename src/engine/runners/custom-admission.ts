@@ -115,6 +115,7 @@ function snapshotRunner(input: unknown): ConfiguredCustomRunner | null {
       outputFormat: parsed.command.outputFormat,
       idleWarnMs: parsed.command.idleWarnMs,
       idleKillMs: parsed.command.idleKillMs,
+      maxToolCalls: parsed.command.maxToolCalls,
       env: [...parsed.command.env],
     },
   };

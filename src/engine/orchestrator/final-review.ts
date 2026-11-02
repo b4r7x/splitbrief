@@ -21,6 +21,7 @@ import {
 import { reviewName } from '../../core/recovery/headline.js';
 import { isQueuedMessagePendingReviewer } from '../../core/queue-state.js';
 import { phaseStage } from '../../core/rail-stages.js';
+import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import { seatAxisWords } from '../../core/runners/effort-channel.js';
 import { seatReadsChangeFile } from '../../core/runners/capabilities.js';
@@ -630,6 +631,7 @@ export async function runFinalReviewPhase(opts: {
     const triageLog = triageLines(state.triage ?? []);
     const pendingInputs = state.pendingTriage?.inputs ?? [];
     const fixCycle = fixCyclesOf(state).used + 1;
+    const writesFiles = resolveImplementerProfiles(config).defaultProfile.capabilities.writesFiles;
     const planningAnswers = reviewPlanningAnswers(state);
     const operatorInstructions = reviewOperatorInstructions(state);
     const promptScope = reviewScope;
@@ -686,6 +688,7 @@ export async function runFinalReviewPhase(opts: {
             operatorInstructions,
             pendingInputs,
             fixCycle,
+            writesFiles,
             ...(renders.section !== undefined && { renders: renders.section }),
             ...(opts.skillsContext !== undefined && { skillsContext: opts.skillsContext }),
             ...(reviewRunner.contextLength !== undefined && {
@@ -728,6 +731,7 @@ export async function runFinalReviewPhase(opts: {
               operatorInstructions,
               pendingInputs,
               fixCycle,
+              writesFiles,
               taskIds: scope.taskIds,
               criterionIds: scope.criterionIds,
               changeCoverage: promptScope.description,

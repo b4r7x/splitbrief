@@ -87,7 +87,7 @@ function defaultRemediation(state: RunnerFailureOutcomeState): string {
     case 'missing-model':
       return 'Pick a model the tool lists, then retry.';
     case 'tool-use-limit':
-      return 'The attempt made more tool calls than one attempt allows; the planner consults on the last calls.';
+      return 'The attempt reached the maxToolCalls limit of the seat and was stopped; the planner consults on the last calls.';
     default: {
       const _exhaustive: never = state;
       return _exhaustive;

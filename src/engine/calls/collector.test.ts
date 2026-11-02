@@ -2,11 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { collectRunnerCallResult } from './collector.js';
 import { createRunnerCallRecorder } from './recorder.js';
 import { RUNNER_CALL_MESSAGE_MAX_LENGTH, RunnerCallResultSchema } from './schema.js';
-import {
-  RUNNER_CALL_OUTPUT_MAX_BYTES,
-  RUNNER_CALL_TOOL_USE_MAX_ITEMS,
-  RUNNER_CALL_WARNING_MAX_ITEMS,
-} from './output-limit.js';
+import { RUNNER_CALL_OUTPUT_MAX_BYTES, RUNNER_CALL_WARNING_MAX_ITEMS } from './output-limit.js';
 import type { RunnerCallEvent, RunnerCallWarningInput } from './types.js';
 import { normalizeRunnerCallWarning } from './warnings.js';
 
@@ -488,7 +484,7 @@ describe('collectRunnerCallResult', () => {
     expect(result.warnings).toHaveLength(RUNNER_CALL_WARNING_MAX_ITEMS + 1);
   });
 
-  it('caps tool uses at the item limit without truncating the call', () => {
+  it('keeps every tool use it is given, because the recorder bounds them', () => {
     const toolEvents: RunnerCallEvent[] = Array.from({ length: 300 }, (_, index) => ({
       type: 'call_tool_use_done',
       ...base,
@@ -509,13 +505,8 @@ describe('collectRunnerCallResult', () => {
     ]);
 
     expect(result.status).toBe('completed');
-    expect(result.toolUses).toHaveLength(RUNNER_CALL_TOOL_USE_MAX_ITEMS);
-    expect(result.warnings).toEqual([
-      expect.objectContaining({
-        code: 'runner_call_tool_use_count_limit',
-        message: `Only the first ${RUNNER_CALL_TOOL_USE_MAX_ITEMS} tool calls of this call are kept.`,
-      }),
-    ]);
+    expect(result.toolUses).toHaveLength(300);
+    expect(result.warnings).toEqual([]);
   });
 
   it('bounds direct tool payloads without truncating the call', () => {

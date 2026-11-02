@@ -53,6 +53,8 @@ interface SpawnAndCollectOptions {
   // Defaults are applied here in spawnAndCollect, the single defaulting site —
   // callers pass configured overrides through.
   idle?: { warnMs?: number | undefined; killMs?: number | undefined } | undefined;
+  /** The seat's opt-in `maxToolCalls`; unset, no tool-call count ends the call. */
+  maxToolCalls?: number | undefined;
   outputMaxBytes?: number | undefined;
   stderrMaxBytes?: number | undefined;
   stdoutLineMaxBytes?: number | undefined;
@@ -170,6 +172,7 @@ export async function spawnAndCollect(
   const recorder = createRunnerCallRecorder({
     context,
     credentialValues,
+    stopAfterToolUses: opts.maxToolCalls,
     onLimit: () => limitController.abort(),
     onEvent: (event) => opts.onCallEvent?.(event),
   });

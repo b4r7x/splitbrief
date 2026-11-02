@@ -52,10 +52,7 @@ import {
   type FixtureStopState,
   type WorkflowFixtureProjection,
 } from './projections.js';
-import {
-  OUTPUT_LIMIT_TOOL_CALLS_MESSAGE,
-  OUTPUT_LIMIT_TOOL_OUTPUT_MESSAGE,
-} from './output-limit-projection.js';
+import { OUTPUT_LIMIT_TOOL_OUTPUT_MESSAGE } from './output-limit-projection.js';
 import { createWorkflowFixtureFactory } from './setup.js';
 
 const PLAN_USAGE_LIMIT_FRAGMENT = "You've used 75%";
@@ -1354,10 +1351,10 @@ const checkpointPredicates = [
     (context) => {
       if (!includesTranscript()(context)) return false;
       const text = workflowTranscriptText().replace(/\s+/g, ' ');
-      const sentences = [OUTPUT_LIMIT_TOOL_CALLS_MESSAGE, OUTPUT_LIMIT_TOOL_OUTPUT_MESSAGE];
       return (
-        sentences.every((sentence) => sentence.length > 0 && text.includes(sentence)) &&
-        !text.includes('Recent tool calls') &&
+        OUTPUT_LIMIT_TOOL_OUTPUT_MESSAGE.length > 0 &&
+        text.includes(OUTPUT_LIMIT_TOOL_OUTPUT_MESSAGE) &&
+        !text.includes('tool calls of this call are kept') &&
         !text.includes('runner call')
       );
     },

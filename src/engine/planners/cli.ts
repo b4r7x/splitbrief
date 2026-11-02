@@ -172,6 +172,7 @@ export function createCliPlanner(
         warnMs: plannerCfg.idleWarnMs,
         killMs: plannerCfg.idleKillMs,
       },
+      maxToolCalls: plannerCfg.maxToolCalls,
     });
 
     const returnedSessionId = result.nativeSessionId ?? unexpectedResumeSessionId;

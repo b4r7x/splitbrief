@@ -48,4 +48,27 @@ describe('warnDroppedRunnerFields', () => {
       expect(stderr.mock.calls).toEqual([[`${words}\n`]]);
     },
   );
+
+  it('names a maxToolCalls that text output cannot count, and not one that stream-json counts', () => {
+    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+
+    warnDroppedRunnerFields({
+      runner: { kind: 'shell', command: 'my-tool', model: 'test', maxToolCalls: 40 },
+      seat: 'implementer',
+    });
+    warnDroppedRunnerFields({
+      runner: {
+        kind: 'agent',
+        command: 'my-tool',
+        model: 'test',
+        outputFormat: 'stream-json',
+        maxToolCalls: 40,
+      },
+      seat: 'reviewer',
+    });
+
+    expect(stderr.mock.calls).toEqual([
+      ['The implementer tool-call limit is not used: text output reports no tool calls\n'],
+    ]);
+  });
 });

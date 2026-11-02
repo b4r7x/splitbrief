@@ -43,6 +43,7 @@ export function createClaudeCodePlanner(opts: {
   timeout?: number | undefined;
   idleWarnMs?: number | undefined;
   idleKillMs?: number | undefined;
+  maxToolCalls?: number | undefined;
   /** The run's global skills, which every call of this seat may read and never write. */
   skillRoots?: readonly string[] | undefined;
 }): Planner {
@@ -55,6 +56,7 @@ export function createClaudeCodePlanner(opts: {
     timeout,
     idleWarnMs,
     idleKillMs,
+    maxToolCalls,
     skillRoots,
   } = opts;
   // The resolved channel — not the configured one — decides which credential the
@@ -91,6 +93,7 @@ export function createClaudeCodePlanner(opts: {
       ...(timeout !== undefined && { timeoutMs: timeout }),
       ...(idleWarnMs !== undefined && { idleWarnMs }),
       ...(idleKillMs !== undefined && { idleKillMs }),
+      ...(maxToolCalls !== undefined && { maxToolCalls }),
     };
   }
 

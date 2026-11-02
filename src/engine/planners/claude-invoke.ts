@@ -46,6 +46,7 @@ export async function invokeClaudePlanner(opts: {
   timeoutMs?: number | undefined;
   idleWarnMs?: number | undefined;
   idleKillMs?: number | undefined;
+  maxToolCalls?: number | undefined;
   schema?: CliSchemaInput | undefined;
 }): Promise<RunnerCallResult> {
   const args = buildClaudeArgs(opts);
@@ -109,6 +110,7 @@ export async function invokeClaudePlanner(opts: {
       opts.callbacks.onCallEvent?.(event);
     },
     idle: { warnMs: opts.idleWarnMs, killMs: opts.idleKillMs },
+    maxToolCalls: opts.maxToolCalls,
   });
   if (result.status !== 'completed') {
     const failureText = `${result.error?.message ?? result.text}\n${stderr}`;

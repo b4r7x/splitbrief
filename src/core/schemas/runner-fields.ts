@@ -103,6 +103,7 @@ export const DEFAULT_IMPLEMENTER_TEMPERATURE = 0.3;
 const WatchdogFields = {
   idleWarnMs: z.number().int().positive().optional(),
   idleKillMs: z.number().int().positive().optional(),
+  maxToolCalls: z.number().int().positive().optional(),
 };
 
 // A set kill threshold must not fire before the warn threshold, or the runner

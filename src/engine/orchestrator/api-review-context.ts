@@ -1,3 +1,4 @@
+import type { ImplementerWriteMode } from '../../core/schemas/implementer-config.js';
 import type { TriageInput } from '../../core/schemas/review.js';
 import { DRIFT_REPORT_FILE, EVIDENCE_FILE, SPEC_FILE, TASKS_FILE } from '../../core/paths.js';
 import { estimateTokens } from '../../core/tokens/estimate.js';
@@ -48,6 +49,8 @@ export type ApiReviewContextInput = Readonly<{
   feature: string;
   pendingInputs: readonly TriageInput[];
   fixCycle: number;
+  /** How the default implementer writes files: the fix tasks are written for it. */
+  writesFiles: ImplementerWriteMode;
   spec: string;
   taskBriefs: string;
   reviewKind?: 'task' | 'final' | undefined;
@@ -251,6 +254,7 @@ export function buildApiReviewContext(input: ApiReviewContextInput): ApiReviewCo
     reviewKind: input.reviewKind,
     pendingInputs: input.pendingInputs,
     fixCycle: input.fixCycle,
+    writesFiles: input.writesFiles,
     ...(input.reviewScope === undefined
       ? { diff: input.fullDiff }
       : {

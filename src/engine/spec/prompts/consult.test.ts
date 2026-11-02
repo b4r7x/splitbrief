@@ -5,7 +5,7 @@ import { taskId, type Task } from '../../../core/schemas/task.js';
 import { BOUNDS } from '../../../core/pipeline-spec/bounds.js';
 import type { ConsultRecord } from '../../../core/schemas/workflow.js';
 import { buildConsultPrompt, type ConsultPromptInput } from './consult.js';
-import { TASK_CMD_CHECK_RULE } from './plan-session.js';
+import { DIRECT_WRITER_TASK_RULE, TASK_CMD_CHECK_RULE } from './plan-session.js';
 
 const plan: Plan = {
   summary: 'Add greeting support',
@@ -85,6 +85,7 @@ function consultInput(overrides: Partial<ConsultPromptInput> = {}): ConsultPromp
       makeTask({ id: 'T004', title: 'Document the greeting' }),
     ],
     operatorInstructions: [],
+    writesFiles: 'extracted-code',
     ...overrides,
   };
 }
@@ -355,7 +356,27 @@ describe('buildConsultPrompt', () => {
     expect(prompt).toContain('No action undoes one of them.');
     expect(prompt).toContain('This call is read-only');
     expect(prompt).toContain(TASK_CMD_CHECK_RULE);
+    expect(prompt).not.toContain(DIRECT_WRITER_TASK_RULE);
   });
+
+  it.each([
+    ['a plan task', TASK],
+    [
+      'a fix task',
+      {
+        ...TASK,
+        fix: { cycle: 1, findings: [{ id: 'F1', text: 'A red test', acceptance: null }] },
+      },
+    ],
+  ])(
+    'writes a rewrite or a split of %s for a coding agent under its task rule',
+    (_, task: Task) => {
+      const prompt = buildConsultPrompt(consultInput({ task, writesFiles: 'direct' }));
+
+      expect(prompt).toContain(`${TASK_CMD_CHECK_RULE} ${DIRECT_WRITER_TASK_RULE}`);
+      expect(prompt.split(DIRECT_WRITER_TASK_RULE)).toHaveLength(2);
+    },
+  );
 
   it.each([false, true])(
     'tells the planner (resumed=%s) that an answer only instructs the next attempt, and to answer cannot',
