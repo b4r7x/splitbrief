@@ -3419,7 +3419,7 @@ describe('consult answer rows', () => {
     ['cannot', null, 'says it cannot be done', undefined],
     ['accept', null, 'accepts the blockers', undefined],
   ] as const)(
-    'renders the planner answer to a stuck review as %s',
+    'renders the planner answer to a stuck review as $2',
     (action, newTaskIds, words, note) => {
       const rows = rowsFor({
         type: 'consult_answered',

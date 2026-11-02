@@ -4656,6 +4656,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-implementation-streamed-targets',
+      title: 'Workflow · tool inputs that stream in deltas keep their targets',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'implementation-streamed-targets',
+        title: 'The open Read row keeps its path and the Task row its subagent',
+        kind: 'implementation',
+        marker: 'Explore',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-implementation-shell-wrapper',
       title: 'Workflow · codex shell commands in the activity rows',
       surface: screenSurface('workflow'),

@@ -151,7 +151,8 @@ export interface AtRestComposer {
  * Behind this window's Apply, Enter queues home, which a queued quit already overrides; `apply` is
  * absent when no Apply of this window writes the run, so Enter goes home at once. Apply saves the
  * run closed before it removes the run workspace and releases the run; from then on the record
- * speaks, as the byline does, except that a queued quit still promises no home.
+ * speaks, except that a queued quit still promises no home. While a departure is queued, the byline
+ * differs there: it keeps the Apply line and the queued home or quit until Apply finishes.
  */
 export function atRestComposer(
   record: RunRecord,

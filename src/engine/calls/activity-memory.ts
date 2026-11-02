@@ -1,7 +1,10 @@
 import type { z } from 'zod';
 import type { RunnerCallActivityKindSchema } from './schema.js';
 
-type RunnerCallActivityKind = Exclude<z.infer<typeof RunnerCallActivityKindSchema>, 'session'>;
+export type RunnerCallActivityKind = Exclude<
+  z.infer<typeof RunnerCallActivityKindSchema>,
+  'session'
+>;
 
 interface RememberedActivityDetails {
   kind: RunnerCallActivityKind;

@@ -5,11 +5,12 @@ import { sha256Hex } from '../../utils/sha256.js';
 import { projectRelativePathLabel } from '../../utils/path-links.js';
 import { assertNever, isRecord } from '../../utils/type-guards.js';
 import {
+  type RunnerCallActivityKind,
   releaseCallActivityMemory,
   releaseToolUseActivityMemory,
   retainToolDeltaTarget,
 } from './activity-memory.js';
-import type { RunnerCallActivityKindSchema, RunnerCallActivityStageSchema } from './schema.js';
+import type { RunnerCallActivityStageSchema } from './schema.js';
 import type { RunnerCallEvent, RunnerCallWarning } from './types.js';
 import { normalizeRunnerCallWarning, showsRunnerCallWarningOnPrimarySurface } from './warnings.js';
 
@@ -17,7 +18,6 @@ const RUNNER_ACTIVITY_MAX_LENGTH = 512;
 const RUNNER_ACTIVITY_TARGET_MAX_LENGTH = 2048;
 
 type RunnerCallActivityStage = z.infer<typeof RunnerCallActivityStageSchema>;
-type RunnerCallActivityKind = Exclude<z.infer<typeof RunnerCallActivityKindSchema>, 'session'>;
 
 export interface RunnerCallActivityProjection {
   activityId: string;

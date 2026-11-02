@@ -1251,6 +1251,10 @@ const checkpointPredicates = [
     includesAll('No output for', 'running npx vitest run'),
   ],
   [
+    checkpointId('implementation-streamed-targets'),
+    includesAll('src/engine/calls/activity-memory.ts', 'Explore'),
+  ],
+  [
     checkpointId('implementation-shell-wrapper'),
     includesAll('src/loans/renewals.ts', 'renewal window', 'overdue'),
   ],
