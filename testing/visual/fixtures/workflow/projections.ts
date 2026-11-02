@@ -6230,6 +6230,51 @@ const implementationToolRunningProjection: WorkflowFixtureProjection = {
   ),
 };
 
+// A Claude Code build call streams a Read and a Task input in deltas. Only the first delta of each
+// names the file or the subagent; the later fragments name nothing, and both open rows keep it.
+const STREAMED_TOOL_DELTAS = [
+  {
+    toolUseId: 'visual-streamed-read',
+    name: 'Read',
+    inputDelta: JSON.stringify({
+      file_path: resolve(VISUAL_FIXTURE_PROJECT_DIR, 'src/engine/calls/activity-memory.ts'),
+    }),
+  },
+  { toolUseId: 'visual-streamed-task', name: 'Task', inputDelta: '{"subagent_type":"Explore"}' },
+  { toolUseId: 'visual-streamed-read', name: null, inputDelta: '{"offset":' },
+  { toolUseId: 'visual-streamed-task', name: null, inputDelta: '{"prompt":' },
+] as const;
+const implementationStreamedTargetsProjection: WorkflowFixtureProjection = {
+  ...implementationQueuedProjection,
+  scenarioId: scenarioId('workflow-implementation-streamed-targets'),
+  events: [
+    ...implementationQueuedProjection.events.slice(0, 4),
+    ...STREAMED_TOOL_DELTAS.flatMap((delta, index) =>
+      projectRunnerCallEvents(
+        {
+          type: 'call_tool_use_delta',
+          ts: FIXED_TS + 300 + index,
+          callId: FIXED_CALL_ID,
+          role: 'implementer',
+          backendKind: 'cli',
+          runnerName: 'claude',
+          model: BASE_PLANNER.model,
+          axes: seatAxisWords(BASE_PLANNER),
+          attempt: 1,
+          channel: 'tool',
+          ...delta,
+        },
+        {
+          rootDir: VISUAL_FIXTURE_PROJECT_DIR,
+          phase: 'implementing',
+          taskId: taskId('T003'),
+          sequence: index + 1,
+        },
+      ),
+    ),
+  ],
+};
+
 // The same silence on a seat whose stream reports each tool as it starts: nothing is open and no
 // hint applies, so the build block states the silence alone.
 const CODEX_BUILD_SEAT = { kind: 'cli', tool: 'codex', model: 'gpt-6-astra' } as const;
@@ -7693,6 +7738,7 @@ const projections = [
   planningClaudeFramesProjection,
   implementationSilentProjection,
   implementationToolRunningProjection,
+  implementationStreamedTargetsProjection,
   implementationSilentBareProjection,
   implementationShellWrapperProjection,
   reviewCheckRunningProjection,

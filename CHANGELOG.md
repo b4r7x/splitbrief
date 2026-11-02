@@ -514,7 +514,7 @@
 - In a short terminal, the result menu, the stop sheet, the plan card, the recovery menu, planner questions and confirm prompts keep the row Enter acts on in view.
 - The panel of a halt no longer shows part of a secret that a long question, error or implementer note cut in two.
 - The output of a passing check no longer keeps part of a secret that color or the output limit split.
-- A recovery panel states its attempt count once, in the `Attempts` row. Before, the headline repeated it.
+- A halt panel no longer repeats the count of its `Attempts` row in the headline.
 - The panel for a review input over the tool's limit ends its size sentence with a full stop and capitalizes only the first word of its choice list.
 - The troubleshooting guide no longer says that a finding with no brief path is never fixed. It states how findings become fix briefs.
 
