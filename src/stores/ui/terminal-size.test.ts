@@ -90,4 +90,23 @@ describe('terminalSizeStore', () => {
     unsubscribeB();
     expect(process.stdout.listenerCount('resize')).toBe(before);
   });
+
+  it('subscribeToResize measures the current size when no resize event was emitted', async () => {
+    Object.defineProperty(process.stdout, 'columns', { value: 80, writable: true });
+    Object.defineProperty(process.stdout, 'rows', { value: 24, writable: true });
+
+    const { terminalSizeStore } = await import('./terminal-size.js');
+
+    Object.defineProperty(process.stdout, 'columns', { value: 140, writable: true });
+    Object.defineProperty(process.stdout, 'rows', { value: 70, writable: true });
+
+    const unsubscribe = terminalSizeStore.subscribeToResize();
+
+    const state = terminalSizeStore.get();
+    expect(state.cols).toBe(140);
+    expect(state.rows).toBe(70);
+    expect(state.isSmall).toBe(false);
+
+    unsubscribe();
+  });
 });

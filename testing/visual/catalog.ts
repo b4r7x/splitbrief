@@ -22,6 +22,7 @@ export const REQUIRED_VIEWPORTS: readonly Viewport[] = Object.freeze([
 
 export const HOME_COLD_DETECTING_VIEWPORTS: readonly Viewport[] = Object.freeze([
   viewport({ cols: 80, rows: 40 }),
+  viewport({ cols: 120, rows: 40 }),
 ]);
 
 // The focused list spends four rows on its filter box and one on the selection error, so the two
@@ -1743,7 +1744,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'approval-confirm-short',
         title: 'Confirm gate with the marked row in view',
         kind: 'review',
-        marker: 'Confirm',
+        marker: '.splitbrief/state.json',
       },
       elements: [{ id: 'header', title: 'Workflow header' }],
     }),
@@ -1964,7 +1965,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'planner-question-short',
         title: 'Planner question that keeps what it asks and the marked row',
         kind: 'question',
-        marker: 'Reviewer/planner seat',
+        marker: 'Which seat',
       },
       elements: [{ id: 'header', title: 'Workflow header' }],
     }),

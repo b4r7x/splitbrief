@@ -439,7 +439,9 @@ export function WorkflowScreen({
         ? undefined
         : applyByline(apply, bylineWidth)
       : model.closedView !== null
-        ? bylineParts(model.closedView, bylineWidth)
+        ? apply !== undefined && apply.queued !== null
+          ? applyByline(apply, bylineWidth)
+          : bylineParts(model.closedView, bylineWidth)
         : openRunBylineParts({
             status: atRestStatus,
             wait,
