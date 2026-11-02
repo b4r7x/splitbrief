@@ -285,6 +285,34 @@ it('gives a panel too narrow for a cut the mark alone', () => {
   expect(facts?.kind === 'facts' ? facts.items[0] : '').toBe('…');
 });
 
+function askedRow(detail: string, width: number, rows: number): string {
+  const facts = recoveryPromptSummaryRows(
+    makeRecoveryIssue({ details: [detail] }),
+    width,
+    rows,
+  ).find((row) => row.kind === 'facts');
+  return facts?.kind === 'facts' ? (facts.items[0] ?? '') : '';
+}
+
+it.each<[number, number, string, string]>([
+  [40, 1, 'Question: short', 'Question: short'],
+  [40, 1, `Question: ${'x'.repeat(27)}`, `Question: ${'x'.repeat(27)}`],
+  [40, 1, `Question: ${'x'.repeat(28)}`, `Question: ${'x'.repeat(28)}`],
+  [40, 1, `Question: ${'x'.repeat(29)}`, `Question: ${'x'.repeat(27)}…`],
+  [40, 1, `Question: ${'x'.repeat(200)}`, `Question: ${'x'.repeat(27)}…`],
+  [40, 2, `Question: ${'x'.repeat(200)}`, `Question: ${'x'.repeat(65)}…`],
+  [40, 1, `Question: ${'日'.repeat(20)}`, `Question: ${'日'.repeat(13)}…`],
+  [
+    50,
+    2,
+    'Question: Should the deploy use the token' +
+      ': abc_def_ghi for the build or wait for the owner to say which?',
+    'Question: Should the deploy use the token: ***REDACTED*** for the build or wait for the ow…',
+  ],
+])('keeps the longest asked-row cut', (width, rows, detail, expected) => {
+  expect(askedRow(detail, width, rows)).toBe(expected);
+});
+
 it('End run names its kept changes only after a brief finished', () => {
   const issue = makeRecoveryIssue({ reason: 'apply-conflict' });
   expect(recoveryMenuParts('end-run', issue, true)).toEqual([
@@ -304,11 +332,11 @@ it('preserves the canonical retry cause when an old message starts with its seat
     facts: {},
   });
   expect(recoveryPromptSummaryRows(issue, 120)[0]).toMatchObject({
-    text: 'Needs you · T001 failed after 3 attempts',
+    text: 'Needs you · T001 failed',
     parts: [
       { text: 'Needs you', tone: 'warning' },
       { text: ' · ', tone: 'textDim' },
-      { text: 'T001 failed after 3 attempts', tone: 'text' },
+      { text: 'T001 failed', tone: 'text' },
     ],
   });
 });
@@ -454,7 +482,8 @@ describe('recovery prompt', () => {
     const prompt = formatRecoveryPrompt(baseIssue);
     const visible = await renderPromptBody(prompt);
 
-    expect(visible).toContain('Needs you · T003 failed after 3 attempts');
+    expect(visible).toContain('Needs you · T003 failed');
+    expect(visible).not.toContain('after 3 attempts');
     expect(visible).toContain('Task T003 · Patch auth validation');
     expect(visible).toContain('Files src/auth/session.ts · src/auth/session.test.ts');
     expect(visible).toContain(
@@ -505,7 +534,7 @@ describe('recovery prompt', () => {
   it('serializes the headline and facts into a flat prompt with no action row', () => {
     const prompt = formatRecoveryPrompt(baseIssue);
 
-    expect(prompt).toContain('Needs you · T003 failed after 3 attempts');
+    expect(prompt.split('\n')[0]).toBe('Needs you · T003 failed');
     expect(prompt).toContain('Task T003 · Patch auth validation');
     expect(prompt).not.toMatch(/^\S* ?\[/m);
   });
@@ -889,7 +918,7 @@ describe('recovery prompt', () => {
     expect(visible).not.toContain('VERDICT:');
   });
 
-  it('formats headers reading headline cause and omitting attempt suffix at zero attempts', () => {
+  it('formats headers reading headline cause', () => {
     const verdictIssue: RecoveryIssue = {
       ...baseIssue,
       reason: 'retry-exhausted',
@@ -908,25 +937,15 @@ describe('recovery prompt', () => {
       attempts: 4,
       facts: {},
     };
-    expect(formatRecoveryPrompt(retryIssue).split('\n')[0]).toBe(
-      'Needs you · T005 failed after 4 attempts',
-    );
+    expect(formatRecoveryPrompt(retryIssue).split('\n')[0]).toBe('Needs you · T005 failed');
 
     const legacyWords = 'exhausted recovery' + ' retries';
     const legacyIssue: RecoveryIssue = {
       ...retryIssue,
       message: `T005 ${legacyWords}`,
     };
-    expect(formatRecoveryPrompt(legacyIssue).split('\n')[0]).toBe(
-      'Needs you · T005 failed after 4 attempts',
-    );
+    expect(formatRecoveryPrompt(legacyIssue).split('\n')[0]).toBe('Needs you · T005 failed');
     expect(formatRecoveryPrompt(legacyIssue)).not.toContain(legacyWords);
-
-    const zeroAttemptsIssue: RecoveryIssue = {
-      ...baseIssue,
-      attempts: 0,
-    };
-    expect(formatRecoveryPrompt(zeroAttemptsIssue).split('\n')[0]).toBe('Needs you · T003 failed');
   });
 
   it('leaves a substantive review failure on the words it earned', async () => {

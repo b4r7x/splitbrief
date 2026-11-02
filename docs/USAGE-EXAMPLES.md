@@ -698,7 +698,7 @@ Cost is reported in tokens, not dollars: the event stream carries token counts, 
 **Run:** the halt tells you the command. Every headless run that stops on a recovery writes three lines to stderr and exits `1`:
 
 ```
-Needs you (retry-exhausted): T002 failed after 3 attempts
+Needs you (retry-exhausted): T002 failed
 Recommended: skip-current-task
 Continue with: splitbrief continue 2026-09-13-rate-limiter --action skip [--plain|--json]
 ```

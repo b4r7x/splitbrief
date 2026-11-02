@@ -3,7 +3,6 @@ import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
 import { CREW_SEAT_ROLES } from '../../core/crew/seats.js';
 import { isSeatLevelRetry } from '../../engine/orchestrator/recovery/actions.js';
 import { recoveryFactString } from '../../core/schemas/recovery/facts.js';
-import { countNoun } from '../../utils/pluralize.js';
 import { glyph } from '../../lib/glyphs.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { formatResetAt, stripRecoveryResetClause } from '../../core/recovery/reset-clock.js';
@@ -367,23 +366,10 @@ function recoveryCauseParts(issue: RecoveryIssue): ConversationRowSegment[] {
   ) {
     return recoveryHeadlineParts(issue);
   }
-  // "T003 validation failed" takes "after 3 attempts"; a cause that already
-  // ends a sentence would read it as part of that sentence ("or abort after 2
-  // attempts"), so it keeps its full stop and the attempt count stays in the
-  // facts, where the issue's own `Attempts: n` detail already carries it.
   // A retry-exhausted halt reads the transcript's own sentence, so a halt saved
   // under older words names its cause the way the transcript and the byline do.
-  // A seat's question or "cannot" answer is the cause itself, not what the
-  // attempts came to, so it takes no count either.
   const cause = issue.reason === 'retry-exhausted' ? formatRecoveryHeadline(issue) : issue.message;
-  const seatAnswered =
-    recoveryFactString(issue.facts, 'question') !== undefined ||
-    recoveryFactString(issue.facts, 'cannotBy') !== undefined;
-  const attemptSuffix =
-    issue.attempts !== undefined && issue.attempts > 0 && !cause.endsWith('.') && !seatAnswered
-      ? ` after ${countNoun(issue.attempts, 'attempt')}`
-      : '';
-  return separatedSpans(`${cause}${attemptSuffix}`, 'text');
+  return separatedSpans(cause, 'text');
 }
 
 export function recoveryHeadlineParts(issue: RecoveryIssue): ConversationRowSegment[] {

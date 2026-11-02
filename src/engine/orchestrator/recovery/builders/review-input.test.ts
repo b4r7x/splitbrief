@@ -40,7 +40,7 @@ describe('buildReviewInputTooLargeRecoveryIssue', () => {
     });
 
     expect(issue.message).toBe(
-      'Review input is 1,150,000 characters; Custom reviewer takes at most 1,000,000',
+      'Review input is 1,150,000 characters; Custom reviewer takes at most 1,000,000.',
     );
   });
 
@@ -54,7 +54,7 @@ describe('buildReviewInputTooLargeRecoveryIssue', () => {
     });
 
     expect(issue.message).toBe(
-      'Review input is 1,100,000 characters; Claude Code refused it as too large',
+      'Review input is 1,100,000 characters; Claude Code refused it as too large.',
     );
   });
 
@@ -88,6 +88,53 @@ describe('buildReviewInputTooLargeRecoveryIssue', () => {
     );
   });
 
+  it.each([
+    [
+      true,
+      true,
+      'A retry sends the same input. Change the REVIEW tool to one that takes it, skip the review with a note (recorded, not a verification) or end the run (a workspace run saves its changes in run.patch).',
+    ],
+    [
+      true,
+      false,
+      'A retry sends the same input. Change the REVIEW tool to one that takes it or end the run (a workspace run saves its changes in run.patch).',
+    ],
+    [
+      false,
+      true,
+      'A retry sends the same input. Skip the review with a note (recorded, not a verification) or end the run (a workspace run saves its changes in run.patch).',
+    ],
+    [
+      false,
+      false,
+      'A retry sends the same input. End the run (a workspace run saves its changes in run.patch).',
+    ],
+  ] as const)(
+    'with a seat change %s and accept as is %s writes one choice sentence',
+    (offerSeat, acceptAsIs, detail) => {
+      const issue = buildReviewInputTooLargeRecoveryIssue({
+        phase: 'final-review',
+        failure,
+        tool: 'Codex',
+        acceptAsIs,
+        seatSwap: offerSeat
+          ? {
+              seat: 'review',
+              currentTool: 'codex',
+              detectedTools: [
+                { tool: 'codex', model: 'gpt-5', ready: true },
+                { tool: 'opencode', ready: true },
+                { tool: 'claude-code', ready: false },
+              ],
+            }
+          : undefined,
+        createdAt,
+      });
+
+      expect(issue.details[0]).toBe(detail);
+    },
+  );
+
   it('offers and recommends the tools that take the prompt, keeping skip and end', () => {
     const issue = buildReviewInputTooLargeRecoveryIssue({
       phase: 'final-review',
@@ -109,9 +156,6 @@ describe('buildReviewInputTooLargeRecoveryIssue', () => {
     expect(issue.availableActions).toEqual(['switch-seat', 'accept-as-is', 'end-run']);
     expect(issue.recommendedAction).toBe('switch-seat');
     expect(issue.switchSeat).toEqual({ seat: 'review', candidates: [{ tool: 'opencode' }] });
-    expect(issue.details[0]).toBe(
-      'A retry sends the same input. Change the REVIEW tool to one that takes it, Skip the review with a note (recorded, not a verification) or End the run (a workspace run saves its changes in run.patch).',
-    );
     expect(RecoveryIssueSchema.safeParse(issue).success).toBe(true);
   });
 
