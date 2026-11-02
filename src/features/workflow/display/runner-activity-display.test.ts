@@ -235,6 +235,54 @@ describe('runnerActivityLedgerItem', () => {
     ).toMatchObject({ label: 'READ', value: "src/loan's/renewals.ts" });
   });
 
+  it('shows the tool name for a task row that has no target', () => {
+    expect(
+      runnerActivityLedgerItem({
+        stage: 'updated',
+        kind: 'task',
+        label: 'task Task',
+      }),
+    ).toMatchObject({ label: 'PLAN', value: 'Task' });
+  });
+
+  it('keeps every word of a target that starts with a verb', () => {
+    expect(
+      runnerActivityLedgerItem({
+        stage: 'updated',
+        kind: 'command',
+        label: 'running task build',
+        target: 'task build',
+      }),
+    ).toMatchObject({ label: 'RUN', value: 'task build' });
+
+    expect(
+      runnerActivityLedgerItem({
+        stage: 'updated',
+        kind: 'command',
+        label: 'running running tests',
+        target: 'running tests',
+      }),
+    ).toMatchObject({ label: 'RUN', value: 'running tests' });
+
+    expect(
+      runnerActivityLedgerItem({
+        stage: 'updated',
+        kind: 'search',
+        label: 'searching task started',
+        target: 'task started',
+      }),
+    ).toMatchObject({ label: 'FIND', value: 'task started' });
+
+    expect(
+      runnerActivityLedgerItem({
+        stage: 'updated',
+        kind: 'read',
+        label: 'reading task notes.md',
+        target: 'task notes.md',
+      }),
+    ).toMatchObject({ label: 'READ', value: 'task notes.md' });
+  });
+
   it('keeps real terminal failures distinct from interruption', () => {
     expect(
       runnerActivityLedgerItem({

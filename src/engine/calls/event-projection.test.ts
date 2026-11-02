@@ -447,4 +447,60 @@ describe('projectRunnerCallEvent', () => {
     expect(EngineEventSchema.safeParse(started).success).toBe(true);
     expect(EngineEventSchema.safeParse(activity).success).toBe(true);
   });
+
+  it('publishes a stable activity target while raw tool fragments stay unchanged', () => {
+    const callId = 'activity-target-call';
+    const toolUseId = 'tool-read';
+    const secret = 'sk-abcdefghijklmnopqrst';
+    const steps = [
+      {
+        inputDelta: '{"file_path":"/project/src/app.ts"}',
+        stage: 'updated',
+        target: 'src/app.ts',
+      },
+      { inputDelta: `echo ${secret}`, stage: 'updated', target: 'src/app.ts' },
+      { inputDelta: '', stage: 'started', target: 'src/app.ts' },
+      { inputDelta: '{"file_path":"src/next.ts"}', stage: 'updated', target: 'src/next.ts' },
+      { inputDelta: '{"description":"later"}', stage: 'updated', target: 'src/next.ts' },
+    ] as const;
+
+    for (const [index, step] of steps.entries()) {
+      const events = projectRunnerCallEvents(
+        {
+          type: 'call_tool_use_delta',
+          ts: 40 + index,
+          callId,
+          role: 'implementer',
+          backendKind: 'cli',
+          channel: 'tool',
+          toolUseId,
+          name: 'Read',
+          inputDelta: step.inputDelta,
+        },
+        { rootDir: '/project', phase: 'implementing', sequence: index + 1 },
+      );
+
+      expect(events).toHaveLength(2);
+      expect(events[0]).toMatchObject({
+        type: 'runner_call_tool_use',
+        stage: 'delta',
+        sequence: index + 1,
+        callId,
+        toolUseId,
+        name: 'Read',
+        inputDelta: step.inputDelta,
+      });
+      expect(events[0]).not.toHaveProperty('target');
+      expect(events[1]).toMatchObject({
+        type: 'runner_call_activity',
+        sequence: index + 1,
+        activityId: `${callId}:tool:${toolUseId}`,
+        stage: step.stage,
+        kind: 'read',
+        label: `reading ${step.target}`,
+        target: step.target,
+      });
+      expect(JSON.stringify(events[1])).not.toContain('abcdefghijklmnopqrst');
+    }
+  });
 });

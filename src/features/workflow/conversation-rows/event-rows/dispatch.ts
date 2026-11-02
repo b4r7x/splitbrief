@@ -649,7 +649,7 @@ function consultAnsweredSegments(
   if (event.reason === 'no-progress') {
     return [
       label,
-      { text: `${arrowSep()}review stuck after ${event.taskId}: `, tone: 'textDim' },
+      { text: `${arrowSep()}review stuck after ${event.taskId}${SOFT_SEP}`, tone: 'textDim' },
       { text: stuckAnswerWords(event), tone: 'textDim' },
       { text: SOFT_SEP, tone: 'textDim' },
       { text: event.diagnosis, tone: 'textDim' },

@@ -18,7 +18,7 @@ import {
 import { runCommand } from '#testing/helpers/commander.js';
 
 function parseWorkflowOptions(args: string[]): WorkflowOpts {
-  const command = addWorkflowOptions(new Command());
+  const command = addWorkflowOptions(new Command('continue'));
   command.parse(['node', 'splitbrief', ...args]);
   return command.opts<WorkflowOpts>();
 }
@@ -157,10 +157,11 @@ describe('parseContinueActionOption', () => {
     });
   });
 
-  it('omits --action from start help and describes CLI and API model overrides', async () => {
+  it('omits --action from start and resume help and describes CLI and API model overrides', async () => {
     const help = addWorkflowOptions(new Command('start')).helpInformation();
 
     expect(help).not.toContain('--action');
+    expect(addWorkflowOptions(new Command('resume')).helpInformation()).not.toContain('--action');
     expect(
       help
         .split('\n')
@@ -174,6 +175,49 @@ describe('parseContinueActionOption', () => {
     const result = await runCommand(['start', 'smoke', '--action', 'skip']);
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("unknown option '--action'");
+
+    const originalWrite = process.stdout.write;
+    const written: string[] = [];
+    process.stdout.write = ((chunk: string | Uint8Array) => {
+      if (typeof chunk === 'string') written.push(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+    const resume = await runCommand(['resume', '--help']).finally(() => {
+      process.stdout.write = originalWrite;
+    });
+    const resumeHelp = `${resume.stdout}${written.join('')}`;
+    expect(resume.exitCode).toBe(0);
+    expect(resumeHelp).toContain('Resume the most recent run');
+    expect(resumeHelp).not.toContain('--action');
+
+    const resumeRejected = await runCommand(['resume', '--action', 'skip']);
+    expect(resumeRejected.exitCode).toBe(1);
+    expect(resumeRejected.stderr).toContain("unknown option '--action'");
+  });
+
+  it('describes continue actions with the seat grammar the parser accepts', async () => {
+    const description =
+      'skip, retry, restore, switch-seat:<tool>[:<model>][@<effort>], or end-run answer recovery; apply and discard settle a run that is ready to apply';
+    const help = addWorkflowOptions(new Command('continue')).helpInformation().replace(/\s+/g, ' ');
+
+    expect(help).toContain(description);
+    expect(help).not.toContain('switch-seat:<seat>');
+    expect(help).not.toContain('`continue` only');
+
+    const originalWrite = process.stdout.write;
+    const written: string[] = [];
+    process.stdout.write = ((chunk: string | Uint8Array) => {
+      if (typeof chunk === 'string') written.push(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+    const registered = await runCommand(['continue', '--help']).finally(() => {
+      process.stdout.write = originalWrite;
+    });
+    const registeredHelp = `${registered.stdout}${written.join('')}`.replace(/\s+/g, ' ');
+    expect(registered.exitCode).toBe(0);
+    expect(registeredHelp).toContain(description);
+    expect(registeredHelp).not.toContain('switch-seat:<seat>');
+    expect(registeredHelp).not.toContain('`continue` only');
   });
 });
 

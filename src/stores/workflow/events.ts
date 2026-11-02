@@ -411,6 +411,8 @@ function isStructuralTranscriptEvent(event: EngineEvent): boolean {
     case 'task_completed':
     case 'task_skipped':
     case 'task_full_fail':
+    case 'user_message':
+    case 'warning':
       return true;
     default:
       return false;

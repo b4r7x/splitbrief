@@ -112,7 +112,7 @@ export function runnerActivityLedgerItem(
     }
   }
   const source = display.target ?? display.label;
-  const withoutVerb = stripActivityVerb(source);
+  const withoutVerb = display.target ?? stripActivityVerb(display.label);
   const shellCommand =
     shellCommandFromText(withoutVerb) !== null || shellCommandFromText(source) !== null;
   const rawLabel = runnerActivityLedgerLabel(display, { interrupted, shellCommand });
@@ -257,7 +257,7 @@ function runnerActivityLedgerValue(
   if (/^tool (Read|Write|Edit|MultiEdit)$/i.test(input.label)) return 'file';
 
   const source = input.target ?? input.label;
-  const withoutVerb = stripActivityVerb(source);
+  const withoutVerb = input.target ?? stripActivityVerb(input.label);
   return shellCommandFromText(withoutVerb) ?? shellCommandFromText(source) ?? withoutVerb;
 }
 
@@ -427,6 +427,7 @@ function stripActivityVerb(text: string): string {
     'matching ',
     'calling ',
     'planning ',
+    'task ',
     'artifact ',
     'warning ',
     'failed ',

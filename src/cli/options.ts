@@ -324,10 +324,10 @@ export function addWorkflowOptions(cmd: Command): Command {
       'Attach project/global skills to every seat (comma-separated ids)',
       parseSkillIdsOption,
     );
-  if (cmd.name() !== 'start') {
+  if (cmd.name() === 'continue') {
     cmd.option(
       '--action <action>',
-      '`continue` only: skip, retry, restore, switch-seat:<seat> (<tool>[:<model>][@<effort>]), or end-run answer recovery; apply and discard settle a run that is ready to apply',
+      'skip, retry, restore, switch-seat:<tool>[:<model>][@<effort>], or end-run answer recovery; apply and discard settle a run that is ready to apply',
       parseContinueActionOption,
     );
   }
