@@ -4615,9 +4615,9 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       viewports: [viewport({ cols: 120, rows: 40 }), viewport({ cols: 160, rows: 45 })],
       checkpoint: {
         id: 'output-limit-warning',
-        title: 'Each limit warning reads as one sentence',
+        title: 'The limit warning reads as one sentence',
         kind: 'planning',
-        marker: 'Only the first 256',
+        marker: 'A tool call output was larger',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

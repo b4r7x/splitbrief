@@ -32,6 +32,8 @@ export function existingToOpts(existing: PlannerConfig | ImplementerConfig): Bui
       existing.idleWarnMs !== undefined && { idleWarnMs: existing.idleWarnMs }),
     ...('idleKillMs' in existing &&
       existing.idleKillMs !== undefined && { idleKillMs: existing.idleKillMs }),
+    ...('maxToolCalls' in existing &&
+      existing.maxToolCalls !== undefined && { maxToolCalls: existing.maxToolCalls }),
   };
 
   if (existing.kind === 'cli') {

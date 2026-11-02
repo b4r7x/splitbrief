@@ -61,6 +61,7 @@ async function loadPlanner(
           timeout: config.planner.timeout,
           idleWarnMs: config.planner.idleWarnMs,
           idleKillMs: config.planner.idleKillMs,
+          maxToolCalls: config.planner.maxToolCalls,
           skillRoots: options?.skillRoots,
         });
       }
@@ -172,6 +173,7 @@ export async function createImplementer(
   const authority = requireFactoryAuthority(config, options, 'implementer');
   const effectiveConfig = implementerConfigForAuthority(options);
   const configured = resolveConfiguredCustomRunner(effectiveConfig, 'implementer');
+  warnDroppedRunnerFields({ runner: effectiveConfig.implementer, seat: 'implementer' });
   if (configured !== null) {
     const { runtime, invocation } = resolveConfiguredCustomGate({
       authority,
@@ -192,7 +194,6 @@ export async function createImplementer(
   if (kind === 'cli') {
     assertCliImplementerTool(effectiveConfig.implementer.tool);
   }
-  warnDroppedRunnerFields({ runner: effectiveConfig.implementer, seat: 'implementer' });
   const gate = runnerGateFor(
     authority.gates,
     gateExpectation({

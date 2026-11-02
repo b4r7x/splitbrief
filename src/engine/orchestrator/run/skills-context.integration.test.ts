@@ -173,6 +173,7 @@ describe('buildSkillsContext', () => {
     const review = buildApiReviewContext({
       pendingInputs: [],
       fixCycle: 1,
+      writesFiles: 'direct',
       feature: 'feature',
       spec: '# Spec',
       taskBriefs: '## T001',
@@ -190,7 +191,7 @@ describe('buildSkillsContext', () => {
         feature: 'feature',
         projectContext: 'project',
         languageContext: buildLanguageContext(undefined),
-        build: { model: undefined, contextTokens: 64_000 },
+        build: { model: undefined, contextTokens: 64_000, writesFiles: 'direct' },
         approvesPlan: true,
         skillsContext,
       }),

@@ -21,7 +21,7 @@ import { REVIEW_FILE, reviewChangeFile, sessionDir } from '../../../core/paths.j
 import { getChangedFilesSnapshot } from '../../orchestrator/approval/file-snapshots/capture.js';
 import { runFinalReviewPhase } from '../../orchestrator/final-review.js';
 import { buildFinalReviewPrompt, reviewChangeText, type ReviewPlanData } from './review.js';
-import { TASK_CMD_CHECK_RULE } from './plan-session.js';
+import { DIRECT_WRITER_TASK_RULE, TASK_CMD_CHECK_RULE } from './plan-session.js';
 
 const SPEC = '## Spec\nAdd a hello function.';
 const TASK_BRIEFS = '## Task T001\nAdd the hello export.';
@@ -161,6 +161,23 @@ describe('buildFinalReviewPrompt', () => {
     expect(result).toContain('- T004 [done] Time zones: Handle time zones');
     expect(result).toContain('- T005 [pending] Reminder API: Expose reminders');
     expect(result).toContain('Reviewer: run npm run check:storage.');
+  });
+
+  it('writes the fix tasks for a coding agent under its task rule, once', () => {
+    const prompt = (writesFiles: 'direct' | 'extracted-code', fixCycle?: number) =>
+      buildFinalReviewPrompt({
+        spec: SPEC,
+        taskBriefs: TASK_BRIEFS,
+        diff: DIFF,
+        plan: REVIEW_PLAN,
+        writesFiles,
+        ...(fixCycle !== undefined && { fixCycle }),
+      });
+
+    expect(prompt('direct', 1).split(DIRECT_WRITER_TASK_RULE)).toHaveLength(2);
+    expect(prompt('direct', 1)).toContain(`${TASK_CMD_CHECK_RULE} ${DIRECT_WRITER_TASK_RULE}`);
+    expect(prompt('extracted-code', 1)).not.toContain(DIRECT_WRITER_TASK_RULE);
+    expect(prompt('direct')).not.toContain(DIRECT_WRITER_TASK_RULE);
   });
 
   it('hands the reviewer every pending input and asks it for the fix tasks in the same answer', () => {

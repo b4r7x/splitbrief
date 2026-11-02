@@ -202,6 +202,7 @@ export function createCliImplementer(
             warnMs: config.idleWarnMs,
             killMs: config.idleKillMs,
           },
+          maxToolCalls: config.maxToolCalls,
           toolUseGuard:
             boundary === undefined
               ? undefined

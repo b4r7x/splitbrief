@@ -255,4 +255,11 @@ export function warnDroppedRunnerFields(
   if (runner.temperature !== undefined && runner.kind !== 'api') {
     warnStderr(`The ${seat} temperature setting is not used: ${tool} takes no temperature`);
   }
+  if (
+    (runner.kind === 'shell' || runner.kind === 'agent') &&
+    runner.maxToolCalls !== undefined &&
+    (runner.outputFormat ?? 'text') === 'text'
+  ) {
+    warnStderr(`The ${seat} tool-call limit is not used: text output reports no tool calls`);
+  }
 }

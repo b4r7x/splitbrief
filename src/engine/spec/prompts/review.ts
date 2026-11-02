@@ -1,3 +1,4 @@
+import type { ImplementerWriteMode } from '../../../core/schemas/implementer-config.js';
 import type { TriageInput } from '../../../core/schemas/review.js';
 import type { TriageRecord } from '../../../core/schemas/workflow.js';
 import {
@@ -8,7 +9,7 @@ import {
   type PromptPart,
   type PromptSection,
 } from './builder.js';
-import { TASK_CMD_CHECK_RULE } from './plan-session.js';
+import { DIRECT_WRITER_TASK_RULE, TASK_CMD_CHECK_RULE } from './plan-session.js';
 
 const REVIEW_INSTRUCTIONS = `Review the implementation diff against every acceptance criterion and requirement in the spec and task briefs. Be thorough but fair -- minor style differences are acceptable; missing functionality or incorrect behavior is not.
 
@@ -29,13 +30,16 @@ const REVIEW_CHECKLIST = `1. **Acceptance Criteria**: Check each criterion from 
 
 const REQUIRED_RESULTS = `Answer with one result per listed id, in the schema you were given. Every task not met and every failed criterion needs a blocking finding naming it. A red pending input already blocks the review: do not restate it as a new finding. When a failed criterion or a task not met needs a finding for that input, give the input's id to one such finding only. A finding a fix cycle left open keeps its id, and a new finding never takes an id the triage log names. Mark a criterion unverified when no recorded evidence proves it, and name its checkIds. Verify a render only when its current-candidate images are attached and you critique the scenario. A manifest alone leaves the render unverified. Finding kinds are defect, plan-gap, unverified and question; minor findings are notes.`;
 
-const FIX_WORK_CONTRACT = `This review call is read-only. Do not write, edit or delete any file, or run commands that change the project. Return the verdict and the fix work in one review_answer.
+function fixWorkContract(writesFiles: ImplementerWriteMode | undefined): string {
+  const sizing = writesFiles === 'direct' ? ` ${DIRECT_WRITER_TASK_RULE}` : '';
+  return `This review call is read-only. Do not write, edit or delete any file, or run commands that change the project. Return the verdict and the fix work in one review_answer.
 
-- fixTasks: complete TaskSpecs with findingIds. Each may edit any ordinary project file a finding needs, including a file no earlier task suggested. ${TASK_CMD_CHECK_RULE}
+- fixTasks: complete TaskSpecs with findingIds. Each may edit any ordinary project file a finding needs, including a file no earlier task suggested. ${TASK_CMD_CHECK_RULE}${sizing}
 - rejected: { findingId, reason } for a pending input that needs no work, for example a red check that fails for a reason outside this run. A rejected red check stops blocking the review, and the user sees the reason. Reject pending inputs only. An Apply conflict always needs a fix task. A finding you would reject is not a blocking finding.
 - ask: { question, whyOnlyUserCanAnswer } or null. Use it only for a change to what is built that the plan and decisions cannot answer.
 
 Unless ask is set, every blocking finding that is not unverified appears exactly once in fixTasks[].findingIds or rejected[].findingId. Every pending input id appears exactly once in rejected[].findingId, or in the findingIds of one or more fix tasks. A blocking finding under a pending input's id follows this rule. With ask set, these two rules do not apply. A fix task's acceptance names only the failures that task fixes; the other failures of the same command belong to their own fix tasks or to the next review. Unverified and minor findings never become fix tasks.`;
+}
 
 const VALIDATION_EVIDENCE_PREAMBLE = `The orchestrator ran these validation commands and recorded their output. This section is the authoritative record of validation results for this run.`;
 
@@ -199,17 +203,19 @@ function requiredResultsBody(
   criterionIds: readonly string[],
   fixCycle: number | undefined,
   reviewKind: 'task' | 'final',
+  writesFiles: ImplementerWriteMode | undefined,
 ): string {
-  const fixWorkContract =
+  const contract = fixWorkContract(writesFiles);
+  const scopedContract =
     reviewKind === 'task'
-      ? FIX_WORK_CONTRACT.replace(
+      ? contract.replace(
           'every blocking finding that is not unverified',
           'every blocking finding inside the Review Scope that is not unverified',
         )
-      : FIX_WORK_CONTRACT;
+      : contract;
   return [
     REQUIRED_RESULTS,
-    ...(fixCycle === undefined ? [] : [fixWorkContract]),
+    ...(fixCycle === undefined ? [] : [scopedContract]),
     '',
     `Task ids: ${taskIds.join(', ') || 'none'}`,
     `Criterion ids: ${criterionIds.join(', ') || 'none'}`,
@@ -222,6 +228,8 @@ export type FinalReviewPromptInput = {
   reviewKind?: 'task' | 'final' | undefined;
   pendingInputs?: readonly TriageInput[] | undefined;
   fixCycle?: number | undefined;
+  /** How the default implementer writes files: the fix tasks of a fix cycle are written for it. */
+  writesFiles?: ImplementerWriteMode | undefined;
   /** The one-shot review diff, used only when files are undefined. */
   diff?: string | undefined;
   files?: readonly ReviewFileDiff[] | undefined;
@@ -382,7 +390,7 @@ export function buildFinalReviewPrompt(opts: FinalReviewPromptInput): string {
     { heading: 'Review Checklist', body: reviewChecklist },
     {
       heading: 'Required Results',
-      body: requiredResultsBody(taskIds, criterionIds, opts.fixCycle, reviewKind),
+      body: requiredResultsBody(taskIds, criterionIds, opts.fixCycle, reviewKind, opts.writesFiles),
     },
   );
   return buildPrompt({

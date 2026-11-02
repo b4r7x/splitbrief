@@ -30,6 +30,7 @@ import {
   runnerCallLimitError,
   runnerCallLimitWarning,
   runnerCallToolUseCountLimit,
+  runnerCallToolUseStopLimit,
   sanitizeRunnerCallRawPreview,
   RUNNER_CALL_ARTIFACT_MAX_ITEMS,
   RUNNER_CALL_OUTPUT_MAX_BYTES,
@@ -134,6 +135,8 @@ export interface RunnerCallRecorder {
 export function createRunnerCallRecorder(opts: {
   context: RunnerCallContext;
   onEvent?: ((event: RunnerCallEvent) => void) | undefined;
+  /** The seat's opt-in `maxToolCalls`: the tool use after it stops the call through `onLimit`. */
+  stopAfterToolUses?: number | undefined;
   onLimit?: (() => void) | undefined;
   startedAt?: number | undefined;
   credentialValues?: readonly string[] | undefined;
@@ -154,7 +157,7 @@ export function createRunnerCallRecorder(opts: {
   let lastHeartbeatTs: number | null = null;
   let activeToolUse: { id: string; name: string | null } | null = null;
   const recentToolUses: RunnerCallToolUse[] = [];
-  let toolUseLimitExceeded = false;
+  let toolUseStop: RunnerCallOutputLimit | null = null;
   const emittedLimitWarnings = new Set<string>();
   let textLimiter = createTextLimiter();
   const subagentTextLimiter = createTextLimiter();
@@ -225,7 +228,7 @@ export function createRunnerCallRecorder(opts: {
         );
       }
     }
-    if (toolUseLimitExceeded) resultLimit = runnerCallToolUseCountLimit(recentToolUses);
+    if (toolUseStop !== null) resultLimit = toolUseStop;
     if (resultLimit !== null) {
       return finishFailed({
         status: 'truncated',
@@ -258,13 +261,12 @@ export function createRunnerCallRecorder(opts: {
   }): RunnerCallResult {
     if (hasTerminalEvent) return snapshot();
     const defaults = currentTerminalDefaults(finishOpts);
-    const toolUseLimit = toolUseLimitExceeded ? runnerCallToolUseCountLimit(recentToolUses) : null;
     const providerType =
       finishOpts.error.providerType === undefined
         ? undefined
         : boundedRunnerCallProviderType(redactCredential(finishOpts.error.providerType));
     const callError =
-      toolUseLimit === null
+      toolUseStop === null
         ? {
             code: redactCredential(finishOpts.error.code),
             message: boundedRunnerCallMessage(finishOpts.error.message, opts.credentialValues),
@@ -272,16 +274,16 @@ export function createRunnerCallRecorder(opts: {
             ...(providerType !== undefined && { providerType }),
           }
         : {
-            code: toolUseLimit.code,
+            code: toolUseStop.code,
             message: boundedRunnerCallMessage(
-              runnerCallLimitError(toolUseLimit).message,
+              runnerCallLimitError(toolUseStop).message,
               opts.credentialValues,
             ),
           };
     const rawTail = runnerCallRawTail(callError.message, opts.credentialValues);
     // Judged on the text the call ends with: a final text that fits replaced
     // whatever the budget cut from the narration streamed before it.
-    if (toolUseLimit === null && textLimiter.limit !== null) {
+    if (toolUseStop === null && textLimiter.limit !== null) {
       noteLimit(textLimiter.limit, 'truncates-result');
     }
     emitStderrFailureWarning();
@@ -289,11 +291,11 @@ export function createRunnerCallRecorder(opts: {
       runnerCallErrorEvent(context, {
         startedAt,
         endedAt: finishOpts.endedAt ?? Date.now(),
-        status: toolUseLimit === null ? finishOpts.status : 'truncated',
+        status: toolUseStop === null ? finishOpts.status : 'truncated',
         error: callError,
         usage: defaults.usage,
         nativeSessionId: defaults.nativeSessionId,
-        partial: toolUseLimit === null ? (finishOpts.partial ?? defaults.partial) : true,
+        partial: toolUseStop === null ? (finishOpts.partial ?? defaults.partial) : true,
         ...(rawTail !== undefined && { rawTail }),
       }),
     );
@@ -302,7 +304,7 @@ export function createRunnerCallRecorder(opts: {
 
   function finishIncomplete(finishOpts: { endedAt?: number | undefined } = {}): RunnerCallResult {
     if (hasTerminalEvent) return snapshot();
-    if (toolUseLimitExceeded) resultLimit = runnerCallToolUseCountLimit(recentToolUses);
+    if (toolUseStop !== null) resultLimit = toolUseStop;
     if (resultLimit !== null) {
       return finishFailed({
         status: 'truncated',
@@ -376,18 +378,21 @@ export function createRunnerCallRecorder(opts: {
   }
 
   function noteToolUseCountExceeded(): void {
-    const limit = runnerCallToolUseCountLimit(recentToolUses);
-    if (!emittedLimitWarnings.has(limit.code)) {
-      emittedLimitWarnings.add(limit.code);
-      emit({
-        type: 'call_warning',
-        ts: Date.now(),
-        ...context,
-        warning: runnerCallLimitWarning(limit),
-      });
-    }
-    if (context.role !== 'implementer' || toolUseLimitExceeded) return;
-    toolUseLimitExceeded = true;
+    const limit = runnerCallToolUseCountLimit();
+    if (emittedLimitWarnings.has(limit.code)) return;
+    emittedLimitWarnings.add(limit.code);
+    emit({
+      type: 'call_warning',
+      ts: Date.now(),
+      ...context,
+      warning: { ...runnerCallLimitWarning(limit), severity: 'debug', surface: 'debug' },
+    });
+  }
+
+  function stopAtToolUseLimit(): void {
+    const max = opts.stopAfterToolUses;
+    if (max === undefined || toolUseDoneCount <= max || toolUseStop !== null) return;
+    toolUseStop = runnerCallToolUseStopLimit(max, recentToolUses);
     opts.onLimit?.();
   }
 
@@ -540,6 +545,7 @@ export function createRunnerCallRecorder(opts: {
         },
         kept,
       );
+      stopAtToolUseLimit();
     },
     usage: (eventOpts) =>
       emit({

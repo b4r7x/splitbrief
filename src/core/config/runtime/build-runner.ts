@@ -45,6 +45,7 @@ export interface BuildRunnerOpts {
   variant?: string | undefined;
   idleWarnMs?: number | undefined;
   idleKillMs?: number | undefined;
+  maxToolCalls?: number | undefined;
   capabilities?: PlannerCapabilities | undefined;
   service?: string | undefined;
   offering?: ApiOffering | undefined;
@@ -96,6 +97,7 @@ export interface CarriedSeatSettings {
   customModels?: string[];
   idleWarnMs?: number;
   idleKillMs?: number;
+  maxToolCalls?: number;
   args?: string[];
   outputFormat?: OutputFormat;
   authChannel?: CliAuthChannelId;
@@ -161,6 +163,7 @@ export function carriedSeatSettings(
     ...(same?.customModels !== undefined && { customModels: same.customModels }),
     ...(subprocess?.idleWarnMs !== undefined && { idleWarnMs: subprocess.idleWarnMs }),
     ...(subprocess?.idleKillMs !== undefined && { idleKillMs: subprocess.idleKillMs }),
+    ...(subprocess?.maxToolCalls !== undefined && { maxToolCalls: subprocess.maxToolCalls }),
     ...(subprocess?.args !== undefined && { args: subprocess.args }),
     ...(subprocess?.outputFormat !== undefined && { outputFormat: subprocess.outputFormat }),
     ...(same?.kind === 'cli' &&
@@ -212,10 +215,11 @@ function assertModelPresent(
 function resolveWatchdogs(
   opts: BuildRunnerOpts,
   carried: CarriedSeatSettings,
-): Pick<BuildRunnerOpts, 'idleWarnMs' | 'idleKillMs'> {
+): Pick<BuildRunnerOpts, 'idleWarnMs' | 'idleKillMs' | 'maxToolCalls'> {
   return {
     idleWarnMs: opts.idleWarnMs ?? carried.idleWarnMs,
     idleKillMs: opts.idleKillMs ?? carried.idleKillMs,
+    maxToolCalls: opts.maxToolCalls ?? carried.maxToolCalls,
   };
 }
 
@@ -223,6 +227,7 @@ function spreadWatchdogs(watchdogs: ReturnType<typeof resolveWatchdogs>): Record
   return {
     ...(watchdogs.idleWarnMs !== undefined && { idleWarnMs: watchdogs.idleWarnMs }),
     ...(watchdogs.idleKillMs !== undefined && { idleKillMs: watchdogs.idleKillMs }),
+    ...(watchdogs.maxToolCalls !== undefined && { maxToolCalls: watchdogs.maxToolCalls }),
   };
 }
 

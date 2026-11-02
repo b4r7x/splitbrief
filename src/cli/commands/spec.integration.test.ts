@@ -30,6 +30,7 @@ import {
 import { defaultCliAuthChannel } from '../../core/runners/cli-tool-catalog.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { Planner } from '../../engine/planners/types.js';
+import { DIRECT_WRITER_TASK_RULE } from '../../engine/spec/prompts/plan-session.js';
 import {
   planFromTasks,
   scriptedTypedCall,
@@ -302,7 +303,7 @@ describe('spec command', () => {
     expect(card).toContain('Render check K-render needs validation.render');
   });
 
-  it('tells the planner the BUILD context the model catalog publishes, as a run does', async () => {
+  it('tells the planner what a coding-agent BUILD seat gets, with no context figure', async () => {
     writeConfig(
       makeConfig({ implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-opus-5' } }),
     );
@@ -336,7 +337,9 @@ describe('spec command', () => {
       modelCacheStore.reset();
     }
 
-    expect(typed.prompts[0]).toContain('a measured context of 765,432 tokens');
+    expect(typed.prompts[0]).toContain('`claude-opus-5`, a weaker model.');
+    expect(typed.prompts[0]).toContain(DIRECT_WRITER_TASK_RULE);
+    expect(typed.prompts[0]).not.toContain('765,432');
   });
 
   describe('with a planner that reads no files of its own', () => {

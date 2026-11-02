@@ -163,16 +163,22 @@ function runnerCallToolUseSummary(toolUses: readonly RunnerCallToolUse[]): strin
     : summary;
 }
 
-export function runnerCallToolUseCountLimit(
+export function runnerCallToolUseCountLimit(): RunnerCallOutputLimit {
+  return runnerCallItemLimit({
+    code: 'runner_call_tool_use_count_limit',
+    label: 'tool calls',
+    maxItems: RUNNER_CALL_TOOL_USE_MAX_ITEMS,
+  });
+}
+
+export function runnerCallToolUseStopLimit(
+  maxToolCalls: number,
   toolUses: readonly RunnerCallToolUse[],
 ): RunnerCallOutputLimit {
   const summary = runnerCallToolUseSummary(toolUses);
   return {
-    ...runnerCallItemLimit({
-      code: 'runner_call_tool_use_count_limit',
-      label: 'tool calls',
-      maxItems: RUNNER_CALL_TOOL_USE_MAX_ITEMS,
-    }),
+    code: 'runner_call_tool_use_stop',
+    message: `The call reached the maxToolCalls limit of ${maxToolCalls} tool calls and was stopped.`,
     ...(summary.length > 0 && { recentToolCalls: summary }),
   };
 }

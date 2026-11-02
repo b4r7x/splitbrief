@@ -33,6 +33,7 @@ export type CommandRunnerSource =
         outputFormat?: OutputFormat | undefined;
         idleWarnMs?: number | undefined;
         idleKillMs?: number | undefined;
+        maxToolCalls?: number | undefined;
       }>;
       env: NodeJS.ProcessEnv;
       notFoundMessage: string;
@@ -60,6 +61,7 @@ async function launchOf(source: CommandRunnerSource) {
       env: source.env,
       format: runner.outputFormat,
       idle: { warnMs: runner.idleWarnMs, killMs: runner.idleKillMs },
+      maxToolCalls: runner.maxToolCalls,
       notFoundMessage: source.notFoundMessage,
     };
   }
@@ -85,6 +87,7 @@ async function launchOf(source: CommandRunnerSource) {
     env: environment.env,
     format: command.outputFormat,
     idle: { warnMs: command.idleWarnMs, killMs: command.idleKillMs },
+    maxToolCalls: command.maxToolCalls,
     credentialValues: environment.redactionValues,
     redact: createCustomRunnerRedactor(environment.redactionValues),
   };

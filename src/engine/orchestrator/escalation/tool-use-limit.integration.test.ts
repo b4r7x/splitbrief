@@ -14,9 +14,8 @@ import {
 import { consultCallAnswering, guidanceConsult } from '#testing/helpers/typed-planner.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { transition } from '../../../core/state/machine.js';
-import { collectRunnerCallResult } from '../../calls/collector.js';
-import { RUNNER_CALL_TOOL_USE_MAX_ITEMS } from '../../calls/output-limit.js';
-import type { RunnerCallEvent } from '../../calls/types.js';
+import { createRunnerCallRecorder } from '../../calls/recorder.js';
+import type { RunnerCallResult } from '../../calls/types.js';
 import {
   runnerCallFailureMessage,
   runnerCallOutcome,
@@ -43,60 +42,54 @@ function makeValidatingState(): WorkflowState {
   return transition(makeImplState([task]), { type: 'TASK_SENT' });
 }
 
-const base = {
-  ts: 1,
-  callId: 'call-tool-use',
-  role: 'implementer',
-  backendKind: 'cli',
-} as const;
+const MAX_TOOL_CALLS = 10;
 
-function toolFlood(): RunnerCallEvent[] {
-  const events: RunnerCallEvent[] = [{ type: 'call_started', ...base }];
-  for (let index = 0; index < RUNNER_CALL_TOOL_USE_MAX_ITEMS + 2; index += 1) {
-    events.push({
-      type: 'call_tool_use_done',
-      ...base,
-      ts: index + 1,
-      channel: 'tool',
+/** The call a seat with `maxToolCalls: 10` ends: its 11th tool use stops it. */
+function stoppedCall(): RunnerCallResult {
+  const recorder = createRunnerCallRecorder({
+    context: { callId: 'call-tool-use', role: 'implementer', backendKind: 'cli' },
+    startedAt: 1,
+    stopAfterToolUses: MAX_TOOL_CALLS,
+  });
+  for (let index = 0; index <= MAX_TOOL_CALLS; index += 1) {
+    recorder.toolUseDone({
       toolUse: { id: `tool-${index}`, name: 'read_file', input: { path: `file-${index}.ts` } },
     });
   }
-  events.push({
-    type: 'call_completed',
-    ...base,
-    status: 'completed',
-    startedAt: 1,
-    endedAt: 20,
-    durationMs: 19,
-    partial: false,
-    error: null,
-    usage: null,
-    nativeSessionId: 'native-1',
-  });
-  return events;
+  return recorder.finishIncomplete({ endedAt: 20 });
 }
 
-describe('implementer tool-use limit', () => {
-  it('ends the call as tool-use-limit and carries the last calls in its error', () => {
-    const result = collectRunnerCallResult(toolFlood());
+describe('implementer tool-use stop', () => {
+  it('ends the call as tool-use-limit, names the configured number and the last calls', () => {
+    const result = stoppedCall();
 
     expect(result.status).toBe('truncated');
-    expect(result.error?.code).toBe('runner_call_tool_use_count_limit');
+    expect(result.error?.code).toBe('runner_call_tool_use_stop');
+    expect(result.error?.message).toContain(
+      `The call reached the maxToolCalls limit of ${MAX_TOOL_CALLS} tool calls and was stopped.`,
+    );
     expect(result.error?.message).toContain('Recent tool calls');
     expect(result.error?.message).toContain('file-');
-    const countLimitWarning = result.warnings.find(
-      (warning) => warning.code === 'runner_call_tool_use_count_limit',
-    );
-    expect(countLimitWarning).toMatchObject({
-      message: `Only the first ${RUNNER_CALL_TOOL_USE_MAX_ITEMS} tool calls of this call are kept.`,
-    });
-    expect(countLimitWarning?.message).not.toContain('Recent tool calls');
     expect(runnerCallOutcome(result).state).toBe('tool-use-limit');
+  });
+
+  it('keeps a call without maxToolCalls a success past 256 tool uses', () => {
+    const recorder = createRunnerCallRecorder({
+      context: { callId: 'call-tool-use', role: 'implementer', backendKind: 'cli' },
+      startedAt: 1,
+    });
+    for (let index = 0; index < 300; index += 1) {
+      recorder.toolUseDone({
+        toolUse: { id: `tool-${index}`, name: 'read_file', input: { path: `file-${index}.ts` } },
+      });
+    }
+
+    expect(runnerCallOutcome(recorder.finishCompleted({ endedAt: 20 })).state).toBe('success');
   });
 
   it('consults once with the last calls and no local retry', async () => {
     const { projectDir, sessionId } = setupProject();
-    const result = collectRunnerCallResult(toolFlood());
+    const result = stoppedCall();
     const outcome = runnerCallOutcome(result);
     if (outcome.state === 'success') throw new Error('expected a failed outcome');
     const summary = runnerCallFailureMessage(result, undefined);

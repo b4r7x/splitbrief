@@ -5,6 +5,7 @@ import {
   type ConsultReason,
   type ImplementerReport,
 } from '../../../core/schemas/consult.js';
+import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { TriageResult } from '../../../core/schemas/review.js';
 import type { Task, TaskId } from '../../../core/schemas/task.js';
@@ -218,14 +219,14 @@ async function taskDiff(
 }
 
 function promptInput(
-  state: WorkflowState,
+  ctx: ConsultContext,
   input: ConsultRequestInput,
   taskDiff: ConsultPromptInput['taskDiff'],
-  workspaceDir: string,
 ): ConsultPromptInput {
+  const { state } = ctx;
   const lineage = state.lineages?.[lineageIdOf(input.task)];
   return {
-    workspaceDir,
+    workspaceDir: ctx.workspaceDir,
     reason: input.reason,
     plan: state.plan,
     task: input.task,
@@ -237,6 +238,7 @@ function promptInput(
     earlierConsults: lineage?.consultRecords ?? [],
     otherTasks: state.tasks.filter((task) => task.id !== input.task.id),
     operatorInstructions: lineage?.corrections ?? [],
+    writesFiles: resolveImplementerProfiles(ctx.config).defaultProfile.capabilities.writesFiles,
   };
 }
 
@@ -300,7 +302,7 @@ export async function requestConsult(
   };
 
   const diff = await taskDiff(ctx.workspaceDir, ctx.state, input.task, ref);
-  const prompt = promptInput(ctx.state, input, diff, ctx.workspaceDir);
+  const prompt = promptInput(ctx, input, diff);
   const contract = answerContract(input.task, input.reason, input.stuck, {
     known: new Set(
       checkRegistry({

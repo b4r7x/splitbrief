@@ -82,6 +82,8 @@ export type InvokeProcessCliContext = Readonly<{
    * runner can think for minutes while emitting frames that record nothing.
    */
   idle?: Readonly<{ warnMs: number; killMs?: number | undefined }> | undefined;
+  /** The seat's opt-in `maxToolCalls`; unset, no tool-call count ends the call. */
+  maxToolCalls?: number | undefined;
   onEvent?: ((event: RunnerCallEvent) => void) | undefined;
   toolUseGuard?: ToolUseGuard | undefined;
   /**
@@ -202,6 +204,7 @@ export async function invokeProcessCli(
     recorder = createRunnerCallRecorder({
       context: context.callContext,
       credentialValues,
+      stopAfterToolUses: context.maxToolCalls,
       onLimit: () => limitController.abort(),
       onEvent: recordEvent,
     });
@@ -360,6 +363,7 @@ export async function invokeProcessCli(
             context: context.callContext,
             startedAt: recorder.startedAt,
             credentialValues,
+            stopAfterToolUses: context.maxToolCalls,
             onLimit: () => limitController.abort(),
             onEvent: (event) => {
               if (event.type !== 'call_started') recordEvent(event);

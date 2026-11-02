@@ -1,3 +1,4 @@
+import type { ImplementerWriteMode } from '../../../core/schemas/implementer-config.js';
 import { MAX_GATE_COMMANDS, type PlanProposal } from '../../../core/schemas/plan.js';
 import { PROTECTED_PATHS_TEXT } from '../../../core/pipeline-spec/scope.js';
 import { PACKAGE_TEST_COMMAND } from '../../../core/validation/stacks/typescript.js';
@@ -15,8 +16,12 @@ export function questionRoundLimit(decideForMe: boolean | undefined): number {
   return decideForMe === true ? 1 : MAX_QUESTION_ROUNDS;
 }
 
-/** The implementer the tasks are sized for: its model, and the context it was measured at. */
-export type BuildSeat = Readonly<{ model: string | undefined; contextTokens: number }>;
+/** The implementer the tasks are sized for: its model, its context, and how it writes files. */
+export type BuildSeat = Readonly<{
+  model: string | undefined;
+  contextTokens: number;
+  writesFiles: ImplementerWriteMode;
+}>;
 
 export type PlanSessionPromptInput = Readonly<{
   feature: string;
@@ -31,9 +36,19 @@ export type PlanSessionPromptInput = Readonly<{
   earlierPlanning?: string | undefined;
 }>;
 
+/**
+ * How a task reaches an implementer that edits the files itself, and how to size it: a TaskSpec a
+ * seat writes for such an implementer follows it.
+ */
+export const DIRECT_WRITER_TASK_RULE = `The implementer is a coding agent that reads and edits the files itself. SPLITBRIEF sends it the task fields, the plan context and the code of the context files only. Each place it must find costs it time. For each change, name the file, the symbol and the test title. Copy the anchors that the request gives. A line number is a hint only. List in \`suggestedFiles\` every file the task writes. Split a behaviour when one task needs a wide search or many writes. Each large shared file the task must edit counts as a wide search. As a reference, a task that writes up to about 6 files in about 12 steps finishes well. Each part still verifies on its own.`;
+
 function buildSeatText(build: BuildSeat): string {
   const model = build.model === undefined ? 'the configured implementer' : `\`${build.model}\``;
-  return `The tasks are built by ${model}, a weaker model with a measured context of ${build.contextTokens.toLocaleString('en-US')} tokens. Each task reaches it with the current code of its suggested and context files, the instructions and the checks, and the whole prompt must fit well inside that context with room left to work. A task is one verifiable behaviour with its tests and callers. Group by coherent outcome, not by count: every task costs a fixed overhead, and every task boundary is a place where one task can break another.`;
+  const seat =
+    build.writesFiles === 'direct'
+      ? `The tasks are built by ${model}, a weaker model. ${DIRECT_WRITER_TASK_RULE}`
+      : `The tasks are built by ${model}, a weaker model with a measured context of ${build.contextTokens.toLocaleString('en-US')} tokens. Each task reaches it with the current code of its suggested and context files, the instructions and the checks, and the whole prompt must fit well inside that context with room left to work.`;
+  return `${seat} A task is one verifiable behaviour with its tests and callers. Group by coherent outcome, not by count: every task costs a fixed overhead, and every task boundary is a place where one task can break another.`;
 }
 
 // A package script runs only after the user approved the plan that names it.
@@ -55,7 +70,8 @@ function fileTestRule(): string {
  */
 export const TASK_CMD_CHECK_RULE = `A \`cmd\` check follows the plan check policy, with no shell operator. A package manager runs only its bare \`test\`, or \`npm run <script>\` for a script \`package.json\` defines when the user approved the plan. \`make\` or \`just\` runs only one bare \`typecheck\`, \`lint\` or \`test\` target. A test runner, linter or type checker of the project's stack, such as \`vitest\`, \`tsc\`, \`pytest\`, \`go\` or \`cargo\`, runs directly with its arguments. \`node\` runs only as \`node --test <test file>\` or \`node --check <file>\`. \`npx\` runs only as \`npx --no-install <stack tool>\`. ${fileTestRule()} SPLITBRIEF refuses any other command, such as \`grep\` or \`node build.js\`, and sends the refusal back for one repair. Prefer a \`test\` check that names a test file. A \`test\` check's value is one test file path, never a command.`;
 
-function planRules(approvesPlan: boolean): string {
+function planRules(approvesPlan: boolean, writesFiles: ImplementerWriteMode): string {
+  const direct = writesFiles === 'direct';
   return `- Research the repository read-only. Do not edit, create or delete any file.
 - Do not invoke a native user-question tool (AskUserQuestion or the like). SPLITBRIEF asks the user.
 - Ask questions only when a decision that only the user can make blocks the plan: at most 3 questions per round, at most ${MAX_QUESTION_ROUNDS} rounds. Give every question a non-empty \`default\`, the answer the plan uses when the user just presses Enter. An answer of the user that asks you to decide is the user's consent to decide that matter yourself: take the default or your best choice, and state it in the plan. Give \`choices\` when the answer is one of a fixed set, else null; the \`default\` of a question with \`choices\` is one of them.
@@ -64,10 +80,9 @@ function planRules(approvesPlan: boolean): string {
 - A \`test\` check narrows \`${PACKAGE_TEST_COMMAND}\` to its file (\`${PACKAGE_TEST_COMMAND} -- <file>\`) only when the \`package.json\` test script is one command. A chained script (\`a && b\`) runs whole. To run one test file there, use a \`cmd\` check that runs the project's test runner on the file directly: \`node --test <test file>\`, \`npx --no-install vitest run <test file>\` or \`npx --no-install jest <test file>\`. \`node --check <file>\` checks the syntax of one file. ${fileTestRule()}
 - Task ids are \`T001\`, \`T002\`, … in order. Every task serves at least one criterion, every criterion is served by at least one task, and every task has at least one check. SPLITBRIEF runs a task's own checks after the task, and every required check before every review. A task check is the fastest command that proves the task: its test file, the typecheck or a lint. Put the full gate, such as a release or CI script, in \`gate\`, never in a task. A \`render\` check is slow and runs before a review.
 - Each task completes one verifiable behaviour, including its tests and the caller changes it needs. Its \`intent\` names the behaviour and its expected result, never only files. Never separate implement, test and caller tasks for one behaviour.
-- Split a behaviour only when its task would not fit the implementer's context, and split it into behaviours that each verify on their own.
-- \`suggestedFiles\`: the files the task writes, first the main one. At least one. They are guidance: the implementer may touch another ordinary file when the change needs it.
+${direct ? '' : "- Split a behaviour only when its task would not fit the implementer's context, and split it into behaviours that each verify on their own.\n"}- \`suggestedFiles\`: the files the task writes, first the main one. At least one. They are guidance: the implementer may touch another ordinary file when the change needs it.
 - \`contextFiles\`: the read-only files the implementer must see. SPLITBRIEF attaches their current code when it dispatches the task.
-- Do not copy code into a task. Name the files; SPLITBRIEF attaches their current code.
+- Do not copy code into a task. ${direct ? 'Name the files.' : 'Name the files; SPLITBRIEF attaches their current code.'}
 - A task must not depend on anything outside its own fields and the plan context (summary, decisions, its criteria); do not refer to 'the plan' or to another task's text.
 - \`exclusions\`: explicit "do not" notes. The reviewer checks them.
 - \`steps\`: only where the approach is not obvious, else null.
@@ -102,7 +117,7 @@ export function buildPlanSessionPrompt(input: PlanSessionPromptInput): string {
           ]),
       { heading: 'Implementer', body: buildSeatText(input.build) },
       instructionsSection(
-        `${planRules(input.approvesPlan)}${input.skillsContext === undefined ? '' : `\n- ${SKILLS_WITH_EVERY_BRIEF}`}`,
+        `${planRules(input.approvesPlan, input.build.writesFiles)}${input.skillsContext === undefined ? '' : `\n- ${SKILLS_WITH_EVERY_BRIEF}`}`,
       ),
     ],
     output:

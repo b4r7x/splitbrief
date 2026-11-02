@@ -723,6 +723,33 @@ describe('createRunnerConfigSchema', () => {
     expect(result.success).toBe(false);
   });
 
+  it('subprocess runners accept a positive whole maxToolCalls, and api runners reject it', () => {
+    const schema = createRunnerConfigSchema(GenerationCommonFields);
+    const runners = [
+      { kind: 'cli', tool: 'codex', model: 'gpt-5' },
+      { kind: 'shell', command: './run', model: 'local-shell' },
+      { kind: 'agent', command: 'my-agent', model: 'agent-default' },
+    ];
+
+    expect(
+      runners.map((runner) => schema.safeParse({ ...runner, maxToolCalls: 400 }).success),
+    ).toEqual([true, true, true]);
+    expect(
+      [0, -1, 1.5].map((maxToolCalls) => schema.safeParse({ ...runners[0], maxToolCalls }).success),
+    ).toEqual([false, false, false]);
+    expect(
+      schema.safeParse({
+        kind: 'api',
+        provider: 'ollama',
+        service: 'ollama',
+        offering: 'local',
+        apiBase: 'http://localhost:11434/v1',
+        model: 'qwen2.5-coder:7b',
+        maxToolCalls: 400,
+      }).success,
+    ).toBe(false);
+  });
+
   it('parses a CLI implementer config with timeout: 3_600_000', () => {
     const schema = createRunnerConfigSchema(GenerationCommonFields);
     const result = schema.safeParse({

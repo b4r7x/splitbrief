@@ -87,7 +87,7 @@ function runnerCallStatusMessage(status: Exclude<RunnerCallResult['status'], 'co
 
 function failureStateFromCode(code: string): RunnerFailureOutcomeState | null {
   switch (code) {
-    case 'runner_call_tool_use_count_limit':
+    case 'runner_call_tool_use_stop':
       return 'tool-use-limit';
     // The tool could not read the prompt SPLITBRIEF sent; every attempt sends it the same way.
     case 'prompt-transport-error':

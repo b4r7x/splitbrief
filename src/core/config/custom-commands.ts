@@ -66,6 +66,7 @@ export const CustomCommandDefinitionSchema = z
     outputFormat: OutputFormatSchema.optional(),
     idleWarnMs: z.number().int().positive().optional(),
     idleKillMs: z.number().int().positive().optional(),
+    maxToolCalls: z.number().int().positive().optional(),
     env: z.array(EnvironmentReferenceNameSchema).max(64).optional(),
   })
   .superRefine((definition, ctx) => {
@@ -141,6 +142,7 @@ const CustomCommandShape = {
   outputFormat: OutputFormatSchema,
   idleWarnMs: z.number().int().positive(),
   idleKillMs: z.number().int().positive().optional(),
+  maxToolCalls: z.number().int().positive().optional(),
   env: z.array(EnvironmentReferenceNameSchema).max(64).readonly(),
 } as const;
 
@@ -172,6 +174,7 @@ export const NormalizedCustomCommandSchema = z
       outputFormat: command.outputFormat,
       idleWarnMs: command.idleWarnMs,
       idleKillMs: command.idleKillMs,
+      maxToolCalls: command.maxToolCalls,
       env: command.env,
     });
     if (!definition.success) {
@@ -199,6 +202,7 @@ export type CustomCommandExecutionTuple = Readonly<{
   outputFormat: OutputFormat;
   idleWarnMs: number;
   idleKillMs?: number | undefined;
+  maxToolCalls?: number | undefined;
   env: readonly string[];
 }>;
 
@@ -210,6 +214,7 @@ type CustomCommandTupleInput = Readonly<{
   outputFormat?: OutputFormat | undefined;
   idleWarnMs?: number | undefined;
   idleKillMs?: number | undefined;
+  maxToolCalls?: number | undefined;
   env?: readonly string[] | undefined;
 }>;
 
@@ -221,6 +226,7 @@ export function customCommandTuple(input: CustomCommandTupleInput): CustomComman
     outputFormat: input.outputFormat ?? 'text',
     idleWarnMs: defaultedIdleWarnMs(input.idleWarnMs),
     ...(input.idleKillMs !== undefined && { idleKillMs: input.idleKillMs }),
+    ...(input.maxToolCalls !== undefined && { maxToolCalls: input.maxToolCalls }),
     env: [...(input.env ?? [])].sort(),
   };
 }
@@ -241,6 +247,7 @@ export function customCommandTupleForRunner(
     outputFormat: runner.outputFormat,
     idleWarnMs: runner.idleWarnMs,
     idleKillMs: runner.idleKillMs,
+    maxToolCalls: runner.maxToolCalls,
     env: runner.env,
   });
 }
