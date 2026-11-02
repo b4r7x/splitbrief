@@ -596,7 +596,8 @@ describe('ToolModelPicker discovery state', () => {
       const frame = frameText(ui);
       expect(frame).not.toContain('Checking your tools…');
       expect(frame).toContain('Tools');
-      expect(frame).toContain('Models');
+      expect(frame).toContain('Install Claude Code CLI, then ctrl+r.');
+      expect(frame).not.toContain('Models');
     });
     ui.unmount();
   });

@@ -563,7 +563,7 @@ splitbrief init --reconfigure
 splitbrief status [--project <dir>]
 ```
 
-Print the current session's phase, task progress, one `PLAN`, `BUILD` and `REVIEW` line with the tool and model of each seat, and counts for completed / escalated / failed tasks. Task progress names the brief the run is on as `N/M`; once every brief has settled it reads `M/M`, never a brief past the last. A run with no briefs yet prints no task line.
+Print these lines, in this order: `Feature`, `Status`, `Task`, `Started`, `Session`, `PLAN`, `BUILD`, `REVIEW`, `Done`, `Escalated`, and `Failed`. `Feature` is the feature description. `Status` reads `running`, `waiting for you`, `stopped`, `ready to apply`, or the closed outcome `applied`, `apply undone`, `discarded`, `ended` or `complete`. `Task` names the brief the run is on as `N/M`; once every brief has settled it reads `M/M`, never a brief past the last. A run with no briefs yet prints no `Task` line. `Started` is the time the run started, and `Session` is the session id. `PLAN`, `BUILD`, and `REVIEW` name the tool and model of each seat. `Done`, `Escalated`, and `Failed` count the briefs in that state.
 
 ### Usage
 
@@ -604,7 +604,6 @@ splitbrief status --project ../other-repo
 ### Behavior notes
 
 - If there is no active session, prints `No active workflow.`
-- The `(awaiting continue)` suffix on the phase line means the run parked at a call boundary and is waiting for user input — `/resume` in the TUI, `splitbrief resume` from the shell.
 - Without a `reviewer:` block in the config, the planner holds the review seat, so the `REVIEW` line names the same tool and model as `PLAN`, also after the plan seat switches. A switch of the review seat gives `REVIEW` its own tool and model.
 - `Done`, `Escalated`, `Failed` lines only appear when the corresponding count is non-zero.
 

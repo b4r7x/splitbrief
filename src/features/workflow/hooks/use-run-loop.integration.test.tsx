@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import type { RunRecord } from '../../../core/sessions/run-record.js';
 import { routerStore } from '../../../stores/navigation/router.js';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { render } from 'ink-testing-library';
 import { Box, Text } from 'ink';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -1953,6 +1953,12 @@ describe('useRunLoop', () => {
       projectDir,
       config: makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }),
     });
+    // The offered candidate is ready, so its model list shows the drafted row.
+    detectionStore.setDetection({
+      cliTools: [cliDetectionFor('ready', 'claude-code')],
+      providers: [],
+    });
+    onTestFinished(() => detectionStore.reset());
     // What the driver does before it opens the overlay: draft the offered candidate's
     // model and effort, then land the picker on that candidate's tool row. The seat's
     // current tool is codex, so the picker opens on a tool that is not the current one.

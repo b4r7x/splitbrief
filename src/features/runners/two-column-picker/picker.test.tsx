@@ -225,7 +225,6 @@ describe('TwoColumnPicker', () => {
               },
               modelCount: 0,
               toolName: 'OpenCode CLI',
-              status: { state: 'ready', remediation: null },
               budget: bylineBudget,
             }),
           ),
@@ -391,8 +390,9 @@ describe('TwoColumnPicker', () => {
     ui.unmount();
   });
 
-  it('re-sorting the left list under the cursor re-emits onLeftChange and confirms the visible pair', async () => {
+  it('re-sorting the left list under the cursor keeps the selected tool and confirms it', async () => {
     const confirms: Array<{ l: string; r: string | null }> = [];
+    const leftChanges: string[] = [];
     function Consumer() {
       const [tools, setTools] = useState(TOOLS);
       const [leftId, setLeftId] = useState('alpha');
@@ -403,13 +403,16 @@ describe('TwoColumnPicker', () => {
             items: tools,
             getKey: (t) => t.id,
             isDisabled: (t) => !!t.disabled,
-            renderRow: (t) => <Text>{t.displayName}</Text>,
+            renderRow: (t, { isCursor }) => (
+              <Text>{`${isCursor ? '>' : ' '}${t.displayName}`}</Text>
+            ),
           }}
           rightProps={{
             items: MODELS_BY_TOOL[leftId] ?? [],
             getKey: (m) => m.id,
             renderRow: (m) => <Text>{m.displayName}</Text>,
             onLeftChange: (t) => {
+              leftChanges.push(t.id);
               setLeftId(t.id);
             },
           }}
@@ -425,14 +428,22 @@ describe('TwoColumnPicker', () => {
     }
     const ui = renderFeature(<Consumer />);
     await flushEffects();
+    expect(leftChanges).toEqual(['alpha']);
+    expect(ui.lastFrame()).toContain('>Alpha');
     expect(ui.lastFrame()).toContain('alpha-1');
 
     await flushEffects();
     ui.stdin.write('\u0012'); // ctrl+r - refresh re-sorts the tools under the cursor
     await flushEffects();
 
-    expect(ui.lastFrame()).toContain('gamma-1');
-    expect(ui.lastFrame()).not.toContain('alpha-1');
+    const lines = (ui.lastFrame() ?? '').split('\n');
+    const gammaLine = lines.findIndex((line) => line.includes('Gamma'));
+    const alphaLine = lines.findIndex((line) => line.includes('>Alpha'));
+    expect(gammaLine).toBeGreaterThanOrEqual(0);
+    expect(gammaLine).toBeLessThan(alphaLine);
+    expect(ui.lastFrame()).toContain('alpha-1');
+    expect(ui.lastFrame()).not.toContain('gamma-1');
+    expect(leftChanges).toEqual(['alpha']);
 
     await flushEffects();
     ui.stdin.write('\r'); // Enter left -> focus right
@@ -440,7 +451,185 @@ describe('TwoColumnPicker', () => {
     ui.stdin.write('\r'); // Enter right -> confirm
     await tick(20);
 
-    expect(confirms).toEqual([{ l: 'gamma', r: 'g-1' }]);
+    expect(confirms).toEqual([{ l: 'alpha', r: 'a-1' }]);
+    ui.unmount();
+  });
+
+  it('removing the selected tool clamps the cursor and reports the replacement', async () => {
+    const leftChanges: string[] = [];
+    function Consumer() {
+      const [tools, setTools] = useState(TOOLS);
+      const [leftId, setLeftId] = useState('gamma');
+      return (
+        <TwoColumnPicker<Tool, Model>
+          title="Picker"
+          leftProps={{
+            items: tools,
+            getKey: (t) => t.id,
+            isDisabled: (t) => !!t.disabled,
+            initialIndex: 2,
+            renderRow: (t, { isCursor }) => (
+              <Text>{`${isCursor ? '>' : ' '}${t.displayName}`}</Text>
+            ),
+          }}
+          rightProps={{
+            items: MODELS_BY_TOOL[leftId] ?? [],
+            getKey: (m) => m.id,
+            renderRow: (m) => <Text>{m.displayName}</Text>,
+            onLeftChange: (t) => {
+              leftChanges.push(t.id);
+              setLeftId(t.id);
+            },
+          }}
+          onConfirm={() => {}}
+          onCancel={() => {}}
+          onRefresh={() => {
+            setTools((current) => current.slice(0, -1));
+          }}
+        />
+      );
+    }
+    const ui = renderFeature(<Consumer />);
+    await flushEffects();
+    expect(leftChanges).toEqual(['gamma']);
+    expect(ui.lastFrame()).toContain('>Gamma');
+    expect(ui.lastFrame()).toContain('gamma-1');
+
+    await flushEffects();
+    ui.stdin.write('\u0012');
+    await flushEffects();
+
+    const frame = ui.lastFrame() ?? '';
+    expect(leftChanges).toEqual(['gamma', 'beta']);
+    expect(frame).toContain('>Beta');
+    expect(frame).toContain('Alpha');
+    expect(frame).not.toContain('>Alpha');
+    expect(frame).not.toContain('Gamma');
+    expect(frame).not.toContain('gamma-1');
+    ui.unmount();
+  });
+
+  it('re-sorting models preserves the selected model key', async () => {
+    const confirms: Array<{ l: string; r: string | null }> = [];
+    const models = MODELS_BY_TOOL.alpha ?? [];
+    function Consumer() {
+      const [rows, setRows] = useState(models);
+      return (
+        <TwoColumnPicker<Tool, Model>
+          title="Picker"
+          initialColumn="right"
+          leftProps={{
+            items: TOOLS,
+            getKey: (t) => t.id,
+            renderRow: (t) => <Text>{t.displayName}</Text>,
+          }}
+          rightProps={{
+            items: rows,
+            getKey: (m) => m.id,
+            initialIndex: 1,
+            renderRow: (m, { isCursor }) => (
+              <Text>{`${isCursor ? '>' : ' '}${m.displayName}`}</Text>
+            ),
+            customRow: { onSelect: () => {} },
+          }}
+          onConfirm={(l, r) => {
+            confirms.push({ l: l.id, r: r?.id ?? null });
+          }}
+          onCancel={() => {}}
+          onRefresh={() => {
+            setRows(models.toReversed());
+          }}
+        />
+      );
+    }
+    const ui = renderFeature(<Consumer />);
+    await flushEffects();
+    const before = (ui.lastFrame() ?? '').split('\n');
+    const beforeFirst = before.findIndex((line) => line.includes('alpha-1'));
+    const beforeSecond = before.findIndex((line) => line.includes('>alpha-2'));
+    expect(beforeFirst).toBeGreaterThanOrEqual(0);
+    expect(beforeFirst).toBeLessThan(beforeSecond);
+
+    await flushEffects();
+    ui.stdin.write('\u0012');
+    await flushEffects();
+
+    const after = (ui.lastFrame() ?? '').split('\n');
+    const afterFirst = after.findIndex((line) => line.includes('>alpha-2'));
+    const afterSecond = after.findIndex((line) => line.includes('alpha-1'));
+    expect(afterFirst).toBeGreaterThanOrEqual(0);
+    expect(afterFirst).toBeLessThan(afterSecond);
+
+    await flushEffects();
+    ui.stdin.write('\r');
+    await tick(20);
+
+    expect(confirms).toEqual([{ l: 'alpha', r: 'a-2' }]);
+    ui.unmount();
+  });
+
+  it('keeps the virtual custom row selected during a model reorder', async () => {
+    const customOpens: string[] = [];
+    const confirms: string[] = [];
+    const models = MODELS_BY_TOOL.alpha ?? [];
+    function Consumer() {
+      const [rows, setRows] = useState(models);
+      return (
+        <TwoColumnPicker<Tool, Model>
+          title="Picker"
+          initialColumn="right"
+          leftProps={{
+            items: TOOLS,
+            getKey: (t) => t.id,
+            renderRow: (t) => <Text>{t.displayName}</Text>,
+          }}
+          rightProps={{
+            items: rows,
+            getKey: (m) => m.id,
+            renderRow: (m, { isCursor }) => (
+              <Text>{`${isCursor ? '>' : ' '}${m.displayName}`}</Text>
+            ),
+            customRow: {
+              onSelect: (tool) => {
+                customOpens.push(tool.id);
+              },
+            },
+          }}
+          onConfirm={(_l, right) => {
+            confirms.push(right?.id ?? 'none');
+          }}
+          onCancel={() => {}}
+          onRefresh={() => {
+            setRows(models.toReversed());
+          }}
+        />
+      );
+    }
+    const ui = renderFeature(<Consumer />);
+    await flushEffects();
+
+    ui.stdin.write('\u001B[A');
+    await flushEffects();
+    expect(ui.lastFrame()).toContain('⏎ add custom');
+
+    await flushEffects();
+    ui.stdin.write('\u0012');
+    await flushEffects();
+
+    const lines = (ui.lastFrame() ?? '').split('\n');
+    const alpha2 = lines.findIndex((line) => line.includes('alpha-2'));
+    const alpha1 = lines.findIndex((line) => line.includes('alpha-1'));
+    expect(alpha2).toBeGreaterThanOrEqual(0);
+    expect(alpha2).toBeLessThan(alpha1);
+    expect(ui.lastFrame()).toContain('⏎ add custom');
+    expect(ui.lastFrame()).not.toContain('>alpha-1');
+    expect(ui.lastFrame()).not.toContain('>alpha-2');
+
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+    expect(customOpens).toEqual(['alpha']);
+    expect(confirms).toEqual([]);
     ui.unmount();
   });
 
@@ -544,6 +733,64 @@ describe('TwoColumnPicker', () => {
     await tick(20);
 
     expect(confirms.at(-1)).toEqual({ l: 'alpha', r: 'a-2' });
+    ui.unmount();
+  });
+
+  it('lands the right cursor on the resolved row when the next tool lists the same model id lower down', async () => {
+    const tools: Tool[] = [
+      { id: 'opencode', displayName: 'OpenCode' },
+      { id: 'kilo', displayName: 'Kilo' },
+    ];
+    const modelsByTool: Record<string, Model[]> = {
+      opencode: [
+        { id: 'shared', displayName: 'shared-model' },
+        { id: 'o-2', displayName: 'open-2' },
+      ],
+      kilo: [
+        { id: 'saved', displayName: 'kilo-saved' },
+        { id: 'k-2', displayName: 'kilo-2' },
+        { id: 'shared', displayName: 'shared-model' },
+      ],
+    };
+    const confirms: Array<{ l: string; r: string | null }> = [];
+    function Consumer() {
+      const [leftId, setLeftId] = useState('opencode');
+      return (
+        <TwoColumnPicker<Tool, Model>
+          title="Picker"
+          leftProps={{
+            items: tools,
+            getKey: (t) => t.id,
+            renderRow: (t) => <Text>{t.displayName}</Text>,
+          }}
+          rightProps={{
+            items: modelsByTool[leftId] ?? [],
+            getKey: (m) => m.id,
+            renderRow: (m) => <Text>{m.displayName}</Text>,
+            resolveInitialIndex: () => 0,
+            onLeftChange: (t) => {
+              setLeftId(t.id);
+            },
+          }}
+          onConfirm={(l, r) => {
+            confirms.push({ l: l.id, r: r?.id ?? null });
+          }}
+          onCancel={() => {}}
+        />
+      );
+    }
+    const ui = renderFeature(<Consumer />);
+    await flushEffects();
+
+    ui.stdin.write('\u001B[B');
+    await flushEffects();
+    await flushEffects();
+    ui.stdin.write('\u001B[C');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await tick(20);
+
+    expect(confirms).toEqual([{ l: 'kilo', r: 'saved' }]);
     ui.unmount();
   });
 

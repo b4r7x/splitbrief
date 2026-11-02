@@ -110,6 +110,7 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
   const rightCurrentItem = filteredRight[rightEffectiveIndex];
 
   const terminalPane = leftCol.currentItem ? terminalPaneOf?.(leftCol.currentItem) : undefined;
+  const expandedOnScreen = terminalPane === undefined && (rightProps.isExpanded ?? false);
   const isDisabled = leftCol.currentItem
     ? (isLeftItemDisabled?.(leftCol.currentItem) ?? false)
     : false;
@@ -274,7 +275,7 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
         activateLeft,
         activateRight,
         cycleRight,
-        isExpanded: rightProps.isExpanded ?? false,
+        isExpanded: expandedOnScreen,
         onCollapse: collapseRight,
       });
     },
@@ -299,7 +300,7 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
     terminalPane,
     isDisabled,
     escape: escapeAction({
-      isExpanded: rightProps.isExpanded ?? false,
+      isExpanded: expandedOnScreen,
       leftActive: activeColumn === 'left',
       rightActive,
       leftFilter: leftCol.filter,

@@ -8,13 +8,14 @@ import type { RightItemOrVirtual } from './virtual-items.js';
 export type TerminalPaneLine = string | Readonly<{ whole: string }>;
 
 /**
- * A left row that answers for itself: the right column becomes a read-only card
- * and Enter commits the row instead of advancing into an empty model column.
+ * A left row that answers for itself: the right column becomes a read-only card.
+ * With a verb, Enter commits the row instead of advancing into an empty model
+ * column. An actionless card omits the verb, so the hint promises no Enter.
  */
 export interface TerminalPane {
   label: string;
-  /** The verb the hint promises for Enter on this row. */
-  verb: string;
+  /** The verb the hint promises for Enter on this row. Absent on an actionless card. */
+  verb?: string | undefined;
   lines: TerminalPaneLine[];
 }
 

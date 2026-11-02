@@ -268,7 +268,7 @@ describe('e2e: the BUILD picker on an OpenCode seat', { timeout: 120_000 }, () =
         });
         screen.write('antigravity');
         await screen.shows(/▌ Google Antigravity CLI/);
-        await screen.shows(/│ +auto +/);
+        await screen.shows('Its models show here when it is ready.');
         expect(screen.text()).not.toContain('Claude Haiku 4.5');
         expect(screen.text()).not.toContain('Custom');
       },

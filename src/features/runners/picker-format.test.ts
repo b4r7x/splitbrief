@@ -9,14 +9,19 @@ import {
   formatModelCatalogGuidance,
   formatModelsByline,
   formatPermissionLabels,
+  formatPickerStatusLabel,
   formatRouteAuth,
   formatRouteRemedy,
   formatToolsByline,
   modelBylineAxes,
+  notReadyPane,
   pickerListingSource,
   wrapOnWords,
   type ModelCatalogDiagnostic,
 } from './picker-format.js';
+import { formatSeatIdentity } from '../../core/crew/identity.js';
+import type { RunnerConfig } from '../../core/config/accessors/runner-config.js';
+import { cliReadinessRemediation } from '../../core/schemas/readiness.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import type { PickerOption } from './model-catalog/options.js';
 import { cliPermissions, deriveModelCatalogCapability } from './model-catalog/posture.js';
@@ -29,15 +34,6 @@ import type { RightRow } from './model-catalog/rows.js';
 import type { PickerOptionStatus } from './model-catalog/status.js';
 
 const zeroCounts = { confirmed: 0, stale: 0, suggestions: 0, bundled: 0, custom: 0 };
-const READY: PickerOptionStatus = { state: 'ready', remediation: null };
-const REMEDIED: PickerOptionStatus = {
-  state: 'unavailable',
-  remediation: 'Install OpenCode CLI, then ctrl+r.',
-};
-const SIGNED_OUT: PickerOptionStatus = {
-  state: 'unauthenticated',
-  remediation: 'Sign in to OpenCode CLI, then ctrl+r.',
-};
 
 describe('fallbackInheritanceNotice', () => {
   it('warns that saving an inherited REVIEW fallback gives REVIEW its own seat', () => {
@@ -175,34 +171,116 @@ describe('formatModelCatalogGuidance', () => {
       'No models detected · 1 provider configured',
     );
   });
+});
 
-  it('shows the sign-in remediation under the Auth required label for zero providers', () => {
-    const tool: PickerOption = {
-      ...readyCliTool(),
+const codexFacts = {
+  tool: 'codex',
+  installedVersion: CLI_TOOL_CATALOG.codex.compatibility.testedVersion,
+  testedVersion: CLI_TOOL_CATALOG.codex.compatibility.testedVersion,
+  compatibility: 'compatible',
+} as const;
+
+describe('notReadyPane', () => {
+  const savedRunner: RunnerConfig = { kind: 'cli', tool: 'codex', model: 'gpt-5.4' };
+  const cases: ReadonlyArray<{ name: string; status: PickerOptionStatus }> = [
+    {
+      name: 'unavailable',
+      status: {
+        state: 'unavailable',
+        remediation: cliReadinessRemediation(
+          { ...codexFacts, installedVersion: null, compatibility: 'not-checked' },
+          'unavailable',
+          'picker',
+        ),
+      },
+    },
+    {
+      name: 'unauthenticated',
       status: {
         state: 'unauthenticated',
-        remediation: 'Sign in or configure a provider, then ctrl+r. Free models require sign-in.',
+        remediation: cliReadinessRemediation(
+          { ...codexFacts, auth: 'unauthenticated', authChannel: 'session' },
+          'unauthenticated',
+          'picker',
+        ),
       },
-      available: false,
-    };
+    },
+    {
+      name: 'unverified version',
+      status: {
+        state: 'unverified',
+        remediation: cliReadinessRemediation(
+          { ...codexFacts, installedVersion: null, compatibility: 'unverified' },
+          'unverified',
+          'picker',
+        ),
+      },
+    },
+    {
+      name: 'unverified auth',
+      status: {
+        state: 'unverified',
+        remediation: cliReadinessRemediation(
+          { ...codexFacts, auth: 'unknown' },
+          'unverified',
+          'picker',
+        ),
+      },
+    },
+    {
+      name: 'incompatible',
+      status: {
+        state: 'incompatible',
+        remediation: cliReadinessRemediation(
+          { ...codexFacts, compatibility: 'incompatible' },
+          'incompatible',
+          'picker',
+        ),
+      },
+    },
+    {
+      name: 'untrusted',
+      status: {
+        state: 'untrusted',
+        remediation: cliReadinessRemediation(codexFacts, 'untrusted', 'picker'),
+      },
+    },
+    {
+      name: 'disabled',
+      status: {
+        state: 'disabled',
+        remediation: cliReadinessRemediation(codexFacts, 'disabled', 'picker'),
+      },
+    },
+  ];
 
-    expect(formatModelCatalogGuidance(tool, zeroCounts)).toEqual({
-      headline: 'Auth required',
-      detail: 'Sign in or configure a provider, then ctrl+r. Free models require sign-in.',
+  it.each(cases)(
+    '$name keeps the status title and the remedy, and promises no Enter',
+    ({ status }) => {
+      if (status.state === 'ready') throw new Error('a ready tool has no card');
+      expect(notReadyPane({ status, savedRunner: undefined })).toEqual({
+        label: formatPickerStatusLabel(status),
+        lines: [status.remediation, '', 'Its models show here when it is ready.'],
+      });
+    },
+  );
+
+  it('names the saved choice only when the saved runner is passed', () => {
+    const status = cases[0]?.status;
+    if (status === undefined || status.state === 'ready') throw new Error('missing status');
+    const identity = formatSeatIdentity({ seat: savedRunner });
+    expect(notReadyPane({ status, savedRunner })?.lines.at(-1)).toEqual({
+      whole: `Saved choice: ${identity}`,
     });
+    expect(JSON.stringify(notReadyPane({ status, savedRunner: undefined })?.lines)).not.toContain(
+      'Saved choice:',
+    );
   });
 
-  it('keeps status remediation ahead of any count copy when the tool is not ready', () => {
-    const tool: PickerOption = {
-      ...readyCliTool(),
-      status: { state: 'unauthenticated', remediation: 'Sign in first.' },
-      available: false,
-    };
-
-    expect(formatModelCatalogGuidance(tool, { ...zeroCounts, suggestions: 3 })).toEqual({
-      headline: 'Auth required',
-      detail: 'Sign in first.',
-    });
+  it('returns undefined for a ready tool', () => {
+    expect(
+      notReadyPane({ status: { state: 'ready', remediation: null }, savedRunner }),
+    ).toBeUndefined();
   });
 });
 
@@ -250,7 +328,7 @@ describe('formatCatalogDiagnostic', () => {
   ] satisfies Array<[ModelCatalogDiagnostic, string]>)(
     'gives actionable copy for %j',
     (diagnostic, copy) => {
-      expect(formatCatalogDiagnostic(diagnostic, 'OpenCode', false)).toBe(copy);
+      expect(formatCatalogDiagnostic(diagnostic, 'OpenCode')).toBe(copy);
     },
   );
 
@@ -262,17 +340,14 @@ describe('formatCatalogDiagnostic', () => {
     const offline = formatCatalogDiagnostic(
       { kind: 'probe-failed', failure: 'offline' },
       'OpenCode',
-      false,
     );
     const missingCredential = formatCatalogDiagnostic(
       { kind: 'probe-failed', failure: 'missing-credential' },
       'OpenCode',
-      false,
     );
     const invalidCredential = formatCatalogDiagnostic(
       { kind: 'probe-failed', failure: 'invalid-credential' },
       'OpenCode',
-      false,
     );
     const loading = formatModelCatalogGuidance(readyCliTool(), zeroCounts, undefined, true);
 
@@ -468,7 +543,6 @@ describe('formatToolsByline', () => {
       source: 'from copilot help config',
       unverifiedForPlan: true,
       diagnostic: undefined,
-      status: READY,
       lane: 'ready',
       capabilities: ['network', 'shell'],
       billing: 'subscription-included',
@@ -494,85 +568,14 @@ describe('formatToolsByline', () => {
     expect(wrapOnWords(line, budget, 2).cut).toBe(false);
   });
 
-  it('offers no second ctrl+r under a remediation that already ends on it', () => {
-    const line = (diagnostic: ModelCatalogDiagnostic, modelCount = 0) =>
-      bylineDiagnostic({
-        diagnostic,
-        modelCount,
-        toolName: 'OpenCode CLI',
-        status: REMEDIED,
-        budget: 100,
-      });
-
-    expect(line({ kind: 'probe-failed', failure: 'timeout' })).toBe('Model detection timed out');
-    expect(line({ kind: 'probe-failed', failure: 'offline' })).toBe(
-      'Model detection could not reach the network',
-    );
-    expect(line({ kind: 'probe-failed', failure: 'cancelled' })).toBe(
-      'Model detection was cancelled',
-    );
-    expect(line({ kind: 'not-probed' })).toBe('Model detection has not run yet');
-    expect(line({ kind: 'not-probed' }, 3)).toBe('Bundled model list');
-    expect(line({ kind: 'not-run-retained' }, 3)).toBe('Models from an earlier check');
-  });
-
-  it('leaves the sign-in step to a signed-out remediation and names no retry under any remediation', () => {
-    const line = (
-      failure: 'missing-credential' | 'invalid-credential' | 'malformed',
-      status: PickerOptionStatus = SIGNED_OUT,
-    ) =>
-      bylineDiagnostic({
-        diagnostic: { kind: 'probe-failed', failure },
-        modelCount: 0,
-        toolName: 'OpenCode CLI',
-        status,
-        budget: 100,
-      });
-
-    expect(line('missing-credential')).toBeUndefined();
-    expect(line('invalid-credential')).toBeUndefined();
-    expect(line('missing-credential', REMEDIED)).toBe(
-      'Sign in to OpenCode CLI to detect its models',
-    );
-    expect(line('malformed')).toBe(
-      `Unreadable model list${SOFT_SEP}add a custom model or report the output`,
-    );
-    expect(line('malformed', READY)).toContain('ctrl+r will not help');
-  });
-
-  it('names no retry on a failed catalog lane under a remediation', () => {
-    expect(byline({ lane: 'failed', status: REMEDIED })).not.toContain('ctrl+r');
-    expect(byline({ lane: 'failed' })).toContain(`Could not load models${SOFT_SEP}ctrl+r`);
-  });
-
-  it('keeps a signed-out tool its whole sign-in step at 80 columns and offers no retry', () => {
-    const budget = overlayWidth({ cols: 80, density: 'wide' });
-    const cause =
-      'Please sign in to view available models. Launch the CLI without arguments to sign in.';
-    const diagnostic: ModelCatalogDiagnostic = {
-      kind: 'probe-failed',
-      failure: 'command-failed',
-      cause,
-    };
-    const line = bylineDiagnostic({
-      diagnostic,
-      modelCount: 1,
-      toolName: 'Google Antigravity CLI',
-      status: SIGNED_OUT,
-      budget,
-    });
-
-    expect(line).toBe(`Google Antigravity CLI could not list models: ${cause}`);
-    expect(wrapOnWords(line ?? '', budget, 2).cut).toBe(false);
+  it('names an earlier listing and its refresh key for a ready tool', () => {
     expect(
-      bylineDiagnostic({
-        diagnostic,
-        modelCount: 1,
-        toolName: 'Google Antigravity CLI',
-        status: READY,
-        budget,
+      byline({
+        toolName: 'OpenCode',
+        modelCount: 3,
+        diagnostic: { kind: 'not-run-retained' },
       }),
-    ).toContain('ctrl+r to retry');
+    ).toBe(`Models from an earlier check${SOFT_SEP}ctrl+r detects this tool's models`);
   });
 
   it('uses the singular noun for a single row', () => {
@@ -593,22 +596,16 @@ describe('formatToolsByline', () => {
         diagnostic: { kind: 'probe-failed', failure: 'malformed' },
         modelCount: 1,
         toolName: 'Kilo Code CLI',
-        status: READY,
         budget: 108,
       }),
     ).toBe(
-      formatCatalogDiagnostic(
-        { kind: 'probe-failed', failure: 'malformed' },
-        'Kilo Code CLI',
-        false,
-      ),
+      formatCatalogDiagnostic({ kind: 'probe-failed', failure: 'malformed' }, 'Kilo Code CLI'),
     );
     expect(
       bylineDiagnostic({
         diagnostic: { kind: 'unsupported' },
         modelCount: 9,
         toolName: 'Claude Code CLI',
-        status: READY,
         budget: 108,
       }),
     ).toBeUndefined();
@@ -617,7 +614,6 @@ describe('formatToolsByline', () => {
         diagnostic: undefined,
         modelCount: 0,
         toolName: 'X',
-        status: READY,
         budget: 108,
       }),
     ).toBeUndefined();
@@ -634,7 +630,6 @@ describe('formatToolsByline', () => {
           diagnostic,
           modelCount: 3,
           toolName: 'OpenCode',
-          status: READY,
           budget: 108,
         }) ?? '';
 
@@ -646,10 +641,9 @@ describe('formatToolsByline', () => {
           diagnostic,
           modelCount: 0,
           toolName: 'OpenCode',
-          status: READY,
           budget: 108,
         }),
-      ).toBe(formatCatalogDiagnostic(diagnostic, 'OpenCode', false));
+      ).toBe(formatCatalogDiagnostic(diagnostic, 'OpenCode'));
     },
   );
 
@@ -679,7 +673,7 @@ describe('formatToolsByline', () => {
       toolName: 'Kilo Code CLI',
       billing: 'provider-dependent',
     });
-    expect(line).toBe(formatCatalogDiagnostic(diagnostic, 'Kilo Code CLI', false));
+    expect(line).toBe(formatCatalogDiagnostic(diagnostic, 'Kilo Code CLI'));
     expect(line).not.toContain('provider');
     expect(line).not.toContain('network');
     expect(line).not.toContain('24 models');
@@ -688,7 +682,7 @@ describe('formatToolsByline', () => {
   it('shows a diagnostic when no row survives', () => {
     const diagnostic: ModelCatalogDiagnostic = { kind: 'unsupported' };
     expect(byline({ diagnostic, modelCount: 0 })).toBe(
-      formatCatalogDiagnostic(diagnostic, 'GitHub Copilot CLI', false),
+      formatCatalogDiagnostic(diagnostic, 'GitHub Copilot CLI'),
     );
   });
 
@@ -773,7 +767,6 @@ describe('formatToolsByline', () => {
       source: "from Claude's documented aliases",
       unverifiedForPlan: false,
       diagnostic: undefined,
-      status: READY,
       lane: 'pending',
       capabilities: ['network', 'shell'],
       billing: 'subscription-included',
@@ -798,7 +791,6 @@ describe('formatToolsByline', () => {
         source: listing.source,
         unverifiedForPlan: listing.unverifiedForPlan,
         diagnostic: undefined,
-        status: READY,
         lane: 'ready',
         capabilities: formatPermissionLabels(cliPermissions(descriptor, 'implementer')),
         billing: 'unknown',

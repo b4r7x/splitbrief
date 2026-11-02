@@ -74,9 +74,9 @@ it('names recorded seats from the remembered catalog in a fresh command', async 
 
   const run = await status();
   expect(run.exitCode, run.stderr).toBe(0);
-  expect(run.stdout).toContain('PLAN:     OpenAI Codex CLI · GPT-6-Luna');
-  expect(run.stdout).toContain('BUILD:    OpenAI Codex CLI · GPT-6-Luna');
-  expect(run.stdout).toContain('REVIEW:   OpenAI Codex CLI · GPT-6-Luna');
+  expect(run.stdout).toContain('PLAN:      OpenAI Codex CLI · GPT-6-Luna');
+  expect(run.stdout).toContain('BUILD:     OpenAI Codex CLI · GPT-6-Luna');
+  expect(run.stdout).toContain('REVIEW:    OpenAI Codex CLI · GPT-6-Luna');
   expect(run.stdout).not.toContain('GPT-6 Luna');
 });
 
@@ -103,9 +103,9 @@ it('prints readable OpenCode models with the same identities as the crew rows', 
     const identity = formatSeatIdentity({ seat });
     expect(identity).toBe(`OpenCode CLI · DeepSeek V4.1 Flash · via ${model.split('/')[0]}`);
     expect(out).not.toContain(model);
-    expect(out).toContain(`PLAN:     ${identity}`);
-    expect(out).toContain(`BUILD:    ${identity}`);
-    expect(out).toContain(`REVIEW:   ${identity}`);
+    expect(out).toContain(`PLAN:      ${identity}`);
+    expect(out).toContain(`BUILD:     ${identity}`);
+    expect(out).toContain(`REVIEW:    ${identity}`);
     identities.push(out.split('\n').find((line) => line.startsWith('BUILD:')));
   }
   expect(new Set(identities).size).toBe(3);
@@ -136,9 +136,9 @@ it('prints Claude aliases and model-encoded axes with the same identities as the
   const run = await status();
   expect(run.exitCode, run.stderr).toBe(0);
   const out = stripVTControlCharacters(run.stdout);
-  expect(out).toContain(`PLAN:     ${formatSeatIdentity({ seat: planner })}`);
-  expect(out).toContain(`BUILD:    ${formatSeatIdentity({ seat: implementer })}`);
-  expect(out).toContain(`REVIEW:   ${formatSeatIdentity({ seat: planner })}`);
+  expect(out).toContain(`PLAN:      ${formatSeatIdentity({ seat: planner })}`);
+  expect(out).toContain(`BUILD:     ${formatSeatIdentity({ seat: implementer })}`);
+  expect(out).toContain(`REVIEW:    ${formatSeatIdentity({ seat: planner })}`);
   expect(out).toContain('Sonnet 5.5 · high');
   expect(out).toContain('Claude Opus 5 · xhigh · thinking · fast');
 });
@@ -173,7 +173,7 @@ it.each(['high', 'max'] as const)(
 
     expect(run.exitCode, run.stderr).toBe(0);
     expect(stripVTControlCharacters(run.stdout).split('\n')).toContain(
-      `BUILD:    Claude Code CLI · Sonnet 5.5 · ${effort}`,
+      `BUILD:     Claude Code CLI · Sonnet 5.5 · ${effort}`,
     );
   },
 );
@@ -209,7 +209,10 @@ it('prints REVIEW as the switched PLAN seat when PLAN holds REVIEW, live and aft
       .split('\n')
       .filter((line) => /^(PLAN|REVIEW):/.test(line));
   };
-  const expected = ['PLAN:     Claude Code CLI · Opus 5.5', 'REVIEW:   Claude Code CLI · Opus 5.5'];
+  const expected = [
+    'PLAN:      Claude Code CLI · Opus 5.5',
+    'REVIEW:    Claude Code CLI · Opus 5.5',
+  ];
 
   expect(await seatLines()).toEqual(expected);
 

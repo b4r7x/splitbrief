@@ -256,10 +256,10 @@ export function sortPickerOptions(
   const aLauncher = a.kind === 'custom-command' || a.kind === 'no-fallback';
   const bLauncher = b.kind === 'custom-command' || b.kind === 'no-fallback';
   if (aLauncher !== bLauncher) return aLauncher === filterActive ? 1 : -1;
-  if (a.isCurrent && !b.isCurrent) return -1;
-  if (!a.isCurrent && b.isCurrent) return 1;
-  if (a.available && !b.available) return -1;
-  if (!a.available && b.available) return 1;
+  if ((a.kind === 'api') !== (b.kind === 'api')) return a.kind === 'api' ? 1 : -1;
+  const aTier = a.status.state === 'ready' ? 0 : a.status.state === 'unavailable' ? 2 : 1;
+  const bTier = b.status.state === 'ready' ? 0 : b.status.state === 'unavailable' ? 2 : 1;
+  if (aTier !== bTier) return aTier - bTier;
   return a.displayName.localeCompare(b.displayName);
 }
 

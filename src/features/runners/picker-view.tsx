@@ -51,8 +51,8 @@ import {
   formatToolsByline,
   isPickerItemDisabled,
   modelBylineAxes,
+  notReadyPane,
   pickerListingSource,
-  withRetry,
   wrapOnWords,
   type ModelCatalogDiagnostic,
 } from './picker-format.js';
@@ -71,12 +71,12 @@ import { inheritsPlannerSeat } from './config-transforms.js';
 const MAX_STALE_MODEL_COPY_COUNT = 99;
 
 /** Rows a failed refresh left behind are not a count the byline can claim. */
-function staleModelCopy(staleCount: number, remedied: boolean): string | undefined {
+function staleModelCopy(staleCount: number): string | undefined {
   if (staleCount <= 0) return undefined;
   const count = Math.min(staleCount, MAX_STALE_MODEL_COPY_COUNT);
   const label = staleCount > MAX_STALE_MODEL_COPY_COUNT ? `${count}+` : String(count);
   const noun = staleCount === 1 ? 'model' : 'models';
-  return withRetry(`${label} stale ${noun} retained`, '. Refresh detection.', remedied);
+  return `${label} stale ${noun} retained. Refresh detection.`;
 }
 
 /** The remedy the card may spend before its own copy needs the rest of the budget. */
@@ -225,12 +225,18 @@ export function PickerView({
       // replaced that column owes it.
       return { label: 'Local server', verb: 'set up', lines: localConnectionPaneLines(item) };
     }
-    if (item.kind !== 'custom-command') return undefined;
-    return {
-      label: 'Custom command',
-      verb: 'add custom',
-      lines: [...CUSTOM_COMMAND_PANE_LINES],
-    };
+    if (item.kind === 'custom-command') {
+      return {
+        label: 'Custom command',
+        verb: 'add custom',
+        lines: [...CUSTOM_COMMAND_PANE_LINES],
+      };
+    }
+    if (item.kind !== 'cli') return undefined;
+    return notReadyPane({
+      status: item.status,
+      savedRunner: item.isCurrent === true ? catalog.savedRunner : undefined,
+    });
   };
 
   const handleRefresh = () => {
@@ -304,10 +310,7 @@ export function PickerView({
         if (remedy !== undefined) return remedy;
       }
     }
-    // A status remediation takes the first row: a runner the picker cannot run says how to fix it,
-    // then on its own row what it is, so the advice never runs into the facts.
-    const reason = tool.status.remediation;
-    const stale = staleModelCopy(catalog.modelCounts.stale, reason !== null);
+    const stale = staleModelCopy(catalog.modelCounts.stale);
     const spent =
       stale === undefined ? 0 : getTerminalCellWidth(stale) + getTerminalCellWidth(SOFT_SEP);
 
@@ -322,7 +325,6 @@ export function PickerView({
         source: listing.source,
         unverifiedForPlan: listing.unverifiedForPlan,
         diagnostic: catalog.catalogDiagnostic,
-        status: tool.status,
         lane: catalog.catalogLane,
         capabilities: formatPermissionLabels(tool.permissions),
         billing: tool.billing,
@@ -359,20 +361,14 @@ export function PickerView({
       diagnostic: catalog.catalogDiagnostic,
       modelCount: catalog.modelRowCount,
       toolName: tool.displayName,
-      status: tool.status,
       budget: ctx.bylineBudget,
     });
-    // A status remediation outranks the listing failure: it comes first, and the failure takes the
-    // row left after it.
-    if (status !== undefined) {
-      return tool.status.remediation === null ? status : `${tool.status.remediation}\n${status}`;
-    }
+    if (status !== undefined) return status;
     const byline =
       ctx.activeColumn === 'right' && row !== null && row.kind !== 'action'
         ? modelsByline(row)
         : toolsByline();
-    const trail = stale === undefined ? byline : `${byline}${SOFT_SEP}${stale}`;
-    return reason === null ? trail : `${reason}\n${trail}`;
+    return stale === undefined ? byline : `${byline}${SOFT_SEP}${stale}`;
   };
 
   return (
