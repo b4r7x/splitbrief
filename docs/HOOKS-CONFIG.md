@@ -54,7 +54,7 @@ hooks:
     - name: "lint-check"     # Optional name (else uses command)
       command: "npx"         # Required — script or binary path
       args: ["prettier", "--check", "${event.file}"]
-      timeout_ms: 5000       # Default 30000, max 300000
+      timeout_ms: 5000       # Optional; no default, no maximum
       on_failure: block      # 'block' | 'warn' (default) | 'ignore'
 
   post_task:
@@ -236,7 +236,7 @@ Specific runtime failures are handled as follows, independent of (or layered on 
 | Hook crashes mid-stream                          | Partial stderr flushed as `warning`; treated as failure per `on_failure`.                  |
 | Non-zero exit code                               | Treated as `deny` if `on_failure: block`; `warn` otherwise.                                |
 
-A hung hook can never stall the workflow indefinitely — `timeout_ms` is mandatory at the schema level (default 30000 ms, hard ceiling 300000 ms).
+`timeout_ms` is optional. It has no default and no maximum: without it, a hook runs until it ends. Press Esc to stop a running hook. Set `timeout_ms` on a hook that must not run longer than a known time.
 
 ## Security model
 
@@ -245,7 +245,7 @@ Hook commands run with the user's **full shell privileges** — the same authori
 Because of that authority, SPLITBRIEF layers several guardrails:
 
 1. **No inline shell.** Schema rejects shell launchers by basename and shell-evaluation flags. Substitution never uses `shell: true`, so event-field values cannot be injected as shell syntax. If you need a pipeline, put it in a script file and invoke the script.
-2. **Mandatory timeout.** `timeout_ms` has a default (30000 ms) and a hard ceiling (300000 ms). A hung hook cannot stall the workflow indefinitely.
+2. **Stop control.** Esc stops a running hook. `timeout_ms` is an optional limit with no default and no maximum; set it to stop a hook after a known time.
 3. **Project cwd start.** Hooks start in `cwd: projectDir`, matching the implementer subprocess. This is not a filesystem sandbox: hook commands retain normal user access and can read or write anywhere the user account can.
 4. **Trust recheck before execution.** Before running a configured hook, SPLITBRIEF re-hashes the trusted hook configuration and referenced hook files. If bytes changed after trust, the hook is refused until the user re-trusts the new configuration.
 

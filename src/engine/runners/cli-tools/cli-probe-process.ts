@@ -6,7 +6,11 @@ import {
   type CliAuthChannel,
   type CliToolId,
 } from '../../../core/runners/cli-tool-catalog.js';
-import { createBoundedOutput, type BoundedOutput } from '../../../lib/process/bounded-output.js';
+import {
+  createBoundedOutput,
+  type BoundedOutput,
+  type BoundedOutputPolicy,
+} from '../../../lib/process/bounded-output.js';
 import { killProcess } from '../../../lib/process/registry.js';
 import {
   isFatalSignal,
@@ -14,7 +18,7 @@ import {
   type SpawnPipeFatalSignal,
 } from '../../../lib/process/spawn/lifecycle.js';
 import { throwIfAborted } from '../../../utils/abort.js';
-import { DISCOVERY_SUBPROCESS_TIMEOUT_MS } from '../../constants.js';
+import { CLI_PROBE_TIMEOUT_MS } from '../../constants.js';
 import {
   cliChannelStaging,
   cliPackageCacheEnv,
@@ -24,8 +28,6 @@ import {
 import { bridgedCliStatePresent } from '../sandbox-state-bridge.js';
 import type { CliAuthProbe, CliProbeCommand, CliProbeOutput, CliVersionProbe } from './contract.js';
 
-const PROBE_TIMEOUT_CEILING_MS = DISCOVERY_SUBPROCESS_TIMEOUT_MS;
-const PROBE_OUTPUT_CEILING_BYTES = 64 * 1024;
 const PROBE_TIMED_OUT = Symbol('splitbrief.probeTimedOut');
 const FORBIDDEN_PROBE_ARGUMENTS = new Set([
   'download',
@@ -113,31 +115,40 @@ export async function probeEnvironment({
   };
 }
 
-export async function runProbe({
-  executable,
-  command,
+export type ProbeOutputBudget = Readonly<{ ceilingBytes: number; policy: BoundedOutputPolicy }>;
+
+export type ProbeSpawn = Readonly<{ output: CliProbeOutput; spawnFailure: Error | undefined }>;
+
+const READINESS_PROBE_OUTPUT: ProbeOutputBudget = { ceilingBytes: 64 * 1024, policy: 'tail' };
+
+/**
+ * Runs one declared probe child: it stops the child at `CLI_PROBE_TIMEOUT_MS`,
+ * on `signal`, or past its output budget, and reports each as captured output.
+ */
+export async function spawnProbe({
+  executablePath,
+  args,
   cwd,
   env,
   signal: externalSignal,
+  maxOutputBytes: declaredOutputBytes,
+  budget,
 }: Readonly<{
-  executable: CliExecutableIdentity;
-  command: CliProbeCommand;
+  executablePath: string;
+  args: string[];
   cwd: string;
   env: NodeJS.ProcessEnv;
-  signal?: AbortSignal | undefined;
-}>): Promise<CliProbeOutput> {
+  signal: AbortSignal | undefined;
+  maxOutputBytes: number;
+  budget: ProbeOutputBudget;
+}>): Promise<ProbeSpawn> {
   throwIfAborted(externalSignal);
-  const [, ...args] = command.command;
-  const timeoutMs =
-    Number.isFinite(command.timeoutMs) && command.timeoutMs > 0
-      ? Math.min(command.timeoutMs, PROBE_TIMEOUT_CEILING_MS)
-      : PROBE_TIMEOUT_CEILING_MS;
   const maxOutputBytes =
-    Number.isSafeInteger(command.maxOutputBytes) && command.maxOutputBytes > 0
-      ? Math.min(command.maxOutputBytes, PROBE_OUTPUT_CEILING_BYTES)
-      : PROBE_OUTPUT_CEILING_BYTES;
-  const stdout = createBoundedOutput({ maxBytes: maxOutputBytes, policy: 'tail' });
-  const stderr = createBoundedOutput({ maxBytes: maxOutputBytes, policy: 'tail' });
+    Number.isSafeInteger(declaredOutputBytes) && declaredOutputBytes > 0
+      ? Math.min(declaredOutputBytes, budget.ceilingBytes)
+      : budget.ceilingBytes;
+  const stdout = createBoundedOutput({ maxBytes: maxOutputBytes, policy: budget.policy });
+  const stderr = createBoundedOutput({ maxBytes: maxOutputBytes, policy: budget.policy });
   const timeout = new AbortController();
   const signal =
     externalSignal === undefined
@@ -145,7 +156,7 @@ export async function runProbe({
       : AbortSignal.any([externalSignal, timeout.signal]);
   let timer: NodeJS.Timeout | undefined;
   let child: ChildProcess | undefined;
-  let spawnFailure: unknown;
+  let spawnFailure: Error | undefined;
   let outputBytes = 0;
   let outputExceeded = false;
 
@@ -156,20 +167,23 @@ export async function runProbe({
     outputExceeded = true;
     return {
       state: 'output-budget-breach',
-      remediation: `Readiness probe exceeded its ${maxOutputBytes}-byte output budget.`,
+      remediation: `Probe exceeded its ${maxOutputBytes}-byte output budget.`,
     };
   };
-  const captured = (exitCode: number | null, timedOut: boolean): CliProbeOutput => ({
-    stdout: stdout.snapshot().text,
-    stderr: stderr.snapshot().text,
-    exitCode,
-    timedOut,
-    outputExceeded,
+  const captured = (exitCode: number | null, timedOut: boolean): ProbeSpawn => ({
+    output: {
+      stdout: stdout.snapshot().text,
+      stderr: stderr.snapshot().text,
+      exitCode,
+      timedOut,
+      outputExceeded,
+    },
+    spawnFailure,
   });
 
   try {
-    return await spawnPipe<CliProbeOutput>({
-      command: executable.path,
+    return await spawnPipe<ProbeSpawn>({
+      command: executablePath,
       args,
       cwd,
       env,
@@ -180,7 +194,7 @@ export async function runProbe({
       partialStderrMaxBytes: maxOutputBytes,
       onSpawned: (proc) => {
         child = proc;
-        timer = setTimeout(() => timeout.abort(PROBE_TIMED_OUT), timeoutMs);
+        timer = setTimeout(() => timeout.abort(PROBE_TIMED_OUT), CLI_PROBE_TIMEOUT_MS);
         timer.unref?.();
       },
       onStdout: (chunk) => collect(stdout, chunk),
@@ -204,6 +218,32 @@ export async function runProbe({
   } finally {
     if (timer !== undefined) clearTimeout(timer);
   }
+}
+
+export async function runProbe({
+  executable,
+  command,
+  cwd,
+  env,
+  signal,
+}: Readonly<{
+  executable: CliExecutableIdentity;
+  command: CliProbeCommand;
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+  signal?: AbortSignal | undefined;
+}>): Promise<CliProbeOutput> {
+  const [, ...args] = command.command;
+  const { output } = await spawnProbe({
+    executablePath: executable.path,
+    args,
+    cwd,
+    env,
+    signal,
+    maxOutputBytes: command.maxOutputBytes,
+    budget: READINESS_PROBE_OUTPUT,
+  });
+  return output;
 }
 
 export function hasForbiddenProbeArgument(command: CliProbeCommand): boolean {

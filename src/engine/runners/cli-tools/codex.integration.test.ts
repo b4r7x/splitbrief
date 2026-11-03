@@ -63,11 +63,9 @@ describe('Codex role adapters', () => {
       terminalEvent: 'required',
     });
     expect(codexPlannerAdapter.probe.version.command).toEqual(['codex', '--version']);
-    expect(codexPlannerAdapter.probe.auth.command).toEqual(['codex', 'login', 'status']);
     expect(CODEX_NATIVE_MODEL_CATALOG_PROBE).toEqual({
       capability: 'debug-models-v2',
       command: ['codex', 'debug', 'models'],
-      timeoutMs: 5_000,
       maxOutputBytes: 2 * 1024 * 1024,
     });
   });

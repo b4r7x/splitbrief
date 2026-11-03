@@ -108,20 +108,13 @@ describe('Copilot role adapters', () => {
     );
   });
 
-  it('keeps stdin, process-exit completion, version/auth probes, and output limits explicit', () => {
+  it('keeps stdin, process-exit completion, the version probe, and output limits explicit', () => {
     for (const adapter of [copilotPlannerAdapter, copilotImplementerAdapter]) {
       expect(adapter.promptTransport).toEqual({ kind: 'stdin' });
       expect(adapter.outputContract).toEqual({ kind: 'text-exit', successfulExitCodes: [0] });
       expect(adapter.probe.version).toEqual({
         command: ['copilot', '--version'],
         cwd: 'neutral',
-        timeoutMs: 5_000,
-        maxOutputBytes: 4_096,
-      });
-      expect(adapter.probe.auth).toEqual({
-        command: ['copilot', 'auth', 'status'],
-        cwd: 'neutral',
-        timeoutMs: 5_000,
         maxOutputBytes: 4_096,
       });
     }

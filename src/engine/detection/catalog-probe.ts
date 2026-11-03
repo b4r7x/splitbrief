@@ -1,4 +1,3 @@
-import type { ChildProcess } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
@@ -16,14 +15,6 @@ import {
   type CliToolId,
 } from '../../core/runners/cli-tool-catalog.js';
 import { classifyCliAdmittedVersion } from '../../core/runners/cli-version.js';
-import { createBoundedOutput, type BoundedOutput } from '../../lib/process/bounded-output.js';
-import { killProcess } from '../../lib/process/registry.js';
-import {
-  isFatalSignal,
-  spawnPipe,
-  type SpawnPipeFatalSignal,
-} from '../../lib/process/spawn/lifecycle.js';
-import { DISCOVERY_SUBPROCESS_TIMEOUT_MS } from '../constants.js';
 import {
   nativeCliCatalogToDetectedModels,
   parseCompleteCommandCodeNativeModelCatalog,
@@ -40,9 +31,11 @@ import {
   authChannelRequiresCredential,
   type AuthProbeRun,
 } from '../runners/cli-tools/readiness-probe.js';
+import { spawnProbe, type ProbeOutputBudget } from '../runners/cli-tools/cli-probe-process.js';
 import { providerOracleCommand } from '../runners/cli-tools/provider-oracle.js';
 import { isCanonicalCliDeclaredProbe } from '../runners/cli-tools/registry.js';
 import { throwIfAborted } from '../../utils/abort.js';
+import { trackProbe } from '../probe-activity.js';
 import { sanitizeTerminalDiagnosticText, stripTerminalControls } from '../../utils/display-text.js';
 import type {
   CliCatalogProbe,
@@ -61,9 +54,10 @@ import {
 } from './cli-context.js';
 
 const CATALOG_ADMISSION_MAX_AGE_MS = 30_000;
-const CATALOG_PROBE_TIMEOUT_CEILING_MS = DISCOVERY_SUBPROCESS_TIMEOUT_MS;
-const CATALOG_PROBE_OUTPUT_CEILING_BYTES = 4 * 1024 * 1024;
-const CATALOG_PROBE_TIMED_OUT = Symbol('splitbrief.catalogProbeTimedOut');
+const CATALOG_PROBE_OUTPUT: ProbeOutputBudget = {
+  ceilingBytes: 4 * 1024 * 1024,
+  policy: 'prefix-tail',
+};
 /**
  * Command Code prints its listing in half a second, then flushes telemetry for
  * five to ten more before it exits, so every probe outlived its budget. Its own
@@ -214,7 +208,6 @@ function catalogProbeForVersion(
     kind: 'catalog',
     command: immutableProbeCommand(legacy.command),
     cwd: probe.cwd,
-    timeoutMs: probe.timeoutMs,
     maxOutputBytes: probe.maxOutputBytes,
     ...(legacy.manualCommand === undefined
       ? {}
@@ -334,10 +327,9 @@ async function runAdmittedCatalogProbe(
   command: Exclude<CliCatalogProbe, { kind: 'not-run' }>,
   cwd: string,
   env: NodeJS.ProcessEnv,
-  externalSignal: AbortSignal | undefined,
+  signal: AbortSignal | undefined,
   projectDir: string | undefined,
 ): Promise<ProbeOutcome<readonly DetectedModel[]>> {
-  throwIfAborted(externalSignal);
   const [, ...declared] = command.command;
   // The cwd stays neutral; only the header names the project, encoded as
   // OpenCode's own client encodes it, so no path segment becomes an argument.
@@ -345,91 +337,16 @@ async function runAdmittedCatalogProbe(
     projectDir === undefined || command.directoryHeader === undefined
       ? declared
       : [...declared, '-H', `${command.directoryHeader}:${encodeURIComponent(projectDir)}`];
-  const timeoutMs =
-    Number.isFinite(command.timeoutMs) && command.timeoutMs > 0
-      ? Math.min(command.timeoutMs, CATALOG_PROBE_TIMEOUT_CEILING_MS)
-      : CATALOG_PROBE_TIMEOUT_CEILING_MS;
-  const maxOutputBytes =
-    Number.isSafeInteger(command.maxOutputBytes) && command.maxOutputBytes > 0
-      ? Math.min(command.maxOutputBytes, CATALOG_PROBE_OUTPUT_CEILING_BYTES)
-      : CATALOG_PROBE_OUTPUT_CEILING_BYTES;
-  const stdout = createBoundedOutput({ maxBytes: maxOutputBytes, policy: 'prefix-tail' });
-  const stderr = createBoundedOutput({ maxBytes: maxOutputBytes, policy: 'prefix-tail' });
-  const timeout = new AbortController();
-  const signal =
-    externalSignal === undefined
-      ? timeout.signal
-      : AbortSignal.any([externalSignal, timeout.signal]);
-  let timer: NodeJS.Timeout | undefined;
-  let child: ChildProcess | undefined;
-  let spawnFailure: Error | undefined;
-  let outputBytes = 0;
-  let outputExceeded = false;
-
-  const collect = (output: BoundedOutput, chunk: string): SpawnPipeFatalSignal | undefined => {
-    output.append(chunk);
-    outputBytes += Buffer.byteLength(chunk, 'utf8');
-    if (outputBytes <= maxOutputBytes || outputExceeded) return undefined;
-    outputExceeded = true;
-    return {
-      state: 'output-budget-breach',
-      remediation: `Catalog probe exceeded its ${maxOutputBytes}-byte output budget.`,
-    };
-  };
-  const captured = (
-    exitCode: number | null,
-    timedOut: boolean,
-  ): ProbeOutcome<readonly DetectedModel[]> =>
-    catalogOutcomeFromProbe(
-      operation.context.id,
-      command,
-      {
-        stdout: stdout.snapshot().text,
-        stderr: stderr.snapshot().text,
-        exitCode,
-        timedOut,
-        outputExceeded,
-      },
-      spawnFailure,
-    );
-
-  try {
-    return await spawnPipe<ProbeOutcome<readonly DetectedModel[]>>({
-      command: operation.executable.path,
-      args,
-      cwd,
-      env,
-      detached: true,
-      ledger: false,
-      signal,
-      partialStdoutMaxBytes: maxOutputBytes,
-      partialStderrMaxBytes: maxOutputBytes,
-      onSpawned: (proc) => {
-        child = proc;
-        timer = setTimeout(() => timeout.abort(CATALOG_PROBE_TIMED_OUT), timeoutMs);
-        timer.unref?.();
-      },
-      onStdout: (chunk) => collect(stdout, chunk),
-      onStderr: (chunk) => collect(stderr, chunk),
-      onError: (err) => {
-        spawnFailure = err;
-        return null;
-      },
-      onClose: async (exitCode) => {
-        if (child !== undefined) await killProcess(child, { group: true });
-        return captured(exitCode, false);
-      },
-    });
-  } catch (cause) {
-    if (cause === CATALOG_PROBE_TIMED_OUT) return captured(null, true);
-    if (isFatalSignal(cause) && cause.state === 'output-budget-breach') {
-      return captured(null, false);
-    }
-    if (cause === spawnFailure) return captured(null, false);
-    throw cause;
-  } finally {
-    if (timer !== undefined) clearTimeout(timer);
-  }
+  const { output, spawnFailure } = await spawnProbe({
+    executablePath: operation.executable.path,
+    args,
+    cwd,
+    env,
+    signal,
+    maxOutputBytes: command.maxOutputBytes,
+    budget: CATALOG_PROBE_OUTPUT,
+  });
+  return catalogOutcomeFromProbe(operation.context.id, command, output, spawnFailure);
 }
 
 function catalogCommandFailureCause(
@@ -557,13 +474,15 @@ export async function probeContextCatalog(
     const outcome =
       input.authProbeRun !== undefined && probeCommandsMatch(probe, input.authProbeRun.command)
         ? catalogOutcomeFromProbe(operation.context.id, probe, input.authProbeRun.output, undefined)
-        : await runAdmittedCatalogProbe(
-            operation,
-            probe,
-            neutralDir,
-            environment.env,
-            input.signal,
-            input.namesProject ? input.projectDir : undefined,
+        : await trackProbe({ tool: operation.context.id, check: 'model list' }, () =>
+            runAdmittedCatalogProbe(
+              operation,
+              probe,
+              neutralDir,
+              environment.env,
+              input.signal,
+              input.namesProject ? input.projectDir : undefined,
+            ),
           );
     const after = await resolveCustomExecutable({
       command: operation.executable.executableIdentity.canonicalPath,

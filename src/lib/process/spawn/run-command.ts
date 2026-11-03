@@ -8,8 +8,6 @@ import {
   spawnPipe,
 } from './lifecycle.js';
 
-const DEFAULT_COMMAND_TIMEOUT_MS = 60_000;
-
 export async function runCommand(
   command: string,
   args: string[],
@@ -28,7 +26,7 @@ export async function runCommand(
   stdoutMetadata?: BoundedOutputMetadata | undefined;
   stderrMetadata?: BoundedOutputMetadata | undefined;
 }> {
-  const timeout = options?.timeout ?? DEFAULT_COMMAND_TIMEOUT_MS;
+  const timeout = options?.timeout;
   const stdout = createBoundedOutput({
     maxBytes: options?.outputMaxBytes ?? DEFAULT_PROCESS_OUTPUT_MAX_BYTES,
     policy: 'prefix-tail',
@@ -37,10 +35,10 @@ export async function runCommand(
     maxBytes: options?.stderrMaxBytes ?? DEFAULT_PROCESS_STDERR_MAX_BYTES,
     policy: 'tail',
   });
-  const timeoutSignal = AbortSignal.timeout(timeout);
+  const timeoutSignal = timeout === undefined ? undefined : AbortSignal.timeout(timeout);
   const signal =
-    options?.signal === undefined
-      ? timeoutSignal
+    options?.signal === undefined || timeoutSignal === undefined
+      ? (timeoutSignal ?? options?.signal)
       : AbortSignal.any([options.signal, timeoutSignal]);
 
   try {
@@ -85,7 +83,7 @@ export async function runCommand(
       onError: () => null,
     });
   } catch (err: unknown) {
-    if (err !== timeoutSignal.reason) throw err;
+    if (timeout === undefined || err !== timeoutSignal?.reason) throw err;
 
     const stdoutSnapshot = stdout.snapshot();
     const stderrSnapshot = stderr.snapshot();

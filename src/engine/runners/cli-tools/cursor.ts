@@ -87,13 +87,6 @@ function createProbe() {
     version: {
       command: [CURSOR_COMMAND, ...CURSOR_VERSION_ARGS] as const,
       cwd: 'neutral' as const,
-      timeoutMs: 5_000,
-      maxOutputBytes: 4_096,
-    },
-    auth: {
-      command: [CURSOR_COMMAND, 'status'] as const,
-      cwd: 'neutral' as const,
-      timeoutMs: 5_000,
       maxOutputBytes: 4_096,
     },
   } as const;

@@ -89,24 +89,20 @@ function declaredCatalogProbe(): CliProbeContract {
   const version = {
     command: ['codex', '--version'] as const,
     cwd: 'neutral' as const,
-    timeoutMs: 1_000,
     maxOutputBytes: 1_024,
   };
   const auth = {
     command: ['codex', 'login', 'status'] as const,
     cwd: 'neutral' as const,
-    timeoutMs: 1_000,
     maxOutputBytes: 1_024,
   };
   const catalog = {
     command: ['codex', 'models', 'list'] as const,
     cwd: 'neutral' as const,
-    timeoutMs: 1_000,
     maxOutputBytes: 1_024,
   };
   return {
     version,
-    auth,
     declared: {
       kind: 'declared',
       version: {
@@ -132,13 +128,6 @@ function legacyVersionOnlyProbe(): CliProbeContract {
     version: {
       command: ['codex', '--version'],
       cwd: 'neutral',
-      timeoutMs: 1_000,
-      maxOutputBytes: 1_024,
-    },
-    auth: {
-      command: ['codex', 'login', 'status'],
-      cwd: 'neutral',
-      timeoutMs: 1_000,
       maxOutputBytes: 1_024,
     },
   };
@@ -875,7 +864,6 @@ describe('context-bound runner evidence', () => {
           mutationResults = [
             Reflect.set(catalog.command, 0, 'attacker'),
             Reflect.set(catalog, 'parse', () => ({ kind: 'success', value: [] })),
-            Reflect.set(catalog, 'timeoutMs', 1),
             Reflect.set(declared, 'catalog', { kind: 'not-run' }),
           ];
           return 1_001;
@@ -888,7 +876,7 @@ describe('context-bound runner evidence', () => {
           now,
         });
 
-        expect(mutationResults).toEqual([false, false, false, false]);
+        expect(mutationResults).toEqual([false, false, false]);
         expect(evidence.catalog).toEqual({
           kind: 'success',
           value: [{ id: 'model-a', nativeOrder: 0 }],

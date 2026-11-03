@@ -2,16 +2,22 @@ import { describe, it, expect } from 'vitest';
 import { HookEntrySchema, HooksConfigSchema } from './hooks.js';
 
 describe('HookEntrySchema', () => {
-  it('parses legacy command hook entries with runtime defaults', () => {
+  it('parses legacy command hook entries with runtime defaults and no time limit', () => {
     const result = HookEntrySchema.parse({ command: './scripts/pre-task.sh' });
 
     expect(result).toEqual({
       kind: 'command',
       command: './scripts/pre-task.sh',
       args: [],
-      timeout_ms: 30_000,
       on_failure: 'warn',
     });
+    expect(result.timeout_ms).toBeUndefined();
+  });
+
+  it('accepts a time limit above five minutes', () => {
+    const result = HookEntrySchema.parse({ command: './scripts/pre-task.sh', timeout_ms: 999_999 });
+
+    expect(result.timeout_ms).toBe(999_999);
   });
 
   it.each([
@@ -23,7 +29,8 @@ describe('HookEntrySchema', () => {
     [{ command: '/usr/bin/env' }],
     [{ command: 'node', args: ['-c', 'echo nope'] }],
     [{ command: 'node', args: ['bash'] }],
-    [{ command: './scripts/pre-task.sh', timeout_ms: 999_999 }],
+    [{ command: './scripts/pre-task.sh', timeout_ms: 0 }],
+    [{ command: './scripts/pre-task.sh', timeout_ms: 1.5 }],
   ])('rejects unsafe hook config %o', (entry) => {
     expect(HookEntrySchema.safeParse(entry).success).toBe(false);
   });

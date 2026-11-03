@@ -28,6 +28,7 @@ import {
   suspendTerminalForEditor,
 } from '../../lib/terminal/editor-handover.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
+import { holdSlowProbeLines } from '../slow-probe-line.js';
 import { resolveRenderInputConfig } from './input-config.js';
 import { createEditorOutput } from './editor-output.js';
 import {
@@ -121,6 +122,7 @@ export async function renderApp(
   options: RenderOptions,
   deps: { exit: (code: number) => void } = { exit: (code) => process.exit(code) },
 ): Promise<void> {
+  const releaseSlowProbeLines = holdSlowProbeLines();
   const { fullscreen, mouse, hover, projectDir, unmountSignal } = options;
   let processCompletion: Promise<void> | undefined;
   const kittyKeyboard = detectKittyKeyboardFlags();
@@ -401,6 +403,7 @@ export async function renderApp(
     process.off('uncaughtException', settleCrash);
     process.off('unhandledRejection', settleCrash);
     await cleanup();
+    releaseSlowProbeLines();
   }
   if (processCompletion !== undefined) await processCompletion;
   else if (!unmountSignal?.aborted) deps.exit(Number(process.exitCode ?? 0));

@@ -43,6 +43,7 @@ import {
   type CliProbeOutput,
 } from './contract.js';
 import { isProviderOracleProbe, providerOracleCommand } from './provider-oracle.js';
+import { trackProbe } from '../../probe-activity.js';
 import { readCodexCredentialStore } from '../host-model-selection.js';
 import { revalidateCliExecutableIdentity } from '../resolve-cli-executable.js';
 import { removeSandboxTempDirs } from '../sandbox-state-paths.js';
@@ -140,13 +141,15 @@ async function declaredReadinessEvidence({
     ? { kind: 'not-run' as const }
     : versionOutcomeFromProbe({
         probe: probe.version,
-        output: await runProbe({
-          executable,
-          command: probe.version,
-          cwd: neutralDir,
-          env: versionEnvironment.env,
-          signal,
-        }),
+        output: await trackProbe({ tool, check: 'version' }, () =>
+          runProbe({
+            executable,
+            command: probe.version,
+            cwd: neutralDir,
+            env: versionEnvironment.env,
+            signal,
+          }),
+        ),
       });
   if ((await revalidateCliExecutableIdentity(executable)) !== 'match') {
     return { version: { kind: 'cancelled' }, auth: 'cancelled' };
@@ -198,13 +201,15 @@ async function declaredReadinessEvidence({
     return { version, auth: await absentCredentialAuth(tool, authChannel) };
   }
   const authCommand = authProbeCommandForVersion(tool, authProbe, version);
-  const output = await runProbe({
-    executable,
-    command: authCommand,
-    cwd: neutralDir,
-    env: authEnvironment.env,
-    signal,
-  });
+  const output = await trackProbe({ tool, check: 'sign-in' }, () =>
+    runProbe({
+      executable,
+      command: authCommand,
+      cwd: neutralDir,
+      env: authEnvironment.env,
+      signal,
+    }),
+  );
   if ((await revalidateCliExecutableIdentity(executable)) !== 'match') {
     return { version: { kind: 'cancelled' }, auth: 'cancelled' };
   }
@@ -287,6 +292,7 @@ export async function probeCliReadiness(
   }
 
   let installedVersion: string | null;
+  let versionTimedOut: boolean;
   let auth: CliAuthState;
   let providerAuth: CliProviderAuth | undefined;
   if (isDeclaredCliProbeContract(options.probe)) {
@@ -299,25 +305,30 @@ export async function probeCliReadiness(
       ...(options.signal !== undefined ? { signal: options.signal } : {}),
     });
     installedVersion = evidence.version.kind === 'success' ? evidence.version.value : null;
+    versionTimedOut = evidence.version.kind === 'timeout';
     auth = legacyAuthState(evidence.auth);
     providerAuth = evidence.providerAuth;
   } else {
+    const executable = options.executable;
     const neutralDir = await mkdtemp(join(tmpdir(), 'splitbrief-readiness-'));
     try {
       const environment = await probeEnvironment({
-        executable: options.executable,
+        executable,
         neutralDir,
         tool: options.tool,
         channel: undefined,
       });
-      const versionProbe = await runProbe({
-        executable: options.executable,
-        command: options.probe.version,
-        cwd: neutralDir,
-        env: environment.env,
-        signal: options.signal,
-      });
+      const versionProbe = await trackProbe({ tool: options.tool, check: 'version' }, () =>
+        runProbe({
+          executable,
+          command: options.probe.version,
+          cwd: neutralDir,
+          env: environment.env,
+          signal: options.signal,
+        }),
+      );
       installedVersion = extractVersion(versionProbe);
+      versionTimedOut = versionProbe.timedOut;
       auth = 'unknown';
     } finally {
       await rm(neutralDir, { recursive: true, force: true });
@@ -345,7 +356,7 @@ export async function probeCliReadiness(
       executable: readinessExecutable(options.executable),
       trust: 'trusted',
       installedVersion,
-      compatibility: 'unverified',
+      compatibility: versionTimedOut ? 'timeout' : 'unverified',
       auth,
       ...(unversionedProviderAuth === undefined ? {} : { providerAuth: unversionedProviderAuth }),
     });

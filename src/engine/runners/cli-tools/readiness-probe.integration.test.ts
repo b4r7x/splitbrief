@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import type { CliReadinessResult } from '../../../core/schemas/readiness.js';
-import { freezeProbeDeadlines } from '#testing/helpers/fake-timers.js';
+import { expireDeadlineAfterFile, freezeProbeDeadlines } from '#testing/helpers/fake-timers.js';
 import { itUnix } from '#testing/helpers/planner-command-invoke.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import type { AuthFact } from '../../../core/discovery/runner-evidence.js';
@@ -18,6 +18,19 @@ import { providerOracleAuthFact } from './provider-oracle.js';
 import { probeCliReadiness, probeDeclaredCliReadinessEvidence } from './readiness-probe.js';
 import { lookupCliReadinessProbe } from './registry.js';
 import { resolveCliExecutable } from '../resolve-cli-executable.js';
+
+/** A case whose child never answers on a real clock sets a short probe limit here. */
+const probeLimit = vi.hoisted(() => ({ ms: undefined as number | undefined }));
+
+vi.mock('../../constants.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../constants.js')>();
+  return {
+    ...actual,
+    get CLI_PROBE_TIMEOUT_MS() {
+      return probeLimit.ms ?? actual.CLI_PROBE_TIMEOUT_MS;
+    },
+  };
+});
 
 async function nodeExecutable(): Promise<CliExecutableIdentity> {
   const path = await realpath(process.execPath);
@@ -33,30 +46,11 @@ async function nodeExecutable(): Promise<CliExecutableIdentity> {
   };
 }
 
-/**
- * How long a probe waits for a `node -e` script that answers immediately. These cases are about
- * what the probe concludes, never about how fast a process starts, and a machine running the whole
- * suite at once takes far longer than a second to spawn one. A case that is about a timeout sets
- * its own, much shorter, value.
- */
-const PROBE_TIMEOUT_MS = 10_000;
-
-function probe(
-  versionScript = "console.log('codex 0.40.0')",
-  authScript = 'process.exit(0)',
-  timeoutMs = PROBE_TIMEOUT_MS,
-): CliProbeContract {
+function probe(versionScript = "console.log('codex 0.40.0')"): CliProbeContract {
   return {
     version: {
       command: ['node', '-e', versionScript],
       cwd: 'neutral',
-      timeoutMs,
-      maxOutputBytes: 1_024,
-    },
-    auth: {
-      command: ['node', '-e', authScript],
-      cwd: 'neutral',
-      timeoutMs,
       maxOutputBytes: 1_024,
     },
   };
@@ -67,7 +61,6 @@ function declaredProbe(
     versionScript?: string;
     authScript?: string;
     authCommand?: readonly [string, ...string[]];
-    authTimeoutMs?: number;
     catalogScript?: string;
     parseAuth?: (input: CliProbeOutput) => AuthFact;
     authNotRun?: boolean;
@@ -76,7 +69,6 @@ function declaredProbe(
   const version = {
     command: ['node', '-e', options.versionScript ?? "console.log('codex 0.40.0')"] as const,
     cwd: 'neutral' as const,
-    timeoutMs: PROBE_TIMEOUT_MS,
     maxOutputBytes: 1_024,
   };
   const auth = {
@@ -84,18 +76,15 @@ function declaredProbe(
       options.authCommand ??
       (['node', '-e', options.authScript ?? "console.log('verified')"] as const),
     cwd: 'neutral' as const,
-    timeoutMs: options.authTimeoutMs ?? PROBE_TIMEOUT_MS,
     maxOutputBytes: 1_024,
   };
   const catalog = {
     command: ['node', '-e', options.catalogScript ?? "console.log('model-a')"] as const,
     cwd: 'neutral' as const,
-    timeoutMs: PROBE_TIMEOUT_MS,
     maxOutputBytes: 1_024,
   };
   return {
     version,
-    auth,
     declared: {
       kind: 'declared',
       version: {
@@ -158,24 +147,19 @@ async function fakeOpencode(dir: string, oracleBody: string): Promise<CliExecuta
   };
 }
 
-function opencodeProbe(
-  options: { authTimeoutMs?: number; authNotRun?: boolean } = {},
-): CliProbeContract {
+function opencodeProbe(options: { authNotRun?: boolean } = {}): CliProbeContract {
   const version = {
     command: ['opencode', '--version'] as const,
     cwd: 'neutral' as const,
-    timeoutMs: PROBE_TIMEOUT_MS,
     maxOutputBytes: 1_024,
   };
   const auth = {
     command: ['opencode', 'auth', 'list', '--standalone', '--format', 'json'] as const,
     cwd: 'neutral' as const,
-    timeoutMs: options.authTimeoutMs ?? PROBE_TIMEOUT_MS,
     maxOutputBytes: 1_024,
   };
   return {
     version,
-    auth,
     declared: {
       kind: 'declared',
       version: {
@@ -192,7 +176,6 @@ function opencodeProbe(
       catalog: {
         command: ['opencode', 'models'] as const,
         cwd: 'neutral' as const,
-        timeoutMs: PROBE_TIMEOUT_MS,
         maxOutputBytes: 1_024,
         kind: 'catalog',
         parse: () => ({ kind: 'success', value: [] }),
@@ -204,7 +187,6 @@ function opencodeProbe(
 async function probeOpencode(
   options: Readonly<{
     oracleBody?: string;
-    authTimeoutMs?: number;
     authNotRun?: boolean;
     classifyVersion?: () => 'compatible' | 'incompatible' | 'unverified';
   }>,
@@ -221,10 +203,9 @@ async function probeOpencode(
       tool: 'opencode',
       executable,
       authChannel: 'provider-dependent',
-      probe: opencodeProbe({
-        ...(options.authTimeoutMs === undefined ? {} : { authTimeoutMs: options.authTimeoutMs }),
-        ...(options.authNotRun === undefined ? {} : { authNotRun: options.authNotRun }),
-      }),
+      probe: opencodeProbe(
+        options.authNotRun === undefined ? {} : { authNotRun: options.authNotRun },
+      ),
       ...(options.classifyVersion === undefined
         ? {}
         : { classifyVersion: options.classifyVersion }),
@@ -269,6 +250,7 @@ freezeProbeDeadlines();
 
 describe('CLI readiness probe', () => {
   afterEach(() => {
+    probeLimit.ms = undefined;
     vi.unstubAllEnvs();
   });
 
@@ -338,7 +320,6 @@ describe('CLI readiness probe', () => {
                   ].join(' '),
                 ],
                 cwd: 'neutral',
-                timeoutMs: 250,
                 maxOutputBytes: 1_024,
               },
             },
@@ -485,6 +466,7 @@ describe('CLI readiness probe', () => {
 
   it('reaps a hanging probe before returning an unverified result', async () => {
     vi.useRealTimers();
+    probeLimit.ms = 250;
     const executable = await nodeExecutable();
     const startedAt = Date.now();
     const result = await probeCliReadiness({
@@ -516,8 +498,6 @@ describe('CLI readiness probe', () => {
               'child.unref();',
               'setInterval(() => {}, 1_000);',
             ].join(' '),
-            undefined,
-            10_000,
           ),
         });
 
@@ -542,6 +522,7 @@ describe('CLI readiness probe', () => {
     'settles when a descendant escapes the probe group holding the inherited pipes',
     async () => {
       vi.useRealTimers();
+      probeLimit.ms = 250;
       const executable = await nodeExecutable();
       const result = await probeCliReadiness({
         tool: 'codex',
@@ -566,6 +547,7 @@ describe('CLI readiness probe', () => {
     'propagates a termination platform limitation without an unhandled rejection',
     async () => {
       vi.useRealTimers();
+      probeLimit.ms = 250;
       await withTempDir('readiness-probe-platform', async (directory) => {
         const executable = await nodeExecutable();
         const pidFile = join(directory, 'probe.pid');
@@ -598,7 +580,6 @@ describe('CLI readiness probe', () => {
                     `require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 1_000)`,
                   ],
                   cwd: 'neutral',
-                  timeoutMs: 250,
                   maxOutputBytes: 1_024,
                 },
               },
@@ -628,15 +609,15 @@ describe('CLI readiness probe', () => {
         const executable = await nodeExecutable();
         const pidFile = join(directory, 'descendant.pid');
         vi.stubEnv('OPENAI_API_KEY', 'readiness-test-key');
+        // Long enough for the grandchild to record its pid before the reap, on a machine
+        // running the whole suite at once; the elapsed assertion below still holds.
+        probeLimit.ms = 8_000;
         const startedAt = Date.now();
         const result = await probeCliReadiness({
           tool: 'codex',
           executable,
           authChannel: 'api-key',
           probe: declaredProbe({
-            // Long enough for the grandchild to record its pid before the reap, on a machine
-            // running the whole suite at once; the elapsed assertion below still holds.
-            authTimeoutMs: 8_000,
             authScript: [
               'const { spawn } = require("node:child_process");',
               `const descendant = spawn(process.execPath, ["-e", ${JSON.stringify(`require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); process.on("SIGTERM", () => {}); setInterval(() => {}, 1_000)`)}], { stdio: "ignore" });`,
@@ -818,9 +799,9 @@ describe('CLI readiness probe', () => {
 
     itUnix('names a hanging oracle command a timeout', async () => {
       vi.useRealTimers();
+      probeLimit.ms = 250;
       const result = await probeOpencode({
         oracleBody: 'setTimeout(() => process.exit(0), 5_000);',
-        authTimeoutMs: 200,
       });
 
       expect(result.providerAuth).toEqual({ kind: 'unreadable', reason: 'timeout' });
@@ -892,6 +873,124 @@ describe('CLI readiness probe', () => {
       });
 
       expect(result.auth).toBe('authenticated');
+    });
+  });
+
+  itUnix(
+    'gives a version check that never answers one minute before it times out',
+    async () => {
+      await withTempDir('readiness-probe-version-ceiling', async (directory) => {
+        const versionStarted = join(directory, 'version-started');
+        const script = join(directory, 'codex');
+        await writeFile(
+          script,
+          [
+            '#!/bin/sh',
+            'if [ "$1" = "--version" ]; then',
+            `  : > ${JSON.stringify(versionStarted)}`,
+            '  exec tail -f /dev/null',
+            'fi',
+            'exit 1',
+            '',
+          ].join('\n'),
+        );
+        await chmod(script, 0o755);
+        const executable = await resolveCliExecutable({
+          command: script,
+          projectDir: '/neutral/project',
+        });
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+        const armedAt = Date.now();
+
+        const pending = probeCliReadiness({
+          tool: 'codex',
+          executable,
+          probe: lookupCliReadinessProbe({ tool: 'codex', role: 'planner' }),
+        });
+        await expireDeadlineAfterFile(versionStarted);
+
+        expect(Date.now() - armedAt).toBe(60_000);
+        expect(await pending).toMatchObject({ installedVersion: null });
+      });
+    },
+    20_000,
+  );
+
+  itUnix('keeps a declared version check that timed out as a timeout', async () => {
+    await withTempDir('readiness-probe-version-timeout', async (directory) => {
+      vi.stubEnv('HOME', join(directory, 'home'));
+      vi.stubEnv('CODEX_HOME', join(directory, 'home', '.codex'));
+      const versionStarted = join(directory, 'version-started');
+      const script = join(directory, 'codex');
+      await writeFile(
+        script,
+        [
+          '#!/bin/sh',
+          'if [ "$1" = "--version" ]; then',
+          `  : > ${JSON.stringify(versionStarted)}`,
+          '  exec tail -f /dev/null',
+          'fi',
+          'exit 1',
+          '',
+        ].join('\n'),
+      );
+      await chmod(script, 0o755);
+      const executable = await resolveCliExecutable({
+        command: script,
+        projectDir: '/neutral/project',
+      });
+
+      const pending = probeCliReadiness({
+        tool: 'codex',
+        executable,
+        probe: lookupCliReadinessProbe({ tool: 'codex', role: 'planner' }),
+      });
+      await expireDeadlineAfterFile(versionStarted);
+
+      expect(await pending).toMatchObject({ installedVersion: null, compatibility: 'timeout' });
+    });
+  });
+
+  it('keeps a legacy version check that timed out as a timeout', async () => {
+    await withTempDir('readiness-probe-legacy-version-timeout', async (directory) => {
+      const versionStarted = join(directory, 'version-started');
+      const executable = await nodeExecutable();
+
+      const pending = probeCliReadiness({
+        tool: 'codex',
+        executable,
+        probe: probe(
+          `require('node:fs').writeFileSync(${JSON.stringify(versionStarted)}, ''); setInterval(() => {}, 1_000)`,
+        ),
+      });
+      await expireDeadlineAfterFile(versionStarted);
+
+      expect(await pending).toMatchObject({ installedVersion: null, compatibility: 'timeout' });
+    });
+  });
+
+  it('keeps a sign-in check that timed out as a timeout', async () => {
+    await withTempDir('readiness-probe-auth-timeout', async (directory) => {
+      vi.stubEnv('OPENAI_API_KEY', 'readiness-test-key');
+      const authStarted = join(directory, 'auth-started');
+      const executable = await nodeExecutable();
+
+      const pending = probeCliReadiness({
+        tool: 'codex',
+        executable,
+        authChannel: 'api-key',
+        classifyVersion: () => 'compatible',
+        probe: declaredProbe({
+          authScript: `require('node:fs').writeFileSync(${JSON.stringify(authStarted)}, ''); setInterval(() => {}, 1_000)`,
+        }),
+      });
+      await expireDeadlineAfterFile(authStarted);
+
+      expect(await pending).toMatchObject({
+        compatibility: 'compatible',
+        auth: 'timeout',
+        status: 'unverified',
+      });
     });
   });
 });

@@ -42,7 +42,6 @@ function codexProbe(): CliProbeContract {
     ({
       command: ['node', '-e', script] as const,
       cwd: 'neutral' as const,
-      timeoutMs: 10_000,
       maxOutputBytes: 1_024,
     }) as const;
   const testedVersion = CLI_TOOL_CATALOG.codex.compatibility.testedVersion;
@@ -50,7 +49,6 @@ function codexProbe(): CliProbeContract {
   const auth = command("console.log('verified')");
   return {
     version,
-    auth,
     declared: {
       kind: 'declared',
       version: {

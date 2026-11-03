@@ -8,9 +8,9 @@ import { createPlanner, createReviewer } from '../runners/factory.js';
 import type { RunnerFactoryAuthority } from '../runners/factory-gates.js';
 import type { RunnerSlot } from '../runners/prepared-execution.js';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
-import { TIMEOUTS } from '../../core/pipeline-spec/timeouts.js';
 import { admitApiCall, type PreparedApiSeat } from './api-budget.js';
 import type { ProviderDef } from './types.js';
+import type { ApiDeadlineRun } from './api-deadlines.js';
 import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { callPlanner } from '#testing/helpers/planner-call.js';
@@ -21,42 +21,60 @@ type WireRequest = {
   model: string;
   maxTokens: number | undefined;
   messages: { role: string; content: string }[];
-  /** The bound the seat gave the SDK client this request went out on. */
+  /** The timeout of the real SDK client the seat's options build. */
   clientTimeoutMs: number | undefined;
 };
 
 const dispatches: WireRequest[] = [];
+/** The total deadline each call handed the deadline runner. */
+const deadlineTotals: (number | undefined)[] = [];
 
-vi.mock('./client/connection.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('./client/connection.js')>()),
-  createClientFromProvider: (
-    provider: ProviderDef,
-    clientOpts: { readonly timeoutMs?: number | undefined } = {},
-  ) =>
-    ({
-      chat: {
-        completions: {
-          create: async (request: {
-            model: string;
-            max_tokens?: number;
-            messages: { role: string; content: string }[];
-          }) => {
-            dispatches.push({
-              baseURL: provider.baseURL,
-              model: request.model,
-              maxTokens: request.max_tokens,
-              messages: request.messages,
-              clientTimeoutMs: clientOpts.timeoutMs,
-            });
-            return (async function* () {
-              yield chunk(request.model, '```ts\nexport const x = 1;\n```', null);
-              yield chunk(request.model, null, 'stop');
-            })();
+vi.mock('./api-deadlines.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./api-deadlines.js')>();
+  return {
+    ...actual,
+    runWithApiDeadlines: (run: ApiDeadlineRun<unknown>) => {
+      deadlineTotals.push(run.totalMs);
+      return actual.runWithApiDeadlines(run);
+    },
+  };
+});
+
+vi.mock('./client/connection.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./client/connection.js')>();
+  return {
+    ...actual,
+    createClientFromProvider: (
+      provider: ProviderDef,
+      clientOpts: { readonly timeoutMs?: number | undefined } = {},
+    ) => {
+      const clientTimeoutMs = actual.createClientFromProvider(provider, clientOpts).timeout;
+      return {
+        chat: {
+          completions: {
+            create: async (request: {
+              model: string;
+              max_tokens?: number;
+              messages: { role: string; content: string }[];
+            }) => {
+              dispatches.push({
+                baseURL: provider.baseURL,
+                model: request.model,
+                maxTokens: request.max_tokens,
+                messages: request.messages,
+                clientTimeoutMs,
+              });
+              return (async function* () {
+                yield chunk(request.model, '```ts\nexport const x = 1;\n```', null);
+                yield chunk(request.model, null, 'stop');
+              })();
+            },
           },
         },
-      },
-    }) as unknown as OpenAI,
-}));
+      } as unknown as OpenAI;
+    },
+  };
+});
 
 function chunk(model: string, content: string | null, finishReason: string | null) {
   return {
@@ -160,6 +178,7 @@ let projectDir: string;
 
 beforeEach(() => {
   dispatches.length = 0;
+  deadlineTotals.length = 0;
   catalogRequests = [];
   catalogs.clear();
   projectDir = createTempDir('api-runtime-wiring');
@@ -304,7 +323,7 @@ describe('three-seat identity and budget', () => {
     expect(dispatches).toHaveLength(2);
   });
 
-  it('bounds a seat that configured no timeout by its own role budget, client included', async () => {
+  it('gives a seat with no timeout no deadline and the SDK client no limit', async () => {
     catalogs.set('1234', [{ key: 'plan-model', activeContextTokens: 40_000 }]);
     catalogs.set('5678', [{ key: 'build-model', activeContextTokens: 40_000 }]);
     const cfg = config();
@@ -314,7 +333,8 @@ describe('three-seat identity and budget', () => {
       initialSessionId: null,
     });
     await callPlanner(planner, { projectDir, callbacks: { onOutput: () => {} } });
-    expect(dispatches.at(-1)?.clientTimeoutMs).toBe(TIMEOUTS.reviewerMs);
+    expect(dispatches.at(-1)?.clientTimeoutMs).toBe(2_147_483_647);
+    expect(deadlineTotals.at(-1)).toBeUndefined();
 
     await createApiImplementer(cfg).implement({
       task: makeTask({ id: 'T003', suggestedFiles: ['src/bounded.ts'], action: 'create' }),
@@ -323,7 +343,8 @@ describe('three-seat identity and budget', () => {
       context: { name: 'p', dir: projectDir },
       onOutput: () => {},
     });
-    expect(dispatches.at(-1)?.clientTimeoutMs).toBe(TIMEOUTS.implementerMs);
+    expect(dispatches.at(-1)?.clientTimeoutMs).toBe(2_147_483_647);
+    expect(deadlineTotals.at(-1)).toBeUndefined();
 
     const bounded = config({
       implementer: { ...lmStudioSeat('5678', 'build-model'), timeout: 90_000 },
@@ -336,6 +357,7 @@ describe('three-seat identity and budget', () => {
       onOutput: () => {},
     });
     expect(dispatches.at(-1)?.clientTimeoutMs).toBe(90_000);
+    expect(deadlineTotals.at(-1)).toBe(90_000);
   });
 
   it('refuses rather than asking for a rewrite of current code that does not fit', async () => {

@@ -98,9 +98,11 @@ Direct terminal diagnostics are sanitized before printing. `warnStderr`, `warnEr
 
 `splitbrief doctor` and the readiness gate on `start` emit the same remediation strings in human output and JSON. During workflow commands, runner subprocess failures normalize to `RunnerOutcome` `state` values in `session.jsonl` with the same copyable remediation pattern.
 
-The two commands share the strings but not the verdict: `doctor` diagnoses and exits `0` on warnings, while `start` fails closed on a configured `kind: cli` runner that is denied admission — no trusted executable identity, a version not proven compatible, or a definitively negative authentication fact (no credential, or the tool answering signed-out). Those refusals land in both transports: start exits `1` with the remediation quoted, before creating a session, instead of aborting mid-run.
+The two commands share the strings but not the verdict: `doctor` diagnoses and exits `0` on warnings, while `start` fails closed on a configured `kind: cli` runner that is denied admission — no trusted executable identity, a version not proven compatible, or a definitively negative authentication fact (no credential, or the tool answering signed-out). A version check that does not answer in 60 seconds refuses a start too, because SPLITBRIEF cannot choose the arguments for an unknown version. Those refusals land in both transports: start exits `1` with the remediation quoted, before creating a session, instead of aborting mid-run.
 
-Unverified authentication is the one state where the verdict also splits by transport. A credential that exists but no call has proven reports readiness status `unverified` (stateId `auth-unknown`, severity warning), and a headless start (`--json` or `--plain`) refuses it unless `--allow-unverified-auth` is passed, while an interactive start discloses the unverified state and proceeds. `doctor` on a TTY reports it as a warning and exits `0`; its human output says so in one line — `No trusted readiness identity for <tool>: headless start would be refused; use --allow-unverified-auth or complete verification — interactive start proceeds.` — and `doctor --json` or a non-TTY stdin replays the headless blocker instead. See [CLI-REFERENCE.md](./CLI-REFERENCE.md#splitbrief-doctor).
+Unverified authentication is the one state where the verdict also splits by transport. A credential that exists but no call has proven reports readiness status `unverified` (stateId `auth-unknown`, severity warning), and a headless start (`--json` or `--plain`) refuses it unless `--allow-unverified-auth` is passed, while an interactive start discloses the unverified state and proceeds. A sign-in check that times out is unverified authentication too: the headless blocker reads `<tool> sign-in check timed out.` (stateId `auth-timeout`) and names `--allow-unverified-auth`. `doctor` on a TTY reports it as a warning and exits `0`; its human output says so in one line — `No trusted readiness identity for <tool>: headless start would be refused; use --allow-unverified-auth or complete verification — interactive start proceeds.` — and `doctor --json` or a non-TTY stdin replays the headless blocker instead. See [CLI-REFERENCE.md](./CLI-REFERENCE.md#splitbrief-doctor).
+
+Each version, sign-in, model-list and options check of a found CLI tool waits up to 60 seconds. After 10 seconds, the screen that waits names the tool, the check and the time, for example `Checking tools · OpenCode CLI sign-in 12s`. On a screen, Esc stops the check. Every command that checks tools without a screen (`start`, `continue`, `resume`, `spec`, `review`, `doctor` and `init --yes`) writes that line once on stderr, for example `Checking tools · OpenCode CLI sign-in 10s`. In a shell, Ctrl-C stops the command while a check runs.
 
 ### `splitbrief doctor --json`
 
@@ -127,9 +129,10 @@ Prefer these stable identifiers in automation and log correlation. Remediation s
 | Configured CLI is not installed or not on `PATH` (`spawn-not-found`, executable was not found). | `missing-binary` | Install the configured CLI, then run `splitbrief doctor` again. |
 | Executable identity does not match the trusted fingerprint (untrusted project-bin or stale fingerprint). | `untrusted-path` | Install the configured CLI outside the project. Put its absolute directory first on PATH, then run `splitbrief doctor` again. |
 | Installed CLI version is outside the tested or qualified range. | `incompatible-version` | Install the tested CLI version, then run `splitbrief doctor` again. |
+| The CLI version check timed out. | `version-timeout` | Run the configured CLI with `--version` in a terminal and wait for it to finish, then run `splitbrief doctor` again. |
 | Required credentials are missing or invalid. | `unauthenticated` | Sign in to the configured CLI, then run `splitbrief doctor` again. |
 | Auth probe could not determine login state. | `auth-unknown` | If a call to the CLI fails to authenticate, sign in again. Stored credentials do not prove a session; only a real call does. |
-| The CLI sign-in check timed out. | `auth-timeout` | Check the network connection, then run `splitbrief doctor` again. |
+| The CLI sign-in check timed out. | `auth-timeout` | Run SPLITBRIEF in a terminal to review the sign-in warning, or pass --allow-unverified-auth to start without confirming sign-in. |
 | The CLI sign-in check could not connect. | `auth-offline` | Check the network connection, then run `splitbrief doctor` again. |
 | SPLITBRIEF could not read the CLI sign-in check result. | `auth-malformed` | Run `splitbrief doctor` again. If the result is still unreadable, update the CLI. |
 | An access policy denied the CLI sign-in check. | `auth-policy-denied` | Check the account and access policy, then run `splitbrief doctor` again. |
@@ -447,7 +450,7 @@ Files can be inside or outside the project. Relative paths use the project root.
 
 ### Symptom: Planner times out before producing a brief
 
-**Likely cause:** An `api` planner has three deadlines. The total call has 10 minutes (`TIMEOUTS.reviewerMs`). The first response must arrive within 120 s. A 60 s stream-idle guard applies between chunks. A cold-loading local model (Ollama or LM Studio loads the model into memory) usually hits the first-response deadline. Non-`api` planners (`cli`, `shell`, `agent`) have no default limit. The **inactivity watchdog** warns after 5 minutes of no output. Beside the build block, the byline shows the normal live status. Where no block is painted, the byline reads `⚠ No output for 5:00`. The call continues until it ends or you press Esc. Set `idleKillMs` to cut a silent call, or `planner.timeout` to put a wall-clock cap on the whole call; both are opt-in.
+**Likely cause:** A planner call has no default time limit on any seat kind. An `api` planner has no first-response or stream-idle deadline. A planner call times out only at a limit you set: `planner.timeout` for the total call, or `idleKillMs` for output silence on a `cli`, `shell` or `agent` planner. A cold-loading local model (Ollama or LM Studio loads the model into memory) can use most of a short `planner.timeout` before its first token. The **inactivity watchdog** warns after 5 minutes of no output. Beside the build block, the byline shows the normal live status. Where no block is painted, the byline reads `⚠ No output for 5:00`. The call continues until it ends or you press Esc. Set `idleKillMs` to cut a silent call, or `planner.timeout` to put a wall-clock cap on the whole call; both are opt-in.
 
 **Fix:**
 1. Read the end of the session log. The last event names the phase that was active:
@@ -455,12 +458,12 @@ Files can be inside or outside the project. Relative paths use the project root.
    tail -20 .splitbrief/sessions/<id>/session.jsonl | jq .
    ```
    When `cost_update` events stop arriving, the subprocess is live but produces no tokens. Check the remote provider status.
-2. Warm the model before the run so the first token arrives within 120s — e.g. issue one throwaway request to your local server, or pre-pull the model so it is resident.
-3. Set `planner.timeout` (milliseconds) in `.splitbrief/config.yaml` to put a total wall-clock budget on each planner call (Opus planning passes can take several minutes). This caps the whole call; it does not extend the 60s idle guard.
+2. Warm the model before the run so the first token arrives sooner — e.g. issue one throwaway request to your local server, or pre-pull the model so it is resident.
+3. Raise or remove `planner.timeout` (milliseconds) in `.splitbrief/config.yaml`. It is the total wall-clock budget of each planner call (Opus planning passes can take several minutes). Without it, the call has no time limit.
 4. If the planner is genuinely stuck (no token activity), check provider status pages and your network; restart the run. For an `api` planner, check that its `apiBase` is reachable. For a `cli` planner, check that the tool is on `PATH`.
 5. Reduce `codebase.tokenBudget` so the prompt is smaller and the call returns sooner.
 
-**Prevention:** Keep local models warm so the first response arrives within the 120s first-response deadline, and set `planner.timeout` as a total-call ceiling for high-latency planners.
+**Prevention:** Keep local models warm, and set a `planner.timeout` that leaves room for a slow first response.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/WORKFLOW.md](./WORKFLOW.md).
 
@@ -767,7 +770,7 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 
 ### Symptom: two consecutive timeouts halted my run
 
-**Likely cause:** The implementer hit a limit twice in a row on the same brief. A `cli`, `shell` or `agent` seat has no default limit, so this halt follows an opt-in `timeout` or `idleKillMs` on the seat, or the role total of an `api` seat (`TIMEOUTS.implementerMs`, 20 minutes, for BUILD). A second consecutive timeout or idle cut on one brief raises the recovery issue `runner-timeout-repeated` — `<tool> timed out twice in a row on T00N` — instead of retrying or consulting the planner, because handing an unfinishable brief to the planner only spends planner money on the same defect.
+**Likely cause:** The implementer hit a limit twice in a row on the same brief. A seat has no default limit on any kind, so this halt follows an opt-in limit on the seat: its `timeout`, or `idleKillMs` on a `cli`, `shell` or `agent` seat. A second consecutive timeout or idle cut on one brief raises the recovery issue `runner-timeout-repeated` — `<tool> timed out twice in a row on T00N` — instead of retrying or consulting the planner, because handing an unfinishable brief to the planner only spends planner money on the same defect.
 
 **Fix:**
 1. Read the issue's details: they carry the tool's own last message, the attempt count, and the implementer profile that was selected.
@@ -923,12 +926,12 @@ To measure the project before a run, run its own commands directly. `doctor` run
 
 ### Symptom: A reviewer check or base re-run takes a long time
 
-**Likely cause:** A reviewer check is slow. Each reviewer check has its own `validation.timeout_ms`, which defaults to one hour. The project gate also runs once at the run base beside the build, one command at a time; while it runs, the counts line of the build block ends with `· Base re-run V1 <clock>`. When a reviewer check is red before its base command finished, the review waits for that result.
+**Likely cause:** A reviewer check is slow. A reviewer check has no time limit unless you set `validation.timeout_ms`. The project gate also runs once at the run base beside the build, one command at a time; while it runs, the counts line of the build block ends with `· Base re-run V1 <clock>`. When a reviewer check is red before its base command finished, the review waits for that result.
 
 **Fix:**
 
 1. Read the byline and transcript for `Reviewer check V1 · <command>` or `Base re-run V1 · <command>` and the elapsed time.
-2. Set `validation.timeout_ms` to the time the command needs, with a minimum of 1000 ms. A timeout is never pre-existing: when the run base is red too, the reviewer check row reads `not verified at the run base`, and the reviewer decides.
+2. Set `validation.timeout_ms` to stop each command after a known time, with a minimum of 1000 ms. A timeout is never pre-existing: when the run base is red too, the reviewer check row reads `not verified at the run base`, and the reviewer decides.
 3. Correct the review with a note that names a faster command, or set `validation.end_checks: false` and run the commands yourself. No check runs before a run's first task.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) (§4 `validation`), [docs/WORKFLOW.md](./WORKFLOW.md).

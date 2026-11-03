@@ -1163,6 +1163,13 @@ const createSettingsCrewApiTwinFixture: FixtureFactory = () =>
     seed: seedConfig({ planner: PLANNER_HIGH_EFFORT, implementer: BUILD_API_TWIN_SEAT }),
     focus: 'seat:build',
   });
+/** An API build seat with no `timeout`: its Timeout row reads that the call has no limit. */
+const createSettingsApiImplementerFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'settings',
+    seed: seedConfig({ implementer: BUILD_API_TWIN_SEAT }),
+    focus: 'implementer.timeout',
+  });
 const createSettingsFloorFullFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'settings',
@@ -2963,6 +2970,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-settings-crew-kilo-command-code'), createSettingsCrewKiloCommandCodeFixture],
   [scenarioId('overlay-settings-claude-alias'), createSettingsClaudeAliasFixture],
   [scenarioId('overlay-settings-crew-api-twin'), createSettingsCrewApiTwinFixture],
+  [scenarioId('overlay-settings-api-implementer'), createSettingsApiImplementerFixture],
   [scenarioId('overlay-settings-floor-full'), createSettingsFloorFullFixture],
   [scenarioId('overlay-settings-filtered'), createSettingsFilteredFixture],
   [scenarioId('overlay-settings-filter-plan'), createSettingsFilterPlanFixture],

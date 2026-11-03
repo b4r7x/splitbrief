@@ -102,12 +102,13 @@ export function legacyAuthState(auth: AuthFact): CliAuthState {
       return 'not-required';
     case 'not-run':
       return 'not-checked';
+    case 'timeout':
+      return 'timeout';
     case 'not-selected':
     case 'unknown':
     case 'invalid':
     case 'policy-denied':
     case 'offline':
-    case 'timeout':
     case 'malformed':
     case 'cancelled':
       return 'unknown';

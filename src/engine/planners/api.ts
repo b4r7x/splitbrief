@@ -12,7 +12,6 @@ import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { providerError } from '../providers/errors.js';
 import { assertPlannerKind } from '../config-assertions.js';
 import { dispatchStreamCompletion } from '../providers/dispatch-stream.js';
-import { resolveApiDeadlinePolicy } from '../providers/api-deadlines.js';
 import {
   admitApiCall,
   resolveApiCallContext,
@@ -105,8 +104,8 @@ export async function invokeApiTransport(opts: {
   priorMessages?: PriorMessage[] | undefined;
   signal?: AbortSignal | undefined;
   responseFormat?: OpenAIResponseFormat | undefined;
-  /** The total budget this call is bounded by, resolved from the seat's role. */
-  totalDeadlineMs: number;
+  /** The seat's `timeout`; absent, the call has no deadline. */
+  totalDeadlineMs?: number | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   callContext: RunnerCallContext;
   invocationEvidence?: ApiInvocationEvidence | undefined;
@@ -199,17 +198,12 @@ export function createApiPlanner(config: Config, seat: ApiSeatRole = 'planner'):
     schema?: TypedSchemaInput | undefined;
     signal?: AbortSignal | undefined;
   }) => {
-    // The seat timeout is the application's total budget, enforced as a
-    // deadline with its own `api_total_timeout` diagnostic rather than as an
-    // anonymous abort. A seat that configured none is bounded by its own role's
-    // budget rather than by whatever the SDK or the BUILD default happens to be,
-    // and that one figure bounds the SDK client and the deadline policy alike.
-    const totalDeadlineMs = resolveApiDeadlinePolicy({
-      role: callContext.role,
-      ...(timeout !== undefined && { timeoutMs: timeout }),
-    }).totalMs;
+    // The seat's `timeout` is the one total deadline of this call, enforced with
+    // its own `api_total_timeout` diagnostic rather than as an anonymous abort.
+    // It bounds the SDK client and the stream alike; a seat without one has no
+    // deadline.
     const client: StreamClient = toStreamClient(
-      createClientFromProvider(resolved, { timeoutMs: totalDeadlineMs }),
+      createClientFromProvider(resolved, { timeoutMs: timeout }),
     );
     const send = (
       p: string,
@@ -230,7 +224,7 @@ export function createApiPlanner(config: Config, seat: ApiSeatRole = 'planner'):
         onOutput: callbacks.onOutput,
         priorMessages,
         signal,
-        totalDeadlineMs,
+        totalDeadlineMs: timeout,
         onCallEvent: callbacks.onCallEvent,
         callContext: sendContext,
         invocationEvidence: apiInvocationEvidence(resolved, model),

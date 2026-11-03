@@ -25,6 +25,7 @@ import {
   TOOL_CHECK_FAILED_TITLE,
 } from '../../core/discovery/copy.js';
 import { BootManifest } from '../../features/runners/boot-manifest.js';
+import { ToolRollCall } from '../../features/runners/tool-roll-call.js';
 import { prepareExecution } from '../../engine/runners/prepare-execution/prepare-execution.js';
 import {
   CREW_IDENTITY_COLUMN,
@@ -37,8 +38,10 @@ import { CrewRowView, CrewVerdictLine } from '../../features/crew/row-view.js';
 import { useCrew } from '../../features/crew/use-crew.js';
 import { useFilterableList } from '../../hooks/use-filterable-list.js';
 import { useSpinnerFrame } from '../../hooks/use-spinner-frame.js';
+import { useSlowProbeText } from '../../hooks/use-slow-probe-text.js';
 import { refreshPickerDetection } from '../../features/runners/refresh-detection.js';
 import { ApprovalPrompt } from '../../features/workflow/components/approval-prompt.js';
+import { joinBylineParts } from '../../features/workflow/input-footer-byline.js';
 import { StartPreparationPanel } from '../../features/start-preparation/panel.js';
 import { observePreparationCleanup } from '../../features/start-preparation/observe-cleanup.js';
 import { useStartPreparation } from '../../features/start-preparation/use-start-preparation.js';
@@ -231,7 +234,6 @@ type DiscoveryPanelProps = Readonly<{
 function DiscoveryPanel({ state, noConfig, onBack, onRetry, onOpenSettings }: DiscoveryPanelProps) {
   const t = useTheme();
   const hasOverlay = overlayStore.use((snapshot) => snapshot.active !== 'none');
-  const { frame } = useSpinnerFrame(noConfig && state === 'initializing');
   const feedback = feedbackStore.use((snapshot) => snapshot);
   const { cols, rows } = terminalSizeStore.use((size) => size);
   const { innerWidth } = overlayRect({ cols, rows, density: 'compact' });
@@ -259,12 +261,7 @@ function DiscoveryPanel({ state, noConfig, onBack, onRetry, onOpenSettings }: Di
     return (
       <OverlayPanel title={BOOT_MANIFEST_TITLE} density="compact" hint="esc quit">
         {noConfig ? (
-          <>
-            <Text color={t.textDim}>
-              <Text color={t.accent}>{frame}</Text> Choose your crew after the tool check.
-            </Text>
-            {feedbackNotice}
-          </>
+          <ToolRollCall footer={feedbackNotice} />
         ) : (
           <BootManifest footer={feedbackNotice} />
         )}
@@ -534,6 +531,7 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
     state.kind === 'checking' ? state.stage : null,
   );
   const { frame: preparationFrame } = useSpinnerFrame(checkingStage !== null);
+  const slowProbe = useSlowProbeText();
   const [step, setStep] = useState<Step>('discovery');
   const saveCheck = useRef<AbortController | null>(null);
 
@@ -711,7 +709,7 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
   const preparationStatus =
     checkingStage === null
       ? undefined
-      : `${preparationFrame} ${checkingStage}${preparing ? `${SOFT_SEP}esc cancel` : ''}`;
+      : `${preparationFrame} ${joinBylineParts([checkingStage, slowProbe, preparing ? 'esc cancel' : null])}`;
 
   return (
     <CrewStep

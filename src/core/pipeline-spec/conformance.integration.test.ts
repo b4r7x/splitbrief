@@ -119,12 +119,11 @@ describe('retry ladder', () => {
 });
 
 describe('timeouts', () => {
-  // The implementer deadline is a runtime bound, not a parse-time cap: a healthy
-  // call that outlives it is ended by the deadline, and an operator may configure
-  // a runner timeout past it. Only a non-positive timeout fails the schema.
-  it('a configured runner timeout may exceed the implementer deadline', () => {
-    expect(GenerationCommonFields.timeout.safeParse(TIMEOUTS.implementerMs).success).toBe(true);
-    expect(GenerationCommonFields.timeout.safeParse(TIMEOUTS.implementerMs + 1).success).toBe(true);
+  // A runner timeout is the operator's opt-in limit, so the schema caps no
+  // length of it. Only a non-positive timeout fails the schema.
+  it('a configured runner timeout may be any positive length', () => {
+    expect(GenerationCommonFields.timeout.safeParse(1).success).toBe(true);
+    expect(GenerationCommonFields.timeout.safeParse(24 * 60 * 60 * 1000).success).toBe(true);
     expect(GenerationCommonFields.timeout.safeParse(0).success).toBe(false);
   });
 

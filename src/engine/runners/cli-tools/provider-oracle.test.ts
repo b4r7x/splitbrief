@@ -34,7 +34,7 @@ const KILO_ENTRIES = [
 ] as const;
 
 function probeCommand(command: readonly [string, ...string[]]): CliProbeCommand {
-  return { command, cwd: 'neutral', timeoutMs: 1_000, maxOutputBytes: 1_024 };
+  return { command, cwd: 'neutral', maxOutputBytes: 1_024 };
 }
 
 describe('provider oracle parser', () => {

@@ -17,13 +17,6 @@ const probe = {
   version: {
     command: ['fixture', '--version'],
     cwd: 'neutral',
-    timeoutMs: 1_000,
-    maxOutputBytes: 8_192,
-  },
-  auth: {
-    command: ['fixture', 'auth', 'status'],
-    cwd: 'neutral',
-    timeoutMs: 1_000,
     maxOutputBytes: 8_192,
   },
 } as const satisfies CliProbeContract;

@@ -6,7 +6,7 @@ import {
 } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
 import type { EngineEvent } from '../../events/types.js';
-import { runPreHooks } from '../../hooks/run-pre.js';
+import { runPreHooks, type PreHookResult } from '../../hooks/run-pre.js';
 import { raisePendingRecovery } from '../state-ops.js';
 import { buildSnapshotFailedRecoveryIssue } from '../recovery/builders/task.js';
 import { nowIso } from '../../../utils/format-time.js';
@@ -58,11 +58,19 @@ export async function runPreTaskHooksAndPublish(opts: {
       ...(wctx.implementerProfile !== undefined && { implementerProfile: wctx.implementerProfile }),
       ...buildRoutingEventFields(wctx.routingDecision),
     };
-    const pre = await runPreHooks(wctx.config.hooks, 'pre_task', preTaskPayload, {
-      projectDir,
-      workspaceDir,
-      sessionId,
-    });
+    let pre: PreHookResult;
+    try {
+      pre = await runPreHooks(wctx.config.hooks, 'pre_task', preTaskPayload, {
+        projectDir,
+        workspaceDir,
+        sessionId,
+        signal: wctx.signal,
+      });
+    } catch (err) {
+      // A stop during the hook ends the brief here, as a stop before its dispatch does.
+      if (wctx.signal?.aborted) return { proceed: false, state };
+      throw err;
+    }
     if (!pre.allow) {
       publishWarning({
         bus: wctx.bus,

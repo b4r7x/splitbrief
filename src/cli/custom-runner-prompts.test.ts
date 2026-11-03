@@ -1,9 +1,42 @@
-import { describe, expect, it } from 'vitest';
+import { PassThrough } from 'node:stream';
+import { describe, expect, it, vi } from 'vitest';
 import { CONFIRM_PHRASE } from '../core/approval/types.js';
+import { __testResetProbeActivity, trackProbe } from '../engine/probe-activity.js';
 import {
   promptCustomRunnerArtifactApproval,
   promptCustomRunnerDisclosure,
+  promptForLine,
 } from './custom-runner-prompts.js';
+import { watchSlowProbeLines } from './slow-probe-line.js';
+
+describe('promptForLine', () => {
+  it('drops the slow-check line while the prompt is open', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    __testResetProbeActivity();
+    const input = new PassThrough();
+    const stdin = vi.spyOn(process, 'stdin', 'get').mockReturnValue(input as never);
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const lines: string[] = [];
+    const stop = watchSlowProbeLines((line) => lines.push(line));
+    const probe = Promise.withResolvers<void>();
+    const probeRun = trackProbe({ tool: 'codex', check: 'version' }, () => probe.promise);
+    try {
+      const answer = promptForLine('Trust? ');
+      await vi.advanceTimersByTimeAsync(12_000);
+      input.write('yes\n');
+      await expect(answer).resolves.toBe('yes');
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(lines).toEqual([]);
+    } finally {
+      probe.resolve();
+      await probeRun;
+      stop();
+      stdin.mockRestore();
+      stderr.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+});
 
 describe('custom runner CLI prompts', () => {
   it('shows the canonical disclosure and confirms on the exact phrase alone', async () => {

@@ -284,6 +284,9 @@ function compatibilityFromVersion(
   }>,
 ): CompatibilityFact {
   const testedVersion = input.compatibility.testedVersion;
+  if (input.version.kind === 'timeout') {
+    return { kind: 'timeout', installedVersion: null, testedVersion };
+  }
   if (input.version.kind !== 'success') {
     return { kind: 'unknown', installedVersion: null, testedVersion };
   }
@@ -360,6 +363,8 @@ function legacyAuthFact(auth: CliReadinessResult['auth']): AuthFact {
       return 'keyring';
     case 'unknown':
       return 'unknown';
+    case 'timeout':
+      return 'timeout';
     case 'not-required':
       return 'not-required';
     case 'not-checked':
@@ -391,6 +396,8 @@ function compatibilityFromLegacy(readiness: CliReadinessResult): CompatibilityFa
         installedVersion: readiness.installedVersion,
         testedVersion: readiness.testedVersion,
       };
+    case 'timeout':
+      return { kind: 'timeout', installedVersion: null, testedVersion: readiness.testedVersion };
     default:
       return assertNever(readiness.compatibility);
   }

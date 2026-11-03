@@ -22,6 +22,13 @@ import {
 import { antigravityPlannerAdapter } from './cli-tools/antigravity.js';
 import { buildClaudeArgs } from './claude/args.js';
 import { codexPlannerAdapter } from './cli-tools/codex.js';
+import { spawnWithTimeout } from '../../lib/process/spawn/progress.js';
+import { abortError } from '../../utils/abort.js';
+
+vi.mock('../../lib/process/spawn/progress.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/process/spawn/progress.js')>();
+  return { ...actual, spawnWithTimeout: vi.fn(actual.spawnWithTimeout) };
+});
 
 async function preflightWithVectors(
   input: ArgVectorPreflightCheckInput & {
@@ -1034,6 +1041,72 @@ describe('collectArgVectorPreflightChecks — default help invocation', () => {
     const childEnv = readFileSync(envRecord, 'utf8');
     expect(childEnv).not.toContain('/home/real-user');
     expect(childEnv).not.toContain('sk-canary-do-not-leak');
+  });
+
+  it('gives every help read one minute', async () => {
+    const project = tempDir('preflight-project');
+    const toolDir = tempDir('preflight-tools');
+    writeHelpStub(join(toolDir, 'opencode'), join(toolDir, 'invocations'), {
+      '--help': 'opencode-help.txt',
+      run: 'opencode-run-help.txt',
+    });
+    vi.stubEnv('PATH', `${toolDir}${delimiter}${process.env.PATH ?? ''}`);
+    vi.mocked(spawnWithTimeout).mockClear();
+
+    await plannerChecks(project, { tool: 'opencode' });
+
+    const helpReads = vi
+      .mocked(spawnWithTimeout)
+      .mock.calls.filter(([options]) => options.args.includes('--help'));
+    expect(helpReads.map(([options]) => options.args)).toEqual([['--help'], ['run', '--help']]);
+    expect(helpReads.map(([options]) => options.timeout)).toEqual([60_000, 60_000]);
+  });
+
+  it('hands the preparation signal to every help read', async () => {
+    const project = tempDir('preflight-project');
+    const toolDir = tempDir('preflight-tools');
+    writeHelpStub(join(toolDir, 'opencode'), join(toolDir, 'invocations'), {
+      '--help': 'opencode-help.txt',
+      run: 'opencode-run-help.txt',
+    });
+    vi.stubEnv('PATH', `${toolDir}${delimiter}${process.env.PATH ?? ''}`);
+    vi.mocked(spawnWithTimeout).mockClear();
+    const controller = new AbortController();
+
+    await collectArgVectorPreflightChecks({
+      config: makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }),
+      projectDir: project,
+      roles: ['planner'],
+      signal: controller.signal,
+    });
+
+    const helpReads = vi
+      .mocked(spawnWithTimeout)
+      .mock.calls.filter(([options]) => options.args.includes('--help'));
+    expect(helpReads).toHaveLength(2);
+    for (const [options] of helpReads) expect(options.signal).toBe(controller.signal);
+  });
+
+  it('rejects with the abort when the help read stops on the preparation signal', async () => {
+    const project = tempDir('preflight-project');
+    const toolDir = tempDir('preflight-tools');
+    writeCodexStub(join(toolDir, 'codex'), join(toolDir, 'child-env'));
+    vi.stubEnv('PATH', `${toolDir}${delimiter}${process.env.PATH ?? ''}`);
+    const controller = new AbortController();
+    const aborted = abortError(undefined);
+    vi.mocked(spawnWithTimeout).mockImplementationOnce(async () => {
+      controller.abort();
+      throw aborted;
+    });
+
+    await expect(
+      collectArgVectorPreflightChecks({
+        config: makeConfig({ planner: { kind: 'cli', tool: 'codex' } }),
+        projectDir: project,
+        roles: ['planner'],
+        signal: controller.signal,
+      }),
+    ).rejects.toBe(aborted);
   });
 
   it('descends into a yargs subcommand, whose help is the only one advertising --format', async () => {

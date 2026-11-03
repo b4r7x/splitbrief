@@ -41,6 +41,7 @@ import type { RunBriefs } from '../../src/core/run-view/briefs.js';
 import type { RunHalt } from '../../src/core/run-view/halt.js';
 import { recoveryNoticeStore } from '../../src/stores/workflow/recovery-notice.js';
 import { __testDiscardPending as discardPendingSessionDrafts } from '../../src/stores/ui/session-drafts.js';
+import { __testResetProbeActivity } from '../../src/engine/probe-activity.js';
 
 export function resetAllStores(): void {
   eventsStore.reset();
@@ -84,6 +85,7 @@ export function resetAllStores(): void {
   operationsStore.reset();
   runViewStore.reset();
   discardPendingSessionDrafts();
+  __testResetProbeActivity();
 }
 
 /** The run view's briefs, seeded over the rest of the view a test already set. */

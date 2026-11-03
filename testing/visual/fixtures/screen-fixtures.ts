@@ -10,6 +10,8 @@ import { configPath, readConfigDocument } from '../../../src/core/config/load/do
 import type { CLIOverrides } from '../../../src/core/config/runtime/overrides/schema.js';
 import { createProductionDetectionDeps } from '../../../src/engine/detection/deps.js';
 import { detectionStore } from '../../../src/stores/project/detection.js';
+import { trackProbe, trackToolCheck } from '../../../src/engine/probe-activity.js';
+import type { CliToolId } from '../../../src/core/runners/cli-tool-catalog.js';
 import { skillsStore } from '../../../src/stores/project/skills.js';
 import { composerDraftStore } from '../../../src/stores/ui/composer-draft.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
@@ -507,9 +509,23 @@ export function createSetupFixture(
     | 'persisted-api-override' = 'initial',
 ): FixtureLifecycle {
   let restoreFetch: (() => void) | undefined;
+  let releaseToolChecks: (() => Promise<void>) | undefined;
   return {
     setup: (context) => {
       setupVisualFixture(context);
+      // The first-run panel calls the roll of the tools under check: one answered while its model
+      // list still runs, one waiting, one past ten seconds.
+      if (state === 'detecting') {
+        releaseToolChecks = holdToolChecks({
+          checked: ['claude-code'],
+          checking: ['codex', 'opencode'],
+          slowSignIn: 'opencode',
+          slowModelList: 'claude-code',
+        });
+      }
+      if (state === 'cached-refresh') {
+        releaseToolChecks = holdToolChecks({ checking: ['claude-code', 'opencode'] });
+      }
       // Its own repository, so the first save is the one that adds the .splitbrief/ rule.
       if (state === 'saved-ignore-rule') {
         createTestGitRepo(VISUAL_FIXTURE_PROJECT_DIR, { '.gitignore': 'node_modules/\n' });
@@ -667,7 +683,8 @@ export function createSetupFixture(
         for (const key of ['\x1b[A', '\x1b[A', '\x1b[A', '\r']) await write.press(key);
       },
     }),
-    teardown: () => {
+    teardown: async () => {
+      await releaseToolChecks?.();
       restoreFetch?.();
       teardownVisualFixture();
     },
@@ -805,6 +822,41 @@ function submitHeldCheck(origin: 'start' | 'continue'): void {
     prepare: () => new Promise(() => {}),
     onPrepared: () => {},
   });
+}
+
+/**
+ * Tool checks the capture holds open: a checked tool has answered, a checking tool waits, and the
+ * slow tool's sign-in started twelve seconds before the scenario clock. The returned release ends
+ * every held check, so none outlives its scenario.
+ */
+function holdToolChecks(input: {
+  readonly checked?: readonly CliToolId[];
+  readonly checking?: readonly CliToolId[];
+  readonly slowSignIn?: CliToolId;
+  readonly slowModelList?: CliToolId;
+}): () => Promise<void> {
+  const release = Promise.withResolvers<void>();
+  const held: Promise<void>[] = [];
+  for (const tool of input.checked ?? []) held.push(trackToolCheck(tool, () => Promise.resolve()));
+  for (const tool of input.checking ?? []) held.push(trackToolCheck(tool, () => release.promise));
+  const fixedNow = Date.now;
+  Date.now = () => fixedNow() - 12_000;
+  try {
+    if (input.slowSignIn !== undefined) {
+      held.push(trackProbe({ tool: input.slowSignIn, check: 'sign-in' }, () => release.promise));
+    }
+    if (input.slowModelList !== undefined) {
+      held.push(
+        trackProbe({ tool: input.slowModelList, check: 'model list' }, () => release.promise),
+      );
+    }
+  } finally {
+    Date.now = fixedNow;
+  }
+  return async () => {
+    release.resolve();
+    await Promise.all(held);
+  };
 }
 
 /** A cold start: the CLI submitted the check before the mount, so Home has nothing to cancel. */
@@ -1032,6 +1084,22 @@ function createWorkflowContinuingFixture(): FixtureLifecycle {
       composerDraftStore.request('and keep the parser out of the brief header');
     },
     teardown: workflow.teardown,
+  };
+}
+
+/** A check whose sign-in has run past ten seconds: the status row names the tool and the wait. */
+function withSlowSignIn(fixture: FixtureLifecycle): FixtureLifecycle {
+  let release: (() => Promise<void>) | undefined;
+  return {
+    ...fixture,
+    setup: async (context) => {
+      await fixture.setup(context);
+      release = holdToolChecks({ slowSignIn: 'opencode' });
+    },
+    teardown: async () => {
+      await release?.();
+      await fixture.teardown();
+    },
   };
 }
 
@@ -1541,6 +1609,7 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
     () => createHomeFixture({ cold: true, detecting: true, config: VISUAL_WIDE_CREW }),
   ],
   [scenarioId('home-preparing'), createHomePreparingFixture],
+  [scenarioId('home-preparing-slow'), () => withSlowSignIn(createHomePreparingFixture())],
   [scenarioId('home-preparation-failed'), createHomePreparationFailedFixture],
   [scenarioId('home-preparation-checkout-warning'), createHomePreparationCheckoutWarningFixture],
   [scenarioId('home-preparation-blocked'), createHomePreparationBlockedFixture],
@@ -1599,6 +1668,7 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('home-save-long-draft'), createSaveLongDraftFixture],
   [scenarioId('home-no-config-long-draft'), createNoConfigLongDraftFixture],
   [scenarioId('workflow-continuing'), createWorkflowContinuingFixture],
+  [scenarioId('workflow-continuing-slow'), () => withSlowSignIn(createWorkflowContinuingFixture())],
   [
     scenarioId('workflow-continue-repo-runner-blocked'),
     createWorkflowContinueRepoRunnerBlockedFixture,

@@ -315,18 +315,25 @@ async function admitRunners(input: AdmissionInput, sink: ReportSink): Promise<Ad
 
   // The preflight runs a real binary, so it waits for the trust ladder above
   // to name one. It still lands before any planning is paid for.
-  const argVectorChecks = await deps.collectArgVectorPreflightChecks({
-    config: admittedConfig,
-    projectDir: input.projectDir,
-    roles,
-    installedVersions: Object.fromEntries(
-      gates.flatMap((gate) =>
-        gate.kind === 'cli' && gate.installedVersion !== undefined
-          ? [[gate.tool, gate.installedVersion]]
-          : [],
+  let argVectorChecks: ReadinessCheck[];
+  try {
+    argVectorChecks = await deps.collectArgVectorPreflightChecks({
+      config: admittedConfig,
+      projectDir: input.projectDir,
+      roles,
+      installedVersions: Object.fromEntries(
+        gates.flatMap((gate) =>
+          gate.kind === 'cli' && gate.installedVersion !== undefined
+            ? [[gate.tool, gate.installedVersion]]
+            : [],
+        ),
       ),
-    ),
-  });
+      signal: input.signal,
+    });
+  } catch (cause) {
+    if (input.signal.aborted && trustPersisted) throw persistedTrustAbortError();
+    throw cause;
+  }
   throwIfPreparationAborted(input.signal, trustPersisted);
   report = applyRunnerPreparationChecks(report, argVectorChecks);
   sink.report = report;

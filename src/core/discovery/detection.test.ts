@@ -30,6 +30,7 @@ const COMPATIBILITY_STATES: readonly CliCompatibilityState[] = [
   'compatible',
   'incompatible',
   'unverified',
+  'timeout',
   'not-checked',
 ];
 

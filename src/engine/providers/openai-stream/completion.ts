@@ -1,11 +1,7 @@
 import type { EffortLevel } from '../../../core/schemas/enums.js';
 import type { Attachment } from '../../../core/schemas/attachment.js';
 import { throwMappedError } from '../../streaming/stream-errors.js';
-import {
-  isApiDeadlineError,
-  resolveApiDeadlinePolicy,
-  runWithApiDeadlines,
-} from '../api-deadlines.js';
+import { isApiDeadlineError, runWithApiDeadlines } from '../api-deadlines.js';
 import { TRUNCATION_WARNING } from '../constants.js';
 import {
   deriveApiRuntimeStatus,
@@ -79,7 +75,7 @@ interface StreamCompletionOptions {
   callContext?: RunnerCallContext | undefined;
   credentialValues?: readonly string[] | undefined;
   policy?: OpenAICompatPolicy | undefined;
-  /** The seat's configured total budget; absent, the role's TIMEOUTS default applies. */
+  /** The seat's `timeout`; absent, the call has no deadline. */
   timeoutMs?: number | undefined;
   /** Supplied by a dispatch that resolved its provider; absent, auth and billing stay unknown. */
   invocationEvidence?: ApiInvocationEvidence | undefined;
@@ -366,10 +362,6 @@ export async function streamCompletion(
     credentialValues,
     onEvent: opts.onCallEvent,
   });
-  const deadlines = resolveApiDeadlinePolicy({
-    role: context.role,
-    ...(opts.timeoutMs !== undefined && { timeoutMs: opts.timeoutMs }),
-  });
   const runtimeSignals: ApiRuntimeSignal[] = [];
   const runtimeObservation =
     opts.runtimeObservation === undefined ? undefined : { ...opts.runtimeObservation };
@@ -401,7 +393,7 @@ export async function streamCompletion(
 
   try {
     for await (const rawChunk of runWithApiDeadlines<unknown>({
-      policy: deadlines,
+      totalMs: opts.timeoutMs,
       ...(signal !== undefined && { signal }),
       createStream: (deadlineSignal) => {
         publishRuntime('dispatched');

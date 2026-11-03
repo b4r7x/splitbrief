@@ -314,7 +314,7 @@ const HookCommandEntrySchema = z
     name: z.string().min(1).optional(),
     command: z.string().min(1),
     args: z.array(z.string()).default([]),
-    timeout_ms: z.number().int().positive().max(300_000).default(30_000),
+    timeout_ms: z.number().int().positive().optional(),
     on_failure: FailureModeSchema.default('warn'),
   })
   .superRefine((entry, ctx) => {

@@ -123,7 +123,8 @@ function cliToolReadinessCheck(
   if (cause === undefined) return check;
   // Only a sign-in fact depends on the seat's authentication selection; a
   // missing, untrusted or unproven executable blocks every seat of the tool.
-  const authentication = cause === 'unauthenticated' || cause === 'auth-unknown';
+  const authentication =
+    cause === 'unauthenticated' || cause === 'auth-unknown' || cause === 'auth-timeout';
   const authChannel = authentication ? result.authChannel : undefined;
   if (authentication && authChannel === undefined) return check;
   check.runnerCause = {
@@ -143,13 +144,13 @@ function cliReadinessCause(
 ): RunnerReadinessCauseId | undefined {
   if (diagnosticState !== undefined) return diagnosticState;
   if (result.status === 'disabled') return 'disabled';
-  if (
-    result.status === 'unverified' &&
-    (result.installedVersion === null || result.compatibility !== 'compatible')
-  ) {
-    return 'unknown-version';
-  }
+  if (result.status === 'unverified' && !versionConfirmed(result)) return 'unknown-version';
   return undefined;
+}
+
+/** Start admits only a confirmed version, so an unverified tool without one blocks here too. */
+function versionConfirmed(result: CliReadinessResult): boolean {
+  return result.installedVersion !== null && result.compatibility === 'compatible';
 }
 
 function missingCliReadinessCheck(tool: CliToolId): ReadinessCheck {
@@ -185,11 +186,10 @@ function cliReadinessDiagnosticState(
     case 'unauthenticated':
       return 'unauthenticated';
     case 'unverified':
-      return result.installedVersion !== null &&
-        result.compatibility === 'compatible' &&
-        result.auth === 'unknown'
-        ? 'auth-unknown'
-        : undefined;
+      if (result.compatibility === 'timeout') return 'version-timeout';
+      if (!versionConfirmed(result)) return undefined;
+      if (result.auth === 'timeout') return 'auth-timeout';
+      return result.auth === 'unknown' ? 'auth-unknown' : undefined;
     case 'ready':
     case 'disabled':
       return undefined;
@@ -202,7 +202,11 @@ function cliReadinessDiagnosticState(
 function cliReadinessCheck(result: CliReadinessResult, routeChecked: boolean): ReadinessCheck {
   const descriptor = CLI_TOOL_CATALOG[result.tool];
   const severity =
-    result.status === 'ready' ? 'ok' : result.status === 'unverified' ? 'warning' : 'blocker';
+    result.status === 'ready'
+      ? 'ok'
+      : result.status === 'unverified' && versionConfirmed(result)
+        ? 'warning'
+        : 'blocker';
   const diagnosticState = cliReadinessDiagnosticState(result);
   return {
     id: result.checkId,
@@ -249,8 +253,10 @@ function cliReadinessSummary(
     case 'unauthenticated':
       return result.auth === 'keyring' ? CODEX_KEYRING_SIGN_IN : `${name} is not signed in.`;
     case 'unverified':
-      return result.installedVersion === null || result.compatibility !== 'compatible'
-        ? `${name} version could not be confirmed as compatible.`
+      if (result.compatibility === 'timeout') return `${name} version check timed out.`;
+      if (!versionConfirmed(result)) return `${name} version could not be confirmed as compatible.`;
+      return result.auth === 'timeout'
+        ? `${name} sign-in check timed out.`
         : `${name} sign-in status is unknown.`;
     default:
       return assertNever(result);

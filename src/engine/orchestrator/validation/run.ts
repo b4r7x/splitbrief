@@ -14,7 +14,6 @@ import {
   resolveTestCommand,
   type ResolvedCommand,
 } from '../../../core/validation/stage-command.js';
-import { STAGE_TIMEOUT_MS } from '../../../core/pipeline-spec/gates.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import { runCommand } from '../../../lib/process/spawn/run-command.js';
 import { labelError } from '../../../utils/format-errors.js';
@@ -31,10 +30,6 @@ import type {
   ValidatorDeps,
 } from './types.js';
 import { countNoun } from '../../../utils/pluralize.js';
-
-function resolveValidationTimeout(config: Config): number {
-  return config.validation.timeoutMs ?? STAGE_TIMEOUT_MS;
-}
 
 export type StageContext = {
   projectDir: string;
@@ -110,7 +105,7 @@ async function formatFiles(opts: {
   try {
     await opts.runCommand(cmd, [...parts.slice(1), ...files], {
       cwd: opts.projectDir,
-      timeout: resolveValidationTimeout(opts.config),
+      timeout: opts.config.validation.timeoutMs,
       label: 'format',
       signal: opts.signal,
     });

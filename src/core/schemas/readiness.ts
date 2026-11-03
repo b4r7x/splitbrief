@@ -41,6 +41,7 @@ export const READINESS_DIAGNOSTIC_STATE_IDS = [
   'missing-binary',
   'untrusted-path',
   'incompatible-version',
+  'version-timeout',
   'unauthenticated',
   'auth-unknown',
   'auth-timeout',
@@ -257,6 +258,9 @@ export function cliAuthRemediation(
   }
 }
 
+export const UNVERIFIED_AUTH_FIX =
+  'Run SPLITBRIEF in a terminal to review the sign-in warning, or pass --allow-unverified-auth to start without confirming sign-in.';
+
 /** A Codex sign-in kept in the system keyring, the headline wherever that state shows. */
 export const CODEX_KEYRING_SIGN_IN = `${CLI_TOOL_CATALOG.codex.displayName} keeps its sign-in in the system keyring, which a run cannot reach.`;
 
@@ -289,6 +293,9 @@ export function cliReadinessRemediation(
     case 'incompatible':
       return `Install the tested ${name} version (${facts.testedVersion}), ${thenRecheck(recheck)}.`;
     case 'unverified':
+      if (facts.compatibility === 'timeout') {
+        return `Run \`${CLI_TOOL_CATALOG[facts.tool].command} --version\` in a terminal and wait for it to finish, ${thenRecheck(recheck)}.`;
+      }
       if (facts.installedVersion === null || facts.compatibility !== 'compatible') {
         return `Verify ${name} against tested version ${facts.testedVersion}, ${thenRecheck(recheck)}.`;
       }

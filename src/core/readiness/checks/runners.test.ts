@@ -456,6 +456,64 @@ describe('buildRunnerChecks availability guidance', () => {
     expect(check?.summary).not.toContain('is installed, trusted, compatible, and signed in');
   });
 
+  it('blocks on a version check that timed out and names the version check', () => {
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
+
+    const check = buildRunnerChecks({
+      config,
+      cliReadiness: [cliReadiness({ installedVersion: null, compatibility: 'timeout' })],
+    }).find((candidate) => candidate.id === 'runners.cli.claude-code.readiness');
+
+    expect(check).toMatchObject({
+      severity: 'blocker',
+      nextAction: 'prepare-runner',
+      diagnosticState: 'version-timeout',
+      summary: 'Claude Code CLI version check timed out.',
+      fix: 'Run `claude --version` in a terminal and wait for it to finish, then run `splitbrief doctor` again.',
+      runnerCause: { tool: 'claude-code', cause: 'version-timeout', seats: ['PLAN'] },
+    });
+  });
+
+  it.each([
+    ['a version the probe could not read', { installedVersion: null }],
+    ['a version the probe could not classify', { compatibility: 'unverified' }],
+  ] as const)('blocks on %s, as start does', (_label, overrides) => {
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
+
+    const check = buildRunnerChecks({ config, cliReadiness: [cliReadiness(overrides)] }).find(
+      (candidate) => candidate.id === 'runners.cli.claude-code.readiness',
+    );
+
+    expect(check).toMatchObject({
+      severity: 'blocker',
+      nextAction: 'prepare-runner',
+      metadata: { status: 'unverified' },
+    });
+  });
+
+  it('warns on a sign-in check that timed out and gives the unknown sign-in fix', () => {
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
+
+    const check = buildRunnerChecks({
+      config,
+      cliReadiness: [cliReadiness({ auth: 'timeout', authChannel: 'session' })],
+    }).find((candidate) => candidate.id === 'runners.cli.claude-code.readiness');
+
+    expect(check).toMatchObject({
+      severity: 'warning',
+      diagnosticState: 'auth-timeout',
+      summary: 'Claude Code CLI sign-in check timed out.',
+      fix: 'If a call to Claude Code CLI fails to authenticate, sign in again. Stored credentials do not prove a session; only a real call does.',
+      metadata: { status: 'unverified', auth: 'timeout' },
+      runnerCause: {
+        tool: 'claude-code',
+        cause: 'auth-timeout',
+        authChannel: 'session',
+        seats: ['PLAN'],
+      },
+    });
+  });
+
   it('does not claim authentication when the selected CLI does not require it', () => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
 

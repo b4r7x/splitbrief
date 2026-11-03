@@ -31,6 +31,7 @@ import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { BRAILLE_SPINNER_FRAMES, glyph, spinnerFrames } from '../../../lib/glyphs.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { clearAllHandlers, requestSeatChangeAtBoundary } from '../handlers.js';
+import { trackProbe } from '../../../engine/probe-activity.js';
 import { InputFooter } from './input-footer.js';
 
 import { makePlannerStatus } from '#testing/helpers/events/planner.js';
@@ -144,6 +145,34 @@ describe('InputFooter', () => {
     );
     expect(frame).toContain(paint(defaultTheme.textDim, 'Checking tools · esc cancel'));
     ui.unmount();
+  });
+
+  it('names the tool check that has run ten seconds between the stage and the command', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    const preparation = Promise.withResolvers<{ kind: 'aborted' }>();
+    preparationStore.submit({
+      origin: 'continue',
+      stage: 'Checking tools',
+      prepare: () => preparation.promise,
+      onPrepared: () => {},
+    });
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() - 12_000);
+    const models = Promise.withResolvers<void>();
+    const modelsRun = trackProbe({ tool: 'opencode', check: 'model list' }, () => models.promise);
+    clock.mockRestore();
+    try {
+      const ui = renderFeature(<InputFooter />);
+      await flushEffects();
+
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
+        'Checking tools · OpenCode CLI model list 12s · esc cancel',
+      );
+      ui.unmount();
+    } finally {
+      models.resolve();
+      await modelsRun;
+      preparation.resolve({ kind: 'aborted' });
+    }
   });
 
   it('shows neutral API waiting beside the input until the first response, and honors cancellation', () => {

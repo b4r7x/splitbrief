@@ -53,6 +53,7 @@ import { formatNeedsSignInSaveFeedback } from '../../features/runners/picker-for
 import { formatConfigSaveSuccess } from '../../stores/project/save-feedback.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { overlayRect } from '../../core/navigation/overlay-rect.js';
+import { trackProbe } from '../../engine/probe-activity.js';
 import { HomeScreen, type HomeScreenDeps } from './home.js';
 
 const prepareExecutionMock = vi.fn<(input: PrepareExecutionInput) => Promise<PreparationOutcome>>();
@@ -1232,6 +1233,42 @@ describe('HomeScreen', () => {
     expect(frame.replace(/\s+/g, ' ')).toContain(warning);
     expect(frame.split(CHECKING_STATUS)).toHaveLength(2);
     expect(frame).not.toContain('Checking your tools…');
+    ui.stdin.write(ESC);
+    await flushEffects();
+    ui.unmount();
+  });
+
+  it('names the tool check that has run ten seconds on the reserved row', async () => {
+    const pending = Promise.withResolvers<PreparationOutcome>();
+    prepareExecutionMock.mockReturnValue(pending.promise);
+
+    const ui = renderHome();
+    await flushEffects();
+    ui.stdin.write('background preparation');
+    await flushEffects();
+    ui.stdin.write(ENTER);
+    await vi.waitFor(
+      () => expect(prepareExecutionMock).toHaveBeenCalledOnce(),
+      SESSION_FILTER_WAIT_MS,
+    );
+
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() - 12_000);
+    const signIn = Promise.withResolvers<void>();
+    const signInRun = trackProbe({ tool: 'opencode', check: 'sign-in' }, () => signIn.promise);
+    clock.mockRestore();
+    try {
+      await flushEffects();
+
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame).toContain('Checking tools · OpenCode CLI sign-in 12s · esc cancel');
+      expect(frame.split('Checking tools')).toHaveLength(2);
+    } finally {
+      signIn.resolve();
+      await signInRun;
+    }
+
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(CHECKING_STATUS);
     ui.stdin.write(ESC);
     await flushEffects();
     ui.unmount();

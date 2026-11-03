@@ -30,7 +30,6 @@ const CODEX_VERSION_ARGS = Object.freeze(['--version'] as const);
 export const CODEX_NATIVE_MODEL_CATALOG_PROBE = Object.freeze({
   capability: 'debug-models-v2',
   command: Object.freeze([CODEX_COMMAND, 'debug', 'models'] as const),
-  timeoutMs: 5_000,
   maxOutputBytes: 2 * 1024 * 1024,
 });
 
@@ -174,13 +173,6 @@ function createCodexPlannerAdapter(): CliPlannerAdapter<'codex'> {
       version: {
         command: [CODEX_COMMAND, ...CODEX_VERSION_ARGS],
         cwd: 'neutral',
-        timeoutMs: 5_000,
-        maxOutputBytes: 4_096,
-      },
-      auth: {
-        command: [CODEX_COMMAND, 'login', 'status'],
-        cwd: 'neutral',
-        timeoutMs: 5_000,
         maxOutputBytes: 4_096,
       },
     },
@@ -204,13 +196,6 @@ function createCodexImplementerAdapter(): CliImplementerAdapter<'codex'> {
       version: {
         command: [CODEX_COMMAND, ...CODEX_VERSION_ARGS],
         cwd: 'neutral',
-        timeoutMs: 5_000,
-        maxOutputBytes: 4_096,
-      },
-      auth: {
-        command: [CODEX_COMMAND, 'login', 'status'],
-        cwd: 'neutral',
-        timeoutMs: 5_000,
         maxOutputBytes: 4_096,
       },
     },

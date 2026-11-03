@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { TIMEOUTS } from '../../src/core/pipeline-spec/timeouts.js';
 import { READINESS_DIAGNOSTIC_REMEDIATION } from '../../src/core/readiness/format.js';
 import type { RecoveryReason } from '../../src/core/schemas/enums.js';
 import {
@@ -112,10 +111,12 @@ describe('TROUBLESHOOTING diagnostic parity', () => {
     expect(runner).not.toMatch(/^repository:/m);
   });
 
-  it('documents the repeated-timeout halt with the implementer wall clock', () => {
+  it('documents the repeated-timeout halt as the result of an opt-in seat limit', () => {
     const reason: RecoveryReason = 'runner-timeout-repeated';
     expect(troubleshootingDoc).toContain('### Symptom: two consecutive timeouts halted my run');
-    expect(troubleshootingDoc).toContain(`${TIMEOUTS.implementerMs / 60_000} minutes`);
+    expect(troubleshootingDoc).toContain(
+      'A seat has no default limit on any kind, so this halt follows an opt-in limit on the seat',
+    );
     expect(troubleshootingDoc).toContain(reason);
   });
 

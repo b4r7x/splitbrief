@@ -251,7 +251,6 @@ describe('CLI planner to CLI implementer workflow', { timeout: 90_000 }, () => {
       .trim()
       .split('\n')
       .map((line) => JSON.parse(line) as { cwd: string; args: string[] });
-    expect(codexRuns.some((run) => run.args.includes('--version'))).toBe(true);
     expect(codexRuns.some((run) => run.args.includes('exec') && run.args.includes('--json'))).toBe(
       true,
     );

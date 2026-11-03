@@ -58,6 +58,28 @@ describe('formatChangedFiles', () => {
     ]);
   });
 
+  it('runs the formatter with no time limit unless validation.timeout_ms sets one', async () => {
+    writeTsProject(tempDir);
+    writeFileSync(join(tempDir, 'biome.json'), '{}');
+    mkdirSync(join(tempDir, 'src'), { recursive: true });
+    writeFileSync(join(tempDir, 'src/app.ts'), 'export const app = 1;\n');
+    const format = async (formatConfig: typeof config) => {
+      const runner = makeCommandRunner();
+      await createValidator({ runCommand: runner }).formatChangedFiles({
+        task: mkTask('src/app.ts'),
+        projectDir: tempDir,
+        config: formatConfig,
+        bus: fakeBus,
+        phase: 'implementing',
+        changedFiles: ['src/app.ts'],
+      });
+      return runner.calls.map((call) => call.options?.timeout);
+    };
+
+    expect(await format(config)).toEqual([undefined]);
+    expect(await format(makeConfig({ timeoutMs: 5_000 }))).toEqual([5_000]);
+  });
+
   it('never hands the formatter a file the brief deleted', async () => {
     writeTsProject(tempDir);
     writeFileSync(join(tempDir, 'biome.json'), '{}');

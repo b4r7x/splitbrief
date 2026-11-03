@@ -166,6 +166,58 @@ describe('evaluateCandidate policy denial remediation', () => {
   });
 });
 
+describe('evaluateCandidate on a sign-in check that timed out', () => {
+  it('blocks a headless start as unverified sign-in and names --allow-unverified-auth', async () => {
+    stubHome();
+    const { config, candidate } = plannerSeat('gpt-6-mini');
+    const detect = vi.fn<PrepareExecutionDependencies['detectRunnerEvidence']>(
+      async ({ context }) => evidence(context, 'timeout'),
+    );
+
+    vi.useFakeTimers();
+    const result = await settleUnderFakeTimers(
+      evaluateCandidate(candidate, preparationContext(config, detect)),
+    );
+
+    expect(detect).toHaveBeenCalledTimes(1);
+    expect(result.kind).toBe('blocked');
+    expect(result.check).toMatchObject({
+      severity: 'blocker',
+      details: ['OpenAI Codex CLI sign-in check timed out.'],
+      diagnosticState: 'auth-timeout',
+      fix: 'Run SPLITBRIEF in a terminal to review the sign-in warning, or pass --allow-unverified-auth to start without confirming sign-in.',
+      runnerCause: { tool: 'codex', cause: 'auth-timeout', authChannel: 'session' },
+    });
+  });
+});
+
+describe('evaluateCandidate on a version check that timed out', () => {
+  it('blocks the start and tells the user to run the version check in a terminal', async () => {
+    stubHome();
+    const { config, candidate } = plannerSeat('gpt-6-mini');
+    const testedVersion = CLI_TOOL_CATALOG.codex.compatibility.testedVersion;
+    const detect: PrepareExecutionDependencies['detectRunnerEvidence'] = async ({ context }) => ({
+      ...evidence(context),
+      compatibility: { kind: 'timeout', installedVersion: null, testedVersion },
+    });
+
+    vi.useFakeTimers();
+    const result = await settleUnderFakeTimers(
+      evaluateCandidate(candidate, preparationContext(config, detect)),
+    );
+
+    expect(result.kind).toBe('blocked');
+    expect(result.check).toMatchObject({
+      severity: 'blocker',
+      details: ['OpenAI Codex CLI version check timed out.'],
+      diagnosticState: 'version-timeout',
+      fix: 'Run `codex --version` in a terminal and wait for it to finish, then run `splitbrief doctor` again.',
+      runnerCause: { tool: 'codex', cause: 'version-timeout', seats: ['PLAN'] },
+    });
+    expect(result.check).not.toHaveProperty('runnerCause.authChannel');
+  });
+});
+
 describe('evaluateCandidate on a repo-local command without the grant', () => {
   it.each([
     {

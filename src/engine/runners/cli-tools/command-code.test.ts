@@ -506,6 +506,17 @@ describe('Command Code role adapters', () => {
     ).toThrow(/without a terminal result/u);
   });
 
+  it('checks the version with the update check off', () => {
+    const versionArgv = ['cmd', '--version', '--no-auto-update'];
+    expect(commandCodePlannerAdapter.probe.version.command).toEqual(versionArgv);
+    expect(commandCodeImplementerAdapter.probe.version.command).toEqual(versionArgv);
+    for (const candidate of CLI_CONFORMANCE_CANDIDATES) {
+      expect([candidate.rawContract.command, ...candidate.rawContract.versionArgs]).toEqual(
+        versionArgv,
+      );
+    }
+  });
+
   it('publishes one conformance candidate per role with a matching contract hash', () => {
     expect(CLI_CONFORMANCE_CANDIDATES).toHaveLength(2);
     expect(CLI_CONFORMANCE_CANDIDATES.map((candidate) => candidate.role)).toEqual([

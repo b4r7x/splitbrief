@@ -271,6 +271,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'composer', title: 'Feature composer' },
       ],
     }),
+    // A check past ten seconds names the tool and the wait on the same reserved row.
+    defineScenario({
+      id: 'home-preparing-slow',
+      title: 'Home · a tool check past ten seconds',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Slow sign-in named beside the composer',
+        kind: 'ready',
+        marker: 'OpenCode CLI sign-in 12s',
+      },
+      elements: [
+        { id: 'header', title: 'Home header' },
+        { id: 'composer', title: 'Feature composer' },
+      ],
+    }),
     // The panel appears only when preparation needs an answer.
     defineScenario({
       id: 'home-preparation-failed',
@@ -4510,6 +4526,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-continuing-slow',
+      title: 'Workflow · a tool check past ten seconds while continuing a run',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Slow sign-in named on the byline',
+        kind: 'ready',
+        marker: 'OpenCode CLI sign-in 12s',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-continue-repo-runner-blocked',
       title: 'Workflow · a continue blocked by a repo-local runner',
       surface: screenSurface('workflow'),
@@ -5040,9 +5071,9 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       surface: screenSurface('setup'),
       checkpoint: {
         id: 'ready',
-        title: 'Finding ready tools',
+        title: 'Roll call of the tools under check',
         kind: 'ready',
-        marker: 'Choose your crew after the tool check.',
+        marker: 'sign-in 12s',
       },
       elements: [
         { id: 'header', title: 'Setup header' },
@@ -5081,7 +5112,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'ready',
         title: 'Waiting for a fresh crew proposal',
         kind: 'ready',
-        marker: 'Choose your crew after the tool check.',
+        marker: 'Next: choose your crew.',
       },
       elements: [
         { id: 'header', title: 'Setup header' },
@@ -5415,6 +5446,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         id: 'overlay-settings-crew-api-twin',
         title: 'Overlay · settings · API build seat named after a CLI tool',
         marker: 'Settings',
+      },
+      {
+        id: 'overlay-settings-api-implementer',
+        title: 'Overlay · settings · API build seat with no time limit',
+        marker: 'no limit',
       },
       {
         id: 'overlay-settings-floor-full',

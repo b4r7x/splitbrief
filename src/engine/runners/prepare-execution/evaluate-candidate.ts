@@ -13,6 +13,7 @@ import {
 import { admitCliAuthChannel } from '../../../core/runners/cli-auth-selection.js';
 import {
   CODEX_KEYRING_SIGN_IN,
+  UNVERIFIED_AUTH_FIX,
   codexKeyringSignInFix,
   cliAuthRemediation,
   cliReadinessRemediation,
@@ -55,9 +56,6 @@ import {
 } from './runner-candidates.js';
 import type { PreparationContext, PreparationPolicy, SlotEvaluation } from './types.js';
 
-const UNVERIFIED_AUTH_FIX =
-  'Run SPLITBRIEF in a terminal to review the sign-in warning, or pass --allow-unverified-auth to start without confirming sign-in.';
-
 const READINESS_RETRY_DELAY_MS = 1500;
 
 function wait(ms: number, signal: AbortSignal): Promise<void> {
@@ -94,7 +92,10 @@ function cliAdmissionProblem({
       'testedVersion' in compatibility
         ? compatibility.testedVersion
         : CLI_TOOL_CATALOG[tool].compatibility.testedVersion,
-    compatibility: compatibility.kind === 'compatible' ? 'compatible' : 'unverified',
+    compatibility:
+      compatibility.kind === 'compatible' || compatibility.kind === 'timeout'
+        ? compatibility.kind
+        : 'unverified',
   };
   switch (reason.kind) {
     case 'authentication':
@@ -116,12 +117,6 @@ function cliAdmissionProblem({
             message: `${name} credentials are invalid.`,
             cause: 'unauthenticated',
             fix: cliAuthRemediation({ tool, authChannel }, 'doctor'),
-          };
-        case 'timeout':
-          return {
-            message: `${name} sign-in check timed out.`,
-            cause: 'auth-timeout',
-            fix: READINESS_DIAGNOSTIC_REMEDIATION['auth-timeout'],
           };
         case 'offline':
           return {
@@ -167,11 +162,17 @@ function cliAdmissionProblem({
           return assertNever(reason);
       }
     case 'authentication-unverified':
-      return {
-        message: `${name} sign-in status is unknown.`,
-        cause: 'auth-unknown',
-        fix: UNVERIFIED_AUTH_FIX,
-      };
+      return reason.fact === 'timeout'
+        ? {
+            message: `${name} sign-in check timed out.`,
+            cause: 'auth-timeout',
+            fix: UNVERIFIED_AUTH_FIX,
+          }
+        : {
+            message: `${name} sign-in status is unknown.`,
+            cause: 'auth-unknown',
+            fix: UNVERIFIED_AUTH_FIX,
+          };
     case 'installation':
     case 'executable':
       if (reason.fact === 'missing') {
@@ -199,6 +200,13 @@ function cliAdmissionProblem({
           message: `${name} version is not compatible.`,
           cause: 'incompatible-version',
           fix: cliReadinessRemediation(facts, 'incompatible', 'doctor'),
+        };
+      }
+      if (reason.fact === 'timeout') {
+        return {
+          message: `${name} version check timed out.`,
+          cause: 'version-timeout',
+          fix: cliReadinessRemediation(facts, 'unverified', 'doctor'),
         };
       }
       return {

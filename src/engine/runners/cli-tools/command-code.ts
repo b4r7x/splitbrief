@@ -10,7 +10,7 @@ import { error } from '../../../utils/error.js';
 const COMMAND_CODE_ID = 'command-code' as const;
 const COMMAND_CODE_COMMAND = 'cmd' as const;
 const COMMAND_CODE_PROMPT_TRANSPORT = Object.freeze({ kind: 'stdin' } as const);
-const COMMAND_CODE_VERSION_ARGS = Object.freeze(['--version'] as const);
+const COMMAND_CODE_VERSION_ARGS = Object.freeze(['--version', '--no-auto-update'] as const);
 
 export const COMMAND_CODE_PROTECTED_FLAGS = new Set([
   '-p',
@@ -97,13 +97,6 @@ function createProbe() {
     version: {
       command: [COMMAND_CODE_COMMAND, ...COMMAND_CODE_VERSION_ARGS],
       cwd: 'neutral',
-      timeoutMs: 5_000,
-      maxOutputBytes: 4_096,
-    },
-    auth: {
-      command: [COMMAND_CODE_COMMAND, 'status', '--json', '--no-auto-update'],
-      cwd: 'neutral',
-      timeoutMs: 5_000,
       maxOutputBytes: 4_096,
     },
   } as const;
@@ -272,7 +265,7 @@ export type RawCommandCodeCliContract = Readonly<{
   id: typeof COMMAND_CODE_ID;
   command: typeof COMMAND_CODE_COMMAND;
   role: 'planner' | 'implementer';
-  versionArgs: readonly ['--version'];
+  versionArgs: readonly ['--version', '--no-auto-update'];
   auth: Readonly<{ kind: 'none'; env: readonly [] }>;
   rawInvocation: readonly string[];
   promptTransport: 'stdin';

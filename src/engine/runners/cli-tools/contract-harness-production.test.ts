@@ -77,7 +77,7 @@ export const CLI_CONFORMANCE_CANDIDATES = [{
     outputContract: { kind: 'text-exit', successfulExitCodes: [0] },
     parse: () => [],
     terminal: () => ({ type: 'result', status: 'completed', text: 'ok', usage: null, nativeSessionId: null, error: null, partial: false }),
-    probe: { version: { command: ['fixture-cli', '--version'], cwd: 'neutral', timeoutMs: 100, maxOutputBytes: 1024 }, auth: { command: ['fixture-cli', 'auth'], cwd: 'neutral', timeoutMs: 100, maxOutputBytes: 1024 } }
+    probe: { version: { command: ['fixture-cli', '--version'], cwd: 'neutral', maxOutputBytes: 1024 } }
   }
 }];
 `;
@@ -129,7 +129,7 @@ export const CLI_CONFORMANCE_CANDIDATES = [{
     outputContract: ${outputContract},
     parse: ${parse},
     terminal: ${terminal},
-    probe: { version: { command: ['fixture-cli', '--version'], cwd: 'neutral', timeoutMs: 100, maxOutputBytes: 1024 }, auth: { command: ['fixture-cli', 'auth'], cwd: 'neutral', timeoutMs: 100, maxOutputBytes: 1024 } }
+    probe: { version: { command: ['fixture-cli', '--version'], cwd: 'neutral', maxOutputBytes: 1024 } }
   }
 }];
 `;

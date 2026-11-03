@@ -14,12 +14,13 @@ import { CLI_TOOL_CATALOG, type CliToolId } from '../../core/runners/cli-tool-ca
 import type { ActiveRunnerRole } from '../../core/runners/seat-roles.js';
 import { createSanitizedChildEnv } from '../../lib/process/spawn/child-env.js';
 import { assertNever } from '../../utils/type-guards.js';
+import { CLI_PROBE_TIMEOUT_MS } from '../constants.js';
+import { trackProbe } from '../probe-activity.js';
 import { spawnWithTimeout } from '../../lib/process/spawn/progress.js';
 import type { CliArgumentValidation } from './cli-tools/validate-args.js';
 import { lookupCliImplementerAdapter, lookupCliPlannerAdapter } from './cli-tools/registry.js';
 import { resolveCliExecutableAliases, sanitizedRuntimePath } from './resolve-cli-executable.js';
 
-const HELP_TIMEOUT_MS = 5_000;
 const LONG_FLAG_PATTERN = /--[a-z0-9][a-z0-9-]*/gi;
 const SHORT_FLAG_PATTERN = /(?<![\w-])-[a-z](?![\w-])/gi;
 const EMITTED_LONG_FLAG_PATTERN = /^--[a-z0-9][a-z0-9-]*/i;
@@ -303,12 +304,13 @@ export interface ArgVectorPreflightCheckInput {
   /** The release readiness admitted per tool, so the vector is the one dispatch would build. */
   installedVersions?: Readonly<Partial<Record<CliToolId, string>>> | undefined;
   runHelp?: (tool: CliToolId, argv: readonly string[]) => Promise<string | null>;
+  signal?: AbortSignal | undefined;
 }
 
 export async function collectArgVectorPreflightChecks(
   input: ArgVectorPreflightCheckInput,
 ): Promise<ReadinessCheck[]> {
-  const runHelp = input.runHelp ?? defaultRunHelp(input.projectDir);
+  const runHelp = input.runHelp ?? defaultRunHelp(input.projectDir, input.signal);
   const runners: PreflightRunner[] = [];
   if (input.roles.includes('planner') && input.config.planner.kind === 'cli') {
     runners.push({
@@ -614,13 +616,13 @@ async function resolveHelpInvocation(
  * the other and keeping the winner reported the loser's flags as unsupported
  * and blocked a run the binary accepts.
  */
-function defaultRunHelp(projectDir: string) {
+function defaultRunHelp(projectDir: string, signal: AbortSignal | undefined) {
   const helpTexts = new Map<string, Promise<string | null>>();
   const helpFor = (tool: CliToolId, subcommand?: string): Promise<string | null> => {
     const key = subcommand === undefined ? tool : `${tool} ${subcommand}`;
     const cached = helpTexts.get(key);
     if (cached !== undefined) return cached;
-    const pending = fetchHelp(tool, projectDir, subcommand);
+    const pending = fetchHelp(tool, projectDir, subcommand, signal);
     helpTexts.set(key, pending);
     return pending;
   };
@@ -643,6 +645,7 @@ async function fetchHelp(
   tool: CliToolId,
   projectDir: string,
   subcommand: string | undefined,
+  signal: AbortSignal | undefined,
 ): Promise<string | null> {
   const invocation = await resolveHelpInvocation(tool, projectDir);
   if (invocation === null) return null;
@@ -651,7 +654,9 @@ async function fetchHelp(
   const stageDir = await mkdtemp(join(tmpdir(), 'splitbrief-help-'));
   try {
     await chmod(stageDir, 0o500);
-    return await runHelpCommand(invocation, stageDir, subcommand);
+    return await trackProbe({ tool, check: 'options' }, () =>
+      runHelpCommand(invocation, stageDir, subcommand, signal),
+    );
   } finally {
     await rm(stageDir, { recursive: true, force: true });
   }
@@ -660,7 +665,8 @@ async function fetchHelp(
 async function runHelpCommand(
   invocation: HelpInvocation,
   cwd: string,
-  subcommand?: string | undefined,
+  subcommand: string | undefined,
+  signal: AbortSignal | undefined,
 ): Promise<string | null> {
   const args = subcommand === undefined ? ['--help'] : [subcommand, '--help'];
   try {
@@ -669,13 +675,15 @@ async function runHelpCommand(
       args,
       cwd,
       env: invocation.env,
-      timeout: HELP_TIMEOUT_MS,
+      timeout: CLI_PROBE_TIMEOUT_MS,
+      signal,
       onProgress: () => undefined,
       ledger: false,
     });
     if (result.timedOut) return null;
     return `${result.output}\n${result.stderr}`.trim();
-  } catch {
+  } catch (cause) {
+    if (signal?.aborted) throw cause;
     return null;
   }
 }

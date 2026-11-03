@@ -22,7 +22,7 @@ export interface SpawnOptions {
   args: string[];
   cwd: string;
   env?: NodeJS.ProcessEnv | undefined;
-  timeout: number;
+  timeout?: number | undefined;
   onProgress: (text: string) => void;
   onStderr?: ((chunk: string) => void) | undefined;
   stdinInput?: string | undefined;
@@ -44,9 +44,11 @@ export async function spawnWithTimeout(opts: SpawnOptions): Promise<SpawnResult>
     maxBytes: opts.stderrMaxBytes ?? DEFAULT_PROCESS_STDERR_MAX_BYTES,
     policy: 'tail',
   });
-  const timeoutSignal = AbortSignal.timeout(opts.timeout);
+  const timeoutSignal = opts.timeout === undefined ? undefined : AbortSignal.timeout(opts.timeout);
   const signal =
-    opts.signal === undefined ? timeoutSignal : AbortSignal.any([opts.signal, timeoutSignal]);
+    opts.signal === undefined || timeoutSignal === undefined
+      ? (timeoutSignal ?? opts.signal)
+      : AbortSignal.any([opts.signal, timeoutSignal]);
   let timeoutExitCode: number | null = null;
 
   try {
@@ -101,7 +103,7 @@ export async function spawnWithTimeout(opts: SpawnOptions): Promise<SpawnResult>
       },
     });
   } catch (err: unknown) {
-    if (err !== timeoutSignal.reason) throw err;
+    if (timeoutSignal === undefined || err !== timeoutSignal.reason) throw err;
 
     const outputSnapshot = output.snapshot();
     const stderrSnapshot = stderrOutput.snapshot();

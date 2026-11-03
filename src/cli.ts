@@ -17,6 +17,7 @@ import { assertSupportedNodeVersion } from './cli/node-guard.js';
 import { assertNotMistypedCommand } from './cli/unknown-command.js';
 import { valueTakingFlags } from './cli/options.js';
 import { HELP_EXAMPLES } from './cli/help-examples.js';
+import { watchSlowProbeLines } from './cli/slow-probe-line.js';
 import { toErrorMessage } from './utils/format-errors.js';
 import { createLogger } from './lib/logger.js';
 import { getSplitbriefVersion } from './core/paths-io.js';
@@ -49,6 +50,7 @@ async function main(): Promise<void> {
     program.commands.flatMap((command) => [command.name(), ...command.aliases()]),
     valueTakingFlags(program),
   );
+  watchSlowProbeLines((line) => process.stderr.write(`${line}\n`));
   await program.parseAsync();
 }
 

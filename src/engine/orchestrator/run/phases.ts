@@ -91,6 +91,7 @@ export async function runPlanningPhases(
       projectDir,
       workspaceDir,
       sessionId,
+      signal: wctx.signal,
     });
     if (pre.allow) return true;
     publishWarning({

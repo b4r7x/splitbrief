@@ -7,6 +7,7 @@ import {
 } from '../core/approval/types.js';
 import type { ArtifactApprovalReview } from '../engine/runners/types.js';
 import { stripTerminalControls } from '../utils/display-text.js';
+import { holdSlowProbeLines } from './slow-probe-line.js';
 
 type PromptForLine = (question: string) => Promise<string>;
 
@@ -16,12 +17,17 @@ type CustomRunnerPromptOptions = Readonly<{
 }>;
 
 export async function promptForLine(question: string): Promise<string> {
+  const releaseSlowProbeLines = holdSlowProbeLines();
   const readline = createInterface({ input: process.stdin, output: process.stderr });
-  const eof = Symbol('eof');
-  const closed = new Promise<typeof eof>((resolve) => readline.once('close', () => resolve(eof)));
-  const answer = await Promise.race([readline.question(question), closed]);
-  readline.close();
-  return answer === eof ? '' : answer;
+  try {
+    const eof = Symbol('eof');
+    const closed = new Promise<typeof eof>((resolve) => readline.once('close', () => resolve(eof)));
+    const answer = await Promise.race([readline.question(question), closed]);
+    return answer === eof ? '' : answer;
+  } finally {
+    readline.close();
+    releaseSlowProbeLines();
+  }
 }
 
 function deny(reason: string): TieredApprovalResponse {

@@ -106,13 +106,6 @@ function createProbe() {
     version: {
       command: [OPENCODE_COMMAND, ...OPENCODE_VERSION_ARGS] as const,
       cwd: 'neutral' as const,
-      timeoutMs: 5_000,
-      maxOutputBytes: 4_096,
-    },
-    auth: {
-      command: [OPENCODE_COMMAND, 'auth'] as const,
-      cwd: 'neutral' as const,
-      timeoutMs: 5_000,
       maxOutputBytes: 4_096,
     },
   } as const;

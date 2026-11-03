@@ -5,6 +5,7 @@ import { eventPhase } from '../../core/event-phase.js';
 import { hookTrustRefusal, runTrustedHook } from './dispatch.js';
 import type { HookContext, HookOutcome } from './types.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
+import { isAbortError } from '../../utils/abort.js';
 
 export function createHookSink(
   hooks: HooksConfig,
@@ -52,6 +53,7 @@ async function runAndReport(
       });
     }
   } catch (err) {
+    if (isAbortError(err)) return;
     bus.publish({
       type: 'warning',
       ts: Date.now(),

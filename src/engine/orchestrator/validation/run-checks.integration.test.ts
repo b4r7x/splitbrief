@@ -650,7 +650,7 @@ describe('runChecks', () => {
     expect(runner.calls.map((call) => call.cmd)).toEqual(['tsc', 'npx']);
   });
 
-  it('runs every check kind under the configured timeout, an hour by default, and the caller signal', async () => {
+  it('runs every check kind under the configured timeout, with no limit by default, and the caller signal', async () => {
     const task = taskWith([
       { id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true },
       { id: 'K2', kind: 'test', value: 'src/a.test.ts', required: true },
@@ -667,7 +667,7 @@ describe('runChecks', () => {
       options({ task, config: makeConfig({ timeoutMs: 5_000 }), runCommand: configured }),
     );
 
-    expect(byDefault.calls.map((call) => call.options?.timeout)).toEqual([3_600_000, 3_600_000]);
+    expect(byDefault.calls.map((call) => call.options?.timeout)).toEqual([undefined, undefined]);
     expect(byDefault.calls.map((call) => call.options?.signal)).toEqual([
       controller.signal,
       controller.signal,

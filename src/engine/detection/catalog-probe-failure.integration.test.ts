@@ -1,7 +1,7 @@
 import { chmod, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
-import { freezeProbeDeadlines } from '#testing/helpers/fake-timers.js';
+import { describe, expect, it, vi } from 'vitest';
+import { expireDeadlineAfterFile, freezeProbeDeadlines } from '#testing/helpers/fake-timers.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import type { RunnerDiscoveryContext } from '../../core/config/accessors/runner-discovery-context.js';
 import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
@@ -180,5 +180,52 @@ describe('a catalog listing that exits zero', () => {
       expect(outcome).toEqual({ kind: 'malformed' });
     },
     60_000,
+  );
+});
+
+describe('a catalog listing that never answers', () => {
+  it.runIf(process.platform !== 'win32')(
+    'times out after one minute',
+    async () => {
+      await withTempDir('catalog-ceiling', async (directory) => {
+        const listingStarted = join(directory, 'listing-started');
+        const script = join(directory, 'codex');
+        await writeFile(
+          script,
+          [
+            '#!/bin/sh',
+            'if [ "$1" = "--version" ]; then',
+            "  printf '%s\\n' 'codex-cli 0.146.0'",
+            '  exit 0',
+            'fi',
+            'if [ "$1" = "debug" ] && [ "$2" = "models" ]; then',
+            `  : > ${JSON.stringify(listingStarted)}`,
+            '  exec tail -f /dev/null',
+            'fi',
+            'exit 1',
+            '',
+          ].join('\n'),
+        );
+        await chmod(script, 0o755);
+        const shim = await resolveCliExecutable({
+          command: script,
+          projectDir: '/neutral/project',
+        });
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+        const armedAt = Date.now();
+
+        const pending = detectRunnerEvidence({
+          context: codexContext(),
+          resolveExecutable: async () => shim,
+          includeCatalog: true,
+          now: () => 300,
+        });
+        await expireDeadlineAfterFile(listingStarted);
+
+        expect(Date.now() - armedAt).toBe(60_000);
+        expect((await pending).catalog).toEqual({ kind: 'timeout' });
+      });
+    },
+    20_000,
   );
 });

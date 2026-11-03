@@ -846,7 +846,7 @@ Trust these hooks for this project? [y/N] y
 
 The receipt goes to `~/.splitbrief/trust/hooks.json`, keyed by this checkout — not into the repository, so it does not travel with a clone or a copy. `--allow-hooks` skips the prompt in non-TTY (CI) and prints the same disclosure to stderr. Editing the hooks block invalidates trust and re-prompts on the next run.
 
-**Variations:** `on_failure: block` aborts; `warn` (default) logs; `ignore` is silent. Mandatory `timeout_ms` ceiling: 300_000 ms.
+**Variations:** `on_failure: block` aborts; `warn` (default) logs; `ignore` is silent. `timeout_ms` is optional, with no default and no maximum; Esc stops a running hook.
 
 **See also:** [docs/HOOKS-CONFIG.md](./HOOKS-CONFIG.md), recipe 14.
 

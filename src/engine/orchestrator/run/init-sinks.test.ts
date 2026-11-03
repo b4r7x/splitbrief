@@ -4,6 +4,8 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { createEventBus } from '../../events/bus.js';
 import type { EngineEvent } from '../../events/types.js';
+import * as hookSink from '../../hooks/sink.js';
+import { makeAllowHook } from '#testing/helpers/factories/hook-entry.js';
 import { attachRunSinks } from './init-sinks.js';
 
 let dirs: string[] = [];
@@ -200,5 +202,28 @@ describe('attachRunSinks — stdout sinks', () => {
 
     expect(stdout.mock.calls.map(([chunk]) => chunk)).toEqual(['phase: planning\n']);
     expect(stderr.mock.calls.map(([chunk]) => chunk)).toEqual(['A warning.\n']);
+  });
+});
+
+describe('attachRunSinks — hook context', () => {
+  it('hands a sink hook the run signal until the run stops', () => {
+    const projectDir = createTempDir('sinks-hook-signal');
+    dirs.push(projectDir);
+    const sessionId = 'sess-sinks-hook-signal';
+    ensureSessionDir(projectDir, sessionId);
+    const createHookSink = vi.spyOn(hookSink, 'createHookSink');
+    const controller = new AbortController();
+
+    attachRunSinks({
+      opts: { headless: false, signal: controller.signal },
+      config: makeConfig({ hooks: { on_halt: [makeAllowHook('halt')] } }),
+      projectDir,
+      sessionId,
+    });
+    const getCtx = createHookSink.mock.calls[0]?.[1];
+
+    expect(getCtx?.().signal).toBe(controller.signal);
+    controller.abort();
+    expect(getCtx?.()).not.toHaveProperty('signal');
   });
 });

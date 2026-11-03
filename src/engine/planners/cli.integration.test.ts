@@ -6,7 +6,13 @@ import { dirname, join } from 'node:path';
 import { createCliPlanner as createCliPlannerImpl } from './cli.js';
 import { makeConfig as makeBaseConfig } from '#testing/helpers/factories/config.js';
 import { makePlanProposal } from '#testing/helpers/factories/plan.js';
-import { prependPath, trustedShimGate, writeCommandShim } from '#testing/helpers/command-shim.js';
+import {
+  prependPath,
+  trustedShimGate,
+  writeCommandShim,
+  writeFakeCli,
+} from '#testing/helpers/command-shim.js';
+import { probeActivitySnapshot, subscribeProbeActivity } from '../probe-activity.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import {
@@ -177,12 +183,21 @@ afterEach(() => {
 });
 
 describe('createCliPlanner', () => {
-  it('isAvailable returns true when the CLI responds to --version', async () => {
-    installShim('codex', ['codex 1.0.0']);
+  it('isAvailable finds the CLI on PATH without running it', async () => {
+    const marker = join(shimDir, 'ran.txt');
+    writeFakeCli(shimDir, 'codex', `touch '${marker}'\nexit 3\n`);
+    const checks: string[] = [];
+    const unsubscribe = subscribeProbeActivity(() => {
+      checks.push(...probeActivitySnapshot().probes.map((probe) => probe.check));
+    });
 
     const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'codex' } }));
+    const available = await planner.isAvailable();
+    unsubscribe();
 
-    expect(await planner.isAvailable()).toBe(true);
+    expect(available).toBe(true);
+    expect(existsSync(marker)).toBe(false);
+    expect(checks).toEqual([]);
   });
 
   it('refuses an explicitly selected unproven API-key channel before spawning a planner process', async () => {

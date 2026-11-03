@@ -43,6 +43,12 @@ describe('createClientFromProvider', () => {
     },
   );
 
+  it('gives a client built without a timeout the largest timer delay, and keeps a set one', () => {
+    const provider = getProvider('lm-studio');
+    expect(createClientFromProvider(provider).timeout).toBe(2_147_483_647);
+    expect(createClientFromProvider(provider, { timeoutMs: 90_000 }).timeout).toBe(90_000);
+  });
+
   it('sends a configured local credential and keeps its authentication evidence', async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(JSON.stringify({ object: 'list', data: [] }), {

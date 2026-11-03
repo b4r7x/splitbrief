@@ -12,6 +12,7 @@ import type { HookOutcome, HookContext, HookPayload } from './types.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { boundConsumerPayload } from '../../core/payload-bounds.js';
 import { isRecord } from '../../utils/type-guards.js';
+import { throwIfAborted } from '../../utils/abort.js';
 import { hookTrustIneligibility, isHooksConfigTrusted } from '../../core/hooks/trust.js';
 
 export async function runTrustedHook(
@@ -38,10 +39,11 @@ export async function runHook(
   ctx: HookContext,
 ): Promise<HookOutcome> {
   const args = guardInterpolatedArgs(entry.args, event);
+  const { signal, ...context } = ctx;
   const stdin = JSON.stringify(
     boundConsumerPayload({
       context: 'hooks',
-      payload: { event, workspaceDir: ctx.workspaceDir, context: ctx },
+      payload: { event, workspaceDir: ctx.workspaceDir, context },
     }).payload,
   );
 
@@ -53,6 +55,7 @@ export async function runHook(
       timeout: entry.timeout_ms,
       stdinInput: stdin,
       stdinOptional: true,
+      signal,
       onProgress: () => undefined,
       // Short-lived hook commands skip the runner-pid ledger: the per-spawn
       // sync `ps` exec and jsonl rewrite buy no crash-recovery benefit here.
@@ -65,6 +68,7 @@ export async function runHook(
 
     return interpretHookOutput(entry, result.output, result.code, result.stderr);
   } catch (err) {
+    throwIfAborted(signal);
     if (isENOENT(err)) {
       return { kind: 'warn', message: `hook command not found: ${entry.command}` };
     }

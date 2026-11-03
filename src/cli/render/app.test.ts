@@ -12,6 +12,8 @@ import {
 } from '../../lib/terminal/editor-handover.js';
 import { createCrashHandler, createTerminationHandler } from './process-lifecycle.js';
 import { createCrashListener, createTerminationSignalListener, renderApp } from './app.js';
+import { __testResetProbeActivity, trackProbe } from '../../engine/probe-activity.js';
+import { watchSlowProbeLines } from '../slow-probe-line.js';
 
 const lifecycle = vi.hoisted(() => ({
   teardownStores: vi.fn<() => void | Promise<void>>(),
@@ -175,6 +177,44 @@ describe('renderApp key input', () => {
       }
     },
   );
+});
+
+describe('renderApp slow-check line', () => {
+  it('drops the line while the app owns the terminal', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    __testResetProbeActivity();
+    const inkExit = Promise.withResolvers<void>();
+    vi.mocked(render).mockReturnValueOnce(
+      inkInstance(
+        () => inkExit.promise,
+        () => inkExit.resolve(),
+      ),
+    );
+    const lines: string[] = [];
+    const stop = watchSlowProbeLines((line) => lines.push(line));
+    const probe = Promise.withResolvers<void>();
+    let probeRun: Promise<void> | undefined;
+    const rendering = renderApp(
+      createElement(Fragment),
+      { fullscreen: false, unmountSignal: new AbortController().signal },
+      { exit: vi.fn() },
+    );
+    try {
+      probeRun = trackProbe({ tool: 'codex', check: 'version' }, () => probe.promise);
+      await vi.advanceTimersByTimeAsync(12_000);
+      inkExit.resolve();
+      await rendering;
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(lines).toEqual([]);
+    } finally {
+      inkExit.resolve();
+      await rendering;
+      probe.resolve();
+      await probeRun;
+      stop();
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('renderApp completion', () => {

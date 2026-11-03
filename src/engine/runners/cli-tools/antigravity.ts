@@ -105,13 +105,6 @@ function createProbe() {
     version: {
       command: [ANTIGRAVITY_COMMAND, ...ANTIGRAVITY_VERSION_ARGS] as const,
       cwd: 'neutral' as const,
-      timeoutMs: 5_000,
-      maxOutputBytes: 4_096,
-    },
-    auth: {
-      command: [ANTIGRAVITY_COMMAND, 'models'] as const,
-      cwd: 'neutral' as const,
-      timeoutMs: 5_000,
       maxOutputBytes: 4_096,
     },
   } as const;

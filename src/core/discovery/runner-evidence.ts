@@ -59,7 +59,8 @@ export type CompatibilityFact =
   | Readonly<{ kind: 'not-applicable' }>
   | Readonly<{ kind: 'compatible'; installedVersion: string; testedVersion: string }>
   | Readonly<{ kind: 'incompatible'; installedVersion: string; testedVersion: string }>
-  | Readonly<{ kind: 'unknown'; installedVersion: string | null; testedVersion: string }>;
+  | Readonly<{ kind: 'unknown'; installedVersion: string | null; testedVersion: string }>
+  | Readonly<{ kind: 'timeout'; installedVersion: null; testedVersion: string }>;
 
 export const AUTH_FACT_KINDS = [
   'not-required',
@@ -77,6 +78,7 @@ export const AUTH_FACT_KINDS = [
   'not-run',
 ] as const;
 export type AuthFact = (typeof AUTH_FACT_KINDS)[number];
+export type UnverifiedAuthFact = Extract<AuthFact, 'unknown' | 'timeout'>;
 
 export type CredentialPresence = 'present' | 'absent' | 'unknown' | 'not-applicable';
 export type RunnerInstallationFact = 'installed' | 'missing' | 'unknown' | 'not-applicable';
@@ -129,7 +131,7 @@ export type StartAdmissionOptions = Readonly<{
 
 export type StartAdmission =
   | Readonly<{ kind: 'admitted' }>
-  | Readonly<{ kind: 'disclosure-required'; auth: 'unknown' }>
+  | Readonly<{ kind: 'disclosure-required'; auth: UnverifiedAuthFact }>
   | Readonly<{
       kind: 'denied';
       reason:
@@ -147,9 +149,9 @@ export type StartAdmission =
           }>
         | Readonly<{
             kind: 'authentication';
-            fact: Exclude<AuthFact, 'verified' | 'not-required' | 'unknown'>;
+            fact: Exclude<AuthFact, 'verified' | 'not-required' | UnverifiedAuthFact>;
           }>
-        | Readonly<{ kind: 'authentication-unverified' }>
+        | Readonly<{ kind: 'authentication-unverified'; fact: UnverifiedAuthFact }>
         | Readonly<{
             kind: 'probe';
             fact: 'reachable-endpoint' | 'catalog';
@@ -236,9 +238,9 @@ export function admitStart(options: StartAdmissionOptions): StartAdmission {
   return { kind: 'admitted' };
 }
 
-/** The sign-in fact a headless start refuses unless unverified auth was allowed. */
-export function isUnverifiedAuth(auth: unknown): auth is 'unknown' {
-  return auth === 'unknown';
+/** The sign-in facts a headless start refuses unless unverified auth was allowed. */
+export function isUnverifiedAuth(auth: unknown): auth is UnverifiedAuthFact {
+  return auth === 'unknown' || auth === 'timeout';
 }
 
 /**
@@ -251,7 +253,8 @@ export function isUnverifiedAuth(auth: unknown): auth is 'unknown' {
  * run stays fail-closed unless unverified auth was explicitly allowed.
  * Denying interactively — the old first-class-tier behaviour — punished the
  * honesty: it turned "cannot verify without spending a call" into a runner
- * that could never start.
+ * that could never start. A sign-in check that timed out proves nothing either
+ * way, so `timeout` follows the same policy.
  *
  * A tool that stores no credential (`missing`) still calls a provider set up in
  * its own config: a route its model listing serves is admitted.
@@ -268,5 +271,5 @@ function admitAuthentication(options: StartAdmissionOptions): StartAdmission | n
     return { kind: 'disclosure-required', auth };
   }
   if (options.unverifiedAuth === 'allowed') return null;
-  return { kind: 'denied', reason: { kind: 'authentication-unverified' } };
+  return { kind: 'denied', reason: { kind: 'authentication-unverified', fact: auth } };
 }

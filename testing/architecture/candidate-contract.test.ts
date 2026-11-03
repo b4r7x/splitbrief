@@ -83,13 +83,6 @@ function adapter(role: 'planner' | 'implementer') {
       version: {
         command: ['example-cli', '--version'] as const,
         cwd: 'neutral' as const,
-        timeoutMs: 1_000,
-        maxOutputBytes: 1_024,
-      },
-      auth: {
-        command: ['example-cli', 'auth'] as const,
-        cwd: 'neutral' as const,
-        timeoutMs: 1_000,
         maxOutputBytes: 1_024,
       },
     },

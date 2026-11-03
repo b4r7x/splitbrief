@@ -221,10 +221,8 @@ describe('OpenCode role adapters', () => {
       expect(adapter.probe.version).toEqual({
         command: ['opencode', '--version'],
         cwd: 'neutral',
-        timeoutMs: 5_000,
         maxOutputBytes: 4_096,
       });
-      expect(adapter.probe.auth.timeoutMs).toBe(5_000);
     }
   });
 

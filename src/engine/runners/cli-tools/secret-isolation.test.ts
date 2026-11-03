@@ -86,10 +86,8 @@ function adapter(promptTransport: CliPromptTransport): CliImplementerAdapter {
       version: {
         command: ['fixture', '--version'],
         cwd: 'neutral',
-        timeoutMs: 100,
         maxOutputBytes: 1024,
       },
-      auth: { command: ['fixture', 'auth'], cwd: 'neutral', timeoutMs: 100, maxOutputBytes: 1024 },
     },
   };
 }

@@ -283,6 +283,7 @@ export const CliCompatibilityStateSchema = z.enum([
   'compatible',
   'incompatible',
   'unverified',
+  'timeout',
   'not-checked',
 ]);
 export type CliCompatibilityState = z.infer<typeof CliCompatibilityStateSchema>;
@@ -292,6 +293,7 @@ export const CliAuthStateSchema = z.enum([
   'unauthenticated',
   'keyring',
   'unknown',
+  'timeout',
   'not-required',
   'not-checked',
 ]);

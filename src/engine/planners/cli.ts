@@ -6,7 +6,7 @@ import type { CliExecutableIdentity } from '../../core/discovery/detection.js';
 import type { Planner, PlannerCallbacks, PlannerFactoryOptions } from './types.js';
 import { ONE_SHOT_API_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
-import { createCommandAvailability } from '../availability.js';
+import { createCommandExistsAvailability } from '../availability.js';
 import { invokeCliAdapter, toCliEnvironment } from '../runners/invoke-cli-adapter.js';
 import { lookupCliPlannerAdapter } from '../runners/cli-tools/registry.js';
 import { typedOutputCapability } from '../../core/runners/cli-tool-catalog.js';
@@ -285,9 +285,7 @@ export function createCliPlanner(
     ...(resolvedModel !== undefined && { model: resolvedModel }),
     typedOutput: typedOutputCapability(plannerCfg.tool, trustedCli?.installedVersion),
 
-    ...createCommandAvailability(adapter.descriptor.executableAliases, {
-      timeout: adapter.probe.version.timeoutMs,
-    }),
+    ...createCommandExistsAvailability(adapter.descriptor.executableAliases),
 
     capabilities: {
       ...ONE_SHOT_API_CAPS,

@@ -125,13 +125,6 @@ function createProbe() {
     version: {
       command: [KILO_COMMAND, ...KILO_VERSION_ARGS] as const,
       cwd: 'neutral' as const,
-      timeoutMs: 5_000,
-      maxOutputBytes: 4_096,
-    },
-    auth: {
-      command: [KILO_COMMAND, 'auth'] as const,
-      cwd: 'neutral' as const,
-      timeoutMs: 5_000,
       maxOutputBytes: 4_096,
     },
   } as const;

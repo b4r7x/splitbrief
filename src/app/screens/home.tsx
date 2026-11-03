@@ -25,6 +25,7 @@ import { HomeSeatBlock, shedToFit } from '../../features/home/components/seat-bl
 import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { RecentSessions } from '../../features/home/components/recent-sessions.js';
 import { useSpinnerFrame } from '../../hooks/use-spinner-frame.js';
+import { useSlowProbeText } from '../../hooks/use-slow-probe-text.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { inputHeightStore } from '../../stores/ui/input-height.js';
 import { detectionStore } from '../../stores/project/detection.js';
@@ -59,6 +60,7 @@ import { useStartPreparation } from '../../features/start-preparation/use-start-
 import { StartPreparationPanel } from '../../features/start-preparation/panel.js';
 import { observePreparationCleanup } from '../../features/start-preparation/observe-cleanup.js';
 import { ApprovalPrompt } from '../../features/workflow/components/approval-prompt.js';
+import { joinBylineParts } from '../../features/workflow/input-footer-byline.js';
 import { approvalPromptStore, closeApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
 import type { readClipboardImage } from '../../core/attachments/clipboard-image.js';
 import type { listProjectFiles } from '../../lib/file-listing.js';
@@ -268,6 +270,7 @@ export function HomeScreen({
     hintNotice && (toolCheck === 'cold' || toolCheck === 'warm'),
   );
   const { frame: preparationFrame } = useSpinnerFrame(checkingStage !== null);
+  const slowProbe = useSlowProbeText();
 
   // Another process can start, end or finish a run, and a hand edit can change config.yaml, so
   // home reads both again while it shows.
@@ -354,7 +357,7 @@ export function HomeScreen({
   const preparationStatus =
     checkingStage === null || interactionBlocked
       ? undefined
-      : `${preparationFrame} ${checkingStage}${isPreparing ? `${SOFT_SEP}esc cancel` : ''}`;
+      : `${preparationFrame} ${joinBylineParts([checkingStage, slowProbe, isPreparing ? 'esc cancel' : null])}`;
 
   return (
     <>

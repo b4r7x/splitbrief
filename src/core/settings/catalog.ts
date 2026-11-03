@@ -4,7 +4,6 @@ import { CompactionFormatSchema } from '../schemas/compaction.js';
 import { resolveImplementerProfiles } from '../config/accessors/implementer-profiles.js';
 import { getIsolationStrategy } from '../config/accessors/values.js';
 import { resolveEndChecks } from '../config/runtime/resolve.js';
-import { TIMEOUTS } from '../pipeline-spec/timeouts.js';
 
 const isApiImplementer = (config: Config): boolean =>
   resolveImplementerProfiles(config).defaultProfile.config.kind === 'api';
@@ -66,12 +65,12 @@ export const SETTINGS_DEFS: SettingDef[] = [
     id: 'implementer.timeout',
     label: 'Timeout',
     section: 'Tuning',
-    description: 'Request timeout (ms)',
+    description: 'Total time limit of one API call (ms)',
     kind: 'number',
     min: 1,
     integer: true,
     appliesTo: isApiImplementer,
-    unsetLabel: `auto (API total ${TIMEOUTS.implementerMs / 60_000}m)`,
+    unsetLabel: 'no limit',
   },
   {
     id: 'workflow.approve',

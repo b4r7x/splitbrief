@@ -9,7 +9,10 @@ import { withAttemptRestoreScope } from './restore-scope.js';
 import { skipBrief } from './skip-brief.js';
 
 export async function runPreValidationGate(opts: {
-  wctx: Pick<WorkflowContext, 'projectDir' | 'workspaceDir' | 'sessionId' | 'bus' | 'config'>;
+  wctx: Pick<
+    WorkflowContext,
+    'projectDir' | 'workspaceDir' | 'sessionId' | 'bus' | 'config' | 'signal'
+  >;
   task: Task;
   state: WorkflowState;
   /** Null when no attempt ran: there is nothing to roll back. */
@@ -41,6 +44,7 @@ export async function runPreValidationGate(opts: {
         projectDir,
         workspaceDir,
         sessionId,
+        signal: wctx.signal,
       }),
   });
   state = rebaseOnPersistedWorkflowState(wctx, state, { keepUnsaved: true });

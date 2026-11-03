@@ -157,7 +157,6 @@ export type CliPromptEncoder = (
 export type CliProbeCommand = Readonly<{
   command: readonly [string, ...string[]];
   cwd: 'neutral';
-  timeoutMs: number;
   maxOutputBytes: number;
 }>;
 
@@ -231,13 +230,12 @@ export type CliDeclaredProbeContract = Readonly<{
 }>;
 
 /**
- * The legacy commands remain while detection migrates to adapter-declared
- * parser contracts. They carry no parser, so they cannot establish
- * authentication.
+ * The legacy version command remains while detection migrates to
+ * adapter-declared parser contracts. It carries no parser, so it cannot
+ * establish authentication.
  */
 export type CliProbeContract = Readonly<{
   version: CliProbeCommand;
-  auth: CliProbeCommand;
   declared?: CliDeclaredProbeContract | undefined;
 }>;
 

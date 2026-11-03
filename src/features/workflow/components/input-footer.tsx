@@ -24,6 +24,7 @@ import {
 } from '../../../stores/workflow/operations/state.js';
 import { useStopByline } from '../stop/use-stop-byline.js';
 import { useSpinnerFrame } from '../../../hooks/use-spinner-frame.js';
+import { useSlowProbeText } from '../../../hooks/use-slow-probe-text.js';
 import {
   getTerminalCellWidth,
   sanitizeTerminalDisplayText,
@@ -133,6 +134,7 @@ export function InputFooter({
   // continued: the engine is reaping, restoring and re-entering before its first event.
   const resuming = lifecycle.status === 'paused' && stopped === null && givenByline === undefined;
   const { frame } = useSpinnerFrame(display.animate || checkingStage !== null || resuming);
+  const slowProbe = useSlowProbeText();
 
   const stageSeat = activeStage === null ? null : railStageSeat(activeStage.stage);
   const stageParts: ConversationRowSegment[] = [
@@ -325,7 +327,7 @@ export function InputFooter({
       <Box width="100%" height={1} flexShrink={0}>
         <Text color={t.textDim} wrap="truncate-end">
           <Text color={t[stateTone('running')]}>{`${frame} `}</Text>
-          {joinBylineParts([checkingStage, 'esc cancel'])}
+          {joinBylineParts([checkingStage, slowProbe, 'esc cancel'])}
         </Text>
       </Box>
     );

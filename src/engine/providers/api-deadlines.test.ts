@@ -1,14 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  API_FIRST_RESPONSE_TIMEOUT_MS,
-  isApiDeadlineError,
-  resolveApiDeadlinePolicy,
-  runWithApiDeadlines,
-  type ApiDeadlinePolicy,
-} from './api-deadlines.js';
+import { isApiDeadlineError, runWithApiDeadlines } from './api-deadlines.js';
 import { streamCompletion } from './openai-stream/completion.js';
-import { STREAM_IDLE_TIMEOUT_MS } from '../constants.js';
-import { TIMEOUTS } from '../../core/pipeline-spec/timeouts.js';
 import { isAbortError } from '../../utils/abort.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 
@@ -20,14 +12,10 @@ function kindOf(err: unknown): string | undefined {
     : undefined;
 }
 
-it('recognizes only Error instances with known API deadline kinds', () => {
-  for (const kind of [
-    'api_first_response_timeout',
-    'api_stream_idle_timeout',
-    'api_total_timeout',
-  ]) {
-    expect(isApiDeadlineError(Object.assign(new Error('deadline'), { kind }))).toBe(true);
-  }
+it('recognizes only an Error with the API total timeout kind', () => {
+  expect(
+    isApiDeadlineError(Object.assign(new Error('deadline'), { kind: 'api_total_timeout' })),
+  ).toBe(true);
   for (const value of [
     null,
     {},
@@ -103,32 +91,6 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('resolveApiDeadlinePolicy', () => {
-  it('takes the BUILD budget for an implementer seat and the review budget otherwise', () => {
-    expect(resolveApiDeadlinePolicy({ role: 'implementer' })).toEqual({
-      totalMs: TIMEOUTS.implementerMs,
-      firstResponseMs: API_FIRST_RESPONSE_TIMEOUT_MS,
-      streamIdleMs: STREAM_IDLE_TIMEOUT_MS,
-    } satisfies ApiDeadlinePolicy);
-    expect(resolveApiDeadlinePolicy({ role: 'planner' }).totalMs).toBe(TIMEOUTS.reviewerMs);
-    expect(resolveApiDeadlinePolicy({ role: 'review' }).totalMs).toBe(TIMEOUTS.reviewerMs);
-    expect(resolveApiDeadlinePolicy({}).totalMs).toBe(TIMEOUTS.reviewerMs);
-  });
-
-  it('caps both stage deadlines at a shorter configured seat timeout', () => {
-    expect(resolveApiDeadlinePolicy({ role: 'implementer', timeoutMs: 30_000 })).toEqual({
-      totalMs: 30_000,
-      firstResponseMs: 30_000,
-      streamIdleMs: 30_000,
-    } satisfies ApiDeadlinePolicy);
-    expect(resolveApiDeadlinePolicy({ role: 'planner', timeoutMs: 90_000 })).toEqual({
-      totalMs: 90_000,
-      firstResponseMs: 90_000,
-      streamIdleMs: STREAM_IDLE_TIMEOUT_MS,
-    } satisfies ApiDeadlinePolicy);
-  });
-});
-
 describe('runWithApiDeadlines cancellation', () => {
   it('settles a never-resolving create within 250ms of a caller abort', async () => {
     vi.useFakeTimers();
@@ -138,7 +100,6 @@ describe('runWithApiDeadlines cancellation', () => {
 
     const run = drain(
       runWithApiDeadlines<number>({
-        policy: resolveApiDeadlinePolicy({ role: 'implementer' }),
         signal: controller.signal,
         createStream: (signal) => {
           createCalls += 1;
@@ -168,7 +129,6 @@ describe('runWithApiDeadlines cancellation', () => {
 
     const run = drain(
       runWithApiDeadlines<number>({
-        policy: resolveApiDeadlinePolicy({ role: 'implementer' }),
         signal: controller.signal,
         createStream: async () => stream.iterable,
       }),
@@ -191,7 +151,6 @@ describe('runWithApiDeadlines cancellation', () => {
     await expect(
       drain(
         runWithApiDeadlines<number>({
-          policy: resolveApiDeadlinePolicy({ role: 'implementer' }),
           signal: AbortSignal.abort(),
           createStream: async () => {
             createCalls += 1;
@@ -205,32 +164,12 @@ describe('runWithApiDeadlines cancellation', () => {
 });
 
 describe('runWithApiDeadlines deadlines', () => {
-  it('gives a cold first response 120000ms and no more', async () => {
+  it('ends a call that never responds at the seat total', async () => {
     vi.useFakeTimers();
     const stream = scriptedStream({ gapMs: 0, limit: 0 });
     const run = drain(
       runWithApiDeadlines<number>({
-        policy: resolveApiDeadlinePolicy({ role: 'implementer' }),
-        createStream: async () => stream.iterable,
-      }),
-    );
-    const tracked = track(run);
-
-    await vi.advanceTimersByTimeAsync(API_FIRST_RESPONSE_TIMEOUT_MS - 1);
-    expect(tracked.settled()).toBe(false);
-    await vi.advanceTimersByTimeAsync(1);
-
-    await expect(run).rejects.toSatisfy(isApiDeadlineError);
-    expect(kindOf(tracked.error())).toBe('api_first_response_timeout');
-    expect(stream.returnCalls()).toBe(1);
-  });
-
-  it('shortens the first response deadline to a shorter total and names the total', async () => {
-    vi.useFakeTimers();
-    const stream = scriptedStream({ gapMs: 0, limit: 0 });
-    const run = drain(
-      runWithApiDeadlines<number>({
-        policy: resolveApiDeadlinePolicy({ role: 'implementer', timeoutMs: 30_000 }),
+        totalMs: 30_000,
         createStream: async () => stream.iterable,
       }),
     );
@@ -244,38 +183,13 @@ describe('runWithApiDeadlines deadlines', () => {
     await expect(run).rejects.toSatisfy(isApiDeadlineError);
   });
 
-  it('times out a stream gap after the first chunk at 60000ms', async () => {
-    vi.useFakeTimers();
-    const stream = scriptedStream({ gapMs: 1_000, limit: 1 });
-    const chunks: number[] = [];
-    const run = drain(
-      runWithApiDeadlines<number>({
-        policy: resolveApiDeadlinePolicy({ role: 'implementer' }),
-        createStream: async () => stream.iterable,
-      }),
-      chunks,
-    );
-    const tracked = track(run);
-
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(chunks).toEqual([1]);
-
-    // The idle window opens at the first chunk, not at dispatch.
-    await vi.advanceTimersByTimeAsync(STREAM_IDLE_TIMEOUT_MS - 1);
-    expect(tracked.settled()).toBe(false);
-    await vi.advanceTimersByTimeAsync(1);
-
-    expect(kindOf(tracked.error())).toBe('api_stream_idle_timeout');
-    await expect(run).rejects.toSatisfy(isApiDeadlineError);
-  });
-
-  it('bounds a stream that keeps producing chunks inside every idle window', async () => {
+  it('ends a stream that keeps producing chunks at the seat total', async () => {
     vi.useFakeTimers();
     const stream = scriptedStream({ gapMs: 30_000 });
     const chunks: number[] = [];
     const run = drain(
       runWithApiDeadlines<number>({
-        policy: resolveApiDeadlinePolicy({ role: 'implementer', timeoutMs: 150_000 }),
+        totalMs: 150_000,
         createStream: async () => stream.iterable,
       }),
       chunks,
@@ -291,27 +205,28 @@ describe('runWithApiDeadlines deadlines', () => {
     await expect(run).rejects.toSatisfy(isApiDeadlineError);
   });
 
-  it('ends a stream that never goes idle at the default implementer total', async () => {
+  it('gives a call with no total no deadline: a 30 minute gap and 2 hours in all complete', async () => {
     vi.useFakeTimers();
-    const stream = scriptedStream({ gapMs: 30_000 });
+    const gapMs = 30 * 60_000;
+    async function* slowSource(): AsyncGenerator<number> {
+      for (let index = 1; index <= 4; index += 1) {
+        await new Promise((resolve) => setTimeout(resolve, gapMs));
+        yield index;
+      }
+    }
     const chunks: number[] = [];
     const run = drain(
-      runWithApiDeadlines<number>({
-        policy: resolveApiDeadlinePolicy({ role: 'implementer' }),
-        createStream: async () => stream.iterable,
-      }),
+      runWithApiDeadlines<number>({ createStream: async () => slowSource() }),
       chunks,
     );
     const tracked = track(run);
 
-    await vi.advanceTimersByTimeAsync(TIMEOUTS.implementerMs - 1);
+    await vi.advanceTimersByTimeAsync(4 * gapMs - 1);
     expect(tracked.settled()).toBe(false);
-    expect(chunks).toHaveLength(TIMEOUTS.implementerMs / 30_000 - 1);
+    expect(chunks).toEqual([1, 2, 3]);
     await vi.advanceTimersByTimeAsync(1);
 
-    expect(kindOf(tracked.error())).toBe('api_total_timeout');
-    await expect(run).rejects.toSatisfy(isApiDeadlineError);
-    expect(stream.returnCalls()).toBe(1);
+    await expect(run).resolves.toEqual([1, 2, 3, 4]);
   });
 
   it('completes normally and closes the iterator once', async () => {
@@ -327,7 +242,6 @@ describe('runWithApiDeadlines deadlines', () => {
 
     const chunks = await drain(
       runWithApiDeadlines<number>({
-        policy: resolveApiDeadlinePolicy({ role: 'implementer' }),
         createStream: async () => source(),
       }),
     );
@@ -341,7 +255,6 @@ describe('runWithApiDeadlines deadlines', () => {
     await expect(
       drain(
         runWithApiDeadlines<number>({
-          policy: resolveApiDeadlinePolicy({ role: 'implementer' }),
           createStream: async () => {
             throw transport;
           },
@@ -391,14 +304,16 @@ describe('streamCompletion under a deadline', () => {
       {
         temperature: 0,
         onProgress,
-        timeoutMs: 300_000,
+        timeoutMs: 150_000,
         onCallEvent: (event) => events.push(event),
         endpoint: { provider: 'lmstudio', apiBase: 'http://127.0.0.1:1234/v1' },
       },
     );
     const tracked = track(call);
 
-    await vi.advanceTimersByTimeAsync(API_FIRST_RESPONSE_TIMEOUT_MS);
+    await vi.advanceTimersByTimeAsync(149_999);
+    expect(tracked.settled()).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
     expect(tracked.settled()).toBe(true);
     await expect(call).rejects.toSatisfy(isApiDeadlineError);
 
@@ -410,7 +325,7 @@ describe('streamCompletion under a deadline', () => {
     expect(terminal?.type).toBe('call_error');
     if (terminal?.type === 'call_error') {
       expect(terminal.status).toBe('timeout');
-      expect(terminal.error.code).toBe('api_first_response_timeout');
+      expect(terminal.error.code).toBe('api_total_timeout');
     }
 
     // The abandoned response arrives after the terminal record.
@@ -431,6 +346,41 @@ describe('streamCompletion under a deadline', () => {
       events.filter((event) => event.type === 'call_error' || event.type === 'call_completed'),
     ).toHaveLength(terminalCount);
     expect(events.some((event) => event.type === 'call_text_delta')).toBe(false);
+  });
+
+  it('completes a call with no seat timeout after a 30 minute wait for each chunk', async () => {
+    vi.useFakeTimers();
+    const gapMs = 30 * 60_000;
+    const client: StreamClient = {
+      chat: {
+        completions: {
+          create: async () =>
+            (async function* () {
+              for (const [content, finishReason] of [
+                ['a', null],
+                ['b', null],
+                ['c', null],
+                ['d', 'stop'],
+              ] as const) {
+                await new Promise((resolve) => setTimeout(resolve, gapMs));
+                yield { choices: [{ delta: { content }, finish_reason: finishReason }] };
+              }
+            })(),
+        },
+      },
+    };
+    const call = streamCompletion(client, 'local-model', [{ role: 'user', content: 'hello' }], {
+      temperature: 0,
+      onProgress: () => {},
+      endpoint: { provider: 'lmstudio', apiBase: 'http://127.0.0.1:1234/v1' },
+    });
+    const tracked = track(call);
+
+    await vi.advanceTimersByTimeAsync(4 * gapMs - 1);
+    expect(tracked.settled()).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+
+    await expect(call).resolves.toMatchObject({ status: 'completed', text: 'abcd' });
   });
 
   it('finishes status on cancellation without publishing a late response', async () => {

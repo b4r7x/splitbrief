@@ -45,6 +45,11 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { glyph } from '../../lib/glyphs.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import {
+  __testResetProbeActivity,
+  trackProbe,
+  trackToolCheck,
+} from '../../engine/probe-activity.js';
 import { PRESET_SECTION, SetupScreen } from './setup.js';
 
 vi.mock('../../lib/git/files.js', async (importOriginal) => ({
@@ -237,12 +242,61 @@ describe('SetupScreen', () => {
     feedbackStore.reset();
     terminalSizeStore.reset();
     approvalPromptStore.__testReset();
+    __testResetProbeActivity();
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
     terminalSizeStore.reset();
     approvalPromptStore.__testReset();
+  });
+
+  it('calls the roll of the tools it checks in catalog order before the crew is chosen', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 30 });
+    const ui = renderFeature(<SetupScreen prepare={async (input) => preparedOutcome(input)} />);
+    const opencode = Promise.withResolvers<void>();
+    const codex = Promise.withResolvers<void>();
+    const signIn = Promise.withResolvers<void>();
+    const running: Promise<void>[] = [];
+    try {
+      await flushEffects();
+
+      const waiting = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(waiting).toContain('Looking for coding tools…');
+      expect(waiting).toContain('Next: choose your crew.');
+      expect(waiting).not.toContain('Choose your crew after the tool check.');
+
+      running.push(trackToolCheck('opencode', () => opencode.promise));
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() - 12_000);
+      running.push(trackProbe({ tool: 'opencode', check: 'sign-in' }, () => signIn.promise));
+      clock.mockRestore();
+      running.push(trackToolCheck('codex', () => codex.promise));
+      await trackToolCheck('claude-code', async () => undefined);
+      await flushEffects();
+
+      const rows = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+      const claudeRow = rows.findIndex((row) => row.includes('Claude Code CLI'));
+      const codexRow = rows.findIndex((row) => row.includes('OpenAI Codex CLI'));
+      const opencodeRow = rows.findIndex((row) => row.includes('OpenCode CLI'));
+      expect(claudeRow).toBeGreaterThan(0);
+      expect(codexRow).toBeGreaterThan(claudeRow);
+      expect(opencodeRow).toBeGreaterThan(codexRow);
+      expect(rows[claudeRow]).toContain(glyph('check'));
+      expect(rows[codexRow]).not.toContain(glyph('check'));
+      expect(rows[codexRow]).not.toContain('sign-in');
+      expect(rows[opencodeRow]).toContain('sign-in 12s');
+      expect(rows[opencodeRow]).not.toContain(glyph('check'));
+      const frame = rows.join('\n');
+      expect(frame).not.toContain('Looking for coding tools…');
+      expect(frame).not.toContain('Kilo Code CLI');
+      expect(frame).toContain('Next: choose your crew.');
+    } finally {
+      signIn.resolve();
+      opencode.resolve();
+      codex.resolve();
+      await Promise.allSettled(running);
+      ui.unmount();
+    }
   });
 
   it.each([
@@ -589,7 +643,7 @@ describe('SetupScreen', () => {
       const request = beginDiscovery();
       const ui = renderFeature(<SetupScreen />);
       await flushEffects();
-      expect(ui.lastFrame() ?? '').toContain('Choose your crew after the tool check.');
+      expect(ui.lastFrame() ?? '').toContain('Next: choose your crew.');
       expect(ui.lastFrame() ?? '').not.toContain('Continue');
       expect(ui.lastFrame() ?? '').not.toContain('Ollama');
       failedDiscovery(request, 2);
@@ -783,7 +837,7 @@ describe('SetupScreen', () => {
 
     const cold = ui.lastFrame() ?? '';
     expect(cold).toContain('Checking your tools…');
-    expect(cold).toContain('Choose your crew after the tool check.');
+    expect(cold).toContain('Next: choose your crew.');
     expect(cold).not.toContain('Ollama');
 
     expect(cold).not.toContain('No planner');

@@ -10,4 +10,5 @@ export interface HookContext {
   workspaceDir: string;
   sessionId: string;
   files?: string[];
+  signal?: AbortSignal | undefined;
 }

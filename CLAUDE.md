@@ -113,9 +113,23 @@ An independent skeptic, not the agent that found it, checks every finding agains
 
 1. **Confirm first.** Before any edit, confirm the defect as "Reporting findings" requires: the evidence, the cause at `file:line`, and that a normal user hits it. A finding that cannot be confirmed is not fixed; report it as not confirmed.
 2. **Plan, then change.** Load the `change-discipline` skill. Write the plan: the one function every caller routes through, the callers to migrate, the old path to delete. Then implement it; no guessed design.
-3. **Tests at the end.** Planning, implementing, reviewing and fixing run no tests (typecheck, lint and format only). After the review passes, run the tests of the change once at the end. When a test fails, first find out if the code is wrong. When the code is wrong, fix the root cause in the code. Do not fit the test to the code. Change a test only when the test itself is proven wrong, and state why. Review the fix, and run the tests again until they pass.
+3. **Tests first, then once at the end.** Write the new tests before the fix and prove their red ("Real red, then green" below). Implementing, reviewing and fixing then run no tests (typecheck, lint and format only). After the review passes, run the tests of the change once at the end. When a test fails, first find out if the code is wrong. When the code is wrong, fix the root cause in the code. Do not fit the test to the code. Change a test only when the test itself is proven wrong, and state why. Review the fix, and run the tests again until they pass.
 4. **No flaky tests.** Write every test to be deterministic: wait on an event, a file or an output line, never on a fixed sleep; inject the clock, the random source and the order. A test that passes on one run and fails on the next is a defect, never a verdict. Find the race and fix it at the root, in the test (`TEST`) or in the product (`PRODUCT`). A longer timeout, a retry, `.skip` or a re-run is never the fix. Prove the fix with the file green 5 runs in a row. See [TESTING.md](./docs/TESTING.md#core-rules).
-5. **Real red.** A new test must fail on the old code and pass on the new code. A test that passes on the old code proves nothing. Run the new tests on the old code in the one test run at the end (point 3). Do not run them separately during the work. A test that pins a state the change must keep already passes on the old code. That test proves its red with a mutant: break the code on purpose and show that the test fails.
+5. **Real red.** Follow "Real red, then green" below.
+
+## Real red, then green (binding for every change)
+
+This rule applies to every change that adds or changes a test: a defect fix, a feature, a refactor or a docs test.
+
+1. A new test fails on the old code and passes on the new code. A test that passes on the old code proves nothing.
+2. Write the new tests first and prove the red before the implementation starts.
+   - Run the new tests once on the tree before the change. Keep the failing output.
+   - When the tree already holds unfinished work, copy the old tree instead: `git archive HEAD` into the session scratchpad, link `node_modules` from the checkout, add the new test files, and run them there.
+   - The implementation does not change these tests, unless it proves a test wrong and states why.
+   - Run the same files on the new tree at the end. Keep the passing output.
+3. A test that pins a state the change keeps passes on the old code. Prove its red with a named mutant: break the code on purpose, show the failure, then take the mutant out.
+4. The hand-back states, for each new test: the file, the red output (old tree or mutant) and the green output.
+5. A test with no red proof is not done.
 
 ## User-facing text
 

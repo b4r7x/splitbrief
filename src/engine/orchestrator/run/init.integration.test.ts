@@ -843,35 +843,6 @@ describe('initializeWorkflow', () => {
     });
   });
 
-  it('cli planner unavailability message includes the probe reason when present', async () => {
-    await withTempDir('splitbrief-init-cli-unavailable-reason', async (projectDir) => {
-      const feature = 'needs an installed cli';
-      const sessionId = 'session-init-cli-unavailable-reason';
-      const events: EngineEvent[] = [];
-
-      const { init } = await initializeTestWorkflow({
-        projectDir,
-        sessionId,
-        feature,
-        configOverrides: { planner: { kind: 'cli', tool: 'claude-code' } },
-        plannerTool: 'claude-code',
-        plannerRunner: makePlanner({
-          isAvailable: vi.fn().mockResolvedValue(false),
-          unavailabilityReason: () => 'probe timed out after 5s',
-        }),
-        eventSink: (e) => events.push(e),
-      });
-
-      expect(init.ok).toBe(false);
-      const errorEvent = events.find(
-        (e): e is Extract<EngineEvent, { type: 'error' }> => e.type === 'error',
-      );
-      expect(errorEvent?.message).toBe(
-        'Planner Claude Code CLI is not available: probe timed out after 5s.',
-      );
-    });
-  });
-
   it('carries the run-scoped isolation handle on the workflow context', async () => {
     await withTempDir('splitbrief-init-isolation', async (projectDir) => {
       const feature = 'carry isolation handle';

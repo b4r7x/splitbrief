@@ -424,13 +424,6 @@ function createProbe() {
     version: {
       command: [CLAUDE_COMMAND, '--version'] as const,
       cwd: 'neutral' as const,
-      timeoutMs: 5_000,
-      maxOutputBytes: 4_096,
-    },
-    auth: {
-      command: [CLAUDE_COMMAND, 'auth'] as const,
-      cwd: 'neutral' as const,
-      timeoutMs: 5_000,
       maxOutputBytes: 4_096,
     },
   } as const;

@@ -518,3 +518,18 @@ describe('runCommand', () => {
     await waitForPidExit(producerPid);
   });
 });
+
+describe('runCommand time limit', () => {
+  it('starts no timer without a timeout and one for a given timeout', async () => {
+    const timer = vi.spyOn(AbortSignal, 'timeout');
+    try {
+      await runCommand(process.execPath, ['-e', '']);
+      expect(timer).not.toHaveBeenCalled();
+
+      await runCommand(process.execPath, ['-e', ''], { timeout: 5_000 });
+      expect(timer).toHaveBeenCalledWith(5_000);
+    } finally {
+      timer.mockRestore();
+    }
+  });
+});

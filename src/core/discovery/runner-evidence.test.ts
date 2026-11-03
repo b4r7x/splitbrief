@@ -108,11 +108,39 @@ describe('runner evidence', () => {
     // allowance stays fail-closed.
     expect(admit('headless', 'disclosed')).toEqual({
       kind: 'denied',
-      reason: { kind: 'authentication-unverified' },
+      reason: { kind: 'authentication-unverified', fact: 'unknown' },
     });
     expect(admit('headless', 'denied')).toEqual({
       kind: 'denied',
-      reason: { kind: 'authentication-unverified' },
+      reason: { kind: 'authentication-unverified', fact: 'unknown' },
+    });
+  });
+
+  it('treats a sign-in check that timed out as unverified, not as a denial', () => {
+    const evidence = freshEvidence({ auth: 'timeout', credential: 'present' });
+    const admit = (
+      interaction: 'interactive' | 'headless',
+      unverifiedAuth: 'denied' | 'disclosed' | 'allowed',
+    ) =>
+      admitStart({
+        evidence,
+        expectedContextKey: 'runner:codex:context-1',
+        expectedSelectionId: 'gpt-5',
+        requiredFacts: ['authentication'],
+        interaction,
+        unverifiedAuth,
+        route: { kind: 'unchecked' },
+      });
+
+    expect(admit('interactive', 'disclosed')).toEqual({ kind: 'admitted' });
+    expect(admit('interactive', 'denied')).toEqual({
+      kind: 'disclosure-required',
+      auth: 'timeout',
+    });
+    expect(admit('headless', 'allowed')).toEqual({ kind: 'admitted' });
+    expect(admit('headless', 'denied')).toEqual({
+      kind: 'denied',
+      reason: { kind: 'authentication-unverified', fact: 'timeout' },
     });
   });
 

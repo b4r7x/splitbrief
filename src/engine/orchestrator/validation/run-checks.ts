@@ -3,7 +3,6 @@ import { copyFile, mkdir, readFile, readdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { resolveApproveLevel, resolveEndChecks } from '../../../core/config/runtime/resolve.js';
 import { rendersDir } from '../../../core/paths.js';
-import { STAGE_TIMEOUT_MS } from '../../../core/pipeline-spec/gates.js';
 import type { PackageScriptsReadinessInput } from '../../../core/readiness/checks/validation.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { Phase } from '../../../core/schemas/enums.js';
@@ -133,10 +132,6 @@ function checkOutput(result: ValidationResult): string {
   return result.passed ? (result.output ?? '') : (result.error ?? result.output ?? '');
 }
 
-function validationTimeout(config: Config): number {
-  return config.validation.timeoutMs ?? STAGE_TIMEOUT_MS;
-}
-
 type TestCheckPlan = ReturnType<typeof planTestCheck>;
 
 async function runTestCheck(
@@ -178,7 +173,7 @@ async function spawnTestCheck(
     cmd: planned.resolved.cmd,
     args: planned.args,
     cwd: opts.projectDir,
-    timeout: validationTimeout(opts.config),
+    timeout: opts.config.validation.timeoutMs,
     runCommand: run,
     command: planned.command,
     signal: opts.signal,
@@ -288,7 +283,7 @@ async function spawnCommandCheck(
   try {
     const { stdout, stderr } = await run(cmd, args, {
       cwd: opts.projectDir,
-      timeout: validationTimeout(opts.config),
+      timeout: opts.config.validation.timeoutMs,
       label: `check ${check.id}`,
       signal: opts.signal,
     });
@@ -372,7 +367,7 @@ async function runRenderCheck(
   try {
     const { stdout, stderr } = await run(cmd, args, {
       cwd: opts.projectDir,
-      timeout: validationTimeout(opts.config),
+      timeout: opts.config.validation.timeoutMs,
       label: `check ${check.id}`,
       signal: opts.signal,
     });

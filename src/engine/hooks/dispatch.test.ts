@@ -1,9 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runHook } from './dispatch.js';
 import { setProcessLedger } from '../../lib/process/registry.js';
+import * as progress from '../../lib/process/spawn/progress.js';
 import type { EngineEvent } from '../events/types.js';
 import { taskId } from '../../core/schemas/task.js';
 import { makeCommandHookEntry } from '#testing/helpers/factories/hook-entry.js';
@@ -252,5 +253,29 @@ describe('runHook', () => {
       expect(outcome.kind).toBe('deny');
       if (outcome.kind === 'deny') expect(outcome.message).toBe(ctx.workspaceDir);
     });
+  });
+});
+
+describe('runHook run signal', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('hands the spawn the run signal and no time limit, and keeps the signal out of stdin', async () => {
+    const spawn = vi
+      .spyOn(progress, 'spawnWithTimeout')
+      .mockResolvedValue({ output: '', code: 0, timedOut: false, stderr: '' });
+    const controller = new AbortController();
+
+    const outcome = await runHook(mkEntry({ timeout_ms: undefined }), event, {
+      ...ctx,
+      signal: controller.signal,
+    });
+
+    expect(outcome).toEqual({ kind: 'allow' });
+    const spawned = spawn.mock.calls[0]?.[0];
+    expect(spawned?.signal).toBe(controller.signal);
+    expect(spawned?.timeout).toBeUndefined();
+    expect(JSON.parse(spawned?.stdinInput ?? '{}').context).toEqual(ctx);
   });
 });

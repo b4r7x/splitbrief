@@ -37,7 +37,7 @@ export type FreshCliStartGate = Readonly<{
 
 export type FreshCliStartGateResult =
   | Readonly<{ kind: 'admitted'; gate: FreshCliStartGate }>
-  | Readonly<{ kind: 'disclosure-required'; auth: 'unknown' }>
+  | Extract<StartAdmission, { kind: 'disclosure-required' }>
   | Readonly<{
       kind: 'denied';
       reason: Extract<StartAdmission, { kind: 'denied' }>['reason'];

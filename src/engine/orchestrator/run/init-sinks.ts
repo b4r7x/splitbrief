@@ -16,7 +16,10 @@ import type { RunWorkflowOptions } from './init.js';
 const initSinkUnsubscribers = new WeakMap<EventBus, Array<() => void>>();
 
 export type AttachRunSinksInput = {
-  opts: Pick<RunWorkflowOptions, 'eventBus' | 'tuiSink' | 'headless' | 'plain' | '_eventSink'>;
+  opts: Pick<
+    RunWorkflowOptions,
+    'eventBus' | 'tuiSink' | 'headless' | 'plain' | '_eventSink' | 'signal'
+  >;
   config: Config;
   projectDir: string;
   sessionId: string;
@@ -77,6 +80,8 @@ export function attachRunSinks(input: AttachRunSinksInput): EventBus {
             projectDir,
             workspaceDir: getTrackedState?.()?.workspace?.path ?? projectDir,
             sessionId,
+            // A hook that fires after a stop, such as on_halt, runs to its end.
+            ...(opts.signal?.aborted === false && { signal: opts.signal }),
           }),
           bus,
         ),

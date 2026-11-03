@@ -52,7 +52,7 @@ export async function runValidationStep(opts: {
   cmd: string;
   args: string[];
   cwd: string;
-  timeout: number;
+  timeout: number | undefined;
   runCommand: ValidationCommandRunner;
   command: string;
   signal?: AbortSignal | undefined;

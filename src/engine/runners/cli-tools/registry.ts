@@ -20,7 +20,6 @@ import type { DetectedModel } from '../../../core/discovery/detection.js';
 import type { RunnerRole } from '../../../core/runners/seat-roles.js';
 import type { PlannerCliToolId, ImplementerCliToolId } from '../../../core/schemas/enums.js';
 import { includes, isRecord } from '../../../utils/type-guards.js';
-import { DISCOVERY_SUBPROCESS_TIMEOUT_MS } from '../../constants.js';
 import { runnerConfigError } from '../errors.js';
 import type { PromptLimit } from '../input-limit.js';
 import { antigravityImplementerAdapter, antigravityPlannerAdapter } from './antigravity.js';
@@ -50,16 +49,8 @@ import type {
   CliVersionProbe,
 } from './contract.js';
 
-const PROBE_TIMEOUT_MS = 5_000;
 const PROBE_OUTPUT_MAX_BYTES = 4_096;
-const PROVIDER_ORACLE_TIMEOUT_MS = 10_000;
 const PROVIDER_ORACLE_OUTPUT_MAX_BYTES = 16_384;
-// `agy models` waits on Google's loadCodeAssist and fetchAvailableModels before
-// it lists, and at times on a user-info call before it exits. agy's own logs put
-// 388 of 394 readiness listings under 5 s; the rest took 5.9 s, 7.0 s, 11.4 s
-// and longer, and the shared 5 s budget read each one as an unadmitted runner.
-// The probe ceiling caps this budget at 10 s.
-const ANTIGRAVITY_MODELS_TIMEOUT_MS = DISCOVERY_SUBPROCESS_TIMEOUT_MS;
 const SEMVER_PATTERN =
   '(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?';
 const CALVER_PATTERN = '\\d{4}\\.\\d{2}\\.\\d{2}(?:-[A-Za-z0-9]+)?';
@@ -269,7 +260,6 @@ function declaredAuthProbe(tool: CliToolId, command: string): CliAuthProbe {
         kind: 'auth-status',
         command: [command, 'auth', 'status'],
         cwd: 'neutral',
-        timeoutMs: PROBE_TIMEOUT_MS,
         maxOutputBytes: PROBE_OUTPUT_MAX_BYTES,
         parse: parseStatusAuth,
       };
@@ -278,7 +268,6 @@ function declaredAuthProbe(tool: CliToolId, command: string): CliAuthProbe {
         kind: 'auth-status',
         command: [command, 'login', 'status'],
         cwd: 'neutral',
-        timeoutMs: PROBE_TIMEOUT_MS,
         maxOutputBytes: PROBE_OUTPUT_MAX_BYTES,
         parse: parseStatusAuth,
       };
@@ -295,7 +284,6 @@ function declaredAuthProbe(tool: CliToolId, command: string): CliAuthProbe {
         kind: 'auth-status',
         command: oracle,
         cwd: 'neutral',
-        timeoutMs: PROVIDER_ORACLE_TIMEOUT_MS,
         maxOutputBytes: PROVIDER_ORACLE_OUTPUT_MAX_BYTES,
         parse: providerOracleAuthFact,
         ...(legacy === undefined ? {} : { legacy }),
@@ -306,7 +294,6 @@ function declaredAuthProbe(tool: CliToolId, command: string): CliAuthProbe {
         kind: 'auth-status',
         command: [command, 'status'],
         cwd: 'neutral',
-        timeoutMs: PROBE_TIMEOUT_MS,
         maxOutputBytes: PROBE_OUTPUT_MAX_BYTES,
         parse: parseStatusAuth,
       };
@@ -319,7 +306,6 @@ function declaredAuthProbe(tool: CliToolId, command: string): CliAuthProbe {
         kind: 'auth-status',
         command: [command, 'status', '--json', '--no-auto-update'],
         cwd: 'neutral',
-        timeoutMs: PROBE_TIMEOUT_MS,
         maxOutputBytes: PROBE_OUTPUT_MAX_BYTES,
         parse: parseCommandCodeStatusAuth,
       };
@@ -328,7 +314,6 @@ function declaredAuthProbe(tool: CliToolId, command: string): CliAuthProbe {
         kind: 'auth-status',
         command: [command, 'models'],
         cwd: 'neutral',
-        timeoutMs: ANTIGRAVITY_MODELS_TIMEOUT_MS,
         maxOutputBytes: PROBE_OUTPUT_MAX_BYTES,
         // `agy models` needs a signed-in account to list anything, so a
         // non-zero exit is the missing-credential answer.
@@ -412,7 +397,6 @@ function frozenProbeContract(
 ): CliProbeContract {
   return Object.freeze({
     version: frozenProbeCommand(probe.version),
-    auth: frozenProbeCommand(probe.auth),
     declared: frozenDeclaredProbe(declared),
   });
 }
@@ -432,7 +416,6 @@ function structuralCatalogProbe(
     parser: NativeCatalogParser;
     manualCommand?: readonly [string, ...string[]] | undefined;
     directoryHeader?: 'x-opencode-directory' | undefined;
-    timeoutMs?: number | undefined;
     legacy?: Readonly<{
       belowVersion: string;
       command: readonly [string, ...string[]];
@@ -448,7 +431,6 @@ function structuralCatalogProbe(
     kind: 'catalog',
     command,
     cwd: 'neutral',
-    timeoutMs: input.timeoutMs ?? CODEX_NATIVE_MODEL_CATALOG_PROBE.timeoutMs,
     maxOutputBytes: CODEX_NATIVE_MODEL_CATALOG_PROBE.maxOutputBytes,
     ...(manualCommand === undefined ? {} : { manualCommand }),
     ...(input.directoryHeader === undefined ? {} : { directoryHeader: input.directoryHeader }),
@@ -499,10 +481,6 @@ function declaredCatalogProbe(tool: CliToolId): CliCatalogProbe {
         command: ['kilo', 'models', '--verbose'],
         manualCommand: ['kilo', 'models', '--verbose', '--refresh'],
         parser: parseKiloNativeModelCatalog,
-        // Each probe starts kilo in a fresh sandbox home, where it migrates its
-        // database and downloads an 11 MB cache before it lists: 1.7 s idle,
-        // 3.8 s measured under ordinary desktop load, past 5 s at TUI startup.
-        timeoutMs: DISCOVERY_SUBPROCESS_TIMEOUT_MS,
       });
     case 'cursor':
       return structuralCatalogProbe({
@@ -523,7 +501,6 @@ function declaredCatalogProbe(tool: CliToolId): CliCatalogProbe {
       return structuralCatalogProbe({
         command: ['agy', 'models'],
         parser: parseAntigravityModelCatalog,
-        timeoutMs: ANTIGRAVITY_MODELS_TIMEOUT_MS,
       });
     case 'claude-code':
       return { kind: 'not-run' };

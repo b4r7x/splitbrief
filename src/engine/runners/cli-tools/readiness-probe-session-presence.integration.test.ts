@@ -31,17 +31,12 @@ function sessionProbe(
     ({
       command: ['node', '-e', script] as const,
       cwd: 'neutral' as const,
-      // Spawning node under a fully parallel coverage run regularly costs more
-      // than a second; a probe budget that small tests the machine's load, not
-      // the verdict under test.
-      timeoutMs: 10_000,
       maxOutputBytes: 1_024,
     }) as const;
   const version = command(options.versionScript ?? "console.log('tool 1.0.0')");
   const auth = command(options.authScript ?? "console.log('verified')");
   return {
     version,
-    auth,
     declared: {
       kind: 'declared',
       version: {
@@ -695,18 +690,15 @@ function oracleContract(tool: OracleToolId): CliProbeContract {
   const auth = {
     command: argv,
     cwd: 'neutral' as const,
-    timeoutMs: 5_000,
     maxOutputBytes: 16_384,
   };
   const version = {
     command: [argv[0], '--version'] as const,
     cwd: 'neutral' as const,
-    timeoutMs: 5_000,
     maxOutputBytes: 1_024,
   };
   return {
     version,
-    auth,
     declared: {
       kind: 'declared',
       version: {

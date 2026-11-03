@@ -1,4 +1,5 @@
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
+import { CLI_PROBE_TIMEOUT_MS } from '../../constants.js';
 import { resolveCliExecutable } from '../resolve-cli-executable.js';
 import { RawCliCandidateContract, replaceProjectDirSentinel } from './candidate-contract.js';
 import { CONFORMANCE_PROMPT } from '../../providers/candidate-contract.js';
@@ -22,8 +23,6 @@ import {
   type RawCapture,
   type RawCliConformanceOptions,
 } from './contract-harness.js';
-
-const PROBE_TIMEOUT_MS = 5_000;
 
 async function writeRawRecord(recordPath: string, rawCapture: RawCapture): Promise<void> {
   await writeEvidenceFile(recordPath, JSON.stringify({ rawCapture }, null, 2));
@@ -76,7 +75,7 @@ async function runRawProbes(opts: {
     args: [...opts.contract.versionArgs],
     cwd: opts.projectDir,
     env: opts.environment,
-    timeoutMs: PROBE_TIMEOUT_MS,
+    timeoutMs: CLI_PROBE_TIMEOUT_MS,
     maxOutputBytes: MAX_PROCESS_OUTPUT_BYTES,
   });
   const outputs = [`version exit=${version.exitCode}\n${version.stdout}`];
@@ -90,7 +89,7 @@ async function runRawProbes(opts: {
       args: ['auth'],
       cwd: opts.projectDir,
       env: opts.environment,
-      timeoutMs: PROBE_TIMEOUT_MS,
+      timeoutMs: CLI_PROBE_TIMEOUT_MS,
       maxOutputBytes: MAX_PROCESS_OUTPUT_BYTES,
     });
     outputs.push(`auth exit=${auth.exitCode}\n${auth.stdout}`);

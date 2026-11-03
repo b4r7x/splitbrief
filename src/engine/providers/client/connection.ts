@@ -1,5 +1,4 @@
 import OpenAI from 'openai';
-import { TIMEOUTS } from '../../../core/pipeline-spec/timeouts.js';
 import { validateApiBaseUrl } from '../../../core/providers/validate-api-base.js';
 import { error } from '../../../utils/error.js';
 import type { ProviderDef } from '../types.js';
@@ -31,6 +30,9 @@ export function assertCredentialPrefix(credential: string, prefix: string | null
   );
 }
 
+// The SDK has no "no timeout" value, and Node turns a longer timer delay into 1 ms.
+const NO_CLIENT_TIMEOUT_MS = 2_147_483_647;
+
 export function createClientFromProvider(
   provider: ProviderDef,
   opts: { readonly timeoutMs?: number | undefined } = {},
@@ -53,10 +55,10 @@ export function createClientFromProvider(
     organization: null,
     project: null,
     fetch,
-    // A hidden SDK retry would multiply the application's own total deadline,
-    // and the SDK default timeout is unrelated to it. Both are stated here.
+    // A hidden SDK retry would multiply the seat's own total deadline, and the
+    // SDK default timeout would end a call the seat left without a limit.
     maxRetries: 0,
-    timeout: opts.timeoutMs ?? TIMEOUTS.implementerMs,
+    timeout: opts.timeoutMs ?? NO_CLIENT_TIMEOUT_MS,
   });
 }
 

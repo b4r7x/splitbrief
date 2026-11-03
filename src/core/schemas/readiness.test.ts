@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   CliInstallationStateSchema,
   CliReadinessResultSchema,
+  cliReadinessRemediation,
   deriveCliReadiness,
   type CliInstallationState,
   type CliReadinessFacts,
@@ -191,6 +192,34 @@ describe('CLI runner readiness', () => {
     );
     expect(deriveCliReadiness(readyFacts({ installedVersion: null })).remediation).toBe(
       'Verify OpenAI Codex CLI against tested version 0.40.0, then run `splitbrief doctor` again.',
+    );
+  });
+
+  it.each([
+    ['doctor', 'then run `splitbrief doctor` again'],
+    ['picker', 'then ctrl+r'],
+    ['setup', 'then ⏎ on a seat and ctrl+r'],
+  ] as const)(
+    'tells the %s user to run the version check that timed out in a terminal',
+    (recheck, then) => {
+      expect(
+        cliReadinessRemediation(
+          {
+            tool: 'codex',
+            installedVersion: null,
+            testedVersion: '0.40.0',
+            compatibility: 'timeout',
+          },
+          'unverified',
+          recheck,
+        ),
+      ).toBe(`Run \`codex --version\` in a terminal and wait for it to finish, ${then}.`);
+    },
+  );
+
+  it('gives a sign-in check that timed out the unknown sign-in fix', () => {
+    expect(deriveCliReadiness(readyFacts({ auth: 'timeout' })).remediation).toBe(
+      'If a call to OpenAI Codex CLI fails to authenticate, sign in again. Stored credentials do not prove a session; only a real call does.',
     );
   });
 

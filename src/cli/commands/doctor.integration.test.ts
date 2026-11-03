@@ -35,7 +35,9 @@ import {
   runnerDiscoveryContextKey,
 } from '../../engine/detection/runner-evidence.js';
 import { collectRunnerAdmissionChecks } from '../../engine/runners/prepare-execution/prepare-execution.js';
-import { registerDoctorCommand, type SeatProbeCall } from './doctor.js';
+import { registerDoctorCommand, type DoctorDeps, type SeatProbeCall } from './doctor.js';
+import { detectConfiguredCliReadiness } from './start/readiness.js';
+import { CLI_PROBE_TIMEOUT_MS } from '../../engine/constants.js';
 import { saveDetectionCache } from '../../engine/detection/cache.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { configStore } from '../../stores/project/config.js';
@@ -186,7 +188,7 @@ function deterministicCliReadiness(): readonly CliReadinessResult[] {
 
 async function runDoctor(
   args: string[],
-  detectCliReadiness: () => Promise<readonly CliReadinessResult[]> = async () =>
+  detectCliReadiness: NonNullable<DoctorDeps['detectCliReadiness']> = async () =>
     deterministicCliReadiness(),
   runArgVectorHelp: () => Promise<string | null> = async () => null,
   // Availability is a live network claim; unit runs make none unless they say so.
@@ -219,6 +221,82 @@ async function withFakeRetryClock(run: () => Promise<void>): Promise<void> {
     await vi.advanceTimersToNextTimerAsync();
   }
   await pending;
+}
+
+async function withStdinTty(isTTY: boolean, run: () => Promise<void>): Promise<void> {
+  const original = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY');
+  Object.defineProperty(process.stdin, 'isTTY', { value: isTTY, configurable: true });
+  try {
+    await run();
+  } finally {
+    if (original === undefined) delete (process.stdin as { isTTY?: boolean }).isTTY;
+    else Object.defineProperty(process.stdin, 'isTTY', original);
+  }
+}
+
+/**
+ * A codex on PATH with a session sign-in in a temporary HOME. The named check logs
+ * each call to the returned file and never answers; the other check answers at once.
+ */
+function installHangingCodex(hang: 'version' | 'sign-in'): string {
+  const log = join(shimDir, 'codex-hangs.log');
+  const home = join(shimDir, 'codex-home');
+  mkdirSync(join(home, '.codex'), { recursive: true });
+  writeFileSync(join(home, '.codex', 'auth.json'), '{"fixture":true}\n');
+  vi.stubEnv('HOME', home);
+  vi.stubEnv('CODEX_HOME', join(home, '.codex'));
+  const hangLines = [`  printf 'hang\\n' >> '${log}'`, '  exec tail -f /dev/null'];
+  const script = [
+    '#!/bin/sh',
+    'if [ "$1" = "--version" ]; then',
+    ...(hang === 'version'
+      ? hangLines
+      : [
+          `  printf 'codex %s\\n' '${CLI_TOOL_CATALOG.codex.compatibility.testedVersion}'`,
+          '  exit 0',
+        ]),
+    'fi',
+    'if [ "$1" = "login" ] && [ "$2" = "status" ]; then',
+    ...(hang === 'sign-in' ? hangLines : ["  printf 'authenticated\\n'", '  exit 0']),
+    'fi',
+    'exit 1',
+    '',
+  ].join('\n');
+  writeFileSync(join(shimDir, 'codex'), script, { mode: 0o755 });
+  return log;
+}
+
+/** Runs doctor and fires the probe deadline each time the hanging tool logs a new call. */
+async function expireEachHang(log: string, run: () => Promise<void>): Promise<void> {
+  let settled = false;
+  const pending = run().finally(() => {
+    settled = true;
+  });
+  const hangs = (): number =>
+    existsSync(log) ? readFileSync(log, 'utf8').split('\n').filter(Boolean).length : 0;
+  let expired = 0;
+  while (!settled) {
+    await new Promise<void>((resolve) => {
+      const poll = setInterval(() => {
+        if (!settled && hangs() <= expired) return;
+        clearInterval(poll);
+        resolve();
+      }, 5);
+    });
+    if (settled) break;
+    expired = hangs();
+    await vi.advanceTimersByTimeAsync(CLI_PROBE_TIMEOUT_MS);
+  }
+  await pending;
+}
+
+async function saveCodexCrew(): Promise<void> {
+  initGitRepo(tmp);
+  configStore.load(tmp);
+  const seat = { kind: 'cli', tool: 'codex', authChannel: 'session' } as const;
+  expect(
+    (await configStore.save(makeConfig({ planner: seat, reviewer: seat, implementer: seat }))).ok,
+  ).toBe(true);
 }
 
 function captureStdout(): string[] {
@@ -938,7 +1016,8 @@ describe('doctor command', () => {
       evidence: { auth: 'timeout' },
       stateId: 'auth-timeout',
       message: 'OpenAI Codex CLI sign-in check timed out.',
-      remedy: 'Check the network connection, then run `splitbrief doctor` again.',
+      remedy:
+        'Run SPLITBRIEF in a terminal to review the sign-in warning, or pass --allow-unverified-auth to start without confirming sign-in.',
     },
     {
       label: 'offline authentication probe',
@@ -1099,6 +1178,81 @@ describe('doctor command', () => {
     expect(text).toContain('PLAN, BUILD and REVIEW cannot start with OpenAI Codex CLI.');
     expect(text).toContain('OpenAI Codex CLI sign-in status is unknown.');
     expect(process.exitCode).toBe(1);
+  });
+
+  it('reports a version check that timed out as one blocker in headless doctor', async () => {
+    await saveCodexCrew();
+    const log = installHangingCodex('version');
+    const writes = captureStdout();
+
+    await expireEachHang(log, () =>
+      runDoctor(['--project', tmp, '--json'], detectConfiguredCliReadiness),
+    );
+
+    const { report } = JSON.parse(writes.join('')) as { report: ReadinessReportJson };
+    expect(report.checks.filter((check) => check.id === 'runners.cli.codex.readiness')).toEqual([]);
+    const timedOut = report.checks.filter((check) => check.stateId === 'version-timeout');
+    expect(timedOut).toHaveLength(1);
+    expect(timedOut[0]).toMatchObject({
+      severity: 'blocker',
+      summary: 'PLAN, BUILD and REVIEW cannot start with OpenAI Codex CLI.',
+      details: ['OpenAI Codex CLI version check timed out.'],
+      remediation:
+        'Run `codex --version` in a terminal and wait for it to finish, then run `splitbrief doctor` again.',
+    });
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('blocks interactive doctor on a version check that timed out, as start does', async () => {
+    await saveCodexCrew();
+    const log = installHangingCodex('version');
+    const logged = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await withStdinTty(true, () =>
+      expireEachHang(log, () => runDoctor(['--project', tmp], detectConfiguredCliReadiness)),
+    );
+
+    const text = logged.mock.calls.map((call) => call.join(' ')).join('\n');
+    expect(text).toContain('Run readiness: blocked');
+    expect(text).toContain('blocker  OpenAI Codex CLI version check timed out.');
+    expect(text).toContain(
+      'Fix: Run `codex --version` in a terminal and wait for it to finish, then run `splitbrief doctor` again.',
+    );
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('reports a sign-in check that timed out once in headless doctor', async () => {
+    await saveCodexCrew();
+    const log = installHangingCodex('sign-in');
+    const logged = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await expireEachHang(log, () => runDoctor(['--project', tmp], detectConfiguredCliReadiness));
+
+    const text = logged.mock.calls.map((call) => call.join(' ')).join('\n');
+    expect(text.split('OpenAI Codex CLI sign-in check timed out.')).toHaveLength(2);
+    expect(text).not.toContain('sign-in status is unknown');
+    expect(text).toContain('PLAN, BUILD and REVIEW cannot start with OpenAI Codex CLI.');
+    expect(text).toContain(`Fix: ${READINESS_DIAGNOSTIC_REMEDIATION['auth-timeout']}`);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('names a sign-in check that timed out in interactive doctor', async () => {
+    await saveCodexCrew();
+    const log = installHangingCodex('sign-in');
+    const logged = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await withStdinTty(true, () =>
+      expireEachHang(log, () => runDoctor(['--project', tmp], detectConfiguredCliReadiness)),
+    );
+
+    const text = logged.mock.calls.map((call) => call.join(' ')).join('\n');
+    expect(text).toContain('Run readiness: ready with warnings');
+    expect(text).toContain('No trusted readiness identity for codex');
+    expect(text).toContain('warning  OpenAI Codex CLI sign-in check timed out.');
+    expect(text).toContain(
+      'Fix: If a call to OpenAI Codex CLI fails to authenticate, sign in again. Stored credentials do not prove a session; only a real call does.',
+    );
+    expect(process.exitCode).not.toBe(1);
   });
 
   it('emits JSON and exits non-zero for missing config without writing setup files', async () => {
@@ -1550,17 +1704,6 @@ describe('custom runner consent preflight', () => {
       'workflow:',
       '  approve: plan',
     ].join('\n');
-  }
-
-  async function withStdinTty(isTTY: boolean, run: () => Promise<void>): Promise<void> {
-    const original = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY');
-    Object.defineProperty(process.stdin, 'isTTY', { value: isTTY, configurable: true });
-    try {
-      await run();
-    } finally {
-      if (original === undefined) delete (process.stdin as { isTTY?: boolean }).isTTY;
-      else Object.defineProperty(process.stdin, 'isTTY', original);
-    }
   }
 
   it('blocks on a shell runner this machine has not trusted, like a headless start', async () => {

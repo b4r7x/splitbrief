@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { writeFileSync, chmodSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { CliExecutableIdentity } from '../../core/discovery/detection.js';
@@ -7,13 +7,14 @@ import {
   defaultCliAuthChannel,
 } from '../../core/runners/cli-tool-catalog.js';
 import { createClaudeCodePlanner } from './claude-code.js';
-import { writeCommandShim } from '#testing/helpers/command-shim.js';
+import { writeCommandShim, writeFakeCli } from '#testing/helpers/command-shim.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
 import { sandboxRoot } from '../runners/sandbox-state-paths.js';
 import { callPlanner } from '#testing/helpers/planner-call.js';
 import { diagnosePlannerCallFailure } from '../orchestrator/recovery/planner-call-failure.js';
+import { probeActivitySnapshot, subscribeProbeActivity } from '../probe-activity.js';
 
 let shimDir: string;
 let projectDir: string;
@@ -30,6 +31,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   if (originalPath === undefined) delete process.env['PATH'];
   else process.env['PATH'] = originalPath;
   if (originalAnthropicApiKey === undefined) delete process.env['ANTHROPIC_API_KEY'];
@@ -88,6 +90,26 @@ function installAuthRecordingShim(): string {
   chmodSync(shimPath, 0o755);
   return envFile;
 }
+
+describe('createClaudeCodePlanner availability', () => {
+  it('finds claude on PATH without running it', async () => {
+    const marker = join(shimDir, 'ran.txt');
+    writeFakeCli(shimDir, 'claude', `touch '${marker}'\nexit 3\n`);
+    process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
+    const checks: string[] = [];
+    const unsubscribe = subscribeProbeActivity(() => {
+      checks.push(...probeActivitySnapshot().probes.map((probe) => probe.check));
+    });
+
+    const planner = createClaudeCodePlanner({ authChannel: undefined });
+    const available = await planner.isAvailable();
+    unsubscribe();
+
+    expect(available).toBe(true);
+    expect(existsSync(marker)).toBe(false);
+    expect(checks).toEqual([]);
+  });
+});
 
 describe('createClaudeCodePlanner planning', () => {
   it('defaults the omitted auth channel to the session channel', async () => {

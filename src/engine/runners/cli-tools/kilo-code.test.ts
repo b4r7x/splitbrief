@@ -144,7 +144,7 @@ describe('Kilo Code role adapters', () => {
     ).toEqual({ valid: false, conflicts: ['--agent', 'plan'] });
   });
 
-  it('keeps stdin transport, process-exit completion, and five-second probes explicit', () => {
+  it('keeps stdin transport, process-exit completion, and the version probe explicit', () => {
     for (const adapter of [kiloPlannerAdapter, kiloImplementerAdapter]) {
       expect(adapter.promptTransport).toEqual({ kind: 'stdin' });
       expect(adapter.outputContract).toEqual({ kind: 'text-exit', successfulExitCodes: [0] });
@@ -152,13 +152,6 @@ describe('Kilo Code role adapters', () => {
         version: {
           command: ['kilo', '--version'],
           cwd: 'neutral',
-          timeoutMs: 5_000,
-          maxOutputBytes: 4_096,
-        },
-        auth: {
-          command: ['kilo', 'auth'],
-          cwd: 'neutral',
-          timeoutMs: 5_000,
           maxOutputBytes: 4_096,
         },
       });

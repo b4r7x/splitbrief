@@ -61,7 +61,6 @@ describe('Claude Code role adapters', () => {
       terminalEvent: 'required',
     });
     expect(claudeCodePlannerAdapter.probe.version.command).toEqual(['claude', '--version']);
-    expect(claudeCodePlannerAdapter.probe.auth.command).toEqual(['claude', 'auth']);
   });
 
   it('preserves Claude planner session/model/effort placement and implementer permissions', () => {

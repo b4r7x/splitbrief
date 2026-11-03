@@ -31,6 +31,7 @@ import {
 import type { PreparationPolicy, PrepareExecutionDependencies } from './types.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 import { buildReadinessReport } from '../../../core/readiness/checks/build.js';
+import { abortError } from '../../../utils/abort.js';
 
 const EXECUTABLE_DIGEST = 'a'.repeat(64);
 const executable = CliExecutableReceiptSchema.parse({
@@ -525,6 +526,100 @@ describe('prepareExecution', () => {
         'runners.cli.codex.arg-vector.planner',
       ]),
     );
+    expect(prepareSession).not.toHaveBeenCalled();
+  });
+
+  it('hands the preparation signal to the arg-vector preflight', async () => {
+    const project = projectDir();
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'codex' } });
+    const controller = new AbortController();
+    const preflight = vi.fn(async () => []);
+
+    await prepareExecution({
+      projectDir: project,
+      feature: 'preflight signal',
+      effectiveConfig: config,
+      signal: controller.signal,
+      policy: policy('new-workflow'),
+      deps: {
+        collectArgVectorPreflightChecks: preflight,
+        collectReadiness: async () => ({ report: readyReport(project), config }),
+        detectRunnerEvidence: async ({ context }) => freshCliEvidence(context),
+        resolveCliExecutableAliases: async () => ({
+          command: 'codex',
+          executable,
+          usedFallback: false,
+        }),
+        prepareNewSession: () => preparedSession(project, 'preflight-signal-session'),
+      },
+    });
+
+    expect(preflight).toHaveBeenCalledWith(expect.objectContaining({ signal: controller.signal }));
+  });
+
+  it('reports failure rather than a clean abort when the preflight stops after trust publication', async () => {
+    const project = projectDir();
+    const config = ConfigSchema.parse({
+      ...makeConfig({
+        planner: {
+          kind: 'api',
+          provider: 'custom-endpoint',
+          service: 'custom-endpoint',
+          offering: 'payg',
+          apiBase: 'https://api.example.test/v1',
+          apiKey: 'sk-endpoint-test',
+          model: 'claude-opus-4-6',
+        },
+        implementerProfiles: {
+          default: 'review',
+          profiles: {
+            review: { kind: 'shell', command: 'node', model: 'custom-reviewer' },
+          },
+        },
+      }),
+      customCommands: {
+        review: { label: 'Review changes', contract: 'output', executable: 'node' },
+      },
+    });
+    const controller = new AbortController();
+    const prepareSession = vi.fn();
+
+    const outcome = await prepareExecution({
+      projectDir: project,
+      feature: 'abort the preflight after trust publication',
+      effectiveConfig: config,
+      signal: controller.signal,
+      policy: policy('new-workflow'),
+      deps: {
+        collectArgVectorPreflightChecks: async () => {
+          controller.abort();
+          throw abortError(controller.signal);
+        },
+        collectReadiness: async () => ({ report: readyReport(project), config }),
+        prepareCustomRunnerAdmission: async (options) => ({
+          kind: 'admitted' as const,
+          trustPersisted: true,
+          invocation: {
+            kind: 'custom-runner-invocation' as const,
+            runner: options.runner,
+            posture: options.posture,
+            executable,
+            authorization: 'explicit-grant' as const,
+            scope: {
+              projectIdentity: `sha256:${'b'.repeat(64)}`,
+              definitionId: options.runner.command.id,
+              definitionDigest: `sha256:${'c'.repeat(64)}`,
+            },
+          },
+        }),
+        prepareNewSession: prepareSession,
+      },
+    });
+
+    expect(outcome).toMatchObject({
+      kind: 'failed',
+      error: { kind: 'custom-runner-trust-persisted-after-abort' },
+    });
     expect(prepareSession).not.toHaveBeenCalled();
   });
 
@@ -1041,7 +1136,7 @@ describe('prepareExecution', () => {
       'auth-timeout',
       'auth-timeout',
       'OpenAI Codex CLI sign-in check timed out.',
-      'Check the network connection',
+      '--allow-unverified-auth',
     ],
     [
       'offline',

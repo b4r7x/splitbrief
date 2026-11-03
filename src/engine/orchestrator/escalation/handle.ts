@@ -283,6 +283,7 @@ export async function handleRetryAndEscalation(
       projectDir: ctx.projectDir,
       workspaceDir: ctx.workspaceDir,
       sessionId: ctx.sessionId,
+      signal: ctx.signal,
     });
     if (!pre.allow) {
       const reason = pre.reason ?? 'hook denied';

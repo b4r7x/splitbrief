@@ -16,7 +16,6 @@ import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { assertImplementerKind } from '../config-assertions.js';
 import { providerError } from '../providers/errors.js';
 import { dispatchStreamCompletion } from '../providers/dispatch-stream.js';
-import { resolveApiDeadlinePolicy } from '../providers/api-deadlines.js';
 import { toStreamClient } from '../providers/openai-stream/client.js';
 import type { StreamClient } from '../providers/openai-stream/request.js';
 import { DEFAULT_UNKNOWN_CONTEXT_LENGTH } from '../../core/tokens/context-length.js';
@@ -123,15 +122,10 @@ export function createApiImplementer(
         apiBase: impl.apiBase,
         apiKey: impl.apiKey,
       });
-      // One figure is the application's total budget for this call: the seat's
-      // configured timeout, or its own role's default when it configured none.
-      // The SDK client and the deadline policy are bounded by that same figure.
-      const totalDeadlineMs = resolveApiDeadlinePolicy({
-        role: opts.callContext.role,
-        ...(impl.timeout !== undefined && { timeoutMs: impl.timeout }),
-      }).totalMs;
+      // The seat's `timeout` is the one total deadline of this call, for the SDK
+      // client and the stream alike. A seat without one has no deadline.
       const client: StreamClient = toStreamClient(
-        createClientFromProvider(provider, { timeoutMs: totalDeadlineMs }),
+        createClientFromProvider(provider, { timeoutMs: impl.timeout }),
       );
 
       // The system preamble is a message of its own on this transport, so both
@@ -166,7 +160,7 @@ export function createApiImplementer(
         maxTokens,
         runtimeObservation: admission.context,
         signal,
-        timeoutMs: totalDeadlineMs,
+        timeoutMs: impl.timeout,
         onCallEvent: opts.onCallEvent,
         callContext: opts.callContext,
         invocationEvidence: apiInvocationEvidence(provider, model),

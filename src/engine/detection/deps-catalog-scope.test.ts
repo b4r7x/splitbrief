@@ -236,7 +236,7 @@ describe.runIf(process.platform !== 'win32')('native catalog discovery scope', (
     for (const [name, log] of Object.entries(logs)) {
       const lines = readFileSync(log, 'utf8').trim().split('\n');
       expect(
-        lines.filter((line) => line === '--version|'),
+        lines.filter((line) => line.startsWith('--version|')),
         name,
       ).toHaveLength(1);
       const catalogLines = lines.filter(

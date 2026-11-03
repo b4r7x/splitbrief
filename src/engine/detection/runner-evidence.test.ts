@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RunnerDiscoveryContext } from '../../core/config/accessors/runner-discovery-context.js';
 import type { CliExecutableIdentity } from '../../core/discovery/detection.js';
+import { admitStart } from '../../core/discovery/runner-evidence.js';
 import { CLI_TOOL_CATALOG, type CliAuthChannelId } from '../../core/runners/cli-tool-catalog.js';
 import type { CliReadinessProbeEvidence } from '../runners/cli-tools/cli-probe-evidence.js';
 import type { probeDeclaredCliReadinessEvidence } from '../runners/cli-tools/readiness-probe.js';
@@ -173,4 +174,43 @@ describe('detectRunnerEvidence in-flight sharing', () => {
     expect(fixture.calls()).toBe(2);
     fixture.release();
   });
+});
+
+describe('a start after a version check that timed out', () => {
+  it('keeps the timeout as the compatibility fact', async () => {
+    const evidence = await detect({
+      context: cliContext({ authChannel: 'session' }),
+      resolveExecutable: stableResolver(),
+      probeDeclaredReadiness: async () => ({ version: { kind: 'timeout' }, auth: 'verified' }),
+    });
+
+    expect(evidence.compatibility).toEqual({
+      kind: 'timeout',
+      installedVersion: null,
+      testedVersion: TESTED_VERSION,
+    });
+  });
+
+  it.each(['interactive', 'headless'] as const)(
+    'is refused for a %s start, as an unread version is',
+    async (interaction) => {
+      const evidence = await detect({
+        context: cliContext({ authChannel: 'session' }),
+        resolveExecutable: stableResolver(),
+        probeDeclaredReadiness: async () => ({ version: { kind: 'timeout' }, auth: 'verified' }),
+      });
+
+      expect(
+        admitStart({
+          evidence,
+          expectedContextKey: evidence.context.key,
+          expectedSelectionId: evidence.modelRun.selectionId,
+          requiredFacts: ['compatible-version', 'authentication'],
+          interaction,
+          unverifiedAuth: 'allowed',
+          route: { kind: 'unchecked' },
+        }),
+      ).toMatchObject({ kind: 'denied', reason: { kind: 'compatibility', fact: 'timeout' } });
+    },
+  );
 });

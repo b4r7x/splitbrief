@@ -6,7 +6,7 @@ import { CONVERSATIONAL_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
 import { createPlannerCallContext } from './call-context.js';
 import { seatAxisWords } from '../../core/runners/effort-channel.js';
-import { createCommandAvailability } from '../availability.js';
+import { createCommandExistsAvailability } from '../availability.js';
 import { invokeClaudePlanner } from './claude-invoke.js';
 import { typedRunnerCallErrorCode } from '../implementers/pipeline/call-result.js';
 import { toTokenDelta } from '../calls/projection.js';
@@ -202,7 +202,7 @@ export function createClaudeCodePlanner(opts: {
       });
     },
 
-    ...createCommandAvailability('claude'),
+    ...createCommandExistsAvailability(['claude']),
     ...identityConfig,
     typedOutput: typedOutputCapability(CLAUDE_TOOL, trustedCli?.installedVersion),
 

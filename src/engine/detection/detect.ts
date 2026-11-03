@@ -28,6 +28,7 @@ import {
 } from '../runners/resolve-cli-executable.js';
 import { lookupCliReadinessProbe } from '../runners/cli-tools/registry.js';
 import { probeCliReadiness } from '../runners/cli-tools/readiness-probe.js';
+import { trackToolCheck } from '../probe-activity.js';
 import { readHostModelSelection } from '../runners/host-model-selection.js';
 
 type ResolveCliExecutable = CliExecutableResolver;
@@ -166,54 +167,56 @@ async function detectCliToolReadiness(
   }
   throwIfAborted(options.signal);
 
-  try {
-    const selectedChannel =
-      options.authChannel.state === 'withheld'
-        ? undefined
-        : selectCliAuthChannel(tool, { channel: options.authChannel.channel });
-    const result = await options.probeReadiness({
-      tool,
-      executable,
-      probe: options.lookupProbe({ tool, role: options.role }),
-      authChannel: selectedChannel?.id,
-      now: options.now,
-      signal: options.signal,
-      classifyVersion: ({ installedVersion }) =>
-        classifyCliAdmittedVersion({
-          installedVersion,
-          minimumAdmittedVersion: descriptor.compatibility.minimumAdmittedVersion,
-          versionScheme: descriptor.compatibility.versionScheme,
-        }),
-    });
-    return deriveCliReadiness({
-      tool: result.tool,
-      enabled: result.enabled,
-      installation: result.installation,
-      executable: result.executable,
-      trust: result.trust,
-      installedVersion: result.installedVersion,
-      testedVersion: result.testedVersion,
-      compatibility: result.compatibility,
-      auth: selectedChannel === undefined ? 'unknown' : result.auth,
-      ...(selectedChannel === undefined ? {} : { authChannel: selectedChannel.id }),
-      ...(result.providerAuth === undefined ? {} : { providerAuth: result.providerAuth }),
-      probedAt: result.probedAt,
-    });
-  } catch {
-    throwIfAborted(options.signal);
-    return deriveCliReadiness({
-      tool,
-      enabled: true,
-      installation: 'installed',
-      executable,
-      trust: 'trusted',
-      installedVersion: null,
-      testedVersion: descriptor.compatibility.testedVersion,
-      compatibility: 'unverified',
-      auth: 'not-checked',
-      probedAt: options.now(),
-    });
-  }
+  return trackToolCheck(tool, async () => {
+    try {
+      const selectedChannel =
+        options.authChannel.state === 'withheld'
+          ? undefined
+          : selectCliAuthChannel(tool, { channel: options.authChannel.channel });
+      const result = await options.probeReadiness({
+        tool,
+        executable,
+        probe: options.lookupProbe({ tool, role: options.role }),
+        authChannel: selectedChannel?.id,
+        now: options.now,
+        signal: options.signal,
+        classifyVersion: ({ installedVersion }) =>
+          classifyCliAdmittedVersion({
+            installedVersion,
+            minimumAdmittedVersion: descriptor.compatibility.minimumAdmittedVersion,
+            versionScheme: descriptor.compatibility.versionScheme,
+          }),
+      });
+      return deriveCliReadiness({
+        tool: result.tool,
+        enabled: result.enabled,
+        installation: result.installation,
+        executable: result.executable,
+        trust: result.trust,
+        installedVersion: result.installedVersion,
+        testedVersion: result.testedVersion,
+        compatibility: result.compatibility,
+        auth: selectedChannel === undefined ? 'unknown' : result.auth,
+        ...(selectedChannel === undefined ? {} : { authChannel: selectedChannel.id }),
+        ...(result.providerAuth === undefined ? {} : { providerAuth: result.providerAuth }),
+        probedAt: result.probedAt,
+      });
+    } catch {
+      throwIfAborted(options.signal);
+      return deriveCliReadiness({
+        tool,
+        enabled: true,
+        installation: 'installed',
+        executable,
+        trust: 'trusted',
+        installedVersion: null,
+        testedVersion: descriptor.compatibility.testedVersion,
+        compatibility: 'unverified',
+        auth: 'not-checked',
+        probedAt: options.now(),
+      });
+    }
+  });
 }
 
 async function detectCliTool(

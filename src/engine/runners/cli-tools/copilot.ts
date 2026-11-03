@@ -180,13 +180,6 @@ function createProbe() {
     version: {
       command: [COPILOT_COMMAND, ...COPILOT_VERSION_ARGS] as const,
       cwd: 'neutral' as const,
-      timeoutMs: 5_000,
-      maxOutputBytes: 4_096,
-    },
-    auth: {
-      command: [COPILOT_COMMAND, 'auth', 'status'] as const,
-      cwd: 'neutral' as const,
-      timeoutMs: 5_000,
       maxOutputBytes: 4_096,
     },
   } as const;

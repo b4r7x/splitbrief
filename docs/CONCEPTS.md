@@ -293,7 +293,7 @@ Gating callbacks (`onApprovalNeeded`, `onPlannerReply`, `onContinuationNeeded`, 
 Workflow lifecycle hooks let users run custom commands at well-known moments (pre/post task and validation, etc.). Built on top of the EventBus — `post_*`/`on_*` are a fire-and-forget sink; `pre_*` hooks run sequentially at the orchestrator call site and a `deny` outcome short-circuits the upcoming action. Hooks are declared under `hooks:` in `.splitbrief/config.yaml`. See [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) — **not** to be confused with React hooks ([HOOKS.md](./HOOKS.md)).
 
 - **HookEvent** — the lifecycle trigger keys (`src/core/schemas/hooks.ts`): `'pre_planning' | 'pre_task' | 'post_task' | 'pre_validation' | 'post_validation' | 'pre_escalation' | 'on_error' | 'on_halt' | 'on_complete'`. `pre_*` hooks block the upcoming action (a `deny` outcome short-circuits it); `post_*` and `on_*` hooks are fire-and-forget through the EventBus sink. The retired keys `pre_commit` and `post_commit` never fire: an empty list loads and is dropped, and a list with entries fails the config load.
-- **HookEntry** — one configured hook, `kind: 'command'`, carrying `{ command, args, timeout_ms, on_failure }`. `on_failure` is one of `'block' | 'warn' | 'ignore'`. `timeout_ms` is bounded at 300_000 ms with a 30_000 ms default.
+- **HookEntry** — one configured hook, `kind: 'command'`, carrying `{ command, args, timeout_ms, on_failure }`. `on_failure` is one of `'block' | 'warn' | 'ignore'`. `timeout_ms` is optional, with no default and no maximum; Esc stops a running hook.
 - **HooksConfig** — the `hooks:` section of `.splitbrief/config.yaml`: a map from `HookEvent` to `HookEntry[]`.
 
 ## Hook trust

@@ -193,6 +193,21 @@ describe('fresh CLI start gate', () => {
     ).toEqual({ kind: 'denied', reason: { kind: 'compatibility', fact: 'incompatible' } });
   });
 
+  it('keeps the version denial when the version check failed without a timeout', () => {
+    const evidence = freshEvidence({
+      compatibility: {
+        kind: 'unknown',
+        installedVersion: null,
+        testedVersion: CLI_TOOL_CATALOG.codex.compatibility.testedVersion,
+      },
+    });
+
+    expect(admit(evidence)).toEqual({
+      kind: 'denied',
+      reason: { kind: 'compatibility', fact: 'unknown' },
+    });
+  });
+
   it('requires an explicit interactive disclosure for compatibility auth unknown', () => {
     const evidence = freshEvidence({ tool: 'copilot', auth: 'unknown' });
     const initial = admitFreshCliStart({
@@ -236,7 +251,7 @@ describe('fresh CLI start gate', () => {
     });
     expect(admit(freshEvidence({ auth: 'unknown' }), { interaction: 'headless' })).toEqual({
       kind: 'denied',
-      reason: { kind: 'authentication-unverified' },
+      reason: { kind: 'authentication-unverified', fact: 'unknown' },
     });
   });
 
@@ -261,7 +276,10 @@ describe('fresh CLI start gate', () => {
       route: { kind: 'unchecked' },
     });
 
-    expect(denied).toEqual({ kind: 'denied', reason: { kind: 'authentication-unverified' } });
+    expect(denied).toEqual({
+      kind: 'denied',
+      reason: { kind: 'authentication-unverified', fact: 'unknown' },
+    });
     expect(allowed).toMatchObject({ kind: 'admitted', gate: { tool: 'copilot' } });
   });
 

@@ -4,6 +4,7 @@ import {
   READINESS_MODEL_SELECTIONS,
   StartReadinessRecordSchema,
   cliExecutableTrustRemediation,
+  UNVERIFIED_AUTH_FIX,
   type ReadinessDiagnosticStateId,
   type ReadinessModelSelection,
   type StartReadinessRecord,
@@ -19,10 +20,12 @@ export const READINESS_DIAGNOSTIC_REMEDIATION: Readonly<
   'missing-binary': 'Install the configured CLI, then run `splitbrief doctor` again.',
   'untrusted-path': cliExecutableTrustRemediation('the configured CLI', 'doctor'),
   'incompatible-version': 'Install the tested CLI version, then run `splitbrief doctor` again.',
+  'version-timeout':
+    'Run the configured CLI with `--version` in a terminal and wait for it to finish, then run `splitbrief doctor` again.',
   unauthenticated: 'Sign in to the configured CLI, then run `splitbrief doctor` again.',
   'auth-unknown':
     'If a call to the CLI fails to authenticate, sign in again. Stored credentials do not prove a session; only a real call does.',
-  'auth-timeout': 'Check the network connection, then run `splitbrief doctor` again.',
+  'auth-timeout': UNVERIFIED_AUTH_FIX,
   'auth-offline': 'Check the network connection, then run `splitbrief doctor` again.',
   'auth-malformed':
     'Run `splitbrief doctor` again. If the result is still unreadable, update the CLI.',
