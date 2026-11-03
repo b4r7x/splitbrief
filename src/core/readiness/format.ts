@@ -21,7 +21,7 @@ export const READINESS_DIAGNOSTIC_REMEDIATION: Readonly<
   'incompatible-version': 'Install the tested CLI version, then run `splitbrief doctor` again.',
   unauthenticated: 'Sign in to the configured CLI, then run `splitbrief doctor` again.',
   'auth-unknown':
-    'CLI authentication cannot be verified without spending a call: stored credentials prove presence, not a working session. The first real call settles it; if it fails to authenticate, sign in to the CLI again.',
+    'If a call to the CLI fails to authenticate, sign in again. Stored credentials do not prove a session; only a real call does.',
   'auth-timeout': 'Check the network connection, then run `splitbrief doctor` again.',
   'auth-offline': 'Check the network connection, then run `splitbrief doctor` again.',
   'auth-malformed':

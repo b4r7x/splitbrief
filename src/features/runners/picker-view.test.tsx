@@ -685,7 +685,8 @@ describe('PickerView previews', () => {
     expect(frame).toContain('Disabled');
     expect(frame).toContain(status.remediation);
     expect(frame).toContain('Its models show here when it is ready.');
-    expect(frame).toContain(`Saved choice: ${formatSeatIdentity({ seat: savedRunner })}`);
+    expect(frame).toContain('Saved choice:');
+    expect(frame).toContain(formatSeatIdentity({ seat: savedRunner }));
     expect(frame).not.toContain('Bundled Opus Marker');
     expect(frame).not.toContain('Custom Marker Model');
     expect(frame).not.toContain('+ Add custom model');

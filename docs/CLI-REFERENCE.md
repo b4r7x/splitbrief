@@ -440,7 +440,7 @@ CLI readiness, config validation, and provider posture checks map to stable `sta
 | `untrusted-path` | Executable identity does not match the trusted fingerprint (untrusted project-bin or stale fingerprint). | Install the configured CLI outside the project. Put its absolute directory first on PATH, then run `splitbrief doctor` again. |
 | `incompatible-version` | Installed CLI version is outside the tested or qualified range. | Install the tested CLI version, then run `splitbrief doctor` again. |
 | `unauthenticated` | Required credentials are missing or invalid. | Sign in to the configured CLI, then run `splitbrief doctor` again. |
-| `auth-unknown` | Auth probe could not determine login state. | CLI authentication cannot be verified without spending a call: stored credentials prove presence, not a working session. The first real call settles it; if it fails to authenticate, sign in to the CLI again. |
+| `auth-unknown` | Auth probe could not determine login state. | If a call to the CLI fails to authenticate, sign in again. Stored credentials do not prove a session; only a real call does. |
 | `auth-timeout` | The CLI sign-in check timed out. | Check the network connection, then run `splitbrief doctor` again. |
 | `auth-offline` | The CLI sign-in check could not connect. | Check the network connection, then run `splitbrief doctor` again. |
 | `auth-malformed` | SPLITBRIEF could not read the CLI sign-in check result. | Run `splitbrief doctor` again. If the result is still unreadable, update the CLI. |

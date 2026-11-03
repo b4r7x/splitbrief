@@ -481,7 +481,7 @@ describe('buildRunnerChecks availability guidance', () => {
       { auth: 'unauthenticated', authChannel: 'api-key' },
       'Export ANTHROPIC_API_KEY',
     ],
-    ['auth-unknown', { auth: 'unknown' }, 'cannot be verified without spending a call'],
+    ['auth-unknown', { auth: 'unknown' }, 'Stored credentials do not prove a session'],
   ] as const)('publishes %s as a structured diagnostic state', (stateId, overrides, fix) => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
 

@@ -181,10 +181,10 @@ describe('CLI runner readiness', () => {
     // The copy must not promise that re-running a cheap check can verify a
     // session: a local status read proves presence, never validity.
     expect(deriveCliReadiness(readyFacts({ auth: 'unknown' })).remediation).toBe(
-      'OpenAI Codex CLI authentication cannot be verified without spending a call: stored credentials prove presence, not a working session. The first real OpenAI Codex CLI call settles it; if that call fails to authenticate, sign in to OpenAI Codex CLI again.',
+      'If a call to OpenAI Codex CLI fails to authenticate, sign in again. Stored credentials do not prove a session; only a real call does.',
     );
     expect(deriveCliReadiness(readyFacts({ auth: 'not-checked' })).remediation).toBe(
-      'OpenAI Codex CLI authentication cannot be verified without spending a call: stored credentials prove presence, not a working session. The first real OpenAI Codex CLI call settles it; if that call fails to authenticate, sign in to OpenAI Codex CLI again.',
+      'If a call to OpenAI Codex CLI fails to authenticate, sign in again. Stored credentials do not prove a session; only a real call does.',
     );
     expect(deriveCliReadiness(readyFacts({ compatibility: 'unverified' })).remediation).toBe(
       'Verify OpenAI Codex CLI against tested version 0.40.0, then run `splitbrief doctor` again.',

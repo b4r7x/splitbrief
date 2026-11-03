@@ -128,7 +128,7 @@ Prefer these stable identifiers in automation and log correlation. Remediation s
 | Executable identity does not match the trusted fingerprint (untrusted project-bin or stale fingerprint). | `untrusted-path` | Install the configured CLI outside the project. Put its absolute directory first on PATH, then run `splitbrief doctor` again. |
 | Installed CLI version is outside the tested or qualified range. | `incompatible-version` | Install the tested CLI version, then run `splitbrief doctor` again. |
 | Required credentials are missing or invalid. | `unauthenticated` | Sign in to the configured CLI, then run `splitbrief doctor` again. |
-| Auth probe could not determine login state. | `auth-unknown` | CLI authentication cannot be verified without spending a call: stored credentials prove presence, not a working session. The first real call settles it; if it fails to authenticate, sign in to the CLI again. |
+| Auth probe could not determine login state. | `auth-unknown` | If a call to the CLI fails to authenticate, sign in again. Stored credentials do not prove a session; only a real call does. |
 | The CLI sign-in check timed out. | `auth-timeout` | Check the network connection, then run `splitbrief doctor` again. |
 | The CLI sign-in check could not connect. | `auth-offline` | Check the network connection, then run `splitbrief doctor` again. |
 | SPLITBRIEF could not read the CLI sign-in check result. | `auth-malformed` | Run `splitbrief doctor` again. If the result is still unreadable, update the CLI. |

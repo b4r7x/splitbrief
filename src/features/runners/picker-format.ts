@@ -134,9 +134,7 @@ export function notReadyPane(input: {
     'Its models show here when it is ready.',
   ];
   if (input.savedRunner !== undefined) {
-    lines.push('', {
-      whole: `Saved choice: ${formatSeatIdentity({ seat: input.savedRunner })}`,
-    });
+    lines.push('', 'Saved choice:', { whole: formatSeatIdentity({ seat: input.savedRunner }) });
   }
   return { label: title, lines };
 }

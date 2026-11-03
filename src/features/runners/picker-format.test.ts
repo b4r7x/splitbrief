@@ -269,9 +269,10 @@ describe('notReadyPane', () => {
     const status = cases[0]?.status;
     if (status === undefined || status.state === 'ready') throw new Error('missing status');
     const identity = formatSeatIdentity({ seat: savedRunner });
-    expect(notReadyPane({ status, savedRunner })?.lines.at(-1)).toEqual({
-      whole: `Saved choice: ${identity}`,
-    });
+    expect(notReadyPane({ status, savedRunner })?.lines.slice(-2)).toEqual([
+      'Saved choice:',
+      { whole: identity },
+    ]);
     expect(JSON.stringify(notReadyPane({ status, savedRunner: undefined })?.lines)).not.toContain(
       'Saved choice:',
     );

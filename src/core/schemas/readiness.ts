@@ -302,7 +302,7 @@ export function cliReadinessRemediation(
       // Honest about the ceiling of a cheap check: stored credentials prove
       // presence, never a working session, and re-running readiness cannot
       // change that — only a real call can.
-      return `${name} authentication cannot be verified without spending a call: stored credentials prove presence, not a working session. The first real ${name} call settles it; if that call fails to authenticate, sign in to ${name} again.`;
+      return `If a call to ${name} fails to authenticate, sign in again. Stored credentials do not prove a session; only a real call does.`;
     case 'unauthenticated':
       if (facts.auth === 'keyring') return codexKeyringSignInFix(recheck);
       return cliAuthRemediation(facts, recheck);

@@ -401,7 +401,10 @@ describe('visual catalog', () => {
         expect(card).toContain(state);
         expect(card).toContain(remedy);
         expect(card).toContain('Its models show here when it is ready.');
-        expect(card).toContain('Saved choice:');
+        const rows = rightCardRows(frame).map((row) => row.trim());
+        const saved = rows.indexOf('Saved choice:');
+        expect(saved).toBeGreaterThan(-1);
+        expect(rows.slice(saved + 1).join(' ')).not.toContain('…');
         expect(frame).not.toContain('does not support model listing');
         expect(frame).not.toContain('Bundled model list');
         expect(frame).not.toContain('Models from an earlier check');
@@ -428,8 +431,7 @@ describe('visual catalog', () => {
     {
       id: 'overlay-picker-tool-unverified-auth',
       title: 'Unverified',
-      remedy: 'authentication cannot be verified without spending a call',
-      remedyFillsNarrowCard: true,
+      remedy: 'If a call to Cursor Agent CLI fails to authenticate, sign in again.',
     },
     {
       id: 'overlay-picker-tool-incompatible',
@@ -446,7 +448,7 @@ describe('visual catalog', () => {
       title: 'Disabled',
       remedy: 'Enable Command Code CLI before selecting it',
     },
-  ])('shows the $title card for $id', async ({ id, title, remedy, remedyFillsNarrowCard }) => {
+  ])('shows the $title card for $id', async ({ id, title, remedy }) => {
     const scenario = findVisualScenario(id);
     const checkpoint = scenario?.checkpoints[0];
     if (!scenario || !checkpoint) throw new Error(`Missing readiness card ${id}`);
@@ -457,9 +459,7 @@ describe('visual catalog', () => {
         const card = rightCardText(frame);
         expect(card).toContain(title);
         expect(card).toContain(remedy);
-        if (!remedyFillsNarrowCard || viewport.cols > 60) {
-          expect(card).toContain('Its models show here when it is ready.');
-        }
+        expect(card).toContain('Its models show here when it is ready.');
         expect(frame).toContain('↑↓ select · esc cancel · ctrl+r refresh');
         expect(frame).not.toContain('⏎');
         expect(frame).not.toContain('Models');
@@ -508,7 +508,7 @@ describe('visual catalog', () => {
     });
     try {
       const card = rightCardText(stripAnsiStyles(await handle.waitForCheckpoint()));
-      expect(card).toContain('settles it');
+      expect(card).toContain('only a real call does.');
     } finally {
       await handle.unmount();
     }
