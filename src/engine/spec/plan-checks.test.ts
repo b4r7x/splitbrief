@@ -13,7 +13,7 @@ import {
 } from './plan-checks.js';
 
 const projectDir = '/repo';
-const k2 = [{ id: 'K2', kind: 'test' as const, value: 'src/b.test.ts', required: true }];
+const k2 = [{ id: 'K2', kind: 'test' as const, value: 'src/b.test.ts' }];
 const fits = new Map<string, PlanTaskFit>([
   ['T001', { fit: 'fits' }],
   ['T002', { fit: 'tight' }],
@@ -55,7 +55,7 @@ describe('planRepairWarning', () => {
 describe('checkPlan', () => {
   it('passes a plan whose tasks cover every criterion and fit BUILD, tight included', () => {
     const plan = makePlanProposal({
-      checks: [{ id: 'K9', kind: 'cmd', value: 'npm test', required: true }],
+      checks: [{ id: 'K9', kind: 'cmd', value: 'npm test' }],
       criteria: [{ id: 'C1', text: 'Greets', checkIds: ['K1', 'K9'] }],
       tasks: [
         makeTaskSpec(),
@@ -117,7 +117,7 @@ describe('checkPlan', () => {
 
   it('refuses duplicate task ids and a check id used twice across the run and a task', () => {
     const plan = makePlanProposal({
-      checks: [{ id: 'K1', kind: 'cmd', value: 'npm test', required: true }],
+      checks: [{ id: 'K1', kind: 'cmd', value: 'npm test' }],
       tasks: [makeTaskSpec(), makeTaskSpec({ checks: [] })],
     });
     expect(codes(plan)).toEqual(['duplicate-task-id', 'duplicate-check-id', 'task-without-check']);
@@ -139,7 +139,7 @@ describe('checkPlan', () => {
   });
 
   it('refuses a plan check id in the V range the reviewer checks use, once per id', () => {
-    const v1 = { id: 'V1', kind: 'cmd' as const, value: 'npm test', required: true };
+    const v1 = { id: 'V1', kind: 'cmd' as const, value: 'npm test' };
     const plan = makePlanProposal({
       checks: [v1],
       tasks: [makeTaskSpec({ checks: [{ ...v1, id: 'V2' }] })],
@@ -191,11 +191,11 @@ describe('checkPlan', () => {
         makeTaskSpec({
           id: 'T003',
           batch: 2,
-          checks: [{ id: 'K3', kind: 'test', value: 'src/c.test.ts', required: true }],
+          checks: [{ id: 'K3', kind: 'test', value: 'src/c.test.ts' }],
         }),
         makeTaskSpec({
           id: 'T004',
-          checks: [{ id: 'K4', kind: 'test', value: 'src/d.test.ts', required: true }],
+          checks: [{ id: 'K4', kind: 'test', value: 'src/d.test.ts' }],
         }),
       ],
     });
@@ -300,15 +300,15 @@ describe('checkPlan', () => {
   it('refuses a cmd check the plan command policy refuses at the approve level of the run', () => {
     const plan = makePlanProposal({
       checks: [
-        { id: 'K9', kind: 'cmd', value: 'npm run lint', required: true },
-        { id: 'K10', kind: 'cmd', value: 'npm test -- run', required: true },
+        { id: 'K9', kind: 'cmd', value: 'npm run lint' },
+        { id: 'K10', kind: 'cmd', value: 'npm test -- run' },
       ],
       criteria: [{ id: 'C1', text: 'Greets', checkIds: ['K1', 'K8', 'K9', 'K10'] }],
       tasks: [
         makeTaskSpec({
           checks: [
-            { id: 'K1', kind: 'test', value: 'src/hello.test.ts', required: true },
-            { id: 'K8', kind: 'cmd', value: 'npx tsc --noEmit', required: false },
+            { id: 'K1', kind: 'test', value: 'src/hello.test.ts' },
+            { id: 'K8', kind: 'cmd', value: 'npx tsc --noEmit' },
           ],
         }),
       ],
@@ -366,10 +366,10 @@ describe('checkPlan', () => {
         makeTaskSpec({
           criteria: ['C1', 'C2'],
           checks: [
-            { id: 'K1', kind: 'cmd', value: 'test -x src/cli.js', required: true },
-            { id: 'K2', kind: 'cmd', value: 'test -L docs/readme.md', required: true },
-            { id: 'K3', kind: 'cmd', value: 'test -f docs/readme.md', required: true },
-            { id: 'K4', kind: 'cmd', value: 'test -d docs', required: true },
+            { id: 'K1', kind: 'cmd', value: 'test -x src/cli.js' },
+            { id: 'K2', kind: 'cmd', value: 'test -L docs/readme.md' },
+            { id: 'K3', kind: 'cmd', value: 'test -f docs/readme.md' },
+            { id: 'K4', kind: 'cmd', value: 'test -d docs' },
           ],
         }),
       ],
@@ -390,8 +390,8 @@ describe('checkPlan', () => {
         makeTaskSpec({
           suggestedFiles: ['src/hello.ts', 'src/not-yet-written.test.ts'],
           checks: [
-            { id: 'K1', kind: 'test', value: 'npm test -- src/hello.test.ts', required: true },
-            { id: 'K2', kind: 'test', value: 'src/not-yet-written.test.ts', required: true },
+            { id: 'K1', kind: 'test', value: 'npm test -- src/hello.test.ts' },
+            { id: 'K2', kind: 'test', value: 'src/not-yet-written.test.ts' },
           ],
         }),
       ],
@@ -604,13 +604,13 @@ describe('checkPlan on the files of the checkout', () => {
 
   it('flags every render check, run-level and task-level, when validation.render is not set', () => {
     const plan = makePlanProposal({
-      checks: [{ id: 'K-render', kind: 'render', value: 'overlay-picker', required: true }],
+      checks: [{ id: 'K-render', kind: 'render', value: 'overlay-picker' }],
       criteria: [{ id: 'C1', text: 'Greets', checkIds: ['K1', 'K-render'] }],
       tasks: [
         makeTaskSpec({
           checks: [
-            { id: 'K1', kind: 'test', value: 'src/hello.test.ts', required: true },
-            { id: 'T001-K2', kind: 'render', value: 'home', required: false },
+            { id: 'K1', kind: 'test', value: 'src/hello.test.ts' },
+            { id: 'T001-K2', kind: 'render', value: 'home' },
           ],
         }),
       ],
@@ -635,13 +635,13 @@ describe('checkPlan on the files of the checkout', () => {
 
   it('words the planner reason and the card note in the number of render checks', () => {
     const one = makePlanProposal({
-      checks: [{ id: 'K-render', kind: 'render', value: 'overlay-picker', required: true }],
+      checks: [{ id: 'K-render', kind: 'render', value: 'overlay-picker' }],
       criteria: [{ id: 'C1', text: 'Greets', checkIds: ['K1', 'K-render'] }],
     });
     const two = makePlanProposal({
       checks: [
-        { id: 'K-a', kind: 'render', value: 'home', required: true },
-        { id: 'K-b', kind: 'render', value: 'overlay-picker', required: true },
+        { id: 'K-a', kind: 'render', value: 'home' },
+        { id: 'K-b', kind: 'render', value: 'overlay-picker' },
       ],
       criteria: [{ id: 'C1', text: 'Greets', checkIds: ['K1', 'K-a', 'K-b'] }],
     });

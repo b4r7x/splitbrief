@@ -267,6 +267,7 @@ async function admitRunners(input: AdmissionInput, sink: ReportSink): Promise<Ad
     signal: input.signal,
     nativeTrustViolations,
     routeCatalogs: new Map(),
+    versionProbes: new Map(),
     deps,
   };
   const evaluated: EvaluatedSlot[] = [];
@@ -523,6 +524,7 @@ export async function collectRunnerAdmissionChecks(
     signal,
     nativeTrustViolations,
     routeCatalogs: input.routeCatalogs,
+    versionProbes: new Map(),
     deps,
   };
   const evaluated: EvaluatedSlot[] = [];

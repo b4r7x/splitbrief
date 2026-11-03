@@ -109,17 +109,20 @@ async function escalate(
 }
 
 describe('the planner decides while the attempts make progress', () => {
-  it('a retry that fails differently, then one consult, then a pass: no halt', async () => {
-    const { result, state, prompts } = await escalate(['module not found'], [guidance('Missing')]);
+  it('a guided attempt that fails differently, then one more consult, then a pass: no halt', async () => {
+    const { result, state, prompts } = await escalate(
+      ['module not found'],
+      [guidance('Wrong type'), guidance('Missing')],
+    );
 
     expect(result).toMatchObject({ completed: true, method: 'consulted' });
-    expect(prompts).toHaveLength(1);
+    expect(prompts).toHaveLength(2);
     expect(state.pendingRecovery).toBeUndefined();
   });
 
   it('three planner answers that each move the failure: no halt', async () => {
     const { result, state, prompts } = await escalate(
-      ['error A', 'error B', 'error C'],
+      ['error A', 'error B'],
       [guidance('First'), guidance('Second'), guidance('Third')],
     );
 
@@ -131,16 +134,21 @@ describe('the planner decides while the attempts make progress', () => {
   it('the same failure after each planner answer goes back to the planner: no halt', async () => {
     const { result, state, prompts } = await escalate(
       ['still broken', 'still broken', 'still broken'],
-      [guidance('First diagnosis'), guidance('Second diagnosis'), guidance('Third diagnosis')],
+      [
+        guidance('First diagnosis'),
+        guidance('Second diagnosis'),
+        guidance('Third diagnosis'),
+        guidance('Fourth diagnosis'),
+      ],
     );
 
-    expect(prompts).toHaveLength(3);
+    expect(prompts).toHaveLength(4);
     expect(result).toMatchObject({ completed: true, method: 'consulted' });
     expect(state.pendingRecovery).toBeUndefined();
   });
 
   it('a failure that keeps moving gets a planner answer past ten answers', async () => {
-    const errors = Array.from({ length: 11 }, (_, index) => `error ${index}`);
+    const errors = Array.from({ length: 10 }, (_, index) => `error ${index}`);
     const answers = Array.from({ length: 11 }, (_, index) => guidance(`Diagnosis ${index}`));
     const { result, state, prompts } = await escalate(errors, answers);
 
@@ -151,12 +159,12 @@ describe('the planner decides while the attempts make progress', () => {
 
   it('each planner prompt shows its earlier answers, each before the failure that followed it', async () => {
     const { prompts } = await escalate(
-      ['first failure', 'second failure', 'third failure'],
+      ['first failure', 'second failure'],
       [guidance('First diagnosis'), guidance('Second diagnosis'), guidance('Third diagnosis')],
     );
 
     const last = prompts.at(-1) ?? '';
-    const order = ['first failure', 'First diagnosis', 'second failure', 'Second diagnosis'].map(
+    const order = ['First diagnosis', 'first failure', 'Second diagnosis', 'second failure'].map(
       (text) => last.indexOf(text),
     );
     expect(order.every((index) => index >= 0)).toBe(true);

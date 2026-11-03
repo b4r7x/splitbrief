@@ -26,7 +26,7 @@ const alpha = makeTaskSpec({
   intent: 'Return the alpha value.',
   criteria: ['C1'],
   suggestedFiles: [ALPHA_FILE],
-  checks: [{ id: 'T001-K1', kind: 'test', value: ALPHA_FILE, required: true }],
+  checks: [{ id: 'T001-K1', kind: 'test', value: ALPHA_FILE }],
 });
 const plan = makePlanProposal({
   summary: 'Add one value.',
@@ -40,7 +40,7 @@ const fix = makeTaskSpec({
   intent: 'Create the alpha module the review found missing.',
   criteria: [],
   suggestedFiles: [ALPHA_FILE],
-  checks: [{ id: 'T002-K1', kind: 'test', value: ALPHA_FILE, required: true }],
+  checks: [{ id: 'T002-K1', kind: 'test', value: ALPHA_FILE }],
 });
 const finding: ReviewAnswer['findings'][number] = {
   id: 'F1',

@@ -44,7 +44,7 @@ Use this shape with real ids, commands and paths:
   "validation": {"language":"typescript","test":"npm test","testPattern":null},
   "tasks": [{
     "id":"T001", "title":"Add the health endpoint", "intent":"Return status ok from GET /health",
-    "criteria":["C1"], "checks":[{"id":"K1","kind":"test","value":"src/health.test.ts","required":true}],
+    "criteria":["C1"], "checks":[{"id":"K1","kind":"test","value":"src/health.test.ts"}],
     "suggestedFiles":["src/health.ts","src/health.test.ts"], "contextFiles":["src/router.ts"],
     "exclusions":["Do not change authentication behaviour"], "protectedOperations":null,
     "steps":null, "dependsOn":[], "batch":1
@@ -60,8 +60,8 @@ SPLITBRIEF searches beside the changed file and in the stack's test folders.
 SPLITBRIEF emits `discovered_validation_refused` when it refuses a discovered pattern.
 It uses the configured pattern, if present. Otherwise, it uses the stack's patterns.
 Task ids match `T` plus three digits. Each task has nonblank intent and at least one accepted criterion.
-Checks have id, kind, value and required. Register only `test` and `cmd` in these skills.
-`render` exists in the engine schema but is unavailable here. A required render criterion blocks pass as unverified.
+Checks have id, kind and value. Every check must pass. Register only `test` and `cmd` in these skills.
+`render` exists in the engine schema but is unavailable here. A render criterion blocks pass as unverified.
 Every criterion's checkIds must resolve to registered run or task checks. Never infer a check from prose.
 Suggested files have at least one entry while the parser requires an anchor file.
 Validate dependencies, id uniqueness, criterion coverage, check references and context fit. Repair once before pausing.

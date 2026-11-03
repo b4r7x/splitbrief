@@ -7,7 +7,6 @@ import { BOUNDS } from '../src/core/pipeline-spec/bounds.js';
 import { BRIEF_SECTION_ORDER, sliceRuleText } from '../src/core/pipeline-spec/brief.js';
 import { CAPTURE_LIMITS, NARROWING_RULE } from '../src/core/pipeline-spec/gates.js';
 import { HALT_SIGNATURES } from '../src/core/pipeline-spec/halts.js';
-import { DEFAULT_LOCAL_RETRIES } from '../src/core/pipeline-spec/retries.js';
 import { PROTECTED_PATHS_TEXT } from '../src/core/pipeline-spec/scope.js';
 import { TIMEOUTS } from '../src/core/pipeline-spec/timeouts.js';
 import { isListedCliTool } from '../src/core/runners/cli-tool-catalog.js';
@@ -62,7 +61,7 @@ const PLACEHOLDER_PLAN: Plan = {
   summary: '<the plan summary>',
   decisions: [],
   criteria: [{ id: '<C1>', text: '<what the criterion verifies>', checkIds: ['<K1>'] }],
-  checks: [{ id: '<K1>', kind: 'test', value: '<the check file or command>', required: true }],
+  checks: [{ id: '<K1>', kind: 'test', value: '<the check file or command>' }],
   validation: null,
 };
 
@@ -207,7 +206,7 @@ Read the workspace without editing it. Answer from this packet and the current c
 <per-task changed paths and touchedNotSuggested entries with reasons>
 
 ## Recorded Validation Output
-<reviewer check output and required checks by id, with commands, exits and artifact paths>
+<reviewer check output and checks by id, with commands, exits and artifact paths>
 
 ## Consults and user answers
 <consult log, previous review answers, rejected findings with reasons, and user answers>
@@ -217,7 +216,7 @@ Check the accepted behaviour, exclusions, edge cases, tests and repository rules
 Quote recorded output for each validation claim. State when evidence is absent.
 Only registered check ids can verify a criterion. Old evidence cannot verify changed code.
 Pending criteria are pending. Do not report them as a plan gap.
-Render checks are unavailable in these skills. A required render criterion stays unverified.
+Render checks are unavailable in these skills. A render criterion stays unverified.
 
 ## Typed answer
 Return one JSON object with tasks, criteria, findings, fixTasks, rejected and ask.
@@ -361,7 +360,7 @@ function consultTable(): string {
       'Only on a review without progress, and never while a red check or an Apply conflict blocks. Keep the open blockers and the failed verdict with a note. A workspace run is ready to apply as is, a checkout run closes, and a task-cadence review lets the next brief start.',
   };
   return [
-    `Attempt → ${DEFAULT_LOCAL_RETRIES} local retry with the exact errors → a consult.`,
+    'Attempt → a consult with the exact errors. A correction the user sent while the checks ran goes to the next attempt first.',
     'Every consult goes to the planner: a plan task, and a fix task the reviewer wrote, also after a rewrite or a split.',
     "The planner continues its planning session. A fix task's consult sends the full fix context on that session.",
     'Record a malformed answer as a failure of the planner. Apply no action.',
@@ -514,7 +513,7 @@ function gateRules(): string {
     'Refuse shell syntax, an environment prefix, a program run by path (`bin/test`), a shell or wrapper, and inline code. Refuse `npx` without `--no-install`, a download-and-run launcher or a setup command (`npm ci`, `pip install`, `go generate`). Refuse a program that does not verify a change. Refuse a reviewer check whose package script, task file, build wrapper or interpreter script the run changed. Name each refused reviewer check with its reason; a plan or task check is never refused for that. A plan may add a script and check it.',
     'Stop at the first reviewer check with new failures. Record each later reviewer check as `not run: <id> failed`. Run the project gate once at the run base during the build, with the same command text, one command at a time, and keep each result. Compare a red reviewer check with that result; wait for a base command that has not finished, and never run it a second time. A failure also red there is pre-existing. Report it and assign no fix task to it.',
     'A timeout, or a red with no failure keys, is never pre-existing. Report it as not verified at the run base and send it to the reviewer. Plan checks, task checks and the Apply re-check never run at the run base.',
-    'A red required check, or a new or not verified reviewer failure, becomes a pending input. The reviewer addresses every pending input in its review answer and writes the fix tasks. No completed brief reopens. The fix task carries the check id, command, output, file, its own `failureKeys` and all original `redKeys` per check id. Keep every original red key before the base split. Two fix tasks may share the failures of one pending input.',
+    'A red check, or a new or not verified reviewer failure, becomes a pending input. The reviewer addresses every pending input in its review answer and writes the fix tasks. No completed brief reopens. The fix task carries the check id, command, output, file, its own `failureKeys` and all original `redKeys` per check id. Keep every original red key before the base split. Two fix tasks may share the failures of one pending input.',
     'Keys come from the full process capture. A test row without FAILED or ERROR and a row with warning severity are not failure keys. SPLITBRIEF reads the severity where the tool prints it, not in the message text. An incomplete capture gives one placeholder key. With an incomplete capture, the fix command must pass.',
     'At either cadence, the brief gate of a fix task runs each carried check once under the same command policy. It makes no base re-run. A red passes when no own failure remains. An own failure that an unfinished fix task of the same cycle also carries is left to that task. Failures the task does not own do not gate it: their fix tasks or the next review answer them.',
     "When every own failure of a carried check is a test failure, run the stack's test runner on the own test files only. The full command runs at the next review. A type check, a lint, an unknown stack and a configured test command keep the full command.",

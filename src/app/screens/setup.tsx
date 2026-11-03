@@ -41,7 +41,7 @@ import { useSpinnerFrame } from '../../hooks/use-spinner-frame.js';
 import { useSlowProbeText } from '../../hooks/use-slow-probe-text.js';
 import { refreshPickerDetection } from '../../features/runners/refresh-detection.js';
 import { ApprovalPrompt } from '../../features/workflow/components/approval-prompt.js';
-import { joinBylineParts } from '../../features/workflow/input-footer-byline.js';
+import { fitCheckingRow } from '../../features/workflow/input-footer-byline.js';
 import { StartPreparationPanel } from '../../features/start-preparation/panel.js';
 import { observePreparationCleanup } from '../../features/start-preparation/observe-cleanup.js';
 import { useStartPreparation } from '../../features/start-preparation/use-start-preparation.js';
@@ -503,6 +503,7 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
     refreshPickerDetection,
   };
   const { exit } = useApp();
+  const { cols, rows } = terminalSizeStore.use((state) => state);
   const projectDir = configStore.use((state) => state.projectDir);
   const noConfig = configStore.use((state) => state.revision === null);
   const initialCrewSelected = useRef(false);
@@ -709,7 +710,13 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
   const preparationStatus =
     checkingStage === null
       ? undefined
-      : `${preparationFrame} ${joinBylineParts([checkingStage, slowProbe, preparing ? 'esc cancel' : null])}`;
+      : `${preparationFrame} ${fitCheckingRow({
+          frame: preparationFrame,
+          stage: checkingStage,
+          slowProbe,
+          cancellable: preparing,
+          width: overlayRect({ cols, rows, density: CREW_PANEL_DENSITY }).innerWidth,
+        })}`;
 
   return (
     <CrewStep

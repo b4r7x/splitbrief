@@ -13,7 +13,12 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
-import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
+import {
+  guidanceConsult,
+  passingReviewVerdict,
+  planFromTasks,
+  typedCallPlanAndReview,
+} from '#testing/helpers/typed-planner.js';
 import { ensureConfigGitignore } from '../../../src/core/config/load/document.js';
 import { createApiImplementer } from '../../../src/engine/implementers/api.js';
 import { makeOpenAiSseResponse } from '#testing/helpers/faux/openai-sse.js';
@@ -61,7 +66,15 @@ describe('an extracted-code writer in the run workspace', { timeout: 90_000 }, (
       validation: { endChecks: false, testCommand: 'noop' },
       workflow: { approve: 'none' },
     });
-    const planner = makePlanner({ typedCall: typedCallFromTasks([task]) });
+    // The failed first attempt goes to the consult, whose guidance the retry carries.
+    const planner = makePlanner({
+      typedCall: typedCallPlanAndReview(
+        () => planFromTasks([task]),
+        (prompt) => passingReviewVerdict(prompt),
+        undefined,
+        () => guidanceConsult(),
+      ),
+    });
     const callDirs: string[] = [];
     const contents = ['first attempt', 'retry', 'after continue'];
     let completionCalls = 0;

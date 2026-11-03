@@ -11,7 +11,12 @@ export function hashTaskBrief(tasks: Task[]): string {
       status: _s,
       checkResults: _checkResults,
       ...rest
-    }) => rest,
+    }) =>
+      // Briefs saved before every check had to pass hashed a `required` flag on each check. Every
+      // check is now required, so hashing it as `true` keeps the hash of such a brief.
+      rest.checks === undefined
+        ? rest
+        : { ...rest, checks: rest.checks.map((check) => ({ ...check, required: true })) },
   );
   const json = canonicalJSON(stripped);
   return sha256Hex(json);

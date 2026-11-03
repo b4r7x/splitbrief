@@ -219,6 +219,29 @@ describe('loadState', () => {
     expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toEqual(current);
   });
 
+  it('loads an old snapshot whose task and plan checks carry the required flag, and drops it', () => {
+    const dir = makeTmp();
+    const stateDir = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID);
+    mkdirSync(stateDir, { recursive: true });
+    const check = { id: 'K1', kind: 'cmd' as const, value: 'node --version' };
+    const current = {
+      ...createInitialState('old-required-checks'),
+      tasks: [makeTask({ checks: [check] })],
+      plan: { summary: 'Plan', decisions: [], criteria: [], checks: [check], validation: null },
+    };
+    const legacy = {
+      ...current,
+      tasks: current.tasks.map((task) => ({
+        ...task,
+        checks: [{ ...check, required: false }],
+      })),
+      plan: { ...current.plan, checks: [{ ...check, required: true }] },
+    };
+    writeFileSync(join(stateDir, 'state.json'), JSON.stringify(legacy));
+
+    expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toEqual(current);
+  });
+
   it('loads an old snapshot with a saved review answer and a reviewer verify, and drops them', () => {
     const dir = makeTmp();
     const stateDir = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID);

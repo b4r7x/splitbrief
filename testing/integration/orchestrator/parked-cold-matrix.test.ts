@@ -10,7 +10,7 @@ const CELL_FILE = 'testing/integration/orchestrator/parked-cold-process.test.ts'
 const ENTRIES = [0, 1, 2];
 
 describe('parked cold process matrix', () => {
-  it.each(['initial', 'local', 'consult'])(
+  it.each(['initial', 'consult'])(
     'keeps the stage over three cold entries of the %s route',
     (route) => {
       const proofDir = mkdtempSync(join(tmpdir(), 'splitbrief-parked-cold-'));

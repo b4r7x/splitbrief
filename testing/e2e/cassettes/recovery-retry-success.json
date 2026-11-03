@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "name": "recovery - task fails then retries successfully",
+  "name": "recovery - task fails, consults the planner, then retries successfully",
   "recordedAt": "2026-04-30T12:15:00.000Z",
   "entries": [
     {
@@ -141,6 +141,28 @@
           "authorization": "***",
           "content-type": "application/json"
         },
+        "body": "{\"purpose\":\"planner consult guidance\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"{\\\"answer\\\":{\\\"diagnosis\\\":\\\"The implementer answered in prose instead of returning the code.\\\",\\\"action\\\":\\\"guidance\\\",\\\"instructions\\\":\\\"Return src/form-validation.ts with the validateForm helper as code.\\\",\\\"context\\\":null}}\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":420,\"completion_tokens\":40}}\n\ndata: [DONE]\n\n"
+      },
+      "provider": "openai-compatible",
+      "durationMs": 640
+    },
+    {
+      "index": 7,
+      "recordedAt": "2026-04-30T12:15:07.000Z",
+      "request": {
+        "method": "POST",
+        "url": "http://localhost:11434/v1/chat/completions",
+        "headers": {
+          "authorization": "***",
+          "content-type": "application/json"
+        },
         "body": "{\"purpose\":\"retry implementer form validation code\"}"
       },
       "response": {
@@ -154,8 +176,8 @@
       "durationMs": 980
     },
     {
-      "index": 7,
-      "recordedAt": "2026-04-30T12:15:07.000Z",
+      "index": 8,
+      "recordedAt": "2026-04-30T12:15:08.000Z",
       "request": {
         "method": "POST",
         "url": "http://localhost:11434/v1/chat/completions",

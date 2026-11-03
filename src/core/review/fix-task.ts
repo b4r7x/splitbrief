@@ -36,7 +36,7 @@ export function fixReviewChecks(task: Task): Check[] {
     for (const id of finding.checkIds ?? []) {
       const command = finding.commands?.[id];
       if (REVIEW_CHECK_ID.test(id) && command !== undefined && !checks.has(id)) {
-        checks.set(id, { id, kind: 'cmd', value: command, required: true });
+        checks.set(id, { id, kind: 'cmd', value: command });
       }
     }
   }

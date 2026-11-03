@@ -6,7 +6,12 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { transition } from '../../../core/state/machine.js';
 import { TaskSpecSchema } from '../../../core/schemas/plan.js';
-import { CheckResultSchema, TaskIdSchema } from '../../../core/schemas/task.js';
+import {
+  CheckResultSchema,
+  CheckSchema,
+  TaskIdSchema,
+  type Task,
+} from '../../../core/schemas/task.js';
 import { TaskStatusSchema } from '../../../core/schemas/enums.js';
 import { taskFromSpec } from '../../spec/plan-tasks.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
@@ -143,5 +148,40 @@ describe('persistTaskEvidence — recorded runs', () => {
       'T014',
     ]);
     expect(unreached.map((entry) => entry.briefHash)).toEqual(unreached.map(() => null));
+  });
+});
+
+/** A brief of S9 as the engine dispatched it, loaded from the saved plan with its check flags. */
+function s9Brief(id: string): Task {
+  const run = RecordedRunSchema.parse(
+    JSON.parse(readFileSync(join(RECORDED_RUNS, 's9.json'), 'utf8')),
+  );
+  const spec = run.tasks.find((task) => task.id === id);
+  if (spec === undefined) throw new Error(`${id} is not in the S9 plan`);
+  return taskFromSpec(spec, makeTaskWorkflowContext().projectDir);
+}
+
+describe('hashTaskBrief — briefs saved with a required flag on their checks', () => {
+  it('keeps the hash of a saved brief whose checks were all required', () => {
+    expect(hashTaskBrief([s9Brief('T001')])).toBe(
+      '8f3d7f5d9d3f1d451d79eed8c13a4166af78d8923202ce65c02cb082c52b8b1f',
+    );
+  });
+
+  it('hashes a check an old plan marked optional as the check every brief now must pass', () => {
+    const optional = s9Brief('T009');
+    const required: Task = {
+      ...optional,
+      checks: (optional.checks ?? []).map((check) =>
+        CheckSchema.parse({ ...check, required: true }),
+      ),
+    };
+    expect(hashTaskBrief([optional])).toBe(hashTaskBrief([required]));
+  });
+
+  it('loads a saved check without its required flag', () => {
+    expect(s9Brief('T009').checks).toEqual([
+      { id: 'T009-K1', kind: 'test', value: 'scripts/recovery-producers.test.ts' },
+    ]);
   });
 });

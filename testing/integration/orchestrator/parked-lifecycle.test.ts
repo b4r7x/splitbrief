@@ -1,9 +1,9 @@
 import { sha256Hex } from '../../../src/utils/sha256.js';
 import { readEvidenceLedger } from '../../../src/core/evidence/ledger-storage.js';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -38,66 +38,7 @@ function fixture() {
   return { projectDir, sessionId, task, state, config };
 }
 
-it.each(['returned', 'thrown', 'success'] as const)(
-  'keeps partial bytes when a local retry is stopped: %s',
-  async (kind) => {
-    const f = fixture();
-    const stop = new AbortController();
-    let retryWorkspace = '';
-    let retryAttempt = -1;
-    const stopped = await runSingleTask({
-      wctx: makeWctx({
-        ...f,
-        isolation: makeCopyingIsolation({ projectDir: f.projectDir, sessionId: f.sessionId }),
-        signal: stop.signal,
-        implementer: makeImplementer({
-          capabilities: { writesFiles: 'direct' },
-          implement: vi.fn(async () => ({
-            success: false,
-            output: '',
-            error: 'first call failed',
-          })),
-          retry: vi.fn(async (opts) => {
-            retryWorkspace = opts.projectDir;
-            retryAttempt = opts.attempt;
-            roots.push(dirname(retryWorkspace));
-            writeFileSync(join(retryWorkspace, 'partial.ts'), 'valuable retry partial');
-            stop.abort();
-            if (kind === 'thrown') throw new DOMException('Stopped', 'AbortError');
-            return {
-              success: kind === 'success',
-              output: '',
-              ...(kind === 'success' ? {} : { outcome: 'user-abort' as const }),
-            };
-          }),
-        }),
-      }),
-      task: f.task,
-      state: f.state,
-      index: 0,
-      totalTasks: 1,
-      taskBreakdowns: [],
-      setTrackedState: () => {},
-      setCurrentTask: () => {},
-    });
-    console.log(
-      JSON.stringify({
-        case: `retry-${kind}`,
-        retryAttempt,
-        returnedAttempt: stopped.attempt,
-        persistedAttempt: loadState(f)?.attempt,
-        workspaceExists: existsSync(retryWorkspace),
-        partialExists: existsSync(join(retryWorkspace, 'partial.ts')),
-      }),
-    );
-    expect(retryAttempt).toBe(1);
-    expect(existsSync(join(retryWorkspace, 'partial.ts'))).toBe(true);
-    expect(stopped.attempt).toBe(retryAttempt);
-    expect(existsSync(join(f.projectDir, '.git/index'))).toBe(false);
-  },
-);
-
-it.each(['initial', 'local', 'consult'] as const)(
+it.each(['initial', 'consult'] as const)(
   'keeps a successful %s writer when Stop arrives during pre-promotion approval',
   async (route) => {
     const f = fixture();
@@ -128,10 +69,7 @@ it.each(['initial', 'local', 'consult'] as const)(
           route === 'initial'
             ? writeResult(opts)
             : { success: false, output: '', error: 'initial failure' },
-        retry: async (opts) =>
-          route === 'consult' && opts.kind === 'local'
-            ? { success: false, output: '', error: 'the local retry needs the planner' }
-            : writeResult(opts),
+        retry: async (opts) => writeResult(opts),
       }),
     });
     wctx.callbacks.onTieredApproval = async () => {
@@ -225,9 +163,6 @@ it.each(['returned', 'thrown', 'success'] as const)(
           error: 'first call failed',
         }),
         retry: async (opts) => {
-          if (opts.kind === 'local') {
-            return { success: false, output: '', error: 'the local retry needs the planner' };
-          }
           workspace = opts.projectDir;
           attempt = opts.attempt;
           writeFileSync(join(workspace, 'partial.ts'), 'consult retry work');

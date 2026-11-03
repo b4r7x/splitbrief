@@ -194,7 +194,7 @@ describe('runRetryStep', () => {
   it('keeps a correction after validation passes when the implementer retry reports no usage', async () => {
     const ref = setupProject();
     const task = makeTask({
-      checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+      checks: [{ id: 'K1', kind: 'cmd', value: 'node --version' }],
     });
     const state = makeImplState([task]);
     const { bus, events } = makeBusRecorder();
@@ -237,7 +237,7 @@ describe('runRetryStep', () => {
       retryFailureFallback: 'retry failed',
       invokeRetry: makeImplementerRetryInvoker({
         context: ctx.context,
-        kind: 'local',
+        kind: 'correction',
         sessionId: ref.sessionId,
         languageContext: buildLanguageContext('typescript'),
         phase: state.phase,
@@ -294,7 +294,7 @@ describe('runRetryStep', () => {
       retryFailureFallback: 'retry failed',
       invokeRetry: makeImplementerRetryInvoker({
         context: ctx.context,
-        kind: 'local',
+        kind: 'correction',
         sessionId: ref.sessionId,
         languageContext: buildLanguageContext('typescript'),
         phase: state.phase,
@@ -395,7 +395,7 @@ describe('runRetryStep', () => {
       retryFailureFallback: 'retry failed',
       invokeRetry: makeImplementerRetryInvoker({
         context: ctx.context,
-        kind: 'local',
+        kind: 'correction',
         sessionId: ref.sessionId,
         languageContext: buildLanguageContext('typescript'),
         phase: state.phase,
@@ -462,7 +462,7 @@ describe('runRetryStep', () => {
         retryFailureFallback: 'retry failed',
         invokeRetry: makeImplementerRetryInvoker({
           context: ctx.context,
-          kind: 'local',
+          kind: 'correction',
           sessionId: ref.sessionId,
           languageContext: buildLanguageContext('typescript'),
           phase: state.phase,
@@ -747,7 +747,7 @@ describe('runRetryStep', () => {
       retryFailureFallback: 'retry failed',
       invokeRetry: makeImplementerRetryInvoker({
         context: defaultContext,
-        kind: 'local',
+        kind: 'correction',
         sessionId,
         languageContext: buildLanguageContext('typescript'),
         phase: state.phase,
@@ -840,7 +840,7 @@ describe('runRetryStep', () => {
       retryFailureFallback: 'Intermediate escalation failed',
       invokeRetry: makeImplementerRetryInvoker({
         context: defaultContext,
-        kind: 'local',
+        kind: 'correction',
         sessionId,
         languageContext: buildLanguageContext('typescript'),
         phase: state.phase,
@@ -916,7 +916,7 @@ describe('runRetryStep', () => {
           context: defaultContext,
           error: lastError,
           attempt: attempts,
-          kind: 'local',
+          kind: 'correction',
           onOutput: () => {},
           phase: state.phase,
         }),
@@ -1077,7 +1077,7 @@ describe('runRetryStep', () => {
         retryFailureFallback: 'retry failed',
         invokeRetry: makeImplementerRetryInvoker({
           context: defaultContext,
-          kind: 'local',
+          kind: 'correction',
           sessionId,
           languageContext: buildLanguageContext('typescript'),
           phase: state.phase,

@@ -33,6 +33,7 @@ import {
   probeCliReadiness,
   probeDeclaredCliReadinessEvidence,
   type AuthProbeRun,
+  type VersionProbeReads,
 } from '../runners/cli-tools/readiness-probe.js';
 import { isDeclaredCliProbeContract } from '../runners/cli-tools/contract.js';
 import { probeContextCatalog } from './catalog-probe.js';
@@ -71,6 +72,8 @@ export interface DetectRunnerEvidenceOptions {
   catalogNamesProject?: boolean | undefined;
   /** Observation-only catalog attribution handoff; receives an immutable receipt snapshot. */
   onResolvedCliExecutable?: ((executable: CliExecutableIdentity) => void) | undefined;
+  /** The version checks one preparation already ran; a read of the same executable reuses them. */
+  versionProbes?: VersionProbeReads | undefined;
   now?: (() => number) | undefined;
   signal?: AbortSignal | undefined;
 }
@@ -599,6 +602,7 @@ async function probeResolvedCliEvidence(
     probe: probe.declared,
     ...(context.authChannel !== undefined ? { authChannel: context.authChannel } : {}),
     ...(signal !== undefined ? { signal } : {}),
+    versionProbes: options.versionProbes,
     // A tool whose auth oracle is its model listing (`agy models`) is spawned once per pass.
     ...(catalogRequested
       ? {

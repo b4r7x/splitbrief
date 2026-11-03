@@ -27,7 +27,7 @@ import {
   survivorsAfter,
   withHiddenRetryCheck,
 } from '../../../helpers/live-paths.js';
-import { eventField, readEventEntries } from '../../../helpers/run-dir-assertions.js';
+import { readEventEntries } from '../../../helpers/run-dir-assertions.js';
 
 const itLive = livePathsEnabled() ? it : it.skip;
 
@@ -40,7 +40,7 @@ afterEach(async (ctx) => {
 });
 
 describe('live paths: failed check, then retry', { timeout: 2 * LIVE_PATHS_TIMEOUT_MS }, () => {
-  itLive('a hidden check forces retry feedback and passes', async (ctx) => {
+  itLive('a hidden check forces a consult, retry feedback and passes', async (ctx) => {
     const crew = resolveLivePathsCrew();
     const gate = await gateLiveMatrixRow(
       [crew.plan.tool, crew.build.tool, crew.review.tool],
@@ -88,11 +88,10 @@ describe('live paths: failed check, then retry', { timeout: 2 * LIVE_PATHS_TIMEO
         ),
     });
     const ref = { projectDir, sessionId };
-    const retries = readEventEntries(runSessionDir(ref)).filter(
-      (entry) => entry.type === 'task_retry',
+    const consults = readEventEntries(runSessionDir(ref)).filter(
+      (entry) => entry.type === 'consult_answered',
     );
-    expect(retries.length).toBeGreaterThan(0);
-    expect(eventField(retries[0]?.data, 'error')).toContain('Hidden acceptance check:');
+    expect(consults.length).toBeGreaterThan(0);
     expect(retryFeedback[0]).toContain('Hidden acceptance check:');
 
     expect(readRunState(ref).closed?.as).toBe('applied');

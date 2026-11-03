@@ -48,7 +48,7 @@ A typical run, step by step:
 4. SPLITBRIEF checks the plan deterministically (every criterion has a check and a task, the dependencies make sense, every task fits the implementer's context); a failing plan goes back to the planner once
 5. User reviews the plan on one plan card: approve, request changes, edit `plan.json`, or end the run. Approving also confirms the protected writes the plan lists
 6. For each task, the implementer writes in the run workspace. SPLITBRIEF checks the changed files there and runs the task's own fast checks, such as its test file or the typecheck. Before the final review SPLITBRIEF runs the project gate that the plan names. With `workflow.review: task`, a task review runs no gate.
-7. If validation fails: the implementer retries once, then the planner is consulted for one typed answer, also for a fix task the reviewer wrote — guidance, a rewritten or split brief, a re-run of the checks, or one question for the user
+7. If validation fails, the planner is consulted for one typed answer, also for a fix task the reviewer wrote — guidance, a rewritten or split brief, a re-run of the checks, or one question for the user
 8. If the ladder cannot go on (a question nobody answers, a seat that says the brief cannot be done, a failed consult call, a runner halt): enter recovery — the user can try again with an answer, switch the seat, skip the task or end the run. Each halt shows as *Needs you* (a decision only you can make) or *Seat down* (the seat cannot run)
 9. The review seat reviews the final result against the briefs and the request — the planner, unless a `reviewer` is configured
 10. The summary is written to disk. A passing workspace review makes the result [ready to apply](./WORKFLOW.md#apply).
@@ -138,7 +138,7 @@ A worktree isolates files, not runtime and not trust. It shares the ports, the d
 
 SPLITBRIEF owns correctness through validation and the final review. No check runs before the first task. The planner reads the project and names the project gate in the plan; SPLITBRIEF runs it under the reviewer command policy (`validation.end_checks`, on by default), which runs any installed program and refuses only the dangerous ones. `workflow.review` sets when: `end` runs the gate at the final review, and each task's own checks, except renders, after the task; `task` runs each task's own checks and due checks after it, and the gate only at the final review. During the build the gate also runs once, with the same command text, on a disposable copy of the run base, and a red reviewer check is compared with that result. Matching failures are pre-existing and start no fix. A failure it cannot compare, such as a timeout, is never pre-existing: the reviewer decides. The review reports them before Apply. The implementer's own checks can improve its work, but do not decide acceptance.
 
-If validation fails, the implementer retries once with the error message. Then SPLITBRIEF asks the planner, read-only, for one typed answer:
+If validation fails, SPLITBRIEF asks the planner, read-only, for one typed answer. The planner sees the error message:
 
 - **Guidance** — the implementer retries once more with the planner's instructions in its error block
 - **Rewrite-task** — the brief is replaced at the same id, one revision further, and the failing attempt's own edits are rolled back first

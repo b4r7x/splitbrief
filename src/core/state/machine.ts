@@ -19,7 +19,6 @@ import { isQueuedMessageClearable, isQueuedMessagePendingDelivery } from '../que
 import { taskStatusForCompletionMethod } from '../task-completion.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { includes } from '../../utils/type-guards.js';
-import { DEFAULT_LOCAL_RETRIES } from '../pipeline-spec/retries.js';
 import { BOUNDS } from '../pipeline-spec/bounds.js';
 import { insertTasksAfter, lineageIdOf } from './task-insert.js';
 import { isInDeclaredSet, taskDeclaredPatterns } from '../scope/declared-set.js';
@@ -36,6 +35,7 @@ const anytimeActions = [
   'RECORD_WORKSPACE',
   'INTERRUPT_STEP',
   'RESUME_STEP',
+  'CONTINUE_STEP',
   'RECORD_REJECT',
   'RESTORE_BRIEF_PARK',
   'SET_PLANNER_CONVERSATION',
@@ -378,9 +378,6 @@ export function transition(
     }
 
     case 'VALIDATION_FAIL':
-      if (state.attempt < DEFAULT_LOCAL_RETRIES) {
-        return { ...state, phase: 'implementing', attempt: state.attempt + 1 };
-      }
       return { ...state, phase: 'escalating' };
 
     case 'ESCALATE':
@@ -749,6 +746,14 @@ export function transition(
           (state.phase === 'implementing' ||
             state.phase === 'validating-task' ||
             state.phase === 'escalating') && { phase: 'implementing' as const }),
+        interruptedStep: undefined,
+        awaitingContinue: false,
+        lastFailure: undefined,
+      };
+
+    case 'CONTINUE_STEP':
+      return {
+        ...state,
         interruptedStep: undefined,
         awaitingContinue: false,
         lastFailure: undefined,

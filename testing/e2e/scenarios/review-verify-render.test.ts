@@ -59,10 +59,7 @@ writeFileSync(${JSON.stringify(MARKER_FILE)}, ${JSON.stringify(MARKER_SOURCE)});
       tasks: [
         {
           ...task,
-          checks: [
-            ...task.checks,
-            { id: 'T001-R1', kind: 'render', value: 'greet-card', required: true },
-          ],
+          checks: [...task.checks, { id: 'T001-R1', kind: 'render', value: 'greet-card' }],
         },
       ],
     },

@@ -34,7 +34,7 @@ function assertUnborn(dir: string) {
   expect(readdirSync(join(dir, '.git/objects')).sort()).toEqual(['info', 'pack']);
   expect(readdirSync(join(dir, '.git/objects/pack'))).toEqual([]);
 }
-it.each(['initial', 'local', 'consult'] as const)(
+it.each(['initial', 'consult'] as const)(
   'repeated workflow resume preserves %s output and the stopped attempt',
   async (route) => {
     const projectDir = mkdtempSync(join(tmpdir(), 'validator-cold-workflow-'));
@@ -53,7 +53,7 @@ it.each(['initial', 'local', 'consult'] as const)(
       approval: { feedRejectionsToPlanner: false },
     });
     const ref = { projectDir, sessionId };
-    const expectedAttempt = route === 'consult' ? 2 : route === 'initial' ? 0 : 1;
+    const expectedAttempt = route === 'consult' ? 1 : 0;
     let saved: WorkflowState | undefined;
     const observed: Array<{
       attempt: number;
@@ -116,17 +116,16 @@ it.each(['initial', 'local', 'consult'] as const)(
             entry === 0 && route !== 'initial'
               ? { success: false, output: '', error: `${route} initial failure` }
               : writeAndStop(opts),
-          retry: async (opts) =>
-            route === 'consult' && opts.kind === 'local'
-              ? { success: false, output: '', error: 'the local retry needs the planner' }
-              : writeAndStop(opts),
+          retry: async (opts) => writeAndStop(opts),
         }),
       });
       assertUnborn(projectDir);
       const state = loadState(ref);
       if (state === null) throw new Error('missing saved workflow');
+      // The first entry's stop cuts the consult-guided retry, which runs escalating; a
+      // re-entry resumes the cut brief as implementing.
       expect(state).toMatchObject({
-        phase: 'implementing',
+        phase: route === 'consult' && entry === 0 ? 'escalating' : 'implementing',
         attempt: expectedAttempt,
         awaitingContinue: true,
         interruptedStep: {

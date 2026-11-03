@@ -1187,6 +1187,35 @@ describe('collectArgVectorPreflightChecks — default help invocation', () => {
     expect(helpInvocations(log)).toEqual(['--help']);
   });
 
+  // With no HOME, `cmd` reads the user's own home through the account database. It then shows and
+  // clears a pending "Updated X → Y" notice there, so the user never sees it in their next session.
+  it('runs the help in a HOME of its own, never the user home', async () => {
+    const project = tempDir('preflight-project');
+    const toolDir = tempDir('preflight-tools');
+    const hostHome = tempDir('preflight-host-home');
+    const envRecord = join(toolDir, 'child-home');
+    writeFileSync(
+      join(toolDir, 'cmd'),
+      [
+        '#!/bin/sh',
+        `printf '%s\\n' "\${HOME-<unset>}" >> ${JSON.stringify(envRecord)}`,
+        `cat ${JSON.stringify(join(CLI_HELP_FIXTURES, 'command-code-help.txt'))}`,
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    chmodSync(join(toolDir, 'cmd'), 0o755);
+    vi.stubEnv('HOME', hostHome);
+    vi.stubEnv('PATH', `${toolDir}${delimiter}${process.env.PATH ?? ''}`);
+
+    await plannerChecks(project, { tool: 'command-code', model: 'claude-opus-5' });
+
+    const childHome = readFileSync(envRecord, 'utf8').trim();
+    expect(childHome).not.toBe('<unset>');
+    expect(childHome).not.toBe(hostHome);
+    expect(childHome).not.toBe('');
+  });
+
   // The seat carries an effort so the recorded help — where `-c, --config <key=value>` stands
   // alone on its entry line and the description follows indented — is what the short-flag
   // comparison is pinned against, not only the hand-written CODEX_HELP above.

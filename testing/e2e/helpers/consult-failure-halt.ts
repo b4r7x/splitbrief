@@ -20,7 +20,7 @@ const alpha = makeTaskSpec({
   intent: 'Return the alpha value.',
   criteria: ['C1'],
   suggestedFiles: [ALPHA_FILE],
-  checks: [{ id: 'T001-K1', kind: 'test', value: ALPHA_FILE, required: true }],
+  checks: [{ id: 'T001-K1', kind: 'test', value: ALPHA_FILE }],
 });
 export const plan = makePlanProposal({
   summary: 'Add one value.',
@@ -46,7 +46,7 @@ export const dependentPlan = makePlanProposal({
       criteria: ['C2'],
       dependsOn: [alpha.id],
       suggestedFiles: [BETA_FILE],
-      checks: [{ id: 'T002-K1', kind: 'test', value: BETA_FILE, required: true }],
+      checks: [{ id: 'T002-K1', kind: 'test', value: BETA_FILE }],
     }),
   ],
 });

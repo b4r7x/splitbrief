@@ -81,8 +81,8 @@ export const PLAN_ANSWER = {
         intent: 'Add a standalone greeting helper plus the run marker constant beside it.',
         criteria: ['C1'],
         checks: [
-          { id: 'T001-K1', kind: 'test', value: GREET_FILE, required: true },
-          { id: 'T001-K2', kind: 'test', value: GREET_FILE, required: true },
+          { id: 'T001-K1', kind: 'test', value: GREET_FILE },
+          { id: 'T001-K2', kind: 'test', value: GREET_FILE },
         ],
         suggestedFiles: [GREET_FILE, MARKER_FILE],
         contextFiles: [],

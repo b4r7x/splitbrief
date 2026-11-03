@@ -3,7 +3,7 @@ import { plainUserMessage } from '../../../core/types/user-input.js';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
 import { join } from 'node:path';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { lineageAttemptsOf, type WorkflowState } from '../../../core/schemas/workflow.js';
 import { transition } from '../../../core/state/machine.js';
@@ -25,7 +25,6 @@ import {
   disposeWctxIsolations,
 } from '#testing/helpers/orchestrator-factories.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
-import { DEFAULT_LOCAL_RETRIES } from '../../../core/pipeline-spec/retries.js';
 import type { Planner, TypedCallContext } from '../../planners/types.js';
 import type { Implementer } from '../../implementers/types.js';
 import { createSteeringPort } from '../../calls/steering.js';
@@ -151,7 +150,6 @@ describe('handleRetryAndEscalation', () => {
     ]);
     const implementer = makeImplementer({
       retry: async (opts) => {
-        if (opts.kind === 'local') return { success: false, output: '', error: 'still broken' };
         const detach = opts.steering?.attach({
           callId: 'consult-retry',
           role: 'implementer',
@@ -177,16 +175,16 @@ describe('handleRetryAndEscalation', () => {
       currentState: makeValidatingState(),
     });
 
-    expect(outcome.result).toMatchObject({ completed: true, method: 'consulted', attempts: 2 });
+    expect(outcome.result).toMatchObject({ completed: true, method: 'consulted', attempts: 1 });
     expect(received).toEqual(['keep the alias']);
     expect(steering.current()).toBeNull();
   });
 
-  it('delivers a correction from green verify checks during a consult without another retry rung', async () => {
+  it('delivers a correction from green verify checks during a consult without another consult', async () => {
     const ref = setupProject();
     const task = makeTask({
       id: 'T001',
-      checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+      checks: [{ id: 'K1', kind: 'cmd', value: 'node --version' }],
     });
     const currentState = transition(transition(makeImplState([task]), { type: 'TASK_SENT' }), {
       type: 'COUNT_ATTEMPT',
@@ -195,7 +193,6 @@ describe('handleRetryAndEscalation', () => {
     const { bus, events } = makeBusRecorder();
     const retry = vi
       .fn<Implementer['retry']>()
-      .mockResolvedValueOnce({ success: false, output: '', error: 'still broken' })
       .mockResolvedValueOnce({ success: false, output: '', error: 'still broken' })
       .mockResolvedValueOnce({ success: true, output: 'fixed' });
     const { planner, prompts } = consultPlanner([
@@ -241,28 +238,98 @@ describe('handleRetryAndEscalation', () => {
     });
 
     expect(prompts).toHaveLength(2);
-    expect(retry).toHaveBeenCalledTimes(3);
-    expect(retry.mock.calls[2]?.[0]).toMatchObject({ error: CORRECTION_AFTER_CHECKS });
-    expect(retry.mock.calls[2]?.[0].continuation?.steer).toContain('keep the alias');
+    expect(retry).toHaveBeenCalledTimes(2);
+    expect(retry.mock.calls[1]?.[0]).toMatchObject({ error: CORRECTION_AFTER_CHECKS });
+    expect(retry.mock.calls[1]?.[0].continuation?.steer).toContain('keep the alias');
     expect(runCommand).toHaveBeenCalledTimes(2);
-    expect(outcome.result).toMatchObject({ completed: true, method: 'consulted', attempts: 3 });
+    expect(outcome.result).toMatchObject({ completed: true, method: 'consulted', attempts: 2 });
     expect(outcome.state.tasks[0]?.status).toBe('done');
-    expect(outcome.state.lineages?.T001).toMatchObject({ attempts: 4 });
+    expect(outcome.state.lineages?.T001).toMatchObject({ attempts: 3 });
     expect(outcome.state.lineages?.T001?.consultRecords).toHaveLength(2);
     expect(outcome.state.pendingRecovery).toBeUndefined();
-    expect(events.filter((event) => event.type === 'task_retry')).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'task_retry')).toEqual([]);
     expect(events.filter((event) => event.type === 'queue_drained')).toEqual([
       expect.objectContaining({ count: 1, seat: 'build', taskId: task.id }),
     ]);
     expect(loadState(ref)?.messageQueue[0]?.deliveredTo?.implementer).toBeDefined();
   });
 
-  it('retry succeeds on attempt 1 → completed with method=local', async () => {
+  it('consults the planner before the first retry, with no local retry', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const { bus, events } = makeBusRecorder();
+    const order: string[] = [];
+    bus.subscribe((event) => {
+      if (event.type === 'consult_answered') order.push('consult');
+    });
+    const retry = vi.fn<Implementer['retry']>(async (opts) => {
+      order.push(`${opts.kind} retry, attempt ${opts.attempt}`);
+      return { success: true, output: 'fixed' };
+    });
+    const { planner, prompts } = consultPlanner([
+      guidanceAnswer('The export is missing', 'Add the named export.'),
+    ]);
+
+    const { result } = await handleRetryAndEscalation({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig(),
+        planner,
+        implementer: makeImplementer({ retry }),
+        bus,
+      }),
+      task: makeTask(),
+      initialError: 'type error',
+      currentState: makeValidatingState(),
+    });
+
+    expect(order).toEqual(['consult', 'consult retry, attempt 1']);
+    expect(prompts[0]).toContain('type error');
+    expect(events.filter((e) => e.type === 'task_retry')).toEqual([]);
+    expect(result).toMatchObject({ completed: true, method: 'consulted', attempts: 1 });
+  });
+
+  it('halts as repeated timeouts when the first call and the consult-guided attempt both time out', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const config = makeNoValidationConfig();
+    const retry = vi.fn<Implementer['retry']>().mockResolvedValue({
+      success: false,
+      output: '',
+      error: 'implementer timed out',
+      outcome: 'timeout',
+    });
+    const { planner, prompts } = consultPlanner([
+      guidanceAnswer('The call ran out of time', 'Write the smaller change first.'),
+    ]);
+
+    const { result, state } = await handleRetryAndEscalation({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config,
+        planner,
+        implementer: makeImplementer({ retry }),
+        bus: makeBusRecorder().bus,
+      }),
+      task: makeTask(),
+      initialError: 'implementer timed out',
+      currentState: makeValidatingState(),
+      initialFailure: { outcome: 'timeout', runner: config.implementer },
+    });
+
+    expect(prompts).toHaveLength(1);
+    expect(retry).toHaveBeenCalledTimes(1);
+    expect(retry.mock.calls[0]?.[0]).toMatchObject({ kind: 'consult' });
+    expect(result.completed).toBe(false);
+    expect(state.pendingRecovery).toMatchObject({ reason: 'runner-timeout-repeated' });
+  });
+
+  it('delivers a held correction before any consult and completes with method=local', async () => {
     const { projectDir, sessionId } = setupProject();
     const { callbacks } = makeCallbacks();
-    const planner = makePlanner();
+    const { planner, prompts } = consultPlanner([]);
     const task = makeTask();
-    const state = makeValidatingState();
+    const state = transition(makeValidatingState(), { type: 'RESUME_TASK' });
     const implementer = makeImplementer(); // default retry returns success
 
     const { result } = await handleRetryAndEscalation({
@@ -276,19 +343,24 @@ describe('handleRetryAndEscalation', () => {
         bus: makeBusRecorder().bus,
       }),
       task,
-      initialError: 'type error',
+      initialError: 'Use the existing helper.',
       currentState: state,
+      initialAnswer: 'Use the existing helper.',
     });
 
     expect(result.completed).toBe(true);
     expect(result.method).toBe('local');
+    expect(prompts).toEqual([]);
+    expect(implementer.retry).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'correction', error: 'Use the existing helper.' }),
+    );
   });
 
-  it('spends the local retries with the exact errors, then consults the planner in order', async () => {
+  it('consults the planner on every red with the exact errors, in order', async () => {
     const { projectDir, sessionId } = setupProject();
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
-    const implementer = failingImplementer(2);
+    const implementer = failingImplementer(1);
     const { planner, prompts } = consultPlanner([
       guidanceAnswer('First diagnosis', 'Use the named export.'),
       guidanceAnswer('Second diagnosis', 'Check the import path.'),
@@ -313,19 +385,19 @@ describe('handleRetryAndEscalation', () => {
       (call) => (call[0] as { error: string }).error,
     );
     expect(errors).toEqual([
-      'type error',
       expect.stringContaining('Use the named export.'),
       expect.stringContaining('Check the import path.'),
     ]);
-    expect(events.filter((e) => e.type === 'task_retry')).toHaveLength(DEFAULT_LOCAL_RETRIES);
+    expect(events.filter((e) => e.type === 'task_retry')).toEqual([]);
     expect(events.filter((e) => e.type === 'task_escalating')).toHaveLength(1);
     expect(events.filter((e) => e.type === 'consult_answered')).toHaveLength(2);
     expect(events.filter((e) => e.type === 'escalate')).toEqual([]);
     expect(prompts[0]).toContain('# Consult on a failing task');
-    expect(prompts[0]).toContain('still broken');
+    expect(prompts[0]).toContain('type error');
     expect(prompts[1]).toContain('## Brief History');
     expect(prompts[1]).toContain('First diagnosis');
-    expect(result).toMatchObject({ completed: true, method: 'consulted', attempts: 3 });
+    expect(prompts[1]).toContain('still broken');
+    expect(result).toMatchObject({ completed: true, method: 'consulted', attempts: 2 });
     expect(state.pendingRecovery).toBeUndefined();
   });
 
@@ -365,7 +437,10 @@ describe('handleRetryAndEscalation', () => {
       const implementer = createImplementerBase(
         makeBaseConfig({ invoke, publisher: createImplementerPublisher(bus) }),
       );
-      const { planner } = consultPlanner([guidanceAnswer('The export is missing', 'Add it.')]);
+      const { planner } = consultPlanner([
+        guidanceAnswer('The export is missing', 'Add it.'),
+        guidanceAnswer('There is still no code', 'Write the export.'),
+      ]);
 
       const outcome = await handleRetryAndEscalation({
         wctx: makeWctx({ projectDir, sessionId, planner, implementer, bus }),
@@ -379,9 +454,7 @@ describe('handleRetryAndEscalation', () => {
       expect(counts.map((line) => line.split(' · ').at(-1))).toEqual(
         kind === 'consult' ? ['attempt 2', 'attempt 3'] : ['attempt 3'],
       );
-      expect(events.filter((event) => event.type === 'task_retry')).toHaveLength(
-        kind === 'consult' ? 1 : 0,
-      );
+      expect(events.filter((event) => event.type === 'task_retry')).toEqual([]);
       expect(lineageAttemptsOf(outcome.state, task)).toBe(3);
       expect(runViewStore.get().briefs).toMatchObject({ currentAttempt: 3 });
     },
@@ -392,10 +465,7 @@ describe('handleRetryAndEscalation', () => {
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
     const implementer = makeImplementer({
-      retry: vi
-        .fn()
-        .mockResolvedValueOnce({ success: false, output: '', error: 'still broken' })
-        .mockResolvedValueOnce({ success: true, output: 'fixed', usage: null }),
+      retry: vi.fn().mockResolvedValueOnce({ success: true, output: 'fixed', usage: null }),
     });
     const { planner } = consultPlanner([
       guidanceAnswer('The export is missing', 'Add the named export.', 'src/greet.ts'),
@@ -418,7 +488,7 @@ describe('handleRetryAndEscalation', () => {
 
     expect(result.completed).toBe(true);
     expect(result.method).toBe('consulted');
-    expect(result.attempts).toBe(2);
+    expect(result.attempts).toBe(1);
     expect(events.find((e) => e.type === 'consult_answered')).toMatchObject({
       type: 'consult_answered',
       taskId: 'T001',
@@ -426,10 +496,10 @@ describe('handleRetryAndEscalation', () => {
       action: 'guidance',
       diagnosis: 'The export is missing',
     });
-    const consultError = (implementer.retry as ReturnType<typeof vi.fn>).mock.calls[1]?.[0] as {
+    const consultError = (implementer.retry as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as {
       error: string;
     };
-    expect(consultError.error).toContain('still broken');
+    expect(consultError.error).toContain('type error');
     expect(consultError.error).toContain('Add the named export.');
     expect(consultError.error).toContain('src/greet.ts');
   });
@@ -458,7 +528,11 @@ describe('handleRetryAndEscalation', () => {
       }),
       task: makeTask(),
       initialError: 'still broken',
-      currentState: makeValidatingState(),
+      // The first call is booked on the lineage before the ladder, as `retryAndRecord` does.
+      currentState: transition(makeValidatingState(), {
+        type: 'COUNT_ATTEMPT',
+        taskId: makeTask().id,
+      }),
     });
 
     const children = state.tasks.filter((task) => task.parentId === 'T001');
@@ -497,13 +571,13 @@ describe('handleRetryAndEscalation', () => {
     expect(after.pendingRecovery).toBeUndefined();
   });
 
-  it('a refused command line halts the ladder with a recipe-invalid recovery, without a consult', async () => {
+  it('a refused command line halts the ladder with a recipe-invalid recovery, without a second consult', async () => {
     const { projectDir, sessionId } = setupProject();
     const { callbacks } = makeCallbacks();
     const { bus, events: busEvents } = makeBusRecorder();
     const task = makeTask({ id: 'T007' });
     const state: WorkflowState = { ...makeValidatingState(), tasks: [task] };
-    const { planner, prompts } = consultPlanner([]);
+    const { planner, prompts } = consultPlanner([guidanceAnswer('The flag is wrong', 'Retry.')]);
     const implementer = makeImplementer({
       retry: vi.fn().mockResolvedValue({
         success: false,
@@ -529,7 +603,7 @@ describe('handleRetryAndEscalation', () => {
     });
 
     expect(result.completed).toBe(false);
-    expect(prompts).toEqual([]);
+    expect(prompts).toHaveLength(1);
     expect(finalState.pendingRecovery).toMatchObject({
       reason: 'implementer-recipe-invalid',
       taskId: 'T007',
@@ -539,7 +613,7 @@ describe('handleRetryAndEscalation', () => {
     });
   });
 
-  it('a retry refused for a spent provider balance halts on the seat without a consult', async () => {
+  it('a retry refused for a spent provider balance halts on the seat without a second consult', async () => {
     // Recorded on 2026-10-05: opencode with `deepseek/deepseek-flash` on a spent DeepSeek account.
     const balance =
       'provider.quota: Insufficient Balance (request_id: 021cfcdf-894e-4f9c-8e1b-85ac99f6a0fe)';
@@ -554,7 +628,7 @@ describe('handleRetryAndEscalation', () => {
     const { projectDir, sessionId } = setupProject();
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
-    const { planner, prompts } = consultPlanner([]);
+    const { planner, prompts } = consultPlanner([guidanceAnswer('The call failed', 'Retry.')]);
     const implementer = makeImplementer({
       retry: vi.fn().mockResolvedValue({
         success: false,
@@ -581,9 +655,9 @@ describe('handleRetryAndEscalation', () => {
 
     expect(result.completed).toBe(false);
     expect(implementer.retry).toHaveBeenCalledTimes(1);
-    expect(prompts).toEqual([]);
-    expect(events.filter((e) => e.type === 'task_escalating')).toEqual([]);
-    expect(events.filter((e) => e.type === 'consult_answered')).toEqual([]);
+    expect(prompts).toHaveLength(1);
+    expect(events.filter((e) => e.type === 'task_escalating')).toHaveLength(1);
+    expect(events.filter((e) => e.type === 'consult_answered')).toHaveLength(1);
     expect(state.pendingRecovery).toMatchObject({ reason: 'runner-usage-limit', taskId: 'T001' });
     expect(state.pendingRecovery?.details.join('\n')).toContain(balance);
     // The brief the seat cut is parked mid-step, so a switch resolves onto the same attempt.
@@ -594,12 +668,12 @@ describe('handleRetryAndEscalation', () => {
     });
   });
 
-  it('a retry refused as signed out halts with the seat switch beside the login, without a consult', async () => {
+  it('a retry refused as signed out halts with the seat switch beside the login, without a second consult', async () => {
     const { projectDir, sessionId } = setupProject();
     await rememberDetectedTools(projectDir, cliDetectionsFor('ready', ['opencode', 'claude-code']));
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
-    const { planner, prompts } = consultPlanner([]);
+    const { planner, prompts } = consultPlanner([guidanceAnswer('The call failed', 'Retry.')]);
     const implementer = makeImplementer({
       retry: vi.fn().mockResolvedValue({
         success: false,
@@ -628,8 +702,8 @@ describe('handleRetryAndEscalation', () => {
 
     expect(result.completed).toBe(false);
     expect(implementer.retry).toHaveBeenCalledTimes(1);
-    expect(prompts).toEqual([]);
-    expect(events.filter((e) => e.type === 'consult_answered')).toEqual([]);
+    expect(prompts).toHaveLength(1);
+    expect(events.filter((e) => e.type === 'consult_answered')).toHaveLength(1);
     expect(state.pendingRecovery).toMatchObject({
       reason: 'runner-unauthenticated',
       recommendedAction: 'switch-seat',
@@ -692,6 +766,7 @@ describe('handleRetryAndEscalation', () => {
 
     expect(result.completed).toBe(false);
     expect(prompts).toEqual([]);
+    expect(implementer.retry).not.toHaveBeenCalled();
     expect(busEvents.find((e) => e.type === 'escalate')).toBeUndefined();
 
     // The recovery is attributed to the hook, not silently mislabeled as retry exhaustion.
@@ -702,16 +777,16 @@ describe('handleRetryAndEscalation', () => {
     expect(finalState.pendingRecovery?.message).toBe(
       'T001 escalation blocked by pre_escalation hook: policy: escalation not allowed',
     );
-    expect(finalState.pendingRecovery?.facts?.validationSummary).toBe('still broken');
+    expect(finalState.pendingRecovery?.facts?.validationSummary).toBe('type error');
     expect(finalState.pendingRecovery?.facts?.escalationBlockedBy).toBe(
       'policy: escalation not allowed',
     );
     expect(formatRecoveryHeadline(finalState.pendingRecovery!)).toBe(
       finalState.pendingRecovery?.message,
     );
-    // The first call and the local retry: the transcript read `attempt 2` for the retry.
-    expect(finalState.pendingRecovery).toMatchObject({ attempts: 2 });
-    expect(finalState.pendingRecovery?.details).toContain('Attempts: 2');
+    // Only the first call ran: the hook stops the ladder before any further attempt.
+    expect(finalState.pendingRecovery).toMatchObject({ attempts: 1 });
+    expect(finalState.pendingRecovery?.details).toContain('Attempts: 1');
   });
 
   it('halts Needs you with the question when nobody answers the planner, without asking it again', async () => {
@@ -828,7 +903,7 @@ describe('handleRetryAndEscalation', () => {
           summary: 'Fix the greeting',
           decisions: [],
           criteria: [{ id: 'C1', text: 'The greeting is returned', checkIds: ['K1'] }],
-          checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+          checks: [{ id: 'K1', kind: 'cmd', value: 'node --version' }],
           validation: null,
         },
       }),
@@ -884,4 +959,94 @@ describe('handleRetryAndEscalation', () => {
     expect(finalState.pendingRecovery).toBeUndefined();
     expect(events.filter((e) => e.type === 'task_completed')).toEqual([]);
   });
+});
+
+describe('handleRetryAndEscalation /steer on a consult-guided attempt', () => {
+  const steerText = 'Keep the helper in src/retry.ts.';
+  const stopped = () => new DOMException('The operation was aborted', 'AbortError');
+  const fixFinding = { id: 'F1', text: 'The helper swallows the error', acceptance: null };
+
+  it.each([
+    ['a brief', 'throw', false],
+    ['a brief', 'return', false],
+    ['a fix brief', 'throw', true],
+    ['a fix brief', 'return', true],
+  ] as const)(
+    'continues %s with the steer and its kept edits when the cut call exits by %s',
+    async (_kind, exit, fix) => {
+      const ref = setupProject();
+      const task = makeTask({
+        id: 'T001',
+        suggestedFiles: ['src/retry.ts'],
+        ...(fix && { fix: { cycle: 1, findings: [fixFinding] } }),
+      });
+      const currentState = transition(makeImplState([task]), { type: 'TASK_SENT' });
+      const { bus, events } = makeBusRecorder();
+      const { planner } = consultPlanner([
+        guidanceAnswer('The helper is missing', 'Add the helper to src/retry.ts.'),
+      ]);
+      let abort: (() => void) | null = null;
+      let keptWhenContinued: string | undefined;
+      let phaseWhenContinued: string | undefined;
+      const retry = vi.fn<Implementer['retry']>(async (call) => {
+        if (retry.mock.calls.length === 1) {
+          mkdirSync(join(call.projectDir, 'src'), { recursive: true });
+          writeFileSync(join(call.projectDir, 'src/retry.ts'), 'export const helper = 1;\n');
+          call.onOutput?.('partial consult attempt');
+          abort?.();
+          if (exit === 'throw') throw stopped();
+          return { success: false, output: '', error: 'Aborted', outcome: 'user-abort' };
+        }
+        keptWhenContinued = readFileSync(join(call.projectDir, 'src/retry.ts'), 'utf8');
+        phaseWhenContinued = loadState(ref)?.phase;
+        return { success: true, output: 'fixed' };
+      });
+      const onContinuationNeeded = vi.fn(async () => plainUserMessage(steerText));
+      const wctx = makeWctx({
+        ...ref,
+        bus,
+        planner,
+        implementer: makeImplementer({ retry }),
+        callbacks: makeCallbacks({ onContinuationNeeded }).callbacks,
+        sinks: {
+          setAbortHandler: (handler) => {
+            abort = handler;
+          },
+          setQueueHandler: () => {},
+        },
+      });
+
+      const outcome = await handleRetryAndEscalation({
+        wctx,
+        task,
+        initialError: 'type error',
+        currentState,
+      });
+
+      expect(onContinuationNeeded).toHaveBeenCalledTimes(1);
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          type: 'turn_interrupted',
+          at: 'mid-step',
+          step: { kind: 'brief', taskId: task.id, attempt: 1 },
+        }),
+      );
+      expect(events).toContainEqual(
+        expect.objectContaining({ type: 'user_message', text: steerText, phase: 'escalating' }),
+      );
+      expect(phaseWhenContinued).toBe('escalating');
+      expect(retry).toHaveBeenCalledTimes(2);
+      const continued = retry.mock.calls[1]?.[0];
+      expect(continued?.continuation?.steer).toContain(steerText);
+      expect(continued?.continuation?.partial).toContain('partial consult attempt');
+      expect(continued?.continuation?.kept).toEqual(['src/retry.ts']);
+      expect(continued?.allowNoChange).toBe(true);
+      expect(keptWhenContinued).toBe('export const helper = 1;\n');
+      expect(outcome.result).toMatchObject({ completed: true, method: 'consulted' });
+      expect(outcome.state.pendingRecovery).toBeUndefined();
+      expect(readFileSync(join(ref.projectDir, 'src/retry.ts'), 'utf8')).toBe(
+        'export const helper = 1;\n',
+      );
+    },
+  );
 });

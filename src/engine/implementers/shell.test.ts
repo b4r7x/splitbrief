@@ -66,7 +66,7 @@ async function retryTask(
   },
 ) {
   const implementer = await createImplementer(opts.config, implementerAuthority(opts.config));
-  return implementer.retry({ ...opts, task, kind: 'local' });
+  return implementer.retry({ ...opts, task, kind: 'correction' });
 }
 
 describe('shell implementer', () => {

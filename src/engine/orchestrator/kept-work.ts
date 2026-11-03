@@ -4,6 +4,7 @@ import type { Task } from '../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../core/schemas/workflow.js';
 import { orderChangedFiles } from '../change-detection.js';
 import { getChangedFilesSinceSnapshot } from './approval/file-snapshots/capture.js';
+import type { ImplementerOptions } from '../implementers/types.js';
 
 /** Where the run's code lives: its isolation workspace, or the checkout when it has none. */
 export function runCodeDir(projectDir: string, workspace: WorkflowState['workspace']): string {
@@ -46,4 +47,40 @@ export async function keptBriefFiles(
   const taskStart = state.changedFilesBaseline?.activeTaskSnapshot;
   if (task?.id !== step.taskId || taskStart === undefined) return [];
   return changedDeclaredFiles(codeDir, task, taskStart);
+}
+
+/**
+ * A restarted attempt is told about the declared files that already moved, so it
+ * edits what is there instead of writing the file again from nothing.
+ */
+export function changedDeclaredFilesNote(changed: readonly string[]): { extra?: string } {
+  if (changed.length === 0) return {};
+  return {
+    extra: `These declared files changed since this brief started (an earlier attempt of this brief left them): ${changed.join(', ')}`,
+  };
+}
+
+/**
+ * What a brief attempt continues on: the cut attempt's partial, the steer, and the declared files
+ * already changed. A cut attempt continues on the files it wrote before the cut; `kept` names them,
+ * since a call that finds them complete changes nothing of its own. An attempt that was not cut and
+ * carries no steer continues nothing.
+ */
+export async function briefContinuation(opts: {
+  codeDir: string;
+  task: Task;
+  taskStartSnapshot: ChangedFilesSnapshot;
+  partial: string | undefined;
+  steer?: string | undefined;
+}): Promise<ImplementerOptions['continuation']> {
+  const { partial, steer } = opts;
+  if (partial === undefined && steer === undefined) return undefined;
+  const changed = await changedDeclaredFiles(opts.codeDir, opts.task, opts.taskStartSnapshot);
+  const kept = partial !== undefined && changed.length > 0 ? changed : undefined;
+  return {
+    ...(partial !== undefined && { partial }),
+    ...(steer !== undefined && { steer }),
+    ...changedDeclaredFilesNote(changed),
+    ...(kept !== undefined && { kept }),
+  };
 }

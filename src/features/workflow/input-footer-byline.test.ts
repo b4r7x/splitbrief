@@ -3,7 +3,11 @@ import type { ConversationRowSegment } from './conversation-rows/types.js';
 import { glyph } from '../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { getChromeContentWidth } from './layout/chrome-rows.js';
-import { buildInputFooterByline, stageFractionText } from './input-footer-byline.js';
+import {
+  buildInputFooterByline,
+  fitCheckingRow,
+  stageFractionText,
+} from './input-footer-byline.js';
 import { stopByline } from './stop/copy.js';
 import { suiteStatusParts } from './display/phase-verb.js';
 
@@ -415,4 +419,54 @@ it('keeps the fitted lead and dim clock apart without changing the string projec
     expect(byline.at(-1)).toEqual({ text: ' 0:42', tone: 'textDim' });
     expect(fullByline(byline)).toMatch(/ 0:42$/);
   }
+});
+
+describe('fitCheckingRow', () => {
+  const row = {
+    frame: '⠋',
+    stage: 'Checking tools',
+    slowProbe: { tool: 'Google Antigravity CLI', check: 'model list 59s' },
+  };
+
+  it('keeps the whole row when it fits', () => {
+    expect(fitCheckingRow({ ...row, cancellable: true, width: 69 })).toBe(
+      'Checking tools · Google Antigravity CLI model list 59s · esc cancel',
+    );
+    expect(fitCheckingRow({ ...row, cancellable: false, width: 69 })).toBe(
+      'Checking tools · Google Antigravity CLI model list 59s',
+    );
+  });
+
+  it.each([56, 58, 64, 66])(
+    'keeps the stage and esc cancel whole in %i cells and shortens the slow check',
+    (width) => {
+      const text = fitCheckingRow({ ...row, cancellable: true, width });
+
+      expect(text).toMatch(/^Checking tools · Google ….* model list 59s · esc cancel$/u);
+      expect(getTerminalCellWidth(`${row.frame} ${text}`)).toBeLessThanOrEqual(width);
+    },
+  );
+
+  // The crew panel's hint row at 60 columns: the tool's name goes before any word of its check.
+  it('keeps a two-word check whole when the tool name does not fit', () => {
+    expect(fitCheckingRow({ ...row, cancellable: true, width: 50 })).toBe(
+      'Checking tools · model list 59s · esc cancel',
+    );
+  });
+
+  it('keeps the check whole past a minute, when its time has two words', () => {
+    const slowProbe = { tool: 'OpenCode CLI', check: 'sign-in 1m 5s' };
+    expect(fitCheckingRow({ ...row, slowProbe, cancellable: true, width: 56 })).toBe(
+      'Checking tools · OpenCode … sign-in 1m 5s · esc cancel',
+    );
+    expect(fitCheckingRow({ ...row, slowProbe, cancellable: true, width: 48 })).toBe(
+      'Checking tools · sign-in 1m 5s · esc cancel',
+    );
+  });
+
+  it('drops the slow check when the check itself does not fit', () => {
+    expect(fitCheckingRow({ ...row, cancellable: true, width: 32 })).toBe(
+      'Checking tools · esc cancel',
+    );
+  });
 });

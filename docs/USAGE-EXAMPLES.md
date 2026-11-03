@@ -666,7 +666,7 @@ done: 3 tasks
 
 The count in the closing line is the number of tasks the run has completed, read from its state, so a resumed or continued run also counts the tasks an earlier process completed.
 
-A task that exhausts its retries stops the run: headless has nobody to answer the recovery, so the stream ends on the `failed` line and the command exits `1` with no `review:` or `done:` line.
+A task that halts stops the run: headless has nobody to answer the recovery, so the stream ends on the `failed` line and the command exits `1` with no `review:` or `done:` line.
 
 ```
 phase: implementing

@@ -351,8 +351,11 @@ describe('workflow steering through real phases', () => {
     expect(run.summaryContexts).toHaveLength(1);
     expect(run.summaryContexts[0]).not.toHaveProperty('steering');
     expect(run.summaryContexts[0]?.callbacks).not.toHaveProperty('steering');
-    expect(run.helperContexts).toHaveLength(1);
-    expect(run.helperContexts[0]?.callbacks).not.toHaveProperty('steering');
+    // Each failed build goes to the consult: one consult per failed attempt.
+    expect(run.helperContexts).toHaveLength(2);
+    for (const context of run.helperContexts) {
+      expect(context.callbacks).not.toHaveProperty('steering');
+    }
     expect(run.buildCalls[1]?.continuation?.steer).toContain('Correction for build-1');
     expect(run.buildCalls[2]?.continuation?.steer).toContain('Correction for build-2');
   });

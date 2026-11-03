@@ -58,7 +58,7 @@ describe('runSingleTask — worktree isolation', () => {
       action: 'modify',
       suggestedFiles: ['src/main.ts'],
       scope: { inBounds: ['src/main.ts'] },
-      checks: [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }],
+      checks: [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit' }],
     });
     const passing = makeTask({
       id: 'T002',
@@ -133,7 +133,13 @@ describe('runSingleTask — worktree isolation', () => {
       task: passing,
       index: 1,
       totalTasks: 2,
-      state: { ...afterFailing, pendingRecovery: undefined, currentTaskIndex: 1 },
+      // The halt leaves the brief escalating; moving on starts the next brief from implementing.
+      state: {
+        ...afterFailing,
+        phase: 'implementing',
+        pendingRecovery: undefined,
+        currentTaskIndex: 1,
+      },
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),

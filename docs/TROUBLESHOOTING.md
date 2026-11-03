@@ -643,10 +643,10 @@ A commit, a branch switch or a pull in your checkout does not halt the brief: a 
 
 ### Symptom: Implementer keeps failing the same task in a loop
 
-**Likely cause:** The task is genuinely too hard for the implementer model, or the brief contains contradictory constraints. The orchestrator retries once and then asks the planner, so you may see the same failure repeat before the consult lands.
+**Likely cause:** The task is genuinely too hard for the implementer model, or the brief contains contradictory constraints. The orchestrator asks the planner after every failed attempt, so you may see the same failure repeat while the planner tries another answer.
 
 **Fix:**
-1. Watch the attempt counter in the build block — it reads `attempt <a>` and the consult runs after the first retry.
+1. Watch the attempt counter in the build block — it reads `attempt <a>` and the consult runs after the first failed attempt.
 2. Inspect `evidence.json` and the task log to see whether failures are typecheck, test, or runtime.
 3. Read the consult row (`PLAN → T00N: … · <diagnosis>`). Guidance retries the brief; a `rewrite-task` or `split-task` answer changes the brief itself; `ask-user` is the one question that asks you; `cannot` halts the brief with the seat's reason.
 4. If the run halts with `Needs you · T00N needs your answer`, read its `Question:` line. Type your answer in the composer and take **Try again**, or take `skip-current-task` or `end-run`.
@@ -764,7 +764,7 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 
 **Prevention:** None needed — the legend row states the live keys (`esc stop options · ctrl+c stop now · ctrl+k commands · /help`), and a cancelled call still never spends an attempt or a consult: an aborted implementer call stops the retry loop, and the attempt counter rolls back to the value it had before it.
 
-**See also:** [docs/FEATURES.md](./FEATURES.md#stopping-a-run), [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md) (retry arithmetic), `src/engine/orchestrator/escalation/local-retries.ts`.
+**See also:** [docs/FEATURES.md](./FEATURES.md#stopping-a-run), [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md), `src/engine/orchestrator/escalation/handle.ts`.
 
 ---
 
@@ -802,7 +802,7 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 
 ### Symptom: A check fails after a task or before the review; workflow blocked
 
-**Likely cause:** A brief's check or a reviewer check ran against the implementer's output and failed. A failed brief check retries the brief. A reviewer check with new failures stops the list and reaches the reviewer as a pending input, and the reviewer returns the fix work. SPLITBRIEF never stages or commits the result.
+**Likely cause:** A brief's check or a reviewer check ran against the implementer's output and failed. A failed brief check goes to the planner's consult. A reviewer check with new failures stops the list and reaches the reviewer as a pending input, and the reviewer returns the fix work. SPLITBRIEF never stages or commits the result.
 
 **Fix:**
 1. Open `evidence.json` for the run; the checks log lists the exact failing command, its exit code and its output.
@@ -836,7 +836,7 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 
 **Likely cause:** The plan command policy refused the planner's command when the check ran. The row names the rule, for example `Plan check K2 · npm run lint · refused · runs a package script or binary (npm run)`. A package script (`npm run <script>`) runs only under an approved plan. `checkPlan` already sends a plan back to the planner when a check breaks the policy, so a refusal during Build usually means that `workflow.approve` changed after planning. A check whose script `package.json` does not define is not refused: it fails, and the reviewer can answer it with a fix task.
 
-A refused check did not run. SPLITBRIEF records it as refused, not as failed, and the reviewer sees it as refused. An optional refused check does not stop the run. A required refused check halts the run before the review with `Required checks cannot run: <id>`.
+A refused check did not run. SPLITBRIEF records it as refused, not as failed, and the reviewer sees it as refused. A refused check halts the run before the review with `Checks cannot run: <id>`.
 
 **Fix:**
 1. Read the reason on the row.
@@ -883,7 +883,7 @@ The policy does not catch database-drop tasks: `rails db:drop`, `rake db:drop`, 
 
 ### Symptom: Every task fails validation because the tree was already red
 
-**Likely cause:** A brief check fails on a failure the tree had before the run. This can occur with `workflow.review: task` or a consult `verify`. Its failure retries the brief once with the exact errors, then consults the planner, for a plan task and for a fix task. Only the project gate runs at the run base, once during the build with the same command text, and only a red reviewer check is compared with it.
+**Likely cause:** A brief check fails on a failure the tree had before the run. This can occur with `workflow.review: task` or a consult `verify`. Its failure goes to the planner's consult with the exact errors, for a plan task and for a fix task. Only the project gate runs at the run base, once during the build with the same command text, and only a red reviewer check is compared with it.
 
 A fix check runs once per brief gate. Each new BUILD attempt runs the checks again. A fix check never re-runs at the run base.
 
@@ -910,7 +910,7 @@ To measure the project before a run, run its own commands directly. `doctor` run
 
 ### Symptom: a planner `test` check is `not-runnable` with `no test command for an unrecognised stack; set validation.test_command`
 
-**Likely cause:** The check could not resolve a test command. That happens when the project carries none of the five stack markers (`Cargo.toml`, `go.mod`, `pyproject.toml`/`setup.py`/`setup.cfg`/`requirements.txt`/`Pipfile`, `tsconfig.json` or a `typescript` dependency, `package.json`), and there is no `validation.test_command`, no `package.json` `test` script / `Makefile` or `justfile` `test` target, and nothing the planner discovered. SPLITBRIEF deliberately does not guess `npm test` at that point — a fabricated check that passes is worse than a stated absence. A required `test` check in this state halts the run with `required-checks-unrunnable`. The reviewer checks do not resolve through the stack: the reviewer still chooses them from the project itself, and the reviewer command policy runs any installed program of any language.
+**Likely cause:** The check could not resolve a test command. That happens when the project carries none of the five stack markers (`Cargo.toml`, `go.mod`, `pyproject.toml`/`setup.py`/`setup.cfg`/`requirements.txt`/`Pipfile`, `tsconfig.json` or a `typescript` dependency, `package.json`), and there is no `validation.test_command`, no `package.json` `test` script / `Makefile` or `justfile` `test` target, and nothing the planner discovered. SPLITBRIEF deliberately does not guess `npm test` at that point — a fabricated check that passes is worse than a stated absence. A `test` check in this state halts the run with `required-checks-unrunnable`. The reviewer checks do not resolve through the stack: the reviewer still chooses them from the project itself, and the reviewer command policy runs any installed program of any language.
 
 **Fix:**
 1. If the repo does have a stack SPLITBRIEF knows, pin it: `validation.stack: python` (or `go`, `rust`, `typescript`, `javascript`). Detection order is rust → go → python → typescript → javascript, so a pin is also the fix when the wrong marker wins in a polyglot repo.

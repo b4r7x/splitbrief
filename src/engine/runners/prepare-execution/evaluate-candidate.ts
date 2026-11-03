@@ -261,6 +261,7 @@ async function evaluateCli(
       context: discoveryContext,
       projectDir: context.projectDir,
       signal: context.signal,
+      versionProbes: context.versionProbes,
     });
   let evidence = await detect();
   throwIfAborted(context.signal);
@@ -338,6 +339,7 @@ async function evaluateCli(
         context: discoveryContext,
         projectDir: context.projectDir,
         signal: context.signal,
+        versionProbes: context.versionProbes,
         includeCatalog: true,
         catalogNamesProject: true,
       }),

@@ -27,7 +27,7 @@ const greeting = makeTaskSpec({
   intent: 'Return a greeting.',
   criteria: ['C1'],
   suggestedFiles: [GREET, GREET_TEST],
-  checks: [{ id: 'T001-K1', kind: 'test', value: GREET_TEST, required: true }],
+  checks: [{ id: 'T001-K1', kind: 'test', value: GREET_TEST }],
 });
 const plan = {
   result: makePlanProposal({

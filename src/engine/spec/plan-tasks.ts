@@ -10,7 +10,7 @@ const planTaskError = {
 } as const;
 
 export function formatCheck(check: Check): string {
-  return `${check.id} ${check.kind}${check.required ? '' : ' (optional)'}: ${check.value}`;
+  return `${check.id} ${check.kind}: ${check.value}`;
 }
 
 /** What a brief does to its anchor: `modify` when the file is in the checkout, else `create`. */

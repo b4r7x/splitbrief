@@ -30,7 +30,7 @@ const alpha = makeTaskSpec({
   intent: 'Return the alpha value.',
   criteria: ['C1'],
   suggestedFiles: ['src/alpha.mjs', 'src/alpha.test.mjs'],
-  checks: [{ id: 'T001-K1', kind: 'test', value: 'src/alpha.test.mjs', required: true }],
+  checks: [{ id: 'T001-K1', kind: 'test', value: 'src/alpha.test.mjs' }],
 });
 const beta = makeTaskSpec({
   id: 'T002',
@@ -38,7 +38,7 @@ const beta = makeTaskSpec({
   intent: 'Return the beta value.',
   criteria: ['C2'],
   suggestedFiles: ['src/beta.mjs', 'src/beta.test.mjs'],
-  checks: [{ id: 'T002-K1', kind: 'test', value: 'src/beta.test.mjs', required: true }],
+  checks: [{ id: 'T002-K1', kind: 'test', value: 'src/beta.test.mjs' }],
 });
 const plan = makePlanProposal({
   summary: 'Add two independently tested values.',
@@ -82,7 +82,6 @@ const HALT_CALLS = [
   'implement T001',
   'task-review',
   'implement T002',
-  'implement T002',
   'consult',
   'implement T002',
   'consult',
@@ -103,7 +102,7 @@ afterEach(() => {
  * The planner answers the plan, its first consult with guidance and every later consult with a
  * question that has no default, and each task and final review with every id its prompt lists. The implementer lands T001, and writes T002's files on every attempt
  * with a value its test never accepts. The `task` review cadence runs each brief's checks at its
- * gate, so T002's required check fails every attempt and the ladder escalates.
+ * gate, so T002's check fails every attempt and the ladder escalates.
  */
 function writeRunners(target: StopContinueFixture, callsPath: string) {
   const plannerPath = join(target.tmpDir, 'planner.mjs');
@@ -297,7 +296,7 @@ describe('e2e: brief escalation', { timeout: 240_000 }, () => {
       message: HALT_MESSAGE,
       availableActions: HALT_ACTIONS,
       recommendedAction: 'retry-same-worker',
-      attempts: 3,
+      attempts: 2,
       facts: { question: QUESTION },
     });
     expect(state.tasks.map((task) => ({ id: task.id, status: task.status }))).toEqual([
@@ -317,11 +316,7 @@ describe('e2e: brief escalation', { timeout: 240_000 }, () => {
     });
 
     const { events } = await readRunEvents(ref);
-    expect(
-      events.flatMap((event) =>
-        event.type === 'task_retry' && event.taskId === 'T002' ? [event.taskId] : [],
-      ),
-    ).toEqual(['T002']);
+    expect(events.filter((event) => event.type === 'task_retry')).toEqual([]);
     expect(
       events.flatMap((event) => (event.type === 'task_escalating' ? [event.taskId] : [])),
     ).toEqual(['T002']);

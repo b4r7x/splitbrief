@@ -10,7 +10,7 @@ import { deriveSummaryView } from '../../../src/features/workflow/closed/view-mo
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { passingVerdict } from '#testing/helpers/typed-planner.js';
+import { guidanceConsult, passingVerdict } from '#testing/helpers/typed-planner.js';
 import {
   cli,
   createStopContinueFixture,
@@ -27,7 +27,7 @@ const alpha = makeTaskSpec({
   intent: 'Return the alpha value.',
   criteria: ['C1'],
   suggestedFiles: ['src/alpha.mjs', 'src/alpha.test.mjs'],
-  checks: [{ id: 'T001-K1', kind: 'test', value: 'src/alpha.test.mjs', required: true }],
+  checks: [{ id: 'T001-K1', kind: 'test', value: 'src/alpha.test.mjs' }],
 });
 const plan = makePlanProposal({
   summary: 'Add one tested value.',
@@ -214,8 +214,8 @@ const testChild = makeTaskSpec({
 });
 
 /**
- * The planner plans `planned` and answers the consult on the failing brief with a split into
- * `children`; each review passes every id its prompt lists.
+ * The planner plans `planned`, answers the first consult with a split into `children` and each
+ * later consult with guidance; each review passes every id its prompt lists.
  */
 function writeSplitPlanner(
   plannerPath: string,
@@ -230,9 +230,10 @@ function writeSplitPlanner(
       tasks: children,
     },
   };
+  const guidance = guidanceConsult('Keep the code the prompt shows and add your own lines.');
   writeFileSync(
     plannerPath,
-    `import { appendFileSync } from 'node:fs';
+    `import { appendFileSync, readFileSync } from 'node:fs';
 const chunks = [];
 for await (const chunk of process.stdin) chunks.push(chunk);
 const prompt = Buffer.concat(chunks).toString('utf8');
@@ -246,8 +247,10 @@ if (prompt.includes('# Final Implementation Review') || prompt.includes('# Task 
     findings: [], fixTasks: [], rejected: [], ask: null,
   };
 } else if (prompt.includes('# Consult on a failing task') || prompt.includes('# Consult continued')) {
+  const consults = readFileSync(${JSON.stringify(callsPath)}, 'utf8').split('\\n')
+    .filter((line) => line.includes('"kind":"consult"')).length;
   appendFileSync(${JSON.stringify(callsPath)}, JSON.stringify({ kind: 'consult' }) + '\\n');
-  answer = ${JSON.stringify(split)};
+  answer = consults === 0 ? ${JSON.stringify(split)} : ${JSON.stringify(guidance)};
 } else if (prompt.includes('# Plan the change')) {
   answer = ${JSON.stringify({ result: planned })};
 } else {
@@ -330,13 +333,11 @@ const addCheck = {
   id: 'T001-K1',
   kind: 'cmd' as const,
   value: 'node --test test/calc-add.test.mjs',
-  required: true,
 };
 const subCheck = {
   id: 'T001-K2',
   kind: 'cmd' as const,
   value: 'node --test test/calc-sub.test.mjs',
-  required: true,
 };
 const calc = makeTaskSpec({
   id: 'T001',
@@ -374,7 +375,7 @@ const subChild = makeTaskSpec({
  * A `shell` implementer answers with the anchor's whole new text, as a model does: the code its
  * prompt shows, then its own lines. The brief it was split from writes a value the tests reject.
  * With `subOwnLinesFirst`, the sub child's first answer holds only its own line, as a weak model's
- * does, and its retry answers with the whole file.
+ * does, and its guided retry after the consult answers with the whole file.
  */
 function writeShellSplitRunners(
   target: StopContinueFixture,
@@ -605,14 +606,16 @@ describe('e2e: a consult split of a brief whose seat answers with whole files', 
     writeShellSplitRunners(target, callsPath, { add: ADD_BLOCK, subOwnLinesFirst: true });
 
     const run = await cli(target, ['start', 'smoke'], { timeoutMs: RUN_TIMEOUT_MS });
+    expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
     const written = readFileSync(join(target.projectDir, 'src/calc.mjs'), 'utf8');
     expect(written).toContain(ADD_BLOCK);
     expect(written).toContain(CALC_LINES.sub);
-    expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
-    const subBuilds = readCalls(callsPath).filter(
+    const calls = readCalls(callsPath);
+    const subBuilds = calls.filter(
       (call) => call.kind === 'implement' && call.title === subChild.title,
     );
     expect(subBuilds.map((call) => call.retry)).toEqual([false, true]);
+    expect(calls.filter((call) => call.kind === 'consult')).toHaveLength(2);
     const sessionId = readdirSync(sessionsRoot(target.projectDir))[0];
     if (sessionId === undefined) throw new Error('Missing session');
     const state = readState(target, sessionId);

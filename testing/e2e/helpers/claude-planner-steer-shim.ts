@@ -38,7 +38,7 @@ export function installClaudePlannerSteerShim(directory: string, bin: string) {
       tasks: [
         makeTaskSpec({
           suggestedFiles: [GREET_FILE, MARKER_FILE],
-          checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+          checks: [{ id: 'K1', kind: 'cmd', value: 'node --version' }],
           steps: ['Write the greeting and the run marker.'],
         }),
       ],

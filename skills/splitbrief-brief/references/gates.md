@@ -24,7 +24,7 @@ Record the command and its source in plan.json and the plan block. Run commands 
 - Refuse shell syntax, an environment prefix, a program run by path (`bin/test`), a shell or wrapper, and inline code. Refuse `npx` without `--no-install`, a download-and-run launcher or a setup command (`npm ci`, `pip install`, `go generate`). Refuse a program that does not verify a change. Refuse a reviewer check whose package script, task file, build wrapper or interpreter script the run changed. Name each refused reviewer check with its reason; a plan or task check is never refused for that. A plan may add a script and check it.
 - Stop at the first reviewer check with new failures. Record each later reviewer check as `not run: <id> failed`. Run the project gate once at the run base during the build, with the same command text, one command at a time, and keep each result. Compare a red reviewer check with that result; wait for a base command that has not finished, and never run it a second time. A failure also red there is pre-existing. Report it and assign no fix task to it.
 - A timeout, or a red with no failure keys, is never pre-existing. Report it as not verified at the run base and send it to the reviewer. Plan checks, task checks and the Apply re-check never run at the run base.
-- A red required check, or a new or not verified reviewer failure, becomes a pending input. The reviewer addresses every pending input in its review answer and writes the fix tasks. No completed brief reopens. The fix task carries the check id, command, output, file, its own `failureKeys` and all original `redKeys` per check id. Keep every original red key before the base split. Two fix tasks may share the failures of one pending input.
+- A red check, or a new or not verified reviewer failure, becomes a pending input. The reviewer addresses every pending input in its review answer and writes the fix tasks. No completed brief reopens. The fix task carries the check id, command, output, file, its own `failureKeys` and all original `redKeys` per check id. Keep every original red key before the base split. Two fix tasks may share the failures of one pending input.
 - Keys come from the full process capture. A test row without FAILED or ERROR and a row with warning severity are not failure keys. SPLITBRIEF reads the severity where the tool prints it, not in the message text. An incomplete capture gives one placeholder key. With an incomplete capture, the fix command must pass.
 - At either cadence, the brief gate of a fix task runs each carried check once under the same command policy. It makes no base re-run. A red passes when no own failure remains. An own failure that an unfinished fix task of the same cycle also carries is left to that task. Failures the task does not own do not gate it: their fix tasks or the next review answer them.
 - When every own failure of a carried check is a test failure, run the stack's test runner on the own test files only. The full command runs at the next review. A type check, a lint, an unknown stack and a configured test command keep the full command.
@@ -72,7 +72,7 @@ Save baseline hashes and bytes before any dispatch. Preserve pre-existing edits.
 For a saved run or failed review, retain the original baseline.
 A failure also red on the run base copy is pre-existing, not an implementer failure. Record it explicitly; it proves no criterion by itself.
 A new failure is a red at the check or command that finds it, including a failure in a file outside the suggestions.
-A check or command that cannot run is unavailable, with its reason. A required unavailable check blocks review pass.
+A check or command that cannot run is unavailable, with its reason. An unavailable check blocks review pass.
 Ask the planner to repair defective tooling through a task. Keep the requirement that the command verifies.
 Apply the approval options in references/family-map.md before ordinary tooling repairs.
 Never install packages or write git state as a tooling repair.
@@ -105,18 +105,18 @@ The session's run artifacts are orchestration writes. The implementer never edit
 
 ## Checks and cadence
 
-Register each check with id, kind, value and required in plan.json.
+Register each check with id, kind and value in plan.json. Every check must pass.
 Resolve criterion checkIds from the run and task registries. Reject unknown or empty verification selections.
 For test checks, run the named test file or pattern. For cmd checks, run the registered command under project policy.
 Allow no package installs, git writes, protected mutations without confirmation, or commands outside the workspace.
-Render checks are unavailable in these skills. Keep a required render criterion unverified.
-At cadence=task, after each task, run its checks and the due checks. A red required check goes to that task's retry ladder.
-At cadence=end, after each task, run its own checks. A red required check goes to that task's retry ladder. A consult `verify` runs only the checks it names, and on a fix brief the failed checks that brief answers.
+Render checks are unavailable in these skills. Keep a render criterion unverified.
+At cadence=task, after each task, run its checks and the due checks. A red check goes to that task's consult.
+At cadence=end, after each task, run its own checks. A red check goes to that task's consult. A consult `verify` runs only the checks it names, and on a fix brief the failed checks that brief answers.
 A due check is a check of the task, or of a criterion whose serving tasks are all done.
-Before the final review, run every registered check. Only required checks decide a red.
+Before the final review, run every registered check. Every check decides a red.
 
 ## Recorded validation output
 
-The packet's Recorded Validation Output carries the current reviewer-check and required-check output, with commands and ids.
+The packet's Recorded Validation Output carries the current reviewer-check and check output, with commands and ids.
 Include final task-attempt check output as context. Quote recorded output for every test, type check, lint or other command claim.
 A generic green command never proves an unrelated criterion. Missing required evidence keeps that criterion unverified.

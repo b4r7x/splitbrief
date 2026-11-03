@@ -310,10 +310,10 @@ describe('skill-blocks', () => {
     for (const skill of ['splitbrief', 'splitbrief-brief', 'splitbrief-run', 'splitbrief-review']) {
       const gates = readFileSync(`skills/${skill}/references/gates.md`, 'utf8');
       expect(gates, skill).toContain(
-        "At cadence=end, after each task, run its own checks. A red required check goes to that task's retry ladder.",
+        "At cadence=end, after each task, run its own checks. A red check goes to that task's consult.",
       );
       expect(gates, skill).toContain(
-        "At cadence=task, after each task, run its checks and the due checks. A red required check goes to that task's retry ladder.",
+        "At cadence=task, after each task, run its checks and the due checks. A red check goes to that task's consult.",
       );
       expect(gates, skill).not.toContain('At cadence=end, an ordinary task runs no check.');
     }

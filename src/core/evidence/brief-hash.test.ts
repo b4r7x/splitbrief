@@ -47,11 +47,11 @@ describe('hashTaskBrief', () => {
 
   it('keeps the planned checks in the hash', () => {
     const planned = makeTask({
-      checks: [{ id: 'K1', kind: 'test', value: 'a.test.ts', required: true }],
+      checks: [{ id: 'K1', kind: 'test', value: 'a.test.ts' }],
     });
     const replanned = {
       ...planned,
-      checks: [{ id: 'K1', kind: 'test' as const, value: 'b.test.ts', required: true }],
+      checks: [{ id: 'K1', kind: 'test' as const, value: 'b.test.ts' }],
     };
     expect(hashTaskBrief([replanned])).not.toBe(hashTaskBrief([planned]));
   });

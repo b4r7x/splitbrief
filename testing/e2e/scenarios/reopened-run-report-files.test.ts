@@ -24,7 +24,7 @@ const report = makeTaskSpec({
   intent: 'Return a report line.',
   criteria: ['C1'],
   suggestedFiles: [SUMMARY_FILE, REPORT_FILE],
-  checks: [{ id: 'T001-K1', kind: 'cmd', value: 'node --version', required: true }],
+  checks: [{ id: 'T001-K1', kind: 'cmd', value: 'node --version' }],
 });
 const plan = makePlanProposal({
   summary: 'Add one report helper.',

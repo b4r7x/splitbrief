@@ -88,7 +88,7 @@ export function writeMinimalHeadlessConfigYaml(
     '  context_length: 32768',
     'validation:',
     '  end_checks: false',
-    '  test_command: "noop"',
+    '  test_command: "true"',
     'workflow:',
     '  approve: none',
   ]);

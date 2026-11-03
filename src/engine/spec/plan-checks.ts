@@ -232,7 +232,7 @@ export const RENDER_ID_PATTERN = /^[a-z0-9-]+$/;
  * The checks refused before they run: a plan's checks, the checks of the fix tasks a review writes,
  * and the checks of a consult's rewrite or split. A refused command, an npm script that
  * package.json lacks while no task writes package.json, a `test` check that holds more than one
- * path, or a `render` check that names no scenario id never becomes a required check.
+ * path, or a `render` check that names no scenario id never becomes a check of the run.
  */
 export function refusedCheckErrors(
   checks: readonly Pick<TaskSpec['checks'][number], 'id' | 'kind' | 'value'>[],

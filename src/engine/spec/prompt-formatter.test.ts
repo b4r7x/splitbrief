@@ -260,7 +260,7 @@ describe('formatTaskPrompt', () => {
     expect(prompt).toContain('### Current Code — src/health.test.ts');
     expect(prompt).toContain("it('health', () => {});");
 
-    const retry = formatRetryPrompt({ task, context, error: 'boom', attempt: 1 });
+    const retry = formatRetryPrompt({ task, context, error: 'boom', attempt: 1, kind: 'consult' });
     expect(retry).toContain('### Current Code — src/health.test.ts');
   });
 
@@ -293,8 +293,20 @@ describe('formatTaskPrompt', () => {
       },
     });
 
-    const retry = formatRetryPrompt({ task: fix, context, error: 'boom', attempt: 1 });
-    const plain = formatRetryPrompt({ task: makeTask(), context, error: 'boom', attempt: 1 });
+    const retry = formatRetryPrompt({
+      task: fix,
+      context,
+      error: 'boom',
+      attempt: 1,
+      kind: 'consult',
+    });
+    const plain = formatRetryPrompt({
+      task: makeTask(),
+      context,
+      error: 'boom',
+      attempt: 1,
+      kind: 'consult',
+    });
 
     expect(retry.split('\n')[0]).toBe(
       "Your previous attempt had an error. Fix what it names as yours; failures it names as not this brief's job are left to their fix tasks or the next review:",
@@ -313,7 +325,14 @@ describe('formatTaskPrompt', () => {
     for (const prompt of [
       formatTaskPrompt({ task, context, contextLength: 8192 }),
       formatTaskPrompt({ task, context, outputContract: 'file-bundle-v1' }),
-      formatRetryPrompt({ task, context, error: 'boom', attempt: 1, contextLength: 8192 }),
+      formatRetryPrompt({
+        task,
+        context,
+        error: 'boom',
+        attempt: 1,
+        contextLength: 8192,
+        kind: 'consult',
+      }),
     ]) {
       expect(prompt).toContain('### Read-only context (do not modify) — src/types.ts');
       expect(prompt).toContain('export type Health = "ok";');
@@ -337,7 +356,14 @@ describe('formatTaskPrompt', () => {
 
     for (const prompt of [
       formatTaskPrompt({ task, context, contextLength }),
-      formatRetryPrompt({ task, context, error: 'boom', attempt: 1, contextLength }),
+      formatRetryPrompt({
+        task,
+        context,
+        error: 'boom',
+        attempt: 1,
+        contextLength,
+        kind: 'consult',
+      }),
     ]) {
       expect(prompt).toContain('### Read-only context (do not modify) — src/types.ts');
       expect(estimateTokens(prompt) + estimateTokens(system)).toBeLessThanOrEqual(contextLength);
@@ -360,7 +386,14 @@ describe('formatTaskPrompt', () => {
 
     for (const prompt of [
       formatTaskPrompt({ task, context, contextLength }),
-      formatRetryPrompt({ task, context, error: 'boom', attempt: 1, contextLength }),
+      formatRetryPrompt({
+        task,
+        context,
+        error: 'boom',
+        attempt: 1,
+        contextLength,
+        kind: 'consult',
+      }),
     ]) {
       expect(prompt).toContain('export const anchor = 1;');
       expect(prompt).toContain('### Read-only context (do not modify) — src/big.ts');
@@ -374,7 +407,7 @@ describe('formatTaskPrompt', () => {
       escalation: ['stop on type error in shared schema'],
       evidence: ['typecheck output'],
     });
-    const prompt = formatRetryPrompt({ task, context, error: 'boom', attempt: 1 });
+    const prompt = formatRetryPrompt({ task, context, error: 'boom', attempt: 1, kind: 'consult' });
     expect(prompt).toContain('Fix it:');
     expect(prompt).toContain('### Scope');
     expect(prompt).toContain('- no schema changes');
@@ -414,6 +447,7 @@ describe('direct writer', () => {
       context,
       error: 'boom',
       attempt: 1,
+      kind: 'consult',
       writesFiles: 'direct',
       inPlace: true,
     });
@@ -429,6 +463,7 @@ describe('direct writer', () => {
       context,
       error: 'boom',
       attempt: 2,
+      kind: 'consult',
       contextLength: 8192,
       writesFiles: 'direct',
     });
@@ -460,6 +495,7 @@ describe('direct writer', () => {
       context,
       error: 'boom',
       attempt: 1,
+      kind: 'consult',
       writesFiles: 'extracted-code',
       outputContract: 'file-bundle-v1',
     });
@@ -491,10 +527,30 @@ describe('formatRetryPrompt', () => {
     [2, 'rephrased'],
     [3, 'different approach'],
   ] as const)('attempt %i contains expected framing', (attempt, expectedText) => {
-    const prompt = formatRetryPrompt({ task, context, error, attempt });
+    const prompt = formatRetryPrompt({ task, context, error, attempt, kind: 'consult' });
     expect(prompt).toContain(expectedText);
     expect(prompt).toContain(error);
     expect(prompt).toContain(task.suggestedFiles[0]);
+  });
+
+  it('a correction after passing checks opens with the correction, not an error framing', () => {
+    const correction = 'The operator sent a correction while the checks ran.';
+    const prompt = formatRetryPrompt({
+      task,
+      context,
+      error: correction,
+      attempt: 0,
+      kind: 'correction',
+    });
+
+    expect(prompt.split('\n').slice(0, 4)).toEqual([
+      'Your previous attempt passed its checks. The operator sent a correction: apply it, then hand back.',
+      '',
+      'Correction:',
+      correction,
+    ]);
+    expect(prompt).not.toContain('Multiple attempts have failed');
+    expect(prompt).not.toContain('Error from previous attempt:');
   });
 
   it('attempt 2 and 3 still include currentCode (v0.2: full context preserved)', () => {
@@ -502,8 +558,20 @@ describe('formatRetryPrompt', () => {
       action: 'modify',
       currentCode: 'export function existing(): void { /* long code */ }\n',
     });
-    const retry2 = formatRetryPrompt({ task: modifyTask, context, error, attempt: 2 });
-    const retry3 = formatRetryPrompt({ task: modifyTask, context, error, attempt: 3 });
+    const retry2 = formatRetryPrompt({
+      task: modifyTask,
+      context,
+      error,
+      attempt: 2,
+      kind: 'consult',
+    });
+    const retry3 = formatRetryPrompt({
+      task: modifyTask,
+      context,
+      error,
+      attempt: 3,
+      kind: 'consult',
+    });
 
     expect(retry2).toContain('Current Code');
     expect(retry3).toContain('Current Code');
@@ -564,7 +632,14 @@ describe('plan context', () => {
 
   it('carries the same section in a retry prompt', () => {
     const task = makeTask({ criteria: ['C2'] });
-    const prompt = formatRetryPrompt({ task, context, error: 'tests failed', attempt: 2, plan });
+    const prompt = formatRetryPrompt({
+      task,
+      context,
+      error: 'tests failed',
+      attempt: 2,
+      plan,
+      kind: 'consult',
+    });
 
     expect(prompt).toContain('Plan context');
     expect(prompt).toContain(plan.summary);

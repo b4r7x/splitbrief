@@ -143,7 +143,7 @@ function consultState(suggestedFiles?: Task['suggestedFiles']): WorkflowState {
       summary: 'Greet people by name',
       decisions: [],
       criteria: [{ id: 'C1', text: 'A greeting is returned', checkIds: ['K1'] }],
-      checks: [{ id: 'K1', kind: 'test', value: 'src/greet.test.ts', required: true }],
+      checks: [{ id: 'K1', kind: 'test', value: 'src/greet.test.ts' }],
       validation: null,
     },
   };
@@ -793,8 +793,8 @@ describe('requestConsult', () => {
       id: 'T003',
       suggestedFiles: ['src/greet.ts'],
       checks: [
-        { id: 'K1', kind: 'test', value: 'src/greet.tset.ts', required: true },
-        { id: 'K2', kind: 'render', value: 'workflow-x,', required: true },
+        { id: 'K1', kind: 'test', value: 'src/greet.tset.ts' },
+        { id: 'K2', kind: 'render', value: 'workflow-x,' },
       ],
     });
     const planner = consultPlanner(
@@ -842,10 +842,10 @@ describe('requestConsult', () => {
       id: 'T003',
       suggestedFiles: ['src/greet.ts'],
       checks: [
-        { id: 'K1', kind: 'cmd', value: 'npm run tset', required: true },
-        { id: 'K2', kind: 'render', value: 'workflow-x', required: true },
-        { id: 'K3', kind: 'test', value: 'src/hello.test.ts', required: true },
-        { id: 'K4', kind: 'test', value: 'src/later.test.ts', required: true },
+        { id: 'K1', kind: 'cmd', value: 'npm run tset' },
+        { id: 'K2', kind: 'render', value: 'workflow-x' },
+        { id: 'K3', kind: 'test', value: 'src/hello.test.ts' },
+        { id: 'K4', kind: 'test', value: 'src/later.test.ts' },
       ],
     });
     const planner = consultPlanner(

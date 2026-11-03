@@ -62,7 +62,7 @@ async function readyRun(name: string): Promise<{
         intent:
           'Make the script executable, link the readme from docs, retarget the link and update the note.',
         suggestedFiles: ['script.sh', 'note.txt'],
-        checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+        checks: [{ id: 'K1', kind: 'cmd', value: 'node --version' }],
       }),
     ],
   });

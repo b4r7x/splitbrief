@@ -60,7 +60,7 @@ import { useStartPreparation } from '../../features/start-preparation/use-start-
 import { StartPreparationPanel } from '../../features/start-preparation/panel.js';
 import { observePreparationCleanup } from '../../features/start-preparation/observe-cleanup.js';
 import { ApprovalPrompt } from '../../features/workflow/components/approval-prompt.js';
-import { joinBylineParts } from '../../features/workflow/input-footer-byline.js';
+import { fitCheckingRow } from '../../features/workflow/input-footer-byline.js';
 import { approvalPromptStore, closeApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
 import type { readClipboardImage } from '../../core/attachments/clipboard-image.js';
 import type { listProjectFiles } from '../../lib/file-listing.js';
@@ -357,7 +357,13 @@ export function HomeScreen({
   const preparationStatus =
     checkingStage === null || interactionBlocked
       ? undefined
-      : `${preparationFrame} ${joinBylineParts([checkingStage, slowProbe, isPreparing ? 'esc cancel' : null])}`;
+      : `${preparationFrame} ${fitCheckingRow({
+          frame: preparationFrame,
+          stage: checkingStage,
+          slowProbe,
+          cancellable: isPreparing,
+          width: layout.width,
+        })}`;
 
   return (
     <>

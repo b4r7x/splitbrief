@@ -211,7 +211,7 @@ describe('handleRetryAndEscalation — a blocked implementer', () => {
     });
   });
 
-  it('ends the local rung and consults with reason blocked when a retry reports blocked', async () => {
+  it('consults again with reason blocked when a consult-guided retry reports blocked', async () => {
     const { projectDir, sessionId } = setupProject();
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
@@ -235,6 +235,7 @@ describe('handleRetryAndEscalation — a blocked implementer', () => {
         .mockResolvedValueOnce({ success: true, output: 'fixed', usage: null }),
     });
     const { planner, prompts } = consultPlanner([
+      guidanceAnswer('The type is wrong', 'Fix the type in src/consumer.ts.'),
       guidanceAnswer('The consumer may be edited', 'Edit src/consumer.ts within scope.'),
     ]);
 
@@ -253,14 +254,15 @@ describe('handleRetryAndEscalation — a blocked implementer', () => {
       currentState: makeValidatingState(),
     });
 
-    // One local attempt reported blocked; the remaining local retry was not spent.
-    expect(events.filter((e) => e.type === 'task_retry')).toHaveLength(1);
+    // The first consult answers the failed check; the guided retry reported blocked.
+    expect(events.filter((e) => e.type === 'task_retry')).toEqual([]);
     expect(implementer.retry).toHaveBeenCalledTimes(2);
     expect(result.completed).toBe(true);
     expect(result.method).toBe('consulted');
-    expect(prompts[0]).toContain('blocked —');
-    expect(prompts[0]).toContain('Blocked: May I edit src/consumer.ts?');
-    expect(events.find((e) => e.type === 'consult_answered')).toMatchObject({
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain('blocked —');
+    expect(prompts[1]).toContain('Blocked: May I edit src/consumer.ts?');
+    expect(events.filter((e) => e.type === 'consult_answered').at(1)).toMatchObject({
       type: 'consult_answered',
       taskId: 'T001',
       reason: 'blocked',
@@ -281,7 +283,9 @@ describe('handleRetryAndEscalation — a blocked implementer', () => {
     const implementer = makeImplementer({
       retry: vi.fn().mockResolvedValue({ success: true, output: 'fixed', usage: null, report }),
     });
-    const { planner } = consultPlanner([]);
+    const { planner } = consultPlanner([
+      guidanceAnswer('The type is wrong', 'Fix the type in src/x.ts.'),
+    ]);
 
     const { result } = await handleRetryAndEscalation({
       wctx: makeWctx({

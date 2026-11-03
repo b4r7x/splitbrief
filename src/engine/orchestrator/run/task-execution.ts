@@ -17,11 +17,10 @@ import { runTaskLoop } from '../task/loop.js';
 import { runFinalReviewPhase } from '../final-review.js';
 import {
   type CheckRunResult,
-  checkRegistry,
   planApprovesNpmScripts,
   runChecks,
 } from '../validation/run-checks.js';
-import { checkFailureText, failureKeysForFile } from '../validation/failure-text.js';
+import { checkFailureText } from '../validation/failure-text.js';
 import {
   classifyRequiredChecks,
   haltRequiredChecksUnrunnable,
@@ -32,10 +31,6 @@ import { recordCheckRuns } from '../evidence/record-checks.js';
 import { captureReviewedCandidate } from '../apply/states.js';
 import { bindApplyHandOffs } from '../apply/hand-off.js';
 import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
-import type { TriageInput } from '../../../core/schemas/review.js';
-import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
-import { normalizeProjectRelativePath } from '../../../utils/path-patterns.js';
-import { failingFilesFromKeys, fileOwnerSentence } from '../task/file-owner.js';
 import { ensureRunBaselineSnapshot, recordRunSnapshotForRun } from './snapshots.js';
 import { SNAPSHOT_BASELINE_ID } from '../../../core/paths.js';
 import type { PlanningPhaseResult } from '../planning/types.js';
@@ -145,16 +140,14 @@ async function recheckMergedCandidate(
   state: WorkflowState;
   failures: string[];
   notRun: string[];
-  inputs: TriageInput[];
   unrunnable: UnrunnableCheck[];
 }> {
   let { state } = opts;
   const failures: string[] = [];
   const notRun: string[] = [];
-  const inputs: TriageInput[] = [];
   const unrunnable = new Map<string, UnrunnableCheck>();
   const applyReview = state.applyReview;
-  if (applyReview === undefined) return { state, failures, notRun, inputs, unrunnable: [] };
+  if (applyReview === undefined) return { state, failures, notRun, unrunnable: [] };
 
   const { wctx, setTrackedState } = opts;
   const ref = { projectDir: wctx.projectDir, sessionId: wctx.sessionId };
@@ -175,58 +168,14 @@ async function recheckMergedCandidate(
     signal: wctx.signal,
     results: { ref, state, tree: 'workspace' as const },
   };
-  const ledger = readEvidenceLedger({ projectDir: wctx.projectDir, sessionId: wctx.sessionId });
-  const registry = checkRegistry({ plan: state.plan, tasks: state.tasks });
-  const pushFiles = (
-    files: readonly (string | null)[],
-    ownerLabel: string,
-    run: CheckRunResult,
-  ): void => {
-    for (const file of files) {
-      const owner = fileOwnerSentence(ledger, state.tasks, file);
-      const failureKeys = failureKeysForFile({
-        failure: run.status === 'fail' ? run.failure : null,
-        file,
-      });
-      inputs.push({
-        id: `A${inputs.length + 1}`,
-        kind: 'defect',
-        source: 'check',
-        file,
-        text: `${owner === undefined ? '' : `${owner}\n`}${ownerLabel} ${checkFailureText(run, { file })}`,
-        checkIds: [run.checkId],
-        ...(run.command !== undefined && { command: run.command }),
-        output: run.output,
-        ...(failureKeys.length > 0 && { failureKeys }),
-        ...(run.status === 'fail' && { redKeys: run.failure.keys }),
-      });
-    }
-  };
-  const pushRun = (run: CheckRunResult, ownerLabel: string): void => {
-    const check = registry.get(run.checkId);
-    const named = failingFilesFromKeys(
-      run.status === 'fail' ? run.failure.keys : [],
-      wctx.workspaceDir,
-    );
-    const files =
-      named.length > 0
-        ? named
-        : check?.kind === 'test'
-          ? [normalizeProjectRelativePath(check.value)]
-          : [null];
-    pushFiles(files, ownerLabel, run);
-  };
   const collectRuns = (owner: string, runs: readonly CheckRunResult[]) => {
-    const required = classifyRequiredChecks(
-      runs.filter((run) => registry.get(run.checkId)?.required === true),
-    );
-    for (const check of required.unrunnable) {
+    const classified = classifyRequiredChecks(runs);
+    for (const check of classified.unrunnable) {
       if (unrunnable.has(check.checkId) === false) unrunnable.set(check.checkId, check);
     }
     for (const run of runs) {
       if (run.status === 'fail') {
         failures.push(`${owner} ${checkFailureText(run)}`);
-        pushRun(run, owner);
       } else if (run.status !== 'pass') {
         const outcome = run.status === 'refused' ? 'refused' : 'not run';
         notRun.push(`${owner} check ${run.checkId} ${outcome}: ${run.output}`);
@@ -275,7 +224,7 @@ async function recheckMergedCandidate(
   }
   state = transitionAndSave(ref, state, { type: 'RECORD_APPLY_RECHECK', failures, notRun });
   setTrackedState(state);
-  return { state, failures, notRun, inputs, unrunnable: [...unrunnable.values()] };
+  return { state, failures, notRun, unrunnable: [...unrunnable.values()] };
 }
 
 export async function runTasksAndReview(
@@ -528,7 +477,6 @@ async function buildAndReview(args: {
           state,
           failures: state.applyReview?.failures ?? [],
           notRun: state.applyReview?.notRun ?? [],
-          inputs: [],
           unrunnable: [],
         }
       : await recheckMergedCandidate({ wctx, state, setTrackedState });
@@ -571,8 +519,7 @@ async function buildAndReview(args: {
       }),
       ...(integration !== undefined && { integration }),
       ...(!reviewAgain && {
-        preReview: (s: WorkflowState) =>
-          runPreReview({ wctx, state: s, setTrackedState, inputs: recheck.inputs }),
+        preReview: (s: WorkflowState) => runPreReview({ wctx, state: s, setTrackedState }),
       }),
       ...(!reviewAgain && { reviewChecks: { baseGate } }),
     });

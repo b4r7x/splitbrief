@@ -35,7 +35,7 @@ describe('a correction during first-attempt checks', { timeout: 60_000 }, () => 
       action: 'create',
       suggestedFiles: ['src/main.ts'],
       scope: { inBounds: ['src/main.ts'] },
-      checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+      checks: [{ id: 'K1', kind: 'cmd', value: 'node --version' }],
     });
     const { bus, events } = makeBusRecorder();
     bus.subscribe((event) => {
@@ -103,7 +103,7 @@ describe('a correction during first-attempt checks', { timeout: 60_000 }, () => 
         action: 'create',
         suggestedFiles: ['src/main.ts'],
         scope: { inBounds: ['src/main.ts'] },
-        checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+        checks: [{ id: 'K1', kind: 'cmd', value: 'node --version' }],
       });
       const { bus, events } = makeBusRecorder();
       const order: string[] = [];

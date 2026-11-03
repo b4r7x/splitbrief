@@ -235,7 +235,7 @@ src/
 │   │   │                          + apply (the five answers)
 │   │   ├── continuation.ts        withContinuationLoop (pause/resume gate)
 │   │   ├── drift/                 the run's drift report (analyze, format, io)
-│   │   ├── escalation/            local retries, retry step, seat wait,
+│   │   ├── escalation/            held correction, retry step, seat wait,
 │   │   │                          evidence, retry validation
 │   │   ├── events.ts              publish* helpers for typed events
 │   │   ├── evidence/              ledger, persistence, reporting,

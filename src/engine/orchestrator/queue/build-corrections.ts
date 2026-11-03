@@ -9,7 +9,8 @@ import { persistApiApplyEvidence } from '../evidence/persistence.js';
 import type { WorkflowContext, WorkflowPersistenceContext } from '../types.js';
 import { recordBriefCorrection } from '../state-ops.js';
 import { commitQueueMessagesDrained, readQueueForPrompt } from './drain.js';
-import { formatDrainedMessages, imagesFromMessages } from './prompt.js';
+import { formatDrainedMessages, formatMessageInput, imagesFromMessages } from './prompt.js';
+import type { UserMessageInput } from '../../../core/types/user-input.js';
 import type { ImplementerOptions } from '../../implementers/types.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { settleMidCallDeliveries } from './mid-call.js';
@@ -74,6 +75,17 @@ type BuildCorrectionOptions = BuildImageContext & {
   taskId: TaskId;
   bus: EventBus;
 };
+
+/** The words sent into a cut brief attempt are a correction of that brief, read by its next call. */
+export function recordSteerCorrection(
+  opts: BuildCorrectionOptions & { message: UserMessageInput },
+): WorkflowState {
+  const text = formatMessageInput(opts.message);
+  if (!text.trim()) return opts.state;
+  const state = recordBriefCorrection(opts, opts.state, opts.taskId, text, opts.message.images);
+  publishBuildImagesAsPaths({ ...opts, state, count: opts.message.images.length });
+  return state;
+}
 
 export function buildCorrectionInput(
   state: WorkflowState,

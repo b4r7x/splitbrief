@@ -1,17 +1,22 @@
-export type LadderRungId = 'recipe-fix' | 'local' | 'consult';
+export type LadderRungId = 'recipe-fix' | 'consult';
 
 export type LadderRung = Readonly<{
   id: LadderRungId;
   who: 'implementer' | 'planner-then-implementer';
   consumesRetry?: boolean;
-  count?: 'DEFAULT_LOCAL_RETRIES';
 }>;
 
 export const LADDER: readonly LadderRung[] = [
   { id: 'recipe-fix', who: 'implementer', consumesRetry: false },
-  { id: 'local', who: 'implementer', count: 'DEFAULT_LOCAL_RETRIES' },
   { id: 'consult', who: 'planner-then-implementer' },
 ];
+
+/** A `correction` retry delivers the operator's correction to an attempt that passed its checks; a `consult` retry delivers the planner's answer to a red. */
+export type RetryKind = 'correction' | 'consult';
+
+/** The opening of a correction retry: the earlier attempt did not fail, so no error framing applies. */
+export const CORRECTION_FRAMING =
+  'Your previous attempt passed its checks. The operator sent a correction: apply it, then hand back.';
 
 const FINAL_FRAMING = 'Multiple attempts have failed. Try a completely different approach:';
 

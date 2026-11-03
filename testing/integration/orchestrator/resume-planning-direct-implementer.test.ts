@@ -98,7 +98,7 @@ describe('resume planning continuation with a direct-writing implementer', {
           model: 'cheap-direct-agent',
           contextLength: 4096,
         },
-        validation: { endChecks: false, testCommand: 'noop' },
+        validation: { endChecks: false, testCommand: 'true' },
         workflow: {
           approve: 'none',
         },

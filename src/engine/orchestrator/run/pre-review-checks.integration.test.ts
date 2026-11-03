@@ -2,7 +2,7 @@ import { describe, expect, it, afterEach, beforeEach, vi } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Plan } from '../../../core/schemas/plan.js';
-import type { Check, Task } from '../../../core/schemas/task.js';
+import { CheckSchema, type Check, type Task } from '../../../core/schemas/task.js';
 import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
 import { saveState } from '../../../core/state/persistence.js';
 import { processError } from '../../../lib/process/errors.js';
@@ -94,9 +94,9 @@ describe('pre-review checks', () => {
     writeFileSync(join(projectDir, 'src', 'b.test.ts'), '');
     const state = makeImplState([], {
       plan: makePlan([
-        { id: 'K1', kind: 'test', value: 'src/a.test.ts', required: true },
-        { id: 'K2', kind: 'test', value: 'src/b.test.ts', required: true },
-        { id: 'K3', kind: 'cmd', value: 'node --version', required: true },
+        { id: 'K1', kind: 'test', value: 'src/a.test.ts' },
+        { id: 'K2', kind: 'test', value: 'src/b.test.ts' },
+        { id: 'K3', kind: 'cmd', value: 'node --version' },
       ]),
       discoveredValidation: { testPattern: '../*.test.ts' },
     });
@@ -129,16 +129,16 @@ describe('pre-review checks', () => {
 
   it('publishes each plan and task check before execution and settles it before the next check', async () => {
     const checks: Check[] = [
-      { id: 'K1', kind: 'cmd', value: 'node --version', required: true },
-      { id: 'K2', kind: 'test', value: 'src/a.test.ts', required: true },
-      { id: 'R1', kind: 'render', value: 'workflow-x', required: true },
-      { id: 'R2', kind: 'render', value: 'workflow-y', required: false },
-      { id: 'R3', kind: 'render', value: 'Invalid!', required: false },
-      { id: 'K3', kind: 'cmd', value: 'tsc --noEmit', required: false },
+      { id: 'K1', kind: 'cmd', value: 'node --version' },
+      { id: 'K2', kind: 'test', value: 'src/a.test.ts' },
+      { id: 'R1', kind: 'render', value: 'workflow-x' },
+      { id: 'R2', kind: 'render', value: 'workflow-y' },
+      { id: 'R3', kind: 'render', value: 'Invalid!' },
+      { id: 'K3', kind: 'cmd', value: 'tsc --noEmit' },
     ];
     const task = makeTask({
       status: 'done',
-      checks: [{ id: 'K4', kind: 'cmd', value: 'node --version', required: false }],
+      checks: [{ id: 'K4', kind: 'cmd', value: 'node --version' }],
     });
     mkdirSync(join(projectDir, 'src'));
     writeFileSync(join(projectDir, 'src', 'a.test.ts'), '');
@@ -217,7 +217,8 @@ describe('pre-review checks', () => {
         .filter((event) => !event.id?.startsWith('R'))
         .every((event) => event.scenario === undefined),
     ).toBe(true);
-    expect(result.defects).toEqual([]);
+    expect(result.failed.map((run) => run.checkId)).toEqual(['R2']);
+    expect(result.unrunnable.map((check) => check.checkId)).toEqual(['R3', 'K3']);
   });
 
   it('shows a render which cannot run with its scenario and reason', async () => {
@@ -230,7 +231,7 @@ describe('pre-review checks', () => {
       options({
         bus,
         state: makeImplState([], {
-          plan: makePlan([{ id: 'R1', kind: 'render', value: 'workflow-x', required: false }]),
+          plan: makePlan([{ id: 'R1', kind: 'render', value: 'workflow-x' }]),
         }),
       }),
     );
@@ -255,7 +256,7 @@ describe('pre-review checks', () => {
       options({
         bus,
         state: makeImplState([], {
-          plan: makePlan([{ id: 'K1', kind: 'cmd', value: 'npm run typecheck', required: false }]),
+          plan: makePlan([{ id: 'K1', kind: 'cmd', value: 'npm run typecheck' }]),
         }),
       }),
     );
@@ -267,16 +268,16 @@ describe('pre-review checks', () => {
     });
   });
 
-  it('runs optional checks and records results on their task or the last task for a plan check', async () => {
+  it('runs every check, records results on their task or the last task for a plan check, and hands a red one to the review', async () => {
     const first = makeTask({
       id: 'T001',
       status: 'done',
-      checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+      checks: [{ id: 'K1', kind: 'cmd', value: 'node --version' }],
     });
     const last = makeTask({ id: 'T002', status: 'done' });
-    const plan = makePlan([{ id: 'K2', kind: 'cmd', value: 'node --version', required: false }]);
+    const plan = makePlan([{ id: 'K2', kind: 'cmd', value: 'node --version' }]);
     const runner = makeCommandRunner(
-      processError.exitCode({ command: 'node', code: 1, stderr: 'optional failure' }),
+      processError.exitCode({ command: 'node', code: 1, stderr: 'plan check failure' }),
       { stdout: 'pass', stderr: '', code: 0 },
     );
     const state = makeImplState([first, last], { plan });
@@ -285,14 +286,15 @@ describe('pre-review checks', () => {
     expect(result.runs.map((run) => run.checkId)).toEqual(['K2', 'K1']);
     expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'K1', status: 'pass' }]);
     expect(result.state.tasks[1]?.checkResults).toEqual([{ id: 'K2', status: 'fail' }]);
-    expect(result.defects).toEqual([]);
+    expect(result.failed.map((run) => run.checkId)).toEqual(['K2']);
+    expect(result.defects).toHaveLength(1);
     expect(result.unrunnable).toEqual([]);
   });
 
   it('halts a refused required check and names its id', async () => {
     const plan = makePlan([
-      { id: 'K1', kind: 'cmd', value: 'npm run deploy', required: true },
-      { id: 'K2', kind: 'cmd', value: 'tsc --noEmit', required: false },
+      { id: 'K1', kind: 'cmd', value: 'npm run deploy' },
+      { id: 'K2', kind: 'cmd', value: 'tsc --noEmit' },
     ]);
     const result = await runPreReviewChecks(
       options({ state: makeImplState([], { plan }), npmScriptsApproved: false }),
@@ -301,6 +303,27 @@ describe('pre-review checks', () => {
     expect(result.unrunnable.map((check) => check.checkId)).toEqual(['K1']);
     expect(result.unrunnable[0]?.output).not.toBe('');
     expect(result.defects).toEqual([]);
+  });
+
+  it('halts the review on a refused check that an old plan marked optional', async () => {
+    const plan = makePlan([
+      CheckSchema.parse({ id: 'K1', kind: 'cmd', value: 'npm run deploy', required: false }),
+    ]);
+    const state = makeImplState([], { plan, phase: 'final-review' });
+    saveState({ projectDir, sessionId: 'sess-pre-review' }, state);
+    const wctx = makeWctx({
+      projectDir,
+      sessionId: 'sess-pre-review',
+      planner: makePlanner({ typedCall: vi.fn() }),
+      bus,
+      config: makeConfig({}),
+    });
+
+    const result = await runPreReview({ wctx, state, setTrackedState: vi.fn() });
+
+    expect(result.kind).toBe('stopped');
+    expect(result.state.pendingRecovery).toMatchObject({ reason: 'required-checks-unrunnable' });
+    expect(result.state.pendingRecovery?.message).toContain('K1');
   });
 
   it.each([
@@ -315,8 +338,8 @@ describe('pre-review checks', () => {
     async (missing) => {
       vi.spyOn(commandRunner, 'runCommand').mockRejectedValue(missing);
       const plan = makePlan([
-        { id: 'K-command', kind: 'cmd', value: 'tsc --noEmit', required: true },
-        { id: 'K-render', kind: 'render', value: 'overlay-picker', required: true },
+        { id: 'K-command', kind: 'cmd', value: 'tsc --noEmit' },
+        { id: 'K-render', kind: 'render', value: 'overlay-picker' },
       ]);
       const planner = makePlanner({ typedCall: vi.fn() });
       const state = makeImplState([], { plan, phase: 'final-review' });
@@ -348,7 +371,7 @@ describe('pre-review checks', () => {
     vi.spyOn(commandRunner, 'runCommand').mockRejectedValue(
       Object.assign(new Error('spawn missing-vitest ENOENT'), { code: 'ENOENT' }),
     );
-    const plan = makePlan([{ id: 'K1', kind: 'test', value: 'src/a.test.ts', required: true }]);
+    const plan = makePlan([{ id: 'K1', kind: 'test', value: 'src/a.test.ts' }]);
     const state = makeImplState([], { plan, phase: 'final-review' });
     saveState({ projectDir, sessionId: 'sess-pre-review' }, state);
     const bus = createEventBus();
@@ -378,7 +401,7 @@ describe('pre-review checks', () => {
   });
 
   it('turns a failing required check into a check-sourced triage defect, not a review', async () => {
-    const plan = makePlan([{ id: 'K2', kind: 'cmd', value: 'tsc --noEmit', required: true }]);
+    const plan = makePlan([{ id: 'K2', kind: 'cmd', value: 'tsc --noEmit' }]);
     const runner = makeCommandRunner(
       processError.exitCode({
         command: 'tsc',
@@ -410,7 +433,7 @@ describe('pre-review checks', () => {
       { projectDir, sessionId: 'sess-pre-review' },
       ledgerFor([task], { T001: ['src/a.ts'] }),
     );
-    const plan = makePlan([{ id: 'K2', kind: 'cmd', value: 'tsc --noEmit', required: true }]);
+    const plan = makePlan([{ id: 'K2', kind: 'cmd', value: 'tsc --noEmit' }]);
     const runner = makeCommandRunner(
       processError.exitCode({
         command: 'tsc',
@@ -434,7 +457,7 @@ describe('pre-review checks', () => {
   });
 
   it('lists only each required-check input file and its assertion messages', async () => {
-    const plan = makePlan([{ id: 'K2', kind: 'cmd', value: 'tsc --noEmit', required: true }]);
+    const plan = makePlan([{ id: 'K2', kind: 'cmd', value: 'tsc --noEmit' }]);
     const runner = makeCommandRunner(
       processError.exitCode({
         command: 'tsc',
@@ -469,7 +492,7 @@ describe('pre-review checks', () => {
 
   it('keeps an unassigned Rust failure on the required check target', () => {
     const output = 'test tests::adds ... FAILED';
-    const check: Check = { id: 'K-rust', kind: 'test', value: 'src/lib.rs', required: true };
+    const check: Check = { id: 'K-rust', kind: 'test', value: 'src/lib.rs' };
     const inputs = buildPreReviewInputs({
       failed: [
         {
@@ -498,7 +521,7 @@ describe('pre-review checks', () => {
 
   it('names no owner for a red whole-suite command whose output names no file', () => {
     const output = 'Error: boom';
-    const check: Check = { id: 'K1', kind: 'cmd', value: 'npm test', required: true };
+    const check: Check = { id: 'K1', kind: 'cmd', value: 'npm test' };
     const task = makeTask({ id: 'T001', status: 'done' });
     const inputs = buildPreReviewInputs({
       failed: [
@@ -521,7 +544,7 @@ describe('pre-review checks', () => {
 
     expect(inputs).toHaveLength(1);
     expect(inputs[0]?.file).toBeNull();
-    expect(inputs[0]?.text).toMatch(/^Required check K1 did not pass/);
+    expect(inputs[0]?.text).toMatch(/^Check K1 did not pass/);
     expect(inputs[0]?.text).not.toContain('No task changed it.');
   });
 
@@ -636,9 +659,7 @@ describe('pre-review checks run each command once per workspace state', () => {
     const state = makeImplState([], {
       phase: 'final-review',
       changedFilesBaseline: serializeChangedFilesBaseline(baseline),
-      plan: makePlan(
-        ['K1', 'K2', 'K3'].map((id) => ({ id, kind: 'cmd', value: TYPECHECK, required: true })),
-      ),
+      plan: makePlan(['K1', 'K2', 'K3'].map((id) => ({ id, kind: 'cmd', value: TYPECHECK }))),
     });
     return { projectDir, sessionId, state };
   }

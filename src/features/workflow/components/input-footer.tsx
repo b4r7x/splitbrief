@@ -37,7 +37,7 @@ import { WORKFLOW_CANCEL_REASON_USER } from '../../../engine/events/workflow-can
 import { formatStageLabel } from '../../../core/phase-display.js';
 import {
   buildInputFooterByline,
-  joinBylineParts,
+  fitCheckingRow,
   stageFractionText,
 } from '../input-footer-byline.js';
 import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
@@ -327,7 +327,13 @@ export function InputFooter({
       <Box width="100%" height={1} flexShrink={0}>
         <Text color={t.textDim} wrap="truncate-end">
           <Text color={t[stateTone('running')]}>{`${frame} `}</Text>
-          {joinBylineParts([checkingStage, slowProbe, 'esc cancel'])}
+          {fitCheckingRow({
+            frame,
+            stage: checkingStage,
+            slowProbe,
+            cancellable: true,
+            width: getChromeContentWidth(Math.max(1, width ?? cols)),
+          })}
         </Text>
       </Box>
     );

@@ -35,6 +35,8 @@ import type { WorkflowState } from '../core/schemas/workflow.js';
 import type { Implementer } from '../engine/implementers/types.js';
 import type { Planner } from '../engine/planners/types.js';
 import {
+  consultCallAnswering,
+  guidanceConsult,
   passingReviewVerdict,
   planFromTasks,
   typedCallAnswering,
@@ -423,7 +425,7 @@ describe('runHeadless — with a reviewer configured', () => {
       '  context_length: 32768',
       'validation:',
       '  end_checks: false',
-      '  test_command: "noop"',
+      '  test_command: "true"',
       'workflow:',
       '  approve: none',
     ]);
@@ -885,7 +887,7 @@ describe('runHeadless — a failure in a session folder that takes no new file',
       '  context_length: 32768',
       'validation:',
       '  end_checks: false',
-      '  test_command: "noop"',
+      '  test_command: "true"',
       'workflow:',
       '  approve: none',
     ]);
@@ -1553,7 +1555,8 @@ describe('runHeadless — the seat-down policy and the record', () => {
       await expect(
         runHeadless({
           prepared,
-          _planner: makePlanner(),
+          // The first timeout goes to the consult; its guidance runs the retry that times out again.
+          _planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
           _implementer: createCliImplementer(seat, {
             trustedCli: trustedShimGate({ dir: shimDir, tool: 'opencode' }),
           }),

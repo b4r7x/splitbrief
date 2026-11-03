@@ -34,7 +34,6 @@ import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factor
 import { defaultCliAuthChannel } from '../../../core/runners/cli-tool-catalog.js';
 import { error } from '../../../utils/error.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
-import { DEFAULT_LOCAL_RETRIES } from '../../../core/pipeline-spec/retries.js';
 import { requestConsult } from '../consult/request.js';
 import { handleTaskPlannerCallFailure, retryAndRecord } from './retry.js';
 
@@ -53,7 +52,7 @@ afterEach(() => {
 });
 
 describe('retryAndRecord — retry budget', () => {
-  it('local retry on first attempt succeeds → advances task, records local method', async () => {
+  it('a consult-guided retry after the first red succeeds → advances task, records consulted method', async () => {
     const task = makeTask({ id: 'T001' });
     let state = implementingState([task]);
     state = transition(state, { type: 'START_TASK', taskId: task.id });
@@ -67,8 +66,9 @@ describe('retryAndRecord — retry budget', () => {
       usage: { inputTokens: 50, outputTokens: 25 },
     });
     const implementer = makeImplementer({ retry });
+    const planner = makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) });
 
-    const wctx = makeWorkflowContext({ callbacks, implementer, bus });
+    const wctx = makeWorkflowContext({ callbacks, implementer, planner, bus });
     const setTrackedState = vi.fn();
     const taskBreakdowns: TaskTokenUsage[] = [];
 
@@ -86,11 +86,11 @@ describe('retryAndRecord — retry budget', () => {
     expect(res.state.tasks[0]?.status).toBe('done');
     expect(res.state.currentTaskIndex).toBe(1);
 
-    const retryEvents = busEvents.filter((e) => e.type === 'task_retry');
-    expect(retryEvents.length).toBeGreaterThanOrEqual(1);
-    expect(retryEvents[0]).toMatchObject({ taskId: 'T001', attempt: 1 });
+    expect(busEvents.filter((e) => e.type === 'task_retry')).toEqual([]);
+    expect(busEvents.filter((e) => e.type === 'consult_answered')).toHaveLength(1);
+    expect(retry).toHaveBeenCalledWith(expect.objectContaining({ kind: 'consult', attempt: 1 }));
 
-    expect(taskBreakdowns[0]?.method).toBe('local');
+    expect(taskBreakdowns[0]?.method).toBe('consulted');
   });
 
   it('keeps the changed files of both attempts', async () => {
@@ -121,6 +121,7 @@ describe('retryAndRecord — retry budget', () => {
         projectDir,
         sessionId,
         implementer,
+        planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
         validator,
       }),
       task,
@@ -158,7 +159,13 @@ describe('retryAndRecord — retry budget', () => {
     const clock = vi.spyOn(Date, 'now').mockImplementation(() => ++now);
     try {
       const result = await retryAndRecord({
-        wctx: makeWorkflowContext({ projectDir, sessionId, implementer, bus }),
+        wctx: makeWorkflowContext({
+          projectDir,
+          sessionId,
+          implementer,
+          planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
+          bus,
+        }),
         task,
         initialError: 'test failed',
         state,
@@ -179,7 +186,7 @@ describe('retryAndRecord — retry budget', () => {
     );
   });
 
-  it('spends the local retries and the consults, then halts when a consult fails', async () => {
+  it('spends the consults, then halts when a consult fails', async () => {
     const task = makeTask({ id: 'T001' });
     let state = implementingState([task]);
     state = transition(state, { type: 'START_TASK', taskId: task.id });
@@ -232,8 +239,8 @@ describe('retryAndRecord — retry budget', () => {
       reason: 'planner-call-failed',
       taskId: 'T001',
     });
-    // The first attempt, one local retry and the attempt after each of the two consults.
-    expect(retry).toHaveBeenCalledTimes(3);
+    // The attempt after each of the two consults; the third consult fails.
+    expect(retry).toHaveBeenCalledTimes(2);
     expect(loadState(wctx)?.pendingRecovery).toMatchObject({
       reason: 'planner-call-failed',
       taskId: 'T001',
@@ -241,8 +248,7 @@ describe('retryAndRecord — retry budget', () => {
 
     const complete = busEvents.find((e) => e.type === 'task_completed');
     expect(complete).toBeUndefined();
-    const retryEvents = busEvents.filter((e) => e.type === 'task_retry');
-    expect(retryEvents.length).toBe(DEFAULT_LOCAL_RETRIES);
+    expect(busEvents.filter((e) => e.type === 'task_retry')).toEqual([]);
   });
 
   it('error event on exhaustion', async () => {
@@ -522,7 +528,7 @@ describe('retryAndRecord — recovery stop points', () => {
     expect(events.find((e) => e.type === 'recovery_prompted')).toBeUndefined();
   });
 
-  it('adds recovery to the latest persisted retry state when a later retry step throws', async () => {
+  it('adds recovery to the latest persisted state when the consult throws', async () => {
     const { projectDir, sessionId } = setupProject();
 
     const task = makeTask({ id: 'T001' });
@@ -566,7 +572,8 @@ describe('retryAndRecord — recovery stop points', () => {
     });
 
     expect(result.completed).toBe(false);
-    expect(result.state.attempt).toBe(1);
+    expect(implementer.retry).not.toHaveBeenCalled();
+    expect(result.state.attempt).toBe(0);
     expect(result.state.pendingRecovery).toMatchObject({
       reason: 'planner-call-failed',
       seat: 'plan',
@@ -576,7 +583,7 @@ describe('retryAndRecord — recovery stop points', () => {
     // A consult call is not an attempt on the brief, so its halt states no attempt count.
     expect(result.state.pendingRecovery?.attempts).toBeUndefined();
     expect(loadState({ projectDir, sessionId })).toMatchObject({
-      attempt: 1,
+      attempt: 0,
       pendingRecovery: expect.objectContaining({ reason: 'planner-call-failed', seat: 'plan' }),
     });
     expect(events).toContainEqual(

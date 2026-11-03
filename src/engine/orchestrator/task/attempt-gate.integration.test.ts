@@ -2,7 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { entryStoreDir } from '../isolation/entry-snapshot.js';
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { makeCallbacks, makeImplementer } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeCallbacks,
+  makeImplementer,
+  makePlanner,
+} from '#testing/helpers/orchestrator-factories.js';
+import { consultCallAnswering, guidanceConsult } from '#testing/helpers/typed-planner.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeImplStateWithMetadata as implementingState } from '#testing/helpers/factories/workflow-state.js';
@@ -175,7 +180,7 @@ async function runInWorkspace(opts: {
 }) {
   const task: Task = {
     ...opts.task,
-    checks: [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }],
+    checks: [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit' }],
   };
   vi.spyOn(commandRunner, 'runCommand').mockImplementation(async (_cmd, _args, options) => {
     if (opts.check(options?.cwd ?? '')) return { stdout: '', stderr: '', code: 0 };
@@ -209,6 +214,7 @@ async function runInWorkspace(opts: {
       workspaceDir,
       callbacks,
       implementer: opts.implementer,
+      planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
       config: opts.config,
       isolation,
     }),

@@ -1,8 +1,6 @@
 import { resolveApproveLevel } from '../../config/runtime/resolve.js';
-import { DEFAULT_LOCAL_RETRIES } from '../../pipeline-spec/retries.js';
 import { CREW_SEAT_LABELS } from '../../crew/identity.js';
 import type { Config } from '../../schemas/config.js';
-import { countNoun } from '../../../utils/pluralize.js';
 import type { ReadinessCheck } from '../types.js';
 
 export function buildPlanApprovalChecks(
@@ -29,8 +27,7 @@ export function buildPlanApprovalChecks(
     {
       id: 'workflow.retries',
       severity: 'info',
-      summary: `${CREW_SEAT_LABELS.build} gets ${countNoun(DEFAULT_LOCAL_RETRIES, 'retry', 'retries')} after a failed check, then asks ${CREW_SEAT_LABELS.plan} or ${CREW_SEAT_LABELS.review} for guidance.`,
-      metadata: { maxRetries: DEFAULT_LOCAL_RETRIES },
+      summary: `${CREW_SEAT_LABELS.build} asks ${CREW_SEAT_LABELS.plan} for guidance after a failed check.`,
     },
   ];
 }

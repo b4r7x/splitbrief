@@ -171,7 +171,6 @@ export function planFromTasks(tasks: readonly Task[]): PlanProposal {
             id: `${task.id}-K${index + 1}`,
             kind: 'test' as const,
             value: file,
-            required: false,
           }));
     return {
       id: task.id,
@@ -187,7 +186,6 @@ export function planFromTasks(tasks: readonly Task[]): PlanProposal {
                 id: `${task.id}-K1`,
                 kind: 'cmd' as const,
                 value: 'node --version',
-                required: false,
               },
             ]),
       suggestedFiles: [...task.suggestedFiles],

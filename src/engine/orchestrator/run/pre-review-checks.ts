@@ -27,6 +27,7 @@ import {
 } from '../validation/run-checks.js';
 import { checkFailureText, failureKeysForFile } from '../validation/failure-text.js';
 import { throwIfAborted } from '../../../utils/abort.js';
+import { capitalize } from '../../../utils/capitalize.js';
 import type { ValidationCommandRunner } from '../validation/types.js';
 
 /** Runs one check between its running row and the row it settles on, with its clock. */
@@ -70,7 +71,7 @@ export async function runCheckWithRows(input: {
   return preExisting.length > 0 ? { ...run, preExisting } : run;
 }
 
-/** A required check that did not pass: `fail` is a defect, everything else cannot run. */
+/** A check that did not pass: `fail` is a defect, everything else cannot run. */
 export function classifyRequiredChecks(runs: readonly CheckRunResult[]): {
   failed: CheckRunResult[];
   unrunnable: UnrunnableCheck[];
@@ -91,7 +92,7 @@ export function classifyRequiredChecks(runs: readonly CheckRunResult[]): {
 }
 
 /**
- * The failures the pre-review hands the reviewer: every required check that ran and failed. Each
+ * The failures the pre-review hands the reviewer: every check that ran and failed. Each
  * carries the path into the run registry so the fix task knows the file it owns.
  */
 export function buildPreReviewInputs(input: {
@@ -123,7 +124,7 @@ export function buildPreReviewInputs(input: {
         kind: 'defect',
         source: 'check',
         file,
-        text: `${owner === undefined ? '' : `${owner}\n`}Required ${checkFailureText(run, { file })}`,
+        text: `${owner === undefined ? '' : `${owner}\n`}${capitalize(checkFailureText(run, { file }))}`,
         checkIds: [run.checkId],
         ...(run.command !== undefined && { command: run.command }),
         output: run.output,
@@ -144,7 +145,7 @@ export type RunPreReviewChecksOptions = {
   bus: EventBus;
   phase: Phase;
   npmScriptsApproved: boolean;
-  /** The review the checks come before; a task review runs only the required checks it covers. */
+  /** The review the checks come before; a task review runs only the checks it covers. */
   scope?: ReviewScope['kind'] | undefined;
   signal?: AbortSignal | undefined;
   runCommand?: ValidationCommandRunner | undefined;
@@ -153,7 +154,7 @@ export type RunPreReviewChecksOptions = {
 export type PreReviewChecks = Readonly<{
   state: WorkflowState;
   runs: CheckRunResult[];
-  /** The required checks that ran and failed. */
+  /** The checks that ran and failed. */
   failed: CheckRunResult[];
   defects: TriageInput[];
   unrunnable: UnrunnableCheck[];
@@ -161,9 +162,9 @@ export type PreReviewChecks = Readonly<{
 
 /**
  * The candidate verification a review runs first. The final review runs every check of the
- * combined task and run registry; a task review runs the required checks of its briefs and due
- * criteria. Checks are recorded on their declaring task (plan checks on the last task the review
- * covers). Only required checks decide check defects and unrunnable halts.
+ * combined task and run registry; a task review runs the checks of its briefs and due criteria.
+ * Checks are recorded on their declaring task (plan checks on the last task the review covers).
+ * Every check that runs decides check defects and unrunnable halts.
  */
 export async function runPreReviewChecks(
   opts: RunPreReviewChecksOptions,
@@ -179,7 +180,7 @@ export async function runPreReviewChecks(
       .flatMap((criterion) => criterion.checkIds),
   ]);
   const checks = [...registry.values()].filter(
-    (check) => scope.kind === 'final' || (check.required && covered.has(check.id)),
+    (check) => scope.kind === 'final' || covered.has(check.id),
   );
   const checkOptions: RunChecksOptions = {
     plan: opts.state.plan,
@@ -207,9 +208,7 @@ export async function runPreReviewChecks(
     throwIfAborted(opts.signal);
     runs.push(await runCheckWithRows({ check, prepare, notices, moment: 'plan' }));
   }
-  const { failed, unrunnable } = classifyRequiredChecks(
-    runs.filter((run) => registry.get(run.checkId)?.required === true),
-  );
+  const { failed, unrunnable } = classifyRequiredChecks(runs);
   const defects = buildPreReviewInputs({
     failed,
     registry,
@@ -267,7 +266,6 @@ export async function runPreReview(args: {
   wctx: WorkflowContext;
   state: WorkflowState;
   setTrackedState: (s: WorkflowState) => void;
-  inputs?: readonly TriageInput[] | undefined;
   scope?: ReviewScope['kind'] | undefined;
 }): Promise<PreReviewResult> {
   const { wctx, setTrackedState } = args;
@@ -297,7 +295,7 @@ export async function runPreReview(args: {
     return { state, kind: 'stopped' };
   }
 
-  const inputs = [...(args.inputs ?? []), ...checks.defects];
+  const inputs = checks.defects;
   if (inputs.length > 0) {
     state = transitionAndSave(wctx, state, { type: 'QUEUE_TRIAGE', inputs });
     setTrackedState(state);

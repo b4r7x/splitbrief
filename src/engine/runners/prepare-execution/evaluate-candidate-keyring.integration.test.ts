@@ -103,6 +103,7 @@ describe('evaluateCandidate on a Codex host that keeps its sign-in in the keyrin
         signal: new AbortController().signal,
         nativeTrustViolations: new Set(),
         routeCatalogs: new Map(),
+        versionProbes: new Map(),
         deps: {
           detectRunnerEvidence: (options) =>
             detectRunnerEvidence({

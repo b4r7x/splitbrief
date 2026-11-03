@@ -142,7 +142,7 @@ export function withHiddenRetryCheck(
     if (!task.checks?.some((check) => check.id === 'hidden-retry-acceptance')) {
       task.checks = [
         ...(task.checks ?? []),
-        { id: 'hidden-retry-acceptance', kind: 'test', value: checkFile, required: true },
+        { id: 'hidden-retry-acceptance', kind: 'test', value: checkFile },
       ];
     }
   };

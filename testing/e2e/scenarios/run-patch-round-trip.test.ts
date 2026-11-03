@@ -44,7 +44,7 @@ describe('e2e: saved run patch', () => {
             intent:
               'Make the script executable, add a link, retarget the existing link and update the note.',
             suggestedFiles: ['script.sh', 'note.txt'],
-            checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+            checks: [{ id: 'K1', kind: 'cmd', value: 'node --version' }],
           }),
         ],
       });

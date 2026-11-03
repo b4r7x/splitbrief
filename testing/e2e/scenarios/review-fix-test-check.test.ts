@@ -27,7 +27,7 @@ const alpha = makeTaskSpec({
   intent: 'Export alpha and its upper-case form loud.',
   criteria: ['C1'],
   suggestedFiles: ['src/alpha.mjs', TEST_FILE],
-  checks: [{ id: 'T001-K1', kind: 'test', value: TEST_FILE, required: true }],
+  checks: [{ id: 'T001-K1', kind: 'test', value: TEST_FILE }],
 });
 const fix = makeTaskSpec({
   id: 'T002',
@@ -36,7 +36,7 @@ const fix = makeTaskSpec({
   criteria: ['C1'],
   suggestedFiles: ['src/alpha.mjs'],
   contextFiles: [TEST_FILE],
-  checks: [{ id: 'T002-K1', kind: 'test', value: TEST_COMMAND, required: true }],
+  checks: [{ id: 'T002-K1', kind: 'test', value: TEST_COMMAND }],
 });
 const plan = makePlanProposal({
   summary: 'Add the alpha values.',
@@ -156,7 +156,7 @@ function missingTestPlannerScript(callsPath: string): string {
   const fixT002 = {
     ...fix,
     suggestedFiles: ['src/alpha.mjs', NEW_TEST_FILE],
-    checks: [{ id: 'T002-K1', kind: 'test', value: NEW_TEST_FILE, required: true }],
+    checks: [{ id: 'T002-K1', kind: 'test', value: NEW_TEST_FILE }],
     findingIds: ['F1'],
   };
   return `import { appendFileSync } from 'node:fs';
@@ -267,18 +267,18 @@ describe('e2e: a review fix task with a test check', { timeout: 300_000 }, () =>
   it.each([
     {
       name: 'a test path with a typo',
-      check: { id: 'T002-K1', kind: 'test', value: 'src/alpha.tset.mjs', required: true },
+      check: { id: 'T002-K1', kind: 'test', value: 'src/alpha.tset.mjs' },
       refusal:
         'Check T002-K1 is refused: a `test` check names one test file, and `src/alpha.tset.mjs` is no test file in the workspace, and no task lists it.',
     },
     {
       name: 'a test path with a trailing comma',
-      check: { id: 'T002-K1', kind: 'test', value: `${TEST_FILE},`, required: true },
+      check: { id: 'T002-K1', kind: 'test', value: `${TEST_FILE},` },
       refusal: `Check T002-K1 is refused: a \`test\` check names one test file, and \`${TEST_FILE},\` is no test file in the workspace, and no task lists it.`,
     },
     {
       name: 'a render id with a stray comma',
-      check: { id: 'T002-K1', kind: 'render', value: 'workflow-x,', required: true },
+      check: { id: 'T002-K1', kind: 'render', value: 'workflow-x,' },
       refusal:
         'Check T002-K1 is refused: a `render` check names one scenario id of lowercase letters, digits and hyphens, and `workflow-x,` is not one.',
     },

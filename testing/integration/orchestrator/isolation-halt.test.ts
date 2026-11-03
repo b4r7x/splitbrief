@@ -80,6 +80,7 @@ const greetTask = () =>
     scope: { inBounds: [TARGET], outOfBounds: ['everything else'] },
     evidence: ['src/greet.ts exports greet'],
     typeDefs: 'export const greet: (name: string) => string',
+    checks: [{ id: 'T001-K1', kind: 'cmd', value: 'node --version' }],
   });
 
 function opencodeConfig(): CliImplementerConfig {

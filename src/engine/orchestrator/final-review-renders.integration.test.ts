@@ -75,7 +75,7 @@ describe('final review render delivery', () => {
           summary: 'Render the dashboard.',
           decisions: [],
           criteria: [{ id: 'C1', text: 'The dashboard is readable', checkIds: ['K1'] }],
-          checks: [{ id: 'K1', kind: 'render', value: 'dashboard', required: true }],
+          checks: [{ id: 'K1', kind: 'render', value: 'dashboard' }],
           validation: null,
         },
       });
@@ -182,7 +182,7 @@ describe('final review render delivery', () => {
         summary: 'Render the dashboard.',
         decisions: [],
         criteria: [{ id: 'C1', text: 'The dashboard is readable', checkIds: ['K1'] }],
-        checks: [{ id: 'K1', kind: 'render', value: 'dashboard', required: true }],
+        checks: [{ id: 'K1', kind: 'render', value: 'dashboard' }],
         validation: null,
       },
     });
@@ -293,7 +293,6 @@ describe('final review render delivery', () => {
           id: render.checkId,
           kind: 'render' as const,
           value: render.scenario,
-          required: true,
         })),
         validation: null,
       },

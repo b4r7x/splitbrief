@@ -30,7 +30,7 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) cleanupTempDir(dir);
 });
 
-const check = (id: string): Check => ({ id, kind: 'cmd', value: 'tsc --noEmit', required: true });
+const check = (id: string): Check => ({ id, kind: 'cmd', value: 'tsc --noEmit' });
 
 async function runBriefs(opts: {
   review: 'end' | 'task';
@@ -147,18 +147,19 @@ describe('runTaskLoop brief checks', { timeout: 120_000 }, () => {
       review: 'end',
       tasks: oneBrief([check('K1')]),
       red: 1,
+      planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
     });
 
     expect(result.state.tasks.map((task) => task.status)).toEqual(['done']);
     expect(commands).toEqual(['tsc --noEmit', 'tsc --noEmit']);
     expect(implementer.retry).toHaveBeenCalledTimes(1);
     expect(vi.mocked(implementer.retry).mock.calls[0]?.[0]).toMatchObject({
-      kind: 'local',
+      kind: 'consult',
       error: expect.stringContaining(TYPE_ERROR),
     });
   });
 
-  it("consults on a brief whose own check stays red after the retry at workflow.review 'end'", async () => {
+  it("consults again on a brief whose own check stays red after the consult-guided retry at workflow.review 'end'", async () => {
     const consult = vi.fn((_prompt: string) => guidanceConsult());
     const { result, commands } = await runBriefs({
       review: 'end',
@@ -167,14 +168,15 @@ describe('runTaskLoop brief checks', { timeout: 120_000 }, () => {
       planner: makePlanner({ typedCall: consultCallAnswering(consult) }),
     });
 
-    expect(consult).toHaveBeenCalledTimes(1);
+    expect(consult).toHaveBeenCalledTimes(2);
     expect(consult.mock.calls[0]?.[0]).toContain(TYPE_ERROR);
+    expect(consult.mock.calls[1]?.[0]).toContain(TYPE_ERROR);
     expect(result.state.tasks.map((task) => task.status)).toEqual(['done']);
     expect(commands).toEqual(Array(3).fill('tsc --noEmit'));
   });
 
   it("runs only the checks a consult verify names at workflow.review 'end'", async () => {
-    const lint: Check = { id: 'K2', kind: 'cmd', value: 'eslint src/alpha.ts', required: true };
+    const lint: Check = { id: 'K2', kind: 'cmd', value: 'eslint src/alpha.ts' };
     const consult = vi.fn((_prompt: string) => ({
       answer: {
         diagnosis: 'The type error is in a file this task did not touch.',
@@ -208,7 +210,7 @@ describe('runTaskLoop brief checks', { timeout: 120_000 }, () => {
       review: 'end',
       tasks: oneBrief([
         check('K1'),
-        { id: 'K2', kind: 'render', value: 'workflow-build-progress', required: true },
+        { id: 'K2', kind: 'render', value: 'workflow-build-progress' },
       ]),
     });
 

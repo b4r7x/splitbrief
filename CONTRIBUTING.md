@@ -133,7 +133,7 @@ Each skill step follows the engine contract in this table.
 | Plan admission and Markdown renderings | `src/engine/spec/plan-checks.ts`, `plan-tasks.ts`, `prompts/task-format-example.ts` |
 | One behaviour with its tests and callers | TaskSpec intent/criteria; `src/core/pipeline-spec/brief.ts` |
 | Ordinary files as guidance; protected confirmation | `src/core/pipeline-spec/scope.ts` |
-| One local retry and planner consult | `src/core/pipeline-spec/retries.ts`; `src/core/schemas/consult.ts`; `src/engine/orchestrator/consult/` |
+| Consult first, with no local retry | `src/core/pipeline-spec/ladder.ts`; `src/core/schemas/consult.ts`; `src/engine/orchestrator/consult/` |
 | Code refresh before dispatch and persistent lineage bounds | `src/engine/orchestrator/task/refresh-code.ts`; `src/core/pipeline-spec/bounds.ts` |
 | Proposed decisions and confirmed Plan context | ImplementerReport decisions and `plan.decisions` |
 | End/task cadence and completed-task coverage | `workflow.review` (`src/core/schemas/config.ts`) |

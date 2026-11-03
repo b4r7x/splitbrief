@@ -232,7 +232,7 @@ async function runToFirstSeatDown(
             contextLength: 4096,
             fallback,
           },
-    validation: { endChecks: false, testCommand: 'noop' },
+    validation: { endChecks: false, testCommand: 'true' },
     workflow: { approve: 'none' },
   });
   writeConfigYamlText(projectDir, YAML.stringify(config));

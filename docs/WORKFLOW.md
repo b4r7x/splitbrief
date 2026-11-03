@@ -59,8 +59,7 @@ stateDiagram-v2
     implementing --> final_review : ALL_DONE
 
     validating_task --> implementing : VALIDATION_PASS
-    validating_task --> implementing : VALIDATION_FAIL (one retry)
-    validating_task --> escalating : VALIDATION_FAIL (retry spent)
+    validating_task --> escalating : VALIDATION_FAIL
 
     escalating --> implementing : RESET_TASK (rewrite or split handed back)
 
@@ -99,8 +98,7 @@ Verified against the `transition()` reducer in `src/core/state/machine.ts` and t
 | `implementing` | `START_TASK` | `implementing` | Sets task to `in_progress`, resets `attempt` to 0 |
 | `implementing` | `TASK_SENT` | `validating-task` | — |
 | `validating-task` | `VALIDATION_PASS` | `implementing` | Marks task `done`, advances `currentTaskIndex`, resets `attempt` |
-| `validating-task` | `VALIDATION_FAIL` (retry available) | `implementing` | Increments `attempt`. One retry: `DEFAULT_LOCAL_RETRIES` is 1 |
-| `validating-task` | `VALIDATION_FAIL` (retry spent) | `escalating` | The ladder moves to the consult |
+| `validating-task` | `VALIDATION_FAIL` | `escalating` | Keeps `attempt`. Every red goes to the consult |
 | `validating-task` | `ESCALATE` | `escalating` | — |
 | `implementing` / `validating-task` / `escalating` | `SKIP_TASK` | *(same)* | Marks task `skipped`, advances `currentTaskIndex` |
 | `implementing` / `validating-task` / `escalating` | `RESET_TASK` | `implementing` | Sets task to `pending`, rewinds `currentTaskIndex` to that task's index, resets `attempt`. Tasks after it keep their status. |
@@ -109,9 +107,9 @@ Verified against the `transition()` reducer in `src/core/state/machine.ts` and t
 | `final-review` | `REVIEW_DONE` | `complete` | Records `reviewStatus: 'passed' \| 'failed'` |
 | `complete` (review `failed`) or `final-review` (`review-failed` halt) | `REVIEW_CORRECTION` | `final-review` | The `revise` recovery action: queues the correction as a user triage input of kind `defect` with source `user`, and appends the note to `fixCycles.notes`. Refused after a passed review |
 
-`DEFAULT_LOCAL_RETRIES` is 1 (`src/core/pipeline-spec/retries.ts`); `workflow.max_retries` is retired and loads with one notice. The old `HINT_SUCCESS`, `HINT_FAIL` and `FULL_SUCCESS` transitions are gone from the reducer; old `escalated-hint`, `escalated-intermediate` and `escalated-full` completion values and the old `escalate`, `hint_failed` and `task_scope_widened` events stay parseable so a saved `state.json` and `session.jsonl` still load.
+There is no local retry; `workflow.max_retries` is retired and loads with one notice. The old `HINT_SUCCESS`, `HINT_FAIL` and `FULL_SUCCESS` transitions are gone from the reducer; old `escalated-hint`, `escalated-intermediate` and `escalated-full` completion values and the old `escalate`, `hint_failed` and `task_scope_widened` events stay parseable so a saved `state.json` and `session.jsonl` still load.
 
-Before final review, `runPreReviewChecks` runs every plan and task check separately. The collection prepares its validation context once and each test command once. Running and settled rows use that prepared command. Each publishes `full_suite` at `moment: plan` in the review phase, first `running`, then `done`, `not-run` or `refused`. A render alone carries `scenario`, and its row reads `Render <scenario>` with `rendered` or `failed` and its duration. The rail shows Review during collection. The byline and build block use each check's own clock. Plan rows preserve existing required-check triage and add no reviewer-check reds.
+Before final review, `runPreReviewChecks` runs every plan and task check separately. The collection prepares its validation context once and each test command once. Running and settled rows use that prepared command. Each publishes `full_suite` at `moment: plan` in the review phase, first `running`, then `done`, `not-run` or `refused`. A render alone carries `scenario`, and its row reads `Render <scenario>` with `rendered` or `failed` and its duration. The rail shows Review during collection. The byline and build block use each check's own clock. Every red plan or task check becomes a triage input; plan rows add no reviewer-check reds.
 
 **Review fix cycles.** The review seat answers with a typed `ReviewAnswer` (one stateless, read-only call through `requestTyped`). SPLITBRIEF derives `pass`, `pass-with-notes` or `fail` from its verdict (`deriveReviewOutcome`, `src/core/review/verdict.ts`). A criterion or finding the verdict leaves `unverified` reads the results of its registered checks (`verifyClaimChecks`, `src/engine/orchestrator/triage.ts`): a result stored for the same tree state serves it, a stored red included, and only a check with no stored result runs; a `render` check stays unverified, and an unverified criterion blocks pass. A red check whose failures all fail at the run base too fails nothing: it verifies the claim, and the Checks Log names its failures pre-existing. A minor finding is a note, also when it is unverified. A blocking unverified finding blocks until its checks verify it. The verdict lives in `state.review` and `review.json`; `review.md` is its rendering, and `parseFinalReview` stays only as the reader for old sessions that have no `review.json`.
 
@@ -125,13 +123,13 @@ Unverified and minor findings never create fix tasks. `START_FIX_CYCLE` spends o
 
 A red at the final review never reopens a finished brief. The reviewer writes the fix work. Each fix finding carries its check ids, commands by id, own failure keys and original red keys by id, file and output. Its brief gate runs those checks again.
 
-A fix check fails the task when an own failure remains. The task takes the local retry with the exact errors, then the consult. The planner answers that consult, as it answers every consult. This happens before the next round of reviewer checks and review.
+A fix check fails the task when an own failure remains. The task goes to the consult with the exact errors. The planner answers that consult, as it answers every consult. This happens before the next round of reviewer checks and review.
 
 The fields live on each finding of `task.fix` (`file`, `checkIds`, `commands`, `failureKeys`, `redKeys`, `output`). Each `commands` entry maps a check id to the exact command text it ran. SPLITBRIEF copies a pending input's command and failure keys under its check ids. A verdict finding carries every reviewer command and plan check command its check ids name. It takes the union of pending input keys for the same check id and file. Keys come from the full process capture. A test row without FAILED or ERROR and a row with warning severity are not failure keys. A line of Node's TAP stream is not a failure key: a test point, its YAML block with its `location:` and stack lines, and a `#` comment. A failing `node --test` test is keyed by its file and name, and a test file that fails outside its tests by its file. A parent that failed only through its subtests gives no key. A test cancelled by a failed hook or a timeout of an ancestor gives no key; that ancestor gives one. SPLITBRIEF reads the severity where the tool prints it, not in the message text. An incomplete capture gives one placeholder key. The command must pass. Each `redKeys` entry contains every key the original red showed, before the run-base split. A verdict finding takes their union across all inputs for that check id and all files. The consult prompt shows them as the whole red; the gate does not read them. A verdict finding assigned to a fix task must name only registered checks. An unknown id sends the answer back for its one schema repair.
 
 The brief gate (`runBriefGate`, `src/engine/orchestrator/task/brief-gate.ts`) adds those checks to the checks its cadence runs. `runTaskChecks` (`src/engine/orchestrator/task/task-checks.ts`) builds each carried reviewer check from `commands[id]`. It runs under the same command policy as the review. For each check id, the task carries the union of its findings' failure keys, with repeats removed. A red passes when no own failure remains. An own failure that an unfinished fix task of the same cycle also carries is left to that task and does not gate this one. That task carries the failure when it carries the same failure key from a red of the same command, under any check id. Failures the task does not own do not gate it: their fix tasks or the next review answer them, because the next review runs the commands again. A check id with no own failures does not gate the brief when its findings carry failures for another check id.
 
-The error text of a check that did not pass comes from one builder (`checkFailureText`, `src/engine/orchestrator/validation/failure-text.ts`). The implementer retry, consult, escalation, reviewer-command inputs and verify results read it. Required-check and end-check inputs also use it. It lists at most 10 failure keys. Failing tests and diagnostic lines each get up to five places; unused places go to the other family. Each listed test keeps its captured assertion message, including a Go diagnostic that also forms a key. Each key and message line is clipped and secrets are redacted.
+The error text of a check that did not pass comes from one builder (`checkFailureText`, `src/engine/orchestrator/validation/failure-text.ts`). The implementer retry, consult, escalation, reviewer-command inputs and verify results read it. Plan-check and end-check inputs also use it. It lists at most 10 failure keys. Failing tests and diagnostic lines each get up to five places; unused places go to the other family. Each listed test keeps its captured assertion message, including a Go diagnostic that also forms a key. Each key and message line is clipped and secrets are redacted.
 
 The shared selector beside the builder supplies both the input's failure keys and its text. A per-file input keeps that file's keys and unassigned keys, such as Rust's `tests::adds`. When no key names a file, an input assigned to the check's test target keeps all keys. An input without a file also keeps all keys within the same bound. File-scoped text omits the raw output tail and any test message whose diagnostic names another file. The input's `output` field keeps the recorded output. Text without a file appends the bounded output tail after the keys. Reviewer inputs keep the run-base classification and file owner before the failure listing. The builder labels new and pre-existing keys separately when the run records pre-existing failures. Pre-existing failures also fail at the run base. A fix task's text names which of its own keys remain, lists a shared key under `Left to <task>:`, and labels the rest `Other failures, not this brief's job:`. A red with a placeholder key keeps only the tail, or the placeholder reason when the tail is empty or the text has a file.
 
@@ -139,7 +137,7 @@ A diagnostic key includes its path, position and message. Match exact keys first
 
 Other failures belong to other fix tasks or the next review. A check with no carried keys must pass, unless its findings carry failures for another check id. This includes older saved fix tasks. A timeout or a red with no named failure fails the gate. Results of `refused`, `unknown` and `not-runnable` also reject the brief. A settled fix check records `status: 'pass'` in `checkResults`; its command evidence keeps the failure.
 
-The same rule covers carried reviewer, plan and task checks, even when a check is optional. Each judged re-run gets a fix check verdict row. A settled re-run reads `your 2 failures gone · 3 others left for their fix tasks or the next review`. A shared failure an unfinished fix task carries reads `1 left to T025`. An own failure that remains reads `1 of your 2 failures remains`. Plan and task checks get only a done row, with no duration.
+The same rule covers carried reviewer, plan and task checks. Each judged re-run gets a fix check verdict row. A settled re-run reads `your 2 failures gone · 3 others left for their fix tasks or the next review`. A shared failure an unfinished fix task carries reads `1 left to T025`. An own failure that remains reads `1 of your 2 failures remains`. Plan and task checks get only a done row, with no duration.
 
 A fix check runs once per brief gate. Each new BUILD attempt that changes a file runs the checks again. A fix check never re-runs at the run base. The run base still supplies changed-script refusal for reviewer checks.
 
@@ -201,6 +199,7 @@ These fire from any phase. They modify sub-state without changing `phase`.
 | `RECORD_WORKSPACE` | Records the run workspace and its base snapshot. |
 | `INTERRUPT_STEP` | Records `interruptedStep: { step, source, cut, partialRef?, kept?, at }` and sets `awaitingContinue: true`. `cut` is where the stop landed — `mid-step` inside a call, `boundary` where it cut nothing: between two briefs, or at a gate — and `deriveRunStatus` reads it for `paused.at`. `kept` is recorded only when the cut brief had changed declared files; `deriveRunStatus` carries it as `paused.kept`. The run stays open and resumes at that step. |
 | `RESUME_STEP` | Clears `interruptedStep` and sets `awaitingContinue: false`. The run is picking the step up again. |
+| `CONTINUE_STEP` | Clears the same fields as `RESUME_STEP` and keeps `phase`: a call the operator cut continues in place, so a consult-guided attempt stays `escalating`. |
 | `RESTORE_BRIEF_PARK` | Puts a cut brief's park back on resume: the task `in_progress`, `attempt` the cut attempt, `phase: 'implementing'`, `interruptedStep` with `cut: 'mid-step'`, `awaitingContinue: true`. Dispatched only by `initializeWorkflow`, when the state has no park and the session log's most recent brief cut has not run again. |
 | `SET_PLANNER_SESSION_ID` | Stores backend session handle for resume. |
 | `ENQUEUE_USER_MSG` | Appends message to `messageQueue`. |
@@ -307,7 +306,7 @@ Apply merges the current checkout into the run workspace. It uses the three stat
 
 A conflict raises the `apply-conflict` halt. You choose the result for each file in the workspace. Resolve every conflict before checks or review. The available choices and recovery steps are in [Apply conflicts](./APPROVAL-AND-RECOVERY.md#apply-conflicts).
 
-If the merge or a repair changes the reviewed candidate, SPLITBRIEF runs validation and the required checks again. The review seat then reviews the whole run diff, from the workspace base to the candidate, with checkout hunks marked. This re-review counts as a final-review fix cycle.
+If the merge or a repair changes the reviewed candidate, SPLITBRIEF runs validation and every check again. The review seat then reviews the whole run diff, from the workspace base to the candidate, with checkout hunks marked. This re-review counts as a final-review fix cycle.
 
 Before the first checkout write, Apply saves a backup under `.splitbrief/sessions/<id>/apply/<backup-id>/`. It records replaced files and symlinks, created paths and expected results, and freezes the assessed candidate. `APPLY_START` persists the backup id. The writer uses one hash-guarded call for the result. Its guard compares the checkout with the bytes Apply read for the merge. A later checkout edit cannot silently replace that baseline.
 
@@ -401,7 +400,7 @@ The operator can take these actions during a live phase:
 | Stop now | `ctrl+c`, or **Stop now** on the stop sheet | `AbortController.abort()`. Current call terminates. Partial response preserved in `session.jsonl` with `interrupted: true`. Dispatches `INTERRUPT_STEP` → the step it cut is recorded, and the run parks mid-brief with its partial changes kept. |
 | Exit workflow | `ctrl+q` or `/quit` | Stop now, then exit once the run has parked or ended, so the session is on disk before the process goes. The saved state may be resumable later with `splitbrief continue <session-id>`. |
 | Pause after this brief | **Pause after this brief** on the stop sheet | Nothing is killed: the running brief finishes its checks and its review, then the run parks between briefs. Dispatches `INTERRUPT_STEP` with `cut: 'boundary'` naming the brief it stopped *before*, so leaving the screen persists as a boundary park and the run picks up there. |
-| Continue | `/resume`, or typed text on a parked run | Dispatches `RESUME_STEP` → the parked step is cleared. Typed text becomes the step's steer; an empty submit continues with none. |
+| Continue | `/resume`, or typed text on a parked run | Dispatches `RESUME_STEP` → the parked step is cleared. A call cut in this process continues through `CONTINUE_STEP` instead, which keeps the phase. Typed text becomes the step's steer; an empty submit continues with none. |
 
 **Continuing is one path** (`continueRun`, `src/engine/orchestrator/run/continue.ts`). A run this process is still holding settles through its park; a run at rest is re-entered on its saved state with `RunWorkflowOptions.steer`. Either way the operator's words travel as a steer, never as a message queued behind the run, and they are also recorded as a `user_message` in the transcript and `session.jsonl` — once, at the seam the engine consumes them (seed creation on re-entry, the call-continuation loop for a park), except when they answer a planner question still pending, which the call loop records as the answer it consumes. A closed run is refused with its reason rather than restarted.
 
@@ -520,12 +519,12 @@ Switch moves PLAN.
 During a consult, the composer byline uses the active call's seat and clock.
 A consult question takes the planner's composer hint: `Type your answer…` for a structured question, else `Reply to the planner…`.
 
-A rewrite that changes criteria or drops a required criterion check asks the operator before the answer applies.
-A split that drops a criterion or its required check asks through the same path.
+A rewrite that changes criteria or drops a criterion check asks the operator before the answer applies.
+A split that drops a criterion or its check asks through the same path.
 `applyConsultAnswer` returns the operator's answer as guidance, or `failed` when no answer is available.
 It never returns an unasked question to a caller.
 
-When a task fails validation after its attempt and its one retry (`DEFAULT_LOCAL_RETRIES`), or its implementer reports `blocked`, SPLITBRIEF consults the planner: one read-only typed call (`requestConsult`, `src/engine/orchestrator/consult/request.ts`) on the planner's own session. A fix task (`task.fix`) consults the planner too, and so do the descendants of its rewrite or split. The consult of a fix task sends the full prompt with the findings' `failureKeys` and `redKeys`, because the planner did not write the fix brief. Its usage goes to the planner. The planner answers a `ConsultAnswer` (`src/core/schemas/consult.ts`) with exactly one action — `guidance`, `rewrite-task`, `split-task`, `verify`, `ask-user` or `cannot` — and the run acts on it: one more implementer attempt carrying the guidance in its error block, a replacement at the same id with `revision` raised by one, a split whose subtasks take the next free ids and share the lineage, a brief gate and the named checks that can complete the task as `consulted`, the one question the ladder asks the user, or a halt for a brief that cannot be done. An answer that would drop a criterion becomes that question. The planner never writes the implementation, and the planner answers a `blocked` report, not you. Each answer is one transcript row, `PLAN → T003: split into T011, T012 · <diagnosis>`. New records carry no `seat`; an older run's record and `consult_answered` event that carry `seat: 'review'` still load, and their row reads `REVIEW →`. Planner questions about requirements still come to you.
+When a task fails validation, or its implementer reports `blocked`, SPLITBRIEF consults the planner: one read-only typed call (`requestConsult`, `src/engine/orchestrator/consult/request.ts`) on the planner's own session. A fix task (`task.fix`) consults the planner too, and so do the descendants of its rewrite or split. The consult of a fix task sends the full prompt with the findings' `failureKeys` and `redKeys`, because the planner did not write the fix brief. Its usage goes to the planner. The planner answers a `ConsultAnswer` (`src/core/schemas/consult.ts`) with exactly one action — `guidance`, `rewrite-task`, `split-task`, `verify`, `ask-user` or `cannot` — and the run acts on it: one more implementer attempt carrying the guidance in its error block, a replacement at the same id with `revision` raised by one, a split whose subtasks take the next free ids and share the lineage, a brief gate and the named checks that can complete the task as `consulted`, the one question the ladder asks the user, or a halt for a brief that cannot be done. An answer that would drop a criterion becomes that question. The planner never writes the implementation, and the planner answers a `blocked` report, not you. Each answer is one transcript row, `PLAN → T003: split into T011, T012 · <diagnosis>`. New records carry no `seat`; an older run's record and `consult_answered` event that carry `seat: 'review'` still load, and their row reads `REVIEW →`. Planner questions about requirements still come to you.
 
 A hand-back that reports `decisions` is not a consult. Before its attempt is validated, SPLITBRIEF adds each decision the ledger does not hold yet for that brief to the plan's decisions ledger, with the brief's id. No seat confirms it, and no planner call is spent. A decision is `{ what, why }`; a decision written as plain text joins the ledger without a reason. A retry that reports the same decision again adds nothing; a new decision of a retry joins beside the first. Later briefs, consults and every review read the ledger, and the reviewer judges each decision with a brief id against the criteria and the code. When one field of a done report has the wrong shape, SPLITBRIEF keeps the other fields, reads that field as empty and shows one warning that names it. Every consult and every review sees the brief's operator instructions: your queued messages, messages during a call, the correction typed on a stopped run, and your answers to a question about the brief.
 
@@ -649,8 +648,7 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
         plan and task checks get only a done row
       The project formatter runs on this brief's changed files first.
         pass → VALIDATION_PASS → implementing (next task)
-        fail → VALIDATION_FAIL → implementing (attempt++, one retry)
-        fail (retry spent) → escalating, where the planner is consulted
+        fail → VALIDATION_FAIL → escalating, where the planner is consulted
         (for a plan task and for a fix task):
           guidance → one more implementer attempt with the guidance attached
           rewrite-task → REPLACE_TASK (same id, revision+1) → implementing
@@ -736,7 +734,7 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
     An own failure an unfinished sibling fix task carries → left to it.
     Each judged re-run gets a verdict row, including green re-runs.
     Plan and task checks get only a done row.
-    An own failure that remains retries and consults the planner.
+    An own failure that remains consults the planner, then retries.
     With no carried keys or no named failure, the command must pass. A review
     round without progress goes to the planner; its cannot halts on
     review-failed: fix again with a note, Accept as is when no red

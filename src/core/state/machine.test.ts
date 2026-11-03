@@ -19,7 +19,6 @@ import { taskId, type Task } from '../schemas/task.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
-import { DEFAULT_LOCAL_RETRIES } from '../pipeline-spec/retries.js';
 import { BOUNDS } from '../pipeline-spec/bounds.js';
 import { deriveRunStatus } from '../sessions/run-status.js';
 import { reviewsAgain } from '../review/verdict.js';
@@ -118,7 +117,7 @@ describe('transition', () => {
         summary: 'One task.',
         decisions: [],
         criteria: [{ id: 'C1', text: 'Works.', checkIds: ['K1'] }],
-        checks: [{ id: 'K1', kind: 'cmd' as const, value: 'npm test', required: true }],
+        checks: [{ id: 'K1', kind: 'cmd' as const, value: 'npm test' }],
         validation: null,
       };
       const state: WorkflowState = { ...createInitialState('feat'), phase };
@@ -286,11 +285,11 @@ describe('transition', () => {
   });
 
   it.each([
-    [0, 'implementing', 1],
+    [0, 'escalating', 0],
     [1, 'escalating', 1],
     [2, 'escalating', 2],
   ] as const)(
-    'VALIDATION_FAIL at attempt %i -> %s at attempt %i under DEFAULT_LOCAL_RETRIES',
+    'VALIDATION_FAIL at attempt %i -> %s at attempt %i',
     (attempt, phase, nextAttempt) => {
       const state: WorkflowState = {
         ...createInitialState('feat'),
@@ -600,6 +599,24 @@ describe('transition', () => {
     expect(next.phase).toBe('implementing');
   });
 
+  it('CONTINUE_STEP clears a mid-step brief park and keeps the escalating phase', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'escalating',
+      awaitingContinue: true,
+      interruptedStep: {
+        step: { kind: 'brief', taskId: taskId('T001'), attempt: 1 },
+        source: 'user',
+        cut: 'mid-step',
+        at: '2026-04-01T00:00:00.000Z',
+      },
+    };
+    const next = transition(state, { type: 'CONTINUE_STEP' });
+    expect(next.phase).toBe('escalating');
+    expect(next.interruptedStep).toBeUndefined();
+    expect(next.awaitingContinue).toBe(false);
+  });
+
   it('CLEAR_QUEUE removes only messages still pending delivery', () => {
     const state: WorkflowState = {
       ...createInitialState('feat'),
@@ -668,23 +685,23 @@ describe('transition', () => {
     expect(state.plannerSessionId).toBe('second');
   });
 
-  it('a re-entered task at the local retry limit escalates on its next VALIDATION_FAIL', () => {
+  it('a re-entered task keeps its attempt and escalates on its next VALIDATION_FAIL', () => {
     const tasks = [makeTask({ id: 'T001' })];
     const resumed: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'implementing',
       tasks,
       currentTaskIndex: 0,
-      attempt: DEFAULT_LOCAL_RETRIES,
+      attempt: 1,
     };
     const started = transition(resumed, { type: 'START_TASK', taskId: tasks[0]!.id });
-    expect(started.attempt).toBe(DEFAULT_LOCAL_RETRIES);
+    expect(started.attempt).toBe(1);
     expect(started.tasks[0]?.status).toBe('in_progress');
 
     const sent = transition(started, { type: 'TASK_SENT' });
     const exhausted = transition(sent, { type: 'VALIDATION_FAIL' });
     expect(exhausted.phase).toBe('escalating');
-    expect(exhausted.attempt).toBe(DEFAULT_LOCAL_RETRIES);
+    expect(exhausted.attempt).toBe(1);
   });
 
   it('UPDATE_TASK_CODE without code removes stale currentCode from the selected task only', () => {

@@ -10,6 +10,7 @@ import { withApplyRun, type ApplyRun } from '#testing/helpers/apply-run.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
+import { CheckSchema } from '../../../core/schemas/task.js';
 import { isQueuedMessagePendingDelivery } from '../../../core/queue-state.js';
 import { processError } from '../../../lib/process/errors.js';
 import { enqueueUserMessage } from '../queue/submit.js';
@@ -68,7 +69,7 @@ describe('brief gate', () => {
         markHooksConfigTrusted(ref.projectDir, hooks);
         const task = makeTask({
           suggestedFiles: ['source.txt'],
-          checks: [{ id: 'check', kind: 'cmd', value: 'node --version', required: true }],
+          checks: [{ id: 'check', kind: 'cmd', value: 'node --version' }],
         });
         const taskStartSnapshot = {
           ...(await captureWorkspaceSnapshot(ref.projectDir, ref)),
@@ -163,7 +164,7 @@ describe('brief gate', () => {
       restoreFiles: ['attempt.txt'],
     };
     const task = makeTask({
-      checks: [{ id: 'check', kind: 'cmd', value: 'node --version', required: true }],
+      checks: [{ id: 'check', kind: 'cmd', value: 'node --version' }],
     });
     const state = {
       ...makeImplState([task]),
@@ -223,7 +224,7 @@ describe('brief gate', () => {
     const ref = setup();
     const task = makeTask({
       id: 'T001',
-      checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+      checks: [{ id: 'K1', kind: 'cmd', value: 'node --version' }],
     });
     const state = makeImplState([task]);
     saveState(ref, state);
@@ -277,7 +278,7 @@ describe('brief gate', () => {
     const ref = setup();
     const task = makeTask({
       id: 'T001',
-      checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+      checks: [{ id: 'K1', kind: 'cmd', value: 'node --version' }],
     });
     const state = makeImplState([task]);
     saveState(ref, state);
@@ -317,7 +318,7 @@ describe('brief gate', () => {
     const ref = setup();
     const task = makeTask({
       id: 'T001',
-      checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+      checks: [{ id: 'K1', kind: 'cmd', value: 'node --version' }],
     });
     const state = makeImplState([task]);
     saveState(ref, state);
@@ -390,7 +391,7 @@ describe('brief gate', () => {
       decisions: [],
       validation: null,
       criteria: [{ id: 'C1', text: 'both work', checkIds: ['K1'] }],
-      checks: [{ id: 'K1', kind: 'cmd' as const, value: 'node --version', required: true }],
+      checks: [{ id: 'K1', kind: 'cmd' as const, value: 'node --version' }],
     };
     const runCommand = vi.fn().mockResolvedValue({ stdout: 'ok', stderr: '', code: 0 });
     const wctx = makeWctx({
@@ -419,7 +420,7 @@ describe('brief gate', () => {
     expect(due.state.tasks[1]?.checkResults).toEqual([{ id: 'K1', status: 'pass' }]);
   });
 
-  it('rejects required due checks and accepts optional failures', async () => {
+  it('fails the brief on a red due check that an old plan marked optional', async () => {
     const ref = setup();
     const runCommand = vi
       .fn()
@@ -430,23 +431,23 @@ describe('brief gate', () => {
       ...ref,
       config: makeNoValidationConfig({ workflow: { review: 'task' } }),
     });
-    for (const required of [true, false]) {
-      const task = makeTask({
-        id: 'T001',
-        checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required }],
-      });
-      const result = await runBriefGate({
-        wctx,
-        task,
-        state: makeImplState([task]),
-        changedFiles: [],
-        taskStartSnapshot: null,
-        runCommand,
-      });
-      expect(result.acceptance).toEqual({ accepted: !required });
-      expect(result.error).toMatch(required ? /^check K1 did not pass \(fail\): .*broken/s : /^$/);
-      expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'K1', status: 'fail' }]);
-    }
+    const task = makeTask({
+      id: 'T001',
+      checks: [
+        CheckSchema.parse({ id: 'K1', kind: 'cmd', value: 'node --version', required: false }),
+      ],
+    });
+    const result = await runBriefGate({
+      wctx,
+      task,
+      state: makeImplState([task]),
+      changedFiles: [],
+      taskStartSnapshot: null,
+      runCommand,
+    });
+    expect(result.acceptance).toEqual({ accepted: false });
+    expect(result.error).toMatch(/^check K1 did not pass \(fail\): .*broken/s);
+    expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'K1', status: 'fail' }]);
   });
   // Live run 2026-10-09: the 4k tail of `npm run test-ci` was an event-log line.
   it('leads the retry text with the failing test and its message when the output tail is noise', async () => {
@@ -463,7 +464,7 @@ describe('brief gate', () => {
     ].join('\n');
     const task = makeTask({
       id: 'T001',
-      checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+      checks: [{ id: 'K1', kind: 'cmd', value: 'node --version' }],
     });
     const result = await runBriefGate({
       wctx: makeWctx({ ...ref, config: makeNoValidationConfig({ workflow: { review: 'task' } }) }),
@@ -505,7 +506,7 @@ describe('brief gate', () => {
       decisions: [],
       validation: null,
       criteria: [],
-      checks: [{ id: 'K1', kind: 'cmd' as const, value: 'node --version', required: false }],
+      checks: [{ id: 'K1', kind: 'cmd' as const, value: 'node --version' }],
     };
     const runCommand = vi
       .fn()

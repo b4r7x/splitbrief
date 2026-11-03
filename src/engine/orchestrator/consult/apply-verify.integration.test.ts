@@ -146,7 +146,7 @@ async function harness(opts: {
 describe('applyConsultAnswer verify', () => {
   it('keeps the task baseline when verification records writes against a later attempt', async () => {
     const ref = setupRepo();
-    const checks: Check[] = [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }];
+    const checks: Check[] = [{ id: 'K1', kind: 'cmd', value: 'node --version' }];
     const task = makeTask({ id: 'T003', status: 'in_progress', criteria: ['C1'], checks });
     const taskStartSnapshot = {
       ...(await getChangedFilesSnapshot(ref.projectDir)),
@@ -196,7 +196,7 @@ describe('applyConsultAnswer verify', () => {
 
   it('returns a correction without completing when a message arrives during green verify checks', async () => {
     const ref = setupRepo();
-    const checks: Check[] = [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }];
+    const checks: Check[] = [{ id: 'K1', kind: 'cmd', value: 'node --version' }];
     const task = makeTask({ id: 'T003', status: 'in_progress', criteria: ['C1'], checks });
     const { ctx, states, events } = await harness({
       ...ref,
@@ -239,7 +239,7 @@ describe('applyConsultAnswer verify', () => {
       criteria: ['C1'],
       status: 'failed',
     });
-    const plan = planWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }]);
+    const plan = planWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit' }]);
     const commandRunner = makeCommandRunner({ stdout: 'clean', stderr: '', code: 0 });
     const { ctx, states, events, validator } = await harness({
       projectDir,
@@ -294,7 +294,7 @@ describe('applyConsultAnswer verify', () => {
     const { ctx } = await harness({
       ...ref,
       task,
-      plan: planWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }]),
+      plan: planWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit' }]),
       runCommand: makeCommandRunner({ stdout: 'clean', stderr: '', code: 0 }),
       taskStartSnapshot,
     });
@@ -318,7 +318,7 @@ describe('applyConsultAnswer verify', () => {
       criteria: ['C1'],
       status: 'failed',
     });
-    const plan = planWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }]);
+    const plan = planWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit' }]);
     const { ctx, events } = await harness({
       projectDir,
       sessionId,
@@ -348,7 +348,7 @@ describe('applyConsultAnswer verify', () => {
   it('fails the consult on an empty selection without running anything', async () => {
     const { projectDir, sessionId } = setupRepo();
     const task = makeTask({ id: 'T003', suggestedFiles: ['src/greet.ts'], criteria: ['C1'] });
-    const plan = planWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }]);
+    const plan = planWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit' }]);
     const runner = makeCommandRunner();
     const { ctx, states, events } = await harness({
       projectDir,
@@ -371,7 +371,7 @@ describe('applyConsultAnswer verify', () => {
   it('fails the consult on a selection naming an unknown check', async () => {
     const { projectDir, sessionId } = setupRepo();
     const task = makeTask({ id: 'T003', suggestedFiles: ['src/greet.ts'], criteria: ['C1'] });
-    const plan = planWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }]);
+    const plan = planWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit' }]);
     const runner = makeCommandRunner();
     const { ctx, events } = await harness({
       projectDir,
@@ -395,8 +395,8 @@ describe('applyConsultAnswer verify', () => {
     const task = makeTask({ id: 'T003', suggestedFiles: ['src/greet.ts'], criteria: ['C1'] });
     const plan = planWith(
       [
-        { id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true },
-        { id: 'K2', kind: 'cmd', value: 'biome check', required: true },
+        { id: 'K1', kind: 'cmd', value: 'tsc --noEmit' },
+        { id: 'K2', kind: 'cmd', value: 'biome check' },
       ],
       ['K1', 'K2'],
     );
@@ -424,14 +424,14 @@ describe('applyConsultAnswer verify', () => {
       id: 'T001',
       criteria: ['C1'],
       status: 'done',
-      checks: [{ id: 'K5', kind: 'cmd', value: 'biome check', required: true }],
+      checks: [{ id: 'K5', kind: 'cmd', value: 'biome check' }],
     });
     const task = makeTask({
       id: 'T002',
       suggestedFiles: ['src/greet.ts'],
       criteria: ['C1'],
       status: 'failed',
-      checks: [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }],
+      checks: [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit' }],
     });
     const plan = planWith([], ['K1', 'K5']);
     const runner = makeCommandRunner({ stdout: 'clean', stderr: '', code: 0 });
@@ -475,14 +475,14 @@ describe('applyConsultAnswer verify', () => {
       id: 'T002',
       criteria: ['C1'],
       status: 'pending',
-      checks: [{ id: 'K2', kind: 'cmd', value: 'test -e src/beta.mjs', required: true }],
+      checks: [{ id: 'K2', kind: 'cmd', value: 'test -e src/beta.mjs' }],
     });
     const task = makeTask({
       id: 'T001',
       suggestedFiles: ['src/greet.ts'],
       criteria: ['C1'],
       status: 'failed',
-      checks: [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }],
+      checks: [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit' }],
     });
     const plan = planWith([], ['K1', 'K2']);
     const runner = makeCommandRunner({ stdout: 'clean', stderr: '', code: 0 });
@@ -518,7 +518,7 @@ describe('applyConsultAnswer verify', () => {
       criteria: ['C1'],
       status: 'failed',
     });
-    const plan = planWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }]);
+    const plan = planWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit' }]);
     const commandRunner = makeCommandRunner(
       processError.exitCode({ command: 'tsc', code: 1, stderr: 'type error', output: '' }),
     );
@@ -577,7 +577,7 @@ describe('applyConsultAnswer verify', () => {
           },
         });
       const task = fixOf('T023', [own, shared], 'failed');
-      const plan = planWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }]);
+      const plan = planWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit' }]);
       const { ctx, states } = await harness({
         projectDir,
         sessionId,
@@ -602,7 +602,7 @@ describe('applyConsultAnswer verify', () => {
     },
   );
 
-  it('completes when only an optional check the planner did not select fails', async () => {
+  it('fails the verify when a task check the planner did not select fails', async () => {
     const { projectDir, sessionId } = setupRepo();
     const task = makeTask({
       id: 'T003',
@@ -610,13 +610,13 @@ describe('applyConsultAnswer verify', () => {
       criteria: ['C1'],
       status: 'failed',
       checks: [
-        { id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true },
-        { id: 'K2', kind: 'cmd', value: 'node --version', required: false },
+        { id: 'K1', kind: 'cmd', value: 'tsc --noEmit' },
+        { id: 'K2', kind: 'cmd', value: 'node --version' },
       ],
     });
     const commandRunner = makeCommandRunner(
       { stdout: 'clean', stderr: '', code: 0 },
-      processError.exitCode({ command: 'node', code: 1, stderr: 'optional red', output: '' }),
+      processError.exitCode({ command: 'node', code: 1, stderr: 'unselected red', output: '' }),
     );
     const { ctx, events } = await harness({
       projectDir,
@@ -630,7 +630,7 @@ describe('applyConsultAnswer verify', () => {
 
     const result = await applyConsultAnswer(ctx, task, verify(['K1'], 'Verify K1'), attempt);
 
-    expect(result).toMatchObject({ action: 'completed' });
+    expect(result).toMatchObject({ action: 'failed', reason: expect.stringContaining('K2') });
     expect(events.filter((event) => event.type === 'checks_run')).toMatchObject([
       {
         taskId: 'T003',
@@ -650,8 +650,8 @@ describe('applyConsultAnswer verify', () => {
       criteria: ['C1'],
       status: 'failed',
       checks: [
-        { id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true },
-        { id: 'K2', kind: 'cmd', value: 'node --version', required: true },
+        { id: 'K1', kind: 'cmd', value: 'tsc --noEmit' },
+        { id: 'K2', kind: 'cmd', value: 'node --version' },
       ],
     });
     const plan = planWith([], ['K1']);
@@ -701,7 +701,7 @@ describe('applyConsultAnswer verify under a pre_validation hook', () => {
     try {
       const { projectDir, sessionId } = setupRepo();
       const task = makeTask({ id: 'T003', suggestedFiles: ['src/greet.ts'], criteria: ['C1'] });
-      const plan = planWith([{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }]);
+      const plan = planWith([{ id: 'K1', kind: 'cmd', value: 'node --version' }]);
       writeFileSync(
         join(projectDir, 'deny-validation.mjs'),
         "console.log(JSON.stringify({ decision: 'deny', message: 'policy: validation gated' }));\n",

@@ -6,7 +6,7 @@ import { compactFacts, createRecoveryIssue, type RecoveryBuilderBase } from './i
 export type UnrunnableCheck = { checkId: string; output: string; missingProgram?: true };
 
 /**
- * A required check whose status is refused, not-runnable or unknown is a policy
+ * A check whose status is refused, not-runnable or unknown is a policy
  * problem, not a finding: the run cannot judge the candidate, and no fix task can
  * answer it. The halt names every check id and why it cannot run, tells the user to
  * install a missing program or correct the check, and offers the reviewer seat the
@@ -30,7 +30,7 @@ export function buildRequiredChecksUnrunnableRecoveryIssue(
     phase: opts.phase,
     files: [],
     affectedTaskIds: [],
-    message: `Required checks cannot run: ${entries.join('; ')}`,
+    message: `Checks cannot run: ${entries.join('; ')}`,
     details: [
       ...(missingProgram ? ['Install what is missing, then run the checks again.'] : []),
       ...(otherCause ? ['Fix the cause below, then run the checks again.'] : []),

@@ -109,7 +109,7 @@ describe('a steer that resumes a run is recorded exactly once', { timeout: 90_00
           model: 'cheap-direct-agent',
           contextLength: 4096,
         },
-        validation: { endChecks: false, testCommand: 'noop' },
+        validation: { endChecks: false, testCommand: 'true' },
         workflow: {
           approve: 'none',
         },

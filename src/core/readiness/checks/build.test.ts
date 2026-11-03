@@ -197,7 +197,7 @@ describe('readiness checks', () => {
     expect(section?.title).toBe('Workflow');
     expect(section?.checks.map((check) => check.summary)).toEqual([
       'Plan approval: automatic.',
-      'BUILD gets 1 retry after a failed check, then asks PLAN or REVIEW for guidance.',
+      'BUILD asks PLAN for guidance after a failed check.',
     ]);
     expect(report.sections.some((candidate) => candidate.id === 'mode')).toBe(false);
     expect(report.metadata).toEqual(expect.objectContaining({ approve: 'none' }));

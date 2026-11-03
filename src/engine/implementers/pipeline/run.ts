@@ -198,6 +198,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         context: opts.context,
         error: opts.error,
         attempt: opts.attempt,
+        kind: opts.kind,
         contextLength: opts.config.implementer.contextLength,
         languageContext: opts.languageContext,
         writesFiles,
@@ -843,10 +844,17 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
       if (prepared.kind === 'refused') return prepared.result;
       const retryOpts: RetryOptions = { ...opts, task: prepared.opts.task };
       const base = buildRetryPrompt(retryOpts);
+      // A continued attempt kept its work; only a retry that starts over discarded the earlier one.
       const prompt =
         retryOpts.continuation === undefined
           ? base
-          : composeContinuation({ basePrompt: base, ...retryOpts.continuation, discarded: true });
+          : composeContinuation({
+              basePrompt: base,
+              ...retryOpts.continuation,
+              discarded:
+                retryOpts.continuation.partial === undefined &&
+                retryOpts.continuation.kept === undefined,
+            });
       const temperature =
         retryOpts.kind === 'consult'
           ? retryOpts.config.implementer.temperature

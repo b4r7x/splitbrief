@@ -7,7 +7,7 @@ import { rebaseOnPersistedWorkflowState } from '../state-ops.js';
 import type { WorkflowContext } from '../types.js';
 import type { ValidationAcceptance } from '../validation/acceptance.js';
 import { checkFailureText } from '../validation/failure-text.js';
-import { checkRegistry, type CheckRunResult } from '../validation/run-checks.js';
+import type { CheckRunResult } from '../validation/run-checks.js';
 import type { ValidationCommandRunner } from '../validation/types.js';
 import { runPreValidationGate } from './pre-validation-gate.js';
 import { runTaskChecks } from './task-checks.js';
@@ -30,7 +30,7 @@ export async function runBriefGate(opts: {
   /** A pre_validation denial restores the task's recorded writes to this baseline. */
   taskStartSnapshot: ChangedFilesSnapshot | null;
   attemptSnapshot?: ChangedFilesSnapshot | undefined;
-  /** Checks the caller selected: each must pass, whatever its status or `required` flag. */
+  /** Checks the caller selected: each must pass, whatever its status. */
   checkIds?: readonly string[] | undefined;
   runCommand?: ValidationCommandRunner | undefined;
   setTrackedState?: ((state: WorkflowState) => void) | undefined;
@@ -123,14 +123,11 @@ export async function runBriefGate(opts: {
     runs = checked.runs;
     settled = checked.settled;
   }
-  const registry = checkRegistry({ task, tasks: state.tasks, plan: state.plan });
   const selected = new Set(opts.checkIds ?? []);
   const failedChecks = runs.filter((run) =>
     selected.has(run.checkId) || fixCheckIds.has(run.checkId)
       ? run.status !== 'pass' && !settled.has(run.checkId)
-      : run.status === 'fail' &&
-        !settled.has(run.checkId) &&
-        registry.get(run.checkId)?.required === true,
+      : run.status === 'fail' && !settled.has(run.checkId),
   );
   const checksAccepted = failedChecks.length === 0 && !wctx.signal?.aborted;
   state = rebaseOnPersistedWorkflowState(wctx, state, { keepUnsaved: true });

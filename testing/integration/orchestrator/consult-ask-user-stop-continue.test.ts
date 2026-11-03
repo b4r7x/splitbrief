@@ -85,7 +85,7 @@ describe('a run stopped while a consult question waits', { timeout: 120_000 }, (
       description: 'Create a module whose marker only the operator knows.',
       implementationSteps: ['Create src/loop.ts with the marker export.'],
       tests: ['node validate.mjs passes'],
-      checks: [{ id: 'K-retry', kind: 'test', value: targetFile, required: true }],
+      checks: [{ id: 'K-retry', kind: 'test', value: targetFile }],
       scope: { inBounds: [targetFile], outOfBounds: ['unrelated files'] },
       evidence: ['validation passes after the operator answers'],
       typeDefs: 'export const loop: string',
@@ -108,14 +108,6 @@ describe('a run stopped while a consult question waits', { timeout: 120_000 }, (
         return { success: true, output: 'initial', usage: { inputTokens: 10, outputTokens: 5 } };
       }),
       retry: vi.fn(async (opts: RetryOptions) => {
-        if (opts.kind === 'local') {
-          return {
-            success: false,
-            output: '',
-            error: 'local retry still misses the marker',
-            usage: { inputTokens: 10, outputTokens: 5 },
-          };
-        }
         writeFileSync(join(opts.projectDir, targetFile), 'export const loop = "from-retry";\n');
         return { success: true, output: 'fixed', usage: { inputTokens: 10, outputTokens: 5 } };
       }),

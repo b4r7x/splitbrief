@@ -190,7 +190,12 @@ describe('collectCallUsageEvidence — task attribution', () => {
     }, 'cli');
     const failed = await cli.implement(runOptions(cliConfig()));
     expect(failed.success).toBe(false);
-    await cli.retry({ ...runOptions(cliConfig()), error: 'exit 1', attempt: 1, kind: 'local' });
+    await cli.retry({
+      ...runOptions(cliConfig()),
+      error: 'exit 1',
+      attempt: 1,
+      kind: 'correction',
+    });
 
     const rows = collect();
     expect(rows.map((row) => [row.taskId, row.attempt])).toEqual([

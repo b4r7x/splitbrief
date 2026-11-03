@@ -27,7 +27,7 @@ afterEach(() => {
   restorePath = undefined;
 });
 
-function alphaPlan(k2: { value: string; required: boolean }) {
+function alphaPlan(k2: { value: string }) {
   return makePlanProposal({
     summary: 'Add a tested alpha value.',
     decisions: [],
@@ -40,7 +40,7 @@ function alphaPlan(k2: { value: string; required: boolean }) {
         criteria: ['C1'],
         suggestedFiles: ['src/alpha.mjs', 'src/alpha.test.mjs'],
         checks: [
-          { id: 'K1', kind: 'test', value: 'src/alpha.test.mjs', required: true },
+          { id: 'K1', kind: 'test', value: 'src/alpha.test.mjs' },
           { id: 'K2', kind: 'cmd', ...k2 },
         ],
       }),
@@ -162,7 +162,7 @@ describe('e2e: a refused plan check', () => {
         detail: 'uses the code-loading option node --require',
       },
     ];
-    const plan = alphaPlan({ value: 'node --version', required: true });
+    const plan = alphaPlan({ value: 'node --version' });
     const { run, state, events, calls, executedPath } = await runRefusedCheck({
       approve: 'none',
       plan: { ...plan, gate: refused.map(({ command }) => command) },
@@ -213,7 +213,7 @@ describe('e2e: a refused plan check', () => {
       'requires a Python stack tool directly after uv run (received --frozen)',
     ],
   ])('records the rule that refuses the discovered test command %s', async (command, reason) => {
-    const plan = alphaPlan({ value: 'node --version', required: true });
+    const plan = alphaPlan({ value: 'node --version' });
     const { run, state, events, calls } = await runRefusedCheck({
       approve: 'none',
       plan: {
@@ -243,8 +243,8 @@ describe('e2e: a refused plan check', () => {
   it('sends a plan whose npm run check names a script package.json lacks back to the planner', async () => {
     const { run, state, events, calls } = await runRefusedCheck({
       approve: 'plan',
-      plan: alphaPlan({ value: 'npm run lint', required: true }),
-      repair: alphaPlan({ value: 'node --version', required: true }),
+      plan: alphaPlan({ value: 'npm run lint' }),
+      repair: alphaPlan({ value: 'node --version' }),
     });
 
     expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
@@ -276,8 +276,8 @@ describe('e2e: a refused plan check', () => {
     async (command, reason) => {
       const { run, state, events, calls } = await runRefusedCheck({
         approve: 'none',
-        plan: alphaPlan({ value: command, required: true }),
-        repair: alphaPlan({ value: 'node --version', required: true }),
+        plan: alphaPlan({ value: command }),
+        repair: alphaPlan({ value: 'node --version' }),
       });
 
       expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);

@@ -34,7 +34,7 @@ const clamp = makeTaskSpec({
   intent: 'Clamp a value into a range.',
   criteria: ['C1'],
   suggestedFiles: ['src/clamp.mjs', 'src/clamp.test.mjs'],
-  checks: [{ id: 'T001-K1', kind: 'test', value: 'src/clamp.test.mjs', required: true }],
+  checks: [{ id: 'T001-K1', kind: 'test', value: 'src/clamp.test.mjs' }],
 });
 const plan = makePlanProposal({
   summary: 'Add a tested clamp helper.',

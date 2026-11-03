@@ -24,7 +24,8 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
+import { expireDeadlineAfterFile } from '#testing/helpers/fake-timers.js';
 import {
   installOpencodeSteeringShim,
   type OpencodeSteeringShimMode,
@@ -3008,10 +3009,18 @@ describe('OpenCode process steering', () => {
     });
   });
 
+  // The deadline fires only once the sidecar has written its pid, so a slow node start under load
+  // cannot reach the timeout before the sidecar exists.
   itUnix('times out and reaps a sidecar while waiting for its startup lines', async () => {
     await withTempDir('opencode-startup-timeout', async (dir) => {
       const fixture = setup(dir, 'no-url');
-      const result = await fixture.run({ timeoutMs: 500 });
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      onTestFinished(() => {
+        vi.useRealTimers();
+      });
+      const running = fixture.run({ timeoutMs: 500 });
+      await expireDeadlineAfterFile(fixture.shim.serverFile);
+      const result = await running;
       expect(result).toMatchObject({ status: 'timeout', error: { code: 'timeout' } });
       expect(existsSync(fixture.shim.captureFile)).toBe(false);
       fixture.assertReaped(fixture.shim.serverFile);

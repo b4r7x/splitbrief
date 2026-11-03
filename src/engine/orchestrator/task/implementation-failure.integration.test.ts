@@ -336,6 +336,7 @@ describe('handleFailedImplementation — a seat refused on the retry counts both
         implementer: { kind: 'cli', tool: 'opencode', model: 'deepseek/deepseek-flash' },
         validation: { endChecks: false, testCommand: 'noop' },
       }),
+      planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
     });
 
     const next = await handleFailedImplementation({
@@ -441,7 +442,7 @@ describe('handleFailedImplementation — the automatic seat switch intent', () =
 });
 
 describe('handleFailedImplementation — a stop with a hand-back is consulted', () => {
-  it('ends the local rung on a no-change retry and asks the planner', async () => {
+  it('asks the planner on a no-change attempt, with no local retry', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001' });
     const state = implementingState([task]);
@@ -485,10 +486,10 @@ describe('handleFailedImplementation — a stop with a hand-back is consulted', 
       setTrackedState: vi.fn(),
     });
 
-    // One local retry stopped on the no-change outcome; each consult answer spent
-    // one more attempt, and the third consult failed, so the brief halts on it.
-    expect(implementer.retry).toHaveBeenCalledTimes(3);
-    expect(events.filter((e) => e.type === 'task_retry')).toHaveLength(1);
+    // Each consult answer spent one more attempt, and the third consult failed,
+    // so the brief halts on it.
+    expect(implementer.retry).toHaveBeenCalledTimes(2);
+    expect(events.filter((e) => e.type === 'task_retry')).toEqual([]);
     expect(events.filter((e) => e.type === 'consult_answered')).toHaveLength(2);
     expect(next.pendingRecovery).toMatchObject({ reason: 'planner-call-failed', taskId: 'T001' });
   });
@@ -504,6 +505,7 @@ describe('handleFailedImplementation — an effect failure is no scope fence', (
 
     const retry = vi.fn().mockResolvedValue({ success: false, output: '', error: 'still broken' });
     const { bus, events } = makeBusRecorder();
+    let consults = 0;
     const wctx = makeWorkflowContext({
       projectDir,
       sessionId,
@@ -511,6 +513,14 @@ describe('handleFailedImplementation — an effect failure is no scope fence', (
       bus,
       config: makeConfig({
         validation: { endChecks: false, testCommand: 'noop' },
+      }),
+      // One answer, then the planner fails: no count stops the consults of a brief that keeps failing.
+      planner: makePlanner({
+        typedCall: consultCallAnswering(() => {
+          consults += 1;
+          if (consults > 1) throw new Error('Planner call failed');
+          return guidanceConsult();
+        }),
       }),
     });
     const error = "Tool implementer wrote outside the brief's declared files: src/other.ts";
@@ -531,7 +541,7 @@ describe('handleFailedImplementation — an effect failure is no scope fence', (
       setTrackedState: vi.fn(),
     });
 
-    expect(retry.mock.calls[0]?.[0]?.error).toBe(error);
+    expect(retry.mock.calls[0]?.[0]?.error).toContain(error);
     expect(readFileSync(join(projectDir, 'src/other.ts'), 'utf-8')).toBe('agent rewrote this\n');
     expect(JSON.stringify(events)).not.toMatch(/revert/i);
   });
@@ -571,7 +581,7 @@ describe('handleFailedImplementation — an effect failure is no scope fence', (
       setTrackedState: vi.fn(),
     });
 
-    expect(retry.mock.calls[0]?.[0]?.error).toBe(error);
+    expect(retry.mock.calls[0]?.[0]?.error).toContain(error);
     expect(next.pendingRecovery?.reason).not.toBe('approval-promotion-conflict');
   });
 });
@@ -851,10 +861,21 @@ describe('runTaskLoop — a Cursor seat that refuses the account is a seat-down 
     expect(run.state.pendingRecovery?.availableActions).toContain('switch-seat');
   });
 
-  it('halts on the retry rung when the refusal comes on the second attempt', async () => {
+  it('halts on the consult-guided attempt when the refusal comes on the second attempt', async () => {
     const run = await runCursorSeat({ firstFailure: 'Error: the agent stopped unexpectedly' });
 
-    expectSeatDownOnFirstAttempt(run, 2);
+    expect(run.state.pendingRecovery).toMatchObject({
+      reason: 'runner-usage-limit',
+      taskId: 'T001',
+      attempts: 2,
+    });
+    // The ordinary first failure earns the one consult; the refusal on its attempt halts at once.
+    expect(run.consult).toHaveBeenCalledTimes(1);
+    expect(run.events.filter((event) => event.type === 'consult_answered')).toHaveLength(1);
+    expect(formatRecoveryPrompt(run.state.pendingRecovery!).split('\n')[0]).toBe(
+      'Seat down · Access refused by Cursor Agent CLI',
+    );
+    expect(run.state.pendingRecovery?.details.join('\n')).toContain(CURSOR_MODEL_REFUSAL);
   });
 
   it('halts again at once when the user retries the same seat', async () => {

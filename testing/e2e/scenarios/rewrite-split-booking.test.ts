@@ -12,6 +12,7 @@ import { resultMenuRows } from '../../../src/features/workflow/result/options.js
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { guidanceConsult } from '#testing/helpers/typed-planner.js';
 import {
   cli,
   createStopContinueFixture,
@@ -32,16 +33,16 @@ afterEach(() => {
   restorePath = undefined;
 });
 
-/** The check passes once the planner's first consult removed the flag file. */
+/** The check passes once a consult other than guidance removed the flag file. */
 function flagTest(flag: string): string {
   return `import { existsSync } from 'node:fs';\nimport { strict as assert } from 'node:assert';\nimport { test } from 'node:test';\ntest('alpha', () => assert.ok(!existsSync(${JSON.stringify(flag)})));\n`;
 }
 
 /**
  * The planner plans `planned`, passes every review on the ids its prompt lists (the first one
- * answers `firstReview` when given), and answers the consults in turn; each consult removes the
- * flag. The implementer writes the files that `implementer` lists for the brief title in its
- * prompt.
+ * answers `firstReview` when given), and answers the consults in turn; each consult but a
+ * guidance one removes the flag. The implementer writes the files that `implementer` lists for
+ * the brief title in its prompt.
  */
 function writeRunners(
   target: StopContinueFixture,
@@ -79,9 +80,9 @@ if (prompt.includes('# Task Implementation Review') && firstReview !== null && !
 } else if (prompt.includes('# Consult on a failing task') || prompt.includes('# Consult continued')) {
   const n = Number(readFileSync(${JSON.stringify(counter)}, 'utf8'));
   writeFileSync(${JSON.stringify(counter)}, String(n + 1));
-  rmSync(${JSON.stringify(flag)}, { force: true });
   const answers = ${JSON.stringify(consults)};
   answer = answers[Math.min(n, answers.length - 1)];
+  if (answer.answer.action !== 'guidance') rmSync(${JSON.stringify(flag)}, { force: true });
 } else if (prompt.includes('# Plan the change')) {
   answer = ${JSON.stringify({ result: planned })};
 } else {
@@ -156,7 +157,6 @@ const check = {
   id: 'T001-K1',
   kind: 'cmd' as const,
   value: 'node --test src/alpha.test.mjs',
-  required: true,
 };
 
 describe('e2e: the booking of a brief the planner rewrote or split', { timeout: 400_000 }, () => {
@@ -246,6 +246,7 @@ describe('e2e: the booking of a brief the planner rewrote or split', { timeout: 
         tasks: [parent],
       }),
       [
+        guidanceConsult('Write the brief again.'),
         {
           answer: {
             diagnosis: 'The brief mixes two changes.',
@@ -317,6 +318,7 @@ describe('e2e: the booking of a brief the planner rewrote or split', { timeout: 
         tasks: [parent],
       }),
       [
+        guidanceConsult('Write the brief again.'),
         {
           answer: {
             diagnosis: 'The brief mixes two changes.',

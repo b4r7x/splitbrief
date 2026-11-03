@@ -478,7 +478,7 @@ describe('withContinuationLoop', () => {
     expect(seenPartials[1]).toBe('partial-output-1');
     expect(seenSteers[1]).toBe('please finish it');
     expect(userReplies).toEqual(['partial-output-1']);
-    // RESUME_STEP was the last transition — the loop exited with the park cleared.
+    // CONTINUE_STEP was the last transition — the loop exited with the park cleared.
     expect(result.state.awaitingContinue).toBe(false);
   });
 
@@ -596,7 +596,7 @@ describe('withContinuationLoop', () => {
     expect(steered.prompts[0]).toContain('PRIMARY PROMPT');
   });
 
-  it('an outer-signal abort while parked skips the RESUME_STEP save', async () => {
+  it('an outer-signal abort while parked skips the CONTINUE_STEP save', async () => {
     const { projectDir, sessionId } = setupProjectDir();
     const outer = new AbortController();
     let resolvePrompt: (message: ReturnType<typeof plainUserMessage>) => void = () => {};

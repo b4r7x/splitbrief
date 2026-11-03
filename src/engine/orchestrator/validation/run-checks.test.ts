@@ -21,7 +21,7 @@ const PLAN: Plan = {
 describe('enabledReviewChecks', () => {
   it('names the V ids of the project gate the plan names', () => {
     expect(enabledReviewChecks(makeConfig(), PLAN)).toEqual([
-      { id: 'V1', kind: 'cmd', value: 'npm test', required: true },
+      { id: 'V1', kind: 'cmd', value: 'npm test' },
     ]);
   });
 
@@ -72,7 +72,7 @@ describe('a Rust test check', () => {
     });
     return runChecks(['K1'], {
       task: makeTask({
-        checks: [{ id: 'K1', kind: 'test', value: 'src/parser.rs', required: true }],
+        checks: [{ id: 'K1', kind: 'test', value: 'src/parser.rs' }],
       }),
       projectDir,
       config: { ...base, validation: { ...base.validation, testCommand: opts.testCommand } },

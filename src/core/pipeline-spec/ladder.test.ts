@@ -3,20 +3,15 @@ import { framingForAttempt, HAND_BACK_MAX_CHARS, LADDER, RETRY_FRAMINGS } from '
 
 describe('LADDER', () => {
   it('lists the rungs in escalation order', () => {
-    expect(LADDER.map((rung) => rung.id)).toEqual(['recipe-fix', 'local', 'consult']);
+    expect(LADDER.map((rung) => rung.id)).toEqual(['recipe-fix', 'consult']);
   });
 
-  it('spends no retry on the recipe-fix rung and counts the local rung', () => {
+  it('spends no retry on the recipe-fix rung', () => {
     expect(LADDER[0]).toEqual({ id: 'recipe-fix', who: 'implementer', consumesRetry: false });
-    expect(LADDER[1]).toEqual({
-      id: 'local',
-      who: 'implementer',
-      count: 'DEFAULT_LOCAL_RETRIES',
-    });
   });
 
   it('runs the consult rung with the planner before the implementer', () => {
-    expect(LADDER[2]).toEqual({ id: 'consult', who: 'planner-then-implementer' });
+    expect(LADDER[1]).toEqual({ id: 'consult', who: 'planner-then-implementer' });
   });
 });
 

@@ -70,7 +70,8 @@ describe('splitbrief start --plain', { timeout: 90_000 }, () => {
 
   it('renders the run as plain lines and puts no NDJSON record on the same stdout', async () => {
     const tmp = getStartCommandTmp();
-    writeReadyReadinessFixtures(tmp, { validation: false, codebase: false, approve: 'none' });
+    // A test command the brief's check can run: a check that cannot run halts the run.
+    writeReadyReadinessFixtures(tmp, { validation: true, codebase: false, approve: 'none' });
 
     const chunks: string[] = [];
     vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
@@ -136,9 +137,7 @@ describe('splitbrief start --plain', { timeout: 90_000 }, () => {
     const stdout = chunks.join('');
     expect(stdout).toContain('phase: planning');
     expect(stdout).toContain('task T001: done');
-    expect(stdout).toContain(
-      'plan check T001-K1: not run (no test command for an unrecognised stack; set validation.test_command)',
-    );
+    expect(stdout).toContain('plan check T001-K1: passed');
 
     const lines = stdout.trimEnd().split('\n').filter(Boolean);
     expect(lines.length).toBeGreaterThan(0);

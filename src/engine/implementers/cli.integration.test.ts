@@ -1054,7 +1054,7 @@ it.each(['implement', 'retry'] as const)(
     const result =
       method === 'implement'
         ? await implementer.implement(call)
-        : await implementer.retry({ ...call, kind: 'local', attempt: 1, error: 'fix layout' });
+        : await implementer.retry({ ...call, kind: 'correction', attempt: 1, error: 'fix layout' });
     expect(result.success).toBe(true);
     const args = readArgv(argvFile);
     expect(args.slice(args.indexOf('--input-format'), args.indexOf('--input-format') + 2)).toEqual([
@@ -1108,7 +1108,12 @@ describe('createCliImplementer (codex usage capture)', () => {
       const result =
         method === 'implement'
           ? await implementer.implement(call)
-          : await implementer.retry({ ...call, kind: 'local', attempt: 1, error: 'fix layout' });
+          : await implementer.retry({
+              ...call,
+              kind: 'correction',
+              attempt: 1,
+              error: 'fix layout',
+            });
       expect(result.success).toBe(true);
       const args = readArgv(argvFile);
       const imageIndex = args.indexOf('--image');
@@ -1372,7 +1377,7 @@ describe('createCliImplementer (opencode arg vector)', () => {
       onOutput: () => {},
       error: 'previous attempt failed',
       attempt: 1,
-      kind: 'local',
+      kind: 'correction',
     });
 
     expect(result.success).toBe(true);
@@ -1539,7 +1544,7 @@ it.each(['implement', 'retry'] as const)(
     const result =
       method === 'implement'
         ? await implementer.implement(options)
-        : await implementer.retry({ ...options, error: 'retry', attempt: 1, kind: 'local' });
+        : await implementer.retry({ ...options, error: 'retry', attempt: 1, kind: 'correction' });
     expect(result.success).toBe(true);
     expect(await Promise.all(sends)).toEqual(['delivered']);
     expect(port.current()).toBeNull();

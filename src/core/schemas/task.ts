@@ -47,7 +47,6 @@ export const CheckSchema = z.object({
   id: z.string(),
   kind: z.enum(['test', 'cmd', 'render']),
   value: z.string(),
-  required: z.boolean(),
 });
 export type Check = z.infer<typeof CheckSchema>;
 

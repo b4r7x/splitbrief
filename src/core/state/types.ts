@@ -85,6 +85,8 @@ export type StateAction =
       kept?: readonly string[];
     }
   | { type: 'RESUME_STEP' }
+  /** The cut call continues in place: the park clears and the phase stays as it is. */
+  | { type: 'CONTINUE_STEP' }
   /**
    * A reject put back these paths: the stop no longer keeps them, and each brief in `booked` (the
    * briefs that booked one of them) that passed is open again.

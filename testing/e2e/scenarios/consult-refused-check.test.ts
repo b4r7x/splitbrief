@@ -26,7 +26,7 @@ const alpha = makeTaskSpec({
   intent: 'Return the alpha value.',
   criteria: ['C1'],
   suggestedFiles: ['src/alpha.mjs', 'src/alpha.test.mjs'],
-  checks: [{ id: 'T001-K1', kind: 'test', value: 'src/alpha.test.mjs', required: true }],
+  checks: [{ id: 'T001-K1', kind: 'test', value: 'src/alpha.test.mjs' }],
 });
 const rewritten = {
   ...alpha,
@@ -37,7 +37,7 @@ const refusedRewrite = {
   ...rewritten,
   checks: [
     ...rewritten.checks,
-    { id: 'T001-K2', kind: 'cmd', value: 'grep -F alpha src/alpha.mjs', required: true },
+    { id: 'T001-K2', kind: 'cmd', value: 'grep -F alpha src/alpha.mjs' },
   ],
 };
 const plan = makePlanProposal({

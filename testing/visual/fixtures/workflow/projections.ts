@@ -2350,7 +2350,7 @@ const PLAN_CARD_PLAN = makePlanProposal({
       title: 'Expose the greeting from the CLI',
       intent: 'Print the greeting for --name',
       criteria: ['C2'],
-      checks: [{ id: 'K2', kind: 'test', value: 'src/cli.test.ts', required: true }],
+      checks: [{ id: 'K2', kind: 'test', value: 'src/cli.test.ts' }],
       suggestedFiles: ['src/cli.ts'],
       contextFiles: ['src/hello.ts'],
       protectedOperations: [
@@ -2408,7 +2408,7 @@ const planCardProjection: WorkflowFixtureProjection = {
 // kept them after its one repair, so the card opens with the note before anything it confirms.
 const RENDER_NOTE_PLAN = makePlanProposal({
   ...PLAN_CARD_PLAN,
-  checks: [{ id: 'K-render', kind: 'render', value: 'overlay-settings', required: true }],
+  checks: [{ id: 'K-render', kind: 'render', value: 'overlay-settings' }],
   criteria: [
     { id: 'C1', text: 'A name gets a greeting', checkIds: ['K1'] },
     { id: 'C2', text: 'The CLI prints the greeting', checkIds: ['K2', 'K-render'] },
@@ -2431,9 +2431,9 @@ const planCardRenderNoteProjection: WorkflowFixtureProjection = {
 const SHARED_COMMAND_PLAN = makePlanProposal({
   ...PLAN_CARD_PLAN,
   checks: [
-    { id: 'c-typecheck', kind: 'cmd', value: 'npm run typecheck', required: true },
-    { id: 'c-invariants', kind: 'cmd', value: 'npm run check:invariants', required: true },
-    { id: 'c-deleted-symbols', kind: 'cmd', value: 'npm run check:invariants', required: true },
+    { id: 'c-typecheck', kind: 'cmd', value: 'npm run typecheck' },
+    { id: 'c-invariants', kind: 'cmd', value: 'npm run check:invariants' },
+    { id: 'c-deleted-symbols', kind: 'cmd', value: 'npm run check:invariants' },
   ],
 });
 
@@ -3260,8 +3260,8 @@ const FIXTURE_TYPECHECK_ERROR =
   "src/features/workflow/display/activity.ts(42,18): error TS2339: Property 'stop' does not exist on type 'Projection'.";
 
 /**
- * Two local retries fail on one typecheck error; the third changes nothing and says why, which
- * ends the local rung on the same error. The planner answers, and the guided retry fails on it.
+ * Each attempt fails on one typecheck error. The planner's consult answers after each one, and
+ * the last guided attempt changes nothing and says why.
  */
 const retryExhaustedRecoveryIssue = buildRetryExhaustedRecoveryIssue({
   id: 'rec_visual_retry_exhausted',
@@ -3670,7 +3670,7 @@ function finalReviewHaltState(checks: readonly UnrunnableCheck[]): WorkflowState
   });
 }
 
-/** The final review's required check runs a test script that calls a program not installed. */
+/** A check of the final review runs a test script that calls a program not installed. */
 const checksMissingProgramRecoveryProjection: WorkflowFixtureProjection = {
   ...reviewFailedRecoveryProjection,
   scenarioId: scenarioId('workflow-recovery-checks-missing-program'),

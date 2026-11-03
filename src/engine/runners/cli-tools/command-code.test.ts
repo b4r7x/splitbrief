@@ -8,6 +8,7 @@ import {
   CLI_TOOL_CATALOG,
   COMMAND_CODE_CLI_ADMISSION_VERDICT,
 } from '../../../core/runners/cli-tool-catalog.js';
+import { contractSha256 } from '../../providers/candidate-contract.js';
 import { CLI_PROMPT_SENTINEL, UnregisteredCliCandidate } from './candidate-contract.js';
 import type { CliProtocolEvent } from './contract.js';
 import { validateCliArgs } from './validate-args.js';
@@ -23,6 +24,10 @@ import {
 const NDJSON_FIXTURE = join(
   import.meta.dirname,
   '../../../../testing/fixtures/command-code/json-result.txt',
+);
+const CONFORMANCE_RECORD = join(
+  import.meta.dirname,
+  '../../../../testing/fixtures/command-code/conformance-record.json',
 );
 const STREAM_FIXTURE = join(
   import.meta.dirname,
@@ -538,5 +543,17 @@ describe('Command Code role adapters', () => {
     expect(CLI_CONFORMANCE_CANDIDATES[0]?.contractSha256).not.toBe(
       CLI_CONFORMANCE_CANDIDATES[1]?.contractSha256,
     );
+  });
+
+  // The record is the capture of the implementer contract as it stands: an argv change makes a new
+  // contract, and the record has to be captured again with `scripts/cli-conformance.ts`.
+  it('keeps the conformance record captured against the current implementer contract', () => {
+    const record = JSON.parse(readFileSync(CONFORMANCE_RECORD, 'utf8'));
+    const implementer = CLI_CONFORMANCE_CANDIDATES.find(
+      (candidate) => candidate.role === 'implementer',
+    );
+    const current = contractSha256(implementer?.rawContract);
+    expect(record.rawCapture.contractSha256).toBe(current);
+    expect(record.productionConformance.contractSha256).toBe(current);
   });
 });

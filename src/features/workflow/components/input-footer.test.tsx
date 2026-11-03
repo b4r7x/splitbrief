@@ -175,6 +175,40 @@ describe('InputFooter', () => {
     }
   });
 
+  it.each([60, 68])(
+    'keeps the stage and esc cancel whole at %i columns and shortens the slow check',
+    async (cols) => {
+      terminalSizeStore.__testReset({ cols, rows: 24, isSmall: cols < 80 });
+      const preparation = Promise.withResolvers<{ kind: 'aborted' }>();
+      preparationStore.submit({
+        origin: 'continue',
+        stage: 'Checking tools',
+        prepare: () => preparation.promise,
+        onPrepared: () => {},
+      });
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() - 59_000);
+      const models = Promise.withResolvers<void>();
+      const modelsRun = trackProbe(
+        { tool: 'antigravity', check: 'model list' },
+        () => models.promise,
+      );
+      clock.mockRestore();
+      try {
+        const ui = renderFeature(<InputFooter />);
+        await flushEffects();
+
+        const row = stripAnsiStyles(ui.lastFrame() ?? '').trimEnd();
+        expect(row).toMatch(/^. Checking tools · Google .*….* · esc cancel$/u);
+        expect(getTerminalCellWidth(row)).toBeLessThanOrEqual(cols - 4);
+        ui.unmount();
+      } finally {
+        models.resolve();
+        await modelsRun;
+        preparation.resolve({ kind: 'aborted' });
+      }
+    },
+  );
+
   it('shows neutral API waiting beside the input until the first response, and honors cancellation', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     runViewStore.__testReset({ phase: 'implementing' });

@@ -313,27 +313,6 @@ export function publishGitBranchCreated(ctx: BusContext, name: string): void {
   ctx.bus.publish({ type: 'git_branch_created', ts: Date.now(), phase: ctx.phase, name });
 }
 
-export function publishRetry(
-  opts: BusContext & {
-    taskId: TaskId;
-    attempt: number;
-    maxRetries: number;
-    lineageAttempt: number;
-    error: string;
-  },
-): void {
-  opts.bus.publish({
-    type: 'task_retry',
-    ts: Date.now(),
-    phase: opts.phase,
-    taskId: opts.taskId,
-    attempt: opts.attempt,
-    maxRetries: opts.maxRetries,
-    lineageAttempt: opts.lineageAttempt,
-    error: opts.error,
-  });
-}
-
 export function publishConsultAnswered(
   ctx: BusContext,
   opts: {

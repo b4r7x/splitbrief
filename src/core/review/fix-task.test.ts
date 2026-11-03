@@ -125,8 +125,8 @@ describe('fixReviewChecks', () => {
     });
 
     expect(fixReviewChecks(task)).toEqual([
-      { id: 'V1', kind: 'cmd', value: 'tsc --noEmit', required: true },
-      { id: 'V2', kind: 'cmd', value: 'npm test', required: true },
+      { id: 'V1', kind: 'cmd', value: 'tsc --noEmit' },
+      { id: 'V2', kind: 'cmd', value: 'npm test' },
     ]);
   });
 });

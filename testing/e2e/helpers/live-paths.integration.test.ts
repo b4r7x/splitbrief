@@ -26,7 +26,11 @@ import {
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir, withTempDir } from '#testing/helpers/temp-dir.js';
 import { runTrackedWorkflow, settleTrackedWorkflows } from '#testing/helpers/tracked-workflow.js';
-import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
+import {
+  guidanceConsult,
+  planFromTasks,
+  scriptedTypedCall,
+} from '#testing/helpers/typed-planner.js';
 import {
   createLivePathsProject,
   disposeLivePathsProject,
@@ -163,7 +167,7 @@ describe('hidden retry acceptance', () => {
           expect(error).toContain('The project test suite must pass.');
           expect(error).toContain('slugify trims hyphens');
         }
-        await hidden.implementer.retry({ ...options, error, attempt: 1, kind: 'local' });
+        await hidden.implementer.retry({ ...options, error, attempt: 1, kind: 'correction' });
         expect(hidden.feedback).toEqual([error]);
         const [passed] = await runChecks(['hidden-retry-acceptance'], checkOptions);
         expect(passed?.status).toBe('pass');
@@ -184,7 +188,7 @@ describe('hidden retry acceptance in a run', { timeout: 90_000 }, () => {
     while (dirs.length > 0) cleanupTempDir(dirs.pop() as string);
   });
 
-  it('fails the first brief on the frozen prepared config, feeds the retry, and reaches ready-to-apply', async () => {
+  it('fails the first brief on the frozen prepared config, consults the planner, feeds the retry, and reaches ready-to-apply', async () => {
     const root = createTempDir('hidden-retry-run');
     dirs.push(root);
     const projectDir = join(root, 'project');
@@ -199,7 +203,7 @@ describe('hidden retry acceptance in a run', { timeout: 90_000 }, () => {
       description: SLUGIFY_FIXTURE.feature,
       suggestedFiles: ['src/text.mjs', 'test/text.test.mjs'],
       tests: [],
-      checks: [{ id: 'T001-K1', kind: 'cmd', value: 'node --version', required: false }],
+      checks: [{ id: 'T001-K1', kind: 'cmd', value: 'node --version' }],
     });
     const hidden = withHiddenRetryCheck(
       makeImplementer({
@@ -242,16 +246,20 @@ describe('hidden retry acceptance in a run', { timeout: 90_000 }, () => {
       }),
       callbacks: makeCallbacks().callbacks,
       sinks: TEST_WORKFLOW_SINKS,
-      _planner: makePlanner({ typedCall: typedCallFromTasks([task]) }),
+      _planner: makePlanner({
+        typedCall: scriptedTypedCall([
+          planFromTasks([task]),
+          JSON.stringify(guidanceConsult('Add the test case the hidden check names.')),
+        ]).typedCall,
+      }),
       _implementer: hidden.implementer,
       _eventSink: (event) => events.push(event),
     });
 
-    const retry = events.find(
-      (event): event is Extract<EngineEvent, { type: 'task_retry' }> => event.type === 'task_retry',
-    );
-    expect(retry?.error).toContain('Hidden acceptance check:');
-    expect(hidden.feedback).toEqual([retry?.error]);
+    expect(events.filter((event) => event.type === 'consult_answered')).toHaveLength(1);
+    expect(hidden.feedback).toHaveLength(1);
+    expect(hidden.feedback[0]).toContain('Hidden acceptance check:');
+    expect(hidden.feedback[0]).toContain('Add the test case the hidden check names.');
     const state = loadState({ projectDir, sessionId });
     if (state === null) throw new Error('the run saved no state');
     expect(deriveRunStatus({ state, liveness: 'not-alive' }).kind).toBe('ready-to-apply');

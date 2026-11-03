@@ -34,7 +34,7 @@ const greet = makeTaskSpec({
   intent: 'Return a greeting for a name.',
   criteria: ['C1'],
   suggestedFiles: ['src/greet.mjs', 'src/greet.test.mjs'],
-  checks: [{ id: 'T001-K1', kind: 'test', value: 'src/greet.test.mjs', required: true }],
+  checks: [{ id: 'T001-K1', kind: 'test', value: 'src/greet.test.mjs' }],
 });
 const fix = makeTaskSpec({
   id: 'T002',
@@ -43,7 +43,7 @@ const fix = makeTaskSpec({
   criteria: ['C1'],
   suggestedFiles: ['src/fix.mjs', 'src/fix.test.mjs'],
   contextFiles: ['src/greet.mjs'],
-  checks: [{ id: 'T002-K1', kind: 'test', value: 'src/fix.test.mjs', required: true }],
+  checks: [{ id: 'T002-K1', kind: 'test', value: 'src/fix.test.mjs' }],
 });
 const plan = makePlanProposal({
   summary: 'Add a tested greeting.',
@@ -181,7 +181,7 @@ console.log('Implemented ' + taskId);
 }
 
 describe('e2e: fix task repair consult', { timeout: 240_000 }, () => {
-  it('consults the planner for a twice-failing fix task and delivers its guidance to the next attempt', async () => {
+  it('consults the planner for a failing fix task and delivers its guidance to the next attempt', async () => {
     fixture = createStopContinueFixture(() => '', { isolation: 'none' });
     const target = fixture;
     restorePath = activateSafeCliShimPath(target.tmpDir);
@@ -229,7 +229,6 @@ describe('e2e: fix task repair consult', { timeout: 240_000 }, () => {
       'implementer:implementT001',
       'reviewer:task-review',
       'implementer:implementT002',
-      'implementer:implementT002',
       'planner:consult',
       'implementer:implementT002',
       'reviewer:task-review',
@@ -250,9 +249,9 @@ describe('e2e: fix task repair consult', { timeout: 240_000 }, () => {
     const fixPrompts = calls
       .filter((call) => call.seat === 'implementer' && call.taskId === 'T002')
       .map((call) => call.prompt);
-    expect(fixPrompts).toHaveLength(3);
-    for (const prompt of fixPrompts.slice(0, 2)) expect(prompt).not.toContain(GUIDANCE_MARKER);
-    expect(fixPrompts[2]).toContain(`${GUIDANCE_MARKER}${INSTRUCTIONS}`);
+    expect(fixPrompts).toHaveLength(2);
+    expect(fixPrompts[0]).not.toContain(GUIDANCE_MARKER);
+    expect(fixPrompts[1]).toContain(`${GUIDANCE_MARKER}${INSTRUCTIONS}`);
     expect(readFileSync(join(target.projectDir, 'src/fix.mjs'), 'utf8')).toBe(
       `export const fixed = ${JSON.stringify(HINT)};\n`,
     );
@@ -297,10 +296,7 @@ describe('e2e: fix task repair consult', { timeout: 240_000 }, () => {
       diagnosis: DIAGNOSIS,
       newTaskIds: null,
     });
-    const retryIndexes = events.flatMap((event, index) =>
-      event.type === 'task_retry' && event.taskId === 'T002' ? [index] : [],
-    );
-    expect(retryIndexes).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'task_retry')).toEqual([]);
     const escalatingIndex = events.findIndex(
       (event) => event.type === 'task_escalating' && event.taskId === 'T002',
     );
@@ -308,7 +304,7 @@ describe('e2e: fix task repair consult', { timeout: 240_000 }, () => {
     const completedIndex = events.findIndex(
       (event) => event.type === 'task_completed' && event.taskId === 'T002',
     );
-    expect(retryIndexes[0]).toBeLessThan(escalatingIndex);
+    expect(escalatingIndex).toBeGreaterThan(-1);
     expect(escalatingIndex).toBeLessThan(answeredIndex);
     expect(answeredIndex).toBeLessThan(completedIndex);
     expect(events[completedIndex]).toMatchObject({ method: 'consulted' });

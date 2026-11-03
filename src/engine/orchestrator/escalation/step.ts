@@ -8,11 +8,14 @@ import {
 import { refreshAndPersistCode } from '../task/refresh-code.js';
 import { gateAttemptChanges } from '../task/attempt-gate.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
-import { withPerCallAbort } from '../cancellable-call.js';
+import { withContinuationLoop } from '../continuation.js';
+import { briefContinuation } from '../kept-work.js';
+import { recordSteerCorrection } from '../queue/build-corrections.js';
 import { persistRetryApprovalEvidence, recordRetryDenial } from './retry-evidence.js';
 import { validateAndCommit } from './validate-and-commit.js';
 import { boundedHandBack, failedRetry } from './types.js';
 import type { RetryInvokeResult, RetryStepOpts, RetryStepOutcome } from './types.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { recordedApiCreatedPaths } from '../evidence/task.js';
 import { raiseApiApplyRecovery } from '../evidence/persistence.js';
 import { isAbortError } from '../../../utils/abort.js';
@@ -113,18 +116,40 @@ async function runRetryStepAttempt(
     onValidationAfterRetryFail,
   } = opts;
   let state = initialState;
-  let retryResult: Awaited<ReturnType<typeof invokeRetry>>;
+  let loop: { state: WorkflowState; value: RetryInvokeResult };
   try {
-    retryResult = await withAttemptRestoreScope({
-      ref: ctx,
-      dir: workspace.projectDir,
-      taskStartSnapshot: ctx.taskStartSnapshot,
-      attemptSnapshot: workspace.snapshot,
-      run: () =>
-        withPerCallAbort({
-          sinks: ctx.sinks,
-          signal: ctx.signal,
-          run: (signal) =>
+    // A stop of this call parks the attempt; the steer continues it on the edits it already made.
+    loop = await withContinuationLoop<RetryInvokeResult>({
+      ctx: {
+        projectDir: workspace.projectDir,
+        sessionId: ctx.sessionId,
+        persistRef: { projectDir: ctx.projectDir, sessionId: ctx.sessionId },
+        callbacks: ctx.callbacks,
+        bus: ctx.bus,
+        signal: ctx.signal,
+        sinks: ctx.sinks,
+      },
+      state,
+      step: { kind: 'brief', taskId: task.id, attempt: state.attempt },
+      onStateChange: (next) => {
+        state = next;
+      },
+      body: async ({ signal, partial, steerInput, recordOutput }) => {
+        if (steerInput !== undefined) {
+          state = recordSteerCorrection({ ...ctx, state, taskId: task.id, message: steerInput });
+        }
+        const continuation = await briefContinuation({
+          codeDir: workspace.projectDir,
+          task,
+          taskStartSnapshot: ctx.taskStartSnapshot,
+          partial,
+        });
+        return withAttemptRestoreScope({
+          ref: ctx,
+          dir: workspace.projectDir,
+          taskStartSnapshot: ctx.taskStartSnapshot,
+          attemptSnapshot: workspace.snapshot,
+          run: () =>
             invokeRetry({
               task,
               lastError,
@@ -141,16 +166,20 @@ async function runRetryStepAttempt(
               changeDetection: workspace.changeDetection,
               createdByThisTask: recordedApiCreatedPaths(ctx, task, workspace.projectDir),
               deliversAnswer: opts.deliversAnswer,
+              ...(continuation !== undefined && { continuation }),
+              recordOutput,
               seat: { ref: ctx, state, usageCategory },
             }),
-        }),
+        });
+      },
     });
   } catch (err) {
     if (isAbortError(err) && isResumableWorkspaceStop(ctx.signal)) await workspace.retain?.();
     else workspace.cleanup();
     throw err;
   }
-  state = rebaseOnPersistedWorkflowState(ctx, state);
+  const retryResult = loop.value;
+  state = rebaseOnPersistedWorkflowState(ctx, loop.state);
   state = addUsageAndSave(ctx, state, usageCategory, retryResult.usage);
 
   const applyResult = retryResult.applyResult;

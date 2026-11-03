@@ -2,7 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { execSync } from 'node:child_process';
 import { chmodSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { makeCallbacks, makeImplementer } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeCallbacks,
+  makeImplementer,
+  makePlanner,
+} from '#testing/helpers/orchestrator-factories.js';
+import { consultCallAnswering, guidanceConsult } from '#testing/helpers/typed-planner.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeImplStateWithMetadata as implementingState } from '#testing/helpers/factories/workflow-state.js';
@@ -108,7 +113,7 @@ describe('captureTaskReviewChanges', () => {
       id: 'T001',
       action: 'create',
       suggestedFiles: ['src/a.ts', 'src/b.ts'],
-      checks: [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }],
+      checks: [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit' }],
     });
     const write = (file: string) =>
       vi.fn().mockImplementation(async ({ projectDir: dir }: ImplementerOptions) => {
@@ -124,7 +129,7 @@ describe('captureTaskReviewChanges', () => {
       onFallback: () => {},
     });
     const workspaceDir = (await isolation.open({ config })).projectDir;
-    // The brief check fails on the first attempt and passes once the retry writes src/b.ts.
+    // The brief check fails on the first attempt and passes once the consult-guided retry writes src/b.ts.
     vi.spyOn(commandRunner, 'runCommand')
       .mockRejectedValueOnce(
         processError.exitCode({ command: 'tsc', code: 2, stderr: 'b is missing', output: '' }),
@@ -141,6 +146,7 @@ describe('captureTaskReviewChanges', () => {
           implement: write('src/a.ts'),
           retry: write('src/b.ts'),
         }),
+        planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
         config,
         isolation,
       }),

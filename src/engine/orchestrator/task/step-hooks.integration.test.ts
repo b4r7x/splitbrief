@@ -6,8 +6,10 @@ import {
   makeCallbacks,
   makeImplementer,
   makeBusRecorder,
+  makePlanner,
   openRunWorkspace,
 } from '#testing/helpers/orchestrator-factories.js';
+import { consultCallAnswering, guidanceConsult } from '#testing/helpers/typed-planner.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeImplStateWithMetadata as implementingState } from '#testing/helpers/factories/workflow-state.js';
@@ -26,7 +28,7 @@ import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
 import { revertedDir } from '../../../core/paths.js';
 
 // The pre_validation hook gates the brief checks: a brief with no check runs no hook.
-const BRIEF_CHECKS: Check[] = [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }];
+const BRIEF_CHECKS: Check[] = [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit' }];
 
 let trustHome: ReturnType<typeof useTrustHome>;
 
@@ -147,7 +149,7 @@ describe('runSingleTask — pre_validation hooks', () => {
     });
   });
 
-  it('ends the retry ladder on the skip when the hook denies a retry attempt', async () => {
+  it('ends the ladder on the skip when the hook denies the consult-guided attempt', async () => {
     const { projectDir, sessionId } = setupProject();
     const first = makeTask({
       id: 'T001',
@@ -203,6 +205,7 @@ describe('runSingleTask — pre_validation hooks', () => {
       ],
     };
     markHooksConfigTrusted(projectDir, hooks);
+    const consult = vi.fn(() => guidanceConsult());
 
     const wctx = await openRunWorkspace(
       makeWorkflowContext({
@@ -210,6 +213,7 @@ describe('runSingleTask — pre_validation hooks', () => {
         sessionId,
         callbacks,
         implementer,
+        planner: makePlanner({ typedCall: consultCallAnswering(consult) }),
         bus,
         config: makeConfig({
           workflow: { review: 'task' },
@@ -228,6 +232,7 @@ describe('runSingleTask — pre_validation hooks', () => {
       setCurrentTask: vi.fn(),
     });
 
+    expect(consult).toHaveBeenCalledTimes(1);
     expect(implementer.retry).toHaveBeenCalledTimes(1);
     expect(runCommand).toHaveBeenCalledTimes(1);
     expect(result.tasks.map((task) => task.status)).toEqual(['skipped', 'pending']);

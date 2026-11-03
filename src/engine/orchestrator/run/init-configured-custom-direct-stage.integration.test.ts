@@ -322,7 +322,7 @@ describe('configured direct stage canaries', () => {
                   context: init.wctx.context,
                   error: 'retry',
                   attempt: 1,
-                  kind: 'local',
+                  kind: 'correction',
                   onOutput: () => {},
                   sandboxEnv: stage.sandboxEnv,
                   fileIgnoreProjectDir: projectDir,

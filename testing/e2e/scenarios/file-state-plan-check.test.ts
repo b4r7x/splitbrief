@@ -62,9 +62,9 @@ describe('e2e: a plan that checks a file mode and a symbolic link', () => {
           criteria: ['C1', 'C2'],
           suggestedFiles: ['cli.js', 'docs/readme.md'],
           checks: [
-            { id: 'K1', kind: 'cmd', value: 'test -x cli.js', required: true },
-            { id: 'K2', kind: 'cmd', value: 'test -L docs/readme.md', required: true },
-            { id: 'K3', kind: 'cmd', value: 'test -f docs/readme.md', required: true },
+            { id: 'K1', kind: 'cmd', value: 'test -x cli.js' },
+            { id: 'K2', kind: 'cmd', value: 'test -L docs/readme.md' },
+            { id: 'K3', kind: 'cmd', value: 'test -f docs/readme.md' },
           ],
         }),
       ],

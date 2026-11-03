@@ -38,7 +38,7 @@ const brief = makeTaskSpec({
   intent: 'Return the sum of two numbers.',
   criteria: ['C1'],
   suggestedFiles: [TOTAL_FILE, TOTAL_TEST_FILE],
-  checks: [{ id: 'T001-K1', kind: 'test', value: TOTAL_TEST_FILE, required: true }],
+  checks: [{ id: 'T001-K1', kind: 'test', value: TOTAL_TEST_FILE }],
 });
 const repair = makeTaskSpec({
   id: 'T002',
@@ -46,7 +46,7 @@ const repair = makeTaskSpec({
   intent: 'Make total add numeric strings.',
   criteria: ['C1'],
   suggestedFiles: [TOTAL_FILE],
-  checks: [{ id: 'T002-K1', kind: 'test', value: TOTAL_TEST_FILE, required: true }],
+  checks: [{ id: 'T002-K1', kind: 'test', value: TOTAL_TEST_FILE }],
 });
 const plan = makePlanProposal({
   summary: 'Add a total helper with its test.',

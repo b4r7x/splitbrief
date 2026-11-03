@@ -320,7 +320,7 @@ describe('createTaskImplementer configured retry runner', () => {
             context: ctx.context,
             error: 'first attempt failed',
             attempt: 1,
-            kind: 'local',
+            kind: 'correction',
             onOutput: () => {},
             sandboxEnv: workspace.sandboxEnv,
             fileIgnoreProjectDir: projectDir,
@@ -341,7 +341,7 @@ describe('createTaskImplementer configured retry runner', () => {
           context: ctx.context,
           error: 'first attempt failed',
           attempt: 1,
-          kind: 'local',
+          kind: 'correction',
           onOutput: () => {},
         });
 

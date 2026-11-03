@@ -15,7 +15,7 @@ import {
 } from '../helpers/stop-continue-fixture.js';
 
 const scenario = {
-  name: 'recovery - task fails then retries successfully',
+  name: 'recovery - task fails, consults the planner, then retries successfully',
   cassetteName: 'recovery-retry-success',
   feature: 'add validation to form handler',
   config: makeE2eScenarioConfig(),
@@ -24,13 +24,14 @@ const scenario = {
 describe('e2e: recovery retry success', () => {
   const ctx = setupE2eScenario(scenario);
 
-  it('retries failed task and eventually completes', async () => {
+  it('consults the planner on the failed task, retries it and completes', async () => {
     const summary = await runE2eWorkflow(ctx, scenario);
 
-    const retryEvents = ctx.events.filter((event) => event.type === 'task_retry');
+    const consulted = ctx.events.filter((event) => event.type === 'consult_answered');
     const taskCompleted = ctx.events.filter((event) => event.type === 'task_completed');
 
-    expect(retryEvents.length).toBeGreaterThan(0);
+    expect(consulted).toMatchObject([{ taskId: 'T001', action: 'guidance' }]);
+    expect(ctx.events.filter((event) => event.type === 'task_retry')).toEqual([]);
     expect(taskCompleted.length).toBeGreaterThan(0);
     expect(summary.totalTasks).toBeGreaterThanOrEqual(1);
     const validationPath = join(ctx.projectDir, 'src/form-validation.ts');

@@ -138,7 +138,7 @@ export function makeNoValidationConfig(overrides?: Parameters<typeof makeConfig>
     ...overrides,
     validation: {
       endChecks: false,
-      testCommand: 'noop',
+      testCommand: 'true',
       ...overrides?.validation,
     },
   });

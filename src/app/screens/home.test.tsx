@@ -1274,6 +1274,48 @@ describe('HomeScreen', () => {
     ui.unmount();
   });
 
+  it.each([60, 68])(
+    'keeps the stage and esc cancel whole at %i columns and shortens the slow check',
+    async (cols) => {
+      terminalSizeStore.__testReset({ cols, rows: 24, isSmall: cols < 80 });
+      const pending = Promise.withResolvers<PreparationOutcome>();
+      prepareExecutionMock.mockReturnValue(pending.promise);
+
+      const ui = renderHome();
+      await flushEffects();
+      ui.stdin.write('background preparation');
+      await flushEffects();
+      ui.stdin.write(ENTER);
+      await vi.waitFor(
+        () => expect(prepareExecutionMock).toHaveBeenCalledOnce(),
+        SESSION_FILTER_WAIT_MS,
+      );
+
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() - 59_000);
+      const models = Promise.withResolvers<void>();
+      const modelsRun = trackProbe(
+        { tool: 'antigravity', check: 'model list' },
+        () => models.promise,
+      );
+      clock.mockRestore();
+      try {
+        await flushEffects();
+
+        const row = stripAnsiStyles(ui.lastFrame() ?? '')
+          .split('\n')
+          .find((line) => line.includes('Checking tools'));
+        expect(row?.trim()).toMatch(/^. Checking tools · Google .*….* · esc cancel$/u);
+      } finally {
+        models.resolve();
+        await modelsRun;
+      }
+
+      ui.stdin.write(ESC);
+      await flushEffects();
+      ui.unmount();
+    },
+  );
+
   it('esc during preparation leaves the submitted draft in the composer input', async () => {
     const pending = Promise.withResolvers<PreparationOutcome>();
     prepareExecutionMock.mockReturnValue(pending.promise);

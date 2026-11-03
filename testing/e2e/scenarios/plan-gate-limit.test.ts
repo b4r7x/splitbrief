@@ -36,7 +36,7 @@ const plan = makePlanProposal({
       intent: 'Return the alpha value.',
       criteria: ['C1'],
       suggestedFiles: ['src/alpha.mjs', 'src/alpha.test.mjs'],
-      checks: [{ id: 'K1', kind: 'test', value: 'src/alpha.test.mjs', required: true }],
+      checks: [{ id: 'K1', kind: 'test', value: 'src/alpha.test.mjs' }],
     }),
   ],
 });

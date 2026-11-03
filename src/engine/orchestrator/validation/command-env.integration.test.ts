@@ -42,7 +42,7 @@ describe('the environment of a check SPLITBRIEF runs', () => {
       summary: 'Plan summary',
       decisions: [],
       criteria: [],
-      checks: [{ id: 'C1', kind: 'cmd', value: 'npm test', required: true }],
+      checks: [{ id: 'C1', kind: 'cmd', value: 'npm test' }],
       validation: null,
     };
 

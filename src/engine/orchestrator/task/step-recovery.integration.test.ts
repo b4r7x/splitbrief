@@ -37,7 +37,7 @@ afterEach(() => {
   cleanupTaskProjects();
 });
 
-const BRIEF_CHECKS: Check[] = [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }];
+const BRIEF_CHECKS: Check[] = [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit' }];
 
 /** Every brief check command fails, so the brief gate rejects every attempt. */
 function failBriefChecks(): void {
@@ -79,6 +79,7 @@ describe('runSingleTask — recovery', () => {
         sessionId,
         isolation: makeWorktreeIsolation({ projectDir, sessionId }),
         implementer,
+        planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
         bus,
         config: makeConfig({
           workflow: { review: 'task' },
@@ -142,7 +143,7 @@ describe('runSingleTask — recovery', () => {
       action: 'modify',
       suggestedFiles: ['src/two.ts'],
       scope: { inBounds: ['src/two.ts'] },
-      checks: [{ id: 'K2', kind: 'cmd', value: 'tsc --noEmit', required: true }],
+      checks: [{ id: 'K2', kind: 'cmd', value: 'tsc --noEmit' }],
     });
     const state = implementingState([taskOne, taskTwo]);
 
@@ -321,7 +322,7 @@ describe('runSingleTask — the retry-exhausted halt keeps the check output', ()
 });
 
 describe('runSingleTask — a layout-only lint failure', () => {
-  it('formats every file the brief wrote across its attempts, so the layout costs no consult', {
+  it('formats every file the brief wrote across its attempts, so only the type error costs a consult', {
     timeout: 90_000,
   }, async () => {
     const { projectDir, sessionId } = setupProject({
@@ -336,12 +337,12 @@ describe('runSingleTask — a layout-only lint failure', () => {
       suggestedFiles: ['src/a.ts', 'src/a.test.ts', 'src/b.ts'],
       scope: { inBounds: ['src/a.ts', 'src/a.test.ts', 'src/b.ts'] },
       checks: [
-        { id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true },
-        { id: 'K2', kind: 'cmd', value: 'biome check .', required: true },
+        { id: 'K1', kind: 'cmd', value: 'tsc --noEmit' },
+        { id: 'K2', kind: 'cmd', value: 'biome check .' },
       ],
     });
     // Attempt 1 writes an unformatted test and leaves a type error in src/b.ts; the
-    // local retry fixes src/b.ts only, as T008's attempts 8 to 10 did in a real run.
+    // consult-guided retry fixes src/b.ts only, as T008's attempts 8 to 10 did in a real run.
     const implementer = makeImplementer({
       implement: vi.fn().mockImplementation(async ({ projectDir: runDir }: ImplementerOptions) => {
         writeFileSync(join(runDir, 'src/a.ts'), 'export const a = 1;\n');
@@ -415,8 +416,8 @@ describe('runSingleTask — a layout-only lint failure', () => {
 
     expect(result.pendingRecovery).toBeUndefined();
     expect(result.tasks[0]?.status).toBe('done');
-    expect(consult).not.toHaveBeenCalled();
-    expect(events.filter((event) => event.type === 'task_escalating')).toEqual([]);
+    expect(consult).toHaveBeenCalledTimes(1);
+    expect(events.filter((event) => event.type === 'task_escalating')).toHaveLength(1);
     expect(readFileSync(join(wctx.workspaceDir, 'src/a.test.ts'), 'utf-8')).toBe('export {};\n');
     const formatted = events.find(
       (event): event is EngineEventOf<'warning'> =>
@@ -505,7 +506,7 @@ describe('runSingleTask — signed-out runner', () => {
     expect(retryResult.state.pendingRecovery).toBeUndefined();
   });
 
-  it('halts mid-ladder when a retry attempt reports unauthenticated instead of escalating to the planner', async () => {
+  it('halts on the consult-guided attempt that reports unauthenticated instead of consulting the planner again', async () => {
     const { projectDir, sessionId } = setupProject({ 'src/main.ts': 'export const main = 0;\n' });
     const task = makeTask({
       id: 'T001',
@@ -521,7 +522,7 @@ describe('runSingleTask — signed-out runner', () => {
         writeFileSync(join(runDir, 'src/main.ts'), 'export const main = 999; // broken\n');
         return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
       }),
-      // The login expires between the first attempt and the retry ladder.
+      // The login expires between the first attempt and the consult-guided retry.
       retry: vi.fn().mockResolvedValue({
         success: false,
         error: CODEX_BURNED_REFRESH,
@@ -529,7 +530,8 @@ describe('runSingleTask — signed-out runner', () => {
         usage: { inputTokens: 2, outputTokens: 0 },
       }),
     });
-    const planner = makePlanner();
+    const consult = vi.fn(() => guidanceConsult());
+    const planner = makePlanner({ typedCall: consultCallAnswering(consult) });
     failBriefChecks();
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
@@ -564,6 +566,8 @@ describe('runSingleTask — signed-out runner', () => {
     });
     // The failed login stops further retries.
     expect(implementer.retry).toHaveBeenCalledTimes(1);
+    // The failed check earned one consult; the seat-down attempt after it earns none.
+    expect(consult).toHaveBeenCalledTimes(1);
     expect(
       events.find((event) => event.type === 'error' && event.message.includes('codex login')),
     ).toBeDefined();
@@ -674,7 +678,7 @@ describe('runSingleTask — usage-limited runner', () => {
     expect(retryResult.state.pendingRecovery).toBeUndefined();
   });
 
-  it('halts mid-ladder when a retry hits the limit instead of silently escalating to the planner', async () => {
+  it('halts on the consult-guided attempt that hits the limit instead of silently consulting the planner again', async () => {
     const { projectDir, sessionId } = setupProject({ 'src/main.ts': 'export const main = 0;\n' });
     const task = makeTask({
       id: 'T001',
@@ -690,7 +694,7 @@ describe('runSingleTask — usage-limited runner', () => {
         writeFileSync(join(runDir, 'src/main.ts'), 'export const main = 999; // broken\n');
         return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
       }),
-      // The quota runs out between the first attempt and the retry ladder.
+      // The quota runs out between the first attempt and the consult-guided retry.
       retry: vi.fn().mockResolvedValue({
         success: false,
         error: CODEX_USAGE_LIMIT,
@@ -698,7 +702,8 @@ describe('runSingleTask — usage-limited runner', () => {
         usage: { inputTokens: 2, outputTokens: 0 },
       }),
     });
-    const planner = makePlanner();
+    const consult = vi.fn(() => guidanceConsult());
+    const planner = makePlanner({ typedCall: consultCallAnswering(consult) });
     failBriefChecks();
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
@@ -733,6 +738,8 @@ describe('runSingleTask — usage-limited runner', () => {
     });
     // The exhausted quota stops further retries.
     expect(implementer.retry).toHaveBeenCalledTimes(1);
+    // The failed check earned one consult; the seat-down attempt after it earns none.
+    expect(consult).toHaveBeenCalledTimes(1);
     expectResetNamedOnce(events);
     // The failing attempt's changes were rolled back like any exhausted task.
     expect(readFileSync(join(projectDir, 'src/main.ts'), 'utf-8')).toBe('export const main = 0;\n');

@@ -24,7 +24,7 @@ const alpha = makeTaskSpec({
   intent: 'Return the alpha value.',
   criteria: ['C1'],
   suggestedFiles: ['src/alpha.mjs', 'src/alpha.test.mjs'],
-  checks: [{ id: 'T001-K1', kind: 'test', value: 'src/alpha.test.mjs', required: true }],
+  checks: [{ id: 'T001-K1', kind: 'test', value: 'src/alpha.test.mjs' }],
 });
 const beta = makeTaskSpec({
   id: 'T002',
@@ -32,7 +32,7 @@ const beta = makeTaskSpec({
   intent: 'Return the beta value.',
   criteria: ['C1'],
   suggestedFiles: ['src/beta.mjs', 'src/beta.test.mjs'],
-  checks: [{ id: 'T002-K1', kind: 'test', value: 'src/beta.test.mjs', required: true }],
+  checks: [{ id: 'T002-K1', kind: 'test', value: 'src/beta.test.mjs' }],
 });
 const plan = makePlanProposal({
   summary: 'Add two tested values that serve one criterion.',
@@ -198,7 +198,7 @@ describe('e2e: consult verify on a shared criterion', { timeout: 240_000 }, () =
     expect(
       events.find(
         (event) =>
-          event.type === 'checks_run' && event.taskId === 'T002' && event.phase === 'implementing',
+          event.type === 'checks_run' && event.taskId === 'T002' && event.phase === 'escalating',
       ),
     ).toMatchObject({
       results: expect.arrayContaining([

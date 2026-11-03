@@ -5,7 +5,7 @@ Use one stateless read-only call per review. The session reviews from the packet
 ## Review procedure
 
 1. Select tasks and criteria using references/run-protocol.md for cadence or one-task scope.
-2. Run current validation and required checks with references/gates.md.
+2. Run current validation and every check with references/gates.md.
 3. Write the packet below from the current candidate.
 4. Spawn one stateless read-only reviewer with references/tool-recipes.md, or review in this session.
 5. Use references/run-protocol.md for waiting, with `review` as the task id and no default deadline.
@@ -36,7 +36,7 @@ Write review-packet.md with this shape:
     <per-task changed paths and touchedNotSuggested entries with reasons>
 
     ## Recorded Validation Output
-    <reviewer check output and required checks by id, with commands, exits and artifact paths>
+    <reviewer check output and checks by id, with commands, exits and artifact paths>
 
     ## Consults and user answers
     <consult log, previous review answers, rejected findings with reasons, and user answers>
@@ -46,7 +46,7 @@ Write review-packet.md with this shape:
     Quote recorded output for each validation claim. State when evidence is absent.
     Only registered check ids can verify a criterion. Old evidence cannot verify changed code.
     Pending criteria are pending. Do not report them as a plan gap.
-    Render checks are unavailable in these skills. A required render criterion stays unverified.
+    Render checks are unavailable in these skills. A render criterion stays unverified.
 
     ## Typed answer
     Return one JSON object with tasks, criteria, findings, fixTasks, rejected and ask.
@@ -69,7 +69,7 @@ Write review-packet.md with this shape:
 Include approved plan.json, all ledger decisions, criterion text, relevant briefs and the current run diff.
 Group changes by task. Include touchedNotSuggested paths and their reasons, check results, consults, previous review answers and user answers.
 Use baseline bytes and hashes for the run diff. Exclude unchanged pre-existing edits and run artifacts.
-Save the current reviewer-check and required-check output with commands, exits, ids and artifact paths.
+Save the current reviewer-check and check output with commands, exits, ids and artifact paths.
 Reject an oversized packet rather than silently dropping files or evidence.
 For a malformed answer, attach the invalid answer and parser errors to the permitted fresh repair call.
 

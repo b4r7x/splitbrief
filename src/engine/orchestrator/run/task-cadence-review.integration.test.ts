@@ -226,7 +226,7 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
             id,
             suggestedFiles: [`src/${id}.ts`],
             criteria: [],
-            checks: [{ id: `${id}-K1`, kind: 'cmd', value: 'node --version', required: true }],
+            checks: [{ id: `${id}-K1`, kind: 'cmd', value: 'node --version' }],
           }),
           findingIds: [`F${index + 1}`],
         })),
@@ -376,7 +376,7 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
           { id: 'C1', text: 'The first brief works', checkIds: ['K1'] },
           { id: 'C2', text: 'The second brief works', checkIds: [] },
         ],
-        checks: [{ id: 'K1', kind: 'cmd', value: 'npm test', required: true }],
+        checks: [{ id: 'K1', kind: 'cmd', value: 'npm test' }],
         validation: null,
       },
     });
@@ -406,7 +406,7 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
     const halt = result.state.pendingRecovery;
     if (halt === undefined) throw new Error('Missing halt');
     expect(halt.reason).toBe('required-checks-unrunnable');
-    expect(halt.message).toMatch(/^Required checks cannot run: K1: /);
+    expect(halt.message).toMatch(/^Checks cannot run: K1: /);
     expect(halt.details).toContain('Install what is missing, then run the checks again.');
     expect(halt.availableActions).toEqual(['retry-same-worker', 'end-run']);
     const errors = events.flatMap((event) => (event.type === 'error' ? [event] : []));
@@ -458,7 +458,7 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
           id: 'T001',
           suggestedFiles: ['src/alpha.ts'],
           criteria: ['C1'],
-          checks: [{ id: 'T001-K1', kind: 'cmd', value: 'npm test', required: true }],
+          checks: [{ id: 'T001-K1', kind: 'cmd', value: 'npm test' }],
         }),
         makeTask({ id: 'T002', suggestedFiles: ['src/beta.ts'], criteria: ['C2'] }),
       ];
@@ -547,7 +547,7 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
               id: 'T002',
               suggestedFiles: ['src/shared/widget.ts'],
               criteria: [],
-              checks: [{ id: 'K2', kind: 'cmd', value: 'node --version', required: true }],
+              checks: [{ id: 'K2', kind: 'cmd', value: 'node --version' }],
             }),
             findingIds: ['F1'],
           },
@@ -651,9 +651,7 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
                     id: 'T900',
                     suggestedFiles: ['src/pending.ts'],
                     criteria: [],
-                    checks: [
-                      { id: 'K-pending', kind: 'cmd', value: 'node --version', required: true },
-                    ],
+                    checks: [{ id: 'K-pending', kind: 'cmd', value: 'node --version' }],
                   }),
                   findingIds: ['F1'],
                 },
@@ -664,7 +662,7 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
               id: 'T901',
               suggestedFiles: ['src/time-zone.test.ts'],
               criteria: ['C6'],
-              checks: [{ id: 'K-time-zone', kind: 'cmd', value: 'node --version', required: true }],
+              checks: [{ id: 'K-time-zone', kind: 'cmd', value: 'node --version' }],
             }),
             findingIds: ['F2'],
           },

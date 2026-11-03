@@ -3,7 +3,7 @@
 > **Status:** stable (state v4, config v3).
 > **Audience:** implementer runners, reviewers, and advanced read-only integrations inspecting Task Brief state.
 
-A brief that fails after its one retry or reports `blocked` goes to a consult, not to a fixed tier chain. The planner answers every consult, the consult of a fix task (`task.fix`) included. The old `escalated-hint` / `escalated-intermediate` / `escalated-full` completion values and the old `escalate`, `hint_failed` and `task_scope_widened` events stay parseable so a saved `state.json` and `session.jsonl` still load.
+A brief that fails or reports `blocked` goes to a consult, not to a fixed tier chain. The planner answers every consult, the consult of a fix task (`task.fix`) included. The old `escalated-hint` / `escalated-intermediate` / `escalated-full` completion values and the old `escalate`, `hint_failed` and `task_scope_widened` events stay parseable so a saved `state.json` and `session.jsonl` still load.
 
 ## v4 contract boundary
 
@@ -37,7 +37,7 @@ The planning session's answer is typed. Its schemas live in `src/core/schemas/pl
 | `summary` | string | One paragraph the plan card shows first |
 | `decisions` | string[] | Choices the planner made; `state.plan` stores the ledger as `{ text, taskId }` entries, and a plain string reads as `taskId: null` |
 | `criteria` | `{ id, text, checkIds }[]` | Acceptance criteria, each served by named checks |
-| `checks` | `{ id, kind: 'test' \| 'cmd' \| 'render', value, required }[]` | The checks the criteria and tasks name |
+| `checks` | `{ id, kind: 'test' \| 'cmd' \| 'render', value }[]` | The checks the criteria and tasks name. Every check must pass. A plan or state file that still holds a `required` key on a check loads, and SPLITBRIEF ignores that key |
 | `gate` | string[] (at most 6, `MAX_GATE_COMMANDS`) | The project gate: the commands that the project's own scripts or CI run to verify a whole change, in run order. They run as the reviewer checks `V1`, `V2`, … before the final review, under the reviewer command policy. The plan card and `plan.md` show them under **Project gate**. Empty when the project has none |
 | `validation` | `{ language, test, testPattern }` or null | Becomes `state.discoveredValidation` (`testCommand`, `testPattern`, `language`); it feeds only the planner's `test` checks. `testPattern` is a file name pattern with one `*`, such as `*.test.js` or `test_*.py`. It has no directory part (`/` or `\`) and no `..`. SPLITBRIEF searches beside the changed file and in the stack's test folders. SPLITBRIEF emits `discovered_validation_refused` when it refuses a discovered pattern. It uses the configured pattern, if present. Otherwise, it uses the stack's patterns. |
 | `tasks` | `TaskSpec[]` | The tasks |
@@ -54,7 +54,7 @@ The planning session's answer is typed. Its schemas live in `src/core/schemas/pl
 | `title` | string | `title` |
 | `intent` | string | `description` |
 | `criteria` | string[] (criterion ids) | `criteria` |
-| `checks` | `Check[]` | `checks`; `tests` = the values of the `test` checks; `evidence` = one line per check (`<id> <kind>[ (optional)]: <value>`) |
+| `checks` | `Check[]` | `checks`; `tests` = the values of the `test` checks; `evidence` = one line per check (`<id> <kind>: <value>`) |
 | `suggestedFiles` | string[], at least one | `suggestedFiles` (the first is the anchor) |
 | `contextFiles` | string[] | `contextFiles` (read-only: never in `scope`, never a write target) |
 | `exclusions` | string[] | `exclusions`; `scope.outOfBounds` |
@@ -163,7 +163,7 @@ type Task = {
   status: TaskStatus;
   // Plan fields: set by taskFromSpec on a task compiled from plan.json; absent on older briefs
   criteria?: string[];               // criterion ids the task serves
-  checks?: Check[];                  // { id, kind: 'test' | 'cmd' | 'render', value, required }
+  checks?: Check[];                  // { id, kind: 'test' | 'cmd' | 'render', value }
   contextFiles?: string[];           // read-only context; never a write target
   contextCodeByFile?: Record<string, string>;  // captured current code of contextFiles, keyed by path
   exclusions?: string[];             // explicit "do not" notes
@@ -210,13 +210,12 @@ Transitions (simplified; full state-machine in `src/core/state/machine.ts`):
 ```
 pending --[START_TASK]--> in_progress
 in_progress --[VALIDATION_PASS]--> done
-in_progress --[VALIDATION_FAIL (retry available)]--> in_progress  (state.attempt++)
-in_progress --[VALIDATION_FAIL (retry spent)]--> phase escalating; the consult's answer decides:
-                                                    guidance → one more attempt → done
-                                                    rewrite-task → REPLACE_TASK (revision+1)
-                                                    split-task → INSERT_TASKS (parentId, next free ids)
-                                                    verify → validation + checks → done
-                                                    ask-user → the user's answer continues as guidance
+in_progress --[VALIDATION_FAIL]--> phase escalating; the consult's answer decides:
+                                      guidance → one more attempt → done
+                                      rewrite-task → REPLACE_TASK (revision+1)
+                                      split-task → INSERT_TASKS (parentId, next free ids)
+                                      verify → validation + checks → done
+                                      ask-user → the user's answer continues as guidance
 in_progress --[a ladder halt with a pending recovery]--> failed
 any --[SKIP_TASK]--> skipped
 any --[RESET_TASK]--> pending
@@ -473,7 +472,7 @@ The backend selects `file-bundle-v1` before every API BUILD call, including one-
 {"version":1,"blocked":{"question":"<question>","filesNeeded":["<file>"]}}
 ```
 
-A blocked bundle applies nothing and starts a consult with reason `blocked` and no local retry.
+A blocked bundle applies nothing and starts a consult with reason `blocked`.
 
 Targets must be declared, confined relative paths and regular UTF-8 text files or explicitly new files. API bundles do not support delete, rename, chmod or binary operations. Omitted declared targets stay untouched; unchanged entries are no-ops. An empty effective change is not successful implementation.
 
@@ -599,7 +598,7 @@ Any base-tree preparation failure, including directory creation, listing stale t
 
 A check is one of three kinds. A `test` check runs the named test file through the resolved test command (`resolveTestCommand`) and the stack's narrowing; on this repository that is `npm test -- <file>`, which finds only unit files, so an integration test is a `cmd` check (`npm run test:integration -- <file>`). Its value is one test file path: a value of more than one word, such as a command, is refused (`refused-check-command`). When the stack narrows the test command to the check's file and the workspace holds no test file for it, the check fails with `the workspace has no test file for <file>`: a brief gate that runs it sends the builder back, and the pre-review hands it to the reviewer as a red check. A `package.json` test script that chains commands is not narrowed (`resolveTestTarget`): the check runs `npm test` as written, and a `cmd` check that runs the test runner on the file directly (`node --test <test file>`, `npx --no-install vitest run <test file>`) runs one test file. A `cmd` check runs its value as a command: `npm run <script>` is allowed only under an approved plan, and when `package.json` does not define the script the check fails with `runs the npm script <script>, which package.json does not define`, so a fix task can add it; `npx` is allowed only as `npx --no-install <stack tool>`, and `test` is allowed only as `test -e`, `-f`, `-x` or `-L` on one relative workspace file, which checks a file mode or a symbolic link. `commandTextRefusal` and `missingNpmScript` (`src/engine/orchestrator/planning/sanitize-discovered-validation.ts`) decide this, and `checkPlan` sends a plan back to the planner when a `cmd` check fails that policy (`refused-check-command`); `planApprovesNpmScripts` reads the configured approval level and the run's recorded plan approval, and without approval every other command falls to `unsafeCommandReason`. The plan card lists approved `npm run` checks as confirmations (`planConfirmations`, `src/engine/orchestrator/approval/confirm.ts`). A `render` check runs the user's `validation.render` command — `{id}` is the check's value, one argv element matching `^[a-z0-9-]+$`, and `{out}` is a fresh directory under `<workspace>/.test-artifacts/ui/`, with cwd the workspace; it is not filtered by the planner command policy. Every `.png` under `{out}` is copied to `.splitbrief/sessions/<id>/renders/<check-id>/` and logged with its sha256. With no `validation.render` the check is `not-runnable` with `validation.render is not set`.
 
-A check's status is `pass`, `fail`, `not-runnable`, `refused` or `unknown`. `checkResults`, the `checks_run` event and the evidence ledger record that status, so a check that did not run is neither a pass nor a failure. A brief's check that did not run gets a `refused` or not-run row with its reason, and the review prompt and its Checks Log mark it `refused` or `not-runnable`. A required check that cannot run — any status but `pass` or `fail` — halts before the review with `required-checks-unrunnable`, listing every check id; it never becomes a fix task. A required check that ran and failed reaches the reviewer as a pending `defect` input. The brief gate follows `workflow.review`. End cadence runs the task's own checks, except a `render` check. Task cadence runs the task's checks and its due checks. A fix task also runs the checks of the red it answers. The final review runs all plan and task checks, including renders. A task review first runs again the required checks of the briefs and criteria it covers, so a required check that cannot run halts that review too. A review that runs again on the same candidate, after Fix again or an answered review question, runs none of these checks, so its pending inputs reach the reviewer unchanged (`reviewsAgain`, `src/core/review/verdict.ts`). Then, before the final review, the reviewer checks run (`validation.end_checks`): the commands of the plan's `gate`, as `cmd` checks `V1`, `V2`, … (`reviewCheckList`, `src/engine/orchestrator/validation/run-checks.ts`). A task review runs no gate. SPLITBRIEF runs them under the reviewer command policy (`reviewerCommandRefusal`, `src/engine/orchestrator/validation/reviewer-command-policy.ts`), not the plan command policy. That policy admits any installed program of any language and refuses only what breaks its danger rules ([CONFIGURATION.md §Reviewer checks](./CONFIGURATION.md#reviewer-checks)). It also refuses a reviewer check whose package script, task file, build wrapper or interpreter script this run changed or the run base does not hold; this refusal does not apply to plan and task checks. A refused or not-run reviewer check gets its own row and does not halt the review. The first reviewer check with new failures stops the list. Every new red reaches the reviewer, and so does a red that is not verified at the run base (a timeout, or no failure keys). Each run appends one entry to the task's `checks` log; the review packet prints them under `## Checks Log` with every path read outside the workspace.
+A check's status is `pass`, `fail`, `not-runnable`, `refused` or `unknown`. `checkResults`, the `checks_run` event and the evidence ledger record that status, so a check that did not run is neither a pass nor a failure. A brief's check that did not run gets a `refused` or not-run row with its reason, and the review prompt and its Checks Log mark it `refused` or `not-runnable`. A check that cannot run — any status but `pass` or `fail` — halts before the review with `required-checks-unrunnable`, listing every check id; it never becomes a fix task. A check that ran and failed reaches the reviewer as a pending `defect` input. The brief gate follows `workflow.review`. End cadence runs the task's own checks, except a `render` check. Task cadence runs the task's checks and its due checks. A fix task also runs the checks of the red it answers. The final review runs all plan and task checks, including renders. A task review first runs again the checks of the briefs and criteria it covers, so a check that cannot run halts that review too. A review that runs again on the same candidate, after Fix again or an answered review question, runs none of these checks, so its pending inputs reach the reviewer unchanged (`reviewsAgain`, `src/core/review/verdict.ts`). Then, before the final review, the reviewer checks run (`validation.end_checks`): the commands of the plan's `gate`, as `cmd` checks `V1`, `V2`, … (`reviewCheckList`, `src/engine/orchestrator/validation/run-checks.ts`). A task review runs no gate. SPLITBRIEF runs them under the reviewer command policy (`reviewerCommandRefusal`, `src/engine/orchestrator/validation/reviewer-command-policy.ts`), not the plan command policy. That policy admits any installed program of any language and refuses only what breaks its danger rules ([CONFIGURATION.md §Reviewer checks](./CONFIGURATION.md#reviewer-checks)). It also refuses a reviewer check whose package script, task file, build wrapper or interpreter script this run changed or the run base does not hold; this refusal does not apply to plan and task checks. A refused or not-run reviewer check gets its own row and does not halt the review. The first reviewer check with new failures stops the list. Every new red reaches the reviewer, and so does a red that is not verified at the run base (a timeout, or no failure keys). Each run appends one entry to the task's `checks` log; the review packet prints them under `## Checks Log` with every path read outside the workspace.
 
 A `test`, `cmd` or `render` check whose executable is missing is `not-runnable` with `<executable> not found`. A check whose executable starts and exits 127 is also `not-runnable`: this is how the shell of a package script reports a program it calls that is not installed. Its reason is the last stderr line that holds the shell's missing-program message (`not found` or `No such file or directory`), such as `sh: mocha: command not found`, even when a package manager such as yarn or bun writes its own line after it. With no such line the reason is the last stderr line, or `<executable> exited 127` when the executable wrote none. Such a check never becomes `fail` or a pending review input.
 

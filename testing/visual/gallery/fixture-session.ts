@@ -351,7 +351,7 @@ export async function createFixtureSession(input: FixtureSessionInput): Promise<
 
   let disposal: Promise<void> | undefined;
   let activation: Promise<void> | undefined;
-  const connectionOutcome = fixture.connectionOutcome;
+  const { connectionOutcome, prepareExecution } = fixture;
   return {
     scenario,
     checkpoint,
@@ -360,19 +360,22 @@ export async function createFixtureSession(input: FixtureSessionInput): Promise<
         workflowFixtureProjections.get(scenario.id),
         previewSessionSelect,
       ),
-      interactionDeps:
-        connectionOutcome === undefined
-          ? previewInteractionDeps
-          : {
-              ...previewInteractionDeps,
-              picker: {
-                ...previewPicker,
-                checkConnection: async (input) =>
-                  input.provider === connectionOutcome.provider
-                    ? connectionOutcome
-                    : previewPicker.checkConnection(input),
-              },
-            },
+      interactionDeps: {
+        ...previewInteractionDeps,
+        ...(prepareExecution !== undefined && {
+          home: { ...previewHome, prepareExecution },
+          setup: { ...previewSetup, prepareExecution },
+        }),
+        ...(connectionOutcome !== undefined && {
+          picker: {
+            ...previewPicker,
+            checkConnection: async (input) =>
+              input.provider === connectionOutcome.provider
+                ? connectionOutcome
+                : previewPicker.checkConnection(input),
+          },
+        }),
+      },
     },
     activate: (write) => {
       activation ??= Promise.resolve().then(() => {

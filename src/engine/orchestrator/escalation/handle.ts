@@ -3,7 +3,7 @@ import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/
 import type { ConsultReason } from '../../../core/schemas/consult.js';
 import type { WorkflowContext } from '../types.js';
 import type { EngineEvent } from '../../events/types.js';
-import { recordNoProgressCut, runLocalRetries } from './local-retries.js';
+import { isAbortedOutcome, recordNoProgressCut, runHeldCorrection } from './held-correction.js';
 import { runRetryStep, type BlockedReport } from './step.js';
 import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
@@ -27,6 +27,7 @@ import { getRunnerCatalogDisplayName } from '../../../core/config/accessors/runn
 import { loadSeatSwapContext } from '../recovery/seat-swap-context.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
 import { nowIso } from '../../../utils/format-time.js';
+import { TIMEOUTS } from '../../../core/pipeline-spec/timeouts.js';
 import { consultAttemptError, guidanceInstructions } from './consult-guidance.js';
 import type {
   EscalationContext,
@@ -53,6 +54,11 @@ type HandleRetryOptions = {
 
 function handBackOf(outcome: RetryStepOutcome): string | undefined {
   return outcome.lastFailure?.handBack;
+}
+
+/** A timeout and a no-progress cut both end a call that did not finish. */
+function isUnfinishedCall(failure: RetryAttemptFailure | undefined): boolean {
+  return failure?.outcome === 'timeout' || failure?.outcome === 'no-progress-cut';
 }
 
 /**
@@ -152,7 +158,7 @@ async function runnerDefectHalt(
     phase: stepOutcome.state.phase,
     runner: failure.runner,
     toolMessage: stepOutcome.lastError,
-    // The local ladder books a timeout before it names the second one in a row a defect.
+    // The ladder books a timeout before it names the second one in a row a defect.
     ...haltAttempts(stepOutcome.state, task, {
       booked: failure.outcome === 'runner-timeout-repeated',
     }),
@@ -204,12 +210,12 @@ async function attemptChangedFiles(
 }
 
 /**
- * The ladder: one local rung with the exact errors, then the consult loop. A
+ * The ladder: every red goes to the consult seat with the exact errors. A
  * guidance or ask-user answer spends one more implementer attempt with the
  * consult seat's instructions in its error block; a rewrite or a split replaces
  * the brief and hands back to the task loop; verify completes in place. A
  * correction the user sent while the checks ran is delivered by the next
- * attempt, with no retry rung and no consult. No count stops the loop: each
+ * attempt, before any consult. No count stops the loop: each
  * failed attempt goes back to the consult seat, whose prompt shows its earlier
  * answers and the failures that followed them. A question of the seat that
  * nobody answers halts the brief for the operator.
@@ -246,31 +252,43 @@ export async function handleRetryAndEscalation(
   let attemptSnapshot: ChangedFilesSnapshot = taskStartSnapshot;
   let answer: string | undefined;
 
-  if (ctx.signal?.aborted) return { state, result: failedRetry(attempts) };
-
-  // An implementation that stopped to ask for a decision is not retried with
-  // the same brief: the consult seat answers the question.
-  if (blocked === undefined) {
-    const retries = await runLocalRetries({
-      ctx,
-      task,
+  // Timeouts and no-progress cuts share one count: two unfinished calls in a row halt as
+  // `runner-timeout-repeated`; any other outcome resets it.
+  let consecutiveTimeouts = isUnfinishedCall(opts.initialFailure) ? 1 : 0;
+  const countCall = (outcome: RetryStepOutcome) => {
+    const failure = outcome.lastFailure;
+    consecutiveTimeouts = isUnfinishedCall(failure) ? consecutiveTimeouts + 1 : 0;
+    if (failure === undefined || consecutiveTimeouts < TIMEOUTS.consecutiveTimeoutsHalt) {
+      return null;
+    }
+    return runnerHalt(ctx, task, {
+      ...outcome,
       state,
-      lastError,
-      ...(opts.initialFailure !== undefined && { initialFailure: opts.initialFailure }),
-      ...(opts.initialAnswer !== undefined && { answer: opts.initialAnswer }),
+      lastFailure: { ...failure, outcome: 'runner-timeout-repeated' },
     });
-    state = retries.state;
-    task = retries.task;
-    lastError = retries.lastError;
-    attempts = retries.attempts;
-    handBack = handBackOf(retries) ?? handBack;
-    attemptSnapshot = retries.attemptSnapshot ?? attemptSnapshot;
-    blocked = retries.blocked;
-    if (retries.result) return { state, result: retries.result };
+  };
+
+  if (isAbortedOutcome(lastError, ctx.signal)) return { state, result: failedRetry(attempts) };
+  // The first attempt can be the one the watchdog cut; record it before the consult it earns.
+  recordNoProgressCut(ctx, task, state, opts.initialFailure);
+
+  if (blocked === undefined && opts.initialAnswer !== undefined) {
+    const held = await runHeldCorrection({ ctx, task, state, answer: opts.initialAnswer });
+    state = held.state;
+    task = held.task;
+    lastError = held.lastError;
+    handBack = handBackOf(held) ?? handBack;
+    attemptSnapshot = held.attemptSnapshot ?? attemptSnapshot;
+    blocked = held.blocked;
+    if (held.result) return { state, result: held.result };
     if (ctx.signal?.aborted) return { state, result: failedRetry(attempts) };
-    const retriesHalt = await runnerHalt(ctx, retries.task, retries);
-    if (retriesHalt) return retriesHalt;
+    const heldHalt = (await runnerHalt(ctx, held.task, held)) ?? (await countCall(held));
+    if (heldHalt) return heldHalt;
   }
+
+  // Every red goes to the consult seat: the brief is escalating from here.
+  if (state.phase === 'implementing') state = transitionAndSave(ctx, state, { type: 'TASK_SENT' });
+  state = transitionAndSave(ctx, state, { type: 'VALIDATION_FAIL' });
 
   if (ctx.config.hooks) {
     const preEscalationPayload: EngineEvent = {
@@ -309,8 +327,7 @@ export async function handleRetryAndEscalation(
     }
   }
 
-  // The local rung is over: the brief is escalating, and every answer from here
-  // is the consult seat's or the operator's.
+  // Every answer from here is the consult seat's or the operator's.
   wctx.bus.publish({
     type: 'task_escalating',
     ts: Date.now(),
@@ -364,7 +381,7 @@ export async function handleRetryAndEscalation(
     recordNoProgressCut(ctx, task, state, outcome.lastFailure);
     if (outcome.result) return { state, result: outcome.result };
     if (ctx.signal?.aborted) return { state, result: failedRetry(attempts) };
-    return runnerHalt(ctx, outcome.task, outcome);
+    return (await runnerHalt(ctx, outcome.task, outcome)) ?? countCall(outcome);
   };
 
   for (;;) {

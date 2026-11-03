@@ -33,7 +33,7 @@ describe('retry target provenance', () => {
     const workspace = await createTargetWriteWorkspace(projectDir);
     const invokeRetry = makeImplementerRetryInvoker({
       context: defaultContext,
-      kind: 'local',
+      kind: 'correction',
       sessionId: TARGET_WRITE_SESSION_ID,
       languageContext: buildLanguageContext('typescript'),
       phase: 'implementing',

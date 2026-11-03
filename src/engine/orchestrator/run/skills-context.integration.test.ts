@@ -146,7 +146,14 @@ describe('buildSkillsContext', () => {
 
     const prompts = [
       formatTaskPrompt({ task, context, writesFiles: 'direct' }),
-      formatRetryPrompt({ task, context, error: 'tsc failed', attempt: 1, writesFiles: 'direct' }),
+      formatRetryPrompt({
+        task,
+        context,
+        error: 'tsc failed',
+        attempt: 1,
+        kind: 'consult',
+        writesFiles: 'direct',
+      }),
       formatTaskPrompt({ task, context, outputContract: 'file-bundle-v1' }),
     ];
 
@@ -196,7 +203,14 @@ describe('buildSkillsContext', () => {
         skillsContext,
       }),
       brief: formatTaskPrompt({ task, context, writesFiles: 'direct' }),
-      retry: formatRetryPrompt({ task, context, error: 'x', attempt: 1, writesFiles: 'direct' }),
+      retry: formatRetryPrompt({
+        task,
+        context,
+        error: 'x',
+        attempt: 1,
+        kind: 'consult',
+        writesFiles: 'direct',
+      }),
       bundle: formatTaskPrompt({ task, context, outputContract: 'file-bundle-v1' }),
       review: buildFinalReviewPrompt({
         spec: '# Spec',

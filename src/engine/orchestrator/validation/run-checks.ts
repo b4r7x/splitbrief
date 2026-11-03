@@ -70,7 +70,7 @@ export type RunChecksOptions = {
   task?: Task | undefined;
   tasks?: readonly Task[] | undefined;
   plan?: Plan | undefined;
-  /** The project gate as required `cmd` checks; a script the run changed refuses its check. */
+  /** The project gate as `cmd` checks; a script the run changed refuses its check. */
   reviewChecks?: readonly Check[] | undefined;
   /** The run base: a reviewer check whose script this run changed is refused against it. */
   base?: RunBase | undefined;
@@ -100,13 +100,12 @@ export function planApprovesNpmScripts(opts: {
   return resolveApproveLevel(opts.config) === 'plan' && opts.state.approve === 'plan';
 }
 
-/** The project gate the plan names as required `cmd` checks `V1`, `V2`, … in its order. */
+/** The project gate the plan names as `cmd` checks `V1`, `V2`, … in its order. */
 export function reviewCheckList(plan: Plan | undefined): Check[] {
   return (plan?.gate ?? []).map((command, index) => ({
     id: `V${index + 1}`,
     kind: 'cmd',
     value: command,
-    required: true,
   }));
 }
 

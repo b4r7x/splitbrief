@@ -11,7 +11,7 @@ function makePlan(checks: Plan['checks']): Plan {
 
 describe('planConfirmations', () => {
   it('lists a run-level npm run check from plan.checks', () => {
-    const plan = makePlan([{ id: 'R1', kind: 'cmd', value: 'npm run typecheck', required: true }]);
+    const plan = makePlan([{ id: 'R1', kind: 'cmd', value: 'npm run typecheck' }]);
 
     const confirmations = planConfirmations([], projectDir, plan);
 
@@ -23,7 +23,7 @@ describe('planConfirmations', () => {
 
   it('lists a task-level npm run check once', () => {
     const task = makeTask({
-      checks: [{ id: 'K1', kind: 'cmd', value: 'npm run lint', required: true }],
+      checks: [{ id: 'K1', kind: 'cmd', value: 'npm run lint' }],
     });
 
     const confirmations = planConfirmations([task], projectDir);
@@ -35,12 +35,12 @@ describe('planConfirmations', () => {
 
   it('lists one command once when two check ids run it', () => {
     const plan = makePlan([
-      { id: 'c-typecheck', kind: 'cmd', value: 'npm run typecheck', required: true },
-      { id: 'c-invariants', kind: 'cmd', value: 'npm run check:invariants', required: true },
-      { id: 'c-deleted-symbols', kind: 'cmd', value: 'npm run check:invariants', required: true },
+      { id: 'c-typecheck', kind: 'cmd', value: 'npm run typecheck' },
+      { id: 'c-invariants', kind: 'cmd', value: 'npm run check:invariants' },
+      { id: 'c-deleted-symbols', kind: 'cmd', value: 'npm run check:invariants' },
     ]);
     const task = makeTask({
-      checks: [{ id: 'K1', kind: 'cmd', value: 'npm run typecheck', required: true }],
+      checks: [{ id: 'K1', kind: 'cmd', value: 'npm run typecheck' }],
     });
 
     const confirmations = planConfirmations([task], projectDir, plan);
@@ -68,7 +68,7 @@ describe('planConfirmations', () => {
   it('keeps protected-write confirmations', () => {
     const task = makeTask({
       protectedOperations: [{ path: 'package.json', operation: 'write' }],
-      checks: [{ id: 'K1', kind: 'cmd', value: 'npm run lint', required: true }],
+      checks: [{ id: 'K1', kind: 'cmd', value: 'npm run lint' }],
     });
 
     const confirmations = planConfirmations([task], projectDir);

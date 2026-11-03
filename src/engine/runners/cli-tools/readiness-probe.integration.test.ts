@@ -523,23 +523,32 @@ describe('CLI readiness probe', () => {
     async () => {
       vi.useRealTimers();
       probeLimit.ms = 250;
-      const executable = await nodeExecutable();
-      const result = await probeCliReadiness({
-        tool: 'codex',
-        executable,
-        // The descendant starts its own session, so the group kill cannot reach
-        // it and the leader's stdio never closes: the probe must still answer.
-        probe: probe(
-          [
-            'const { spawn } = require("node:child_process");',
-            'const escaped = spawn(process.execPath, ["-e", "setTimeout(() => process.exit(0), 4_000)"], { detached: true, stdio: ["ignore", "inherit", "inherit"] });',
-            'escaped.unref();',
-            'setInterval(() => {}, 1_000);',
-          ].join(' '),
-        ),
-      });
+      await withTempDir('readiness-escaped-descendant', async (directory) => {
+        const release = join(directory, 'release');
+        const exited = join(directory, 'exited');
+        const executable = await nodeExecutable();
+        // The descendant leaves when the test releases it (or after 4 s) and marks its exit.
+        const descendant = `const fs = require("node:fs"); const leave = () => { fs.writeFileSync(${JSON.stringify(exited)}, ""); process.exit(0); }; setInterval(() => { if (fs.existsSync(${JSON.stringify(release)})) leave(); }, 25); setTimeout(leave, 4_000);`;
+        const result = await probeCliReadiness({
+          tool: 'codex',
+          executable,
+          // The descendant starts its own session, so the group kill cannot reach
+          // it and the leader's stdio never closes: the probe must still answer.
+          probe: probe(
+            [
+              'const { spawn } = require("node:child_process");',
+              `const escaped = spawn(process.execPath, ["-e", ${JSON.stringify(descendant)}], { detached: true, stdio: ["ignore", "inherit", "inherit"] });`,
+              'escaped.unref();',
+              'setInterval(() => {}, 1_000);',
+            ].join(' '),
+          ),
+        });
 
-      expect(result.status).toBe('unverified');
+        expect(result.status).toBe('unverified');
+        expect(existsSync(exited)).toBe(false);
+        await writeFile(release, '');
+        await vi.waitFor(() => expect(existsSync(exited)).toBe(true), { timeout: 6_000 });
+      });
     },
   );
 

@@ -15,7 +15,7 @@ The orchestrator in the middle owns the workflow: it runs the planner, persists 
 
 The goal is a change that holds up: the tool that wrote the code never signs it off, and a deterministic pipeline — not the implementer's own opinion — decides whether the task passed. Lower total cost follows from the split; it is a reported outcome, not the promise.
 
-The **pipeline spec** (`src/core/pipeline-spec/`) is where that pipeline's countable rules live — the brief grouping rule, the retry count, the ladder, the bounds, the timeouts, the test check narrowing rule, the halt signatures. The orchestrator imports them and the portable agent skills are rendered from them, so the two cannot drift; `npm run skills:check` fails when they do.
+The **pipeline spec** (`src/core/pipeline-spec/`) is where that pipeline's countable rules live — the brief grouping rule, the ladder, the bounds, the timeouts, the test check narrowing rule, the halt signatures. The orchestrator imports them and the portable agent skills are rendered from them, so the two cannot drift; `npm run skills:check` fails when they do.
 
 ---
 
@@ -28,7 +28,7 @@ The "smart" side. Its responsibilities, in order:
 1. **Research** the project (read files, understand existing patterns).
 2. **Answer one typed plan** (`PlanAnswerSchema`) — acceptance criteria, checks, validation commands and tasks. SPLITBRIEF validates it, writes `plan.json`, and renders `plan.md` and `tasks.md` from it; each task is one Task Brief, the durable execution contract for its part of the change.
 3. **Review** the entire diff at the end against the plan and its Task Briefs (when no reviewer is configured, the planner holds the review seat). The review seat makes one kind of call: the verdict call. Before the final review SPLITBRIEF runs the project gate that the plan names (`runReviewChecks`, `src/engine/orchestrator/review-checks.ts`).
-4. **Consult** — when the implementer fails a task's attempt and its one retry (or reports `blocked`), the planner answers one read-only typed consult, also for a fix task the reviewer wrote: guidance, a rewritten brief, a split into subtasks, a re-run of the named checks, one question for the user, or `cannot` when the task cannot be done as asked. A question that nobody answers, and a `cannot` answer, enter explicit recovery.
+4. **Consult** — when a task's attempt fails (or the implementer reports `blocked`), the planner answers one read-only typed consult, also for a fix task the reviewer wrote: guidance, a rewritten brief, a split into subtasks, a re-run of the named checks, one question for the user, or `cannot` when the task cannot be done as asked. A question that nobody answers, and a `cannot` answer, enter explicit recovery.
 
 The planner also supports **clarifying questions**: it can ask the user questions before it answers the plan. The questions are part of the typed answer (`PlanResultSchema`), so every planner can ask them.
 
@@ -89,7 +89,7 @@ idle
  │   └─► reviewing-plan   (the plan card waits for the user; skipped with approve: none)
  ├─► implementing      (implementer is working on current task)
  │   └─► validating-task  (the brief's checks running)
- │       └─► escalating   (retry spent → the consult, then recovery)
+ │       └─► escalating   (a red → the consult, then recovery)
  ├─► final-review      (review seat reads the whole diff against the briefs and the request)
  └─► complete
 ```
@@ -183,8 +183,8 @@ A red reviewer check whose failures are also red on a disposable run base copy, 
 
 On validation failure:
 
-- **One local retry**: the implementer retries once with the exact error message appended to its context. No planner involvement. The rung ends early on the first attempt that read the feedback and still changed nothing; the consult is asked instead. `DEFAULT_LOCAL_RETRIES` is 1 (`src/core/pipeline-spec/retries.ts`), and `workflow.max_retries` is retired with one notice.
-- **The consult**: one read-only typed call (`requestConsult`, `src/engine/orchestrator/consult/request.ts`; schema `src/core/schemas/consult.ts`). The planner answers it on its own session, for a plan task and for a fix task (`task.fix`); a fix task's consult sends the full prompt. The planner answers exactly one action — `guidance` (one more implementer attempt carrying the instructions), `rewrite-task` (the brief replaced at the same id, `revision` +1, the current attempt rolled back), `split-task` (2–4 subtasks at the next free ids, dependents re-pointed), `verify` (validation and the named checks run with no implementer call; a clean run completes the task as `consulted`) or `ask-user` (the only question the ladder asks). A `blocked` report goes to the consult without the local retry.
+- **Consult first**: a red attempt goes straight to the consult, with its exact errors. There is no local retry. A correction that you send while the checks run goes to the next attempt first, before any consult. `workflow.max_retries` is retired with one notice.
+- **The consult**: one read-only typed call (`requestConsult`, `src/engine/orchestrator/consult/request.ts`; schema `src/core/schemas/consult.ts`). The planner answers it on its own session, for a plan task and for a fix task (`task.fix`); a fix task's consult sends the full prompt. The planner answers exactly one action — `guidance` (one more implementer attempt carrying the instructions), `rewrite-task` (the brief replaced at the same id, `revision` +1, the current attempt rolled back), `split-task` (2–4 subtasks at the next free ids, dependents re-pointed), `verify` (validation and the named checks run with no implementer call; a clean run completes the task as `consulted`) or `ask-user` (the only question the ladder asks). A `blocked` report also goes to the consult.
 - **Brief history** (`## Brief History`, `src/engine/spec/prompts/consult.ts`): no count stops the consults. Every failed attempt goes back to the planner, and each consult shows the planner its earlier answers, each before the failed attempts that followed it. The planner changes its approach when an earlier answer left the same failure.
 - **Recovery** follows a question that nobody answers, a brief that the planner says cannot be done, or a ladder that cannot continue. The planner never automatically takes over code-writing implementation.
 

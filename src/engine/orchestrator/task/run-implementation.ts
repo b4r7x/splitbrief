@@ -1,4 +1,4 @@
-import { changedDeclaredFiles } from '../kept-work.js';
+import { briefContinuation, changedDeclaredFiles, changedDeclaredFilesNote } from '../kept-work.js';
 import type { Task } from '../../../core/schemas/task.js';
 import {
   lineageAttemptsOf,
@@ -20,33 +20,17 @@ import { buildProjectLanguageContext } from '../../spec/prompts/language-context
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { isAbortError } from '../../../utils/abort.js';
 import { implementerSeatAttempt, runSeatCall } from '../escalation/seat-wait.js';
-import {
-  addUsageAndSave,
-  rebaseOnPersistedWorkflowState,
-  recordBriefCorrection,
-} from '../state-ops.js';
+import { addUsageAndSave, rebaseOnPersistedWorkflowState } from '../state-ops.js';
 import { isResumableWorkspaceStop, retentionError } from '../isolation/retention.js';
 import { recordedApiCreatedPaths } from '../evidence/task.js';
 import {
   absorbBuildCorrections,
   buildCorrectionInput,
-  publishBuildImagesAsPaths,
+  recordSteerCorrection,
   runWithCorrectionPasses,
 } from '../queue/build-corrections.js';
 import { settleMidCallDeliveries } from '../queue/mid-call.js';
-import { formatMessageInput } from '../queue/prompt.js';
 import { withAttemptRestoreScope } from './restore-scope.js';
-
-/**
- * A restarted attempt is told about the declared files that already moved, so it
- * edits what is there instead of writing the file again from nothing.
- */
-function changedDeclaredFilesNote(changed: readonly string[]): { extra?: string } {
-  if (changed.length === 0) return {};
-  return {
-    extra: `These declared files changed since this brief started (an earlier attempt of this brief left them): ${changed.join(', ')}`,
-  };
-}
 
 export type RunImplementationResult = {
   state: WorkflowState;
@@ -83,10 +67,7 @@ export async function runImplementation(opts: {
   let recordedCorrection: UserMessageInput | undefined;
   const recordCorrection = (message: UserMessageInput | undefined): void => {
     if (message === undefined || message === recordedCorrection) return;
-    const text = formatMessageInput(message);
-    if (!text.trim()) return;
-    state = recordBriefCorrection({ projectDir, sessionId }, state, task.id, text, message.images);
-    publishBuildImagesAsPaths({ ...wctx, state, taskId: task.id, count: message.images.length });
+    state = recordSteerCorrection({ ...wctx, state, taskId: task.id, message });
     recordedCorrection = message;
     setTrackedState(state);
   };
@@ -204,25 +185,16 @@ export async function runImplementation(opts: {
           await settleMidCallDeliveries({ projectDir, sessionId });
           absorb();
           const correction = buildCorrectionInput(state, task, wctx);
-          const combinedSteer = correction.continuation?.steer;
-          const continues = partial !== undefined || combinedSteer !== undefined;
-          const changed = continues
-            ? await changedDeclaredFiles(workspace.projectDir, task, opts.taskStartSnapshot)
-            : [];
-          // A cut attempt continues on the files it wrote before the cut; the call's own row
-          // names them, since a call that finds them complete changes nothing of its own.
-          const kept = partial !== undefined && changed.length > 0 ? changed : undefined;
-          const continuation = continues
-            ? {
-                ...(partial !== undefined && { partial }),
-                ...(combinedSteer !== undefined && { steer: combinedSteer }),
-                ...changedDeclaredFilesNote(changed),
-                ...(kept !== undefined && { kept }),
-              }
-            : undefined;
+          const continuation = await briefContinuation({
+            codeDir: workspace.projectDir,
+            task,
+            taskStartSnapshot: opts.taskStartSnapshot,
+            partial,
+            steer: correction.continuation?.steer,
+          });
           // A fix task may already have its code on disk when none of its findings needs a change,
           // and a cut attempt may find its kept work complete: either call may change nothing.
-          const allowNoChange = task.fix !== undefined || kept !== undefined;
+          const allowNoChange = task.fix !== undefined || continuation?.kept !== undefined;
           const firstCall: ImplementerOptions = {
             ...call,
             ...correction,

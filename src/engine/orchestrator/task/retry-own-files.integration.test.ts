@@ -82,8 +82,8 @@ function scriptedCheck(failing: { value: boolean }): void {
 }
 
 /**
- * The brief creates `src/new.ts`. Its first attempt writes the file, then its planner call stops:
- * the consult after the attempt and its local retry fail the brief's check. Try again runs the
+ * The brief creates `src/new.ts`. Its first attempt writes the file and fails the brief's check,
+ * then the planner call of the consult stops. Try again runs the
  * brief once more; each build call
  * of that run records the lineage's consult count as saved when the call starts, and the action it
  * was dispatched with.
@@ -95,7 +95,7 @@ async function retryAfterHalt() {
     action: 'create',
     suggestedFiles: [NEW_FILE],
     criteria: [],
-    checks: [{ id: 'T001-K1', kind: 'cmd', value: 'tsc --noEmit', required: true }],
+    checks: [{ id: 'T001-K1', kind: 'cmd', value: 'tsc --noEmit' }],
   });
   const failing = { value: true };
   scriptedCheck(failing);

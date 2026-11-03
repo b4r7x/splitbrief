@@ -22,7 +22,7 @@ const alpha = makeTaskSpec({
   intent: 'Return the alpha value.',
   criteria: ['C1'],
   suggestedFiles: ['src/alpha.mjs', 'src/alpha.test.mjs'],
-  checks: [{ id: 'T001-K1', kind: 'test', value: 'src/alpha.test.mjs', required: true }],
+  checks: [{ id: 'T001-K1', kind: 'test', value: 'src/alpha.test.mjs' }],
 });
 const plan = makePlanProposal({
   summary: 'Add one tested value.',
@@ -51,9 +51,8 @@ afterEach(() => {
 
 /**
  * The first attempt writes both files with a value check T001-K1 rejects, and `generated` data
- * files outside the brief, and with `notes` a brief file with a space in its path; the local retry
- * changes nothing. The planner logs the consult prompt and answers with guidance, after which the
- * implementer writes the right value.
+ * files outside the brief, and with `notes` a brief file with a space in its path. The planner logs
+ * the consult prompt and answers with guidance, after which the implementer writes the right value.
  */
 function writeRunners(
   target: StopContinueFixture,
@@ -132,7 +131,7 @@ function consultPrompts(callsPath: string): string[] {
     .map((call) => call.prompt ?? '');
 }
 
-describe('e2e: the consult after two failed attempts', { timeout: 360_000 }, () => {
+describe('e2e: the consult after a failed attempt', { timeout: 360_000 }, () => {
   it("shows the first attempt's files and one line per failed attempt", async () => {
     fixture = createStopContinueFixture(() => '', { isolation: 'none' });
     const target = fixture;
@@ -162,9 +161,7 @@ describe('e2e: the consult after two failed attempts', { timeout: 360_000 }, () 
     expect(taskDiff).toContain('+export const alpha = "not alpha";');
     expect(taskDiff).toContain('src/alpha.test.mjs');
     expect(prompt).toMatch(/^- Attempt 1 \(T001 revision 1\): check T001-K1 did not pass/m);
-    expect(prompt).toMatch(
-      /^- Attempt 2 \(T001 revision 1\): .*exited without changing any files/m,
-    );
+    expect(prompt).not.toMatch(/^- Attempt 2 /m);
     expect(prompt.indexOf('## Brief History')).toBeLessThan(prompt.indexOf('## Failing Output'));
 
     const sessionId = readdirSync(sessionsRoot(target.projectDir))[0];

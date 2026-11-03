@@ -338,7 +338,7 @@ describe('api BUILD — file-bundle-v1 through the public pipeline', () => {
         ...call(task),
         error: 'io-failure on src/locked/b.ts',
         attempt: 1,
-        kind: 'local',
+        kind: 'correction',
       });
 
       expect(second.success).toBe(true);

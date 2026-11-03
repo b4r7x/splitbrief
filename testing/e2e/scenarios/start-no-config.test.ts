@@ -67,7 +67,7 @@ function readyClaude(bin: string, calls: string, hostHome: string) {
       tasks: [
         makeTaskSpec({
           suggestedFiles: ['src/greet.mjs'],
-          checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+          checks: [{ id: 'K1', kind: 'cmd', value: 'node --version' }],
           steps: ['Write src/greet.mjs.'],
         }),
       ],
@@ -108,7 +108,7 @@ function readyCodex(bin: string, calls: string, hostHome: string) {
       tasks: [
         makeTaskSpec({
           suggestedFiles: ['src/greet.mjs'],
-          checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+          checks: [{ id: 'K1', kind: 'cmd', value: 'node --version' }],
           steps: ['Write src/greet.mjs.'],
         }),
       ],
@@ -146,7 +146,7 @@ describe('e2e: headless start without config', () => {
           tasks: [
             makeTaskSpec({
               suggestedFiles: ['src/greet.mjs'],
-              checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+              checks: [{ id: 'K1', kind: 'cmd', value: 'node --version' }],
               steps: ['Write src/greet.mjs.'],
             }),
           ],

@@ -5,7 +5,7 @@ import { formatPlanMarkdown } from './plan-markdown.js';
 describe('formatPlanMarkdown', () => {
   it('renders the summary, decisions, criteria, run checks, project gate, batches and protected operations', () => {
     const plan = makePlanProposal({
-      checks: [{ id: 'K9', kind: 'cmd', value: 'npm test', required: true }],
+      checks: [{ id: 'K9', kind: 'cmd', value: 'npm test' }],
       gate: ['npm run release-check', 'npm run lint'],
       criteria: [{ id: 'C1', text: 'A name gets a greeting', checkIds: ['K1', 'K9'] }],
       tasks: [
@@ -16,7 +16,7 @@ describe('formatPlanMarkdown', () => {
           dependsOn: ['T001'],
           batch: 2,
           suggestedFiles: ['package.json'],
-          checks: [{ id: 'K2', kind: 'cmd', value: 'npm ls', required: false }],
+          checks: [{ id: 'K2', kind: 'cmd', value: 'npm ls' }],
           protectedOperations: [{ path: 'package.json', operation: 'write' }],
         }),
       ],
@@ -67,7 +67,7 @@ describe('formatPlanMarkdown', () => {
         'Return a greeting for a name',
         '',
         '- Criteria: C1',
-        '- Checks: K2 cmd (optional): npm ls',
+        '- Checks: K2 cmd: npm ls',
         '- Suggested files: package.json',
         '- Depends on: T001',
         '',
@@ -77,7 +77,7 @@ describe('formatPlanMarkdown', () => {
 
   it('opens with what the reader has to settle before approving', () => {
     const plan = makePlanProposal({
-      checks: [{ id: 'K-render', kind: 'render', value: 'overlay-picker', required: true }],
+      checks: [{ id: 'K-render', kind: 'render', value: 'overlay-picker' }],
     });
     const lines = formatPlanMarkdown(plan, [
       'Render check K-render needs validation.render, which is not set.',

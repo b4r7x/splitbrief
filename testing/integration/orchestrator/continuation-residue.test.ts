@@ -60,7 +60,7 @@ function setup() {
 }
 
 describe('a stopped production implementer call', () => {
-  for (const kind of ['normal', 'local', 'consult'] as const) {
+  for (const kind of ['normal', 'correction', 'consult'] as const) {
     it(`keeps ${kind} narration in the authoritative log for continuation`, async () => {
       const fixture = setup();
       const ref = { projectDir: fixture.projectDir, sessionId: fixture.sessionId };

@@ -486,14 +486,14 @@ describe('applyConsultAnswer', () => {
       id: 'T003',
       suggestedFiles: ['src/greet.ts'],
       criteria: ['C1'],
-      checks: [{ id: 'K1', kind: 'test', value: 'src/greet.test.ts', required: true }],
+      checks: [{ id: 'K1', kind: 'test', value: 'src/greet.test.ts' }],
       status: 'failed',
     });
     const plan: Plan = {
       summary: 'Fix the greeting',
       decisions: [],
       criteria: [{ id: 'C1', text: 'A greeting is returned', checkIds: ['K1'] }],
-      checks: [{ id: 'K1', kind: 'test', value: 'src/greet.test.ts', required: true }],
+      checks: [{ id: 'K1', kind: 'test', value: 'src/greet.test.ts' }],
       validation: null,
     };
     const { ctx, states } = contextFor(projectDir, sessionId, task, plan);
@@ -506,7 +506,7 @@ describe('applyConsultAnswer', () => {
         makeTaskSpec({
           id: 'T003',
           criteria: ['C1'],
-          checks: [{ id: 'K1', kind: 'cmd', value: 'npm run greet-test', required: true }],
+          checks: [{ id: 'K1', kind: 'cmd', value: 'npm run greet-test' }],
           suggestedFiles: ['src/greet.ts'],
         }),
       ),
@@ -514,9 +514,7 @@ describe('applyConsultAnswer', () => {
     );
 
     if (result.action !== 'rewrite-task') throw new Error(`expected rewrite, got ${result.action}`);
-    expect(result.task.checks).toEqual([
-      { id: 'K1', kind: 'cmd', value: 'npm run greet-test', required: true },
-    ]);
+    expect(result.task.checks).toEqual([{ id: 'K1', kind: 'cmd', value: 'npm run greet-test' }]);
     expect(states).toHaveLength(1);
   });
 
@@ -526,14 +524,14 @@ describe('applyConsultAnswer', () => {
       id: 'T003',
       suggestedFiles: ['src/greet.ts'],
       criteria: ['C1'],
-      checks: [{ id: 'K1', kind: 'test', value: 'src/greet.test.ts', required: true }],
+      checks: [{ id: 'K1', kind: 'test', value: 'src/greet.test.ts' }],
       status: 'failed',
     });
     const plan: Plan = {
       summary: 'Fix the greeting',
       decisions: [],
       criteria: [{ id: 'C1', text: 'A greeting is returned', checkIds: ['K1'] }],
-      checks: [{ id: 'K1', kind: 'test', value: 'src/greet.test.ts', required: true }],
+      checks: [{ id: 'K1', kind: 'test', value: 'src/greet.test.ts' }],
       validation: null,
     };
     const onPlannerReply = vi.fn().mockResolvedValue(undefined);

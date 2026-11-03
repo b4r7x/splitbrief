@@ -186,7 +186,7 @@ describe('runReviewCheck at the brief gate', () => {
           bus,
           phase: 'implementing',
           npmScriptsApproved: false,
-          reviewChecks: [{ id: 'V1', kind: 'cmd', value: 'npm test', required: true }],
+          reviewChecks: [{ id: 'V1', kind: 'cmd', value: 'npm test' }],
         },
       });
       expect(result.run.status).toBe('fail');
@@ -227,7 +227,7 @@ describe('runReviewCheck at the brief gate', () => {
           bus,
           phase: 'implementing',
           npmScriptsApproved: false,
-          reviewChecks: [{ id: 'V1', kind: 'cmd', value: 'npm test', required: true }],
+          reviewChecks: [{ id: 'V1', kind: 'cmd', value: 'npm test' }],
         },
       });
       expect(result.run.status).toBe('fail');
@@ -254,7 +254,7 @@ describe('runReviewCheck at the brief gate', () => {
           bus,
           phase: 'implementing',
           npmScriptsApproved: false,
-          reviewChecks: [{ id: 'V1', kind: 'cmd', value: 'npm test', required: true }],
+          reviewChecks: [{ id: 'V1', kind: 'cmd', value: 'npm test' }],
         },
       });
       expect(result.fresh).toEqual([]);
@@ -1344,7 +1344,7 @@ describe('reviewer checks run each command once per tree state', () => {
             summary: 'Run the tests.',
             criteria: [],
             decisions: [],
-            checks: [{ id: 'K1', kind: 'cmd', value: 'npm test', required: true }],
+            checks: [{ id: 'K1', kind: 'cmd', value: 'npm test' }],
             validation: null,
           },
         },

@@ -13,7 +13,7 @@ export function makeTaskSpec(overrides?: TaskSpecOverrides): TaskSpec {
     title: 'Add the greeting',
     intent: 'Return a greeting for a name',
     criteria: ['C1'],
-    checks: [{ id: 'K1', kind: 'test', value: 'src/hello.test.ts', required: true }],
+    checks: [{ id: 'K1', kind: 'test', value: 'src/hello.test.ts' }],
     suggestedFiles: ['src/hello.ts'],
     contextFiles: [],
     exclusions: [],

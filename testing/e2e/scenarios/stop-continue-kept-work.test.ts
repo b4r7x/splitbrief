@@ -132,6 +132,16 @@ async function retries(target: StopContinueFixture, sessionId: string): Promise<
   return events.flatMap((event) => (event.type === 'task_retry' ? [event.error] : []));
 }
 
+/** The planner's answer to a consult: the brief stays, and the next attempt carries the guidance. */
+const GUIDANCE_ANSWER = {
+  answer: {
+    diagnosis: 'The attempt wrote no file.',
+    action: 'guidance',
+    instructions: 'Write the files the brief names.',
+    context: null,
+  },
+};
+
 /** Ends the run from the shell and returns the patch it saved. */
 async function endRunPatch(target: StopContinueFixture, sessionId: string): Promise<string> {
   const ended = await cli(target, ['continue', sessionId, '--action', 'end-run']);
@@ -376,8 +386,14 @@ describe('stop after the brief wrote its files → continue', { timeout: 240_000
     expect(patch).toContain(KEPT_MARKER);
   });
 
-  it('still retries a resumed brief that has no change at all', async () => {
-    fixture = createStopContinueFixture(implementerCalls([{ holds: true }, {}]));
+  it('consults the planner on a resumed brief that has no change at all, then retries it', async () => {
+    fixture = createStopContinueFixture(implementerCalls([{ holds: true }, {}]), {
+      // Anchored to a line start: the plan prompt's repository map quotes this matcher's own line.
+      consult: () => `(prompt) =>
+  /^# Consult (on a failing task|continued)$/m.test(prompt)
+    ? ${JSON.stringify(JSON.stringify(GUIDANCE_ANSWER))}
+    : undefined`,
+    });
     const target = fixture;
 
     const parked = await startAndSignal(target, 'SIGINT', signalDir(target, 0));
@@ -394,7 +410,10 @@ describe('stop after the brief wrote its files → continue', { timeout: 240_000
     expect(resumed.exitCode, resumed.stderr).toBe(0);
     expect(resumed.stdout).toContain('task T001: done (2 of 2 checks passed)');
     expect(invocations(target)).toBe(3);
-    expect(await retries(target, parked.sessionId)).toHaveLength(1);
+    expect(await retries(target, parked.sessionId)).toEqual([]);
+    expect(
+      (await eventTypes(target, parked.sessionId)).filter((type) => type === 'consult_answered'),
+    ).toHaveLength(1);
   });
 });
 

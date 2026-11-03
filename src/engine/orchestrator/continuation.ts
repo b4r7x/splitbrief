@@ -266,7 +266,7 @@ export async function withContinuationLoop<T>(
     });
     const userText = await onContinuationNeeded(partialOutput, 'mid-step', kept);
     throwIfAborted(ctx.signal);
-    applyState(transitionAndSave(persistRef, state, { type: 'RESUME_STEP' }));
+    applyState(transitionAndSave(persistRef, state, { type: 'CONTINUE_STEP' }));
     recordSteer(ctx, state.phase, userText);
     applyState(rebaseOnPersistedWorkflowState(persistRef, state));
     return userText;

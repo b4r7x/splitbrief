@@ -171,7 +171,7 @@ describe('createImplementerBase — continuation', () => {
       onOutput: vi.fn(),
       error: 'the reviewer says the error is swallowed',
       attempt: 1,
-      kind: 'local',
+      kind: 'correction',
       continuation: { partial: 'I was half way', steer: 'start from the top' },
     });
 
@@ -196,7 +196,7 @@ describe('createImplementerBase — continuation', () => {
       onOutput: vi.fn(),
       error: 'tsc: Type X is not assignable to Y',
       attempt: 1,
-      kind: 'local',
+      kind: 'correction',
       continuation: { steer: 'keep the exported name' },
     });
 
@@ -207,6 +207,30 @@ describe('createImplementerBase — continuation', () => {
     expect(seenPrompt.indexOf('tsc: Type X is not assignable to Y')).toBeLessThan(
       seenPrompt.indexOf('[Continuation]'),
     );
+  });
+
+  it('does not tell a continued retry that kept its edits that its attempt was discarded', async () => {
+    let seenPrompt = '';
+    const invoke = vi.fn().mockImplementation(async (opts) => {
+      seenPrompt = opts.prompt;
+      return makeRunnerCallResult({ status: 'completed', text: 'done', usage: null });
+    });
+    const implementer = createImplementerBase(makeBaseConfig({ extractsCode: false, invoke }));
+
+    await implementer.retry({
+      task: makeTask({ title: 'Add the retry ladder' }),
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+      error: 'tsc: Type X is not assignable to Y',
+      attempt: 1,
+      kind: 'consult',
+      continuation: { partial: '', steer: 'keep the exported name', kept: ['src/retry.ts'] },
+    });
+
+    expect(seenPrompt).toContain('The user says: keep the exported name');
+    expect(seenPrompt).not.toContain('discarded');
   });
 
   it("keeps a direct writer's cut output as the partial a continue reads back", async () => {
@@ -318,7 +342,7 @@ describe('createImplementerBase — prompt write contracts', () => {
     };
 
     await implementer.implement(call);
-    await implementer.retry({ ...call, error: 'tsc failed', attempt: 1, kind: 'local' });
+    await implementer.retry({ ...call, error: 'tsc failed', attempt: 1, kind: 'correction' });
 
     expect(prompts).toHaveLength(2);
     for (const prompt of prompts) {
@@ -348,7 +372,7 @@ describe('createImplementerBase — prompt write contracts', () => {
     };
 
     await implementer.implement(call);
-    await implementer.retry({ ...call, error: 'tsc failed', attempt: 1, kind: 'local' });
+    await implementer.retry({ ...call, error: 'tsc failed', attempt: 1, kind: 'correction' });
 
     expect(prompts).toHaveLength(2);
     for (const prompt of prompts) {
@@ -969,7 +993,7 @@ describe('createImplementerBase — retry', () => {
   afterEach(cleanupProject);
 
   it.each([
-    ['local', 2, 'tsc failed', 0.4, 'Previous attempts failed.'],
+    ['correction', 2, 'tsc failed', 0.4, 'Your previous attempt passed its checks.'],
     ['consult', 1, 'lint failed', 0.2, 'Your previous attempt had an error.'],
   ] as const)(
     'succeeds on retry for kind "%s" at attempt %i, prompting with the error and setting the temperature',

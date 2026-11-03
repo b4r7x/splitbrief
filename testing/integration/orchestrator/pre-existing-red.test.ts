@@ -134,6 +134,9 @@ describe('a red that was there before the run', { timeout: 90_000 }, () => {
       scope: { inBounds: [targetFile], outOfBounds: [redFile] },
       evidence: ['the review reports the red as pre-existing and starts no fix brief'],
       typeDefs: 'export const other: string',
+      // The brief's own check passes: every red check fails its brief, and the red under test is
+      // the plan gate's.
+      checks: [{ id: 'T001-K1', kind: 'cmd', value: 'node --version' }],
     });
 
     const before = spawnSync('node', ['validate.mjs'], { cwd: projectDir, encoding: 'utf-8' });
@@ -232,7 +235,7 @@ describe('a red that was there before the run', { timeout: 90_000 }, () => {
       ['base', 'V1', 'npm test', false],
     ]);
     expect(checksDone.filter((event) => event.moment !== 'base').map(row)).toEqual([
-      ['plan', 'T001-K1', 'node validate.mjs', false],
+      ['plan', 'T001-K1', 'node --version', true],
       ['pre-review', 'V1', 'npm test', false],
     ]);
 

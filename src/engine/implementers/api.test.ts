@@ -82,7 +82,12 @@ describe('api implementer — OpenAI-compatible path', () => {
       const result =
         method === 'implement'
           ? await implementer.implement(call)
-          : await implementer.retry({ ...call, kind: 'local', attempt: 1, error: 'fix layout' });
+          : await implementer.retry({
+              ...call,
+              kind: 'correction',
+              attempt: 1,
+              error: 'fix layout',
+            });
 
       expect(result.success).toBe(true);
       expect(bodies).toHaveLength(1);
@@ -380,15 +385,15 @@ describe('api implementer — OpenAI-compatible path', () => {
       attempt: 2,
     };
 
-    const localResult = await implementer.retry({ ...baseRetry, kind: 'local' });
-    expect(localResult.success).toBe(true);
-    const localBody = JSON.parse(
+    const correctionResult = await implementer.retry({ ...baseRetry, kind: 'correction' });
+    expect(correctionResult.success).toBe(true);
+    const correctionBody = JSON.parse(
       String((fetchMock.mock.calls.at(-1)?.[1] as { body?: string } | undefined)?.body),
     ) as { temperature?: number };
-    expect(localBody.temperature).toBeUndefined();
+    expect(correctionBody.temperature).toBeUndefined();
 
     fetchMock.mockClear();
-    // The local retry created the file, so the consult retry rewrites what this
+    // The correction retry created the file, so the consult retry rewrites what this
     // same task left on disk.
     fetchMock.mockResolvedValue(
       makeOpenAiSseResponse([
@@ -430,7 +435,7 @@ describe('api implementer — OpenAI-compatible path', () => {
     };
 
     await implementer.implement(call);
-    await implementer.retry({ ...call, error: 'tsc failed', attempt: 1, kind: 'local' });
+    await implementer.retry({ ...call, error: 'tsc failed', attempt: 1, kind: 'correction' });
 
     const bodies = fetchMock.mock.calls.map((args) =>
       String((args[1] as { body?: string } | undefined)?.body),

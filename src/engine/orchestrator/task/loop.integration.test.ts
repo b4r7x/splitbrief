@@ -46,7 +46,7 @@ describe('runTaskLoop', { timeout: 120_000 }, () => {
       implement: vi.fn().mockImplementation(async (opts) => {
         implemented.push(opts.task.id);
         mkdirSync(join(projectDir, 'src'), { recursive: true });
-        writeFileSync(join(projectDir, opts.task.file), 'implementation\n');
+        writeFileSync(join(projectDir, opts.task.suggestedFiles[0]), 'implementation\n');
         return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
       }),
     });
@@ -90,7 +90,7 @@ describe('runTaskLoop', { timeout: 120_000 }, () => {
       implement: vi.fn().mockImplementation(async (opts) => {
         implemented.push(opts.task.id);
         mkdirSync(join(projectDir, 'src'), { recursive: true });
-        writeFileSync(join(projectDir, opts.task.file), 'implementation\n');
+        writeFileSync(join(projectDir, opts.task.suggestedFiles[0]), 'implementation\n');
         return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
       }),
     });
@@ -125,7 +125,7 @@ describe('runTaskLoop', { timeout: 120_000 }, () => {
       implement: vi.fn().mockImplementation(async (opts) => {
         expect(runCommand).not.toHaveBeenCalled();
         mkdirSync(join(projectDir, 'src'), { recursive: true });
-        writeFileSync(join(projectDir, opts.task.file), 'implementation\n');
+        writeFileSync(join(projectDir, opts.task.suggestedFiles[0]), 'implementation\n');
         return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
       }),
     });
@@ -160,7 +160,7 @@ describe('runTaskLoop', { timeout: 120_000 }, () => {
       implement: vi.fn().mockImplementation(async (opts) => {
         persisted = loadState({ projectDir, sessionId })?.changedFilesBaseline?.activeTaskSnapshot;
         mkdirSync(join(projectDir, 'src'), { recursive: true });
-        writeFileSync(join(projectDir, opts.task.file), 'implementation\n');
+        writeFileSync(join(projectDir, opts.task.suggestedFiles[0]), 'implementation\n');
         return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
       }),
     });

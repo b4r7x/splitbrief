@@ -21,7 +21,7 @@ const alpha = makeTaskSpec({
   intent: 'Return the alpha value.',
   criteria: ['C1'],
   suggestedFiles: ['src/alpha.mjs', 'src/alpha.test.mjs'],
-  checks: [{ id: 'T001-K1', kind: 'test', value: 'src/alpha.test.mjs', required: true }],
+  checks: [{ id: 'T001-K1', kind: 'test', value: 'src/alpha.test.mjs' }],
 });
 const fixes = ['T002', 'T003', 'T004'].map((id) =>
   makeTaskSpec({
@@ -31,7 +31,7 @@ const fixes = ['T002', 'T003', 'T004'].map((id) =>
     criteria: ['C1'],
     suggestedFiles: [`src/alpha-${id}.test.mjs`],
     contextFiles: ['src/alpha.mjs'],
-    checks: [{ id: `${id}-K1`, kind: 'test', value: `src/alpha-${id}.test.mjs`, required: true }],
+    checks: [{ id: `${id}-K1`, kind: 'test', value: `src/alpha-${id}.test.mjs` }],
   }),
 );
 const plan = makePlanProposal({

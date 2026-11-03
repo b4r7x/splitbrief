@@ -39,7 +39,7 @@ const PLAN_ANSWER = {
         title: 'Add a greeting helper',
         intent: `Export greet from ${GREET_FILE}.`,
         suggestedFiles: [GREET_FILE],
-        checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+        checks: [{ id: 'K1', kind: 'cmd', value: 'node --version' }],
         steps: [`Create \`${GREET_FILE}\` exporting \`greet\`.`],
       }),
     ],

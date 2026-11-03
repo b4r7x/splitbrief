@@ -179,7 +179,7 @@ src/engine/codebase/
 ### `src/core/pipeline-spec/`, `scope/`, `validation/stacks/`, `recovery/` — the contract domains
 
 ```
-src/core/pipeline-spec/      # the typed pipeline contract: ladder.ts, retries.ts, gates.ts, halts.ts,
+src/core/pipeline-spec/      # the typed pipeline contract: ladder.ts, gates.ts, halts.ts,
                              #   steps.ts (older runs' step table, read by run-status), review.ts,
                              #   brief.ts, scope.ts, baseline.ts, timeouts.ts,
                              #   bounds.ts — pure data and readers, no I/O

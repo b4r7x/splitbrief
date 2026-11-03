@@ -110,6 +110,7 @@ function preparationContext(
     signal: new AbortController().signal,
     nativeTrustViolations: new Set(),
     routeCatalogs: new Map(),
+    versionProbes: new Map(),
     deps: {
       detectRunnerEvidence,
       collectReadiness: notCalled('collectReadiness'),

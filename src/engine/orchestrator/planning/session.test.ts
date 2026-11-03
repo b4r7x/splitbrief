@@ -553,7 +553,7 @@ describe('the planning session on the live path', () => {
           makeTaskSpec({
             id: 'T002',
             dependsOn: ['T001'],
-            checks: [{ id: 'K2', kind: 'test', value: 'src/b.test.ts', required: true }],
+            checks: [{ id: 'K2', kind: 'test', value: 'src/b.test.ts' }],
             suggestedFiles: ['src/b.ts'],
           }),
         ],
@@ -721,7 +721,7 @@ describe('the planning session on the live path', () => {
 
   it('sends render checks back once while validation.render is unset, then names them on the card', async () => {
     const renderPlan = makePlanProposal({
-      checks: [{ id: 'K-render', kind: 'render', value: 'overlay-picker', required: true }],
+      checks: [{ id: 'K-render', kind: 'render', value: 'overlay-picker' }],
       criteria: [{ id: 'C1', text: 'A name gets a greeting', checkIds: ['K1', 'K-render'] }],
     });
     const run = await plan({ script: [renderPlan, renderPlan] });
@@ -746,7 +746,7 @@ describe('the planning session on the live path', () => {
 
   it('takes render checks without a word when validation.render is set', async () => {
     const renderPlan = makePlanProposal({
-      checks: [{ id: 'K-render', kind: 'render', value: 'overlay-picker', required: true }],
+      checks: [{ id: 'K-render', kind: 'render', value: 'overlay-picker' }],
       criteria: [{ id: 'C1', text: 'A name gets a greeting', checkIds: ['K1', 'K-render'] }],
     });
     const run = await plan({
@@ -1291,7 +1291,7 @@ describe('the plan card', () => {
   it('compiles an edit that adds a render check with no render command and names it on the card', async () => {
     const edited = makePlanProposal({
       summary: 'Edited by hand',
-      checks: [{ id: 'K-render', kind: 'render', value: 'overlay-picker', required: true }],
+      checks: [{ id: 'K-render', kind: 'render', value: 'overlay-picker' }],
       criteria: [{ id: 'C1', text: 'A name gets a greeting', checkIds: ['K1', 'K-render'] }],
     });
     const onApprovalNeeded = vi

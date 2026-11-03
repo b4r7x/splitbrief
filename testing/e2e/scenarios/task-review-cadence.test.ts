@@ -41,7 +41,7 @@ const alpha = makeTaskSpec({
   intent: 'Return the alpha value.',
   criteria: ['C1'],
   suggestedFiles: ['src/alpha.mjs', 'src/alpha.test.mjs'],
-  checks: [{ id: 'T001-K1', kind: 'test', value: 'src/alpha.test.mjs', required: true }],
+  checks: [{ id: 'T001-K1', kind: 'test', value: 'src/alpha.test.mjs' }],
 });
 const beta = makeTaskSpec({
   id: 'T002',
@@ -49,7 +49,7 @@ const beta = makeTaskSpec({
   intent: 'Return the beta value.',
   criteria: ['C2'],
   suggestedFiles: ['src/beta.mjs', 'src/beta.test.mjs'],
-  checks: [{ id: 'T002-K1', kind: 'test', value: 'src/beta.test.mjs', required: true }],
+  checks: [{ id: 'T002-K1', kind: 'test', value: 'src/beta.test.mjs' }],
 });
 const fix = makeTaskSpec({
   id: 'T003',
@@ -58,7 +58,7 @@ const fix = makeTaskSpec({
   criteria: ['C1'],
   suggestedFiles: ['src/alpha-type.test.mjs'],
   contextFiles: ['src/alpha.mjs'],
-  checks: [{ id: 'T003-K1', kind: 'test', value: 'src/alpha-type.test.mjs', required: true }],
+  checks: [{ id: 'T003-K1', kind: 'test', value: 'src/alpha-type.test.mjs' }],
 });
 const plan = makePlanProposal({
   summary: 'Add two independently tested values.',
@@ -131,8 +131,8 @@ function transcriptRows(events: EngineEvent[]): string[] {
 
 /**
  * `needsFix`: the T001 review fails with fix work whose first answer is refused. `retryBeta`:
- * T002's first attempt reports a decision and writes a beta its check fails, so the brief
- * retries. `testCommand` runs the test checks.
+ * T002's first attempt reports a decision and writes a beta its check fails, so the planner is
+ * consulted and the brief retries. `testCommand` runs the test checks.
  * A review marks every criterion unverified when its prompt shows a check that did not run.
  */
 async function startCadence(needsFix: boolean, retryBeta: boolean, testCommand: string) {
@@ -160,17 +160,25 @@ async function startCadence(needsFix: boolean, retryBeta: boolean, testCommand: 
       id: 'T900',
       criteria: [],
       suggestedFiles: ['src/beta.mjs'],
-      checks: [{ id: 'T900-K1', kind: 'cmd', value: 'node --version', required: true }],
+      checks: [{ id: 'T900-K1', kind: 'cmd', value: 'node --version' }],
     }),
     findingIds: ['F1'],
   };
   const refusedFix = {
     ...fix,
     checks: [
-      { id: 'T003-K1', kind: 'cmd', value: 'grep -F alpha src/alpha.mjs', required: true },
-      { id: 'T003-K2', kind: 'test', value: 'node --test src/alpha-type.test.mjs', required: true },
+      { id: 'T003-K1', kind: 'cmd', value: 'grep -F alpha src/alpha.mjs' },
+      { id: 'T003-K2', kind: 'test', value: 'node --test src/alpha-type.test.mjs' },
     ],
     findingIds: ['F2'],
+  };
+  const betaGuidance = {
+    answer: {
+      diagnosis: 'Beta is a number; its test expects the string beta.',
+      action: 'guidance',
+      instructions: 'Export the string beta from src/beta.mjs.',
+      context: null,
+    },
   };
   writeFileSync(
     plannerPath,
@@ -207,9 +215,12 @@ if (prompt.includes('# Task Implementation Review') || prompt.includes('# Final 
     answer.criteria = answer.criteria.map((criterion) => ({
       ...criterion,
       status: 'unverified',
-      evidence: 'A required check did not run.',
+      evidence: 'A check did not run.',
     }));
   }
+} else if (prompt.includes('# Consult on a failing task') || prompt.includes('# Consult continued')) {
+  kind = 'consult';
+  answer = ${JSON.stringify(betaGuidance)};
 } else if (prompt.includes('# Plan the change')) {
   kind = 'plan';
   answer = ${JSON.stringify({ result: plan })};
@@ -346,7 +357,7 @@ describe('e2e: task review cadence', () => {
     const repair = calls.find((call) => call.kind === 'task-review-repair');
     expect(repair?.prompt).toContain(scopeError);
     // A fix check the plan command policy refuses goes back to the reviewer and never becomes a
-    // required check of the fix brief.
+    // check of the fix brief.
     expect(repair?.prompt).toContain(refusedCheck);
     expect(repair?.prompt).toContain(refusedTestCheck);
     expect(JSON.stringify(state.tasks)).not.toContain('grep');
@@ -467,19 +478,22 @@ describe('e2e: task review cadence', () => {
     ).toEqual(state.tasks.map((task) => ({ id: task.id, title: task.title, status: task.status })));
   });
 
-  it('retries a brief whose check fails without a review between, and keeps its decision once', async () => {
+  it('consults the planner on a brief whose check fails, retries it without a review between, and keeps its decision once', async () => {
     const { state, events, calls, target } = await runCadence(false, true);
     expect(calls.map((call) => call.kind)).toEqual([
       'plan',
       'implement',
       'task-review',
       'implement',
+      'consult',
       'implement',
       'task-review',
       'final-review',
     ]);
-    expect(events.some((event) => event.type === 'consult_answered')).toBe(false);
-    expect(events.find((event) => event.type === 'task_retry')).toMatchObject({ taskId: 'T002' });
+    expect(events.filter((event) => event.type === 'consult_answered')).toMatchObject([
+      { taskId: 'T002', action: 'guidance' },
+    ]);
+    expect(events.filter((event) => event.type === 'task_retry')).toEqual([]);
     expect(state.plan?.decisions.filter((decision) => decision.taskId === 'T002')).toEqual([
       { text: `${numberDecision.what} — ${numberDecision.why}`, taskId: 'T002' },
     ]);
@@ -504,7 +518,7 @@ describe('e2e: task review cadence', () => {
       reason: 'required-checks-unrunnable',
       availableActions: ['retry-same-worker', 'end-run'],
     });
-    expect(state.pendingRecovery?.message).toMatch(/^Required checks cannot run: T001-K1: /);
+    expect(state.pendingRecovery?.message).toMatch(/^Checks cannot run: T001-K1: /);
     expect(state.pendingRecovery?.message).toContain('splitbrief-missing-runner');
     expect(state.pendingRecovery?.details).toContain(
       'Install what is missing, then run the checks again.',

@@ -98,6 +98,7 @@ export function createApiImplementer(
         context: opts.context,
         error: opts.error,
         attempt: opts.attempt,
+        kind: opts.kind,
         contextLength: opts.config.implementer.contextLength ?? DEFAULT_UNKNOWN_CONTEXT_LENGTH,
         languageContext: opts.languageContext,
         outputContract: 'file-bundle-v1',

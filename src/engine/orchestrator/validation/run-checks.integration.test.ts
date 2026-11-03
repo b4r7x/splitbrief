@@ -87,9 +87,7 @@ describe('runChecks', () => {
   });
 
   it('runs a plan check when the run has no current task', async () => {
-    const plan = makePlan([
-      { id: 'C1-check', kind: 'test', value: 'src/a.test.ts', required: true },
-    ]);
+    const plan = makePlan([{ id: 'C1-check', kind: 'test', value: 'src/a.test.ts' }]);
     const runner = makeCommandRunner({ stdout: '1 passed', stderr: '', code: 0 });
     const results = await runChecks(
       ['C1-check'],
@@ -111,9 +109,7 @@ describe('runChecks', () => {
   });
 
   it('reports a plan render check as not runnable when validation.render is unset', async () => {
-    const plan = makePlan([
-      { id: 'C2-render', kind: 'render', value: 'overlay-picker', required: false },
-    ]);
+    const plan = makePlan([{ id: 'C2-render', kind: 'render', value: 'overlay-picker' }]);
     const runner = makeCommandRunner();
     const results = await runChecks(
       ['C2-render'],
@@ -134,7 +130,6 @@ describe('runChecks', () => {
           id: 'K1',
           kind,
           value: kind === 'cmd' ? 'tsc --noEmit' : 'overlay-picker',
-          required: true,
         },
       ]);
       const program = kind === 'cmd' ? 'tsc' : 'render';
@@ -175,7 +170,7 @@ describe('runChecks', () => {
         join(projectDir, 'package.json'),
         JSON.stringify({ private: true, scripts: { test: 'splitbrief-missing-runner' } }),
       );
-      const task = taskWith([{ id: 'K1', kind, value, required: true }]);
+      const task = taskWith([{ id: 'K1', kind, value }]);
 
       const [result] = await runChecks(['K1'], options({ task }));
 
@@ -187,7 +182,7 @@ describe('runChecks', () => {
 
   it('retains both executions of a render with the same PNG filename and different bytes', async () => {
     const sessionId = 'sess-render-history';
-    const task = taskWith([{ id: 'K1', kind: 'render', value: 'overlay-picker', required: true }]);
+    const task = taskWith([{ id: 'K1', kind: 'render', value: 'overlay-picker' }]);
     let execution = 0;
     const runner: ValidationCommandRunner = async (_cmd, args) => {
       const out = args[1];
@@ -221,7 +216,7 @@ describe('runChecks', () => {
 
   it('runs a render check, substitutes {id} and {out}, and copies its PNGs', async () => {
     const sessionId = 'sess-render';
-    const task = taskWith([{ id: 'K1', kind: 'render', value: 'overlay-picker', required: true }]);
+    const task = taskWith([{ id: 'K1', kind: 'render', value: 'overlay-picker' }]);
     const outDirs: string[] = [];
     const runner: ValidationCommandRunner = async (_cmd, args) => {
       const out = args[1] as string;
@@ -258,7 +253,7 @@ describe('runChecks', () => {
   });
 
   it('refuses a render id that is not a scenario slug and never runs it', async () => {
-    const task = taskWith([{ id: 'K1', kind: 'render', value: 'gallery/hello', required: true }]);
+    const task = taskWith([{ id: 'K1', kind: 'render', value: 'gallery/hello' }]);
     const runner = makeCommandRunner();
     const results = await runChecks(
       ['K1'],
@@ -281,7 +276,7 @@ describe('runChecks', () => {
   });
 
   it('reports an id the plan does not name as unknown without a task', async () => {
-    const plan = makePlan([{ id: 'C1-check', kind: 'cmd', value: 'tsc --noEmit', required: true }]);
+    const plan = makePlan([{ id: 'C1-check', kind: 'cmd', value: 'tsc --noEmit' }]);
     const results = await runChecks(
       ['K404'],
       options({ task: undefined, plan, runCommand: makeCommandRunner() }),
@@ -292,10 +287,10 @@ describe('runChecks', () => {
 
   it('resolves task checks and plan checks in order, running each once', async () => {
     const task = taskWith([
-      { id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true },
-      { id: 'K2', kind: 'render', value: 'overlay-picker', required: true },
+      { id: 'K1', kind: 'cmd', value: 'tsc --noEmit' },
+      { id: 'K2', kind: 'render', value: 'overlay-picker' },
     ]);
-    const plan = makePlan([{ id: 'K3', kind: 'cmd', value: 'cargo test', required: true }]);
+    const plan = makePlan([{ id: 'K3', kind: 'cmd', value: 'cargo test' }]);
     const runner = makeCommandRunner();
     const results = await runChecks(
       ['K1', 'K2', 'K3', 'K1'],
@@ -323,7 +318,7 @@ describe('runChecks', () => {
   });
 
   it('runs a test check through the test stage with the check value as the target', async () => {
-    const task = taskWith([{ id: 'K1', kind: 'test', value: 'src/a.test.ts', required: true }]);
+    const task = taskWith([{ id: 'K1', kind: 'test', value: 'src/a.test.ts' }]);
     const runner = makeCommandRunner({ stdout: '1 passed', stderr: '', code: 0 });
     const results = await runChecks(['K1'], options({ task, runCommand: runner }));
 
@@ -343,7 +338,7 @@ describe('runChecks', () => {
   });
 
   it('reports a failing test check with the runner output', async () => {
-    const task = taskWith([{ id: 'K1', kind: 'test', value: 'src/a.test.ts', required: true }]);
+    const task = taskWith([{ id: 'K1', kind: 'test', value: 'src/a.test.ts' }]);
     const runner = makeCommandRunner(
       processError.exitCode({ command: 'npm', code: 1, stderr: '1 test failed', output: '' }),
     );
@@ -356,9 +351,7 @@ describe('runChecks', () => {
   });
 
   it('fails a test check whose test file the workspace does not hold', async () => {
-    const task = taskWith([
-      { id: 'K1', kind: 'test', value: 'src/missing.test.ts', required: true },
-    ]);
+    const task = taskWith([{ id: 'K1', kind: 'test', value: 'src/missing.test.ts' }]);
     const runner = makeCommandRunner();
     const results = await runChecks(['K1'], options({ task, runCommand: runner }));
 
@@ -390,7 +383,7 @@ describe('runChecks', () => {
   ])(
     'reports a test check whose $source executable is missing as not runnable, naming it',
     async ({ testCommand, missing }) => {
-      const task = taskWith([{ id: 'K1', kind: 'test', value: 'src/a.test.ts', required: true }]);
+      const task = taskWith([{ id: 'K1', kind: 'test', value: 'src/a.test.ts' }]);
       const results = await runChecks(
         ['K1'],
         options({
@@ -410,7 +403,7 @@ describe('runChecks', () => {
     vi.spyOn(commandRunner, 'runCommand').mockRejectedValue(
       Object.assign(new Error('spawn missing-vitest ENOENT'), { code: 'ENOENT' }),
     );
-    const plan = makePlan([{ id: 'K-test', kind: 'test', value: 'src/a.test.ts', required: true }]);
+    const plan = makePlan([{ id: 'K-test', kind: 'test', value: 'src/a.test.ts' }]);
     const planner = makePlanner({ typedCall: vi.fn() });
     const sessionId = 'sess-missing-test-bin';
     const state = makeImplState([], { plan, phase: 'final-review' });
@@ -433,7 +426,7 @@ describe('runChecks', () => {
   });
 
   it('runs a cmd check in the workspace and reports its failure text', async () => {
-    const task = taskWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }]);
+    const task = taskWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit' }]);
     const pass = makeCommandRunner({ stdout: 'clean', stderr: '', code: 0 });
     const passed = await runChecks(['K1'], options({ task, runCommand: pass }));
     expect(passed).toEqual([
@@ -464,7 +457,7 @@ describe('runChecks', () => {
   });
 
   it('logs the command and exit code of a failing cmd check', async () => {
-    const task = taskWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }]);
+    const task = taskWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit' }]);
     const runner = makeCommandRunner(
       processError.exitCode({
         command: 'tsc',
@@ -498,7 +491,6 @@ describe('runChecks', () => {
           kind,
           value:
             kind === 'cmd' ? 'tsc --noEmit' : kind === 'test' ? 'src/a.test.ts' : 'overlay-picker',
-          required: true,
         },
       ]);
       for (const complete of [true, false]) {
@@ -534,8 +526,8 @@ describe('runChecks', () => {
 
   it('refuses a cmd check the policy rejects, fails one on an undefined script, and runs neither', async () => {
     const task = taskWith([
-      { id: 'K1', kind: 'cmd', value: 'node scripts/deploy.ts', required: true },
-      { id: 'K2', kind: 'cmd', value: 'npm run deploy', required: true },
+      { id: 'K1', kind: 'cmd', value: 'node scripts/deploy.ts' },
+      { id: 'K2', kind: 'cmd', value: 'npm run deploy' },
     ]);
     const runner = makeCommandRunner();
     const results = await runChecks(['K1', 'K2'], options({ task, runCommand: runner }));
@@ -560,7 +552,7 @@ describe('runChecks', () => {
   });
 
   it('runs an npm run check only when the plan approves the scripts', async () => {
-    const task = taskWith([{ id: 'K1', kind: 'cmd', value: 'npm run typecheck', required: true }]);
+    const task = taskWith([{ id: 'K1', kind: 'cmd', value: 'npm run typecheck' }]);
     const runner = makeCommandRunner();
     const approved = await runChecks(['K1'], options({ task, runCommand: runner }));
 
@@ -599,7 +591,7 @@ describe('runChecks', () => {
   });
 
   it('fails an npm run check whose script package.json does not define, so a fix can add it', async () => {
-    const task = taskWith([{ id: 'K1', kind: 'cmd', value: 'npm run deploy', required: true }]);
+    const task = taskWith([{ id: 'K1', kind: 'cmd', value: 'npm run deploy' }]);
     const results = await runChecks(['K1'], options({ task, runCommand: makeCommandRunner() }));
     const missing = 'runs the npm script deploy, which package.json does not define';
 
@@ -615,9 +607,9 @@ describe('runChecks', () => {
 
   it('runs a stack tool under approve: none and npx only with --no-install', async () => {
     const task = taskWith([
-      { id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true },
-      { id: 'K2', kind: 'cmd', value: 'npx some-package', required: true },
-      { id: 'K3', kind: 'cmd', value: 'npx --no-install tsc', required: true },
+      { id: 'K1', kind: 'cmd', value: 'tsc --noEmit' },
+      { id: 'K2', kind: 'cmd', value: 'npx some-package' },
+      { id: 'K3', kind: 'cmd', value: 'npx --no-install tsc' },
     ]);
     const runner = makeCommandRunner();
     const results = await runChecks(
@@ -652,8 +644,8 @@ describe('runChecks', () => {
 
   it('runs every check kind under the configured timeout, with no limit by default, and the caller signal', async () => {
     const task = taskWith([
-      { id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true },
-      { id: 'K2', kind: 'test', value: 'src/a.test.ts', required: true },
+      { id: 'K1', kind: 'cmd', value: 'tsc --noEmit' },
+      { id: 'K2', kind: 'test', value: 'src/a.test.ts' },
     ]);
     const controller = new AbortController();
     const byDefault = makeCommandRunner();
@@ -676,7 +668,7 @@ describe('runChecks', () => {
   });
 
   it('bounds cmd check output to the validation capture limit', async () => {
-    const task = taskWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }]);
+    const task = taskWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit' }]);
     const runner = makeCommandRunner({ stdout: 'x'.repeat(10_000), stderr: '', code: 0 });
     const results = await runChecks(['K1'], options({ task, runCommand: runner }));
 
@@ -690,19 +682,19 @@ function gatePlan(gate: string[]): Plan {
 }
 
 describe('reviewer checks in the run registry', () => {
-  it('resolves the project gate the plan names as required cmd checks V1, V2, …', () => {
+  it('resolves the project gate the plan names as cmd checks V1, V2, …', () => {
     const plan = gatePlan(['npm test', 'make test']);
 
     expect(reviewCheckList(plan)).toEqual([
-      { id: 'V1', kind: 'cmd', value: 'npm test', required: true },
-      { id: 'V2', kind: 'cmd', value: 'make test', required: true },
+      { id: 'V1', kind: 'cmd', value: 'npm test' },
+      { id: 'V2', kind: 'cmd', value: 'make test' },
     ]);
     const registry = checkRegistry({
-      plan: makePlan([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: false }]),
+      plan: makePlan([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit' }]),
       reviewChecks: reviewCheckList(plan),
     });
     expect([...registry.keys()]).toEqual(['K1', 'V1', 'V2']);
-    expect(registry.get('V2')).toMatchObject({ kind: 'cmd', value: 'make test', required: true });
+    expect(registry.get('V2')).toMatchObject({ kind: 'cmd', value: 'make test' });
     expect(checkRegistry({ plan: makePlan([]) }).has('V1')).toBe(false);
   });
 
@@ -817,8 +809,8 @@ describe('reviewer checks in the run registry', () => {
         );
         const runner = makeCommandRunner();
         const results = await runChecks(['K1', 'C1-check'], {
-          task: taskWith([{ id: 'K1', kind: 'cmd', value: 'npm run test:new', required: true }]),
-          plan: makePlan([{ id: 'C1-check', kind: 'cmd', value: 'npm test', required: true }]),
+          task: taskWith([{ id: 'K1', kind: 'cmd', value: 'npm run test:new' }]),
+          plan: makePlan([{ id: 'C1-check', kind: 'cmd', value: 'npm test' }]),
           base: runBaseOf({ projectDir: run.dir, sessionId: run.sessionId }, run),
           projectDir: run.ws,
           checkoutDir: run.dir,

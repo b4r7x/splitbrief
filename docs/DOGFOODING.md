@@ -87,7 +87,7 @@ tmux capture-pane -t sb -p | sed 's/[[:space:]]*$//' | grep -v '^$' | tail -16
 ps -o rss=,etime= -p $(pgrep -f 'dist/cli.js' | head -1)
 ```
 
-Events worth acting on: `artifact_written`, `recovery_prompted{reason}`, `task_retry{attempt}`, `task_escalating`, `validate{status:"done",passed}`, `runner_call_stalled`, `workflow_complete{review}`.
+Events worth acting on: `artifact_written`, `recovery_prompted{reason}`, `task_escalating`, `validate{status:"done",passed}`, `runner_call_stalled`, `workflow_complete{review}`.
 
 Silence now means no frames. Every admitted tool is spawned in a streaming output mode — antigravity included, on `--output-format stream-json` — so a working child emits a frame per step and the idle watchdog measures the gap between frames, not the gap between documents. `runner_call_stalled` therefore means the tool has printed nothing for 5 minutes, which is worth looking at rather than waiting out. The watchdog never ends the call by default: press Esc to stop it resumably, or set `idleKillMs` on the seat for an unattended run. Before killing a child, look for its own activity trail: antigravity writes step records to `~/.gemini/antigravity-cli/brain/<conversation>/.system_generated/logs/chunks/transcript_full/*.jsonl` (`ls -t … | head -1`, then `tail -1`); a record younger than a minute is a working agent.
 

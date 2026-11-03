@@ -1,6 +1,7 @@
 import { SOFT_SEP } from '../../core/separators.js';
 import { glyph } from '../../lib/glyphs.js';
 import {
+  ELLIPSIS,
   getTerminalCellWidth,
   truncateTerminalDisplayText,
   segmentsForRowText,
@@ -9,6 +10,7 @@ import { getChromeContentWidth } from './layout/chrome-rows.js';
 import type { ConversationRowSegment } from './conversation-rows/types.js';
 import { separatedSpans } from './conversation-rows/row-format/text.js';
 import { fitFeedbackMessage } from '../../components/composer/feedback-fit.js';
+import type { SlowProbeText } from '../../hooks/use-slow-probe-text.js';
 
 // The rail's fraction counts briefs that passed their checks, never the index of the one running:
 // a run on its last brief must not read as finished.
@@ -26,10 +28,40 @@ export interface InputFooterBylineInput {
   worktreeLabel?: string | null;
 }
 
-export function joinBylineParts(parts: readonly (string | null | undefined)[]): string {
+function joinBylineParts(parts: readonly (string | null | undefined)[]): string {
   return parts
     .filter((part): part is string => part !== null && part !== undefined && part.length > 0)
     .join(SOFT_SEP);
+}
+
+/**
+ * The text after `frame` on the row of a check the user waits on, fitted to `width` cells with the
+ * frame. The stage, `esc cancel` and the slow check with its time stay whole. The tool's name
+ * gives up its middle words first and keeps its first word, the maker; then the name goes, and
+ * then the slow check goes.
+ */
+export function fitCheckingRow(
+  input: Readonly<{
+    frame: string;
+    stage: string;
+    slowProbe: SlowProbeText | null;
+    cancellable: boolean;
+    width: number;
+  }>,
+): string {
+  const cancel = input.cancellable ? 'esc cancel' : null;
+  const row = (probe: string | null) => joinBylineParts([input.stage, probe, cancel]);
+  if (input.slowProbe === null) return row(null);
+  const room = input.width - getTerminalCellWidth(`${input.frame} `);
+  const { tool, check } = input.slowProbe;
+  const [maker, ...rest] = tool.split(' ');
+  const shortened = rest.map((_, dropped) =>
+    [maker, ELLIPSIS, ...rest.slice(dropped + 1), check].join(' '),
+  );
+  const probe = [`${tool} ${check}`, ...shortened, check].find(
+    (candidate) => getTerminalCellWidth(row(candidate)) <= room,
+  );
+  return row(probe ?? null);
 }
 
 function bylineCells(text: string): number {

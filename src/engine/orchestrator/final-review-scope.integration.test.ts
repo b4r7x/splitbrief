@@ -254,7 +254,7 @@ describe('final review task completion provenance', () => {
   it('names the file a brief created when verify completes it after a retry', async () => {
     const p = await project();
     const created = 'src/created.ts';
-    const checks: Check[] = [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }];
+    const checks: Check[] = [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit' }];
     const task = makeTask({
       suggestedFiles: [created],
       action: 'create',

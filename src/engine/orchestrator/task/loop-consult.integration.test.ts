@@ -17,9 +17,9 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
-import { consultCallAnswering } from '#testing/helpers/typed-planner.js';
+import { consultCallAnswering, guidanceConsult } from '#testing/helpers/typed-planner.js';
 import type { ConsultAnswer } from '../../../core/schemas/consult.js';
-import type { ImplementerOptions, RetryOptions } from '../../implementers/types.js';
+import type { ImplementerOptions } from '../../implementers/types.js';
 import { processError } from '../../../lib/process/errors.js';
 import * as commandRunner from '../../../lib/process/spawn/run-command.js';
 import { runTaskLoop } from './loop.js';
@@ -52,7 +52,7 @@ async function haltCheckoutBrief() {
   const ref = setupProject();
   const task = makeTask({
     suggestedFiles: ['src/attempt.ts', 'src/later.ts'],
-    checks: [{ id: 'check', kind: 'cmd', value: 'tsc --noEmit', required: true }],
+    checks: [{ id: 'check', kind: 'cmd', value: 'tsc --noEmit' }],
   });
   const writeAttempt = async (opts: ImplementerOptions) => {
     mkdirSync(join(opts.projectDir, 'src'), { recursive: true });
@@ -66,13 +66,17 @@ async function haltCheckoutBrief() {
     throw processError.exitCode({ command: 'tsc', code: 2, stderr: 'check failed', output: '' });
   });
   const { bus, events } = makeBusRecorder();
+  let consults = 0;
   const wctx = makeWctx({
     ...ref,
     bus,
     config: makeNoValidationConfig({ workflow: { isolation: 'none', review: 'task' } }),
+    // One guidance answer, then the planner fails: the guided attempt writes the brief's files
+    // and runs its failing check before the halt.
     planner: makePlanner({
       typedCall: consultCallAnswering(() => {
-        throw new Error('Planner call failed');
+        if (++consults > 1) throw new Error('Planner call failed');
+        return guidanceConsult();
       }),
     }),
     // The first attempt fails as an implementation, so the halt keeps the brief's files.
@@ -238,7 +242,7 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
       const ref = setupProject();
       const task = makeTask({
         suggestedFiles: ['src/attempt.ts'],
-        checks: [{ id: 'check', kind: 'cmd', value: 'node --version', required: true }],
+        checks: [{ id: 'check', kind: 'cmd', value: 'node --version' }],
       });
       let checks = 0;
       vi.spyOn(commandRunner, 'runCommand').mockImplementation(async () => {
@@ -283,7 +287,8 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
       });
 
       expect(halted.state.pendingRecovery?.reason).toBe('planner-call-failed');
-      expect(checks).toBeGreaterThan(2);
+      // The attempt's check, then the check the verify answer ran again.
+      expect(checks).toBe(2);
       const persisted = loadState(ref);
       if (persisted === null) throw new Error('Missing halted verification state');
       writeFileSync(join(ref.projectDir, 'init.txt'), 'user edit while halted\n');
@@ -398,7 +403,7 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
     const ref = setupProject();
     const task = makeTask({
       suggestedFiles: ['src/attempt.ts'],
-      checks: [{ id: 'check', kind: 'cmd', value: 'tsc --noEmit', required: true }],
+      checks: [{ id: 'check', kind: 'cmd', value: 'tsc --noEmit' }],
     });
     const state = makeImplState([task]);
     const writeAttempt = async (opts: ImplementerOptions) => {
@@ -456,7 +461,7 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
     expect(readFileSync(join(ref.projectDir, 'scratch.txt'), 'utf8')).toBe('notes while stopped\n');
   });
 
-  it('repairs a twice-failing task by splitting it, with no user prompt, and keeps earlier work', async () => {
+  it('repairs a failing task by splitting it, with no user prompt, and keeps earlier work', async () => {
     const { projectDir, sessionId } = setupProject();
     const tasks = [
       makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'], criteria: ['C1'] }),
@@ -464,7 +469,7 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
         id: 'T002',
         suggestedFiles: ['src/b.ts'],
         criteria: ['C2'],
-        checks: [{ id: 'K2', kind: 'cmd', value: 'tsc --noEmit', required: true }],
+        checks: [{ id: 'K2', kind: 'cmd', value: 'tsc --noEmit' }],
       }),
       makeTask({
         id: 'T003',
@@ -475,8 +480,8 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
     ];
     const state = makeImplState(tasks);
 
-    // T002's first attempt and its retry leave a new file behind; the retry also
-    // overwrites the file T001 completed, so the split's rollback has to put it back.
+    // T002's attempt leaves a new file behind and overwrites the file T001 completed,
+    // so the split's rollback has to put it back.
     const implementer = makeImplementer({
       implement: vi.fn().mockImplementation(async (opts: ImplementerOptions) => {
         mkdirSync(join(opts.projectDir, 'src'), { recursive: true });
@@ -484,22 +489,20 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
           join(opts.projectDir, opts.task.suggestedFiles[0]),
           `done by ${opts.task.id}\n`,
         );
+        if (opts.task.id === 'T002') {
+          writeFileSync(join(opts.projectDir, 'src/a.ts'), 'broken by the T002 attempt\n');
+          writeFileSync(join(opts.projectDir, 'src/c.ts'), 'left by the T002 attempt\n');
+        }
         return {
           success: true,
           output: 'wrote the brief file',
           usage: { inputTokens: 10, outputTokens: 5 },
         };
       }),
-      retry: vi.fn().mockImplementation(async (opts: RetryOptions) => {
-        if (opts.kind === 'local' && opts.task.id === 'T002') {
-          writeFileSync(join(opts.projectDir, 'src/a.ts'), 'broken by the T002 retry\n');
-          writeFileSync(join(opts.projectDir, 'src/c.ts'), 'left by the T002 retry\n');
-        }
-        return {
-          success: true,
-          output: 'retried the brief',
-          usage: { inputTokens: 10, outputTokens: 5 },
-        };
+      retry: vi.fn().mockResolvedValue({
+        success: true,
+        output: 'retried the brief',
+        usage: { inputTokens: 10, outputTokens: 5 },
       }),
     });
 
@@ -552,11 +555,11 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
     expect(byId.get(taskId('T003'))?.dependsOn).toEqual(['T004', 'T005']);
     expect(byId.get(taskId('T003'))?.status).toBe('done');
 
-    // Two implementer attempts on T002, one consult on its lineage.
-    expect(result.state.lineages?.T002).toMatchObject({ attempts: 2 });
+    // One implementer attempt on T002, one consult on its lineage.
+    expect(result.state.lineages?.T002).toMatchObject({ attempts: 1 });
     expect(result.state.lineages?.T002?.consultRecords).toHaveLength(1);
 
-    // T001's work survived the failed retry and the split's rollback, in the run
+    // T001's work survived the failed attempt and the split's rollback, in the run
     // workspace; the checkout never received any of it.
     expect(readFileSync(join(wctx.workspaceDir, 'src/a.ts'), 'utf-8')).toBe('done by T001\n');
     expect(existsSync(join(projectDir, 'src/a.ts'))).toBe(false);
@@ -581,7 +584,7 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
 
   it('reviews a split child that a consult verified before its sibling starts', async () => {
     const { projectDir, sessionId } = setupProject();
-    const check = { id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true } as const;
+    const check = { id: 'K1', kind: 'cmd', value: 'tsc --noEmit' } as const;
     const tasks = [
       makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'], criteria: ['C1'], checks: [check] }),
     ];

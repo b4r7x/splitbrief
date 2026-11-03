@@ -27,7 +27,7 @@ const RENDER_B = 'chk-settings';
 const CANDIDATE = 'candidate-current';
 
 function renderCheck(id: string, value: string): Check {
-  return { id, kind: 'render', value, required: true };
+  return { id, kind: 'render', value };
 }
 
 function registryOf(...checks: Check[]): ReadonlyMap<string, Check> {

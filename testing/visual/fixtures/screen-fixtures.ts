@@ -871,6 +871,50 @@ function createHomePreparingFixture(): FixtureLifecycle {
   };
 }
 
+const STARTING_FEATURE = 'Add a dark mode toggle to the settings page';
+
+/** A start whose check never answers, so the capture holds the screen on it. */
+const heldPreparation: NonNullable<FixtureLifecycle['prepareExecution']> = () =>
+  new Promise(() => {});
+
+/** A start the user submitted on Home: the screen owns the check, so esc cancels it. */
+function createHomeStartingFixture(): FixtureLifecycle {
+  const home = createHomeFixture();
+  return {
+    setup: async (context) => {
+      await home.setup(context);
+      composerDraftStore.request(STARTING_FEATURE);
+    },
+    teardown: home.teardown,
+    prepareExecution: heldPreparation,
+    afterMount: (write) => write.press('\r'),
+  };
+}
+
+/**
+ * A start from the CLI with no config: the user walks from PLAN down to Continue and takes it, the
+ * crew is saved, and the start's check runs on the crew panel, where esc cancels it.
+ */
+function createSetupStartingFixture(): FixtureLifecycle {
+  const setup = createSetupFixture();
+  return {
+    setup: async (context) => {
+      await setup.setup(context);
+      routerStore.init({
+        screen: 'setup',
+        onComplete: 'workflow',
+        feature: STARTING_FEATURE,
+        allowRepoRunners: false,
+      });
+    },
+    teardown: setup.teardown,
+    prepareExecution: heldPreparation,
+    afterMount: async (write) => {
+      for (const key of ['\x1b[B', '\x1b[B', '\x1b[B', '\r']) await write.press(key);
+    },
+  };
+}
+
 /**
  * A check that has already answered, so the panel that needs answering is on screen. The checks are
  * built by the readiness builders themselves, so the copy in the capture is the copy an operator
@@ -1087,14 +1131,17 @@ function createWorkflowContinuingFixture(): FixtureLifecycle {
   };
 }
 
-/** A check whose sign-in has run past ten seconds: the status row names the tool and the wait. */
-function withSlowSignIn(fixture: FixtureLifecycle): FixtureLifecycle {
+/** A check past ten seconds on one tool: the status row names the tool and the wait. */
+function withSlowToolCheck(
+  fixture: FixtureLifecycle,
+  slow: Readonly<{ slowSignIn: CliToolId } | { slowModelList: CliToolId }>,
+): FixtureLifecycle {
   let release: (() => Promise<void>) | undefined;
   return {
     ...fixture,
     setup: async (context) => {
       await fixture.setup(context);
-      release = holdToolChecks({ slowSignIn: 'opencode' });
+      release = holdToolChecks(slow);
     },
     teardown: async () => {
       await release?.();
@@ -1609,7 +1656,18 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
     () => createHomeFixture({ cold: true, detecting: true, config: VISUAL_WIDE_CREW }),
   ],
   [scenarioId('home-preparing'), createHomePreparingFixture],
-  [scenarioId('home-preparing-slow'), () => withSlowSignIn(createHomePreparingFixture())],
+  [
+    scenarioId('home-preparing-slow'),
+    () => withSlowToolCheck(createHomePreparingFixture(), { slowSignIn: 'opencode' }),
+  ],
+  [
+    scenarioId('home-preparing-slow-long'),
+    () => withSlowToolCheck(createHomePreparingFixture(), { slowModelList: 'antigravity' }),
+  ],
+  [
+    scenarioId('home-starting-slow-long'),
+    () => withSlowToolCheck(createHomeStartingFixture(), { slowModelList: 'antigravity' }),
+  ],
   [scenarioId('home-preparation-failed'), createHomePreparationFailedFixture],
   [scenarioId('home-preparation-checkout-warning'), createHomePreparationCheckoutWarningFixture],
   [scenarioId('home-preparation-blocked'), createHomePreparationBlockedFixture],
@@ -1668,7 +1726,14 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('home-save-long-draft'), createSaveLongDraftFixture],
   [scenarioId('home-no-config-long-draft'), createNoConfigLongDraftFixture],
   [scenarioId('workflow-continuing'), createWorkflowContinuingFixture],
-  [scenarioId('workflow-continuing-slow'), () => withSlowSignIn(createWorkflowContinuingFixture())],
+  [
+    scenarioId('workflow-continuing-slow'),
+    () => withSlowToolCheck(createWorkflowContinuingFixture(), { slowSignIn: 'opencode' }),
+  ],
+  [
+    scenarioId('workflow-continuing-slow-long'),
+    () => withSlowToolCheck(createWorkflowContinuingFixture(), { slowModelList: 'antigravity' }),
+  ],
   [
     scenarioId('workflow-continue-repo-runner-blocked'),
     createWorkflowContinueRepoRunnerBlockedFixture,
@@ -1697,6 +1762,10 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   [
     scenarioId('setup-saved-detecting-startup-warnings'),
     () => withStartupWarnings(createSetupFixture('saved-detecting')),
+  ],
+  [
+    scenarioId('setup-starting-slow-long'),
+    () => withSlowToolCheck(createSetupStartingFixture(), { slowModelList: 'antigravity' }),
   ],
   [scenarioId('setup-no-config-cached-refresh'), () => createSetupFixture('cached-refresh')],
   [scenarioId('setup-no-config-cached-failure'), () => createSetupFixture('cached-failure')],

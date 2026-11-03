@@ -16,6 +16,7 @@ import type { BundleApplyResult } from './file-bundle.js';
 import type { ImplementerReport } from '../../core/schemas/consult.js';
 import type { PlanContext } from '../spec/prompt-formatter.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
+import type { RetryKind } from '../../core/pipeline-spec/ladder.js';
 
 export interface ImplementerResult {
   success: boolean;
@@ -143,7 +144,7 @@ export interface ImplementerOptions extends UndeclaredWritesPolicy, Pick<InvokeO
 export interface RetryOptions extends ImplementerOptions {
   error: string;
   attempt: number;
-  kind: 'local' | 'consult';
+  kind: RetryKind;
 }
 
 export interface InvokeOpts extends UndeclaredWritesPolicy {

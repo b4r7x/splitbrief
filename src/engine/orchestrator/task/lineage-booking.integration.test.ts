@@ -13,7 +13,11 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
-import { consultCallAnswering, failedReviewVerdict } from '#testing/helpers/typed-planner.js';
+import {
+  consultCallAnswering,
+  failedReviewVerdict,
+  guidanceConsult,
+} from '#testing/helpers/typed-planner.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import type { ConsultAnswer } from '../../../core/schemas/consult.js';
 import type { ReviewAnswer } from '../../../core/schemas/review.js';
@@ -40,7 +44,7 @@ afterEach(() => {
   dirs = [];
 });
 
-const CHECK: Check = { id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true };
+const CHECK: Check = { id: 'K1', kind: 'cmd', value: 'tsc --noEmit' };
 
 function setupProject(): { projectDir: string; sessionId: string } {
   const ref = setupGitSessionProject({ prefix: 'lineage-booking', sessionId: 'sess-booking' });
@@ -87,9 +91,11 @@ function driftFindings(ref: { projectDir: string; sessionId: string }, taskId: s
 }
 
 /**
- * T001's first attempt writes `src/a.ts`, a generated `gen/x.txt` and each of `preSplitFiles`; its local retry writes
- * `src/retry.ts`, which the consult's rollback takes back. The planner then answers each
- * consult in turn, fails its call past the last answer, and answers each task review with
+ * T001's first attempt writes `src/a.ts`, a generated `gen/x.txt` and each of `preSplitFiles`.
+ * The planner answers the first consult with guidance, so a guided retry that writes
+ * `src/retry.ts` runs between attempt 1 and the rewrite or split, and the rollback takes back
+ * only that retry. The planner then answers each later consult with `answers` in turn, fails
+ * its call past the last answer, and answers each task review with
  * `review` (a passing verdict when it gives none).
  * The loop pauses at the boundary after the brief `pauseAfter` names.
  */
@@ -104,25 +110,24 @@ async function runLineage(opts: {
   const failing = { value: true };
   scriptedCheck(failing);
   let consults = 0;
-  let builds = 0;
   let pause = false;
   const build = async (call: ImplementerOptions | RetryOptions) => {
-    builds += 1;
     if (call.task.id === opts.pauseAfter) pause = true;
-    if (consults === 0 && builds === 1) {
+    if (consults === 0) {
       write(call.projectDir, 'src/a.ts', 'export const a = 1;\n');
       write(call.projectDir, 'gen/x.txt', 'generated\n');
       for (const file of opts.preSplitFiles ?? []) write(call.projectDir, file, 'pre-split\n');
-    } else if (consults === 0) {
+    } else if (consults === 1) {
       write(call.projectDir, 'src/retry.ts', 'export const retry = 1;\n');
     } else {
-      opts.afterConsult(consults, call);
+      opts.afterConsult(consults - 1, call);
     }
     return { success: true, output: 'implemented' };
   };
   const consultCall = consultCallAnswering(() => {
-    const answer = opts.answers[consults];
     consults += 1;
+    if (consults === 1) return guidanceConsult();
+    const answer = opts.answers[consults - 2];
     if (answer === undefined) throw new Error('The planner process stopped unexpectedly.');
     return answer(failing);
   });
@@ -271,6 +276,7 @@ describe('the booking of a lineage after a rewrite or a split', { timeout: 90_00
       ['T002', 'done'],
       ['T003', 'done'],
     ]);
+    expect(existsSync(join(ref.projectDir, 'src/retry.ts'))).toBe(false);
     const { byTask, all } = booked(ref);
     expect(byTask).toEqual({ T001: [], T002: ['src/a.ts'], T003: ['gen/x.txt', 'src/b.ts'] });
     expect(all).toEqual([...new Set(all)]);

@@ -2,6 +2,7 @@ import type { CheckpointDefinition, ScenarioDefinition } from '../contracts/cata
 import type { Viewport } from '../contracts/geometry.js';
 import type { ScenarioId } from '../contracts/identifiers.js';
 import type { ProviderCatalogOutcome } from '../../../src/engine/providers/types.js';
+import type { HomeScreenDeps } from '../../../src/app/screens/home.js';
 
 /**
  * What a preview says instead of reaching for an effect it cannot simulate. It lives beside the
@@ -50,6 +51,8 @@ export interface FixtureLifecycle {
   readonly afterMount?: (write: FixtureWrite) => void | Promise<void>;
   /** A synthetic answer for this scenario's local connection check. */
   readonly connectionOutcome?: ProviderCatalogOutcome;
+  /** The preparation behind a start this scenario submits on home or setup. */
+  readonly prepareExecution?: HomeScreenDeps['prepareExecution'];
 }
 
 export type FixtureFactory = () => FixtureLifecycle;

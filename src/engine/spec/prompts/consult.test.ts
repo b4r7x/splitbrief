@@ -15,8 +15,8 @@ const plan: Plan = {
     { id: 'C2', text: 'An empty name is refused', checkIds: ['K2'] },
   ],
   checks: [
-    { id: 'K1', kind: 'test', value: 'src/greet.test.ts', required: true },
-    { id: 'K2', kind: 'cmd', value: 'npm run lint', required: false },
+    { id: 'K1', kind: 'test', value: 'src/greet.test.ts' },
+    { id: 'K2', kind: 'cmd', value: 'npm run lint' },
   ],
   validation: null,
 };
@@ -28,8 +28,8 @@ const TASK = makeTask({
   revision: 2,
   criteria: ['C1', 'C2'],
   checks: [
-    { id: 'K1', kind: 'test', value: 'src/greet.test.ts', required: true },
-    { id: 'K2', kind: 'cmd', value: 'npm run lint', required: false },
+    { id: 'K1', kind: 'test', value: 'src/greet.test.ts' },
+    { id: 'K2', kind: 'cmd', value: 'npm run lint' },
   ],
 });
 
@@ -103,7 +103,7 @@ describe('buildConsultPrompt', () => {
 
     expect(prompt).toContain('## Plan');
     expect(prompt).toContain('**C1**: A greeting is returned — checks: K1');
-    expect(prompt).toContain('`K2` (cmd `npm run lint`, optional)');
+    expect(prompt).toContain('`K2` (cmd `npm run lint`)');
     expect(prompt).toContain('## Task T003 (revision 2)');
     expect(prompt).toContain('**Title**: Greet by name');
     expect(prompt).toContain('## Revision 1 · Greet at all');

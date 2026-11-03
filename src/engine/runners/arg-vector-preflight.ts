@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Config } from '../../core/schemas/config.js';
@@ -12,14 +12,16 @@ import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runn
 import { formatSlotLabel } from '../../core/crew/identity.js';
 import { CLI_TOOL_CATALOG, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
 import type { ActiveRunnerRole } from '../../core/runners/seat-roles.js';
-import { createSanitizedChildEnv } from '../../lib/process/spawn/child-env.js';
+import type { CliExecutableIdentity } from '../../core/discovery/detection.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { CLI_PROBE_TIMEOUT_MS } from '../constants.js';
 import { trackProbe } from '../probe-activity.js';
 import { spawnWithTimeout } from '../../lib/process/spawn/progress.js';
 import type { CliArgumentValidation } from './cli-tools/validate-args.js';
 import { lookupCliImplementerAdapter, lookupCliPlannerAdapter } from './cli-tools/registry.js';
-import { resolveCliExecutableAliases, sanitizedRuntimePath } from './resolve-cli-executable.js';
+import { probeEnvironment } from './cli-tools/cli-probe-process.js';
+import { resolveCliExecutableAliases } from './resolve-cli-executable.js';
+import { removeSandboxTempDirs } from './sandbox-state-paths.js';
 
 const LONG_FLAG_PATTERN = /--[a-z0-9][a-z0-9-]*/gi;
 const SHORT_FLAG_PATTERN = /(?<![\w-])-[a-z](?![\w-])/gi;
@@ -579,11 +581,6 @@ function semanticOverrideCheck(
   };
 }
 
-type HelpInvocation = Readonly<{
-  executablePath: string;
-  env: NodeJS.ProcessEnv;
-}>;
-
 /**
  * The help run is a real execution of a real binary, so it takes the same
  * identity the run itself would take: an absolute path the executable-trust
@@ -591,18 +588,16 @@ type HelpInvocation = Readonly<{
  * PATH. A refused or absent candidate yields no help text, which the caller
  * already reports as `ok`.
  */
-async function resolveHelpInvocation(
+async function resolveHelpExecutable(
   tool: CliToolId,
   projectDir: string,
-): Promise<HelpInvocation | null> {
+): Promise<CliExecutableIdentity | null> {
   try {
     const resolved = await resolveCliExecutableAliases({
       commands: CLI_TOOL_CATALOG[tool].executableAliases,
       projectDir,
     });
-    const env = createSanitizedChildEnv(process.env);
-    env.PATH = await sanitizedRuntimePath(projectDir);
-    return { executablePath: resolved.executable.path, env };
+    return resolved.executable;
   } catch {
     return null;
   }
@@ -647,34 +642,50 @@ async function fetchHelp(
   subcommand: string | undefined,
   signal: AbortSignal | undefined,
 ): Promise<string | null> {
-  const invocation = await resolveHelpInvocation(tool, projectDir);
-  if (invocation === null) return null;
-  // The help probe runs in a disposable sealed stage, never in the project:
-  // a read-only staged probe cannot observe or write project state.
+  const executable = await resolveHelpExecutable(tool, projectDir);
+  if (executable === null) return null;
+  // The help probe runs in a disposable stage with the version probe's sandbox HOME, never in the
+  // project or the user's HOME: the read-only working directory cannot observe or write project
+  // state, and a tool that installs a pending update when it starts finds no record of one.
   const stageDir = await mkdtemp(join(tmpdir(), 'splitbrief-help-'));
   try {
-    await chmod(stageDir, 0o500);
+    const { env } = await probeEnvironment({
+      executable,
+      neutralDir: stageDir,
+      tool,
+      channel: undefined,
+    });
+    const cwd = join(stageDir, 'cwd');
+    await mkdir(cwd, { mode: 0o500 });
     return await trackProbe({ tool, check: 'options' }, () =>
-      runHelpCommand(invocation, stageDir, subcommand, signal),
+      runHelpCommand({ executablePath: executable.path, env, cwd, subcommand, signal }),
     );
   } finally {
     await rm(stageDir, { recursive: true, force: true });
+    removeSandboxTempDirs(stageDir);
   }
 }
 
-async function runHelpCommand(
-  invocation: HelpInvocation,
-  cwd: string,
-  subcommand: string | undefined,
-  signal: AbortSignal | undefined,
-): Promise<string | null> {
+async function runHelpCommand({
+  executablePath,
+  env,
+  cwd,
+  subcommand,
+  signal,
+}: Readonly<{
+  executablePath: string;
+  env: NodeJS.ProcessEnv;
+  cwd: string;
+  subcommand: string | undefined;
+  signal: AbortSignal | undefined;
+}>): Promise<string | null> {
   const args = subcommand === undefined ? ['--help'] : [subcommand, '--help'];
   try {
     const result = await spawnWithTimeout({
-      command: invocation.executablePath,
+      command: executablePath,
       args,
       cwd,
-      env: invocation.env,
+      env,
       timeout: CLI_PROBE_TIMEOUT_MS,
       signal,
       onProgress: () => undefined,

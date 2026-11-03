@@ -107,7 +107,7 @@ describe('createImplementerBase — invoke and runner-call projection', () => {
       onOutput: vi.fn(),
       error: 'try again',
       attempt: 2,
-      kind: 'local',
+      kind: 'correction',
     });
 
     expect(contexts).toHaveLength(2);

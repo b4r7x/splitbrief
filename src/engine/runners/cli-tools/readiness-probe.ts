@@ -73,7 +73,14 @@ export type ProbeDeclaredCliReadinessEvidenceOptions = Readonly<{
   signal?: AbortSignal | undefined;
   /** Receives the auth status run, so a catalog probe with the same argv can reuse its output. */
   onAuthProbeRun?: ((run: AuthProbeRun) => void) | undefined;
+  versionProbes?: VersionProbeReads | undefined;
 }>;
+
+/**
+ * One preparation's version checks, one per executable: every seat on the same executable shares
+ * the first answer, so a version check that never answers costs one deadline, not one per seat.
+ */
+export type VersionProbeReads = Map<string, Promise<CliProbeOutput>>;
 
 export type AuthProbeRun = Readonly<{ command: CliProbeCommand; output: CliProbeOutput }>;
 
@@ -121,6 +128,7 @@ async function declaredReadinessEvidence({
   authChannel,
   signal,
   onAuthProbeRun,
+  versionProbes,
 }: Readonly<{
   executable: CliExecutableIdentity;
   neutralDir: string;
@@ -129,28 +137,32 @@ async function declaredReadinessEvidence({
   authChannel: CliAuthChannel | undefined;
   signal: AbortSignal | undefined;
   onAuthProbeRun: ((run: AuthProbeRun) => void) | undefined;
+  versionProbes: VersionProbeReads | undefined;
 }>): Promise<CliReadinessProbeEvidence> {
   throwIfAborted(signal);
-  const versionEnvironment = await probeEnvironment({
-    executable,
-    neutralDir,
-    tool,
-    channel: undefined,
-  });
-  const version = hasForbiddenProbeArgument(probe.version)
-    ? { kind: 'not-run' as const }
-    : versionOutcomeFromProbe({
-        probe: probe.version,
-        output: await trackProbe({ tool, check: 'version' }, () =>
+  const readVersion = (): Promise<CliProbeOutput> => {
+    const { path, fingerprint } = executable;
+    const key = `${tool}\u0000${path}\u0000${fingerprint.dev}:${fingerprint.ino}:${fingerprint.size}:${fingerprint.mtimeMs}`;
+    const shared = versionProbes?.get(key);
+    if (shared !== undefined) return shared;
+    const read = probeEnvironment({ executable, neutralDir, tool, channel: undefined }).then(
+      (environment) =>
+        trackProbe({ tool, check: 'version' }, () =>
           runProbe({
             executable,
             command: probe.version,
             cwd: neutralDir,
-            env: versionEnvironment.env,
+            env: environment.env,
             signal,
           }),
         ),
-      });
+    );
+    versionProbes?.set(key, read);
+    return read;
+  };
+  const version = hasForbiddenProbeArgument(probe.version)
+    ? { kind: 'not-run' as const }
+    : versionOutcomeFromProbe({ probe: probe.version, output: await readVersion() });
   if ((await revalidateCliExecutableIdentity(executable)) !== 'match') {
     return { version: { kind: 'cancelled' }, auth: 'cancelled' };
   }
@@ -256,6 +268,7 @@ export async function probeDeclaredCliReadinessEvidence(
       authChannel,
       signal: options.signal,
       onAuthProbeRun: options.onAuthProbeRun,
+      versionProbes: options.versionProbes,
     });
   } finally {
     await rm(neutralDir, { recursive: true, force: true });

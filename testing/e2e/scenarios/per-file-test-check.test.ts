@@ -158,8 +158,8 @@ describe('e2e: a plan with a per-file test check', () => {
     const { run, state, events, calls } = await runAlpha({
       testCommand: 'node --test',
       checks: [
-        { id: 'K1', kind: 'test', value: 'src/alpha.test.mjs', required: true },
-        { id: 'K2', kind: 'cmd', value: 'node --test src/alpha.test.mjs', required: true },
+        { id: 'K1', kind: 'test', value: 'src/alpha.test.mjs' },
+        { id: 'K2', kind: 'cmd', value: 'node --test src/alpha.test.mjs' },
       ],
       gate: parseOnly,
     });
@@ -199,8 +199,8 @@ describe('e2e: a plan with a per-file test check', () => {
         'test/unit/beta.mjs': "import { strict as assert } from 'node:assert';\nassert.ok(true);\n",
       },
       checks: [
-        { id: 'K1', kind: 'test', value: 'src/alpha.test.mjs', required: true },
-        { id: 'K2', kind: 'cmd', value: 'node --test test/unit/beta.mjs', required: true },
+        { id: 'K1', kind: 'test', value: 'src/alpha.test.mjs' },
+        { id: 'K2', kind: 'cmd', value: 'node --test test/unit/beta.mjs' },
       ],
     });
 
@@ -227,7 +227,7 @@ describe('e2e: a plan with a per-file test check', () => {
         'test.js':
           "const assert = require('node:assert');\nimport('./src/alpha.mjs').then((m) => assert.equal(m.alpha, 'alpha'));\n",
       },
-      checks: [{ id: 'K1', kind: 'test', value: 'test.js', required: true }],
+      checks: [{ id: 'K1', kind: 'test', value: 'test.js' }],
     });
 
     expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
@@ -249,7 +249,7 @@ describe('e2e: a plan with a per-file test check', () => {
           scripts: { test: 'splitbrief-missing-runner' },
         })}\n`,
       },
-      checks: [{ id: 'K1', kind: 'test', value: 'src/alpha.test.mjs', required: true }],
+      checks: [{ id: 'K1', kind: 'test', value: 'src/alpha.test.mjs' }],
     });
 
     const rows = events.filter(

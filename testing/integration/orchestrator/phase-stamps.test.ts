@@ -53,8 +53,7 @@ function plannerCall(callbacks: PlannerOutputCallbacks, callId: string, text: st
 
 /**
  * The canary's consulted brief: with the task review cadence the brief gate runs its test check,
- * the check fails, the local retry fails, the planner's consult call answers with guidance, and
- * the guided retry lands. Every event it publishes names the phase the run is in.
+ * the check fails, the planner's consult call answers with guidance, and the guided retry lands. Every event it publishes names the phase the run is in.
  */
 async function runConsultedBrief(): Promise<EngineEvent[]> {
   const projectDir = createTempDir('orch-int-phase-stamps');
@@ -70,7 +69,7 @@ async function runConsultedBrief(): Promise<EngineEvent[]> {
     description: 'Create a module that needs a planner consult before validation passes.',
     implementationSteps: ['Create src/loop.ts with the retry marker export.'],
     tests: ['node validate.mjs passes after the consult'],
-    checks: [{ id: 'K-retry', kind: 'test', value: targetFile, required: true }],
+    checks: [{ id: 'K-retry', kind: 'test', value: targetFile }],
     scope: { inBounds: [targetFile], outOfBounds: ['unrelated files'] },
     evidence: ['the consult answer appears before workflow_complete'],
     typeDefs: 'export const loop: string',
@@ -113,9 +112,6 @@ async function runConsultedBrief(): Promise<EngineEvent[]> {
       }),
       retry: vi.fn(async (opts: RetryOptions) => {
         opts.onOutput(`${opts.kind} retry`);
-        if (opts.kind === 'local') {
-          return { success: false, output: '', error: 'still the initial marker' };
-        }
         writeLoop(opts.projectDir, 'from-retry');
         return { success: true, output: 'fixed' };
       }),
@@ -126,12 +122,13 @@ async function runConsultedBrief(): Promise<EngineEvent[]> {
 }
 
 // The state machine's own path for this brief: the attempt's validation runs in validating-task,
-// and the local retry, the consult and the guided retry all run in implementing before the brief
-// passes and the review opens.
+// the consult and the guided retry run in escalating, and the pass returns the run to implementing
+// before the review opens.
 const PHASES = [
   'planning',
   'implementing',
   'validating-task',
+  'escalating',
   'implementing',
   'final-review',
   'complete',

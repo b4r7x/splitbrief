@@ -27,7 +27,7 @@ import {
   recordedApiCreatedPaths,
 } from '../evidence/task.js';
 import { withContinuationLoop } from '../continuation.js';
-import { addUsageAndSave } from '../state-ops.js';
+import { addUsageAndSave, recordBriefCorrection } from '../state-ops.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js';
 
@@ -50,9 +50,9 @@ function makeRecordingImplementer() {
 
 describe('makeImplementerRetryInvoker', () => {
   it.each([
-    ['local', true],
+    ['correction', true],
     ['consult', true],
-    ['local', false],
+    ['correction', false],
     ['consult', false],
   ] as const)(
     'allows unchanged output for a %s attempt only when it delivers an answer (%s)',
@@ -88,7 +88,55 @@ describe('makeImplementerRetryInvoker', () => {
     },
   );
 
-  it.each(['local', 'consult'] as const)(
+  it('continues a cut retry on its kept work with the steer from the brief corrections', async () => {
+    const ref = setupProject(directories);
+    const task = makeTask();
+    const state = makeImplState([task]);
+    saveState(ref, state);
+    const corrected = recordBriefCorrection(ref, state, task.id, 'Keep the helper.');
+    const recorded: string[] = [];
+    let received: RetryOptions | undefined;
+    const implementer = makeImplementer({
+      retry: async (opts) => {
+        received = opts;
+        opts.onOutput('continued the helper', {});
+        return { success: true, output: 'continued' };
+      },
+    });
+    const invoker = makeImplementerRetryInvoker({
+      context: defaultContext,
+      kind: 'consult',
+      sessionId: ref.sessionId,
+      languageContext: buildLanguageContext('typescript'),
+      phase: 'implementing',
+    });
+
+    await invoker({
+      task,
+      lastError: 'checks failed',
+      attempts: 1,
+      projectDir: ref.projectDir,
+      implementer,
+      config: makeConfig(),
+      continuation: { partial: '', kept: ['src/hello.ts'] },
+      recordOutput: (text) => recorded.push(text),
+      seat: {
+        ref: { ...ref, bus: createEventBus() },
+        state: corrected,
+        usageCategory: 'implementer',
+      },
+    });
+
+    expect(received?.continuation).toEqual({
+      partial: '',
+      kept: ['src/hello.ts'],
+      steer: 'Keep the helper.',
+    });
+    expect(received?.allowNoChange).toBe(true);
+    expect(recorded).toEqual(['continued the helper']);
+  });
+
+  it.each(['correction', 'consult'] as const)(
     'classifies %s output using the selected implementer, including profile overrides',
     async (kind) => {
       for (const writesFiles of ['direct', 'extracted-code'] as const) {
@@ -184,7 +232,7 @@ describe('makeImplementerRetryInvoker', () => {
       const { implementer, getReceived } = makeRecordingImplementer();
       const invoker = makeImplementerRetryInvoker({
         context: defaultContext,
-        kind: 'local',
+        kind: 'correction',
         sessionId: ref.sessionId,
         languageContext: buildLanguageContext('typescript'),
         phase: state.phase,
@@ -230,7 +278,7 @@ describe('makeImplementerRetryInvoker', () => {
       .mockResolvedValueOnce({ success: true, output: 'fixed' });
     const invoker = makeImplementerRetryInvoker({
       context: defaultContext,
-      kind: 'local',
+      kind: 'correction',
       sessionId: ref.sessionId,
       languageContext: buildLanguageContext('typescript'),
       phase: 'implementing',
@@ -321,7 +369,7 @@ describe('makeImplementerRetryInvoker', () => {
     const invoke = makeImplementerRetryInvoker({
       steering,
       context: defaultContext,
-      kind: 'local',
+      kind: 'correction',
       sessionId: ref.sessionId,
       languageContext: buildLanguageContext('typescript'),
       phase: state.phase,
@@ -390,7 +438,7 @@ describe('makeImplementerRetryInvoker', () => {
       });
       const invoker = makeImplementerRetryInvoker({
         context: defaultContext,
-        kind: 'local',
+        kind: 'correction',
         sessionId: ref.sessionId,
         languageContext: buildLanguageContext('typescript'),
         phase: 'implementing',
@@ -494,7 +542,7 @@ describe('makeImplementerRetryInvoker', () => {
     });
     const invoker = makeImplementerRetryInvoker({
       context: defaultContext,
-      kind: 'local',
+      kind: 'correction',
       sessionId: ref.sessionId,
       languageContext: buildLanguageContext('typescript'),
       phase: 'implementing',
@@ -600,7 +648,7 @@ describe('makeImplementerRetryInvoker', () => {
 
     const invoker = makeImplementerRetryInvoker({
       context: defaultContext,
-      kind: 'local',
+      kind: 'correction',
       sessionId: ref.sessionId,
       languageContext: buildLanguageContext('typescript'),
       phase: 'implementing',
@@ -626,7 +674,7 @@ describe('makeImplementerRetryInvoker', () => {
     expect(result.runner).toEqual(overrideConfig.implementer);
     expect(argImpl.getReceived()).toBeUndefined();
     expect(override.getReceived()?.config.implementer.model).toBe('override-model');
-    expect(override.getReceived()?.kind).toBe('local');
+    expect(override.getReceived()?.kind).toBe('correction');
     expect(override.getReceived()?.allowNoChange).toBe(false);
   });
 
@@ -671,7 +719,7 @@ describe('makeImplementerRetryInvoker', () => {
       });
       const invoker = makeImplementerRetryInvoker({
         context: defaultContext,
-        kind: 'local',
+        kind: 'correction',
         sessionId: ref.sessionId,
         languageContext: buildLanguageContext('typescript'),
         phase: 'implementing',
@@ -805,7 +853,7 @@ describe('makeImplementerRetryInvoker', () => {
     });
     const invoker = makeImplementerRetryInvoker({
       context: defaultContext,
-      kind: 'local',
+      kind: 'correction',
       sessionId: ref.sessionId,
       languageContext: buildLanguageContext('typescript'),
       phase: 'implementing',

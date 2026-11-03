@@ -588,7 +588,7 @@ describe('runFinalReviewPhase', () => {
         fixTasks: failed.fixTasks.map((task) => ({
           ...task,
           suggestedFiles: files,
-          checks: [{ id: 'FC1', kind: 'test' as const, value, required: true }],
+          checks: [{ id: 'FC1', kind: 'test' as const, value }],
         })),
       };
     });
@@ -675,7 +675,7 @@ describe('runFinalReviewPhase', () => {
           ...base,
           id: `T90${index}`,
           suggestedFiles: files,
-          checks: [{ id: `FC${index + 1}`, ...check, required: true }],
+          checks: [{ id: `FC${index + 1}`, ...check }],
           findingIds: [`F${index + 1}`],
         })),
       };
@@ -823,7 +823,7 @@ describe('runFinalReviewPhase', () => {
           summary: 'Verify the greeting.',
           decisions: [],
           criteria: [{ id: 'C1', text: 'A greeting works', checkIds: ['K1'] }],
-          checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+          checks: [{ id: 'K1', kind: 'cmd', value: 'node --version' }],
           validation: null,
         },
         pendingTriage: {
@@ -862,7 +862,7 @@ describe('runFinalReviewPhase', () => {
           summary: 'Verify the greeting.',
           decisions: [],
           criteria: [{ id: 'C1', text: 'A greeting works', checkIds: ['K1'] }],
-          checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+          checks: [{ id: 'K1', kind: 'cmd', value: 'node --version' }],
           validation: null,
         },
         pendingTriage: {
@@ -1034,7 +1034,7 @@ describe('runFinalReviewPhase', () => {
             makeTask({
               id: 'T001',
               status: 'done',
-              checks: [{ id: 'K1', kind: 'cmd', value: 'npm test', required: true }],
+              checks: [{ id: 'K1', kind: 'cmd', value: 'npm test' }],
             }),
           ],
           runStartHead,
@@ -1087,7 +1087,7 @@ describe('runFinalReviewPhase', () => {
           summary: 'Render the gallery.',
           decisions: [],
           criteria: [{ id: 'C1', text: 'The gallery renders', checkIds: ['K1'] }],
-          checks: [{ id: 'K1', kind: 'render', value: 'gallery/hello', required: false }],
+          checks: [{ id: 'K1', kind: 'render', value: 'gallery/hello' }],
           validation: null,
         },
       },
@@ -1146,7 +1146,7 @@ describe('runFinalReviewPhase', () => {
           summary: 'Greet people by name.',
           decisions: [],
           criteria: [{ id: 'C1', text: 'A name gets a greeting', checkIds: ['K1'] }],
-          checks: [{ id: 'K1', kind: 'cmd', value: 'npm test', required: true }],
+          checks: [{ id: 'K1', kind: 'cmd', value: 'npm test' }],
           validation: null,
         },
       },

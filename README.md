@@ -48,9 +48,7 @@ You: "add user authentication with JWT"
     │           │
   pass        fail
     │           │
-  next task   one retry
-                │
-                still failing
+  next task     │
                 │
             the planner is consulted, read-only
             (fix tasks included):

@@ -275,7 +275,7 @@ describe('spec command', () => {
       ...base,
       checks: [
         ...base.checks,
-        { id: 'K-render', kind: 'render' as const, value: 'overlay-picker', required: true },
+        { id: 'K-render', kind: 'render' as const, value: 'overlay-picker' },
       ],
     };
     const typed = scriptedTypedCall([withRender, withRender]);

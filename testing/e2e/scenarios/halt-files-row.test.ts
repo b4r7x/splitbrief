@@ -23,7 +23,7 @@ const clamp = makeTaskSpec({
   intent: 'Add a clamp helper and its test.',
   criteria: ['C1'],
   suggestedFiles: [SOURCE_FILE, TEST_FILE],
-  checks: [{ id: 'T001-K1', kind: 'test', value: TEST_FILE, required: true }],
+  checks: [{ id: 'T001-K1', kind: 'test', value: TEST_FILE }],
 });
 const plan = makePlanProposal({
   summary: 'Add one helper.',

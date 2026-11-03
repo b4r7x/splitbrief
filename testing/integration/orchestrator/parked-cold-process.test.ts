@@ -41,11 +41,11 @@ import {
 } from '#testing/helpers/typed-planner.js';
 
 // Cold-process proof harness. parked-cold-matrix.test.ts runs this file once per matrix cell:
-//   F2B_PROOF_DIR=<fixture> F2B_PROOF_ENTRY=<n> F2B_PROOF_ROUTE=<initial|local|consult>
+//   F2B_PROOF_DIR=<fixture> F2B_PROOF_ENTRY=<n> F2B_PROOF_ROUTE=<initial|consult>
 // Each cell is one independent process over the fixture; entries 0..2 keep the
 // same retained stage, bytes, attempt, and canonical session log. Retirement is
 // common to MAIN and CLONE.
-type ColdRoute = 'initial' | 'local' | 'consult';
+type ColdRoute = 'initial' | 'consult';
 
 type ColdObservation = {
   attempt: number;
@@ -73,7 +73,7 @@ afterEach(async () => {
 
 function coldRouteFromEnv(): ColdRoute {
   const raw = (process.env.F2B_PROOF_ROUTE ?? process.env.F2B_ROUTE ?? 'initial').toLowerCase();
-  return raw === 'local' || raw === 'consult' ? raw : 'initial';
+  return raw === 'consult' ? raw : 'initial';
 }
 
 function makeColdTask() {
@@ -181,10 +181,7 @@ async function runColdEntry(input: {
         entryNumber === 0 && route !== 'initial'
           ? { success: false, output: '', error: `${route} initial failure` }
           : writeAndStop(opts),
-      retry: async (opts) =>
-        route === 'consult' && opts.kind === 'local'
-          ? { success: false, output: '', error: 'the local retry needs the planner' }
-          : writeAndStop(opts),
+      retry: async (opts) => writeAndStop(opts),
     }),
   });
   assertUnborn(projectDir);
@@ -214,9 +211,11 @@ it.skipIf(!matrixActive)(
       entryNumber: proofEntry,
       route: proofRoute,
     });
-    const expectedAttempt = proofRoute === 'consult' ? 2 : proofRoute === 'initial' ? 0 : 1;
+    const expectedAttempt = proofRoute === 'consult' ? 1 : 0;
+    // The first entry's stop cuts the consult-guided retry, which runs escalating; a cold
+    // re-entry resumes the cut brief as implementing.
     expect(state).toMatchObject({
-      phase: 'implementing',
+      phase: proofRoute === 'consult' && proofEntry === 0 ? 'escalating' : 'implementing',
       attempt: expectedAttempt,
       awaitingContinue: true,
       interruptedStep: {

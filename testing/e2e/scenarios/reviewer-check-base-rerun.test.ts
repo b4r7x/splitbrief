@@ -125,7 +125,7 @@ const brief = makeTaskSpec({
   intent: 'Return the sum of two numbers.',
   criteria: ['C1'],
   suggestedFiles: [TOTAL_FILE, TOTAL_TEST_FILE],
-  checks: [{ id: 'T001-K1', kind: 'test', value: TOTAL_TEST_FILE, required: true }],
+  checks: [{ id: 'T001-K1', kind: 'test', value: TOTAL_TEST_FILE }],
 });
 const plan = makePlanProposal({
   summary: 'Add a total helper with its test.',

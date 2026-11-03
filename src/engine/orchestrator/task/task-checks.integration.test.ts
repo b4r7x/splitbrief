@@ -46,7 +46,7 @@ function recordedChecks(projectDir: string, sessionId: string): EvidenceCheckEnt
 }
 
 function versionCheck(): Check[] {
-  return [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }];
+  return [{ id: 'K1', kind: 'cmd', value: 'node --version' }];
 }
 
 function acceptingValidator(): Validator {
@@ -102,8 +102,8 @@ describe('runTaskChecks', () => {
       id: 'T001',
       checks: [
         ...versionCheck(),
-        { id: 'K2', kind: 'cmd', value: 'npm run lint', required: true },
-        { id: 'K3', kind: 'render', value: 'home', required: false },
+        { id: 'K2', kind: 'cmd', value: 'npm run lint' },
+        { id: 'K3', kind: 'render', value: 'home' },
       ],
     });
     const { bus, events } = makeBusRecorder();
@@ -155,7 +155,7 @@ describe('runTaskChecks', () => {
     const { projectDir, sessionId } = setup('task-checks-start');
     const task = makeTask({
       id: 'T001',
-      checks: [...versionCheck(), { id: 'K3', kind: 'render', value: 'home', required: false }],
+      checks: [...versionCheck(), { id: 'K3', kind: 'render', value: 'home' }],
     });
     const { bus, events } = makeBusRecorder();
 
@@ -203,7 +203,7 @@ describe('runTaskChecks', () => {
     expect(events).toHaveLength(0);
   });
 
-  it('runs and records the checks once when a local retry is accepted', async () => {
+  it('runs and records the checks once when a retried attempt is accepted', async () => {
     const { projectDir, sessionId } = setup('task-checks-retry');
     const task = makeTask({ id: 'T002', checks: versionCheck() });
     const ctx = await makeEscalationCtx({
@@ -461,7 +461,7 @@ describe('runTaskChecks for a fix task that answers a reviewer check', { timeout
 
   it('settles a plan check a fix finding carries by the same keys and says so on a fix check row', async () => {
     await withApplyRun(FILES, { sessionId: 'sess-fix-plan-check' }, async (run) => {
-      const typecheck: Check = { id: 'K2', kind: 'cmd', value: 'tsc --noEmit', required: true };
+      const typecheck: Check = { id: 'K2', kind: 'cmd', value: 'tsc --noEmit' };
       const task = makeTask({
         id: 'T002',
         checks: [typecheck],
@@ -536,7 +536,7 @@ describe('runTaskChecks for a fix task that answers a reviewer check', { timeout
 
   it('marks a fix check row reused when the same command already ran on the same files', async () => {
     const ref = setup('fix-check-reused');
-    const typecheck: Check = { id: 'K2', kind: 'cmd', value: 'tsc --noEmit', required: true };
+    const typecheck: Check = { id: 'K2', kind: 'cmd', value: 'tsc --noEmit' };
     const task = makeTask({
       id: 'T002',
       checks: [typecheck],
@@ -607,7 +607,7 @@ describe('runTaskChecks for a fix task that answers a reviewer check', { timeout
     'publishes a green %s check ownership verdict',
     async (origin) => {
       await withApplyRun(FILES, { sessionId: 'sess-green-fix-check' }, async (run) => {
-        const check: Check = { id: 'K2', kind: 'cmd', value: 'tsc --noEmit', required: true };
+        const check: Check = { id: 'K2', kind: 'cmd', value: 'tsc --noEmit' };
         const task = makeTask({
           checks: origin === 'task' ? [check] : [],
           fix: {

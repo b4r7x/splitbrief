@@ -11,7 +11,11 @@ import { buildLanguageContext, type LanguageContext } from './prompts/language-c
 import { buildImplementerSystemPreamble as formatImplementerSystemPreamble } from './prompts/system.js';
 import { buildScopeLines } from './formatter.js';
 import { READ_ONLY_CONTEXT_HEADING, TASK_BRIEF_HEADINGS } from './headings.js';
-import { framingForAttempt } from '../../core/pipeline-spec/ladder.js';
+import {
+  CORRECTION_FRAMING,
+  framingForAttempt,
+  type RetryKind,
+} from '../../core/pipeline-spec/ladder.js';
 import { CLOSING_CONSTRAINTS } from '../../core/pipeline-spec/brief.js';
 
 export { formatImplementerSystemPreamble };
@@ -335,6 +339,7 @@ export function formatRetryPrompt(opts: {
   context: ProjectContext;
   error: string;
   attempt: number;
+  kind: RetryKind;
   contextLength?: number | undefined;
   languageContext?: LanguageContext | undefined;
   writesFiles?: ImplementerWriteMode | undefined;
@@ -348,15 +353,25 @@ export function formatRetryPrompt(opts: {
     context,
     error,
     attempt,
+    kind,
     writesFiles = 'extracted-code',
     outputContract,
     plan,
     inPlace = false,
   } = opts;
-  const framing = framingForAttempt(attempt, task.fix !== undefined);
+  const correction = kind === 'correction';
+  const framing = correction
+    ? CORRECTION_FRAMING
+    : framingForAttempt(attempt, task.fix !== undefined);
   const sections = buildTaskSections(task, context, writesFiles, outputContract, plan, inPlace);
 
-  sections.unshift(framing, '', 'Error from previous attempt:', error, '');
+  sections.unshift(
+    framing,
+    '',
+    correction ? 'Correction:' : 'Error from previous attempt:',
+    error,
+    '',
+  );
   insertTaskCode(sections, { ...opts, writesFiles });
   return sections.join('\n');
 }

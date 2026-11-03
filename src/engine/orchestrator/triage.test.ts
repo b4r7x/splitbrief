@@ -75,7 +75,7 @@ const TRIAGE_PLAN: Plan = {
   summary: 'Greet people by name',
   decisions: [{ text: 'Keep the greeting in one shared module', taskId: null }],
   criteria: [{ id: 'C1', text: 'A name gets a greeting', checkIds: ['K1'] }],
-  checks: [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }],
+  checks: [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit' }],
   validation: null,
 };
 

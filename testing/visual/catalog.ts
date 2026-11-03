@@ -287,6 +287,51 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'composer', title: 'Feature composer' },
       ],
     }),
+    defineScenario({
+      id: 'home-preparing-slow-long',
+      title: 'Home · a slow tool check with a long name on a narrow terminal',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Slow model list named beside the composer, with no key',
+        kind: 'ready',
+        marker: 'CLI model list 12s',
+      },
+      elements: [
+        { id: 'header', title: 'Home header' },
+        { id: 'composer', title: 'Feature composer' },
+      ],
+      // A long tool name and check at the widths where the row is cut: the CLI started this check
+      // before Home mounted, so the row has no key; the stage stays whole and the check gives up
+      // its middle words.
+      viewports: [
+        viewport({ cols: 60, rows: 18 }),
+        viewport({ cols: 68, rows: 20 }),
+        viewport({ cols: 80, rows: 24 }),
+      ],
+    }),
+    defineScenario({
+      id: 'home-starting-slow-long',
+      title: 'Home · a submitted start waiting on a slow tool check on a narrow terminal',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Slow model list shortened, esc cancel kept',
+        kind: 'ready',
+        marker: 'esc cancel',
+      },
+      elements: [
+        { id: 'header', title: 'Home header' },
+        { id: 'composer', title: 'Feature composer' },
+      ],
+      // The user submitted this start on Home, so Esc cancels it: the stage and the key stay
+      // whole and the check gives up its middle words.
+      viewports: [
+        viewport({ cols: 60, rows: 18 }),
+        viewport({ cols: 68, rows: 20 }),
+        viewport({ cols: 80, rows: 24 }),
+      ],
+    }),
     // The panel appears only when preparation needs an answer.
     defineScenario({
       id: 'home-preparation-failed',
@@ -4225,7 +4270,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-recovery-checks-missing-program',
-      title: 'Workflow · a required check that cannot run because a program is missing',
+      title: 'Workflow · a check that cannot run because a program is missing',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'recovery-checks-missing-program',
@@ -4241,7 +4286,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-recovery-checks-unrunnable',
-      title: 'Workflow · a required check that cannot run because a setting is missing',
+      title: 'Workflow · a check that cannot run because a setting is missing',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'recovery-checks-unrunnable',
@@ -4538,6 +4583,28 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [
         { id: 'header', title: 'Workflow header' },
         { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-continuing-slow-long',
+      title: 'Workflow · a slow tool check with a long name on a narrow terminal',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Slow model list shortened, esc cancel kept',
+        kind: 'ready',
+        marker: 'esc cancel',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+      // A long tool name and check at the widths where the row is cut: the stage and the key stay
+      // whole and the check gives up its middle words.
+      viewports: [
+        viewport({ cols: 60, rows: 18 }),
+        viewport({ cols: 68, rows: 20 }),
+        viewport({ cols: 80, rows: 24 }),
       ],
     }),
     defineScenario({
@@ -5103,6 +5170,25 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         marker: '2 warnings, all shown when you quit',
       },
       elements: [{ id: 'setup-panel', title: 'Setup panel' }],
+    }),
+    defineScenario({
+      id: 'setup-starting-slow-long',
+      title: 'Setup · a start waiting on a slow tool check on a narrow terminal',
+      surface: screenSurface('setup'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Slow model list shortened on the crew panel, esc cancel kept',
+        kind: 'ready',
+        marker: 'esc cancel',
+      },
+      elements: [{ id: 'setup-panel', title: 'Setup panel' }],
+      // The saved crew moves into the start's check on the panel's hint row: the stage and the key
+      // stay whole and the check gives up its middle words.
+      viewports: [
+        viewport({ cols: 60, rows: 18 }),
+        viewport({ cols: 68, rows: 20 }),
+        viewport({ cols: 80, rows: 24 }),
+      ],
     }),
     defineScenario({
       id: 'setup-no-config-cached-refresh',

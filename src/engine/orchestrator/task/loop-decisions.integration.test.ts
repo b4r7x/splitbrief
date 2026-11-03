@@ -70,7 +70,7 @@ function setupProject(): { projectDir: string; sessionId: string } {
 function stateWithPlan(tasks: Task[], overrides?: Partial<WorkflowState>): WorkflowState {
   const checked = tasks.map((task) => ({
     ...task,
-    checks: [{ id: `K-${task.id}`, kind: 'cmd' as const, value: 'tsc --noEmit', required: true }],
+    checks: [{ id: `K-${task.id}`, kind: 'cmd' as const, value: 'tsc --noEmit' }],
   }));
   return makeImplState(checked, {
     plan: {
@@ -288,8 +288,8 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
   it('records a decision once when every retry reports it again, and retries a red validation with the exact errors', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
-    const implementer = decidingImplementer([[HOW], [HOW], [HOW]]);
-    const validator = scriptedValidator({ T001: [TS_ERROR, LINT_ERROR, null] });
+    const implementer = decidingImplementer([[HOW], [HOW]]);
+    const validator = scriptedValidator({ T001: [TS_ERROR, null] });
     const { planner, prompts } = scriptedPlanner({ consult: guidance });
     const { bus, events } = makeBusRecorder();
 
@@ -305,14 +305,13 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
 
     expect(result.state.pendingRecovery).toBeUndefined();
     expect(result.status).toBe('complete');
-    expect(eventTypes(events)).toEqual(['retry', 'consult:failed:guidance']);
+    expect(eventTypes(events)).toEqual(['consult:failed:guidance']);
     const retries = vi.mocked(implementer.retry).mock.calls.map(([opts]) => opts);
-    expect(retries[0]?.kind).toBe('local');
+    expect(retries.map((retry) => retry.kind)).toEqual(['consult']);
     expect(retries[0]?.error).toContain(TS_ERROR);
-    expect(retries[1]?.kind).toBe('consult');
     expect(prompts).toHaveLength(1);
     expect(prompts[0]).toContain('failed —');
-    expect(prompts[0]).toContain(LINT_ERROR);
+    expect(prompts[0]).toContain(TS_ERROR);
     expect(result.state.plan?.decisions).toEqual([
       { text: `${HOW.what} — ${HOW.why}`, taskId: 'T001' },
     ]);
@@ -324,7 +323,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
     const implementer = decidingImplementer([[HOW], [HOW, HOW_TOO]]);
     const validator = scriptedValidator({ T001: [TS_ERROR, null] });
-    const { planner, prompts } = scriptedPlanner({});
+    const { planner, prompts } = scriptedPlanner({ consult: guidance });
     const { bus, events } = makeBusRecorder();
 
     const result = await runLoop({
@@ -338,8 +337,8 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     });
 
     expect(result.status).toBe('complete');
-    expect(eventTypes(events)).toEqual(['retry']);
-    expect(prompts).toEqual([]);
+    expect(eventTypes(events)).toEqual(['consult:failed:guidance']);
+    expect(prompts).toHaveLength(1);
     expect(result.state.plan?.decisions).toEqual([
       { text: `${HOW.what} — ${HOW.why}`, taskId: 'T001' },
       { text: `${HOW_TOO.what} — ${HOW_TOO.why}`, taskId: 'T001' },
@@ -410,7 +409,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     return project;
   }
 
-  /** T001's check never passes, so its ladder reaches the consult after the local retry. */
+  /** T001's check never passes, so its ladder reaches the consult after the first attempt. */
   function redValidator() {
     return scriptedValidator({ T001: Array<string>(8).fill(TS_ERROR) });
   }
@@ -451,10 +450,9 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       expect(halted.state.pendingRecovery?.reason).toBe('planner-call-failed');
       expect(existsSync(join(projectDir, 'src/a.ts'))).toBe(false);
       expect(restoreWarnings(events)).toEqual([expect.stringContaining('src/a.ts')]);
-      // The ledger keeps the decisions of the attempts that failed validation.
+      // The ledger keeps the decision of the attempt that failed validation.
       expect(halted.state.plan?.decisions).toEqual([
         { text: `${HOW.what} — ${HOW.why}`, taskId: 'T001' },
-        { text: `${HOW_TOO.what} — ${HOW_TOO.why}`, taskId: 'T001' },
       ]);
 
       const skipped = await skip(projectDir, sessionId, halted.state, bus);
@@ -468,8 +466,8 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     it('takes back the files of the attempts before and after a Retry', async () => {
       const { projectDir, sessionId } = setupProjectWithUserWork();
       const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts', 'src/b.ts'] });
-      // The attempts before the Retry write src/a.ts; the attempts after it write src/b.ts.
-      const implementer = writingImplementer(['src/a.ts', 'src/a.ts', 'src/b.ts']);
+      // The attempt before the Retry writes src/a.ts; the attempt after it writes src/b.ts.
+      const implementer = writingImplementer(['src/a.ts', 'src/b.ts']);
       const planner = failingPlanner();
       const validator = redValidator();
       const { bus, events } = makeBusRecorder();
@@ -621,8 +619,8 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
 
       expect(second.state.tasks[0]?.status).toBe('skipped');
       expect(implementer.implement).toHaveBeenCalledTimes(1);
-      // Only the local retry of the first run: the hook denied the Retry before its attempt.
-      expect(implementer.retry).toHaveBeenCalledTimes(1);
+      // The first run consults before any retry, and the hook denied the Retry before its attempt.
+      expect(implementer.retry).not.toHaveBeenCalled();
       expect(existsSync(join(projectDir, 'src/a.ts'))).toBe(false);
       expect(bookedFiles(projectDir, sessionId, 'T001')).toEqual([]);
       expect(restoreWarnings(events)).toEqual([expect.stringContaining('src/a.ts')]);
@@ -631,7 +629,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
 
     it('books none of the restored files when a pre_validation hook denies the brief', async () => {
       const { projectDir, sessionId } = setupProjectWithUserWork();
-      // The hook passes the first attempt and denies the local retry that wrote the user's file.
+      // The hook passes the first attempt and denies the consult-guided retry that wrote the user's file.
       const hooks = trustedHooks(projectDir, 'pre_validation', [
         "import { readFileSync } from 'node:fs';",
         `const file = JSON.parse(input).workspaceDir + '/${USER_FILE}';`,
@@ -648,7 +646,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
         state: stateWithPlan([task]),
         implementer,
         validator,
-        planner: failingPlanner(),
+        planner: scriptedPlanner({ consult: guidance }).planner,
         bus,
         hooks,
       });

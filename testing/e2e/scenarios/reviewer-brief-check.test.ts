@@ -29,7 +29,7 @@ const PLAN = makePlanProposal({
       title: 'Add the total helper',
       steps: ['Implement the total helper.'],
       suggestedFiles: ['src/total.mjs'],
-      checks: [{ id: 'K1', kind: 'test', value: 'test/total.test.mjs', required: true }],
+      checks: [{ id: 'K1', kind: 'test', value: 'test/total.test.mjs' }],
     }),
   ],
 });

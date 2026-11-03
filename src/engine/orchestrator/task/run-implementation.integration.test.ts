@@ -1347,7 +1347,7 @@ describe.each(['implementation', 'retry-invoker'] as const)(
             : undefined;
         const invoker = makeImplementerRetryInvoker({
           context: wctx.context,
-          kind: 'local',
+          kind: 'correction',
           sessionId: ref.sessionId,
           languageContext: buildLanguageContext('typescript'),
           phase: 'implementing',
@@ -1502,7 +1502,7 @@ describe.each(['implementation', 'retry-invoker'] as const)(
           if (caller === 'retry-invoker') {
             const invoker = makeImplementerRetryInvoker({
               context: wctx.context,
-              kind: 'local',
+              kind: 'correction',
               sessionId: ref.sessionId,
               languageContext: buildLanguageContext('typescript'),
               phase: 'implementing',

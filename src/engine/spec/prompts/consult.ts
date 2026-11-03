@@ -96,7 +96,7 @@ function consultContract(task: Task, writesFiles: ImplementerWriteMode): string 
 const RESUME_CONTRACT = `Answer again with exactly one JSON object in the consult shape: \`answer.diagnosis\` and exactly one action. The call stays read-only. The operator rule still holds: no action undoes an operator instruction. The answer rule still holds: an answer only instructs the next attempt. Offer only choices that the next attempt can carry out. When the task cannot be done as asked, answer \`cannot\`. The criteria rule still holds: a rewrite or a split never drops a criterion id, and a split never splits a subtask. The checks rule still holds too: a defective check command may be repaired under the same check id, but removing a check id a served criterion names needs \`ask-user\`.`;
 
 function checkLine(check: Check): string {
-  return `\`${check.id}\` (${check.kind} \`${check.value}\`${check.required ? '' : ', optional'})`;
+  return `\`${check.id}\` (${check.kind} \`${check.value}\`)`;
 }
 
 function bullets(label: string, values: readonly string[]): string[] {

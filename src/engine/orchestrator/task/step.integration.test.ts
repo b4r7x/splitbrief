@@ -37,7 +37,7 @@ afterEach(() => {
   cleanupTaskProjects();
 });
 
-const BRIEF_CHECKS: Check[] = [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }];
+const BRIEF_CHECKS: Check[] = [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit' }];
 
 // Every case here drives a real git fixture repo and real snapshot/drift git
 // subprocesses, so the body is a second of work in isolation and several under
@@ -467,6 +467,17 @@ describe('runSingleTask — a brief keeps its corrections on every attempt', {
 }, () => {
   const correction = 'keep the exported name';
 
+  /** One guidance answer, then the planner fails: the retry it earns is the one the brief gets. */
+  function guidedOnce() {
+    let consults = 0;
+    return makePlanner({
+      typedCall: consultCallAnswering(() => {
+        if (++consults > 1) throw new Error('Planner call failed');
+        return guidanceConsult();
+      }),
+    });
+  }
+
   function correctedContext(
     projectDir: string,
     sessionId: string,
@@ -482,6 +493,7 @@ describe('runSingleTask — a brief keeps its corrections on every attempt', {
       projectDir,
       sessionId,
       implementer: makeImplementer({ implement: vi.fn().mockImplementation(implement), retry }),
+      planner: guidedOnce(),
       continuation: createContinuationHolder({
         step: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
         steer: plainUserMessage(correction),
@@ -571,6 +583,7 @@ describe('runSingleTask — a brief keeps its corrections on every attempt', {
         sessionId,
         bus,
         implementer: makeImplementer({ implement, retry }),
+        planner: guidedOnce(),
       }),
       task,
       index: 0,

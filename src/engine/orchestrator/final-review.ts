@@ -339,7 +339,7 @@ export async function runFinalReviewPhase(opts: {
   scope?: 'final' | 'task' | undefined;
   afterTaskId?: TaskId | undefined;
   /**
-   * The required checks run on the candidate before the review call. New
+   * The checks run on the candidate before the review call. New
    * failures become pending inputs in the review answer.
    */
   preReview?: ((state: WorkflowState) => Promise<PreReviewResult>) | undefined;
@@ -380,7 +380,7 @@ export async function runFinalReviewPhase(opts: {
     opts.setTrackedState?.(state);
   }
 
-  // A required check that cannot run halts before the review.
+  // A check that cannot run halts before the review.
   if (opts.preReview !== undefined) {
     const pre = await opts.preReview(state);
     state = pre.state;

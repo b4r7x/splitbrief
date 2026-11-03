@@ -75,7 +75,7 @@ const alpha = makeTaskSpec({
   intent: 'Export alpha and its upper-case form loud.',
   criteria: ['C1'],
   suggestedFiles: ['src/alpha.mjs', 'src/alpha.test.mjs', SPEC_FILE],
-  checks: [{ id: 'T001-K1', kind: 'test', value: 'src/alpha.test.mjs', required: true }],
+  checks: [{ id: 'T001-K1', kind: 'test', value: 'src/alpha.test.mjs' }],
 });
 const beta = makeTaskSpec({
   id: 'T002',
@@ -83,7 +83,7 @@ const beta = makeTaskSpec({
   intent: 'Export the beta value.',
   criteria: ['C2'],
   suggestedFiles: ['src/beta.mjs', 'src/beta.test.mjs'],
-  checks: [{ id: 'T002-K1', kind: 'test', value: 'src/beta.test.mjs', required: true }],
+  checks: [{ id: 'T002-K1', kind: 'test', value: 'src/beta.test.mjs' }],
 });
 const fix = makeTaskSpec({
   id: 'T003',
@@ -92,7 +92,7 @@ const fix = makeTaskSpec({
   criteria: ['C1'],
   suggestedFiles: ['src/alpha.mjs'],
   contextFiles: [SPEC_FILE],
-  checks: [{ id: 'T003-K1', kind: 'test', value: 'src/alpha.test.mjs', required: true }],
+  checks: [{ id: 'T003-K1', kind: 'test', value: 'src/alpha.test.mjs' }],
 });
 const plan = makePlanProposal({
   summary: 'Add the alpha and beta values.',

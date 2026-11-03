@@ -41,15 +41,21 @@ export function makeImplementerRetryInvoker(opts: {
     changeDetection,
     createdByThisTask,
     deliversAnswer,
+    continuation,
+    recordOutput,
     seat,
   }) => {
     const effectiveConfig = opts.config ?? config;
     const effectiveImplementer = opts.implementer ?? implementer;
     const imageContext = { config: effectiveConfig, modelCache: seat.ref.modelCache };
-    const onOutput = createImplementerTextHandler(
+    const textHandler = createImplementerTextHandler(
       { bus: seat.ref.bus, phase: opts.phase },
       effectiveImplementer,
     );
+    const onOutput: ImplementerOptions['onOutput'] = (text, outputOpts) => {
+      recordOutput?.(text);
+      textHandler(text, outputOpts);
+    };
     let state = seat.state;
     const absorb = (): number => {
       const absorbed = absorbBuildCorrections({
@@ -68,6 +74,7 @@ export function makeImplementerRetryInvoker(opts: {
     const produce = async (attemptSignal: AbortSignal): Promise<SeatAttempt<RetryInvokeResult>> => {
       await settleMidCallDeliveries(seat.ref);
       absorb();
+      const correction = buildCorrectionInput(state, task, imageContext);
       const call: ImplementerOptions = {
         task,
         ...(opts.steering !== undefined && { steering: opts.steering }),
@@ -84,8 +91,12 @@ export function makeImplementerRetryInvoker(opts: {
         fileIgnoreProjectDir,
         changeDetection,
         plan: state.plan,
-        ...buildCorrectionInput(state, task, imageContext),
-        allowNoChange: task.fix !== undefined || deliversAnswer === true,
+        ...correction,
+        ...(continuation !== undefined && {
+          continuation: { ...continuation, ...correction.continuation },
+        }),
+        allowNoChange:
+          task.fix !== undefined || deliversAnswer === true || continuation?.kept !== undefined,
         ...creationOwnership(),
       };
       const result = await runWithCorrectionPasses({

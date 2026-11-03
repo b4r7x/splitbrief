@@ -49,14 +49,14 @@ const KINDS: Record<
   },
   plan: {
     id: 'chk-types',
-    check: { id: 'chk-types', kind: 'cmd', value: 'tsc --noEmit', required: true },
+    check: { id: 'chk-types', kind: 'cmd', value: 'tsc --noEmit' },
     command: 'tsc --noEmit',
     key: (name) =>
       `src/${name}.ts(1,14): error TS2322: Type number is not assignable to type string.`,
   },
   test: {
     id: 'chk-a',
-    check: { id: 'chk-a', kind: 'test', value: 'src/a.test.ts', required: true },
+    check: { id: 'chk-a', kind: 'test', value: 'src/a.test.ts' },
     command: 'npm test -- src/a.test.ts',
     key: (name) => `src/a.test.ts::${name}`,
   },
@@ -324,7 +324,7 @@ describe.each(['reviewer', 'plan', 'test'] as const)(
 
     it('10 a check the finding names without own failures, on a finding with failures for another check, does not gate', async () => {
       await withApplyRun(FILES, { sessionId: `own-${kind}-10` }, async (run) => {
-        const ok: Check = { id: 'chk-ok', kind: 'cmd', value: 'node --version', required: true };
+        const ok: Check = { id: 'chk-ok', kind: 'cmd', value: 'node --version' };
         const task = makeTask({
           id: 'T023',
           fix: {
@@ -507,7 +507,7 @@ describe('the triage, split and rewrite shapes (rows 15-18)', { timeout: 60_000 
           summary: 's',
           decisions: [],
           criteria: [{ id: 'C1', text: 'c', checkIds: ['chk-unit'] }],
-          checks: [{ id: 'chk-unit', kind: 'cmd', value: 'npm test', required: true }],
+          checks: [{ id: 'chk-unit', kind: 'cmd', value: 'npm test' }],
           validation: null,
         },
       });
@@ -565,7 +565,7 @@ describe('the triage, split and rewrite shapes (rows 15-18)', { timeout: 60_000 
       const { result } = await gate(run, {
         task: t023,
         others: [t025],
-        checks: [{ id: 'chk-unit', kind: 'cmd', value: 'npm test', required: true }],
+        checks: [{ id: 'chk-unit', kind: 'cmd', value: 'npm test' }],
         red: ' FAIL  src/a.test.ts > swap\nAssertionError: expected 1 to be 2',
       });
 
@@ -677,7 +677,7 @@ describe('a fix check runs only the own test files of a test red (C)', { timeout
     await withApplyRun(TS_FILES, { sessionId: 'own-c-plan' }, async (run) => {
       const { result, commands } = await gate(run, {
         task: fixTask('T023', 'chk-unit', 'npm test', { own: [k('own')] }),
-        checks: [{ id: 'chk-unit', kind: 'cmd', value: 'npm test', required: true }],
+        checks: [{ id: 'chk-unit', kind: 'cmd', value: 'npm test' }],
         red: testRed,
         config,
       });
@@ -764,7 +764,7 @@ describe('a fix check runs only the own test files of a test red (C)', { timeout
 });
 
 describe('a failure a sibling carries under another check id', { timeout: 60_000 }, () => {
-  const UNIT: Check = { id: 'chk-unit', kind: 'cmd', value: 'npm test', required: true };
+  const UNIT: Check = { id: 'chk-unit', kind: 'cmd', value: 'npm test' };
   const k = (name: string) => `src/a.test.ts::${name}`;
   const KEYS = [k('pause'), k('swap')];
   const red = (...names: string[]) =>

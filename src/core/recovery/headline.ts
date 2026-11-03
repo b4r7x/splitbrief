@@ -224,8 +224,7 @@ export function formatRecoveryHeadlineSpans(
       const ids = recoveryFactString(issue.facts, 'requiredCheckIds');
       return [
         {
-          text:
-            ids === undefined ? 'Required checks cannot run' : `Required checks cannot run: ${ids}`,
+          text: ids === undefined ? 'Checks cannot run' : `Checks cannot run: ${ids}`,
         },
       ];
     }

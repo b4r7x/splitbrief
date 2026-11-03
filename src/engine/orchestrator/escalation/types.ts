@@ -3,7 +3,7 @@ import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import type { Config } from '../../../core/schemas/config.js';
-import type { Implementer } from '../../implementers/types.js';
+import type { Implementer, ImplementerOptions } from '../../implementers/types.js';
 import type { RunnerFailureOutcomeState } from '../../runners/errors.js';
 import type { ChangeDetectionKind } from '../../change-detection.js';
 import type { WorkflowContext, WorkflowPersistenceContext } from '../types.js';
@@ -106,6 +106,10 @@ export type RetryInvokeArgs = {
    * already right and change nothing.
    */
   deliversAnswer?: boolean | undefined;
+  /** What the cut attempt this call continues left: its partial and the declared files it kept. */
+  continuation?: ImplementerOptions['continuation'];
+  /** Receives the call's output, the partial a stop of this call continues on. */
+  recordOutput?: ((text: string) => void) | undefined;
   /** The seat-trouble wrapper's target; the step supplies the live state and usage category. */
   seat: RetrySeatTarget;
 };

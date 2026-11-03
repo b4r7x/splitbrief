@@ -331,7 +331,7 @@ describe('createImplementerBase — bus events', () => {
       phase: 'implementing',
       error: 'TS2322 in src/engine/implementers/pipeline/call-result.ts',
       attempt: 1,
-      kind: 'local',
+      kind: 'correction',
     });
 
     expect(result).toMatchObject({ success: false, outcome: 'no-staged-change' });

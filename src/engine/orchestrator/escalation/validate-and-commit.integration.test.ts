@@ -84,7 +84,7 @@ describe('validateAndCommit', () => {
     const ref = setupProject();
     const task = makeTask({
       id: 'T001',
-      checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+      checks: [{ id: 'K1', kind: 'cmd', value: 'node --version' }],
     });
     const state = makeImplState([task]);
     const { bus, events } = makeBusRecorder();
@@ -135,7 +135,7 @@ describe('validateAndCommit', () => {
     const ref = setupProject();
     const task = makeTask({
       id: 'T001',
-      checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+      checks: [{ id: 'K1', kind: 'cmd', value: 'node --version' }],
     });
     const state = makeImplState([task]);
     const { bus, events } = makeBusRecorder();
@@ -209,7 +209,7 @@ describe('validateAndCommit', () => {
     const task = makeTask({
       id: 'T013',
       suggestedFiles: ['src/blocks.ts'],
-      checks: [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }],
+      checks: [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit' }],
     });
     vi.spyOn(commandRunner, 'runCommand').mockRejectedValue(
       processError.exitCode({
@@ -244,7 +244,7 @@ describe('validateAndCommit', () => {
     const fixTask = makeTask({
       id: 'T023',
       suggestedFiles: ['src/blocks.ts'],
-      checks: [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }],
+      checks: [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit' }],
       fix: {
         cycle: 1,
         findings: [

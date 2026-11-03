@@ -36,8 +36,7 @@ import { BOUNDS } from './bounds.js';
 import { sliceRuleText } from './brief.js';
 import { CAPTURE_LIMITS } from './gates.js';
 import { HALT_SIGNATURES } from './halts.js';
-import { LADDER, RETRY_FRAMINGS } from './ladder.js';
-import { DEFAULT_LOCAL_RETRIES } from './retries.js';
+import { RETRY_FRAMINGS } from './ladder.js';
 import { VERDICT_RULES } from './review.js';
 import { TIMEOUTS } from './timeouts.js';
 
@@ -46,13 +45,6 @@ let dirs: string[] = [];
 afterEach(() => {
   for (const dir of dirs) cleanupTempDir(dir);
   dirs = [];
-});
-
-describe('retry budget', () => {
-  it('the ladder spends one local retry from the pipeline spec', () => {
-    expect(DEFAULT_LOCAL_RETRIES).toBe(1);
-    expect(LADDER.filter((rung) => rung.count === 'DEFAULT_LOCAL_RETRIES')).toHaveLength(1);
-  });
 });
 
 describe('gates', () => {
@@ -71,6 +63,7 @@ describe('retry ladder', () => {
       context: defaultContext,
       error: 'type error',
       attempt: 5,
+      kind: 'consult',
     });
     expect(prompt.split('\n')[0]).toBe(RETRY_FRAMINGS[3]);
   });
@@ -79,7 +72,7 @@ describe('retry ladder', () => {
     expect(BOUNDS.consultFailingOutputChars).toBe(4000);
   });
 
-  it('a brief that never passes spends the local retries then consults the planner', async () => {
+  it('a brief that never passes consults the planner first, with no local retry', async () => {
     const { projectDir, sessionId } = setupGitSessionProject({
       prefix: 'conformance-ladder',
       sessionId: 'sess-conformance',
@@ -111,7 +104,7 @@ describe('retry ladder', () => {
       currentState: transition(makeImplState([task]), { type: 'TASK_SENT' }),
     });
 
-    expect(events.filter((e) => e.type === 'task_retry')).toHaveLength(DEFAULT_LOCAL_RETRIES);
+    expect(events.filter((e) => e.type === 'task_retry')).toEqual([]);
     expect(events.filter((e) => e.type === 'task_escalating')).toHaveLength(1);
     expect(events.filter((e) => e.type === 'consult_answered').length).toBeGreaterThanOrEqual(1);
     expect(events.filter((e) => e.type === 'escalate')).toEqual([]);

@@ -23,6 +23,7 @@ import {
 import {
   cannotConsult,
   failedReviewVerdict,
+  guidanceConsult,
   passingReviewVerdict,
   planFromTasks,
   typedCallPlanAndReview,
@@ -96,7 +97,7 @@ afterEach(async () => {
   dirs = [];
 });
 
-const BRIEF_CHECKS: Check[] = [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }];
+const BRIEF_CHECKS: Check[] = [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit' }];
 
 /** The first brief check run fails with `error`; every later one passes. */
 function failCheckOnce(error: string): void {
@@ -181,7 +182,7 @@ function runOptions(opts: {
   review: ReviewVerdict | ((prompt: string, call: number) => ReviewVerdict);
   /** The triage answer; the default rejects every blocking finding. */
   triage?: ((prompt: string, call: number) => TriageResult | string) | undefined;
-  /** The planner's answer on a review without progress; the default says it cannot fix it. */
+  /** The planner's answer to a consult on a failed brief or a stuck review; the default says it cannot fix it. */
   consult?: ((prompt: string) => ConsultAnswer) | undefined;
   onComplete: () => void;
   sinks?: WorkflowSinks | undefined;
@@ -454,6 +455,7 @@ describe('runTasksAndReview boundary pause', { timeout: 120_000 }, () => {
       state: reviewedState(tasks, head, 0),
       review: (prompt) => passingReviewVerdict(prompt),
       onComplete: vi.fn(),
+      consult: () => guidanceConsult(),
       sinks: pauseOnceSinks(),
       onContinuationNeeded: async () => plainUserMessage(correction),
       continuation: createContinuationHolder(),
@@ -517,6 +519,7 @@ describe('runTasksAndReview boundary pause', { timeout: 120_000 }, () => {
       state: reviewedState(tasks, head, 0),
       review: (prompt) => passingReviewVerdict(prompt),
       onComplete: vi.fn(),
+      consult: () => guidanceConsult(),
       sinks,
       onContinuationNeeded: async () => plainUserMessage(correction),
       continuation: createContinuationHolder(),
@@ -574,7 +577,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
         summary: 'Greet people by name',
         decisions: [],
         criteria: [{ id: 'C1', text: 'The greeting is returned', checkIds: ['K1'] }],
-        checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+        checks: [{ id: 'K1', kind: 'cmd', value: 'node --version' }],
         validation: null,
       },
     };
@@ -604,7 +607,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
             ...makeTaskSpec({
               id: 'T002',
               suggestedFiles: ['src/shared/widget.ts'],
-              checks: [{ id: 'K2', kind: 'cmd', value: 'node --version', required: true }],
+              checks: [{ id: 'K2', kind: 'cmd', value: 'node --version' }],
             }),
             findingIds: ['F1'],
           },
@@ -679,7 +682,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
           summary: 'Fix the widget.',
           decisions: [],
           criteria: [],
-          checks: [{ id: 'K1', kind: 'cmd', value: 'make test', required: true }],
+          checks: [{ id: 'K1', kind: 'cmd', value: 'make test' }],
           validation: null,
         },
       },
@@ -702,6 +705,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
         rejected: [],
         ask: null,
       }),
+      consult: () => guidanceConsult(),
       onComplete: vi.fn(),
       implementer,
     });
@@ -1093,6 +1097,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
         checkIds: ['K9'],
       }),
       fixTasks: [],
+      rejected: [{ findingId: 'P1', reason: 'K9 is flaky' }],
     });
     const { reviewPrompts, options } = runOptions({
       projectDir,
@@ -1103,7 +1108,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
           summary: 'Greet.',
           decisions: [],
           criteria: [],
-          checks: [{ id: 'K9', kind: 'cmd', value: 'test -e greeting.txt', required: false }],
+          checks: [{ id: 'K9', kind: 'cmd', value: 'test -e greeting.txt' }],
           validation: null,
         },
       },
@@ -1116,8 +1121,8 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
 
     const result = await runTasksAndReview(options);
 
-    // The pre-review run of K9 is red, and the review reads that stored red without a run; the
-    // planner's verify runs it past that red, and the next review reads the green.
+    // The pre-review run of K9 is red, and the review sets that red aside as flaky; the planner's
+    // verify runs it past that red, and the next review reads the green.
     expect(runs).toBe(2);
     expect(reviewPrompts).toHaveLength(2);
     expect(reviewPrompts[0]).toContain('- plan check K9: fail');
@@ -1232,7 +1237,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
           summary: 'Fix the widget.',
           decisions: [],
           criteria: [],
-          checks: [{ id: 'K1', kind: 'cmd', value: 'make test', required: true }],
+          checks: [{ id: 'K1', kind: 'cmd', value: 'make test' }],
           validation: null,
         },
         workspace: { kind: 'checkout', path: projectDir, base: { snapshotId: 'base', head } },
@@ -1298,7 +1303,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
           summary: 'Greet people by name',
           decisions: [],
           criteria: [{ id: 'C1', text: 'The rendered greeting is checked', checkIds: ['K1'] }],
-          checks: [{ id: 'K1', kind: 'render', value: 'greeting-render', required: false }],
+          checks: [{ id: 'K1', kind: 'render', value: 'greeting-render' }],
           validation: null,
         },
       },
@@ -1310,6 +1315,8 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
         };
       },
       onComplete: vi.fn(),
+      // The render runs and leaves no image, so the reviewer can only call C1 unverified.
+      config: makeNoValidationConfig({ workflow: {}, validation: { render: 'true {id} {out}' } }),
     });
 
     const result = await runTasksAndReview(options);
@@ -1577,6 +1584,7 @@ function promptRecordingImplementer(prompts: string[]): Implementer {
           context: call.context,
           error: call.error,
           attempt: call.attempt,
+          kind: call.kind,
           writesFiles: 'direct',
         }),
       );
@@ -1600,6 +1608,7 @@ describe('runTasksAndReview review fix instruction', { timeout: 120_000 }, () =>
       state: reviewedState(tasks, head, 0),
       review: (prompt) => passingReviewVerdict(prompt),
       onComplete: vi.fn(),
+      consult: () => guidanceConsult(),
       implementer: promptRecordingImplementer(prompts),
       config: makeNoValidationConfig({ workflow: { review: 'task' } }),
     });
@@ -1673,7 +1682,7 @@ describe('runTasksAndReview review halt', { timeout: 120_000 }, () => {
               id: 'T002',
               suggestedFiles: ['src/shared/widget.ts'],
               criteria: [],
-              checks: [{ id: 'K2', kind: 'cmd', value: 'node --version', required: true }],
+              checks: [{ id: 'K2', kind: 'cmd', value: 'node --version' }],
             }),
             findingIds: ['U3'],
           },
@@ -1793,7 +1802,7 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
         join(projectDir, 'Cargo.toml'),
         '[package]\nname = "rust-check"\nversion = "0.1.0"\n',
       );
-      const check: Check = { id: 'K-rust', kind: 'test', value: 'src/lib.rs', required: false };
+      const check: Check = { id: 'K-rust', kind: 'test', value: 'src/lib.rs' };
       const tasks = [
         makeTask({
           id: 'T001',
@@ -1824,7 +1833,7 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
           controller.abort();
           return {
             ...passingReviewVerdict(prompt),
-            rejected: [{ findingId: 'A1', reason: 'No fix required.' }],
+            rejected: [{ findingId: 'P1', reason: 'No fix required.' }],
           };
         },
         onComplete: vi.fn(),
@@ -1835,13 +1844,13 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
         const result = await runTasksAndReview(options);
         const pending = reviewPrompts[0]?.split('## Pending Inputs\n')[1]?.split('\n## ')[0];
         expect(reviewPrompts).toHaveLength(1);
-        expect(pending).toContain('**A1** (check · defect)');
+        expect(pending).toContain('**P1** (check · defect)');
         expect(pending).toContain('src/lib.rs');
         expect(pending).toContain('1 failure\nFailures:\n- tests::adds');
         expect(pending).not.toContain('0 failures');
         expect(pending).not.toContain('Output tail:');
         expect(result.state.pendingTriage?.inputs[0]).toMatchObject({
-          id: 'A1',
+          id: 'P1',
           file: 'src/lib.rs',
           failureKeys: ['tests::adds'],
           output: 'FAIL  tests::adds',
@@ -1858,7 +1867,7 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
       join(projectDir, 'Cargo.toml'),
       '[package]\nname = "rust-check"\nversion = "0.1.0"\n',
     );
-    const check: Check = { id: 'K-rust', kind: 'test', value: 'src/lib.rs', required: false };
+    const check: Check = { id: 'K-rust', kind: 'test', value: 'src/lib.rs' };
     const tasks = [
       makeTask({ id: 'T001', suggestedFiles: ['src/lib.rs'], status: 'done', checks: [check] }),
     ];
@@ -1876,7 +1885,7 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
       state: integrationReviewState(tasks, head, 0),
       review: (prompt) => ({
         ...passingReviewVerdict(prompt),
-        rejected: [{ findingId: 'A1', reason: 'The test is flaky under load.' }],
+        rejected: [{ findingId: 'P1', reason: 'The test is flaky under load.' }],
       }),
       onComplete: vi.fn(),
     });
@@ -1893,7 +1902,51 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
     }
   });
 
-  it('halts every unrunnable required Apply check before review, even with an optional failure', async () => {
+  it('hands each red Apply re-check to the reviewer once', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    writeFileSync(
+      join(projectDir, 'Cargo.toml'),
+      '[package]\nname = "rust-check"\nversion = "0.1.0"\n',
+    );
+    const check: Check = { id: 'K-rust', kind: 'test', value: 'src/lib.rs' };
+    const tasks = [
+      makeTask({ id: 'T001', suggestedFiles: ['src/lib.rs'], status: 'done', checks: [check] }),
+    ];
+    vi.spyOn(commandRunner, 'runCommand').mockRejectedValue(
+      processError.exitCode({
+        command: 'cargo test',
+        code: 1,
+        stderr: '',
+        output: 'test tests::adds ... FAILED',
+      }),
+    );
+    const controller = new AbortController();
+    const { options, reviewPrompts } = runOptions({
+      projectDir,
+      sessionId,
+      state: integrationReviewState(tasks, head, 0),
+      review: (prompt) => {
+        controller.abort();
+        return passingReviewVerdict(prompt);
+      },
+      onComplete: vi.fn(),
+      signal: controller.signal,
+    });
+
+    try {
+      const result = await runTasksAndReview(options);
+      const pending = reviewPrompts[0]?.split('## Pending Inputs\n')[1]?.split('\n## ')[0] ?? '';
+
+      expect(
+        result.state.pendingTriage?.inputs.filter((input) => input.checkIds?.includes('K-rust')),
+      ).toHaveLength(1);
+      expect(pending.match(/\(check · defect\)/g)).toHaveLength(1);
+    } finally {
+      await options.wctx.isolation.dispose();
+    }
+  });
+
+  it('halts every unrunnable Apply check before review, even with a failing check', async () => {
     const { projectDir, sessionId, head } = setupProject();
     writeFileSync(join(projectDir, 'Makefile'), 'lint:\n\t@exit 1\n');
     const tasks = [
@@ -1902,8 +1955,8 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
         suggestedFiles: ['src/alpha.ts'],
         status: 'done',
         checks: [
-          { id: 'K-task-refused', kind: 'cmd', value: 'npm run deploy', required: true },
-          { id: 'K-optional-failure', kind: 'cmd', value: 'make lint', required: false },
+          { id: 'K-task-refused', kind: 'cmd', value: 'npm run deploy' },
+          { id: 'K-failure', kind: 'cmd', value: 'make lint' },
         ],
       }),
     ];
@@ -1915,8 +1968,8 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
         criteria: [],
         validation: null,
         checks: [
-          { id: 'K-plan-refused', kind: 'cmd' as const, value: 'npx some-package', required: true },
-          { id: 'K-render', kind: 'render' as const, value: 'overlay-picker', required: true },
+          { id: 'K-plan-refused', kind: 'cmd' as const, value: 'npx some-package' },
+          { id: 'K-render', kind: 'render' as const, value: 'overlay-picker' },
         ],
       },
     };
@@ -1945,41 +1998,6 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
         ),
       ).toBeDefined();
       expect(result.completed).toBe(false);
-    } finally {
-      await options.wctx.isolation.dispose();
-    }
-  });
-
-  it('names an optional refused Apply check as refused, never as a failure the review must answer', async () => {
-    const { projectDir, sessionId, head } = setupProject();
-    const tasks = [
-      makeTask({
-        id: 'T001',
-        suggestedFiles: ['src/alpha.ts'],
-        status: 'done',
-        checks: [{ id: 'K-optional', kind: 'cmd', value: 'npm run lint', required: false }],
-      }),
-    ];
-    const { reviewPrompts, options } = runOptions({
-      projectDir,
-      sessionId,
-      state: integrationReviewState(tasks, head, 0),
-      review: (prompt) => passingReviewVerdict(prompt),
-      onComplete: vi.fn(),
-    });
-
-    try {
-      const result = await runTasksAndReview(options);
-
-      expect(reviewPrompts).toHaveLength(1);
-      expect(reviewPrompts[0]).toContain(
-        '## Checks re-run at Apply\n- T001 check K-optional refused: runs a package script or binary',
-      );
-      expect(reviewPrompts[0]).not.toContain('did not pass (refused)');
-      expect(result.state.reviewStatus).toBe('passed');
-      expect(result.state.tasks[0]?.checkResults).toEqual([
-        { id: 'K-optional', status: 'refused' },
-      ]);
     } finally {
       await options.wctx.isolation.dispose();
     }
@@ -2149,7 +2167,7 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
         id: 'T001',
         suggestedFiles: ['src/alpha.ts'],
         status: 'done',
-        checks: [{ id: 'C1', kind: 'cmd', value: 'make test', required: false }],
+        checks: [{ id: 'C1', kind: 'cmd', value: 'make test' }],
         checkResults: [{ id: 'C1', status: 'pass' }],
       }),
     ];
@@ -2176,7 +2194,7 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
           summary: 'Re-check the merged candidate.',
           decisions: [],
           criteria: [],
-          checks: [{ id: 'P1', kind: 'cmd', value: 'make lint', required: false }],
+          checks: [{ id: 'P1', kind: 'cmd', value: 'make lint' }],
           validation: null,
         },
       },
@@ -2190,7 +2208,7 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
               criteria: [],
               checks: [],
             }),
-            findingIds: ['A1', 'A2', 'A3'],
+            findingIds: ['P1', 'P2', 'P3'],
           },
         ],
         rejected: [],
@@ -2218,8 +2236,8 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
       expect(triagePrompts[0]).toContain('Last changed by T001.');
       expect(triagePrompts[0]).toContain('No task changed it.');
       const pending = triagePrompts[0]?.split('## Pending Inputs\n')[1] ?? '';
-      const alpha = pending.split('**A1**')[1]?.split('**A2**')[0];
-      const beta = pending.split('**A2**')[1]?.split('**A3**')[0];
+      const alpha = pending.split('**P2**')[1]?.split('**P3**')[0];
+      const beta = pending.split('**P3**')[1]?.split('\n## ')[0];
       expect(alpha).toContain('- src/alpha.test.ts::adds\n  AssertionError: expected 1 to be 2');
       expect(alpha).not.toContain('src/beta.test.ts');
       expect(alpha).not.toContain('expected 3 to be 4');
@@ -2244,9 +2262,7 @@ describe('runTasksAndReview required-checks halt retry', { timeout: 120_000 }, (
         decisions: [],
         criteria: [],
         validation: null,
-        checks: [
-          { id: 'K-render', kind: 'render' as const, value: 'overlay-picker', required: true },
-        ],
+        checks: [{ id: 'K-render', kind: 'render' as const, value: 'overlay-picker' }],
       },
     };
     const stale = makeNoValidationConfig({ workflow: {} });

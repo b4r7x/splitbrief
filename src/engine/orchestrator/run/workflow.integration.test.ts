@@ -110,7 +110,9 @@ import {
   planQuestionsFrom,
   passingReviewVerdict,
   typedCallAnswering,
+  typedCallPlanAndConsult,
   typedCallPlanAndReview,
+  guidanceConsult,
 } from '#testing/helpers/typed-planner.js';
 
 // A state.json write SPLITBRIEF renamed into place but could not confirm on disk (a failing disk,
@@ -657,7 +659,7 @@ describe('runWorkflow — smoke', () => {
           feature: 'state write',
           projectDir,
           config: makeConfig({
-            validation: { endChecks: false, testCommand: 'noop' },
+            validation: { endChecks: false, testCommand: 'true' },
             workflow: { approve: 'none' },
           }),
           callbacks: makeCallbacks().callbacks,
@@ -926,6 +928,13 @@ describe('runWorkflow — smoke', () => {
           { from: 'runRetryStepAttempt', fails },
           'task_started',
           {
+            // The failed attempt goes to the consult; its guidance runs the retry.
+            _planner: makePlanner({
+              typedCall: typedCallPlanAndConsult(
+                () => planFromTasks([makeTask({ id: 'T001' })]),
+                () => guidanceConsult(),
+              ),
+            }),
             _implementer: makeImplementer({
               implement: vi.fn().mockRejectedValueOnce(new Error('boom')),
             }),
@@ -2512,7 +2521,7 @@ describe('runWorkflow — smoke', () => {
       feature: 'inherited review seat call events',
       projectDir,
       config: makeConfig({
-        validation: { endChecks: false, testCommand: 'noop' },
+        validation: { endChecks: false, testCommand: 'true' },
         workflow: { approve: 'none' },
       }),
       callbacks,
@@ -2568,7 +2577,7 @@ describe('runWorkflow — smoke', () => {
       projectDir,
       config: makeConfig({
         reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-5' },
-        validation: { endChecks: false, testCommand: 'noop' },
+        validation: { endChecks: false, testCommand: 'true' },
         workflow: { approve: 'none' },
       }),
       callbacks,

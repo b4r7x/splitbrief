@@ -44,7 +44,7 @@ describe('buildValidation', () => {
         summary: 'Plan',
         decisions: [],
         criteria: [],
-        checks: [{ id: 'K1', kind: 'cmd', value: 'npm test', required: true }],
+        checks: [{ id: 'K1', kind: 'cmd', value: 'npm test' }],
         validation: null,
       },
     };
