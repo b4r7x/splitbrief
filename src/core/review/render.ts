@@ -7,12 +7,14 @@ const PRE_EXISTING_LEAD =
   "These reviewer checks failed at the run base too. Their failures below also fail before this run's changes, so they raise no finding.";
 
 /**
- * `preExistingChecks` are the reviewer checks that were red at the run base too; `setAside` are the
- * red inputs the reviewer rejected with a reason; `plannerNote` is the note the planner accepted a
- * stuck review's blockers with.
+ * `tasks` are the plan's tasks, whose titles name the task lines; `preExistingChecks` are the
+ * reviewer checks that were red at the run base too; `setAside` are the red inputs the reviewer
+ * rejected with a reason; `plannerNote` is the note the planner accepted a stuck review's blockers
+ * with.
  */
 export function renderReviewMarkdown(
   verdict: ReviewVerdict,
+  tasks: readonly { id: string; title: string }[],
   outcome: ReviewOutcome,
   preExistingChecks: NonNullable<ReviewRecord['preExistingChecks']>,
   setAside: readonly SetAside[],
@@ -23,10 +25,13 @@ export function renderReviewMarkdown(
   if (verdict.tasks.length === 0) {
     lines.push('None.');
   } else {
+    const titles = new Map(tasks.map((task) => [task.id, task.title]));
     for (const task of verdict.tasks) {
       const note = task.note.trim();
       const suffix = note === '' ? '' : ` — ${note}`;
-      lines.push(`- [${task.plan}] ${task.id}${suffix}`);
+      const title = titles.get(task.id);
+      const name = title === undefined ? task.id : `${task.id} ${title}`;
+      lines.push(`- [${task.plan}] ${name}${suffix}`);
     }
   }
   lines.push('', '### Criteria Results', '');

@@ -367,6 +367,7 @@ describe('runFinalReviewPhase', () => {
     const markdown = readFileSync(reviewPath, 'utf-8');
     expect(markdown).toContain('### Verdict\n\nfail');
     expect(markdown).toContain('src/alpha.ts drops the error');
+    expect(markdown).toContain('### Tasks\n\n- [met] T001 Create hello module\n');
 
     // The typed record is the verdict's one home: review.json and state.review.
     const record = readReviewRecord(projectDir, sessionId);

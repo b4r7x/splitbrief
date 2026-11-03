@@ -1126,8 +1126,21 @@ describe('the review that judges a fix cycle', () => {
     it('accepts the blockers with the planner note and closes the final review as accepted', async () => {
       const ref = setupProject();
       const { planner } = consultPlanner([accept]);
+      const failed = reviewed(await firstCycleRan(), 'fail');
+      const review = failed.review;
+      if (review === undefined) throw new Error('expected a review');
+      const marked = {
+        ...failed,
+        review: {
+          ...review,
+          verdict: {
+            ...review.verdict,
+            tasks: [{ id: taskId('T001'), plan: 'met' as const, note: 'The handler is in place' }],
+          },
+        },
+      };
       const result = await follow(
-        triaged(reviewed(await firstCycleRan(), 'fail'), fixTask('T901', 'F1')),
+        triaged(marked, fixTask('T901', 'F1')),
         fixTask('T901', 'F1'),
         { planner },
         ref,
@@ -1145,6 +1158,9 @@ describe('the review that judges a fix cycle', () => {
       );
       expect(readSpecFile(ref, REVIEW_FILE)).toContain(
         '**Accepted by the planner**\n\nThe old error type is part of the public API',
+      );
+      expect(readSpecFile(ref, REVIEW_FILE)).toContain(
+        '- [met] T001 Create hello module — The handler is in place\n',
       );
       expect(result.events.filter((event) => event.type === 'consult_answered')).toMatchObject([
         { action: 'accept', note: 'The old error type is part of the public API' },

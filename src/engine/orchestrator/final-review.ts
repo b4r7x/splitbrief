@@ -962,7 +962,13 @@ export async function runFinalReviewPhase(opts: {
         },
       });
     verdict = { verdict: reviewerVerdict, outcome };
-    reviewText = renderReviewMarkdown(reviewerVerdict, outcome, preExistingChecks, setAside);
+    reviewText = renderReviewMarkdown(
+      reviewerVerdict,
+      state.tasks,
+      outcome,
+      preExistingChecks,
+      setAside,
+    );
     writeSpecFile(
       { projectDir, sessionId },
       REVIEW_JSON_FILE,

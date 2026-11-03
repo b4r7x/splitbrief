@@ -393,6 +393,53 @@ describe('buildFinalReviewPrompt', () => {
     expect(bare).not.toContain('Never claim a render was verified.');
   });
 
+  it('lists each required task id with its plan title, and only the reviewed tasks in a task review', () => {
+    const requiredResults = (prompt: string) => prompt.split('## Required Results')[1] ?? '';
+    const final = buildFinalReviewPrompt({
+      spec: SPEC,
+      taskBriefs: TASK_BRIEFS,
+      diff: DIFF,
+      plan: REVIEW_PLAN,
+    });
+    expect(requiredResults(final)).toContain(
+      [
+        `Criterion ids: ${REVIEW_PLAN.criteria.map((criterion) => criterion.id).join(', ')}`,
+        '',
+        "Write each task's note about that task's own work:",
+        '- T001: Storage',
+        '- T002: Scheduling',
+        '- T003: Delivery',
+        '- T004: Time zones',
+        '- T005: Reminder API',
+      ].join('\n'),
+    );
+
+    const task = requiredResults(
+      buildFinalReviewPrompt({
+        spec: SPEC,
+        taskBriefs: TASK_BRIEFS,
+        diff: DIFF,
+        plan: REVIEW_PLAN,
+        reviewKind: 'task',
+        taskIds: ['T001', 'T002'],
+        criterionIds: ['C1', 'C2', 'C3', 'C4'],
+      }),
+    );
+    expect(task).toContain(
+      "Criterion ids: C1, C2, C3, C4\n\nWrite each task's note about that task's own work:\n- T001: Storage\n- T002: Scheduling",
+    );
+    expect(task).not.toContain('- T003: Delivery');
+
+    const bare = buildFinalReviewPrompt({
+      spec: SPEC,
+      taskBriefs: TASK_BRIEFS,
+      diff: DIFF,
+      taskIds: ['T001'],
+    });
+    expect(bare).toContain('Task ids: T001');
+    expect(bare).not.toContain("Write each task's note");
+  });
+
   it('tells the final and the task reviewer not to restate a red pending input', () => {
     const input = {
       pendingInputs: [],

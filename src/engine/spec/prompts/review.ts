@@ -200,6 +200,7 @@ function touchedBody(entries: readonly ReviewTouchedNotSuggested[]): string {
 
 function requiredResultsBody(
   taskIds: readonly string[],
+  tasks: readonly { id: string; title: string }[],
   criterionIds: readonly string[],
   fixCycle: number | undefined,
   reviewKind: 'task' | 'final',
@@ -219,6 +220,13 @@ function requiredResultsBody(
     '',
     `Task ids: ${taskIds.join(', ') || 'none'}`,
     `Criterion ids: ${criterionIds.join(', ') || 'none'}`,
+    ...(tasks.length === 0
+      ? []
+      : [
+          '',
+          "Write each task's note about that task's own work:",
+          ...tasks.map((task) => `- ${task.id}: ${task.title}`),
+        ]),
   ].join('\n');
 }
 
@@ -390,7 +398,14 @@ export function buildFinalReviewPrompt(opts: FinalReviewPromptInput): string {
     { heading: 'Review Checklist', body: reviewChecklist },
     {
       heading: 'Required Results',
-      body: requiredResultsBody(taskIds, criterionIds, opts.fixCycle, reviewKind, opts.writesFiles),
+      body: requiredResultsBody(
+        taskIds,
+        opts.plan?.tasks.filter((task) => taskIds.includes(task.id)) ?? [],
+        criterionIds,
+        opts.fixCycle,
+        reviewKind,
+        opts.writesFiles,
+      ),
     },
   );
   return buildPrompt({

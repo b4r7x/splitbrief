@@ -260,6 +260,7 @@ function acceptStuckReview(args: {
     REVIEW_FILE,
     renderReviewMarkdown(
       judged.verdict,
+      args.state.tasks,
       outcome,
       judged.preExistingChecks ?? [],
       setAsideInputs(args.inputs, args.fixWork),
