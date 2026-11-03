@@ -37,12 +37,12 @@ function subscribe(listener: TickListener): () => void {
 /**
  * The one ticking clock for every surface that states a freshness or a session's age. One
  * shared interval feeds every subscriber the same `now`, so no two surfaces can sample a different
- * second; a surface that stops asking (a frozen clock) takes itself off the clock and the last
- * sample stays.
+ * second. A surface asks for the clock as a rule of its sample, so the frame that takes it off the
+ * clock reads the same sample as the rule did, and that sample stays.
  */
-export function useSharedClock(input: { active: boolean }): number {
-  const { active } = input;
+export function useSharedClock(input: { active: (now: number) => boolean }): number {
   const [now, setNow] = useState(() => Date.now());
+  const active = input.active(now);
   useEffect(() => {
     if (!active) return;
     return subscribe(setNow);

@@ -411,8 +411,6 @@ export function WorkflowScreen({
     viewWait === null || (atRestStatus?.kind === 'open' && seatWaitMoved(viewWait.wait, config))
       ? null
       : viewWait;
-  // A wait's text goes when its reset passes, so the byline needs the clock while one shows.
-  const showsWait = wait !== null && seatWaitParts(wait.tool, wait.wait.resetAt) !== null;
   // The run's log names when an Apply started, here or in another process. A log written before it
   // did leaves another process's Apply to the running line, which has no clock to get wrong.
   const applyClock = runViewStore.use((view) => view.apply);
@@ -423,7 +421,12 @@ export function WorkflowScreen({
     (model.atRestRecord !== undefined &&
       applyRunning(model.atRestRecord) &&
       applyClock?.until === null);
-  const now = useSharedClock({ active: applying || showsWait });
+  // A wait's text goes when its reset passes, so the byline needs the clock while one shows at the
+  // clock's own sample: the tick that passes the reset is the frame that drops the wait.
+  const now = useSharedClock({
+    active: (sample) =>
+      applying || (wait !== null && seatWaitParts(wait.tool, wait.wait.resetAt, sample) !== null),
+  });
   const queuedDeparture = departureStore.use((state) => state?.kind ?? null);
   // This process's Apply reads 0:00 until the bus delivers its start.
   const apply = applying

@@ -1310,6 +1310,102 @@ describe('WorkflowScreen showing a run at rest', () => {
     vi.useRealTimers();
   });
 
+  it('drops the wait of a run another process drives when a re-read lands between its reset and the next tick', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(FIXED_TS);
+    const wait: SeatWait = {
+      seat: 'build',
+      resetAt: new Date(FIXED_TS + 2_500).toISOString(),
+      tool: 'codex',
+      kind: 'cli',
+      holds: { tool: 'codex', kind: 'cli' },
+    };
+    mkdirSync(sessionDir(projectDir, 'at-rest-session'), { recursive: true });
+    await writeLockfile(sessionDir(projectDir, 'at-rest-session'), {
+      pid: process.pid,
+      startTimeMs: 0,
+      lastAliveMs: FIXED_TS,
+      sessionId: 'at-rest-session',
+      feature: 'held elsewhere',
+    });
+    const record = openRun({
+      status: { kind: 'running' },
+      hydration: {
+        kind: 'loaded',
+        state: makeWorkflowState({
+          phase: 'implementing',
+          tasks: [makeTask({ id: 'T003', status: 'in_progress' })],
+          seatWait: wait,
+        }),
+      },
+    });
+    loadEvents([
+      {
+        type: 'seat_wait_started',
+        ts: FIXED_TS - 1_000,
+        phase: 'implementing',
+        seat: wait.seat,
+        resetAt: wait.resetAt,
+        tool: 'OpenAI Codex CLI',
+        wait,
+      },
+    ]);
+
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
+    await flushEffects();
+    vi.advanceTimersByTime(2_000);
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Waiting for OpenAI Codex CLI');
+
+    // The holder's heartbeat re-reads the record past the reset, before the clock's next tick.
+    vi.setSystemTime(FIXED_TS + 2_600);
+    routerStore.updateRun({ run: { ...record } });
+    await flushEffects();
+    vi.advanceTimersByTime(1_200);
+    await flushEffects();
+    const passed = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(passed).toContain('Running in another process');
+    expect(passed).not.toContain('Waiting for');
+
+    ui.unmount();
+    vi.useRealTimers();
+  });
+
+  it('drops a kept seat wait from the byline when a resize lands between its reset and the next tick', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(FIXED_TS);
+    const wait = { seat: 'build' as const, resetAt: new Date(FIXED_TS + 2_500).toISOString() };
+    openRun({
+      hydration: {
+        kind: 'loaded',
+        state: makeWorkflowState({
+          phase: 'implementing',
+          tasks: [makeTask({ id: 'T003', status: 'in_progress' })],
+          seatWait: wait,
+        }),
+      },
+    });
+    loadKeptWait(wait);
+
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
+    await flushEffects();
+    vi.advanceTimersByTime(2_000);
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Waiting for');
+
+    vi.setSystemTime(FIXED_TS + 2_600);
+    terminalSizeStore.__testReset({ cols: 120, rows: 39 });
+    await flushEffects();
+    vi.advanceTimersByTime(60_000);
+    await flushEffects();
+    const passed = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(passed).toContain('Stopped at T003');
+    expect(passed).not.toContain('Waiting for');
+
+    ui.unmount();
+    vi.useRealTimers();
+  });
+
   it('sends a failed final review back with the correction typed into the at-rest composer', async () => {
     const { ui, record } = renderFailedReviewRun();
     await flushEffects();

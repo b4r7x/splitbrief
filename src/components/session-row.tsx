@@ -56,7 +56,7 @@ export function SessionRow({ session, cursor = NO_ROW_CURSOR }: SessionRowProps)
   const display = getSessionStatusDisplay(session, t);
   const icon = display.icon;
   const iconColor = display.color;
-  const now = useSharedClock({ active: true });
+  const now = useSharedClock({ active: () => true });
   const time = formatRelativeTime(session.completedAt ?? session.startedAt, now);
   const feature = oneLineDisplayText(session.feature);
   const selected = isSelected(cursor);

@@ -11,7 +11,7 @@ import { useSharedClock } from './use-shared-clock.js';
 /** The running tool checks, with the shared clock ticking while any probe runs. */
 export function useProbeActivity(): Readonly<{ snapshot: ProbeActivitySnapshot; now: number }> {
   const snapshot = useSyncExternalStore(subscribeProbeActivity, probeActivitySnapshot);
-  const now = useSharedClock({ active: snapshot.probes.length > 0 });
+  const now = useSharedClock({ active: () => snapshot.probes.length > 0 });
   return { snapshot, now };
 }
 
