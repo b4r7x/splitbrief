@@ -3,7 +3,6 @@ import { existsSync, readFileSync, realpathSync, statSync, writeFileSync } from 
 import { invokeTestClaude } from '#testing/helpers/claude-planner-steer-test-invoke.js';
 import { createClaudeCodePlanner } from '../../planners/claude-code.js';
 import { join } from 'node:path';
-import { DEFAULT_PROCESS_LINE_MAX_BYTES } from '../../../lib/process/spawn/lifecycle.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import type { RunnerCallEvent } from '../../calls/types.js';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
@@ -586,11 +585,11 @@ process.stdout.write(JSON.stringify({ type: 'result', result: 'unexpected' }) + 
     });
   });
 
-  it('skips an oversized stdout line with a warning and completes on a valid terminal', async () => {
+  it('parses a stdout line longer than 1 MB and completes on a valid terminal', async () => {
     installClaudeNodeShim(
       shimDir,
       `
-process.stdout.write("x".repeat(${DEFAULT_PROCESS_LINE_MAX_BYTES + 100}) + "\\n");
+process.stdout.write("x".repeat(${1024 * 1024 + 100}) + "\\n");
 process.stdout.write(JSON.stringify({ type: "result", result: "ok" }) + "\\n");
 `,
     );
@@ -612,10 +611,7 @@ process.stdout.write(JSON.stringify({ type: "result", result: "ok" }) + "\\n");
     expect(events).toContainEqual(
       expect.objectContaining({
         type: 'call_warning',
-        warning: expect.objectContaining({
-          code: 'stdout_line_overflow',
-          message: expect.stringContaining('A line of the tool output longer than'),
-        }),
+        warning: expect.objectContaining({ code: 'malformed_stream_json' }),
       }),
     );
     expect(events.filter((event) => event.type === 'call_warning')).toHaveLength(1);

@@ -378,6 +378,19 @@ describe('spawnPipe lifecycle termination', () => {
     });
     expect(processIsAbsent(pid)).toBe(true);
   });
+
+  itUnix('names no fixed size when an output budget signal carries no remediation', async () => {
+    const pending = pipe({
+      script: ["process.stdout.write('over')", silent].join(';'),
+      onStdout: () => ({ state: 'output-budget-breach', remediation: '' }),
+    });
+
+    await expect(pending).rejects.toMatchObject({
+      state: 'output-budget-breach',
+      remediation:
+        'The tool wrote more output than its limit allows and was stopped. Narrow what it was asked to print, then retry.',
+    });
+  });
 });
 
 describe('spawnPipe stdin failure', () => {

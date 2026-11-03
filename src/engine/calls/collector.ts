@@ -5,11 +5,9 @@ import { isRunnerCallTerminalEvent } from './status.js';
 import { applyRunnerCallUsageSample } from './usage.js';
 import { normalizeRunnerCallWarning } from './warnings.js';
 import {
-  boundRunnerCallArtifact,
   boundRunnerCallToolUse,
   createRunnerCallDeltaLimiter,
   runnerCallItemLimit,
-  runnerCallLimitError,
   runnerCallLimitWarning,
   sanitizeRunnerCallRawPreview,
   RUNNER_CALL_ARTIFACT_MAX_ITEMS,
@@ -44,11 +42,8 @@ interface RunnerCallCollectionState {
   error: RunnerCallError | null;
   partial: boolean | null;
   terminalStatus: RunnerCallStatus | null;
-  resultLimit: RunnerCallOutputLimit | null;
   emittedLimitWarningCodes: Set<string>;
-  textLimiter: ReturnType<typeof createRunnerCallDeltaLimiter>;
   stderrLimiter: ReturnType<typeof createRunnerCallDeltaLimiter>;
-  toolDeltaLimiter: ReturnType<typeof createRunnerCallDeltaLimiter>;
   stderrPreview: string;
   stderrWarningEmitted: boolean;
   artifactCount: number;
@@ -71,17 +66,11 @@ export function collectRunnerCallResult(events: Iterable<RunnerCallEvent>): Runn
     error: null,
     partial: null,
     terminalStatus: null,
-    resultLimit: null,
     emittedLimitWarningCodes: new Set<string>(),
-    textLimiter: createTextLimiter(),
     stderrLimiter: createRunnerCallDeltaLimiter({
       code: 'runner_call_stderr_limit',
       label: 'The tool error output',
       maxBytes: RUNNER_CALL_STDERR_MAX_BYTES,
-    }),
-    toolDeltaLimiter: createRunnerCallDeltaLimiter({
-      code: 'runner_call_tool_delta_limit',
-      label: 'The streamed tool input',
     }),
     stderrPreview: '',
     stderrWarningEmitted: false,
@@ -116,7 +105,7 @@ export function collectRunnerCallResult(events: Iterable<RunnerCallEvent>): Runn
     );
   }
 
-  const status = state.resultLimit !== null ? 'truncated' : (state.terminalStatus ?? 'incomplete');
+  const status = state.terminalStatus ?? 'incomplete';
   const startedAt = state.startedAt ?? 0;
   const endedAt = state.endedAt ?? Date.now();
   const durationMs = state.durationMs ?? Math.max(0, endedAt - startedAt);
@@ -124,8 +113,6 @@ export function collectRunnerCallResult(events: Iterable<RunnerCallEvent>): Runn
     state.terminalStatus === null
       ? { code: 'missing_terminal_event', message: 'Runner call ended without a terminal event' }
       : null;
-  const resultLimitError =
-    state.resultLimit === null ? null : runnerCallLimitError(state.resultLimit);
 
   const common = {
     callId: state.context.callId,
@@ -171,12 +158,11 @@ export function collectRunnerCallResult(events: Iterable<RunnerCallEvent>): Runn
     ...common,
     status,
     error: state.error ??
-      resultLimitError ??
       missingTerminal ?? {
         code: 'missing_failure_error',
         message: `Runner call ended with ${status} status without an error`,
       },
-    partial: state.resultLimit !== null ? true : (state.partial ?? true),
+    partial: state.partial ?? true,
   };
 }
 
@@ -243,38 +229,19 @@ function applyRunnerCallEvent(state: RunnerCallCollectionState, event: RunnerCal
       return;
     case 'call_text_delta':
       if (event.subagentId === undefined && contributesToResultText(event.channel)) {
-        const limiter = event.semantics === 'final' ? createTextLimiter() : state.textLimiter;
-        // An explicit `delta` is a partial slice of one record: the byte budget
-        // bounds it, the event budget counts records.
-        const accepted = limiter.accept(event.text);
-        if (event.semantics === 'final') {
-          // An empty assistant final closes a message but has no text to replace its streamed partial.
-          if (event.channel === 'assistant' && accepted.text.length === 0) {
-            state.textLimiter = limiter;
-            return;
-          }
-          state.text = accepted.text;
-          state.textLimiter = limiter;
-          if (accepted.limit === null && state.resultLimit?.code === 'runner_call_text_limit') {
-            state.resultLimit = null;
-          }
-        } else {
-          state.text += accepted.text;
-        }
-        if (accepted.limit !== null) noteLimit(state, accepted.limit, true);
+        // An empty assistant final closes a message but has no text to replace its streamed partial.
+        if (event.semantics !== 'final') state.text += event.text;
+        else if (event.channel !== 'assistant' || event.text.length > 0) state.text = event.text;
       }
       return;
     case 'call_stderr_delta':
       applyStderrEvent(state, event.text);
       return;
-    case 'call_tool_use_delta':
-      applyToolDeltaEvent(state, event.inputDelta);
-      return;
     case 'call_tool_use_done':
       {
         const bounded = boundRunnerCallToolUse(event.toolUse);
         state.toolUses.push(bounded.value);
-        if (bounded.limit !== null) noteLimit(state, bounded.limit, false);
+        if (bounded.limit !== null) noteLimit(state, bounded.limit);
       }
       return;
     case 'call_usage':
@@ -295,16 +262,11 @@ function applyRunnerCallEvent(state: RunnerCallCollectionState, event: RunnerCal
             label: 'artifacts',
             maxItems: RUNNER_CALL_ARTIFACT_MAX_ITEMS,
           }),
-          true,
         );
         return;
       }
       state.artifactCount += 1;
-      {
-        const bounded = boundRunnerCallArtifact(event.artifact);
-        state.artifacts.push(bounded.value);
-        if (bounded.limit !== null) noteLimit(state, bounded.limit, true);
-      }
+      state.artifacts.push(event.artifact);
       return;
     case 'call_warning':
       appendWarning(state, event.warning);
@@ -350,7 +312,6 @@ function applyRunnerCallEvent(state: RunnerCallCollectionState, event: RunnerCal
             label: 'unknown tool records',
             maxItems: RUNNER_CALL_UNKNOWN_UPSTREAM_MAX_ITEMS,
           }),
-          false,
         );
         return;
       }
@@ -366,6 +327,7 @@ function applyRunnerCallEvent(state: RunnerCallCollectionState, event: RunnerCal
         message: sanitizeRunnerCallRawPreview(event.rawPreview),
       });
       return;
+    case 'call_tool_use_delta':
     case 'call_runtime_status':
     case 'call_stalled':
     case 'call_stall_cleared':
@@ -392,7 +354,6 @@ function appendWarning(
         label: 'warnings',
         maxItems: RUNNER_CALL_WARNING_MAX_ITEMS,
       }),
-      false,
     );
     return;
   }
@@ -402,27 +363,10 @@ function appendWarning(
   state.warnings.push(normalized);
 }
 
-function noteLimit(
-  state: RunnerCallCollectionState,
-  limit: RunnerCallOutputLimit,
-  resultIncomplete: boolean,
-): void {
-  if (resultIncomplete && state.resultLimit === null) state.resultLimit = limit;
+function noteLimit(state: RunnerCallCollectionState, limit: RunnerCallOutputLimit): void {
   if (state.emittedLimitWarningCodes.has(limit.code)) return;
   state.emittedLimitWarningCodes.add(limit.code);
   appendWarning(state, runnerCallLimitWarning(limit));
-}
-
-function createTextLimiter(): ReturnType<typeof createRunnerCallDeltaLimiter> {
-  return createRunnerCallDeltaLimiter({
-    code: 'runner_call_text_limit',
-    label: 'The reply',
-  });
-}
-
-function applyToolDeltaEvent(state: RunnerCallCollectionState, inputDelta: string): void {
-  const accepted = state.toolDeltaLimiter.accept(inputDelta);
-  if (accepted.limit !== null) noteLimit(state, accepted.limit, true);
 }
 
 function applyStderrEvent(state: RunnerCallCollectionState, text: string): void {
@@ -438,7 +382,7 @@ function applyStderrEvent(state: RunnerCallCollectionState, text: string): void 
       emitStderrDiagnosticWarning(state, 'stderr_diagnostic', accepted.text);
     }
   }
-  if (accepted.limit !== null) noteLimit(state, accepted.limit, false);
+  if (accepted.limit !== null) noteLimit(state, accepted.limit);
 }
 
 function stderrLooksWarningLike(text: string): boolean {

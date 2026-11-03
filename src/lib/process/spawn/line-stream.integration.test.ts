@@ -27,24 +27,19 @@ describe('spawnWithStdin', () => {
     expect(lines.some((l) => l.includes('hello world'))).toBe(true);
   });
 
-  it('skips an oversized unterminated stdout tail on a clean exit', {
-    timeout: 60_000,
-  }, async () => {
-    const lines: string[] = [];
-    const overflows: Array<{ lineBytes: number; maxLineBytes: number }> = [];
+  it('passes a stdout line above 1 MiB to onLine whole', { timeout: 60_000 }, async () => {
+    const lineBytes = 1024 * 1024 + 100;
+    const lineLengths: number[] = [];
     const result = await spawnWithStdin({
       command: 'node',
-      args: ['-e', 'process.stdout.write("x".repeat(100))'],
+      args: ['-e', `process.stdout.write("x".repeat(${lineBytes}) + "\\nafter\\n")`],
       cwd: '.',
       notFoundMessage: 'node not found',
-      onLine: (line) => lines.push(line),
-      onStdoutLineOverflow: (overflow) => overflows.push(overflow),
-      stdoutLineMaxBytes: 16,
+      onLine: (line) => lineLengths.push(line.length),
     });
 
     expect(result.code).toBe(0);
-    expect(lines).toEqual([]);
-    expect(overflows).toEqual([expect.objectContaining({ lineBytes: 100, maxLineBytes: 16 })]);
+    expect(lineLengths).toEqual([lineBytes, 'after'.length]);
   });
 
   it('writes stdin to process', { timeout: 60_000 }, async () => {
@@ -97,11 +92,10 @@ describe('spawnWithStdin', () => {
       onStderr: (chunk) => stderrChunks.push(chunk),
       outputMaxBytes: 20,
       stderrMaxBytes: 10,
-      stdoutLineMaxBytes: 16,
     });
 
     expect(result.code).toBe(0);
-    expect(lines).toEqual(['line1']);
+    expect(lines).toEqual(['line1', 'x'.repeat(80)]);
     expect(result.textMetadata).toMatchObject({
       bytesSeen: 86,
       bytesStored: 20,
@@ -125,12 +119,11 @@ describe('spawnWithStdin', () => {
       cwd: '.',
       notFoundMessage: 'node not found',
       outputMaxBytes: 1024,
-      stdoutLineMaxBytes: 512,
       onLine: (line) => lines.push(line),
     });
 
     expect(result.code).toBe(0);
-    expect(lines).toEqual([]);
+    expect(lines).toEqual(['x'.repeat(8192)]);
     expect(result.textMetadata).toMatchObject({
       bytesSeen: 8192,
       bytesStored: 1024,

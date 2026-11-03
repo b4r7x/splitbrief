@@ -2,9 +2,10 @@ import type { ChildProcess } from 'node:child_process';
 import type { SteeringPort } from '../../calls/steering.js';
 import { createRunnerCallRecorder, type RunnerCallRecorder } from '../../calls/recorder.js';
 import {
+  RUNNER_CALL_RETAINED_OUTPUT_MAX_BYTES,
   RUNNER_CALL_STDERR_MAX_BYTES,
-  runnerCallLimitWarning,
-  runnerCallLineOutputLimit,
+  createHeadTailEventLog,
+  type HeadTailEventLog,
 } from '../../calls/output-limit.js';
 import {
   RUNNER_CALL_STOPPED_ERROR,
@@ -23,12 +24,8 @@ import type {
   RunnerCallFailureStatus,
   RunnerCallResult,
 } from '../../calls/types.js';
-import {
-  DEFAULT_PROCESS_LINE_MAX_BYTES,
-  spawnPipe,
-  spawnPipeError,
-} from '../../../lib/process/spawn/lifecycle.js';
-import { createLineBuffer, type LineBufferOverflow } from '../../../lib/process/line-buffer.js';
+import { spawnPipe, spawnPipeError } from '../../../lib/process/spawn/lifecycle.js';
+import { createLineBuffer } from '../../../lib/process/line-buffer.js';
 import { isENOENT, processError, timedOutMessage } from '../../../lib/process/errors.js';
 import { assertNever, isRecord } from '../../../utils/type-guards.js';
 import { error, matches } from '../../../utils/error.js';
@@ -49,13 +46,39 @@ import type {
 } from './contract.js';
 
 /**
- * Raw protocol traffic is not the text the recorder retains: a verbose
- * stream-json session carries envelope frames, partial-message deltas, and tool
- * result echoes that are a large multiple of the assistant text one call
- * produces. These ceilings only stop a runaway process; recorded output keeps
- * its own `RUNNER_CALL_OUTPUT_*` limits, which truncate instead of killing.
+ * The parsed events of one call, kept for the adapter's terminal reducers. Past
+ * `maxBytes` the text, tool-use and heartbeat events drop from the middle: the
+ * head and the tail stay, so the final group still parses. Every usage,
+ * session, warning and result event stays, because the reducers read the last
+ * of each and sum the usage of all.
  */
-export const CLI_RAW_OUTPUT_MAX_BYTES = 64 * 1024 * 1024;
+export function createProtocolEventLog(maxBytes: number): HeadTailEventLog<CliProtocolEvent> {
+  return createHeadTailEventLog(maxBytes, droppableBytes);
+}
+
+function droppableBytes(event: CliProtocolEvent): number | null {
+  switch (event.type) {
+    case 'text':
+    case 'input-ack':
+      return event.text.length;
+    case 'tool-use-delta':
+      return event.inputDelta.length;
+    case 'tool-use':
+      return (
+        JSON.stringify(event.input).length +
+        (event.output === undefined ? 0 : JSON.stringify(event.output).length)
+      );
+    case 'heartbeat':
+      return 0;
+    case 'usage':
+    case 'session':
+    case 'warning':
+    case 'result':
+      return null;
+    default:
+      return assertNever(event);
+  }
+}
 
 type CliAdapter = CliProcessAdapter;
 
@@ -279,7 +302,7 @@ export async function invokeProcessCli(
       release?.();
     }
   };
-  const protocolEvents: CliProtocolEvent[] = [];
+  const protocolEvents = createProtocolEventLog(RUNNER_CALL_RETAINED_OUTPUT_MAX_BYTES);
   let stdoutLastLine = '';
   let stdoutTailCarry = '';
   let stderr = '';
@@ -384,7 +407,7 @@ export async function invokeProcessCli(
       // `terminal` reducer picks the authoritative one. Any non-result traffic
       // after a terminal result is still a protocol failure.
       if (terminalSeen && event.type !== 'result') {
-        throw fatal('protocol-failure', 'CLI emitted output after its terminal result');
+        throw fatal('CLI emitted output after its terminal result');
       }
       protocolEvents.push(event);
       if (
@@ -401,42 +424,24 @@ export async function invokeProcessCli(
     };
 
     const parse = steeringSession?.parse ?? adapter.createParser?.() ?? adapter.parse;
-    const lineBufferOptions = {
-      maxLineBytes: DEFAULT_PROCESS_LINE_MAX_BYTES,
-      onOverflow: (overflow: LineBufferOverflow) => {
-        recorder.warning({
-          warning: runnerCallLimitWarning(
-            runnerCallLineOutputLimit({
-              code: 'stdout_line_overflow',
-              label: 'the tool output',
-              lineBytes: overflow.lineBytes,
-              maxLineBytes: overflow.maxLineBytes,
-            }),
-          ),
-        });
-        return undefined;
-      },
-    };
-    const allowInputEcho = (input: string) => {
-      lineBufferOptions.maxLineBytes = Math.max(
-        lineBufferOptions.maxLineBytes,
-        Buffer.byteLength(input, 'utf8') + DEFAULT_PROCESS_LINE_MAX_BYTES,
-      );
-    };
-    const onStdinReady = steeringSession?.onStdinReady;
-    if (onStdinReady !== undefined) allowInputEcho(prepared.stdin);
+    // A steered tool keeps running after its result: a background task can open a new turn on
+    // its own. The call settles on that result, and SPLITBRIEF stops the tool unread.
+    const settle = new AbortController();
+    const settled = new DOMException('CLI call settled on its result', 'AbortError');
     const lineBuffer = createLineBuffer((line) => {
+      if (settle.signal.aborted) return;
       let parsed: readonly CliProtocolEvent[];
       try {
         parsed = parse(line);
       } catch {
-        throw fatal('protocol-failure', 'CLI output did not match its structured protocol');
+        throw fatal('CLI output did not match its structured protocol');
       }
       // A line the parser drops, such as the tool's echo of the prompt, is not the tool's words.
       stdoutLastLine = parsed.length === 0 ? '' : line;
-      const turnBoundary = terminalSeen ? false : (steeringSession?.onLine(line, parsed) ?? false);
+      const turnBoundary = steeringSession?.onLine(line, parsed) ?? false;
       for (const event of parsed) applyProtocolEvent(event, turnBoundary);
-    }, lineBufferOptions);
+      if (steeringSession !== undefined && terminalSeen) settle.abort(settled);
+    });
 
     const executableState = await revalidateCliExecutableIdentity(invocation.executable);
     if (executableState !== 'match') {
@@ -466,19 +471,8 @@ export async function invokeProcessCli(
       env: { ...invocation.environment },
       detached: process.platform !== 'win32',
       stdin: prepared.stdin,
-      onStdinReady:
-        onStdinReady === undefined
-          ? undefined
-          : (writer) =>
-              onStdinReady({
-                write: (input) => {
-                  allowInputEcho(input);
-                  return writer.write(input);
-                },
-                end: () => writer.end(),
-              }),
-      signal,
-      outputBudgetBytes: CLI_RAW_OUTPUT_MAX_BYTES,
+      onStdinReady: steeringSession?.onStdinReady,
+      signal: AbortSignal.any([signal, settle.signal]),
       // The recorder owns every retained byte of this call and nothing here
       // reads the spawn-level stdout snapshot, so a rolling megabyte tail of a
       // multi-megabyte protocol stream would be pure cost.
@@ -515,7 +509,7 @@ export async function invokeProcessCli(
           lineBuffer.push(chunk);
         } catch (cause) {
           closeAdmission();
-          return fatalSignal(cause, 'protocol-failure');
+          return fatalSignal(cause);
         }
         return undefined;
       },
@@ -536,6 +530,10 @@ export async function invokeProcessCli(
         stdoutTailCarry = '';
         return { exitCode, signal: processSignal, stderr };
       },
+    }).catch((cause: unknown) => {
+      if (cause !== settled) throw cause;
+      // The stop after the result is SPLITBRIEF's, so it is not a failed exit of the tool.
+      return { exitCode: 0, signal: null, stderr };
     });
     // The process can finish on its own before the guard's abort reaches it.
     if (guardFailure !== null) {
@@ -586,7 +584,7 @@ export async function invokeProcessCli(
     try {
       terminal = adapter.terminal({
         outputContract: adapter.outputContract,
-        events: protocolEvents,
+        events: protocolEvents.events(),
         stderr: closed.stderr,
         exitCode: closed.exitCode,
         signal: closed.signal,
@@ -605,7 +603,7 @@ export async function invokeProcessCli(
     if (isFailureExit(adapter.outputContract, closed.exitCode) && terminal.status === 'completed') {
       const halt = haltFailure(stderr, [stdoutLastLine, stdoutTailCarry]);
       if (halt !== null) return () => fail({ recorder, status: 'failed', error: halt });
-      const last = protocolEvents.at(-1);
+      const last = protocolEvents.events().at(-1);
       if (
         adapter.outputContract.kind === 'text-exit' &&
         terminal.text.length > 0 &&
@@ -787,7 +785,7 @@ export async function invokeProcessCli(
         recorder,
         context: context.callContext,
         credentialValues,
-        status: fatalState === 'output-budget-breach' ? 'truncated' : 'failed',
+        status: 'failed',
         error: { code: fatalState, message: errorMessage(cause) },
       });
     }
@@ -979,32 +977,23 @@ function isFailureExit(contract: CliOutputContract, exitCode: number | null): bo
   }
 }
 
-function fatal(state: 'output-budget-breach' | 'protocol-failure', message: string): Error {
-  const cause = error(state, message);
-  Object.assign(cause, { state, remediation: message });
+function fatal(message: string): Error {
+  const cause = error('protocol-failure', message);
+  Object.assign(cause, { state: 'protocol-failure', remediation: message });
   return cause;
 }
 
-function fatalSignal(
-  cause: unknown,
-  fallback: 'output-budget-breach' | 'protocol-failure',
-): {
-  state: 'output-budget-breach' | 'protocol-failure' | 'callback-failure';
+function fatalSignal(cause: unknown): {
+  state: 'protocol-failure' | 'callback-failure';
   remediation: string;
 } {
-  return { state: fatalStateOf(cause) ?? fallback, remediation: errorMessage(cause) };
+  return { state: fatalStateOf(cause) ?? 'protocol-failure', remediation: errorMessage(cause) };
 }
 
-function fatalStateOf(
-  cause: unknown,
-): 'output-budget-breach' | 'protocol-failure' | 'callback-failure' | null {
+function fatalStateOf(cause: unknown): 'protocol-failure' | 'callback-failure' | null {
   if (!isRecord(cause)) return null;
   const state = cause.state;
-  if (
-    state === 'output-budget-breach' ||
-    state === 'protocol-failure' ||
-    state === 'callback-failure'
-  ) {
+  if (state === 'protocol-failure' || state === 'callback-failure') {
     return state;
   }
   return null;

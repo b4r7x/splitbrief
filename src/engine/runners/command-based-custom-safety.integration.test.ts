@@ -1,6 +1,5 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
 import { describe, expect, it } from 'vitest';
 import { projectRunnerCallEvents } from '../calls/event-projection.js';
 import { runnerCallLogEntry } from '#testing/helpers/runner-call-events.js';
@@ -237,96 +236,36 @@ describe('custom command runner safety', () => {
     expectNoDeclaredValues(observation, [canary]);
   });
 
-  // Per-channel retention bounds truncate what is kept; only the process-wide output
-  // budget ends the call. An over-long line is reported and the call carries on.
-  it('treats the process output budget as fatal and an over-long line as a warning', {
-    timeout: 120_000,
-  }, async () => {
+  it('keeps a stdout line above 1 MiB whole and redacts the line before it', async () => {
     const canary = 'output-budget-value-canary-3ef9';
-    const MB = 1024 * 1024;
-    const scenarios = [
-      {
-        name: 'stdout',
-        script: `process.stdout.write("secret-" + process.env.CUSTOM_PUBLIC_VALUE + "\\n");process.stdout.write("x".repeat(64 * ${MB} + 1));`,
-        status: 'truncated',
-        code: 'runner_process_output_limit',
-      },
-      {
-        name: 'stderr',
-        script: `process.stderr.write("secret-" + process.env.CUSTOM_PUBLIC_VALUE + "\\n");process.stderr.write("x".repeat(64 * ${MB} + 1));`,
-        status: 'truncated',
-        code: 'runner_process_output_limit',
-      },
-      {
-        name: 'combined',
-        script: `process.stdout.write("x".repeat(40 * ${MB}));process.stderr.write("y".repeat(25 * ${MB}));`,
-        status: 'truncated',
-        code: 'runner_process_output_limit',
-      },
-      {
-        name: 'line',
-        script: `process.stdout.write("secret-" + process.env.CUSTOM_PUBLIC_VALUE + "\\n");process.stdout.write("x".repeat(${MB} + 1) + "\\n");`,
-        status: 'completed',
-        code: 'stdout_line_overflow',
-      },
-    ] as const;
-
-    for (const scenario of scenarios) {
-      const observation = await observeCustomInvocation({
-        admission: await admittedCustomRunner(
-          process.cwd(),
-          customRunner({ argv: ['-e', scenario.script], env: ['CUSTOM_PUBLIC_VALUE'] }),
-        ),
-        prompt: '',
-        authorizationProjectDir: process.cwd(),
-        cwd: process.cwd(),
-        sourceEnv: { CUSTOM_PUBLIC_VALUE: canary },
-      });
-
-      expect(observation.failure, scenario.name).toBeUndefined();
-      expect(observation.result, scenario.name).toMatchObject({ status: scenario.status });
-      const warnings = observation.events.flatMap((event) =>
-        event.type === 'call_warning' ? [event.warning.code] : [],
-      );
-      expect(warnings, scenario.name).toContain(scenario.code);
-      expectNoDeclaredValues(observation, [canary]);
-    }
-  });
-
-  it('reaps a budget-breaching custom child before its delayed side effect can run', {
-    timeout: 30_000,
-  }, async () => {
-    await withTempDir('custom runner output limit cleanup', async (projectDir) => {
-      const delayedEffect = join(projectDir, 'late-child-effect');
-      const observation = await observeCustomInvocation({
-        admission: await admittedCustomRunner(
-          projectDir,
-          customRunner({
-            argv: [
-              '-e',
-              [
-                'const fs = require("node:fs");',
-                `process.stdout.write('x'.repeat(64 * 1024 * 1024 + 1), () => setTimeout(() => fs.writeFileSync(${JSON.stringify(delayedEffect)}, "late"), 2_500));`,
-                'setInterval(() => undefined, 1_000);',
-              ].join(''),
-            ],
-          }),
-        ),
-        prompt: '',
-        authorizationProjectDir: projectDir,
-        cwd: projectDir,
-        sourceEnv: {},
-      });
-
-      expect(observation.failure).toBeUndefined();
-      expect(observation.result).toMatchObject({
-        status: 'truncated',
-        error: { code: 'runner_process_output_limit' },
-      });
-      // Past the delay after output drains: a surviving child would have run its side effect.
-      await delay(4_000);
-      expect(existsSync(delayedEffect)).toBe(false);
+    const observation = await observeCustomInvocation({
+      admission: await admittedCustomRunner(
+        process.cwd(),
+        customRunner({
+          argv: [
+            '-e',
+            `process.stdout.write("secret-" + process.env.CUSTOM_PUBLIC_VALUE + "\\n");process.stdout.write("x".repeat(${1024 * 1024} + 1) + "\\n");`,
+          ],
+          env: ['CUSTOM_PUBLIC_VALUE'],
+        }),
+      ),
+      prompt: '',
+      authorizationProjectDir: process.cwd(),
+      cwd: process.cwd(),
+      sourceEnv: { CUSTOM_PUBLIC_VALUE: canary },
     });
+
+    expect(observation.failure).toBeUndefined();
+    expect(observation.result).toMatchObject({ status: 'completed' });
+    expect(JSON.stringify(observation.result).includes(`${'x'.repeat(1024 * 1024 + 1)}\\n`)).toBe(
+      true,
+    );
+    expect(
+      observation.events.filter(
+        (event) => event.type === 'call_warning' && event.warning.surface !== 'debug',
+      ),
+    ).toEqual([]);
+    expectNoDeclaredValues(observation, [canary]);
   });
 
   it('fails missing, blocked and oversized environment preflight before spawn', async () => {

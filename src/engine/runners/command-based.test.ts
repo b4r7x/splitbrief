@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  DEFAULT_PROCESS_LINE_MAX_BYTES,
-  DEFAULT_PROCESS_STDERR_MAX_BYTES,
-} from '../../lib/process/spawn/lifecycle.js';
+import { DEFAULT_PROCESS_STDERR_MAX_BYTES } from '../../lib/process/spawn/lifecycle.js';
 import { invokeCommandRunner } from './command-based.js';
 
 function run(
@@ -107,43 +104,51 @@ describe('invokeCommandRunner', () => {
     );
   });
 
-  it('recovers from a stdout line overflow with a warning instead of failing the call', async () => {
+  it('returns a single stdout answer line above 1 MiB whole, with no warning on screen', async () => {
+    const lineBytes = 1024 * 1024 + 100;
     const result = await run(
       'node',
       [
         '-e',
-        [
-          'require("node:fs").readFileSync(0);',
-          `process.stdout.write("x".repeat(${DEFAULT_PROCESS_LINE_MAX_BYTES + 100}) + "\\n");`,
-          'process.stdout.write("after-overflow\\n");',
-        ].join(''),
+        `require("node:fs").readFileSync(0);process.stdout.write("x".repeat(${lineBytes}) + "\\n");`,
       ],
       '',
     );
 
-    expect(result).toMatchObject({ status: 'completed' });
-    expect(result.text).toContain('after-overflow');
-    expect(result.warnings).toContainEqual(
-      expect.objectContaining({
-        code: 'stdout_line_overflow',
-        message: expect.stringContaining('A line of the tool output longer than'),
-      }),
-    );
+    expect(result).toMatchObject({ status: 'completed', error: null });
+    expect(result.text.length).toBe(lineBytes + 1);
+    expect(result.text.replaceAll('x', '')).toBe('\n');
+    expect(result.warnings).toEqual([
+      expect.objectContaining({ code: 'runner_call_text_limit', surface: 'debug' }),
+    ]);
   });
 
-  it('spawns a child bound to the shared 64 MiB output ceiling and reaps it on breach', async () => {
+  it('returns the whole stdout of a shell seat when it is larger than 1 MB', async () => {
+    const lineCount = 2_048;
     const result = await run(
       'node',
       [
         '-e',
-        'require("node:fs").readFileSync(0);for (let i = 0; i < 1100; i++) process.stdout.write("y".repeat(65_536));setInterval(() => {}, 1_000);',
+        `require("node:fs").readFileSync(0);for (let i = 0; i < ${lineCount}; i++) process.stdout.write("a".repeat(1_023) + "\\n");`,
       ],
       '',
     );
 
-    expect(result).toMatchObject({
-      status: 'truncated',
-      error: { code: 'runner_process_output_limit' },
-    });
+    expect(result).toMatchObject({ status: 'completed', error: null });
+    expect(result.text.replaceAll('\n', '').length).toBe(lineCount * 1_023);
   });
+
+  it('keeps a shell seat running past the 64 MiB output bound and keeps its final answer', async () => {
+    const result = await run(
+      'node',
+      [
+        '-e',
+        'require("node:fs").readFileSync(0);for (let i = 0; i < 1100; i++) process.stdout.write("y".repeat(65_535) + "\\n");process.stdout.write("final answer\\n");',
+      ],
+      '',
+    );
+
+    expect(result).toMatchObject({ status: 'completed', error: null });
+    expect(result.text.trimEnd().endsWith('final answer')).toBe(true);
+  }, 60_000);
 });

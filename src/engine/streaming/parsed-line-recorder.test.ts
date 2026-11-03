@@ -27,11 +27,11 @@ function createHarness() {
 
 describe('createParsedLineRecorder', () => {
   it('records assistant text on the assistant channel', () => {
-    const { events, parsed, text } = createHarness();
+    const { events, parsed, recorder, text } = createHarness();
 
     parsed.apply({ text: 'assistant answer', channel: 'assistant' });
 
-    expect(parsed.text).toBe('assistant answer');
+    expect(recorder.snapshot().text).toBe('assistant answer');
     expect(text).toEqual(['assistant answer']);
     expect(events).toContainEqual(
       expect.objectContaining({
@@ -43,7 +43,7 @@ describe('createParsedLineRecorder', () => {
   });
 
   it('records result text with final usage semantics', () => {
-    const { events, parsed } = createHarness();
+    const { events, parsed, recorder } = createHarness();
 
     parsed.apply({
       text: 'final answer',
@@ -51,7 +51,7 @@ describe('createParsedLineRecorder', () => {
       usage: { inputTokens: 5, outputTokens: 2 },
     });
 
-    expect(parsed.text).toBe('final answer');
+    expect(recorder.snapshot().text).toBe('final answer');
     expect(events).toContainEqual(
       expect.objectContaining({
         type: 'call_text_delta',
@@ -91,12 +91,12 @@ describe('createParsedLineRecorder', () => {
   });
 
   it('replaces assistant draft text with final result text', () => {
-    const { events, parsed, text } = createHarness();
+    const { events, parsed, recorder, text } = createHarness();
 
     parsed.apply({ text: 'draft text', channel: 'assistant' });
     parsed.apply({ text: 'final text', channel: 'result' });
 
-    expect(parsed.text).toBe('final text');
+    expect(recorder.snapshot().text).toBe('final text');
     expect(text).toEqual(['draft text']);
     expect(events).toContainEqual(
       expect.objectContaining({
@@ -109,12 +109,12 @@ describe('createParsedLineRecorder', () => {
   });
 
   it('records final result text after a full-size assistant draft', () => {
-    const { events, parsed } = createHarness();
+    const { events, parsed, recorder } = createHarness();
 
     parsed.apply({ text: 'x'.repeat(RUNNER_CALL_OUTPUT_MAX_BYTES), channel: 'assistant' });
     parsed.apply({ text: 'final ok', channel: 'result' });
 
-    expect(parsed.text).toBe('final ok');
+    expect(recorder.snapshot().text).toBe('final ok');
     expect(events).toContainEqual(
       expect.objectContaining({
         type: 'call_text_delta',
@@ -126,12 +126,12 @@ describe('createParsedLineRecorder', () => {
   });
 
   it('streams only the final suffix when result text extends assistant text', () => {
-    const { events, parsed, text } = createHarness();
+    const { events, parsed, recorder, text } = createHarness();
 
     parsed.apply({ text: 'draft', channel: 'assistant' });
     parsed.apply({ text: 'draft final', channel: 'result' });
 
-    expect(parsed.text).toBe('draft final');
+    expect(recorder.snapshot().text).toBe('draft final');
     expect(text).toEqual(['draft', ' final']);
     expect(events).not.toContainEqual(
       expect.objectContaining({
@@ -143,11 +143,11 @@ describe('createParsedLineRecorder', () => {
   });
 
   it('keeps system progress out of result text and output callbacks', () => {
-    const { events, parsed, text } = createHarness();
+    const { events, parsed, recorder, text } = createHarness();
 
     parsed.apply({ text: 'installing dependencies', channel: 'system' });
 
-    expect(parsed.text).toBe('');
+    expect(recorder.snapshot().text).toBe('');
     expect(text).toEqual([]);
     expect(events).toContainEqual(
       expect.objectContaining({
@@ -242,8 +242,8 @@ describe('createParsedLineRecorder', () => {
     expect(warnings).toHaveLength(0);
   });
 
-  it('warns once, at the end, when 3 MB of assistant text is the text the call ends with', () => {
-    const { events, parsed, recorder } = createHarness();
+  it('notes once, at the end, when 3 MB of assistant text is the text the call ends with', () => {
+    const { events, parsed, recorder, text } = createHarness();
 
     const chunk = 'x'.repeat(15_000);
     for (let i = 0; i < 200; i++) {
@@ -255,9 +255,14 @@ describe('createParsedLineRecorder', () => {
     const warnings = events.filter(
       (event) => event.type === 'call_warning' && event.warning.code === 'runner_call_text_limit',
     );
-    expect(warnings).toHaveLength(1);
-    expect(result.status).toBe('truncated');
-    expect(parsed.text.length).toBeLessThanOrEqual(1024 * 1024);
+    expect(warnings).toEqual([
+      expect.objectContaining({
+        warning: expect.objectContaining({ severity: 'debug', surface: 'debug' }),
+      }),
+    ]);
+    expect(result.status).toBe('completed');
+    expect(result.text.length).toBe(200 * chunk.length);
+    expect(text.join('').length).toBe(1024 * 1024);
   });
 
   it('does not warn about 3 MB of narration a final text that fits replaced', () => {

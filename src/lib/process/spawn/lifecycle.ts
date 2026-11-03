@@ -15,7 +15,6 @@ import {
 
 export const DEFAULT_PROCESS_OUTPUT_MAX_BYTES = 1024 * 1024;
 export const DEFAULT_PROCESS_STDERR_MAX_BYTES = 256 * 1024;
-export const DEFAULT_PROCESS_LINE_MAX_BYTES = 1024 * 1024;
 
 export type SpawnPipeFatalState = 'output-budget-breach' | 'protocol-failure' | 'callback-failure';
 
@@ -101,7 +100,7 @@ function isStdinReaderGone(err: Error): boolean {
 function defaultFatalRemediation(state: SpawnPipeFatalState): string {
   switch (state) {
     case 'output-budget-breach':
-      return 'The tool wrote more than 64 MB of output and was stopped. Narrow what it was asked to print, then retry.';
+      return 'The tool wrote more output than its limit allows and was stopped. Narrow what it was asked to print, then retry.';
     case 'protocol-failure':
       return 'Check the CLI version and output protocol, then retry.';
     case 'callback-failure':

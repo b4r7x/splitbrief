@@ -229,7 +229,6 @@ function writeOpencodeProofShim(opts: {
     timeout: 'while true; do sleep 1; done',
     'abort-wait': 'while true; do sleep 1; done',
     'signal-exit': 'kill -TERM "$$"',
-    'output-flood': 'while true; do printf flood; done',
   };
 
   const script = [

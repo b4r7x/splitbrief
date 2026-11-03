@@ -25,11 +25,6 @@ import { error, matches } from '../../utils/error.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { isCredentialEnvironmentName, redactSecrets } from '../../utils/redact.js';
 import { isRecord } from '../../utils/type-guards.js';
-import {
-  finishRunnerCallOutputLimit,
-  runnerCallLimitWarning,
-  runnerCallLineOutputLimit,
-} from '../calls/output-limit.js';
 import { getLineParser } from './output-parsers.js';
 import { createParsedLineRecorder } from './parsed-line-recorder.js';
 import { createRunnerCallStderrBuffer } from './stderr-lines.js';
@@ -57,8 +52,6 @@ interface SpawnAndCollectOptions {
   maxToolCalls?: number | undefined;
   outputMaxBytes?: number | undefined;
   stderrMaxBytes?: number | undefined;
-  stdoutLineMaxBytes?: number | undefined;
-  outputBudgetBytes?: number | undefined;
   /** Credential values are passed explicitly so callbacks never receive raw secrets. */
   credentialValues?: readonly string[] | undefined;
   /**
@@ -82,14 +75,6 @@ export const spawnCollectError = {
     error(opts.kind, opts.message, opts.data),
   isInvalidHardDeadline: matches('runner-invalid-timeout'),
 } as const;
-
-function isOutputBudgetFatalSignal(
-  err: unknown,
-): err is SpawnPipeFatalSignal & { state: 'output-budget-breach' } {
-  return (
-    isRecord(err) && err.state === 'output-budget-breach' && typeof err.remediation === 'string'
-  );
-}
 
 type InvocationCancellationSource = 'none' | 'external' | 'timeout';
 
@@ -285,21 +270,6 @@ export async function spawnAndCollect(
       },
       outputMaxBytes: opts.outputMaxBytes,
       stderrMaxBytes: opts.stderrMaxBytes,
-      stdoutLineMaxBytes: opts.stdoutLineMaxBytes,
-      outputBudgetBytes: opts.outputBudgetBytes,
-      onStdoutLineOverflow: (overflow) => {
-        recorder.warning({
-          warning: runnerCallLimitWarning(
-            runnerCallLineOutputLimit({
-              code: 'stdout_line_overflow',
-              label: 'the tool output',
-              lineBytes: overflow.lineBytes,
-              maxLineBytes: overflow.maxLineBytes,
-            }),
-          ),
-        });
-        return undefined;
-      },
       onLine(line) {
         applyParsed(parseLine(line));
         return toolInputCapacitySignal();
@@ -329,20 +299,6 @@ export async function spawnAndCollect(
     }
     flushStdout();
     flushStderr();
-    if (isOutputBudgetFatalSignal(err)) {
-      if (!recorder.hasTerminal()) {
-        const limit = {
-          code: 'runner_process_output_limit',
-          message: err.remediation,
-        };
-        finishRunnerCallOutputLimit(recorder, limit, {
-          usage: parsedRecorder.usage,
-          nativeSessionId: parsedRecorder.sessionId,
-        });
-      }
-      const result = recorder.finalResult();
-      return { ...result, sessionId: parsedRecorder.sessionId };
-    }
     const redactedError = redactThrownError(err, redactCredential);
     if (!recorder.hasTerminal()) {
       const cancellationSource = cancellation.source();

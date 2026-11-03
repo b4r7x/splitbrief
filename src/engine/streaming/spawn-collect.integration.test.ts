@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { DEFAULT_PROCESS_LINE_MAX_BYTES } from '../../lib/process/spawn/lifecycle.js';
 import { projectRunnerCallEvents } from '../calls/event-projection.js';
 import { boundEngineEventForConsumer } from '../events/bound.js';
 import { spawnAndCollect, spawnCollectError } from './spawn-collect.js';
@@ -777,13 +776,13 @@ describe('spawnAndCollect', () => {
     }
   });
 
-  it('reports an oversized structured terminal result as a bounded truncation', async () => {
+  it('parses a stream-json line above 1 MiB and completes on the terminal result', async () => {
     const result = await spawnAndCollect({
       command: 'node',
       args: [
         '-e',
         [
-          `process.stdout.write("x".repeat(${DEFAULT_PROCESS_LINE_MAX_BYTES + 100}) + "\\n");`,
+          `process.stdout.write(JSON.stringify({type:"assistant",message:{content:[{type:"text",text:"x".repeat(${1024 * 1024 + 100})}]}}) + "\\n");`,
           `process.stdout.write(JSON.stringify({type:"result",result:"valid terminal output"}) + "\\n");`,
         ].join(''),
       ],
@@ -793,36 +792,25 @@ describe('spawnAndCollect', () => {
 
     expect(result.status).toBe('completed');
     expect(result.text).toBe('valid terminal output');
-    expect(result.warnings.filter((w) => w.code === 'stdout_line_overflow')).toHaveLength(1);
-    expect(result.warnings).toEqual([
-      expect.objectContaining({
-        code: 'stdout_line_overflow',
-        message: expect.stringContaining('A line of the tool output longer than'),
-      }),
-    ]);
+    expect(result.warnings).toEqual([]);
   });
 
-  it('returns a bounded truncation when a plain-text stdout line overflows', async () => {
+  it('returns a plain-text stdout line above 1 MiB whole', async () => {
+    const lineBytes = 1024 * 1024 + 100;
     const result = await spawnAndCollect({
       command: 'node',
       args: [
         '-e',
-        `process.stdout.write("x".repeat(${DEFAULT_PROCESS_LINE_MAX_BYTES + 100}) + "\\n"); process.stdout.write("plain output\\n");`,
+        `process.stdout.write("x".repeat(${lineBytes}) + "\\n"); process.stdout.write("plain output\\n");`,
       ],
       cwd: process.cwd(),
     });
 
     expect(result.status).toBe('completed');
-    expect(result.text).toBe('plain output\n');
-    expect(result.warnings.filter((w) => w.code === 'stdout_line_overflow')).toHaveLength(1);
+    expect(result.text.length).toBe(lineBytes + '\nplain output\n'.length);
+    expect(result.text.endsWith('x\nplain output\n')).toBe(true);
     expect(result.warnings).toEqual([
-      expect.objectContaining({
-        code: 'stdout_line_overflow',
-        severity: 'warning',
-        source: 'system',
-        surface: 'activity',
-        message: expect.stringContaining('A line of the tool output longer than'),
-      }),
+      expect.objectContaining({ code: 'runner_call_text_limit', surface: 'debug' }),
     ]);
   });
 

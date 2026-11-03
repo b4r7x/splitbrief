@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_PROCESS_LINE_MAX_BYTES } from '../../lib/process/spawn/lifecycle.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import { invokeCommandRunner, type CommandRunnerOptions } from './command-based.js';
 
@@ -22,6 +21,17 @@ function run(
     callContext: { callId: 'call-timeout', role: 'implementer', backendKind: 'shell' },
     ...extra,
   });
+}
+
+function streamJsonSeat(frames: string): ConfigRunner {
+  return {
+    command: 'node',
+    args: [
+      '-e',
+      `require("node:fs").readFileSync(0);const out = (frame) => process.stdout.write(JSON.stringify(frame) + "\\n");${frames}`,
+    ],
+    outputFormat: 'stream-json',
+  };
 }
 
 describe('invokeCommandRunner with timeout', () => {
@@ -203,6 +213,57 @@ describe('invokeCommandRunner with timeout', () => {
     expect(chunks).toEqual(['draft', ' final']);
   });
 
+  it('returns a stream-json answer above 1 MiB once when its result frame restates it', async () => {
+    const answer = `Answer start. ${'y'.repeat(1_500_000)} END-OF-ANSWER`;
+    const result = await run(
+      streamJsonSeat(
+        'const t = "Answer start. " + "y".repeat(1500000) + " END-OF-ANSWER";' +
+          'out({ type: "assistant", message: { content: [{ type: "text", text: t }] } });' +
+          'out({ type: "result", subtype: "success", result: t });',
+      ),
+    );
+
+    expect(result).toMatchObject({ status: 'completed', error: null });
+    expect(result.text.length).toBe(answer.length);
+    expect(result.text.match(/END-OF-ANSWER/g)).toHaveLength(1);
+    expect(result.text === answer).toBe(true);
+    expect(result.warnings.filter((warning) => warning.surface !== 'debug')).toEqual([]);
+  });
+
+  it('returns a stream-json answer streamed as deltas above 1 MiB once when its result frame restates it', async () => {
+    const answer = `Answer start. ${'y'.repeat(1_500_000)} END-OF-ANSWER`;
+    const result = await run(
+      streamJsonSeat(
+        'const t = "Answer start. " + "y".repeat(1500000) + " END-OF-ANSWER";' +
+          'for (let i = 0; i < t.length; i += 100000) out({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: t.slice(i, i + 100000) } } });' +
+          'out({ type: "result", subtype: "success", result: t });',
+      ),
+    );
+
+    expect(result).toMatchObject({ status: 'completed', error: null });
+    expect(result.text.length).toBe(answer.length);
+    expect(result.text.match(/END-OF-ANSWER/g)).toHaveLength(1);
+    expect(result.text === answer).toBe(true);
+    expect(result.warnings.filter((warning) => warning.surface !== 'debug')).toEqual([]);
+  });
+
+  it('keeps every stream-json message above 1 MiB when the result frame restates only the last', async () => {
+    const parts = Array.from({ length: 15 }, (_, i) => `PART-${i} ${'z'.repeat(100_000)}\n`);
+    const result = await run(
+      streamJsonSeat(
+        'let last = "";' +
+          'for (let i = 0; i < 15; i++) { last = "PART-" + i + " " + "z".repeat(100000) + "\\n"; out({ type: "assistant", message: { content: [{ type: "text", text: last }] } }); }' +
+          'out({ type: "result", subtype: "success", result: last });',
+      ),
+    );
+
+    expect(result).toMatchObject({ status: 'completed', error: null });
+    expect(result.text.length).toBe(parts.join('').length);
+    expect(result.text.match(/PART-\d+/g)).toEqual(parts.map((_, i) => `PART-${i}`));
+    expect(result.text === parts.join('')).toBe(true);
+    expect(result.warnings.filter((warning) => warning.surface !== 'debug')).toEqual([]);
+  });
+
   it('rejects a child that outlives the timeout and reports it as a timeout call error', async () => {
     const events: RunnerCallEvent[] = [];
 
@@ -322,14 +383,15 @@ describe('invokeCommandRunner with timeout', () => {
     expect(events.some((event) => event.type === 'call_tool_use_done')).toBe(true);
   });
 
-  it('recovers from an unterminated oversized stdout line', async () => {
+  it('returns an unterminated stdout line above 1 MiB whole and streams its first 1 MiB', async () => {
+    const lineBytes = 1024 * 1024 + 100;
     const chunks: string[] = [];
     const result = await run(
       {
         command: 'node',
         args: [
           '-e',
-          `require("node:fs").readFileSync(0);process.stdout.write("x".repeat(${DEFAULT_PROCESS_LINE_MAX_BYTES + 100}))`,
+          `require("node:fs").readFileSync(0);process.stdout.write("x".repeat(${lineBytes}))`,
         ],
         outputFormat: 'text',
       },
@@ -339,14 +401,11 @@ describe('invokeCommandRunner with timeout', () => {
       },
     );
 
-    expect(result.text).toBe('');
-    expect(chunks).toEqual([]);
-    expect(result).toMatchObject({ status: 'completed' });
+    expect(result).toMatchObject({ status: 'completed', error: null });
+    expect(result.text.trimEnd().length).toBe(lineBytes);
+    expect(chunks.join('').length).toBe(1024 * 1024);
     expect(result.warnings).toEqual([
-      expect.objectContaining({
-        code: 'stdout_line_overflow',
-        message: expect.stringContaining('A line of the tool output longer than'),
-      }),
+      expect.objectContaining({ code: 'runner_call_text_limit', surface: 'debug' }),
     ]);
   });
 });

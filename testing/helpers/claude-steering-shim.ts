@@ -3,7 +3,14 @@ import { writeFakeNodeCli } from './command-shim.js';
 
 export function installClaudeSteeringShim(
   dir: string,
-  mode: 'tool' | 'follow-up' | 'exit' | 'abort' | 'unsolicited' | 'repeated' = 'tool',
+  mode:
+    | 'tool'
+    | 'follow-up'
+    | 'exit'
+    | 'abort'
+    | 'unsolicited'
+    | 'repeated'
+    | 'notification' = 'tool',
 ): { executable: string; stdinFile: string; argvFile: string } {
   const stdinFile = join(dir, 'steering-stdin.jsonl');
   const argvFile = join(dir, 'steering-argv.json');
@@ -33,6 +40,16 @@ if (!process.argv.includes('--input-format')) {
   lines.on('line', line => {
     fs.appendFileSync(stdinFile, line + '\\n');
     const text = JSON.parse(line).message.content;
+    if (first && mode === 'notification') {
+      first = false;
+      init(); echo(text);
+      emit({type:'assistant',message:{content:[{type:'tool_use',id:'monitor',name:'Monitor',input:{command:'watch'}}]}});
+      emit({type:'user',parent_tool_use_id:null,message:{content:[{type:'tool_result',tool_use_id:'monitor'}]}});
+      const late = JSON.stringify({type:'assistant',message:{content:[{type:'tool_use',id:'late',name:'Write',input:{file_path:'late.txt',content:'late'}}]}});
+      process.stdout.write(JSON.stringify({type:'result',result:'last',structured_output:{answer:'last'},usage:{input_tokens:10,output_tokens:5}}) + '\\n' + JSON.stringify({type:'system',subtype:'init',session_id:'steering-session'}) + '\\n' + late + '\\n');
+      setInterval(() => console.log(late), 20);
+      return;
+    }
     if (first) {
       first = false;
       init(); echo(text);

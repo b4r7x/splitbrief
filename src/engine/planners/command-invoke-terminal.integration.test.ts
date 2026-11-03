@@ -207,11 +207,6 @@ describe('configured direct planner terminal cleanup', () => {
       runnerOptions: { idleWarnMs: 10, idleKillMs: 20 },
     },
     {
-      name: 'output-limit',
-      script:
-        "require('node:fs').writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, 'would be valid');for (let i = 0; i < 1100; i++) process.stdout.write('x'.repeat(65_536));",
-    },
-    {
       name: 'parser-failure',
       script:
         "require('node:fs').writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, 'would be valid');process.stdout.write(JSON.stringify({ type: 'result', is_error: true }) + '\\n');",

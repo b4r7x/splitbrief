@@ -4,6 +4,7 @@ import { RUNNER_CALL_MESSAGE_MAX_LENGTH } from './schema.js';
 import {
   RUNNER_CALL_ARTIFACT_TEXT_MAX_BYTES,
   RUNNER_CALL_OUTPUT_MAX_BYTES,
+  RUNNER_CALL_RETAINED_OUTPUT_MAX_BYTES,
   RUNNER_CALL_TOOL_PAYLOAD_MAX_BYTES,
   RUNNER_CALL_TOOL_USE_MAX_ITEMS,
 } from './output-limit.js';
@@ -286,7 +287,7 @@ describe('createRunnerCallRecorder', () => {
     );
   });
 
-  it('truncates direct recorder text and returns a truncated terminal status', () => {
+  it('keeps direct recorder text whole and cuts only the recorded copy', () => {
     const events: RunnerCallEvent[] = [];
     const recorder = createRunnerCallRecorder({
       context,
@@ -298,15 +299,21 @@ describe('createRunnerCallRecorder', () => {
     const result = recorder.finishCompleted({ endedAt: 20 });
 
     expect(result).toMatchObject({
-      status: 'truncated',
-      partial: true,
-      error: { code: 'runner_call_text_limit' },
-      warnings: [expect.objectContaining({ code: 'runner_call_text_limit' })],
+      status: 'completed',
+      partial: false,
+      error: null,
+      warnings: [
+        expect.objectContaining({
+          code: 'runner_call_text_limit',
+          severity: 'debug',
+          surface: 'debug',
+        }),
+      ],
     });
-    expect(Buffer.byteLength(result.text, 'utf8')).toBeLessThanOrEqual(
-      RUNNER_CALL_OUTPUT_MAX_BYTES,
-    );
-    expect(events.filter((event) => event.type === 'call_text_delta')).toHaveLength(1);
+    expect(result.text.length).toBe(RUNNER_CALL_OUTPUT_MAX_BYTES + 10);
+    const recorded = events.filter((event) => event.type === 'call_text_delta');
+    expect(recorded).toHaveLength(1);
+    expect(Buffer.byteLength(recorded[0]?.text ?? '', 'utf8')).toBe(RUNNER_CALL_OUTPUT_MAX_BYTES);
   });
 
   it('redacts a credential inside a structured answer', () => {
@@ -331,7 +338,7 @@ describe('createRunnerCallRecorder', () => {
     expect(JSON.stringify(events)).not.toContain(credential);
   });
 
-  it('fails a structured answer past the output bound as truncated', () => {
+  it('completes a structured answer past the output bound and records a debug note', () => {
     const events: RunnerCallEvent[] = [];
     const recorder = createRunnerCallRecorder({
       context,
@@ -345,10 +352,128 @@ describe('createRunnerCallRecorder', () => {
     });
 
     expect(result).toMatchObject({
-      status: 'truncated',
-      error: { code: 'runner_call_structured_limit' },
+      status: 'completed',
+      error: null,
+      warnings: [
+        expect.objectContaining({
+          code: 'runner_call_structured_limit',
+          severity: 'debug',
+          surface: 'debug',
+        }),
+      ],
     });
     expect(JSON.stringify(events).length).toBeLessThan(RUNNER_CALL_OUTPUT_MAX_BYTES);
+  });
+
+  it('completes a final answer larger than 1 MB in full and cuts only the recorded copy', () => {
+    const events: RunnerCallEvent[] = [];
+    const recorder = createRunnerCallRecorder({
+      context,
+      startedAt: 1,
+      onEvent: (event) => events.push(event),
+    });
+    const answer = 'x'.repeat(2 * RUNNER_CALL_OUTPUT_MAX_BYTES);
+
+    recorder.text({ channel: 'result', text: answer, semantics: 'final' });
+    const result = recorder.finishCompleted({ endedAt: 20 });
+
+    expect(result).toMatchObject({ status: 'completed', error: null });
+    expect(result.text === answer).toBe(true);
+    const recordedBytes = events
+      .filter((event) => event.type === 'call_text_delta')
+      .reduce((bytes, event) => bytes + Buffer.byteLength(event.text, 'utf8'), 0);
+    expect(recordedBytes).toBeLessThanOrEqual(RUNNER_CALL_OUTPUT_MAX_BYTES);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'call_warning',
+        warning: expect.objectContaining({ code: 'runner_call_text_limit', surface: 'debug' }),
+      }),
+    );
+  });
+
+  it('completes a streamed answer larger than 1 MB in full', () => {
+    const recorder = createRunnerCallRecorder({ context, startedAt: 1 });
+    const chunk = 'y'.repeat(64 * 1024);
+    const chunks = 2 * (RUNNER_CALL_OUTPUT_MAX_BYTES / chunk.length);
+
+    for (let index = 0; index < chunks; index += 1) {
+      recorder.text({ channel: 'stdout', text: chunk });
+    }
+    const result = recorder.finishCompleted({ endedAt: 20 });
+
+    expect(result).toMatchObject({ status: 'completed', error: null });
+    expect(result.text.length).toBe(chunks * chunk.length);
+  });
+
+  it('keeps the head and the tail of an answer past the 64 MB bound and records a debug note', () => {
+    const recorder = createRunnerCallRecorder({ context, startedAt: 1 });
+    const chunk = 'm'.repeat(1024 * 1024);
+    const chunks = RUNNER_CALL_RETAINED_OUTPUT_MAX_BYTES / chunk.length + 8;
+
+    recorder.text({ channel: 'stdout', text: 'head of the answer\n' });
+    for (let index = 0; index < chunks; index += 1) {
+      recorder.text({ channel: 'stdout', text: chunk });
+    }
+    recorder.text({ channel: 'stdout', text: 'final answer\n' });
+    const result = recorder.finishCompleted({ endedAt: 20 });
+
+    expect(result).toMatchObject({ status: 'completed', error: null });
+    expect(result.text.startsWith('head of the answer\nmmm')).toBe(true);
+    expect(result.text.endsWith('mmmfinal answer\n')).toBe(true);
+    expect(result.text.length).toBeLessThanOrEqual(RUNNER_CALL_RETAINED_OUTPUT_MAX_BYTES);
+    expect(result.warnings).toContainEqual(
+      expect.objectContaining({
+        code: 'runner_call_retained_text_limit',
+        severity: 'debug',
+        surface: 'debug',
+      }),
+    );
+  });
+
+  it('completes a structured answer larger than 1 MB in full and cuts only the recorded copy', () => {
+    const events: RunnerCallEvent[] = [];
+    const recorder = createRunnerCallRecorder({
+      context,
+      startedAt: 1,
+      onEvent: (event) => events.push(event),
+    });
+    const answer = 'x'.repeat(2 * RUNNER_CALL_OUTPUT_MAX_BYTES);
+
+    const result = recorder.finishCompleted({ endedAt: 20, structured: { answer } });
+
+    expect(result).toMatchObject({ status: 'completed', error: null });
+    if (result.status !== 'completed') throw new Error('expected a completed call');
+    expect(result.structured).toEqual({ answer });
+    expect(Buffer.byteLength(JSON.stringify(events), 'utf8')).toBeLessThan(answer.length);
+  });
+
+  it('completes a call whose streamed tool input passes its record bound', () => {
+    const recorder = createRunnerCallRecorder({ context, startedAt: 1 });
+    for (let index = 0; index < 600; index += 1) {
+      recorder.toolUseDelta({ toolUseId: 'tool-0', name: 'Write', inputDelta: 'x'.repeat(2048) });
+    }
+
+    const result = recorder.finishCompleted({ endedAt: 20 });
+
+    expect(result).toMatchObject({ status: 'completed', error: null });
+  });
+
+  it('completes a call whose artifact text passes its record bound', () => {
+    const recorder = createRunnerCallRecorder({ context, startedAt: 1 });
+    recorder.artifact({
+      artifact: {
+        id: 'artifact-1',
+        source: 'stream',
+        name: 'large.txt',
+        path: null,
+        mimeType: 'text/plain',
+        text: 'z'.repeat(RUNNER_CALL_ARTIFACT_TEXT_MAX_BYTES + 10),
+      },
+    });
+
+    const result = recorder.finishCompleted({ endedAt: 20 });
+
+    expect(result).toMatchObject({ status: 'completed', error: null });
   });
 
   it('replaces a full-size draft with final result text', () => {
@@ -388,7 +513,13 @@ describe('createRunnerCallRecorder', () => {
       error: { code: 'runner_process_error', message: 'exited' },
     });
 
-    expect(result.warnings).toEqual([expect.objectContaining({ code: 'runner_call_text_limit' })]);
+    expect(result.warnings).toEqual([
+      expect.objectContaining({
+        code: 'runner_call_text_limit',
+        severity: 'debug',
+        surface: 'debug',
+      }),
+    ]);
   });
 
   it('caps recorded tool uses at the item limit without truncating the call', () => {
@@ -531,9 +662,23 @@ describe('createRunnerCallRecorder', () => {
     expect(result.error?.message).toContain('maxToolCalls limit of 2 tool calls');
   });
 
+  it('ends a call truncated when it completes after its tool-use stop', () => {
+    const recorder = createRunnerCallRecorder({ context, startedAt: 1, stopAfterToolUses: 2 });
+    for (let index = 0; index < 3; index += 1) {
+      recorder.toolUseDone({ toolUse: { id: `tool-${index}`, name: 'Read', input: {} } });
+    }
+
+    const result = recorder.finishCompleted({ endedAt: 20 });
+
+    expect(result).toMatchObject({
+      status: 'truncated',
+      partial: true,
+      error: { code: 'runner_call_tool_use_stop' },
+    });
+  });
+
   // A tool announcement replays input that `toolUseDone` carries again, so a run with hundreds of
-  // tool starts spends the delta budget on a diagnostic and must not lose its result to it. The
-  // streamed stage is the result's own text and still does.
+  // tool starts spends the delta budget on a diagnostic and must not lose its result to it.
   it('keeps a call completed when announced tool input exhausts the delta budget', () => {
     const recorder = createRunnerCallRecorder({ context, startedAt: 1 });
     for (let index = 0; index < 600; index += 1) {
@@ -554,7 +699,7 @@ describe('createRunnerCallRecorder', () => {
     ]);
   });
 
-  it('truncates a call when streamed tool deltas exhaust the delta budget', () => {
+  it('notes on debug when streamed tool deltas exhaust the delta budget', () => {
     const recorder = createRunnerCallRecorder({ context, startedAt: 1 });
     for (let index = 0; index < 600; index += 1) {
       recorder.toolUseDelta({ toolUseId: 'tool-0', name: 'Write', inputDelta: 'x'.repeat(2048) });
@@ -563,8 +708,15 @@ describe('createRunnerCallRecorder', () => {
     const result = recorder.finishCompleted({ endedAt: 20 });
 
     expect(result).toMatchObject({
-      status: 'truncated',
-      error: { code: 'runner_call_tool_delta_limit' },
+      status: 'completed',
+      error: null,
+      warnings: [
+        expect.objectContaining({
+          code: 'runner_call_tool_delta_limit',
+          severity: 'debug',
+          surface: 'debug',
+        }),
+      ],
     });
   });
 
@@ -585,12 +737,21 @@ describe('createRunnerCallRecorder', () => {
     expect(JSON.stringify(result.toolUses)).not.toContain('x'.repeat(1024));
     expect(JSON.stringify(result.toolUses)).not.toContain('y'.repeat(1024));
     expect(result.warnings).toEqual([
-      expect.objectContaining({ code: 'runner_call_tool_input_limit' }),
+      expect.objectContaining({
+        code: 'runner_call_tool_input_limit',
+        severity: 'warning',
+        surface: 'activity',
+      }),
     ]);
   });
 
-  it('bounds direct artifact payloads before storing result values', () => {
-    const recorder = createRunnerCallRecorder({ context, startedAt: 1 });
+  it('keeps a direct artifact whole in the result and bounds its recorded copy', () => {
+    const events: RunnerCallEvent[] = [];
+    const recorder = createRunnerCallRecorder({
+      context,
+      startedAt: 1,
+      onEvent: (event) => events.push(event),
+    });
     recorder.artifact({
       artifact: {
         id: 'artifact-1',
@@ -604,11 +765,16 @@ describe('createRunnerCallRecorder', () => {
 
     const result = recorder.finishCompleted({ endedAt: 20 });
 
-    expect(result.status).toBe('truncated');
-    expect(result.artifacts[0]?.text).not.toContain('z'.repeat(1024));
-    expect(result.warnings.map((warning) => warning.code)).toEqual(
-      expect.arrayContaining(['runner_call_artifact_text_limit']),
-    );
+    expect(result.status).toBe('completed');
+    expect(result.artifacts[0]?.text).toBe('z'.repeat(RUNNER_CALL_ARTIFACT_TEXT_MAX_BYTES + 10));
+    expect(JSON.stringify(events)).not.toContain('z'.repeat(RUNNER_CALL_ARTIFACT_TEXT_MAX_BYTES));
+    expect(result.warnings).toEqual([
+      expect.objectContaining({
+        code: 'runner_call_artifact_text_limit',
+        severity: 'debug',
+        surface: 'debug',
+      }),
+    ]);
   });
 
   it('stalled and stallCleared emit stall events', () => {

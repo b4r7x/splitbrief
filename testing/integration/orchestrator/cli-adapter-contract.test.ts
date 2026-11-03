@@ -736,7 +736,7 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
     expect(readFileSync(targetPath, 'utf8')).toBe('generated\n');
   }, 60_000);
 
-  it('classifies signal exit, output flood and consumer callback failures', async () => {
+  it('classifies signal exit and consumer callback failures', async () => {
     const fixture = createFixture(toolId);
     const adapter = CLI_IMPLEMENTER_ADAPTERS[toolId];
     const env = CREDENTIAL_ENV[toolId] ?? {};
@@ -772,36 +772,6 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
       });
       expect(signalResult.status).toBe('failed');
       expect(signalResult.error?.code).toBe('signal-exit');
-
-      installShim(fixture, 'output-flood');
-      resetCapture(fixture);
-      const flood = await invokeCliAdapter({
-        adapter,
-        invocation: {
-          executable: fixture.trustedGate.executable,
-          args: adapter.buildArgs({
-            model: undefined,
-            projectDir: fixture.projectDir,
-            configuredArgs: [],
-          }),
-          promptTransport: adapter.promptTransport,
-          environment: shimEnvironment(env),
-          cwd: fixture.projectDir,
-          timeoutMs: 5_000,
-          signal: undefined,
-        },
-        prompt: FULL_PROMPT,
-        callContext: {
-          callId: `flood-${toolId}`,
-          role: 'implementer',
-          backendKind: 'cli',
-          runnerName: toolId,
-        },
-      });
-      if (adapter.outputContract.kind === 'structured-terminal') {
-        expect(flood.status).toBe('incomplete');
-        expect(flood.warnings.map((warning) => warning.code)).toContain('stdout_line_overflow');
-      }
 
       installShim(fixture, 'success-direct');
       const callback = await invokeCliAdapter({

@@ -23,7 +23,9 @@ import { isRecord } from '../../utils/type-guards.js';
 import { formatZodIssues, runnerCallUnknownUpstreamPreview } from './unknown-upstream.js';
 import {
   boundRunnerCallArtifact,
+  boundRunnerCallStructured,
   boundRunnerCallToolUse,
+  createHeadTailEventLog,
   createRunnerCallDeltaLimiter,
   runnerCallByteLimitMessage,
   runnerCallItemLimit,
@@ -33,7 +35,7 @@ import {
   runnerCallToolUseStopLimit,
   sanitizeRunnerCallRawPreview,
   RUNNER_CALL_ARTIFACT_MAX_ITEMS,
-  RUNNER_CALL_OUTPUT_MAX_BYTES,
+  RUNNER_CALL_RETAINED_OUTPUT_MAX_BYTES,
   RUNNER_CALL_STDERR_MAX_BYTES,
   RUNNER_CALL_TOOL_USE_MAX_ITEMS,
   RUNNER_CALL_TOOL_USE_SUMMARY_MAX_ITEMS,
@@ -88,11 +90,7 @@ export interface RunnerCallRecorder {
     toolUseId: string | null;
     name: string | null;
     inputDelta: string;
-    /**
-     * `started` replays the input a tool was announced with, which `toolUseDone` carries again in
-     * full, so a flood of starts is diagnostic like a done event. Only the streamed `delta` stage
-     * is the result's own text, so only it truncates the call.
-     */
+    /** `started` replays the input a tool was announced with: it starts a new tool use. */
     stage?: 'started' | 'delta' | undefined;
     ts?: number | undefined;
   }) => void;
@@ -144,9 +142,8 @@ export function createRunnerCallRecorder(opts: {
   const context = snapshotRunnerCallContext(opts.context);
   const startedAt = opts.startedAt ?? Date.now();
   const redactCredential = createRunnerCallCredentialRedactor(opts.credentialValues ?? []);
-  const events: RunnerCallEvent[] = [];
+  const events = createHeadTailEventLog(RUNNER_CALL_RETAINED_OUTPUT_MAX_BYTES, streamedTextBytes);
   let hasTerminalEvent = false;
-  let resultLimit: RunnerCallOutputLimit | null = null;
   let toolUseDoneCount = 0;
   let artifactCount = 0;
   let warningCount = 0;
@@ -171,20 +168,44 @@ export function createRunnerCallRecorder(opts: {
     label: 'The streamed tool input',
   });
 
-  /** An event the result does not keep still reaches the feed. */
-  function emit(input: RunnerCallEventInput, retain = true): void {
+  /**
+   * An event the result does not keep still reaches the feed. The result reads the whole event,
+   * until the streamed text passes the retained bound and its middle drops; the feed and the call
+   * log get `recordInput`, a copy cut to its record bound, or nothing.
+   */
+  function emit(
+    input: RunnerCallEventInput,
+    retain = true,
+    recordInput: RunnerCallEventInput | null = input,
+  ): void {
     const event = validateRunnerCallEvent(redactRunnerCallEventInput(input, redactCredential));
     if (hasTerminalEvent && !isRunnerCallTerminalEvent(event)) return;
     if (isRunnerCallTerminalEvent(event)) {
       if (hasTerminalEvent) return;
       hasTerminalEvent = true;
     }
-    if (retain) events.push(event);
-    opts.onEvent?.(event);
+    const dropped = retain && events.push(event);
+    if (recordInput !== null) {
+      opts.onEvent?.(
+        recordInput === input
+          ? event
+          : validateRunnerCallEvent(redactRunnerCallEventInput(recordInput, redactCredential)),
+      );
+    }
+    if (dropped) {
+      noteLimit(
+        {
+          code: 'runner_call_retained_text_limit',
+          message: runnerCallByteLimitMessage('The reply', RUNNER_CALL_RETAINED_OUTPUT_MAX_BYTES),
+          maxBytes: RUNNER_CALL_RETAINED_OUTPUT_MAX_BYTES,
+        },
+        'debug',
+      );
+    }
   }
 
   function snapshot(): RunnerCallResult {
-    return validateRunnerCallResult(collectRunnerCallResult(events));
+    return validateRunnerCallResult(collectRunnerCallResult(events.events()));
   }
 
   function currentTerminalDefaults(opts: {
@@ -214,40 +235,37 @@ export function createRunnerCallRecorder(opts: {
   ): RunnerCallResult {
     if (hasTerminalEvent) return snapshot();
     const defaults = currentTerminalDefaults(finishOpts);
-    if (finishOpts.structured !== undefined) {
-      const structuredBytes = Buffer.byteLength(JSON.stringify(finishOpts.structured), 'utf8');
-      if (structuredBytes > RUNNER_CALL_OUTPUT_MAX_BYTES) {
-        noteLimit(
-          {
-            code: 'runner_call_structured_limit',
-            message: runnerCallByteLimitMessage('The answer', RUNNER_CALL_OUTPUT_MAX_BYTES),
-            bytesSeen: structuredBytes,
-            maxBytes: RUNNER_CALL_OUTPUT_MAX_BYTES,
-          },
-          'truncates-result',
-        );
-      }
-    }
-    if (toolUseStop !== null) resultLimit = toolUseStop;
-    if (resultLimit !== null) {
+    if (toolUseStop !== null) {
       return finishFailed({
         status: 'truncated',
-        error: runnerCallLimitError(resultLimit),
+        error: runnerCallLimitError(toolUseStop),
         usage: defaults.usage,
         nativeSessionId: defaults.nativeSessionId,
         partial: true,
         endedAt: finishOpts.endedAt,
       });
     }
-    emit(
-      runnerCallCompletedEvent(context, {
-        startedAt,
-        endedAt: finishOpts.endedAt ?? Date.now(),
-        usage: defaults.usage,
-        nativeSessionId: defaults.nativeSessionId,
-        ...(finishOpts.structured !== undefined && { structured: finishOpts.structured }),
-      }),
-    );
+    noteCutText();
+    const terminal = {
+      startedAt,
+      endedAt: finishOpts.endedAt ?? Date.now(),
+      usage: defaults.usage,
+      nativeSessionId: defaults.nativeSessionId,
+      ...(finishOpts.structured !== undefined && { structured: finishOpts.structured }),
+    };
+    const completed = runnerCallCompletedEvent(context, terminal);
+    const structured =
+      finishOpts.structured === undefined ? null : boundRunnerCallStructured(finishOpts.structured);
+    if (structured !== null && structured.limit !== null) {
+      noteLimit(structured.limit, 'debug');
+      emit(
+        completed,
+        true,
+        runnerCallCompletedEvent(context, { ...terminal, structured: structured.value }),
+      );
+    } else {
+      emit(completed);
+    }
     return snapshot();
   }
 
@@ -281,11 +299,7 @@ export function createRunnerCallRecorder(opts: {
             ),
           };
     const rawTail = runnerCallRawTail(callError.message, opts.credentialValues);
-    // Judged on the text the call ends with: a final text that fits replaced
-    // whatever the budget cut from the narration streamed before it.
-    if (toolUseStop === null && textLimiter.limit !== null) {
-      noteLimit(textLimiter.limit, 'truncates-result');
-    }
+    if (toolUseStop === null) noteCutText();
     emitStderrFailureWarning();
     emit(
       runnerCallErrorEvent(context, {
@@ -304,15 +318,6 @@ export function createRunnerCallRecorder(opts: {
 
   function finishIncomplete(finishOpts: { endedAt?: number | undefined } = {}): RunnerCallResult {
     if (hasTerminalEvent) return snapshot();
-    if (toolUseStop !== null) resultLimit = toolUseStop;
-    if (resultLimit !== null) {
-      return finishFailed({
-        status: 'truncated',
-        error: runnerCallLimitError(resultLimit),
-        partial: true,
-        endedAt: finishOpts.endedAt,
-      });
-    }
     return finishFailed({
       status: 'incomplete',
       error: {
@@ -362,31 +367,23 @@ export function createRunnerCallRecorder(opts: {
 
   emit({ type: 'call_started', ts: startedAt, ...context });
 
-  function noteLimit(
-    limit: RunnerCallOutputLimit,
-    disposition: 'truncates-result' | 'diagnostic-only',
-  ): void {
-    if (disposition === 'truncates-result' && resultLimit === null) resultLimit = limit;
+  /** No limit ends the call. A record bound that cut only the recorded copy notes it on `debug`. */
+  function noteLimit(limit: RunnerCallOutputLimit, surface: 'activity' | 'debug'): void {
     if (emittedLimitWarnings.has(limit.code)) return;
     emittedLimitWarnings.add(limit.code);
+    const warning = runnerCallLimitWarning(limit);
     emit({
       type: 'call_warning',
       ts: Date.now(),
       ...context,
-      warning: runnerCallLimitWarning(limit),
+      warning: surface === 'debug' ? { ...warning, severity: 'debug', surface: 'debug' } : warning,
     });
   }
 
-  function noteToolUseCountExceeded(): void {
-    const limit = runnerCallToolUseCountLimit();
-    if (emittedLimitWarnings.has(limit.code)) return;
-    emittedLimitWarnings.add(limit.code);
-    emit({
-      type: 'call_warning',
-      ts: Date.now(),
-      ...context,
-      warning: { ...runnerCallLimitWarning(limit), severity: 'debug', surface: 'debug' },
-    });
+  // Judged on the text the call ends with: a final text that fits replaced
+  // whatever the budget cut from the narration streamed before it.
+  function noteCutText(): void {
+    if (textLimiter.limit !== null) noteLimit(textLimiter.limit, 'debug');
   }
 
   function stopAtToolUseLimit(): void {
@@ -437,33 +434,32 @@ export function createRunnerCallRecorder(opts: {
     text: (eventOpts) => {
       const isSubagent = eventOpts.subagentId !== undefined;
       if (!isSubagent && eventOpts.semantics === 'final') textLimiter = createTextLimiter();
+      const text = redactCredential(eventOpts.text);
       // An explicit `delta` is a partial slice of one record: the byte budget
       // bounds it, the event budget counts records.
-      const accepted = (isSubagent ? subagentTextLimiter : textLimiter).accept(
-        redactCredential(eventOpts.text),
-      );
-      const eventText = accepted.text;
-      if (
-        !isSubagent &&
-        accepted.limit === null &&
-        resultLimit?.code === 'runner_call_text_limit'
-      ) {
-        resultLimit = null;
-      }
-      if (eventText.length > 0 || (eventOpts.semantics === 'final' && accepted.limit === null)) {
-        emit({
-          type: 'call_text_delta',
-          ts: eventOpts.ts ?? Date.now(),
-          ...context,
-          channel: eventOpts.channel,
-          text: eventText,
-          ...(eventOpts.subagentId !== undefined && { subagentId: eventOpts.subagentId }),
-          ...(eventOpts.semantics !== undefined && { semantics: eventOpts.semantics }),
-        });
-      }
-      if (accepted.limit !== null) {
-        if (isSubagent) noteLimit(accepted.limit, 'diagnostic-only');
-        else if (resultLimit === null) resultLimit = accepted.limit;
+      const accepted = (isSubagent ? subagentTextLimiter : textLimiter).accept(text);
+      const textEvent = (eventText: string): RunnerCallEventInput => ({
+        type: 'call_text_delta',
+        ts: eventOpts.ts ?? Date.now(),
+        ...context,
+        channel: eventOpts.channel,
+        text: eventText,
+        ...(eventOpts.subagentId !== undefined && { subagentId: eventOpts.subagentId }),
+        ...(eventOpts.semantics !== undefined && { semantics: eventOpts.semantics }),
+      });
+      const recorded =
+        accepted.text.length > 0 || (eventOpts.semantics === 'final' && accepted.limit === null);
+      if (isSubagent) {
+        if (recorded) emit(textEvent(accepted.text));
+        if (accepted.limit !== null) noteLimit(accepted.limit, 'activity');
+      } else if (text.length > 0 || eventOpts.semantics === 'final') {
+        // The answer is kept whole; only its recorded copy is cut.
+        const event = textEvent(text);
+        emit(
+          event,
+          true,
+          accepted.limit === null ? event : recorded ? textEvent(accepted.text) : null,
+        );
       }
     },
     stderr: (eventOpts) => {
@@ -481,7 +477,7 @@ export function createRunnerCallRecorder(opts: {
           text: accepted.text,
         });
       }
-      if (accepted.limit !== null) noteLimit(accepted.limit, 'diagnostic-only');
+      if (accepted.limit !== null) noteLimit(accepted.limit, 'activity');
     },
     toolUseDelta: (eventOpts) => {
       const toolUseId =
@@ -506,12 +502,7 @@ export function createRunnerCallRecorder(opts: {
           inputDelta: accepted.text,
         });
       }
-      if (accepted.limit !== null) {
-        noteLimit(
-          accepted.limit,
-          eventOpts.stage === 'started' ? 'diagnostic-only' : 'truncates-result',
-        );
-      }
+      if (accepted.limit !== null) noteLimit(accepted.limit, 'debug');
     },
     toolUseDone: (eventOpts) => {
       const toolUse =
@@ -533,8 +524,8 @@ export function createRunnerCallRecorder(opts: {
       recentToolUses.push(bounded.value);
       if (recentToolUses.length > RUNNER_CALL_TOOL_USE_SUMMARY_MAX_ITEMS) recentToolUses.shift();
       toolUseDoneCount += 1;
-      if (!kept) noteToolUseCountExceeded();
-      if (bounded.limit !== null) noteLimit(bounded.limit, 'diagnostic-only');
+      if (!kept) noteLimit(runnerCallToolUseCountLimit(), 'debug');
+      if (bounded.limit !== null) noteLimit(bounded.limit, 'activity');
       emit(
         {
           type: 'call_tool_use_done',
@@ -576,11 +567,11 @@ export function createRunnerCallRecorder(opts: {
             label: 'artifacts',
             maxItems: RUNNER_CALL_ARTIFACT_MAX_ITEMS,
           }),
-          'truncates-result',
+          'debug',
         );
         return;
       }
-      const bounded = boundRunnerCallArtifact({
+      const artifact = {
         ...eventOpts.artifact,
         id: redactCredential(eventOpts.artifact.id),
         name: redactCredential(eventOpts.artifact.name),
@@ -590,15 +581,17 @@ export function createRunnerCallRecorder(opts: {
             ? null
             : redactCredential(eventOpts.artifact.mimeType),
         text: eventOpts.artifact.text === null ? null : redactCredential(eventOpts.artifact.text),
-      });
+      };
+      const bounded = boundRunnerCallArtifact(artifact);
       artifactCount += 1;
-      if (bounded.limit !== null) noteLimit(bounded.limit, 'truncates-result');
-      emit({
+      if (bounded.limit !== null) noteLimit(bounded.limit, 'debug');
+      const artifactEvent: RunnerCallEventInput = {
         type: 'call_artifact',
         ts: eventOpts.ts ?? Date.now(),
         ...context,
-        artifact: bounded.value,
-      });
+        artifact,
+      };
+      emit(artifactEvent, true, { ...artifactEvent, artifact: bounded.value });
     },
     warning: (eventOpts) => {
       if (warningCount >= RUNNER_CALL_WARNING_MAX_ITEMS) {
@@ -608,7 +601,7 @@ export function createRunnerCallRecorder(opts: {
             label: 'warnings',
             maxItems: RUNNER_CALL_WARNING_MAX_ITEMS,
           }),
-          'diagnostic-only',
+          'activity',
         );
         return;
       }
@@ -632,7 +625,7 @@ export function createRunnerCallRecorder(opts: {
             label: 'unknown tool records',
             maxItems: RUNNER_CALL_UNKNOWN_UPSTREAM_MAX_ITEMS,
           }),
-          'diagnostic-only',
+          'activity',
         );
         return;
       }
@@ -680,6 +673,15 @@ export function createRunnerCallRecorder(opts: {
     finalResult: () => (hasTerminalEvent ? snapshot() : finishIncomplete()),
     snapshot,
   };
+}
+
+/**
+ * Streamed text is what grows without end: past the retained bound it drops
+ * from the middle of the call. A final text replaces what streamed before it,
+ * so it stays, like every other event.
+ */
+function streamedTextBytes(event: RunnerCallEvent): number | null {
+  return event.type === 'call_text_delta' && event.semantics !== 'final' ? event.text.length : null;
 }
 
 // The identity is fixed before `call_started`: every event and result of the

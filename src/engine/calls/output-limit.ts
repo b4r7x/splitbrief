@@ -2,14 +2,8 @@ import { sanitizeTerminalDiagnosticText } from '../../utils/display-text.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { boundConsumerPayload } from '../../core/payload-bounds.js';
 import { BOUNDS } from '../../core/pipeline-spec/bounds.js';
-import type { RunnerCallRecorder } from './recorder.js';
 import { UNKNOWN_UPSTREAM_RAW_PREVIEW_MAX_LENGTH } from './schema.js';
-import type {
-  RunnerCallEvent,
-  RunnerCallResult,
-  RunnerCallUsage,
-  RunnerCallWarningInput,
-} from './types.js';
+import type { RunnerCallEvent, RunnerCallWarningInput } from './types.js';
 
 export const RUNNER_CALL_OUTPUT_MAX_BYTES = 1024 * 1024;
 export const RUNNER_CALL_STDERR_MAX_BYTES = 64 * 1024;
@@ -22,6 +16,63 @@ export const RUNNER_CALL_ARTIFACT_MAX_ITEMS = 64;
 export const RUNNER_CALL_WARNING_MAX_ITEMS = 256;
 export const RUNNER_CALL_UNKNOWN_UPSTREAM_MAX_ITEMS = 128;
 export const RUNNER_CALL_PAYLOAD_TRUNCATED_KEY = '_truncated';
+/**
+ * The output one call keeps in memory: the recorder's result text, and a CLI
+ * call's parsed protocol events, which carry envelope frames, partial-message
+ * deltas and tool result echoes beside the text. Past it the middle drops; the
+ * call itself runs on.
+ */
+export const RUNNER_CALL_RETAINED_OUTPUT_MAX_BYTES = 64 * 1024 * 1024;
+
+export type HeadTailEventLog<E> = Readonly<{
+  /** Returns true when the push dropped events from the middle. */
+  push: (event: E) => boolean;
+  events: () => readonly E[];
+}>;
+
+/**
+ * Keeps the head and the tail of a long event stream. Past `maxBytes` of
+ * droppable events, the ones after the first half of the bound drop until a
+ * quarter of the bound is left; an event with no size (`null`) never drops,
+ * and the newest event always stays.
+ */
+export function createHeadTailEventLog<E>(
+  maxBytes: number,
+  droppableBytes: (event: E) => number | null,
+): HeadTailEventLog<E> {
+  let events: E[] = [];
+  let bytes = 0;
+  let headLength = -1;
+  let headBytes = 0;
+  return {
+    push(event) {
+      events.push(event);
+      const size = droppableBytes(event);
+      if (size === null) return false;
+      bytes += size;
+      if (headLength < 0 && bytes >= maxBytes / 2) {
+        headLength = events.length;
+        headBytes = bytes;
+      }
+      if (bytes <= maxBytes) return false;
+      // The tail shrinks to a quarter of the bound, so the next drop waits for that much output.
+      const kept = events.slice(0, headLength);
+      let tailBytes = bytes - headBytes;
+      let consumed = headLength;
+      for (const middleEvent of events.slice(headLength, -1)) {
+        if (tailBytes <= maxBytes / 4) break;
+        const middleSize = droppableBytes(middleEvent);
+        if (middleSize === null) kept.push(middleEvent);
+        else tailBytes -= middleSize;
+        consumed += 1;
+      }
+      events = kept.concat(events.slice(consumed));
+      bytes = headBytes + tailBytes;
+      return true;
+    },
+    events: () => events,
+  };
+}
 
 export interface RunnerCallOutputLimit {
   code: string;
@@ -233,22 +284,13 @@ export function boundRunnerCallArtifact(
   };
 }
 
-export function finishRunnerCallOutputLimit(
-  recorder: RunnerCallRecorder,
-  limit: RunnerCallOutputLimit,
-  opts: {
-    usage?: RunnerCallUsage | null | undefined;
-    nativeSessionId?: string | null | undefined;
-  } = {},
-): RunnerCallResult {
-  recorder.warning({ warning: runnerCallLimitWarning(limit) });
-  return recorder.finishFailed({
-    status: 'truncated',
-    error: runnerCallLimitError(limit),
-    usage: opts.usage,
-    nativeSessionId: opts.nativeSessionId,
-    partial: true,
-  });
+export function boundRunnerCallStructured(structured: unknown): RunnerCallBoundedValue<unknown> {
+  return boundRunnerCallPayload(
+    structured,
+    RUNNER_CALL_OUTPUT_MAX_BYTES,
+    'The answer',
+    'runner_call_structured_limit',
+  );
 }
 
 export function takeUtf8PrefixBytes(text: string, maxBytes: number): string {

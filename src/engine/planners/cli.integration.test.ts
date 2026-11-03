@@ -22,7 +22,6 @@ import {
 import { processError } from '../../lib/process/errors.js';
 import { TASKS_FILE } from '../../core/paths.js';
 import type { RunnerCallEvent } from '../calls/types.js';
-import { CLI_RAW_OUTPUT_MAX_BYTES } from '../runners/cli-tools/process-invoke.js';
 import type { PlannerFactoryOptions } from './types.js';
 import { callPlanner } from '#testing/helpers/planner-call.js';
 import { z } from 'zod';
@@ -792,62 +791,6 @@ Create the mismatch fallback file.
       kind: 'planning-unexpected-mutations',
       data: { files: ['.opencode/plugin/injected.js'] },
     });
-  });
-
-  it('rejects a typed truncated call and reaps OpenCode when stdout exceeds its budget', async () => {
-    const pidFile = join(shimDir, 'opencode-pids.json');
-    const shimPath = join(shimDir, 'opencode');
-    const script = [
-      '#!/usr/bin/env node',
-      "const { spawn } = require('node:child_process');",
-      "const { writeFileSync } = require('node:fs');",
-      "const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 60_000)'], { stdio: 'ignore' });",
-      `writeFileSync(${JSON.stringify(pidFile)}, JSON.stringify([process.pid, child.pid]));`,
-      "process.stdout.write('OpenCode response text\\n');",
-      "const frame = 'x'.repeat(999_999) + '\\n';",
-      `setTimeout(() => { for (let i = 0; i < ${Math.ceil(CLI_RAW_OUTPUT_MAX_BYTES / 1_000_000) + 2}; i += 1) process.stdout.write(frame); }, 25);`,
-      'setInterval(() => {}, 60_000);',
-    ].join('\n');
-    writeFileSync(shimPath, `${script}\n`, 'utf8');
-    chmodSync(shimPath, 0o755);
-
-    const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }));
-    const events: RunnerCallEvent[] = [];
-
-    await expect(
-      planner.review('prompt', projectDir, {
-        onOutput: vi.fn(),
-        onCallEvent: (event) => events.push(event),
-      }),
-    ).rejects.toMatchObject({
-      kind: 'runner-call-failed',
-      data: {
-        role: 'review',
-        backendKind: 'cli',
-        status: 'truncated',
-        partial: true,
-        error: {
-          code: 'output-budget-breach',
-          message: expect.stringContaining('more than 64 MB'),
-        },
-      },
-    });
-
-    const pids = JSON.parse(readFileSync(pidFile, 'utf8')) as number[];
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: 'call_error',
-        status: 'truncated',
-        partial: true,
-        error: { code: 'output-budget-breach', message: expect.any(String) },
-      }),
-    );
-    expect(events).not.toContainEqual(expect.objectContaining({ type: 'call_completed' }));
-    expect(pids).toHaveLength(2);
-    for (const pid of pids) {
-      expect(pid).toBeGreaterThan(1);
-      expect(() => process.kill(pid, 0)).toThrow();
-    }
   });
 
   it('does not ingest a root tasks.md that an agentic CLI only described in prose', async () => {

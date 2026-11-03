@@ -67,7 +67,7 @@ function defaultRemediation(state: RunnerFailureOutcomeState): string {
     case 'protocol-failure':
       return 'Check the CLI version and output protocol, then retry.';
     case 'output-budget-breach':
-      return 'The tool wrote more than 64 MB of output and was stopped. Narrow what it was asked to print, then retry.';
+      return 'The provider ended the answer at its output token limit. Ask for a shorter answer or choose a model with a larger output limit, then retry.';
     case 'callback-failure':
       return 'Resolve the callback error, then retry.';
     case 'no-staged-change':

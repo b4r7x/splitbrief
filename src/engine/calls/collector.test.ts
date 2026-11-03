@@ -285,7 +285,7 @@ describe('collectRunnerCallResult', () => {
     expect(result.error).toBeNull();
   });
 
-  it('marks direct oversized result text as truncated', () => {
+  it('completes with the whole result text past the output bound', () => {
     const result = collectRunnerCallResult([
       { type: 'call_started', ...base },
       {
@@ -303,14 +303,12 @@ describe('collectRunnerCallResult', () => {
     ]);
 
     expect(result).toMatchObject({
-      status: 'truncated',
-      partial: true,
-      error: { code: 'runner_call_text_limit' },
-      warnings: [expect.objectContaining({ code: 'runner_call_text_limit' })],
+      status: 'completed',
+      partial: false,
+      error: null,
+      warnings: [],
     });
-    expect(Buffer.byteLength(result.text, 'utf8')).toBeLessThanOrEqual(
-      RUNNER_CALL_OUTPUT_MAX_BYTES,
-    );
+    expect(result.text.length).toBe(RUNNER_CALL_OUTPUT_MAX_BYTES + 10);
   });
 
   it('keeps stderr diagnostics out of result warnings by default', () => {

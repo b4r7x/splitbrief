@@ -25,7 +25,7 @@ function textDeltaBytes(events: readonly RunnerCallEvent[], channel: 'stderr' | 
 }
 
 describe.skipIf(process.env.SPLITBRIEF_PERF !== '1')('runner large output perf', () => {
-  it('keeps a large stdout line without newline bounded through spawn collection', async () => {
+  it('returns a large stdout line without newline whole through spawn collection', async () => {
     const events: RunnerCallEvent[] = [];
     const script = [
       'const chunk = "stdout-no-newline-sentinel-" + "x".repeat(64 * 1024);',
@@ -43,12 +43,14 @@ describe.skipIf(process.env.SPLITBRIEF_PERF !== '1')('runner large output perf',
     const elapsedMs = performance.now() - startedAt;
     forceGc();
 
-    expect(result.status).toBe('truncated');
-    expect(result.partial).toBe(true);
-    expect(result.error?.code).toBe('stdout_line_overflow');
-    expect(events.at(-1)).toMatchObject({ type: 'call_error', status: 'truncated', partial: true });
-    expect(result.text.length).toBeLessThan(1_100_000);
-    expect(textDeltaBytes(events, 'stdout')).toBeLessThan(1_100_000);
+    const lineBytes = 64 * ('stdout-no-newline-sentinel-'.length + 64 * 1024);
+    expect(result).toMatchObject({ status: 'completed', error: null });
+    expect(result.warnings).toEqual([
+      expect.objectContaining({ code: 'runner_call_text_limit', surface: 'debug' }),
+    ]);
+    expect(events.at(-1)).toMatchObject({ type: 'call_completed' });
+    expect(result.text.trimEnd().length).toBe(lineBytes);
+    expect(textDeltaBytes(events, 'stdout')).toBeLessThanOrEqual(1024 * 1024);
     expect(serializedBytes(events)).toBeLessThan(1_250_000);
     expect(elapsedMs).toBeLessThan(4_000);
   });
@@ -73,14 +75,12 @@ describe.skipIf(process.env.SPLITBRIEF_PERF !== '1')('runner large output perf',
     forceGc();
     const serializedEvents = JSON.stringify(events);
 
-    expect(result.status).toBe('truncated');
-    expect(result.partial).toBe(true);
-    expect(result.error?.code).toBe('stderr_line_overflow');
-    expect(events.at(-1)).toMatchObject({ type: 'call_error', status: 'truncated', partial: true });
-    expect(result.text).toBe('');
+    expect(result).toMatchObject({ status: 'completed', error: null });
     expect(result.warnings).toContainEqual(
       expect.objectContaining({ code: 'stderr_line_overflow' }),
     );
+    expect(events.at(-1)).toMatchObject({ type: 'call_completed' });
+    expect(result.text).toBe('');
     expect(result.warnings.length).toBeLessThanOrEqual(lineCount + 1);
     expect(textDeltaBytes(events, 'stderr')).toBe(0);
     expect(serializedBytes(events)).toBeLessThan(512_000);

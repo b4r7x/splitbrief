@@ -433,7 +433,7 @@ describe('Claude stream text budget', () => {
     expect(textLimitWarnings(events)).toEqual([]);
   });
 
-  it('warns once when the text the call ends with was cut', async () => {
+  it('keeps the whole text and notes once on debug when its recorded copy was cut', async () => {
     const { events, finish } = record([
       streamEvent({ type: 'message_start', message: { id: 'msg_long', content: [] } }),
       ...Array.from({ length: 4 }, () => textDelta('x'.repeat(RUNNER_CALL_OUTPUT_MAX_BYTES / 4))),
@@ -441,10 +441,12 @@ describe('Claude stream text budget', () => {
       JSON.stringify({ type: 'result', result: '' }),
     ]);
 
-    await expect(finish()).rejects.toThrow('Claude runner call truncated');
+    const result = await finish();
+    expect(result).toMatchObject({ status: 'completed' });
+    expect(result.text.length).toBe(RUNNER_CALL_OUTPUT_MAX_BYTES + 1);
     expect(textLimitWarnings(events)).toEqual([
       expect.objectContaining({
-        warning: expect.objectContaining({ code: 'runner_call_text_limit' }),
+        warning: expect.objectContaining({ code: 'runner_call_text_limit', surface: 'debug' }),
       }),
     ]);
   });

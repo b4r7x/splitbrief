@@ -9,7 +9,6 @@ import { reconcileFinalText } from './final-text.js';
 import { accumulateTokenUsage } from '../calls/usage.js';
 
 export interface ParsedLineRecorder {
-  readonly text: string;
   readonly usage: TokenDelta | null;
   readonly sessionId: string | null;
   apply: (parsed: ParsedLine) => void;
@@ -20,7 +19,6 @@ export function createParsedLineRecorder(opts: {
   onText?: ((text: string) => void) | undefined;
   onSessionId?: ((id: string) => void) | undefined;
 }): ParsedLineRecorder {
-  let text = '';
   let usage: TokenDelta | null = null;
   let sessionId: string | null = null;
   let activeToolUse: { id: string | null; name: string } | null = null;
@@ -41,7 +39,7 @@ export function createParsedLineRecorder(opts: {
   }
 
   function applyResultText(resultText: string): void {
-    const reconciliation = reconcileFinalText(text, resultText);
+    const reconciliation = reconcileFinalText(opts.recorder.snapshot().text, resultText);
     if (reconciliation.kind === 'none') return;
 
     const accepted =
@@ -49,7 +47,6 @@ export function createParsedLineRecorder(opts: {
         ? acceptTextDelta(reconciliation.text)
         : acceptFinalText(reconciliation.text);
     if (reconciliation.kind === 'full') {
-      text = accepted.text;
       if (accepted.text.length > 0) {
         opts.onText?.(accepted.text);
       }
@@ -57,29 +54,23 @@ export function createParsedLineRecorder(opts: {
       return;
     }
     if (reconciliation.kind === 'suffix') {
-      text += accepted.text;
       if (accepted.text.length > 0) opts.onText?.(accepted.text);
       opts.recorder.text({ channel: 'assistant', text: reconciliation.text });
       return;
     }
 
-    text = accepted.text;
     opts.recorder.text({ channel: 'result', text: reconciliation.text, semantics: 'final' });
   }
 
   function applyDeltaText(channel: ParsedTextChannel, textDelta: string): void {
     const accepted = acceptTextDelta(textDelta);
     if (accepted.text.length > 0 && contributesToRunnerResult(channel)) {
-      text += accepted.text;
       opts.onText?.(accepted.text);
     }
     opts.recorder.text({ channel, text: textDelta, semantics: 'delta' });
   }
 
   return {
-    get text() {
-      return text;
-    },
     get usage() {
       return usage;
     },

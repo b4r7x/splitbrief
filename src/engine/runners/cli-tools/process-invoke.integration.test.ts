@@ -33,7 +33,10 @@ import {
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
-import { RUNNER_CALL_STDERR_MAX_BYTES } from '../../calls/output-limit.js';
+import {
+  RUNNER_CALL_RETAINED_OUTPUT_MAX_BYTES,
+  RUNNER_CALL_STDERR_MAX_BYTES,
+} from '../../calls/output-limit.js';
 import { RUNNER_CALL_MESSAGE_MAX_LENGTH } from '../../calls/schema.js';
 import {
   CURSOR_MODEL_REFUSAL,
@@ -46,7 +49,7 @@ import type {
   CliPromptTransport,
   CliProtocolEvent,
 } from './contract.js';
-import { CLI_RAW_OUTPUT_MAX_BYTES, invokeProcessCli } from './process-invoke.js';
+import { invokeProcessCli } from './process-invoke.js';
 import { runnerCallOutcome, runnerOwnWords } from '../../implementers/pipeline/call-result.js';
 import { requireCompletedCall } from '../../planners/require-completed-call.js';
 import { antigravityImplementerAdapter } from './antigravity.js';
@@ -1135,81 +1138,76 @@ describe('invokeProcessCli', () => {
     expect(result.error).toBeNull();
   }, 60_000);
 
-  it('skips a 2 MB stdout line with a warning and completes on a valid terminal', async () => {
-    const script = [
-      "process.stdout.write('x'.repeat(2 * 1024 * 1024) + '\\n')",
-      "process.stdout.write('RESULT:'+Buffer.from('final answer').toString('base64')+'\\n')",
-    ].join(';');
+  itUnix('completes with the whole answer when its result line is larger than 1 MB', async () => {
+    const answer = 'a'.repeat(1_200_000);
+    const resultLine = { type: 'result', subtype: 'success', is_error: false, result: answer };
+    await withTempDir('splitbrief-long-result-line', async (dir) => {
+      const streamPath = join(dir, 'stream.ndjson');
+      writeFileSync(streamPath, `${JSON.stringify(resultLine)}\n`);
+      const shimPath = join(dir, 'claude');
+      writeFileSync(shimPath, `#!/bin/bash\ncat > /dev/null\ncat ${JSON.stringify(streamPath)}\n`, {
+        mode: 0o755,
+      });
 
-    const result = await run(adapter({ kind: 'stdin' }), invocation({ script }));
+      const result = await invokeProcessCli(claudeCodePlannerAdapter, {
+        invocation: {
+          executable: executableIdentity(shimPath),
+          args: [],
+          promptTransport: claudeCodePlannerAdapter.promptTransport,
+          environment: { PATH: process.env.PATH ?? '' },
+          cwd: dir,
+          timeoutMs: 15_000,
+          signal: undefined,
+        },
+        prompt: 'fixture prompt',
+        callContext: { ...callContext, role: 'planner' },
+      });
 
-    expect(result).toMatchObject({
-      status: 'completed',
-      text: 'final answer',
+      expect(result).toMatchObject({ status: 'completed', error: null });
+      expect(result.warnings.filter((warning) => warning.surface !== 'debug')).toEqual([]);
+      expect(result.text.length).toBe(answer.length);
+      expect(result.text === answer).toBe(true);
     });
-    expect(
-      result.warnings.filter((warning) => warning.code === 'stdout_line_overflow'),
-    ).toHaveLength(1);
-    expect(result.warnings).toHaveLength(1);
   });
 
-  it.skipIf(process.platform === 'win32')(
-    'reports fatal output-budget breach only after reaping the producer group',
+  it('completes with the whole answer when the answer is larger than 1 MB', async () => {
+    const lineCount = 2_048;
+    const script = [
+      "const line='a'.repeat(1_023)",
+      `for(let i=0;i<${lineCount};i++)process.stdout.write(line+'\\n')`,
+    ].join(';');
+    const answer = Array.from({ length: lineCount }, () => 'a'.repeat(1_023)).join('\n');
+
+    const result = await run(
+      adapter({ kind: 'stdin' }, { output: 'text' }),
+      invocation({ script }),
+    );
+
+    expect(result).toMatchObject({ status: 'completed', error: null });
+    expect(result.text.length).toBe(answer.length);
+    expect(result.text === answer).toBe(true);
+  });
+
+  itUnix(
+    'keeps a call running past the raw output bound and parses its final answer',
     async () => {
-      const promptMarker = 'OUTPUT-BUDGET-PROMPT-MUST-STAY-PRIVATE';
-      const credential = 'output-budget-credential-must-stay-private';
       const events: RunnerCallEvent[] = [];
-      let leaderPid = 0;
-      let descendantPid = 0;
-      let aliveBeforeTerminal: { leader: boolean; descendant: boolean } | undefined;
-      let absentAtCallError: { leader: boolean; descendant: boolean } | undefined;
-      const noiseFrames = Math.ceil(CLI_RAW_OUTPUT_MAX_BYTES / 1_000_000) + 2;
+      const noiseFrames = Math.ceil(RUNNER_CALL_RETAINED_OUTPUT_MAX_BYTES / 1_000_000) + 2;
       const script = [
-        "const {spawn}=require('node:child_process')",
-        "const child=spawn(process.execPath,['-e','setTimeout(()=>{},10000)'],{stdio:'ignore'})",
-        "const pids=String(process.pid)+':'+String(child.pid)",
-        "process.stdout.write('TEXT:'+Buffer.from(pids).toString('base64')+'\\n')",
         "const frame='NOISE:'+'x'.repeat(999_993)+'\\n'",
-        `setTimeout(()=>{for(let i=0;i<${noiseFrames};i++)process.stdout.write(frame)},25)`,
+        `for(let i=0;i<${noiseFrames};i++)process.stdout.write(frame)`,
+        "process.stdout.write('RESULT:'+Buffer.from('final answer').toString('base64')+'\\n')",
       ].join(';');
+
       const result = await run(
         adapter({ kind: 'stdin' }),
-        invocation({ script, environment: { OPENAI_API_KEY: credential }, timeoutMs: 60_000 }),
-        promptMarker,
-        (event) => {
-          events.push(event);
-          if (event.type === 'call_text_delta') {
-            const [leader, descendant] = event.text.split(':');
-            leaderPid = Number.parseInt(leader ?? '', 10);
-            descendantPid = Number.parseInt(descendant ?? '', 10);
-            aliveBeforeTerminal = {
-              leader: !processIsAbsent(leaderPid),
-              descendant: !processIsAbsent(descendantPid),
-            };
-          }
-          if (event.type === 'call_error' && event.error.code === 'output-budget-breach') {
-            absentAtCallError = {
-              leader: processIsAbsent(leaderPid),
-              descendant: processIsAbsent(descendantPid),
-            };
-          }
-        },
+        invocation({ script, timeoutMs: 60_000 }),
+        '',
+        (event) => events.push(event),
       );
 
-      expect(result).toMatchObject({
-        status: 'truncated',
-        error: { code: 'output-budget-breach' },
-      });
-      expect(leaderPid).toBeGreaterThan(1);
-      expect(descendantPid).toBeGreaterThan(1);
-      expect(aliveBeforeTerminal).toEqual({ leader: true, descendant: true });
-      expect(absentAtCallError).toEqual({ leader: true, descendant: true });
-      expect({
-        leader: processIsAbsent(leaderPid),
-        descendant: processIsAbsent(descendantPid),
-      }).toEqual({ leader: true, descendant: true });
-      expect(JSON.stringify({ result, events })).not.toContain(promptMarker);
-      expect(JSON.stringify({ result, events })).not.toContain(credential);
+      expect(result).toMatchObject({ status: 'completed', text: 'final answer', error: null });
+      expect(events.some((event) => event.type === 'call_error')).toBe(false);
     },
     60_000,
   );
@@ -1382,6 +1380,31 @@ describe('invokeProcessCli', () => {
     expect(ordered).toMatchObject({ status: 'failed', error: { code: 'protocol-failure' } });
     expect(stderrBytes).toBeLessThanOrEqual(RUNNER_CALL_STDERR_MAX_BYTES);
     expect(diagnostics.warnings.some((warning) => warning.code === 'stderr_diagnostic')).toBe(true);
+  });
+
+  it('fails a Codex call that writes a message after its completed turn', async () => {
+    const stream = [
+      '{"type":"thread.started","thread_id":"019fd8af-fdab-7f11-a014-29c1de9fe822"}',
+      '{"type":"turn.started"}',
+      '{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"done"}}',
+      '{"type":"turn.completed","usage":{"input_tokens":10,"output_tokens":5}}',
+      '{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"late"}}',
+    ].join('\n');
+    const encoded = Buffer.from(stream, 'utf8').toString('base64');
+
+    const result = await run(
+      codexImplementerAdapter,
+      invocation({
+        script: `process.stdout.write(Buffer.from('${encoded}','base64').toString('utf8')+'\\n');`,
+        promptTransport: codexImplementerAdapter.promptTransport,
+      }),
+      'fixture prompt',
+    );
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      error: { code: 'protocol-failure', message: 'CLI emitted output after its terminal result' },
+    });
   });
 
   // G-23 synthetic strictness: the structured-terminal guard keeps a warning the CLI emitted
@@ -2613,6 +2636,55 @@ process.stdin.on('end', () => {
     },
   );
 
+  itUnix.each([claudeCodeImplementerAdapter, claudeCodePlannerAdapter])(
+    'a $role call settles with its result and stops the tool when a background task opens a new turn',
+    async (selected) => {
+      await withTempDir('claude-steering-notification', async (dir) => {
+        const shim = installClaudeSteeringShim(dir, 'notification');
+        const port = createSteeringPort();
+        const events: RunnerCallEvent[] = [];
+        let pid = 0;
+        const result = await invokeProcessCli(selected, {
+          invocation: {
+            executable: executableIdentity(shim.executable),
+            args: ['-p'],
+            promptTransport: { kind: 'stdin' },
+            environment: toCliEnvironment(process.env),
+            cwd: dir,
+            signal: undefined,
+            timeoutMs: 5_000,
+          },
+          installedVersion: '2.1.296',
+          steering: port,
+          prompt: 'initial',
+          callContext: { ...callContext, role: selected.role },
+          onEvent: (event) => events.push(event),
+          onSpawned: (child) => {
+            pid = child.pid ?? 0;
+          },
+        });
+
+        expect(result).toMatchObject({
+          status: 'completed',
+          text: 'last',
+          structured: { answer: 'last' },
+          error: null,
+        });
+        expect(events.some((event) => event.type === 'call_error')).toBe(false);
+        expect(
+          events.some(
+            (event) =>
+              (event.type === 'call_tool_use_delta' && event.name === 'Write') ||
+              (event.type === 'call_tool_use_done' && event.toolUse.name === 'Write'),
+          ),
+        ).toBe(false);
+        expect(pid).toBeGreaterThan(1);
+        expect(processIsAbsent(pid)).toBe(true);
+        expect(port.current()).toBeNull();
+      });
+    },
+  );
+
   itUnix.each(['exit', 'abort', 'unsolicited'] as const)(
     'settles sends and detaches on %s',
     async (mode) => {
@@ -2655,10 +2727,8 @@ process.stdin.on('end', () => {
               : ['uncertain'],
         );
         expect(result.status).toBe(
-          mode === 'abort' ? 'aborted' : mode === 'exit' ? 'incomplete' : 'failed',
+          mode === 'abort' ? 'aborted' : mode === 'exit' ? 'incomplete' : 'completed',
         );
-        if (mode === 'unsolicited')
-          expect(result.error).toMatchObject({ code: 'protocol-failure' });
         expect(port.current()).toBeNull();
       });
     },

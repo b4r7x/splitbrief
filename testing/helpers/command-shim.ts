@@ -115,8 +115,7 @@ export type ContractShimMode =
   | 'partial-protocol'
   | 'timeout'
   | 'abort-wait'
-  | 'signal-exit'
-  | 'output-flood';
+  | 'signal-exit';
 
 export interface ContractShimProfile {
   transport: ContractShimTransport;
@@ -248,10 +247,6 @@ export function writeContractShim(opts: ContractShimOptions): string {
     '    ;;',
     '  signal-exit)',
     '    kill -TERM "$$"',
-    '    ;;',
-    '  output-flood)',
-    '    dd if=/dev/zero bs=1024 count=1025 2>/dev/null | tr "\\000" "x"',
-    '    exit 0',
     '    ;;',
     '  *)',
     '    exit 1',

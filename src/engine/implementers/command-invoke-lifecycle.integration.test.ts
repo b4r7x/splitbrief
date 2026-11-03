@@ -7,8 +7,6 @@ import {
   createConfiguredImplementerFixtures,
   implement,
 } from '#testing/helpers/configured-custom-implementer.js';
-import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { CLI_RAW_OUTPUT_MAX_BYTES } from '../runners/cli-tools/process-invoke.js';
 
 const { temporaryDirectory, projectDirectory, runtimeHarness } =
   createConfiguredImplementerFixtures();
@@ -46,78 +44,6 @@ describe('createConfiguredCustomImplementer', () => {
     expect(readFileSync(targetPath, 'utf8')).toBe('export const preserved = true;\n');
     expect(harness.stages).toHaveLength(1);
     expect(existsSync(harness.stages[0] ?? '')).toBe(false);
-  });
-
-  it('discards output past the 64 MB raw ceiling and cleans the child stage without replacing an existing target', {
-    timeout: 30_000,
-  }, async () => {
-    const projectDir = projectDirectory('configured-implementer-output-limit');
-    const targetPath = join(projectDir, 'src', 'output-limit.ts');
-    const outsideDir = temporaryDirectory('configured-implementer-output-limit-outside');
-    const childStarted = join(outsideDir, 'output-limit-child-started');
-    writeFileSync(targetPath, 'export const preserved = true;\n');
-    const harness = runtimeHarness(projectDir, { sourceEnv: {} });
-    const implementer = await createConfiguredCustomImplementer({
-      runner: configuredRunner({
-        argv: [
-          '-e',
-          [
-            `require('node:fs').writeFileSync(${JSON.stringify(childStarted)}, 'started');`,
-            "process.stdout.write('```ts\\nexport const shouldNotApply = true;\\n```\\n');",
-            `const chunk = 'x'.repeat(1_000_000); for (let i = 0; i < ${Math.ceil(CLI_RAW_OUTPUT_MAX_BYTES / 1_000_000) + 1}; i += 1) process.stdout.write(chunk);`,
-          ].join(''),
-        ],
-      }),
-      runtime: harness.runtime,
-    });
-
-    const result = await implement(implementer, projectDir, { file: 'src/output-limit.ts' });
-
-    expect(result.success).toBe(false);
-    expect(existsSync(childStarted)).toBe(true);
-    expect(readFileSync(targetPath, 'utf8')).toBe('export const preserved = true;\n');
-    expect(harness.stages).toHaveLength(1);
-    expect(existsSync(harness.stages[0] ?? '')).toBe(false);
-  });
-
-  it('does not promote direct staged writes after the 64 MB raw ceiling', {
-    timeout: 30_000,
-  }, async () => {
-    const authorizationProjectDir = projectDirectory('configured-implementer-output-limit-auth');
-    const outerStageDir = projectDirectory('configured-implementer-output-limit-stage');
-    const outsideDir = temporaryDirectory('configured-implementer-output-limit-outside');
-    const childStarted = join(outsideDir, 'output-limit-child-started');
-    const promotedPath = join(authorizationProjectDir, 'src', 'should-not-promote.ts');
-    writeFileSync(promotedPath, 'export const canonical = true;\n');
-    const harness = runtimeHarness(authorizationProjectDir, { sourceEnv: {} });
-    const implementer = await createConfiguredCustomImplementer({
-      runner: configuredRunner({
-        contract: 'direct',
-        argv: [
-          '-e',
-          [
-            "const fs = require('node:fs');",
-            `fs.writeFileSync(${JSON.stringify(childStarted)}, 'started');`,
-            "fs.writeFileSync('src/should-not-promote.ts', 'export const stagedOnly = true;\\n');",
-            "process.stdout.write('```ts\\nexport const shouldNotApply = true;\\n```\\n');",
-            `const chunk = 'x'.repeat(1_000_000); for (let i = 0; i < ${Math.ceil(CLI_RAW_OUTPUT_MAX_BYTES / 1_000_000) + 1}; i += 1) process.stdout.write(chunk);`,
-          ].join(''),
-        ],
-      }),
-      runtime: harness.runtime,
-    });
-
-    const result = await implement(implementer, outerStageDir, {
-      file: 'src/should-not-promote.ts',
-    });
-
-    expect(result.success).toBe(false);
-    expect(existsSync(childStarted)).toBe(true);
-    expect(existsSync(join(outerStageDir, 'src', 'should-not-promote.ts'))).toBe(true);
-    expect(readFileSync(promotedPath, 'utf8')).toBe('export const canonical = true;\n');
-    expect(harness.stages).toEqual([]);
-    cleanupTempDir(outerStageDir);
-    expect(existsSync(outerStageDir)).toBe(false);
   });
 
   it('cleans every output child stage after completed, failed, malformed-output, and aborted calls', async () => {

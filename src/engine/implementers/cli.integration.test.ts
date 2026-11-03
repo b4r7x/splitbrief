@@ -25,7 +25,6 @@ import {
   CURSOR_MODEL_REFUSAL_FORMS,
   writeCursorRefusalShim,
 } from '#testing/helpers/cursor-refusal.js';
-import { DEFAULT_PROCESS_LINE_MAX_BYTES } from '../../lib/process/spawn/lifecycle.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import type { ImplementerPublisher } from './types.js';
 
@@ -1406,14 +1405,14 @@ describe('createCliImplementer (opencode arg vector)', () => {
     expect(argv.slice(-2)).toEqual(['--extra-flag', 'value']);
   });
 
-  it('warns on an over-long stdout line and completes through the real CLI path', async () => {
+  it('parses a stdout line longer than 1 MB through the real CLI path', async () => {
     const pidsFile = join(shimDir, 'pids.txt');
     const shimPath = join(shimDir, 'opencode');
     const script = [
       '#!/usr/bin/env node',
       "const { writeFileSync } = require('node:fs');",
       `writeFileSync(${JSON.stringify(pidsFile)}, String(process.pid));`,
-      `process.stdout.write('x'.repeat(${DEFAULT_PROCESS_LINE_MAX_BYTES + 10}));`,
+      `process.stdout.write('x'.repeat(${1024 * 1024 + 10}));`,
     ].join('\n');
     writeFileSync(shimPath, `${script}\n`, 'utf8');
     chmodSync(shimPath, 0o755);
@@ -1441,7 +1440,7 @@ describe('createCliImplementer (opencode arg vector)', () => {
     expect(result).toMatchObject({ success: false, outcome: 'no-staged-change' });
     expect(
       events.filter((event) => event.type === 'call_warning').map((event) => event.warning.code),
-    ).toContain('stdout_line_overflow');
+    ).toEqual(['malformed_opencode']);
     expect(leaderPid).toBeGreaterThan(1);
     expect(processIsAbsent(leaderPid)).toBe(true);
   });

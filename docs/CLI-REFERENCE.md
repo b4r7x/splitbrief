@@ -462,7 +462,7 @@ During `start`, `spec`, `resume`, and other commands that invoke planners or imp
 
 | `state` | Condition | Copyable remediation |
 |---|---|---|
-| `output-budget-breach` | CLI stdout, stderr, or protocol event stream exceeded the configured byte or line budget. | The tool wrote more than 64 MB of output and was stopped. Narrow what it was asked to print, then retry. |
+| `output-budget-breach` | An API seat's answer reached the provider's output token limit before it was complete. | The provider ended the answer at its output token limit. Ask for a shorter answer or choose a model with a larger output limit, then retry. |
 | `no-staged-change` | Implementer completed without staging the expected working-tree change. | Make the requested change in the staged project, then retry. |
 
 Other distinguishable runner outcomes (`spawn-not-found`, `protocol-failure`, `incompatible-version`, `unauthenticated`, and others) are documented in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) and [ENGINE.md](./ENGINE.md). Symptom-oriented guidance: [TROUBLESHOOTING.md](./TROUBLESHOOTING.md).

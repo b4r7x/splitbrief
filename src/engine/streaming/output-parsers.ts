@@ -1,6 +1,7 @@
 import type { OutputFormat } from '../../core/schemas/enums.js';
 import type { ParsedLine } from '../runners/types.js';
-import { assertNever } from '../../utils/type-guards.js';
+import { assertNever, isRecord } from '../../utils/type-guards.js';
+import { reconcileFinalText } from './final-text.js';
 import { createStreamParser, type StreamParseResult } from './parse-stream-json.js';
 import { parseJsonlLine } from './parse-jsonl.js';
 import { parseTextLine } from './parse-text.js';
@@ -28,11 +29,36 @@ function streamParsedLine(r: StreamParseResult): ParsedLine {
   };
 }
 
+/**
+ * With partial messages on, an `assistant` record restates the deltas its block
+ * streamed: keep only the text no delta streamed. Each subagent streams its own blocks.
+ */
+function createFinalRecordReconciler(): (r: StreamParseResult, line: string) => StreamParseResult {
+  const openBlocks = new Map<string, string>();
+  return (r, line) => {
+    if (r.textSemantics === undefined) return r;
+    const record: unknown = r.isSubagent ? JSON.parse(line) : null;
+    const block = isRecord(record) ? String(record.parent_tool_use_id) : '';
+    const blockText = openBlocks.get(block) ?? '';
+    if (r.textSemantics === 'delta') {
+      openBlocks.set(block, blockText + (r.text ?? ''));
+      return r;
+    }
+    openBlocks.delete(block);
+    if (r.text === undefined) return r;
+    const reconciliation = reconcileFinalText(blockText, r.text);
+    return reconciliation.kind === 'none'
+      ? { ...r, text: undefined, channel: undefined }
+      : { ...r, text: reconciliation.text };
+  };
+}
+
 export function getLineParser(format: OutputFormat): (line: string) => ParsedLine {
   switch (format) {
     case 'stream-json': {
       const parse = createStreamParser();
-      return (line) => streamParsedLine(parse(line));
+      const reconcile = createFinalRecordReconciler();
+      return (line) => streamParsedLine(reconcile(parse(line), line));
     }
     case 'jsonl':
       return parseJsonlLine;

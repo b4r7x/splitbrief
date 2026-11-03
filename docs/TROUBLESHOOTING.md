@@ -158,7 +158,7 @@ During `start`, `spec`, `resume`, and other planner/implementer invocations, dis
 
 | Symptom (what you see) | `state` | Copyable remediation |
 |---|---|---|
-| CLI stdout, stderr, or protocol event stream exceeded the configured byte or line budget. | `output-budget-breach` | The tool wrote more than 64 MB of output and was stopped. Narrow what it was asked to print, then retry. |
+| An API seat's answer reached the provider's output token limit before it was complete. | `output-budget-breach` | The provider ended the answer at its output token limit. Ask for a shorter answer or choose a model with a larger output limit, then retry. |
 | Implementer completed without staging the expected working-tree change. | `no-staged-change` | Make the requested change in the staged project, then retry. |
 | Implementer tool call reached outside the isolation directory. | `implementer-left-isolation` | The implementer reached outside its isolation directory and was stopped. Check your checkout, then retry, switch the seat or skip the brief. |
 | Git state changed during an implementer call. [Isolation checks](./APPROVAL-AND-RECOVERY.md#isolation-checks) defines which changes halt. | `checkout-changed` | Your checkout's git state changed while the implementer ran, and SPLITBRIEF reverted nothing. Check the named changes, then retry, switch the seat or skip the brief. |

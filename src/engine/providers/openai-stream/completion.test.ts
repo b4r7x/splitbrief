@@ -483,6 +483,23 @@ describe('streamCompletion', () => {
     expect(events.filter((event) => event.type === 'call_text_delta')).toHaveLength(count);
   });
 
+  it('completes with the whole answer when the streamed reply is larger than 1 MB', async () => {
+    const chunk = 'x'.repeat(64 * 1024);
+    const count = 32;
+    const client = makeMockClient([
+      ...Array.from({ length: count }, () => ({ content: chunk })),
+      { finishReason: 'stop' },
+    ]);
+
+    const result = await streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
+      temperature: 0.2,
+      onProgress: () => undefined,
+    });
+
+    expect(result).toMatchObject({ status: 'completed', error: null });
+    expect(result.text.length).toBe(count * chunk.length);
+  });
+
   it('completes many OpenAI-compatible tool deltas without event cap', async () => {
     const count = 5_000;
     const client = makeMockClient([

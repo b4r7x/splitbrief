@@ -2,7 +2,6 @@ import { createBoundedOutput, type BoundedOutputMetadata } from '../bounded-outp
 import { isENOENT, processError } from '../errors.js';
 import { createLineBuffer } from '../line-buffer.js';
 import {
-  DEFAULT_PROCESS_LINE_MAX_BYTES,
   DEFAULT_PROCESS_OUTPUT_MAX_BYTES,
   DEFAULT_PROCESS_STDERR_MAX_BYTES,
   isFatalSignal,
@@ -23,9 +22,6 @@ export async function spawnWithStdin(opts: {
   env?: NodeJS.ProcessEnv | undefined;
   stdin?: string | undefined;
   onLine: LineStreamCallback<string>;
-  onStdoutLineOverflow?:
-    | LineStreamCallback<{ lineBytes: number; maxLineBytes: number }>
-    | undefined;
   onStderr?: LineStreamCallback<string> | undefined;
   errorDetail?: (() => string | undefined) | undefined;
   notFoundMessage?: string | undefined;
@@ -33,8 +29,6 @@ export async function spawnWithStdin(opts: {
   idle?: SpawnIdleOptions | undefined;
   outputMaxBytes?: number | undefined;
   stderrMaxBytes?: number | undefined;
-  stdoutLineMaxBytes?: number | undefined;
-  outputBudgetBytes?: number | undefined;
 }): Promise<{
   text: string;
   stderrOutput: string;
@@ -52,19 +46,10 @@ export async function spawnWithStdin(opts: {
     maxBytes: stderrMaxBytes,
     policy: 'tail',
   });
-  const stdoutBuf = createLineBuffer(
-    (line) => {
-      const result = opts.onLine(line);
-      return isFatalSignal(result) ? result : undefined;
-    },
-    {
-      maxLineBytes: opts.stdoutLineMaxBytes ?? DEFAULT_PROCESS_LINE_MAX_BYTES,
-      onOverflow: (overflow) => {
-        const result = opts.onStdoutLineOverflow?.(overflow);
-        return isFatalSignal(result) ? result : undefined;
-      },
-    },
-  );
+  const stdoutBuf = createLineBuffer((line) => {
+    const result = opts.onLine(line);
+    return isFatalSignal(result) ? result : undefined;
+  });
 
   const exitFailure = (code: number | null): Error => {
     if (code === 127) return processError.notFound(opts.command, opts.notFoundMessage);
@@ -87,7 +72,6 @@ export async function spawnWithStdin(opts: {
     stdin: opts.stdin,
     signal: opts.signal,
     idle: opts.idle,
-    outputBudgetBytes: opts.outputBudgetBytes,
     partialStdoutMaxBytes: stdoutMaxBytes,
     partialStderrMaxBytes: stderrMaxBytes,
     onStdout: (chunk) => {

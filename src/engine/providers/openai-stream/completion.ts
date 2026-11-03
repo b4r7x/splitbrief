@@ -22,11 +22,6 @@ import {
 } from '../../calls/status.js';
 import type { RunnerCallCredentialRedactor } from '../../calls/status.js';
 import { normalizeRunnerCallUsage } from '../../calls/usage.js';
-import {
-  createRunnerCallDeltaLimiter,
-  finishRunnerCallOutputLimit,
-  type RunnerCallDeltaLimitResult,
-} from '../../calls/output-limit.js';
 import type {
   RunnerCallContext,
   RunnerCallEvent,
@@ -108,39 +103,26 @@ function emitText(
 function emitToolUseDeltas(
   recorder: RunnerCallRecorder,
   delta: StreamChoiceDelta | undefined,
-  limiter: ReturnType<typeof createRunnerCallDeltaLimiter>,
   redactCredential: RunnerCallCredentialRedactor,
-): RunnerCallDeltaLimitResult {
-  if (delta === undefined) return { text: '', limit: null };
-  let accepted: RunnerCallDeltaLimitResult = { text: '', limit: null };
+): void {
+  if (delta === undefined) return;
 
   for (const toolCall of delta.tool_calls ?? []) {
-    accepted = limiter.accept(toolCall.function?.arguments ?? '');
-    if (accepted.text.length > 0 || accepted.limit === null) {
-      recorder.toolUseDelta({
-        toolUseId: toolCall.id === undefined ? null : redactCredential(toolCall.id),
-        name:
-          toolCall.function?.name === undefined ? null : redactCredential(toolCall.function.name),
-        inputDelta: redactCredential(accepted.text),
-      });
-    }
-    if (accepted.limit !== null) return accepted;
+    recorder.toolUseDelta({
+      toolUseId: toolCall.id === undefined ? null : redactCredential(toolCall.id),
+      name: toolCall.function?.name === undefined ? null : redactCredential(toolCall.function.name),
+      inputDelta: redactCredential(toolCall.function?.arguments ?? ''),
+    });
   }
 
   if (delta.function_call !== undefined) {
-    accepted = limiter.accept(delta.function_call.arguments ?? '');
-    if (accepted.text.length > 0 || accepted.limit === null) {
-      recorder.toolUseDelta({
-        toolUseId: null,
-        name:
-          delta.function_call.name === undefined
-            ? null
-            : redactCredential(delta.function_call.name),
-        inputDelta: redactCredential(accepted.text),
-      });
-    }
+    recorder.toolUseDelta({
+      toolUseId: null,
+      name:
+        delta.function_call.name === undefined ? null : redactCredential(delta.function_call.name),
+      inputDelta: redactCredential(delta.function_call.arguments ?? ''),
+    });
   }
-  return accepted;
 }
 
 function emitOpenAiTerminal(
@@ -381,15 +363,6 @@ export async function streamCompletion(
 
   let usage: RunnerCallUsage | null = null;
   let finishReason: string | null = null;
-  const textLimiter = createRunnerCallDeltaLimiter({
-    code: 'provider_text_delta_limit',
-    label: 'The reply',
-  });
-  const toolDeltaLimiter = createRunnerCallDeltaLimiter({
-    code: 'provider_tool_delta_limit',
-    label: 'The streamed tool input',
-  });
-  let outputLimit: RunnerCallDeltaLimitResult['limit'] = null;
 
   try {
     for await (const rawChunk of runWithApiDeadlines<unknown>({
@@ -422,26 +395,10 @@ export async function streamCompletion(
       }
       const chunk = parsedChunk.data;
       const choice = chunk.choices?.[0];
-      const toolDelta = emitToolUseDeltas(
-        recorder,
-        choice?.delta,
-        toolDeltaLimiter,
-        redactCredential,
-      );
-      if (toolDelta.limit !== null) {
-        outputLimit = toolDelta.limit;
-        break;
-      }
+      emitToolUseDeltas(recorder, choice?.delta, redactCredential);
 
       const content = choice?.delta?.content;
-      if (content) {
-        const accepted = textLimiter.accept(content);
-        emitText(recorder, accepted.text, onProgress, redactCredential);
-        if (accepted.limit !== null) {
-          outputLimit = accepted.limit;
-          break;
-        }
-      }
+      if (content) emitText(recorder, content, onProgress, redactCredential);
       if (choice?.finish_reason !== undefined && choice.finish_reason !== null) {
         finishReason = choice.finish_reason;
         if (choice.finish_reason === 'length' && isPolicyFinishReason(policy, 'length')) {
@@ -479,11 +436,6 @@ export async function streamCompletion(
     finishOpenAiFailure(recorder, err, endpoint, usage, credentialValues, redactCredential);
   }
   publishRuntime('settled');
-
-  if (outputLimit !== null) {
-    finishRunnerCallOutputLimit(recorder, outputLimit, { usage, nativeSessionId: null });
-    return recorder.finalResult();
-  }
 
   emitOpenAiTerminal(recorder, finishReason, usage, policy);
   return recorder.finalResult();

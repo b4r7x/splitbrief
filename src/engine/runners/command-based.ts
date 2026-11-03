@@ -8,7 +8,6 @@ import {
   revalidateCustomRunnerInvocation,
   type AdmittedCustomRunnerInvocation,
 } from './custom-launchability.js';
-import { CLI_RAW_OUTPUT_MAX_BYTES } from './cli-tools/process-invoke.js';
 
 /**
  * Where the command comes from. An admitted custom command runs its revalidated absolute path
@@ -106,6 +105,5 @@ export async function invokeCommandRunner(opts: CommandRunnerOptions): Promise<R
     callContext: opts.callContext,
     signal: opts.signal,
     timeoutMs: opts.timeoutMs,
-    outputBudgetBytes: CLI_RAW_OUTPUT_MAX_BYTES,
   });
 }
