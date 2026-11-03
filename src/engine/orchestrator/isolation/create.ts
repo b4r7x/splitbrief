@@ -517,7 +517,6 @@ export function createRunIsolation(opts: {
             projectDir,
             slug: basename(worktreeDir),
             git: worktreeGit,
-            deleteBranch: true,
             worktreeDir,
             ...(warningPublisher !== undefined && { warningPublisher }),
             suppressUncommittedWarning: true,

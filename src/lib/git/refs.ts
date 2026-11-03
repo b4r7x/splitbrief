@@ -49,27 +49,6 @@ export async function getCurrentBranch(dir: string): Promise<string> {
   );
 }
 
-export async function branchExists(dir: string, name: string): Promise<boolean> {
-  return runGit('branch --list', async () => {
-    const result = await getGitForDir(dir).branch(['--list', name]);
-    return result.all.includes(name);
-  });
-}
-
-export async function createBranch(dir: string, desiredName: string): Promise<string> {
-  let name = desiredName;
-  let suffix = 2;
-  while (await branchExists(dir, name)) {
-    if (suffix > 99) {
-      throw gitError.branchNameCollision(desiredName);
-    }
-    name = `${desiredName}-${suffix}`;
-    suffix++;
-  }
-  await runGit('checkout -b', () => getGitForDir(dir).checkoutLocalBranch(name));
-  return name;
-}
-
 export async function showFileAtHead(dir: string, file: string): Promise<Buffer | null> {
   try {
     return await getGitForDir(dir).showBuffer([`HEAD:${file}`]);

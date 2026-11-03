@@ -788,7 +788,7 @@ type Config = {
     approve?: ApproveLevel       // plan | none (all, spec, default load as plan with one notice)
     maxRetries?: unknown         // retired: loads with one notice, ignored; the planner decides every retry
     compactionThreshold?: number
-    git?: { createBranch?: boolean } // retired commitStrategy input is stripped
+    git?: {}                     // retired: commitStrategy none and createBranch false are stripped; other values fail the load
     // taskReview, briefReview, speckit and driftChainThreshold are retired keys (one notice each)
   }
   escalation?: unknown           // retired: loads with one notice, ignored; the planner's consult replaces the intermediate tier

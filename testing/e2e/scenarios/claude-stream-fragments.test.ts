@@ -50,7 +50,6 @@ writeFileSync(${JSON.stringify(MARKER_FILE)}, ${JSON.stringify(MARKER_SOURCE)});
       ...config,
       planner: claude,
       reviewer: claude,
-      workflow: { ...config.workflow, git: { createBranch: false } },
     });
     await trustDeclaredRunners({
       projectDir: target.projectDir,

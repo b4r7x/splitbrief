@@ -159,8 +159,8 @@ describe('setupWorkflow', () => {
   });
 
   const runId = '2026-10-25-leftover-run';
-  const kept = { workspace: true, worktrees: 1, runBranch: true, record: true, stderr: '' };
-  const gone = { workspace: false, worktrees: 0, runBranch: false, record: false, stderr: '' };
+  const kept = { workspace: true, worktrees: 1, record: true, stderr: '' };
+  const gone = { workspace: false, worktrees: 0, record: false, stderr: '' };
 
   async function workspaceRun(
     dirs: string[],
@@ -270,7 +270,6 @@ describe('setupWorkflow', () => {
           git(['worktree', 'list', '--porcelain'])
             .split('\n')
             .filter((line) => line.startsWith('worktree ')).length - 1,
-        runBranch: git(['branch', '--list', `splitbrief/${runId}`]).trim() !== '',
         record: (await readWorkspaceRecord({ projectDir, sessionId: runId })) !== null,
         stderr: stderrSpy.mock.calls.map((call) => String(call[0])).join(''),
       }).toEqual(expected);

@@ -40,12 +40,9 @@ import { readRunEvents } from '../../events/replay.js';
 import { recordInterruptedCalls } from '../../calls/interrupted.js';
 import { seatCandidateOfRunner } from '../recovery/switch-seat.js';
 import { seedUsageLimitSteps } from '../usage-limit-gate.js';
-import { createBranch } from '../../../lib/git/refs.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { initLogger } from '../../../core/logger.js';
-import { slugify } from '../../../utils/slugify.js';
-import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
 import type {
   OrchestratorCallbacks,
   ResumeContextHolder,
@@ -60,8 +57,6 @@ import {
   publishWorkflowConfig,
   publishSeatSwitched,
   publishWarning,
-  publishWarningFromError,
-  publishGitBranchCreated,
 } from '../events.js';
 import {
   commitWorkflowState,
@@ -490,16 +485,6 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
       createStartReadinessRecord(prepared.report, { projectDir, sessionId }),
     )) {
       publishWarning({ bus, phase: state.phase, message });
-    }
-
-    if (config.workflow.git?.createBranch) {
-      const desired = `${SPLITBRIEF_IDENTITY.branchPrefix}${slugify(feature, 40)}`;
-      try {
-        const actual = await createBranch(projectDir, desired);
-        publishGitBranchCreated({ bus: bus, phase: state.phase }, actual);
-      } catch (err) {
-        publishWarningFromError({ bus: bus, phase: state.phase }, 'failed to create branch', err);
-      }
     }
   }
 

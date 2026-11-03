@@ -71,7 +71,7 @@ it('names the brief check it runs and offers no running BUILD call while it runs
     writeConfig(target.projectDir, {
       ...config,
       validation: { ...config.validation, testCommand: `node ${script}` },
-      workflow: { ...config.workflow, review: 'task', git: { createBranch: false } },
+      workflow: { ...config.workflow, review: 'task' },
     });
     const bin = join(target.tmpDir, 'bin');
     mkdirSync(bin);

@@ -115,7 +115,6 @@ if (!corrected) throw new Error('Checks ran before the BUILD correction pass');
       ...config,
       implementer: { kind: 'cli', tool: 'codex', model: 'gpt-5-codex', contextLength: 200_000 },
       validation: { ...config.validation, testCommand: 'node ./tools/check.mjs' },
-      workflow: { ...config.workflow, git: { createBranch: false } },
     });
     const env: Readonly<Record<string, string>> = {
       ...safeChildEnvironment(home.home, [bin]),

@@ -341,7 +341,6 @@ describe('config loading', () => {
       writeConfigYaml(dir, {
         workflow: {
           approve: 'plan',
-          git: { create_branch: true },
           compaction_threshold: 50,
           compaction_format: 'structured',
         },
@@ -350,7 +349,6 @@ describe('config loading', () => {
       expect(loadConfig(dir).config.workflow).toEqual({
         approve: 'plan',
         review: 'end',
-        git: { createBranch: true },
         compactionThreshold: 50,
         compactionFormat: 'structured',
       });

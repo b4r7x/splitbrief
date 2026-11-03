@@ -61,7 +61,6 @@ setInterval(() => {}, 1000);
     writeConfig(target.projectDir, {
       ...config,
       implementer: { kind: 'cli', tool: 'codex', model: 'gpt-5-codex', contextLength: 200_000 },
-      workflow: { ...config.workflow, git: { createBranch: false } },
     });
     const env: Readonly<Record<string, string>> = {
       ...safeChildEnvironment(home.home, [bin]),

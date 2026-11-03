@@ -62,6 +62,7 @@
 - **The Claude Code implementer never runs unsandboxed.** A sandbox that cannot start stops the seat. On Linux, readiness names a missing `bwrap` or `socat` before a run with that implementer starts. `splitbrief spec` and `splitbrief review` do not need them.
 - **An inline `shell` or `agent` runner asks for trust once more after this upgrade.** It no longer inherits the SPLITBRIEF environment; it gets its staged environment and the names in its `env` list. A headless run stays blocked until you confirm in a terminal or pass `--allow-repo-runners`.
 - **Briefs are grouped by outcome, not by count.** One brief delivers one reviewable outcome with its tests, wiring and documentation, and a run may hold any number of briefs.
+- **A run creates no branch.** The run worktree is detached at your project's current commit. Create a branch yourself when you want the changes on one. A run that an older version started on a `splitbrief/<slug>` branch still continues, and closing it deletes that branch.
 - **Staged-copy runs need no git.** A project without git no longer halts at its first brief. `splitbrief init` no longer writes `workflow.isolation`; unset reads `worktree`.
 - **Old runs continue as one planning session.** A run that stopped at its spec, plan or briefs gate continues as one planning session that reads its earlier documents. A run saved before the typed plan and the run workspace still opens, but it loses the transcript rows of retired events (user edits, brief quality and readiness, pause selections) and its drift score.
 - **One transcript, in time order.** Done, running and pending work reads in one scroller. A review row names its failed commands, failed checks and fix briefs. Event labels use sentence case; seat tags stay upper case.
@@ -103,6 +104,7 @@
 - **Breaking — subsystems.** Each is removed with its command, flags and config keys: the Task Brief compiler, brief recovery, detached runs (`splitbrief attach`, `detach`, `ps` and `--detach`), the RPC server (`--rpc`), the MCP server (`splitbrief mcp`), `splitbrief worktree` and `--worktree`, `splitbrief explain`, `splitbrief handoff`, `splitbrief export`, `splitbrief stats` and `status --history`, `splitbrief snapshot` and automatic snapshots, the planner estimate review, automatic splitting of an overflowing task, the session tree, the OpenTelemetry sink and `--otel-exporter`, and module hooks. A retired CLI name prints what replaced it.
 - **Breaking — config keys.** These are load errors, and one load names every offending path: `workflow.persistTranscript`, `workflow.briefReview: rich`, `hooks.builtin`, `hooks.pre_compact`, a hook's `kind: module`, `approval.headless`, `approval.tiers.network`, `approval.tiers.validation`, `codebase.cacheDir`, `sessions.scope: global`, and the top-level `otel`, `snapshots`, `trust`, `plannerEstimateReview` and `autoSplitOverflow`. See [Removed config keys](./docs/CONFIGURATION.md#removed-config-keys). Without `approval.headless`, a run that has a reply channel is always asked.
 - **Breaking — `--json` stream.** The `planner_heartbeat` event no longer carries `accumulatedTokens`.
+- `workflow.git.create_branch` and the *Create branch* setting. `false` still loads and changes nothing. `true` fails the load with a message to delete the key.
 - The `required` key on a check. Every check must pass. A plan or a saved run that still holds the key loads, and SPLITBRIEF ignores the key.
 
 ### Fixed
@@ -181,7 +183,7 @@
 - A seat answer that fails its contract with several errors now lists every error in the transcript, and the halt panel and --plain show one error per line instead of a line cut in the middle of a word.
 - A PLAN, BUILD or REVIEW prompt larger than the tool takes on its command line no longer halts with only Try again or Continue, which failed the same way. A BUILD brief no longer retries or asks the planner first. The halt states the prompt's size and the tool's limit, and offers a change of that seat's tool, its fallback first, and End run.
 - A BUILD prompt that Claude Code refuses as too long no longer shows a made-up size.
-- When End run, Discard or Apply could not confirm the saved run state or could not remove the run's worktree or staged copy, the next SPLITBRIEF start removes it, with its git worktree entry and branch, instead of leaving them on disk.
+- When End run, Discard or Apply could not confirm the saved run state or could not remove the run's worktree or staged copy, the next SPLITBRIEF start removes it, with its git worktree entry, instead of leaving them on disk.
 - Continuing a run that stopped while it planned no longer prints `(task 0/0)`, and `splitbrief status` no longer prints `Task: 0/0` for it; both name no brief position until the run has briefs.
 - A notice that does not fit a narrow terminal keeps the file name and shortens its cause.
 - A notice cut at the end of its row ends on a whole word.

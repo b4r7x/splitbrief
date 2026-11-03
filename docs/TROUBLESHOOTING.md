@@ -610,7 +610,7 @@ A read, list or search outside the isolation directory does not halt. The tripwi
 
 ### Symptom: the run halted with "Repository changed under T00N"
 
-**Likely cause:** Git state that the run shares with your checkout changed while an implementer call ran: a branch other than the current one, a tag, the stash, a hook, the git config or the installed `node_modules` set. A change to the run worktree's own `HEAD`, branch or index halts too. The halt's sentence names each change: `Repository changed under T004 · tag v1.2 · hook pre-commit`, or `Repository changed under T004 · run worktree branch splitbrief/<session-id>` when something committed inside the run worktree. The audit sees what changed, not who changed it: a hook that is still running, or another agent that creates or moves an audited branch ref in the same repository, halts the brief too. See [Isolation checks](./APPROVAL-AND-RECOVERY.md#isolation-checks).
+**Likely cause:** Git state that the run shares with your checkout changed while an implementer call ran: a branch other than the current one, a tag, the stash, a hook, the git config or the installed `node_modules` set. A change to the run worktree's own `HEAD`, branch or index halts too. The halt's sentence names each change: `Repository changed under T004 · tag v1.2 · hook pre-commit`, or `Repository changed under T004 · run worktree HEAD` when something committed inside the run worktree. The audit sees what changed, not who changed it: a hook that is still running, or another agent that creates or moves an audited branch ref in the same repository, halts the brief too. See [Isolation checks](./APPROVAL-AND-RECOVERY.md#isolation-checks).
 
 A commit, a branch switch or a pull in your checkout does not halt the brief: a move of the checkout's `HEAD` or current branch is Apply's work. Apply merges it with the run's result, and an overlap it cannot merge stops Apply with an `apply-conflict` halt instead ([Apply conflicts](./APPROVAL-AND-RECOVERY.md#apply-conflicts)). A changed file does not halt the brief either, because an editor save changes files too. The run publishes the `checkout_changed_during_call` warning and continues: `Task T004: your checkout changed while Google Antigravity CLI ran — src/app.ts; nothing there was reverted`. The warning is in the transcript, in `session.jsonl` and in the review packet's warnings list.
 
@@ -1263,24 +1263,12 @@ A killed process's `base-<pid>-*` tree under `$XDG_STATE_HOME/splitbrief/bases/`
 
 ---
 
-### Symptom: `Branch splitbrief/<slug> already exists.`
-
-**Likely cause:** A previous run's isolation worktree left the branch behind and it was never deleted. SPLITBRIEF refuses to overwrite an existing branch when creating a worktree.
-
-**Fix:**
-1. If the branch contains work you still want, inspect it first, then rename it.
-2. Otherwise clear the stale registration: `git worktree prune`, then `git branch -D splitbrief/<slug>`.
-
-**Prevention:** Let runs finish so isolation removes its own worktree and branch; `git worktree list` shows the ones that outlived a run.
-
----
-
 ### Symptom: A run-isolation worktree is left behind after an interrupted run
 
 **Likely cause:** An open or ready run retains its workspace across stops and restarts. Discard and End run preserve a patch before removal. A failed patch write keeps the workspace. A failed removal reports its path. See [Apply](./WORKFLOW.md#apply).
 
 **Fix:**
-1. Find the path: `git worktree list` (look for `splitbrief/<session-id>`).
+1. Find the path: `git worktree list` (look for a `detached HEAD` entry whose path ends in `splitbrief/trees/<hash>/<session-id>`).
 2. Inspect what it holds: `cd` to that path and run `git status` (and compare against the project directory).
 3. Continue the same run. If it is ready, use [the result menu](./FEATURES.md#run-result-menu). If you closed it, inspect the reported `run.patch` before removing any retained directory.
 

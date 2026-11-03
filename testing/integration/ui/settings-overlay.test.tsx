@@ -96,15 +96,14 @@ describe('settings overlay integration', () => {
       expect(loadConfig(dir).config.validation.endChecks).toBe(false);
     });
 
-    // Back on, then up past Isolation to Create branch, which turns on.
+    // Back on, then up to Isolation, which moves to the staged copy.
     ui.stdin.write(' ');
-    ui.stdin.write(ARROW_UP);
     ui.stdin.write(ARROW_UP);
     ui.stdin.write(' ');
     await vi.waitFor(() => {
       const config = loadConfig(dir).config;
       expect(config.validation.endChecks).toBe(true);
-      expect(config.workflow.git?.createBranch).toBe(true);
+      expect(config.workflow.isolation).toBe('staged-copy');
     });
     ui.unmount();
   });
@@ -295,7 +294,7 @@ describe('settings overlay integration', () => {
     ui.stdin.write(PAGE_DOWN);
     await vi.waitFor(() => {
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(lineContaining(frame, CURSOR_GLYPH)).toContain('End-of-run checks');
+      expect(lineContaining(frame, CURSOR_GLYPH)).toContain('Test command');
       // The page steps over the Workflow section and lands with the whole of it on screen — its
       // first row included — so no row was stepped over unseen.
       expect(frame).toContain('Plan approval');

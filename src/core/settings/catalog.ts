@@ -90,14 +90,6 @@ export const SETTINGS_DEFS: SettingDef[] = [
     options: [...CompactionFormatSchema.options],
   },
   {
-    id: 'workflow.git.createBranch',
-    label: 'Create branch',
-    section: 'Workflow',
-    description: 'Auto-create a splitbrief/<slug> branch at workflow start',
-    kind: 'boolean',
-    readValue: (config) => config.workflow.git?.createBranch ?? false,
-  },
-  {
     id: 'workflow.isolation',
     label: 'Isolation',
     section: 'Workflow',

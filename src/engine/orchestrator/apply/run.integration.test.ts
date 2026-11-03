@@ -237,16 +237,14 @@ describe('runApply', { timeout: 60_000 }, () => {
   );
 
   it.each(['worktree', 'staged-copy'] as const)(
-    '%s: an applied run removes its workspace, and a worktree its branch',
+    '%s: an applied run removes its workspace',
     async (strategy) => {
       await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID, strategy }, async (run) => {
         writeFileSync(join(run.ws, 'a.txt'), lines('ONE', 'two', 'three', 'four', 'five'));
         const git = (...args: string[]) =>
           execFileSync('git', args, { cwd: run.dir, encoding: 'utf8' });
-        const branch = `splitbrief/${basename(run.ws)}`;
         if (strategy === 'worktree') {
           expect(git('worktree', 'list', '--porcelain')).toContain(realpathSync(run.ws));
-          expect(git('branch', '--list', branch)).toContain(branch);
         }
 
         const state = await reviewedReadyState(run);
@@ -266,7 +264,6 @@ describe('runApply', { timeout: 60_000 }, () => {
           'apply_finished',
         ]);
         expect(git('worktree', 'list', '--porcelain')).not.toContain(basename(run.ws));
-        expect(git('branch', '--list', branch).trim()).toBe('');
         expect(
           await readWorkspaceRecord({ projectDir: run.dir, sessionId: run.sessionId }),
         ).toBeNull();
@@ -277,6 +274,38 @@ describe('runApply', { timeout: 60_000 }, () => {
       });
     },
   );
+
+  it('worktree: a seat commit in the run worktree moves no branch, and Apply still brings the change', async () => {
+    const refs = (dir: string): string =>
+      execFileSync('git', ['for-each-ref', '--format=%(refname) %(objectname)', 'refs/heads'], {
+        cwd: dir,
+        encoding: 'utf8',
+      });
+    let userBranches = '';
+    await withApplyRun(
+      { 'a.txt': FIVE },
+      {
+        sessionId: SESSION_ID,
+        strategy: 'worktree',
+        atBase: (dir) => {
+          userBranches = refs(dir);
+        },
+      },
+      async (run) => {
+        writeFileSync(join(run.ws, 'a.txt'), lines('ONE', 'two', 'three', 'four', 'five'));
+        execFileSync('git', ['add', 'a.txt'], { cwd: run.ws });
+        execFileSync('git', ['commit', '-q', '-m', 'seat commit'], { cwd: run.ws });
+
+        expect.soft(refs(run.dir)).toBe(userBranches);
+
+        const result = await apply(run, await reviewedReadyState(run));
+
+        expect(result.outcome).toBe('applied');
+        expect(read(run.dir, 'a.txt')).toBe(lines('ONE', 'two', 'three', 'four', 'five'));
+        expect(refs(run.dir)).toBe(userBranches);
+      },
+    );
+  });
 
   it('a workspace Apply cannot remove stays named in a warning, and the run stays applied', async () => {
     await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {

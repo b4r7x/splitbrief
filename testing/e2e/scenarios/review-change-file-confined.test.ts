@@ -67,7 +67,6 @@ symlinkSync(${JSON.stringify(outside)}, '.splitbrief');
       ...config,
       planner: claude,
       reviewer: claude,
-      workflow: { ...config.workflow, git: { createBranch: false } },
     });
     await trustDeclaredRunners({
       projectDir: target.projectDir,

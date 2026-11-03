@@ -154,16 +154,35 @@ describe('config defaults', () => {
       },
     );
 
-    it('loads commit_strategy none as inert, keeps create_branch, and omits it on rewrite', () => {
+    it('loads commit_strategy none as inert and omits it on rewrite', () => {
       const dir = join(TMP, 'legacy-commit-strategy-none');
-      writeConfigYaml(dir, { workflow: { git: { commit_strategy: 'none', create_branch: true } } });
+      writeConfigYaml(dir, { workflow: { git: { commit_strategy: 'none' } } });
 
       const { config } = loadConfig(dir);
-      expect(config.workflow.git).toEqual({ createBranch: true });
+      expect(config.workflow.git).toEqual({});
 
       const rewritten = YAML.parse(writeConfig(dir, config)) as Record<string, unknown>;
-      expect((rewritten.workflow as Record<string, unknown>).git).toEqual({ create_branch: true });
+      expect((rewritten.workflow as Record<string, unknown>).git).toEqual({});
       expect(loadConfig(dir).config).toEqual(config);
+    });
+
+    it('rejects workflow.git.create_branch true at load, saying SPLITBRIEF no longer creates a branch', () => {
+      const dir = join(TMP, 'retired-create-branch-true');
+      writeConfigYaml(dir, { workflow: { git: { create_branch: true } } });
+
+      expect(() => loadConfig(dir)).toThrow(
+        /workflow\.git\.createBranch: .*no longer creates a branch/,
+      );
+    });
+
+    it('loads workflow.git.create_branch false as inert and omits it on rewrite', () => {
+      const dir = join(TMP, 'retired-create-branch-false');
+      writeConfigYaml(dir, { workflow: { git: { create_branch: false } } });
+
+      const { config } = loadConfig(dir);
+      expect(config.workflow.git ?? {}).not.toHaveProperty('createBranch');
+
+      expect(writeConfig(dir, config)).not.toContain('create_branch');
     });
 
     it.each(['pre_commit', 'post_commit'])(

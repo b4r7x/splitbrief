@@ -168,19 +168,17 @@ The planner names the project gate from the project itself, and the reviewer com
 
 **Resolution ladder.** A planner `test` check resolves its command through `config → manifest → discovered → stack default → none`: an explicit `validation.test_command`, then a `package.json` `test` script / `Makefile` or `justfile` `test` target / `[tool.pytest.ini_options]` section, then the command the planner discovered while reading the repo, then the stack default. When every rung is empty the check is `not-runnable` with the reason `no test command for an unrecognised stack; set validation.test_command`, never passed; a required one halts with `required-checks-unrunnable`. SPLITBRIEF never falls back to `npm test` on a project that is not a JavaScript or TypeScript one.
 
-**How to use.** Leave `validation.end_checks` on, or set it to `false` (Settings: End-of-run checks) to run no reviewer check before a review. The plan card shows the gate commands before the build. Pin the stack with `validation.stack` when the markers are ambiguous, and override the `test` check command with `validation.test_command`. Optionally auto-create a branch with `workflow.git.createBranch: true` (writes to `splitbrief/<slug>`).
+**How to use.** Leave `validation.end_checks` on, or set it to `false` (Settings: End-of-run checks) to run no reviewer check before a review. The plan card shows the gate commands before the build. Pin the stack with `validation.stack` when the markers are ambiguous, and override the `test` check command with `validation.test_command`.
 
-Review the changes and commit them manually.
+Review the changes and commit them manually. SPLITBRIEF creates no branch: the run worktree is detached at your project's current commit, so create a branch yourself when you want the changes on one.
 
 Existing staged content, including partial staging, remains the user’s.
 
 ```yaml
 validation: { end_checks: true, test_command: "npm test" }
-workflow:
-  git: { createBranch: false }
 ```
 
-Events: `validate`, `git_branch_created`. Historical `git_commit` and `git_checkpoint` records remain replayable, but new runs never publish them.
+Events: `validate`. Historical `git_commit`, `git_checkpoint` and `git_branch_created` records remain replayable, but new runs never publish them.
 
 ### Retry + consult
 

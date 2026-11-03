@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { realpath, rm, rmdir } from 'node:fs/promises';
 import { basename, dirname, join, relative } from 'node:path';
 import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
@@ -8,7 +8,6 @@ import { getGitCommonDir } from '../../../lib/git/repository.js';
 import { isENOENT, isNodeError } from '../../../lib/process/errors.js';
 import { clearWorkspaceRecord, stagedWorkspaceRoot, retentionError } from './retention.js';
 import { isInsideRoot } from '../../../lib/path-confinement.js';
-import { worktreeError } from './errors.js';
 import {
   gitignoreDiffersOnlyBySplitbriefBookkeeping,
   shouldIgnoreWorktreeUncommittedPath,
@@ -23,7 +22,6 @@ export type RemoveWorktreeOptions = {
   projectDir: string;
   slug: string;
   git: GitClient;
-  deleteBranch?: boolean;
   // Run isolation places its worktree outside `.trees/` and resolves that path
   // itself; without it the slug names a directory under the project root.
   worktreeDir?: string;
@@ -66,7 +64,6 @@ export async function removeRunWorkspace(
       projectDir,
       slug,
       git: createGitClient(projectDir),
-      deleteBranch: true,
       worktreeDir,
       suppressUncommittedWarning: true,
     });
@@ -99,26 +96,26 @@ function worktreeLabel(projectDir: string, wtPath: string): string {
 }
 
 export async function removeWorktree(opts: RemoveWorktreeOptions): Promise<void> {
-  const {
-    projectDir,
-    slug,
-    git,
-    deleteBranch = false,
-    warningPublisher,
-    suppressUncommittedWarning = false,
-  } = opts;
+  const { projectDir, slug, git, warningPublisher, suppressUncommittedWarning = false } = opts;
   const wtPath = opts.worktreeDir ?? resolveConfinedWorktreePath(projectDir, slug);
   const label = worktreeLabel(projectDir, wtPath);
-  const branch = `${SPLITBRIEF_IDENTITY.branchPrefix}${slug}`;
+  const registration = await findWorktreeRegistration(git, wtPath);
+  // An older version put each run worktree on its own `splitbrief/<slug>` branch.
+  // A detached run worktree has no branch to delete.
+  const oldRunBranch = `${SPLITBRIEF_IDENTITY.branchPrefix}${slug}`;
+  const ownsOldRunBranch = registration?.branch === `refs/heads/${oldRunBranch}`;
 
   if (!existsSync(wtPath)) {
-    const branches = await git.branch();
-    if (!branches.all.includes(branch)) {
-      throw worktreeError.notFound(label);
+    // A `git worktree prune`, by the user or by the close of another run, already removed it.
+    if (registration === undefined) {
+      if ((await git.raw(['branch', '--list', oldRunBranch])).trim() !== '') {
+        await git.raw(['branch', '-D', oldRunBranch]);
+      }
+      return;
     }
     await git.raw(['worktree', 'prune']);
-    if (deleteBranch) {
-      await git.raw(['branch', '-D', branch]);
+    if (ownsOldRunBranch) {
+      await git.raw(['branch', '-D', oldRunBranch]);
     }
     return;
   }
@@ -151,7 +148,28 @@ export async function removeWorktree(opts: RemoveWorktreeOptions): Promise<void>
 
   await git.raw(['worktree', 'remove', wtPath, '--force']);
 
-  if (deleteBranch) {
-    await git.raw(['branch', '-D', branch]);
+  if (ownsOldRunBranch) {
+    await git.raw(['branch', '-D', oldRunBranch]);
   }
+}
+
+// Git lists each worktree at its real path; a removed directory keeps its entry until a prune.
+async function findWorktreeRegistration(
+  git: GitClient,
+  wtPath: string,
+): Promise<{ branch: string | undefined } | undefined> {
+  const target = `worktree ${realPathOf(wtPath)}`;
+  const porcelain = await git.raw(['worktree', 'list', '--porcelain']);
+  const entry = porcelain
+    .split('\n\n')
+    .map((block) => block.split('\n'))
+    .find((lines) => lines[0] === target);
+  if (entry === undefined) return undefined;
+  return { branch: entry.find((line) => line.startsWith('branch '))?.slice('branch '.length) };
+}
+
+function realPathOf(path: string): string {
+  if (existsSync(path)) return realpathSync(path);
+  const parent = dirname(path);
+  return parent === path ? path : join(realPathOf(parent), basename(path));
 }

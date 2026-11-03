@@ -45,7 +45,7 @@ function git(cwd: string, args: readonly string[]): string {
 }
 
 describe('e2e: headless End run on a run worktree with uncommitted changes', () => {
-  it('removes the worktree and its branch without a warning and keeps the changes in run.patch', async () => {
+  it('removes the worktree without a warning, creates no branch, and keeps the changes in run.patch', async () => {
     fixture = createStopContinueFixture(writingImplementerScript);
     const target = fixture;
     mkdirSync(join(target.projectDir, 'src'));
@@ -66,8 +66,8 @@ describe('e2e: headless End run on a run worktree with uncommitted changes', () 
     const uncommitted = git(workspace.path, ['status', '--porcelain', '--', 'src']);
     expect(uncommitted).toContain(` M ${GREET_FILE}`);
     expect(uncommitted).toContain(`?? ${MARKER_FILE}`);
-    const branch = `${SPLITBRIEF_IDENTITY.branchPrefix}${sessionId.slice(0, 64)}`;
-    expect(git(target.projectDir, ['branch', '--list', branch])).toContain(branch);
+    const runBranches = ['branch', '--list', `${SPLITBRIEF_IDENTITY.branchPrefix}*`];
+    expect(git(target.projectDir, runBranches)).toBe('');
 
     const ended = await cli(target, ['continue', sessionId, '--action', 'end-run']);
 
@@ -88,7 +88,7 @@ describe('e2e: headless End run on a run worktree with uncommitted changes', () 
     expect(patchText).toContain('+export function greet(name: string): string {');
     expect(patchText).toContain("+export const RUN_MARKER = 'implementer-started';");
     expect(existsSync(workspace.path)).toBe(false);
-    expect(git(target.projectDir, ['branch', '--list', branch])).toBe('');
+    expect(git(target.projectDir, runBranches)).toBe('');
     expect(git(target.projectDir, ['worktree', 'list', '--porcelain'])).not.toContain(
       workspace.path,
     );

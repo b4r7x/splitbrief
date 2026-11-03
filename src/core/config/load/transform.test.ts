@@ -4,12 +4,12 @@ import { toYaml } from './transform.js';
 describe('toYaml', () => {
   it('converts camelCase to snake_case in output', () => {
     const obj = {
-      workflow: { maxRetries: 3, git: { createBranch: true } },
+      workflow: { maxRetries: 3, compactionFormat: 'structured' },
     };
     const result = toYaml(obj);
     const workflow = result.workflow as Record<string, unknown>;
     expect(workflow.max_retries).toBe(3);
-    expect((workflow.git as Record<string, unknown>).create_branch).toBe(true);
+    expect(workflow.compaction_format).toBe('structured');
     expect(workflow.maxRetries).toBeUndefined();
   });
 });

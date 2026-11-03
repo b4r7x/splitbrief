@@ -25,18 +25,26 @@ const GitWorkflowFieldsSchema = z.strictObject({
   createBranch: z.boolean().optional(),
 });
 
-// `none` is what the removed automation already did, so it loads and is dropped; `checkpoint` and
-// `per-task` asked SPLITBRIEF to write the git index, which it no longer does, so they fail the load.
+// Both fields are retired. `commitStrategy: none` and `createBranch: false` are what SPLITBRIEF
+// already does, so they load and are dropped; `checkpoint`, `per-task` and `createBranch: true`
+// asked for git writes SPLITBRIEF no longer makes, so they fail the load.
 const GitWorkflowConfigSchema = GitWorkflowFieldsSchema.superRefine((git, ctx) => {
-  if (git.commitStrategy === undefined || git.commitStrategy === 'none') return;
-  ctx.addIssue({
-    code: 'custom',
-    message: `commitStrategy "${git.commitStrategy}" was removed — SPLITBRIEF no longer stages, commits or checkpoints; delete workflow.git.commit_strategy and commit your changes yourself.`,
-    path: ['commitStrategy'],
-  });
-}).transform(
-  ({ commitStrategy: _retired, ...git }): z.infer<typeof GitWorkflowFieldsSchema> => git,
-);
+  if (git.commitStrategy !== undefined && git.commitStrategy !== 'none') {
+    ctx.addIssue({
+      code: 'custom',
+      message: `commitStrategy "${git.commitStrategy}" was removed — SPLITBRIEF no longer stages, commits or checkpoints; delete workflow.git.commit_strategy and commit your changes yourself.`,
+      path: ['commitStrategy'],
+    });
+  }
+  if (git.createBranch === true) {
+    ctx.addIssue({
+      code: 'custom',
+      message:
+        'createBranch was removed — SPLITBRIEF no longer creates a branch; delete workflow.git.create_branch and create your branch yourself.',
+      path: ['createBranch'],
+    });
+  }
+}).transform((): z.infer<typeof GitWorkflowFieldsSchema> => ({}));
 
 export const ApprovalConfigSchema = z.strictObject({
   /** Retired: loads with one notice and changes nothing. */

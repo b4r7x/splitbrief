@@ -272,6 +272,37 @@ describe('ensureIsolationWorktree', { timeout: 90_000 }, () => {
     expect(statSync(join(result.worktreePath, 'shared.txt')).mode & 0o777).toBe(0o640);
   });
 
+  it('opens the run worktree on a detached HEAD at the project commit and creates no branch', async () => {
+    createTestGitRepo(repoDir, { 'README.md': '# test\n' });
+    const git = (cwd: string, ...args: string[]): string =>
+      execFileSync('git', args, { cwd, encoding: 'utf-8' }).trim();
+    const branchesBefore = git(
+      repoDir,
+      'for-each-ref',
+      '--format=%(refname) %(objectname)',
+      'refs/heads',
+    );
+
+    const result = await ensureIsolationWorktree({
+      projectDir: repoDir,
+      sessionId: SESSION_ID,
+      git: createGitClient(repoDir),
+    });
+
+    expect(result.kind).toBe('ready');
+    if (result.kind !== 'ready') return;
+    expect(git(result.worktreePath, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('HEAD');
+    expect(git(result.worktreePath, 'rev-parse', 'HEAD')).toBe(git(repoDir, 'rev-parse', 'HEAD'));
+    expect(git(repoDir, 'branch', '--list', 'splitbrief/*')).toBe('');
+    expect(git(repoDir, 'for-each-ref', '--format=%(refname) %(objectname)', 'refs/heads')).toBe(
+      branchesBefore,
+    );
+    const entry = git(repoDir, 'worktree', 'list', '--porcelain')
+      .split('\n\n')
+      .find((block) => block.startsWith(`worktree ${realpathSync(result.worktreePath)}\n`));
+    expect(entry?.split('\n')).toContain('detached');
+  });
+
   it('reuses the same worktree for a second run of the same session via its marker', async () => {
     createTestGitRepo(repoDir, { 'README.md': '# test\n' });
     const first = await ensureIsolationWorktree({

@@ -152,7 +152,7 @@ process.stdout.write(${JSON.stringify(JSON.stringify(passingVerdict({ kind: 'tas
         implementer: { kind: 'cli', tool: 'codex', model: 'gpt-5-codex', contextLength: 200_000 },
         reviewer,
         validation: { ...config.validation, testCommand: 'node ./tools/check.mjs' },
-        workflow: { ...config.workflow, review: 'task', git: { createBranch: false } },
+        workflow: { ...config.workflow, review: 'task' },
       });
       const env: Readonly<Record<string, string>> = {
         ...safeChildEnvironment(home.home, [bin]),

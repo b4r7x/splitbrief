@@ -2815,8 +2815,8 @@ describe('runWorkflow — orphan session sweep', () => {
   });
 });
 
-describe('runWorkflow — createBranch', () => {
-  it('creates splitbrief/<slug> branch when git.createBranch is enabled', async () => {
+describe('runWorkflow — no run branch', () => {
+  it('creates no branch in the project when a run starts', async () => {
     const projectDir = setupProject();
     const { callbacks } = makeCallbacks();
     const events: EngineEvent[] = [];
@@ -2825,51 +2825,10 @@ describe('runWorkflow — createBranch', () => {
 
     const config = makeConfig({
       validation: { endChecks: false, testCommand: 'noop' },
-      workflow: {
-        git: { createBranch: true },
-      },
-    });
-
-    await runWorkflow({
-      feature: 'add auth',
-      projectDir,
-      config,
-      callbacks,
-      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-      _eventSink: (e) => events.push(e),
-      _planner: makePlanner(),
-      signal: controller.signal,
-    });
-
-    const branchEvent = events.find(
-      (e): e is Extract<EngineEvent, { type: 'git_branch_created' }> =>
-        e.type === 'git_branch_created',
-    );
-    expect(branchEvent).toBeDefined();
-    expect(branchEvent?.name).toBe('splitbrief/add-auth');
-
-    const g = simpleGit(projectDir);
-    const status = await g.status();
-    expect(status.current).toBe(branchEvent?.name);
-  });
-
-  it('does not create a branch when git.createBranch is false', async () => {
-    const projectDir = setupProject();
-    const { callbacks } = makeCallbacks();
-    const events: EngineEvent[] = [];
-    const controller = new AbortController();
-    controller.abort();
-
-    const config = makeConfig({
-      validation: { endChecks: false, testCommand: 'noop' },
-      workflow: {
-        git: { createBranch: false },
-      },
     });
 
     const g = simpleGit(projectDir);
-    const statusBefore = await g.status();
-    const defaultBranch = statusBefore.current ?? 'main';
+    const before = await g.branch();
 
     await runWorkflow({
       feature: 'add auth',
@@ -2883,8 +2842,9 @@ describe('runWorkflow — createBranch', () => {
     });
 
     expect(events.find((e) => e.type === 'git_branch_created')).toBeUndefined();
-    const statusAfter = await g.status();
-    expect(statusAfter.current).toBe(defaultBranch);
+    const after = await g.branch();
+    expect(after.current).toBe(before.current);
+    expect(after.all).toEqual(before.all);
   });
 });
 

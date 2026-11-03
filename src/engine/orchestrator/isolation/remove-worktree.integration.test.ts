@@ -30,6 +30,12 @@ async function initRepo(dir: string): Promise<SimpleGit> {
   return simpleGit(dir);
 }
 
+async function checkOutBranch(wtPath: string, branch: string): Promise<void> {
+  const worktreeGit = simpleGit(wtPath);
+  await worktreeGit.raw(['branch', branch, 'HEAD']);
+  await worktreeGit.raw(['symbolic-ref', 'HEAD', `refs/heads/${branch}`]);
+}
+
 beforeEach(async () => {
   repoDir = await mkdtemp(join(tmpdir(), 'worktree-remove-test-'));
   git = await initRepo(repoDir);
@@ -63,11 +69,10 @@ describe('removeWorktree', () => {
         ).rejects.toMatchObject({ kind: 'isolation-retention-unavailable' });
         expect(existsSync(worktreeDir)).toBe(true);
         expect(await git.raw(['worktree', 'list', '--porcelain'])).toContain(worktreeDir);
-        expect((await git.branch()).all).toContain(`splitbrief/${slug}`);
         expect(await readFile(record, 'utf8')).toBe('kept\n');
       } finally {
         if (existsSync(worktreeDir)) {
-          await removeWorktree({ projectDir: repoDir, slug, git, worktreeDir, deleteBranch: true });
+          await removeWorktree({ projectDir: repoDir, slug, git, worktreeDir });
         }
       }
     },
@@ -89,7 +94,6 @@ describe('removeWorktree', () => {
         removeRunWorkspace(repoDir, sessionId, { kind: 'worktree', path: recordedPath }),
       ).rejects.toMatchObject({ kind: 'worktree-isolation-path-overlap' });
       expect(existsSync(worktreeDir)).toBe(true);
-      expect((await git.branch()).all).toContain(`splitbrief/${sessionId}`);
     } finally {
       await rm(recordedPath);
     }
@@ -119,11 +123,10 @@ describe('removeWorktree', () => {
         ).rejects.toThrow();
         expect(existsSync(worktreeDir)).toBe(true);
         expect(await git.raw(['worktree', 'list', '--porcelain'])).toContain(worktreeDir);
-        expect((await git.branch()).all).toContain(`splitbrief/${slug}`);
       } finally {
         await rm(linkPath, { force: true });
         if (existsSync(worktreeDir)) {
-          await removeWorktree({ projectDir: repoDir, slug, git, worktreeDir, deleteBranch: true });
+          await removeWorktree({ projectDir: repoDir, slug, git, worktreeDir });
         }
       }
     },
@@ -141,25 +144,51 @@ describe('removeWorktree', () => {
     expect(worktreeList).not.toContain('feat-h');
   });
 
-  it('throws for a non-existent worktree', async () => {
-    await expect(removeWorktree({ projectDir: repoDir, slug: 'nonexistent', git })).rejects.toThrow(
-      'Worktree ".trees/nonexistent" does not exist.',
-    );
+  it('treats a worktree with no folder and no git entry as removed', async () => {
+    await createWorktree({ projectDir: repoDir, slug: 'feat-pruned', git });
+    const branchesBefore = (await git.branch()).all;
+    rmSync(join(repoDir, TREES_DIR, 'feat-pruned'), { recursive: true, force: true });
+    await git.raw(['worktree', 'prune']);
+
+    await expect(
+      removeWorktree({ projectDir: repoDir, slug: 'feat-pruned', git }),
+    ).resolves.toBeUndefined();
+
+    expect((await git.branch()).all).toEqual(branchesBefore);
   });
 
-  it('prunes a stale registration and deletes the branch when the dir was removed out-of-band', async () => {
-    await createWorktree({ projectDir: repoDir, slug: 'feat-gone', git });
-    const wtPath = join(repoDir, TREES_DIR, 'feat-gone');
+  it('deletes the splitbrief/<slug> branch of an older version worktree with no folder and no git entry', async () => {
+    const wtPath = await createWorktree({ projectDir: repoDir, slug: 'feat-old-pruned', git });
+    await checkOutBranch(wtPath, 'splitbrief/feat-old-pruned');
     rmSync(wtPath, { recursive: true, force: true });
-    const before = await git.raw(['worktree', 'list', '--porcelain']);
-    expect(before).toContain('feat-gone');
-    expect((await git.branch()).all).toContain('splitbrief/feat-gone');
+    await git.raw(['worktree', 'prune']);
 
-    await removeWorktree({ projectDir: repoDir, slug: 'feat-gone', git, deleteBranch: true });
+    await removeWorktree({ projectDir: repoDir, slug: 'feat-old-pruned', git });
 
-    const after = await git.raw(['worktree', 'list', '--porcelain']);
-    expect(after).not.toContain('feat-gone');
-    expect((await git.branch()).all).not.toContain('splitbrief/feat-gone');
+    expect((await git.branch()).all).not.toContain('splitbrief/feat-old-pruned');
+  });
+
+  it('prunes the stale registration of a detached worktree removed out-of-band', async () => {
+    await createWorktree({ projectDir: repoDir, slug: 'feat-gone', git });
+    const branchesBefore = (await git.branch()).all;
+    rmSync(join(repoDir, TREES_DIR, 'feat-gone'), { recursive: true, force: true });
+    expect(await git.raw(['worktree', 'list', '--porcelain'])).toContain('feat-gone');
+
+    await removeWorktree({ projectDir: repoDir, slug: 'feat-gone', git });
+
+    expect(await git.raw(['worktree', 'list', '--porcelain'])).not.toContain('feat-gone');
+    expect((await git.branch()).all).toEqual(branchesBefore);
+  });
+
+  it('prunes an older version worktree removed out-of-band and deletes its splitbrief/<slug> branch', async () => {
+    const wtPath = await createWorktree({ projectDir: repoDir, slug: 'feat-old-gone', git });
+    await checkOutBranch(wtPath, 'splitbrief/feat-old-gone');
+    rmSync(wtPath, { recursive: true, force: true });
+
+    await removeWorktree({ projectDir: repoDir, slug: 'feat-old-gone', git });
+
+    expect(await git.raw(['worktree', 'list', '--porcelain'])).not.toContain('feat-old-gone');
+    expect((await git.branch()).all).not.toContain('splitbrief/feat-old-gone');
   });
 
   it('warns about a non-terminal session with no .splitbrief/active pointer (TUI run)', async () => {
@@ -262,14 +291,23 @@ describe('removeWorktree', () => {
     stderrSpy.mockRestore();
   });
 
-  it('deletes the branch when deleteBranch=true', async () => {
-    await createWorktree({ projectDir: repoDir, slug: 'feat-l', git });
-    const branchesBefore = await git.branch();
-    expect(branchesBefore.all).toContain('splitbrief/feat-l');
+  it('deletes the splitbrief/<slug> branch an older version checked out in the worktree', async () => {
+    const wtPath = await createWorktree({ projectDir: repoDir, slug: 'feat-l', git });
+    await checkOutBranch(wtPath, 'splitbrief/feat-l');
 
-    await removeWorktree({ projectDir: repoDir, slug: 'feat-l', git, deleteBranch: true });
+    await removeWorktree({ projectDir: repoDir, slug: 'feat-l', git });
 
-    const branchesAfter = await git.branch();
-    expect(branchesAfter.all).not.toContain('splitbrief/feat-l');
+    expect(existsSync(wtPath)).toBe(false);
+    expect((await git.branch()).all).not.toContain('splitbrief/feat-l');
+  });
+
+  it('keeps a branch of another name checked out in the worktree', async () => {
+    const wtPath = await createWorktree({ projectDir: repoDir, slug: 'feat-m', git });
+    await checkOutBranch(wtPath, 'user-work');
+
+    await removeWorktree({ projectDir: repoDir, slug: 'feat-m', git });
+
+    expect(existsSync(wtPath)).toBe(false);
+    expect((await git.branch()).all).toContain('user-work');
   });
 });

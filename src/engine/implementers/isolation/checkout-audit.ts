@@ -63,6 +63,8 @@ async function snapshotRefs(dir: string): Promise<Record<string, string>> {
     if (name === undefined || oid === undefined) continue;
     // The stash is read whole from its log below; `refs/stash` alone misses a dropped entry.
     if (name === 'refs/stash' || /^refs\/(?:remotes|prefetch)\//.test(name)) continue;
+    // A run an older version started can still resume with its worktree on a
+    // `splitbrief/<slug>` branch, so a seat commit there moves that branch.
     if (name.startsWith(`refs/heads/${SPLITBRIEF_IDENTITY.branchPrefix}`)) continue;
     refs[name] = oid;
   }

@@ -1,5 +1,5 @@
 import { appendFile, mkdtemp, rm, writeFile, mkdir, readFile, chmod } from 'node:fs/promises';
-import { existsSync, rmSync, statSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -38,40 +38,22 @@ describe('createWorktree', () => {
     expect(existsSync(join(wtPath, 'dirty.txt'))).toBe(false);
   });
 
-  it('creates a worktree directory with a .git file and splitbrief branch', async () => {
+  it('creates a worktree directory with a .git file on a detached HEAD and no branch', async () => {
     const slug = 'feat-a';
+    const branchesBefore = (await git.branch()).all;
     await createWorktree({ projectDir: repoDir, slug, git });
     const wtPath = join(repoDir, TREES_DIR, slug);
     expect(existsSync(wtPath)).toBe(true);
     const gitMarker = join(wtPath, '.git');
     expect(existsSync(gitMarker)).toBe(true);
     expect(statSync(gitMarker).isFile()).toBe(true);
-    const branches = await git.branch();
-    expect(branches.all).toContain(`splitbrief/${slug}`);
+    expect(await simpleGit(wtPath).raw(['rev-parse', '--abbrev-ref', 'HEAD'])).toBe('HEAD\n');
+    expect((await git.branch()).all).toEqual(branchesBefore);
   });
 
-  it('throws when the branch splitbrief/<slug> already exists', async () => {
-    await createWorktree({ projectDir: repoDir, slug: 'feat-c', git });
-    await expect(createWorktree({ projectDir: repoDir, slug: 'feat-c', git })).rejects.toThrow(
-      'Branch splitbrief/feat-c already exists',
-    );
-  });
-
-  it('hands a git-valid prune remediation when retry-create hits the stale branch (F-392)', async () => {
-    await createWorktree({ projectDir: repoDir, slug: 'feat-stale', git });
-    rmSync(join(repoDir, TREES_DIR, 'feat-stale'), { recursive: true, force: true });
-    expect((await git.branch()).all).toContain('splitbrief/feat-stale');
-
-    await expect(createWorktree({ projectDir: repoDir, slug: 'feat-stale', git })).rejects.toThrow(
-      'git worktree prune" then "git branch -D splitbrief/feat-stale',
-    );
-  });
-
-  it('rejects path traversal via git and leaves no branch or worktree path', async () => {
+  it('rejects path traversal via git and leaves no worktree path', async () => {
     const slug = '../escape';
     await expect(createWorktree({ projectDir: repoDir, slug, git })).rejects.toThrow();
-    const branches = await git.branch();
-    expect(branches.all).not.toContain(`splitbrief/${slug}`);
     expect(existsSync(join(repoDir, TREES_DIR, slug))).toBe(false);
   });
 

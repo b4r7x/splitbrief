@@ -212,7 +212,6 @@ if (!corrected) throw new Error('Checks ran before the API BUILD correction pass
           contextLength: 200_000,
         },
         validation: { ...config.validation, testCommand: 'node ./tools/check.mjs' },
-        workflow: { ...config.workflow, git: { createBranch: false } },
       });
       const env: Readonly<Record<string, string>> = {
         ...safeChildEnvironment(home.home, [bin]),

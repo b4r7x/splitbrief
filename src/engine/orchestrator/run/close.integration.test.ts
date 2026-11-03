@@ -1,5 +1,13 @@
 import { execFileSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SPLITBRIEF_DIR, sessionDir } from '../../../core/paths.js';
@@ -178,6 +186,59 @@ describe('closeRunIfOpen on a workspace run before Apply', () => {
       expect(readFileSync(join(replay, 'assets/logo.bin'))).toEqual(WORKSPACE_RUN_BINARY);
     },
   );
+
+  it('worktree: a seat commit in the run worktree moves no branch, and run.patch still holds the change', {
+    timeout: 60_000,
+  }, async () => {
+    const { ref, state, workspaceDir } = await openWorkspaceRun('worktree');
+    const git = (cwd: string, ...args: string[]): string =>
+      execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+    const branches = (): string =>
+      git(ref.projectDir, 'for-each-ref', '--format=%(refname) %(objectname)', 'refs/heads');
+    const userBranches = `${git(ref.projectDir, 'symbolic-ref', 'HEAD')} ${git(ref.projectDir, 'rev-parse', 'HEAD')}`;
+    git(workspaceDir, 'add', 'src/keep.ts', 'src/new.ts');
+    git(workspaceDir, 'commit', '-q', '-m', 'seat commit');
+
+    expect.soft(branches()).toBe(userBranches);
+
+    await closeRunIfOpen({ ...ref, bus: makeBusRecorder().bus }, state);
+
+    const patchPath = join(sessionDir(ref.projectDir, ref.sessionId), 'run.patch');
+    const replay = createTempDir('close-run-commit-replay-');
+    dirs.push(replay);
+    cpSync(join(ref.projectDir, 'src'), join(replay, 'src'), { recursive: true });
+    execFileSync('git', ['apply', patchPath], { cwd: replay, stdio: 'pipe' });
+    expect(readFileSync(join(replay, 'src/keep.ts'), 'utf8')).toBe(
+      'export const one = 1;\nexport const two = 22;\n',
+    );
+    expect(readFileSync(join(replay, 'src/new.ts'), 'utf8')).toBe('export const fresh = "new";\n');
+    expect(branches()).toBe(userBranches);
+  });
+
+  it('closes a run whose worktree an older version put on a splitbrief/<slug> branch, and deletes that branch', {
+    timeout: 60_000,
+  }, async () => {
+    const { ref, state, workspaceDir } = await openWorkspaceRun('worktree');
+    const git = (cwd: string, ...args: string[]): string =>
+      execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+    const branch = `splitbrief/${SESSION_ID}`;
+    if (git(ref.projectDir, 'branch', '--list', branch) === '') {
+      git(workspaceDir, 'branch', branch, 'HEAD');
+    }
+    git(workspaceDir, 'symbolic-ref', 'HEAD', `refs/heads/${branch}`);
+    expect(git(ref.projectDir, 'worktree', 'list', '--porcelain')).toContain(
+      `branch refs/heads/${branch}`,
+    );
+    const registered = realpathSync(workspaceDir);
+
+    const closure = await closeRunIfOpen({ ...ref, bus: makeBusRecorder().bus }, state);
+
+    expect(closure.state.closed?.as).toBe('ended');
+    expect(existsSync(join(sessionDir(ref.projectDir, ref.sessionId), 'run.patch'))).toBe(true);
+    expect(existsSync(workspaceDir)).toBe(false);
+    expect(git(ref.projectDir, 'worktree', 'list', '--porcelain')).not.toContain(registered);
+    expect(git(ref.projectDir, 'branch', '--list', 'splitbrief/*')).toBe('');
+  });
 
   it('writes the patch before it removes the workspace', { timeout: 60_000 }, async () => {
     const { ref, state } = await openWorkspaceRun('worktree');
@@ -386,6 +447,82 @@ describe('closeRunIfOpen on a workspace run before Apply', () => {
     expect(closure.closedNow).toBe(true);
     expect(existsSync(join(sessionDir(ref.projectDir, ref.sessionId), 'run.patch'))).toBe(false);
     expect(events.some((event) => event.type === 'warning')).toBe(true);
+  });
+
+  describe('a worktree run whose folder is gone and whose git entry was pruned', () => {
+    const git = (cwd: string, ...args: string[]): string =>
+      execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+
+    async function closeWithoutRemovalWarning(run: {
+      ref: { projectDir: string; sessionId: string };
+      state: WorkflowState;
+    }): Promise<void> {
+      const { bus, events } = makeBusRecorder();
+      const closure = await closeRunIfOpen({ ...run.ref, bus }, run.state);
+      expect(closure.closedNow).toBe(true);
+      expect(
+        events.filter(
+          (event) => event.type === 'warning' && event.message.includes('Could not remove'),
+        ),
+      ).toEqual([]);
+      expect(await readWorkspaceRecord(run.ref)).toBeNull();
+    }
+
+    async function startCleanupOutput(projectDir: string): Promise<string> {
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      try {
+        await removeClosedRunWorkspaces(projectDir);
+        return stderrSpy.mock.calls.map((call) => String(call[0])).join('');
+      } finally {
+        stderrSpy.mockRestore();
+      }
+    }
+
+    it('closes as removed, and the next start prints nothing', { timeout: 60_000 }, async () => {
+      const run = await openWorkspaceRun('worktree');
+      rmSync(run.workspaceDir, { recursive: true, force: true });
+      git(run.ref.projectDir, 'worktree', 'prune');
+
+      await closeWithoutRemovalWarning(run);
+
+      expect(await startCleanupOutput(run.ref.projectDir)).toBe('');
+    });
+
+    it('closes two runs of one repository after the first close pruned the entry of the second', {
+      timeout: 60_000,
+    }, async () => {
+      const first = await openWorkspaceRun('worktree');
+      const second = await startWorkspaceRun({
+        strategy: 'worktree',
+        sessionId: `${SESSION_ID}-second`,
+        dirs,
+        projectDir: first.ref.projectDir,
+      });
+      rmSync(dirname(first.workspaceDir), { recursive: true, force: true });
+
+      await closeWithoutRemovalWarning(first);
+      expect(git(first.ref.projectDir, 'worktree', 'list', '--porcelain')).not.toContain(
+        second.ref.sessionId,
+      );
+      await closeWithoutRemovalWarning(second);
+
+      expect(await startCleanupOutput(first.ref.projectDir)).toBe('');
+    });
+
+    it('deletes the splitbrief/<slug> branch an older version put the run on', {
+      timeout: 60_000,
+    }, async () => {
+      const run = await openWorkspaceRun('worktree');
+      const branch = `splitbrief/${SESSION_ID}`;
+      git(run.workspaceDir, 'branch', branch, 'HEAD');
+      git(run.workspaceDir, 'symbolic-ref', 'HEAD', `refs/heads/${branch}`);
+      rmSync(run.workspaceDir, { recursive: true, force: true });
+      git(run.ref.projectDir, 'worktree', 'prune');
+
+      await closeWithoutRemovalWarning(run);
+
+      expect(git(run.ref.projectDir, 'branch', '--list', 'splitbrief/*')).toBe('');
+    });
   });
 
   it('a run without a workspace closes without a patch', async () => {

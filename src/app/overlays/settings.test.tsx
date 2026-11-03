@@ -265,7 +265,7 @@ describe('SettingsOverlay', () => {
     await flushEffects();
     const lines = frameLines(ui);
 
-    const workflowRowIndex = indexOfLine(lines, 'Create branch');
+    const workflowRowIndex = indexOfLine(lines, 'Isolation');
     const validationRowIndex = indexOfLine(lines, 'End-of-run checks');
 
     expect(workflowRowIndex).toBeGreaterThan(-1);
@@ -307,7 +307,7 @@ describe('SettingsOverlay', () => {
     overlayStore.open('settings', 'filter:workflow');
     await flushEffects();
     expect(stripAnsiStyles(ui.lastFrame())).toContain('workflow');
-    expect(lineWith(frameLines(ui), 'Create branch')).toBeDefined();
+    expect(lineWith(frameLines(ui), 'Isolation')).toBeDefined();
     expect(lineWith(frameLines(ui), 'Temperature')).toBeUndefined();
 
     overlayStore.open('settings');
@@ -453,12 +453,12 @@ describe('SettingsOverlay', () => {
   // the spacer above its rule, so a description that wraps must not grow the panel by a row.
   it('keeps the frame height identical between a 1-line and a 2-line description row', async () => {
     // Inner width at 70 cols / roomy density is 60 cells (70 - 4 - OVERLAY_FRAME_COLS).
-    const shortDef = SETTINGS_DEFS.find((def) => def.id === 'workflow.git.createBranch');
+    const shortDef = SETTINGS_DEFS.find((def) => def.id === 'workflow.compactionFormat');
     const longDef = SETTINGS_DEFS.find((def) => def.id === 'workflow.approve');
     expect(shortDef?.description.length).toBeLessThanOrEqual(60);
     expect(longDef?.description.length).toBeGreaterThan(60);
 
-    overlayStore.open('settings', 'workflow.git.createBranch');
+    overlayStore.open('settings', 'workflow.compactionFormat');
     const shortUi = renderAt(70, 40);
     await flushEffects();
     const shortFrame = stripAnsiStyles(shortUi.lastFrame()).split('\n');
@@ -470,9 +470,9 @@ describe('SettingsOverlay', () => {
     const longFrame = stripAnsiStyles(longUi.lastFrame()).split('\n');
     longUi.unmount();
 
-    expect(shortFrame.some((line) => line.includes('Auto-create a splitbrief/<slug> branch'))).toBe(
-      true,
-    );
+    expect(
+      shortFrame.some((line) => line.includes('Summary format for transcript compaction')),
+    ).toBe(true);
     const wrapStart = longFrame.findIndex((line) => line.includes('Whether the plan waits'));
     expect(wrapStart).toBeGreaterThan(-1);
     expect(longFrame[wrapStart]).not.toContain('starts');
@@ -653,10 +653,10 @@ describe('SettingsOverlay', () => {
     ui.unmount();
   });
 
-  // The commit strategy is no longer a value the config accepts, and spend is read in `/usage`
-  // rather than switched on for a main screen that shows no figure. Neither has a row to land on,
-  // by cursor or by click; the seats the user still chooses are untouched.
-  it('offers no row for the retired commit strategy or spend toggle', async () => {
+  // The commit strategy and branch creation are no longer values the config accepts, and spend is
+  // read in `/usage` rather than switched on for a main screen that shows no figure. None has a row
+  // to land on, by cursor or by click; the seats the user still chooses are untouched.
+  it('offers no row for the retired commit strategy, branch creation or spend toggle', async () => {
     _resetMouseZones();
     overlayStore.open('settings', 'filter:workflow');
     const ui = renderAt(120, 40);
@@ -669,8 +669,8 @@ describe('SettingsOverlay', () => {
     expect(zones).not.toContain('list-row:workflow.git.commitStrategy');
     expect(zones).not.toContain('list-row:workflow.showSpend');
 
-    expect(lineWith(lines, 'Create branch')).toBeDefined();
-    expect(zones).toContain('list-row:workflow.git.createBranch');
+    expect(lineWith(lines, 'Create branch')).toBeUndefined();
+    expect(zones).not.toContain('list-row:workflow.git.createBranch');
 
     ui.unmount();
   });

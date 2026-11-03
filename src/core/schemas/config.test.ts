@@ -268,7 +268,7 @@ describe('ConfigSchema retired git automation', () => {
     (commitStrategy) => {
       const issues = issuesFor({
         ...validConfig,
-        workflow: { ...validConfig.workflow, git: { commitStrategy, createBranch: true } },
+        workflow: { ...validConfig.workflow, git: { commitStrategy, createBranch: false } },
       });
 
       expect(issues).toHaveLength(1);
@@ -278,22 +278,25 @@ describe('ConfigSchema retired git automation', () => {
     },
   );
 
-  it('loads a historical commitStrategy none as inert and drops it, keeping createBranch', () => {
-    const config = ConfigSchema.parse({
+  it('rejects workflow.git.createBranch true at its own path, saying SPLITBRIEF no longer creates a branch', () => {
+    const issues = issuesFor({
       ...validConfig,
-      workflow: { ...validConfig.workflow, git: { commitStrategy: 'none', createBranch: true } },
+      workflow: { ...validConfig.workflow, git: { createBranch: true } },
     });
 
-    expect(config.workflow.git).toEqual({ createBranch: true });
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.path.join('.')).toBe('workflow.git.createBranch');
+    expect(issues[0]?.message).toContain('no longer creates a branch');
+    expect(issues[0]?.message).toContain('delete workflow.git.create_branch');
   });
 
-  it('keeps an ordinary createBranch unchanged', () => {
+  it('loads a historical commitStrategy none and createBranch false as inert and drops both', () => {
     const config = ConfigSchema.parse({
       ...validConfig,
-      workflow: { ...validConfig.workflow, git: { createBranch: false } },
+      workflow: { ...validConfig.workflow, git: { commitStrategy: 'none', createBranch: false } },
     });
 
-    expect(config.workflow.git).toEqual({ createBranch: false });
+    expect(config.workflow.git).toEqual({});
   });
 });
 

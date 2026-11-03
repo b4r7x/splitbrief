@@ -254,7 +254,7 @@ describe('useSettingsEditor', () => {
       createElement(Harness, {
         config,
         items,
-        initialKey: 'workflow.git.createBranch',
+        initialKey: 'workflow.compactionFormat',
         activated: [],
       }),
     );
@@ -263,7 +263,7 @@ describe('useSettingsEditor', () => {
     await vi.waitFor(() => {
       expect(feedbackStore.get()).toEqual({
         message:
-          'Saved Create branch · on to .splitbrief/config.yaml · Added .splitbrief/ to .gitignore',
+          'Saved Compaction format · freeform to .splitbrief/config.yaml · Added .splitbrief/ to .gitignore',
         isError: false,
       });
     });

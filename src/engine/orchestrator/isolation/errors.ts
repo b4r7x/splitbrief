@@ -26,14 +26,6 @@ export const worktreeError = {
       `Worktree name "${name}" contains invalid characters. Allowed: letters, digits, "_", "-", "." (after the first character).`,
       { name },
     ),
-  branchExists: (branch: string) =>
-    error(
-      'worktree-branch-exists',
-      `Branch ${branch} already exists. Run "git worktree prune" then "git branch -D ${branch}" to clear a stale registration, or start a new session so run isolation names a different branch.`,
-      { branch },
-    ),
-  notFound: (label: string) =>
-    error('worktree-not-found', `Worktree "${label}" does not exist.`, { label }),
   treesPathEscape: () =>
     error(
       'worktree-trees-path-escape',

@@ -718,7 +718,7 @@ workflow: {
   // Git
   git?: {
     commitStrategy?:      'none'; // retired input, removed on load with no notice
-    createBranch?:        boolean;
+    createBranch?:        false;  // retired input, removed on load with no notice
   };
 
   // The workspace used by every writer and validation
@@ -749,7 +749,7 @@ workflow: {
 | `review` | `end` \| `task` | `end` | `end`: each brief runs its own checks, except a `render` check. A consult `verify` runs only the checks it names, and on a fix brief the failed checks that brief answers. The final review runs the project gate that the plan names (`validation.end_checks`). The first reviewer check with new failures stops the list, and the reviewer turns its failures into fix work. `task`: each task runs its own checks and its due checks, then its review. A task review runs no project gate. The final review then runs the project gate that the plan names. |
 | `maxRetries` (`max_retries`) | retired | absent | Loads with one notice and changes nothing: `workflow.max_retries was retired and is ignored: the planner decides every retry. Delete workflow.max_retries.` A failed attempt goes straight to the planner's consult, and no count stops the consults. |
 | `git.commitStrategy` | retired | absent | Legacy `none` loads with no notice and is removed from the loaded config; `checkpoint` and `per-task` are rejected. Omit the field. |
-| `git.createBranch` | boolean | `false` | Auto-create `splitbrief/<slug>` branch at workflow start. |
+| `git.createBranch` (`create_branch`) | retired | absent | SPLITBRIEF creates no branch. `false` loads with no notice and is removed from the loaded config. `true` fails the load: `workflow.git.createBranch: createBranch was removed — SPLITBRIEF no longer creates a branch; delete workflow.git.create_branch and create your branch yourself.` Omit the field. |
 | `isolation` | enum | `worktree` | Where every writer works: one linked git `worktree` or one `staged-copy` per run, used by tasks, retries, validation and code review until [Apply](./WORKFLOW.md#apply); or `none`, your checkout itself, with no Apply. Unset reads `worktree`. `splitbrief init` does not write this key. |
 | `driftChainThreshold` (`drift_chain_threshold`) | retired | absent | Loads with one notice and changes nothing: SPLITBRIEF no longer scores drift chains. Delete it. |
 | `compactionThreshold` | int >= 10 | unset | On resume, auto-compact persisted transcript context when compacted message count exceeds this threshold and the planner supports self-summarisation. |
@@ -765,7 +765,7 @@ Every writer uses one run workspace. `cli` and `agent` write there directly; SPL
 
 | Value | What it does | Cost |
 |---|---|---|
-| `worktree` (default) | One linked git worktree with its own branch and history. Its files take the file modes of your project. Installed Node dependencies are linked. Python virtualenvs, Go caches and Rust target directories are not linked. | One worktree creation per run. |
+| `worktree` (default) | One linked git worktree, detached at your project's current commit, with no branch of its own. Its files take the file modes of your project. Installed Node dependencies are linked. Python virtualenvs, Go caches and Rust target directories are not linked. | One worktree creation per run. |
 | `staged-copy` | One project copy per run, reused by tasks, retries and continuation. It excludes `.git`, `node_modules`, `.splitbrief/`, `.trees/` and credential files. It has no git history or installed dependencies. | One full project copy per run. |
 | `none` (shown as "your checkout") | The implementer of every transport works in your checkout itself. SPLITBRIEF writes an extracted-code implementer's code there. Validation, checks and review run there. There is no worktree, no workspace record and no Apply: a passing review closes the run. | No setup. Your checkout holds the run's edits as they happen. |
 
@@ -807,15 +807,6 @@ Both cadences use `runFinalReviewPhase`, which publishes `review_started` and on
 
 Review events never fire hooks. `workflow_complete` fires `on_complete`. The review seat publishes no `planner_status`, even when the planner holds it. See [the review event fields](./ENGINE.md#key-event-shapes).
 
-Plan approval on the current branch:
-
-```yaml
-workflow:
-  approve: plan
-  git:
-    createBranch: false
-```
-
 Headless CI:
 
 ```yaml
@@ -824,7 +815,6 @@ workflow:
 ```
 
 **When to use what:**
-- `git.createBranch: true` — when running SPLITBRIEF in CI or against `main` and you don't want the changes landing on the current branch.
 - `isolation: worktree` (the default) creates a run workspace with installed Node dependencies linked, and your checkout receives the result at Apply. Choose `staged-copy` when a linked worktree cannot serve the project and a copy can. Both strategies need checks that can run inside the workspace.
 - `isolation: none` when the stack only works in the checkout (linked workspaces, editable installs, a shared build cache), or when you want the edits in your project as they happen. Do not edit the checkout while a brief runs.
 
@@ -1272,7 +1262,7 @@ Unknown top-level keys are tolerated, apart from the removed root keys named in 
 
 `version: 3` is the only accepted schema version. A config carrying any other version — or none at all — is rejected at load with `Unsupported config version: <value>. Supported: 3.` Run `splitbrief init --reconfigure` to write a current config; there is no in-memory upgrade path.
 
-Fields that older shapes used are gone rather than aliased — `workflow.autoApproveSpec` / `workflow.autoApprovePlan` are replaced by `workflow.approve`, and `workflow.commitStrategy` and `workflow.git.commitStrategy` by manual commits. These old fields and values fail validation with the offending path named, except `workflow.git.commitStrategy: none`: it loads with no notice and is removed from the resolved config. Delete the retired field when updating your config.
+Fields that older shapes used are gone rather than aliased — `workflow.autoApproveSpec` / `workflow.autoApprovePlan` are replaced by `workflow.approve`, `workflow.commitStrategy` and `workflow.git.commitStrategy` by manual commits, and `workflow.git.createBranch` by a branch you create yourself. These old fields and values fail validation with the offending path named, except `workflow.git.commitStrategy: none` and `workflow.git.createBranch: false`: each loads with no notice and is removed from the resolved config. Delete the retired field when updating your config.
 
 ### Retired keys that still load
 
@@ -1387,8 +1377,6 @@ validation:
 # ---------- Workflow: plan approval, manual commits ----------
 workflow:
   approve: plan
-  git:
-    createBranch: false
   isolation: worktree
 
 # ---------- Repo-map: 6k tokens, src + lib only ----------

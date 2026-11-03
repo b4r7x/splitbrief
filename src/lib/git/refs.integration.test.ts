@@ -2,14 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { chmodSync, writeFileSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { execSync } from 'node:child_process';
-import { simpleGit } from 'simple-git';
-import {
-  GIT_EMPTY_TREE_HASH,
-  branchExists,
-  createBranch,
-  getCurrentCommitSha,
-  resolveRunStartBase,
-} from './refs.js';
+import { GIT_EMPTY_TREE_HASH, getCurrentCommitSha, resolveRunStartBase } from './refs.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo, recordGitLaunches } from '#testing/helpers/git.js';
 
@@ -147,55 +140,5 @@ describe('getCurrentCommitSha', () => {
         process.env.PATH = originalPath;
       }
     }
-  });
-});
-
-describe('branchExists', () => {
-  it('returns false for a branch that does not exist', async () => {
-    const dir = tracked(setupGitRepo());
-    expect(await branchExists(dir, 'splitbrief/nonexistent')).toBe(false);
-  });
-
-  it('returns true for the current branch', async () => {
-    const dir = tracked(setupGitRepo());
-    const g = simpleGit(dir);
-    const status = await g.status();
-    const currentBranch = status.current ?? 'main';
-    expect(await branchExists(dir, currentBranch)).toBe(true);
-  });
-});
-
-describe('createBranch', () => {
-  it('creates a new branch and returns its name', async () => {
-    const dir = tracked(setupGitRepo());
-    const name = await createBranch(dir, 'splitbrief/add-auth');
-    expect(name).toBe('splitbrief/add-auth');
-    const g = simpleGit(dir);
-    const status = await g.status();
-    expect(status.current).toBe('splitbrief/add-auth');
-  });
-
-  it('appends -2 on collision', async () => {
-    const dir = tracked(setupGitRepo());
-    const g = simpleGit(dir);
-    const initStatus = await g.status();
-    const defaultBranch = initStatus.current ?? 'main';
-    await createBranch(dir, 'splitbrief/foo');
-    await g.checkout(defaultBranch);
-    const name = await createBranch(dir, 'splitbrief/foo');
-    expect(name).toBe('splitbrief/foo-2');
-  });
-
-  it('increments suffix through multiple collisions', async () => {
-    const dir = tracked(setupGitRepo());
-    const g = simpleGit(dir);
-    const initStatus = await g.status();
-    const defaultBranch = initStatus.current ?? 'main';
-    await createBranch(dir, 'splitbrief/bar');
-    await g.checkout(defaultBranch);
-    await g.checkoutLocalBranch('splitbrief/bar-2');
-    await g.checkout(defaultBranch);
-    const name = await createBranch(dir, 'splitbrief/bar');
-    expect(name).toBe('splitbrief/bar-3');
   });
 });

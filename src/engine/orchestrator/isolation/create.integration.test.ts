@@ -670,7 +670,6 @@ describe('createRunIsolation', () => {
       ).toBe(false);
       expect(existsSync(isolationWorktree(dir))).toBe(true);
       expect(existsSync(isolationRoot(dir))).toBe(true);
-      expect((await createGitClient(dir).branch()).all).toContain(`splitbrief/${SLUG}`);
     } finally {
       cleanupTempDir(dir);
     }
@@ -705,7 +704,6 @@ describe('createRunIsolation', () => {
         (await readWorkspaceRecord({ projectDir: dir, sessionId: SESSION_ID }))?.retained,
       ).toBe(false);
       expect(existsSync(isolationWorktree(dir))).toBe(true);
-      expect((await createGitClient(dir).branch()).all).toContain(`splitbrief/${SLUG}`);
     } finally {
       cleanupTempDir(dir);
     }
@@ -893,7 +891,6 @@ describe('createRunIsolation', () => {
       expect(existsSync(npmCache)).toBe(true);
       expect(existsSync(join(ws.projectDir, 'unpromoted.txt'))).toBe(true);
       expect(existsSync(isolationWorktree(dir))).toBe(true);
-      expect((await createGitClient(dir).branch()).all).toContain(`splitbrief/${SLUG}`);
     } finally {
       cleanupTempDir(dir);
     }
@@ -1235,9 +1232,9 @@ describe('createRunIsolation', () => {
         ).toBe(false);
         const usesWorktree = ws.projectDir === isolationWorktree(dir);
         expect(existsSync(isolationWorktree(dir))).toBe(usesWorktree);
-        const branches = await createGitClient(dir).branch();
-        expect(branches.all.filter((branch) => branch.startsWith('splitbrief/'))).toHaveLength(
-          usesWorktree ? 1 : 0,
+        const worktrees = await createGitClient(dir).raw(['worktree', 'list', '--porcelain']);
+        expect(worktrees.split('\n').filter((line) => line.startsWith('worktree '))).toHaveLength(
+          usesWorktree ? 2 : 1,
         );
       } finally {
         cleanupTempDir(dir);
@@ -1484,8 +1481,6 @@ describe('one workspace per run', () => {
 
       expect(existsSync(isolationWorktree(dir))).toBe(true);
       expect(readFileSync(join(isolationWorktree(dir), 'README.md'), 'utf8')).toBe('# test\n');
-      const branches = execFileSync('git', ['branch', '--list'], { cwd: dir, encoding: 'utf8' });
-      expect(branches).toContain(SLUG);
 
       const continued = worktreeRun(dir);
       const reopened = await continued.open({ config });

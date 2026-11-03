@@ -76,10 +76,6 @@ export const gitError = {
       { intent, causeMessage },
       cause,
     ),
-  branchNameCollision: (desiredName: string) =>
-    error('git-branch-name-collision', `too many branch name collisions on ${desiredName}`, {
-      desiredName,
-    }),
 } as const;
 
 export type GitCommandError = ReturnType<typeof gitError.commandFailed>;

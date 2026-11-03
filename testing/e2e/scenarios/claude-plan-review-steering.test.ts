@@ -59,7 +59,6 @@ writeFileSync(${JSON.stringify(MARKER_FILE)}, ${JSON.stringify(MARKER_SOURCE)});
       ...config,
       planner: claude,
       reviewer: claude,
-      workflow: { ...config.workflow, git: { createBranch: false } },
     });
     const env: Readonly<Record<string, string>> = {
       ...safeChildEnvironment(home.home, [bin]),

@@ -108,7 +108,6 @@ export async function runSteeringCli(
     writeConfig(target.projectDir, {
       ...config,
       implementer,
-      workflow: { ...config.workflow, git: { createBranch: false } },
     });
     const env: Readonly<Record<string, string>> = {
       ...safeChildEnvironment(home.home, [bin]),

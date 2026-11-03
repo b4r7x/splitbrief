@@ -16,21 +16,26 @@ export const WORKSPACE_RUN_BINARY = Buffer.from([0, 1, 2, 255, 0, 7]);
 
 /**
  * An open run in its own git checkout, implementing in a workspace that changed, deleted and added
- * files. The checkout path is canonical, as every start resolves it. Each folder it creates goes
+ * files. The checkout path is canonical, as every start resolves it. A given `projectDir` is the
+ * checkout of an earlier call, for a second run in one repository. Each folder it creates goes
  * into `dirs` for the caller to remove.
  */
 export async function startWorkspaceRun(input: {
   strategy: 'worktree' | 'staged-copy';
   sessionId: string;
   dirs: string[];
+  projectDir?: string;
 }) {
   const { strategy, sessionId, dirs } = input;
-  const projectDir = realpathSync(createTempDir('workspace-run'));
-  dirs.push(projectDir);
-  createTestGitRepo(projectDir, {
-    'src/keep.ts': 'export const one = 1;\nexport const two = 2;\n',
-    'src/gone.ts': 'export const gone = true;\n',
-  });
+  let projectDir = input.projectDir;
+  if (projectDir === undefined) {
+    projectDir = realpathSync(createTempDir('workspace-run'));
+    dirs.push(projectDir);
+    createTestGitRepo(projectDir, {
+      'src/keep.ts': 'export const one = 1;\nexport const two = 2;\n',
+      'src/gone.ts': 'export const gone = true;\n',
+    });
+  }
   const ref = { projectDir, sessionId };
   ensureSessionDir(projectDir, sessionId);
   await createSnapshot({ ...ref, phase: 'manual', name: 'run-baseline' });

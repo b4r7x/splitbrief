@@ -2,10 +2,8 @@ import { existsSync } from 'node:fs';
 import { cp, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { SPLITBRIEF_DIR, CONFIG_FILE } from '../../../core/paths.js';
-import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
 import { ensureConfigGitignore } from '../../../core/config/load/document.js';
 import { createGitClient, type GitClient } from '../../../lib/git/client.js';
-import { worktreeError } from './errors.js';
 import { resolveConfinedWorktreePath } from './path.js';
 
 const HOOKS_DIR = 'hooks';
@@ -40,14 +38,8 @@ export async function initWorktreeSubmodules(projectDir: string, wtPath: string)
 export async function createWorktree(opts: CreateWorktreeOptions): Promise<string> {
   const { projectDir, slug, git } = opts;
   const wtPath = opts.worktreeDir ?? resolveConfinedWorktreePath(projectDir, slug);
-  const branch = `${SPLITBRIEF_IDENTITY.branchPrefix}${slug}`;
 
-  const branches = await git.branch();
-  if (branches.all.includes(branch)) {
-    throw worktreeError.branchExists(branch);
-  }
-
-  await git.raw(['worktree', 'add', wtPath, '-b', branch]);
+  await git.raw(['worktree', 'add', '--detach', wtPath, 'HEAD']);
   await initWorktreeSubmodules(projectDir, wtPath);
   await propagateSplitbriefState(projectDir, wtPath);
   return wtPath;

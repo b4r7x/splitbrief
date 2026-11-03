@@ -309,10 +309,6 @@ export function unranCheckRow(run: { status: CheckStatus; output: string }) {
   };
 }
 
-export function publishGitBranchCreated(ctx: BusContext, name: string): void {
-  ctx.bus.publish({ type: 'git_branch_created', ts: Date.now(), phase: ctx.phase, name });
-}
-
 export function publishConsultAnswered(
   ctx: BusContext,
   opts: {

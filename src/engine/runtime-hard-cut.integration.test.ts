@@ -133,16 +133,17 @@ describe('runtime hard cut', () => {
     expect(result).toEqual({ contextLength: 16_384, origin: 'config' });
   });
 
-  it('branch-create', async () => {
-    const projectDir = join(root, 'branch-create');
+  it('worktree-create', async () => {
+    const projectDir = join(root, 'worktree-create');
     await mkdir(projectDir);
     createTestGitRepo(projectDir);
     const git = simpleGit(projectDir);
+    const branchesBefore = (await git.branch()).all;
 
     const worktree = await createWorktree({ projectDir, slug: 'canonical', git });
 
     expect(worktree).toBe(join(projectDir, TREES_DIR, 'canonical'));
-    expect((await git.branch()).all).toContain(`${SPLITBRIEF_IDENTITY.branchPrefix}canonical`);
+    expect((await git.branch()).all).toEqual(branchesBefore);
   });
 
   it('prior-branch-reject', async () => {
@@ -152,9 +153,7 @@ describe('runtime hard cut', () => {
     const git = simpleGit(projectDir);
     for (const branch of PRIOR_BRANCHES) await git.raw(['branch', branch]);
 
-    await expect(
-      removeWorktree({ projectDir, slug: 'legacy', git, deleteBranch: true }),
-    ).rejects.toThrow('Worktree ".trees/legacy" does not exist.');
+    await expect(removeWorktree({ projectDir, slug: 'legacy', git })).resolves.toBeUndefined();
 
     const branches = (await git.branch()).all;
     expect(branches).toEqual(expect.arrayContaining([...PRIOR_BRANCHES]));

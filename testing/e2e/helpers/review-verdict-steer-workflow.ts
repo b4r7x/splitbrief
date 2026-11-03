@@ -113,7 +113,6 @@ if (call === 1) {
     writeConfig(target.projectDir, {
       ...config,
       reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-5-codex', contextLength: 200_000 },
-      workflow: { ...config.workflow, git: { createBranch: false } },
     });
     const env: Readonly<Record<string, string>> = {
       ...safeChildEnvironment(home.home, [bin]),

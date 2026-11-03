@@ -43,9 +43,9 @@ describe('getIsolationStrategy', () => {
 
 describe('applyEdits', () => {
   it('sets nested values immutably', () => {
-    const updated = applyEdits(mockConfig, { 'workflow.git.createBranch': true });
-    expect(updated.workflow.git?.createBranch).toBe(true);
-    expect(mockConfig.workflow.git?.createBranch).toBeUndefined();
+    const updated = applyEdits(mockConfig, { 'workflow.isolation': 'staged-copy' });
+    expect(updated.workflow.isolation).toBe('staged-copy');
+    expect(mockConfig.workflow.isolation).toBeUndefined();
   });
 
   it('applies multiple edits at once', () => {

@@ -526,29 +526,6 @@ describe('InputFooter', () => {
     terminalSizeStore.reset();
   });
 
-  // The branch a run creates is announced by name in the transcript, where the name is real. The
-  // byline does not mirror the setting beside the worktree marker, where a reader would take the
-  // worktree's name for the branch's.
-  it('mirrors no git setting on the byline when createBranch is on', () => {
-    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    configStore.__testReset({
-      config: makeConfig({ workflow: { git: { createBranch: true } } }),
-      projectDir: '/tmp/splitbrief-test',
-    });
-    runViewStore.__testReset({ phase: 'researching' });
-    lifecycleStore.__testReset({ status: 'complete' });
-
-    const ui = renderFeature(<InputFooter />);
-    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-
-    expect(frame).toContain(`${glyph('stageDone')} Plan`);
-    expect(frame).not.toContain('git:');
-    expect(frame).not.toContain('branch');
-
-    ui.unmount();
-    terminalSizeStore.reset();
-  });
-
   it('renders the active rail stage and task fraction in the byline when not running', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     runViewStore.__testReset({ phase: 'implementing' });

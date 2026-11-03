@@ -65,17 +65,20 @@ describe('SETTINGS_DEFS dead settings', () => {
     expect(SETTINGS_DEFS.some((def) => def.id === 'sessions.scope')).toBe(false);
   });
 
-  // SPLITBRIEF no longer stages or commits, so a commit strategy is not a choice the config even
-  // accepts any more — offering the row would hand the user a value that fails on save. Spend is
-  // read in `/usage` on request, not toggled for a main screen that no longer shows a figure.
-  it.each(['workflow.git.commitStrategy', 'workflow.showSpend', 'workflow.maxRetries'])(
-    'offers no row for the retired %s',
-    (id) => {
-      expect(SETTINGS_DEFS.some((def) => def.id === id)).toBe(false);
-    },
-  );
+  // SPLITBRIEF no longer stages, commits or creates a branch, so a commit strategy or a branch
+  // switch is not a choice the config even accepts any more — offering the row would hand the user
+  // a value that fails on save. Spend is read in `/usage` on request, not toggled for a main screen
+  // that no longer shows a figure.
+  it.each([
+    'workflow.git.commitStrategy',
+    'workflow.git.createBranch',
+    'workflow.showSpend',
+    'workflow.maxRetries',
+  ])('offers no row for the retired %s', (id) => {
+    expect(SETTINGS_DEFS.some((def) => def.id === id)).toBe(false);
+  });
 
-  it('keeps the branch the run still creates and the ordinary workflow rows', () => {
+  it('keeps only the ordinary workflow rows', () => {
     const workflowIds = SETTINGS_DEFS.filter((def) => def.section === 'Workflow').map(
       (def) => def.id,
     );
@@ -83,7 +86,6 @@ describe('SETTINGS_DEFS dead settings', () => {
     expect(workflowIds).toEqual([
       'workflow.approve',
       'workflow.compactionFormat',
-      'workflow.git.createBranch',
       'workflow.isolation',
     ]);
   });
