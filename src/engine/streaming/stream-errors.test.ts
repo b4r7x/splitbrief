@@ -164,39 +164,45 @@ describe('throwMappedError', () => {
     }
   });
 
-  test('ignores Retry-After on non-429 statuses and non-numeric values', () => {
-    const serverError = Object.assign(new Error('Internal'), {
-      status: 500,
-      headers: new Headers({ 'retry-after': '60' }),
+  test.each([
+    ['a 503 delay in seconds', 503, '30', '(retry-after: 30s)'],
+    [
+      'a 429 HTTP date',
+      429,
+      'Fri, 07 Aug 2026 17:00:00 GMT',
+      'retry-after: Fri, 07 Aug 2026 17:00:00 GMT',
+    ],
+  ])('keeps %s in the detail so the retry waits for it', (_name, status, header, kept) => {
+    const underlying = Object.assign(new Error('Service Unavailable'), {
+      status,
+      headers: new Headers({ 'retry-after': header }),
     });
-    let serverThrown: unknown;
+    let thrown: unknown;
     try {
-      throwMappedError(serverError, { provider: 'custom-endpoint' });
+      throwMappedError(underlying, { provider: 'custom-endpoint' });
     } catch (err) {
-      serverThrown = err;
+      thrown = err;
     }
-    expect(matches('stream-http-status')(serverThrown)).toBe(true);
-    if (matches('stream-http-status')(serverThrown)) {
-      expect(serverThrown.data).not.toMatchObject({
-        detail: expect.stringContaining('retry-after'),
-      });
+    expect(matches('stream-http-status')(thrown)).toBe(true);
+    if (matches('stream-http-status')(thrown)) {
+      expect(thrown.data).toMatchObject({ detail: expect.stringContaining(kept) });
     }
+  });
 
-    const dateHeader = Object.assign(new Error('Too Many Requests'), {
+  test('ignores a Retry-After that is neither seconds nor an HTTP date', () => {
+    const underlying = Object.assign(new Error('Too Many Requests'), {
       status: 429,
-      headers: new Headers({ 'retry-after': 'Fri, 07 Aug 2026 17:00:00 GMT' }),
+      headers: new Headers({ 'retry-after': 'soon' }),
     });
-    let dateThrown: unknown;
+    let thrown: unknown;
     try {
-      throwMappedError(dateHeader, { provider: 'custom-endpoint' });
+      throwMappedError(underlying, { provider: 'custom-endpoint' });
     } catch (err) {
-      dateThrown = err;
+      thrown = err;
     }
-    expect(matches('stream-http-status')(dateThrown)).toBe(true);
-    if (matches('stream-http-status')(dateThrown)) {
-      expect(dateThrown.data).not.toMatchObject({
-        detail: expect.stringContaining('retry-after'),
-      });
+    expect(matches('stream-http-status')(thrown)).toBe(true);
+    if (matches('stream-http-status')(thrown)) {
+      expect(thrown.data).not.toMatchObject({ detail: expect.stringContaining('retry-after') });
     }
   });
 

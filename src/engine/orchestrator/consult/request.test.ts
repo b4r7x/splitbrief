@@ -993,7 +993,7 @@ describe('requestConsult', () => {
     }
 
     await expect(pending).rejects.toBe(failure);
-    expect(calls).toBe(4);
+    expect(calls).toBe(BOUNDS.transientRetries + 1);
   });
 });
 

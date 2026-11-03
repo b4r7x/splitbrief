@@ -7,6 +7,7 @@ import { isCliToolId } from '../runners/cli-tool-catalog.js';
 import { ROUTE_NEEDS_SIGN_IN, routeAuthState } from '../runners/route-auth.js';
 import type { ActiveRunnerRole } from '../runners/seat-roles.js';
 import type { Config } from '../schemas/config.js';
+import type { SeatSwitchRecord } from '../schemas/workflow.js';
 import { SOFT_SEP } from '../separators.js';
 import {
   formatSeatIdentity,
@@ -43,6 +44,14 @@ export function fallbackRowKey(row: FallbackRow): FallbackRowKey {
 
 export function seatFallback(config: Config, role: ActiveRunnerRole): SeatFallback | undefined {
   return readActiveRunner({ config, role }).fallback;
+}
+
+/** A seat moves to its declared fallback automatically at most once per run. */
+export function automaticSwitchUsed(
+  switches: readonly SeatSwitchRecord[] | undefined,
+  seat: CrewSeatId,
+): boolean {
+  return (switches ?? []).some((record) => record.seat === seat && record.auto);
 }
 
 /**

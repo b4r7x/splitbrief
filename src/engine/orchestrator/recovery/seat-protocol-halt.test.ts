@@ -34,6 +34,7 @@ describe('seatProtocolHaltIssue', () => {
   it('halts and switches an inherited reviewer on the review seat', async () => {
     const issue = await seatProtocolHaltIssue({
       modelCache: undefined,
+      signal: undefined,
       projectDir: await projectWithTools(),
       config: makeConfig({}),
       error: reviewerProtocolError,
@@ -51,6 +52,7 @@ describe('seatProtocolHaltIssue', () => {
   it('swaps the review seat when a reviewer block declares it', async () => {
     const issue = await seatProtocolHaltIssue({
       modelCache: undefined,
+      signal: undefined,
       projectDir: await projectWithTools(),
       config: makeConfig({ reviewer: { kind: 'cli', tool: 'codex' } }),
       error: reviewerProtocolError,

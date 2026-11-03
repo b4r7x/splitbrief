@@ -92,6 +92,7 @@ describe('loadSeatSwapContext', () => {
     const runner = { kind: 'cli', tool: 'codex', fallback: { tool: 'claude-code' } } as const;
     const context = await loadSeatSwapContext({
       modelCache: undefined,
+      signal: undefined,
       projectDir,
       seat: 'build',
       runner,
@@ -115,6 +116,7 @@ describe('loadSeatSwapContext', () => {
 
     const context = await loadSeatSwapContext({
       modelCache: undefined,
+      signal: undefined,
       projectDir,
       seat: 'build',
       runner,
@@ -136,6 +138,7 @@ describe('loadSeatSwapContext', () => {
 
     const context = await loadSeatSwapContext({
       modelCache: undefined,
+      signal: undefined,
       projectDir,
       seat: 'build',
       runner: { kind: 'cli', tool: 'codex' },
@@ -167,6 +170,7 @@ describe('loadSeatSwapContext', () => {
 
     const context = await loadSeatSwapContext({
       modelCache: undefined,
+      signal: undefined,
       projectDir,
       seat: 'build',
       runner: { kind: 'cli', tool: 'codex' },
@@ -184,6 +188,7 @@ describe('loadSeatSwapContext', () => {
 
     const context = await loadSeatSwapContext({
       modelCache: undefined,
+      signal: undefined,
       projectDir,
       seat: 'build',
       runner: makeConfig().implementer,
@@ -204,6 +209,7 @@ describe('loadSeatSwapContext', () => {
 
     const context = await loadSeatSwapContext({
       modelCache: undefined,
+      signal: undefined,
       projectDir,
       seat: 'build',
       runner: { kind: 'cli', tool: 'codex' },
@@ -252,6 +258,7 @@ describe('loadSeatSwapContext', () => {
 
     const context = await loadSeatSwapContext({
       modelCache: undefined,
+      signal: undefined,
       projectDir,
       seat: 'build',
       runner: { kind: 'cli', tool: 'codex' },
@@ -316,6 +323,7 @@ describe('loadSeatSwapContext', () => {
 
       const context = await loadSeatSwapContext({
         modelCache: undefined,
+        signal: undefined,
         projectDir,
         seat: 'build',
         runner,
@@ -343,6 +351,7 @@ describe('loadSeatSwapContext', () => {
     ) =>
       loadSeatSwapContext({
         modelCache: undefined,
+        signal: undefined,
         projectDir,
         seat: 'build',
         runner: haltRunner,
@@ -387,6 +396,46 @@ describe('loadSeatSwapContext', () => {
       expect(context?.routeAuth).toEqual({ kind: 'unknown', reason: 'catalog-not-read' });
     });
 
+    it('stops the fresh read when its signal aborts', async () => {
+      const projectDir = await staleProject('seat-swap-fresh-stopped');
+      let reading: () => void = () => {};
+      const read = new Promise<void>((resolve) => {
+        reading = resolve;
+      });
+      // A model list read that never ends unless its signal stops it.
+      evidence.detectRunnerEvidence.mockImplementation(
+        (options: { signal?: AbortSignal }) =>
+          new Promise((_resolve, reject) => {
+            options.signal?.addEventListener('abort', () => reject(options.signal?.reason));
+            reading();
+          }),
+      );
+      const controller = new AbortController();
+
+      let outcome = 'pending';
+      void loadSeatSwapContext({
+        modelCache: undefined,
+        signal: controller.signal,
+        projectDir,
+        seat: 'build',
+        runner,
+        config: makeConfig({ implementer: runner }),
+        refusal,
+      }).then(
+        () => {
+          outcome = 'resolved';
+        },
+        (error: unknown) => {
+          outcome = error instanceof Error ? error.message : 'rejected';
+        },
+      );
+      await read;
+      controller.abort(new Error('stopped'));
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(outcome).toBe('stopped');
+    });
+
     it('probes nothing for a seat that names no model', async () => {
       const context = await halt(await staleProject('seat-swap-fresh-no-model'), {
         kind: 'cli',
@@ -406,6 +455,7 @@ describe('loadSeatSwapContext', () => {
 
     const context = await loadSeatSwapContext({
       modelCache: undefined,
+      signal: undefined,
       projectDir,
       seat: 'build',
       config: makeConfig({
@@ -445,6 +495,7 @@ describe('loadSeatSwapContext', () => {
 
     const context = await loadSeatSwapContext({
       modelCache: undefined,
+      signal: undefined,
       projectDir,
       seat: 'build',
       runner: { kind: 'cli', tool: 'codex', fallback: { tool: 'claude-code', model: 'sonnet' } },
@@ -473,6 +524,7 @@ describe('loadSeatSwapContext', () => {
 
     const context = await loadSeatSwapContext({
       modelCache: undefined,
+      signal: undefined,
       projectDir,
       seat: 'build',
       runner: { kind: 'cli', tool: 'codex', fallback: { tool: 'claude-code' } },
@@ -484,6 +536,48 @@ describe('loadSeatSwapContext', () => {
     expect(context?.fallbackBlockedReason).toBe('unauthenticated');
     expect(context?.detectedTools).toContainEqual({ tool: 'claude-code', ready: false });
     expect(switchSeatOffer(context)).toBeUndefined();
+  });
+
+  it('stops the live fallback check when its signal aborts', async () => {
+    const projectDir = await projectWithRememberedTools('seat-swap-fallback-stopped', [
+      cliDetectionFor('ready', 'codex'),
+    ]);
+    let checking: () => void = () => {};
+    const checked = new Promise<void>((resolve) => {
+      checking = resolve;
+    });
+    // A sign-in check that never ends unless its signal stops it.
+    live.detectAvailableCliTools.mockImplementation(
+      (options: { signal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          options.signal?.addEventListener('abort', () => reject(options.signal?.reason));
+          checking();
+        }),
+    );
+    const controller = new AbortController();
+    const runner = { kind: 'cli', tool: 'codex', fallback: { tool: 'claude-code' } } as const;
+
+    let outcome = 'pending';
+    void loadSeatSwapContext({
+      modelCache: undefined,
+      signal: controller.signal,
+      projectDir,
+      seat: 'build',
+      runner,
+      config: makeConfig({ implementer: runner }),
+    }).then(
+      () => {
+        outcome = 'resolved';
+      },
+      (error: unknown) => {
+        outcome = error instanceof Error ? error.message : 'rejected';
+      },
+    );
+    await checked;
+    controller.abort(new Error('stopped'));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(outcome).toBe('stopped');
   });
 
   it.each([
@@ -526,6 +620,7 @@ describe('loadSeatSwapContext', () => {
 
       const context = await loadSeatSwapContext({
         modelCache: undefined,
+        signal: undefined,
         projectDir,
         seat: 'build',
         runner: { kind: 'cli', tool: 'codex', fallback },
@@ -552,6 +647,7 @@ describe('loadSeatSwapContext', () => {
       writeConfig(projectDir, config);
       const context = await loadSeatSwapContext({
         modelCache: undefined,
+        signal: undefined,
         projectDir,
         seat: 'build',
         runner,
@@ -650,6 +746,7 @@ describe('loadSeatSwapContext', () => {
 
       const context = await loadSeatSwapContext({
         modelCache: undefined,
+        signal: undefined,
         projectDir,
         seat: 'build',
         runner,
@@ -681,6 +778,7 @@ describe('loadSeatSwapContext', () => {
 
     const context = await loadSeatSwapContext({
       modelCache: undefined,
+      signal: undefined,
       projectDir,
       seat: 'build',
       runner: { kind: 'cli', tool: 'codex', fallback: { tool: 'claude-code' } },
@@ -697,6 +795,7 @@ describe('loadSeatSwapContext', () => {
     async function contextIn(projectDir: string) {
       return loadSeatSwapContext({
         modelCache: undefined,
+        signal: undefined,
         projectDir,
         seat: 'build',
         runner,
@@ -764,6 +863,7 @@ describe('loadSeatSwapContext', () => {
         ]);
         const context = await loadSeatSwapContext({
           modelCache: undefined,
+          signal: undefined,
           projectDir,
           seat: 'build',
           runner: configRunner,

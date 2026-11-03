@@ -48,6 +48,7 @@ describe('fallback of record', () => {
       const context = await loadSeatSwapContext({
         projectDir,
         modelCache: undefined,
+        signal: undefined,
         seat,
         runner,
         config,
@@ -147,6 +148,7 @@ describe('fallback of record', () => {
     );
     const context = await loadSeatSwapContext({
       modelCache: undefined,
+      signal: undefined,
       projectDir,
       seat: 'build',
       runner,
@@ -172,6 +174,7 @@ describe('fallback of record', () => {
     const context = await loadSeatSwapContext({
       projectDir,
       modelCache: undefined,
+      signal: undefined,
       seat: 'build',
       runner,
       config,
@@ -234,6 +237,7 @@ describe('fallback of record', () => {
     const context = await loadSeatSwapContext({
       projectDir,
       modelCache: undefined,
+      signal: undefined,
       seat: 'review',
       runner,
       config,

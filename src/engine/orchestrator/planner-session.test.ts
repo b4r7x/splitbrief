@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { makeBusRecorder, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { makeResearchingState, setupProject } from '#testing/helpers/queue.js';
@@ -14,6 +15,8 @@ const dirs: string[] = [];
 afterEach(() => {
   for (const dir of dirs.splice(0)) cleanupTempDir(dir);
 });
+
+const config = makeConfig();
 
 describe('askPlannerSession steering', () => {
   it.each([false, true])(
@@ -66,7 +69,7 @@ describe('askPlannerSession steering', () => {
       });
 
       const answer = await askPlannerSession(
-        { ...ref, bus, state, planner, steering },
+        { ...ref, bus, config, state, planner, steering },
         {
           schema: z.object({ answer: z.string() }),
           jsonSchema: { type: 'object' },
@@ -110,7 +113,7 @@ describe('askPlannerSession steering', () => {
     });
 
     const answer = await askPlannerSession(
-      { ...ref, bus, state, planner },
+      { ...ref, bus, config, state, planner },
       {
         schema: z.object({ answer: z.string() }),
         jsonSchema: { type: 'object' },
@@ -169,7 +172,7 @@ describe('askPlannerSession on a refused thread', () => {
       },
     });
 
-    const answer = await askPlannerSession({ ...ref, bus, state, planner }, call(turns));
+    const answer = await askPlannerSession({ ...ref, bus, config, state, planner }, call(turns));
 
     expect(answer.result).toMatchObject({ value: { answer: 'ok' } });
     expect(turns.map((turn) => turn.onSession)).toEqual([true, false]);
@@ -203,7 +206,7 @@ describe('askPlannerSession on a refused thread', () => {
     });
 
     await expect(
-      askPlannerSession({ ...ref, bus, state, planner }, call(turns)),
+      askPlannerSession({ ...ref, bus, config, state, planner }, call(turns)),
     ).rejects.toMatchObject({ kind: 'input-too-large' });
     expect(turns).toHaveLength(1);
   });
@@ -234,7 +237,7 @@ describe('askPlannerSession repair', () => {
     });
 
     const answer = await askPlannerSession(
-      { ...ref, bus, state, planner },
+      { ...ref, bus, config, state, planner },
       {
         schema: z.object({ answer: z.string() }),
         jsonSchema: { type: 'object' },

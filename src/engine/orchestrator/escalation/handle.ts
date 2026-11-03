@@ -78,6 +78,7 @@ async function seatDownHalt(
   const seatSwap = await loadSeatSwapContext({
     projectDir: ctx.projectDir,
     modelCache: ctx.modelCache,
+    signal: ctx.signal,
     seat: 'build',
     runner: failure.runner,
     config: ctx.config,
@@ -147,6 +148,7 @@ async function runnerDefectHalt(
   const seatSwap = await loadSeatSwapContext({
     projectDir: ctx.projectDir,
     modelCache: ctx.modelCache,
+    signal: ctx.signal,
     seat: 'build',
     runner: failure.runner,
     config: ctx.config,

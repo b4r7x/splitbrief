@@ -109,16 +109,16 @@ Match the phrases as written, case-insensitively, in the last 60 lines of `$LOG`
 A bare number is never a signature. NDJSON logs contain many numbers.
 
 <!-- generated: seat-recovery -->
-- Transient seat failures permit 3 retries with backoff.
-- A usage match with a reported reset within 10 minutes permits a bounded wait up to that limit.
-- After the wait bound, halt as seat down and ask the user. Longer or unknown resets need the user immediately.
+- Transient seat failures permit 10 retries with backoff, each wait at most 60 seconds. A provider `retry-after` sets the wait instead.
+- A usage limit moves the seat at once to a declared `fallback` that is installed, signed in and not the seat itself, when the seat has not switched by itself in this run. Otherwise wait for the reported reset, however far away, then run the call once more.
+- A usage limit with no reported reset and no such fallback, or a second limit after the wait, halts as seat down and asks the user.
 - An account refusal — balance, billing, a quota with no reset, or sign-in — halts at once as seat down.
 - A declared `fallback` switches the seat once per run with no question.
 - The `retry-later` action reads `Retry at <clock>`, and is offered only with a known reset.
 <!-- /generated -->
 
 An `auth` or `missing-model` match halts the run.
-A `usage` match halts the run unless the bounded reset-wait rule above applies.
+A `usage` match halts the run unless the seat-recovery rules above move the seat or wait for its reset.
 Report the tool's login or plan page, and its model listing when available.
 
 <!-- generated: halt-signatures -->

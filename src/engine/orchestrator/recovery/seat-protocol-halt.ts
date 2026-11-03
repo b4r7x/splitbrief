@@ -21,6 +21,7 @@ export async function seatProtocolHaltIssue(
     projectDir: string;
     config: Config;
     modelCache: ModelCacheAccessor | undefined;
+    signal: AbortSignal | undefined;
     error: SeatProtocolError;
     phase: Phase;
     task?: Task | undefined;
@@ -31,6 +32,7 @@ export async function seatProtocolHaltIssue(
   const seatSwap = await loadSeatSwapContext({
     projectDir: input.projectDir,
     modelCache: input.modelCache,
+    signal: input.signal,
     seat: reviewed ? 'review' : 'plan',
     runner: reviewed ? reviewer.runner : input.config.planner,
     config: input.config,
@@ -55,6 +57,7 @@ export async function haltSeatProtocolError(args: {
     projectDir: args.wctx.projectDir,
     config: args.wctx.config,
     modelCache: args.wctx.modelCache,
+    signal: args.wctx.signal,
     error: args.error,
     phase: args.state.phase,
   });

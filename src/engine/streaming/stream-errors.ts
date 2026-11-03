@@ -1,6 +1,7 @@
 import { error } from '../../utils/error.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { formatErrorWithHint } from '../error-hints.js';
+import { parseUsageLimitReset } from '../runners/usage-limit.js';
 import { redactSecrets } from '../../utils/redact.js';
 import { isRecord } from '../../utils/type-guards.js';
 
@@ -54,11 +55,13 @@ export const streamError = {
 } as const;
 
 /**
- * The Retry-After a 429 response carried, in whole seconds. OpenAI-compatible
- * SDK errors expose the response headers on the thrown error; appending the
- * value to the diagnostic lets the usage-limit recovery name the reset moment.
+ * The Retry-After a response carried, as the detail spells it: whole seconds
+ * as "30s", an HTTP date as sent. OpenAI-compatible SDK errors expose the
+ * response headers on the thrown error; appending the value to the diagnostic
+ * lets the seat retry wait for it and the usage-limit recovery name the reset
+ * moment. A value `parseUsageLimitReset` cannot read is dropped.
  */
-export function retryAfterHeaderSeconds(err: Record<string, unknown>): string | null {
+export function retryAfterHeader(err: Record<string, unknown>): string | null {
   const headers = err.headers;
   const value =
     headers instanceof Headers
@@ -68,7 +71,8 @@ export function retryAfterHeaderSeconds(err: Record<string, unknown>): string | 
         : null;
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
-  return /^\d+$/.test(trimmed) ? trimmed : null;
+  const kept = /^\d+$/.test(trimmed) ? `${trimmed}s` : trimmed;
+  return parseUsageLimitReset(`retry-after: ${kept}`) === null ? null : kept;
 }
 
 function hasConnectionRefusedInChain(err: Record<string, unknown>): boolean {
@@ -92,11 +96,12 @@ export function throwMappedError(
     throw streamError.connectionRefused(provider, endpoint?.apiBase, err);
   }
   if (typeof err.status === 'number' && err.status >= 400) {
-    const retryAfter = err.status === 429 ? retryAfterHeaderSeconds(err) : null;
+    const retryable = err.status === 408 || err.status === 429 || err.status >= 500;
+    const retryAfter = retryable ? retryAfterHeader(err) : null;
     const detail =
       retryAfter === null
         ? toErrorMessage(err)
-        : `${toErrorMessage(err)} (retry-after: ${retryAfter}s)`;
+        : `${toErrorMessage(err)} (retry-after: ${retryAfter})`;
     throw streamError.httpStatus(provider, err.status, detail, err);
   }
   throw err;

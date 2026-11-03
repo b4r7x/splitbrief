@@ -97,9 +97,16 @@ function isTailSource(source: SeatFailureSource): boolean {
   return source === 'stdout-tail';
 }
 
+/**
+ * The HTTP status the words name: after "HTTP", "status" or "API error" (an API
+ * seat's "API error 503 from openai: …"), or leading the message as the openai
+ * SDK writes it ("503 status code (no body)", "502 Bad Gateway").
+ */
 function httpStatusOf(message: string): number | null {
-  const contextual = /(?:http|status(?:\s*code)?)[^0-9]{0,4}(\d{3})\b/i.exec(message);
+  const contextual = /(?:http|status(?:\s*code)?|api error)[^0-9]{0,4}(\d{3})\b/i.exec(message);
   if (contextual?.[1] !== undefined) return Number.parseInt(contextual[1], 10);
+  const leading = /^\s*(\d{3})\s/.exec(message);
+  if (leading?.[1] !== undefined) return Number.parseInt(leading[1], 10);
   const parenthesized = /\((\d{3})\)/.exec(message);
   if (parenthesized?.[1] !== undefined) return Number.parseInt(parenthesized[1], 10);
   if (/\b429\b/.test(message)) return 429;

@@ -151,6 +151,7 @@ export async function handleTaskPlannerCallFailure(
       projectDir: wctx.projectDir,
       config: wctx.config,
       modelCache: wctx.modelCache,
+      signal: wctx.signal,
       error: err,
       phase: recoveryBaseState.phase,
       task,
@@ -169,6 +170,7 @@ export async function handleTaskPlannerCallFailure(
     issue = await plannerCallHaltIssue({
       projectDir: wctx.projectDir,
       modelCache: wctx.modelCache,
+      signal: wctx.signal,
       config: wctx.config,
       diagnosis,
       task,

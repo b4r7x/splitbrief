@@ -184,7 +184,7 @@ Use `# generated: <id>` and `# /generated` in shell scripts.
 |---|---|
 | TaskSpec field map and workspace/report contracts | brief-template, implementer-preamble, body-order, closing-line |
 | ConsultAnswerSchema, retries and BOUNDS | consult-table, consult-contract |
-| BOUNDS seat retries and reset waiting | seat-recovery |
+| BOUNDS seat retries and the transient backoff | seat-recovery |
 | Pipeline validation and stack registry | gate-rules, gates, brief-grouping, suggested-files, baseline-rule |
 | The review contract and REVIEW_CYCLE_CAP | review-packet, verdict-rules, fix-cycle |
 | Engine halts and deadlines | halt-signatures, halt-signatures-sh, timeouts, wait-protocol |
@@ -192,7 +192,7 @@ Use `# generated: <id>` and `# /generated` in shell scripts.
 
 `consult-table` renders only into canonical `recovery.md`; `wait-protocol` renders only into `run-protocol.md`.
 The consult table derives its actions from ConsultAnswerSchema and its bounds from BOUNDS.
-`seat-recovery` renders the transient retry count and reset-wait bound into `tool-recipes.md` from BOUNDS.
+`seat-recovery` renders the transient retry count and the longest backoff wait into `tool-recipes.md` from BOUNDS and `transient.ts`.
 
 Change either side, run `npm run skills:sync`, and the skills follow; `npm run skills:check` (part of `release-check`) fails when a generated block, a mirror, or a frontmatter rule is out of date.
 

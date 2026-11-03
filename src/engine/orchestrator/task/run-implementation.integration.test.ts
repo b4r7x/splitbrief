@@ -664,6 +664,88 @@ describe('runImplementation seat trouble', () => {
     expect(implement).toHaveBeenCalledTimes(2);
     expect(wait?.holds).toEqual({ tool: 'claude-code', kind: 'cli', profile: 'big' });
   });
+
+  it('drops the wait a /steer cut once the steered brief succeeds', async () => {
+    const { projectDir } = setupProject('seat-wait-steer');
+    const sessionId = 'seat-wait-steer-session';
+    ensureSessionDir(projectDir, sessionId);
+    const ref = { projectDir, sessionId };
+    const task = makeTask({ id: 'T062', suggestedFiles: ['src/steer.ts'], action: 'create' });
+    const state = makeImplState([task]);
+    saveState(ref, state);
+    const implement = vi
+      .fn()
+      .mockResolvedValueOnce({
+        success: false,
+        output: '',
+        error: "You've hit your usage limit. Try again in 3 hours.",
+      })
+      .mockResolvedValueOnce({ success: true, output: '' });
+    const { bus, events } = makeBusRecorder();
+    const abortHandlers: (() => void)[] = [];
+    const wctx = makeWctx({
+      projectDir,
+      sessionId,
+      bus,
+      implementer: makeImplementer({ implement }),
+      config: makeNoValidationConfig({ implementer: { kind: 'cli', tool: 'claude-code' } }),
+      sinks: {
+        setAbortHandler: (handler) => {
+          if (handler === null) abortHandlers.pop();
+          else abortHandlers.push(handler);
+        },
+        setQueueHandler: () => {},
+      },
+      callbacks: makeCallbacks({
+        onContinuationNeeded: async () => plainUserMessage('keep it small'),
+      }).callbacks,
+    });
+    const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
+
+    vi.useFakeTimers({
+      toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'],
+    });
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+    let tracked = state;
+    const pending = runImplementation({
+      wctx,
+      task,
+      state,
+      taskStartSnapshot,
+      setTrackedState: (next) => {
+        tracked = next;
+      },
+      recordApprovalDenial: vi.fn(),
+    });
+    let settled = false;
+    void pending.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    // The brief reads git with real child processes, so each turn lets them land before the clock moves.
+    const turn = async (): Promise<void> => {
+      await new Promise((resolve) => setImmediate(resolve));
+      await vi.advanceTimersByTimeAsync(1);
+    };
+    while (!settled && !events.some((event) => event.type === 'seat_wait_started')) await turn();
+    expect(loadState(ref)?.seatWait?.seat).toBe('build');
+    // `/steer` aborts the call through the per-call abort handler.
+    abortHandlers.at(-1)?.();
+    while (!settled) await turn();
+    const result = await pending;
+
+    expect(implement).toHaveBeenCalledTimes(2);
+    expect(result.implResult.success).toBe(true);
+    expect(loadState(ref)?.seatWait).toBeUndefined();
+    expect(tracked.seatWait).toBeUndefined();
+    expect(events.filter((event) => event.type === 'seat_wait_ended').at(-1)).not.toHaveProperty(
+      'kept',
+    );
+  });
 });
 
 describe('runImplementation correction at a stop', () => {

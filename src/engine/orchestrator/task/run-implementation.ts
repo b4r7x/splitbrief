@@ -250,6 +250,7 @@ export async function runImplementation(opts: {
                 state,
                 seat: 'build',
                 runner: config.implementer,
+                config,
                 profile: wctx.implementerProfile,
                 signal,
                 onStateChange: (next) => {

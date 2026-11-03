@@ -12,6 +12,7 @@ import {
   makePlanner,
   makeWctx,
   TEST_METADATA,
+  TEST_SINKS,
 } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { passingReviewVerdict } from '#testing/helpers/typed-planner.js';
@@ -19,14 +20,12 @@ import { writeConfig } from '../../core/config/load/io.js';
 import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import { ensureSessionDir, writeSpecFile } from '../../core/paths-io.js';
 import { SPEC_FILE } from '../../core/paths.js';
-import { recoveryActionLabel } from '../../core/recovery/action-label.js';
 import { loadState } from '../../core/state/persistence.js';
 import type { Task } from '../../core/schemas/task.js';
+import { plainUserMessage } from '../../core/types/user-input.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
-import type { EventBus } from '../events/types.js';
+import type { EngineEvent, EventBus } from '../events/types.js';
 import type { Planner } from '../planners/types.js';
-import { applyRecoveryAction } from './recovery/actions.js';
-import { resumeSeatWait } from './escalation/seat-wait.js';
 import { haltVerdictlessReview } from './run/review.js';
 import { runFinalReviewPhase, type FinalReviewResult } from './final-review.js';
 import { createCliPlanner } from '../planners/cli.js';
@@ -42,6 +41,22 @@ afterEach(() => {
   vi.useRealTimers();
   for (const dir of dirs.splice(0)) cleanupTempDir(dir);
 });
+
+// The run's git helpers pause on short real timers, so the fake clock also moves with real time;
+// the seat's own wait is long enough that only the explicit advance ends it.
+function seatClock(): void {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'], shouldAdvanceTime: true });
+}
+
+function nextEvent(bus: EventBus, type: EngineEvent['type']): Promise<EngineEvent> {
+  return new Promise((resolve) => {
+    const stop = bus.subscribe((event) => {
+      if (event.type !== type) return;
+      stop();
+      resolve(event);
+    });
+  });
+}
 
 function project(): { projectDir: string; sessionId: string } {
   const projectDir = createTempDir('final-review-seat-wait');
@@ -163,76 +178,119 @@ describe('a rate-limited codex reviewer', () => {
     },
   );
 
-  it('waits out a reset inside the bound, then reviews again and passes', async () => {
-    const ref = project();
-    const { bus, events } = makeBusRecorder();
-    const reviewer = codexReviewer(RESET_IN_BOUND);
-
-    const failed = await review(ref, doneState(makeTask({ id: 'T001' })), reviewer, bus);
-    expect(failed.reviewStatus).toBe('failed');
-    expect(failed.failure?.kind).toBe('seat-blocked');
-
-    const halted = await halt(ref, failed, bus);
-    const issue = halted.pendingRecovery;
-    expect(issue).toMatchObject({ seat: 'review', reason: 'runner-usage-limit' });
-    expect(issue?.availableActions).toContain('retry-later');
-    expect(issue?.recommendedAction).toBe('retry-later');
-    if (issue?.resetAt === undefined) throw new Error('the halt names no reset');
-
-    const applied = await applyRecoveryAction({
-      ...ref,
-      state: halted,
-      action: 'retry-later',
-      bus,
-      entryConfig: CODEX_REVIEWER,
-    });
-    expect(applied).toMatchObject({ ok: true, status: 'continued' });
-    if (!applied.ok) return;
-    expect(applied.state.pendingRecovery).toBeUndefined();
-    expect(applied.state.seatWait?.resetAt).toBe(issue.resetAt);
-
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date(Date.parse(issue.resetAt) - 120_000));
-    const pending = resumeSeatWait({
-      ref: { ...ref, bus },
-      state: applied.state,
-      config: CODEX_REVIEWER,
-    });
-    await vi.advanceTimersByTimeAsync(1);
-    expect(events.filter((event) => event.type === 'seat_wait_started')).toHaveLength(1);
-    await vi.advanceTimersByTimeAsync(120_000);
-    const resumed = await pending;
-    vi.useRealTimers();
-    expect(resumed.seatWait).toBeUndefined();
-    expect(loadState(ref)?.seatWait).toBeUndefined();
-
-    const passed = await review(ref, resumed, reviewer, bus);
-    expect(passed.reviewStatus).toBe('written');
-    expect(passed.verdict?.outcome.kind).toBe('pass');
-  });
-
-  it.each([CODEX_REVIEWER, makeNoValidationConfig({ planner: { kind: 'cli', tool: 'codex' } })])(
-    'halts the review seat on a reset past the bound, offering Retry at the clock [%#]',
-    async (config) => {
+  it.each([
+    [RESET_IN_BOUND, CODEX_REVIEWER, 120_000],
+    [RESET_PAST_BOUND, CODEX_REVIEWER, 7_200_000],
+    [
+      RESET_PAST_BOUND,
+      makeNoValidationConfig({ planner: { kind: 'cli', tool: 'codex' } }),
+      7_200_000,
+    ],
+  ])(
+    'waits inside the review call for a named reset with no fallback, then passes: %s [%#]',
+    async (message, config, waitMs) => {
+      seatClock();
       const ref = project();
       const { bus, events } = makeBusRecorder();
-      const reviewer = codexReviewer(RESET_PAST_BOUND);
+      const waiting = nextEvent(bus, 'seat_wait_started');
 
-      const failed = await review(ref, doneState(makeTask({ id: 'T001' })), reviewer, bus, config);
-      expect(failed.reviewStatus).toBe('failed');
-      expect(failed.failure?.kind).toBe('seat-blocked');
-
-      const halted = await halt(ref, failed, bus, config);
-      expect(events.find((event) => event.type === 'error')?.message).toContain(
-        'change the REVIEW tool',
+      const running = review(
+        ref,
+        doneState(makeTask({ id: 'T001' })),
+        codexReviewer(message),
+        bus,
+        config,
       );
-      const issue = halted.pendingRecovery;
-      expect(issue).toMatchObject({ seat: 'review', reason: 'runner-usage-limit' });
-      expect(issue?.availableActions).toContain('retry-later');
-      if (issue?.resetAt === undefined) throw new Error('the halt names no reset');
-      expect(recoveryActionLabel('retry-later', { resetAt: issue.resetAt })).toMatch(/^Retry at /);
+      const started = await Promise.race([waiting, running]);
+      expect(started).toMatchObject({ type: 'seat_wait_started', seat: 'review' });
+      if (!('type' in started) || started.type !== 'seat_wait_started') return;
+      const resetAt = Date.parse(started.resetAt);
+      expect(resetAt - started.ts).toBeGreaterThan(waitMs - 1_000);
+      expect(resetAt - started.ts).toBeLessThanOrEqual(waitMs);
+      expect(loadState(ref)?.seatWait?.resetAt).toBe(new Date(resetAt).toISOString());
+      await vi.advanceTimersByTimeAsync(resetAt - Date.now());
+      const passed = await running;
+
+      expect(passed.reviewStatus).toBe('written');
+      expect(passed.verdict?.outcome.kind).toBe('pass');
+      expect(events.filter((event) => event.type === 'seat_wait_ended')).toHaveLength(1);
+      expect(events.some((event) => event.type === 'error')).toBe(false);
+      expect(loadState(ref)?.seatWait).toBeUndefined();
+      expect(loadState(ref)?.pendingRecovery).toBeUndefined();
     },
   );
+
+  it('drops the wait a /steer cut once the steered review call passes', async () => {
+    seatClock();
+    const ref = project();
+    const { bus, events } = makeBusRecorder();
+    const abortHandlers: (() => void)[] = [];
+    const waiting = nextEvent(bus, 'seat_wait_started');
+
+    const running = runFinalReviewPhase({
+      ...ref,
+      workspaceDir: ref.projectDir,
+      state: doneState(makeTask({ id: 'T001' })),
+      config: CODEX_REVIEWER,
+      bus,
+      callbacks: makeCallbacks({
+        onContinuationNeeded: async () => plainUserMessage('look at auth'),
+      }).callbacks,
+      sinks: {
+        ...TEST_SINKS,
+        setAbortHandler: (handler) => {
+          if (handler === null) abortHandlers.pop();
+          else abortHandlers.push(handler);
+        },
+      },
+      signal: new AbortController().signal,
+      reviewer: codexReviewer(RESET_PAST_BOUND),
+      metadata: TEST_METADATA,
+      summaryBase: {
+        feature: 'feature',
+        startTime: Date.now(),
+        plannerTool: 'test',
+        implementerTool: 'test',
+      },
+    });
+    await Promise.race([waiting, running]);
+    expect(loadState(ref)?.seatWait?.seat).toBe('review');
+    // `/steer` aborts the call through the per-call abort handler.
+    abortHandlers.at(-1)?.();
+    const passed = await running;
+
+    expect(passed.verdict?.outcome.kind).toBe('pass');
+    expect(loadState(ref)?.seatWait).toBeUndefined();
+    expect(events.filter((event) => event.type === 'seat_wait_ended').at(-1)).not.toHaveProperty(
+      'kept',
+    );
+  });
+
+  it('retries a dropped connection inside the review call, then passes', async () => {
+    seatClock();
+    const ref = project();
+    const { bus, events } = makeBusRecorder();
+    const retried = nextEvent(bus, 'seat_retry');
+
+    const running = review(
+      ref,
+      doneState(makeTask({ id: 'T001' })),
+      codexReviewer('stream error: connection reset by peer'),
+      bus,
+    );
+    expect(await Promise.race([retried, running])).toMatchObject({
+      type: 'seat_retry',
+      seat: 'review',
+      attempt: 1,
+      delayMs: 2_000,
+    });
+    await vi.advanceTimersByTimeAsync(2_000);
+    const passed = await running;
+
+    expect(passed.reviewStatus).toBe('written');
+    expect(passed.verdict?.outcome.kind).toBe('pass');
+    expect(events.some((event) => event.type === 'error')).toBe(false);
+  });
 });
 
 describe('a Cursor reviewer that refuses the account', () => {

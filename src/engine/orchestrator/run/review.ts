@@ -171,6 +171,7 @@ export async function haltVerdictlessReview(args: {
         runner,
         config: wctx.config,
         modelCache: wctx.modelCache,
+        signal: wctx.signal,
       }),
       createdAt: nowIso(),
     });
@@ -184,6 +185,7 @@ export async function haltVerdictlessReview(args: {
     const issue = await plannerCallHaltIssue({
       projectDir: wctx.projectDir,
       modelCache: wctx.modelCache,
+      signal: wctx.signal,
       config: wctx.config,
       diagnosis: failure.diagnosis,
       phase: state.phase,

@@ -1,5 +1,6 @@
 import type { z } from 'zod';
 import type { Attachment } from '../../core/schemas/attachment.js';
+import type { Config } from '../../core/schemas/config.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import type { SteeringPort } from '../calls/steering.js';
@@ -10,6 +11,7 @@ import { withFreshSessionReissue } from './resume-context.js';
 import { publishWarning } from './events.js';
 import { SEAT_ANSWER_REFUSED_CODE } from '../../core/runners/seat-answer-notice.js';
 import { transitionAndSave } from './state-ops.js';
+import { runThrowingSeatCall } from './escalation/seat-wait.js';
 
 /** What one typed call on the planner's own thread is built from. */
 export type PlannerSessionCall<T> = Readonly<{
@@ -39,6 +41,8 @@ export type PlannerSessionContext = Readonly<{
   sessionId: string;
   bus: EventBus;
   planner: Pick<Planner, 'capabilities' | 'typedCall'>;
+  /** The run config: its PLAN seat is the runner a limit waits on or falls back from. */
+  config: Config;
   /** The state the call starts on: the thread it names is the one a resumed turn continues. */
   state: WorkflowState;
   signal?: AbortSignal | undefined;
@@ -55,8 +59,8 @@ export type PlannerSessionAnswer<T> = Readonly<{
 /**
  * One typed call on the planner's own session. The call resumes the saved thread when the
  * tool can, and a thread the backend rejects is reissued once on a fresh session with the
- * rebuilt transcript, the state remembering the reset. A returned native handle is saved for
- * the calls after it.
+ * rebuilt transcript, the state remembering the reset. Each issue runs under the PLAN seat's
+ * trouble ladder (`runSeatCall`). A returned native handle is saved for the calls after it.
  */
 export async function askPlannerSession<T>(
   ctx: PlannerSessionContext,
@@ -86,31 +90,44 @@ export async function askPlannerSession<T>(
         Boolean(state.plannerSessionId);
       const priorMessages: PriorMessage[] | undefined =
         rebuilt ?? (call.priorMessages === undefined ? undefined : [...call.priorMessages]);
-      return requestTyped({
-        prompt: await call.compose({ onSession, priorMessages }),
-        schema: call.schema,
-        jsonSchema: call.jsonSchema,
-        schemaName: call.schemaName,
-        onRepair: (message) =>
-          publishWarning({
-            bus: ctx.bus,
-            phase: state.phase,
-            message,
-            safety: { category: 'planner', code: SEAT_ANSWER_REFUSED_CODE },
+      const prompt = await call.compose({ onSession, priorMessages });
+      return runThrowingSeatCall(
+        {
+          ref: { ...ref, bus: ctx.bus },
+          state,
+          seat: 'plan',
+          runner: ctx.config.planner,
+          config: ctx.config,
+          ...(ctx.signal !== undefined && { signal: ctx.signal }),
+          onStateChange: apply,
+        },
+        (signal) =>
+          requestTyped({
+            prompt,
+            schema: call.schema,
+            jsonSchema: call.jsonSchema,
+            schemaName: call.schemaName,
+            onRepair: (message) =>
+              publishWarning({
+                bus: ctx.bus,
+                phase: state.phase,
+                message,
+                safety: { category: 'planner', code: SEAT_ANSWER_REFUSED_CODE },
+              }),
+            call: ctx.planner.typedCall({
+              projectDir: ctx.projectDir,
+              seat: 'planner',
+              callbacks: {
+                onOutput: () => {},
+                ...(call.onCallEvent !== undefined && { onCallEvent: call.onCallEvent }),
+                signal,
+                ...(ctx.steering !== undefined && { steering: ctx.steering }),
+              },
+              ...(call.images !== undefined && { images: [...call.images] }),
+              ...(priorMessages !== undefined && priorMessages.length > 0 && { priorMessages }),
+            }),
           }),
-        call: ctx.planner.typedCall({
-          projectDir: ctx.projectDir,
-          seat: 'planner',
-          callbacks: {
-            onOutput: () => {},
-            ...(call.onCallEvent !== undefined && { onCallEvent: call.onCallEvent }),
-            ...(ctx.signal !== undefined && { signal: ctx.signal }),
-            ...(ctx.steering !== undefined && { steering: ctx.steering }),
-          },
-          ...(call.images !== undefined && { images: [...call.images] }),
-          ...(priorMessages !== undefined && priorMessages.length > 0 && { priorMessages }),
-        }),
-      });
+      );
     },
   });
 

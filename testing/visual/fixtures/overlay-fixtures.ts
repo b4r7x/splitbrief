@@ -3189,6 +3189,27 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-fallback-picker-same-seat'), createFallbackPickerSameSeatFixture],
   [scenarioId('workflow-stop-sheet'), createStopSheetFixture],
   [scenarioId('workflow-stop-sheet-short'), () => createStopSheetFixture()],
+  [
+    scenarioId('workflow-stop-sheet-seat-wait'),
+    () =>
+      createOverlayFixture({
+        overlay: 'stop-sheet',
+        underlyingScreen: 'workflow',
+        seed: () => {
+          seedStopSheet();
+          const resetAt = new Date(STOP_SHEET_TS + 40 * 60_000).toISOString();
+          addEvent({
+            type: 'seat_wait_started',
+            ts: STOP_SHEET_TS + 6_000,
+            phase: 'implementing',
+            seat: 'build',
+            tool: 'Ollama',
+            resetAt,
+            wait: { seat: 'build', resetAt, tool: 'ollama', kind: 'cli' },
+          });
+        },
+      }),
+  ],
   [scenarioId('workflow-stop-menu-parked'), createParkedStopMenuFixture],
   [scenarioId('workflow-stop-menu-parked-first-brief'), createParkedFirstBriefStopMenuFixture],
   [

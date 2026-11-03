@@ -2,6 +2,7 @@ import { BOUNDS } from '../../core/pipeline-spec/bounds.js';
 import { abortError, throwIfAborted } from '../../utils/abort.js';
 import type { RunnerFailureOutcomeState } from './errors.js';
 import { classifySeatFailure } from './seat-failure.js';
+import { parseUsageLimitReset } from './usage-limit.js';
 
 /**
  * One failed seat call, in the runner's own words and its machine outcome when
@@ -26,6 +27,7 @@ export type SeatAttempt<T> =
 export type SeatRetryInfo = Readonly<{ attempt: number; delayMs: number }>;
 
 const SEAT_RETRY_BASE_DELAY_MS = 2_000;
+export const SEAT_RETRY_MAX_DELAY_MS = 60_000;
 
 /**
  * A network or server-side failure the same call can survive, as the one seat
@@ -44,9 +46,17 @@ export function isTransientSeatFailure(failure: SeatFailure): boolean {
   );
 }
 
-/** The backoff delay before retry `attempt` (1-based): 2s, then 4s, then 8s. */
-export function seatRetryDelayMs(attempt: number): number {
-  return SEAT_RETRY_BASE_DELAY_MS * 2 ** (attempt - 1);
+/**
+ * The wait before retry `attempt` (1-based). A retry-after the provider sent,
+ * as seconds or as an HTTP date, replaces the backoff; otherwise the backoff
+ * doubles from 2s and never goes above 60s.
+ */
+function seatRetryDelayMs(failure: SeatFailure, attempt: number, now: Date): number {
+  const retryAt = parseUsageLimitReset(failure.message, now);
+  if (retryAt !== null && retryAt.getTime() > now.getTime()) {
+    return retryAt.getTime() - now.getTime();
+  }
+  return Math.min(SEAT_RETRY_BASE_DELAY_MS * 2 ** (attempt - 1), SEAT_RETRY_MAX_DELAY_MS);
 }
 
 export function abortableDelay(ms: number, signal: AbortSignal | undefined): Promise<void> {
@@ -70,8 +80,8 @@ export function abortableDelay(ms: number, signal: AbortSignal | undefined): Pro
 
 /**
  * Run one seat call, retrying only a transient failure. The call reports each
- * attempt as a `SeatAttempt`; a transient failure retries with exponential
- * backoff at most `BOUNDS.transientRetries` times, then comes back as it is.
+ * attempt as a `SeatAttempt`; a transient failure retries at most
+ * `BOUNDS.transientRetries` times, then comes back as it is.
  * `onRetry` publishes the retry; aborting the signal aborts the backoff.
  * `onDiscarded` receives each attempt value a retry replaced, so its usage is
  * never lost.
@@ -92,7 +102,7 @@ export async function withSeatRetry<T>(
       return result;
     }
     opts.onDiscarded(result.value);
-    const delayMs = seatRetryDelayMs(attempt);
+    const delayMs = seatRetryDelayMs(result.failure, attempt, new Date(Date.now()));
     opts.onRetry?.({ attempt, delayMs });
     await abortableDelay(delayMs, signal);
   }

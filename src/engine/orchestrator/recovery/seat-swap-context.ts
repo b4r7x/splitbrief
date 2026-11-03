@@ -91,6 +91,7 @@ async function haltRouteAuth(
     runner: SeatRunner;
     config: Config;
     refusal?: string | undefined;
+    signal: AbortSignal | undefined;
   }>,
   remembered: DetectionCacheSnapshot | null,
 ): Promise<RouteAuthState | undefined> {
@@ -113,11 +114,13 @@ async function haltRouteAuth(
         projectDir: input.projectDir,
         includeCatalog: true,
         catalogNamesProject: true,
+        signal: input.signal,
       });
       providerAuth = evidence.providerAuth ?? UNREAD_PROVIDER_AUTH;
       catalog =
         evidence.catalog.kind === 'success' ? { models: evidence.catalog.value } : undefined;
-    } catch {
+    } catch (error) {
+      if (input.signal?.aborted) throw error;
       providerAuth = UNREAD_PROVIDER_AUTH;
       catalog = undefined;
     }
@@ -139,6 +142,7 @@ async function fallbackDecision(
     config: Config;
     fallback: SeatFallback;
     remembered: DetectionCacheSnapshot | null;
+    signal: AbortSignal | undefined;
   }>,
 ): Promise<string | undefined> {
   const { fallback, remembered } = input;
@@ -157,6 +161,7 @@ async function fallbackDecision(
     projectDir: input.projectDir,
     tools: [runner.tool],
     authChannels: { [runner.tool]: defaultCliAuthChannel(runner.tool).id },
+    signal: input.signal,
   });
   const state = live?.diagnostic.state;
   if (
@@ -180,6 +185,7 @@ async function fallbackDecision(
         projectDir: input.projectDir,
         includeCatalog: true,
         catalogNamesProject: true,
+        signal: input.signal,
       }),
     );
   }
@@ -202,6 +208,8 @@ export async function loadSeatSwapContext(
     config: Config;
     /** Required so no halt drops the run's cache: the fallback row names its model through it. */
     modelCache: ModelCacheAccessor | undefined;
+    /** Required so no caller drops the run's stop: it ends a live check of the route or the fallback. */
+    signal: AbortSignal | undefined;
     implementerProfile?: string | undefined;
     /** The tool's own words on the halted call; a model refusal re-reads the route's evidence. */
     refusal?: string | undefined;
@@ -232,6 +240,7 @@ export async function loadSeatSwapContext(
       config: input.config,
       fallback,
       remembered,
+      signal: input.signal,
     });
     if (blockedReason === undefined) {
       detectedTools = [

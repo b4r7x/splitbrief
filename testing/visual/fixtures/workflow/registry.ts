@@ -1282,6 +1282,8 @@ const checkpointPredicates = [
       includesAll('Waiting for OpenAI Codex CLI')(context) &&
       excludesAll('Between calls', 'Resuming', 'Implementing…')(context),
   ],
+  [checkpointId('planning-seat-wait'), includesAll('Waiting for Claude Code')],
+  [checkpointId('final-review-seat-wait'), includesAll('Waiting for OpenAI Codex CLI')],
   [checkpointId('review-check-running'), includesAll('Review · Reviewer check V2')],
   [checkpointId('review-check-reused'), includesAll('Reviewer check V2', 'reused,')],
   [checkpointId('review-pause-requested'), includesAll('Review · Reviewer check V2')],

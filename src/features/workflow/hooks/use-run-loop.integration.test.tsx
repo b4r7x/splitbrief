@@ -3431,6 +3431,7 @@ describe('useRunLoop — a seat wait after the seat changed', () => {
             state: loadState(ref) ?? createInitialState('wait'),
             seat,
             runner: readActiveRunner({ config, role: CREW_SEAT_ROLES[seat], profile }),
+            config,
             ...(profile !== undefined && { profile }),
             signal: options.signal,
           },

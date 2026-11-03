@@ -1617,7 +1617,10 @@ function firstFailsThenPassesReviewer(): Planner {
           ? makeRunnerCallResult({
               status: 'failed',
               text: '',
-              error: { code: 'review-unavailable', message: 'The review seat is offline.' },
+              error: {
+                code: 'review-unavailable',
+                message: 'The review seat returned no verdict.',
+              },
             })
           : makeRunnerCallResult({
               status: 'completed',

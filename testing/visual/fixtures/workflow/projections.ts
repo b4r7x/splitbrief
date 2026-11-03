@@ -6302,8 +6302,8 @@ const implementationSilentBareProjection: WorkflowFixtureProjection = {
   }),
 };
 
-// The same brief after its seat hit a usage limit that resets inside the wait bound: the run waits
-// in this process, and the build block and the byline name the tool and the reset clock.
+// The same brief after its seat, with no fallback, hit a usage limit that resets in forty minutes: the
+// run waits in this process, and the build block and the byline name the tool and the reset clock.
 const liveSeatWaitProjection: WorkflowFixtureProjection = {
   ...implementationSilentBareProjection,
   scenarioId: scenarioId('workflow-live-seat-wait'),
@@ -6320,15 +6320,57 @@ const liveSeatWaitProjection: WorkflowFixtureProjection = {
       phase: 'implementing',
       seat: 'build',
       tool: 'OpenAI Codex CLI',
-      resetAt: new Date(FIXED_TS + 9 * 60_000).toISOString(),
+      resetAt: new Date(FIXED_TS + 40 * 60_000).toISOString(),
       wait: {
         seat: 'build',
-        resetAt: new Date(FIXED_TS + 9 * 60_000).toISOString(),
+        resetAt: new Date(FIXED_TS + 40 * 60_000).toISOString(),
         tool: 'codex',
         kind: 'cli',
       },
     },
   ],
+};
+
+// The planning call, on a PLAN seat with no fallback, hit a usage limit that resets in forty
+// minutes: the planning session waits in this process for the reset, then asks again.
+const PLAN_WAIT_RESET_AT = new Date(FIXED_TS + 40 * 60_000).toISOString();
+const planningSeatWaitProjection: WorkflowFixtureProjection = {
+  ...planningProjection,
+  scenarioId: scenarioId('workflow-planning-seat-wait'),
+  events: [
+    ...planningProjection.events,
+    {
+      type: 'seat_wait_started',
+      ts: FIXED_TS + 200,
+      phase: 'planning',
+      seat: 'plan',
+      tool: 'Claude Code',
+      resetAt: PLAN_WAIT_RESET_AT,
+      wait: { seat: 'plan', resetAt: PLAN_WAIT_RESET_AT, tool: 'claude-code', kind: 'cli' },
+    },
+  ],
+};
+
+// The final review call, on a REVIEW seat with no fallback, hit a usage limit that resets in
+// forty minutes: the review waits in this process for the reset, then asks again.
+const finalReviewSeatWaitProjection: WorkflowFixtureProjection = {
+  ...finalReviewProjection,
+  scenarioId: scenarioId('workflow-final-review-seat-wait'),
+  get events(): EngineEvent[] {
+    const resetAt = new Date(FIXED_TS + 40 * 60_000).toISOString();
+    return [
+      ...finalReviewProjection.events.filter((event) => event.type !== 'runner_call_started'),
+      {
+        type: 'seat_wait_started',
+        ts: FIXED_TS + 520,
+        phase: 'final-review',
+        seat: 'review',
+        tool: 'OpenAI Codex CLI',
+        resetAt,
+        wait: { seat: 'review', resetAt, tool: 'codex', kind: 'cli' },
+      },
+    ];
+  },
 };
 
 const implementationShellWrapperProjection: WorkflowFixtureProjection = {
@@ -7776,6 +7818,8 @@ const projections = [
   planUsageLimitProjection,
   outputLimitWarningProjection,
   liveSeatWaitProjection,
+  planningSeatWaitProjection,
+  finalReviewSeatWaitProjection,
 ] as const;
 
 export const workflowFixtureProjections: ReadonlyMap<ScenarioId, WorkflowFixtureProjection> =

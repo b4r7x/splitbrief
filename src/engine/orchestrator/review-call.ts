@@ -1,5 +1,7 @@
 import type { z } from 'zod';
+import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
+import type { Config } from '../../core/schemas/config.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { Reviewer } from '../reviewers/types.js';
 import type { EventBus } from '../events/types.js';
@@ -12,6 +14,7 @@ import { addUsageAndSave } from './state-ops.js';
 import { publishWarning } from './events.js';
 import { SEAT_ANSWER_REFUSED_CODE } from '../../core/runners/seat-answer-notice.js';
 import type { SteeringPort } from '../calls/steering.js';
+import { runThrowingSeatCall } from './escalation/seat-wait.js';
 
 type ReviewerCallInput = Readonly<{
   prompt: string;
@@ -38,6 +41,8 @@ export type RunReviewerCallOptions<T> = {
   workspaceDir: string;
   sessionId: string;
   bus: EventBus;
+  /** The run config: its REVIEW seat is the runner a limit waits on or falls back from. */
+  config: Config;
   state: WorkflowState;
   signal?: AbortSignal | undefined;
   steering?: SteeringPort | undefined;
@@ -49,51 +54,63 @@ export type RunReviewerCallResult<T> = {
 };
 
 /**
- * A review call: a typed request through the reviewer seat, with the seat's
- * own one-repair contract, and the usage it spent booked against the reviewer
- * bucket whichever way it landed.
+ * A review call: a typed request through the reviewer seat under the REVIEW seat's trouble
+ * ladder (`runSeatCall`), with the seat's own one-repair contract, and the usage it spent
+ * booked against the reviewer bucket whichever way it landed.
  */
 export async function runReviewerCall<T>(
   opts: RunReviewerCallOptions<T>,
 ): Promise<RunReviewerCallResult<T>> {
-  const { reviewer, projectDir, workspaceDir, sessionId, bus } = opts;
-  const result = await requestTyped({
-    prepareCall: async () => {
-      const input = 'prepareCall' in opts ? await opts.prepareCall() : opts;
-      const call = reviewer.typedCall({
-        projectDir: workspaceDir,
-        seat: 'reviewer',
-        callbacks: {
-          onOutput: () => {},
-          signal: opts.signal,
-          ...(opts.steering !== undefined && { steering: opts.steering }),
-        },
-        ...(input.images !== undefined && input.images.length > 0 && { images: [...input.images] }),
-      });
-      return {
-        prompt:
-          typeof input.prompt === 'string'
-            ? input.prompt
-            : input.prompt(typedPromptSuffix(call.typedOutput, opts.jsonSchema)),
-        call,
-      };
+  const { reviewer, projectDir, workspaceDir, sessionId, bus, config } = opts;
+  const ref = { projectDir, sessionId, bus };
+  let current = opts.state;
+  const result = await runThrowingSeatCall(
+    {
+      ref,
+      state: current,
+      seat: 'review',
+      runner: resolveReviewerRunner(config).runner,
+      config,
+      ...(opts.signal !== undefined && { signal: opts.signal }),
+      onStateChange: (next) => {
+        current = next;
+      },
     },
-    schema: opts.schema,
-    jsonSchema: opts.jsonSchema,
-    schemaName: opts.schemaName,
-    onRepair: (message) =>
-      publishWarning({
-        bus,
-        phase: opts.state.phase,
-        message,
-        safety: { category: 'reviewer', code: SEAT_ANSWER_REFUSED_CODE },
+    (signal) =>
+      requestTyped({
+        prepareCall: async () => {
+          const input = 'prepareCall' in opts ? await opts.prepareCall() : opts;
+          const call = reviewer.typedCall({
+            projectDir: workspaceDir,
+            seat: 'reviewer',
+            callbacks: {
+              onOutput: () => {},
+              signal,
+              ...(opts.steering !== undefined && { steering: opts.steering }),
+            },
+            ...(input.images !== undefined &&
+              input.images.length > 0 && { images: [...input.images] }),
+          });
+          return {
+            prompt:
+              typeof input.prompt === 'string'
+                ? input.prompt
+                : input.prompt(typedPromptSuffix(call.typedOutput, opts.jsonSchema)),
+            call,
+          };
+        },
+        schema: opts.schema,
+        jsonSchema: opts.jsonSchema,
+        schemaName: opts.schemaName,
+        onRepair: (message) =>
+          publishWarning({
+            bus,
+            phase: current.phase,
+            message,
+            safety: { category: 'reviewer', code: SEAT_ANSWER_REFUSED_CODE },
+          }),
       }),
-  });
-  const state = addUsageAndSave(
-    { projectDir, sessionId, bus },
-    opts.state,
-    'reviewer',
-    result.usage,
   );
+  const state = addUsageAndSave(ref, current, 'reviewer', result.usage);
   return { state, result };
 }

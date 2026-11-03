@@ -151,7 +151,7 @@ No seat has a default fallback.
 The review seat uses `reviewer.fallback` when a `reviewer` block exists; otherwise, it uses `planner.fallback`.
 
 Declaring a fallback authorizes one automatic switch per run and seat.
-SPLITBRIEF switches only for an account refusal or a rate limit with a reset beyond the run's wait limit.
+SPLITBRIEF switches only for an account refusal or a usage limit, whatever its reset.
 The fallback must pass admission checks, and the halt must carry the config revision.
 SPLITBRIEF records each switch in `seatSwitches`.
 An automatic switch makes the old CLI seat the fallback, preserving its tool and model.
@@ -391,7 +391,7 @@ The reviewer is a planner-tier seat and shares the planner's admission set, so a
 - **No `reviewer` block:** the planner runner performs the review. Review tokens are priced at the planner's rates and folded into the planner line in the run summary.
 - **A `reviewer` block:** the reviewer performs the review and gets its own priced line in both.
 - **The review seat's fallback:** `reviewer.fallback` when a `reviewer` block exists, else `planner.fallback`. See [`fallback`](#fallback).
-- **A configured reviewer that fails admission** blocks the run before it starts, with a readiness blocker naming the reviewer seat. A mid-call account refusal or long-reset limit raises a Seat down halt and can apply the review seat's configured fallback under the [switch conditions](./APPROVAL-AND-RECOVERY.md#seat-down). A review that ends as failed records `finalReviewStatus: "failed"` in the run summary and `finalReview.status` in the review packet, with the reviewer's identity in the error and the final-review evidence. SPLITBRIEF never silently hands the review back to the planner.
+- **A configured reviewer that fails admission** blocks the run before it starts, with a readiness blocker naming the reviewer seat. A mid-call account refusal, or a usage limit that the run does not wait for, raises a Seat down halt and can apply the review seat's configured fallback under the [switch conditions](./APPROVAL-AND-RECOVERY.md#seat-down). A review that ends as failed records `finalReviewStatus: "failed"` in the run summary and `finalReview.status` in the review packet, with the reviewer's identity in the error and the final-review evidence. SPLITBRIEF never silently hands the review back to the planner.
 
 ### YAML — cross-lab review
 

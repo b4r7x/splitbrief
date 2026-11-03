@@ -1,6 +1,5 @@
 import type { Config } from '../../../../core/schemas/config.js';
 import type { Phase, RecoveryAction } from '../../../../core/schemas/enums.js';
-import { BOUNDS } from '../../../../core/pipeline-spec/bounds.js';
 import type { ReviewRecord, SeatSwitchRecord } from '../../../../core/schemas/workflow.js';
 import type { CannotNextStep } from '../../../../core/schemas/consult.js';
 import {
@@ -23,6 +22,7 @@ import {
   type CrewSeatId,
 } from '../../../../core/crew/identity.js';
 import { CREW_SEAT_ROLES } from '../../../../core/crew/seats.js';
+import { automaticSwitchUsed } from '../../../../core/crew/fallback.js';
 import { recordedSeatIdentityInput } from '../../../providers/model/display-names.js';
 import { NULL_CACHE, type ModelCacheAccessor } from '../../../providers/model/resolution.js';
 import { recoveryActionLabel } from '../../../../core/recovery/action-label.js';
@@ -314,7 +314,7 @@ function fallbackDetail(opts: SeatDownRecoveryOptions, identity: string | undefi
   if (fallback === undefined) return 'no fallback set';
   const blockedReason = opts.seatSwap?.fallbackBlockedReason;
   if (blockedReason !== undefined) return `fallback: ${identity} · not offered: ${blockedReason}`;
-  if ((opts.seatSwitches ?? []).some((record) => record.seat === opts.seat && record.auto)) {
+  if (automaticSwitchUsed(opts.seatSwitches, opts.seat)) {
     return `fallback: ${identity} · automatic switch already used in this run`;
   }
   if (
@@ -340,30 +340,21 @@ function reportedDetail(displayName: string, opts: SeatDownRecoveryOptions): str
 }
 
 /**
- * The automatic-switch intent a seat-down halt carries: the seat moves itself to
- * its declared fallback without asking. Only a seat that cannot work qualifies —
- * an account refusal, or a rate-limited call whose reset is further away than a
- * run will wait — and only when the offer leads with that fallback and this run
- * has not already switched the seat automatically. The config hash travels with
- * the intent so a config the operator changed is not overwritten.
+ * Whether a seat that cannot work moves to its declared fallback now, without asking: only when
+ * the offer leads with that fallback — the halt can take it and the seat does not run it already —
+ * and this run has not already switched the seat automatically. The seat call and the seat-down
+ * halt both decide here, so a seat that does not move waits for its reset or halts with the panel.
+ * The config hash travels with the intent so a config the operator changed is not overwritten.
  */
-function autoSwitchIntent(
-  opts: SeatDownRecoveryOptions,
-  offer: SwitchSeatOffer,
+export function automaticSeatSwitch(
+  seatSwap: SeatSwapContext | undefined,
+  seatSwitches: readonly SeatSwitchRecord[] | undefined,
 ): NonNullable<SwitchSeatOffer['auto']> | undefined {
-  const fallback = opts.seatSwap?.fallback;
-  const configRevision = opts.seatSwap?.configRevision;
+  if (seatSwap === undefined) return undefined;
+  const { fallback, configRevision } = seatSwap;
   if (fallback === undefined || configRevision === undefined) return undefined;
-  if ((opts.seatSwitches ?? []).some((record) => record.seat === offer.seat && record.auto)) {
-    return undefined;
-  }
-  const classification = opts.classification;
-  const switchable =
-    classification.class === 'account' ||
-    (classification.class === 'rate-limited' &&
-      classification.resetAt.getTime() - Date.now() > BOUNDS.rateLimitResetWaitMs);
-  if (!switchable) return undefined;
-  const first = offer.candidates[0];
+  if (automaticSwitchUsed(seatSwitches, seatSwap.seat)) return undefined;
+  const first = switchSeatOffer(seatSwap)?.candidates[0];
   if (first === undefined || !sameSeatCandidate(first, fallback)) return undefined;
   return { candidate: fallback, configRevision };
 }
@@ -395,7 +386,9 @@ export function buildSeatDownIssue(opts: SeatDownRecoveryOptions): RecoveryIssue
   const resetAt =
     opts.resetAt ?? (classification.class === 'rate-limited' ? classification.resetAt : undefined);
   const offer = switchSeatOffer(opts.seatSwap);
-  const auto = offer === undefined ? undefined : autoSwitchIntent(opts, offer);
+  // An account refusal or a rate-limited call moves the seat, whatever its reset.
+  const switchable = classification.class === 'account' || classification.class === 'rate-limited';
+  const auto = switchable ? automaticSeatSwitch(opts.seatSwap, opts.seatSwitches) : undefined;
   const switchSeat =
     offer === undefined ? undefined : auto === undefined ? offer : { ...offer, auto };
   const actions = haltActions(reason, [

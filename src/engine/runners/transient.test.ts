@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { BOUNDS } from '../../core/pipeline-spec/bounds.js';
+import { throwMappedError } from '../streaming/stream-errors.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
 import { isTransientSeatFailure, withSeatRetry, type SeatAttempt } from './transient.js';
 
 afterEach(() => {
@@ -25,6 +26,14 @@ describe('isTransientSeatFailure', () => {
     'fetch failed',
     'socket hang up',
   ])('reads %s as transient', (message) => {
+    expect(isTransientSeatFailure({ message })).toBe(true);
+  });
+
+  // The text an API seat's provider 5xx reaches the retry with (stream-errors.ts httpStatus).
+  it.each([
+    'API error 503 from openai: 503 status code (no body)',
+    'API error 502 from openai: 502 Bad Gateway',
+  ])('reads the API seat failure %s as transient', (message) => {
     expect(isTransientSeatFailure({ message })).toBe(true);
   });
 
@@ -74,7 +83,7 @@ describe('isTransientSeatFailure', () => {
 describe('withSeatRetry', () => {
   const onDiscarded = (): void => {};
 
-  it('retries a transient failure three times with 2s/4s/8s backoff and then returns it', async () => {
+  it('retries a transient failure ten times, doubling from 2s and never waiting above 60s', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(0));
     const calls: number[] = [];
@@ -91,14 +100,119 @@ describe('withSeatRetry', () => {
     await vi.runAllTimersAsync();
     const result = await pending;
 
-    expect(call).toHaveBeenCalledTimes(BOUNDS.transientRetries + 1);
-    expect(retries).toEqual([
-      { attempt: 1, delayMs: 2_000 },
-      { attempt: 2, delayMs: 4_000 },
-      { attempt: 3, delayMs: 8_000 },
-    ]);
-    expect(calls).toEqual([0, 2_000, 6_000, 14_000]);
+    const delays = [2_000, 4_000, 8_000, 16_000, 32_000, 60_000, 60_000, 60_000, 60_000, 60_000];
+    expect(retries).toEqual(delays.map((delayMs, index) => ({ attempt: index + 1, delayMs })));
+    expect(Math.max(...retries.map((retry) => retry.delayMs))).toBe(60_000);
+    expect(call).toHaveBeenCalledTimes(11);
+    expect(calls[10]).toBe(delays.reduce((sum, delay) => sum + delay, 0));
     expect(result.ok).toBe(false);
+  });
+
+  it('recovers when the fifth call succeeds after four transient failures', async () => {
+    vi.useFakeTimers();
+    let calls = 0;
+    const call = vi.fn(async (): Promise<SeatAttempt<string>> => {
+      calls += 1;
+      return calls <= 4 ? failed('HTTP 503 Service Unavailable') : { ok: true, value: 'fixed' };
+    });
+
+    const pending = withSeatRetry<string>(call, { onDiscarded });
+    await vi.runAllTimersAsync();
+
+    await expect(pending).resolves.toEqual({ ok: true, value: 'fixed' });
+    expect(call).toHaveBeenCalledTimes(5);
+  });
+
+  it.each([
+    [
+      'a delay in seconds',
+      'API error 503 from openai: Service Unavailable (retry-after: 30s)',
+      30_000,
+    ],
+    [
+      'an HTTP date',
+      'API error 503 from openai: Service Unavailable (retry-after: Thu, 01 Jan 2026 00:00:45 GMT)',
+      45_000,
+    ],
+  ])(
+    'waits the retry-after the provider sent as %s instead of the backoff',
+    async (_form, message, delayMs) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+      const calls: number[] = [];
+      const retries: Array<{ attempt: number; delayMs: number }> = [];
+      const call = vi.fn(async (): Promise<SeatAttempt<string>> => {
+        calls.push(Date.now());
+        return calls.length === 1 ? failed(message) : { ok: true, value: 'fixed' };
+      });
+
+      const pending = withSeatRetry<string>(call, {
+        onRetry: (info) => retries.push(info),
+        onDiscarded,
+      });
+      await vi.runAllTimersAsync();
+
+      await expect(pending).resolves.toEqual({ ok: true, value: 'fixed' });
+      expect(retries).toEqual([{ attempt: 1, delayMs }]);
+      expect(calls).toEqual([
+        Date.parse('2026-01-01T00:00:00.000Z'),
+        Date.parse('2026-01-01T00:00:00.000Z') + delayMs,
+      ]);
+    },
+  );
+
+  it('keeps the backoff when the retry-after date the provider sent is already past', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+    let calls = 0;
+    const retries: Array<{ attempt: number; delayMs: number }> = [];
+    const call = vi.fn(async (): Promise<SeatAttempt<string>> => {
+      calls += 1;
+      return calls === 1
+        ? failed(
+            'API error 503 from openai: Service Unavailable (retry-after: Wed, 31 Dec 2025 23:59:00 GMT)',
+          )
+        : { ok: true, value: 'fixed' };
+    });
+
+    const pending = withSeatRetry<string>(call, {
+      onRetry: (info) => retries.push(info),
+      onDiscarded,
+    });
+    await vi.runAllTimersAsync();
+
+    await expect(pending).resolves.toEqual({ ok: true, value: 'fixed' });
+    expect(retries).toEqual([{ attempt: 1, delayMs: 2_000 }]);
+  });
+
+  it('waits the retry-after a provider 503 sent through the mapped API error', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+    const sdkError = Object.assign(new Error('503 Service Unavailable'), {
+      status: 503,
+      headers: new Headers({ 'retry-after': '30' }),
+    });
+    let mapped: unknown;
+    try {
+      throwMappedError(sdkError, { provider: 'openai' });
+    } catch (err) {
+      mapped = err;
+    }
+    const retries: Array<{ attempt: number; delayMs: number }> = [];
+    let calls = 0;
+    const call = vi.fn(async (): Promise<SeatAttempt<string>> => {
+      calls += 1;
+      return calls === 1 ? failed(toErrorMessage(mapped)) : { ok: true, value: 'fixed' };
+    });
+
+    const pending = withSeatRetry<string>(call, {
+      onRetry: (info) => retries.push(info),
+      onDiscarded,
+    });
+    await vi.runAllTimersAsync();
+
+    await expect(pending).resolves.toEqual({ ok: true, value: 'fixed' });
+    expect(retries).toEqual([{ attempt: 1, delayMs: 30_000 }]);
   });
 
   it('recovers when a retry succeeds', async () => {

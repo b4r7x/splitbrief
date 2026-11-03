@@ -5,6 +5,7 @@ import { loadState } from '../../core/state/persistence.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import type { Reviewer } from '../reviewers/types.js';
 import type { TypedCallContext } from '../planners/types.js';
@@ -115,6 +116,7 @@ describe('runReviewerCall', () => {
           schema: ReviewAnswerSchema,
           jsonSchema: REVIEW_ANSWER_JSON_SCHEMA,
           schemaName: 'review_answer',
+          config: makeConfig(),
           bus,
           state: createInitialState('feature'),
         });
@@ -155,6 +157,7 @@ describe('runReviewerCall', () => {
       schema: ReviewAnswerSchema,
       jsonSchema: REVIEW_ANSWER_JSON_SCHEMA,
       schemaName: 'review_answer',
+      config: makeConfig(),
       bus,
       state: createInitialState('feature'),
     });
@@ -186,6 +189,7 @@ describe('runReviewerCall', () => {
       schema: ReviewAnswerSchema,
       jsonSchema: REVIEW_ANSWER_JSON_SCHEMA,
       schemaName: 'review_answer',
+      config: makeConfig(),
       bus,
       state: createInitialState('feature'),
     };
@@ -213,6 +217,7 @@ describe('runReviewerCall', () => {
       schema: ReviewAnswerSchema,
       jsonSchema: REVIEW_ANSWER_JSON_SCHEMA,
       schemaName: 'review_answer',
+      config: makeConfig(),
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -245,6 +250,7 @@ describe('runReviewerCall', () => {
       schema: ReviewAnswerSchema,
       jsonSchema: REVIEW_ANSWER_JSON_SCHEMA,
       schemaName: 'review_answer',
+      config: makeConfig(),
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -280,6 +286,7 @@ describe('runReviewerCall', () => {
       schema: ReviewAnswerSchema,
       jsonSchema: REVIEW_ANSWER_JSON_SCHEMA,
       schemaName: 'review_answer',
+      config: makeConfig(),
       projectDir,
       workspaceDir: projectDir,
       sessionId,

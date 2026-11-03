@@ -69,6 +69,7 @@ export async function handleFailedImplementation(opts: {
     const seatSwap = await loadSeatSwapContext({
       projectDir: wctx.projectDir,
       modelCache: wctx.modelCache,
+      signal: wctx.signal,
       seat: 'build',
       runner: wctx.config.implementer,
       config: wctx.config,
@@ -114,6 +115,7 @@ export async function handleFailedImplementation(opts: {
     const seatSwap = await loadSeatSwapContext({
       projectDir: wctx.projectDir,
       modelCache: wctx.modelCache,
+      signal: wctx.signal,
       seat: 'build',
       runner: wctx.config.implementer,
       config: wctx.config,
@@ -168,6 +170,7 @@ export async function handleFailedImplementation(opts: {
     const seatSwap = await loadSeatSwapContext({
       projectDir: wctx.projectDir,
       modelCache: wctx.modelCache,
+      signal: wctx.signal,
       seat: 'build',
       runner: wctx.config.implementer,
       config: wctx.config,

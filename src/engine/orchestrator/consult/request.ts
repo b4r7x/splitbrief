@@ -17,7 +17,7 @@ import { diffFileEntries } from '../../../lib/git/entry-diff.js';
 import type { RunnerCallEvent } from '../../calls/types.js';
 import type { EventBus } from '../../events/types.js';
 import type { Planner } from '../../planners/types.js';
-import type { RequestTypedResult, SeatProtocolError } from '../../runners/typed-output.js';
+import type { SeatProtocolError } from '../../runners/typed-output.js';
 import { orderChangedFiles } from '../../change-detection.js';
 import { refusedCheckErrors, unconfiguredRenderCheckErrors } from '../../spec/plan-checks.js';
 import { buildConsultPrompt, type ConsultPromptInput } from '../../spec/prompts/consult.js';
@@ -31,7 +31,6 @@ import { resolveRunUniverse, runUserFiles } from '../evidence/review-packet/sect
 import { fixTaskTargetErrors } from '../triage.js';
 import { publishConsultAnswered, publishRunnerCallEvent } from '../events.js';
 import { askPlannerSession, type PlannerSessionTurn } from '../planner-session.js';
-import { runSeatCall, seatFailureFromError } from '../escalation/seat-wait.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import {
   checkRegistry,
@@ -80,11 +79,6 @@ export type ConsultRequestInput = Readonly<{
 export type ConsultOutcome =
   | Readonly<{ answer: ConsultAnswer }>
   | Readonly<{ error: SeatProtocolError }>;
-
-/** What one seat-trouble-wrapped consult attempt produced: an answer, or the error to rethrow. */
-type ConsultRun =
-  | Readonly<{ kind: 'answer'; result: RequestTypedResult<ConsultAnswer> }>
-  | Readonly<{ kind: 'threw'; error: unknown }>;
 
 /** The failures a consult produced, including returned protocol errors the caller throws. */
 const consultErrors = new WeakSet<object>();
@@ -330,69 +324,29 @@ export async function requestConsult(
       { bus: ctx.bus, phase: state.phase, rootDir: ctx.projectDir, taskId: input.task.id },
       event,
     );
-  const session = {
-    ...ref,
-    bus: ctx.bus,
-    planner: ctx.planner,
-    state,
-    ...(ctx.signal !== undefined && { signal: ctx.signal }),
-    onStateChange: apply,
-  };
-
   // A fix task's brief comes from the review, not from the planning thread, so every consult on a
   // fix lineage sends the whole prompt, also on a live session.
   const repair = input.task.fix !== undefined && input.stuck === undefined;
-  const ask = async (signal: AbortSignal): Promise<RequestTypedResult<ConsultAnswer>> => {
-    const answer = await askPlannerSession(
-      { ...session, state, signal },
-      {
-        ...contract,
-        compose: (turn: PlannerSessionTurn) =>
-          buildConsultPrompt({ ...prompt, resumed: turn.onSession && !repair }),
-        onCallEvent,
-      },
-    );
-    return answer.result;
-  };
-
-  // A transient seat failure retries with backoff and a near rate-limit reset
-  // is waited out before the same call repeats; a thrown consult failure is
-  // carried through the wrapper and rethrown so the ladder keeps its halt.
-  const asked = await runSeatCall<ConsultRun>(
+  const answer = await askPlannerSession(
     {
-      ref: usageCtx,
+      ...ref,
+      bus: ctx.bus,
+      planner: ctx.planner,
+      config: ctx.config,
       state,
-      seat: 'plan',
-      runner: ctx.config.planner,
       ...(ctx.signal !== undefined && { signal: ctx.signal }),
       onStateChange: apply,
     },
-    async (signal) => {
-      try {
-        const result = await ask(signal);
-        const value: ConsultRun = { kind: 'answer', result };
-        if ('error' in result) {
-          return { ok: false, failure: { message: result.error.message }, value };
-        }
-        return { ok: true, value };
-      } catch (error) {
-        return {
-          ok: false,
-          failure: seatFailureFromError(error),
-          value: { kind: 'threw', error },
-        };
-      }
+    {
+      ...contract,
+      compose: (turn: PlannerSessionTurn) =>
+        buildConsultPrompt({ ...prompt, resumed: turn.onSession && !repair }),
+      onCallEvent,
     },
-    // A thrown consult carries no usage, and a protocol answer is not retried.
-    () => {},
-  );
-
-  if (asked.value.kind === 'threw') {
-    const thrown = asked.value.error;
+  ).catch((thrown: unknown) => {
     if (typeof thrown === 'object' && thrown !== null) consultErrors.add(thrown);
     throw thrown;
-  }
-  const answer = asked.value;
+  });
 
   if ('error' in answer.result) {
     apply(addUsageAndSave(usageCtx, state, 'planner', answer.result.usage));

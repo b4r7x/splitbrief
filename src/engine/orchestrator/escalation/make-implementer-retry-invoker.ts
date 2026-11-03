@@ -139,6 +139,7 @@ export function makeImplementerRetryInvoker(opts: {
         state,
         seat: 'build',
         runner: effectiveConfig.implementer,
+        config: effectiveConfig,
         profile: seat.ref.implementerProfile,
         ...(signal !== undefined && { signal }),
         onStateChange: (next) => {

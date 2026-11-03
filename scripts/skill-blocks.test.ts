@@ -100,12 +100,19 @@ describe('skill-blocks', () => {
     }
   });
 
-  it('renders seat retries and the reset-wait exception from BOUNDS', () => {
+  it('renders the seat retries and the usage-limit order: fallback, then the reset, then the user', () => {
     const recovery = renderBlock('seat-recovery');
     expect(recovery).toContain(`${BOUNDS.transientRetries} retries with backoff`);
-    expect(recovery).toContain(`${BOUNDS.rateLimitResetWaitMs / 60_000} minutes`);
-    expect(recovery).toContain('reported reset');
-    expect(recovery).toContain('Longer or unknown resets');
+    expect(recovery).toContain('10 retries with backoff');
+    expect(recovery).toContain('at most 60 seconds');
+    expect(recovery).toContain('retry-after');
+    expect(recovery).toContain('fallback');
+    expect(recovery).toContain('wait for the reported reset');
+    expect(recovery).toContain('installed, signed in and not the seat itself');
+    expect(recovery).toContain('a second limit after the wait');
+    expect(recovery).not.toContain('A usage limit moves a seat with a declared `fallback`');
+    expect(recovery).not.toContain('minutes permits');
+    expect(recovery).not.toContain('Longer or unknown resets');
   });
 
   it('states the account rule, the declared fallback and the retry-later row', () => {

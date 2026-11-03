@@ -38,6 +38,7 @@ it('carries the catalog name through the planner halt and fallback context', asy
       modelCache: makeModelCacheAccessor({
         providerModels: { codex: [{ id: 'gpt-6-luna', displayName: 'GPT-6-Luna' }] },
       }),
+      signal: undefined,
       diagnosis: {
         failure: 'usage-limit',
         message: 'Balance spent',
@@ -252,6 +253,7 @@ describe('a model refusal on a planner-tier seat', () => {
     const config = makeConfig({ planner: runner });
     return plannerCallHaltIssue({
       modelCache: undefined,
+      signal: undefined,
       projectDir,
       config,
       diagnosis,
@@ -301,6 +303,7 @@ describe('a model refusal on a planner-tier seat', () => {
       const config = makeConfig({ planner: runner });
       await plannerCallHaltIssue({
         modelCache: undefined,
+        signal: undefined,
         projectDir,
         config,
         diagnosis: {
@@ -328,6 +331,7 @@ describe('a model refusal on a planner-tier seat', () => {
       const config = makeConfig({ planner: runner });
       const issue = await plannerCallHaltIssue({
         modelCache: undefined,
+        signal: undefined,
         projectDir,
         config,
         diagnosis: failed,

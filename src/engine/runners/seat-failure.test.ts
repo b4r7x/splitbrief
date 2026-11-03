@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { classifyHaltSignature } from '../../core/pipeline-spec/halts.js';
-import { runnerCallOutcome } from '../implementers/pipeline/call-result.js';
+import { runnerCallOutcome, thrownSeatFailure } from '../implementers/pipeline/call-result.js';
+import { throwMappedError } from '../streaming/stream-errors.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import {
   CURSOR_MODEL_REFUSAL,
@@ -276,6 +278,32 @@ describe('classifySeatFailure precedence', () => {
     if (classification.class === 'rate-limited')
       expect(classification.resetAt).toBeInstanceOf(Date);
   });
+
+  it.each([
+    ['a delay in seconds', '30'],
+    ['an HTTP date', 'Thu, 01 Jan 2026 00:00:45 GMT'],
+  ])(
+    'a provider 503 that keeps a retry-after as %s is transient, not rate-limited',
+    (_form, header) => {
+      const sdkError = Object.assign(new Error('503 Service Unavailable'), {
+        status: 503,
+        headers: new Headers({ 'retry-after': header }),
+      });
+      let mapped: unknown;
+      try {
+        throwMappedError(sdkError, { provider: 'openai' });
+      } catch (err) {
+        mapped = err;
+      }
+
+      const { words, classification } = thrownSeatFailure(mapped);
+      expect(words).toContain('retry-after');
+      expect(classification).toEqual({ class: 'transient' });
+      expect(classifySeatFailure({ message: toErrorMessage(mapped), source: 'thrown' })).toEqual({
+        class: 'transient',
+      });
+    },
+  );
 
   it('a bare 429 with no status and no corroboration is other', () => {
     expect(classifySeatFailure({ message: '429', source: 'result-error' })).toEqual({

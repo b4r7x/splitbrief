@@ -2506,6 +2506,38 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-planning-seat-wait',
+      title: 'Workflow · planning waiting for a PLAN seat reset',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'planning-seat-wait',
+        title: 'Planning waits for the reset of the PLAN tool',
+        kind: 'planning',
+        marker: 'Waiting for Claude Code',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Planning transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-final-review-seat-wait',
+      title: 'Workflow · the final review waiting for a REVIEW seat reset',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'final-review-seat-wait',
+        title: 'The final review waits for the reset of the REVIEW tool',
+        kind: 'review',
+        marker: 'Waiting for OpenAI Codex CLI',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Review transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-at-rest-halted-chosen',
       title: 'Workflow · a halted run killed after its action was chosen',
       surface: screenSurface('workflow'),
@@ -6164,6 +6196,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
           viewport({ cols: 60, rows: 12 }),
           viewport({ cols: 40, rows: 12 }),
         ],
+      },
+      {
+        id: 'workflow-stop-sheet-seat-wait',
+        title: 'Workflow · stop options while a seat waits for a long usage-limit reset',
+        marker: 'Stop options',
       },
       {
         id: 'workflow-stop-menu-parked-gate',

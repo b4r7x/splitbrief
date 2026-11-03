@@ -109,6 +109,7 @@ const ESTIMATES = {
 let dirs: string[] = [];
 
 afterEach(() => {
+  vi.useRealTimers();
   for (const dir of dirs) cleanupTempDir(dir);
   dirs = [];
   universe.fullDiff = '';
@@ -412,15 +413,24 @@ describe('a REVIEW that reached no verdict', () => {
     ).toEqual(['drift-report.json']);
   });
 
-  it('carries a transport failure as a call that did not land, not as zero blockers', async () => {
+  it('retries a transport failure ten times, then carries it as a call that did not land, not as zero blockers', async () => {
+    // Git's short real timers keep running; the backoff waits between the tries are the faked ones.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true });
     const ref = setupRun('review-transport', { ledger: true });
 
-    const { result, events } = await review({
+    let settled = false;
+    const running = review({
       ref,
       config: makeNoValidationConfig(),
       throws: new Error('socket hang up'),
+    }).finally(() => {
+      settled = true;
     });
+    while (!settled) await vi.advanceTimersByTimeAsync(60_000);
+    const { result, events, reviewCalls } = await running;
 
+    expect(reviewCalls).toBe(11);
+    expect(events.filter((event) => event.type === 'seat_retry')).toHaveLength(10);
     const issue = result.state.pendingRecovery;
     expect(issue?.reason).toBe('review-failed');
     expect(issue?.seat).toBe('review');

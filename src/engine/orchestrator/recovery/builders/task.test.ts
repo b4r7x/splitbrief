@@ -401,6 +401,26 @@ describe('buildSeatDownIssue', () => {
     expect(issue.facts?.fallback).toBe('Claude Code CLI · Sonnet 5.5');
   });
 
+  it('switches to the fallback at once on a usage limit whose reset is two minutes away', () => {
+    const fallback = { tool: 'claude-code', model: 'sonnet' };
+    const issue = buildSeatDownIssue({
+      seat: 'build',
+      runner: codexRunner,
+      classification: { class: 'rate-limited', resetAt: new Date(Date.now() + 120_000) },
+      words: 'HTTP 429 (retry-after: 120)',
+      phase: 'implementing',
+      createdAt,
+      seatSwap: {
+        seat: 'build',
+        currentTool: 'codex',
+        fallback,
+        configRevision: 'revision',
+        detectedTools: [{ ...fallback, ready: true }],
+      },
+    });
+    expect(issue.switchSeat?.auto).toEqual({ candidate: fallback, configRevision: 'revision' });
+  });
+
   it('names the automatic switch already used in this run and offers no automatic intent', () => {
     const fallback = { tool: 'claude-code' };
     const issue = buildSeatDownIssue({

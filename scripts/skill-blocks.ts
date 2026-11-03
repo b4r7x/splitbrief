@@ -32,6 +32,7 @@ import {
   CLI_IMPLEMENTER_ADAPTERS,
   CLI_PLANNER_ADAPTERS,
 } from '../src/engine/runners/cli-tools/registry.js';
+import { SEAT_RETRY_MAX_DELAY_MS } from '../src/engine/runners/transient.js';
 import { fallbackInstruction } from '../src/engine/runners/typed-output.js';
 import { READ_ONLY_CONTEXT_HEADING, TASK_BRIEF_HEADINGS } from '../src/engine/spec/headings.js';
 import { formatTaskPrompt } from '../src/engine/spec/prompt-formatter.js';
@@ -393,9 +394,9 @@ function consultTable(): string {
 
 function seatRecovery(): string {
   return bullets([
-    `Transient seat failures permit ${BOUNDS.transientRetries} retries with backoff.`,
-    `A usage match with a reported reset within ${BOUNDS.rateLimitResetWaitMs / 60_000} minutes permits a bounded wait up to that limit.`,
-    'After the wait bound, halt as seat down and ask the user. Longer or unknown resets need the user immediately.',
+    `Transient seat failures permit ${BOUNDS.transientRetries} retries with backoff, each wait at most ${SEAT_RETRY_MAX_DELAY_MS / 1000} seconds. A provider \`retry-after\` sets the wait instead.`,
+    'A usage limit moves the seat at once to a declared `fallback` that is installed, signed in and not the seat itself, when the seat has not switched by itself in this run. Otherwise wait for the reported reset, however far away, then run the call once more.',
+    'A usage limit with no reported reset and no such fallback, or a second limit after the wait, halts as seat down and asks the user.',
     'An account refusal — balance, billing, a quota with no reset, or sign-in — halts at once as seat down.',
     'A declared `fallback` switches the seat once per run with no question.',
     'The `retry-later` action reads `Retry at <clock>`, and is offered only with a known reset.',

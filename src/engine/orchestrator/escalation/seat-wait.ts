@@ -3,7 +3,6 @@ import {
   type RunnerConfig,
 } from '../../../core/config/accessors/runner-config.js';
 import type { CrewSeatId } from '../../../core/crew/identity.js';
-import { BOUNDS } from '../../../core/pipeline-spec/bounds.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { SeatWait, WorkflowState } from '../../../core/schemas/workflow.js';
 import { heldSeatOf, seatWaitMoved } from '../../../core/sessions/held-seat.js';
@@ -20,6 +19,8 @@ import {
 } from '../../runners/transient.js';
 import { parseUsageLimitReset } from '../../runners/usage-limit.js';
 import { publishSeatRetry, publishSeatWaitEnded, publishSeatWaitStarted } from '../events.js';
+import { automaticSeatSwitch } from '../recovery/builders/task.js';
+import { loadSeatSwapContext } from '../recovery/seat-swap-context.js';
 import { transitionAndSave } from '../state-ops.js';
 import type { WorkflowPersistenceContext } from '../types.js';
 
@@ -30,6 +31,8 @@ export type SeatCallContext = Readonly<{
   seat: CrewSeatId;
   /** The runner the call runs on, which a wait for its reset names. */
   runner: RunnerConfig;
+  /** The run config, which the seat of record falls back to when the project has no config file. */
+  config: Config;
   /** The BUILD profile the runner is, which a wait for its reset holds. */
   profile?: string | undefined;
   signal?: AbortSignal | undefined;
@@ -66,11 +69,10 @@ export function implementerSeatAttempt<T extends ImplementerSeatResult>(
 }
 
 /**
- * The reset a limit failure named, when the run can afford to wait for it: no
- * more than `BOUNDS.rateLimitResetWaitMs` away. Only a usage-limit failure can
- * earn a wait; an outcome that names something else, or an unreported outcome
- * whose words do not read as a limit, returns undefined and the caller keeps
- * the runner-usage-limit halt with the seat picker.
+ * The reset a limit failure named, however far away. Only a usage-limit failure
+ * can earn a wait; an outcome that names something else, an unreported outcome
+ * whose words do not read as a limit, or a reset already past returns undefined
+ * and the caller keeps the runner-usage-limit halt with the seat picker.
  */
 export function seatResetWaitDeadline(
   failure: SeatFailure,
@@ -85,7 +87,7 @@ export function seatResetWaitDeadline(
   const resetAt = parseUsageLimitReset(failure.message, now);
   if (resetAt === null) return undefined;
   const waitMs = resetAt.getTime() - now.getTime();
-  if (waitMs <= 0 || waitMs > BOUNDS.rateLimitResetWaitMs) return undefined;
+  if (waitMs <= 0) return undefined;
   return resetAt;
 }
 
@@ -158,11 +160,18 @@ export async function resumeSeatWait(
 
 /**
  * One seat call with the whole seat-trouble ladder around it: a transient
- * failure retries with backoff, a limit with a near reset is waited out once
- * and the same call repeats, and a longer or unknown reset comes back as the
- * failure the caller halts on. None of these retries is a lineage attempt — no
- * state transition counts them. `onDiscarded` receives every attempt value a
- * retry or the wait replaced, so the caller can keep its usage.
+ * failure retries with backoff. A limit comes back at once as the failure the
+ * caller halts on when the halt would move the seat to its fallback by itself
+ * (`automaticSeatSwitch`). Otherwise a reported reset of any length is waited
+ * out once and the same call repeats, and an unknown reset comes back as the
+ * failure. None of these retries is a lineage attempt — no state transition
+ * counts them. `onDiscarded` receives every attempt value a retry or the wait
+ * replaced, or a stop ended, so the caller can keep its usage.
+ *
+ * A wait of this seat still saved when the call starts is one a `/steer` cut:
+ * a stop or a Retry at is waited out on re-entry before any seat call runs.
+ * The steered call runs now and the wait is dropped; a limit that still holds
+ * starts a new wait.
  */
 export async function runSeatCall<T>(
   ctx: SeatCallContext,
@@ -177,14 +186,36 @@ export async function runSeatCall<T>(
       onDiscarded,
     });
 
+  let state = ctx.state;
+  const head = loadState(ctx.ref) ?? state;
+  if (head.seatWait?.seat === ctx.seat) {
+    publishSeatWaitEnded({ bus: ctx.ref.bus, phase: head.phase }, ctx.seat);
+    state = transitionAndSave(ctx.ref, head, { type: 'CLEAR_SEAT_WAIT' });
+    ctx.onStateChange?.(state);
+  }
+
   const first = await attempt();
   if (first.ok) return first;
   const deadline = seatResetWaitDeadline(first.failure);
   if (deadline === undefined) return first;
+  const seatSwap = await loadSeatSwapContext({
+    projectDir: ctx.ref.projectDir,
+    seat: ctx.seat,
+    runner: ctx.runner,
+    config: ctx.config,
+    // The context only decides the move here; the halt names the fallback with its own cache.
+    modelCache: undefined,
+    signal: ctx.signal,
+    implementerProfile: ctx.profile,
+  }).catch((error: unknown) => {
+    onDiscarded(first.value);
+    throw error;
+  });
+  if (automaticSeatSwitch(seatSwap, state.seatSwitches) !== undefined) return first;
   onDiscarded(first.value);
   const resumed = await waitForSeatReset({
     ref: ctx.ref,
-    state: ctx.state,
+    state,
     wait: {
       seat: ctx.seat,
       resetAt: deadline.toISOString(),
@@ -196,4 +227,28 @@ export async function runSeatCall<T>(
   });
   ctx.onStateChange?.(resumed);
   return attempt();
+}
+
+/**
+ * A seat call that throws its failure, under `runSeatCall`: what it returns is the seat's answer,
+ * and what it throws is retried, waited out, or rethrown unchanged once the ladder gives up.
+ */
+export async function runThrowingSeatCall<T>(
+  ctx: SeatCallContext,
+  call: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const attempt = await runSeatCall<Readonly<{ answer: T }> | Readonly<{ thrown: unknown }>>(
+    ctx,
+    async (signal) => {
+      try {
+        return { ok: true, value: { answer: await call(signal) } };
+      } catch (thrown) {
+        return { ok: false, failure: seatFailureFromError(thrown), value: { thrown } };
+      }
+    },
+    // A thrown call carries no usage to keep.
+    () => {},
+  );
+  if ('thrown' in attempt.value) throw attempt.value.thrown;
+  return attempt.value.answer;
 }

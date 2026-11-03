@@ -187,15 +187,20 @@ export async function plannerCallHaltIssue(
       projectDir: string;
       config: Config;
       modelCache: ModelCacheAccessor | undefined;
+      signal: AbortSignal | undefined;
       /** The seat a swap moves, and the runner it runs now. */
-      swap: Omit<Parameters<typeof loadSeatSwapContext>[0], 'projectDir' | 'config' | 'modelCache'>;
+      swap: Omit<
+        Parameters<typeof loadSeatSwapContext>[0],
+        'projectDir' | 'config' | 'modelCache' | 'signal'
+      >;
     }>,
 ): Promise<RecoveryIssue> {
-  const { projectDir, config, modelCache, swap, ...halt } = input;
+  const { projectDir, config, modelCache, signal, swap, ...halt } = input;
   const seatSwap = await loadSeatSwapContext({
     projectDir,
     config,
     modelCache,
+    signal,
     ...swap,
     refusal: halt.diagnosis.words,
   });

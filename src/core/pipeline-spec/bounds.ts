@@ -3,6 +3,5 @@ export const BOUNDS = {
   consultDiffChars: 40_000,
   consultAttemptLineChars: 200,
   toolUseCountLimit: 256,
-  rateLimitResetWaitMs: 600_000,
-  transientRetries: 3,
+  transientRetries: 10,
 } as const;

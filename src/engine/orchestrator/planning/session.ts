@@ -434,6 +434,7 @@ export async function runPlanningSession(
                 sessionId,
                 bus,
                 planner,
+                config: wctx.config,
                 ...(wctx.steering !== undefined && { steering: wctx.steering }),
                 state,
                 signal,
@@ -597,6 +598,7 @@ async function settle(
         projectDir,
         config,
         modelCache: wctx.modelCache,
+        signal: wctx.signal,
         error: outcome.error,
         phase: state.phase,
       });

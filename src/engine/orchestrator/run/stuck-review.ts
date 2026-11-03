@@ -189,6 +189,7 @@ export async function askPlannerOnStuckReview(args: {
     const issue = await plannerCallHaltIssue({
       projectDir: wctx.projectDir,
       modelCache: wctx.modelCache,
+      signal: wctx.signal,
       config: wctx.config,
       diagnosis,
       phase: state.phase,

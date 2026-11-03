@@ -104,7 +104,7 @@ The retired phases `researching`, `specifying`, `reviewing-spec`, `clarifying`, 
 
 **Halt** (`RecoveryHalt`, `src/core/recovery/halt.ts`): a pending recovery as a person sees it, one of two. *Needs you*: a decision only the operator can make — a question nobody answered, a brief the planner says cannot be done, a failed review that made no progress, a protected write, a conflict at Apply. *Seat down*: the seat cannot run — signed out, out of quota, refused its command, or answered off its contract twice. `haltOf(reason)` maps every recovery reason onto one halt, and the halt fixes the actions the reason may offer. Every surface shows `Needs you · <cause>` or `Seat down · <cause>`; the reason code stays in the issue, the events and the log.
 
-**Fallback** (`SeatFallback`, `src/core/crew/fallback.ts`): the CLI runner a seat authorizes for one automatic switch per run and seat on an account refusal or long-reset limit. Set it in Settings › Fallback, or in `.splitbrief/config.yaml`. Its row shows a seat identity or `none · pause and ask`. REVIEW inherits PLAN's fallback until it has its own block. Each halt reads the fallback of record. An automatic switch makes the old CLI seat the fallback, or leaves none for an old non-CLI seat. A manual switch keeps it. See [Seat fallback](./FEATURES.md#seat-fallback).
+**Fallback** (`SeatFallback`, `src/core/crew/fallback.ts`): the CLI runner a seat authorizes for one automatic switch per run and seat on an account refusal or a usage limit. Set it in Settings › Fallback, or in `.splitbrief/config.yaml`. Its row shows a seat identity or `none · pause and ask`. REVIEW inherits PLAN's fallback until it has its own block. Each halt reads the fallback of record. An automatic switch makes the old CLI seat the fallback, or leaves none for an old non-CLI seat. A manual switch keeps it. See [Seat fallback](./FEATURES.md#seat-fallback).
 
 **Step** (`StepRef`, `src/core/schemas/run-step.ts`): a planner call, gate, brief attempt, review cycle or Apply. Older planner and gate names remain readable. `resumeStep(state)` names the next step. Planning continues as one session.
 
@@ -188,7 +188,7 @@ On validation failure:
 - **Brief history** (`## Brief History`, `src/engine/spec/prompts/consult.ts`): no count stops the consults. Every failed attempt goes back to the planner, and each consult shows the planner its earlier answers, each before the failed attempts that followed it. The planner changes its approach when an earlier answer left the same failure.
 - **Recovery** follows a question that nobody answers, a brief that the planner says cannot be done, or a ladder that cannot continue. The planner never automatically takes over code-writing implementation.
 
-Ladder logic: `src/engine/orchestrator/escalation/handle.ts`; seat trouble (transient retries, a ≤10-minute reset wait, the opt-in `idleKillMs` cut) in `src/engine/runners/transient.ts` and `src/engine/orchestrator/escalation/seat-wait.ts`.
+Ladder logic: `src/engine/orchestrator/escalation/handle.ts`; seat trouble (transient retries, the wait for a usage-limit reset, the opt-in `idleKillMs` cut) in `src/engine/runners/transient.ts` and `src/engine/orchestrator/escalation/seat-wait.ts`.
 
 ---
 
