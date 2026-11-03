@@ -151,7 +151,11 @@ export async function invokeApiTransport(opts: {
   });
 }
 
-export function createApiPlanner(config: Config, seat: ApiSeatRole = 'planner'): Planner {
+export function createApiPlanner(
+  config: Config,
+  seat: ApiSeatRole = 'planner',
+  signal?: AbortSignal | undefined,
+): Planner {
   const plannerCfg = assertPlannerKind(config, 'api');
   const provider = plannerCfg.provider;
   const model = resolveAutoModel(plannerCfg.model, provider);
@@ -161,7 +165,7 @@ export function createApiPlanner(config: Config, seat: ApiSeatRole = 'planner'):
     apiKey: plannerCfg.apiKey,
   });
 
-  const availability = createProviderAvailability(resolved);
+  const availability = createProviderAvailability(resolved, signal);
   const timeout = plannerCfg.timeout;
   // Taken once, when the seat is built: every later call is admitted against
   // this identity and observes the model on this seat's own connection.

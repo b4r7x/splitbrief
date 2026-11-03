@@ -421,7 +421,7 @@ describe('run-loop stop completion', () => {
         detached: true,
         stdio: 'ignore',
       });
-      registerProcess(outside, { group: true, ledger: false });
+      registerProcess(outside, { group: true });
       const prepared = prepare();
       mount(prepared);
       await vi.waitFor(
@@ -447,7 +447,7 @@ describe('run-loop stop completion', () => {
       detached: true,
       stdio: 'ignore',
     });
-    registerProcess(outside, { group: true, ledger: false });
+    registerProcess(outside, { group: true });
     const cleanup = Promise.withResolvers<void>();
     const prepared = prepare();
     const engine = waitingEngine(awaitAbort, cleanup.promise);

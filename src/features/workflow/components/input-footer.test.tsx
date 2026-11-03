@@ -209,6 +209,32 @@ describe('InputFooter', () => {
     },
   );
 
+  // The run checks an API seat at its start and before each brief, after preparation settled.
+  it.each([
+    { status: 'running', lead: 'a brief gate' },
+    { status: 'paused', lead: 'a continued run' },
+  ] as const)('names the slow API seat check of $lead on the run byline', async ({ status }) => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status });
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() - 12_000);
+    const models = Promise.withResolvers<void>();
+    const modelsRun = trackProbe({ provider: 'ollama', check: 'model list' }, () => models.promise);
+    clock.mockRestore();
+    try {
+      const ui = renderFeature(<InputFooter />);
+      await flushEffects();
+
+      const row = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(row).toContain(`${spinnerFrames()[0]} Checking tools · Ollama model list 12s`);
+      expect(row).not.toContain('esc cancel');
+      ui.unmount();
+    } finally {
+      models.resolve();
+      await modelsRun;
+    }
+  });
+
   it('shows neutral API waiting beside the input until the first response, and honors cancellation', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     runViewStore.__testReset({ phase: 'implementing' });

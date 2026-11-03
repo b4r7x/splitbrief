@@ -296,7 +296,6 @@ describe('e2e: fix task repair consult', { timeout: 240_000 }, () => {
       diagnosis: DIAGNOSIS,
       newTaskIds: null,
     });
-    expect(events.filter((event) => event.type === 'task_retry')).toEqual([]);
     const escalatingIndex = events.findIndex(
       (event) => event.type === 'task_escalating' && event.taskId === 'T002',
     );

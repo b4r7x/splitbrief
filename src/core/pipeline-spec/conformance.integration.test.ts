@@ -104,7 +104,6 @@ describe('retry ladder', () => {
       currentState: transition(makeImplState([task]), { type: 'TASK_SENT' }),
     });
 
-    expect(events.filter((e) => e.type === 'task_retry')).toEqual([]);
     expect(events.filter((e) => e.type === 'task_escalating')).toHaveLength(1);
     expect(events.filter((e) => e.type === 'consult_answered').length).toBeGreaterThanOrEqual(1);
     expect(events.filter((e) => e.type === 'escalate')).toEqual([]);

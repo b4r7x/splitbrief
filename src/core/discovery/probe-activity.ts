@@ -1,14 +1,18 @@
 import { formatTime } from '../../utils/format-time.js';
+import { getRunnerIdentityDisplayName } from '../providers/catalog.js';
 import { CLI_TOOL_CATALOG, CLI_TOOL_IDS, type CliToolId } from '../runners/cli-tool-catalog.js';
 
 export type ProbeCheck = 'version' | 'sign-in' | 'model list' | 'options';
 
-export type ProbeActivity = Readonly<{
-  id: number;
-  tool: CliToolId;
-  check: ProbeCheck;
-  startedAt: number;
-}>;
+/** What a probe checks: a found CLI tool, or the API provider a seat names by its config id. */
+export type ProbeSubject = Readonly<{ tool: CliToolId } | { provider: string }>;
+
+export type ProbeActivity = ProbeSubject &
+  Readonly<{
+    id: number;
+    check: ProbeCheck;
+    startedAt: number;
+  }>;
 
 export type ProbeActivitySnapshot = Readonly<{
   probes: readonly ProbeActivity[];
@@ -32,14 +36,26 @@ export function probeCheckText(probe: ProbeActivity, now: number): string {
   return `${probe.check} ${formatTime(now - probe.startedAt)}`;
 }
 
+/** The name a person reads for what a probe checks: `OpenCode CLI`, `Ollama`. */
+export function probeSubjectName(subject: ProbeSubject): string {
+  return 'tool' in subject
+    ? CLI_TOOL_CATALOG[subject.tool].displayName
+    : getRunnerIdentityDisplayName('api', subject.provider);
+}
+
 /** The slowest probe as a person reads it: `OpenCode CLI sign-in 12s`. */
 export function slowProbeText(probes: readonly ProbeActivity[], now: number): string | null {
   const slowest = slowestProbe(probes, now);
   if (!slowest) return null;
-  return `${CLI_TOOL_CATALOG[slowest.tool].displayName} ${probeCheckText(slowest, now)}`;
+  return `${probeSubjectName(slowest)} ${probeCheckText(slowest, now)}`;
+}
+
+/** Catalog order for tools; a provider sorts after every tool. */
+function subjectRank(subject: ProbeSubject): number {
+  return 'tool' in subject ? CLI_TOOL_IDS.indexOf(subject.tool) : CLI_TOOL_IDS.length;
 }
 
 function runsLonger(probe: ProbeActivity, than: ProbeActivity): boolean {
   if (probe.startedAt !== than.startedAt) return probe.startedAt < than.startedAt;
-  return CLI_TOOL_IDS.indexOf(probe.tool) < CLI_TOOL_IDS.indexOf(than.tool);
+  return subjectRank(probe) < subjectRank(than);
 }

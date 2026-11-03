@@ -493,7 +493,6 @@ describe('e2e: task review cadence', () => {
     expect(events.filter((event) => event.type === 'consult_answered')).toMatchObject([
       { taskId: 'T002', action: 'guidance' },
     ]);
-    expect(events.filter((event) => event.type === 'task_retry')).toEqual([]);
     expect(state.plan?.decisions.filter((decision) => decision.taskId === 'T002')).toEqual([
       { text: `${numberDecision.what} — ${numberDecision.why}`, taskId: 'T002' },
     ]);

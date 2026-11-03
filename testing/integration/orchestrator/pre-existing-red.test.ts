@@ -207,7 +207,6 @@ describe('a red that was there before the run', { timeout: 90_000 }, () => {
     ).toBe('export const other = "unrelated";\n');
     // No fix brief was appended for the pre-existing red.
     expect(summary).toMatchObject({ totalTasks: 1, completedByLocal: 1, failed: 0 });
-    expect(events.filter((event) => event.type === 'task_retry')).toHaveLength(0);
     expect(events.filter((event) => event.type === 'task_reset')).toHaveLength(0);
 
     const firstBrief = events.findIndex((event) => event.type === 'task_started');

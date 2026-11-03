@@ -288,6 +288,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'home-preparing-slow-provider',
+      title: 'Home · an API provider model list past ten seconds',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Slow model list named by its provider beside the composer',
+        kind: 'ready',
+        marker: 'Ollama model list 12s',
+      },
+      elements: [
+        { id: 'header', title: 'Home header' },
+        { id: 'composer', title: 'Feature composer' },
+      ],
+    }),
+    defineScenario({
       id: 'home-preparing-slow-long',
       title: 'Home · a slow tool check with a long name on a narrow terminal',
       surface: screenSurface('home'),
@@ -789,6 +804,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Plan ledger and running brief' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-brief-check-slow-provider',
+      title: 'Workflow · an API seat check past ten seconds before a brief',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'brief-check-slow-provider',
+        title: 'Slow model list named by its provider on the run byline',
+        kind: 'implementation',
+        marker: 'Ollama model list 12s',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
@@ -4586,6 +4616,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-continuing-slow-provider',
+      title: 'Workflow · an API provider model list past ten seconds while continuing a run',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Slow model list named by its provider on the byline',
+        kind: 'ready',
+        marker: 'Ollama model list 12s',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-continuing-slow-long',
       title: 'Workflow · a slow tool check with a long name on a narrow terminal',
       surface: screenSurface('workflow'),
@@ -5168,6 +5213,18 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Warning count in place of the tool check note',
         kind: 'ready',
         marker: '2 warnings, all shown when you quit',
+      },
+      elements: [{ id: 'setup-panel', title: 'Setup panel' }],
+    }),
+    defineScenario({
+      id: 'setup-starting-slow-provider',
+      title: 'Setup · a start waiting on an API provider model list',
+      surface: screenSurface('setup'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Slow model list named by its provider on the crew panel',
+        kind: 'ready',
+        marker: 'Ollama model list 12s',
       },
       elements: [{ id: 'setup-panel', title: 'Setup panel' }],
     }),
@@ -5906,6 +5963,7 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
           ['loaded', 'model loaded', 'LM Studio answered'],
           ['not-loaded', 'model not loaded', 'not loaded'],
           ['listed', 'model listed, loading unknown', 'Ollama answered'],
+          ['slow', 'check past ten seconds', 'Ollama model list 12s'],
         ] as const
       ).map(([id, title, marker]) => ({
         id: `overlay-local-connection-${id}`,

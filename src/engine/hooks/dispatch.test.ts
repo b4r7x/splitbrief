@@ -65,21 +65,29 @@ describe('runHook', () => {
     expect(outcome).toEqual({ kind: 'allow' });
   });
 
-  it('command hook spawns bypass the runner-pid ledger', async () => {
+  it('records a command hook group in the runner-pid ledger until the group ends', async () => {
     const recorded: number[] = [];
     const released: number[] = [];
+    let groupEnded: () => void = () => undefined;
+    const ended = new Promise<void>((resolve) => {
+      groupEnded = resolve;
+    });
     setProcessLedger({
       record: (pid) => recorded.push(pid),
-      release: (pid) => released.push(pid),
+      release: (pid) => {
+        released.push(pid);
+        groupEnded();
+      },
     });
     try {
       await runHook(mkEntry({ command: 'echo', args: ['hello'] }), event, ctx);
+      expect(recorded).toHaveLength(1);
+      await ended;
     } finally {
       setProcessLedger(null);
     }
 
-    expect(recorded).toEqual([]);
-    expect(released).toEqual([]);
+    expect(released).toEqual(recorded);
   });
 
   it('returns deny on non-zero exit (false) when on_failure=block', async () => {

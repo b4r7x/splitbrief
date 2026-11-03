@@ -31,6 +31,7 @@ describe('createPlannerSeat', () => {
       injectedPlanner: undefined,
       injectedReviewer: undefined,
       skillRoots,
+      signal: undefined,
     });
 
     expect(createPlanner).toHaveBeenCalledWith(config, expect.objectContaining({ skillRoots }));

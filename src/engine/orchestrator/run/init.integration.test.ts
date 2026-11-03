@@ -1,6 +1,8 @@
 import { plainUserMessage } from '../../../core/types/user-input.js';
 
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { readFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -15,6 +17,7 @@ import {
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
 import { createInitialState } from '../../../core/state/machine.js';
@@ -33,6 +36,7 @@ import { taskId, type Task } from '../../../core/schemas/task.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import type { EngineEvent, EventBus } from '../../events/types.js';
 import { createEventBus } from '../../events/bus.js';
+import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../events/workflow-cancel.js';
 import { readRunEvents } from '../../events/replay.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
@@ -51,6 +55,7 @@ import {
 import type { SummaryBase } from '../summary/build.js';
 import { initializeWorkflow } from './init.js';
 import { createPlannerSeat } from './init-seats.js';
+import { runTaskLoop } from '../task/loop.js';
 import { createRunIsolation } from '../isolation/create.js';
 import type { RunIsolation } from '../isolation/types.js';
 import { parsePreparedConfig, type PreparedExecution } from '../../runners/prepared-execution.js';
@@ -158,6 +163,10 @@ async function initializeTestWorkflow(
     plannerKind?: SummaryBase['plannerKind'];
     implementerKind?: SummaryBase['implementerKind'];
     plannerRunner?: ReturnType<typeof makePlanner>;
+    /** Builds the configured planner seat itself instead of a test double. */
+    configuredPlanner?: boolean;
+    /** Builds the configured implementer seat itself instead of a test double. */
+    configuredImplementer?: boolean;
     selectedSkills?: SkillMeta[];
     eventSink?: (event: EngineEvent) => void;
     eventBus?: EventBus;
@@ -224,8 +233,8 @@ async function initializeTestWorkflow(
       headless: input.headless,
       eventBus: input.eventBus,
       signal: input.signal,
-      _planner: planner,
-      _implementer: implementer,
+      _planner: input.configuredPlanner === true ? undefined : planner,
+      _implementer: input.configuredImplementer === true ? undefined : implementer,
       _eventSink: input.eventSink,
       ...(input.steer !== undefined && { steer: input.steer }),
       ...(input.resumeCause !== undefined && { resumeCause: input.resumeCause }),
@@ -1015,6 +1024,100 @@ describe('initializeWorkflow — a planner that is not available', () => {
           : "Make sure it's installed.";
       expect(errorEvent?.message).toBe(`Planner ${word} is not available. ${hint}`);
     });
+  });
+});
+
+describe('initializeWorkflow — a stop while the api planner is checked', () => {
+  it('ends the start without calling the planner unavailable', async () => {
+    const controller = new AbortController();
+    const server = http.createServer((request) => {
+      if (request.url === '/api/tags') controller.abort(WORKFLOW_USER_CANCELLED_ABORT_REASON);
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as AddressInfo;
+    try {
+      await withTempDir('splitbrief-init-api-stop', async (projectDir) => {
+        const events: EngineEvent[] = [];
+
+        await initializeTestWorkflow({
+          projectDir,
+          sessionId: 'session-init-api-stop',
+          feature: 'stop while the planner is checked',
+          configOverrides: {
+            planner: {
+              kind: 'api',
+              provider: 'ollama',
+              service: 'ollama',
+              offering: 'local',
+              model: 'qwen3-coder:30b',
+              apiBase: `http://127.0.0.1:${port}/v1`,
+            },
+          },
+          configuredPlanner: true,
+          signal: controller.signal,
+          eventSink: (event) => events.push(event),
+        }).catch(() => undefined);
+
+        expect(
+          events.filter((event) => event.type === 'error').map((event) => event.message),
+        ).toEqual([]);
+      });
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+});
+
+describe('runTaskLoop — a stop while the api implementer is checked before a brief', () => {
+  it('stops the run without a recovery and without calling the implementer unavailable', async () => {
+    const controller = new AbortController();
+    const server = http.createServer((request) => {
+      if (request.url === '/api/tags') controller.abort(WORKFLOW_USER_CANCELLED_ABORT_REASON);
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as AddressInfo;
+    try {
+      await withTempDir('splitbrief-loop-api-stop', async (projectDir) => {
+        const events: EngineEvent[] = [];
+        const { init } = await initializeTestWorkflow({
+          projectDir,
+          sessionId: 'session-loop-api-stop',
+          feature: 'stop while the implementer is checked',
+          configOverrides: {
+            implementer: {
+              kind: 'api',
+              provider: 'ollama',
+              service: 'ollama',
+              offering: 'local',
+              model: 'qwen3-coder:30b',
+              apiBase: `http://127.0.0.1:${port}/v1`,
+            },
+          },
+          configuredImplementer: true,
+          signal: controller.signal,
+          eventSink: (event) => events.push(event),
+        });
+        if (!init.ok) throw new Error('the run did not start');
+
+        const result = await runTaskLoop({
+          wctx: init.wctx,
+          initialState: makeImplState([makeTask({ id: 'T001' })]),
+          setTrackedState: vi.fn(),
+          setCurrentTask: vi.fn(),
+        });
+
+        expect(controller.signal.aborted).toBe(true);
+        expect(
+          events.filter((event) => event.type === 'error').map((event) => event.message),
+        ).toEqual([]);
+        expect(result.state.pendingRecovery).toBeUndefined();
+        expect(result.status).toBe('stopped');
+      });
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 });
 

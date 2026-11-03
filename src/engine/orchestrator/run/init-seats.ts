@@ -14,6 +14,7 @@ type SeatBase = {
   config: Config;
   prepared: PreparedExecution;
   customRuntime: CustomRunnerRuntimePort;
+  signal: AbortSignal | undefined;
 };
 
 export type PlannerSeatInput = SeatBase & {
@@ -44,6 +45,7 @@ export async function createPlannerSeat(input: PlannerSeatInput): Promise<Planne
       slot: { role: 'planner' },
       customRuntime,
       skillRoots: input.skillRoots,
+      signal: input.signal,
     }));
   const reviewerSeat = configuredReviewerSeat(config);
   const reviewer: Reviewer =
@@ -82,6 +84,7 @@ export async function createImplementerSeat(input: ImplementerSeatInput): Promis
     const slot = factoryOptions.slot ?? { role: 'implementer', profile: defaultProfile };
     return createImplementer(config, {
       ...factoryOptions,
+      signal: input.signal,
       customRuntime,
       preparedConfig: prepared.config,
       preparationId: prepared.preparationId,

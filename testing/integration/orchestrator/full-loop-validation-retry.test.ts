@@ -347,7 +347,6 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
       '- Attempt 1 (T001 revision 1): check K-retry did not pass (fail)',
     );
     expect(consultPrompts[0]).not.toMatch(/^- Attempt 2 /m);
-    expect(events.filter((event) => event.type === 'task_retry')).toEqual([]);
     expect(
       readFileSync(join(runWorkspaceDir({ projectDir, sessionId }), targetFile), 'utf-8'),
     ).toBe(consultImplementation);

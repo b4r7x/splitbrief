@@ -1,11 +1,9 @@
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import {
-  probeRunnerAvailability,
-  RUNNER_AVAILABILITY_PROBE_TIMEOUT_MS,
-} from './probe-availability.js';
+import { watchSlowProbeLines } from '../../cli/slow-probe-line.js';
+import { probeRunnerAvailability } from './probe-availability.js';
 
 const servers: http.Server[] = [];
 
@@ -84,17 +82,36 @@ describe('probeRunnerAvailability', () => {
     expect(facts[0]?.verdict).toEqual({ state: 'no-models' });
   });
 
-  it('gives up on an endpoint that never answers and reports a timeout', async () => {
-    const port = await listen(() => {
-      // Accepts the connection and never responds.
+  it('names a model list that has not answered after ten seconds and gives it one minute', async () => {
+    let requested!: () => void;
+    const listRequested = new Promise<void>((resolve) => {
+      requested = resolve;
     });
+    vi.stubGlobal('fetch', (_input: RequestInfo | URL, init?: RequestInit) => {
+      requested();
+      return new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
+      });
+    });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    const lines: string[] = [];
+    const stopLines = watchSlowProbeLines((line) => lines.push(line));
+    try {
+      const armedAt = Date.now();
+      const pending = probeRunnerAvailability({ config: ollamaConfig(11434) });
+      await listRequested;
 
-    const started = Date.now();
-    const facts = await probeRunnerAvailability({ config: ollamaConfig(port) });
-    const elapsed = Date.now() - started;
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(lines).toEqual(['Checking tools · Ollama model list 10s']);
 
-    expect(facts[0]?.verdict).toMatchObject({ state: 'timeout' });
-    expect(elapsed).toBeLessThan(RUNNER_AVAILABILITY_PROBE_TIMEOUT_MS * 2);
+      await vi.advanceTimersToNextTimerAsync();
+      expect(Date.now() - armedAt).toBe(60_000);
+      expect((await pending)[0]?.verdict).toMatchObject({ state: 'timeout' });
+    } finally {
+      stopLines();
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
   });
 
   it('reports a custom provider with no credential as not-probed without contacting it', async () => {

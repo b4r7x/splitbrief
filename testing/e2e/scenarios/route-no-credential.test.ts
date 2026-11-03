@@ -330,7 +330,6 @@ describe('e2e: a BUILD route with no credential', { timeout: 240_000 }, () => {
     expect(state?.pendingRecovery?.details).toContain(`OpenCode CLI reported: ${NO_ROUTE}`);
     expect(recordedCalls(opencodeCalls)).toEqual([{ model: ROUTE_MODEL }]);
     const types = await eventTypes(ref);
-    expect(types).not.toContain('task_retry');
     expect(types).not.toContain('task_escalating');
     expect(() => readFileSync(claudeCalls)).toThrow();
   });
@@ -358,7 +357,6 @@ describe('e2e: a BUILD route with no credential', { timeout: 240_000 }, () => {
     expect(recordedCalls(opencodeCalls)).toEqual([{ model: ROUTE_MODEL }]);
     expect(recordedCalls(claudeCalls)).toEqual([{ model: 'sonnet' }]);
     const types = await eventTypes(ref);
-    expect(types).not.toContain('task_retry');
     expect(types).not.toContain('task_escalating');
     expect(readFileSync(target.greetPath, 'utf8')).toBe(GREET_SOURCE);
   });
@@ -387,7 +385,6 @@ describe('e2e: a BUILD route with no credential', { timeout: 240_000 }, () => {
     expect(state?.seatSwitches ?? []).toEqual([]);
     expect(recordedCalls(opencodeCalls)).toEqual([{ model: ROUTE_MODEL }]);
     const types = await eventTypes(ref);
-    expect(types).not.toContain('task_retry');
     expect(types).not.toContain('task_escalating');
     expect(() => readFileSync(claudeCalls)).toThrow();
   });

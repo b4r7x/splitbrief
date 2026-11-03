@@ -155,7 +155,6 @@ describe('handleRetryAndEscalation — a blocked implementer', () => {
       expect(vi.mocked(implementer.retry).mock.calls[0]?.[0].error).not.toContain(
         'How should T001 proceed?',
       );
-      expect(events.filter((event) => event.type === 'task_retry')).toEqual([]);
       expect(events.filter((event) => event.type === 'user_message')).toEqual([
         expect.objectContaining({ text: answer, qa: [expect.objectContaining({ answer })] }),
       ]);
@@ -197,7 +196,6 @@ describe('handleRetryAndEscalation — a blocked implementer', () => {
     });
 
     // No local retry ran before the consult; the only retry is the answer's.
-    expect(events.filter((e) => e.type === 'task_retry')).toEqual([]);
     expect(implementer.retry).toHaveBeenCalledTimes(1);
     expect(result.completed).toBe(true);
     expect(result.method).toBe('consulted');
@@ -255,7 +253,6 @@ describe('handleRetryAndEscalation — a blocked implementer', () => {
     });
 
     // The first consult answers the failed check; the guided retry reported blocked.
-    expect(events.filter((e) => e.type === 'task_retry')).toEqual([]);
     expect(implementer.retry).toHaveBeenCalledTimes(2);
     expect(result.completed).toBe(true);
     expect(result.method).toBe('consulted');

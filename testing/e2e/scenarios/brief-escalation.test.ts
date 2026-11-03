@@ -316,7 +316,6 @@ describe('e2e: brief escalation', { timeout: 240_000 }, () => {
     });
 
     const { events } = await readRunEvents(ref);
-    expect(events.filter((event) => event.type === 'task_retry')).toEqual([]);
     expect(
       events.flatMap((event) => (event.type === 'task_escalating' ? [event.taskId] : [])),
     ).toEqual(['T002']);

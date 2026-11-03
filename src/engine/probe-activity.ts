@@ -2,6 +2,7 @@ import type {
   ProbeActivity,
   ProbeActivitySnapshot,
   ProbeCheck,
+  ProbeSubject,
 } from '../core/discovery/probe-activity.js';
 import type { CliToolId } from '../core/runners/cli-tool-catalog.js';
 
@@ -23,16 +24,13 @@ function publish(): void {
   for (const listener of listeners) listener();
 }
 
-/** Lists `run` as a running probe of `activity.tool` until it settles. */
+/** Lists `run` as a running probe of the activity's tool or provider until it settles. */
 export async function trackProbe<T>(
-  activity: Readonly<{ tool: CliToolId; check: ProbeCheck }>,
+  activity: ProbeSubject & Readonly<{ check: ProbeCheck }>,
   run: () => Promise<T>,
 ): Promise<T> {
   const id = nextId++;
-  probes.set(
-    id,
-    Object.freeze({ id, tool: activity.tool, check: activity.check, startedAt: Date.now() }),
-  );
+  probes.set(id, Object.freeze({ ...activity, id, startedAt: Date.now() }));
   publish();
   try {
     return await run();

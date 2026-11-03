@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import {
   detectAvailableProviders,
   detectProviderCatalog,
@@ -6,10 +6,32 @@ import {
 } from './catalog-detection.js';
 import { KNOWN_PROVIDERS } from './registry.js';
 import { PROVIDER_CATALOG_FAILURE_KINDS } from './types.js';
+import { CLI_PROBE_TIMEOUT_MS } from '../constants.js';
+import { probeActivitySnapshot } from '../probe-activity.js';
+import { slowProbeText } from '../../core/discovery/probe-activity.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), { status: 200 });
+}
+
+type SlowAnswer = { afterMs: number; body: unknown } | 'never' | 'refused';
+
+/**
+ * Answers each request on the fake clock. Like the platform fetch, a pending request
+ * rejects with its signal's reason when the signal aborts.
+ */
+function mockSlowFetch(answer: (url: string) => SlowAnswer): void {
+  vi.mocked(globalThis.fetch).mockImplementation((url, init) => {
+    const planned = answer(url.toString());
+    if (planned === 'refused') return Promise.reject(new TypeError('Connection refused'));
+    const signal = init?.signal ?? undefined;
+    return new Promise<Response>((resolve, reject) => {
+      signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+      if (planned !== 'never')
+        setTimeout(() => resolve(jsonResponse(planned.body)), planned.afterMs);
+    });
+  });
 }
 
 function mockFetchRoutes(
@@ -177,13 +199,66 @@ describe('detectAvailableProviders', () => {
     expect(JSON.stringify(outcome)).not.toContain(canary);
   });
 
-  it('handles timeout', { timeout: 30000 }, async () => {
-    vi.mocked(globalThis.fetch).mockReturnValue(new Promise<Response>(() => {}));
+  describe('on the fake clock', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
 
-    const results = await detectAvailableProviders();
-    for (const r of results) {
-      expect(r.available).toBe(false);
-    }
+    it('counts a model list that answers after six seconds as found', async () => {
+      vi.useFakeTimers();
+      mockSlowFetch((url) => {
+        if (url.includes('11434/api/tags')) {
+          return { afterMs: 6_000, body: { models: [{ name: 'qwen2.5-coder:7b' }] } };
+        }
+        if (url.includes('11434/api/ps')) return { afterMs: 0, body: { models: [] } };
+        return 'refused';
+      });
+
+      const pending = detectAvailableProviders();
+      await vi.advanceTimersByTimeAsync(6_000);
+
+      expect((await pending).find((r) => r.provider === 'ollama')).toMatchObject({
+        available: true,
+        models: [{ id: 'qwen2.5-coder:7b' }],
+      });
+    });
+
+    // The scan once ended at five seconds; every model-list check now has the one-minute ceiling.
+    it('ends a model list that never answers at the one-minute ceiling as a timeout', async () => {
+      vi.useFakeTimers();
+      mockSlowFetch(() => 'never');
+
+      let settled = false;
+      const pending = detectAvailableProviders().finally(() => {
+        settled = true;
+      });
+      await vi.advanceTimersByTimeAsync(CLI_PROBE_TIMEOUT_MS - 1);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+
+      const local = (await pending).filter((r) => r.isLocal);
+      expect(local.length).toBeGreaterThan(0);
+      for (const r of local) {
+        expect(r).toMatchObject({ available: false, failure: 'timeout' });
+      }
+    });
+
+    it('names the provider and the check after ten seconds, and Esc stops the check', async () => {
+      vi.useFakeTimers();
+      mockSlowFetch(() => 'never');
+      const esc = new AbortController();
+
+      const pending = detectProviderCatalog({ provider: 'ollama', signal: esc.signal });
+      const stopped = expect(pending).rejects.toThrow();
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(slowProbeText(probeActivitySnapshot().probes, Date.now())).toBe(
+        'Ollama model list 10s',
+      );
+
+      esc.abort();
+      await stopped;
+      expect(probeActivitySnapshot().probes).toEqual([]);
+    });
   });
 });
 

@@ -553,6 +553,7 @@ describe('Seat pickers spend the supplied picker ports', () => {
       expect(fx.ports.checkConnection.mock.calls[0]?.[0]).toEqual({
         provider: 'ollama',
         apiBase: role === 'planner' ? OLLAMA_SEAT_BASE : getKnownProviderBaseURL('ollama'),
+        signal: expect.any(AbortSignal),
       });
       expect(production.detectProviderCatalog).not.toHaveBeenCalled();
     },

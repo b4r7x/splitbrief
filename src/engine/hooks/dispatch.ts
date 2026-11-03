@@ -57,9 +57,6 @@ export async function runHook(
       stdinOptional: true,
       signal,
       onProgress: () => undefined,
-      // Short-lived hook commands skip the runner-pid ledger: the per-spawn
-      // sync `ps` exec and jsonl rewrite buy no crash-recovery benefit here.
-      ledger: false,
     });
 
     if (result.timedOut) {

@@ -25,6 +25,7 @@ import { checkpointId } from '../../contracts/identifiers.js';
 import {
   LONG_COMPOSER_DRAFT,
   VISUAL_FIXTURE_EPOCH,
+  trackSlowProbe,
   type CheckpointPredicate,
   type FixtureFactory,
   type FixtureRegistry,
@@ -408,6 +409,24 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
       },
     });
   }
+  if (projection.scenarioId === 'workflow-brief-check-slow-provider') {
+    return () => {
+      const lifecycle = base();
+      const release = Promise.withResolvers<void>();
+      let held: Promise<void> | undefined;
+      return {
+        setup: async (context) => {
+          await lifecycle.setup(context);
+          held = trackSlowProbe({ provider: 'ollama', check: 'model list' }, () => release.promise);
+        },
+        teardown: async () => {
+          release.resolve();
+          await held;
+          await lifecycle.teardown();
+        },
+      };
+    };
+  }
   if (projection.scenarioId === 'workflow-resuming') {
     return () => {
       const lifecycle = base();
@@ -562,6 +581,7 @@ const checkpointPredicates = [
   ],
   [checkpointId('plan-compiled'), includesAll('plan.md', 'tasks.md')],
   [checkpointId('first-brief-after-plan'), includesAll('Plan', 'T001', '0/3 briefs passed')],
+  [checkpointId('brief-check-slow-provider'), includesAll('Checking tools', 'T001')],
   [checkpointId('build-consult'), includesAll('Claude Code CLI', 'answering the consult on T901')],
   [checkpointId('build-brief-check'), includesAll('Plan check K2', 'read after its checks')],
   [

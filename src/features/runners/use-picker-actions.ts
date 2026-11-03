@@ -130,6 +130,7 @@ const probeLocalConnection: LocalConnectionProbe = (input) =>
       apiBase: input.apiBase,
       ...(input.apiKey === undefined ? {} : { apiKey: input.apiKey }),
     },
+    signal: input.signal,
   });
 
 /** The production ports, in one place: no other layer names these three functions. */

@@ -141,7 +141,7 @@ describe('a quota line that arrives during a live call', { timeout: 30_000 }, ()
       projectDir,
       cliDetectionsFor('ready', ['antigravity', 'claude-code']),
     );
-    const { bus, events } = makeBusRecorder();
+    const { bus } = makeBusRecorder();
     const consult = vi.fn(() => guidanceConsult());
     const wctx = makeWorkflowContext({
       projectDir,
@@ -166,13 +166,11 @@ describe('a quota line that arrives during a live call', { timeout: 30_000 }, ()
     const issue = state.pendingRecovery;
     expect({
       spawned: existsSync(counter) ? readFileSync(counter, 'utf8') : '',
-      retries: events.filter((event) => event.type === 'task_retry').length,
       consults: consult.mock.calls.length,
       reason: issue?.reason,
       auto: issue?.switchSeat?.auto?.candidate,
     }).toEqual({
       spawned: 'x\n',
-      retries: 0,
       consults: 0,
       reason: 'runner-usage-limit',
       auto: { tool: 'claude-code' },

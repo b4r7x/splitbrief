@@ -142,7 +142,7 @@ describe('a BUILD tool that takes the prompt on stdin', { timeout: 90_000 }, () 
     const { projectDir, sessionId } = setupProject();
     writeConfig(projectDir, config);
     await rememberDetectedTools(projectDir, cliDetectionsFor('ready', ['copilot', 'claude-code']));
-    const { bus, events } = makeBusRecorder();
+    const { bus } = makeBusRecorder();
     const consult = vi.fn(() => guidanceConsult());
     const wctx = makeWorkflowContext({
       projectDir,
@@ -165,14 +165,12 @@ describe('a BUILD tool that takes the prompt on stdin', { timeout: 90_000 }, () 
     const issue = state.pendingRecovery;
     expect({
       spawned: existsSync(counter) ? readFileSync(counter, 'utf8') : '',
-      retries: events.filter((event) => event.type === 'task_retry').length,
       consults: consult.mock.calls.length,
       reason: issue?.reason,
       cause: issue?.facts?.cause,
       auto: issue?.switchSeat?.auto?.candidate,
     }).toEqual({
       spawned: 'x\n',
-      retries: 0,
       consults: 0,
       reason: 'runner-usage-limit',
       cause: 'access',

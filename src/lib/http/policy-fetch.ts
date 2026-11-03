@@ -1,3 +1,5 @@
+import { Agent } from 'undici';
+
 export type EndpointPolicyFetch = (
   input: string | URL | Request,
   init?: RequestInit,
@@ -5,6 +7,8 @@ export type EndpointPolicyFetch = (
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const MAX_REDIRECTS = 20;
+// Node's default agent cuts a request after 300 s without headers or body bytes; 0 sets no limit.
+const dispatcher = new Agent({ headersTimeout: 0, bodyTimeout: 0 });
 
 function parseOrigin(value: string, invalidEndpoint: () => Error, base?: URL): URL {
   let parsed: URL;
@@ -67,7 +71,7 @@ export function createEndpointPolicyFetch(
 
   return async (input, init) => {
     let nextInput: string | URL | Request = input;
-    let nextInit: RequestInit | undefined = { ...init, redirect: 'manual' };
+    let nextInit: RequestInit & { dispatcher: Agent } = { ...init, redirect: 'manual', dispatcher };
     let request = new Request(nextInput, nextInit);
     assertRedirectOrigin(initialURL.href, request.url, invalidEndpoint);
 
@@ -85,7 +89,7 @@ export function createEndpointPolicyFetch(
       await response.body?.cancel();
       request = redirectRequest(replayableRequest, redirectURL.href, response.status);
       nextInput = request;
-      nextInit = undefined;
+      nextInit = { dispatcher };
     }
 
     throw invalidEndpoint();

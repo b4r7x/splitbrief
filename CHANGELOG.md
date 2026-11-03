@@ -85,6 +85,7 @@
 - With `review: task`, each task review first runs again the checks of the briefs it covers and of the criteria due at that review. A later brief that breaks an earlier brief's check is now found at that task review, not only at the final review. A run takes longer by these checks.
 - `continue --action restore` says how many files it put back in your checkout, works without a terminal, and leaves the run ready to apply.
 - A headless run stopped by Ctrl+C, SIGTERM or a closed terminal exits with code 130, 143 or 129 and prints the command that continues it.
+- The model list in the picker, the provider scan on home and setup, the Check of a local server and the check of an API seat wait up to one minute instead of two or five seconds. A provider that answers after six seconds is now found, not failed. After ten seconds the screen names the provider and the check, also while a run checks its seat at its start or before a brief. Esc stops the check; during a run, the run's stop ends it.
 
 ### Removed
 
@@ -105,9 +106,12 @@
 
 ### Fixed
 
+- A check or hook that was still running when SPLITBRIEF ended unexpectedly is now stopped the next time SPLITBRIEF starts.
 - `/steer` and `ctrl+⏎` now work on every attempt of a brief, also on an attempt after the planner's answer and on a fix brief. The attempt keeps its work and continues with your text.
 - After Apply, each red check reaches the reviewer once, not twice.
 - A correction that you send while the checks run no longer tells the build tool that its earlier attempts failed when the checks passed.
+- An API seat with no `timeout` no longer fails after five minutes when the provider takes longer to start its answer or pauses in the middle of it.
+- A stop while the run checks an API planner or implementer no longer reports it as not available, and no longer halts the run for a recovery.
 - A slow tool no longer hides the sign-in step or claims that it cannot list models.
 - In the runner picker, a tool you signed out of keeps its earlier models and shows the sign-in step first. It no longer tells you to refresh detection.
 - An older tool, or a tool whose version cannot be read, no longer claims that it cannot list models, and the model picker no longer calls models from an earlier check the bundled list.

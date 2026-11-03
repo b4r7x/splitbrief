@@ -75,7 +75,6 @@ interface SpawnPipeOptions<T> {
   cwd?: string | undefined;
   env?: NodeJS.ProcessEnv | undefined;
   detached?: boolean | undefined;
-  ledger?: boolean | undefined;
   stdin?: string | undefined;
   stdinOptional?: boolean | undefined;
   onStdinReady?: ((writer: SpawnStdinWriter) => void) | undefined;
@@ -350,7 +349,7 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
       return;
     }
 
-    registerProcess(proc, { group: opts.detached ?? false, ledger: opts.ledger });
+    registerProcess(proc, { group: opts.detached ?? false });
 
     const { stdout, stderr, stdin } = proc;
     if (!stdout || !stderr || !stdin) {

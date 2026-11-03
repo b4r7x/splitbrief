@@ -90,7 +90,6 @@ describe('a correction during first-attempt checks', { timeout: 60_000 }, () => 
     expect(result.messageQueue).toEqual([]);
     expect(loadState(ref)?.messageQueue).toEqual([]);
     expect(events.filter((event) => event.type === 'task_completed')).toHaveLength(1);
-    expect(events.filter((event) => event.type === 'task_retry')).toEqual([]);
     expect(events.filter((event) => event.type === 'queue_drained')).toEqual([]);
   });
 
@@ -181,7 +180,6 @@ describe('a correction during first-attempt checks', { timeout: 60_000 }, () => 
       expect(result.tasks[0]?.status).toBe('done');
       expect(result.currentTaskIndex).toBe(1);
       expect(result.lineages?.T001).toMatchObject({ attempts: 2, consultRecords: [] });
-      expect(events.filter((event) => event.type === 'task_retry')).toEqual([]);
       expect(events).toContainEqual(
         expect.objectContaining({
           type: 'queue_drained',

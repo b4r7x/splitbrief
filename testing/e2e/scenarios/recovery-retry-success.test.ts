@@ -31,7 +31,6 @@ describe('e2e: recovery retry success', () => {
     const taskCompleted = ctx.events.filter((event) => event.type === 'task_completed');
 
     expect(consulted).toMatchObject([{ taskId: 'T001', action: 'guidance' }]);
-    expect(ctx.events.filter((event) => event.type === 'task_retry')).toEqual([]);
     expect(taskCompleted.length).toBeGreaterThan(0);
     expect(summary.totalTasks).toBeGreaterThanOrEqual(1);
     const validationPath = join(ctx.projectDir, 'src/form-validation.ts');

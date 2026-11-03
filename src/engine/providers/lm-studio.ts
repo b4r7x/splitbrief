@@ -3,7 +3,6 @@ import type { DetectedModel, DetectedModelInstance } from '../../core/discovery/
 import { endpointPolicyFetch } from '../../core/providers/endpoint-policy.js';
 import { throwIfAborted } from '../../utils/abort.js';
 import { assertNever } from '../../utils/type-guards.js';
-import { DISCOVERY_HTTP_TIMEOUT_MS } from '../constants.js';
 import { stripV1Suffix } from './constants.js';
 import { createMetadataProvider } from './client/metadata.js';
 import { sanitizeProviderDiagnostic } from './client/request.js';
@@ -199,13 +198,11 @@ async function fetchInventory<T>(
   }>,
 ): Promise<LmStudioListResult<T>> {
   throwIfAborted(input.signal);
-  const timeout = AbortSignal.timeout(DISCOVERY_HTTP_TIMEOUT_MS);
-  const signal = input.signal === undefined ? timeout : AbortSignal.any([input.signal, timeout]);
   const headers = requestHeaders(input.apiKey);
 
   try {
     const response = await input.policyFetch(input.endpoint, {
-      signal,
+      ...(input.signal === undefined ? {} : { signal: input.signal }),
       ...(headers ? { headers } : {}),
     });
     throwIfAborted(input.signal);
@@ -297,8 +294,11 @@ export function createLmStudioProvider(overrides?: ProviderOverrides): ProviderD
     async listModelsWithMetadata(options?: ProviderModelListOptions): Promise<DetectedModel[]> {
       return [...(await listInventory(options))];
     },
-    async detectContextLength(model: string): Promise<number | null> {
-      const entry = (await listInventory()).find((candidate) => candidate.id === model);
+    async detectContextLength(
+      model: string,
+      options?: ProviderModelListOptions,
+    ): Promise<number | null> {
+      const entry = (await listInventory(options)).find((candidate) => candidate.id === model);
       return entry?.effectiveContextTokens ?? entry?.maximumContextTokens ?? null;
     },
   };

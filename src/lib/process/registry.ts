@@ -25,7 +25,6 @@ type RegisteredProcess = {
   pid: number | undefined;
   group: boolean;
   ledger: ProcessLedger | null;
-  ledgered: boolean;
   releaseMonitor: NodeJS.Timeout | undefined;
   scope: ProcessScope | undefined;
 };
@@ -182,7 +181,7 @@ function releaseRegistration(entry: RegisteredProcess): void {
   notifyRegistryChange();
   if (entry.releaseMonitor !== undefined) clearInterval(entry.releaseMonitor);
   if (usesProcessGroup(entry.group, entry.pid)) unwatchGroup(entry.pid);
-  if (!entry.ledgered || entry.ledger === null || entry.pid === undefined) return;
+  if (entry.ledger === null || entry.pid === undefined) return;
   try {
     entry.ledger.release(entry.pid);
   } catch (err) {
@@ -205,17 +204,15 @@ function monitorGroupRelease(entry: RegisteredProcess): void {
 
 export function registerProcess(
   proc: ChildProcess,
-  options?: { group?: boolean | undefined; ledger?: boolean | undefined },
+  options?: { group?: boolean | undefined },
 ): void {
   const group = options?.group ?? false;
-  const ledgered = group && (options?.ledger ?? true);
-  const ledger = ledgered ? processLedger : null;
+  const ledger = group ? processLedger : null;
   const entry: RegisteredProcess = {
     proc,
     pid: proc.pid,
     group,
     ledger,
-    ledgered,
     releaseMonitor: undefined,
     scope: runningScope.getStore(),
   };

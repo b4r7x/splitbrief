@@ -213,7 +213,6 @@ function bookedFiles(projectDir: string, sessionId: string, taskId: string): str
 function eventTypes(events: readonly EngineEvent[]): string[] {
   return events.flatMap((event) => {
     if (event.type === 'consult_answered') return [`consult:${event.reason}:${event.action}`];
-    if (event.type === 'task_retry') return ['retry'];
     return [];
   });
 }

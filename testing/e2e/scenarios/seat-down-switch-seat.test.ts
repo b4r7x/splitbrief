@@ -320,11 +320,6 @@ describe('e2e: seat down without a fallback, switched by hand', { timeout: 240_0
   });
 });
 
-async function taskRetries(ref: { projectDir: string; sessionId: string }): Promise<string[]> {
-  const { events } = await readRunEvents(ref);
-  return events.flatMap((event) => (event.type === 'task_retry' ? [event.error] : []));
-}
-
 describe('e2e: seat down after the brief wrote its files', { timeout: 240_000 }, () => {
   it('passes the brief on the kept work when the switched seat changes nothing', async () => {
     const { target, halted, sessionId, claudeCalls, options } = await codexHaltFixture(true);
@@ -341,14 +336,12 @@ describe('e2e: seat down after the brief wrote its files', { timeout: 240_000 },
     expect(switched.stdout).toContain('task T001: done');
     expect(loadState(ref)?.tasks).toMatchObject([{ id: 'T001', status: 'done' }]);
     expect(recordedCalls(claudeCalls)).toHaveLength(1);
-    expect(await taskRetries(ref)).toEqual([]);
     expect(readFileSync(target.greetPath, 'utf8')).toBe(GREET_SOURCE);
     expect(readFileSync(target.markerPath, 'utf8')).toBe(MARKER_SOURCE);
   });
 
   it('passes the brief on the kept work when the switch carries a typed correction', async () => {
     const { target, halted, sessionId, claudeCalls } = await codexHaltFixture(true);
-    const ref = { projectDir: target.projectDir, sessionId };
     expect(halted.exitCode, `${halted.stdout}\n${halted.stderr}`).toBe(1);
     const correction = 'Both files are written. Check them and keep them.';
     vi.stubGlobal('fetch', async () => {
@@ -362,7 +355,6 @@ describe('e2e: seat down after the brief wrote its files', { timeout: 240_000 },
     expect(recordedCalls(claudeCalls)).toEqual([
       { model: SWITCHED_MODEL, prompt: expect.stringContaining(correction) },
     ]);
-    expect(await taskRetries(ref)).toEqual([]);
     expect(readFileSync(target.greetPath, 'utf8')).toBe(GREET_SOURCE);
     expect(readFileSync(target.markerPath, 'utf8')).toBe(MARKER_SOURCE);
   });

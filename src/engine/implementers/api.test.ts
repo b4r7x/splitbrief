@@ -6,6 +6,7 @@ import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeOpenAiSseResponse } from '#testing/helpers/faux/openai-sse.js';
 import { localCatalogResponse, withLocalCatalog } from '#testing/helpers/faux/local-catalog.js';
+import { watchSlowProbeLines } from '../../cli/slow-probe-line.js';
 import { createApiImplementer } from './api.js';
 
 const remoteImplementerSeat = {
@@ -130,6 +131,37 @@ describe('api implementer — OpenAI-compatible path', () => {
     const implementer = createApiImplementer(makeConfig());
 
     expect(await implementer.isAvailable()).toBe(true);
+  });
+
+  it('names a model list that has not answered at the availability gate after ten seconds and gives it one minute', async () => {
+    let requested!: () => void;
+    const listRequested = new Promise<void>((resolve) => {
+      requested = resolve;
+    });
+    fetchMock.mockImplementation((_input: RequestInfo | URL, init?: RequestInit) => {
+      requested();
+      return new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
+      });
+    });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    const lines: string[] = [];
+    const stopLines = watchSlowProbeLines((line) => lines.push(line));
+    try {
+      const armedAt = Date.now();
+      const pending = createApiImplementer(makeConfig()).isAvailable();
+      await listRequested;
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(lines).toEqual(['Checking tools · Ollama model list 10s']);
+
+      await vi.advanceTimersToNextTimerAsync();
+      expect(Date.now() - armedAt).toBe(60_000);
+      expect(await pending).toBe(false);
+    } finally {
+      stopLines();
+      vi.useRealTimers();
+    }
   });
 
   it('re-probes the endpoint on the next availability gate instead of latching the verdict', async () => {

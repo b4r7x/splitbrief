@@ -79,7 +79,6 @@ export async function checkIgnoredPaths(dir: string, paths: string[]): Promise<s
       args: ['check-ignore', '--stdin', '-z'],
       cwd: dir,
       detached: true,
-      ledger: false,
       stdin: paths.join('\0'),
       onStdout: (chunk) => {
         chunks.push(chunk);

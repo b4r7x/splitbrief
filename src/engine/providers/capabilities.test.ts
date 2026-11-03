@@ -1,8 +1,11 @@
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { detectCapabilities } from './capabilities.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import type { Config } from '../../core/schemas/config.js';
+import { OBSERVATION_HTTP_TIMEOUT_MS } from '../constants.js';
 
 describe('detectCapabilities', () => {
   it('returns config contextLength for non-api implementer without throwing', async () => {
@@ -187,4 +190,69 @@ describe('detectCapabilities', () => {
       }
     });
   });
+});
+
+describe('detectCapabilities against a local server that accepts the read and never answers', () => {
+  async function withSilentServer(
+    run: (input: Readonly<{ apiBase: string; requested: Promise<void> }>) => Promise<void>,
+  ): Promise<void> {
+    let markRequested!: () => void;
+    const requested = new Promise<void>((resolve) => {
+      markRequested = resolve;
+    });
+    const server = http.createServer(() => markRequested());
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as AddressInfo;
+    try {
+      await run({ apiBase: `http://127.0.0.1:${port}/v1`, requested });
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  }
+
+  it.each(['lm-studio', 'llama-cpp', 'ollama'] as const)(
+    'settles %s on the fallback window with no warning once the read passes its bound',
+    async (provider) => {
+      // process.stderr is a sanctioned global spy — see docs/TESTING.md. AbortSignal.timeout is the
+      // clock: the test fires the bound once the server holds the request.
+      const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+      const bounds: { ms: number; controller: AbortController }[] = [];
+      const timeout = vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms) => {
+        const controller = new AbortController();
+        bounds.push({ ms, controller });
+        return controller.signal;
+      });
+      try {
+        await withSilentServer(async ({ apiBase, requested }) => {
+          const config = makeConfig({
+            implementer: {
+              kind: 'api',
+              provider,
+              service: provider,
+              offering: 'local',
+              apiBase,
+              model: 'local-model',
+            },
+          });
+          delete config.implementer.contextLength;
+
+          const detected = detectCapabilities(config);
+          await requested;
+          expect(bounds.map((bound) => bound.ms)).toEqual([OBSERVATION_HTTP_TIMEOUT_MS]);
+          for (const { controller } of bounds) {
+            controller.abort(
+              new DOMException('The operation was aborted due to timeout', 'TimeoutError'),
+            );
+          }
+
+          expect(await detected).toEqual({ contextLength: 32_768, origin: 'fallback' });
+          expect(stderr).not.toHaveBeenCalled();
+        });
+      } finally {
+        timeout.mockRestore();
+        stderr.mockRestore();
+      }
+    },
+  );
 });

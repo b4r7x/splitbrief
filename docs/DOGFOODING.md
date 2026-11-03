@@ -131,7 +131,7 @@ What `continue` does with the saved state (`src/engine/orchestrator/run/init.ts`
 | Crashed mid-brief (no `interruptedStep`) | the brief restarts at attempt 0; its declared files in the run workspace are restored from its task-start snapshot |
 | On a recovery | nothing runs until `--action` or the panel answers it |
 
-A runner process does not outlive a crash: a watchdog process ends every runner process group when SPLITBRIEF dies, `SIGKILL` included. A runner that still survives is reaped from `runner-pids.jsonl` when SPLITBRIEF starts, when a run opens at rest, when a run ends and when a workflow starts. The code the run builds stays in its run workspace until Apply, and never reaches the running orchestrator: a fix the run built for its own benefit takes effect in the next run, after Apply, the maintainer's commit and a rebuild.
+A runner, check or hook process does not outlive a crash: a watchdog process ends every such process group when SPLITBRIEF dies, `SIGKILL` included. A runner, check or hook process that still survives is reaped from `runner-pids.jsonl` when SPLITBRIEF starts, when a run opens at rest, when a run ends and when a workflow starts. The code the run builds stays in its run workspace until Apply, and never reaches the running orchestrator: a fix the run built for its own benefit takes effect in the next run, after Apply, the maintainer's commit and a rebuild.
 
 When the planner's output was lost by the tool, there is no artifact to rebuild by hand: the planning session is one typed call loop. Retry the planning step (`continue --action retry` on its halt); a loss that repeats is a tool defect that blocks the run (§6).
 

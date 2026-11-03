@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { spawnWithTimeout } from './progress.js';
-import { setProcessLedger } from '../registry.js';
 
 describe('spawnWithTimeout', () => {
   it('captures stdout and returns exit code 0', async () => {
@@ -32,30 +31,6 @@ describe('spawnWithTimeout', () => {
 
     expect(result.stderr).toContain('err');
     expect(stderrChunks.join('')).toContain('err');
-  });
-
-  it('ledger: false bypasses the runner-pid ledger', async () => {
-    const recorded: number[] = [];
-    const released: number[] = [];
-    setProcessLedger({
-      record: (pid) => recorded.push(pid),
-      release: (pid) => released.push(pid),
-    });
-    try {
-      await spawnWithTimeout({
-        command: 'echo',
-        args: ['hello'],
-        cwd: process.cwd(),
-        timeout: 5000,
-        onProgress: () => {},
-        ledger: false,
-      });
-    } finally {
-      setProcessLedger(null);
-    }
-
-    expect(recorded).toEqual([]);
-    expect(released).toEqual([]);
   });
 
   it('streams every stdout chunk while retaining only bounded output', async () => {

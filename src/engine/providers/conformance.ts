@@ -15,6 +15,7 @@ import { isRecord } from '../../utils/type-guards.js';
 import { error as createError } from '../../utils/error.js';
 
 export const COMPLETION_TIMEOUT_MS = 30_000;
+export const MODEL_LIST_TIMEOUT_MS = 5_000;
 
 export const PROVIDER_CONFORMANCE_EXIT_CODES = CONFORMANCE_EXIT_CODES;
 

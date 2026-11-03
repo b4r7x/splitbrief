@@ -1,5 +1,5 @@
 import { ThemeText as Text, useTheme } from '../../components/theme.js';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Box, useInput } from 'ink';
 import { ListRow } from '../../components/list-row.js';
 import { MultilineInput } from '../../components/input/multiline-input.js';
@@ -32,6 +32,7 @@ import type { ConfiguredProviderRuntime } from '../../engine/detection/provider-
 import { deriveProviderConnectionState } from '../../engine/providers/connection-state.js';
 import { apiConnectionContextKey } from '../../engine/providers/selected-model.js';
 import type { ProviderCatalogOutcome } from '../../engine/providers/types.js';
+import { type SlowProbeText, useSlowProbeText } from '../../hooks/use-slow-probe-text.js';
 import { useSpinnerFrame } from '../../hooks/use-spinner-frame.js';
 import { glyph } from '../../lib/glyphs.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
@@ -55,6 +56,8 @@ export interface LocalConnectionProbeInput {
   readonly provider: ApiProviderId;
   readonly apiBase: string;
   readonly apiKey?: string | undefined;
+  /** Aborts when the form closes or a newer check or edit replaces this one. */
+  readonly signal?: AbortSignal | undefined;
 }
 
 /** The read-only catalog probe: it lists, and starts, pulls and loads nothing. */
@@ -233,6 +236,8 @@ function connectionStatus(input: {
   name: string;
   probe: ProbeState;
   frame: string;
+  /** The check past ten seconds: the provider, the check and the time. */
+  slow: SlowProbeText | null;
   seatModel: string | undefined;
 }): ConnectionStatus {
   const { probe, name } = input;
@@ -245,7 +250,13 @@ function connectionStatus(input: {
     return plain(`Not checked yet${SOFT_SEP}⏎ asks what this server serves`);
   }
   if (probe.kind === 'refused') return plain(probe.message);
-  if (probe.kind === 'checking') return plain(`${input.frame} checking…`);
+  if (probe.kind === 'checking') {
+    return plain(
+      input.slow === null
+        ? `${input.frame} Checking…`
+        : `${input.frame} Checking…${SOFT_SEP}${input.slow.tool} ${input.slow.check}`,
+    );
+  }
   if (probe.kind === 'failed') return plain('The check could not run', probe.message);
 
   const facts = deriveProviderConnectionState({
@@ -361,10 +372,11 @@ export function LocalConnectionForm({
   const [apiBase, setApiBase] = useState(seat.apiBase);
   const [token, setToken] = useState(seat.apiKey ?? '');
   const [probe, setProbe] = useState<ProbeState>({ kind: 'idle' });
-  const checkGeneration = useRef(0);
+  const runningCheck = useRef<AbortController | null>(null);
   const [index, setIndex] = useState(0);
   const focus = overlayStore.use((s) => overlayAllowsPickerKeys(s.active));
   const { frame } = useSpinnerFrame(probe.kind === 'checking');
+  const slow = useSlowProbeText(provider);
 
   const catalog =
     probe.kind === 'done' && probe.outcome.kind === 'success' ? probe.outcome.models : undefined;
@@ -400,13 +412,17 @@ export function LocalConnectionForm({
     return { apiBase: address.apiBase, apiKey: trimmed === '' ? undefined : trimmed };
   };
 
+  useEffect(() => () => runningCheck.current?.abort(), []);
+
   const runCheck = () => {
-    const generation = ++checkGeneration.current;
+    runningCheck.current?.abort();
     const draft = resolveDraft();
     if (draft === undefined) return;
+    const running = new AbortController();
+    runningCheck.current = running;
     const at = contextOf(provider, draft.apiBase, draft.apiKey ?? '');
     const settle = (next: ProbeState) => {
-      if (generation !== checkGeneration.current) return;
+      if (running.signal.aborted) return;
       setProbe((prev) => (prev.kind === 'checking' && prev.at === at ? next : prev));
     };
     setProbe({ kind: 'checking', at });
@@ -414,6 +430,7 @@ export function LocalConnectionForm({
       provider,
       apiBase: draft.apiBase,
       ...(draft.apiKey === undefined ? {} : { apiKey: draft.apiKey }),
+      signal: running.signal,
     })
       .then((outcome) => settle({ kind: 'done', at, outcome }))
       .catch((err: unknown) => settle({ kind: 'failed', at, message: toErrorMessage(err) }));
@@ -433,7 +450,7 @@ export function LocalConnectionForm({
   // An edited address or token is a different connection, so the last check stops
   // standing for it.
   const editField = (setter: (next: string) => void) => (next: string) => {
-    checkGeneration.current += 1;
+    runningCheck.current?.abort();
     setter(next);
     setProbe({ kind: 'idle' });
   };
@@ -458,6 +475,7 @@ export function LocalConnectionForm({
     name: descriptor.displayName,
     probe,
     frame,
+    slow,
     seatModel: seat.model,
   });
   const checked = probe.kind === 'done' || probe.kind === 'failed';

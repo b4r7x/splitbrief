@@ -48,10 +48,6 @@ export async function runCommand(
       cwd: options?.cwd,
       env: createCommandEnv(),
       detached: true,
-      // Short-lived probe/validation/git commands skip the runner-pid ledger: at
-      // dozens of spawns per validation pipeline, the per-spawn sync `ps` exec and
-      // jsonl rewrites would block the TUI event loop for no recovery benefit.
-      ledger: false,
       signal,
       onStdout: (chunk) => {
         stdout.append(chunk);

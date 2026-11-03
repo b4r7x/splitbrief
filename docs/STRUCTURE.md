@@ -290,7 +290,7 @@ src/utils/
 ├── redact.ts          # secret / API-key redaction
 ├── truncate.ts        # text truncation helpers
 ├── type-guards.ts     # assertNever, isRecord, typedEntries
-└── with-timeout.ts    # promise / async-iterable timeout
+└── with-timeout.ts    # a deadline joined to an abort signal
 ```
 
 ## Feature anatomy

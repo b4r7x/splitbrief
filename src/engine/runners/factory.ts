@@ -70,7 +70,7 @@ async function loadPlanner(
     }
     case 'api': {
       const mod = await loadApiPlanner();
-      return mod.createApiPlanner(config, seat);
+      return mod.createApiPlanner(config, seat, options?.signal);
     }
     case 'shell':
     case 'agent': {

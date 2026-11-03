@@ -35,13 +35,14 @@ import { currentCodeContextMode } from '../orchestrator/context-routing/headings
 // the unavailability-reason member.
 function providerAvailability(
   impl: ApiImplementerConfig,
+  signal: AbortSignal | undefined,
 ): ReturnType<typeof createProviderAvailability> | undefined {
   try {
     const provider = getProvider(impl.provider, {
       apiBase: impl.apiBase,
       apiKey: impl.apiKey,
     });
-    return createProviderAvailability(provider);
+    return createProviderAvailability(provider, signal);
   } catch {
     return undefined;
   }
@@ -52,7 +53,7 @@ export function createApiImplementer(
   options?: ImplementerFactoryOptions,
 ): Implementer {
   const impl = assertImplementerKind(initialConfig, 'api');
-  const availability = providerAvailability(impl);
+  const availability = providerAvailability(impl, options?.signal);
   // Taken once, when the seat is built. A config whose endpoint or model moved
   // afterwards no longer matches it, and the call refuses instead of silently
   // dispatching somewhere else.

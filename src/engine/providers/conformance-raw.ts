@@ -13,6 +13,7 @@ import {
 import { extractOpenAIModelList, isOpenAIModelList } from './client/request.js';
 import {
   COMPLETION_TIMEOUT_MS,
+  MODEL_LIST_TIMEOUT_MS,
   PROVIDER_CONFORMANCE_EXIT_CODES,
   type ProviderConformanceFetchOptions,
   type ProviderConformanceOutcome,
@@ -31,7 +32,6 @@ import {
 } from './conformance.js';
 
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
-const MODEL_LIST_TIMEOUT_MS = 5_000;
 
 export interface RawProviderConformanceOptions extends ProviderConformanceFetchOptions {
   readonly contractJson: string;

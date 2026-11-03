@@ -1,8 +1,9 @@
 import type { CheckpointDefinition, ScenarioDefinition } from '../contracts/catalog.js';
 import type { Viewport } from '../contracts/geometry.js';
 import type { ScenarioId } from '../contracts/identifiers.js';
-import type { ProviderCatalogOutcome } from '../../../src/engine/providers/types.js';
+import type { LocalConnectionProbe } from '../../../src/features/runners/local-connection-form.js';
 import type { HomeScreenDeps } from '../../../src/app/screens/home.js';
+import { trackProbe } from '../../../src/engine/probe-activity.js';
 
 /**
  * What a preview says instead of reaching for an effect it cannot simulate. It lives beside the
@@ -49,8 +50,8 @@ export interface FixtureLifecycle {
   readonly teardown: FixtureTeardown;
   /** Exercise the mounted view through its ordinary input path. */
   readonly afterMount?: (write: FixtureWrite) => void | Promise<void>;
-  /** A synthetic answer for this scenario's local connection check. */
-  readonly connectionOutcome?: ProviderCatalogOutcome;
+  /** This scenario's local connection check, in place of the preview's synthetic catalog. */
+  readonly checkConnection?: LocalConnectionProbe;
   /** The preparation behind a start this scenario submits on home or setup. */
   readonly prepareExecution?: HomeScreenDeps['prepareExecution'];
 }
@@ -66,3 +67,17 @@ export interface CheckpointPredicateContext {
 }
 
 export type CheckpointPredicate = (context: CheckpointPredicateContext) => boolean;
+
+/** Lists `run` as a probe that started twelve seconds before the scenario clock: a slow check. */
+export function trackSlowProbe<T>(
+  activity: Parameters<typeof trackProbe>[0],
+  run: () => Promise<T>,
+): Promise<T> {
+  const fixedNow = Date.now;
+  Date.now = () => fixedNow() - 12_000;
+  try {
+    return trackProbe(activity, run);
+  } finally {
+    Date.now = fixedNow;
+  }
+}

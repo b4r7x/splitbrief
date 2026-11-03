@@ -159,7 +159,6 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
         const parsed = JSON.parse(line) as { type?: string; data?: { type?: string } };
         return parsed.type === 'event' ? parsed.data?.type : parsed.type;
       });
-    expect(emittedTypes).not.toContain('task_retry');
     expect(emittedTypes).not.toContain('task_escalating');
     expect(emittedTypes).not.toContain('escalate');
 

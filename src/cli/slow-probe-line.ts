@@ -1,11 +1,15 @@
-import { SLOW_PROBE_AFTER_MS, slowProbeText } from '../core/discovery/probe-activity.js';
+import {
+  probeSubjectName,
+  SLOW_PROBE_AFTER_MS,
+  slowProbeText,
+} from '../core/discovery/probe-activity.js';
 import type { ProbeActivity } from '../core/discovery/probe-activity.js';
 import { probeActivitySnapshot, subscribeProbeActivity } from '../engine/probe-activity.js';
 
 let holds = 0;
 
 function checkKey(probe: ProbeActivity): string {
-  return `${probe.tool}:${probe.check}`;
+  return `${probeSubjectName(probe)}:${probe.check}`;
 }
 
 /**
@@ -20,8 +24,8 @@ export function holdSlowProbeLines(): () => void {
 }
 
 /**
- * Writes `Checking tools · <tool> <check> 10s` once a probe has run `SLOW_PROBE_AFTER_MS`. Probes of
- * one tool and check that overlap give one line; a later probe of it gives its own line.
+ * Writes `Checking tools · <tool or provider> <check> 10s` once a probe has run `SLOW_PROBE_AFTER_MS`.
+ * Probes of one tool and check that overlap give one line; a later probe of it gives its own line.
  */
 export function watchSlowProbeLines(write: (line: string) => void): () => void {
   const timers = new Map<number, ReturnType<typeof setTimeout> | null>();

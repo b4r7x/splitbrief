@@ -313,21 +313,34 @@ describe('runCommand', () => {
     }
   });
 
-  it('runCommand spawns bypass the runner-pid ledger', { timeout: 60_000 }, async () => {
+  it('records a command group in the runner-pid ledger until the group ends', {
+    timeout: 60_000,
+  }, async () => {
     const recorded: number[] = [];
     const released: number[] = [];
+    let groupEnded: () => void = () => undefined;
+    const ended = new Promise<void>((resolve) => {
+      groupEnded = resolve;
+    });
     setProcessLedger({
       record: (pid) => recorded.push(pid),
-      release: (pid) => released.push(pid),
+      release: (pid) => {
+        released.push(pid);
+        groupEnded();
+      },
     });
     try {
-      await runCommand('echo', ['hello']);
+      const { stdout } = await runCommand('node', [
+        '-e',
+        'process.stdout.write(String(process.pid))',
+      ]);
+      expect(recorded).toEqual([Number(stdout)]);
+      await ended;
     } finally {
       setProcessLedger(null);
     }
 
-    expect(recorded).toEqual([]);
-    expect(released).toEqual([]);
+    expect(released).toEqual(recorded);
   });
 
   it('fatal byte budget aborts and reaps the producer group with bounded partial output', {
@@ -347,7 +360,6 @@ describe('runCommand', () => {
         command: process.execPath,
         args: ['-e', childProgram],
         detached: true,
-        ledger: false,
         outputBudgetBytes: 256,
         partialStdoutMaxBytes: 64,
         partialStderrMaxBytes: 32,
@@ -462,7 +474,6 @@ describe('runCommand', () => {
             'process.stdout.write("stdout-ready"); process.stderr.write("stderr-ready"); setInterval(() => {}, 1000);',
           ],
           detached: true,
-          ledger: false,
           partialStdoutMaxBytes: 32,
           partialStderrMaxBytes: 32,
           onStdout: () =>
@@ -495,7 +506,6 @@ describe('runCommand', () => {
           'process.stderr.write("diagnostic-before-callback"); setTimeout(() => process.stdout.write("callback-trigger"), 25); setInterval(() => {}, 1000);',
         ],
         detached: true,
-        ledger: false,
         partialStdoutMaxBytes: 48,
         partialStderrMaxBytes: 48,
         onSpawned: (proc) => {

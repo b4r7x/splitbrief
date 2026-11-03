@@ -30,7 +30,6 @@ export function isOpenAIModelList(data: unknown): boolean {
   return OpenAIModelListSchema.safeParse(data).success;
 }
 
-const MODEL_LIST_TIMEOUT_MS = 5_000;
 const PROVIDER_DIAGNOSTIC_REDACTION_MARKER = '***REDACTED***';
 
 const SENSITIVE_QUERY_PARAMETER_PATTERN =
@@ -93,7 +92,7 @@ export async function fetchModelList<T>(options: {
   extractModels: (data: unknown) => T[] | null;
 }): Promise<T[]> {
   throwIfAborted(options.signal);
-  const { endpoint, apiKey, onError, extractModels } = options;
+  const { endpoint, apiKey, onError, extractModels, signal } = options;
   try {
     const headers = options.headers ?? (apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined);
     const diagnosticOptions: ProviderDiagnosticOptions = {
@@ -105,14 +104,12 @@ export async function fetchModelList<T>(options: {
         message === undefined ? undefined : sanitizeProviderDiagnostic(message, diagnosticOptions),
       );
     };
-    const timeoutSignal = AbortSignal.timeout(MODEL_LIST_TIMEOUT_MS);
-    const signal =
-      options.signal === undefined
-        ? timeoutSignal
-        : AbortSignal.any([options.signal, timeoutSignal]);
     const policyFetch =
       options.fetch ?? createEndpointPolicyFetch(endpoint, endpointPolicyError.invalid);
-    const res = await policyFetch(endpoint, headers ? { headers, signal } : { signal });
+    const res = await policyFetch(endpoint, {
+      ...(headers ? { headers } : {}),
+      ...(signal === undefined ? {} : { signal }),
+    });
     throwIfAborted(options.signal);
     if (!res.ok) {
       reportError(`HTTP ${res.status}`);

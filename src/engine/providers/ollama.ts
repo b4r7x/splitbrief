@@ -9,7 +9,7 @@ import { getKnownProviderBaseURL } from '../../core/providers/catalog.js';
 import { isOllamaLocalCredentialReference } from '../../core/providers/ollama-credential.js';
 import { warnError } from '../../lib/warn.js';
 import { composeAbortSignal, throwIfAborted } from '../../utils/abort.js';
-import { DISCOVERY_HTTP_TIMEOUT_MS } from '../constants.js';
+import { OBSERVATION_HTTP_TIMEOUT_MS } from '../constants.js';
 import { stripV1Suffix } from './constants.js';
 import { resolveApiKeyOverride } from './client/api-key.js';
 import { createMetadataProvider } from './client/metadata.js';
@@ -120,7 +120,7 @@ async function observeLoadedOllamaModels(
   }>,
 ): Promise<OllamaLoadObservation> {
   throwIfAborted(input.signal);
-  const signal = composeAbortSignal(input.signal, DISCOVERY_HTTP_TIMEOUT_MS);
+  const signal = composeAbortSignal(input.signal, OBSERVATION_HTTP_TIMEOUT_MS);
   try {
     const response = await input.policyFetch(`${stripV1Suffix(input.baseURL)}/api/ps`, {
       headers: bearerHeaders(input.apiKey),
@@ -200,6 +200,7 @@ async function detectContextLengthFromShow(
     model: string;
     apiKey: string;
     policyFetch: EndpointPolicyFetch;
+    signal: AbortSignal | undefined;
   }>,
 ): Promise<number | null> {
   try {
@@ -207,7 +208,7 @@ async function detectContextLengthFromShow(
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...bearerHeaders(input.apiKey) },
       body: JSON.stringify({ name: input.model }),
-      signal: AbortSignal.timeout(DISCOVERY_HTTP_TIMEOUT_MS),
+      ...(input.signal === undefined ? {} : { signal: input.signal }),
     });
     if (!response.ok) return null;
     const json: unknown = await response.json();
@@ -271,12 +272,13 @@ export function createOllamaProvider(overrides?: ProviderOverrides): ProviderDef
       const observedAt = Date.now();
       return models.map((model) => withLoadState(model, observation, observedAt));
     },
-    detectContextLength: (model: string) =>
+    detectContextLength: (model: string, options?: ProviderModelListOptions) =>
       detectContextLengthFromShow({
         baseURL: provider.baseURL,
         model,
         apiKey: localCredential,
         policyFetch: provider[endpointPolicyFetch],
+        signal: options?.signal,
       }),
   };
 }

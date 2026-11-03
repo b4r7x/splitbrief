@@ -89,6 +89,8 @@ export interface ImplementerFactoryOptions {
   trustedCli?: CliStartGate | undefined;
   customRuntime?: CustomRunnerRuntimePort | undefined;
   slot?: Extract<RunnerSlot, { role: 'implementer' }> | undefined;
+  /** The run's signal: a stop during the availability gate is not a verdict on the seat. */
+  signal?: AbortSignal | undefined;
 }
 
 export interface ImplementerOptions extends UndeclaredWritesPolicy, Pick<InvokeOpts, 'images'> {

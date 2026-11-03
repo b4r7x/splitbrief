@@ -86,7 +86,6 @@ describe('retryAndRecord — retry budget', () => {
     expect(res.state.tasks[0]?.status).toBe('done');
     expect(res.state.currentTaskIndex).toBe(1);
 
-    expect(busEvents.filter((e) => e.type === 'task_retry')).toEqual([]);
     expect(busEvents.filter((e) => e.type === 'consult_answered')).toHaveLength(1);
     expect(retry).toHaveBeenCalledWith(expect.objectContaining({ kind: 'consult', attempt: 1 }));
 
@@ -248,7 +247,6 @@ describe('retryAndRecord — retry budget', () => {
 
     const complete = busEvents.find((e) => e.type === 'task_completed');
     expect(complete).toBeUndefined();
-    expect(busEvents.filter((e) => e.type === 'task_retry')).toEqual([]);
   });
 
   it('error event on exhaustion', async () => {

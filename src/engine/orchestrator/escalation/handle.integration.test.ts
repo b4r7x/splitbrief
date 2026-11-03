@@ -247,7 +247,6 @@ describe('handleRetryAndEscalation', () => {
     expect(outcome.state.lineages?.T001).toMatchObject({ attempts: 3 });
     expect(outcome.state.lineages?.T001?.consultRecords).toHaveLength(2);
     expect(outcome.state.pendingRecovery).toBeUndefined();
-    expect(events.filter((event) => event.type === 'task_retry')).toEqual([]);
     expect(events.filter((event) => event.type === 'queue_drained')).toEqual([
       expect.objectContaining({ count: 1, seat: 'build', taskId: task.id }),
     ]);
@@ -256,7 +255,7 @@ describe('handleRetryAndEscalation', () => {
 
   it('consults the planner before the first retry, with no local retry', async () => {
     const { projectDir, sessionId } = setupProject();
-    const { bus, events } = makeBusRecorder();
+    const { bus } = makeBusRecorder();
     const order: string[] = [];
     bus.subscribe((event) => {
       if (event.type === 'consult_answered') order.push('consult');
@@ -285,7 +284,6 @@ describe('handleRetryAndEscalation', () => {
 
     expect(order).toEqual(['consult', 'consult retry, attempt 1']);
     expect(prompts[0]).toContain('type error');
-    expect(events.filter((e) => e.type === 'task_retry')).toEqual([]);
     expect(result).toMatchObject({ completed: true, method: 'consulted', attempts: 1 });
   });
 
@@ -388,7 +386,6 @@ describe('handleRetryAndEscalation', () => {
       expect.stringContaining('Use the named export.'),
       expect.stringContaining('Check the import path.'),
     ]);
-    expect(events.filter((e) => e.type === 'task_retry')).toEqual([]);
     expect(events.filter((e) => e.type === 'task_escalating')).toHaveLength(1);
     expect(events.filter((e) => e.type === 'consult_answered')).toHaveLength(2);
     expect(events.filter((e) => e.type === 'escalate')).toEqual([]);
@@ -412,7 +409,7 @@ describe('handleRetryAndEscalation', () => {
       for (let index = 0; index < used; index += 1) {
         currentState = transition(currentState, { type: 'COUNT_ATTEMPT', taskId: task.id });
       }
-      const { bus, events } = makeBusRecorder();
+      const { bus } = makeBusRecorder();
       bus.subscribe(addEvent);
       addEvent(makeTaskStart({ taskId: task.id, total: 1 }));
       const counts: string[] = [];
@@ -454,7 +451,6 @@ describe('handleRetryAndEscalation', () => {
       expect(counts.map((line) => line.split(' · ').at(-1))).toEqual(
         kind === 'consult' ? ['attempt 2', 'attempt 3'] : ['attempt 3'],
       );
-      expect(events.filter((event) => event.type === 'task_retry')).toEqual([]);
       expect(lineageAttemptsOf(outcome.state, task)).toBe(3);
       expect(runViewStore.get().briefs).toMatchObject({ currentAttempt: 3 });
     },

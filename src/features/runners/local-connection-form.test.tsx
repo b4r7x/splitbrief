@@ -2,10 +2,12 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { ToolModelPicker } from '../../app/overlays/runners.js';
 import type { DetectedModel } from '../../core/discovery/detection.js';
+import { __testResetProbeActivity, trackProbe } from '../../engine/probe-activity.js';
 import type { ProviderCatalogOutcome } from '../../engine/providers/types.js';
 import { configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/project/detection.js';
@@ -166,6 +168,7 @@ describe('LocalConnectionForm', () => {
     feedbackStore.reset();
     pickerViewStore.reset();
     terminalSizeStore.__testReset({ cols: 100, rows: 30, isSmall: true });
+    __testResetProbeActivity();
   });
 
   afterEach(() => {
@@ -269,11 +272,87 @@ describe('LocalConnectionForm', () => {
     await flushEffects();
     await flushEffects();
 
-    expect(calls).toEqual([{ provider: 'ollama', apiBase: SECOND_SERVER }]);
+    expect(calls).toEqual([
+      { provider: 'ollama', apiBase: SECOND_SERVER, signal: expect.any(AbortSignal) },
+    ]);
     const frame = ui.lastFrame();
     expect(frame).toContain('Ollama answered');
     expect(frame).toContain('gemma3:27b');
     ui.unmount();
+  });
+
+  it('stops a running check when the form closes', async () => {
+    const signals: AbortSignal[] = [];
+    const ui = openForm(
+      (input) => {
+        if (input.signal !== undefined) signals.push(input.signal);
+        return new Promise(() => {});
+      },
+      { model: SEAT_MODEL },
+    );
+    await flushEffects();
+    ui.stdin.write(ENTER);
+    await flushEffects();
+    expect(signals.map((signal) => signal.aborted)).toEqual([false]);
+
+    ui.unmount();
+
+    expect(signals.map((signal) => signal.aborted)).toEqual([true]);
+  });
+
+  /** A probe of `subject` that started `agoMs` ago and runs until the test releases it. */
+  function heldProbe(subject: Parameters<typeof trackProbe>[0], agoMs: number) {
+    const held = Promise.withResolvers<void>();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() - agoMs);
+    const run = trackProbe(subject, () => held.promise);
+    clock.mockRestore();
+    return {
+      run,
+      release: async () => {
+        held.resolve();
+        await run;
+      },
+    };
+  }
+
+  it('names the provider, the check and the time once the check has run ten seconds', async () => {
+    let probe: ReturnType<typeof heldProbe> | undefined;
+    const ui = openForm(
+      (input) => {
+        probe = heldProbe({ provider: input.provider, check: 'model list' }, 12_000);
+        return probe.run.then(() => listing([]));
+      },
+      { model: SEAT_MODEL },
+    );
+    try {
+      await flushEffects();
+      ui.stdin.write(ENTER);
+      await flushEffects();
+
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame).toMatch(/. Checking… · Ollama model list 12s/u);
+      expect(frame).toContain('esc cancel');
+    } finally {
+      ui.unmount();
+      await probe?.release();
+    }
+  });
+
+  it('leaves the slow check of another tool out of its own status line', async () => {
+    const other = heldProbe({ tool: 'opencode', check: 'sign-in' }, 15_000);
+    const ui = openForm(() => new Promise(() => {}), { model: SEAT_MODEL });
+    try {
+      await flushEffects();
+      ui.stdin.write(ENTER);
+      await flushEffects();
+
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame).toContain('Checking…');
+      expect(frame).not.toContain('OpenCode');
+    } finally {
+      ui.unmount();
+      await other.release();
+    }
   });
 
   it('reports an unreadable server response without blaming the address or asking to start it', async () => {

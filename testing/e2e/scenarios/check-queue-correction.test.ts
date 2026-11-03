@@ -260,9 +260,6 @@ process.stdout.write(${JSON.stringify(JSON.stringify(passingVerdict({ kind: 'tas
             expect(
               log.filter((entry) => entry.kind === 'event' && entry.type === 'task_escalating'),
             ).toEqual([]);
-            expect(
-              log.filter((entry) => entry.kind === 'event' && entry.type === 'task_retry'),
-            ).toEqual([]);
             expect(JSON.stringify(log)).not.toContain('no-staged-change');
             const state = loadState(ref);
             expect(state?.phase).toBe('complete');

@@ -36,9 +36,9 @@ function joinBylineParts(parts: readonly (string | null | undefined)[]): string 
 
 /**
  * The text after `frame` on the row of a check the user waits on, fitted to `width` cells with the
- * frame. The stage, `esc cancel` and the slow check with its time stay whole. The tool's name
- * gives up its middle words first and keeps its first word, the maker; then the name goes, and
- * then the slow check goes.
+ * frame. `esc cancel` and the slow check with its time stay whole. The tool's name gives up its
+ * middle words first and keeps its first word, the maker; then the stage goes and the name gives
+ * up its middle words again; then the slow check goes and the stage comes back.
  */
 export function fitCheckingRow(
   input: Readonly<{
@@ -55,13 +55,15 @@ export function fitCheckingRow(
   const room = input.width - getTerminalCellWidth(`${input.frame} `);
   const { tool, check } = input.slowProbe;
   const [maker, ...rest] = tool.split(' ');
-  const shortened = rest.map((_, dropped) =>
-    [maker, ELLIPSIS, ...rest.slice(dropped + 1), check].join(' '),
-  );
-  const probe = [`${tool} ${check}`, ...shortened, check].find(
-    (candidate) => getTerminalCellWidth(row(candidate)) <= room,
-  );
-  return row(probe ?? null);
+  const named = [
+    `${tool} ${check}`,
+    ...rest.map((_, dropped) => [maker, ELLIPSIS, ...rest.slice(dropped + 1), check].join(' ')),
+  ];
+  const fitted = [
+    ...named.map(row),
+    ...named.map((probe) => joinBylineParts([probe, cancel])),
+  ].find((candidate) => getTerminalCellWidth(candidate) <= room);
+  return fitted ?? row(null);
 }
 
 function bylineCells(text: string): number {

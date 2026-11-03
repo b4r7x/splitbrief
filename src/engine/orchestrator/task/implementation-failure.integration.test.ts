@@ -65,7 +65,7 @@ describe('handleFailedImplementation — runner defects halt before the ladder',
     const task = makeTask({ id: 'T001' });
     const state = implementingState([task]);
     const implementer = makeImplementer({ retry: vi.fn() });
-    const { bus, events } = makeBusRecorder();
+    const { bus } = makeBusRecorder();
     const wctx = makeWorkflowContext({ implementer, bus });
 
     const next = await handleFailedImplementation({
@@ -92,7 +92,6 @@ describe('handleFailedImplementation — runner defects halt before the ladder',
     });
     // The halt counts the one call the tool refused, on the brief's lineage.
     expect(next.pendingRecovery?.details).toContain('Attempts: 1');
-    expect(events.find((e) => e.type === 'task_retry')).toBeUndefined();
   });
 
   it('an implementer that left its isolation directory halts on the evidence', async () => {
@@ -126,7 +125,6 @@ describe('handleFailedImplementation — runner defects halt before the ladder',
       message: `T001 left the isolation directory · Ollama ${evidence}`,
       recommendedAction: 'retry-same-worker',
     });
-    expect(events.find((e) => e.type === 'task_retry')).toBeUndefined();
     expect(events).toContainEqual(
       expect.objectContaining({
         type: 'error',
@@ -165,7 +163,6 @@ describe('handleFailedImplementation — runner defects halt before the ladder',
       message: 'Repository changed under T001 · branch escaped',
       recommendedAction: 'retry-same-worker',
     });
-    expect(events.find((e) => e.type === 'task_retry')).toBeUndefined();
     expect(events).toContainEqual(
       expect.objectContaining({
         type: 'error',
@@ -282,7 +279,6 @@ describe('handleFailedImplementation — an account the provider refuses is a se
     const { next, events, implementer } = await haltOn(OPENCODE_DEEPSEEK_BALANCE);
 
     expect(implementer.retry).not.toHaveBeenCalled();
-    expect(events.filter((e) => e.type === 'task_retry')).toEqual([]);
     expect(events.filter((e) => e.type === 'task_escalating')).toEqual([]);
     expect(events.filter((e) => e.type === 'consult_answered')).toEqual([]);
     expect(next.pendingRecovery).toMatchObject({
@@ -489,7 +485,6 @@ describe('handleFailedImplementation — a stop with a hand-back is consulted', 
     // Each consult answer spent one more attempt, and the third consult failed,
     // so the brief halts on it.
     expect(implementer.retry).toHaveBeenCalledTimes(2);
-    expect(events.filter((e) => e.type === 'task_retry')).toEqual([]);
     expect(events.filter((e) => e.type === 'consult_answered')).toHaveLength(2);
     expect(next.pendingRecovery).toMatchObject({ reason: 'planner-call-failed', taskId: 'T001' });
   });
@@ -821,7 +816,6 @@ describe('runTaskLoop — a Cursor seat that refuses the account is a seat-down 
     const run = await runCursorSeat({ fallback: { tool: 'claude-code' } });
 
     expectSeatDownOnFirstAttempt(run);
-    expect(run.events.filter((event) => event.type === 'task_retry')).toEqual([]);
     expect(run.state.pendingRecovery?.switchSeat?.auto?.candidate).toEqual({ tool: 'claude-code' });
   });
 
@@ -899,7 +893,6 @@ describe('runTaskLoop — a Cursor seat that refuses the account is a seat-down 
 
     expect(state.pendingRecovery).toMatchObject({ reason: 'runner-usage-limit', taskId: 'T001' });
     expect(first.consult).not.toHaveBeenCalled();
-    expect(first.events.filter((event) => event.type === 'task_retry')).toEqual([]);
   });
 
   it('keeps the halt and its automatic switch in the saved state of a reopened run', async () => {

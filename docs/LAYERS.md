@@ -37,7 +37,7 @@ Import direction is one-way, top to bottom. For the cross-check table and blocke
 - `redact.ts` — strip API keys from strings
 - `truncate.ts` — `truncateByChars`, `truncateByTailLines`
 - `format-time.ts` — `formatDuration`, `formatTime`
-- `with-timeout.ts` — wrap a promise with a timeout
+- `with-timeout.ts` — `startDeadline`: a `setTimeout` deadline joined to an abort signal
 - `frontmatter.ts` — generic YAML frontmatter parser
 - `diff.ts` — LCS diff algorithm
 

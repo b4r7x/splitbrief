@@ -3,7 +3,7 @@ import type { DetectedModel } from '../../core/discovery/detection.js';
 import { endpointPolicyFetch } from '../../core/providers/endpoint-policy.js';
 import { getKnownProviderBaseURL } from '../../core/providers/catalog.js';
 import { composeAbortSignal, throwIfAborted } from '../../utils/abort.js';
-import { DISCOVERY_HTTP_TIMEOUT_MS } from '../constants.js';
+import { OBSERVATION_HTTP_TIMEOUT_MS } from '../constants.js';
 import { stripV1Suffix } from './constants.js';
 import { createMetadataProvider } from './client/metadata.js';
 import type {
@@ -69,7 +69,7 @@ async function observeServerHealth(
   }>,
 ): Promise<ServerHealth> {
   throwIfAborted(input.signal);
-  const signal = composeAbortSignal(input.signal, DISCOVERY_HTTP_TIMEOUT_MS);
+  const signal = composeAbortSignal(input.signal, OBSERVATION_HTTP_TIMEOUT_MS);
   try {
     const response = await input.policyFetch(`${stripV1Suffix(input.baseURL)}/health`, {
       ...(signal === undefined ? {} : { signal }),

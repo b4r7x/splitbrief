@@ -94,7 +94,7 @@ describe('implementer tool-use stop', () => {
     if (outcome.state === 'success') throw new Error('expected a failed outcome');
     const summary = runnerCallFailureMessage(result, undefined);
     const { callbacks } = makeCallbacks();
-    const { bus, events } = makeBusRecorder();
+    const { bus } = makeBusRecorder();
     const retry = vi.fn().mockResolvedValue({ success: true, output: 'fixed', usage: null });
     const implementer = makeImplementer({ retry });
     const prompts: string[] = [];
@@ -125,7 +125,6 @@ describe('implementer tool-use stop', () => {
     expect(prompts).toHaveLength(1);
     expect(prompts[0]).toContain('Recent tool calls');
     expect(prompts[0]).toContain('file-');
-    expect(events.filter((e) => e.type === 'task_retry')).toEqual([]);
     expect(runResult).toMatchObject({ completed: true, method: 'consulted' });
   });
 });

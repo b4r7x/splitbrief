@@ -15,6 +15,8 @@ export interface PlannerFactoryOptions {
   customRuntime?: CustomRunnerRuntimePort | undefined;
   /** The run's global skills, which the seat may read and never write. */
   skillRoots?: readonly string[] | undefined;
+  /** The run's signal: a stop during the availability check is not a verdict on the seat. */
+  signal?: AbortSignal | undefined;
 }
 
 export type PlannerCapabilities = {

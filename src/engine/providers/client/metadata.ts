@@ -217,9 +217,12 @@ export function createMetadataProvider<TRaw extends { id: string }>(
       return models.map(toDetected);
     },
 
-    async detectContextLength(model: string): Promise<number | null> {
+    async detectContextLength(
+      model: string,
+      options?: ProviderModelListOptions,
+    ): Promise<number | null> {
       try {
-        const models = await fetchModels();
+        const models = await fetchModels(options);
         const entry = models.find((m) => m.id === model);
         return entry ? getContextLength(entry) : null;
       } catch (error) {

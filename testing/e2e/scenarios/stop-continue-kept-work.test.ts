@@ -127,11 +127,6 @@ function prompt(target: StopContinueFixture, invocation: number): string {
   return readFileSync(join(target.tmpDir, `prompt-${invocation}`), 'utf8');
 }
 
-async function retries(target: StopContinueFixture, sessionId: string): Promise<string[]> {
-  const { events } = await readRunEvents({ projectDir: target.projectDir, sessionId });
-  return events.flatMap((event) => (event.type === 'task_retry' ? [event.error] : []));
-}
-
 /** The planner's answer to a consult: the brief stays, and the next attempt carries the guidance. */
 const GUIDANCE_ANSWER = {
   answer: {
@@ -229,7 +224,6 @@ describe('stop after the brief wrote its files → continue', { timeout: 240_000
     expect(resumed.exitCode, resumed.stderr).toBe(0);
     expect(resumed.stdout).toContain('task T001: done (2 of 2 checks passed)');
     expect(invocations(target)).toBe(2);
-    expect(await retries(target, parked.sessionId)).toEqual([]);
     // The implementer's own report names one of the two files the brief holds. The call's row is
     // the one list: it names them both, says this call kept them rather than wrote them, and
     // carries no call time beside the brief's own.
@@ -301,7 +295,6 @@ describe('stop after the brief wrote its files → continue', { timeout: 240_000
     expect(resumed.tasks).toMatchObject([{ id: 'T001', status: 'done' }]);
     expect(invocations(target)).toBe(2);
     expect(prompt(target, 1)).toContain(correction);
-    expect(await retries(target, parked.sessionId)).toEqual([]);
 
     const patch = await endRunPatch(target, parked.sessionId);
     expect(patch).toContain(KEPT_GREET);
@@ -325,7 +318,6 @@ describe('stop after the brief wrote its files → continue', { timeout: 240_000
     expect(resumed.tasks).toMatchObject([{ id: 'T001', status: 'done' }]);
     expect(invocations(target)).toBe(2);
     expect(prompt(target, 1)).toContain(correction);
-    expect(await retries(target, parked.sessionId)).toEqual([]);
 
     const patch = await endRunPatch(target, parked.sessionId);
     expect(patch).toContain('+  const trimmed = name.trim();');
@@ -349,7 +341,6 @@ describe('stop after the brief wrote its files → continue', { timeout: 240_000
     expect(resumed.exitCode, resumed.stderr).toBe(0);
     expect(resumed.stdout).toContain('task T001: done (2 of 2 checks passed)');
     expect(invocations(target)).toBe(3);
-    expect(await retries(target, parked.sessionId)).toEqual([]);
 
     const patch = await endRunPatch(target, parked.sessionId);
     expect(patch).toContain(KEPT_GREET);
@@ -373,7 +364,6 @@ describe('stop after the brief wrote its files → continue', { timeout: 240_000
     expect(resumed.exitCode, resumed.stderr).toBe(0);
     expect(resumed.stdout).toContain('task T001: done (2 of 2 checks passed)');
     expect(invocations(target)).toBe(2);
-    expect(await retries(target, parked.sessionId)).toEqual([]);
     // The call names the file it wrote, and the file the stopped attempt left beside it, once.
     for (const rows of await resumedRows(target, parked.sessionId)) {
       const done = rows.findIndex((row) => /^src\/greet\.ts(?: {2}|$)/.test(row));
@@ -410,7 +400,6 @@ describe('stop after the brief wrote its files → continue', { timeout: 240_000
     expect(resumed.exitCode, resumed.stderr).toBe(0);
     expect(resumed.stdout).toContain('task T001: done (2 of 2 checks passed)');
     expect(invocations(target)).toBe(3);
-    expect(await retries(target, parked.sessionId)).toEqual([]);
     expect(
       (await eventTypes(target, parked.sessionId)).filter((type) => type === 'consult_answered'),
     ).toHaveLength(1);
@@ -495,7 +484,6 @@ describe('a correction on a stopped run reaches the review', { timeout: 240_000 
     expect(invocations(target)).toBe(2);
     const types = await eventTypes(target, parked.sessionId);
     expect(types).not.toContain('consult_answered');
-    expect(types).not.toContain('task_retry');
     expect(types).not.toContain('task_escalating');
     expect(types).not.toContain('implementer_generate_failed');
     expect(readFileSync(join(target.tmpDir, 'review-prompt'), 'utf8')).toContain(

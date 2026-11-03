@@ -22,15 +22,10 @@ import {
 } from '../providers/selected-model.js';
 import type { ProviderDef } from '../providers/types.js';
 import { isAbortError } from '../../utils/abort.js';
+import { startDeadline } from '../../utils/with-timeout.js';
+import { CLI_PROBE_TIMEOUT_MS } from '../constants.js';
+import { trackProbe } from '../probe-activity.js';
 import { assertNever } from '../../utils/type-guards.js';
-
-/**
- * Readiness runs before every start, so the budget is what a person will wait
- * for, not what a slow endpoint may take. Overrunning it is evidence of its own
- * — the connection timed out — while a caller that stops waiting leaves no
- * evidence at all and stays `not-probed`.
- */
-export const RUNNER_AVAILABILITY_PROBE_TIMEOUT_MS = 2_000;
 
 export type RunnerAvailabilityRole = RunnerAvailabilitySlot['role'];
 
@@ -142,17 +137,6 @@ function selectedModelVerdict(
   }
 }
 
-type ProbeDeadline = Readonly<{ signal: AbortSignal; expired: () => boolean }>;
-
-/** Keeps the readiness budget distinguishable from the caller's own abort. */
-function probeDeadline(signal: AbortSignal | undefined): ProbeDeadline {
-  const deadline = AbortSignal.timeout(RUNNER_AVAILABILITY_PROBE_TIMEOUT_MS);
-  return {
-    signal: signal === undefined ? deadline : AbortSignal.any([signal, deadline]),
-    expired: () => deadline.aborted,
-  };
-}
-
 async function catalogAdmission(
   runner: ProbeableRunner,
   provider: ProviderDef,
@@ -212,16 +196,18 @@ async function probeApiRunner(
     };
   }
 
-  const deadline = probeDeadline(signal);
+  // Running past the probe ceiling is an observation about the connection; the
+  // caller's abort is the absence of one, and stays `not-probed`.
+  const deadline = startDeadline(signal, CLI_PROBE_TIMEOUT_MS);
   try {
     return {
       provider: runner.provider,
       endpoint,
-      verdict: await catalogAdmission(runner, provider, deadline.signal),
+      verdict: await trackProbe({ provider: runner.provider, check: 'model list' }, () =>
+        catalogAdmission(runner, provider, deadline.signal),
+      ),
     };
   } catch (cause) {
-    // Our own budget running out is an observation about the connection; the
-    // caller's abort is the absence of one.
     const timedOut = deadline.expired() && signal?.aborted !== true;
     return {
       provider: runner.provider,
@@ -230,6 +216,8 @@ async function probeApiRunner(
         ? { state: 'timeout', diagnostic: diagnose(cause) }
         : { state: 'not-probed', diagnostic: diagnose(cause) },
     };
+  } finally {
+    deadline.clear();
   }
 }
 

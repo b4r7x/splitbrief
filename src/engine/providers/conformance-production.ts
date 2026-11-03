@@ -13,6 +13,7 @@ import type { RunnerCallResult } from '../calls/types.js';
 import { isRecord } from '../../utils/type-guards.js';
 import {
   COMPLETION_TIMEOUT_MS,
+  MODEL_LIST_TIMEOUT_MS,
   PROVIDER_CONFORMANCE_EXIT_CODES,
   type ProviderConformanceFetchOptions,
   type ProviderConformanceOutcome,
@@ -88,7 +89,9 @@ async function runProductionProbe(
   candidate: UnregisteredProviderCandidateValue,
   provider: UnregisteredOpenAICompatProvider,
 ): Promise<{ readonly result: RunnerCallResult; readonly model: string }> {
-  const discovered = await provider.listModels();
+  const discovered = await provider.listModels({
+    signal: AbortSignal.timeout(MODEL_LIST_TIMEOUT_MS),
+  });
   const model = chooseModel(candidate.rawContract, candidate.knownModels, discovered);
   const expectedModels = candidate.rawContract.modelIds;
   for (const expected of expectedModels) {

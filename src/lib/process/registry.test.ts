@@ -33,13 +33,13 @@ describe('killProcessScope', () => {
 
   it("ends a run's processes and leaves a process that belongs to no run running", async () => {
     const outside = spawn('sleep', ['60'], { detached: true, stdio: 'ignore' });
-    registerProcess(outside, { group: true, ledger: false });
+    registerProcess(outside, { group: true });
     const withOutside = registeredProcessCount();
     const scope = createProcessScope();
     const inside = await runInProcessScope(scope, async () => {
       await Promise.resolve();
       const proc = spawn('sleep', ['60'], { detached: true, stdio: 'ignore' });
-      registerProcess(proc, { group: true, ledger: false });
+      registerProcess(proc, { group: true });
       return proc;
     });
     expect(processScopeCount(scope)).toBe(1);
@@ -106,7 +106,7 @@ describe('killAllProcesses', () => {
     const second = { pid: secondPid, exitCode: null, signalCode: null } as ChildProcess;
     const alive = new Set([firstPid]);
     const signaled: number[] = [];
-    registerProcess(first, { group: true, ledger: false });
+    registerProcess(first, { group: true });
 
     const processKill = vi.spyOn(process, 'kill').mockImplementation((targetPid, signal) => {
       const pid = -targetPid;
@@ -120,7 +120,7 @@ describe('killAllProcesses', () => {
         signaled.push(pid);
         if (pid === firstPid) {
           alive.add(secondPid);
-          registerProcess(second, { group: true, ledger: false });
+          registerProcess(second, { group: true });
         }
         alive.delete(pid);
       }
@@ -426,7 +426,7 @@ describe('killAllProcesses', () => {
       { detached: true, stdio: 'ignore' },
     );
     procs.push(proc);
-    registerProcess(proc, { group: true, ledger: false });
+    registerProcess(proc, { group: true });
     await new Promise<void>((resolve) => proc.once('spawn', resolve));
 
     // Only the grace deadline runs on the fake clock: the signals, the exit and
@@ -492,24 +492,6 @@ describe('setProcessLedger', () => {
     expect(released).toEqual([]);
     await killProcess(proc, { group: true });
     expect(released).toEqual([proc.pid]);
-  });
-
-  it('ledger: false registers the process without recording or releasing ledger entries', () => {
-    const recorded: number[] = [];
-    const released: number[] = [];
-    setProcessLedger({
-      record: (pid) => recorded.push(pid),
-      release: (pid) => released.push(pid),
-    });
-
-    const proc = spawn('sleep', ['60'], { detached: true, stdio: 'ignore' });
-    procs.push(proc);
-
-    registerProcess(proc, { group: true, ledger: false });
-    unregisterProcess(proc);
-
-    expect(recorded).toEqual([]);
-    expect(released).toEqual([]);
   });
 
   it('clearProcessLedger only uninstalls the ledger it is given', () => {

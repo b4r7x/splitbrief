@@ -35,7 +35,7 @@ export function ToolRollCall({ footer }: { footer?: ReactNode }) {
           const slow =
             state === 'checking'
               ? slowestProbe(
-                  snapshot.probes.filter((probe) => probe.tool === tool),
+                  snapshot.probes.filter((probe) => 'tool' in probe && probe.tool === tool),
                   now,
                 )
               : null;

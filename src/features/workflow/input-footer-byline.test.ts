@@ -447,10 +447,14 @@ describe('fitCheckingRow', () => {
     },
   );
 
-  // The crew panel's hint row at 60 columns: the tool's name goes before any word of its check.
-  it('keeps a two-word check whole when the tool name does not fit', () => {
+  // The crew panel's hint row at 60 columns: the stage goes before the name of what is slow.
+  it('keeps the name, the check and esc cancel when the stage does not fit', () => {
     expect(fitCheckingRow({ ...row, cancellable: true, width: 50 })).toBe(
-      'Checking tools · model list 59s · esc cancel',
+      'Google … CLI model list 59s · esc cancel',
+    );
+    const slowProbe = { tool: 'Ollama', check: 'model list 12s' };
+    expect(fitCheckingRow({ ...row, slowProbe, cancellable: true, width: 50 })).toBe(
+      'Ollama model list 12s · esc cancel',
     );
   });
 
@@ -460,7 +464,7 @@ describe('fitCheckingRow', () => {
       'Checking tools · OpenCode … sign-in 1m 5s · esc cancel',
     );
     expect(fitCheckingRow({ ...row, slowProbe, cancellable: true, width: 48 })).toBe(
-      'Checking tools · sign-in 1m 5s · esc cancel',
+      'OpenCode CLI sign-in 1m 5s · esc cancel',
     );
   });
 

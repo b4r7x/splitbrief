@@ -188,7 +188,6 @@ export async function spawnProbe({
       cwd,
       env,
       detached: true,
-      ledger: false,
       signal,
       partialStdoutMaxBytes: maxOutputBytes,
       partialStderrMaxBytes: maxOutputBytes,

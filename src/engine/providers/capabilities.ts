@@ -3,6 +3,7 @@ import { DEFAULT_UNKNOWN_CONTEXT_LENGTH } from '../../core/tokens/context-length
 import type { ProviderDef } from './types.js';
 import { resolveRunnerContextWindow } from './model/context-window.js';
 import { warnError } from '../../lib/warn.js';
+import { OBSERVATION_HTTP_TIMEOUT_MS } from '../constants.js';
 import { providerError } from './errors.js';
 import { getProvider } from './registry.js';
 
@@ -55,14 +56,18 @@ export async function detectCapabilities(config: Config): Promise<DetectedCapabi
   if (config.implementer.kind === 'api') {
     const provider = getImplementerProvider(config);
     if (provider.detectContextLength) {
+      const signal = AbortSignal.timeout(OBSERVATION_HTTP_TIMEOUT_MS);
       try {
-        const ctx = await provider.detectContextLength(config.implementer.model);
+        const ctx = await provider.detectContextLength(config.implementer.model, { signal });
         if (ctx) return { contextLength: ctx, origin: 'detected' };
       } catch (error) {
-        warnError(
-          `Could not read the context length of ${config.implementer.model} from ${provider.name}`,
-          error,
-        );
+        // A read past its bound leaves the length unknown; the next source supplies it.
+        if (!signal.aborted) {
+          warnError(
+            `Could not read the context length of ${config.implementer.model} from ${provider.name}`,
+            error,
+          );
+        }
       }
     }
   }

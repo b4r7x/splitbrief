@@ -669,6 +669,8 @@ A commit, a branch switch or a pull in your checkout does not halt the brief: a 
 
 **Prevention:** Readiness probes the endpoint before the run starts, so a stopped daemon is a blocker at `doctor` and at `start` rather than a mid-run surprise after the planning phase has been paid for (`runners.availability.implementer.<profile>`, `src/core/readiness/checks/availability.ts`). To draft a spec while the daemon is down, use `splitbrief spec` — it never calls the implementer, so its readiness does not gate on one.
 
+A provider that `did not answer in time` did not send its model list in one minute. Each check of the model list waits up to one minute: before the start, at the start and before each brief. The provider scan of home, setup and the model picker, and the Check of a local server, wait up to one minute too. A provider that answers after six seconds is found, not failed. After ten seconds the screen names the provider and the check, for example `Checking tools · Ollama model list 10s`, and Esc stops the check. A stop during the check is not reported as an unavailable provider.
+
 **See also:** [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md), `src/engine/implementers/api.ts`.
 
 ---

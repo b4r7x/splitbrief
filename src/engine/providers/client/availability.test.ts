@@ -1,4 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { CLI_PROBE_TIMEOUT_MS } from '../../constants.js';
+import { getProvider } from '../registry.js';
 import { createProviderAvailability, describeProviderUnavailability } from './availability.js';
 
 describe('describeProviderUnavailability', () => {
@@ -52,5 +54,28 @@ describe('describeProviderUnavailability', () => {
     const diagnostic = availability.unavailabilityReason() ?? '';
     expect(diagnostic).not.toContain(credential);
     expect(diagnostic).toContain('***REDACTED***');
+  });
+
+  it('names a model list that did not answer within the probe ceiling as the reason', async () => {
+    vi.stubGlobal('fetch', (_input: RequestInfo | URL, init?: RequestInit) => {
+      return new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
+      });
+    });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const availability = createProviderAvailability(
+        getProvider('ollama', { apiBase: 'http://127.0.0.1:11434/v1' }),
+      );
+      const pending = availability.isAvailable();
+
+      await vi.advanceTimersByTimeAsync(CLI_PROBE_TIMEOUT_MS);
+
+      expect(await pending).toBe(false);
+      expect(availability.unavailabilityReason()).toBe('the model list did not answer in time');
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
   });
 });

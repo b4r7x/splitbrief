@@ -7246,6 +7246,11 @@ const projections = [
   startReadinessWarningProjection,
   planCompiledProjection,
   firstBriefAfterPlanProjection,
+  // The same brief while its API seat check has run twelve seconds (held by the registry).
+  {
+    ...firstBriefAfterPlanProjection,
+    scenarioId: scenarioId('workflow-brief-check-slow-provider'),
+  },
   implementationProjection,
   // The same run a moment after it was continued: the screen holds it and its engine has not
   // started its first call yet (`markWorkflowPaused`, applied by the registry).

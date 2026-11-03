@@ -205,7 +205,6 @@ describe('runHeldCorrection — corrections during checks', () => {
     expect(briefCorrections(outcome.state, task.id)).toEqual([]);
     expect(outcome.state.messageQueue).toEqual([]);
     expect(loadState(ref)?.messageQueue).toEqual([]);
-    expect(events.filter((event) => event.type === 'task_retry')).toEqual([]);
     expect(events.filter((event) => event.type === 'task_completed')).toHaveLength(1);
     expect(events.filter((event) => event.type === 'queue_drained')).toEqual([]);
   });
@@ -261,7 +260,6 @@ describe('runHeldCorrection — corrections during checks', () => {
     expect(outcome.result).toMatchObject({ completed: true, method: 'local', attempts: 0 });
     expect(outcome.state.tasks[0]?.status).toBe('done');
     expect(outcome.state.lineages?.T001).toMatchObject({ attempts: 3, consultRecords: [] });
-    expect(events.filter((event) => event.type === 'task_retry')).toEqual([]);
     expect(events.filter((event) => event.type === 'task_completed')).toHaveLength(1);
     expect(outcome.state.messageQueue[0]?.deliveredTo?.implementer).toBeDefined();
   });
@@ -363,7 +361,6 @@ describe('handleRetryAndEscalation — aborted implementer call', () => {
     expect(result).toEqual({ completed: false, method: 'failed', attempts: 0 });
     expect(retry).not.toHaveBeenCalled();
     expect(events.filter((e) => e.type === 'escalate')).toEqual([]);
-    expect(events.filter((e) => e.type === 'task_retry')).toEqual([]);
   });
 });
 
@@ -507,7 +504,6 @@ describe('handleRetryAndEscalation — cuts and timeouts in the consult loop', (
     });
 
     expect(retry).toHaveBeenCalledTimes(2);
-    expect(events.filter((e) => e.type === 'task_retry')).toEqual([]);
     expect(events.filter((e) => e.type === 'consult_answered')).toHaveLength(2);
     expect(events.filter((e) => e.type === 'no_progress_cut')).toEqual([
       expect.objectContaining({

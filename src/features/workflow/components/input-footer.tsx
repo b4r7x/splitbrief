@@ -5,7 +5,7 @@ import { useStores } from '../../../stores/use-stores.js';
 import { configStore } from '../../../stores/project/config.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { routerStore } from '../../../stores/navigation/router.js';
-import { preparationStore } from '../../../stores/navigation/preparation.js';
+import { CHECKING_TOOLS_STAGE, preparationStore } from '../../../stores/navigation/preparation.js';
 import { getActiveRailStage, phaseStage, railStageSeat } from '../../../core/rail-stages.js';
 import { deriveLiveStatus } from '../display/live-activity.js';
 import { seatWaitSentence } from '../../../core/sessions/seat-wait-line.js';
@@ -133,8 +133,13 @@ export function InputFooter({
   // A run on screen that is paused with no stop of its own and no record byline has been
   // continued: the engine is reaping, restoring and re-entering before its first event.
   const resuming = lifecycle.status === 'paused' && stopped === null && givenByline === undefined;
-  const { frame } = useSpinnerFrame(display.animate || checkingStage !== null || resuming);
   const slowProbe = useSlowProbeText();
+  // A live run checks its API seat at its start and before each brief, after preparation settled.
+  const runChecking =
+    slowProbe !== null && givenByline === undefined && lifecycle.status !== 'complete';
+  const { frame } = useSpinnerFrame(
+    display.animate || checkingStage !== null || resuming || runChecking,
+  );
 
   const stageSeat = activeStage === null ? null : railStageSeat(activeStage.stage);
   const stageParts: ConversationRowSegment[] = [
@@ -222,6 +227,23 @@ export function InputFooter({
           },
         ];
   const stalledHint = stall === null ? null : silenceTail(operations.active, stall);
+  // The legend row already offers the run's stop, so the row names only the check and its wait.
+  const runCheckingLead: ConversationRowSegment[] =
+    slowProbe === null
+      ? []
+      : [
+          { text: `${frame} `, tone: stateTone('running') },
+          {
+            text: fitCheckingRow({
+              frame,
+              stage: CHECKING_TOOLS_STAGE,
+              slowProbe,
+              cancellable: false,
+              width: getChromeContentWidth(Math.max(1, width ?? cols)),
+            }),
+            tone: 'textDim',
+          },
+        ];
   const wait = runView.seatWait;
   const seatWait = wait?.live ? seatWaitSentence(wait.tool, wait.wait.resetAt) : null;
   const seatWaitLead: ConversationRowSegment[] =
@@ -267,20 +289,22 @@ export function InputFooter({
               ? { lead: interruptedLead, hintText: null }
               : seatWait !== null
                 ? { lead: seatWaitLead, hintText: null }
-                : resuming
-                  ? { lead: resumingLead, hintText: null }
-                  : stall !== null
-                    ? {
-                        lead: stalledLead,
-                        hintText: stalledHint,
-                      }
-                    : liveStatus !== null
+                : runChecking
+                  ? { lead: runCheckingLead, hintText: null }
+                  : resuming
+                    ? { lead: resumingLead, hintText: null }
+                    : stall !== null
                       ? {
-                          lead: liveLead,
-                          leadClock: elapsed,
-                          hintText: null,
+                          lead: stalledLead,
+                          hintText: stalledHint,
                         }
-                      : { lead: stageLead, hintText: null };
+                      : liveStatus !== null
+                        ? {
+                            lead: liveLead,
+                            leadClock: elapsed,
+                            hintText: null,
+                          }
+                        : { lead: stageLead, hintText: null };
 
   const queuedCopy =
     lifecycle.queueDepth > 0 && (atRestStatus === null || atRestStatus === 'open')

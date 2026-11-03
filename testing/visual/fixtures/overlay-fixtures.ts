@@ -90,7 +90,7 @@ import { makeReviewFixInsertedEvents } from '../../helpers/events/task.js';
 import { createEvidenceLedger } from '../../../src/core/evidence/ledger-state.js';
 import { hashTaskBrief } from '../../../src/core/evidence/brief-hash.js';
 import type { FixtureFactory, FixtureLifecycle, FixtureRegistry } from './common.js';
-import { VISUAL_FIXTURE_EPOCH } from './common.js';
+import { trackSlowProbe, VISUAL_FIXTURE_EPOCH } from './common.js';
 import {
   opencodeApiModels,
   opencodeConfigOnlyModels,
@@ -1905,7 +1905,33 @@ function localConnectionFixture(
           catalog: input.models?.length === 0 ? 'empty' : 'populated',
           models: input.models ?? [],
         };
-  return { ...fixture, connectionOutcome: outcome, afterMount: (write) => write('\r') };
+  return { ...fixture, checkConnection: async () => outcome, afterMount: (write) => write('\r') };
+}
+
+// A check past ten seconds: the form names the provider, the check and the wait. The check stays
+// open until the scenario ends, and the end fails it.
+function localConnectionSlowFixture(): FixtureLifecycle {
+  const fixture = localConnectionFixture();
+  const release = Promise.withResolvers<void>();
+  const held: Promise<ProviderCatalogOutcome>[] = [];
+  return {
+    ...fixture,
+    checkConnection: (input) => {
+      const run = trackSlowProbe({ provider: input.provider, check: 'model list' }, () =>
+        release.promise.then((): never => {
+          throw new Error('The scenario ended.');
+        }),
+      );
+      held.push(run);
+      return run;
+    },
+    afterMount: (write) => write('\r'),
+    teardown: async () => {
+      release.resolve();
+      await Promise.allSettled(held);
+      await fixture.teardown();
+    },
+  };
 }
 
 // The cursor opens on the expanded model row; one step down lands it on the auth row, whose
@@ -3099,6 +3125,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
     () => localConnectionFixture({ failure: 'malformed' }),
   ],
   [scenarioId('overlay-local-connection-empty'), () => localConnectionFixture({ models: [] })],
+  [scenarioId('overlay-local-connection-slow'), localConnectionSlowFixture],
   [
     scenarioId('overlay-local-connection-missing'),
     () => localConnectionFixture({ models: [{ id: 'gemma3:27b' }] }),

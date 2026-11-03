@@ -184,6 +184,8 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     } catch (err) {
       availabilityError = toErrorMessage(err);
     }
+    // A stop during the gate is not a verdict on the implementer.
+    if (wctx.signal?.aborted) return { state, status: 'stopped' };
     if (!isImplementerAvailable) {
       const tool = getRunnerCatalogDisplayName(selectedProfile.config);
       const reason =

@@ -367,6 +367,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     injectedPlanner: opts._planner,
     injectedReviewer: opts._reviewer,
     skillRoots: skills.skillRoots,
+    signal: opts.signal,
   });
   if (savedState && !hasPendingRecovery) {
     savedState = await autoCompactResumeContext({
@@ -397,13 +398,19 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
   // After the rebuild: the continuation hands the steer to the step it resumes.
   publishResumedSteer({ bus, projectDir, sessionId, state: savedState, steer: opts.steer });
   if (!hasPendingRecovery) {
-    const available = await planner.isAvailable();
+    // A stop during the check ends the start; it says nothing about the planner.
+    const available = await planner.isAvailable().catch((cause: unknown) => {
+      if (opts.signal?.aborted === true) return false;
+      throw cause;
+    });
     if (!available) {
-      publishError({
-        bus: bus,
-        phase: savedState?.phase ?? 'idle',
-        message: plannerUnavailableMessage(config.planner, planner),
-      });
+      if (opts.signal?.aborted !== true) {
+        publishError({
+          bus: bus,
+          phase: savedState?.phase ?? 'idle',
+          message: plannerUnavailableMessage(config.planner, planner),
+        });
+      }
       return {
         ok: false,
         summary: buildSummary({ ...summaryBase, state: savedState ?? createInitialState(feature) }),
@@ -419,6 +426,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     customRuntime,
     bus,
     injectedImplementer: opts._implementer,
+    signal: opts.signal,
   });
 
   const sessionPath = sessionDir(projectDir, sessionId);

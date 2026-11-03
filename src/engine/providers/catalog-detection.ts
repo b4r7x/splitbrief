@@ -9,10 +9,11 @@ import type { DetectedModel, ProviderDetection } from '../../core/discovery/dete
 import { API_PROVIDER_CATALOG } from '../../core/providers/api-provider-catalog.js';
 import type { ApiProviderId } from '../../core/providers/api-provider-catalog.js';
 import { getProvider } from './registry.js';
-import { withTimeout } from '../../utils/with-timeout.js';
-import { DETECTION_TIMEOUT_MS } from '../constants.js';
+import { CLI_PROBE_TIMEOUT_MS } from '../constants.js';
+import { trackProbe } from '../probe-activity.js';
 import { matches } from '../../utils/error.js';
 import { throwIfAborted } from '../../utils/abort.js';
+import { startDeadline } from '../../utils/with-timeout.js';
 import { sanitizeProviderDiagnostic } from './client/request.js';
 
 function credentialState(
@@ -156,6 +157,7 @@ export interface DetectProviderCatalogOptions {
   readonly provider: ApiProviderId;
   /** Applies only to this provider's current config, never to another source. */
   readonly configOverrides?: ProviderOverrides | undefined;
+  /** The caller's stop (Esc): its abort rejects. Running past the probe ceiling is a `timeout` outcome. */
   readonly signal?: AbortSignal | undefined;
 }
 
@@ -206,15 +208,16 @@ export async function detectProviderCatalog(
     };
   }
 
+  const deadline = startDeadline(options.signal, CLI_PROBE_TIMEOUT_MS);
+  const list = { signal: deadline.signal };
   try {
-    const models: DetectedModel[] = provider.listModelsWithMetadata
-      ? await withTimeout(
-          provider.listModelsWithMetadata({ signal: options.signal }),
-          DETECTION_TIMEOUT_MS,
-        )
-      : (
-          await withTimeout(provider.listModels({ signal: options.signal }), DETECTION_TIMEOUT_MS)
-        ).map((id) => ({ id }));
+    const models: DetectedModel[] = await trackProbe(
+      { provider: options.provider, check: 'model list' },
+      async () =>
+        provider.listModelsWithMetadata
+          ? await provider.listModelsWithMetadata(list)
+          : (await provider.listModels(list)).map((id) => ({ id })),
+    );
     throwIfAborted(options.signal);
     const warning = provider.getLastError?.();
     if (models.length === 0 && warning !== undefined) {
@@ -255,6 +258,8 @@ export async function detectProviderCatalog(
       apiKey,
       configOverrides: options.configOverrides,
     });
+  } finally {
+    deadline.clear();
   }
 }
 

@@ -10,7 +10,7 @@ import { configPath, readConfigDocument } from '../../../src/core/config/load/do
 import type { CLIOverrides } from '../../../src/core/config/runtime/overrides/schema.js';
 import { createProductionDetectionDeps } from '../../../src/engine/detection/deps.js';
 import { detectionStore } from '../../../src/stores/project/detection.js';
-import { trackProbe, trackToolCheck } from '../../../src/engine/probe-activity.js';
+import { trackToolCheck } from '../../../src/engine/probe-activity.js';
 import type { CliToolId } from '../../../src/core/runners/cli-tool-catalog.js';
 import { skillsStore } from '../../../src/stores/project/skills.js';
 import { composerDraftStore } from '../../../src/stores/ui/composer-draft.js';
@@ -79,6 +79,7 @@ import {
   type FixtureContext,
   type FixtureLifecycle,
   type FixtureRegistry,
+  trackSlowProbe,
 } from './common.js';
 
 /**
@@ -834,24 +835,28 @@ function holdToolChecks(input: {
   readonly checking?: readonly CliToolId[];
   readonly slowSignIn?: CliToolId;
   readonly slowModelList?: CliToolId;
+  /** An API provider's config id whose model list is past ten seconds. */
+  readonly slowProviderModelList?: string;
 }): () => Promise<void> {
   const release = Promise.withResolvers<void>();
   const held: Promise<void>[] = [];
   for (const tool of input.checked ?? []) held.push(trackToolCheck(tool, () => Promise.resolve()));
   for (const tool of input.checking ?? []) held.push(trackToolCheck(tool, () => release.promise));
-  const fixedNow = Date.now;
-  Date.now = () => fixedNow() - 12_000;
-  try {
-    if (input.slowSignIn !== undefined) {
-      held.push(trackProbe({ tool: input.slowSignIn, check: 'sign-in' }, () => release.promise));
-    }
-    if (input.slowModelList !== undefined) {
-      held.push(
-        trackProbe({ tool: input.slowModelList, check: 'model list' }, () => release.promise),
-      );
-    }
-  } finally {
-    Date.now = fixedNow;
+  if (input.slowSignIn !== undefined) {
+    held.push(trackSlowProbe({ tool: input.slowSignIn, check: 'sign-in' }, () => release.promise));
+  }
+  if (input.slowModelList !== undefined) {
+    held.push(
+      trackSlowProbe({ tool: input.slowModelList, check: 'model list' }, () => release.promise),
+    );
+  }
+  if (input.slowProviderModelList !== undefined) {
+    held.push(
+      trackSlowProbe(
+        { provider: input.slowProviderModelList, check: 'model list' },
+        () => release.promise,
+      ),
+    );
   }
   return async () => {
     release.resolve();
@@ -1131,10 +1136,12 @@ function createWorkflowContinuingFixture(): FixtureLifecycle {
   };
 }
 
-/** A check past ten seconds on one tool: the status row names the tool and the wait. */
+/** A check past ten seconds on one tool or API provider: the status row names it and the wait. */
 function withSlowToolCheck(
   fixture: FixtureLifecycle,
-  slow: Readonly<{ slowSignIn: CliToolId } | { slowModelList: CliToolId }>,
+  slow: Readonly<
+    { slowSignIn: CliToolId } | { slowModelList: CliToolId } | { slowProviderModelList: string }
+  >,
 ): FixtureLifecycle {
   let release: (() => Promise<void>) | undefined;
   return {
@@ -1665,6 +1672,10 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
     () => withSlowToolCheck(createHomePreparingFixture(), { slowModelList: 'antigravity' }),
   ],
   [
+    scenarioId('home-preparing-slow-provider'),
+    () => withSlowToolCheck(createHomePreparingFixture(), { slowProviderModelList: 'ollama' }),
+  ],
+  [
     scenarioId('home-starting-slow-long'),
     () => withSlowToolCheck(createHomeStartingFixture(), { slowModelList: 'antigravity' }),
   ],
@@ -1731,6 +1742,10 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
     () => withSlowToolCheck(createWorkflowContinuingFixture(), { slowSignIn: 'opencode' }),
   ],
   [
+    scenarioId('workflow-continuing-slow-provider'),
+    () => withSlowToolCheck(createWorkflowContinuingFixture(), { slowProviderModelList: 'ollama' }),
+  ],
+  [
     scenarioId('workflow-continuing-slow-long'),
     () => withSlowToolCheck(createWorkflowContinuingFixture(), { slowModelList: 'antigravity' }),
   ],
@@ -1766,6 +1781,10 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   [
     scenarioId('setup-starting-slow-long'),
     () => withSlowToolCheck(createSetupStartingFixture(), { slowModelList: 'antigravity' }),
+  ],
+  [
+    scenarioId('setup-starting-slow-provider'),
+    () => withSlowToolCheck(createSetupStartingFixture(), { slowProviderModelList: 'ollama' }),
   ],
   [scenarioId('setup-no-config-cached-refresh'), () => createSetupFixture('cached-refresh')],
   [scenarioId('setup-no-config-cached-failure'), () => createSetupFixture('cached-failure')],

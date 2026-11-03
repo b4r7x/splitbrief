@@ -689,7 +689,6 @@ async function runHelpCommand({
       timeout: CLI_PROBE_TIMEOUT_MS,
       signal,
       onProgress: () => undefined,
-      ledger: false,
     });
     if (result.timedOut) return null;
     return `${result.output}\n${result.stderr}`.trim();

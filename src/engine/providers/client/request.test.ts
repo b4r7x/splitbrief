@@ -68,38 +68,6 @@ describe('fetchModelList', () => {
     expect(errors.at(-1)).toBeUndefined();
   });
 
-  it('passes an AbortSignal to fetch and aborts when the request stalls past the timeout', async () => {
-    vi.useFakeTimers();
-    try {
-      let signalRef: AbortSignal | undefined;
-      vi.mocked(globalThis.fetch).mockImplementationOnce((_url, init) => {
-        signalRef = (init as RequestInit | undefined)?.signal as AbortSignal;
-        return new Promise((_resolve, reject) => {
-          signalRef?.addEventListener('abort', () => {
-            reject(new DOMException('aborted', 'AbortError'));
-          });
-        });
-      });
-
-      const errors: Array<string | undefined> = [];
-      const pending = fetchModelList({
-        endpoint: 'https://slow.example.com/v1/models',
-        onError: (err: string | undefined) => errors.push(err),
-        extractModels: defaultExtract,
-      });
-
-      await vi.advanceTimersByTimeAsync(6_000);
-      const result = await pending;
-
-      expect(signalRef).toBeInstanceOf(AbortSignal);
-      expect(signalRef?.aborted).toBe(true);
-      expect(result).toEqual([]);
-      expect(errors.some((e) => /abort|timeout/i.test(e ?? ''))).toBe(true);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
   it('uses custom headers verbatim when provided (no Authorization injection)', async () => {
     vi.unstubAllGlobals();
     await withLoopbackServer(

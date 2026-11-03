@@ -262,7 +262,6 @@ describe('runSingleTask — completion, abort and approval evidence', { timeout:
     expect(result.pendingRecovery).toBeUndefined();
     expect(result.tasks[0]?.status).not.toBe('done');
     expect(events.find((e) => e.type === 'recovery_prompted')).toBeUndefined();
-    expect(events.find((e) => e.type === 'task_retry')).toBeUndefined();
   });
 
   it('aborting after validation passes returns state without completing the task', async () => {

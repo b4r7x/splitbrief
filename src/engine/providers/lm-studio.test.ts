@@ -2,7 +2,8 @@ import http from 'node:http';
 import { describe, expect, it, vi } from 'vitest';
 import { createLmStudioProvider } from './lm-studio.js';
 import { DetectedModelSchema } from '../../core/discovery/detection.js';
-import { DISCOVERY_HTTP_TIMEOUT_MS } from '../constants.js';
+import { CLI_PROBE_TIMEOUT_MS } from '../constants.js';
+import { detectProviderCatalog } from './catalog-detection.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 
 type RequestRecord = Readonly<{
@@ -442,20 +443,23 @@ describe('createLmStudioProvider native timeout', () => {
       vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
         const request = recordRequest(input, init);
         requests.push(request);
-        requestSignal = new Request(input, init).signal;
+        const signal = new Request(input, init).signal;
+        requestSignal = signal;
         return new Promise((_resolve, reject) => {
-          requestSignal?.addEventListener(
-            'abort',
-            () => reject(new DOMException('native inventory timed out', 'AbortError')),
-            { once: true },
-          );
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true });
         });
       });
 
-      const pending = createLmStudioProvider().listModels();
-      await vi.advanceTimersByTimeAsync(DISCOVERY_HTTP_TIMEOUT_MS + 1);
+      let settled = false;
+      const pending = detectProviderCatalog({ provider: 'lm-studio' }).finally(() => {
+        settled = true;
+      });
+      await vi.advanceTimersByTimeAsync(CLI_PROBE_TIMEOUT_MS - 1);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(settled).toBe(true);
 
-      expect(await pending).toEqual([]);
+      expect(await pending).toMatchObject({ kind: 'failed', failure: 'timeout' });
       expect(requestSignal?.aborted).toBe(true);
       expect(requests).toEqual([
         { method: 'GET', pathname: '/api/v1/models', authorization: undefined },

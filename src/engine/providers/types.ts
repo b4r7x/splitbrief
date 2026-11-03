@@ -21,13 +21,13 @@ export interface ProviderDef {
   dispatchAuthentication?(): ApiDispatchAuthentication;
   listModels(options?: ProviderModelListOptions): Promise<string[]>;
   listModelsWithMetadata?(options?: ProviderModelListOptions): Promise<DetectedModel[]>;
-  detectContextLength?(model: string): Promise<number | null>;
+  detectContextLength?(model: string, options?: ProviderModelListOptions): Promise<number | null>;
   getLastError?(): string | undefined;
 }
 
 export interface ProviderDefWithMetadata extends ProviderDef {
   listModelsWithMetadata(options?: ProviderModelListOptions): Promise<DetectedModel[]>;
-  detectContextLength(model: string): Promise<number | null>;
+  detectContextLength(model: string, options?: ProviderModelListOptions): Promise<number | null>;
 }
 
 export interface ProviderOverrides {

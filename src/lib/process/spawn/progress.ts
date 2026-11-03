@@ -32,7 +32,6 @@ export interface SpawnOptions {
   idle?: SpawnIdleOptions | undefined;
   outputMaxBytes?: number | undefined;
   stderrMaxBytes?: number | undefined;
-  ledger?: boolean | undefined;
 }
 
 export async function spawnWithTimeout(opts: SpawnOptions): Promise<SpawnResult> {
@@ -58,7 +57,6 @@ export async function spawnWithTimeout(opts: SpawnOptions): Promise<SpawnResult>
       cwd: opts.cwd,
       env: opts.env,
       detached: true,
-      ledger: opts.ledger,
       stdin: opts.stdinInput,
       stdinOptional: opts.stdinOptional,
       signal,

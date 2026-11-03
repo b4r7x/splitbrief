@@ -1746,3 +1746,34 @@ describe('usePickerActions', () => {
     ui.unmount();
   });
 });
+
+describe('the local connection check', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('counts a server that lists its models after six seconds as answered', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', (url: string | URL | Request, init?: RequestInit) => {
+      const signal = init?.signal ?? undefined;
+      const models = url.toString().includes('/api/tags') ? [{ name: 'qwen2.5-coder:7b' }] : [];
+      return new Promise<Response>((resolve, reject) => {
+        signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+        setTimeout(() => resolve(new Response(JSON.stringify({ models }))), 6_000);
+      });
+    });
+
+    const pending = defaultPickerEffectDeps.checkConnection({
+      provider: 'ollama',
+      apiBase: 'http://localhost:11434/v1',
+    });
+    await vi.advanceTimersByTimeAsync(12_000);
+
+    expect(await pending).toMatchObject({
+      kind: 'success',
+      provider: 'ollama',
+      models: [{ id: 'qwen2.5-coder:7b' }],
+    });
+  });
+});

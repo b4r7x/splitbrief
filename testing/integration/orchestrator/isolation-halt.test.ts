@@ -189,7 +189,6 @@ describe('isolation halt through the orchestrator', { timeout: 90_000 }, () => {
         headline: 'T001 left the isolation directory',
       }),
     );
-    expect(events.some((event) => event.type === 'task_retry')).toBe(false);
 
     const retried = await applyRecoveryAction({
       projectDir,
