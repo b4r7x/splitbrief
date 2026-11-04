@@ -210,7 +210,7 @@ describe('headless End run', { timeout: 240_000 }, () => {
     ]);
     expect(view.briefs.earlierRows).toEqual([]);
     const notices = await workspaceNotices(ref);
-    expect(notices.logged).toContain(WORKSPACE_KEPT_CODE);
+    expect(notices.logged).not.toContain(WORKSPACE_KEPT_CODE);
     expect(notices.shown).not.toContain(WORKSPACE_KEPT_CODE);
     expect(notices.shown).toContain('workspace_closed');
   });
@@ -256,6 +256,7 @@ describe('headless End run', { timeout: 240_000 }, () => {
         );
         expect(ended.stdout.includes('apply them with git apply')).toBe(hasChanges);
         expect(ended.stderr).not.toContain('run.patch');
+        const loggedEnd = (await readRunEvents(ref)).events.at(-1);
         await vi.waitFor(
           () => {
             const frame = stripAnsiStyles(ui.lastFrame());
@@ -266,6 +267,8 @@ describe('headless End run', { timeout: 240_000 }, () => {
             expect(frame).not.toContain('Workspace kept');
             expect(frame).not.toContain('Partial changes kept');
             expect(frame.includes('run.patch')).toBe(hasChanges);
+            // The screen can show the closed state before its reread of the last lines End run logged.
+            expect(eventsStore.get().events.at(-1)).toEqual(loggedEnd);
           },
           { timeout: 5_000 },
         );
@@ -311,7 +314,7 @@ describe('headless End run', { timeout: 240_000 }, () => {
       projectDir: target.projectDir,
       sessionId: parked.sessionId,
     });
-    expect(notices.logged).toContain(WORKSPACE_KEPT_CODE);
+    expect(notices.logged).not.toContain(WORKSPACE_KEPT_CODE);
     expect(notices.shown).not.toContain(WORKSPACE_KEPT_CODE);
     expect(notices.shown).toContain('workspace_closed');
   });

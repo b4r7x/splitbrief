@@ -764,9 +764,10 @@ export function raisePendingRecovery(
 /**
  * A stop the operator asked for parks the run at the step it picks up at, and the log holds the stop
  * as a row, not only the state. A run stopped before it had a bus still parks. A gate runs no call,
- * so a stop there cuts nothing. A cut brief records the declared files it had changed, read from
- * the run's code as the stop leaves it. A park already recorded stands: leaving a run parked in
- * place is the same stop, so the state and the row stay the first stop's.
+ * so a stop there cuts nothing. A cut brief records the files it wrote that are still changed, its
+ * declared files first, read from the run's code as the stop leaves it. A park already recorded
+ * stands: leaving a run parked in place is the same stop, so the state and the row stay the first
+ * stop's.
  */
 export async function parkStoppedRun(
   scope: SessionRef & { bus?: EventBus | undefined },

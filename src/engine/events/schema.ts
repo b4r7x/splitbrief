@@ -104,9 +104,16 @@ function operationalMessageEvent<T extends 'info' | 'warning' | 'error', S exten
   return z.union([safe, base]);
 }
 
-const OperationalInfoEventSchema = operationalMessageEvent('info', {});
-const OperationalWarningEventSchema = operationalMessageEvent('warning', {});
+/**
+ * On the row of an attempt revert, a brief restore or a denied write: the files a put-back of the
+ * running brief still acts on. The stop sheet promises no kept change while it is 0.
+ */
+const briefKept = z.number().int().nonnegative().optional();
+
+const OperationalInfoEventSchema = operationalMessageEvent('info', { briefKept });
+const OperationalWarningEventSchema = operationalMessageEvent('warning', { briefKept });
 const OperationalErrorEventSchema = operationalMessageEvent('error', {
+  briefKept,
   /** When a usage-limit halt's quota comes back, as the ISO instant its `resetAt` names. */
   resetAt: z.string().optional(),
 });
@@ -288,7 +295,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
      * next brief starts on the new seat. Absent for a pause the operator asked for.
      */
     cause: z.literal('seat-change').optional(),
-    /** The declared files a brief cut mid-step had changed; absent when it kept none. */
+    /** The files a brief cut mid-step wrote that are still changed, its declared files first; absent when it kept none. */
     kept: stringArray.optional(),
   }),
   /** The error that stopped the run, as the state records it for the step the run retries. */
@@ -773,9 +780,10 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   phaseEvent('full_suite').extend({
     /**
      * The transcript settles a command a stop cut. A base command runs beside the build, so the
-     * engine settles it itself, `stopped` when it cut it.
+     * engine settles it itself, `stopped` when it cut it. `off` is a fix brief's reviewer check
+     * that does not run while End-of-run checks are off.
      */
-    status: z.enum(['running', 'done', 'not-run', 'refused', 'stopped']),
+    status: z.enum(['running', 'done', 'not-run', 'refused', 'stopped', 'off']),
     stage: z.enum(['typecheck', 'lint', 'test']).optional(),
     id: z.string().optional(),
     command: z.string(),

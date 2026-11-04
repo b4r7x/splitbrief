@@ -860,6 +860,7 @@ done: 3 tasks
   A green re-run reads `your N failures gone`. A check with no own failure reads `no failure of yours`. The line also reports judged plan and task checks. Their fix check row has no running state or duration. The line uses singular forms for one failure. Each fix check runs once, with no base re-run.
 
   A check without carried keys keeps `passed (<command>)` or `failed (<command>)`. A refusal reads `refused (<detail>)`; a check that did not run reads `not run (<detail>)`.
+- `fix check <id>: off` — End-of-run checks are off (`validation.end_checks: false`), so a fix task does not run the reviewer check of the finding it answers. Its plan and task checks still run.
 - `plan check <id>: passed|failed [· <duration>] (<command>)` — a plan or task check SPLITBRIEF ran before the review, with its command and, when recorded, its duration.
 - `plan check <id>: refused|not run [(<detail>)]` — a plan check the command policy refused or that did not run, with the reason the call gave when it gave one.
 - `verify <id>: passed|failed|pre-existing|<m> new, <n> pre-existing [· <duration>] (<command>)` — a check the review read or ran to verify one of its claims, or a check the planner ran again on a review without progress, with its command and, when recorded, its duration. A red reads `pre-existing` with the reason when every failure also occurs at the run base, and `<m> new, <n> pre-existing` when only some do. A refusal or a check that did not run reads `verify <id>: refused|not run [(<detail>)]`. A render check reads as a `Render <scenario>` line.

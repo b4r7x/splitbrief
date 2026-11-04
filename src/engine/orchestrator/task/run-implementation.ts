@@ -77,6 +77,7 @@ export async function runImplementation(opts: {
     role: 'implementer',
     config,
     resume: seed?.keepWorkspace === true,
+    brief: { task, taskStartSnapshot: opts.taskStartSnapshot },
   });
   // A direct writer narrates between tool calls; that text has one home, the transcript rows
   // textHandler feeds. The preview under `working on <file>…` is for the code an extractor

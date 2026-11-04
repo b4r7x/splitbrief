@@ -24,7 +24,7 @@ export interface StopBylineInput {
   readonly parked: {
     readonly kind: StopParkKind;
     readonly taskId: string | null;
-    /** The declared files the cut brief had changed when the stop parked it. */
+    /** The files the cut brief wrote that are still changed when the stop parked it, its declared files first. */
     readonly kept: readonly string[];
   } | null;
   readonly currentTaskId: string | null;

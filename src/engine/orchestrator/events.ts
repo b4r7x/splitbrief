@@ -50,6 +50,8 @@ interface PublishOperationalMessageOptions extends BusContext {
   safety?: OperationalMessageSafety | undefined;
   /** An error's usage-limit reset, as the halt's `resetAt` names it; the row spells it when read. */
   resetAt?: string | undefined;
+  /** The files a put-back of the running brief still acts on, on a revert, restore or denial row. */
+  briefKept?: number | undefined;
 }
 
 type PlannerTextOptions = Pick<Partial<EngineEventOf<'planner_text'>>, 'role' | 'content'>;
@@ -237,7 +239,7 @@ export function publishReviewChecks(ctx: BusContext, status: 'off' | 'none'): vo
 export function publishReviewCheck(
   ctx: BusContext,
   opts: {
-    status: 'running' | 'done' | 'not-run' | 'refused' | 'stopped';
+    status: 'running' | 'done' | 'not-run' | 'refused' | 'stopped' | 'off';
     id: string;
     command: string;
     moment: 'pre-review' | 'base' | 'brief' | 'plan' | 'verify';
@@ -463,7 +465,7 @@ export function publishCostUpdate(ctx: BusContext, tokenUsage: TokenUsage): void
 }
 
 export function publishError(options: PublishOperationalMessageOptions): void {
-  const { bus, phase, message, safety, resetAt } = options;
+  const { bus, phase, message, safety, resetAt, briefKept } = options;
   bus.publish({
     type: 'error',
     ts: Date.now(),
@@ -474,16 +476,25 @@ export function publishError(options: PublishOperationalMessageOptions): void {
       code: safety.code,
     }),
     ...(resetAt !== undefined && { resetAt }),
+    ...(briefKept !== undefined && { briefKept }),
   });
 }
 
-export function publishInfo(options: BusContext & { message: string }): void {
-  const { bus, phase, message } = options;
-  bus.publish({ type: 'info', ts: Date.now(), phase, message });
+export function publishInfo(
+  options: BusContext & { message: string; briefKept?: number | undefined },
+): void {
+  const { bus, phase, message, briefKept } = options;
+  bus.publish({
+    type: 'info',
+    ts: Date.now(),
+    phase,
+    message,
+    ...(briefKept !== undefined && { briefKept }),
+  });
 }
 
 export function publishWarning(options: PublishOperationalMessageOptions): void {
-  const { bus, phase, message, taskId, safety } = options;
+  const { bus, phase, message, taskId, safety, briefKept } = options;
   bus.publish({
     type: 'warning',
     ts: Date.now(),
@@ -494,6 +505,7 @@ export function publishWarning(options: PublishOperationalMessageOptions): void 
       category: safety.category,
       code: safety.code,
     }),
+    ...(briefKept !== undefined && { briefKept }),
   });
 }
 

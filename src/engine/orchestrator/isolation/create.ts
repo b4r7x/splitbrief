@@ -20,6 +20,7 @@ import {
 } from '../../../lib/git/repository.js';
 import { warnError } from '../../../lib/warn.js';
 import { addWorkspaceRoot, toErrorMessage } from '../../../utils/format-errors.js';
+import { countNoun } from '../../../utils/pluralize.js';
 import {
   createRunnerSandboxEnv,
   pruneSandboxNpmCache,
@@ -36,7 +37,9 @@ import {
   type AcquisitionBaseline,
 } from '../approval/file-snapshots/entry.js';
 import { createStagedProject } from '../approval/staged-project.js';
+import { briefKeptFiles } from '../kept-work.js';
 import type {
+  AttemptBrief,
   AttemptWorkspace,
   IsolationRole,
   IsolatedWorkspace,
@@ -66,8 +69,10 @@ export function createRunIsolation(opts: {
   strategy: IsolationStrategy;
   onFallback: (reason: string) => void;
   warningPublisher?: (message: string) => void;
+  /** `briefKept` counts the files a put-back of the brief still acts on. */
+  infoPublisher?: (row: { message: string; briefKept?: number | undefined }) => void;
 }): RunIsolation {
-  const { projectDir, sessionId, strategy, onFallback, warningPublisher } = opts;
+  const { projectDir, sessionId, strategy, onFallback, warningPublisher, infoPublisher } = opts;
 
   let latchedStrategy: IsolationStrategy = strategy;
   let fallbackReported = false;
@@ -372,11 +377,12 @@ export function createRunIsolation(opts: {
     if (runWorkspace?.kind !== 'checkout') await assertWorkspaceIdentity(dir);
   }
 
-  async function revertAttempt(
+  /** Puts the given files, or every file the attempt changed, back to the attempt's start. */
+  async function restoreAttempt(
     dir: string,
     snapshot: ChangedFilesSnapshot,
     files?: readonly string[],
-  ): Promise<void> {
+  ): Promise<{ restoredFiles: string[]; savedTo?: string | undefined }> {
     await assertAttemptDir(dir);
     snapshot.restoreFiles ??= await getChangedFilesSinceSnapshot(dir, snapshot);
     const { restoredFiles, savedTo } = await restoreWorkspaceFiles({
@@ -385,20 +391,33 @@ export function createRunIsolation(opts: {
       snapshot,
       files,
     });
-    if (savedTo !== undefined) {
-      warningPublisher?.(
-        `Put back what the attempt changed in your checkout: ${restoredFiles.join(', ')}. The replaced bytes are in ${relative(projectDir, savedTo)}.`,
-      );
-    }
+    return {
+      restoredFiles,
+      savedTo: savedTo === undefined ? undefined : relative(projectDir, savedTo),
+    };
   }
 
-  function queueCleanup(
+  /**
+   * Puts the attempt back and publishes its revert row. The row counts the files a put-back of the
+   * brief still acts on, which an earlier attempt of the brief left.
+   */
+  async function revertAttempt(
     dir: string,
     snapshot: ChangedFilesSnapshot,
-    files?: readonly string[],
-  ): void {
+    brief: AttemptBrief,
+  ): Promise<void> {
+    const { restoredFiles, savedTo } = await restoreAttempt(dir, snapshot);
+    if (restoredFiles.length === 0) return;
+    const reverted = `${brief.task.id} attempt reverted: ${countNoun(restoredFiles.length, 'file')}`;
+    const message =
+      savedTo === undefined ? reverted : `${reverted}. The replaced bytes are in ${savedTo}.`;
+    const kept = await briefKeptFiles(dir, brief.taskStartSnapshot);
+    infoPublisher?.({ message, briefKept: kept?.length });
+  }
+
+  function queueCleanup(dir: string, snapshot: ChangedFilesSnapshot, brief: AttemptBrief): void {
     pendingCleanup = pendingCleanup
-      .then(() => revertAttempt(dir, snapshot, files))
+      .then(() => revertAttempt(dir, snapshot, brief))
       .catch((err) => {
         cleanupFailure ??= attemptCleanupError.failed(dir, err);
         warnError(`Could not undo the attempt's changes in ${dir}`, err);
@@ -430,7 +449,8 @@ export function createRunIsolation(opts: {
       ? null
       : (retainedAttempt ?? (await readWorkspaceRecord({ projectDir, sessionId })));
     const retained = previous?.retained === true ? previous : null;
-    if (retained !== null && input.resume !== true) await revertAttempt(dir, retained.snapshot);
+    if (retained !== null && input.resume !== true)
+      await revertAttempt(dir, retained.snapshot, input.brief);
     const resumed = retained !== null && input.resume === true;
     const targetBaseline = inCheckout
       ? undefined
@@ -458,14 +478,21 @@ export function createRunIsolation(opts: {
       targetBaseline,
       changeDetection: 'file-hashes',
       changedFiles: () => getChangedFilesSinceSnapshot(dir, snapshot),
-      cleanup: (files) => {
+      cleanup: () => {
         if (disposed || preserved || ownedWorkspace !== workspace) return;
-        queueCleanup(dir, snapshot, files);
+        queueCleanup(dir, snapshot, input.brief);
       },
-      revert: async (files) => {
+      revert: async () => {
         if (disposed || ownedWorkspace !== workspace) throw retentionError.unavailable();
         await settledCleanup();
-        await revertAttempt(dir, snapshot, files);
+        await revertAttempt(dir, snapshot, input.brief);
+      },
+      discard: async (files) => {
+        if (disposed || ownedWorkspace !== workspace) throw retentionError.unavailable();
+        await settledCleanup();
+        const { savedTo } = await restoreAttempt(dir, snapshot, files);
+        const kept = await briefKeptFiles(dir, input.brief.taskStartSnapshot);
+        return { savedTo, briefKept: kept?.length };
       },
       retain: () => {
         if (disposed || ownedWorkspace !== workspace)

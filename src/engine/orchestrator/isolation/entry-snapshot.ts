@@ -159,10 +159,21 @@ export async function saveReplacedEntries(
   return saved ? folder : undefined;
 }
 
+/** The paths `snapshot.restoreFiles` records as the task's writes that changed since `snapshot`. */
+export async function restorableFiles(
+  dir: string,
+  snapshot: ChangedFilesSnapshot,
+): Promise<string[]> {
+  const restoreFiles = snapshot.restoreFiles ?? [];
+  if (restoreFiles.length === 0) return [];
+  return (await getChangedFilesSinceSnapshot(dir, snapshot)).filter((file) =>
+    restoreFiles.includes(file),
+  );
+}
+
 /**
- * Puts back the paths `snapshot.restoreFiles` records as the task's writes that changed since
- * `snapshot`, limited to `files` when given. In the checkout itself the replaced bytes are saved
- * first, and the result names where.
+ * Puts back the `restorableFiles` of `snapshot`, limited to `files` when given. In the checkout
+ * itself the replaced bytes are saved first, and the result names where.
  */
 export async function restoreWorkspaceFiles(input: {
   ref: SessionRef;
@@ -172,11 +183,8 @@ export async function restoreWorkspaceFiles(input: {
 }): Promise<{ restoredFiles: string[]; savedTo?: string | undefined }> {
   const { ref, dir, snapshot, files: requested } = input;
   if (requested?.length === 0) return { restoredFiles: [] };
-  const restoreFiles = snapshot.restoreFiles ?? [];
-  if (restoreFiles.length === 0) return { restoredFiles: [] };
-  const changed = await getChangedFilesSinceSnapshot(dir, snapshot);
-  const files = changed.filter(
-    (file) => (requested === undefined || requested.includes(file)) && restoreFiles.includes(file),
+  const files = (await restorableFiles(dir, snapshot)).filter(
+    (file) => requested === undefined || requested.includes(file),
   );
   if (files.length === 0) return { restoredFiles: [] };
   const savedTo =

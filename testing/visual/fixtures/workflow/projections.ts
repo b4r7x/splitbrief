@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { relative, resolve } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import { projectRunnerCallActivity } from '../../../../src/engine/calls/activity.js';
 import { reviewResumeProjection, reviewCheckCrashProjection } from './review-resume-projection.js';
 import {
@@ -106,13 +106,17 @@ import {
 import { consultFailureLabel } from '../../../../src/engine/orchestrator/task/retry.js';
 import {
   publishError,
+  publishInfo,
   publishRecoveryActionSelected,
   publishRecoveryPrompted,
   publishRecoveryResolved,
+  publishReviewCheck,
+  publishReviewChecks,
   publishWarning,
   publishSeatSwitched,
   publishTaskStart,
 } from '../../../../src/engine/orchestrator/events.js';
+import { revertedDir } from '../../../../src/core/paths.js';
 import type { Config } from '../../../../src/core/schemas/config.js';
 import { error } from '../../../../src/utils/error.js';
 import { createEventBus } from '../../../../src/engine/events/bus.js';
@@ -7447,6 +7451,100 @@ const fixCheckDoneProjection: WorkflowFixtureProjection = {
   },
 };
 
+// End-of-run checks are off for the whole run: the review runs no check and says so, and the fix
+// brief's gate leaves out the reviewer check its finding names and says so on its row.
+const fixCheckOffProjection: WorkflowFixtureProjection = {
+  ...fixCheckRunningProjection,
+  scenarioId: scenarioId('workflow-fix-check-off'),
+  config: { validation: { endChecks: false } },
+  get events(): EngineEvent[] {
+    const fixBuild = reviewFixProjection.events
+      .slice(everyBriefPassed().length)
+      .filter((event) => event.type !== 'review_started' && event.type !== 'review_completed');
+    return [
+      ...everyBriefPassed(),
+      finalReviewStarted(FIXED_TS + 350, BASE_PLANNER),
+      ...publishedEvents(FIXED_TS + 350, (bus) =>
+        publishReviewChecks({ bus, phase: 'final-review' }, 'off'),
+      ),
+      finalReviewCompleted({
+        ts: FIXED_TS + 400,
+        duration: 50,
+        verdict: 'fail',
+        seat: BASE_PLANNER,
+      }),
+      ...fixBuild,
+      ...publishedEvents(FIXED_TS + 2_000, (bus) =>
+        publishReviewCheck(
+          { bus, phase: 'implementing' },
+          { status: 'off', id: REVIEW_CHECK_TEST.id, command: '', moment: 'brief' },
+        ),
+      ),
+    ];
+  },
+};
+
+// A failed first attempt puts back the files it changed before the brief goes on, so none of the
+// brief's files is left changed. In the project checkout the attempt's own bytes are saved first,
+// and the row names where.
+const ATTEMPT_REVERTED_TS = FIXED_TS + 300;
+const ATTEMPT_REVERTED = `${WORKFLOW_FIXTURE_TASK_ID} attempt reverted: 2 files`;
+const ATTEMPT_REVERTED_SAVED_TO = join(
+  revertedDir({ projectDir: VISUAL_FIXTURE_PROJECT_DIR, sessionId: VISUAL_WORKFLOW_SESSION_ID }),
+  new Date(ATTEMPT_REVERTED_TS).toISOString().replace(/[:.]/g, '-'),
+);
+
+function attemptRevertedEvents(message: string): EngineEvent[] {
+  return [
+    { type: 'workflow_started', ts: FIXED_TS, phase: 'implementing', feature: WORKFLOW_FEATURE },
+    FIXTURE_TASKS_PLANNED,
+    {
+      type: 'task_started',
+      ts: FIXED_TS + 100,
+      phase: 'implementing',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      title: WORKFLOW_FIXTURE_TEXT.implementationTask,
+      index: 0,
+      total: 3,
+      file: WORKFLOW_FIXTURE_REVIEW_FILE,
+      files: [WORKFLOW_FIXTURE_REVIEW_FILE, WORKFLOW_FIXTURE_SECOND_FILE],
+      action: 'modify',
+      tool: 'ollama',
+      model: FIXED_RUNNER_MODEL,
+    },
+    {
+      type: 'implementer_generate_failed',
+      ts: FIXED_TS + 200,
+      phase: 'implementing',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      model: FIXED_RUNNER_MODEL,
+      error: WORKFLOW_FIXTURE_TEXT.implementerFailure,
+    },
+    ...publishedEvents(ATTEMPT_REVERTED_TS, (bus) =>
+      publishInfo({ bus, phase: 'implementing', message, briefKept: 0 }),
+    ),
+  ];
+}
+
+const attemptRevertedProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-attempt-reverted'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  events: attemptRevertedEvents(ATTEMPT_REVERTED),
+};
+
+const attemptRevertedCheckoutProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-attempt-reverted-checkout'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  config: { workflow: { isolation: 'none' } },
+  events: attemptRevertedEvents(
+    `${ATTEMPT_REVERTED}. The replaced bytes are in ${ATTEMPT_REVERTED_SAVED_TO}.`,
+  ),
+};
+
 const BASE_NOT_VERIFIED_E2E = {
   id: 'V1',
   command: 'npm run e2e',
@@ -8156,6 +8254,9 @@ const projections = [
   fixCheckRunningProjection,
   fixCheckStoppedContinuedProjection,
   fixCheckDoneProjection,
+  fixCheckOffProjection,
+  attemptRevertedProjection,
+  attemptRevertedCheckoutProjection,
   reviewBaseNotVerifiedProjection,
   reviewBaseRejectedProjection,
   reviewRedGateProjection,

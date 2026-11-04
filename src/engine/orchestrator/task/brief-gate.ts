@@ -1,12 +1,14 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import { dueCriterionIds } from '../../../core/review/verdict.js';
-import { fixCheckKeys } from '../../../core/review/fix-task.js';
+import { resolveEndChecks } from '../../../core/config/runtime/resolve.js';
+import { fixCheckKeys, splitFixCheckIds } from '../../../core/review/fix-task.js';
 import { isQueuedMessagePendingDelivery } from '../../../core/queue-state.js';
 import { rebaseOnPersistedWorkflowState } from '../state-ops.js';
 import type { WorkflowContext } from '../types.js';
 import type { ValidationAcceptance } from '../validation/acceptance.js';
 import { checkFailureText } from '../validation/failure-text.js';
+import { publishReviewCheck } from '../events.js';
 import type { CheckRunResult } from '../validation/run-checks.js';
 import type { ValidationCommandRunner } from '../validation/types.js';
 import { runPreValidationGate } from './pre-validation-gate.js';
@@ -53,10 +55,10 @@ export async function runBriefGate(opts: {
     });
   let state = opts.state;
   const track = opts.setTrackedState ?? (() => {});
-  // A fix task runs the checks of the red it answers again on top of what its cadence runs.
-  const fixCheckIds = new Set(
-    (task.fix?.findings ?? []).flatMap((finding) => finding.checkIds ?? []),
-  );
+  // A fix task runs the checks of the red it answers again on top of what its cadence runs, but
+  // no reviewer check while End-of-run checks are off.
+  const fixChecks = splitFixCheckIds(task, resolveEndChecks(wctx.config));
+  const fixCheckIds = new Set(fixChecks.run);
   const cadence = wctx.config.workflow.review ?? 'end';
   const due = new Set(dueCriterionIds(state, task.id));
   // At `end` a brief runs its own checks but no render: renders run before the review. A consult
@@ -93,6 +95,12 @@ export async function runBriefGate(opts: {
     }),
   );
   state = rebaseOnPersistedWorkflowState(wctx, state, { keepUnsaved: true });
+  for (const id of fixChecks.off) {
+    publishReviewCheck(
+      { bus: wctx.bus, phase: state.phase },
+      { status: 'off', id, command: '', moment: 'brief' },
+    );
+  }
   let runs: CheckRunResult[] = [];
   let settled: ReadonlySet<string> = new Set();
   if (checkIds.length > 0) {

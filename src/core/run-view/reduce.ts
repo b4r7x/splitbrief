@@ -4,6 +4,7 @@ import type { ClarificationQuestion } from '../schemas/question.js';
 import type { SeatWait } from '../schemas/workflow.js';
 import { EMPTY_BRIEFS, reduceBriefs, type RunBriefs } from './briefs.js';
 import type {
+  BriefKeptEvent,
   PlannerQuestionsAskedEvent,
   RunFailedEvent,
   RunRejectedEvent,
@@ -43,10 +44,15 @@ export interface RunView {
   readonly questions: readonly ClarificationQuestion[] | null;
   /** The run waits at the plan card, so a continue opens it again. */
   readonly planCard: boolean;
-  /** The declared files the last stop kept from the brief it cut mid-step. */
+  /** What the last stop kept of the brief it cut mid-step: the files it wrote that are still changed, its declared files first. */
   readonly stopKept: readonly string[];
   /** The error that stopped the run, until the run takes its step again. */
   readonly failure: string | null;
+  /**
+   * The files a put-back of the running brief still acts on after its last revert, restore or
+   * denied write, until its next attempt starts; null while no such row was read.
+   */
+  readonly briefKept: number | null;
   readonly apply: ViewApply | null;
 }
 
@@ -62,6 +68,7 @@ export const EMPTY_RUN_VIEW: RunView = {
   planCard: false,
   stopKept: NO_FILES,
   failure: null,
+  briefKept: null,
   apply: null,
 };
 
@@ -97,12 +104,19 @@ function isRunFailed<T extends EventTypeCarrier>(event: T): event is T & RunFail
   return event.type === 'run_failed';
 }
 
+function isBriefKeptRow<T extends EventTypeCarrier>(event: T): event is T & BriefKeptEvent {
+  return event.type === 'info' || event.type === 'warning' || event.type === 'error';
+}
+
 /**
  * One event folded into the view. An event that changes nothing returns the same view, so a store
  * that holds it does not notify.
  */
 export function reduceRunView(view: RunView, event: RunViewEvent): RunView {
-  const next = reduceStop(reduceAsk(reduceSeatWait(reducePhase(view, event), event), event), event);
+  const next = reduceBriefKept(
+    reduceStop(reduceAsk(reduceSeatWait(reducePhase(view, event), event), event), event),
+    event,
+  );
   const halt = reduceHalt(next.halt, event);
   const briefs = reduceBriefs(next.briefs, event);
   const apply = reduceApply(next.apply, event);
@@ -191,6 +205,21 @@ function reduceStop(view: RunView, event: RunViewEvent): RunView {
   if (event.type !== 'workflow_resumed' && event.type !== 'workflow_started') return view;
   if (view.stopKept === NO_FILES && view.failure === null) return view;
   return { ...view, stopKept: NO_FILES, failure: null };
+}
+
+const ATTEMPT_STARTS = new Set([
+  'implementer_generate_running',
+  'task_started',
+  'task_retry',
+  'workflow_resumed',
+]);
+
+/** The count a revert, a restore or a denial row carries holds until the next attempt starts. */
+function reduceBriefKept(view: RunView, event: RunViewEvent): RunView {
+  if (isBriefKeptRow(event) && event.briefKept !== undefined)
+    return event.briefKept === view.briefKept ? view : { ...view, briefKept: event.briefKept };
+  if (!ATTEMPT_STARTS.has(event.type) || view.briefKept === null) return view;
+  return { ...view, briefKept: null };
 }
 
 /** An Apply's clock: it starts with the Apply and stops when the Apply ends. */

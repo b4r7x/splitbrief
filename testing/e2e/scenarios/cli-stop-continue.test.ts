@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
@@ -143,8 +143,9 @@ function indexOfType(events: readonly EngineEvent[], type: EngineEvent['type']):
 }
 
 describe('stop a CLI implementer call → continue', { timeout: 240_000 }, () => {
-  it('records the stop as an interrupted turn, never an error, and drops the kept notice on continue', async () => {
+  it('records the stop as an interrupted turn, never an error, and writes the kept notice to the debug log only', async () => {
     const target = await codexFixture();
+    vi.stubEnv('SPLITBRIEF_DEBUG', '1');
 
     const parked = await startAndSignal(target, 'SIGINT', target.isolationTreesDir);
     expect(parked.exitCode).toBe(130);
@@ -161,9 +162,12 @@ describe('stop a CLI implementer call → continue', { timeout: 240_000 }, () =>
     });
     expect(
       stopped.some((event) => event.type === 'warning' && event.code === WORKSPACE_KEPT_CODE),
-    ).toBe(true);
+    ).toBe(false);
+    expect(
+      readFileSync(join(target.projectDir, '.splitbrief', 'logs', 'debug.log'), 'utf8'),
+    ).toContain(WORKSPACE_KEPT_CODE);
     const parkedRows = await transcriptRows(ref);
-    expect(parkedRows.filter((row) => row.includes('Workspace kept at'))).toHaveLength(1);
+    expect(parkedRows.filter((row) => row.includes('Workspace kept at'))).toHaveLength(0);
     resetAllStores();
 
     const resumed = await continueRun(target);
@@ -171,11 +175,10 @@ describe('stop a CLI implementer call → continue', { timeout: 240_000 }, () =>
     expect(readState(target, parked.sessionId).tasks[0]?.status).toBe('done');
 
     const events = (await readRunEvents(ref)).events;
-    const keptAt = events.findIndex(
-      (event) => event.type === 'warning' && event.code === WORKSPACE_KEPT_CODE,
-    );
-    expect(keptAt).toBeGreaterThanOrEqual(0);
-    expect(keptAt).toBeLessThan(indexOfType(events, 'workflow_resumed'));
+    expect(indexOfType(events, 'workflow_resumed')).toBeGreaterThanOrEqual(0);
+    expect(
+      events.some((event) => event.type === 'warning' && event.code === WORKSPACE_KEPT_CODE),
+    ).toBe(false);
     expect(
       events.some(
         (event) => event.type === 'runner_call_error' && event.error.code === 'user-abort',

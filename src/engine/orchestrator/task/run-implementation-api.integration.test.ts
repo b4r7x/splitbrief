@@ -7,6 +7,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
+import { makeAttemptBrief } from '#testing/helpers/factories/attempt-brief.js';
 import {
   makeBusRecorder,
   makeCopyingIsolation,
@@ -136,7 +137,11 @@ it.each(['queue', 'seed', 'parked'] as const)(
     };
     const opened = await wctx.isolation.open({ config });
     wctx.workspaceDir = opened.projectDir;
-    const workspace = await wctx.isolation.acquire({ role: 'implementer', config });
+    const workspace = await wctx.isolation.acquire({
+      role: 'implementer',
+      config,
+      brief: makeAttemptBrief(),
+    });
     const options = {
       wctx,
       task,
@@ -229,8 +234,9 @@ it('applies real API bundles to one workspace on the first attempt, the next one
   });
   const opened = await wctx.isolation.open({ config });
   wctx.workspaceDir = opened.projectDir;
-  const taskStartSnapshot = (await wctx.isolation.acquire({ role: 'implementer', config }))
-    .snapshot;
+  const taskStartSnapshot = (
+    await wctx.isolation.acquire({ role: 'implementer', config, brief: makeAttemptBrief() })
+  ).snapshot;
   const options = {
     wctx,
     task,

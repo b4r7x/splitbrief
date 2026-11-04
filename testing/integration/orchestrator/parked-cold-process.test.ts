@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
+import { makeAttemptBrief } from '#testing/helpers/factories/attempt-brief.js';
 import {
   makeCallbacks,
   makeImplementer,
@@ -295,7 +296,7 @@ it('cold continuation keeps one staged directory and revokes disposed handles', 
   ensureSessionDir(projectDir, sessionId);
   const ref = { projectDir, sessionId };
   const config = makeColdConfig();
-  const options = { role: 'implementer' as const, config, resume: true };
+  const options = { role: 'implementer' as const, config, resume: true, brief: makeAttemptBrief() };
   const makeIsolation = () =>
     createRunIsolation({
       ...ref,

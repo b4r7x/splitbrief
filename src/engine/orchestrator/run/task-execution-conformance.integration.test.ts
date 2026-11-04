@@ -6,6 +6,7 @@ import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeCopyingIsolation, makeWctx } from '#testing/helpers/orchestrator-factories.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
+import { makeAttemptBrief } from '#testing/helpers/factories/attempt-brief.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { runCodeDir } from '../kept-work.js';
 import { runTasksAndReview } from './task-execution.js';
@@ -98,8 +99,13 @@ describe('workspace acquisition conformance', () => {
     const opened = await wctx.isolation.open({ config: wctx.config });
     writeFileSync(join(opened.projectDir, 'source.txt'), 'pre-task input\n');
     writeFileSync(join(opened.projectDir, 'earlier.txt'), 'earlier task\n');
-    const snapshot = (await wctx.isolation.acquire({ role: 'implementer', config: wctx.config }))
-      .snapshot;
+    const snapshot = (
+      await wctx.isolation.acquire({
+        role: 'implementer',
+        config: wctx.config,
+        brief: makeAttemptBrief(),
+      })
+    ).snapshot;
     writeFileSync(join(opened.projectDir, 'source.txt'), 'interrupted output\n');
     rmSync(join(opened.projectDir, 'deleted.txt'));
     writeFileSync(join(projectDir, 'source.txt'), 'operator edit\n');

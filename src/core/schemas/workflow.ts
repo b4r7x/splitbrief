@@ -419,8 +419,9 @@ const WorkflowStateFields = {
       cut: StepCutSchema.optional(),
       partialRef: z.object({ kind: z.literal('session-log'), index: z.number().int() }).optional(),
       /**
-       * The declared files the cut brief had changed when the stop parked it. Absent when it had
-       * changed none, when the step is no brief, and on a state written before the field.
+       * The files the cut brief wrote that are still changed when the stop parked it, its declared
+       * files first. Absent when it kept none, when the step is no brief, and on a state written
+       * before the field.
        */
       kept: z.array(z.string()).optional(),
       at: z.string(),

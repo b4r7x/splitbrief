@@ -13,7 +13,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { delimiter, dirname, join } from 'node:path';
+import { delimiter, dirname, join, relative } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { createDefaultConfig } from '../../../core/config/load/defaults.js';
 import {
@@ -28,17 +28,20 @@ import {
 import type { Config } from '../../../core/schemas/config.js';
 import { createGitClient } from '../../../lib/git/client.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
-import { gateAttemptChanges } from '../task/attempt-gate.js';
+import { denialMessage, gateAttemptChanges } from '../task/attempt-gate.js';
+import { withAttemptRestoreScope } from '../task/restore-scope.js';
 import { createRunnerSandboxEnv } from '../../runners/sandbox-env.js';
 import { sandboxCredentialValues } from '../../runners/sandbox-credential-values.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeAttemptBrief } from '#testing/helpers/factories/attempt-brief.js';
 import { makeCallbacks, makeWctx } from '#testing/helpers/orchestrator-factories.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { cleanupTempDir as removeTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createSnapshot } from '../../snapshots/create.js';
 import { reconcileWorkspaceToBase } from './acquisition.js';
 import { createRunIsolation } from './create.js';
+import { captureWorkspaceSnapshot } from './entry-snapshot.js';
 import { removeRunWorkspace } from './remove-worktree.js';
 import { readWorkspaceRecord } from './retention.js';
 
@@ -61,7 +64,7 @@ const REAL_OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 let testStateHome: string;
 
 function acquireDirect(handle: ReturnType<typeof createRunIsolation>) {
-  return handle.acquire({ role: 'implementer', config });
+  return handle.acquire({ role: 'implementer', config, brief: makeAttemptBrief() });
 }
 
 const isolationRoot = (dir: string): string =>
@@ -323,6 +326,7 @@ describe('createRunIsolation', () => {
       const fresh = await continued.acquire({
         role: 'implementer',
         config,
+        brief: makeAttemptBrief(),
       });
       expect(fresh.projectDir).toBe(first.projectDir);
       await continued.dispose();
@@ -427,6 +431,7 @@ describe('createRunIsolation', () => {
         const first = await handle.acquire({
           role: 'implementer',
           config: twoCli,
+          brief: makeAttemptBrief(),
         });
         const codexAuth = join(first.sandboxEnv.HOME as string, '.codex', 'auth.json');
         expect(existsSync(codexAuth)).toBe(true);
@@ -434,10 +439,12 @@ describe('createRunIsolation', () => {
         const planner = await handle.acquire({
           role: 'planner',
           config: twoCli,
+          brief: makeAttemptBrief(),
         });
         const second = await handle.acquire({
           role: 'implementer',
           config: twoCli,
+          brief: makeAttemptBrief(),
         });
 
         expect(existsSync(join(planner.sandboxEnv.HOME as string, '.copilot', 'config.json'))).toBe(
@@ -475,11 +482,12 @@ describe('createRunIsolation', () => {
         const implementer = await handle.acquire({
           role: 'implementer',
           config: apiPlanner,
+          brief: makeAttemptBrief(),
         });
         const codexAuth = join(implementer.sandboxEnv.HOME as string, '.codex', 'auth.json');
         expect(existsSync(codexAuth)).toBe(true);
 
-        await handle.acquire({ role: 'planner', config: apiPlanner });
+        await handle.acquire({ role: 'planner', config: apiPlanner, brief: makeAttemptBrief() });
 
         expect(readFileSync(codexAuth, 'utf8')).toBe(CODEX_STATE);
       } finally {
@@ -508,6 +516,7 @@ describe('createRunIsolation', () => {
         const implementer = await handle.acquire({
           role: 'implementer',
           config: SAME_TOOL_SPLIT_CHANNELS,
+          brief: makeAttemptBrief(),
         });
         const codexAuth = join(implementer.sandboxEnv.HOME as string, '.codex', 'auth.json');
         expect(existsSync(codexAuth)).toBe(true);
@@ -515,6 +524,7 @@ describe('createRunIsolation', () => {
         const planner = await handle.acquire({
           role: 'planner',
           config: SAME_TOOL_SPLIT_CHANNELS,
+          brief: makeAttemptBrief(),
         });
 
         expect(readFileSync(codexAuth, 'utf8')).toBe(CODEX_STATE);
@@ -546,10 +556,12 @@ describe('createRunIsolation', () => {
         const planner = await handle.acquire({
           role: 'planner',
           config: SAME_TOOL_SPLIT_CHANNELS,
+          brief: makeAttemptBrief(),
         });
         const implementer = await handle.acquire({
           role: 'implementer',
           config: SAME_TOOL_SPLIT_CHANNELS,
+          brief: makeAttemptBrief(),
         });
 
         expect(existsSync(join(planner.sandboxEnv.HOME as string, '.codex', 'auth.json'))).toBe(
@@ -594,6 +606,7 @@ describe('createRunIsolation', () => {
             tool: 'codex',
             authChannel: 'session',
           }),
+          brief: makeAttemptBrief(),
         });
         const copilotProfile = await handle.acquire({
           role: 'implementer',
@@ -602,6 +615,7 @@ describe('createRunIsolation', () => {
             tool: 'copilot',
             authChannel: 'session',
           }),
+          brief: makeAttemptBrief(),
         });
 
         expect(copilotProfile.sandboxEnv).not.toBe(codexProfile.sandboxEnv);
@@ -978,6 +992,7 @@ describe('createRunIsolation', () => {
       const next = await handle.acquire({
         role: 'implementer',
         config,
+        brief: makeAttemptBrief(),
       });
       expect(readlinkSync(join(next.projectDir, '.claude', 'skills', 'current'))).toBe(
         '../../skills/a',
@@ -1023,6 +1038,7 @@ describe('createRunIsolation', () => {
         const next = await handle.acquire({
           role: 'implementer',
           config,
+          brief: makeAttemptBrief(),
         });
         expectCleanSources(next.projectDir);
         await handle.dispose();
@@ -1056,6 +1072,7 @@ describe('createRunIsolation', () => {
       const cut = await handle.acquire({
         role: 'implementer',
         config,
+        brief: makeAttemptBrief(),
       });
       writeFileSync(join(cut.projectDir, 'docs', 'guide.md'), 'worker\n');
       // The run stops with the worker's edit unpromoted, and the operator edits
@@ -1072,6 +1089,7 @@ describe('createRunIsolation', () => {
       const next = await nextHandle.acquire({
         role: 'implementer',
         config,
+        brief: makeAttemptBrief(),
       });
       expect(readFileSync(join(next.projectDir, 'docs', 'guide.md'), 'utf8')).toBe('worker\n');
       expect(await getChangedFilesSinceSnapshot(next.projectDir, next.snapshot)).toEqual([]);
@@ -1378,9 +1396,6 @@ describe('one workspace per run', () => {
     });
   }
 
-  const acquire = (handle: ReturnType<typeof createRunIsolation>) =>
-    handle.acquire({ role: 'implementer', config });
-
   it('acquire twice in one run returns the same workspace', { timeout: 60_000 }, async () => {
     const dir = createTempDir('isolation-run-same');
     try {
@@ -1388,8 +1403,8 @@ describe('one workspace per run', () => {
       const handle = worktreeRun(dir);
 
       const opened = await handle.open({ config });
-      const first = await acquire(handle);
-      const second = await acquire(handle);
+      const first = await acquireDirect(handle);
+      const second = await acquireDirect(handle);
 
       expect(opened.kind).toBe('worktree');
       expect(opened.projectDir).toBe(isolationWorktree(dir));
@@ -1410,10 +1425,10 @@ describe('one workspace per run', () => {
       createTestGitRepo(dir, { 'README.md': '# test\n', 'src.txt': 'v1\n' });
       const handle = worktreeRun(dir);
 
-      const first = await acquire(handle);
+      const first = await acquireDirect(handle);
       writeFileSync(join(dir, 'src.txt'), 'operator edit\n');
       writeFileSync(join(dir, 'operator.txt'), 'new\n');
-      const second = await acquire(handle);
+      const second = await acquireDirect(handle);
 
       expect(readFileSync(join(second.projectDir, 'src.txt'), 'utf8')).toBe('v1\n');
       expect(existsSync(join(second.projectDir, 'operator.txt'))).toBe(false);
@@ -1430,10 +1445,10 @@ describe('one workspace per run', () => {
       createTestGitRepo(dir, { 'README.md': '# test\n', 'src.txt': 'v1\n' });
       const handle = worktreeRun(dir);
 
-      const firstTask = await acquire(handle);
+      const firstTask = await acquireDirect(handle);
       writeFileSync(join(firstTask.projectDir, 'src.txt'), 'task one\n');
       writeFileSync(join(firstTask.projectDir, 'one.txt'), 'one\n');
-      const retry = await acquire(handle);
+      const retry = await acquireDirect(handle);
 
       expect(readFileSync(join(retry.projectDir, 'src.txt'), 'utf8')).toBe('task one\n');
       expect(readFileSync(join(retry.projectDir, 'one.txt'), 'utf8')).toBe('one\n');
@@ -1450,14 +1465,14 @@ describe('one workspace per run', () => {
       createTestGitRepo(dir, { 'README.md': '# test\n', 'src.txt': 'v1\n' });
       const handle = worktreeRun(dir);
 
-      const earlier = await acquire(handle);
+      const earlier = await acquireDirect(handle);
       writeFileSync(join(earlier.projectDir, 'src.txt'), 'earlier\n');
       writeFileSync(join(earlier.projectDir, 'earlier.txt'), 'kept\n');
-      const attempt = await acquire(handle);
+      const attempt = await acquireDirect(handle);
       writeFileSync(join(attempt.projectDir, 'src.txt'), 'v1\n');
       writeFileSync(join(attempt.projectDir, 'attempt.txt'), 'gone\n');
       attempt.cleanup();
-      const next = await acquire(handle);
+      const next = await acquireDirect(handle);
 
       expect(readFileSync(join(next.projectDir, 'src.txt'), 'utf8')).toBe('earlier\n');
       expect(readFileSync(join(next.projectDir, 'earlier.txt'), 'utf8')).toBe('kept\n');
@@ -1475,7 +1490,7 @@ describe('one workspace per run', () => {
       createTestGitRepo(dir, { 'README.md': '# test\n' });
       const handle = worktreeRun(dir);
 
-      const ws = await acquire(handle);
+      const ws = await acquireDirect(handle);
       expect(await getChangedFilesSinceSnapshot(ws.projectDir, ws.snapshot)).toEqual([]);
       await handle.dispose();
 
@@ -1504,12 +1519,12 @@ describe('one workspace per run', () => {
       });
 
       const opened = await handle.open({ config });
-      const first = await acquire(handle);
+      const first = await acquireDirect(handle);
       writeFileSync(join(first.projectDir, 'src.txt'), 'task one\n');
-      const second = await acquire(handle);
+      const second = await acquireDirect(handle);
       writeFileSync(join(second.projectDir, 'retry.txt'), 'retry\n');
       second.cleanup();
-      const third = await acquire(handle);
+      const third = await acquireDirect(handle);
 
       expect(opened.kind).toBe('staged-copy');
       expect(opened.head).toBeNull();
@@ -1541,8 +1556,8 @@ describe('one workspace per run', () => {
       const handle = worktreeRun(dir, (reason) => reasons.push(reason));
 
       const opened = await handle.open({ config });
-      const first = await acquire(handle);
-      const second = await acquire(handle);
+      const first = await acquireDirect(handle);
+      const second = await acquireDirect(handle);
 
       expect(reasons).toEqual(['repository has no commits']);
       expect(opened.kind).toBe('staged-copy');
@@ -1563,8 +1578,8 @@ describe('one workspace per run', () => {
       const handle = worktreeRun(dir, (reason) => reasons.push(reason));
 
       const opened = await handle.open({ config });
-      const first = await acquire(handle);
-      const second = await acquire(handle);
+      const first = await acquireDirect(handle);
+      const second = await acquireDirect(handle);
 
       expect(reasons).toEqual(['project is not a git repository']);
       expect(opened.kind).toBe('staged-copy');
@@ -1682,7 +1697,7 @@ describe('run workspace attempts', () => {
         const opening = first.open({ config });
         expect(first.open({ config })).toBe(opening);
         const opened = await opening;
-        const workspace = await first.acquire({ role: 'implementer', config });
+        const workspace = await acquireDirect(first);
         writeFileSync(join(workspace.projectDir, 'src.txt'), 'partial\n');
         await workspace.retain?.();
         await first.dispose();
@@ -1710,6 +1725,7 @@ describe('run workspace attempts', () => {
           role: 'implementer',
           config: nextConfig,
           resume: true,
+          brief: makeAttemptBrief(),
         });
         expect(await getChangedFilesSinceSnapshot(resumed.projectDir, resumed.snapshot)).toEqual([
           'src.txt',
@@ -1732,17 +1748,17 @@ describe('run workspace attempts', () => {
       try {
         createTestGitRepo(dir, { 'src.txt': 'base\n' });
         const first = isolation(dir, strategy);
-        const earlier = await first.acquire({ role: 'implementer', config });
+        const earlier = await acquireDirect(first);
         writeFileSync(join(earlier.projectDir, 'src.txt'), 'earlier\n');
         writeFileSync(join(earlier.projectDir, 'earlier.txt'), 'kept\n');
-        const cut = await first.acquire({ role: 'implementer', config });
+        const cut = await acquireDirect(first);
         writeFileSync(join(cut.projectDir, 'src.txt'), 'cut\n');
         writeFileSync(join(cut.projectDir, 'cut.txt'), 'removed\n');
         await cut.retain?.();
         await first.dispose();
         writeFileSync(join(dir, 'src.txt'), 'operator\n');
         const next = isolation(dir, strategy);
-        const attempt = await next.acquire({ role: 'implementer', config });
+        const attempt = await acquireDirect(next);
         expect(attempt.projectDir).toBe(cut.projectDir);
         expect(readFileSync(join(attempt.projectDir, 'src.txt'), 'utf8')).toBe('earlier\n');
         expect(readFileSync(join(attempt.projectDir, 'earlier.txt'), 'utf8')).toBe('kept\n');
@@ -1767,7 +1783,7 @@ describe('run workspace attempts', () => {
       const large = Buffer.alloc(9 * 1024 * 1024, 'a');
       writeFileSync(join(dir, 'large.bin'), large);
       const first = isolation(dir, 'worktree');
-      const cut = await first.acquire({ role: 'implementer', config });
+      const cut = await acquireDirect(first);
       writeFileSync(join(cut.projectDir, 'large.bin'), Buffer.alloc(9 * 1024 * 1024, 'b'));
       writeFileSync(join(cut.projectDir, 'src.txt'), 'cut\n');
       await cut.retain?.();
@@ -1779,7 +1795,7 @@ describe('run workspace attempts', () => {
       ).toBe(true);
 
       const next = isolation(dir, 'worktree');
-      const attempt = await next.acquire({ role: 'implementer', config });
+      const attempt = await acquireDirect(next);
 
       expect(attempt.projectDir).toBe(cut.projectDir);
       expect(readFileSync(join(attempt.projectDir, 'large.bin')).equals(large)).toBe(true);
@@ -1792,23 +1808,28 @@ describe('run workspace attempts', () => {
   });
 
   it.each(['worktree', 'staged-copy'] as const)(
-    'limits %s cleanup to the supplied changed files',
+    'limits %s discard to the supplied changed files',
     { timeout: 60_000 },
     async (strategy) => {
       const dir = createTempDir('run-workspace-selected-cleanup');
       try {
         createTestGitRepo(dir, { 'src.txt': 'base\n' });
         const run = isolation(dir, strategy);
-        const attempt = await run.acquire({ role: 'implementer', config });
+        const attempt = await acquireDirect(run);
         writeFileSync(join(attempt.projectDir, 'src.txt'), 'allowed\n');
         writeFileSync(join(attempt.projectDir, 'denied.txt'), 'denied\n');
-        attempt.cleanup(['denied.txt']);
-        const next = await run.acquire({ role: 'implementer', config });
+        await attempt.discard(['denied.txt']);
+        const next = await acquireDirect(run);
         expect(readFileSync(join(next.projectDir, 'src.txt'), 'utf8')).toBe('allowed\n');
         expect(existsSync(join(next.projectDir, 'denied.txt'))).toBe(false);
         await run.dispose();
         const continued = isolation(dir, strategy);
-        const reopened = await continued.acquire({ role: 'implementer', config, resume: true });
+        const reopened = await continued.acquire({
+          role: 'implementer',
+          config,
+          resume: true,
+          brief: makeAttemptBrief(),
+        });
         expect(readFileSync(join(reopened.projectDir, 'src.txt'), 'utf8')).toBe('allowed\n');
         expect(await getChangedFilesSinceSnapshot(reopened.projectDir, reopened.snapshot)).toEqual(
           [],
@@ -1840,7 +1861,7 @@ describe('run workspace attempts', () => {
       });
       writeFileSync(join(dir, 'same.txt'), 'late\n');
       const run = isolation(dir, 'worktree');
-      const attempt = await run.acquire({ role: 'implementer', config });
+      const attempt = await acquireDirect(run);
       writeFileSync(join(attempt.projectDir, 'cut.txt'), 'partial\n');
       writeFileSync(join(attempt.projectDir, 'added.txt'), 'late\n');
       mkdirSync(join(attempt.projectDir, 'ignored'));
@@ -1871,7 +1892,7 @@ describe('run workspace attempts', () => {
 });
 
 describe('the checkout mode (workflow.isolation: none)', () => {
-  function checkoutRun(dir: string, warnings: string[] = []) {
+  function checkoutRun(dir: string, warnings: string[] = [], rows: unknown[] = []) {
     return createRunIsolation({
       projectDir: dir,
       sessionId: SESSION_ID,
@@ -1880,6 +1901,7 @@ describe('the checkout mode (workflow.isolation: none)', () => {
         throw new Error('the checkout mode never falls back');
       },
       warningPublisher: (message) => warnings.push(message),
+      infoPublisher: (row) => rows.push(row),
     });
   }
 
@@ -1896,7 +1918,7 @@ describe('the checkout mode (workflow.isolation: none)', () => {
       const run = checkoutRun(dir);
 
       const opened = await run.open({ config });
-      const attempt = await run.acquire({ role: 'implementer', config });
+      const attempt = await acquireDirect(run);
       writeFileSync(join(attempt.projectDir, 'live.ts'), 'export {};\n');
 
       expect(opened).toMatchObject({ kind: 'checkout', projectDir: dir, keptFiles: [] });
@@ -1923,11 +1945,12 @@ describe('the checkout mode (workflow.isolation: none)', () => {
     try {
       createTestGitRepo(dir, { 'src/a.ts': 'export const a = 1;\n' });
       const warnings: string[] = [];
-      const run = checkoutRun(dir, warnings);
-      const attempt = await run.acquire({ role: 'implementer', config });
+      const rows: unknown[] = [];
+      const run = checkoutRun(dir, warnings, rows);
+      const attempt = await acquireDirect(run);
       writeFileSync(join(dir, 'src', 'a.ts'), 'export const a = 2;\n');
 
-      await attempt.revert(['src/a.ts']);
+      await attempt.revert();
 
       expect(readFileSync(join(dir, 'src', 'a.ts'), 'utf8')).toBe('export const a = 1;\n');
       const reverted = join(sessionDir(dir, SESSION_ID), 'reverted');
@@ -1935,7 +1958,10 @@ describe('the checkout mode (workflow.isolation: none)', () => {
       expect(readFileSync(join(reverted, stamp ?? '', 'src', 'a.ts'), 'utf8')).toBe(
         'export const a = 2;\n',
       );
-      expect(warnings).toEqual([expect.stringContaining('.splitbrief/sessions/')]);
+      expect(warnings).toEqual([]);
+      expect(rows).toEqual([
+        { message: expect.stringContaining('.splitbrief/sessions/'), briefKept: 0 },
+      ]);
       await run.dispose();
     } finally {
       cleanupTempDir(dir);
@@ -1951,13 +1977,13 @@ describe('the checkout mode (workflow.isolation: none)', () => {
       writeFileSync(join(dir, 'src', 'a.ts'), 'one\n');
       const run = checkoutRun(dir);
       const opened = await run.open({ config });
-      const attempt = await run.acquire({ role: 'implementer', config });
+      const attempt = await acquireDirect(run);
       writeFileSync(join(dir, 'src', 'a.ts'), 'two\n');
       writeFileSync(join(dir, 'src', 'b.ts'), 'new\n');
 
       expect(opened).toMatchObject({ kind: 'checkout', projectDir: dir, head: null });
       expect(await attempt.changedFiles()).toEqual(['src/a.ts', 'src/b.ts']);
-      await attempt.revert(['src/a.ts', 'src/b.ts']);
+      await attempt.revert();
 
       expect(readFileSync(join(dir, 'src', 'a.ts'), 'utf8')).toBe('one\n');
       expect(existsSync(join(dir, 'src', 'b.ts'))).toBe(false);
@@ -2017,5 +2043,289 @@ describe('the checkout mode (workflow.isolation: none)', () => {
     } finally {
       cleanupTempDir(dir);
     }
+  });
+});
+
+describe('the attempt revert row', () => {
+  function revertRun(
+    dir: string,
+    strategy: 'worktree' | 'none',
+    rows: unknown[],
+    warnings: string[],
+  ) {
+    return createRunIsolation({
+      projectDir: dir,
+      sessionId: SESSION_ID,
+      strategy,
+      onFallback: (reason) => {
+        throw new Error(`the run fell back: ${reason}`);
+      },
+      warningPublisher: (message) => warnings.push(message),
+      infoPublisher: (row) => rows.push(row),
+    });
+  }
+
+  const task = makeTask({
+    id: 'T002',
+    action: 'modify',
+    suggestedFiles: ['src/a.ts', 'src/b.ts'],
+    scope: { inBounds: ['src/a.ts', 'src/b.ts'] },
+  });
+
+  /** The brief as the run starts it: the snapshot of the run workspace before its first attempt. */
+  async function startBrief(handle: ReturnType<typeof createRunIsolation>, dir: string) {
+    const opened = await handle.open({ config });
+    const taskStartSnapshot = await captureWorkspaceSnapshot(opened.projectDir, {
+      projectDir: dir,
+      sessionId: SESSION_ID,
+    });
+    return { task, taskStartSnapshot };
+  }
+
+  type Brief = Awaited<ReturnType<typeof startBrief>>;
+
+  const acquireFor = (
+    handle: ReturnType<typeof createRunIsolation>,
+    brief: Brief,
+    resume = false,
+  ) => handle.acquire({ role: 'implementer', config, brief, ...(resume && { resume: true }) });
+
+  /** Writes `src/a.ts` inside the attempt's restore scope, where every production writer runs. */
+  const writeInScope = (
+    dir: string,
+    attempt: Awaited<ReturnType<typeof acquireFor>>,
+    brief: Brief,
+    content: string,
+  ) =>
+    withAttemptRestoreScope({
+      ref: { projectDir: dir, sessionId: SESSION_ID },
+      dir: attempt.projectDir,
+      taskStartSnapshot: brief.taskStartSnapshot,
+      attemptSnapshot: attempt.snapshot,
+      run: async () => writeFileSync(join(attempt.projectDir, 'src', 'a.ts'), content),
+    });
+
+  const BASE = {
+    'README.md': '# test\n',
+    'package.json': '{}\n',
+    'src/a.ts': 'one\n',
+    'src/b.ts': 'one\n',
+  };
+
+  it('says no file of the brief is left once the first attempt in the worktree is put back', {
+    timeout: 60_000,
+  }, async () => {
+    const dir = createTempDir('isolation-revert-row-worktree');
+    try {
+      createTestGitRepo(dir, BASE);
+      const rows: unknown[] = [];
+      const warnings: string[] = [];
+      const run = revertRun(dir, 'worktree', rows, warnings);
+      const brief = await startBrief(run, dir);
+      const attempt = await acquireFor(run, brief);
+      writeFileSync(join(attempt.projectDir, 'README.md'), '# changed\n');
+      writeFileSync(join(attempt.projectDir, 'src', 'a.ts'), 'two\n');
+
+      attempt.cleanup();
+      const next = await acquireFor(run, brief);
+
+      expect(readFileSync(join(next.projectDir, 'src', 'a.ts'), 'utf8')).toBe('one\n');
+      expect(rows).toEqual([{ message: 'T002 attempt reverted: 2 files', briefKept: 0 }]);
+      expect(warnings).toEqual([]);
+      await run.dispose();
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it('names the saved folder and says no file of the brief is left when the checkout is put back', {
+    timeout: 60_000,
+  }, async () => {
+    const dir = createTempDir('isolation-revert-row-checkout');
+    try {
+      createTestGitRepo(dir, BASE);
+      const rows: unknown[] = [];
+      const warnings: string[] = [];
+      const run = revertRun(dir, 'none', rows, warnings);
+      const brief = await startBrief(run, dir);
+      const attempt = await acquireFor(run, brief);
+      writeFileSync(join(dir, 'src', 'a.ts'), 'two\n');
+      writeFileSync(join(dir, 'src', 'b.ts'), 'two\n');
+
+      attempt.cleanup();
+      await acquireFor(run, brief);
+
+      expect(readFileSync(join(dir, 'src', 'a.ts'), 'utf8')).toBe('one\n');
+      const reverted = join(sessionDir(dir, SESSION_ID), 'reverted');
+      const [stamp] = readdirSync(reverted);
+      expect(rows).toEqual([
+        {
+          message: `T002 attempt reverted: 2 files. The replaced bytes are in ${relative(dir, join(reverted, stamp ?? ''))}.`,
+          briefKept: 0,
+        },
+      ]);
+      expect(warnings).toEqual([]);
+      await run.dispose();
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it('publishes nothing when the cleanup puts back no file', { timeout: 60_000 }, async () => {
+    const dir = createTempDir('isolation-revert-row-none');
+    try {
+      createTestGitRepo(dir, BASE);
+      const rows: unknown[] = [];
+      const warnings: string[] = [];
+      const run = revertRun(dir, 'worktree', rows, warnings);
+      const brief = await startBrief(run, dir);
+      const attempt = await acquireFor(run, brief);
+
+      attempt.cleanup();
+      await acquireFor(run, brief);
+
+      expect(rows).toEqual([]);
+      expect(warnings).toEqual([]);
+      await run.dispose();
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it('counts the brief file an earlier attempt left when a failed retry is put back', {
+    timeout: 60_000,
+  }, async () => {
+    const dir = createTempDir('isolation-revert-row-retry');
+    try {
+      createTestGitRepo(dir, BASE);
+      const rows: unknown[] = [];
+      const run = revertRun(dir, 'worktree', rows, []);
+      const brief = await startBrief(run, dir);
+      const first = await acquireFor(run, brief);
+      await writeInScope(dir, first, brief, 'attempt 0\n');
+      const retry = await acquireFor(run, brief);
+      writeFileSync(join(retry.projectDir, 'src', 'b.ts'), 'attempt 1\n');
+
+      retry.cleanup();
+      const next = await acquireFor(run, brief);
+
+      expect(readFileSync(join(next.projectDir, 'src', 'a.ts'), 'utf8')).toBe('attempt 0\n');
+      expect(readFileSync(join(next.projectDir, 'src', 'b.ts'), 'utf8')).toBe('one\n');
+      expect(rows).toEqual([{ message: 'T002 attempt reverted: 1 file', briefKept: 1 }]);
+      await run.dispose();
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it('counts the brief file an earlier attempt left when a resumed attempt is put back', {
+    timeout: 60_000,
+  }, async () => {
+    const dir = createTempDir('isolation-revert-row-resumed');
+    try {
+      createTestGitRepo(dir, BASE);
+      const rows: unknown[] = [];
+      const first = revertRun(dir, 'worktree', rows, []);
+      const brief = await startBrief(first, dir);
+      const earlier = await acquireFor(first, brief);
+      await writeInScope(dir, earlier, brief, 'attempt 0\n');
+      const stopped = await acquireFor(first, brief);
+      writeFileSync(join(stopped.projectDir, 'src', 'b.ts'), 'attempt 1\n');
+      await stopped.retain?.();
+      await first.dispose();
+
+      const continued = revertRun(dir, 'worktree', rows, []);
+      const resumed = await acquireFor(continued, brief, true);
+      resumed.cleanup();
+      await continued.dispose();
+
+      expect(readFileSync(join(resumed.projectDir, 'src', 'a.ts'), 'utf8')).toBe('attempt 0\n');
+      expect(readFileSync(join(resumed.projectDir, 'src', 'b.ts'), 'utf8')).toBe('one\n');
+      expect(rows).toEqual([{ message: 'T002 attempt reverted: 1 file', briefKept: 1 }]);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it('publishes the row when the whole attempt is put back on request', {
+    timeout: 60_000,
+  }, async () => {
+    const dir = createTempDir('isolation-revert-row-request');
+    try {
+      createTestGitRepo(dir, BASE);
+      const rows: unknown[] = [];
+      const run = revertRun(dir, 'worktree', rows, []);
+      const brief = await startBrief(run, dir);
+      const attempt = await acquireFor(run, brief);
+      writeFileSync(join(attempt.projectDir, 'src', 'a.ts'), 'two\n');
+
+      await attempt.revert();
+
+      expect(readFileSync(join(attempt.projectDir, 'src', 'a.ts'), 'utf8')).toBe('one\n');
+      expect(rows).toEqual([{ message: 'T002 attempt reverted: 1 file', briefKept: 0 }]);
+      await run.dispose();
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  describe.each(['worktree', 'none'] as const)('a partial approval denial (%s)', (strategy) => {
+    it('publishes no revert row, and its denial names what it discarded', {
+      timeout: 60_000,
+    }, async () => {
+      const dir = createTempDir(`isolation-revert-row-denial-${strategy}`);
+      try {
+        createTestGitRepo(dir, BASE);
+        const rows: unknown[] = [];
+        const run = revertRun(dir, strategy, rows, []);
+        const brief = await startBrief(run, dir);
+        const attempt = await acquireFor(run, brief);
+        writeFileSync(join(attempt.projectDir, 'src', 'a.ts'), 'two\n');
+        writeFileSync(join(attempt.projectDir, 'package.json'), '{"denied":true}\n');
+
+        const outcome = await gateAttemptChanges({
+          wctx: makeWctx({
+            projectDir: dir,
+            sessionId: SESSION_ID,
+            isolation: run,
+            callbacks: makeCallbacks({
+              onTieredApproval: vi.fn().mockResolvedValue({ decision: 'deny', reason: 'test' }),
+            }).callbacks,
+            config: makeNoValidationConfig({ approval: { feedRejectionsToPlanner: false } }),
+          }),
+          task,
+          phase: 'implementing',
+          workspace: attempt,
+          preApprovedFiles: ['src/a.ts'],
+          dependsOnFiles: [],
+          onApproved: () => {},
+        });
+
+        expect(readFileSync(join(attempt.projectDir, 'src', 'a.ts'), 'utf8')).toBe('two\n');
+        expect(readFileSync(join(attempt.projectDir, 'package.json'), 'utf8')).toBe('{}\n');
+        expect(rows).toEqual([]);
+        if (outcome.outcome !== 'allow' || outcome.denial === undefined)
+          throw new Error(`expected a partial denial, got ${outcome.outcome}`);
+        const lead =
+          "Approval gate denied package.json: test. SPLITBRIEF discarded this attempt's writes to package.json.";
+        if (strategy === 'worktree') {
+          expect(denialMessage({ subject: 'Task', denial: outcome.denial, blocked: false })).toBe(
+            lead,
+          );
+        } else {
+          const reverted = join(sessionDir(dir, SESSION_ID), 'reverted');
+          const [stamp] = readdirSync(reverted);
+          expect(readFileSync(join(reverted, stamp ?? '', 'package.json'), 'utf8')).toBe(
+            '{"denied":true}\n',
+          );
+          expect(denialMessage({ subject: 'Task', denial: outcome.denial, blocked: false })).toBe(
+            `${lead} The replaced bytes are in ${relative(dir, join(reverted, stamp ?? ''))}.`,
+          );
+        }
+        await run.dispose();
+      } finally {
+        cleanupTempDir(dir);
+      }
+    });
   });
 });

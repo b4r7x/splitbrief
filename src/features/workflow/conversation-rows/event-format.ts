@@ -142,6 +142,7 @@ export function fullSuiteSegments(
         : [{ text: rowDuration(event.duration), tone: 'textDim' }];
   if (event.status === 'running') return append([{ text: 'running', tone: fullSuiteTone(event) }]);
   if (event.status === 'stopped') return append([{ text: 'stopped', tone: fullSuiteTone(event) }]);
+  if (event.status === 'off') return append([{ text: 'off', tone: fullSuiteTone(event) }]);
   if (event.status === 'not-run')
     return append([{ text: NOT_RUN, tone: fullSuiteTone(event) }, ...detail]);
   if (event.status === 'refused')
@@ -239,12 +240,13 @@ function separatedSegments(parts: readonly ConversationRowSegment[]): Conversati
 // reviewer or verify check is a warning, and a plan check is a neutral note, as its brief passes. A
 // red at the run base is a warning: it says only what the run base shows. In an older run the base
 // row carried the split, and a red there was an error when new failures remained. Refused commands
-// stay warning.
+// stay warning. A fix check that is off is a neutral note.
 export function fullSuiteTone(
   event: Extract<EngineEvent, { type: 'full_suite' }>,
 ): ConversationRowTone {
   if (event.status === 'refused' || event.status === 'stopped' || event.status === 'not-run')
     return stateTone('attention');
+  if (event.status === 'off') return 'textDim';
   if (event.status === 'running') return stateTone('running');
   if (event.passed === true) return stateTone('passed');
   if (event.moment === 'base') {

@@ -9,6 +9,7 @@ import { terminalSizeStore } from '../../src/stores/ui/terminal-size.js';
 import { eventsStore, mergeEventLog } from '../../src/stores/workflow/events.js';
 import { lifecycleStore } from '../../src/stores/workflow/lifecycle.js';
 import { runViewStore } from '../../src/stores/workflow/run-view.js';
+import { recoveryNoticeStore } from '../../src/stores/workflow/recovery-notice.js';
 import { operationsStore } from '../../src/stores/workflow/operations/state.js';
 import { conversationScrollStore } from '../../src/stores/workflow/conversation-scroll.js';
 import { readConversationScrollSnapshot } from '../../src/features/workflow/layout/snapshot.js';
@@ -740,6 +741,57 @@ describe('workflow visual fixtures', () => {
       await handle.unmount();
     }
   });
+
+  it.each(REQUIRED_VIEWPORTS)(
+    'promises no changes once a revert left none of the running brief files at $cols x $rows',
+    async (viewport) => {
+      const scenario = findVisualScenario('workflow-stop-sheet-after-revert');
+      const checkpoint = scenario?.checkpoints[0];
+      if (!scenario || !checkpoint) throw new Error('Missing stop sheet after revert scenario');
+      const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
+      try {
+        const frame = stripTerminalControls(await handle.waitForCheckpoint())
+          .replaceAll('│', '')
+          .replace(/\s+/g, ' ');
+        expect(runViewStore.get().briefKept).toBe(0);
+        expect(frame).toContain('Stop now · stop execution; keep the run open');
+        expect(frame).toContain('finish T001');
+        expect(frame).toContain('End run · stop execution; close this run');
+        expect(frame).not.toContain('keep partial changes');
+        expect(frame).not.toContain('keep changes');
+        expect(frame).not.toContain('Changes stay');
+      } finally {
+        await handle.unmount();
+      }
+    },
+  );
+
+  it.each(REQUIRED_VIEWPORTS)(
+    'promises no changes at the halt once a denial took back every write at $cols x $rows',
+    async (viewport) => {
+      const scenario = findVisualScenario('workflow-stop-sheet-after-denial');
+      const checkpoint = scenario?.checkpoints[0];
+      if (!scenario || !checkpoint) throw new Error('Missing stop sheet after denial scenario');
+      const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
+      try {
+        const frame = stripTerminalControls(await handle.waitForCheckpoint())
+          .replaceAll('│', '')
+          .replace(/\s+/g, ' ');
+        expect(runViewStore.get().briefKept).toBe(0);
+        expect(frame).toContain('Recovery Approval denied on T001');
+        expect(frame).toContain('○ Choose how to continue');
+        expect(recoveryNoticeStore.get().open).toBe(true);
+        expect(frame).toContain('Stop now · stop execution; keep the run open');
+        expect(frame).toContain('End run · stop execution; close this run');
+        expect(frame).not.toContain('finish T001');
+        expect(frame).not.toContain('keep partial changes');
+        expect(frame).not.toContain('keep changes');
+        expect(frame).not.toContain('Changes stay');
+      } finally {
+        await handle.unmount();
+      }
+    },
+  );
 
   it.each(REQUIRED_VIEWPORTS)(
     'keeps plan and reviewer check rows after a ready verdict at $cols x $rows',

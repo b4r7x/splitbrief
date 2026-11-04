@@ -148,10 +148,59 @@ describe('runSingleTask — approval gates', () => {
     expect(result.tasks[0]?.status).toBe('done');
     expect(implementer.retry).not.toHaveBeenCalled();
     const error = events.find((e) => e.type === 'error');
-    expect(error?.message).toBe(
-      "Approval gate denied .env.local: no. SPLITBRIEF discarded this attempt's writes to .env.local.",
+    expect(error?.message).toMatch(
+      /^Approval gate denied \.env\.local: no\. SPLITBRIEF discarded this attempt's writes to \.env\.local\. The replaced bytes are in \.splitbrief\/sessions\/sess-task-step\/reverted\/\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.$/,
     );
-    expect(error?.message).not.toMatch(/revert/i);
+    expect(error?.message).not.toMatch(/attempt reverted/i);
+    expect(error).toMatchObject({ briefKept: 1 });
+  });
+
+  it('halts the brief when a denial discards every write, and the denial row counts no file of it', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001', action: 'create', suggestedFiles: ['src/hello.ts'] });
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async ({ projectDir }: ImplementerOptions) => {
+        writeFileSync(join(projectDir, '.env.local'), 'TOKEN=1\n');
+        return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
+      }),
+    });
+    const onTieredApproval = vi.fn().mockResolvedValue({ decision: 'deny', reason: 'no' });
+    const { callbacks } = makeCallbacks({ onTieredApproval });
+    const { bus, events } = makeBusRecorder();
+    const wctx = await openRunWorkspace(
+      makeWorkflowContext({
+        projectDir,
+        sessionId,
+        callbacks,
+        implementer,
+        bus,
+        config: makeConfig({
+          workflow: { review: 'task' },
+          approval: { feedRejectionsToPlanner: true },
+          validation: { endChecks: false, testCommand: 'noop' },
+        }),
+      }),
+    );
+
+    const result = await runSingleTask({
+      wctx,
+      task,
+      index: 0,
+      totalTasks: 1,
+      state: implementingState([task]),
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.pendingRecovery?.reason).toBe('approval-denied');
+    expect(existsSync(join(wctx.workspaceDir, '.env.local'))).toBe(false);
+    expect(events.filter((e) => e.type === 'error')).toMatchObject([
+      {
+        message: expect.stringMatching(/^Task changed files blocked by approval gate: no\./),
+        briefKept: 0,
+      },
+    ]);
   });
 
   it('parks the brief resumably when the protected-write confirmation is cancelled', async () => {

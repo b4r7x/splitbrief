@@ -11,6 +11,7 @@ import { consultCallAnswering, guidanceConsult } from '#testing/helpers/typed-pl
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeImplStateWithMetadata as implementingState } from '#testing/helpers/factories/workflow-state.js';
+import { makeAttemptBrief } from '#testing/helpers/factories/attempt-brief.js';
 import {
   cleanupTaskProjects,
   makeTaskWorkflowContext,
@@ -374,7 +375,11 @@ describe('gateAttemptChanges', () => {
       onFallback: () => {},
     });
     disposers.push(() => isolation.dispose());
-    const workspace = await isolation.acquire({ role: 'implementer', config });
+    const workspace = await isolation.acquire({
+      role: 'implementer',
+      config,
+      brief: makeAttemptBrief(),
+    });
     chmodSync(join(workspace.projectDir, CI_FILE), 0o755);
     const onTieredApproval = vi.fn().mockResolvedValue({ decision: 'deny', reason: 'no' });
     const task = makeTask({ id: 'T001', action: 'modify', suggestedFiles: [CI_FILE] });
@@ -412,13 +417,19 @@ describe('gateAttemptChanges', () => {
       onFallback: () => {},
     });
     disposers.push(() => isolation.dispose());
-    const failed = await isolation.acquire({ role: 'implementer', config });
+    const failed = await isolation.acquire({
+      role: 'implementer',
+      config,
+      brief: makeAttemptBrief(),
+    });
     writeFileSync(join(failed.projectDir, HELLO), 'export const hello = "failed";\n');
     rmSync(entryStoreDir({ projectDir, sessionId }), { recursive: true, force: true });
 
     failed.cleanup();
 
-    await expect(isolation.acquire({ role: 'implementer', config })).rejects.toMatchObject({
+    await expect(
+      isolation.acquire({ role: 'implementer', config, brief: makeAttemptBrief() }),
+    ).rejects.toMatchObject({
       kind: 'isolation-cleanup-failed',
     });
   });
@@ -448,7 +459,8 @@ describe('gateAttemptChanges', () => {
           targetBaseline: undefined,
           changedFiles: () => getChangedFilesSinceSnapshot(projectDir, snapshot),
           cleanup,
-          revert: () => Promise.reject(failure),
+          revert: vi.fn(),
+          discard: () => Promise.reject(failure),
         },
         preApprovedFiles: [],
         dependsOnFiles: [],
@@ -468,7 +480,11 @@ describe('gateAttemptChanges', () => {
       onFallback: () => {},
     });
     disposers.push(() => isolation.dispose());
-    const workspace = await isolation.acquire({ role: 'implementer', config });
+    const workspace = await isolation.acquire({
+      role: 'implementer',
+      config,
+      brief: makeAttemptBrief(),
+    });
     writeFileSync(join(projectDir, SECRET), LEAKED);
     writeFileSync(join(projectDir, HELLO), 'export const hello = "operator";\n');
     const onTieredApproval = vi.fn();

@@ -275,3 +275,69 @@ describe('reduceRunView apply', () => {
     expect(view.apply).toBeNull();
   });
 });
+
+describe('reduceRunView brief kept', () => {
+  const brief = (type: string, ts: number) =>
+    event(type, ts, {
+      phase: 'implementing',
+      taskId: 'T002',
+      title: 'second',
+      index: 1,
+      total: 2,
+      attempt: 0,
+    });
+  const reverted = (briefKept: number) =>
+    event('info', 2_000, {
+      phase: 'implementing',
+      message: 'T002 attempt reverted: 2 files',
+      briefKept,
+    });
+
+  it('holds the count of brief files the revert row says are still changed', () => {
+    expect(fold([brief('task_started', 1_000)]).briefKept).toBeNull();
+    expect(fold([brief('task_started', 1_000), reverted(0)]).briefKept).toBe(0);
+    expect(fold([brief('task_started', 1_000), reverted(1)]).briefKept).toBe(1);
+  });
+
+  it('holds the count a restore warning carries', () => {
+    const restored = event('warning', 3_000, {
+      phase: 'implementing',
+      message: 'Restored 1 change of the failing brief to its start: src/main.ts',
+      briefKept: 0,
+    });
+    expect(fold([brief('task_started', 1_000), reverted(1), restored]).briefKept).toBe(0);
+  });
+
+  it('knows nothing from a row that carries no count', () => {
+    const plain = event('info', 2_000, {
+      phase: 'implementing',
+      message: 'T002 attempt reverted: 2 files',
+      category: 'workspace',
+      code: 'attempt_reverted',
+    });
+    expect(fold([brief('task_started', 1_000), plain]).briefKept).toBeNull();
+  });
+
+  const denied = (fields: Record<string, unknown>) =>
+    event('error', 3_000, {
+      phase: 'implementing',
+      message: 'Task changed files blocked by approval gate: no.',
+      ...fields,
+    });
+
+  it('holds the count a denial error row carries', () => {
+    expect(fold([brief('task_started', 1_000), denied({ briefKept: 0 })]).briefKept).toBe(0);
+  });
+
+  it('knows nothing from an error row that carries no count', () => {
+    expect(fold([brief('task_started', 1_000), denied({})]).briefKept).toBeNull();
+  });
+
+  it.each(['implementer_generate_running', 'task_started', 'task_retry', 'workflow_resumed'])(
+    'forgets the count when the next attempt starts on %s',
+    (type) => {
+      const view = fold([brief('task_started', 1_000), reverted(0)]);
+      expect(reduceRunView(view, brief(type, 3_000)).briefKept).toBeNull();
+    },
+  );
+});

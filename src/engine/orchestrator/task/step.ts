@@ -44,9 +44,10 @@ function recordApprovalDenial(opts: {
   task: Task;
   denials: GateDecision[];
   message: string;
+  briefKept?: number | undefined;
 }): void {
-  const { wctx, state, task, denials, message } = opts;
-  publishError({ bus: wctx.bus, phase: state.phase, message: message });
+  const { wctx, state, task, denials, message, briefKept } = opts;
+  publishError({ bus: wctx.bus, phase: state.phase, message, briefKept });
   for (const decision of denials) {
     const rejectedTier = decision.tier;
     if (
@@ -263,6 +264,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
         denial: gate.denial,
         blocked: gate.outcome === 'denied',
       }),
+      briefKept: gate.denial.briefKept,
     });
   }
   if (gate.outcome === 'denied') {
@@ -393,9 +395,9 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     return rerun ?? retry.state;
   }
   if (!retry.completed && retry.state.pendingRecovery !== undefined) {
-    const warning = await restoreExhaustedTaskFiles({ wctx, taskStartSnapshot });
-    if (warning !== undefined) {
-      publishWarning({ bus: wctx.bus, phase: retry.state.phase, message: warning });
+    const restored = await restoreExhaustedTaskFiles({ wctx, taskStartSnapshot });
+    if (restored !== undefined) {
+      publishWarning({ bus: wctx.bus, phase: retry.state.phase, ...restored });
     }
   }
   return retry.state;

@@ -19,6 +19,7 @@ import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
+import { makeAttemptBrief } from '#testing/helpers/factories/attempt-brief.js';
 import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import type { Config } from '../../../core/schemas/config.js';
@@ -1140,7 +1141,9 @@ describe('initializeWorkflow — a task interrupted mid-gate', () => {
           const workspace = await isolation.open({ config });
           expect(workspace.kind).toBe(strategy);
           writeFileSync(join(workspace.projectDir, 'src/two.ts'), 'pre-task input');
-          const snapshot = (await isolation.acquire({ role: 'implementer', config })).snapshot;
+          const snapshot = (
+            await isolation.acquire({ role: 'implementer', config, brief: makeAttemptBrief() })
+          ).snapshot;
           writeFileSync(join(workspace.projectDir, 'src/two.ts'), 'half written by the killed run');
           writeFileSync(join(projectDir, 'src/two.ts'), 'operator edit');
           const task = makeTask({

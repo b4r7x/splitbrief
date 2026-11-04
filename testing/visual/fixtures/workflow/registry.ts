@@ -970,7 +970,13 @@ const checkpointPredicates = [
       includesAll('Final review stopped', 'Stopped at the review')(context) &&
       excludesAll('· running')(context),
   ],
-  [checkpointId('retained-workspace'), includesAll('Workspace kept')],
+  [
+    checkpointId('retained-workspace'),
+    // The halt's panel takes the short screens, so the notice above it is read from the transcript.
+    (context) =>
+      includesTranscript('Workspace kept at', 'Recovery  T001 failed')(context) &&
+      context.output.includes('Needs you'),
+  ],
   [
     checkpointId('cli-stop-continued'),
     (context) => {
@@ -1359,6 +1365,33 @@ const checkpointPredicates = [
         ...context,
         output: context.output.replace(/\s+/g, ' '),
       }),
+  ],
+  [checkpointId('fix-check-off'), includesAll('Fix check V2 · off')],
+  [
+    checkpointId('attempt-reverted'),
+    // SPLITBRIEF's own neutral row, not a warning; a worktree attempt saves no replaced bytes.
+    (context) => {
+      const text = workflowTranscriptText().replace(/\s/g, '');
+      return (
+        includesTranscript()(context) &&
+        text.includes('SPLITBRIEFT901attemptreverted:2files') &&
+        !/Warning|replacedbytes/.test(text)
+      );
+    },
+  ],
+  [
+    checkpointId('attempt-reverted-checkout'),
+    // The saved path wraps, and breaks inside itself at 60 columns.
+    (context) => {
+      const text = workflowTranscriptText().replace(/\s/g, '');
+      return (
+        includesTranscript()(context) &&
+        text.includes(
+          'SPLITBRIEFT901attemptreverted:2files.Thereplacedbytesarein.splitbrief/sessions/visual-workflow/reverted/',
+        ) &&
+        !text.includes('Warning')
+      );
+    },
   ],
   [
     checkpointId('review-base-not-verified'),

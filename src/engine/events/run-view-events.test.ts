@@ -1,5 +1,6 @@
 import { expectTypeOf, it } from 'vitest';
 import type {
+  BriefKeptEvent,
   ChecksRunEvent,
   ImplementerGenerateRunningEvent,
   PlannerQuestionsAskedEvent,
@@ -52,4 +53,10 @@ it('gives the run view every field it folds from the ask and stop events', () =>
   expectTypeOf<EngineEventOf<'turn_interrupted'>>().toExtend<TurnInterruptedEvent>();
   expectTypeOf<EngineEventOf<'run_failed'>>().toExtend<RunFailedEvent>();
   expectTypeOf<EngineEventOf<'run_rejected'>>().toExtend<RunRejectedEvent>();
+});
+
+it('gives the run view the brief files a revert, a restore or a denial row left', () => {
+  expectTypeOf<EngineEventOf<'info'>>().toExtend<BriefKeptEvent>();
+  expectTypeOf<EngineEventOf<'warning'>>().toExtend<BriefKeptEvent>();
+  expectTypeOf<EngineEventOf<'error'>>().toExtend<BriefKeptEvent>();
 });

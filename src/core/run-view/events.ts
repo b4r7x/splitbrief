@@ -38,6 +38,8 @@ export type TurnInterruptedEvent = {
   kept?: readonly string[] | undefined;
 };
 export type RunFailedEvent = { type: 'run_failed'; message: string };
+/** The row of an attempt revert, a brief restore or a denied write, with the brief files it left. */
+export type BriefKeptEvent = { type: 'info' | 'warning' | 'error'; briefKept?: number | undefined };
 export type RunRejectedEvent = { type: 'run_rejected'; restored: readonly string[] };
 
 export type TasksPlannedEvent = {

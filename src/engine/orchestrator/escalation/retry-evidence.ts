@@ -23,7 +23,7 @@ export function recordRetryDenial(input: {
 }): string {
   const { ctx, state, task, denial } = input;
   const message = denialMessage(input);
-  publishError({ bus: ctx.bus, phase: state.phase, message });
+  publishError({ bus: ctx.bus, phase: state.phase, message, briefKept: denial.briefKept });
   for (const decision of denial.decision.denials) {
     persistRetryRejectionEvidence(ctx, state, task, decision);
   }

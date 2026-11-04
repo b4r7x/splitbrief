@@ -16,6 +16,7 @@ import {
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
+import { makeAttemptBrief } from '#testing/helpers/factories/attempt-brief.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
 import { sessionDir } from '../../../src/core/paths.js';
 import { createRunIsolation } from '../../../src/engine/orchestrator/isolation/create.js';
@@ -53,6 +54,7 @@ async function parked() {
   const workspace = await first.acquire({
     role: 'implementer',
     config: f.config,
+    brief: makeAttemptBrief(),
   });
   writeFileSync(join(workspace.projectDir, 'partial.ts'), 'silent partial');
   await workspace.retain?.();
@@ -69,6 +71,7 @@ it('reacquires actual bytes and the original approval baseline without overwriti
     role: 'implementer',
     config: f.config,
     resume: true,
+    brief: makeAttemptBrief(),
   });
   expect(workspace.projectDir).toBe(f.workspace.projectDir);
   expect(readFileSync(join(workspace.projectDir, 'partial.ts'), 'utf8')).toBe('silent partial');
@@ -106,7 +109,12 @@ it.each(['missing', 'recreated', 'root-recreated'] as const)(
     }
     const next = isolation(f);
     await expect(
-      next.acquire({ role: 'implementer', config: f.config, resume: true }),
+      next.acquire({
+        role: 'implementer',
+        config: f.config,
+        resume: true,
+        brief: makeAttemptBrief(),
+      }),
     ).rejects.toThrow('automatic continuation is blocked');
     await next.dispose();
   },
@@ -127,6 +135,7 @@ it.each(['session', 'project', 'escape'] as const)(
         role: 'implementer',
         config: f.config,
         resume: true,
+        brief: makeAttemptBrief(),
       }),
     ).rejects.toThrow();
     expect(readFileSync(join(f.workspace.projectDir, 'partial.ts'), 'utf8')).toBe('silent partial');
@@ -139,6 +148,7 @@ it('keeps bytes when persistence fails and reuses the existing run record', asyn
   const workspace = await run.acquire({
     role: 'implementer',
     config: f.config,
+    brief: makeAttemptBrief(),
   });
   writeFileSync(join(workspace.projectDir, 'partial.ts'), 'valuable unsaved partial');
   const file = join(sessionDir(f.projectDir, f.sessionId), 'retained-workspace.json');
@@ -154,7 +164,12 @@ it('keeps bytes when persistence fails and reuses the existing run record', asyn
   rmSync(file, { recursive: true });
   writeFileSync(file, activeRecord);
   const next = isolation(f);
-  const reused = await next.acquire({ role: 'implementer', config: f.config, resume: true });
+  const reused = await next.acquire({
+    role: 'implementer',
+    config: f.config,
+    resume: true,
+    brief: makeAttemptBrief(),
+  });
   expect(reused.projectDir).toBe(workspace.projectDir);
   await next.dispose();
 });
@@ -170,6 +185,7 @@ it('recognizes an alias of the owning project without accepting another project'
     role: 'implementer',
     config: f.config,
     resume: true,
+    brief: makeAttemptBrief(),
   });
   expect(readFileSync(join(workspace.projectDir, 'partial.ts'), 'utf8')).toBe('silent partial');
   await workspace.retain?.();
@@ -183,6 +199,7 @@ it('keeps staged rollback bytes outside the continuation record', async () => {
   const workspace = await run.acquire({
     role: 'implementer',
     config: f.config,
+    brief: makeAttemptBrief(),
   });
   writeFileSync(
     join(workspace.projectDir, 'partial.ts'),
@@ -212,6 +229,7 @@ it('rejects oversized metadata without changing the retained bytes', async () =>
       role: 'implementer',
       config: f.config,
       resume: true,
+      brief: makeAttemptBrief(),
     }),
   ).rejects.toThrow('automatic continuation is blocked');
   expect(readFileSync(join(f.workspace.projectDir, 'partial.ts'), 'utf8')).toBe('silent partial');
@@ -229,6 +247,7 @@ it('preserves bytes and reports unavailable continuation when metadata exceeds t
   const workspace = await run.acquire({
     role: 'implementer',
     config: f.config,
+    brief: makeAttemptBrief(),
   });
   const file = join(sessionDir(f.projectDir, f.sessionId), 'retained-workspace.json');
   const activeRecord = readFileSync(file, 'utf8');
@@ -249,7 +268,12 @@ it('preserves bytes and reports unavailable continuation when metadata exceeds t
     'oversized metadata must not delete this',
   );
   const next = isolation(f);
-  const reused = await next.acquire({ role: 'implementer', config: f.config, resume: true });
+  const reused = await next.acquire({
+    role: 'implementer',
+    config: f.config,
+    resume: true,
+    brief: makeAttemptBrief(),
+  });
   expect(reused.projectDir).toBe(workspace.projectDir);
   await next.dispose();
   expect(readFileSync(join(workspace.projectDir, 'partial.ts'), 'utf8')).toBe(
@@ -263,6 +287,7 @@ it('keeps run ownership after promotion and cleanup', async () => {
   const workspace = await run.acquire({
     role: 'implementer',
     config: f.config,
+    brief: makeAttemptBrief(),
   });
   writeFileSync(join(workspace.projectDir, 'partial.ts'), 'approved output');
   const applied = await promoteStagedChanges({
@@ -278,6 +303,7 @@ it('keeps run ownership after promotion and cleanup', async () => {
     role: 'implementer',
     config: f.config,
     resume: true,
+    brief: makeAttemptBrief(),
   });
   expect(resumed.projectDir).toBe(workspace.projectDir);
   expect(readFileSync(join(resumed.projectDir, 'partial.ts'), 'utf8')).toBe('approved output');
@@ -292,9 +318,9 @@ it('preserves a retained staged attempt when its rollback bytes are unavailable'
     force: true,
   });
   const next = isolation(f);
-  await expect(next.acquire({ role: 'implementer', config: f.config })).rejects.toThrow(
-    'automatic continuation is blocked',
-  );
+  await expect(
+    next.acquire({ role: 'implementer', config: f.config, brief: makeAttemptBrief() }),
+  ).rejects.toThrow('automatic continuation is blocked');
   expect(readFileSync(join(f.workspace.projectDir, 'partial.ts'), 'utf8')).toBe('silent partial');
   await next.dispose();
 });

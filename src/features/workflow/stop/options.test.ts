@@ -125,6 +125,20 @@ describe('stopSheetRows', () => {
     expect(building[0]?.consequence).toBe('stop execution; keep partial changes');
   });
 
+  it('claims no partial changes on Stop now once a revert left none of the brief files', () => {
+    const rows = (briefKept: number) =>
+      stopSheetRows({
+        currentTaskId: 'T002',
+        nextTaskId: 'T003',
+        boundaryPauseRequested: false,
+        briefKept,
+      });
+
+    expect(rows(0)[0]?.consequence).toBe('stop execution; keep the run open');
+    expect(rows(0).map((row) => row.id)).toEqual(['stop-now', 'pause-after-brief', 'end-run']);
+    expect(rows(1)[0]?.consequence).toBe('stop execution; keep partial changes');
+  });
+
   it('claims kept changes on End run only once a brief has run', () => {
     const rows = (input: { hasChanges: boolean }) =>
       stopSheetRows({
@@ -516,5 +530,147 @@ describe('the draft in the stop rows and footer', () => {
     expect(readStopMenuRows().find((row) => row.id === 'resume')?.consequence).toBe(
       'continue this run; keep the unsent draft',
     );
+  });
+});
+
+describe('the stop sheet after a revert or a restore of the running brief', () => {
+  afterEach(() => {
+    resetAllStores();
+  });
+
+  beforeEach(() => {
+    addEvent({
+      type: 'tasks_planned',
+      ts: 1,
+      phase: 'implementing',
+      tasks: [{ id: taskId('T001'), title: 'Sum', index: 0, file: 'src/sum.js', action: 'create' }],
+      total: 1,
+    });
+    addEvent(makeTaskStart({ taskId: taskId('T001'), index: 0, total: 1 }));
+    addEvent({
+      type: 'implementer_generate_running',
+      ts: 2,
+      phase: 'implementing',
+      taskId: taskId('T001'),
+    });
+  });
+
+  const sheet = () => {
+    const rows = readStopMenuRows();
+    return {
+      stopNow: rows.find((row) => row.id === 'stop-now')?.consequence,
+      endRun: rows.find((row) => row.id === 'end-run')?.consequence,
+      footer: readStopSheetFooter(),
+    };
+  };
+  const KEPT = {
+    stopNow: 'stop execution; keep partial changes',
+    endRun: 'stop execution; close this run; keep changes',
+    footer: 'Changes stay.',
+  };
+  const NOTHING = {
+    stopNow: 'stop execution; keep the run open',
+    endRun: 'stop execution; close this run',
+    footer: null,
+  };
+  const reverted = (ts: number, briefKept: number) =>
+    addEvent({
+      type: 'info',
+      ts,
+      phase: 'implementing',
+      message: 'T001 attempt reverted: 1 file',
+      briefKept,
+    });
+
+  it('keeps nothing after the first attempt was put back, until the next attempt runs', () => {
+    reverted(3, 0);
+
+    expect(sheet()).toEqual(NOTHING);
+
+    addEvent({
+      type: 'implementer_generate_running',
+      ts: 4,
+      phase: 'implementing',
+      taskId: taskId('T001'),
+    });
+
+    expect(sheet()).toEqual(KEPT);
+  });
+
+  it('keeps partial changes after a failed retry, which leaves the files of the attempt before it', () => {
+    addEvent({
+      type: 'task_retry',
+      ts: 3,
+      phase: 'implementing',
+      taskId: taskId('T001'),
+      attempt: 1,
+      maxRetries: 2,
+      error: 'K1 failed',
+    });
+    reverted(4, 1);
+
+    expect(sheet()).toEqual(KEPT);
+  });
+
+  it('keeps partial changes after a resumed attempt failed on the files from before its stop', () => {
+    addEvent({ type: 'workflow_resumed', ts: 3, phase: 'implementing' });
+    addEvent(makeTaskStart({ ts: 4, taskId: taskId('T001'), index: 0, total: 1 }));
+    reverted(5, 1);
+
+    expect(sheet()).toEqual(KEPT);
+  });
+
+  it('keeps partial changes after a denial, which takes back only the denied files', () => {
+    addEvent({
+      type: 'error',
+      ts: 3,
+      phase: 'implementing',
+      message:
+        "Approval gate denied .env.local: no. SPLITBRIEF discarded this attempt's writes to .env.local.",
+    });
+
+    expect(sheet()).toEqual(KEPT);
+  });
+
+  it('keeps nothing at the halt after a denial took back every write of the brief', () => {
+    addEvent({
+      type: 'error',
+      ts: 3,
+      phase: 'implementing',
+      message:
+        "Task changed files blocked by approval gate: no. SPLITBRIEF discarded this attempt's writes to .env.local.",
+      briefKept: 0,
+    });
+    setRunHalt({
+      issue: makeRecoveryIssue({ reason: 'approval-denied', taskId: taskId('T001') }),
+      at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
+    });
+
+    expect(readStopMenuRows().map((row) => row.id)).toEqual(['stop-now', 'end-run']);
+    expect(sheet()).toEqual(NOTHING);
+  });
+
+  it('keeps nothing once a halt restored the brief to its start', () => {
+    reverted(3, 1);
+    addEvent({
+      type: 'error',
+      ts: 4,
+      phase: 'implementing',
+      message: 'Planner consult for T001 failed: The planner process stopped unexpectedly.',
+    });
+    setRunHalt({
+      issue: makeRecoveryIssue({ reason: 'planner-call-failed', taskId: taskId('T001') }),
+      at: { kind: 'brief', taskId: taskId('T001'), attempt: 1 },
+    });
+    addEvent({
+      type: 'warning',
+      ts: 5,
+      phase: 'implementing',
+      message: 'Restored 1 change of the failing brief to its start: src/sum.js',
+      briefKept: 0,
+    });
+
+    expect(readStopMenuRows().map((row) => row.id)).toEqual(['stop-now', 'end-run']);
+    expect(sheet()).toEqual(NOTHING);
   });
 });

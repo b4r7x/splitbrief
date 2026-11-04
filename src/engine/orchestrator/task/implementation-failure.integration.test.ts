@@ -54,6 +54,7 @@ function implState(implResult: ImplementerResult): RunImplementationResult {
       changedFiles: async () => [],
       cleanup: () => {},
       revert: async () => {},
+      discard: async () => ({}),
     },
     preApplyApprovalDenied: false,
     preApplyApprovedFiles: [],

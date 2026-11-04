@@ -53,7 +53,7 @@ export async function skipHaltedBrief(
   const own =
     taskStartSnapshot === undefined
       ? undefined
-      : await restoreExhaustedTaskFiles({ wctx, taskStartSnapshot });
+      : (await restoreExhaustedTaskFiles({ wctx, taskStartSnapshot }))?.message;
   const restoreWarning = await withReplacedAttempts(opts, own);
   return { state: await recordSkip(opts), restoreWarning };
 }

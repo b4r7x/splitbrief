@@ -33,6 +33,7 @@ import {
   cliDetectionsFor,
   rememberDetectedTools,
 } from '#testing/helpers/factories/detection.js';
+import { makeAttemptBrief } from '#testing/helpers/factories/attempt-brief.js';
 import { detectionStore } from '../../../stores/project/detection.js';
 import { runWorkflow } from '../../../engine/orchestrator/run/workflow.js';
 import { createRunIsolation } from '../../../engine/orchestrator/isolation/create.js';
@@ -398,7 +399,11 @@ describe('useRunLoop', () => {
     ensureSessionDir(projectDir, sessionId);
     const base = await createSnapshot({ ...ref, phase: 'manual', name: 'workspace-base' });
     const isolation = createRunIsolation({ ...ref, strategy: 'staged-copy', onFallback: () => {} });
-    const workspace = await isolation.acquire({ role: 'implementer', config: makeConfig() });
+    const workspace = await isolation.acquire({
+      role: 'implementer',
+      config: makeConfig(),
+      brief: makeAttemptBrief(),
+    });
     await workspace.retain?.();
     await isolation.dispose();
     const retained = {

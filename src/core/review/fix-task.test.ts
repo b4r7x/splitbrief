@@ -8,6 +8,7 @@ import {
   fixReviewChecks,
   fileFromFailureKey,
   judgeFixCheck,
+  splitFixCheckIds,
   type FixCheckCounts,
 } from './fix-task.js';
 
@@ -79,7 +80,7 @@ describe('fixReviewChecks', () => {
       },
     });
 
-    expect(fixReviewChecks(task)).toEqual([]);
+    expect(fixReviewChecks(task, true)).toEqual([]);
   });
 
   it('leaves a plan check to the plan registry', () => {
@@ -98,7 +99,7 @@ describe('fixReviewChecks', () => {
       },
     });
 
-    expect(fixReviewChecks(task)).toEqual([]);
+    expect(fixReviewChecks(task, true)).toEqual([]);
   });
 
   it('collects both findings and keeps the first command for a repeated id', () => {
@@ -124,10 +125,41 @@ describe('fixReviewChecks', () => {
       },
     });
 
-    expect(fixReviewChecks(task)).toEqual([
+    expect(fixReviewChecks(task, true)).toEqual([
       { id: 'V1', kind: 'cmd', value: 'tsc --noEmit' },
       { id: 'V2', kind: 'cmd', value: 'npm test' },
     ]);
+  });
+});
+
+describe('a fix task while End-of-run checks are off', () => {
+  const task = makeTask({
+    fix: {
+      cycle: 1,
+      findings: [
+        {
+          id: 'F1',
+          text: 'The reviewer and plan checks failed',
+          acceptance: null,
+          checkIds: ['V1', 'K1'],
+          commands: { V1: 'npm test', K1: 'tsc --noEmit' },
+        },
+        { id: 'F2', text: 'A reviewer check failed', acceptance: null, checkIds: ['V2', 'V1'] },
+      ],
+    },
+  });
+
+  it('returns no reviewer check', () => {
+    expect(fixReviewChecks(task, false)).toEqual([]);
+  });
+
+  it('names every reviewer check id as off, each once, and keeps the plan check', () => {
+    expect(splitFixCheckIds(task, false)).toEqual({ run: ['K1'], off: ['V1', 'V2'] });
+  });
+
+  it('runs every check id, each once, while End-of-run checks are on', () => {
+    expect(fixReviewChecks(task, true)).toEqual([{ id: 'V1', kind: 'cmd', value: 'npm test' }]);
+    expect(splitFixCheckIds(task, true)).toEqual({ run: ['V1', 'K1', 'V2'], off: [] });
   });
 });
 

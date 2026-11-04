@@ -54,6 +54,7 @@ import { createConfiguredCustomImplementer } from '../../implementers/command-in
 import { createImplementerBase } from '../../implementers/pipeline/run.js';
 import { makeBaseConfig } from '#testing/helpers/factories/implementer-base.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
+import { makeAttemptBrief } from '#testing/helpers/factories/attempt-brief.js';
 import { fixBriefDescription, type FixFinding } from '../../../core/review/fix-task.js';
 import {
   captureProjectFileHashes,
@@ -988,6 +989,7 @@ describe('runImplementation continuation note', () => {
         changedFiles: () => getChangedFilesSinceSnapshot(projectDir, snapshot),
         cleanup: () => {},
         revert: vi.fn(),
+        discard: vi.fn(),
       }),
       dispose: async () => {},
     };
@@ -1044,6 +1046,7 @@ describe('runImplementation continuation note', () => {
           changedFiles: () => getChangedFilesSinceSnapshot(projectDir, snapshot),
           cleanup: () => {},
           revert: vi.fn(),
+          discard: vi.fn(),
         };
       },
       dispose: async () => {},
@@ -1248,6 +1251,7 @@ describe('runImplementation live preview', () => {
           changedFiles: () => getChangedFilesSinceSnapshot(projectDir, snapshot),
           cleanup: () => {},
           revert: vi.fn(),
+          discard: vi.fn(),
         };
       },
       dispose: async () => {},
@@ -1425,7 +1429,11 @@ describe.each(['implementation', 'retry-invoker'] as const)(
       try {
         const initialWorkspace =
           caller === 'retry-invoker'
-            ? await wctx.isolation.acquire({ role: 'implementer', config: wctx.config })
+            ? await wctx.isolation.acquire({
+                role: 'implementer',
+                config: wctx.config,
+                brief: makeAttemptBrief(),
+              })
             : undefined;
         const invoker = makeImplementerRetryInvoker({
           context: wctx.context,
@@ -2007,6 +2015,7 @@ describe('BUILD steering wiring', () => {
       cleanup: () => {},
       changedFiles: async () => [],
       revert: async () => {},
+      discard: async () => ({}),
     };
     const isolation: RunIsolation = {
       open: async () => ({

@@ -33,6 +33,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { defaultContext, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
+import { makeAttemptBrief } from '#testing/helpers/factories/attempt-brief.js';
 import {
   makeBusRecorder,
   makeCallbacks,
@@ -952,6 +953,7 @@ describe('runRetryStep', () => {
       const failed = await isolation.acquire({
         role: 'implementer',
         config,
+        brief: makeAttemptBrief(),
       });
       expect(failed.projectDir).toBe(
         isolationWorktreePath(realpathSync(join(projectDir, '.git')), sessionId),
@@ -964,7 +966,7 @@ describe('runRetryStep', () => {
       mkdirSync(join(projectDir, 'src'), { recursive: true });
       writeFileSync(join(projectDir, 'src/shared.ts'), promoted);
       writeFileSync(join(failed.projectDir, 'src/abandoned.ts'), 'export const half = 1;\n');
-      failed.cleanup(['src/abandoned.ts']);
+      await failed.discard(['src/abandoned.ts']);
 
       const retryDirs: string[] = [];
       const outcome = await runRetryStep({
@@ -1035,6 +1037,7 @@ describe('runRetryStep', () => {
       const failed = await isolation.acquire({
         role: 'implementer',
         config,
+        brief: makeAttemptBrief(),
       });
       mkdirSync(join(failed.projectDir, 'src'), { recursive: true });
       writeFileSync(join(failed.projectDir, 'src/dirty.ts'), firstAttempt);
@@ -1227,6 +1230,6 @@ describe('runRetryStep — gate denial', () => {
           event.message ===
             "Retry changed files blocked by approval gate: package change denied. SPLITBRIEF discarded this attempt's writes to package.json.",
       ),
-    ).toHaveLength(1);
+    ).toMatchObject([{ briefKept: 0 }]);
   });
 });

@@ -4,6 +4,7 @@ import type { Task } from '../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../core/schemas/workflow.js';
 import { orderChangedFiles } from '../change-detection.js';
 import { getChangedFilesSinceSnapshot } from './approval/file-snapshots/capture.js';
+import { restorableFiles } from './isolation/entry-snapshot.js';
 import type { ImplementerOptions } from '../implementers/types.js';
 
 /** Where the run's code lives: its isolation workspace, or the checkout when it has none. */
@@ -33,9 +34,27 @@ export async function changedDeclaredFiles(
 }
 
 /**
- * What a stop that cuts `step` leaves kept: the declared files its brief already changed. A step
- * that is no brief, or a brief other than the running one, whose start the state does not hold,
- * kept nothing that can be named.
+ * The files a put-back of the brief still acts on: its writes still changed since it started.
+ * Undefined when the run code cannot be compared with the start (a snapshot head the operator
+ * rewrote): the row then carries no count, so the stop options never promise on it that nothing
+ * is kept.
+ */
+export async function briefKeptFiles(
+  codeDir: string,
+  taskStartSnapshot: ChangedFilesSnapshot,
+): Promise<string[] | undefined> {
+  try {
+    return await restorableFiles(codeDir, taskStartSnapshot);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * What a stop that cuts `step` leaves kept: the files its brief wrote that are still changed, its
+ * declared files first. A step that is no brief, or a brief other than the running one, whose start
+ * the state does not hold, kept nothing that can be named; nor does a start the run code can no
+ * longer be compared with, which must not stop the stop.
  */
 export async function keptBriefFiles(
   codeDir: string,
@@ -46,7 +65,8 @@ export async function keptBriefFiles(
   const task = state.tasks[state.currentTaskIndex];
   const taskStart = state.changedFilesBaseline?.activeTaskSnapshot;
   if (task?.id !== step.taskId || taskStart === undefined) return [];
-  return changedDeclaredFiles(codeDir, task, taskStart);
+  const kept = await briefKeptFiles(codeDir, taskStart);
+  return kept === undefined ? [] : orderChangedFiles(kept, task.suggestedFiles);
 }
 
 /**

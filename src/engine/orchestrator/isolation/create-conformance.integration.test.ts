@@ -13,6 +13,7 @@ import {
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeAttemptBrief } from '#testing/helpers/factories/attempt-brief.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createRunIsolation } from './create.js';
@@ -40,7 +41,11 @@ describe('staged attempt conformance', () => {
       onFallback: vi.fn(),
     });
     const config = makeConfig();
-    const attempt = await isolation.acquire({ role: 'implementer', config });
+    const attempt = await isolation.acquire({
+      role: 'implementer',
+      config,
+      brief: makeAttemptBrief(),
+    });
     chmodSync(join(attempt.projectDir, 'mode.bin'), 0o755);
     await attempt.retain?.();
     await isolation.dispose();
@@ -52,7 +57,11 @@ describe('staged attempt conformance', () => {
     });
     const opened = await continued.open({ config });
     expect(opened.keptFiles).toEqual(['mode.bin']);
-    const next = await continued.acquire({ role: 'implementer', config });
+    const next = await continued.acquire({
+      role: 'implementer',
+      config,
+      brief: makeAttemptBrief(),
+    });
     expect(next.projectDir).toBe(attempt.projectDir);
     expect(lstatSync(join(next.projectDir, 'mode.bin')).mode & 0o777).toBe(0o644);
     expect(readFileSync(join(next.projectDir, 'mode.bin'))).toEqual(original);
@@ -79,10 +88,18 @@ describe('staged attempt conformance', () => {
         onFallback,
       });
       const config = makeConfig();
-      const first = await isolation.acquire({ role: 'implementer', config });
+      const first = await isolation.acquire({
+        role: 'implementer',
+        config,
+        brief: makeAttemptBrief(),
+      });
       writeFileSync(join(first.projectDir, 'source.txt'), 'earlier task\n');
       expect(existsSync(join(first.projectDir, 'node_modules'))).toBe(false);
-      const second = await isolation.acquire({ role: 'implementer', config });
+      const second = await isolation.acquire({
+        role: 'implementer',
+        config,
+        brief: makeAttemptBrief(),
+      });
       expect(second.projectDir).toBe(first.projectDir);
       expect(readFileSync(join(second.projectDir, 'source.txt'), 'utf8')).toBe('earlier task\n');
       expect(existsSync(join(second.projectDir, 'node_modules'))).toBe(false);
@@ -149,12 +166,20 @@ describe('staged attempt conformance', () => {
       onFallback: vi.fn(),
     });
     const config = makeConfig();
-    const first = await isolation.acquire({ role: 'implementer', config });
+    const first = await isolation.acquire({
+      role: 'implementer',
+      config,
+      brief: makeAttemptBrief(),
+    });
     writeFileSync(join(first.projectDir, 'source.txt'), 'earlier task\n');
     writeFileSync(join(first.projectDir, 'earlier.txt'), 'kept\n');
     chmodSync(join(first.projectDir, 'deleted.txt'), 0o640);
     symlinkSync('source.txt', join(first.projectDir, 'existing-link'));
-    const attempt = await isolation.acquire({ role: 'implementer', config });
+    const attempt = await isolation.acquire({
+      role: 'implementer',
+      config,
+      brief: makeAttemptBrief(),
+    });
     writeFileSync(join(attempt.projectDir, 'source.txt'), 'checkout\n');
     chmodSync(join(attempt.projectDir, 'earlier.txt'), 0o000);
     rmSync(join(attempt.projectDir, 'deleted.txt'));
@@ -164,7 +189,11 @@ describe('staged attempt conformance', () => {
     symlinkSync('/outside-the-workspace', join(attempt.projectDir, 'outside-link'));
     writeFileSync(join(attempt.projectDir, 'new.txt'), 'failed\n');
     attempt.cleanup();
-    const next = await isolation.acquire({ role: 'implementer', config });
+    const next = await isolation.acquire({
+      role: 'implementer',
+      config,
+      brief: makeAttemptBrief(),
+    });
     expect(readFileSync(join(next.projectDir, 'source.txt'), 'utf8')).toBe('earlier task\n');
     expect(lstatSync(join(next.projectDir, 'earlier.txt')).mode & 0o777).toBe(0o644);
     expect(readFileSync(join(next.projectDir, 'deleted.txt'))).toEqual(Buffer.from([0, 255, 42]));
@@ -192,7 +221,11 @@ describe('staged attempt conformance', () => {
         strategy: 'staged-copy',
         onFallback: vi.fn(),
       });
-      const workspace = await isolation.acquire({ role: 'implementer', config });
+      const workspace = await isolation.acquire({
+        role: 'implementer',
+        config,
+        brief: makeAttemptBrief(),
+      });
       if (retained) await workspace.retain?.();
       await isolation.dispose();
       expect(existsSync(workspace.projectDir)).toBe(true);

@@ -256,7 +256,7 @@ export async function raiseApiApplyRecovery(opts: {
   const workspacePath = workspace.projectDir;
   const inPlace = state.workspace?.kind === 'checkout';
   if (inPlace) {
-    await workspace.revert(await workspace.changedFiles());
+    await workspace.revert();
   }
   const landed = result.applied.map((file) => file.path).join(', ');
   const message =

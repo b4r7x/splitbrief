@@ -7,6 +7,7 @@ import {
   judgeFixCheck,
   type FixCheckKeys,
 } from '../../../core/review/fix-task.js';
+import { resolveEndChecks } from '../../../core/config/runtime/resolve.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
@@ -73,7 +74,7 @@ function taskCheckOptions(opts: {
     task,
     plan: state.plan,
     tasks: state.tasks,
-    reviewChecks: fixReviewChecks(task),
+    reviewChecks: fixReviewChecks(task, resolveEndChecks(wctx.config)),
     base: runBaseOf(wctx, state),
     runCommand: opts.runCommand,
     projectDir: wctx.workspaceDir,

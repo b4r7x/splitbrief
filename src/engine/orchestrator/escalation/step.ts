@@ -90,6 +90,7 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepResult
   const workspace = await ctx.isolation.acquire({
     role: isolationRole ?? 'implementer',
     config: ctx.config,
+    brief: { task, taskStartSnapshot: ctx.taskStartSnapshot },
   });
   const outcome = await runRetryStepAttempt({ ...opts, state, task }, workspace);
   return { ...outcome, attemptSnapshot: workspace.snapshot };

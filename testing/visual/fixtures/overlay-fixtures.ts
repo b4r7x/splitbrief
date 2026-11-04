@@ -65,8 +65,17 @@ import { sessionsStore } from '../../../src/stores/project/sessions.js';
 import { skillsStore } from '../../../src/stores/project/skills.js';
 import { modelCacheStore } from '../../../src/stores/discovery/model-cache/state.js';
 import { addEvent } from '../../../src/stores/workflow/actions/event.js';
+import { createEventBus } from '../../../src/engine/events/bus.js';
+import {
+  publishError,
+  publishInfo,
+  publishRecoveryPrompted,
+} from '../../../src/engine/orchestrator/events.js';
+import { buildApprovalDeniedRecoveryIssue } from '../../../src/engine/orchestrator/recovery/builders/task.js';
 import { reviewStore } from '../../../src/stores/workflow/review.js';
 import { stopStore } from '../../../src/stores/workflow/stop.js';
+import { recoveryNoticeStore } from '../../../src/stores/workflow/recovery-notice.js';
+import { controlsStore } from '../../../src/stores/ui/controls.js';
 import { markWorkflowPaused } from '../../../src/stores/workflow/actions/pause.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
 import { seatChangeWords } from '../../../src/core/crew/seats.js';
@@ -115,6 +124,8 @@ type VisualConfigOverrides = Parameters<typeof visualConfig>[0];
 
 const EMPTY_SEED: OverlaySeed = () => {};
 
+const OVERLAY_SESSION_ID = 'visual-overlay-session';
+
 function overlayPrepared(): PreparedExecution {
   const config = configStore.get().config;
   if (config === null) throw new Error('Visual overlay fixture requires project config');
@@ -123,7 +134,7 @@ function overlayPrepared(): PreparedExecution {
     projectDir: VISUAL_FIXTURE_PROJECT_DIR,
     feature: 'Inspect visual fixture',
     config,
-    sessionId: 'visual-overlay-session',
+    sessionId: OVERLAY_SESSION_ID,
   });
 }
 
@@ -2211,7 +2222,7 @@ function seedStopSheetPlan(): void {
   });
 }
 
-function seedStopSheet(): void {
+function seedStopSheetFirstBrief(): void {
   seedStopSheetPlan();
   addEvent({
     type: 'task_started',
@@ -2224,6 +2235,10 @@ function seedStopSheet(): void {
     file: 'src/features/workflow/stop/options.ts',
     action: 'create',
   });
+}
+
+function seedStopSheet(): void {
+  seedStopSheetFirstBrief();
   addEvent({
     type: 'task_completed',
     ts: STOP_SHEET_TS + 5_010,
@@ -3315,6 +3330,78 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
         },
       });
     },
+  ],
+  [
+    scenarioId('workflow-stop-sheet-after-revert'),
+    // The first brief's failed first attempt was put back, which left none of its files changed,
+    // and no brief has finished, so stopping keeps no changes.
+    () =>
+      createOverlayFixture({
+        overlay: 'stop-sheet',
+        underlyingScreen: 'workflow',
+        seed: () => {
+          seedStopSheetFirstBrief();
+          addEvent({
+            type: 'implementer_generate_failed',
+            ts: STOP_SHEET_TS + 5_000,
+            phase: 'implementing',
+            taskId: taskId('T001'),
+            error:
+              'Edit bundle did not apply: src/features/workflow/stop/options.ts hunk 2 no longer matches',
+          });
+          const bus = createEventBus();
+          bus.subscribe((event) => addEvent({ ...event, ts: STOP_SHEET_TS + 5_010 }));
+          publishInfo({
+            bus,
+            phase: 'implementing',
+            message: 'T001 attempt reverted: 1 file',
+            briefKept: 0,
+          });
+        },
+      }),
+  ],
+  [
+    scenarioId('workflow-stop-sheet-after-denial'),
+    // The operator denied every write of the first brief's first attempt. The denial took them all
+    // back and the run halts, and no brief has finished, so stopping keeps no changes.
+    () =>
+      createOverlayFixture({
+        overlay: 'stop-sheet',
+        underlyingScreen: 'workflow',
+        seed: () => {
+          seedStopSheetFirstBrief();
+          const bus = createEventBus();
+          bus.subscribe((event) => addEvent({ ...event, ts: STOP_SHEET_TS + 5_010 }));
+          publishError({
+            bus,
+            phase: 'implementing',
+            message:
+              "Task changed files blocked by approval gate: no secrets in this brief. SPLITBRIEF discarded this attempt's writes to .env.local.",
+            briefKept: 0,
+          });
+          publishRecoveryPrompted(
+            { bus, phase: 'implementing' },
+            OVERLAY_SESSION_ID,
+            buildApprovalDeniedRecoveryIssue({
+              id: 'rec_visual_stop_denial',
+              task: makeTask({
+                id: 'T001',
+                title: 'Add the stop sheet rows',
+                action: 'create',
+                suggestedFiles: ['src/features/workflow/stop/options.ts'],
+              }),
+              phase: 'implementing',
+              deniedFiles: ['.env.local'],
+              denialReason: 'no secrets in this brief',
+              createdAt: new Date(STOP_SHEET_TS + 5_020).toISOString(),
+            }),
+            { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
+          );
+          // The halt's panel asks the operator, as the recovery driver leaves it.
+          recoveryNoticeStore.ask(true);
+          controlsStore.setInputMode('question');
+        },
+      }),
   ],
   [
     scenarioId('workflow-stop-menu-parked-gate'),

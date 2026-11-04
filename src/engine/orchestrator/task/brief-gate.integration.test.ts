@@ -548,7 +548,7 @@ describe('brief gate', () => {
         },
       });
       const result = await runBriefGate({
-        wctx: makeWctx(ref),
+        wctx: makeWctx({ ...ref, config: makeConfig() }),
         state: makeImplState([task]),
         task,
         changedFiles: [],
@@ -579,7 +579,7 @@ describe('brief gate', () => {
     });
     const runCommand = vi.fn().mockResolvedValue({ stdout: 'ok', stderr: '', code: 0 });
     const result = await runBriefGate({
-      wctx: makeWctx(ref),
+      wctx: makeWctx({ ...ref, config: makeConfig() }),
       state: makeImplState([task]),
       task,
       changedFiles: [],
@@ -596,6 +596,77 @@ describe('brief gate', () => {
       { id: 'V1', status: 'pass' },
       { id: 'V2', status: 'pass' },
     ]);
+  });
+
+  describe('a fix task that answers a plan check and a reviewer check', () => {
+    async function gateBoth(config: ReturnType<typeof makeConfig>) {
+      const ref = setup();
+      const task = makeTask({
+        id: 'T003',
+        fix: {
+          cycle: 1,
+          findings: [
+            {
+              id: 'F1',
+              text: 'The plan check and the reviewer check failed',
+              acceptance: null,
+              checkIds: ['K1', 'V1'],
+              commands: { K1: 'node --version', V1: 'npm test' },
+            },
+          ],
+        },
+      });
+      const plan = {
+        summary: 'fix',
+        decisions: [],
+        validation: null,
+        criteria: [],
+        checks: [{ id: 'K1', kind: 'cmd' as const, value: 'node --version' }],
+      };
+      const runCommand = vi
+        .fn()
+        .mockRejectedValue(processError.exitCode({ command: 'node', code: 1, stderr: 'broken' }));
+      const { bus, events } = makeBusRecorder();
+      const result = await runBriefGate({
+        wctx: makeWctx({ ...ref, bus, config }),
+        state: makeImplState([task], { plan }),
+        task,
+        changedFiles: [],
+        taskStartSnapshot: null,
+        runCommand,
+      });
+      return {
+        result,
+        commands: runCommand.mock.calls.map(([cmd, args]) => [cmd, ...args].join(' ')),
+        v1Rows: events.filter((event) => event.type === 'full_suite' && event.id === 'V1'),
+      };
+    }
+
+    it('runs and gates the plan check, and drops the reviewer check while End-of-run checks are off', async () => {
+      const { result, commands, v1Rows } = await gateBoth(
+        makeConfig({ validation: { endChecks: false } }),
+      );
+
+      expect(commands).toEqual(['node --version']);
+      expect(result.acceptance.accepted).toBe(false);
+      expect(result.error).toMatch(/^check K1 did not pass \(fail\)/);
+      expect(result.error).not.toContain('V1');
+      expect(v1Rows).toEqual([
+        expect.objectContaining({ moment: 'brief', id: 'V1', status: 'off', command: '' }),
+      ]);
+    });
+
+    it('runs the reviewer check by the command the finding carries while End-of-run checks are on', async () => {
+      const { result, commands, v1Rows } = await gateBoth(makeConfig());
+
+      expect(commands).toEqual(['node --version', 'npm test']);
+      expect(result.acceptance.accepted).toBe(false);
+      expect(result.error).toContain('check V1 did not pass (fail)');
+      expect(v1Rows).toContainEqual(
+        expect.objectContaining({ moment: 'brief', id: 'V1', status: 'done', command: 'npm test' }),
+      );
+      expect(v1Rows).not.toContainEqual(expect.objectContaining({ status: 'off' }));
+    });
   });
 
   describe('a fix task that answers a reviewer check', { timeout: 60_000 }, () => {
@@ -665,9 +736,11 @@ describe('brief gate', () => {
           output,
         });
       };
+      const { bus, events } = makeBusRecorder();
       const result = await runBriefGate({
         wctx: makeWctx({
           ...ref,
+          bus,
           workspaceDir: run.ws,
           config: options.config ?? makeConfig(),
           validator: { formatChangedFiles: vi.fn().mockResolvedValue(undefined) },
@@ -678,7 +751,7 @@ describe('brief gate', () => {
         taskStartSnapshot: null,
         runCommand,
       });
-      return { result, places, commands };
+      return { result, places, commands, events };
     }
 
     it('fails the gate while a failure the finding carries remains, and runs nothing at the run base', async () => {
@@ -734,16 +807,20 @@ describe('brief gate', () => {
       });
     });
 
-    it('runs the carried command again while End-of-run checks are off', async () => {
+    it('runs no check and accepts the brief while End-of-run checks are off, with one neutral off row', async () => {
       await withApplyRun(FILES, { sessionId: 'sess-fix-off' }, async (run) => {
-        const { result, commands } = await gate(
+        const { result, commands, events } = await gate(
           run,
           (at) => (at === 'workspace' ? NEW_RED : null),
           { config: makeConfig({ validation: { endChecks: false } }) },
         );
 
-        expect(commands).toEqual(['npm test']);
-        expect(result.acceptance.accepted).toBe(false);
+        expect(commands).toEqual([]);
+        expect(result.acceptance).toEqual({ accepted: true });
+        expect(result.error).toBe('');
+        expect(events.filter((event) => event.type === 'full_suite')).toEqual([
+          expect.objectContaining({ moment: 'brief', id: 'V1', status: 'off', command: '' }),
+        ]);
       });
     });
 

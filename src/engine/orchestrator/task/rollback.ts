@@ -8,6 +8,7 @@ import { publishWarning, publishWarningFromError } from '../events.js';
 import { inferTaskOwnChangedFiles } from '../changed-files-baseline.js';
 import type { WorkflowContext } from '../types.js';
 import { restoreWorkspaceFiles } from '../isolation/entry-snapshot.js';
+import { briefKeptFiles } from '../kept-work.js';
 import { replacedAttemptWrites } from './booking.js';
 
 /** The restore path runs before a WorkflowContext exists on resume, so it asks for only what it reads. */
@@ -54,33 +55,26 @@ function savedTaskSnapshot(
   return loadState(wctx)?.changedFilesBaseline?.activeTaskSnapshot ?? taskStartSnapshot;
 }
 
-function restoreTaskFilesFromSnapshot(
-  opts: Omit<Parameters<typeof restoreSnapshotFiles>[0], 'snapshot'> & {
-    taskStartSnapshot: ChangedFilesSnapshot;
-  },
-): Promise<string | undefined> {
-  return restoreSnapshotFiles({
-    ...opts,
-    snapshot: savedTaskSnapshot(opts.wctx, opts.taskStartSnapshot),
-  });
-}
-
 /**
  * Every file the brief changed since its task-start snapshot, across all its attempts, goes back.
  * A rewritten brief or a split child starts from its own snapshot, so the files of the attempts it
- * replaced stay. The caller publishes the returned warning where its own events allow it.
+ * replaced stay. The caller publishes the returned warning where its own events allow it, with
+ * `briefKept`, the files a put-back of the brief still acts on afterwards.
  */
-export function restoreExhaustedTaskFiles(opts: {
+export async function restoreExhaustedTaskFiles(opts: {
   wctx: RestoreContext;
   taskStartSnapshot: ChangedFilesSnapshot;
-}): Promise<string | undefined> {
-  return restoreTaskFilesFromSnapshot({
+}): Promise<{ message: string; briefKept: number | undefined } | undefined> {
+  const snapshot = savedTaskSnapshot(opts.wctx, opts.taskStartSnapshot);
+  const message = await restoreSnapshotFiles({
     wctx: opts.wctx,
-    taskStartSnapshot: opts.taskStartSnapshot,
+    snapshot,
     restoredMessage: (restoredFiles, changes) =>
       `Restored ${restoredFiles.length} ${changes} of the failing brief to its start: ${restoredFiles.join(', ')}`,
     failureMessage: 'Failed to restore the changes of the failing brief to its start',
   });
+  if (message === undefined) return undefined;
+  return { message, briefKept: (await briefKeptFiles(opts.wctx.workspaceDir, snapshot))?.length };
 }
 
 export function restoreHookDeniedTaskFiles(opts: {
@@ -88,9 +82,9 @@ export function restoreHookDeniedTaskFiles(opts: {
   taskStartSnapshot: ChangedFilesSnapshot;
   hook: 'pre_task' | 'pre_validation';
 }): Promise<string | undefined> {
-  return restoreTaskFilesFromSnapshot({
+  return restoreSnapshotFiles({
     wctx: opts.wctx,
-    taskStartSnapshot: opts.taskStartSnapshot,
+    snapshot: savedTaskSnapshot(opts.wctx, opts.taskStartSnapshot),
     restoredMessage: (restoredFiles, changes) =>
       `Restored ${restoredFiles.length} unvalidated task ${changes} after ${opts.hook} denied: ${restoredFiles.join(', ')}`,
     failureMessage: `Failed to restore denied ${opts.hook} task changes`,

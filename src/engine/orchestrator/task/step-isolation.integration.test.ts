@@ -1,5 +1,12 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from 'node:fs';
 import { basename, dirname, join, relative } from 'node:path';
 import {
   makeCallbacks,
@@ -16,7 +23,7 @@ import {
   makeTaskWorkflowContext as makeWorkflowContext,
   setupTaskProject as setupProject,
 } from '#testing/helpers/orchestrator-task-context.js';
-import { consultCallAnswering } from '#testing/helpers/typed-planner.js';
+import { consultCallAnswering, guidanceConsult } from '#testing/helpers/typed-planner.js';
 import { isolationWorktreeRoot, SPLITBRIEF_DIR } from '../../../core/paths.js';
 import { createRunIsolation } from '../isolation/create.js';
 import { readWorkspaceRecord } from '../isolation/retention.js';
@@ -216,5 +223,189 @@ describe('runSingleTask — worktree isolation', () => {
     );
     expect((await readWorkspaceRecord({ projectDir, sessionId }))?.retained).toBe(true);
     expect(checkoutFiles(projectDir)).toEqual(before);
+  });
+});
+
+describe('runSingleTask — what a revert or a restore leaves of the brief', () => {
+  const task = makeTask({
+    id: 'T001',
+    action: 'modify',
+    suggestedFiles: ['src/main.ts', 'src/extra.ts'],
+    scope: { inBounds: ['src/main.ts', 'src/extra.ts'] },
+    checks: [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit' }],
+  });
+
+  /**
+   * Runs the brief until a consult fails. The failing consult waits for the revert row, as a real
+   * consult is a seat call that lasts longer than the revert.
+   */
+  async function runUntilHalt(opts: {
+    implement: (dir: string) => { success: boolean };
+    retry?: (dir: string) => { success: boolean };
+    answers: Array<() => ReturnType<typeof guidanceConsult>>;
+  }) {
+    const { projectDir, sessionId } = setupProject({
+      'src/main.ts': 'export const main = 0;\n',
+      'src/extra.ts': 'export const extra = 0;\n',
+    });
+    const usage = { inputTokens: 10, outputTokens: 5 };
+    const result = (outcome: { success: boolean }) =>
+      outcome.success
+        ? { success: true, output: 'ok', usage }
+        : { success: false, error: 'seat error', usage };
+    const implementer = makeImplementer({
+      capabilities: { writesFiles: 'direct' },
+      implement: vi
+        .fn()
+        .mockImplementation(async (call: ImplementerOptions) =>
+          result(opts.implement(call.projectDir)),
+        ),
+      retry: vi
+        .fn()
+        .mockImplementation(async (call: ImplementerOptions) =>
+          result((opts.retry ?? opts.implement)(call.projectDir)),
+        ),
+    });
+    vi.spyOn(commandRunner, 'runCommand').mockRejectedValue(
+      processError.exitCode({ command: 'tsc', code: 2, stderr: 'T001 is broken', output: '' }),
+    );
+    const rows: unknown[] = [];
+    let revertSeen: () => void = () => {};
+    const revertRow = new Promise<void>((resolve) => {
+      revertSeen = resolve;
+    });
+    const isolation = createRunIsolation({
+      projectDir,
+      sessionId,
+      strategy: 'worktree',
+      onFallback: () => {},
+      infoPublisher: (row) => {
+        rows.push(row);
+        revertSeen();
+      },
+    });
+    let consults = 0;
+    const answering = consultCallAnswering(() => {
+      const answer = opts.answers[consults];
+      consults += 1;
+      if (answer === undefined) throw new Error('The planner process stopped unexpectedly.');
+      return answer();
+    });
+    const typedCall = vi.fn((ctx: Parameters<typeof answering>[0]) => {
+      const call = answering(ctx);
+      return {
+        ...call,
+        invoke: async (input: Parameters<typeof call.invoke>[0]) => {
+          if (consults === opts.answers.length) await revertRow;
+          return call.invoke(input);
+        },
+      };
+    });
+    const recorder = makeBusRecorder();
+    const wctx = await openRunWorkspace(
+      makeWorkflowContext({
+        projectDir,
+        sessionId,
+        callbacks: makeCallbacks().callbacks,
+        implementer,
+        bus: recorder.bus,
+        isolation,
+        config: makeConfig({ workflow: { review: 'task' } }),
+        planner: makePlanner({ typedCall }),
+      }),
+    );
+    const state = await runSingleTask({
+      wctx,
+      task,
+      index: 0,
+      totalTasks: 1,
+      state: implementingState([task]),
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+    await isolation.dispose();
+    const warnings = recorder.events.filter((event) => event.type === 'warning');
+    return { state, rows, warnings, workspaceDir: wctx.workspaceDir };
+  }
+
+  const write = (dir: string, file: string, text: string): void =>
+    writeFileSync(join(dir, file), text);
+
+  it('counts the file of the first attempt when the retry is put back, and none after the halt restore', {
+    timeout: 120_000,
+  }, async () => {
+    const { state, rows, warnings, workspaceDir } = await runUntilHalt({
+      implement: (dir) => {
+        write(dir, 'src/main.ts', 'export const main = 1;\n');
+        return { success: true };
+      },
+      retry: (dir) => {
+        write(dir, 'src/extra.ts', 'export const extra = 1;\n');
+        return { success: false };
+      },
+      answers: [() => guidanceConsult('Fix the type error.')],
+    });
+
+    expect(state.pendingRecovery?.reason).toBe('planner-call-failed');
+    expect(rows).toEqual([{ message: 'T001 attempt reverted: 1 file', briefKept: 1 }]);
+    expect(warnings).toContainEqual(
+      expect.objectContaining({
+        message: 'Restored 1 change of the failing brief to its start: src/main.ts',
+        briefKept: 0,
+      }),
+    );
+    expect(readFileSync(join(workspaceDir, 'src/main.ts'), 'utf-8')).toBe(
+      'export const main = 0;\n',
+    );
+  });
+
+  it('counts no file when the first attempt is put back', { timeout: 120_000 }, async () => {
+    const { state, rows } = await runUntilHalt({
+      implement: (dir) => {
+        write(dir, 'src/main.ts', 'export const main = 1;\n');
+        return { success: false };
+      },
+      answers: [],
+    });
+
+    expect(state.pendingRecovery?.reason).toBe('planner-call-failed');
+    expect(rows).toEqual([{ message: 'T001 attempt reverted: 1 file', briefKept: 0 }]);
+  });
+
+  /** The first attempt writes only a file outside the brief's declared files; the retry fails. */
+  const undeclaredFirstAttempt = {
+    implement: (dir: string) => {
+      write(dir, 'src/helper.ts', 'export const helper = 1;\n');
+      return { success: true };
+    },
+    retry: (dir: string) => {
+      write(dir, 'src/extra.ts', 'export const extra = 1;\n');
+      return { success: false };
+    },
+    answers: [() => guidanceConsult('Fix the type error.')],
+  };
+
+  it('counts a file of the first attempt outside the declared files when the retry is put back', {
+    timeout: 120_000,
+  }, async () => {
+    const { rows } = await runUntilHalt(undeclaredFirstAttempt);
+
+    expect(rows).toEqual([{ message: 'T001 attempt reverted: 1 file', briefKept: 1 }]);
+  });
+
+  it('counts no file once the halt restore took back a file outside the declared files', {
+    timeout: 120_000,
+  }, async () => {
+    const { state, warnings, workspaceDir } = await runUntilHalt(undeclaredFirstAttempt);
+
+    expect(state.pendingRecovery?.reason).toBe('planner-call-failed');
+    expect(warnings).toContainEqual(
+      expect.objectContaining({
+        message: 'Restored 1 change of the failing brief to its start: src/helper.ts',
+        briefKept: 0,
+      }),
+    );
+    expect(existsSync(join(workspaceDir, 'src/helper.ts'))).toBe(false);
   });
 });

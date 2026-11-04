@@ -586,6 +586,18 @@ describe('fullSuiteRow for a reviewer check', () => {
     expect(fullSuiteTone({ ...fix, status: 'done', passed: false })).toBe('error');
   });
 
+  it('says in one neutral row that a fix brief ran no reviewer check while End-of-run checks are off', () => {
+    const off = reviewCheck({
+      phase: 'implementing',
+      moment: 'brief',
+      command: '',
+      status: 'off',
+    });
+    expect(fullSuiteRow(off)).toBe('Fix check V1 · off');
+    expect(fullSuiteSegments(off).at(-1)).toEqual({ text: 'off', tone: 'textDim' });
+    expect(fullSuiteTone(off)).toBe('textDim');
+  });
+
   // Live run 2026-10-09: a fix brief's row said `failed` while only other tasks' failures were left.
   it('says how many of the failures a fix check answers are gone, which are left to a sibling, and how many others are left', () => {
     const fix = reviewCheck({

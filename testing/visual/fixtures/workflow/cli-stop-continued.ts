@@ -1,9 +1,4 @@
-import {
-  WORKSPACE_KEPT_CODE,
-  WORKSPACE_NOTICE_CATEGORY,
-} from '../../../../src/core/sessions/workspace-notice.js';
 import { taskId } from '../../../../src/core/schemas/task.js';
-import { retainedWorkspaceNotice } from '../../../../src/engine/orchestrator/isolation/retention.js';
 import type { EngineEvent, EngineEventOf } from '../../../../src/engine/events/types.js';
 import { VISUAL_FIXTURE_EPOCH as epoch } from '../common.js';
 import { scenarioId } from '../../contracts/identifiers.js';
@@ -169,14 +164,6 @@ export const cliStopContinuedProjection: WorkflowFixtureProjection = {
       source: 'user',
       at: 'mid-step',
       step: { kind: 'brief', taskId: BRIEF, attempt: 0 },
-    },
-    {
-      type: 'warning',
-      ts: epoch + 45_200,
-      phase: 'implementing',
-      message: retainedWorkspaceNotice('.splitbrief/trees/greeting/2026-10-14-greeting'),
-      category: WORKSPACE_NOTICE_CATEGORY,
-      code: WORKSPACE_KEPT_CODE,
     },
     { type: 'workflow_resumed', ts: epoch + 80_000, phase: 'implementing' },
     briefStarted(epoch + 80_100),

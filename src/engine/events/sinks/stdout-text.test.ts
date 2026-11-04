@@ -867,6 +867,21 @@ describe('createStdoutTextSink', () => {
     ]);
   });
 
+  it('writes one line for a reviewer check a fix brief does not run while End-of-run checks are off', () => {
+    const off: EngineEventOf<'full_suite'> = {
+      type: 'full_suite',
+      ts,
+      phase: 'implementing',
+      status: 'off',
+      id: 'V1',
+      command: '',
+      moment: 'brief',
+    };
+
+    expect(collect([off])).toEqual(['phase: implementing', 'fix check V1: off']);
+    expect(EngineEventSchema.safeParse(off).success).toBe(true);
+  });
+
   it('writes the split on a red reviewer check line, and only passes or fails on its base line', () => {
     const check = (fields: Partial<EngineEventOf<'full_suite'>>): EngineEventOf<'full_suite'> => ({
       type: 'full_suite',

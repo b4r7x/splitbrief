@@ -81,7 +81,7 @@ export type StateAction =
       /** Where the stop landed: inside the call, or on a boundary — between two briefs, or at a gate. */
       cut: StepCut;
       partialRef?: { kind: 'session-log'; index: number };
-      /** The declared files the cut brief had changed; recorded only when it changed any. */
+      /** The files the cut brief wrote that are still changed, its declared files first; recorded only when it kept any. */
       kept?: readonly string[];
     }
   | { type: 'RESUME_STEP' }

@@ -5339,6 +5339,54 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'composer', title: 'Continued build status' },
       ],
     }),
+    defineScenario({
+      id: 'workflow-fix-check-off',
+      title: 'Workflow · a fix check left out while End-of-run checks are off',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'fix-check-off',
+        title: 'The fix brief names the reviewer check it does not run',
+        kind: 'implementation',
+        marker: 'Fix check V2 · off',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Fix brief transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-attempt-reverted',
+      title: 'Workflow · a failed attempt puts its files back',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'attempt-reverted',
+        title: 'The neutral row after the failed attempt names the files put back',
+        kind: 'implementation',
+        marker: 'attempt reverted: 2 files',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Failed attempt and revert row' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-attempt-reverted-checkout',
+      title: 'Workflow · a failed attempt in the project checkout puts its files back',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'attempt-reverted-checkout',
+        title: 'The revert row names where the replaced bytes are saved',
+        kind: 'implementation',
+        marker: 'attempt reverted: 2 files',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Failed attempt and revert row' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
   ],
   setup: [
     defineScenario({
@@ -6392,6 +6440,16 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         id: 'workflow-stop-sheet-after-continue',
         title: 'Workflow · stop options right after a continue',
         marker: 'Pause after this brief',
+      },
+      {
+        id: 'workflow-stop-sheet-after-revert',
+        title: 'Workflow · stop options after the attempt was put back',
+        marker: 'keep the run open',
+      },
+      {
+        id: 'workflow-stop-sheet-after-denial',
+        title: 'Workflow · stop options after a denial took back every write',
+        marker: 'keep the run open',
       },
     ],
   }).concat(

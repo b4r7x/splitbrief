@@ -568,7 +568,8 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 // `at` says where the stop landed: inside the call, or on a boundary (between two briefs,
 // or at a gate). `step` is the step the stop parked. `cause` marks a boundary park that only
 // changes a seat, where the run stops so the next brief starts on the new seat. `kept` lists
-// the declared files a brief cut mid-step had changed; it is absent when the stop kept none.
+// the files a brief cut mid-step wrote that are still changed, its declared files first; it is
+// absent when the stop kept none.
 // Older logs omit `at`, `step`, `cause` and `kept`.
 
 // The error that stopped the run, as `state.lastFailure` records it for the step it retries

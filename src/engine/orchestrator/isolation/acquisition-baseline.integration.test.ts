@@ -11,6 +11,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
+import { makeAttemptBrief } from '#testing/helpers/factories/attempt-brief.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createStagedProject, promoteStagedChanges } from '../approval/staged-project.js';
 import type { IsolatedWorkspace } from './types.js';
@@ -137,13 +138,21 @@ describe('target acquisition baseline', () => {
       onFallback: () => {},
     });
     const config = makeNoValidationConfig();
-    const first = await isolation.acquire({ role: 'implementer', config });
+    const first = await isolation.acquire({
+      role: 'implementer',
+      config,
+      brief: makeAttemptBrief(),
+    });
     dirs.push(first.projectDir);
     first.cleanup();
 
     writeFileSync(join(projectDir, 'src', 'app.ts'), 'second\n');
 
-    const second = await isolation.acquire({ role: 'implementer', config });
+    const second = await isolation.acquire({
+      role: 'implementer',
+      config,
+      brief: makeAttemptBrief(),
+    });
     dirs.push(second.projectDir);
     writeFileSync(join(second.projectDir, 'src', 'app.ts'), 'worker\n');
 

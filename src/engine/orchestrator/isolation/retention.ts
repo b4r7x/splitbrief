@@ -22,6 +22,7 @@ import {
   assertSessionDirConfined,
 } from '../../../core/sessions/confinement.js';
 import { writeConfinedSecureFileAsync, writeSecureFile } from '../../../lib/fs.js';
+import { createLogger } from '../../../lib/logger.js';
 import { assertPathConfined } from '../../../lib/path-confinement.js';
 import { isENOENT } from '../../../lib/process/errors.js';
 import { canonicalJSON } from '../../../utils/canonical-json.js';
@@ -224,7 +225,8 @@ export async function publishRetainedWorkspaceNotice(
   input: SessionRef & { state: WorkflowState; bus: EventBus },
 ): Promise<boolean> {
   const { state, bus } = input;
-  if (deriveRunStatus({ state, liveness: 'not-alive' }).kind !== 'open') return false;
+  const status = deriveRunStatus({ state, liveness: 'not-alive' });
+  if (status.kind !== 'open') return false;
   const workspace = state.workspace;
   if (workspace === undefined || workspace.kind === 'checkout') return false;
   try {
@@ -238,10 +240,17 @@ export async function publishRetainedWorkspaceNotice(
     publishError({ bus, phase: state.phase, message });
     return false;
   }
+  const message = retainedWorkspaceNotice(workspace.path);
+  // A paused run, which a stop the user asked for or a watchdog park leaves, keeps the workspace
+  // for Continue, so only the debug log names it.
+  if (status.stop.kind === 'stopped' && status.stop.on.kind === 'paused') {
+    createLogger('engine').debug(WORKSPACE_KEPT_CODE, { message });
+    return true;
+  }
   publishWarning({
     bus,
     phase: state.phase,
-    message: retainedWorkspaceNotice(workspace.path),
+    message,
     safety: { category: WORKSPACE_NOTICE_CATEGORY, code: WORKSPACE_KEPT_CODE },
   });
   return true;

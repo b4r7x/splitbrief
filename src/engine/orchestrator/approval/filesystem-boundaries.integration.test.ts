@@ -13,6 +13,7 @@ import {
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
+import { makeAttemptBrief } from '#testing/helpers/factories/attempt-brief.js';
 import { ChangedFilesSnapshotSchema } from '../../../core/schemas/workflow.js';
 
 const control = vi.hoisted(() => ({
@@ -239,7 +240,11 @@ it('detects a later dirty binary rewrite when an actual isolation acquisition re
     strategy: 'worktree',
     onFallback: () => {},
   });
-  const workspace = await isolation.acquire({ role: 'implementer', config });
+  const workspace = await isolation.acquire({
+    role: 'implementer',
+    config,
+    brief: makeAttemptBrief(),
+  });
   writeFileSync(join(workspace.projectDir, 'asset.bin'), Buffer.from([0xfe, 0]));
   expect(await getChangedFilesSinceSnapshot(workspace.projectDir, workspace.snapshot)).toEqual([
     'asset.bin',

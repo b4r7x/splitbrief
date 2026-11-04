@@ -21,7 +21,7 @@ export interface StopParked {
   kind: StopParkKind;
   taskId: string | null;
   resolve: StopResolver | null;
-  /** The declared files a brief cut mid-step had changed, as the engine read them at the cut. */
+  /** The files a brief cut mid-step wrote that are still changed, its declared files first, as the engine read them at the cut. */
   kept: readonly string[];
 }
 

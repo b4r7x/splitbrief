@@ -119,6 +119,11 @@ export interface StopSheetInput {
   /** The run has changes to keep. */
   readonly hasChanges?: boolean | undefined;
   readonly boundaryPauseRequested: boolean;
+  /**
+   * The files a put-back of the running brief still acts on after its last revert, restore or
+   * denied write; at 0 it has no partial changes to keep. Null or absent while no such row was read.
+   */
+  readonly briefKept?: number | null | undefined;
 }
 
 export function stopSheetRows(input: StopSheetInput): StopRow[] {
@@ -127,7 +132,7 @@ export function stopSheetRows(input: StopSheetInput): StopRow[] {
       id: 'stop-now',
       label: 'Stop now',
       consequence:
-        input.currentTaskId === null
+        input.currentTaskId === null || input.briefKept === 0
           ? 'stop execution; keep the run open'
           : 'stop execution; keep partial changes',
     },
@@ -237,13 +242,14 @@ export function readStopMenuRows(): StopRow[] {
         consequence: 'return to sessions once cleanup and saving finish',
       },
     ];
-  const { briefs, phase } = runViewStore.get();
+  const { briefs, phase, briefKept } = runViewStore.get();
   const brief = selectRunningBrief(briefs, phase);
   const rows = stopSheetRows({
     currentTaskId: brief.current?.id ?? null,
     nextTaskId: brief.next?.id ?? null,
     hasChanges: runHasChanges(),
     boundaryPauseRequested: stop.intent === 'pause-after-brief',
+    briefKept,
   });
   const issue = runViewStore.get().halt?.issue ?? null;
   // A halt offers only the actions it accepts: an unfinished Apply's halt refuses End run.
@@ -258,10 +264,11 @@ export function readStopMenuRows(): StopRow[] {
 
 /**
  * A finished brief left changes behind. A stop that cut a brief kept the files the byline names, and
- * no others. Without a stop to say so, a brief that started or failed may have written.
+ * no others. Without a stop to say so, a brief that started or failed may have written, unless a
+ * revert, a restore or a denial left none of its writes changed.
  */
 function runHasChanges(): boolean {
-  const { briefs, phase, stopKept } = runViewStore.get();
+  const { briefs, phase, stopKept, briefKept } = runViewStore.get();
   const view = selectTaskListView(briefs);
   if (view.finished > 0) return true;
   const route = routerStore.get();
@@ -269,7 +276,7 @@ function runHasChanges(): boolean {
     route.screen === 'workflow' && route.execution.kind === 'at-rest' ? route.run : null;
   const kept = stopKeptFiles(stopStore.get().parked, record, stopKept);
   if (kept !== null) return kept.length > 0;
-  return selectRunningBrief(briefs, phase).current !== null || view.failed > 0;
+  return (selectRunningBrief(briefs, phase).current !== null && briefKept !== 0) || view.failed > 0;
 }
 
 /**

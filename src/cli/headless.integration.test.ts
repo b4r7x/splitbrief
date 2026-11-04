@@ -50,6 +50,7 @@ import { buildRetryExhaustedRecoveryIssue } from '../engine/orchestrator/recover
 import { sessionDir } from '../core/paths.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
+import { makeAttemptBrief } from '#testing/helpers/factories/attempt-brief.js';
 import { writeCursorRefusalShim } from '#testing/helpers/cursor-refusal.js';
 
 // The two terminal guards read state and session after the run; skipping the run
@@ -1016,7 +1017,11 @@ describe('runHeadless — the seat-down policy and the record', () => {
     writeMinimalHeadlessConfigYaml(projectDir);
     const base = await createSnapshot({ ...ref, phase: 'manual', name: 'workspace-base' });
     const isolation = createRunIsolation({ ...ref, strategy: 'staged-copy', onFallback: () => {} });
-    const workspace = await isolation.acquire({ role: 'implementer', config: makeConfig() });
+    const workspace = await isolation.acquire({
+      role: 'implementer',
+      config: makeConfig(),
+      brief: makeAttemptBrief(),
+    });
     await workspace.retain?.();
     await isolation.dispose();
     const retained = {

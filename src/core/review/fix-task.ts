@@ -29,8 +29,12 @@ export function isTestNodeKey(key: string): boolean {
   return /^[^\s(:]+\.\w+::/.test(key);
 }
 
-/** The reviewer checks a fix task re-runs, each by the exact command of the red it answers. */
-export function fixReviewChecks(task: Task): Check[] {
+/**
+ * The reviewer checks a fix task re-runs, each by the exact command of the red it answers. None
+ * while End-of-run checks are off.
+ */
+export function fixReviewChecks(task: Task, endChecks: boolean): Check[] {
+  if (!endChecks) return [];
   const checks = new Map<string, Check>();
   for (const finding of task.fix?.findings ?? []) {
     for (const id of finding.checkIds ?? []) {
@@ -41,6 +45,21 @@ export function fixReviewChecks(task: Task): Check[] {
     }
   }
   return [...checks.values()];
+}
+
+/**
+ * The check ids a fix task's findings name, each once: the ones its brief runs again, and the
+ * reviewer checks it leaves off while End-of-run checks are off.
+ */
+export function splitFixCheckIds(task: Task, endChecks: boolean): { run: string[]; off: string[] } {
+  const run: string[] = [];
+  const off: string[] = [];
+  for (const id of new Set(
+    (task.fix?.findings ?? []).flatMap((finding) => finding.checkIds ?? []),
+  )) {
+    (!endChecks && REVIEW_CHECK_ID.test(id) ? off : run).push(id);
+  }
+  return { run, off };
 }
 
 export type FixCheckKeys = {

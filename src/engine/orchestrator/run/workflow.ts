@@ -33,7 +33,7 @@ import {
 } from '../../events/workflow-cancel.js';
 import type { ResumeContextHolder, WorkflowContext } from '../types.js';
 import { buildSummary, type SummaryBase } from '../summary/build.js';
-import { publishError, publishWarning } from '../events.js';
+import { publishError, publishInfo, publishWarning } from '../events.js';
 import { reopenSessionRecord, saveFinalSession } from '../session-lifecycle/finalize.js';
 import { withShutdownHandlers } from '../session-lifecycle/shutdown.js';
 import { installQueueHandler } from '../session-lifecycle/install-queue.js';
@@ -261,6 +261,15 @@ async function runScopedWorkflow(
         bus,
         phase: trackedState?.phase ?? workflowPhase ?? createInitialState(feature).phase,
         message,
+      });
+    },
+    infoPublisher: (row): void => {
+      const bus = wctx?.bus ?? workflowBus;
+      if (!bus) return;
+      publishInfo({
+        bus,
+        phase: trackedState?.phase ?? workflowPhase ?? createInitialState(feature).phase,
+        ...row,
       });
     },
   });

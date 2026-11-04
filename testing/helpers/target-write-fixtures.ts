@@ -173,7 +173,8 @@ export async function runTargetWriteRetry(opts: {
         ...opts.workspace,
         changedFiles: () =>
           getChangedFilesSinceSnapshot(opts.workspace.projectDir, opts.workspace.snapshot),
-        revert: () => Promise.reject(new Error('a target-write retry denies nothing')),
+        revert: () => Promise.reject(new Error('a target-write retry reverts nothing')),
+        discard: () => Promise.reject(new Error('a target-write retry denies nothing')),
       }),
       dispose: async () => {},
     },

@@ -13,6 +13,10 @@ export type GateDenial = {
   decision: GateChangedFilesDenial;
   /** The writes the denial actually removed; a file changed during the prompt is kept. */
   discardedFiles: string[];
+  /** The folder, relative to the project, that holds the bytes the denial replaced in the checkout. */
+  savedTo?: string | undefined;
+  /** The files a put-back of the brief still acts on after the denial. */
+  briefKept?: number | undefined;
 };
 
 export type GateAttemptOutcome =
@@ -23,14 +27,15 @@ export type GateAttemptOutcome =
 
 /**
  * The row a denial shows. A blocked attempt went nowhere; otherwise only the denied files were
- * dropped and the rest went ahead. Either way it names what was actually discarded.
+ * dropped and the rest went ahead. Either way it names what was actually discarded, and in the
+ * checkout the folder that holds the bytes it replaced.
  */
 export function denialMessage(input: {
   subject: string;
   denial: GateDenial;
   blocked: boolean;
 }): string {
-  const { decision, discardedFiles } = input.denial;
+  const { decision, discardedFiles, savedTo } = input.denial;
   const reason = decision.reason ?? 'denied';
   const lead = input.blocked
     ? `${input.subject} changed files blocked by approval gate: ${reason}.`
@@ -39,7 +44,8 @@ export function denialMessage(input: {
     discardedFiles.length === 0
       ? "SPLITBRIEF discarded none of this attempt's writes."
       : `SPLITBRIEF discarded this attempt's writes to ${discardedFiles.join(', ')}.`;
-  return `${lead} ${discarded}`;
+  const saved = savedTo === undefined ? '' : ` The replaced bytes are in ${savedTo}.`;
+  return `${lead} ${discarded}${saved}`;
 }
 
 export async function gateAttemptChanges(opts: {
@@ -84,11 +90,13 @@ export async function gateAttemptChanges(opts: {
   let approvedFiles = changedFiles;
   let denial: GateDenial | undefined;
   if (!decision.allow) {
-    await workspace.revert(decision.deniedFiles).catch((err: unknown) => {
-      workspace.cleanup();
-      throw err;
-    });
-    denial = { decision, discardedFiles: decision.deniedFiles };
+    const { savedTo, briefKept } = await workspace
+      .discard(decision.deniedFiles)
+      .catch((err: unknown) => {
+        workspace.cleanup();
+        throw err;
+      });
+    denial = { decision, discardedFiles: decision.deniedFiles, savedTo, briefKept };
     approvedFiles = changedFiles.filter((file) => !decision.deniedFiles.includes(file));
     if (approvedFiles.length === 0) return { outcome: 'denied', denial };
   }

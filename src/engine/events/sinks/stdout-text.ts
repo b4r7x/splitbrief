@@ -103,6 +103,7 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
       event.scenario !== undefined ? '' : event.command === '' ? detail : ` (${event.command})`;
     return `${label}: ${verdict}${clock}${why}${command}`;
   }
+  if (event.status === 'off') return `${label}: off`;
   const detail = event.detail ?? 'no detail given';
   if (event.status === 'refused') return `${label}: refused (${detail})`;
   if (event.status === 'not-run') return `${label}: not run (${detail})`;
@@ -161,6 +162,7 @@ function briefChecks(view: RunView, taskId: string): string {
  *   fix check V1: <K> of your <N> failures remain (<command>)
  *   fix check V1: no failure of yours · <M> others left for their fix tasks or the next review (<command>)
  *   fix check V1: refused (<detail>) | not run (<detail>)
+ *   fix check V1: off
  *   plan check K1: passed · 14.2s (<command>) | failed · 14.2s (<command>)
  *   plan check K1: refused (<detail>) | not run (<detail>)
  *   verify K1: passed · 14.2s (<command>) | failed · 14.2s (<command>)

@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, expect, it, vi } from 'vitest';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
+import { makeAttemptBrief } from '#testing/helpers/factories/attempt-brief.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
 import { sessionDir } from '../../../src/core/paths.js';
 import { createRunIsolation } from '../../../src/engine/orchestrator/isolation/create.js';
@@ -50,6 +51,7 @@ async function fixture(input: { cli?: boolean } = {}) {
     role: 'implementer' as const,
     config,
     resume: true,
+    brief: makeAttemptBrief(),
   };
   const run = makeIsolation();
   const workspace = await run.acquire(options);
