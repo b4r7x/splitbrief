@@ -110,6 +110,7 @@ async function review(
   config = CODEX_REVIEWER,
 ): Promise<FinalReviewResult> {
   return runFinalReviewPhase({
+    modelCache: undefined,
     ...ref,
     workspaceDir: ref.projectDir,
     state,
@@ -228,6 +229,7 @@ describe('a rate-limited codex reviewer', () => {
     const waiting = nextEvent(bus, 'seat_wait_started');
 
     const running = runFinalReviewPhase({
+      modelCache: undefined,
       ...ref,
       workspaceDir: ref.projectDir,
       state: doneState(makeTask({ id: 'T001' })),

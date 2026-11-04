@@ -19,7 +19,19 @@ export function formatResumeCommand(sessionId: string, issue: RecoveryIssue): st
     const label = recoveryActionLabel(issue.recommendedAction, issue);
     return `${continueRunCommand(sessionId)}, then choose ${label} in the recovery panel`;
   }
-  return `${continueRunCommand(sessionId)} --action ${flag}`;
+  const seat = flag === 'retry' && needsReviewSeatChange(issue) ? ' --reviewer <tool>' : '';
+  return `${continueRunCommand(sessionId)}${seat} --action ${flag}`;
+}
+
+/**
+ * A review that failed on what its seat lacks, images for the renders or a large enough
+ * context, fails the same way on a bare retry; the line names the flag that changes that seat.
+ */
+function needsReviewSeatChange(issue: RecoveryIssue): boolean {
+  return (
+    issue.facts?.reviewSeatNoImages === true ||
+    recoveryFactString(issue.facts, 'reviewFailureKind') === 'insufficient-context'
+  );
 }
 
 /** A line that names its action runs headless too; the recovery panel needs the TUI. */

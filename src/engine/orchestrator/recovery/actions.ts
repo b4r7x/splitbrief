@@ -31,6 +31,7 @@ import { configError } from '../../../core/config/errors.js';
 import { getOrCreateLedger } from '../../../core/evidence/ledger-state.js';
 import { readEvidenceLedger, writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { recordSkippedTaskEvidence } from '../evidence/task.js';
+import { publishReviewSeatRenderNote } from '../review-seat-note.js';
 import {
   publishRecoveryActionFailed,
   publishRecoveryActionSelected,
@@ -217,6 +218,12 @@ export async function applyRecoveryAction(
           status: 'continued',
           correctionRecorded: false,
         };
+      }
+      // A review that failed only on renders its seat could not see runs again as a correction
+      // with no note: the closed review reopens and judges the same candidate on the seat the
+      // picker holds.
+      if (issue.reason === 'review-failed' && issue.facts?.reviewSeatNoImages === true) {
+        return applyReviewCorrectionAction(opts, issue);
       }
       return applyRetrySameWorkerRecoveryAction(opts, issue);
     }
@@ -773,6 +780,13 @@ export function commitSeatSwitch(
       configRevision: choice.configRevision,
     },
   );
+  publishReviewSeatRenderNote({
+    bus: opts.bus,
+    seat,
+    state,
+    config: switchedConfig,
+    modelCache: opts.modelCache,
+  });
   publishRecoveryResolved({
     bus: opts.bus,
     phase: state.phase,

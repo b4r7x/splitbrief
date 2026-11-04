@@ -15,38 +15,15 @@ import type { ImplementerOptions } from '../../implementers/types.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { settleMidCallDeliveries } from './mid-call.js';
 import { seatSupportsImages } from '../../../core/runners/capabilities.js';
-import { resolveAutoModel } from '../../../core/providers/model-selection.js';
-import { isProviderId } from '../../../core/schemas/enums.js';
-import {
-  resolveExactRuntimeModel,
-  lookupModelsDevModel,
-} from '../../providers/model/resolution.js';
+import { resolveSeatImageFact } from '../../providers/model/resolution.js';
 
 type BuildImageContext = Pick<WorkflowContext, 'config' | 'modelCache'>;
 
 export function buildSeatSupportsImages(wctx: BuildImageContext): boolean {
   const runner = wctx.config.implementer;
-  if (runner.kind !== 'api') return seatSupportsImages({ runner });
-  const modelId = resolveAutoModel(runner.model, runner.provider);
-  if (modelId === undefined || wctx.modelCache === undefined || !isProviderId(runner.provider))
-    return seatSupportsImages({ runner });
-  const lookup = {
-    providerId: runner.provider,
-    modelId,
-    cache: wctx.modelCache,
-    kind: runner.kind,
-  };
-  const runtime = resolveExactRuntimeModel({
-    ...lookup,
-    selectionId: modelId,
-    role: 'implementer',
-  });
-  const supportsImages =
-    (runtime.kind === 'found' ? runtime.model.supportsImages : undefined) ??
-    lookupModelsDevModel(lookup)?.supportsImages;
   return seatSupportsImages({
     runner,
-    detected: supportsImages === undefined ? undefined : { supportsImages },
+    detected: resolveSeatImageFact({ runner, role: 'implementer', cache: wctx.modelCache }),
   });
 }
 

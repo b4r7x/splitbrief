@@ -7,7 +7,7 @@ import { countNoun } from '../../utils/pluralize.js';
 import { capitalize } from '../../utils/capitalize.js';
 import { formatAccountCause } from './account-cause.js';
 import { formatNoCredential } from '../runners/route-auth.js';
-import type { SeatLineSpan } from '../crew/identity.js';
+import { CREW_SEAT_LABELS, type SeatLineSpan } from '../crew/identity.js';
 import type { SeatSwitchCause } from '../schemas/workflow.js';
 
 type RecoveryHeadlineInput = Pick<
@@ -69,6 +69,18 @@ export function reviewNoProgressCause(
 /** A review that failed on claims no check could verify, with nothing for the planner to fix. */
 export function reviewUnverifiedCause(review: string, criteria: number): string {
   return `${review} failed with ${countNoun(criteria, 'unverified criterion', 'unverified criteria')}`;
+}
+
+/**
+ * A review whose only failures are render criteria its seat could not see: it names the seat to
+ * change in place of the unverified count.
+ */
+export function reviewSeatNoImagesCause(review: string): readonly SeatLineSpan[] {
+  return [
+    { text: `${review} needs a ` },
+    { text: CREW_SEAT_LABELS.review, seat: 'review' },
+    { text: ' seat that reads images' },
+  ];
 }
 
 /** What stopped a retry-exhausted brief, in the one wording the transcript, the panel and the byline share. */
@@ -246,6 +258,7 @@ export function formatRecoveryHeadlineSpans(
           },
         ];
       }
+      if (issue.facts?.reviewSeatNoImages === true) return reviewSeatNoImagesCause(review);
       const unverified = recoveryFactNumber(issue.facts, 'unverified');
       if (unverified !== undefined) return [{ text: reviewUnverifiedCause(review, unverified) }];
       const blocking = recoveryFactNumber(issue.facts, 'blocking');

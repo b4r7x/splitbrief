@@ -47,6 +47,7 @@ import type { PackageScriptsReadinessInput } from './checks/validation.js';
 import type { RepoReadinessInput } from './checks/repo.js';
 import type { ReadinessCheck, ReadinessReport } from './types.js';
 import type { SeatDisplayName } from '../crew/identity.js';
+import type { SeatImageFact } from '../runners/capabilities.js';
 
 export interface CollectedReadiness {
   report: ReadinessReport;
@@ -108,6 +109,8 @@ export interface CollectReadinessOptions {
   resumeSession?: SessionRef | undefined;
   /** Names each seat's model by the catalog label the crew surfaces show. */
   seatDisplayName?: SeatDisplayName | undefined;
+  /** The detected image fact of an API seat's model; the REVIEW line needs it for its render note. */
+  seatImageFact: SeatImageFact;
 }
 
 const CLI_READINESS_CHECK_IDS = new Set(CLI_TOOL_IDS.map((tool) => cliReadinessCheckId(tool)));
@@ -195,6 +198,7 @@ export async function collectReadiness(
     ...(availability !== undefined && { availability }),
     ...(options.interaction !== undefined && { interaction: options.interaction }),
     ...(options.seatDisplayName !== undefined && { seatDisplayName: options.seatDisplayName }),
+    seatImageFact: options.seatImageFact,
   };
 
   let report = buildReadinessReport(input);

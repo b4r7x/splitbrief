@@ -206,6 +206,7 @@ describe('runFinalReviewPhase continuation', () => {
     const { callbacks } = makeCallbacks();
 
     await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -238,6 +239,7 @@ describe('runFinalReviewPhase continuation', () => {
     const { reviewer, prompts } = makeReviewer();
 
     await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -272,6 +274,7 @@ describe('runFinalReviewPhase', () => {
     const { bus, events } = makeBusRecorder();
     const { reviewer } = makeReviewer();
     const result = await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -304,6 +307,7 @@ describe('runFinalReviewPhase', () => {
     const { callbacks } = makeCallbacks();
 
     await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -344,6 +348,7 @@ describe('runFinalReviewPhase', () => {
     const state = allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead);
 
     const result = await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -426,6 +431,7 @@ describe('runFinalReviewPhase', () => {
 
     const { bus, events } = makeBusRecorder();
     const result = await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -471,6 +477,7 @@ describe('runFinalReviewPhase', () => {
     });
 
     const result = await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -522,6 +529,7 @@ describe('runFinalReviewPhase', () => {
     );
 
     const result = await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -594,6 +602,7 @@ describe('runFinalReviewPhase', () => {
     });
 
     await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -682,6 +691,7 @@ describe('runFinalReviewPhase', () => {
     });
 
     await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -708,6 +718,7 @@ describe('runFinalReviewPhase', () => {
 
     const { bus, events } = makeBusRecorder();
     const result = await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -739,6 +750,7 @@ describe('runFinalReviewPhase', () => {
 
     const { bus, events } = makeBusRecorder();
     const result = await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -764,6 +776,7 @@ describe('runFinalReviewPhase', () => {
     );
 
     const result = await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -785,6 +798,7 @@ describe('runFinalReviewPhase', () => {
     const { projectDir, sessionId, runStartHead } = setupProject();
     const { reviewer } = makeReviewer();
     const result = await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -811,6 +825,7 @@ describe('runFinalReviewPhase', () => {
       ],
     }));
     const result = await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -850,6 +865,7 @@ describe('runFinalReviewPhase', () => {
       rejected: [{ findingId: 'P1', reason: 'No fix proposed' }],
     }));
     const result = await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -889,6 +905,7 @@ describe('runFinalReviewPhase', () => {
     }));
     const { bus, events } = makeBusRecorder();
     const result = await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -932,6 +949,7 @@ describe('runFinalReviewPhase', () => {
     }));
     const { bus, events } = makeBusRecorder();
     const result = await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -972,6 +990,7 @@ describe('runFinalReviewPhase', () => {
     );
     const { bus, events } = makeBusRecorder();
     await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -1022,6 +1041,7 @@ describe('runFinalReviewPhase', () => {
     }));
 
     const result = await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -1075,6 +1095,7 @@ describe('runFinalReviewPhase', () => {
     });
 
     const result = await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -1134,6 +1155,7 @@ describe('runFinalReviewPhase', () => {
     }));
 
     const result = await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -1189,6 +1211,7 @@ describe('runFinalReviewPhase', () => {
     const state = allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead);
 
     const result = await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -1255,6 +1278,7 @@ describe('runFinalReviewPhase', () => {
     }));
 
     const result = await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -1321,6 +1345,7 @@ describe('runFinalReviewPhase', () => {
     const { bus } = makeBusRecorder();
 
     const result = await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -1385,6 +1410,7 @@ describe('runFinalReviewPhase', () => {
     const { reviewer, prompts } = makeReviewer();
 
     const result = await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -1424,6 +1450,7 @@ describe('runFinalReviewPhase', () => {
     const { reviewer, prompts } = makeReviewer();
 
     const result = await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -1475,6 +1502,7 @@ describe('runFinalReviewPhase', () => {
       const { reviewer, prompts } = makeReviewer();
 
       await runFinalReviewPhase({
+        modelCache: undefined,
         projectDir,
         workspaceDir: projectDir,
         sessionId,
@@ -1502,6 +1530,7 @@ describe('runFinalReviewPhase', () => {
       const { reviewer, prompts } = makeReviewer();
 
       await runFinalReviewPhase({
+        modelCache: undefined,
         projectDir,
         workspaceDir: projectDir,
         sessionId,
@@ -1639,6 +1668,7 @@ describe('runFinalReviewPhase', () => {
     };
     saveState({ projectDir, sessionId }, reviewState);
     await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -1686,6 +1716,7 @@ describe('runFinalReviewPhase', () => {
     const { reviewer } = makeReviewer(undefined, { inputTokens: 200, outputTokens: 40 });
 
     const { state } = await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -1732,6 +1763,7 @@ describe('runFinalReviewPhase', () => {
     });
 
     await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -1761,6 +1793,7 @@ describe('runFinalReviewPhase', () => {
     );
 
     await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir: fallbackProjectDir,
       workspaceDir: fallbackProjectDir,
       sessionId: fallbackSessionId,
@@ -1798,6 +1831,7 @@ describe('runFinalReviewPhase', () => {
     const state = allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead);
 
     const result = await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -1848,6 +1882,7 @@ describe('runFinalReviewPhase', () => {
     const { bus, events } = makeBusRecorder();
 
     await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -1891,6 +1926,7 @@ describe('runFinalReviewPhase', () => {
     const { bus, events } = makeBusRecorder();
 
     await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -1920,6 +1956,7 @@ describe('runFinalReviewPhase', () => {
     };
 
     await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -1973,6 +2010,7 @@ describe('runFinalReviewPhase', () => {
     });
 
     const result = await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -2009,6 +2047,7 @@ describe('runFinalReviewPhase', () => {
     const state = allTasksDoneState([], runStartHead);
 
     const result = await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -2041,6 +2080,7 @@ describe('runFinalReviewPhase', () => {
     await recordPromotion({ projectDir, sessionId, task, path: 'src/hello.ts' });
 
     await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -2076,6 +2116,7 @@ describe('runFinalReviewPhase', () => {
     await recordPromotion({ projectDir, sessionId, task, path: 'src/other.ts' });
 
     await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -2113,6 +2154,7 @@ describe('runFinalReviewPhase', () => {
     const { reviewer, prompts } = makeReviewer();
 
     await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -2175,6 +2217,7 @@ describe('runFinalReviewPhase', () => {
     const { reviewer } = makeReviewer();
 
     await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -2212,6 +2255,7 @@ describe('runFinalReviewPhase', () => {
     const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/hello.ts'], status: 'done' })];
 
     await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -2254,6 +2298,7 @@ describe('runFinalReviewPhase', () => {
     await recordPromotion({ projectDir, sessionId, task, path: 'src/feature.ts' });
 
     await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -2323,6 +2368,7 @@ describe('runFinalReviewPhase', () => {
     };
 
     await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -2362,6 +2408,7 @@ describe('runFinalReviewPhase', () => {
     await recordPromotion({ projectDir, sessionId, task, path: 'src/from-unborn.ts' });
 
     await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -2408,6 +2455,7 @@ describe('runFinalReviewPhase', () => {
     await recordPromotion({ projectDir, sessionId, task, path: 'src/large.ts' });
 
     await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -2448,6 +2496,7 @@ describe('runFinalReviewPhase', () => {
       const { bus } = makeBusRecorder();
 
       const result = await runFinalReviewPhase({
+        modelCache: undefined,
         projectDir,
         workspaceDir,
         sessionId,
@@ -2482,6 +2531,7 @@ describe('runFinalReviewPhase', () => {
     const { reviewer, prompts } = makeReviewer();
 
     const result = await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir,
       sessionId,
@@ -2508,6 +2558,7 @@ describe('review record', () => {
     const { reviewer } = makeReviewer();
 
     const result = await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -2666,6 +2717,7 @@ describe('a review that a stop cuts after the reviewer answered', () => {
       const { bus } = makeBusRecorder();
       const run = () =>
         runFinalReviewPhase({
+          modelCache: undefined,
           projectDir: project.projectDir,
           workspaceDir: project.projectDir,
           sessionId: project.sessionId,

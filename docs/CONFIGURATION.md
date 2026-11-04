@@ -393,6 +393,25 @@ The reviewer is a planner-tier seat and shares the planner's admission set, so a
 - **The review seat's fallback:** `reviewer.fallback` when a `reviewer` block exists, else `planner.fallback`. See [`fallback`](#fallback).
 - **A configured reviewer that fails admission** blocks the run before it starts, with a readiness blocker naming the reviewer seat. A mid-call account refusal, or a usage limit that the run does not wait for, raises a Seat down halt and can apply the review seat's configured fallback under the [switch conditions](./APPROVAL-AND-RECOVERY.md#seat-down). A review that ends as failed records `finalReviewStatus: "failed"` in the run summary and `finalReview.status` in the review packet, with the reviewer's identity in the error and the final-review evidence. SPLITBRIEF never silently hands the review back to the planner.
 
+### Render checks and the review seat
+
+The review seat verifies the criteria of a `render` check from its images. Only a seat that sees images gets them:
+
+| Review seat | Sees images |
+|---|---|
+| `cli` Claude Code, Codex, OpenCode, Kilo Code | yes |
+| `cli` Cursor, Command Code, Antigravity | no |
+| `api` | only when detection reports the model as vision-capable |
+| `shell`, `agent` | no |
+
+A seat that sees no images cannot verify a render criterion. The criterion stays unverified, and the review fails. SPLITBRIEF tells you before the review:
+
+- The plan card shows a note when the plan has render checks. The note names the review seat.
+- `splitbrief doctor` adds the same sentence to the REVIEW line when `validation.render` is set.
+- A change of the review seat during a run writes the note in the run.
+
+The note does not stop the run. To verify the render checks, change the review seat to a tool that reads images. Use Settings › Crew › REVIEW before the run, or `/crew review` during the run. A review that fails only for this reason halts with `Final review needs a REVIEW seat that reads images`; see [Troubleshooting](./TROUBLESHOOTING.md#symptom-final-review-needs-a-review-seat-that-reads-images).
+
 ### YAML — cross-lab review
 
 Planning on Claude Code, building on a local model, reviewing on Codex, so the diff is read by a model from a different lab than the one that planned it:
@@ -576,7 +595,7 @@ validation: {
 | `testPattern` (`test_pattern`) | string | — | Optional file name pattern with one `*`, such as `*_test.go` or `test_*.py`. No directory part (`/` or `\`) and no `..`. SPLITBRIEF searches beside the changed file and in the stack's test folders. Overrides the stack's patterns when a `test` check narrows to its affected tests. SPLITBRIEF emits `discovered_validation_refused` when it refuses a discovered pattern. It uses the configured pattern, if present. Otherwise, it uses the stack's patterns. |
 | `timeoutMs` (`timeout_ms`) | number | none | Milliseconds allowed per command (minimum `1000`): every plan check, every reviewer check and every base re-run. Without it, a command has no time limit. A timeout is never pre-existing: when the same command is red at the run base too, the timeout is *not verified at the run base*, and the reviewer decides. |
 | `stack` | enum | detected | Pin the stack a `test` check resolves and narrows through instead of detecting it: `typescript`, `javascript`, `python`, `go`, or `rust`. Use it when a repo carries more than one marker file and the detection order picks the wrong one, or when the markers are missing entirely. |
-| `render` | string | — | The command a `render` check runs. `{id}` (the check value, one argv element) is substituted into the parsed argv, and `{out}` becomes a fresh directory under `<workspace>/.test-artifacts/ui/`; the command runs with cwd = the workspace and is not filtered by the planner command policy. Every `.png` under `{out}` is copied to `.splitbrief/sessions/<id>/renders/<check-id>/` and logged with its sha256. A `render` check whose value is not a `[a-z0-9-]` slug is refused; with no `render` command the check is `not-runnable`. |
+| `render` | string | — | The command a `render` check runs. `{id}` (the check value, one argv element) is substituted into the parsed argv, and `{out}` becomes a fresh directory under `<workspace>/.test-artifacts/ui/`; the command runs with cwd = the workspace and is not filtered by the planner command policy. Every `.png` under `{out}` is copied to `.splitbrief/sessions/<id>/renders/<check-id>/` and logged with its sha256. A `render` check whose value is not a `[a-z0-9-]` slug is refused; with no `render` command the check is `not-runnable`. Only a review seat that sees images verifies the criteria of a render check; see [Render checks and the review seat](#render-checks-and-the-review-seat). |
 | `typecheck`, `lint`, `test`, `typecheckCommand` (`typecheck_command`), `lintCommand` (`lint_command`) | retired | absent | Each loads with one notice and changes nothing: `validation.<key> was retired and is ignored: the plan names the project gate, and validation.end_checks turns it on or off. Delete validation.<key>.` |
 | `approveChecks` (`approve_checks`) | retired | absent | Loads with one notice and changes nothing: `validation.approve_checks was retired and is ignored: the plan names the project gate, and the plan card shows it. Delete validation.approve_checks.` |
 

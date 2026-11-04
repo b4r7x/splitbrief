@@ -394,6 +394,7 @@ async function review(opts: {
     changedFilesBaseline: { head: null, fingerprints: {}, runStartChangedFiles: [] },
   };
   return runFinalReviewPhase({
+    modelCache: undefined,
     projectDir: opts.projectDir,
     workspaceDir: opts.projectDir,
     sessionId: opts.sessionId,

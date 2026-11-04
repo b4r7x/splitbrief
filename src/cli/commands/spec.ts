@@ -249,7 +249,7 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
       writeSpecFile(
         ref,
         PLAN_FILE,
-        formatPlanMarkdown(plan, renderCheckNotes(plan, execution.config.validation.render)),
+        formatPlanMarkdown(plan, renderCheckNotes(plan, execution.config, modelCacheStore)),
         metadata,
       );
       writeSpecFile(ref, TASKS_FILE, formatTasks(tasks), metadata);

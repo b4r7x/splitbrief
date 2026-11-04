@@ -4,6 +4,8 @@ import { buildRunnerChecks } from './runners.js';
 import { deriveCliReadiness, type CliReadinessFacts } from '../../schemas/readiness.js';
 import type { RunnerAvailabilityFact } from './availability.js';
 
+const NO_IMAGE_FACT = () => undefined;
+
 function makeConfig(overrides: Parameters<typeof makeBaseConfig>[0] = {}) {
   const implementer = overrides.implementer;
   return makeBaseConfig({
@@ -35,7 +37,9 @@ function cliReadiness(overrides: Partial<CliReadinessFacts> = {}) {
 }
 
 function availabilityDetails(config: ReturnType<typeof makeConfig>): string[] {
-  const check = buildRunnerChecks({ config }).find((c) => c.id === 'runners.availability');
+  const check = buildRunnerChecks({ seatImageFact: NO_IMAGE_FACT, config }).find(
+    (c) => c.id === 'runners.availability',
+  );
   return check?.details ?? [];
 }
 
@@ -74,6 +78,7 @@ describe('buildRunnerChecks seat identities', () => {
       { role: 'implementer', profile: 'alternate' },
     ];
     const checks = buildRunnerChecks({
+      seatImageFact: NO_IMAGE_FACT,
       config,
       cliReadiness: [],
       availability: slots.map((slot) => ({
@@ -121,6 +126,7 @@ describe('buildRunnerChecks catalog labels', () => {
     });
     const roles = new Set<string>();
     const checks = buildRunnerChecks({
+      seatImageFact: NO_IMAGE_FACT,
       config,
       cliReadiness: [],
       seatDisplayName: (runner, role) => {
@@ -149,9 +155,11 @@ describe('buildRunnerChecks availability guidance', () => {
   it('blocks a selected CLI when no canonical probe result is available', () => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
 
-    const check = buildRunnerChecks({ config, cliReadiness: [] }).find(
-      (candidate) => candidate.id === 'runners.cli.claude-code.readiness',
-    );
+    const check = buildRunnerChecks({
+      seatImageFact: NO_IMAGE_FACT,
+      config,
+      cliReadiness: [],
+    }).find((candidate) => candidate.id === 'runners.cli.claude-code.readiness');
 
     expect(check).toMatchObject({
       severity: 'blocker',
@@ -169,6 +177,7 @@ describe('buildRunnerChecks availability guidance', () => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
 
     const check = buildRunnerChecks({
+      seatImageFact: NO_IMAGE_FACT,
       config,
       cliReadiness: [cliReadiness({ auth: 'unauthenticated', authChannel: 'session' })],
     }).find((candidate) => candidate.id === 'runners.cli.claude-code.readiness');
@@ -193,6 +202,7 @@ describe('buildRunnerChecks availability guidance', () => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'codex' } });
 
     const check = buildRunnerChecks({
+      seatImageFact: NO_IMAGE_FACT,
       config,
       cliReadiness: [
         cliReadiness({
@@ -232,9 +242,12 @@ describe('buildRunnerChecks availability guidance', () => {
       providerAuth: CliReadinessFacts['providerAuth'],
       cliCatalogs: Parameters<typeof buildRunnerChecks>[0]['cliCatalogs'] = goOnly,
     ) =>
-      buildRunnerChecks({ config, cliReadiness: [opencode(providerAuth)], cliCatalogs }).find(
-        (candidate) => candidate.id.startsWith('runners.route.'),
-      );
+      buildRunnerChecks({
+        seatImageFact: NO_IMAGE_FACT,
+        config,
+        cliReadiness: [opencode(providerAuth)],
+        cliCatalogs,
+      }).find((candidate) => candidate.id.startsWith('runners.route.'));
 
     it('warns that the route has no credential and names its sign-in step', () => {
       expect(
@@ -256,6 +269,7 @@ describe('buildRunnerChecks availability guidance', () => {
 
     it('keeps the sign-in blocker of a tool that stores no credential when its model list does not serve the route', () => {
       const checks = buildRunnerChecks({
+        seatImageFact: NO_IMAGE_FACT,
         config,
         cliReadiness: [storesNoCredential],
         cliCatalogs: [{ tool: 'opencode', models: [{ id: 'opencode-go/kimi-k3' }] }],
@@ -275,6 +289,7 @@ describe('buildRunnerChecks availability guidance', () => {
         implementer: { kind: 'cli', tool: 'opencode', model: 'ollama/llama3' },
       });
       const checks = buildRunnerChecks({
+        seatImageFact: NO_IMAGE_FACT,
         config: local,
         cliReadiness: [storesNoCredential],
         cliCatalogs: [{ tool: 'opencode', models: [{ id: 'ollama/llama3' }] }],
@@ -302,6 +317,7 @@ describe('buildRunnerChecks availability guidance', () => {
         implementer: { kind: 'cli', tool: 'opencode', model: 'ollama-cloud/deepseek-v4.1-flash' },
       });
       const checks = buildRunnerChecks({
+        seatImageFact: NO_IMAGE_FACT,
         config: mixed,
         cliReadiness: [storesNoCredential],
         cliCatalogs: [{ tool: 'opencode', models: [{ id: 'ollama/llama3' }] }],
@@ -341,6 +357,7 @@ describe('buildRunnerChecks availability guidance', () => {
 
     it("claims nothing when the tool's saved model list serves the route", () => {
       const check = buildRunnerChecks({
+        seatImageFact: NO_IMAGE_FACT,
         config,
         cliReadiness: [
           opencode({ kind: 'read', facts: [{ provider: 'OpenCode Go', source: 'stored' }] }),
@@ -377,6 +394,7 @@ describe('buildRunnerChecks availability guidance', () => {
       });
     const checksFor = (route: (typeof routes)[number], config: ReturnType<typeof makeConfig>) =>
       buildRunnerChecks({
+        seatImageFact: NO_IMAGE_FACT,
         config,
         cliReadiness: [cliReadiness(), signedIn(route.tool)],
         cliCatalogs: [{ tool: route.tool, models: [{ id: route.model }, { id: 'ollama/llama3' }] }],
@@ -432,6 +450,7 @@ describe('buildRunnerChecks availability guidance', () => {
 
     it('keeps signed in for a tool with no route check', () => {
       const checks = buildRunnerChecks({
+        seatImageFact: NO_IMAGE_FACT,
         config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
         cliReadiness: [cliReadiness()],
       });
@@ -445,6 +464,7 @@ describe('buildRunnerChecks availability guidance', () => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
 
     const check = buildRunnerChecks({
+      seatImageFact: NO_IMAGE_FACT,
       config,
       cliReadiness: [cliReadiness({ auth: 'unknown' })],
     }).find((candidate) => candidate.id === 'runners.cli.claude-code.readiness');
@@ -460,6 +480,7 @@ describe('buildRunnerChecks availability guidance', () => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
 
     const check = buildRunnerChecks({
+      seatImageFact: NO_IMAGE_FACT,
       config,
       cliReadiness: [cliReadiness({ installedVersion: null, compatibility: 'timeout' })],
     }).find((candidate) => candidate.id === 'runners.cli.claude-code.readiness');
@@ -480,9 +501,11 @@ describe('buildRunnerChecks availability guidance', () => {
   ] as const)('blocks on %s, as start does', (_label, overrides) => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
 
-    const check = buildRunnerChecks({ config, cliReadiness: [cliReadiness(overrides)] }).find(
-      (candidate) => candidate.id === 'runners.cli.claude-code.readiness',
-    );
+    const check = buildRunnerChecks({
+      seatImageFact: NO_IMAGE_FACT,
+      config,
+      cliReadiness: [cliReadiness(overrides)],
+    }).find((candidate) => candidate.id === 'runners.cli.claude-code.readiness');
 
     expect(check).toMatchObject({
       severity: 'blocker',
@@ -495,6 +518,7 @@ describe('buildRunnerChecks availability guidance', () => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
 
     const check = buildRunnerChecks({
+      seatImageFact: NO_IMAGE_FACT,
       config,
       cliReadiness: [cliReadiness({ auth: 'timeout', authChannel: 'session' })],
     }).find((candidate) => candidate.id === 'runners.cli.claude-code.readiness');
@@ -518,6 +542,7 @@ describe('buildRunnerChecks availability guidance', () => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
 
     const check = buildRunnerChecks({
+      seatImageFact: NO_IMAGE_FACT,
       config,
       cliReadiness: [cliReadiness({ auth: 'not-required' })],
     }).find((candidate) => candidate.id === 'runners.cli.claude-code.readiness');
@@ -543,9 +568,11 @@ describe('buildRunnerChecks availability guidance', () => {
   ] as const)('publishes %s as a structured diagnostic state', (stateId, overrides, fix) => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
 
-    const check = buildRunnerChecks({ config, cliReadiness: [cliReadiness(overrides)] }).find(
-      (candidate) => candidate.id === 'runners.cli.claude-code.readiness',
-    );
+    const check = buildRunnerChecks({
+      seatImageFact: NO_IMAGE_FACT,
+      config,
+      cliReadiness: [cliReadiness(overrides)],
+    }).find((candidate) => candidate.id === 'runners.cli.claude-code.readiness');
 
     expect(check?.diagnosticState).toBe(stateId);
     expect(check?.fix).toContain(fix);
@@ -555,7 +582,7 @@ describe('buildRunnerChecks availability guidance', () => {
     const runner = { kind: 'cli', tool: 'claude-code' } as const;
     const config = makeConfig({ planner: runner, implementer: runner, reviewer: runner });
 
-    const configured = buildRunnerChecks({ config })
+    const configured = buildRunnerChecks({ seatImageFact: NO_IMAGE_FACT, config })
       .map((check) => check.summary)
       .filter((summary) => summary.endsWith(' configured.'));
 
@@ -573,9 +600,11 @@ describe('buildRunnerChecks availability guidance', () => {
   ] as const)('states a CLI that is not ready in plain words: %o', (overrides, summary) => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
 
-    const check = buildRunnerChecks({ config, cliReadiness: [cliReadiness(overrides)] }).find(
-      (candidate) => candidate.id === 'runners.cli.claude-code.readiness',
-    );
+    const check = buildRunnerChecks({
+      seatImageFact: NO_IMAGE_FACT,
+      config,
+      cliReadiness: [cliReadiness(overrides)],
+    }).find((candidate) => candidate.id === 'runners.cli.claude-code.readiness');
 
     expect(check?.summary).toBe(summary);
   });
@@ -588,9 +617,11 @@ describe('buildRunnerChecks availability guidance', () => {
       cliReadiness({ enabled: false }),
       cliReadiness({ compatibility: 'unverified' }),
     ]) {
-      const check = buildRunnerChecks({ config, cliReadiness: [result] }).find(
-        (candidate) => candidate.id === 'runners.cli.claude-code.readiness',
-      );
+      const check = buildRunnerChecks({
+        seatImageFact: NO_IMAGE_FACT,
+        config,
+        cliReadiness: [result],
+      }).find((candidate) => candidate.id === 'runners.cli.claude-code.readiness');
       expect(check?.diagnosticState).toBeUndefined();
     }
   });
@@ -604,6 +635,7 @@ describe('buildRunnerChecks availability guidance', () => {
       },
     });
     const check = buildRunnerChecks({
+      seatImageFact: NO_IMAGE_FACT,
       config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
       cliReadiness: [result],
     }).find((candidate) => candidate.id === 'runners.cli.claude-code.readiness');
@@ -626,6 +658,7 @@ describe('buildRunnerChecks availability guidance', () => {
     });
 
     const check = buildRunnerChecks({
+      seatImageFact: NO_IMAGE_FACT,
       config,
       cliReadiness: [cliReadiness({ installation: 'unavailable', executable: null })],
     }).find((candidate) => candidate.id === 'runners.cli.claude-code.readiness');
@@ -652,7 +685,7 @@ describe('buildRunnerChecks availability guidance', () => {
   it('uses the canonical CLI check instead of generic availability guidance', () => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
 
-    const checks = buildRunnerChecks({ config });
+    const checks = buildRunnerChecks({ seatImageFact: NO_IMAGE_FACT, config });
 
     expect(checks.find((check) => check.id === 'runners.availability')?.summary).toBe(
       'Provider availability was not probed.',
@@ -669,7 +702,7 @@ describe('buildRunnerChecks availability guidance', () => {
       implementer: { kind: 'cli', tool: 'copilot' },
     });
 
-    const checks = buildRunnerChecks({ config });
+    const checks = buildRunnerChecks({ seatImageFact: NO_IMAGE_FACT, config });
     const notes = checks.filter((check) => check.id.endsWith('trust-boundary'));
 
     expect(notes).toEqual([
@@ -686,6 +719,7 @@ describe('buildRunnerChecks availability guidance', () => {
 
   it('claims no PLAN takeover of the brief for any CLI planner', () => {
     const text = buildRunnerChecks({
+      seatImageFact: NO_IMAGE_FACT,
       config: makeConfig({ planner: { kind: 'cli', tool: 'copilot' } }),
     })
       .flatMap((check) => [check.summary, ...(check.details ?? []), check.fix ?? ''])
@@ -706,7 +740,7 @@ describe('buildRunnerChecks availability guidance', () => {
       approval: { feedRejectionsToPlanner: true },
     });
 
-    const check = buildRunnerChecks({ config }).find(
+    const check = buildRunnerChecks({ seatImageFact: NO_IMAGE_FACT, config }).find(
       (c) => c.id === 'runners.planner.trust-boundary',
     );
 
@@ -730,8 +764,9 @@ describe('buildRunnerChecks availability guidance', () => {
     });
 
     const details = (
-      buildRunnerChecks({ config }).find((c) => c.id === 'runners.planner.trust-boundary')
-        ?.details ?? []
+      buildRunnerChecks({ seatImageFact: NO_IMAGE_FACT, config }).find(
+        (c) => c.id === 'runners.planner.trust-boundary',
+      )?.details ?? []
     ).join('\n');
 
     expect(details).toBe('Command: my-tool --api-ey=sk-***REDACTED*** --token ***REDACTED***');
@@ -753,7 +788,9 @@ describe('buildRunnerChecks availability guidance', () => {
       implementer: { kind: 'cli', tool: 'claude-code' },
     });
 
-    const note = buildRunnerChecks({ config }).find((c) => c.id === 'runners.trust-boundary');
+    const note = buildRunnerChecks({ seatImageFact: NO_IMAGE_FACT, config }).find(
+      (c) => c.id === 'runners.trust-boundary',
+    );
 
     expect(note?.summary).toContain('with your permissions');
     expect(note?.details?.join('\n')).not.toContain('--permission-mode');
@@ -772,7 +809,7 @@ describe('buildRunnerChecks availability guidance', () => {
       implementer: { kind: 'agent', command: './agent', model: 'agent-default' },
     });
 
-    const checks = buildRunnerChecks({ config });
+    const checks = buildRunnerChecks({ seatImageFact: NO_IMAGE_FACT, config });
 
     expect(checks.find((c) => c.id === 'runners.implementer.trust-boundary')).toMatchObject({
       severity: 'warning',
@@ -795,7 +832,7 @@ describe('buildRunnerChecks availability guidance', () => {
       },
     });
 
-    const check = buildRunnerChecks({ config }).find(
+    const check = buildRunnerChecks({ seatImageFact: NO_IMAGE_FACT, config }).find(
       (c) => c.id === 'runners.implementer.timeout-disables-watchdog',
     );
 
@@ -808,6 +845,7 @@ describe('buildRunnerChecks availability guidance', () => {
   it('states each timeout fact once when the crew shares its timeout settings', () => {
     const seat = { kind: 'cli', tool: 'claude-code', timeout: 1000, idleKillMs: 300_000 } as const;
     const checks = buildRunnerChecks({
+      seatImageFact: NO_IMAGE_FACT,
       config: makeConfig({ planner: seat, reviewer: seat, implementer: seat }),
     }).filter((check) => check.id.endsWith('.timeout-disables-watchdog'));
     const lines = checks
@@ -827,7 +865,7 @@ describe('buildRunnerChecks availability guidance', () => {
       },
     });
 
-    const check = buildRunnerChecks({ config }).find(
+    const check = buildRunnerChecks({ seatImageFact: NO_IMAGE_FACT, config }).find(
       (c) => c.id === 'runners.implementer.timeout-disables-watchdog',
     );
 
@@ -839,7 +877,7 @@ describe('buildRunnerChecks availability guidance', () => {
       implementer: { kind: 'cli', tool: 'claude-code', timeout: 1000 },
     });
 
-    const check = buildRunnerChecks({ config }).find(
+    const check = buildRunnerChecks({ seatImageFact: NO_IMAGE_FACT, config }).find(
       (c) => c.id === 'runners.implementer.timeout-disables-watchdog',
     );
 
@@ -852,7 +890,9 @@ describe('buildRunnerChecks availability guidance', () => {
     const explicit = makeConfig({ planner: { kind: 'cli', tool: 'codex', model: 'gpt-5.4' } });
 
     const check = (config: ReturnType<typeof makeConfig>) =>
-      buildRunnerChecks({ config }).find((c) => c.id === 'runners.planner.configured');
+      buildRunnerChecks({ seatImageFact: NO_IMAGE_FACT, config }).find(
+        (c) => c.id === 'runners.planner.configured',
+      );
 
     expect(check(automatic)?.summary).toBe('PLAN OpenAI Codex CLI · auto configured.');
     expect(check(automatic)?.metadata).toMatchObject({ model: null, modelSelection: 'auto' });
@@ -874,7 +914,9 @@ describe('buildRunnerChecks availability guidance', () => {
       implementer: { kind: 'cli', tool: 'opencode', timeout: 1000, idleKillMs: 300_000 },
     });
 
-    const summaries = buildRunnerChecks({ config }).map((check) => check.summary);
+    const summaries = buildRunnerChecks({ seatImageFact: NO_IMAGE_FACT, config }).map(
+      (check) => check.summary,
+    );
 
     expect(summaries.join('\n')).not.toMatch(/\b(Planner|Implementer|Reviewer|implementer)\b/);
     expect(summaries).toEqual(
@@ -891,6 +933,7 @@ describe('buildRunnerChecks availability guidance', () => {
 describe('buildRunnerChecks reviewer seat', () => {
   it('names the PLAN seat as REVIEW without a reviewer block', () => {
     const checks = buildRunnerChecks({
+      seatImageFact: NO_IMAGE_FACT,
       config: makeConfig({ planner: { kind: 'cli', tool: 'codex', model: 'gpt-5.4' } }),
     });
 
@@ -909,6 +952,7 @@ describe('buildRunnerChecks reviewer seat', () => {
 
   it('reports a configured reviewer seat in the seat words', () => {
     const checks = buildRunnerChecks({
+      seatImageFact: NO_IMAGE_FACT,
       config: makeConfig({
         planner: { kind: 'cli', tool: 'claude-code' },
         reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-5.4' },
@@ -924,6 +968,7 @@ describe('buildRunnerChecks reviewer seat', () => {
 
   it('warns when a configured reviewer timeout disables the watchdog', () => {
     const checks = buildRunnerChecks({
+      seatImageFact: NO_IMAGE_FACT,
       config: makeConfig({
         planner: { kind: 'cli', tool: 'claude-code' },
         reviewer: { kind: 'cli', tool: 'codex', timeout: 1000, idleKillMs: 300_000 },
@@ -933,6 +978,71 @@ describe('buildRunnerChecks reviewer seat', () => {
     expect(
       checks.find((check) => check.id === 'runners.reviewer.timeout-disables-watchdog'),
     ).toMatchObject({ severity: 'warning' });
+  });
+});
+
+describe('buildRunnerChecks review seat and render checks', () => {
+  const NOTE =
+    'The review seat, Google Antigravity CLI, cannot see images. The criteria of render checks cannot pass with this seat. In Settings > Crew > REVIEW, change the review seat to a tool that reads images.';
+
+  it('states on the REVIEW line that a review seat with no image input cannot see the renders', () => {
+    const checks = buildRunnerChecks({
+      config: makeConfig({
+        reviewer: { kind: 'cli', tool: 'antigravity' },
+        validation: { render: 'npm run shots' },
+      }),
+      seatImageFact: () => undefined,
+    });
+
+    expect(checks.find((check) => check.id === 'runners.reviewer.configured')?.details).toEqual([
+      NOTE,
+    ]);
+  });
+
+  it('adds the note after the inherited REVIEW detail', () => {
+    const checks = buildRunnerChecks({
+      config: makeConfig({
+        planner: { kind: 'cli', tool: 'antigravity' },
+        validation: { render: 'npm run shots' },
+      }),
+      seatImageFact: () => undefined,
+    });
+
+    expect(checks.find((check) => check.id === 'runners.reviewer.inherited')?.details).toEqual([
+      'REVIEW uses the tool and model of PLAN. To give REVIEW its own seat, choose one in Settings > Crew > REVIEW.',
+      NOTE,
+    ]);
+  });
+
+  it('reads the image fact of an API review seat from the callback', () => {
+    const reviewer = {
+      kind: 'api',
+      provider: 'lm-studio',
+      service: 'lm-studio',
+      offering: 'local',
+      apiBase: 'http://localhost:1234/v1',
+      model: 'vision-model',
+    } as const;
+    const details = (supportsImages: boolean) =>
+      buildRunnerChecks({
+        config: makeConfig({ reviewer, validation: { render: 'npm run shots' } }),
+        seatImageFact: (runner, role) =>
+          runner.kind === 'api' && role === 'reviewer' ? { supportsImages } : undefined,
+      }).find((check) => check.id === 'runners.reviewer.configured')?.details;
+
+    expect(details(true)).toBeUndefined();
+    expect(details(false)).toEqual([NOTE.replace('Google Antigravity CLI', 'LM Studio')]);
+  });
+
+  it('has no note without validation.render', () => {
+    const checks = buildRunnerChecks({
+      config: makeConfig({ reviewer: { kind: 'cli', tool: 'antigravity' } }),
+      seatImageFact: () => undefined,
+    });
+
+    expect(
+      checks.find((check) => check.id === 'runners.reviewer.configured')?.details,
+    ).toBeUndefined();
   });
 });
 
@@ -962,6 +1072,7 @@ describe('buildRunnerChecks write location', () => {
     '$isolation with a $implementer.kind BUILD reads "$line"',
     ({ isolation, implementer, line }) => {
       const checks = buildRunnerChecks({
+        seatImageFact: NO_IMAGE_FACT,
         config: makeConfig({ implementer, workflow: { isolation } }),
       });
 
@@ -974,7 +1085,9 @@ describe('buildRunnerChecks write location', () => {
 
 describe('buildRunnerChecks typed-output fallback', () => {
   const fallbackChecks = (config: ReturnType<typeof makeConfig>) =>
-    buildRunnerChecks({ config }).filter((check) => check.id.endsWith('.typed-output-fallback'));
+    buildRunnerChecks({ seatImageFact: NO_IMAGE_FACT, config }).filter((check) =>
+      check.id.endsWith('.typed-output-fallback'),
+    );
 
   it('warns once when the planner seat is a tool without a schema flag', () => {
     const checks = fallbackChecks(makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }));

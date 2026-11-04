@@ -23,7 +23,7 @@ import { isAbortError, throwIfAborted } from '../../../utils/abort.js';
 import { error, matches } from '../../../utils/error.js';
 import { detectRunnerEvidence } from '../../detection/runner-evidence.js';
 import { resolveSeatDisplayName } from '../../providers/model/display-names.js';
-import { NULL_CACHE } from '../../providers/model/resolution.js';
+import { NULL_CACHE, resolveSeatImageFact } from '../../providers/model/resolution.js';
 import { collectArgVectorPreflightChecks } from '../arg-vector-preflight.js';
 import type { RouteCatalogReads } from '../../detection/route-catalog.js';
 import {
@@ -236,6 +236,8 @@ async function admitRunners(input: AdmissionInput, sink: ReportSink): Promise<Ad
     ...(input.resumeSession !== undefined && { resumeSession: input.resumeSession }),
     seatDisplayName: (runner, role) =>
       resolveSeatDisplayName(runner, role, input.policy.modelCache ?? NULL_CACHE),
+    seatImageFact: (runner, role) =>
+      resolveSeatImageFact({ runner, role, cache: input.policy.modelCache ?? NULL_CACHE }),
   });
   throwIfAborted(input.signal);
   // collectReadiness is given no probe results, so it emits a placeholder

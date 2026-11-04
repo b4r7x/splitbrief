@@ -3,12 +3,22 @@ import type { ActiveRunnerRole } from './seat-roles.js';
 import { CLI_TOOL_CATALOG, isCliToolId } from './cli-tool-catalog.js';
 import { type CliEffortChannel, runnerEffortChannel } from './effort-channel.js';
 import type { ProviderDetection } from '../discovery/detection.js';
-import type { RunnerConfig } from '../config/accessors/runner-config.js';
+import {
+  getRunnerCatalogDisplayName,
+  type RunnerConfig,
+} from '../config/accessors/runner-config.js';
 import { resolveAutoModel } from '../providers/model-selection.js';
 import type { Config } from '../schemas/config.js';
+import { pluralize } from '../../utils/pluralize.js';
 
 /** The models.dev fact for one model; absent when detection never reached it. */
 export type DetectedModelFact = Readonly<{ supportsImages?: boolean }>;
+
+/** The detected image fact of a seat's model; undefined where no lookup knows it. */
+export type SeatImageFact = (
+  runner: RunnerConfig,
+  role: ActiveRunnerRole,
+) => DetectedModelFact | undefined;
 
 export function seatEffortChannel(
   input: Readonly<{ runner: RunnerConfig; role: ActiveRunnerRole }>,
@@ -45,6 +55,25 @@ export function seatSupportsImages(
     default:
       return assertNever(runner);
   }
+}
+
+/** The step that changes a review seat with no image input during a run. */
+export const REVIEW_SEAT_IMAGE_FIX =
+  'Change the review seat to a tool that reads images with /crew review';
+
+/**
+ * The note that the review seat cannot see the renders. It names the render checks, or render
+ * checks in general when no plan names them.
+ */
+export function reviewSeatRenderNote(
+  input: Readonly<{ runner: RunnerConfig; renderCheckIds: readonly string[] }>,
+): string {
+  const ids = input.renderCheckIds;
+  const checks =
+    ids.length === 0
+      ? 'render checks'
+      : `${pluralize(ids.length, 'render check')} ${ids.join(', ')}`;
+  return `The review seat, ${getRunnerCatalogDisplayName(input.runner)}, cannot see images. The criteria of ${checks} cannot pass with this seat.`;
 }
 
 /**

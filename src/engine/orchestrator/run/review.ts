@@ -92,6 +92,7 @@ async function haltFailedReview(args: {
   noProgress?: readonly string[] | undefined;
   fixCycle?: number | undefined;
   unverified?: number | undefined;
+  reviewSeatNoImages?: boolean | undefined;
   cannot?: string | undefined;
   question?: string | undefined;
   details?: readonly string[] | undefined;
@@ -129,6 +130,7 @@ async function haltFailedReview(args: {
     ...(args.noProgress !== undefined && { noProgress: args.noProgress }),
     ...(args.fixCycle !== undefined && { fixCycle: args.fixCycle }),
     ...(args.unverified !== undefined && { unverified: args.unverified }),
+    reviewSeatNoImages: args.reviewSeatNoImages,
     ...(args.cannot !== undefined && { cannot: args.cannot }),
     ...(args.question !== undefined && { question: args.question }),
     details,
@@ -433,6 +435,9 @@ export async function followReviewAnswer(args: {
             ? { noProgress: blockers, fixCycle: started?.cycle }
             : unverified.length > 0 && {
                 unverified: unverified.length,
+                reviewSeatNoImages: unverified.every(
+                  (id) => judged.unseenRenderCriteria?.includes(id) === true,
+                ),
                 details: [`Unverified criteria: ${unverified.join(', ')}`],
               }),
         });
@@ -545,6 +550,7 @@ export async function runScheduledReview(args: {
       state,
       reviewer: wctx.reviewer,
       metadata: wctx.metadata,
+      modelCache: wctx.modelCache,
       signal: wctx.signal,
       sinks: wctx.sinks,
       ...(wctx.continuation !== undefined && { continuation: wctx.continuation }),

@@ -356,6 +356,15 @@ An OpenCode or Kilo Code seat on a `provider/model` route gets a warning when th
 
 `start` shows the same warning before the run spends a call. When OpenCode then refuses the route, the seat halts as **Seat down** with the same sentence; see [Approval and recovery](./APPROVAL-AND-RECOVERY.md).
 
+With `validation.render` set, the REVIEW line says when the review seat cannot see images. That seat cannot verify the criteria of a render check. The sentence is a detail of the `ok` line. It is not a warning, and the exit code does not change:
+
+```
+  ok       REVIEW Google Antigravity CLI · auto configured.
+           The review seat, Google Antigravity CLI, cannot see images. The criteria of render checks cannot pass with this seat. In Settings > Crew > REVIEW, change the review seat to a tool that reads images.
+```
+
+A review seat that follows PLAN gets the same sentence under its inherited line. See [Render checks and the review seat](./CONFIGURATION.md#render-checks-and-the-review-seat).
+
 ### Usage
 
 ```
@@ -879,7 +888,7 @@ Recommended: switch-seat
 Continue with: splitbrief continue 2026-09-13-add-auth --action switch-seat:claude-code [--plain|--json]
 ```
 
-A quota halt ends the first line with the clock its limit resets on, spelled when the line is printed; with `--json`, the halt's `error` event record carries it as `resetAt`. The last line is the command to paste. When the recommended action is one `continue` cannot take on its own, the line opens the recovery panel and names the row to choose there, in the panel's own words: `Continue with: splitbrief continue 2026-09-13-add-auth, then choose Continue in the recovery panel`. That line carries no `[--plain|--json]`: the panel needs the TUI. With `--json` the same facts also arrive on stdout as a `recovery_required` record carrying `reason`, `status`, `message`, `taskId`, `files`, `availableActions`, `recommendedAction` and `resumeCommand`. The record leaves out `files` when the list would pass the record's size limit.
+A quota halt ends the first line with the clock its limit resets on, spelled when the line is printed; with `--json`, the halt's `error` event record carries it as `resetAt`. The last line is the command to paste. When the recommended action is one `continue` cannot take on its own, the line opens the recovery panel and names the row to choose there, in the panel's own words: `Continue with: splitbrief continue 2026-09-13-add-auth, then choose Continue in the recovery panel`. That line carries no `[--plain|--json]`: the panel needs the TUI. Some review halts fail again on the same review seat: the seat cannot see the renders, or its context is too small. Their line adds the flag that changes the seat: `Continue with: splitbrief continue 2026-09-13-add-auth --reviewer <tool> --action retry [--plain|--json]`. Put the new review tool in place of `<tool>`. With `--json` the same facts also arrive on stdout as a `recovery_required` record carrying `reason`, `status`, `message`, `taskId`, `files`, `availableActions`, `recommendedAction` and `resumeCommand`. The record leaves out `files` when the list would pass the record's size limit.
 
 ### Planning session
 

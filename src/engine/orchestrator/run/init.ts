@@ -78,6 +78,7 @@ import { plainUserMessage, type UserMessageInput } from '../../../core/types/use
 import { restoreInterruptedTaskFiles } from '../task/rollback.js';
 import { applyRebuiltContext, autoCompactResumeContext } from '../resume-context.js';
 import { createValidator } from '../validation/run.js';
+import { publishReviewSeatRenderNote } from '../review-seat-note.js';
 import { createCustomRunnerRuntime } from '../../runners/custom-runner-runtime.js';
 import type { PreparedExecution } from '../../runners/prepared-execution.js';
 import { attachRunSinks } from './init-sinks.js';
@@ -303,6 +304,13 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
             configRevision: readConfigDocument(projectDir).revision?.rawSha256 ?? '',
           },
         );
+        publishReviewSeatRenderNote({
+          bus,
+          seat: change.seat,
+          state: savedState,
+          config,
+          modelCache,
+        });
       }
     }
     if (planSeatChanged) {

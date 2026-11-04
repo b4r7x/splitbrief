@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { PlanProposalSchema, type PlanProposal } from '../../core/schemas/plan.js';
@@ -11,6 +12,7 @@ import {
   renderCheckNotes,
   type PlanTaskFit,
 } from './plan-checks.js';
+import { NULL_CACHE } from '../providers/model/resolution.js';
 
 const projectDir = '/repo';
 const k2 = [{ id: 'K2', kind: 'test' as const, value: 'src/b.test.ts' }];
@@ -651,12 +653,66 @@ describe('checkPlan on the files of the checkout', () => {
     ).toEqual([
       'Render check K-render needs validation.render, which is not set; drop it or ask the user.',
     ]);
-    expect(renderCheckNotes(one, undefined)).toEqual([
+    expect(renderCheckNotes(one, makeConfig(), NULL_CACHE)).toEqual([
       'Render check K-render needs validation.render, which is not set. Add it to .splitbrief/config.yaml, or request changes to drop it; without it the run halts before its review.',
     ]);
-    expect(renderCheckNotes(two, undefined)).toEqual([
+    expect(renderCheckNotes(two, makeConfig(), NULL_CACHE)).toEqual([
       'Render checks K-a, K-b need validation.render, which is not set. Add it to .splitbrief/config.yaml, or request changes to drop them; without it the run halts before its review.',
     ]);
-    expect(renderCheckNotes(two, 'render {id} {out}')).toEqual([]);
+    expect(
+      renderCheckNotes(
+        two,
+        makeConfig({ validation: { render: 'render {id} {out}' } }),
+        NULL_CACHE,
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe('renderCheckNotes review seat', () => {
+  const render = 'npm run tui-shots -- --scenario {id} --output {out}';
+  const antigravity = { kind: 'cli', tool: 'antigravity' } as const;
+  const plan = makePlanProposal({
+    checks: [{ id: 'K-render', kind: 'render', value: 'overlay-picker' }],
+    criteria: [{ id: 'C1', text: 'Greets', checkIds: ['K1', 'K-render'] }],
+  });
+
+  it('names a review seat that cannot see images when the plan has a render check', () => {
+    expect(
+      renderCheckNotes(
+        plan,
+        makeConfig({ reviewer: antigravity, validation: { render } }),
+        NULL_CACHE,
+      ),
+    ).toEqual([
+      'The review seat, Google Antigravity CLI, cannot see images. The criteria of render check K-render cannot pass with this seat. Change the review seat to a tool that reads images, or request changes to drop it.',
+    ]);
+  });
+
+  it('puts the review seat note after the note for a missing validation.render', () => {
+    const notes = renderCheckNotes(plan, makeConfig({ reviewer: antigravity }), NULL_CACHE);
+    expect(notes).toHaveLength(2);
+    expect(notes[0]).toMatch(/^Render check K-render needs validation\.render/);
+    expect(notes[1]).toMatch(/^The review seat, Google Antigravity CLI, cannot see images\./);
+  });
+
+  it('has no review seat note for a review seat that sees images', () => {
+    expect(
+      renderCheckNotes(
+        plan,
+        makeConfig({ reviewer: { kind: 'cli', tool: 'claude-code' }, validation: { render } }),
+        NULL_CACHE,
+      ),
+    ).toEqual([]);
+  });
+
+  it('has no review seat note when the plan has no render check', () => {
+    expect(
+      renderCheckNotes(
+        makePlanProposal(),
+        makeConfig({ reviewer: antigravity, validation: { render } }),
+        NULL_CACHE,
+      ),
+    ).toEqual([]);
   });
 });

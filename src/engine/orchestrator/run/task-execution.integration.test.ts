@@ -64,6 +64,8 @@ import { buildReviewFailedRecoveryIssue } from '../recovery/builders/task.js';
 import { processError } from '../../../lib/process/errors.js';
 import * as commandRunner from '../../../lib/process/spawn/run-command.js';
 import { formatRetryPrompt } from '../../spec/prompt-formatter.js';
+import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
+import { NO_VISION_REVIEW } from '../review-renders.js';
 
 /** How many times the session transcript holds this user turn. */
 async function userTurns(ref: { projectDir: string; sessionId: string }, text: string) {
@@ -193,6 +195,7 @@ function runOptions(opts: {
   implementer?: Implementer | undefined;
   config?: Config | undefined;
   validator?: Validator | undefined;
+  modelCache?: ModelCacheAccessor | undefined;
 }) {
   const { bus, events } = makeBusRecorder();
   const reviewPrompts: string[] = [];
@@ -247,6 +250,7 @@ function runOptions(opts: {
     ...(opts.signal !== undefined && { signal: opts.signal }),
     ...(opts.continuation !== undefined && { continuation: opts.continuation }),
     ...(opts.validator !== undefined && { validator: opts.validator }),
+    ...(opts.modelCache !== undefined && { modelCache: opts.modelCache }),
     ...(opts.skillsContext !== undefined && {
       context: { name: 'demo', dir: opts.projectDir, skillsContext: opts.skillsContext },
     }),
@@ -1328,6 +1332,154 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
       message: 'Final review failed with 1 unverified criterion',
     });
     expect(result.state.pendingRecovery?.availableActions).toContain('revise');
+  });
+
+  describe('a review seat with no image input and unverified render criteria', () => {
+    const NO_IMAGE_REVIEWER = { kind: 'cli', tool: 'antigravity' } as const;
+
+    async function haltOnUnverified(
+      criteria: { id: string; text: string; checkIds: string[] }[],
+      reviewer: { kind: 'cli'; tool: 'antigravity' | 'claude-code' } = NO_IMAGE_REVIEWER,
+    ) {
+      const { projectDir, sessionId, head } = setupProject();
+      const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
+      const { options } = runOptions({
+        projectDir,
+        sessionId,
+        state: {
+          ...reviewedState(tasks, head, tasks.length),
+          plan: {
+            summary: 'Greet people by name',
+            decisions: [],
+            criteria,
+            checks: [{ id: 'K1', kind: 'render', value: 'greeting-render' }],
+            validation: null,
+          },
+        },
+        review: (prompt) => {
+          const base = passingReviewVerdict(prompt);
+          return {
+            ...base,
+            criteria: base.criteria.map((criterion) => ({ ...criterion, status: 'unverified' })),
+          };
+        },
+        onComplete: vi.fn(),
+        config: makeNoValidationConfig({
+          workflow: {},
+          reviewer,
+          validation: { render: 'true {id} {out}' },
+        }),
+      });
+      return (await runTasksAndReview(options)).state.pendingRecovery;
+    }
+
+    it('halts on the review seat and recommends Try again when render criteria are the only cause', async () => {
+      const issue = await haltOnUnverified([
+        { id: 'C1', text: 'The rendered greeting is checked', checkIds: ['K1'] },
+      ]);
+
+      expect(issue).toMatchObject({
+        reason: 'review-failed',
+        seat: 'review',
+        message: 'Final review needs a REVIEW seat that reads images',
+        recommendedAction: 'retry-same-worker',
+      });
+      expect(issue?.availableActions).not.toContain('revise');
+    });
+
+    it('keeps Fix again when a criterion with no render check is also unverified', async () => {
+      const issue = await haltOnUnverified([
+        { id: 'C1', text: 'The rendered greeting is checked', checkIds: ['K1'] },
+        { id: 'C2', text: 'The greeting names the user', checkIds: [] },
+      ]);
+
+      expect(issue).toMatchObject({
+        reason: 'review-failed',
+        message: 'Final review failed with 2 unverified criteria',
+        recommendedAction: 'revise',
+      });
+    });
+
+    it('keeps Fix again when a review seat that reads images left a render criterion unverified', async () => {
+      const issue = await haltOnUnverified(
+        [{ id: 'C1', text: 'The rendered greeting is checked', checkIds: ['K1'] }],
+        { kind: 'cli', tool: 'claude-code' },
+      );
+
+      expect(issue).toMatchObject({
+        reason: 'review-failed',
+        seat: 'build',
+        message: 'Final review failed with 1 unverified criterion',
+        recommendedAction: 'revise',
+      });
+    });
+  });
+
+  it('hands the render to an API reviewer whose detected model takes images, so its render criterion passes', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const png = join(sessionDir(projectDir, sessionId), 'dashboard.png');
+    writeFileSync(
+      png,
+      Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a1X8AAAAASUVORK5CYII=',
+        'base64',
+      ),
+    );
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
+    const { options, reviewPrompts } = runOptions({
+      projectDir,
+      sessionId,
+      state: {
+        ...reviewedState(tasks, head, tasks.length),
+        plan: {
+          summary: 'Render the dashboard',
+          decisions: [],
+          criteria: [{ id: 'C1', text: 'The dashboard is readable', checkIds: ['K1'] }],
+          checks: [{ id: 'K1', kind: 'render', value: 'dashboard' }],
+          validation: null,
+        },
+      },
+      review: (prompt) => {
+        const verdict = passingReviewVerdict(prompt);
+        return {
+          ...verdict,
+          criteria: verdict.criteria.map((criterion) => ({
+            ...criterion,
+            evidence: 'dashboard: labels are readable and columns align.',
+          })),
+        };
+      },
+      onComplete: vi.fn(),
+      config: makeNoValidationConfig({
+        workflow: {},
+        validation: { render: `cp ${png} {out}` },
+        reviewer: {
+          kind: 'api',
+          provider: 'lm-studio',
+          model: 'vision-model',
+          apiBase: 'http://localhost:1234/v1',
+        },
+      }),
+      modelCache: {
+        getProviderModels: () => null,
+        getModelsDevCatalog: () => null,
+        getScopedProviderRuntime: ({ role }) => ({
+          connection: { role, provider: 'lm-studio', contextKey: role },
+          state: 'fresh',
+          catalog: 'populated',
+          models: [{ id: 'vision-model', supportsImages: role === 'reviewer' }],
+          fetchedAt: 1,
+          validatedAt: 1,
+        }),
+      },
+    });
+
+    const result = await runTasksAndReview(options);
+
+    expect(reviewPrompts).toHaveLength(1);
+    expect(reviewPrompts[0]).not.toContain(NO_VISION_REVIEW);
+    expect(result.state.pendingRecovery).toBeUndefined();
+    expect(result.completed).toBe(true);
   });
 
   it('pending inputs reach a new review before fix work starts', async () => {

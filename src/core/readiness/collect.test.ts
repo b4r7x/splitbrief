@@ -23,6 +23,8 @@ import { configPath } from '../config/load/document.js';
 import { flattenReadinessChecks } from './status.js';
 import type { ReadinessCheck } from './types.js';
 
+const NO_IMAGE_FACT = () => undefined;
+
 vi.mock('../../lib/git/files.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../lib/git/files.js')>()),
   checkIgnoredPaths: async () => [],
@@ -120,6 +122,7 @@ describe('collectReadiness End-of-run checks', () => {
 
   it('names End-of-run checks off as a warning', async () => {
     const { report } = await collectReadiness({
+      seatImageFact: NO_IMAGE_FACT,
       projectDir: tempDir,
       config: makeConfig({ validation: { endChecks: false } }),
     });
@@ -148,6 +151,7 @@ describe('collectReadiness runner availability wiring', () => {
   it('uses catalog names throughout the collected runner report', async () => {
     const runner = { kind: 'cli', tool: 'codex', model: 'gpt-6-luna' } as const;
     const { report } = await collectReadiness({
+      seatImageFact: NO_IMAGE_FACT,
       projectDir: tempDir,
       config: makeConfig({ planner: runner, implementer: runner, reviewer: runner }),
       seatDisplayName: () => 'GPT-6-Luna',
@@ -160,6 +164,7 @@ describe('collectReadiness runner availability wiring', () => {
 
   it('turns an unreachable default implementer into a blocker', async () => {
     const { report } = await collectReadiness({
+      seatImageFact: NO_IMAGE_FACT,
       projectDir: tempDir,
       config: makeConfig(),
       probeRunnerAvailability: async () => [
@@ -182,6 +187,7 @@ describe('collectReadiness runner availability wiring', () => {
 
   it('falls back to the no-claim notice when the probe itself fails', async () => {
     const { report } = await collectReadiness({
+      seatImageFact: NO_IMAGE_FACT,
       projectDir: tempDir,
       config: makeConfig(),
       probeRunnerAvailability: async () => {
@@ -198,6 +204,7 @@ describe('collectReadiness runner availability wiring', () => {
 
   it('merges headless admission checks when interaction and probeRunnerAdmission are provided', async () => {
     const { report } = await collectReadiness({
+      seatImageFact: NO_IMAGE_FACT,
       projectDir: tempDir,
       config: makeConfig(),
       interaction: 'headless',
@@ -252,6 +259,7 @@ describe('collectReadiness Claude Code sandbox on Linux', () => {
 
   it('blocks a run that calls the claude-code implementer without bwrap and socat', async () => {
     const { report } = await collectReadiness({
+      seatImageFact: NO_IMAGE_FACT,
       projectDir: tempDir,
       config: claudeImplementer(),
       roles: ['planner', 'implementer', 'reviewer'],
@@ -264,6 +272,7 @@ describe('collectReadiness Claude Code sandbox on Linux', () => {
     'skips the check for a run that calls only %j',
     async (roles) => {
       const { report } = await collectReadiness({
+        seatImageFact: NO_IMAGE_FACT,
         projectDir: tempDir,
         config: claudeImplementer(),
         roles,
@@ -278,7 +287,11 @@ describe('preparation readiness projection', () => {
   it('replaces tool-level CLI placeholders with exact slot checks', async () => {
     const projectDir = createTempDir('collect-preparation-checks');
     try {
-      const { report } = await collectReadiness({ projectDir, config: makeConfig() });
+      const { report } = await collectReadiness({
+        seatImageFact: NO_IMAGE_FACT,
+        projectDir,
+        config: makeConfig(),
+      });
       const prepared = applyRunnerPreparationChecks(report, [
         {
           id: 'runners.preparation.planner',
@@ -359,7 +372,11 @@ describe('collectReadiness git posture', () => {
     const config = monorepoConfig();
     writeConfigYaml(tempDir, config);
     writeFileSync(join(tempDir, 'package.json'), JSON.stringify({ name: 'mono' }));
-    const { report: baseline } = await collectReadiness({ projectDir: tempDir, config });
+    const { report: baseline } = await collectReadiness({
+      seatImageFact: NO_IMAGE_FACT,
+      projectDir: tempDir,
+      config,
+    });
     expect(baseline.counts.warning).toBe(0);
     expect(baseline.counts.blocker).toBe(0);
     expect(baseline.status).toBe('ready');
@@ -368,7 +385,11 @@ describe('collectReadiness git posture', () => {
       JSON.stringify({ name: 'mono', workspaces: ['packages/*'] }),
     );
 
-    const { report } = await collectReadiness({ projectDir: tempDir, config });
+    const { report } = await collectReadiness({
+      seatImageFact: NO_IMAGE_FACT,
+      projectDir: tempDir,
+      config,
+    });
 
     const repo = report.sections.find((section) => section.id === 'repo');
     const check = repo?.checks.find((c) => c.id === 'isolation.workspace-links');
@@ -387,7 +408,10 @@ describe('collectReadiness git posture', () => {
     await initConfig(tempDir, createDefaultConfig());
 
     expect(readFileSync(configPath(tempDir), 'utf8')).not.toContain('isolation');
-    const { report } = await collectReadiness({ projectDir: tempDir });
+    const { report } = await collectReadiness({
+      seatImageFact: NO_IMAGE_FACT,
+      projectDir: tempDir,
+    });
 
     const check = report.sections
       .find((section) => section.id === 'repo')
@@ -403,7 +427,10 @@ describe('collectReadiness git posture', () => {
       JSON.stringify({ name: 'mono', workspaces: ['packages/*'] }),
     );
 
-    const { report } = await collectReadiness({ projectDir: tempDir });
+    const { report } = await collectReadiness({
+      seatImageFact: NO_IMAGE_FACT,
+      projectDir: tempDir,
+    });
 
     const ids = flattenReadinessChecks(report.sections).map((check) => check.id);
     expect(ids).not.toContain('isolation.workspace-links');
@@ -417,7 +444,11 @@ describe('collectReadiness git posture', () => {
       JSON.stringify({ name: 'mono', workspaces: ['packages/*'] }),
     );
 
-    const { report } = await collectReadiness({ projectDir: tempDir, config });
+    const { report } = await collectReadiness({
+      seatImageFact: NO_IMAGE_FACT,
+      projectDir: tempDir,
+      config,
+    });
 
     const ids = flattenReadinessChecks(report.sections).map((check) => check.id);
     expect(ids).not.toContain('isolation.workspace-links');
@@ -432,7 +463,11 @@ describe('collectReadiness git posture', () => {
       JSON.stringify({ name: 'mono', workspaces: ['packages/*'] }),
     );
 
-    const { report } = await collectReadiness({ projectDir: tempDir, config });
+    const { report } = await collectReadiness({
+      seatImageFact: NO_IMAGE_FACT,
+      projectDir: tempDir,
+      config,
+    });
 
     const repo = report.sections.find((section) => section.id === 'repo');
     const check = repo?.checks.find((c) => c.id === 'isolation.workspace-links');
@@ -448,7 +483,10 @@ describe('collectReadiness git posture', () => {
   it('reports a failed isolation check when pnpm workspace YAML is invalid', async () => {
     writeFileSync(join(tempDir, 'pnpm-workspace.yaml'), 'packages: [\n');
 
-    const { report } = await collectReadiness({ projectDir: tempDir });
+    const { report } = await collectReadiness({
+      seatImageFact: NO_IMAGE_FACT,
+      projectDir: tempDir,
+    });
 
     const repo = report.sections.find((section) => section.id === 'repo');
     const failure = repo?.checks.find((check) => check.id === 'isolation.check-failed');
@@ -459,7 +497,10 @@ describe('collectReadiness git posture', () => {
   it('reports a failed isolation check when the pnpm workspace file cannot be read', async () => {
     mkdirSync(join(tempDir, 'pnpm-workspace.yaml'));
 
-    const { report } = await collectReadiness({ projectDir: tempDir });
+    const { report } = await collectReadiness({
+      seatImageFact: NO_IMAGE_FACT,
+      projectDir: tempDir,
+    });
 
     const repo = report.sections.find((section) => section.id === 'repo');
     const failure = repo?.checks.find((check) => check.id === 'isolation.check-failed');
@@ -470,7 +511,10 @@ describe('collectReadiness git posture', () => {
   it('warns when the repository is on a detached HEAD', async () => {
     scriptedGit.repo = { isRepo: true, branch: 'HEAD' };
 
-    const { report } = await collectReadiness({ projectDir: tempDir });
+    const { report } = await collectReadiness({
+      seatImageFact: NO_IMAGE_FACT,
+      projectDir: tempDir,
+    });
 
     const detached = flattenReadinessChecks(report.sections).find(
       (check) => check.id === 'repo.detached-head',
@@ -479,7 +523,10 @@ describe('collectReadiness git posture', () => {
   });
 
   it('does not warn about a detached HEAD when on a branch', async () => {
-    const { report } = await collectReadiness({ projectDir: tempDir });
+    const { report } = await collectReadiness({
+      seatImageFact: NO_IMAGE_FACT,
+      projectDir: tempDir,
+    });
 
     expect(
       flattenReadinessChecks(report.sections).find((check) => check.id === 'repo.detached-head'),
@@ -490,7 +537,10 @@ describe('collectReadiness git posture', () => {
     mkdirSync(join(tempDir, '.git'));
     writeFileSync(join(tempDir, '.git', 'MERGE_HEAD'), 'a'.repeat(40));
 
-    const { report } = await collectReadiness({ projectDir: tempDir });
+    const { report } = await collectReadiness({
+      seatImageFact: NO_IMAGE_FACT,
+      projectDir: tempDir,
+    });
 
     const inProgress = flattenReadinessChecks(report.sections).find(
       (check) => check.id === 'repo.in-progress-git-op',
@@ -513,7 +563,10 @@ describe('collectReadiness git posture', () => {
     ];
     scriptedGit.notAdded = [`${TREES_DIR}/`, `${SPLITBRIEF_DIR}/`];
 
-    const { report } = await collectReadiness({ projectDir: tempDir });
+    const { report } = await collectReadiness({
+      seatImageFact: NO_IMAGE_FACT,
+      projectDir: tempDir,
+    });
 
     const dirty = flattenReadinessChecks(report.sections).find(
       (check) => check.id === 'repo.dirty-worktree',
@@ -536,7 +589,10 @@ describe('collectReadiness git posture', () => {
       scriptedGit.headFiles = { '.gitignore': 'node_modules/\n' };
       scriptedGit.files = [{ path: '.gitignore' }];
 
-      const { report } = await collectReadiness({ projectDir: tempDir });
+      const { report } = await collectReadiness({
+        seatImageFact: NO_IMAGE_FACT,
+        projectDir: tempDir,
+      });
 
       const dirty = flattenReadinessChecks(report.sections).find(
         (check) => check.id === 'repo.dirty-worktree',
@@ -551,11 +607,13 @@ describe('collectReadiness git posture', () => {
     writeActive({ projectDir: tempDir, sessionId });
 
     const resumed = await collectReadiness({
+      seatImageFact: NO_IMAGE_FACT,
       projectDir: tempDir,
       config: makeConfig(),
       resumeSession: { projectDir: tempDir, sessionId },
     });
     const other = await collectReadiness({
+      seatImageFact: NO_IMAGE_FACT,
       projectDir: tempDir,
       config: makeConfig(),
       resumeSession: { projectDir: tempDir, sessionId: 'another-session' },
@@ -597,6 +655,7 @@ describe('collectReadiness repository posture from a scripted git', () => {
     // per-task, so this is the input that used to trigger the identity probe.
     const config = makeConfig();
     const { report } = await collectReadiness({
+      seatImageFact: NO_IMAGE_FACT,
       projectDir: tempDir,
       config: { ...config, workflow: { ...config.workflow, git: { commitStrategy: 'per-task' } } },
     });
@@ -621,7 +680,11 @@ describe('collectReadiness repository posture from a scripted git', () => {
     writeSessionLockfile(tempDir, sessionId);
     writeActive({ projectDir: tempDir, sessionId });
 
-    const { report } = await collectReadiness({ projectDir: tempDir, config: makeConfig() });
+    const { report } = await collectReadiness({
+      seatImageFact: NO_IMAGE_FACT,
+      projectDir: tempDir,
+      config: makeConfig(),
+    });
 
     expect(repoChecks(report)).toContainEqual(
       expect.objectContaining({
@@ -641,7 +704,11 @@ describe('collectReadiness repository posture from a scripted git', () => {
     });
     writeActive({ projectDir: tempDir, sessionId });
 
-    const { report } = await collectReadiness({ projectDir: tempDir, config: makeConfig() });
+    const { report } = await collectReadiness({
+      seatImageFact: NO_IMAGE_FACT,
+      projectDir: tempDir,
+      config: makeConfig(),
+    });
 
     expect(repoChecks(report)).toContainEqual(
       expect.objectContaining({
@@ -655,7 +722,11 @@ describe('collectReadiness repository posture from a scripted git', () => {
   it('warns about a detached HEAD in terms of the uncommitted run changes', async () => {
     scriptedGit.repo = { isRepo: true, branch: 'HEAD' };
 
-    const { report } = await collectReadiness({ projectDir: tempDir, config: makeConfig() });
+    const { report } = await collectReadiness({
+      seatImageFact: NO_IMAGE_FACT,
+      projectDir: tempDir,
+      config: makeConfig(),
+    });
 
     const detached = repoChecks(report).find((check) => check.id === 'repo.detached-head');
     expect(detached?.severity).toBe('warning');
@@ -666,7 +737,11 @@ describe('collectReadiness repository posture from a scripted git', () => {
   it('blocks a project directory that is not a git repository', async () => {
     scriptedGit.repo = { isRepo: false, branch: 'main' };
 
-    const { report } = await collectReadiness({ projectDir: tempDir, config: makeConfig() });
+    const { report } = await collectReadiness({
+      seatImageFact: NO_IMAGE_FACT,
+      projectDir: tempDir,
+      config: makeConfig(),
+    });
 
     expect(repoChecks(report)).toEqual([
       expect.objectContaining({ id: 'repo.not-git', severity: 'blocker' }),
@@ -711,7 +786,10 @@ describe('collectReadiness config loader warnings', () => {
     const configPath = writeMinimalV3Config(tempDir);
     chmodSync(configPath, 0o666);
 
-    const { report } = await collectReadiness({ projectDir: tempDir });
+    const { report } = await collectReadiness({
+      seatImageFact: NO_IMAGE_FACT,
+      projectDir: tempDir,
+    });
     const configWarnings = flattenReadinessChecks(report.sections).filter(
       (check) => check.id === 'config.warning',
     );
@@ -730,7 +808,10 @@ describe('collectReadiness config loader warnings', () => {
     );
     chmodSync(configPath, 0o600);
 
-    const { report } = await collectReadiness({ projectDir: tempDir });
+    const { report } = await collectReadiness({
+      seatImageFact: NO_IMAGE_FACT,
+      projectDir: tempDir,
+    });
     const retired = flattenReadinessChecks(report.sections)
       .filter((check) => check.id === 'config.warning' && check.summary.includes('was retired'))
       .map((check) => check.summary);
@@ -755,7 +836,10 @@ describe('collectReadiness config loader warnings', () => {
       },
     });
 
-    const { report } = await collectReadiness({ projectDir: tempDir });
+    const { report } = await collectReadiness({
+      seatImageFact: NO_IMAGE_FACT,
+      projectDir: tempDir,
+    });
     const invalid = flattenReadinessChecks(report.sections).find(
       (check) => check.id === 'config.invalid',
     );

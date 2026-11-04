@@ -22,6 +22,11 @@ import {
 import { getIsolationStrategy } from '../../config/accessors/values.js';
 import type { Config } from '../../schemas/config.js';
 import { resolveReviewerRunner } from '../../config/accessors/reviewer-runner.js';
+import {
+  reviewSeatRenderNote,
+  seatSupportsImages,
+  type SeatImageFact,
+} from '../../runners/capabilities.js';
 import type { CliReadinessResult } from '../../schemas/readiness.js';
 import type { ReadinessCheck, SeatNamer } from '../types.js';
 import { assertNever } from '../../../utils/type-guards.js';
@@ -42,6 +47,7 @@ export function buildRunnerChecks({
   cliSeatModels,
   availability,
   seatDisplayName,
+  seatImageFact,
 }: {
   config: Config;
   cliReadiness?: readonly CliReadinessResult[] | undefined;
@@ -51,6 +57,8 @@ export function buildRunnerChecks({
   cliSeatModels?: ReadonlyMap<string, string | undefined> | undefined;
   availability?: readonly RunnerAvailabilityFact[] | undefined;
   seatDisplayName?: SeatDisplayName | undefined;
+  /** The detected image fact of an API seat's model, for the REVIEW line's render note. */
+  seatImageFact: SeatImageFact;
 }): ReadinessCheck[] {
   const nameSeat: SeatNamer = (runner, role) =>
     formatSeatIdentity({ seat: runner, displayName: seatDisplayName?.(runner, role) });
@@ -67,7 +75,7 @@ export function buildRunnerChecks({
     configuredCliTools.set(runner.tool, seats);
   };
   addCliSeat({ role: 'planner' }, config.planner);
-  checks.push(seatConfiguredCheck('planner', config.planner, nameSeat));
+  checks.push(seatConfiguredCheck('planner', config.planner, nameSeat, []));
   checks.push(...typedOutputFallbackCheck('planner', config.planner));
 
   let resolved: ReturnType<typeof resolveImplementerProfiles> | null = null;
@@ -117,12 +125,13 @@ export function buildRunnerChecks({
   }
 
   const reviewer = resolveReviewerRunner(config);
+  const renderDetails = reviewSeatRenderCheckDetail(config, reviewer.runner, seatImageFact);
   if (reviewer.source === 'configured') {
     addCliSeat({ role: 'reviewer' }, reviewer.runner);
-    checks.push(seatConfiguredCheck('reviewer', reviewer.runner, nameSeat));
+    checks.push(seatConfiguredCheck('reviewer', reviewer.runner, nameSeat, renderDetails));
     checks.push(...typedOutputFallbackCheck('reviewer', reviewer.runner));
   } else {
-    checks.push(inheritedReviewerCheck(reviewer.runner, nameSeat));
+    checks.push(inheritedReviewerCheck(reviewer.runner, nameSeat, renderDetails));
   }
 
   if (resolved !== null) {
@@ -308,15 +317,31 @@ function buildImplementerProfileMetadataChecks(
   });
 }
 
+/** With `validation.render` set, the REVIEW line says when its seat cannot see the renders. */
+function reviewSeatRenderCheckDetail(
+  config: Config,
+  runner: RunnerConfig,
+  seatImageFact: SeatImageFact,
+): string[] {
+  if (config.validation.render === undefined) return [];
+  if (seatSupportsImages({ runner, detected: seatImageFact(runner, 'reviewer') })) return [];
+  const review = formatSlotLabel({ role: 'reviewer' });
+  return [
+    `${reviewSeatRenderNote({ runner, renderCheckIds: [] })} In Settings > Crew > ${review}, change the review seat to a tool that reads images.`,
+  ];
+}
+
 function seatConfiguredCheck(
   role: 'planner' | 'reviewer',
   runner: Config['planner'] | NonNullable<Config['reviewer']>,
   nameSeat: SeatNamer,
+  details: readonly string[],
 ): ReadinessCheck {
   return {
     id: `runners.${role}.configured`,
     severity: 'ok',
     summary: `${formatSlotLabel({ role })} ${nameSeat(runner, role)} configured.`,
+    ...(details.length > 0 && { details: [...details] }),
     metadata: {
       role,
       kind: runner.kind,
@@ -329,7 +354,11 @@ function seatConfiguredCheck(
 }
 
 /** With no reviewer block PLAN's seat reviews, so REVIEW names that seat after the inheritance mark. */
-function inheritedReviewerCheck(runner: Config['planner'], nameSeat: SeatNamer): ReadinessCheck {
+function inheritedReviewerCheck(
+  runner: Config['planner'],
+  nameSeat: SeatNamer,
+  renderDetails: readonly string[],
+): ReadinessCheck {
   const review = formatSlotLabel({ role: 'reviewer' });
   const plan = formatSlotLabel({ role: 'planner' });
   return {
@@ -338,6 +367,7 @@ function inheritedReviewerCheck(runner: Config['planner'], nameSeat: SeatNamer):
     summary: `${review} ${PLANNER_INHERITANCE.mark}${CREW_IDENTITY_SEPARATOR}${nameSeat(runner, 'reviewer')}.`,
     details: [
       `${review} uses the tool and model of ${plan}. To give ${review} its own seat, choose one in Settings > Crew > ${review}.`,
+      ...renderDetails,
     ],
     metadata: { role: 'reviewer', modelSelection: modelSelection(runner) },
   };

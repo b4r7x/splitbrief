@@ -58,6 +58,7 @@ import { sandboxCredentialValues } from '../../engine/runners/sandbox-credential
 import { createRunnerSandboxEnv } from '../../engine/runners/sandbox-env.js';
 import { resolveCliExecutableAliases } from '../../engine/runners/resolve-cli-executable.js';
 import { resolveSeatDisplayName } from '../../engine/providers/model/display-names.js';
+import { resolveSeatImageFact } from '../../engine/providers/model/resolution.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { loadRememberedCatalog } from '../bootstrap/discovery.js';
 
@@ -436,6 +437,8 @@ export function registerDoctorCommand(program: Command, deps: DoctorDeps = {}): 
         detectCliReadiness: deps.detectCliReadiness ?? detectConfiguredCliReadiness,
         probeRunnerAvailability: deps.probeRunnerAvailability ?? probeRunnerAvailability,
         seatDisplayName: (runner, role) => resolveSeatDisplayName(runner, role, modelCacheStore),
+        seatImageFact: (runner, role) =>
+          resolveSeatImageFact({ runner, role, cache: modelCacheStore }),
       });
       const report = await withPreparationPreflights({
         collected,

@@ -300,6 +300,7 @@ describe('prepareExecution', () => {
             projectDir: project,
             config,
             seatDisplayName: input.seatDisplayName,
+            seatImageFact: input.seatImageFact,
             configLoad: { state: 'loaded', path: 'config.yaml', warnings: [] },
             packageScripts: { packageJsonExists: false, scripts: {} },
             repo: { isGitRepo: false, hasCommits: false, dirtyFiles: [], untrackedFiles: [] },
@@ -311,6 +312,51 @@ describe('prepareExecution', () => {
     if (outcome.kind !== 'blocked') throw new Error('Expected repository blocker');
     expect(JSON.stringify(outcome.report)).toContain('OpenAI Codex CLI · GPT-6-Luna');
     expect(JSON.stringify(outcome.report)).not.toContain('GPT-6 Luna');
+  });
+
+  it('reads the image fact of an API review seat from the host catalog for the readiness report', async () => {
+    const project = projectDir();
+    const reviewer = {
+      kind: 'api',
+      provider: 'lm-studio',
+      service: 'lm-studio',
+      offering: 'local',
+      apiBase: 'http://localhost:1234/v1',
+      model: 'vision-model',
+    } as const;
+    const config = makeConfig({ reviewer });
+    let fact: unknown;
+    const outcome = await prepareExecution({
+      projectDir: project,
+      feature: 'catalog image fact',
+      effectiveConfig: config,
+      signal: new AbortController().signal,
+      policy: {
+        ...policy(),
+        modelCache: makeModelCacheAccessor({
+          providerModels: { 'lm-studio': [{ id: 'vision-model', supportsImages: true }] },
+        }),
+      },
+      deps: {
+        collectReadiness: async (input) => {
+          fact = input.seatImageFact(reviewer, 'reviewer');
+          return {
+            config,
+            report: buildReadinessReport({
+              projectDir: project,
+              config,
+              seatImageFact: input.seatImageFact,
+              configLoad: { state: 'loaded', path: 'config.yaml', warnings: [] },
+              packageScripts: { packageJsonExists: false, scripts: {} },
+              repo: { isGitRepo: false, hasCommits: false, dirtyFiles: [], untrackedFiles: [] },
+            }),
+          };
+        },
+      },
+    });
+
+    expect(outcome.kind).toBe('blocked');
+    expect(fact).toEqual({ supportsImages: true });
   });
 
   it('checks planner and every configured profile and derives report and gates from each result', async () => {

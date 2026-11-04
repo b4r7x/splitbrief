@@ -67,7 +67,11 @@ import { reviewOperatorInstructions, reviewPlanData } from './review-plan.js';
 import { touchedNotSuggestedFiles } from './task/commit.js';
 import { hashTaskBrief } from '../../core/evidence/brief-hash.js';
 import { writeReviewPacket } from './evidence/review-packet/write.js';
-import { NULL_CACHE } from '../providers/model/resolution.js';
+import {
+  NULL_CACHE,
+  resolveSeatImageFact,
+  type ModelCacheAccessor,
+} from '../providers/model/resolution.js';
 import { formatTasks } from '../spec/formatter.js';
 import { drainQueueForReview } from './queue/drain.js';
 import { formatDrainedMessages, imagesFromMessages } from './queue/prompt.js';
@@ -327,6 +331,7 @@ export async function runFinalReviewPhase(opts: {
   reviewer: Reviewer;
   steering?: SteeringPort | undefined;
   metadata?: SpecMetadata | null;
+  modelCache: ModelCacheAccessor | undefined;
   signal?: AbortSignal | undefined;
   sinks?: WorkflowSinks | undefined;
   continuation?: ContinuationHolder | undefined;
@@ -597,9 +602,16 @@ export async function runFinalReviewPhase(opts: {
         err,
       );
     }
-    // The renders the checks log recorded: the seat takes up to four images per
-    // check when its tool declares a channel, else it gets a manifest and the
-    // no-vision statement.
+    // The renders the checks log recorded: a seat that takes images gets up to
+    // four per check, else it gets a manifest and the no-vision statement.
+    const reviewSeatTakesImages = seatSupportsImages({
+      runner: reviewRunner,
+      detected: resolveSeatImageFact({
+        runner: reviewRunner,
+        role: 'reviewer',
+        cache: opts.modelCache,
+      }),
+    });
     const renders = reviewRenders({
       ledger,
       registry: checkRegistry({
@@ -608,7 +620,7 @@ export async function runFinalReviewPhase(opts: {
         reviewChecks: enabledReviewChecks(config, state.plan),
       }),
       projectDir,
-      seatSupportsImages: seatSupportsImages({ runner: reviewRunner }),
+      seatSupportsImages: reviewSeatTakesImages,
       currentCandidateId: reviewCandidateId,
     });
     const criterionCheckIds = (criterionId: string): readonly string[] =>
@@ -894,6 +906,7 @@ export async function runFinalReviewPhase(opts: {
     });
     // A render check with no attached image can only stay unverified: the
     // reviewer saw no render of it, so nothing it says may turn one into a pass.
+    let unseenRenderCriteria: readonly string[] = [];
     if (renders.missingCheckIds.length > 0) {
       const forced = forceUnverifiedRenderCriteria({
         verdict: reviewerVerdict,
@@ -902,6 +915,7 @@ export async function runFinalReviewPhase(opts: {
         verification: verification.map,
       });
       reviewerVerdict = forced.verdict;
+      if (!reviewSeatTakesImages) unseenRenderCriteria = forced.forcedCriterionIds;
       if (forced.forcedCriterionIds.length > 0) {
         const forcedKeys = new Set(
           forced.forcedCriterionIds.map((id) => verificationKey('criterion', id)),
@@ -921,6 +935,7 @@ export async function runFinalReviewPhase(opts: {
       verification: verification.entries,
       ...(outcome.redInputs.length > 0 && { redInputs: outcome.redInputs }),
       ...(preExistingChecks.length > 0 && { preExistingChecks }),
+      ...(unseenRenderCriteria.length > 0 && { unseenRenderCriteria: [...unseenRenderCriteria] }),
       at: nowIso(),
     };
     state = transitionAndSave({ projectDir, sessionId }, state, {

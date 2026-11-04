@@ -3,6 +3,8 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { buildRunnerChecks } from './runners.js';
 import type { RunnerAvailabilityFact } from './availability.js';
 
+const NO_IMAGE_FACT = () => undefined;
+
 function ollamaConfig() {
   return makeConfig({
     planner: { kind: 'cli', tool: 'claude-code' },
@@ -31,9 +33,12 @@ function availabilityChecks(
   config: ReturnType<typeof makeConfig>,
   facts: readonly RunnerAvailabilityFact[],
 ) {
-  return buildRunnerChecks({ config, cliReadiness: [], availability: facts }).filter((check) =>
-    check.id.startsWith('runners.availability'),
-  );
+  return buildRunnerChecks({
+    seatImageFact: NO_IMAGE_FACT,
+    config,
+    cliReadiness: [],
+    availability: facts,
+  }).filter((check) => check.id.startsWith('runners.availability'));
 }
 
 describe('runner availability checks', () => {
@@ -320,9 +325,11 @@ describe('runner availability checks', () => {
   });
 
   it('keeps the no-claim notice when no probe ran', () => {
-    const checks = buildRunnerChecks({ config: ollamaConfig(), cliReadiness: [] }).filter((check) =>
-      check.id.startsWith('runners.availability'),
-    );
+    const checks = buildRunnerChecks({
+      seatImageFact: NO_IMAGE_FACT,
+      config: ollamaConfig(),
+      cliReadiness: [],
+    }).filter((check) => check.id.startsWith('runners.availability'));
 
     expect(checks).toHaveLength(1);
     expect(checks[0]).toMatchObject({

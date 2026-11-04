@@ -584,6 +584,92 @@ describe('applyRecoveryAction: revise on a failed review', () => {
   });
 });
 
+describe('applyRecoveryAction: Try again on a review its seat could not see', () => {
+  function noImagesHalt(projectDir: string, sessionId: string): WorkflowState {
+    const issue = buildReviewFailedRecoveryIssue({
+      id: 'rec_review_no_images',
+      blocking: 0,
+      unverified: 1,
+      reviewSeatNoImages: true,
+      cannot: 'The render criterion needs a reviewer that sees images',
+      phase: 'complete',
+      createdAt,
+    });
+    saveState(
+      { projectDir, sessionId },
+      {
+        ...makeImplState([
+          makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' }),
+        ]),
+        phase: 'complete' as const,
+        reviewStatus: 'failed' as const,
+        pendingTriage: { inputs: [], plannerConsult: true },
+        pendingRecovery: issue,
+      },
+    );
+    const state = loadState({ projectDir, sessionId });
+    if (state === null) throw new Error('expected the halt to persist');
+    return state;
+  }
+
+  it('moves the failed final review back to final-review, so the review runs again', async () => {
+    const { projectDir, sessionId } = setupSession('recovery-review-no-images');
+    const state = noImagesHalt(projectDir, sessionId);
+    const { bus } = makeBusRecorder();
+
+    const result = await applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state,
+      action: 'retry-same-worker',
+      bus,
+    });
+
+    expect(result).toMatchObject({ ok: true, status: 'continued' });
+    if (!result.ok) return;
+    expect(result.state.phase).toBe('final-review');
+    expect(result.state.reviewStatus).toBeUndefined();
+    // The planner's recorded cannot is not asked again: the review judges the candidate first.
+    expect(result.state.pendingTriage).toEqual({ inputs: [] });
+    expect(result.state.pendingRecovery).toBeUndefined();
+  });
+
+  it('queues a typed note for the review that runs again, as Fix again does', async () => {
+    const { projectDir, sessionId } = setupSession('recovery-review-no-images-note');
+    const state = noImagesHalt(projectDir, sessionId);
+    const { bus } = makeBusRecorder();
+
+    const result = await applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state,
+      action: 'retry-same-worker',
+      bus,
+      comment: plainUserMessage('judge the greeting from its text output'),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      action: 'retry-same-worker',
+      status: 'continued',
+      correctionRecorded: true,
+    });
+    if (!result.ok) return;
+    expect(result.state.phase).toBe('final-review');
+    expect(result.state.pendingTriage).toEqual({
+      inputs: [
+        {
+          id: 'U1',
+          kind: 'defect',
+          source: 'user',
+          text: 'judge the greeting from its text output',
+          file: null,
+        },
+      ],
+    });
+  });
+});
+
 function usageLimitIssue(task: Task): RecoveryIssue {
   return {
     id: `rec_${task.id}_usage_limit`,
@@ -927,6 +1013,80 @@ describe('applyRecoveryAction: switch-seat', () => {
     });
 
     expect(result).toMatchObject({ ok: false, code: 'seat-swap-unavailable' });
+  });
+});
+
+describe('applyRecoveryAction: a review seat switch and the render checks', () => {
+  const NOTE =
+    'The review seat, Google Antigravity CLI, cannot see images. The criteria of render check K1 cannot pass with this seat. Change the review seat to a tool that reads images with /crew review.';
+
+  async function switchReviewSeat(name: string, tool: 'antigravity' | 'claude-code') {
+    const ref = setupSession(name);
+    const issue = makeRecoveryIssue({
+      reason: 'runner-usage-limit',
+      phase: 'final-review',
+      seat: 'review',
+      switchSeat: {
+        seat: 'review',
+        candidates: [{ tool: 'antigravity' }, { tool: 'claude-code' }],
+      },
+      availableActions: ['switch-seat', 'end-run'],
+      recommendedAction: 'switch-seat',
+    });
+    const task = makeTask({
+      id: 'T001',
+      checks: [{ id: 'K1', kind: 'render', value: 'dashboard' }],
+    });
+    const state = { ...makeImplState([task]), pendingRecovery: issue };
+    saveState(ref, state);
+    const { bus, events } = makeBusRecorder();
+    const result = await applyRecoveryAction({
+      ...ref,
+      state,
+      bus,
+      action: 'switch-seat',
+      candidate: { tool },
+      config: makeConfig({ reviewer: { kind: 'cli', tool: 'codex' } }),
+    });
+    expect(result.ok).toBe(true);
+    return events.filter((event) => event.type === 'info');
+  }
+
+  it('publishes the note when the review seat moves to a tool with no image input', async () => {
+    expect(await switchReviewSeat('review-switch-no-image', 'antigravity')).toEqual([
+      expect.objectContaining({ type: 'info', message: NOTE }),
+    ]);
+  });
+
+  it('has no note when the review seat moves to a tool that reads images', async () => {
+    expect(await switchReviewSeat('review-switch-image', 'claude-code')).toEqual([]);
+  });
+
+  it('has no note when the BUILD seat moves beside a review seat with no image input', async () => {
+    const ref = setupSession('build-switch-no-image-review');
+    const task = makeTask({
+      id: 'T001',
+      status: 'in_progress',
+      checks: [{ id: 'K1', kind: 'render', value: 'dashboard' }],
+    });
+    const issue = usageLimitIssue(task);
+    const state = { ...makeImplState([task]), pendingRecovery: issue };
+    saveState(ref, state);
+    const { bus, events } = makeBusRecorder();
+    const result = await applyRecoveryAction({
+      ...ref,
+      state,
+      bus,
+      action: 'switch-seat',
+      candidate: { tool: 'claude-code' },
+      config: makeConfig({ reviewer: { kind: 'cli', tool: 'antigravity' } }),
+    });
+
+    expect(result.ok).toBe(true);
+    expect(events.filter((event) => event.type === 'seat_switched')).toEqual([
+      expect.objectContaining({ seat: 'build' }),
+    ]);
+    expect(events.filter((event) => event.type === 'info')).toEqual([]);
   });
 });
 

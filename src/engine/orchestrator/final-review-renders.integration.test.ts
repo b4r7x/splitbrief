@@ -37,6 +37,7 @@ import { currentCandidateId } from './evidence/record-checks.js';
 import { runFinalReviewPhase } from './final-review.js';
 import { NO_VISION_REVIEW } from './review-renders.js';
 import { createCliPlanner } from '../planners/cli.js';
+import type { ConfiguredProviderRuntime } from '../detection/provider-outcomes.js';
 
 const dirs: string[] = [];
 
@@ -121,6 +122,7 @@ describe('final review render delivery', () => {
       });
 
       const result = await runFinalReviewPhase({
+        modelCache: undefined,
         ...ref,
         workspaceDir: projectDir,
         state,
@@ -158,6 +160,115 @@ describe('final review render delivery', () => {
       }
     },
   );
+
+  it('verifies a render check on an API reviewer whose detected model takes images', async () => {
+    const { projectDir, sessionId } = setupGitSessionProject({
+      prefix: 'final-review-renders-api',
+      sessionId: 'sess-renders-api',
+    });
+    dirs.push(projectDir);
+    const ref = { projectDir, sessionId };
+    writeSpecFile(ref, PLAN_FILE, 'Render the dashboard.', null);
+    const png = join(sessionDir(projectDir, sessionId), 'dashboard.png');
+    const pngBytes = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a1X8AAAAASUVORK5CYII=',
+      'base64',
+    );
+    writeFileSync(png, pngBytes);
+    const task = makeTask({ id: 'T001', status: 'done' });
+    const baseline = await captureChangedFilesBaseline(projectDir);
+    const candidateId = await currentCandidateId(projectDir, baseline);
+    const state = makeImplState([task], {
+      changedFilesBaseline: serializeChangedFilesBaseline(baseline),
+      plan: {
+        summary: 'Render the dashboard.',
+        decisions: [],
+        criteria: [{ id: 'C1', text: 'The dashboard is readable', checkIds: ['K1'] }],
+        checks: [{ id: 'K1', kind: 'render', value: 'dashboard' }],
+        validation: null,
+      },
+    });
+    writeEvidenceLedger(
+      ref,
+      withUpdatedTask(
+        createEvidenceLedger({ sessionId, feature: state.feature, tasks: [task] }),
+        task.id,
+        (entry) => ({
+          ...entry,
+          checks: [
+            {
+              id: 'K1',
+              command: 'render dashboard',
+              exitCode: 0,
+              artifacts: [{ path: png, sha256: sha256Hex(pngBytes) }],
+              workspaceSnapshotId: candidateId,
+              ts: '2026-10-06T03:00:00.000Z',
+            },
+          ],
+        }),
+      ),
+    );
+    const contexts: TypedCallContext[] = [];
+    const prompts: string[] = [];
+    const call = typedCallPlanAndReview(
+      () => planFromTasks([]),
+      (prompt) => {
+        prompts.push(prompt);
+        const verdict = passingReviewVerdict(prompt);
+        return {
+          ...verdict,
+          criteria: verdict.criteria.map((criterion) => ({
+            ...criterion,
+            evidence: 'dashboard: labels are readable and columns align.',
+          })),
+        };
+      },
+    );
+    const reviewer = makePlanner({
+      typedCall: (ctx) => {
+        contexts.push(ctx);
+        return call(ctx);
+      },
+    });
+    const reviewerRuntime = (supportsImages: boolean): ConfiguredProviderRuntime => ({
+      connection: { role: 'reviewer', provider: 'lm-studio', contextKey: 'reviewer' },
+      state: 'fresh',
+      catalog: 'populated',
+      models: [{ id: 'vision-model', supportsImages }],
+      fetchedAt: 1,
+      validatedAt: 1,
+    });
+
+    const result = await runFinalReviewPhase({
+      ...ref,
+      workspaceDir: projectDir,
+      state,
+      config: makeNoValidationConfig({
+        reviewer: {
+          kind: 'api',
+          provider: 'lm-studio',
+          model: 'vision-model',
+          apiBase: 'http://localhost:1234/v1',
+        },
+      }),
+      reviewer,
+      callbacks: makeCallbacks().callbacks,
+      bus: makeBusRecorder().bus,
+      modelCache: {
+        getProviderModels: () => null,
+        getModelsDevCatalog: () => null,
+        getScopedProviderRuntime: ({ role }) => reviewerRuntime(role === 'reviewer'),
+      },
+    });
+
+    expect(result.reviewStatus).toBe('written');
+    expect(contexts[0]?.images).toEqual([
+      expect.objectContaining({ path: realpathSync(png), kind: 'image' }),
+    ]);
+    expect(prompts[0]).not.toContain(NO_VISION_REVIEW);
+    expect(result.verdict?.outcome.unverifiedCriteria).toEqual([]);
+    expect(result.verdict?.outcome.kind).toBe('pass');
+  });
 
   it('hands the attached render to the Codex reviewer process as --image', async () => {
     const { projectDir, sessionId } = setupGitSessionProject({
@@ -247,6 +358,7 @@ describe('final review render delivery', () => {
       });
 
       const result = await runFinalReviewPhase({
+        modelCache: undefined,
         ...ref,
         workspaceDir: projectDir,
         state,
@@ -339,6 +451,7 @@ describe('final review render delivery', () => {
     });
 
     const result = await runFinalReviewPhase({
+      modelCache: undefined,
       ...ref,
       workspaceDir: projectDir,
       state,

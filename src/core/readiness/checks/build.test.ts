@@ -54,6 +54,7 @@ function baseInput(overrides: Partial<BuildReadinessReportInput> = {}): BuildRea
       untrackedFiles: [],
     },
     cliReadiness: [cliReadiness()],
+    seatImageFact: () => undefined,
     ...overrides,
   };
 }

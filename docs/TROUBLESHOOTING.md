@@ -557,7 +557,7 @@ A REVIEW account refusal raises a Seat down halt. A REVIEW usage limit raises on
 
 **Likely cause:** The reviewer read the whole diff and returned the verdict `fail` with Critical findings. This is a verdict, not a runner failure: the review happened, and it says the work is not done.
 
-SPLITBRIEF tries to fix it before it tells you. The reviewer answers the blocking findings with fix briefs, BUILD runs them as a fix cycle, and the review runs again. Fix cycles have no count limit. When a round makes no progress, the planner decides the next step, with its earlier answers in view: guidance for the next fix briefs, new fix briefs, a re-run of a check that may be flaky, a question to you, or an accept of the open findings with a note. What you are looking at is the planner's answer that the findings cannot be fixed, or, in a headless run, a question from the reviewer or the planner that the run cannot ask you (`The review asked a question this run has no way to answer.`). A planner seat that is down halts as *Seat down* instead. A review that failed with no blocking finding, on criteria no check verified, goes to the planner the same way.
+SPLITBRIEF tries to fix it before it tells you. The reviewer answers the blocking findings with fix briefs, BUILD runs them as a fix cycle, and the review runs again. Fix cycles have no count limit. When a round makes no progress, the planner decides the next step, with its earlier answers in view: guidance for the next fix briefs, new fix briefs, a re-run of a check that may be flaky, a question to you, or an accept of the open findings with a note. What you are looking at is the planner's answer that the findings cannot be fixed, or, in a headless run, a question from the reviewer or the planner that the run cannot ask you (`The review asked a question this run has no way to answer.`). A planner seat that is down halts as *Seat down* instead. A review that failed with no blocking finding, on criteria no check verified, goes to the planner the same way. When those criteria are only render criteria that the review seat could not see, the halt has its own title and actions; see [Final review needs a REVIEW seat that reads images](#symptom-final-review-needs-a-review-seat-that-reads-images).
 
 **Fix:**
 1. Read `.splitbrief/sessions/<id>/review.md` — the Critical findings are the blocking list, in the reviewer's own words. The recovery panel's headline reads `Final review failed with <n> blocking findings`, and the run's `Packet` row names the `review-packet.md` to open.
@@ -569,6 +569,22 @@ SPLITBRIEF tries to fix it before it tells you. The reviewer answers the blockin
 **Prevention:** Smaller slices. A brief that is one verifiable change gives the reviewer something it can accept or reject cleanly, and gives a re-entry cycle a chance of fixing it.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md) (the `final-review → implementing` edge), [docs/CLI-REFERENCE.md](./CLI-REFERENCE.md#plain-output-stream---plain).
+
+---
+
+### Symptom: Final review needs a REVIEW seat that reads images
+
+**Likely cause:** The plan has render checks, and the review seat sees no images. Cursor, Command Code, Antigravity, `shell` and `agent` seats see no images. An `api` seat sees them only when detection reports its model as vision-capable. The seat cannot verify a render criterion, so the criterion stays unverified. The review fails with 0 blocking findings, and no fix brief can change that. A task review reads `Review T004 needs a REVIEW seat that reads images`.
+
+**Fix:**
+1. Read the details on the recovery panel. `Unverified criteria:` names the render criteria that the seat could not see.
+2. Change the review seat to a tool that reads images with `/crew review`. The halt waits while you change the seat. A `--plain` or `--json` run prints `Continue with: splitbrief continue <session> --reviewer <tool> --action retry`. Put a tool that reads images in place of `<tool>` and run that line. It changes the seat and runs the review again, so skip step 3.
+3. Choose **Try again**. The review runs again on the new seat, with no fix cycle. A correction you type also runs the review again.
+4. To keep the result without the render criteria, choose **Accept as is** when the panel offers it.
+
+**Prevention:** Read the plan card before you approve it. When the review seat cannot see images, a note under **Before you approve** names the seat. `splitbrief doctor` shows the same sentence on the REVIEW line when `validation.render` is set. Change the seat before the run, or ask the planner to drop the render checks.
+
+**See also:** [Render checks and the review seat](./CONFIGURATION.md#render-checks-and-the-review-seat), [`review-failed`](./APPROVAL-AND-RECOVERY.md#recovery).
 
 ---
 

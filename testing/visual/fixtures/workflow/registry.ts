@@ -839,6 +839,7 @@ const checkpointPredicates = [
         includesAll('Warning', 'The plan failed 2 checks.', 'SPLITBRIEF')(context)),
   ],
   [checkpointId('plan-card-render-note'), planCardReady],
+  [checkpointId('plan-card-no-image-reviewer'), planCardReady],
   [checkpointId('plan-card-shared-command'), planCardReady],
   [checkpointId('plan-card-session-path'), planCardReady],
   // The two briefs whose long headers the card once skipped, beside the first and the last.
@@ -1151,6 +1152,15 @@ const checkpointPredicates = [
       !workflowTranscriptText().includes('Stopped before') &&
       !workflowTranscriptText().includes('Run continued'),
   ],
+  [
+    checkpointId('seat-review-no-image'),
+    (context) =>
+      includesTranscript(
+        'REVIEW  Claude Code CLI · Claude Sonnet 4',
+        'crew changed',
+        'cannot see images',
+      )(context) && excludesAll('Warning')(context),
+  ],
   [checkpointId('seat-switched-balance'), includesAll()],
   [
     checkpointId('seat-switched-expanded-recovery'),
@@ -1225,6 +1235,7 @@ const checkpointPredicates = [
     checkpointId('review-unverified'),
     includesAll(WORKFLOW_FIXTURE_TEXT.reviewFailed, 'Accept as is', 'unverified criteria'),
   ],
+  [checkpointId('review-no-image'), includesAll('needs a REVIEW seat', 'Accept as is')],
   [
     checkpointId('review-question'),
     includesAll(WORKFLOW_FIXTURE_TEXT.reviewFailed, 'Decide for me'),

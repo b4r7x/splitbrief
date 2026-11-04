@@ -238,6 +238,8 @@ export const ReviewRecordSchema = z.object({
   preExistingChecks: z
     .array(z.object({ id: z.string(), command: z.string(), keys: z.array(z.string()) }))
     .optional(),
+  /** The render criteria that stayed unverified because the review seat takes no images. */
+  unseenRenderCriteria: z.array(z.string()).optional(),
   at: z.string(),
 });
 export type ReviewRecord = z.infer<typeof ReviewRecordSchema>;

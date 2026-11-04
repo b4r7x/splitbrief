@@ -41,6 +41,7 @@ import { CLI_PROBE_TIMEOUT_MS } from '../../engine/constants.js';
 import { saveDetectionCache } from '../../engine/detection/cache.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { configStore } from '../../stores/project/config.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cliReadinessFactsFor } from '#testing/helpers/factories/detection.js';
 
@@ -1684,6 +1685,157 @@ describe('doctor command', () => {
         metadata: report.metadata,
       }),
     ).toContain(READINESS_DIAGNOSTIC_REMEDIATION['conflicting-args']);
+  });
+});
+
+describe('doctor review seat and render checks', () => {
+  const noImageNote = (tool: string): string =>
+    `The review seat, ${tool}, cannot see images. The criteria of render checks cannot pass with this seat. In Settings > Crew > REVIEW, change the review seat to a tool that reads images.`;
+  const ANTIGRAVITY_REVIEWER = ['reviewer:', '  kind: cli', '  tool: antigravity'];
+  const LM_STUDIO_REVIEWER = [
+    'reviewer:',
+    '  kind: api',
+    '  provider: lm-studio',
+    '  service: lm-studio',
+    '  offering: local',
+    '  apiBase: http://localhost:1234/v1',
+    '  model: vision-model',
+    '  contextLength: 32768',
+  ];
+
+  function renderConfigYaml(
+    input: Readonly<{ planner?: string; reviewer?: readonly string[]; render: boolean }>,
+  ): string {
+    return validConfigYaml()
+      .replace('  tool: claude-code', `  tool: ${input.planner ?? 'claude-code'}`)
+      .replace(
+        'validation:',
+        [
+          ...(input.reviewer ?? []),
+          'validation:',
+          ...(input.render ? ['  render: npm run shots'] : []),
+        ].join('\n'),
+      );
+  }
+
+  async function doctorOutput(
+    configYaml: string,
+  ): Promise<{ text: string; report: ReadinessReportJson }> {
+    initGitRepo(tmp);
+    writeConfig(tmp, configYaml);
+    const readiness = async () => [
+      ...deterministicCliReadiness(),
+      deriveCliReadiness(cliReadinessFactsFor('ready', 'antigravity')),
+    ];
+    const noAdmission = async () => [];
+    const logged = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await runDoctor(['--project', tmp], readiness, undefined, undefined, noAdmission);
+    const text = logged.mock.calls.map((call) => call.join(' ')).join('\n');
+    const writes = captureStdout();
+    await runDoctor(['--project', tmp, '--json'], readiness, undefined, undefined, noAdmission);
+    const { report } = JSON.parse(writes.join('')) as { report: ReadinessReportJson };
+    return { text, report };
+  }
+
+  function seedReviewerImageFact(supportsImages: boolean): void {
+    modelCacheStore.setDetection({
+      providers: [],
+      cliTools: [],
+      providerOutcomes: [
+        {
+          connection: { role: 'reviewer', provider: 'lm-studio', contextKey: 'reviewer' },
+          state: 'fresh',
+          catalog: 'populated',
+          models: [{ id: 'vision-model', supportsImages }],
+          fetchedAt: 1,
+          validatedAt: 1,
+        },
+      ],
+    });
+  }
+
+  function linesWith(text: string, fragment: string): number {
+    return text.split('\n').filter((line) => line.includes(fragment)).length;
+  }
+
+  it('states under the REVIEW line that a review seat with no image input cannot see the renders', async () => {
+    const { text, report } = await doctorOutput(
+      renderConfigYaml({ reviewer: ANTIGRAVITY_REVIEWER, render: true }),
+    );
+    const note = noImageNote('Google Antigravity CLI');
+
+    const lines = text.split('\n');
+    const review = lines.findIndex((line) => /^\s*ok\s+REVIEW Google Antigravity CLI/u.test(line));
+    expect(review, text).toBeGreaterThan(-1);
+    expect(lines[review + 1]?.trim()).toBe(note);
+    expect(linesWith(text, 'cannot see images')).toBe(1);
+    expect(report.checks.find((check) => check.id === 'runners.reviewer.configured')).toMatchObject(
+      { severity: 'ok', details: [note] },
+    );
+    expect(report.checks.filter((check) => JSON.stringify(check).includes(note))).toHaveLength(1);
+    expect(report.status).not.toBe('blocked');
+    expect(process.exitCode).toBe(originalExitCode);
+    expectReadableDoctorProse(text, report);
+  });
+
+  it('adds the note after the inherited REVIEW detail when PLAN has no image input', async () => {
+    const { text, report } = await doctorOutput(
+      renderConfigYaml({ planner: 'antigravity', render: true }),
+    );
+
+    expect(
+      report.checks.find((check) => check.id === 'runners.reviewer.inherited')?.details,
+    ).toEqual([
+      'REVIEW uses the tool and model of PLAN. To give REVIEW its own seat, choose one in Settings > Crew > REVIEW.',
+      noImageNote('Google Antigravity CLI'),
+    ]);
+    expect(linesWith(text, 'cannot see images')).toBe(1);
+  });
+
+  it('states it for an API review seat whose model takes no images', async () => {
+    seedReviewerImageFact(false);
+    const { text, report } = await doctorOutput(
+      renderConfigYaml({ reviewer: LM_STUDIO_REVIEWER, render: true }),
+    );
+
+    expect(
+      report.checks.find((check) => check.id === 'runners.reviewer.configured')?.details,
+    ).toEqual([noImageNote('LM Studio')]);
+    expect(linesWith(text, 'cannot see images')).toBe(1);
+  });
+
+  it('has no note for an API review seat whose model takes images', async () => {
+    seedReviewerImageFact(true);
+    const { text, report } = await doctorOutput(
+      renderConfigYaml({ reviewer: LM_STUDIO_REVIEWER, render: true }),
+    );
+
+    expect(
+      report.checks.find((check) => check.id === 'runners.reviewer.configured')?.details,
+    ).toBeUndefined();
+    expect(text).not.toContain('cannot see images');
+  });
+
+  it('has no note for a Claude Code review seat', async () => {
+    const { text, report } = await doctorOutput(renderConfigYaml({ render: true }));
+
+    expect(
+      report.checks.find((check) => check.id === 'runners.reviewer.inherited')?.details,
+    ).toEqual([
+      'REVIEW uses the tool and model of PLAN. To give REVIEW its own seat, choose one in Settings > Crew > REVIEW.',
+    ]);
+    expect(text).not.toContain('cannot see images');
+  });
+
+  it('has no note without validation.render', async () => {
+    const { text, report } = await doctorOutput(
+      renderConfigYaml({ reviewer: ANTIGRAVITY_REVIEWER, render: false }),
+    );
+
+    expect(
+      report.checks.find((check) => check.id === 'runners.reviewer.configured')?.details,
+    ).toBeUndefined();
+    expect(text).not.toContain('cannot see images');
   });
 });
 

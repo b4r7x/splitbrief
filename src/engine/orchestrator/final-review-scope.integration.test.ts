@@ -102,6 +102,7 @@ async function review(p: Awaited<ReturnType<typeof project>>, api = false, tasks
   const prompts: string[] = [];
   writeSpecFile(p.ref, SPEC_FILE, 'Enable feature; preserve operator fixes.', null);
   const result = await runFinalReviewPhase({
+    modelCache: undefined,
     ...p,
     workspaceDir: p.projectDir,
     state: makeImplState(
@@ -165,6 +166,7 @@ describe('final review task completion provenance', () => {
     await completeTask(p);
     const { bus, events } = makeBusRecorder();
     const result = await runFinalReviewPhase({
+      modelCache: undefined,
       ...p,
       workspaceDir: p.projectDir,
       scope: 'task',
@@ -454,6 +456,7 @@ describe('final review task completion provenance', () => {
     const prompts: string[] = [];
 
     const result = await runFinalReviewPhase({
+      modelCache: undefined,
       ...p,
       workspaceDir: p.projectDir,
       scope: 'task',

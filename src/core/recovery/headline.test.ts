@@ -210,6 +210,41 @@ describe('formatRecoveryHeadline', () => {
     );
   });
 
+  it('names the REVIEW seat of a review that failed only on renders its seat could not see', () => {
+    const issue = (facts: RecoveryIssue['facts']): RecoveryIssue =>
+      makeRecoveryIssue({
+        reason: 'review-failed',
+        seat: 'review',
+        taskId: undefined,
+        taskTitle: undefined,
+        facts,
+        availableActions: ['retry-same-worker', 'end-run'],
+        recommendedAction: 'retry-same-worker',
+      });
+
+    expect(
+      formatRecoveryHeadlineSpans(issue({ blocking: 0, unverified: 6, reviewSeatNoImages: true })),
+    ).toEqual([
+      { text: 'Final review needs a ' },
+      { text: 'REVIEW', seat: 'review' },
+      { text: ' seat that reads images' },
+    ]);
+    expect(
+      formatRecoveryHeadline(
+        issue({
+          reviewScope: 'task',
+          afterTaskId: 'T004',
+          blocking: 0,
+          unverified: 1,
+          reviewSeatNoImages: true,
+        }),
+      ),
+    ).toBe('Review T004 needs a REVIEW seat that reads images');
+    expect(formatRecoveryHeadline(issue({ blocking: 0, unverified: 6 }))).toBe(
+      'Final review failed with 6 unverified criteria',
+    );
+  });
+
   it('names the task review of the brief it judged, never the final review', () => {
     const review = (facts: RecoveryIssue['facts']): string =>
       formatRecoveryHeadline(

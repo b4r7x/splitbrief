@@ -39,7 +39,12 @@ import { engineEventFromLogEntry } from '../../../../src/engine/events/replay.js
 import { makeReviewFixInsertedEvents } from '../../../helpers/events/task.js';
 import { makePlanProposal, makeTaskSpec } from '../../../helpers/factories/plan.js';
 import { formatPlanMarkdown } from '../../../../src/engine/spec/plan-markdown.js';
-import { renderCheckNotes, planRepairWarning } from '../../../../src/engine/spec/plan-checks.js';
+import {
+  renderCheckNotes,
+  planRepairWarning,
+  reviewSeatRunNote,
+} from '../../../../src/engine/spec/plan-checks.js';
+import { NULL_CACHE } from '../../../../src/engine/providers/model/resolution.js';
 import { MAX_QUESTION_ROUNDS } from '../../../../src/engine/spec/prompts/plan-session.js';
 import {
   buildRequiredChecksUnrunnableRecoveryIssue,
@@ -2420,7 +2425,32 @@ const planCardRenderNoteProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-plan-card-render-note'),
   review: {
     filePath: 'testing/visual/fixtures/workflow/plan-card/plan.md',
-    source: formatPlanMarkdown(RENDER_NOTE_PLAN, renderCheckNotes(RENDER_NOTE_PLAN, undefined)),
+    source: formatPlanMarkdown(
+      RENDER_NOTE_PLAN,
+      renderCheckNotes(RENDER_NOTE_PLAN, visualConfig(), NULL_CACHE),
+    ),
+    planJson: `${JSON.stringify(RENDER_NOTE_PLAN, null, 2)}\n`,
+    confirms: planCardProjection.review?.confirms ?? [],
+  },
+};
+
+// The same plan with validation.render set, reviewed by a seat that cannot see images: the card
+// opens with the one note that names the review seat.
+const NO_IMAGE_REVIEW_CREW: VisualConfigOverrides = {
+  reviewer: { kind: 'cli', tool: 'antigravity', model: 'gemini-3.8-flash-high' },
+  validation: { render: 'npm run tui-shots -- --scenario {id} --output {out}' },
+};
+
+const planCardNoImageReviewerProjection: WorkflowFixtureProjection = {
+  ...planCardRenderNoteProjection,
+  scenarioId: scenarioId('workflow-plan-card-no-image-reviewer'),
+  config: NO_IMAGE_REVIEW_CREW,
+  review: {
+    filePath: 'testing/visual/fixtures/workflow/plan-card/plan.md',
+    source: formatPlanMarkdown(
+      RENDER_NOTE_PLAN,
+      renderCheckNotes(RENDER_NOTE_PLAN, visualConfig(NO_IMAGE_REVIEW_CREW), NULL_CACHE),
+    ),
     planJson: `${JSON.stringify(RENDER_NOTE_PLAN, null, 2)}\n`,
     confirms: planCardProjection.review?.confirms ?? [],
   },
@@ -3572,6 +3602,41 @@ const reviewUnverifiedRecoveryProjection: WorkflowFixtureProjection = {
     pendingRecovery: buildReviewFailedRecoveryIssue({
       id: 'rec_visual_review_unverified',
       unverified: 6,
+      phase: 'complete',
+      acceptAsIs: true,
+      createdAt: new Date(FIXED_TS).toISOString(),
+    }),
+  }),
+};
+
+/**
+ * The final review left its two render criteria unverified on a REVIEW seat that cannot see images,
+ * and the planner answered that it cannot fix that: the halt points at the review seat.
+ */
+const reviewNoImagesRecoveryProjection: WorkflowFixtureProjection = {
+  ...reviewFailedRecoveryProjection,
+  scenarioId: scenarioId('workflow-recovery-review-no-image'),
+  config: {
+    ...AGY_CREW,
+    reviewer: { kind: 'cli', tool: 'antigravity', model: 'gemini-3.8-flash-high' },
+  },
+  resumeState: makeImplState([{ ...HALTED_TASK, status: 'done' }], {
+    feature: WORKFLOW_FEATURE,
+    startedAt: RESUMED_RUN_STARTED_AT,
+    phase: 'complete',
+    reviewStatus: 'failed',
+    workspace: {
+      kind: 'checkout',
+      path: VISUAL_FIXTURE_PROJECT_DIR,
+      base: { snapshotId: 'visual-base', head: null },
+    },
+    pendingRecovery: buildReviewFailedRecoveryIssue({
+      id: 'rec_visual_review_no_images',
+      blocking: 0,
+      unverified: 2,
+      reviewSeatNoImages: true,
+      cannot: 'No fix brief can make a seat that cannot see images judge the renders.',
+      details: ['Unverified criteria: C2, C3'],
       phase: 'complete',
       acceptAsIs: true,
       createdAt: new Date(FIXED_TS).toISOString(),
@@ -4927,6 +4992,47 @@ const crewChangedSeatProjection: WorkflowFixtureProjection = {
       { type: 'workflow_resumed', ts: event.ts, phase: event.phase, cause: 'seat-change' },
     ];
   }),
+};
+
+// The BUILD and REVIEW seats moved in the crew, REVIEW to a tool that cannot see images while the
+// plan has a render check: the two crew change rows, then the one neutral note the run publishes.
+const NO_IMAGE_REVIEW_SEAT_CREW: VisualConfigOverrides = {
+  ...crewChangedSeatProjection.config,
+  reviewer: { kind: 'cli', tool: 'antigravity', model: 'gemini-3.8-flash-high' },
+};
+const NO_IMAGE_REVIEW_SEAT_NOTE = reviewSeatRunNote(
+  [{ id: 'K1', kind: 'render' }],
+  visualConfig(NO_IMAGE_REVIEW_SEAT_CREW),
+  NULL_CACHE,
+);
+
+const reviewSeatNoImageProjection: WorkflowFixtureProjection = {
+  ...crewChangedSeatProjection,
+  scenarioId: scenarioId('workflow-seat-review-no-image'),
+  config: NO_IMAGE_REVIEW_SEAT_CREW,
+  events: crewChangedSeatProjection.events.flatMap((event): EngineEvent[] =>
+    event.type !== 'seat_switched'
+      ? [event]
+      : [
+          event,
+          {
+            ...event,
+            seat: 'review',
+            from: 'Claude Code CLI · Claude Sonnet 4',
+            to: 'Google Antigravity CLI · Gemini 3.8 Flash · high',
+          },
+          ...(NO_IMAGE_REVIEW_SEAT_NOTE === undefined
+            ? []
+            : [
+                {
+                  type: 'info' as const,
+                  ts: event.ts,
+                  phase: event.phase,
+                  message: NO_IMAGE_REVIEW_SEAT_NOTE,
+                },
+              ]),
+        ],
+  ),
 };
 
 const SPENT_B2_REPLAY_LOG = `
@@ -7672,6 +7778,7 @@ const projections = [
     ],
   },
   planCardRenderNoteProjection,
+  planCardNoImageReviewerProjection,
   planCardSharedCommandProjection,
   planCardSessionPathProjection,
   { ...planCardProjection, scenarioId: scenarioId('workflow-selection-copy') },
@@ -7746,6 +7853,7 @@ const projections = [
   reviewFailedRecoveryProjection,
   reviewFixAgainProjection,
   reviewUnverifiedRecoveryProjection,
+  reviewNoImagesRecoveryProjection,
   reviewQuestionRecoveryProjection,
   taskReviewNoProgressRecoveryProjection,
   checksMissingProgramRecoveryProjection,
@@ -7785,6 +7893,7 @@ const projections = [
   seatSwitchedProjection,
   manualSeatSwitchedProjection,
   crewChangedSeatProjection,
+  reviewSeatNoImageProjection,
   planActivityProjection,
   planningClaudeFramesProjection,
   implementationSilentProjection,
@@ -7945,17 +8054,20 @@ export function assertProjectionBounds(projection: WorkflowFixtureProjection): v
     // implementer's JSON report, which the transcript reads as one summary line, or a start
     // warning, which readiness words as its summary, its details and its fix, or a plan
     // send-back, which lists the plan checks' own messages, or a fix check's failure text, which
-    // lists its bounded failure keys under the verdict, or the question written long to be cut.
+    // lists its bounded failure keys under the verdict, or the review seat note the run composes
+    // whole after a seat change, or the question written long to be cut.
     (value) =>
       value !== planCardProjection.review?.source &&
       value !== planCardProjection.review?.planJson &&
       value !== planCardRenderNoteProjection.review?.source &&
       value !== planCardRenderNoteProjection.review?.planJson &&
+      value !== planCardNoImageReviewerProjection.review?.source &&
       value !== planCardSharedCommandProjection.review?.source &&
       value !== planCardSharedCommandProjection.review?.planJson &&
       value !== ANSWERED_QUESTIONS_TEXT &&
       value !== RESUMED_REPORT_TEXT &&
       value !== FIX_CHECK_RETRY_TEXT &&
+      value !== NO_IMAGE_REVIEW_SEAT_NOTE &&
       !value.includes(LONG_QUESTION) &&
       !retainedWorkspaceNotices.includes(value) &&
       !engineHaltText.includes(value) &&

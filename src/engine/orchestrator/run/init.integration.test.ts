@@ -1923,6 +1923,104 @@ describe('initializeWorkflow — seat record', () => {
   });
 });
 
+describe('initializeWorkflow — a review seat change and the render checks', () => {
+  const NOTE =
+    'The review seat, Google Antigravity CLI, cannot see images. The criteria of render check K1 cannot pass with this seat. Change the review seat to a tool that reads images with /crew review.';
+  const RENDER_TASK = makeTask({
+    id: 'T001',
+    checks: [{ id: 'K1', kind: 'render', value: 'dashboard' }],
+  });
+  const CMD_TASK = makeTask({ id: 'T001', checks: [{ id: 'C1', kind: 'cmd', value: 'npm test' }] });
+
+  async function resumeOnMovedSeat(
+    name: string,
+    input: Readonly<{
+      before: Parameters<typeof makeConfig>[0];
+      after: Parameters<typeof makeConfig>[0];
+      task: Task;
+    }>,
+  ): Promise<EngineEvent[]> {
+    let events: EngineEvent[] = [];
+    await withTempDir(`splitbrief-init-${name}`, async (projectDir) => {
+      const feature = 'resume on a moved review seat';
+      const sessionId = `session-init-${name}`;
+      const sink: EngineEvent[] = [];
+      ensureSessionDir(projectDir, sessionId);
+      writeSeatIdentities(
+        { projectDir, sessionId },
+        seatIdentitiesFromConfig(makeConfig(input.before)),
+      );
+
+      const { init } = await initializeTestWorkflow({
+        projectDir,
+        sessionId,
+        feature,
+        savedState: { ...createInitialState(feature), phase: 'implementing', tasks: [input.task] },
+        eventSink: (e) => sink.push(e),
+        configOverrides: input.after,
+      });
+
+      expect(init.ok).toBe(true);
+      events = sink;
+    });
+    return events;
+  }
+
+  const notes = (events: readonly EngineEvent[]) =>
+    events.filter((e) => e.type === 'info' && e.message.includes('cannot see images'));
+
+  it('publishes the note when the review seat moves to a tool with no image input', async () => {
+    const events = await resumeOnMovedSeat('review-no-image', {
+      before: { reviewer: { kind: 'cli', tool: 'claude-code' } },
+      after: { reviewer: { kind: 'cli', tool: 'antigravity' } },
+      task: RENDER_TASK,
+    });
+
+    expect(events.filter((e) => e.type === 'seat_switched')).toEqual([
+      expect.objectContaining({ seat: 'review', cause: 'crew-changed' }),
+    ]);
+    expect(notes(events)).toEqual([expect.objectContaining({ type: 'info', message: NOTE })]);
+  });
+
+  it('has no note when the review seat moves to a tool that reads images', async () => {
+    const events = await resumeOnMovedSeat('review-image', {
+      before: { reviewer: { kind: 'cli', tool: 'antigravity' } },
+      after: { reviewer: { kind: 'cli', tool: 'claude-code' } },
+      task: RENDER_TASK,
+    });
+
+    expect(events.filter((e) => e.type === 'seat_switched')).toHaveLength(1);
+    expect(notes(events)).toEqual([]);
+  });
+
+  it('has no note when only the BUILD seat moves beside a review seat with no image input', async () => {
+    const events = await resumeOnMovedSeat('build-no-image', {
+      before: { reviewer: { kind: 'cli', tool: 'antigravity' } },
+      after: {
+        reviewer: { kind: 'cli', tool: 'antigravity' },
+        implementer: { kind: 'cli', tool: 'antigravity' },
+      },
+      task: RENDER_TASK,
+    });
+
+    expect(events.filter((e) => e.type === 'seat_switched')).toEqual([
+      expect.objectContaining({ seat: 'build' }),
+    ]);
+    expect(notes(events)).toEqual([]);
+  });
+
+  it('has no note when the plan has no render check', async () => {
+    const events = await resumeOnMovedSeat('review-no-render', {
+      before: { reviewer: { kind: 'cli', tool: 'claude-code' } },
+      after: { reviewer: { kind: 'cli', tool: 'antigravity' } },
+      task: CMD_TASK,
+    });
+
+    expect(events.filter((e) => e.type === 'seat_switched')).toHaveLength(1);
+    expect(notes(events)).toEqual([]);
+  });
+});
+
 describe('initializeWorkflow — the @ context outlives the process', () => {
   const CONTEXT = '# tasks.md\n- T001 wire the banner';
 

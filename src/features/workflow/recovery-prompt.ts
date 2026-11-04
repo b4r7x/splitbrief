@@ -354,6 +354,7 @@ function recoveryCauseParts(issue: RecoveryIssue): ConversationRowSegment[] {
   if (
     issue.reason === 'implementer-recipe-invalid' ||
     recoveryFactString(issue.facts, 'refusal') !== undefined ||
+    issue.facts?.reviewSeatNoImages === true ||
     issue.reason === 'implementer-left-isolation' ||
     issue.reason === 'checkout-changed' ||
     issue.reason === 'apply-conflict' ||

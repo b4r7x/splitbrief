@@ -68,9 +68,11 @@ import {
   reviewNoProgressCause,
   reviewFailedCause,
   reviewName,
+  reviewSeatNoImagesCause,
   reviewUnverifiedCause,
   cannotDetail,
 } from '../../../../core/recovery/headline.js';
+import { REVIEW_SEAT_IMAGE_FIX } from '../../../../core/runners/capabilities.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
 import { stripRecoveryResetClause } from '../../../../core/recovery/reset-clock.js';
 import { HAND_BACK_PANEL_CHARS } from '../../../../core/pipeline-spec/ladder.js';
@@ -1144,6 +1146,8 @@ export interface ReviewFailedRecoveryOptions extends RecoveryBuilderBase {
   question?: string | undefined;
   /** Criteria no check could verify, when the review failed with nothing to fix. */
   unverified?: number | undefined;
+  /** Every one of those criteria is a render criterion the review seat could not see. */
+  reviewSeatNoImages?: boolean | undefined;
   /** The review that judged: a scheduled task review, or the final review when absent. */
   scope?: ReviewRecord['scope'];
   /** The brief a task review judged. */
@@ -1200,12 +1204,15 @@ function buildNoVerdictReviewIssue(
 /**
  * A review still reports blocking findings and its round moved nothing, or it failed with nothing to fix.
  * The operator can send them back through another cycle with a correction of their own (`revise`).
+ * A review that failed only on render criteria its seat could not see sits on the review seat:
+ * no fix helps, so it offers the review again on the seat the picker holds (`retry-same-worker`).
  */
 export function buildReviewFailedRecoveryIssue(opts: ReviewFailedRecoveryOptions): RecoveryIssue {
   if (opts.failure !== undefined) return buildNoVerdictReviewIssue(opts, opts.failure);
   const blocking = opts.blocking ?? 0;
+  const noImages = opts.reviewSeatNoImages === true;
   const actions = haltActions('review-failed', [
-    'revise',
+    noImages ? 'retry-same-worker' : 'revise',
     opts.acceptAsIs === true ? 'accept-as-is' : undefined,
     opts.cannot !== undefined || opts.question !== undefined ? 'decide-for-me' : undefined,
     'end-run',
@@ -1214,12 +1221,16 @@ export function buildReviewFailedRecoveryIssue(opts: ReviewFailedRecoveryOptions
   const message =
     opts.noProgress !== undefined
       ? reviewNoProgressCause(review, opts.noProgress, opts.fixCycle)
-      : opts.unverified !== undefined
-        ? reviewUnverifiedCause(review, opts.unverified)
-        : reviewFailedCause(review, blocking);
+      : noImages
+        ? reviewSeatNoImagesCause(review)
+            .map((span) => span.text)
+            .join('')
+        : opts.unverified !== undefined
+          ? reviewUnverifiedCause(review, opts.unverified)
+          : reviewFailedCause(review, blocking);
   return createRecoveryIssue({
     id: opts.id,
-    seat: 'build',
+    seat: noImages ? 'review' : 'build',
     reason: 'review-failed',
     phase: opts.phase ?? 'final-review',
     files: [],
@@ -1234,6 +1245,9 @@ export function buildReviewFailedRecoveryIssue(opts: ReviewFailedRecoveryOptions
             `Question: ${opts.question}`,
           ]),
       ...(opts.details ?? []),
+      ...(noImages
+        ? [`${REVIEW_SEAT_IMAGE_FIX}, then choose ${recoveryActionLabel('retry-same-worker')}.`]
+        : []),
     ],
     facts: compactFacts({
       blocking,
@@ -1243,6 +1257,7 @@ export function buildReviewFailedRecoveryIssue(opts: ReviewFailedRecoveryOptions
       cannotBy: opts.cannot === undefined ? undefined : 'planner',
       question: opts.question,
       unverified: opts.unverified,
+      reviewSeatNoImages: noImages || undefined,
       reviewScope: opts.scope,
       afterTaskId: opts.afterTaskId,
     }),

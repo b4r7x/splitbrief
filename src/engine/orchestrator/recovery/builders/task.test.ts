@@ -1609,6 +1609,52 @@ describe('buildReviewFailedRecoveryIssue', () => {
     for (const issue of [stuck, blocking, unverified]) expectValidRecoveryIssue(issue);
   });
 
+  it('points a review whose only failures are render criteria its seat could not see at the review seat', () => {
+    const issue = buildReviewFailedRecoveryIssue({
+      createdAt,
+      blocking: 0,
+      unverified: 2,
+      reviewSeatNoImages: true,
+      cannot: 'The render criteria need a reviewer that sees images',
+      details: ['Unverified criteria: C1, C2'],
+      acceptAsIs: true,
+      scope: 'final',
+    });
+
+    expect(issue.message).toBe('Final review needs a REVIEW seat that reads images');
+    expect(formatRecoveryHeadline(issue)).toBe(issue.message);
+    expect(issue.seat).toBe('review');
+    expect(issue.availableActions).not.toContain('revise');
+    expect(issue.availableActions).toEqual([
+      'retry-same-worker',
+      'accept-as-is',
+      'decide-for-me',
+      'end-run',
+    ]);
+    expect(issue.recommendedAction).toBe('retry-same-worker');
+    expect(issue.details).toEqual([
+      'Planner said: The render criteria need a reviewer that sees images',
+      'Unverified criteria: C1, C2',
+      'Change the review seat to a tool that reads images with /crew review, then choose Try again.',
+    ]);
+    expectValidRecoveryIssue(issue);
+  });
+
+  it('keeps Fix again on a review with unverified criteria its seat could see', () => {
+    const issue = buildReviewFailedRecoveryIssue({
+      createdAt,
+      blocking: 0,
+      unverified: 1,
+      acceptAsIs: true,
+      scope: 'final',
+    });
+
+    expect(issue.message).toBe('Final review failed with 1 unverified criterion');
+    expect(issue.seat).toBe('build');
+    expect(issue.recommendedAction).toBe('revise');
+    expect(issue.availableActions).not.toContain('retry-same-worker');
+  });
+
   it('names the task review that reached no verdict, and the final review unchanged', () => {
     const failure = {
       kind: 'call-failed',

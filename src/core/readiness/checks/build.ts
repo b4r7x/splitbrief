@@ -17,6 +17,7 @@ import type { Config } from '../../schemas/config.js';
 import type { CliReadinessResult } from '../../schemas/readiness.js';
 import type { ReadinessReport, ReadinessSection } from '../types.js';
 import type { SeatDisplayName } from '../../crew/identity.js';
+import type { SeatImageFact } from '../../runners/capabilities.js';
 import type { RunnerAvailabilityFact } from './availability.js';
 import type { CliRouteInputs } from './cli-readiness.js';
 import type { ConfigReadinessInput } from './config.js';
@@ -35,6 +36,7 @@ export interface BuildReadinessReportInput {
   /** How the run the report describes starts; a headless one approves its plan card unattended. */
   interaction?: 'interactive' | 'headless' | undefined;
   seatDisplayName?: SeatDisplayName | undefined;
+  seatImageFact: SeatImageFact;
 }
 
 export function buildReadinessReport(input: BuildReadinessReportInput): ReadinessReport {
@@ -97,6 +99,7 @@ function buildSections(input: BuildReadinessReportInput): ReadinessSection[] {
         cliSeatModels: input.cliRoutes?.seatModels,
         availability: input.availability,
         seatDisplayName: input.seatDisplayName,
+        seatImageFact: input.seatImageFact,
       }),
     },
     {

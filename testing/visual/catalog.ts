@@ -1969,6 +1969,25 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
+    // A plan with a render check and a review seat that cannot see images: one neutral note.
+    defineScenario({
+      id: 'workflow-plan-card-no-image-reviewer',
+      title: 'Workflow · plan card naming a review seat that cannot see the renders',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'plan-card-no-image-reviewer',
+        title: 'Plan card with the review seat note',
+        kind: 'review',
+        marker: 'Approve plan and start the build',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Plan transcript' },
+        { id: 'approval-panel', title: 'Plan card panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
     // Two run checks under different ids run one command: the confirms line names it once.
     defineScenario({
       id: 'workflow-plan-card-shared-command',
@@ -3834,6 +3853,24 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'sidebar', title: 'Workflow sidebar' },
       ],
     }),
+    // BUILD and REVIEW moved in the crew, REVIEW to a tool that cannot see images, with a render check.
+    defineScenario({
+      id: 'workflow-seat-review-no-image',
+      title: 'Workflow · REVIEW seat changed in the crew to a tool that cannot see the renders',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'seat-review-no-image',
+        title: 'Crew change row and the review seat note',
+        kind: 'implementation',
+        marker: 'cannot see images',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
     defineScenario({
       id: 'workflow-spent-b2-replay',
       title: 'Workflow · historical spent-balance smoke replay',
@@ -4291,6 +4328,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Review-unverified recovery menu',
         kind: 'question',
         marker: 'Fix again',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-review-no-image',
+      title: 'Workflow · a final review that failed only on renders its seat could not see',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-no-image',
+        title: 'Review-seat-without-images recovery menu',
+        kind: 'question',
+        marker: 'Try again recommended',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

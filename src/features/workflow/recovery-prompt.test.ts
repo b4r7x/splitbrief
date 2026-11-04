@@ -5,7 +5,10 @@ import type { RecoveryIssue, SwitchSeatOffer } from '../../core/schemas/recovery
 import { taskId } from '../../core/schemas/task.js';
 import { glyph } from '../../lib/glyphs.js';
 import { buildRequiredChecksUnrunnableRecoveryIssue } from '../../engine/orchestrator/recovery/builders/checks.js';
-import { buildCheckoutChangedRecoveryIssue } from '../../engine/orchestrator/recovery/builders/task.js';
+import {
+  buildCheckoutChangedRecoveryIssue,
+  buildReviewFailedRecoveryIssue,
+} from '../../engine/orchestrator/recovery/builders/task.js';
 import { buildApplyPartialRecoveryIssue } from '../../engine/orchestrator/recovery/builders/apply.js';
 import { formatTruncatedList } from '../../core/formatting.js';
 import { SOFT_SEP } from '../../core/separators.js';
@@ -92,6 +95,41 @@ it('builds a context cause from its recorded seat, with dim separators', () => {
       { text: 'larger than the context window', tone: 'text' },
     ],
   });
+});
+
+it('paints the REVIEW seat of a review its seat could not see as the byline does', () => {
+  const issue = buildReviewFailedRecoveryIssue({
+    createdAt: '2026-04-29T12:00:00.000Z',
+    blocking: 0,
+    unverified: 2,
+    reviewSeatNoImages: true,
+    acceptAsIs: true,
+    scope: 'final',
+  });
+  expect(recoveryPromptSummaryRows(issue, 120)[0]).toMatchObject({
+    parts: [
+      { text: 'Needs you' },
+      { text: ' · ', tone: 'textDim' },
+      { text: 'Final review needs a ', tone: 'text' },
+      { text: 'REVIEW', tone: 'reviewer' },
+      { text: ' seat that reads images', tone: 'text' },
+    ],
+  });
+});
+
+it('sends a typed correction on a review its seat could not see to Try again', () => {
+  const issue = buildReviewFailedRecoveryIssue({
+    createdAt: '2026-04-29T12:00:00.000Z',
+    blocking: 0,
+    unverified: 2,
+    reviewSeatNoImages: true,
+    acceptAsIs: true,
+    scope: 'final',
+  });
+  expect(correctionActionFor(issue)).toBe('retry-same-worker');
+  expect(recoveryComposerHint(issue, true)).toBe(
+    'Choose an action above, or tab to type a correction…',
+  );
 });
 
 it('keeps the default summary at seven rows at width 30 and five at width 120', () => {

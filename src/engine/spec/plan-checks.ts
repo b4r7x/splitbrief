@@ -16,6 +16,14 @@ import {
   missingNpmScript,
   readPackageScripts,
 } from '../orchestrator/planning/sanitize-discovered-validation.js';
+import type { Config } from '../../core/schemas/config.js';
+import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
+import {
+  REVIEW_SEAT_IMAGE_FIX,
+  reviewSeatRenderNote,
+  seatSupportsImages,
+} from '../../core/runners/capabilities.js';
+import { type ModelCacheAccessor, resolveSeatImageFact } from '../providers/model/resolution.js';
 
 export type PlanCheckCode =
   | 'empty-plan'
@@ -178,13 +186,20 @@ export function checkTaskIdentities(
   return errors;
 }
 
+/** The ids of every `render` check in `checks`, in order. */
+function renderCheckIds(
+  checks: readonly Pick<TaskSpec['checks'][number], 'id' | 'kind'>[],
+): string[] {
+  return checks.filter((check) => check.kind === 'render').map((check) => check.id);
+}
+
 /** The ids of every `render` check in `checks`, in order, or none when the run sets `validation.render`. */
 function unconfiguredRenderCheckIds(
   checks: readonly Pick<TaskSpec['checks'][number], 'id' | 'kind'>[],
   renderCommand: string | undefined,
 ): string[] {
   if (renderCommand !== undefined) return [];
-  return checks.filter((check) => check.kind === 'render').map((check) => check.id);
+  return renderCheckIds(checks);
 }
 
 /** "Render checks A, B need validation.render, which is not set", in the number the ids have. */
@@ -192,17 +207,56 @@ function renderChecksNeedCommand(ids: readonly string[]): string {
   return `${pluralize(ids.length, 'Render check')} ${ids.join(', ')} ${pluralize(ids.length, 'needs', 'need')} validation.render, which is not set`;
 }
 
-/** The plan card's note for every render check without a command; none when the command is set. */
-export function renderCheckNotes(plan: PlanProposal, renderCommand: string | undefined): string[] {
-  const ids = unconfiguredRenderCheckIds(
-    [...plan.checks, ...plan.tasks.flatMap((task) => task.checks)],
-    renderCommand,
-  );
-  return ids.length === 0
-    ? []
-    : [
-        `${renderChecksNeedCommand(ids)}. Add it to .splitbrief/config.yaml, or request changes to drop ${pluralize(ids.length, 'it', 'them')}; without it the run halts before its review.`,
-      ];
+/**
+ * The plan card's notes on its render checks: one for the checks while `validation.render` is not
+ * set, and one when the review seat cannot see the renders, so their criteria cannot pass.
+ */
+export function renderCheckNotes(
+  plan: PlanProposal,
+  config: Config,
+  modelCache: ModelCacheAccessor | undefined,
+): string[] {
+  const checks = [...plan.checks, ...plan.tasks.flatMap((task) => task.checks)];
+  const notes: string[] = [];
+  const unconfigured = unconfiguredRenderCheckIds(checks, config.validation.render);
+  if (unconfigured.length > 0) {
+    notes.push(
+      `${renderChecksNeedCommand(unconfigured)}. Add it to .splitbrief/config.yaml, or request changes to drop ${pluralize(unconfigured.length, 'it', 'them')}; without it the run halts before its review.`,
+    );
+  }
+  const reviewNote = reviewSeatRenderCheckNote(checks, config, modelCache);
+  if (reviewNote !== undefined) {
+    const count = renderCheckIds(checks).length;
+    notes.push(
+      `${reviewNote} Change the review seat to a tool that reads images, or request changes to drop ${pluralize(count, 'it', 'them')}.`,
+    );
+  }
+  return notes;
+}
+
+/** The note that the review seat of `config` cannot see the renders of `checks`; none when it can. */
+function reviewSeatRenderCheckNote(
+  checks: readonly Pick<TaskSpec['checks'][number], 'id' | 'kind'>[],
+  config: Config,
+  modelCache: ModelCacheAccessor | undefined,
+): string | undefined {
+  const ids = renderCheckIds(checks);
+  if (ids.length === 0) return undefined;
+  const runner = resolveReviewerRunner(config).runner;
+  const detected = resolveSeatImageFact({ runner, role: 'reviewer', cache: modelCache });
+  return seatSupportsImages({ runner, detected })
+    ? undefined
+    : reviewSeatRenderNote({ runner, renderCheckIds: ids });
+}
+
+/** The run's note after a review seat change, with the control that changes the seat mid-run. */
+export function reviewSeatRunNote(
+  checks: readonly Pick<TaskSpec['checks'][number], 'id' | 'kind'>[],
+  config: Config,
+  modelCache: ModelCacheAccessor | undefined,
+): string | undefined {
+  const note = reviewSeatRenderCheckNote(checks, config, modelCache);
+  return note === undefined ? undefined : `${note} ${REVIEW_SEAT_IMAGE_FIX}.`;
 }
 
 /**
@@ -416,11 +470,11 @@ export function checkPlan(
     }
   }
 
-  const renderCheckIds = unconfiguredRenderCheckIds(checks, renderCommand);
-  if (renderCheckIds.length > 0) {
+  const unconfigured = unconfiguredRenderCheckIds(checks, renderCommand);
+  if (unconfigured.length > 0) {
     fail(
       'render-check-unconfigured',
-      `${renderChecksNeedCommand(renderCheckIds)}; drop ${pluralize(renderCheckIds.length, 'it', 'them')} or ask the user.`,
+      `${renderChecksNeedCommand(unconfigured)}; drop ${pluralize(unconfigured.length, 'it', 'them')} or ask the user.`,
     );
   }
   return errors;

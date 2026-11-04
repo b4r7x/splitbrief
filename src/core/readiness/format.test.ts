@@ -20,6 +20,8 @@ import {
   StartReadinessRecordSchema,
 } from '../schemas/readiness.js';
 
+const NO_IMAGE_FACT = () => undefined;
+
 const RUN = { projectDir: '/tmp/project', sessionId: '2026-01-01-fix-the-readme' };
 
 function reportWith(checks: ReadinessCheck[]): ReadinessReport {
@@ -59,6 +61,7 @@ describe('readiness formatting', () => {
   });
   it('uses singular counts for one blocker and one warning', () => {
     const report = buildReadinessReport({
+      seatImageFact: NO_IMAGE_FACT,
       projectDir: '/tmp/project',
       configLoad: { state: 'missing', path: '/tmp/project/.splitbrief/config.yaml', warnings: [] },
       packageScripts: { packageJsonExists: true, scripts: { test: 'node --test' } },
@@ -69,6 +72,7 @@ describe('readiness formatting', () => {
   });
   it('states the fix of a blocker once', () => {
     const report = buildReadinessReport({
+      seatImageFact: NO_IMAGE_FACT,
       projectDir: '/tmp/project',
       config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
       configLoad: { state: 'loaded', path: '/tmp/project/.splitbrief/config.yaml', warnings: [] },
@@ -97,6 +101,7 @@ describe('readiness formatting', () => {
   });
   const blockedReport = () =>
     buildReadinessReport({
+      seatImageFact: NO_IMAGE_FACT,
       projectDir: '/tmp/project',
       configLoad: {
         state: 'invalid',
@@ -110,6 +115,7 @@ describe('readiness formatting', () => {
 
   it('formats fail-closed human output and compact start records without config secrets', () => {
     const report = buildReadinessReport({
+      seatImageFact: NO_IMAGE_FACT,
       projectDir: '/tmp/project',
       config: makeConfig({
         validation: { endChecks: false },
@@ -158,6 +164,7 @@ describe('readiness formatting', () => {
   it('does not publish trusted executable paths in human or JSON diagnostics', () => {
     const executablePath = '/Users/private-user/project/bin/claude';
     const report = buildReadinessReport({
+      seatImageFact: NO_IMAGE_FACT,
       projectDir: '/tmp/readiness-project',
       config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
       configLoad: {
@@ -205,6 +212,7 @@ describe('readiness formatting', () => {
   it('promises start can continue only when every configured CLI runner is gated', () => {
     const reportWith = (auth: 'authenticated' | 'unknown') =>
       buildReadinessReport({
+        seatImageFact: NO_IMAGE_FACT,
         projectDir: '/tmp/project',
         config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
         configLoad: {
@@ -240,6 +248,7 @@ describe('readiness formatting', () => {
       facts: Parameters<typeof deriveCliReadiness>[0],
     ) =>
       buildReadinessReport({
+        seatImageFact: NO_IMAGE_FACT,
         projectDir: '/tmp/project',
         config: makeConfig(runner),
         configLoad: {
@@ -283,6 +292,7 @@ describe('readiness formatting', () => {
 
   it("a non-blocked report's output contains no `Start blocked:` line", () => {
     const report = buildReadinessReport({
+      seatImageFact: NO_IMAGE_FACT,
       projectDir: '/tmp/project',
       config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
       configLoad: {
@@ -325,6 +335,7 @@ describe('readiness formatting', () => {
 
   it('names the status in words and states each count once', () => {
     const report = buildReadinessReport({
+      seatImageFact: NO_IMAGE_FACT,
       projectDir: '/tmp/project',
       config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
       configLoad: { state: 'loaded', path: '/tmp/project/.splitbrief/config.yaml', warnings: [] },
@@ -343,6 +354,7 @@ describe('readiness formatting', () => {
 
   it('pluralizes the blocker pointer by its count', () => {
     const one = buildReadinessReport({
+      seatImageFact: NO_IMAGE_FACT,
       projectDir: '/tmp/project',
       configLoad: { state: 'missing', path: '/tmp/project/.splitbrief/config.yaml', warnings: [] },
       packageScripts: { packageJsonExists: false, scripts: {} },

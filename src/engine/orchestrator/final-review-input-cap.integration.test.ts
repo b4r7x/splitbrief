@@ -174,6 +174,7 @@ async function review(
   config = CODEX_REVIEWER,
 ): Promise<FinalReviewResult> {
   return runFinalReviewPhase({
+    modelCache: undefined,
     ...ref,
     workspaceDir: ref.projectDir,
     state,

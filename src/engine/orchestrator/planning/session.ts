@@ -623,7 +623,7 @@ function compilePlan(
     bus,
     phase: state.phase,
     metadata: wctx.metadata,
-    planMarkdown: formatPlanMarkdown(plan, renderCheckNotes(plan, config.validation.render)),
+    planMarkdown: formatPlanMarkdown(plan, renderCheckNotes(plan, config, wctx.modelCache)),
     tasks,
   });
   const manifest = readManifestCommands(projectDir);

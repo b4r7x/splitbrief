@@ -101,6 +101,7 @@ function setupReview(kind: 'cli' | 'api') {
     bus,
     events,
     enqueue,
+    modelCache: undefined,
   };
 }
 

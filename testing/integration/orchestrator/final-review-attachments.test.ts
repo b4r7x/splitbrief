@@ -72,6 +72,7 @@ describe.each(['cli', 'api'] as const)('attached context in %s review', (kind) =
       });
 
       const result = await runFinalReviewPhase({
+        modelCache: undefined,
         ...ref,
         workspaceDir: ref.projectDir,
         config,

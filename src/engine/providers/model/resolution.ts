@@ -20,6 +20,10 @@ import { findCatalogModelByIdentity, getModelsForProvider } from '../models-dev.
 import type { ClaudeCodeModelOption } from '../../../core/providers/claude-code-options.js';
 import { matchesModelsDevId, splitModelVendorPrefix } from './parsing.js';
 import { includes } from '../../../utils/type-guards.js';
+import type { RunnerConfig } from '../../../core/config/accessors/runner-config.js';
+import type { DetectedModelFact } from '../../../core/runners/capabilities.js';
+import { resolveAutoModel } from '../../../core/providers/model-selection.js';
+import { isProviderId } from '../../../core/schemas/enums.js';
 
 export interface ModelCacheAccessor {
   getModelsDevCatalog(): ModelsDevCatalog | null;
@@ -230,6 +234,31 @@ export function lookupModelsDevModel(input: {
     ...(kind === undefined ? {} : { kind }),
   });
   return outcome.kind === 'found' ? outcome.model : null;
+}
+
+/**
+ * The image fact of an API seat's own model: the seat's runtime row first, then models.dev.
+ * Absent for a seat of another kind and when no lookup knows the fact.
+ */
+export function resolveSeatImageFact(
+  input: Readonly<{
+    runner: RunnerConfig;
+    role: ActiveRunnerRole;
+    cache: ModelCacheAccessor | undefined;
+  }>,
+): DetectedModelFact | undefined {
+  const { runner, cache } = input;
+  if (runner.kind !== 'api' || cache === undefined || !isProviderId(runner.provider)) {
+    return undefined;
+  }
+  const modelId = resolveAutoModel(runner.model, runner.provider);
+  if (modelId === undefined) return undefined;
+  const lookup = { providerId: runner.provider, modelId, cache, kind: runner.kind };
+  const runtime = resolveExactRuntimeModel({ ...lookup, selectionId: modelId, role: input.role });
+  const supportsImages =
+    (runtime.kind === 'found' ? runtime.model.supportsImages : undefined) ??
+    lookupModelsDevModel(lookup)?.supportsImages;
+  return supportsImages === undefined ? undefined : { supportsImages };
 }
 
 export function lookupRuntimeModel(input: {

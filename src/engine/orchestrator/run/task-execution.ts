@@ -509,6 +509,7 @@ async function buildAndReview(args: {
       state,
       reviewer: wctx.reviewer,
       metadata: wctx.metadata,
+      modelCache: wctx.modelCache,
       signal: wctx.signal,
       sinks: wctx.sinks,
       ...(wctx.continuation !== undefined && { continuation: wctx.continuation }),

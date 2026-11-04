@@ -516,6 +516,7 @@ describe('buildFinalReviewPrompt', () => {
       ),
     });
     const result = await runFinalReviewPhase({
+      modelCache: undefined,
       projectDir,
       workspaceDir,
       sessionId,
