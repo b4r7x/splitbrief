@@ -1106,6 +1106,29 @@ function createHomePreparationIsolationBlockedFixture(): FixtureLifecycle {
   };
 }
 
+/** A repository with no commits: the blocker and its fix line come from `buildRepoChecks`. */
+function createHomePreparationNoCommitsFixture(): FixtureLifecycle {
+  const home = createHomeFixture();
+  return {
+    setup: async (context) => {
+      await home.setup(context);
+      submitSettledCheck({
+        kind: 'blocked',
+        report: preparationReport(
+          buildRepoChecks({
+            isGitRepo: true,
+            hasCommits: false,
+            dirtyFiles: [],
+            untrackedFiles: [],
+          }),
+          { section: { id: 'repo', title: 'Repository' } },
+        ),
+      });
+    },
+    teardown: home.teardown,
+  };
+}
+
 const CONTINUING_FEATURE = 'Refine terminal navigation';
 
 function createWorkflowContinuingFixture(): FixtureLifecycle {
@@ -1683,6 +1706,7 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('home-preparation-checkout-warning'), createHomePreparationCheckoutWarningFixture],
   [scenarioId('home-preparation-blocked'), createHomePreparationBlockedFixture],
   [scenarioId('home-preparation-isolation-blocked'), createHomePreparationIsolationBlockedFixture],
+  [scenarioId('home-preparation-no-commits'), createHomePreparationNoCommitsFixture],
   [
     scenarioId('home-preparation-runner-trust'),
     () => createHomePreparationRunnerTrustFixture(false),

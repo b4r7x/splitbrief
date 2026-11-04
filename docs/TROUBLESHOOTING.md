@@ -79,14 +79,15 @@ Implementation: `src/cli/headless.ts` wires a `createStdoutJsonSink()` (`src/eng
 
 ### Debug environment variables
 
-SPLITBRIEF has no `debug` package or namespace logger. The diagnostic surface is:
+These variables control the diagnostics of SPLITBRIEF:
 
 | Variable | Effect | Source |
 |---|---|---|
+| `SPLITBRIEF_DEBUG` | `1` writes the debug log to `.splitbrief/logs/debug.log` in the project; `0` or `false` turns it off. An installed SPLITBRIEF writes no debug log unless you set it. | `src/core/logger.ts` |
 | `SPLITBRIEF_CONTEXT_LENGTH` | Override detected implementer context length (integer) | `src/engine/providers/capabilities.ts` |
 | `CI` | Suppresses fullscreen TUI (`--no-fullscreen` is equivalent) | `src/cli/setup.ts` |
 
-For finer-grained traces, use the event log. The API-key-bearing env vars SPLITBRIEF reads are listed in [CONFIGURATION.md §Provider authentication](./CONFIGURATION.md#provider-authentication) — a missing credential fails config load for an API seat and shows as a readiness blocker for a CLI seat.
+For finer-grained traces, use the event log. The debug log also holds the notices that the screen does not show. Examples are a plan that went back to the planner once and a format pass that changed files. The API-key-bearing env vars SPLITBRIEF reads are listed in [CONFIGURATION.md §Provider authentication](./CONFIGURATION.md#provider-authentication) — a missing credential fails config load for an API seat and shows as a readiness blocker for a CLI seat.
 
 ### Terminal diagnostics
 

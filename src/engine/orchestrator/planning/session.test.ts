@@ -13,6 +13,8 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { setupProject } from '#testing/helpers/planning-phase.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { debugLogEntries, enableDebugLog } from '#testing/helpers/debug-log.js';
+import { resetLoggerForTests } from '../../../lib/logger.js';
 import { scriptedTypedCall } from '#testing/helpers/typed-planner.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { PLAN_JSON_FILE, SESSION_LOG_FILE, sessionDir } from '../../../core/paths.js';
@@ -62,6 +64,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 const dirs: string[] = [];
 afterEach(() => {
   statFailure.code = undefined;
+  resetLoggerForTests();
   for (const dir of dirs.splice(0)) cleanupTempDir(dir);
 });
 
@@ -98,6 +101,7 @@ async function plan(opts: {
   steering?: SteeringPort;
 }) {
   const { projectDir, sessionId } = setupProject(dirs);
+  enableDebugLog(projectDir);
   opts.setup?.(projectDir);
   const typed = scriptedTypedCall(opts.script);
   const planner = makePlanner({ typedCall: typed.typedCall, ...opts.planner });
@@ -132,8 +136,14 @@ async function plan(opts: {
     events,
     projectDir,
     sessionId,
+    sendBacks: () => debugLogEntries(projectDir, 'engine', 'plan_send_back'),
   };
 }
+
+const sendBackWarnings = (events: readonly { type: string; message?: string }[]) =>
+  events.filter(
+    (event) => event.type === 'warning' && event.message?.startsWith('The plan failed') === true,
+  );
 
 describe('the planning thread', () => {
   it('passes queued images and their expanded text into the next planning call', async () => {
@@ -616,19 +626,34 @@ describe('the planning session on the live path', () => {
 
       expect(run.prompts).toHaveLength(2);
       expect(run.prompts[1]).toContain(`- ${code}: `);
-      expect(run.events).toContainEqual(
+      expect(sendBackWarnings(run.events)).toEqual([]);
+      expect(run.sendBacks()).toEqual([
         expect.objectContaining({
-          type: 'warning',
           message: expect.stringMatching(
             /^The plan failed \d+ checks?\. It goes back to the planner once to fix (it|them):\n- .+$/s,
           ),
-          planCheck: expect.objectContaining({ code, message: expect.any(String) }),
         }),
-      );
+      ]);
       expect(run.onApprovalNeeded).toHaveBeenCalledTimes(1);
       expect(run.result.disposition).toBe('ready-for-tasks');
     },
   );
+
+  it('sends a failed plan back with no warning row, writes the send-back to the debug log, and reports the pass', async () => {
+    const run = await plan({ script: [uncoveredPlan, makePlanProposal()] });
+
+    expect(run.events.filter((event) => event.type === 'warning')).toEqual([]);
+    expect(run.sendBacks()).toEqual([
+      expect.objectContaining({
+        message:
+          'The plan failed 1 check. It goes back to the planner once to fix it:\n- Criterion C2 is served by no task.',
+      }),
+    ]);
+    expect(run.events).toContainEqual(
+      expect.objectContaining({ type: 'info', message: 'The revised plan passes its checks.' }),
+    );
+    expect(run.result.disposition).toBe('ready-for-tasks');
+  });
 
   it('reports one pass after the repaired plan passes its checks', async () => {
     const run = await plan({ script: [uncoveredPlan, makePlanProposal()] });
@@ -643,9 +668,6 @@ describe('the planning session on the live path', () => {
         message: 'The revised plan passes its checks.',
       },
     ]);
-    expect(run.events.findIndex((event) => event.type === 'warning')).toBeLessThan(
-      run.events.findIndex((event) => passes.includes(event)),
-    );
   });
 
   it.each([
@@ -662,24 +684,20 @@ describe('the planning session on the live path', () => {
     ).toEqual([]);
   });
 
-  it('states the reason of one failing check in the warning, without its code', async () => {
+  it('states the reason of one failing check in the debug log, without its code', async () => {
     const run = await plan({ script: [uncoveredPlan, makePlanProposal()] });
 
-    expect(run.events).toContainEqual(
-      expect.objectContaining({
-        type: 'warning',
-        message:
-          'The plan failed 1 check. It goes back to the planner once to fix it:\n- Criterion C2 is served by no task.',
-        planCheck: {
-          code: 'uncovered-criterion',
-          message: 'Criterion C2 is served by no task.',
-        },
-      }),
-    );
+    expect(sendBackWarnings(run.events)).toEqual([]);
+    const [sendBack] = run.sendBacks();
+    expect(sendBack).toEqual({
+      message:
+        'The plan failed 1 check. It goes back to the planner once to fix it:\n- Criterion C2 is served by no task.',
+    });
+    expect(JSON.stringify(sendBack)).not.toContain('uncovered-criterion');
     expect(run.result.disposition).toBe('ready-for-tasks');
   });
 
-  it('lists all three failed checks and keeps the first blocking one when three checks fail', async () => {
+  it('lists all three failed checks in the debug log when three checks fail', async () => {
     const threeErrorsPlan = makePlanProposal({
       criteria: [
         { id: 'C1', text: 'A name gets a greeting', checkIds: [] },
@@ -690,21 +708,17 @@ describe('the planning session on the live path', () => {
     });
     const run = await plan({ script: [threeErrorsPlan, makePlanProposal()] });
 
-    expect(run.events).toContainEqual(
-      expect.objectContaining({
-        type: 'warning',
+    expect(sendBackWarnings(run.events)).toEqual([]);
+    expect(run.sendBacks()).toEqual([
+      {
         message: [
           'The plan failed 3 checks. It goes back to the planner once to fix them:',
           '- Criterion C1 names no check that verifies it.',
           '- Criterion C2 names no check that verifies it.',
           '- Criterion C3 names no check that verifies it.',
         ].join('\n'),
-        planCheck: {
-          code: 'criterion-without-check',
-          message: 'Criterion C1 names no check that verifies it.',
-        },
-      }),
-    );
+      },
+    ]);
     expect(run.result.disposition).toBe('ready-for-tasks');
   });
 

@@ -13,7 +13,6 @@ it('states the repeated-timeout halt count once in the header', () => {
   const issueWithEngineMessage = makeRecoveryIssue({
     reason: 'runner-timeout-repeated',
     taskId: taskId('T001'),
-    attempts: 2,
     message: 'Codex timed out twice in a row on T001',
   });
   const headerWithEngineMessage = formatRecoveryPrompt(issueWithEngineMessage).split('\n')[0];
@@ -22,7 +21,6 @@ it('states the repeated-timeout halt count once in the header', () => {
   const issueWithHeadlineMessage = makeRecoveryIssue({
     reason: 'runner-timeout-repeated',
     taskId: taskId('T001'),
-    attempts: 2,
     message: 'Two timeouts in a row on T001',
   });
   const headerWithHeadlineMessage = formatRecoveryPrompt(issueWithHeadlineMessage).split('\n')[0];
@@ -30,7 +28,7 @@ it('states the repeated-timeout halt count once in the header', () => {
 });
 
 it.each(RECOVERY_REASONS)('shows at most one count in the header for %s', (reason) => {
-  const base = makeRecoveryIssue({ reason, taskId: taskId('T001'), attempts: 2 });
+  const base = makeRecoveryIssue({ reason, taskId: taskId('T001') });
   const issue = { ...base, message: formatRecoveryHeadline(base) };
   const header = formatRecoveryPrompt(issue).split('\n')[0] ?? '';
   expect((header.match(/\btwice\b|\btwo\b|\b\d+ attempts?\b/gi) ?? []).length).toBeLessThanOrEqual(
@@ -67,7 +65,6 @@ describe.each([1, 5])('a task halt, attempts %i', (attempts) => {
 
 it('names no attempt count when the reviewer says the brief cannot be done', () => {
   const issue = makeRecoveryIssue({
-    attempts: 3,
     taskId: taskId('T001'),
     facts: { cannotBy: 'reviewer' },
   });

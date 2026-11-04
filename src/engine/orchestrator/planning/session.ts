@@ -37,6 +37,7 @@ import { resumeStep } from '../../../core/sessions/run-status.js';
 import { DEFAULT_UNKNOWN_CONTEXT_LENGTH } from '../../../core/tokens/context-length.js';
 import { readManifestCommands } from '../../../core/validation/manifest-commands.js';
 import { detectStack } from '../../../core/validation/stacks/registry.js';
+import { createLogger } from '../../../lib/logger.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { buildRepoMap } from '../../codebase/repomap.js';
 import { absolutePathsNamed } from '../../planners/api-context.js';
@@ -392,11 +393,7 @@ export async function runPlanningSession(
     const ask = async (turn: PlanTurn): Promise<RequestTypedResult<PlanAnswer>> => {
       if (turn.kind === 'answers') state = recordAnswers(wctx, state, turn.reply);
       if (turn.kind === 'repair') {
-        publishWarning({
-          bus,
-          phase: state.phase,
-          ...planRepairWarning(turn.errors),
-        });
+        createLogger('engine').debug('plan_send_back', planRepairWarning(turn.errors));
       }
       const drained = await drainAndFormat(projectDir, sessionId, state, bus);
       state = drained.state;

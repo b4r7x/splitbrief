@@ -280,6 +280,13 @@ describe('buildRetryExhaustedRecoveryIssue', () => {
     expect(five.details).toContain('Attempts: 5');
   });
 
+  it('states the attempt count only in its details row, with no attempts key', () => {
+    for (const attempts of [0, 1, 5]) {
+      const issue = buildRetryExhaustedRecoveryIssue({ ...bothVoices, attempts });
+      expect(issue).not.toHaveProperty('attempts');
+    }
+  });
+
   it('defaults to task failed when neither verdict nor hook reason is set', () => {
     const issue = buildRetryExhaustedRecoveryIssue({
       task: makeTask({ id: 'T012' }),
@@ -1231,7 +1238,6 @@ describe('buildLeftIsolationRecoveryIssue', () => {
       `Google Antigravity CLI ${toolMessage}`,
       "Your checkout gets the run's changes only through Apply.",
     ]);
-    expect(issue.attempts).toBeUndefined();
     expect(issue.facts).toEqual({ tool: 'Google Antigravity CLI' });
     expect(issue.availableActions).toEqual(['retry-same-worker', 'skip-current-task', 'end-run']);
     expect(issue.recommendedAction).toBe('retry-same-worker');
@@ -1317,7 +1323,6 @@ describe('buildCheckoutChangedRecoveryIssue', () => {
       'Changed while Google Antigravity CLI ran; the audit cannot tell who made the change.',
       "Your checkout gets the run's changes only through Apply, and nothing in your checkout was reverted.",
     ]);
-    expect(issue.attempts).toBeUndefined();
     expect(issue.facts).toEqual({
       tool: 'Google Antigravity CLI',
       changes: 'branch escaped · hook pre-commit',

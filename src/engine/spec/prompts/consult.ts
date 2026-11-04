@@ -19,6 +19,7 @@ import {
   type PromptPart,
 } from './builder.js';
 import { DIRECT_WRITER_TASK_RULE, TASK_CMD_CHECK_RULE } from './plan-session.js';
+import { GIT_READ_ONLY_RULE } from './system.js';
 
 export type ConsultPromptInput = Readonly<{
   workspaceDir: string;
@@ -67,7 +68,7 @@ const REASON_TEXT: Record<ConsultReason, string> = {
     "The review made no progress: its blockers did not move after a fix cycle, its answer fixes none of them, or it failed with no blocker on criteria no check verified. The failing output lists your earlier answers on reviews without progress; choose again with them in view. guidance goes with the reviewer's next fix briefs, and needs at least one. A rewrite or a split replaces them. verify re-runs the named checks on the same tree, for a red that may be a flake, and the review runs again. accept leaves every remaining blocker open with your note and keeps the failed verdict; the user reads the note before Apply. A red check or an Apply conflict that blocks cannot be accepted: verify the red check or fix it. ask-user asks the user. cannot stops the run and asks the user.",
 };
 
-const CONSULT_CONTRACT_BODY = `SPLITBRIEF asks you, not the user, for the decision that unblocks this task. This call is read-only: do not write, edit or delete any file, and do not run commands that change the project.
+const CONSULT_CONTRACT_BODY = `SPLITBRIEF asks you, not the user, for the decision that unblocks this task. This call is read-only: do not write, edit or delete any file, and do not run commands that change the project. ${GIT_READ_ONLY_RULE}.
 
 Answer with exactly one JSON object \`{ "answer": { "diagnosis": …, "action": … } }\`. \`answer.diagnosis\` states what actually went wrong, in one or two sentences, and is always present. Exactly one action follows it:
 - \`guidance\` — \`instructions\` the implementer retries with, and \`context\`: the project file or fact the retry needs attached, or null. The brief is kept.
@@ -95,7 +96,7 @@ function consultContract(task: Task, writesFiles: ImplementerWriteMode): string 
   return `${role} ${CONSULT_CONTRACT_BODY}${sizing}`;
 }
 
-const RESUME_CONTRACT = `Answer again with exactly one JSON object in the consult shape: \`answer.diagnosis\` and exactly one action. The call stays read-only. The operator rule still holds: no action undoes an operator instruction. The answer rule still holds: an answer only instructs the next attempt. Offer only choices that the next attempt can carry out. When the task cannot be done as asked, answer \`cannot\`. The workspace rule still holds: guidance, a rewrite and a split continue on the files the failed attempt left. A rewrite or a split names in its brief what to keep, change or remove of these edits. The criteria rule still holds: a rewrite or a split never drops a criterion id, and a split never splits a subtask. The checks rule still holds too: a defective check command may be repaired under the same check id, but removing a check id a served criterion names needs \`ask-user\`.`;
+const RESUME_CONTRACT = `Answer again with exactly one JSON object in the consult shape: \`answer.diagnosis\` and exactly one action. The call stays read-only. ${GIT_READ_ONLY_RULE}. The operator rule still holds: no action undoes an operator instruction. The answer rule still holds: an answer only instructs the next attempt. Offer only choices that the next attempt can carry out. When the task cannot be done as asked, answer \`cannot\`. The workspace rule still holds: guidance, a rewrite and a split continue on the files the failed attempt left. A rewrite or a split names in its brief what to keep, change or remove of these edits. The criteria rule still holds: a rewrite or a split never drops a criterion id, and a split never splits a subtask. The checks rule still holds too: a defective check command may be repaired under the same check id, but removing a check id a served criterion names needs \`ask-user\`.`;
 
 function checkLine(check: Check): string {
   return `\`${check.id}\` (${check.kind} \`${check.value}\`)`;

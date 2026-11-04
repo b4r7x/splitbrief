@@ -10,6 +10,7 @@ import {
   type PromptSection,
 } from './builder.js';
 import { DIRECT_WRITER_TASK_RULE, TASK_CMD_CHECK_RULE } from './plan-session.js';
+import { GIT_READ_ONLY_RULE } from './system.js';
 
 const REVIEW_INSTRUCTIONS = `Review the implementation diff against every acceptance criterion and requirement in the spec and task briefs. Be thorough but fair -- minor style differences are acceptable; missing functionality or incorrect behavior is not.
 
@@ -17,7 +18,9 @@ Validation claims are evidence-bound. The Checks Log section and the Reviewer ch
 
 A failure the Checks Log marks pre-existing was red at the run base before any task ran: report it as pre-existing and raise no finding against this run for it.
 
-A check marked refused, not-runnable or unknown did not run: SPLITBRIEF refused its command or could not start it. It is neither a pass nor a failure, so raise no finding for it. Mark a criterion that only such a check would verify unverified.`;
+A check marked refused, not-runnable or unknown did not run: SPLITBRIEF refused its command or could not start it. It is neither a pass nor a failure, so raise no finding for it. Mark a criterion that only such a check would verify unverified.
+
+${GIT_READ_ONLY_RULE}.`;
 
 const PROVENANCE_INSTRUCTIONS = `Use the Changed Files provenance to distinguish recorded run effects from workspace context. Do not attribute the whole workspace diff to the implementer. Independent operator or tool-fix hunks are context, including when they share a declared file with run changes; unrelated defects in those hunks alone do not fail this run. Evaluate the requested behavior in the integrated current workspace, including cross-file dependencies. A regression caused by a run effect, a broken interaction with existing code, or an unmet acceptance criterion still fails review. Keep unknown and overlapping edits explicit; if missing provenance or context prevents a required judgment, report that limit and fail that criterion rather than assuming it passed.`;
 

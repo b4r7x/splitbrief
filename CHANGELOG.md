@@ -91,6 +91,9 @@
 - A headless run stopped by Ctrl+C, SIGTERM or a closed terminal exits with code 130, 143 or 129 and prints the command that continues it.
 - The model list in the picker, the provider scan on home and setup, the Check of a local server and the check of an API seat wait up to one minute instead of two or five seconds. A provider that answers after six seconds is now found, not failed. After ten seconds the screen names the provider and the check, also while a run checks its seat at its start or before a brief. Esc stops the check; during a run, the run's stop ends it.
 - The workflow sidebar shows no waiting row. Before the plan names its briefs, the Tasks panel shows only `No tasks yet`. The header and the line under the composer show the stage.
+- **Fewer warning rows.** A plan that goes back to the planner once, an output limit of a tool call, and a format pass that rewrote files no longer show a warning row. With `SPLITBRIEF_DEBUG` set, the [debug log](./docs/TROUBLESHOOTING.md#debug-environment-variables) records them; for a format pass it names the files.
+- **The plan, review and consult calls use git only to read**, as the build already does: status, diff, log and show. The plan rules also name the two forms of a `node` check that the command policy accepts: `node --test <test file>` and `node --check <file>`.
+- **A project with no commits** now tells you: *Make a first commit of your files, then start again.*
 
 ### Removed
 
@@ -109,6 +112,7 @@
 - **Breaking — `--json` stream.** The `planner_heartbeat` event no longer carries `accumulatedTokens`.
 - `workflow.git.create_branch` and the *Create branch* setting. `false` still loads and changes nothing. `true` fails the load with a message to delete the key.
 - The `required` key on a check. Every check must pass. A plan or a saved run that still holds the key loads, and SPLITBRIEF ignores the key.
+- **Breaking — `--json` stream.** The recovery event no longer has a top-level `attempts` key. The `Attempts: N` row of its details stays.
 
 ### Fixed
 

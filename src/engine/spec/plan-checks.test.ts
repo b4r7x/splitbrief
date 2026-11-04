@@ -26,7 +26,7 @@ function codes(plan: PlanProposal, contextFits = fits, dir = projectDir): string
 }
 
 describe('planRepairWarning', () => {
-  it('lists every failed check in plan order, without codes, and keeps the first blocking one', () => {
+  it('lists every failed check in plan order, without codes or a separate first check', () => {
     const render = {
       code: 'render-check-unconfigured',
       message: 'Check K2 renders a scenario.',
@@ -44,12 +44,10 @@ describe('planRepairWarning', () => {
         '- Check K4 is refused: `test -d docs` does not name one file test.',
         '- Task T001 has no check.',
       ].join('\n'),
-      planCheck: refused,
     });
     expect(planRepairWarning([unchecked])).toEqual({
       message:
         'The plan failed 1 check. It goes back to the planner once to fix it:\n- Task T001 has no check.',
-      planCheck: unchecked,
     });
   });
 });

@@ -579,7 +579,9 @@ describe('retryAndRecord — recovery stop points', () => {
       availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
     });
     // A consult call is not an attempt on the brief, so its halt states no attempt count.
-    expect(result.state.pendingRecovery?.attempts).toBeUndefined();
+    expect(result.state.pendingRecovery?.details.some((row) => row.startsWith('Attempts'))).toBe(
+      false,
+    );
     expect(loadState({ projectDir, sessionId })).toMatchObject({
       attempt: 0,
       pendingRecovery: expect.objectContaining({ reason: 'planner-call-failed', seat: 'plan' }),
@@ -655,7 +657,7 @@ describe('retryAndRecord — a planner out of quota on the consult', () => {
       setTrackedState: vi.fn(),
     });
     expect(result.pendingRecovery).toMatchObject({ reason: 'planner-call-failed', seat: 'plan' });
-    expect(result.pendingRecovery?.attempts).toBeUndefined();
+    expect(result.pendingRecovery?.details.some((row) => row.startsWith('Attempts'))).toBe(false);
   });
 
   async function consultHalted(

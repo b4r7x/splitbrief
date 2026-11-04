@@ -27,7 +27,6 @@ describe('getRecoveryPromptRows', () => {
     const issue = makeRecoveryIssue({
       reason: 'seat-protocol-error',
       seat: 'review',
-      attempts: undefined,
       message:
         'REVIEW answer needs repair because the answer did not include any usable evidence from the required checks for this brief',
       taskId: undefined,

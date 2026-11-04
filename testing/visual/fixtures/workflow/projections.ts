@@ -39,11 +39,7 @@ import { engineEventFromLogEntry } from '../../../../src/engine/events/replay.js
 import { makeReviewFixInsertedEvents } from '../../../helpers/events/task.js';
 import { makePlanProposal, makeTaskSpec } from '../../../helpers/factories/plan.js';
 import { formatPlanMarkdown } from '../../../../src/engine/spec/plan-markdown.js';
-import {
-  renderCheckNotes,
-  planRepairWarning,
-  reviewSeatRunNote,
-} from '../../../../src/engine/spec/plan-checks.js';
+import { renderCheckNotes, reviewSeatRunNote } from '../../../../src/engine/spec/plan-checks.js';
 import { NULL_CACHE } from '../../../../src/engine/providers/model/resolution.js';
 import { MAX_QUESTION_ROUNDS } from '../../../../src/engine/spec/prompts/plan-session.js';
 import {
@@ -470,16 +466,6 @@ const planningPathNoticeProjection: WorkflowFixtureProjection = {
     },
   ],
 };
-
-/** A plan sent back for a refused check command and a task without a check. */
-const planSendBackWarning = planRepairWarning([
-  {
-    code: 'refused-check-command',
-    message:
-      'Check K4 is refused: `test "$(readlink docs/readme.md)" = "../README.md"` does not name one file test; a plan check runs test only as test -e, -f, -x or -L <file>. Change it to a command that plan checks allow, or to a check of kind `test` that names a test file.',
-  },
-  { code: 'task-without-check', message: 'Task T001 has no check.' },
-]);
 
 const START_READINESS_FEATURE = 'Fix the typo in the README';
 
@@ -4762,21 +4748,9 @@ const planChecksRecoveryProjection: WorkflowFixtureProjection = {
   feature: WORKFLOW_FEATURE,
   inputMode: 'question',
   sidebarVisible: false,
-  get events(): EngineEvent[] {
-    return [
-      { type: 'workflow_started', ts: FIXED_TS, phase: 'planning', feature: WORKFLOW_FEATURE },
-      ...publishedEvents(FIXED_TS + 100, (bus) =>
-        publishWarning({
-          bus,
-          phase: 'planning',
-          ...planRepairWarning([
-            { code: 'uncovered-criterion', message: 'Criterion C2 is served by no task.' },
-            { code: 'dependency-cycle', message: 'Tasks T002 and T003 depend on each other.' },
-          ]),
-        }),
-      ),
-    ];
-  },
+  events: [
+    { type: 'workflow_started', ts: FIXED_TS, phase: 'planning', feature: WORKFLOW_FEATURE },
+  ],
   get resumeState() {
     return makeWorkflowState({
       feature: WORKFLOW_FEATURE,
@@ -8031,12 +8005,6 @@ const projections = [
     events: [
       { type: 'workflow_started', ts: FIXED_TS, phase: 'planning', feature: WORKFLOW_FEATURE },
       {
-        type: 'warning',
-        ts: FIXED_TS + 1,
-        phase: 'planning',
-        ...planSendBackWarning,
-      },
-      {
         type: 'info',
         ts: FIXED_TS + 2,
         phase: 'planning',
@@ -8320,10 +8288,9 @@ export function assertProjectionBounds(projection: WorkflowFixtureProjection): v
     // Nor is a halt the engine composed around the tool's own bounded words, or the plan card's
     // plan.md and plan.json, which the plan formatter and the plan schema write whole, or the
     // implementer's JSON report, which the transcript reads as one summary line, or a start
-    // warning, which readiness words as its summary, its details and its fix, or a plan
-    // send-back, which lists the plan checks' own messages, or a fix check's failure text, which
-    // lists its bounded failure keys under the verdict, or the review seat note the run composes
-    // whole after a seat change, or the question written long to be cut.
+    // warning, which readiness words as its summary, its details and its fix, or a fix check's
+    // failure text, which lists its bounded failure keys under the verdict, or the review seat
+    // note the run composes whole after a seat change, or the question written long to be cut.
     (value) =>
       value !== planCardProjection.review?.source &&
       value !== planCardProjection.review?.planJson &&
@@ -8340,8 +8307,6 @@ export function assertProjectionBounds(projection: WorkflowFixtureProjection): v
       !retainedWorkspaceNotices.includes(value) &&
       !engineHaltText.includes(value) &&
       !startReadinessWarningText.includes(value) &&
-      value !== planSendBackWarning.message &&
-      value !== planSendBackWarning.planCheck?.message &&
       measuredProjectionString(projection, value).length >
         WORKFLOW_FIXTURE_BOUNDS.maxStringLength &&
       !projection.question?.questions?.some(

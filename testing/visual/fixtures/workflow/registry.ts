@@ -53,7 +53,10 @@ import {
   type FixtureStopState,
   type WorkflowFixtureProjection,
 } from './projections.js';
-import { OUTPUT_LIMIT_TOOL_OUTPUT_MESSAGE } from './output-limit-projection.js';
+import {
+  OUTPUT_LIMIT_READ_FILE,
+  OUTPUT_LIMIT_TOOL_OUTPUT_MESSAGE,
+} from './output-limit-projection.js';
 import { createWorkflowFixtureFactory } from './setup.js';
 
 const PLAN_USAGE_LIMIT_FRAGMENT = "You've used 75%";
@@ -839,10 +842,7 @@ const checkpointPredicates = [
   ],
   [
     checkpointId('plan-repaired'),
-    (context) =>
-      includesAll('- Task T001 has no check.', 'The revised plan passes its checks.')(context) &&
-      (context.viewport.cols < 80 ||
-        includesAll('Warning', 'The plan failed 2 checks.', 'SPLITBRIEF')(context)),
+    (context) => includesAll()(context) && excludesAll('Warning', 'The plan failed')(context),
   ],
   [checkpointId('plan-card-render-note'), planCardReady],
   [checkpointId('plan-card-no-image-reviewer'), planCardReady],
@@ -1119,10 +1119,7 @@ const checkpointPredicates = [
     (context) =>
       includesAll('Criterion C2 is served by no task.')(context) &&
       (context.viewport.cols < 80 ||
-        includesAll(
-          'The plan failed 2 checks.',
-          'Tasks T002 and T003 depend on each other.',
-        )(context)),
+        includesAll('Tasks T002 and T003 depend on each other.')(context)),
   ],
   [
     checkpointId('recovery-plan-input-too-large'),
@@ -1391,8 +1388,8 @@ const checkpointPredicates = [
       if (!includesTranscript()(context)) return false;
       const text = workflowTranscriptText().replace(/\s+/g, ' ');
       return (
-        OUTPUT_LIMIT_TOOL_OUTPUT_MESSAGE.length > 0 &&
-        text.includes(OUTPUT_LIMIT_TOOL_OUTPUT_MESSAGE) &&
+        text.includes(OUTPUT_LIMIT_READ_FILE) &&
+        !text.includes(OUTPUT_LIMIT_TOOL_OUTPUT_MESSAGE) &&
         !text.includes('tool calls of this call are kept') &&
         !text.includes('runner call')
       );

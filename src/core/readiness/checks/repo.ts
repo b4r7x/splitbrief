@@ -50,7 +50,7 @@ export function buildRepoChecks(
         id: 'repo.no-commits',
         severity: 'blocker',
         summary: 'Git repository has no commits yet.',
-        fix: 'Make an initial commit (e.g. `git add -A && git commit -m init`) before starting a workflow.',
+        fix: 'Make a first commit of your files, then start again.',
         nextAction: 'clean-or-isolate-repo',
       },
     ];

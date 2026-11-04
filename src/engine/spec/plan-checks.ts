@@ -59,17 +59,12 @@ export type PlanTaskFit = Readonly<{ fit: TaskContextFit; blocked?: string | und
 
 export type PlanCheckError = Readonly<{ code: PlanCheckCode; message: string }>;
 
-export function planRepairWarning(errors: readonly PlanCheckError[]): {
-  message: string;
-  planCheck?: PlanCheckError;
-} {
-  const first = errors.find(blocksPlan) ?? errors[0];
+export function planRepairWarning(errors: readonly PlanCheckError[]): { message: string } {
   return {
     message: [
       `The plan failed ${countNoun(errors.length, 'check')}. It goes back to the planner once to fix ${errors.length === 1 ? 'it' : 'them'}:`,
       ...errors.map((error) => `- ${error.message}`),
     ].join('\n'),
-    ...(first !== undefined && { planCheck: first }),
   };
 }
 

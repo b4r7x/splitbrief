@@ -2,9 +2,12 @@ import type { ImplementerWriteMode } from '../../../core/schemas/implementer-con
 import type { BuildOutputContract } from '../../implementers/file-bundle.js';
 import { buildLanguageContext, type LanguageContext } from './language-context.js';
 
+export const GIT_READ_ONLY_RULE =
+  'Use git only to read (status, diff, log, show); never commit, branch, tag, checkout, switch, stash, reset, restore, rebase, merge, add, or change git config or hooks';
+
 export function workspaceRules(dir: string): string {
   return `- Stay inside ${dir}: read, search, write and run shell commands only there, and never look for other copies of the project
-- Use git only to read (status, diff, log, show); never commit, branch, tag, checkout, switch, stash, reset, restore, rebase, merge, add, or change git config or hooks
+- ${GIT_READ_ONLY_RULE}
 - Dependencies are already installed; never run a package-manager install, ci, add, remove or update (npm, pnpm, yarn, bun)`;
 }
 

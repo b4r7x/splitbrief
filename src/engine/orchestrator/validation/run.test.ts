@@ -11,6 +11,8 @@ import { processError } from '../../../lib/process/errors.js';
 import { makeConfig, makeCommandRunner } from '#testing/helpers/validation-fixtures.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import type { ValidationCommandRunner } from './types.js';
+import { debugLogEntries, enableDebugLog } from '#testing/helpers/debug-log.js';
+import { resetLoggerForTests } from '../../../lib/logger.js';
 
 function mkTask(file: string): Task {
   return makeTask({ suggestedFiles: [file], action: 'modify' });
@@ -31,6 +33,7 @@ describe('formatChangedFiles', () => {
   });
 
   afterEach(() => {
+    resetLoggerForTests();
     cleanupTempDir(tempDir);
   });
 
@@ -158,7 +161,7 @@ describe('formatChangedFiles', () => {
     });
   });
 
-  it('records the format pass as one row naming the files it rewrote', async () => {
+  it('writes the format pass to the debug log, naming the files it rewrote, and shows no row', async () => {
     writeTsProject(tempDir);
     writeFileSync(join(tempDir, 'biome.json'), '{}');
     mkdirSync(join(tempDir, 'src'), { recursive: true });
@@ -174,6 +177,7 @@ describe('formatChangedFiles', () => {
     };
     const validator = createValidator({ runCommand: runner });
     const { bus, events } = makeBusRecorder();
+    enableDebugLog(tempDir);
 
     await validator.formatChangedFiles({
       task: mkTask('src/app.ts'),
@@ -185,14 +189,12 @@ describe('formatChangedFiles', () => {
     });
 
     expect(calls).toEqual(['npx biome format --write src/app.ts src/clean.ts']);
-    const rows = events.filter(
-      (e): e is EngineEventOf<'warning'> =>
-        e.type === 'warning' && e.code === 'validation_formatted',
-    );
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ category: 'validation', taskId: mkTask('src/app.ts').id });
-    expect(rows[0]?.message).toMatch(/^Formatted 1 file with .*: src\/app\.ts$/);
-    expect(rows[0]?.message).not.toContain('src/clean.ts');
+    expect(events.filter((e) => e.type === 'warning')).toEqual([]);
+    expect(debugLogEntries(tempDir, 'engine', 'validation_formatted')).toEqual([
+      expect.objectContaining({
+        message: expect.stringMatching(/^Formatted 1 file with .*: src\/app\.ts$/),
+      }),
+    ]);
   });
 
   it('records no format row when the formatter rewrote nothing', async () => {

@@ -66,13 +66,7 @@ it('shows a repaired plan passing its checks after one send-back, including afte
           (event) => event.type === 'runner_call_started' && event.phase === 'planning',
         ),
       ).toHaveLength(2);
-      expect(
-        liveEvents.filter((event) => event.type === 'warning' && event.planCheck !== undefined),
-      ).toEqual([
-        expect.objectContaining({
-          planCheck: expect.objectContaining({ code: 'task-without-check' }),
-        }),
-      ]);
+      expect(liveEvents.filter((event) => event.type === 'warning')).toEqual([]);
 
       const { events } = await readRunEvents(ref);
       for (const transcriptEvents of [liveEvents, events]) {
@@ -91,9 +85,7 @@ it('shows a repaired plan passing its checks after one send-back, including afte
         const pass = 'The revised plan passes its checks.';
         expect(text.split(pass)).toHaveLength(2);
         expect(text).toContain(`SPLITBRIEF  ${pass}`);
-        const sentBack = 'It goes back to the planner once to fix';
-        expect(text.indexOf(sentBack)).toBeGreaterThanOrEqual(0);
-        expect(text.indexOf(pass)).toBeGreaterThan(text.indexOf(sentBack));
+        expect(text).not.toContain('It goes back to the planner once to fix');
       }
     });
   } finally {

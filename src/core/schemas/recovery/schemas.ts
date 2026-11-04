@@ -138,7 +138,6 @@ export const RecoveryIssueSchema = z.preprocess(
       affectedTaskIds: z.array(TaskIdSchema),
       message: z.string(),
       details: z.array(z.string()),
-      attempts: z.number().int().nonnegative().optional(),
       selectedImplementerProfile: z.string().optional(),
       /** ISO instant the runner's own diagnostic advertised as its reset, when it named one. */
       resetAt: z.string().optional(),

@@ -105,14 +105,7 @@ function operationalMessageEvent<T extends 'info' | 'warning' | 'error', S exten
 }
 
 const OperationalInfoEventSchema = operationalMessageEvent('info', {});
-const OperationalWarningEventSchema = operationalMessageEvent('warning', {
-  planCheck: z
-    .object({
-      code: z.string(),
-      message: z.string(),
-    })
-    .optional(),
-});
+const OperationalWarningEventSchema = operationalMessageEvent('warning', {});
 const OperationalErrorEventSchema = operationalMessageEvent('error', {
   /** When a usage-limit halt's quota comes back, as the ISO instant its `resetAt` names. */
   resetAt: z.string().optional(),

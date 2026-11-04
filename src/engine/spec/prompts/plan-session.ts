@@ -6,6 +6,7 @@ import { FILE_TESTS } from '../../orchestrator/planning/sanitize-discovered-vali
 import type { PlanCheckError } from '../plan-checks.js';
 import { buildPrompt, instructionsSection, skillsSection } from './builder.js';
 import { buildLanguageContextSections, type LanguageContext } from './language-context.js';
+import { GIT_READ_ONLY_RULE } from './system.js';
 import { GATES_ARE_SPLITBRIEFS, SKILLS_WITH_EVERY_BRIEF } from './tasks.js';
 
 /** The question rounds a planning session may ask before it must return a plan. */
@@ -64,19 +65,23 @@ function fileTestRule(): string {
   return `As a \`cmd\` check, ${forms.slice(0, -1).join(', ')} and ${forms.at(-1)} check that a file ${meanings.slice(0, -1).join(', ')} or ${meanings.at(-1)}; use them to check a file mode or a symbolic link instead of a new test file.`;
 }
 
+const NODE_CMD_RULE = '`node` runs only as `node --test <test file>` or `node --check <file>`.';
+const NPX_CMD_RULE = '`npx` runs only as `npx --no-install <stack tool>`.';
+
 /**
  * The `cmd` and `test` check policy of a TaskSpec a seat writes after the plan: a review's fix
  * task and a consult's rewrite or split. `refusedCheckErrors` enforces it on each.
  */
-export const TASK_CMD_CHECK_RULE = `A \`cmd\` check follows the plan check policy, with no shell operator. A package manager runs only its bare \`test\`, or \`npm run <script>\` for a script \`package.json\` defines when the user approved the plan. \`make\` or \`just\` runs only one bare \`typecheck\`, \`lint\` or \`test\` target. A test runner, linter or type checker of the project's stack, such as \`vitest\`, \`tsc\`, \`pytest\`, \`go\` or \`cargo\`, runs directly with its arguments. \`node\` runs only as \`node --test <test file>\` or \`node --check <file>\`. \`npx\` runs only as \`npx --no-install <stack tool>\`. ${fileTestRule()} SPLITBRIEF refuses any other command, such as \`grep\` or \`node build.js\`, and sends the refusal back for one repair. Prefer a \`test\` check that names a test file. A \`test\` check's value is one test file path, never a command.`;
+export const TASK_CMD_CHECK_RULE = `A \`cmd\` check follows the plan check policy, with no shell operator. A package manager runs only its bare \`test\`, or \`npm run <script>\` for a script \`package.json\` defines when the user approved the plan. \`make\` or \`just\` runs only one bare \`typecheck\`, \`lint\` or \`test\` target. A test runner, linter or type checker of the project's stack, such as \`vitest\`, \`tsc\`, \`pytest\`, \`go\` or \`cargo\`, runs directly with its arguments. ${NODE_CMD_RULE} ${NPX_CMD_RULE} ${fileTestRule()} SPLITBRIEF refuses any other command, such as \`grep\` or \`node build.js\`, and sends the refusal back for one repair. Prefer a \`test\` check that names a test file. A \`test\` check's value is one test file path, never a command.`;
 
 function planRules(approvesPlan: boolean, writesFiles: ImplementerWriteMode): string {
   const direct = writesFiles === 'direct';
   return `- Research the repository read-only. Do not edit, create or delete any file.
+- ${GIT_READ_ONLY_RULE}.
 - Do not invoke a native user-question tool (AskUserQuestion or the like). SPLITBRIEF asks the user.
 - Ask questions only when a decision that only the user can make blocks the plan: at most 3 questions per round, at most ${MAX_QUESTION_ROUNDS} rounds. Give every question a non-empty \`default\`, the answer the plan uses when the user just presses Enter. An answer of the user that asks you to decide is the user's consent to decide that matter yourself: take the default or your best choice, and state it in the plan. Give \`choices\` when the answer is one of a fixed set, else null; the \`default\` of a question with \`choices\` is one of them.
 - Criteria are the contract. Give each one an id (\`C1\`, \`C2\`, …) and the \`checkIds\` that verify it. Every check id must exist in the run checks or in a task's checks, and every check id is unique. The ids \`V1\`, \`V2\`, … are the project gate's: never give a check one of them.
-- A check is \`test\` (a test file or pattern), \`cmd\` (a command) or \`render\` (a gallery scenario id). ${packageScriptRule(approvesPlan)} \`npx\` runs only as \`npx --no-install <stack tool>\`.
+- A check is \`test\` (a test file or pattern), \`cmd\` (a command) or \`render\` (a gallery scenario id). ${packageScriptRule(approvesPlan)} ${NODE_CMD_RULE} ${NPX_CMD_RULE}
 - A \`test\` check narrows \`${PACKAGE_TEST_COMMAND}\` to its file (\`${PACKAGE_TEST_COMMAND} -- <file>\`) only when the \`package.json\` test script is one command. A chained script (\`a && b\`) runs whole. To run one test file there, use a \`cmd\` check that runs the project's test runner on the file directly: \`node --test <test file>\`, \`npx --no-install vitest run <test file>\` or \`npx --no-install jest <test file>\`. \`node --check <file>\` checks the syntax of one file. ${fileTestRule()}
 - Task ids are \`T001\`, \`T002\`, … in order. Every task serves at least one criterion, every criterion is served by at least one task, and every task has at least one check. SPLITBRIEF runs a task's own checks after the task, and every check before every review. Every check of a task must pass. A task check is the fastest command that proves the task: its test file, the typecheck or a lint. Put the full gate, such as a release or CI script, in \`gate\`, never in a task. A \`render\` check is slow and runs before a review.
 - Each task completes one verifiable behaviour, including its tests and the caller changes it needs. Its \`intent\` names the behaviour and its expected result, never only files. Never separate implement, test and caller tasks for one behaviour.

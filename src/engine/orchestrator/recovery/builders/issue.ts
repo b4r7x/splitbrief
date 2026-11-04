@@ -53,7 +53,6 @@ export function createRecoveryIssue(opts: {
   affectedTaskIds: TaskId[];
   message: string;
   details: string[];
-  attempts?: number | undefined;
   selectedImplementerProfile?: string | undefined;
   resetAt?: string | undefined;
   switchSeat?: SwitchSeatOffer | undefined;
@@ -80,7 +79,6 @@ export function createRecoveryIssue(opts: {
     affectedTaskIds: uniqueSortedIds(opts.affectedTaskIds),
     message: opts.message,
     details: opts.details.map(summarizeText).filter((detail) => detail.length > 0),
-    ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
     ...(opts.selectedImplementerProfile !== undefined
       ? { selectedImplementerProfile: opts.selectedImplementerProfile }
       : {}),

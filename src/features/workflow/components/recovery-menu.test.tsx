@@ -77,7 +77,6 @@ it.each([
           issue={makeRecoveryIssue({
             reason: 'seat-protocol-error',
             seat: 'review',
-            attempts: undefined,
             taskId: undefined,
             taskTitle: undefined,
             files: [],
@@ -473,7 +472,6 @@ it.each([
         reason,
         seat: tone === 'planner' ? 'plan' : 'build',
         message: `${seat} needs repair`,
-        attempts: undefined,
       }),
     );
     expect(ui.lastFrame()).toContain(paint(defaultTheme.warning, label).replace('\u001b[39m', ''));

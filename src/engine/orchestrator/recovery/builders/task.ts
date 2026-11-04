@@ -444,7 +444,6 @@ export function buildSeatDownIssue(opts: SeatDownRecoveryOptions): RecoveryIssue
       ...attemptDetails(opts.attempts),
       ...(opts.details ?? []),
     ],
-    ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
     selectedImplementerProfile: opts.selectedImplementerProfile,
     ...(resetAt !== undefined && { resetAt: resetAt.toISOString() }),
     ...(switchSeat !== undefined && { switchSeat }),
@@ -533,7 +532,6 @@ export function buildRetryExhaustedRecoveryIssue(
       ...(opts.attempts === 0 ? [] : attemptDetails(opts.attempts)),
       ...(opts.handBack ? [`Implementer said: ${handBackQuote(opts.handBack)}`] : []),
     ],
-    attempts: opts.attempts,
     selectedImplementerProfile: opts.selectedImplementerProfile,
     facts: compactFacts({
       validationSummary: validation.summary,
@@ -750,7 +748,6 @@ function recipeHaltIssue(
       refusalStopDetail(refusal),
       ...attemptDetails(opts.attempts),
     ],
-    ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
     selectedImplementerProfile: opts.selectedImplementerProfile,
     ...(seatSwap !== undefined && { switchSeat: seatSwap }),
     facts: compactFacts({
@@ -863,7 +860,6 @@ export function buildRepeatedTimeoutRecoveryIssue(
       'The run stopped instead of escalating a brief the implementer cannot finish in time.',
       ...attemptDetails(opts.attempts),
     ],
-    ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
     selectedImplementerProfile: opts.selectedImplementerProfile,
     ...(seatSwap !== undefined && { switchSeat: seatSwap }),
     facts: compactFacts({
@@ -1021,7 +1017,6 @@ export function buildRunnerInputTooLargeRecoveryIssue(
       'A retry sends the same prompt.',
       ...attemptDetails(opts.attempts),
     ],
-    ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
     selectedImplementerProfile: opts.selectedImplementerProfile,
     ...(seatSwap !== undefined && { switchSeat: seatSwap }),
     facts: compactFacts({ tool: displayName, ...inputTooLargeFacts(figures) }),
@@ -1084,7 +1079,6 @@ export function buildApprovalDeniedRecoveryIssue(
       denied.length > 0 ? `Blocked files: ${denied.join(', ')}` : undefined,
       ...attemptDetails(opts.attempts),
     ].filter((detail): detail is string => detail !== undefined),
-    ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
     facts: compactFacts({ tool: opts.tool, denialReason: opts.denialReason }),
     availableActions: actions,
     recommendedAction: chooseRecommended(actions),

@@ -478,7 +478,7 @@ describe('collectRunnerCallResult', () => {
     ).toHaveLength(RUNNER_CALL_WARNING_MAX_ITEMS);
     expect(
       result.warnings.filter((warning) => warning.code === 'runner_call_warning_count_limit'),
-    ).toHaveLength(1);
+    ).toEqual([expect.objectContaining({ severity: 'debug', surface: 'debug' })]);
     expect(result.warnings).toHaveLength(RUNNER_CALL_WARNING_MAX_ITEMS + 1);
   });
 
@@ -531,7 +531,11 @@ describe('collectRunnerCallResult', () => {
 
     expect(result.status).toBe('completed');
     expect(result.warnings).toEqual([
-      expect.objectContaining({ code: 'runner_call_tool_input_limit' }),
+      expect.objectContaining({
+        code: 'runner_call_tool_input_limit',
+        severity: 'debug',
+        surface: 'debug',
+      }),
     ]);
     expect(JSON.stringify(result.toolUses[0]?.input).length).toBeLessThan(
       JSON.stringify(rawInput).length,

@@ -88,7 +88,6 @@ describe('handleFailedImplementation — runner defects halt before the ladder',
     expect(next.pendingRecovery).toMatchObject({
       reason: 'implementer-recipe-invalid',
       taskId: 'T001',
-      attempts: 1,
     });
     // The halt counts the one call the tool refused, on the brief's lineage.
     expect(next.pendingRecovery?.details).toContain('Attempts: 1');
@@ -347,10 +346,7 @@ describe('handleFailedImplementation — a seat refused on the retry counts both
     });
 
     expect(implementer.retry).toHaveBeenCalledTimes(1);
-    expect(next.pendingRecovery).toMatchObject({
-      reason: 'runner-usage-limit',
-      attempts: 2,
-    });
+    expect(next.pendingRecovery).toMatchObject({ reason: 'runner-usage-limit' });
     expect(next.pendingRecovery?.details).toContain('Attempts: 2');
   });
 });
@@ -615,7 +611,6 @@ describe('runTaskLoop — a seat that times out twice on one brief is a seat-dow
 
   // The transcript reads `attempt 2` above the halt; the halt states the same count.
   function expectTwoAttempts(state: WorkflowState) {
-    expect(state.pendingRecovery).toMatchObject({ attempts: 2 });
     expect(state.pendingRecovery?.details).toContain('Attempts: 2');
     expect(formatRecoveryPrompt(state.pendingRecovery!).split('\n')[0]).toBe(
       'Seat down · Two timeouts in a row on T001',
@@ -802,8 +797,8 @@ describe('runTaskLoop — a Cursor seat that refuses the account is a seat-down 
     expect(run.state.pendingRecovery).toMatchObject({
       reason: 'runner-usage-limit',
       taskId: 'T001',
-      attempts,
     });
+    expect(run.state.pendingRecovery?.details).toContain(`Attempts: ${attempts}`);
     expect(run.consult).not.toHaveBeenCalled();
     expect(run.events.filter((event) => event.type === 'consult_answered')).toEqual([]);
     expect(formatRecoveryPrompt(run.state.pendingRecovery!).split('\n')[0]).toBe(
@@ -861,8 +856,8 @@ describe('runTaskLoop — a Cursor seat that refuses the account is a seat-down 
     expect(run.state.pendingRecovery).toMatchObject({
       reason: 'runner-usage-limit',
       taskId: 'T001',
-      attempts: 2,
     });
+    expect(run.state.pendingRecovery?.details).toContain('Attempts: 2');
     // The ordinary first failure earns the one consult; the refusal on its attempt halts at once.
     expect(run.consult).toHaveBeenCalledTimes(1);
     expect(run.events.filter((event) => event.type === 'consult_answered')).toHaveLength(1);

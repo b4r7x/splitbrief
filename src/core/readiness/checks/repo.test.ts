@@ -34,6 +34,20 @@ describe('buildRepoChecks in-progress git operation', () => {
   });
 });
 
+describe('buildRepoChecks repository with no commits', () => {
+  it('blocks and asks for a first commit in plain words, with no git command', () => {
+    expect(buildRepoChecks({ ...cleanRepo, hasCommits: false })).toEqual([
+      {
+        id: 'repo.no-commits',
+        severity: 'blocker',
+        summary: 'Git repository has no commits yet.',
+        fix: 'Make a first commit of your files, then start again.',
+        nextAction: 'clean-or-isolate-repo',
+      },
+    ]);
+  });
+});
+
 describe('buildRepoChecks detached HEAD', () => {
   it('warns that a commit made on a detached HEAD belongs to no branch', () => {
     const checks = buildRepoChecks({ ...cleanRepo, onDetachedHead: true });

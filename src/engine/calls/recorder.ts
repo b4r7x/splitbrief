@@ -199,14 +199,11 @@ export function createRunnerCallRecorder(opts: {
       );
     }
     if (dropped) {
-      noteLimit(
-        {
-          code: 'runner_call_retained_text_limit',
-          message: runnerCallByteLimitMessage('The reply', RUNNER_CALL_RETAINED_OUTPUT_MAX_BYTES),
-          maxBytes: RUNNER_CALL_RETAINED_OUTPUT_MAX_BYTES,
-        },
-        'debug',
-      );
+      noteLimit({
+        code: 'runner_call_retained_text_limit',
+        message: runnerCallByteLimitMessage('The reply', RUNNER_CALL_RETAINED_OUTPUT_MAX_BYTES),
+        maxBytes: RUNNER_CALL_RETAINED_OUTPUT_MAX_BYTES,
+      });
     }
   }
 
@@ -263,7 +260,7 @@ export function createRunnerCallRecorder(opts: {
     const structured =
       finishOpts.structured === undefined ? null : boundRunnerCallStructured(finishOpts.structured);
     if (structured !== null && structured.limit !== null) {
-      noteLimit(structured.limit, 'debug');
+      noteLimit(structured.limit);
       emit(
         completed,
         true,
@@ -373,23 +370,22 @@ export function createRunnerCallRecorder(opts: {
 
   emit({ type: 'call_started', ts: startedAt, ...context });
 
-  /** No limit ends the call. A record bound that cut only the recorded copy notes it on `debug`. */
-  function noteLimit(limit: RunnerCallOutputLimit, surface: 'activity' | 'debug'): void {
+  /** No limit ends the call; each limit is noted once, on `debug`. */
+  function noteLimit(limit: RunnerCallOutputLimit): void {
     if (emittedLimitWarnings.has(limit.code)) return;
     emittedLimitWarnings.add(limit.code);
-    const warning = runnerCallLimitWarning(limit);
     emit({
       type: 'call_warning',
       ts: Date.now(),
       ...context,
-      warning: surface === 'debug' ? { ...warning, severity: 'debug', surface: 'debug' } : warning,
+      warning: runnerCallLimitWarning(limit),
     });
   }
 
   // Judged on the text the call ends with: a final text that fits replaced
   // whatever the budget cut from the narration streamed before it.
   function noteCutText(): void {
-    if (textLimiter.limit !== null) noteLimit(textLimiter.limit, 'debug');
+    if (textLimiter.limit !== null) noteLimit(textLimiter.limit);
   }
 
   function stopAtToolUseLimit(): void {
@@ -457,7 +453,7 @@ export function createRunnerCallRecorder(opts: {
         accepted.text.length > 0 || (eventOpts.semantics === 'final' && accepted.limit === null);
       if (isSubagent) {
         if (recorded) emit(textEvent(accepted.text));
-        if (accepted.limit !== null) noteLimit(accepted.limit, 'activity');
+        if (accepted.limit !== null) noteLimit(accepted.limit);
       } else if (text.length > 0 || eventOpts.semantics === 'final') {
         // The answer is kept whole; only its recorded copy is cut.
         const event = textEvent(text);
@@ -483,7 +479,7 @@ export function createRunnerCallRecorder(opts: {
           text: accepted.text,
         });
       }
-      if (accepted.limit !== null) noteLimit(accepted.limit, 'activity');
+      if (accepted.limit !== null) noteLimit(accepted.limit);
     },
     toolUseDelta: (eventOpts) => {
       const toolUseId =
@@ -508,7 +504,7 @@ export function createRunnerCallRecorder(opts: {
           inputDelta: accepted.text,
         });
       }
-      if (accepted.limit !== null) noteLimit(accepted.limit, 'debug');
+      if (accepted.limit !== null) noteLimit(accepted.limit);
     },
     toolUseDone: (eventOpts) => {
       const toolUse =
@@ -530,8 +526,8 @@ export function createRunnerCallRecorder(opts: {
       recentToolUses.push(bounded.value);
       if (recentToolUses.length > RUNNER_CALL_TOOL_USE_SUMMARY_MAX_ITEMS) recentToolUses.shift();
       toolUseDoneCount += 1;
-      if (!kept) noteLimit(runnerCallToolUseCountLimit(), 'debug');
-      if (bounded.limit !== null) noteLimit(bounded.limit, 'activity');
+      if (!kept) noteLimit(runnerCallToolUseCountLimit());
+      if (bounded.limit !== null) noteLimit(bounded.limit);
       emit(
         {
           type: 'call_tool_use_done',
@@ -578,7 +574,6 @@ export function createRunnerCallRecorder(opts: {
             label: 'artifacts',
             maxItems: RUNNER_CALL_ARTIFACT_MAX_ITEMS,
           }),
-          'debug',
         );
         return;
       }
@@ -595,7 +590,7 @@ export function createRunnerCallRecorder(opts: {
       };
       const bounded = boundRunnerCallArtifact(artifact);
       artifactCount += 1;
-      if (bounded.limit !== null) noteLimit(bounded.limit, 'debug');
+      if (bounded.limit !== null) noteLimit(bounded.limit);
       const artifactEvent: RunnerCallEventInput = {
         type: 'call_artifact',
         ts: eventOpts.ts ?? Date.now(),
@@ -612,7 +607,6 @@ export function createRunnerCallRecorder(opts: {
             label: 'warnings',
             maxItems: RUNNER_CALL_WARNING_MAX_ITEMS,
           }),
-          'activity',
         );
         return;
       }
@@ -636,7 +630,6 @@ export function createRunnerCallRecorder(opts: {
             label: 'unknown tool records',
             maxItems: RUNNER_CALL_UNKNOWN_UPSTREAM_MAX_ITEMS,
           }),
-          'activity',
         );
         return;
       }

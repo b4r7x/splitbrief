@@ -20,7 +20,7 @@ import {
 import { loadState } from '../../../core/state/persistence.js';
 import { consultCallAnswering, guidanceConsult } from '#testing/helpers/typed-planner.js';
 import type { ImplementerOptions } from '../../implementers/types.js';
-import type { EngineEvent, EngineEventOf } from '../../events/types.js';
+import type { EngineEvent } from '../../events/types.js';
 import type { ValidationCommandRunner } from '../validation/types.js';
 import { processError } from '../../../lib/process/errors.js';
 import * as commandRunner from '../../../lib/process/spawn/run-command.js';
@@ -419,11 +419,12 @@ describe('runSingleTask — a layout-only lint failure', () => {
     expect(consult).toHaveBeenCalledTimes(1);
     expect(events.filter((event) => event.type === 'task_escalating')).toHaveLength(1);
     expect(readFileSync(join(wctx.workspaceDir, 'src/a.test.ts'), 'utf-8')).toBe('export {};\n');
-    const formatted = events.find(
-      (event): event is EngineEventOf<'warning'> =>
-        event.type === 'warning' && event.code === 'validation_formatted',
+    expect(commands).toContainEqual(
+      expect.stringMatching(/^npx biome format --write .*src\/a\.test\.ts/),
     );
-    expect(formatted?.message).toContain('src/a.test.ts');
+    expect(
+      events.filter((event) => event.type === 'warning' && event.code === 'validation_formatted'),
+    ).toEqual([]);
   });
 });
 

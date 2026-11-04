@@ -359,6 +359,15 @@ describe('buildConsultPrompt', () => {
     expect(prompt).not.toContain(DIRECT_WRITER_TASK_RULE);
   });
 
+  it.each([false, true])(
+    'forbids every git write (resumed=%s), as the BUILD prompt does',
+    (resumed) => {
+      expect(buildConsultPrompt(consultInput({ resumed }))).toContain(
+        'Use git only to read (status, diff, log, show); never commit, branch, tag, checkout, switch, stash, reset, restore, rebase, merge, add, or change git config or hooks',
+      );
+    },
+  );
+
   it.each([
     ['a plan task', TASK],
     [

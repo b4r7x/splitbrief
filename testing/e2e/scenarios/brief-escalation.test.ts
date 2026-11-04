@@ -296,9 +296,9 @@ describe('e2e: brief escalation', { timeout: 240_000 }, () => {
       message: HALT_MESSAGE,
       availableActions: HALT_ACTIONS,
       recommendedAction: 'retry-same-worker',
-      attempts: 2,
       facts: { question: QUESTION },
     });
+    expect(state.pendingRecovery?.details).toContain('Attempts: 2');
     expect(state.tasks.map((task) => ({ id: task.id, status: task.status }))).toEqual([
       { id: 'T001', status: 'done' },
       { id: 'T002', status: 'in_progress' },

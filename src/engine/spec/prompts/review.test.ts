@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
-import { planBody, triageLines, type ReviewPlanData } from './review.js';
+import { buildFinalReviewPrompt, planBody, triageLines, type ReviewPlanData } from './review.js';
 
 const DECLARED_NOTE =
   'The implementer of a task declared each decision that has a task id. Nobody confirmed these decisions: judge them against the criteria and the code.';
@@ -24,6 +24,17 @@ function reviewPlan(decisions: ReviewPlanData['decisions']): ReviewPlanData {
     ],
   };
 }
+
+describe('buildFinalReviewPrompt', () => {
+  it.each([
+    ['a review', undefined],
+    ['a fix cycle review', 1],
+  ])('forbids every git write in %s, as the BUILD prompt does', (_, fixCycle) => {
+    expect(buildFinalReviewPrompt({ spec: 'spec', taskBriefs: 'briefs', fixCycle })).toContain(
+      'Use git only to read (status, diff, log, show); never commit, branch, tag, checkout, switch, stash, reset, restore, rebase, merge, add, or change git config or hooks',
+    );
+  });
+});
 
 describe('planBody', () => {
   it('says a decision with a task id is an unconfirmed implementer decision, in a final and a task review', () => {

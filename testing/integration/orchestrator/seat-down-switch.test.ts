@@ -518,7 +518,8 @@ describe('a seat that prints its halt only on stdout', { timeout: 90_000 }, () =
 
       const recovery = run.halted.pendingRecovery;
       expect(recovery?.reason).toBe('runner-usage-limit');
-      expect(recovery?.attempts).toBe(1);
+      expect(recovery?.details).toContain('Attempts: 1');
+      expect(recovery).not.toHaveProperty('attempts');
       expect(recovery?.details).toContain(`${name} reported: ${LIMIT_LINE}`);
       const resetAt = new Date(recovery?.resetAt ?? Number.NaN);
       expect([resetAt.getHours(), resetAt.getMinutes()]).toEqual([15, 0]);
@@ -537,7 +538,7 @@ describe('a seat that prints its halt only on stdout', { timeout: 90_000 }, () =
     });
 
     expect(run.halted.pendingRecovery?.reason).toBe('runner-unauthenticated');
-    expect(run.halted.pendingRecovery?.attempts).toBe(1);
+    expect(run.halted.pendingRecovery?.details).toContain('Attempts: 1');
   });
 
   it('reads the stdout limit past unrelated stderr noise', async () => {

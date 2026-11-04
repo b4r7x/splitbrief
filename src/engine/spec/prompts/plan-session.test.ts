@@ -101,6 +101,20 @@ describe('buildPlanSessionPrompt', () => {
     expect(unapproved).not.toContain('the plan approval confirms it');
   });
 
+  it('limits node and npx in a cmd check, each sentence once', () => {
+    const prompt = buildPlanSessionPrompt(input);
+    const nodeSentence = '`node` runs only as `node --test <test file>` or `node --check <file>`.';
+    const npxSentence = '`npx` runs only as `npx --no-install <stack tool>`.';
+    expect(prompt.split(nodeSentence)).toHaveLength(2);
+    expect(prompt.split(npxSentence)).toHaveLength(2);
+  });
+
+  it('forbids every git write, as the BUILD prompt does', () => {
+    expect(buildPlanSessionPrompt(input)).toContain(
+      'Use git only to read (status, diff, log, show); never commit, branch, tag, checkout, switch, stash, reset, restore, rebase, merge, add, or change git config or hooks',
+    );
+  });
+
   it('keeps a task check fast and the full gate in the plan gate', () => {
     const prompt = buildPlanSessionPrompt(input);
     expect(prompt).toContain(

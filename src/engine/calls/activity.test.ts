@@ -862,7 +862,7 @@ describe('projectRunnerCallActivity', () => {
     expect(delta('tool-blank', '{"file_path":')?.target).toBeUndefined();
   });
 
-  it('releases every tool target when the call ends or starts again', () => {
+  it('releases every tool target when the call ends', () => {
     const rootDir = '/project';
     const remember = (callId: string, toolUseId: string, file: string) => {
       expect(
@@ -932,18 +932,37 @@ describe('projectRunnerCallActivity', () => {
     ).toMatchObject({ activityId: 'failed-call:terminal', kind: 'error' });
     expect(rememberedTarget('failed-call', 'tool-1')).toBeUndefined();
     expect(rememberedTarget('live-call', 'tool-1')).toBe('src/live.ts');
+  });
 
-    remember('restart-call', 'tool-1', 'src/old.ts');
-    remember('restart-call', 'tool-2', 'src/also-old.ts');
+  it('keeps every tool target when the call starts', () => {
+    const rootDir = '/project';
+    const remember = (toolUseId: string, file: string) =>
+      projectRunnerCallActivity(
+        runnerToolUse({
+          callId: 'started-call',
+          toolUseId,
+          inputDelta: JSON.stringify({ file_path: file }),
+        }),
+        1,
+        rootDir,
+      );
+    remember('tool-1', 'src/one.ts');
+    remember('tool-2', 'src/two.ts');
+    const rememberedTarget = (toolUseId: string) =>
+      projectRunnerCallActivity(
+        runnerToolUse({ callId: 'started-call', toolUseId, inputDelta: '{"file_path":' }),
+        3,
+        rootDir,
+      )?.target;
+
     expect(
       projectRunnerCallActivity(
-        { ...runnerCallBase, callId: 'restart-call', type: 'call_started' },
-        5,
+        { ...runnerCallBase, callId: 'started-call', type: 'call_started' },
+        2,
         rootDir,
       ),
     ).toBeNull();
-    expect(rememberedTarget('restart-call', 'tool-1')).toBeUndefined();
-    expect(rememberedTarget('restart-call', 'tool-2')).toBeUndefined();
-    expect(rememberedTarget('live-call', 'tool-1')).toBe('src/live.ts');
+    expect(rememberedTarget('tool-1')).toBe('src/one.ts');
+    expect(rememberedTarget('tool-2')).toBe('src/two.ts');
   });
 });

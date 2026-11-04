@@ -140,9 +140,9 @@ export function projectRunnerCallActivity(
       });
     // A success is told by its settled batch and the block after it; only a failure is news.
     case 'call_completed':
-    case 'call_started':
       releaseCallActivityMemory(event.callId);
       return null;
+    case 'call_started':
     case 'call_runtime_status':
     case 'call_usage':
     case 'call_stalled':

@@ -125,3 +125,21 @@ describe('runnerCallToolUseStopLimit', () => {
     expect(error.message).toContain('b.ts');
   });
 });
+
+describe('runnerCallLimitWarning', () => {
+  it('notes every output limit on the debug surface, off the activity block', () => {
+    const limit = runnerCallItemLimit({
+      code: 'runner_call_warning_count_limit',
+      label: 'warnings',
+      maxItems: 256,
+    });
+
+    expect(runnerCallLimitWarning(limit)).toEqual({
+      code: 'runner_call_warning_count_limit',
+      severity: 'debug',
+      source: 'system',
+      surface: 'debug',
+      message: limit.message,
+    });
+  });
+});

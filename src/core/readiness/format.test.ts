@@ -81,7 +81,9 @@ describe('readiness formatting', () => {
       cliReadiness: [deriveCliReadiness(cliReadinessFactsFor('ready', 'claude-code'))],
     });
     for (const output of [formatReadinessReport(report), formatReadinessBlockers(report)]) {
-      expect(output.match(/Make an initial commit/g)).toHaveLength(1);
+      expect(output.match(/Make a first commit of your files, then start again\./g)).toHaveLength(
+        1,
+      );
     }
   });
 

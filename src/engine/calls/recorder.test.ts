@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { createRunnerCallRecorder } from './recorder.js';
+import { createRunnerCallRecorder, type RunnerCallRecorder } from './recorder.js';
 import { RUNNER_CALL_MESSAGE_MAX_LENGTH } from './schema.js';
 import {
   RUNNER_CALL_ARTIFACT_TEXT_MAX_BYTES,
   RUNNER_CALL_OUTPUT_MAX_BYTES,
   RUNNER_CALL_RETAINED_OUTPUT_MAX_BYTES,
+  RUNNER_CALL_STDERR_MAX_BYTES,
   RUNNER_CALL_TOOL_PAYLOAD_MAX_BYTES,
   RUNNER_CALL_TOOL_USE_MAX_ITEMS,
+  RUNNER_CALL_UNKNOWN_UPSTREAM_MAX_ITEMS,
+  RUNNER_CALL_WARNING_MAX_ITEMS,
 } from './output-limit.js';
 import type { RunnerCallContext, RunnerCallEvent } from './types.js';
 
@@ -744,8 +747,8 @@ describe('createRunnerCallRecorder', () => {
     expect(result.warnings).toEqual([
       expect.objectContaining({
         code: 'runner_call_tool_input_limit',
-        severity: 'warning',
-        surface: 'activity',
+        severity: 'debug',
+        surface: 'debug',
       }),
     ]);
   });
@@ -905,4 +908,88 @@ describe('runner stderr preview', () => {
       }),
     );
   });
+});
+
+describe('runner-call output limits', () => {
+  const limits: ReadonlyArray<{
+    name: string;
+    code: string;
+    reach: (recorder: RunnerCallRecorder) => void;
+  }> = [
+    {
+      name: 'a tool payload over its bound',
+      code: 'runner_call_tool_input_limit',
+      reach: (recorder) =>
+        recorder.toolUseDone({
+          toolUse: {
+            id: null,
+            name: 'Write',
+            input: { content: 'x'.repeat(RUNNER_CALL_TOOL_PAYLOAD_MAX_BYTES + 10) },
+          },
+        }),
+    },
+    {
+      name: 'a cut stderr',
+      code: 'runner_call_stderr_limit',
+      reach: (recorder) => recorder.stderr({ text: 'x'.repeat(RUNNER_CALL_STDERR_MAX_BYTES + 1) }),
+    },
+    {
+      name: 'a cut subagent text',
+      code: 'runner_call_text_limit',
+      reach: (recorder) =>
+        recorder.text({
+          channel: 'assistant',
+          subagentId: 'agent-1',
+          text: 'x'.repeat(RUNNER_CALL_OUTPUT_MAX_BYTES + 1),
+        }),
+    },
+    {
+      name: 'the warning count',
+      code: 'runner_call_warning_count_limit',
+      reach: (recorder) => {
+        for (let index = 0; index <= RUNNER_CALL_WARNING_MAX_ITEMS; index += 1) {
+          recorder.warning({ warning: { code: `provider_${index}`, message: 'slow stream' } });
+        }
+      },
+    },
+    {
+      name: 'the unknown-upstream count',
+      code: 'runner_call_unknown_upstream_count_limit',
+      reach: (recorder) => {
+        for (let index = 0; index <= RUNNER_CALL_UNKNOWN_UPSTREAM_MAX_ITEMS; index += 1) {
+          recorder.unknownUpstream({
+            rawPreview: `record ${index}`,
+            backendMetadata: { backendKind: 'api', source: 'test', parser: 'jsonl' },
+          });
+        }
+      },
+    },
+  ];
+
+  function limitWarnings(code: string, reach: (recorder: RunnerCallRecorder) => void, times = 1) {
+    const events: RunnerCallEvent[] = [];
+    const recorder = createRunnerCallRecorder({
+      context,
+      startedAt: 1,
+      onEvent: (event) => events.push(event),
+    });
+    for (let index = 0; index < times; index += 1) reach(recorder);
+    recorder.finishCompleted({ endedAt: 20 });
+    return events.flatMap((event) =>
+      event.type === 'call_warning' && event.warning.code === code ? [event.warning] : [],
+    );
+  }
+
+  it.each(limits)('notes $name on the debug surface, off the activity block', ({ code, reach }) => {
+    expect(limitWarnings(code, reach)).toEqual([
+      expect.objectContaining({ code, severity: 'debug', source: 'system', surface: 'debug' }),
+    ]);
+  });
+
+  it.each(limits)(
+    'still records $name once per call however often it is reached',
+    ({ code, reach }) => {
+      expect(limitWarnings(code, reach, 2)).toEqual([expect.objectContaining({ code })]);
+    },
+  );
 });

@@ -1053,7 +1053,6 @@ describe('createRecoveryDriver', () => {
       seat: 'review',
       files: [],
       affectedTaskIds: [],
-      attempts: undefined,
       message: 'OpenAI Codex CLI hit its usage limit',
       resetAt: '2026-10-03T13:02:00.000Z',
       switchSeat: { seat: 'plan', candidates: [{ tool: 'claude-code' }] },

@@ -190,9 +190,9 @@ export function runnerCallLineOutputLimit(opts: {
 export function runnerCallLimitWarning(limit: RunnerCallOutputLimit): RunnerCallWarningInput {
   return {
     code: limit.code,
-    severity: 'warning',
+    severity: 'debug',
     source: 'system',
-    surface: 'activity',
+    surface: 'debug',
     message: limit.message,
   };
 }

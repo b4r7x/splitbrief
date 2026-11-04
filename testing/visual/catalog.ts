@@ -399,6 +399,20 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       },
       elements: [{ id: 'preparation-panel', title: 'Preparation problem panel' }],
     }),
+    // The readiness blocker of a repository with no commits: its summary and fix line come from
+    // `buildRepoChecks`, not from this catalog.
+    defineScenario({
+      id: 'home-preparation-no-commits',
+      title: 'Home · preparation blocked by a repository with no commits',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'failure',
+        title: 'The fix asks for a first commit',
+        kind: 'failure',
+        marker: 'Make a first commit of your files',
+      },
+      elements: [{ id: 'preparation-panel', title: 'Preparation problem panel' }],
+    }),
     // The trust panel a declared `shell` or `agent` runner opens on its first start.
     defineScenario({
       id: 'home-preparation-runner-trust',
@@ -4903,14 +4917,14 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-output-limit-warning',
-      title: 'Workflow · output-limit warnings in a planning call',
+      title: 'Workflow · a planning call reads a tool output over the record limit',
       surface: screenSurface('workflow'),
       viewports: [viewport({ cols: 120, rows: 40 }), viewport({ cols: 160, rows: 45 })],
       checkpoint: {
         id: 'output-limit-warning',
-        title: 'The limit warning reads as one sentence',
+        title: 'The Read row shows and the limit note stays off the screen',
         kind: 'planning',
-        marker: 'A tool call output was larger',
+        marker: 'docs/ARCHITECTURE.md',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

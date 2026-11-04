@@ -15,6 +15,7 @@ import {
   type ResolvedCommand,
 } from '../../../core/validation/stage-command.js';
 import type { Phase } from '../../../core/schemas/enums.js';
+import { createLogger } from '../../../lib/logger.js';
 import { runCommand } from '../../../lib/process/spawn/run-command.js';
 import { labelError } from '../../../utils/format-errors.js';
 import { parseShellCommand } from '../../../utils/parse-shell-command.js';
@@ -77,9 +78,9 @@ export function buildStageContext(input: {
 
 const FORMATTABLE_FILE = /\.(c|m)?[jt]sx?$|\.(json|jsonc|css)$/;
 
-type FormatWarning = {
+type FormatOutcome = {
+  code: 'validation_formatted' | 'validation_format_failed';
   message: string;
-  safety: { category: 'validation'; code: 'validation_formatted' | 'validation_format_failed' };
 };
 
 // Layout the implementer left unformatted fails the project's linter, so the project's own
@@ -91,7 +92,7 @@ async function formatFiles(opts: {
   changedFiles: readonly string[];
   runCommand: ValidationCommandRunner;
   signal: AbortSignal | undefined;
-}): Promise<FormatWarning | undefined> {
+}): Promise<FormatOutcome | undefined> {
   const command = detectFormatFixCommand(opts.projectDir);
   if (command === null) return undefined;
   const formattable = opts.changedFiles.filter((file) => FORMATTABLE_FILE.test(file));
@@ -111,19 +112,19 @@ async function formatFiles(opts: {
     });
   } catch (err) {
     return {
+      code: 'validation_format_failed',
       message: labelError(
         `Formatting the changed files with ${command} failed; the checks still run`,
         err,
       ),
-      safety: { category: 'validation', code: 'validation_format_failed' },
     };
   }
   const after = await fingerprintFiles(opts.projectDir, files);
   const rewritten = files.filter((file) => before.get(file) !== after.get(file));
   if (rewritten.length === 0) return undefined;
   return {
+    code: 'validation_formatted',
     message: `Formatted ${countNoun(rewritten.length, 'file')} with ${command}: ${rewritten.join(', ')}`,
-    safety: { category: 'validation', code: 'validation_formatted' },
   };
 }
 
@@ -191,15 +192,25 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
   const commandRunner = deps.runCommand ?? runCommand;
   async function formatChangedFiles(opts: FormatChangedFilesOptions): Promise<void> {
     if (opts.changedFiles.length === 0) return;
-    const warning = await formatFiles({
+    const outcome = await formatFiles({
       projectDir: opts.projectDir,
       config: opts.config,
       changedFiles: opts.changedFiles,
       runCommand: commandRunner,
       signal: opts.signal,
     });
-    if (warning !== undefined)
-      publishWarning({ bus: opts.bus, phase: opts.phase, taskId: opts.task.id, ...warning });
+    if (outcome === undefined) return;
+    if (outcome.code === 'validation_formatted') {
+      createLogger('engine').debug(outcome.code, { message: outcome.message });
+      return;
+    }
+    publishWarning({
+      bus: opts.bus,
+      phase: opts.phase,
+      taskId: opts.task.id,
+      message: outcome.message,
+      safety: { category: 'validation', code: outcome.code },
+    });
   }
 
   return { formatChangedFiles };

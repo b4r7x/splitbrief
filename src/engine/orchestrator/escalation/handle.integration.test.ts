@@ -781,7 +781,6 @@ describe('handleRetryAndEscalation', () => {
       finalState.pendingRecovery?.message,
     );
     // Only the first call ran: the hook stops the ladder before any further attempt.
-    expect(finalState.pendingRecovery).toMatchObject({ attempts: 1 });
     expect(finalState.pendingRecovery?.details).toContain('Attempts: 1');
   });
 

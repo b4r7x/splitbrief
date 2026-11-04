@@ -57,7 +57,6 @@ const baseIssue: RecoveryIssue = {
     'Attempts: 3',
     'Worker profile: local-qwen',
   ],
-  attempts: 3,
   selectedImplementerProfile: 'local-qwen',
   facts: {
     validationStage: 'test',
@@ -78,7 +77,6 @@ it('builds a context cause from its recorded seat, with dim separators', () => {
   const issue = makeRecoveryIssue({
     reason: 'planner-call-failed',
     seat: 'review',
-    attempts: undefined,
     facts: {
       apiContextCode: 'insufficient-context',
       apiContextSeat: 'review',
@@ -366,7 +364,6 @@ it('preserves the canonical retry cause when an old message starts with its seat
     reason: 'retry-exhausted',
     seat: 'build',
     message: 'BUILD exhausted recovery retries',
-    attempts: 3,
     facts: {},
   });
   expect(recoveryPromptSummaryRows(issue, 120)[0]).toMatchObject({
@@ -561,7 +558,6 @@ describe('recovery prompt', () => {
       ...baseIssue,
       reason,
       taskId: undefined,
-      attempts: undefined,
       message: 'The plan failed its checks again after one repair.',
     });
 
@@ -961,7 +957,6 @@ describe('recovery prompt', () => {
       ...baseIssue,
       reason: 'retry-exhausted',
       taskId: taskId('T003'),
-      attempts: 0,
       facts: { plannerVerdict: 'brief' },
     };
     expect(formatRecoveryPrompt(verdictIssue).split('\n')[0]).toBe(
@@ -972,7 +967,6 @@ describe('recovery prompt', () => {
       ...baseIssue,
       reason: 'retry-exhausted',
       taskId: taskId('T005'),
-      attempts: 4,
       facts: {},
     };
     expect(formatRecoveryPrompt(retryIssue).split('\n')[0]).toBe('Needs you · T005 failed');
