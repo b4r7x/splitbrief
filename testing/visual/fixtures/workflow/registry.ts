@@ -1106,7 +1106,7 @@ const checkpointPredicates = [
     checkpointId('recovery-plan'),
     (context) =>
       includesAll(WORKFLOW_FIXTURE_TEXT.recoveryPlan)(context) &&
-      (context.viewport.cols < 160 || includesAll('Planning stopped')(context)),
+      (context.viewport.cols < 160 || includesAll('No tasks yet')(context)),
   ],
   [
     checkpointId('recovery-plan-checks'),

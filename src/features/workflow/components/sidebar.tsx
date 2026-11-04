@@ -10,7 +10,6 @@ import {
 } from '../../../utils/display-text.js';
 import { type WorkflowTask, selectTaskListView } from '../../../core/run-view/briefs.js';
 import { taskRowLabel } from '../../../core/run-view/brief-labels.js';
-import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { configStore } from '../../../stores/project/config.js';
 import { assertNever } from '../../../utils/type-guards.js';
@@ -23,8 +22,7 @@ import {
 } from '../../../core/crew/identity.js';
 import { CREW_SEAT_ROLES, deriveCrewSeats, type CrewSeat } from '../../../core/crew/seats.js';
 import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
-import { formatStageLabel } from '../../../core/phase-display.js';
-import { getActiveRailStage, railStageSeat, type RailHalt } from '../../../core/rail-stages.js';
+import type { RailHalt } from '../../../core/rail-stages.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { routeBriefMark } from '../at-rest.js';
 import { seatIdentityPieces } from '../closed/copy.js';
@@ -37,14 +35,11 @@ import {
   getSidebarTaskWindow,
   getSidebarStatusColumnCells,
 } from '../layout/rect.js';
-import { useSpinnerFrame } from '../../../hooks/use-spinner-frame.js';
 import { Divider } from '../../../components/divider.js';
-import { useStores } from '../../../stores/use-stores.js';
-import { controlsStore } from '../../../stores/ui/controls.js';
-import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
-import { deriveWorkflowDisplay } from '../display/workflow-status.js';
 import { passedCountSpans, taskOutcomeCountsSpans } from '../display/build-progress.js';
 import { useRunningSeats } from '../hooks/use-running-seats.js';
+import { resolvedSeatModel } from '../display/running-seats.js';
+import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { TextSpans } from '../../../components/text-spans.js';
 import { wrapHard } from '../../../utils/wrap.js';
 
@@ -154,58 +149,6 @@ function rowSpec(status: WorkflowTask['status'], t: Theme, restMark: RailHalt | 
   }
 }
 
-function SidebarWaiting() {
-  const t = useTheme();
-  const [lifecycle, controls, approval, { phase, halt }] = useStores(
-    lifecycleStore,
-    controlsStore,
-    approvalPromptStore,
-    runViewStore,
-  );
-  const display = deriveWorkflowDisplay({
-    status: lifecycle.status,
-    cancelled: lifecycle.cancelled,
-    pendingQuestion: controls.inputMode !== 'normal',
-    pendingRecovery: halt !== null,
-    pendingApproval: approval.status === 'pending',
-  });
-  const { frame } = useSpinnerFrame(display.animate);
-
-  if (halt !== null) {
-    return <Text color={t[stateTone('attention')]}>{`${LIST_INDENT}Planning stopped`}</Text>;
-  }
-  if (display.kind === 'waiting') {
-    return <Text color={t[stateTone('attention')]}>{`${LIST_INDENT}Waiting for your answer`}</Text>;
-  }
-  if (lifecycle.status !== 'running' && lifecycle.status !== 'interrupted') {
-    return <Text color={t.textDim}>{`${LIST_INDENT}No tasks yet`}</Text>;
-  }
-
-  const stage = getActiveRailStage(phase)?.stage ?? '';
-  const seat = stage === '' ? null : railStageSeat(stage);
-  return (
-    <Box flexDirection="column">
-      <Text color={t.textDim}>{`${LIST_INDENT}No tasks yet`}</Text>
-      {lifecycle.status === 'interrupted' ? (
-        <Text color={t.textDim}>
-          {LIST_INDENT}
-          <Text color={t[CREW_SEAT_ROLES.plan]}>Planner</Text>{' '}
-          <Text color={t[stateTone('attention')]}>interrupted</Text>
-        </Text>
-      ) : (
-        // The spinner row already says the planner is running and names the stage, so a separate
-        // "Planner is working" line would float between two rows that each say more than it does.
-        <Text color={t.textDim}>
-          {` ${frame} `}
-          <Text color={seat === null ? t.text : t[CREW_SEAT_ROLES[seat]]}>
-            {formatStageLabel(stage)}
-          </Text>
-        </Text>
-      )}
-    </Box>
-  );
-}
-
 function TaskRow({
   task,
   width,
@@ -291,6 +234,7 @@ export function Sidebar({ width, height, recordedCrew }: SidebarProps) {
   const view = selectTaskListView(runViewStore.use((s) => s.briefs));
   const config = configStore.use((s) => s.config);
   const running = useRunningSeats();
+  const resolvedModels = tokensStore.use((s) => s.resolvedModels);
   const displayNames = useCrewDisplayNames(config);
   const seats: readonly CrewSeat[] = config ? deriveCrewSeats({ config, displayNames }) : [];
   const tasks = view.items;
@@ -306,7 +250,13 @@ export function Sidebar({ width, height, recordedCrew }: SidebarProps) {
     return spans;
   });
   const identityWidth = innerWidth - CREW_LABEL_WIDTH;
-  const crewRows = (toRows: (pieces: readonly string[]) => string[]): SeatRows[] =>
+  const crewRows = (
+    toRows: (
+      pieces: readonly string[],
+      /** The model id the seat's call ran, when its saved value does not name it. */
+      resolved?: string | undefined,
+    ) => string[],
+  ): SeatRows[] =>
     seats.map((seat) => {
       const runningSeat = running[seat.id];
       return {
@@ -315,27 +265,41 @@ export function Sidebar({ width, height, recordedCrew }: SidebarProps) {
           recordedCrew !== undefined
             ? toRows(seatIdentityPieces(recordedCrew[seat.id]))
             : runningSeat !== undefined
-              ? toRows([formatSeatIdentity(runningSeat)])
+              ? toRows(
+                  [formatSeatIdentity(runningSeat)],
+                  resolvedSeatModel(runningSeat.seat, resolvedModels[seat.id]),
+                )
               : seat.id === 'review' && seat.source === 'planner'
                 ? [PLANNER_INHERITANCE.mark]
-                : toRows([
-                    formatSeatIdentity({ seat: seat.runner, displayName: displayNames?.[seat.id] }),
-                  ]),
+                : toRows(
+                    [
+                      formatSeatIdentity({
+                        seat: seat.runner,
+                        displayName: displayNames?.[seat.id],
+                      }),
+                    ],
+                    resolvedSeatModel(seat.runner, resolvedModels[seat.id]),
+                  ),
       };
     });
   const countFooterRows = (crew: readonly SeatRows[]): number =>
     crew.reduce((total, { rows }) => total + rows.length, outcomeRows.length);
-  const wrappedSeatRows = crewRows((pieces) =>
+  const fits = (crew: readonly SeatRows[]): boolean =>
+    height === undefined || countFooterRows(crew) <= getSidebarFooterBudget({ height });
+  const wrapRows = (pieces: readonly string[]): string[] =>
     pieces.length === 1
       ? wrapSeatIdentity(pieces.join(''), identityWidth)
-      : packPieces(pieces, identityWidth),
-  );
-  // With the list already at zero rows, a wrapped crew that still overruns the bottom border gives
-  // each seat the one row its cut identity takes.
-  const seatRows =
-    height !== undefined && countFooterRows(wrappedSeatRows) > getSidebarFooterBudget({ height })
-      ? crewRows((pieces) => [cutSeatIdentity(pieces.join(' '), identityWidth)])
-      : wrappedSeatRows;
+      : packPieces(pieces, identityWidth);
+  const resolvedSeatRows = crewRows((pieces, resolved) => [
+    ...wrapRows(pieces),
+    ...(resolved === undefined ? [] : [cutSeatIdentity(resolved, identityWidth)]),
+  ]);
+  const wrappedSeatRows = fits(resolvedSeatRows) ? resolvedSeatRows : crewRows(wrapRows);
+  // With the list already at zero rows, a crew that overruns the bottom border first gives up the
+  // resolved model rows, then gives each seat the one row its cut identity takes.
+  const seatRows = fits(wrappedSeatRows)
+    ? wrappedSeatRows
+    : crewRows((pieces) => [cutSeatIdentity(pieces.join(' '), identityWidth)]);
 
   const footerRows = countFooterRows(seatRows);
   // Without a height the caller is not budgeting rows, so the list never windows.
@@ -387,15 +351,8 @@ export function Sidebar({ width, height, recordedCrew }: SidebarProps) {
           {` ${title} `}
         </Text>
       </Box>
-      <Box
-        flexDirection="column"
-        paddingRight={1}
-        marginTop={1}
-        flexGrow={1}
-        flexShrink={1}
-        overflow="hidden"
-      >
-        {tasks.length === 0 && <SidebarWaiting />}
+      <Box flexDirection="column" paddingRight={1} flexGrow={1} flexShrink={1} overflow="hidden">
+        {tasks.length === 0 && <Text color={t.textDim}>{`${LIST_INDENT}No tasks yet`}</Text>}
         {listWindow.showAbove && <Text color={t.textDim}>{`${LIST_INDENT}${aboveLabel}`}</Text>}
         {visible.map((task) => (
           <TaskRow key={task.id} task={task} width={width} statusCells={statusCells} />

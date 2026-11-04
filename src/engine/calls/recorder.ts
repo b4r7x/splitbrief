@@ -100,7 +100,12 @@ export interface RunnerCallRecorder {
     semantics: RunnerCallUsageSemantics;
     ts?: number | undefined;
   }) => void;
-  sessionId: (opts: { nativeSessionId: string; ts?: number | undefined }) => void;
+  sessionId: (opts: {
+    nativeSessionId: string;
+    /** The model id the tool reports it runs, when it reports one. */
+    resolvedModel?: string | undefined;
+    ts?: number | undefined;
+  }) => void;
   artifact: (opts: { artifact: RunnerCallArtifact; ts?: number | undefined }) => void;
   warning: (opts: { warning: RunnerCallWarningInput; ts?: number | undefined }) => void;
   unknownUpstream: (opts: {
@@ -151,6 +156,7 @@ export function createRunnerCallRecorder(opts: {
   let stderrPreview = '';
   let stderrWarningEmitted = false;
   let lastNativeSessionId: string | null = null;
+  let lastResolvedModel: string | undefined;
   let lastHeartbeatTs: number | null = null;
   let activeToolUse: { id: string; name: string | null } | null = null;
   const recentToolUses: RunnerCallToolUse[] = [];
@@ -549,14 +555,19 @@ export function createRunnerCallRecorder(opts: {
     sessionId: (eventOpts) => {
       // A native session id has cardinality one per call, but stream protocols
       // stamp it on every frame: without this guard one call restates the same
-      // id hundreds of times and every consumer treats each as news.
-      if (eventOpts.nativeSessionId === lastNativeSessionId) return;
+      // id hundreds of times and every consumer treats each as news. Only some
+      // frames name the model, so a frame without one keeps the model recorded.
+      const newModel =
+        eventOpts.resolvedModel !== undefined && eventOpts.resolvedModel !== lastResolvedModel;
+      if (eventOpts.nativeSessionId === lastNativeSessionId && !newModel) return;
       lastNativeSessionId = eventOpts.nativeSessionId;
+      lastResolvedModel = eventOpts.resolvedModel;
       emit({
         type: 'call_session_id',
         ts: eventOpts.ts ?? Date.now(),
         ...context,
         nativeSessionId: eventOpts.nativeSessionId,
+        ...(eventOpts.resolvedModel !== undefined && { resolvedModel: eventOpts.resolvedModel }),
       });
     },
     artifact: (eventOpts) => {

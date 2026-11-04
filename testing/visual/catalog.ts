@@ -941,6 +941,23 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-crew-claude-resolved',
+      title: 'Workflow · Claude Code seats after their calls named the models they run',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'implementation',
+        title: 'Implementation with resolved seat models',
+        kind: 'implementation',
+        marker: 'Inspecting deterministic fixture contract',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'activity', title: 'Implementation activity block' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-build-consult',
       title: 'Workflow · planner consult during the build',
       surface: screenSurface('workflow'),

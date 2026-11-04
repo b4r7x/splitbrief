@@ -86,7 +86,7 @@ export type CliProtocolEvent =
       semantics?: RunnerCallTextSemantics | undefined;
     }>
   | Readonly<{ type: 'usage'; usage: TokenDelta; semantics: RunnerCallUsageSemantics }>
-  | Readonly<{ type: 'session'; nativeSessionId: string }>
+  | Readonly<{ type: 'session'; nativeSessionId: string; resolvedModel?: string | undefined }>
   | Readonly<{
       type: 'tool-use-delta';
       id: string | null;

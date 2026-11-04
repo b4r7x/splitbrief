@@ -122,7 +122,7 @@ describe('readConversationScrollSnapshot', () => {
           60,
         ),
       });
-      expect(snapshot.totalHeight).toBe(25);
+      expect(snapshot.totalHeight).toBe(24);
       expect(snapshot.viewportHeight).toBe(paintedHeight);
       expect(snapshot.transcriptViewportHeight).toBe(paintedHeight);
       expect(snapshot.maxOffset).toBeGreaterThan(0);

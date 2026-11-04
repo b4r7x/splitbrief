@@ -2301,15 +2301,63 @@ describe('the Final review heading', () => {
       const heading = rows.indexOf('Final review');
       expect(heading, event.type).toBeGreaterThan(-1);
       expect(rows.slice(0, heading - 1), event.type).toEqual(before);
-      expect(rows.slice(heading + 1, heading + 3), event.type).toEqual([
-        '',
-        expect.stringMatching(
-          /^Plan check K1 · node --test tests\/math\.test\.js · (running|passed)/,
-        ),
-      ]);
+      expect(rows[heading + 1], event.type).toMatch(
+        /^Plan check K1 · node --test tests\/math\.test\.js · (running|passed)/,
+      );
     }
     expect(lines().filter((row) => row.startsWith('Plan check K1'))).toHaveLength(1);
     resetWorkflow();
+  });
+
+  const sectionRows = (sections: Section<EngineEvent>[]) => {
+    const projection = buildConversationRowsProjection({
+      sections,
+      expandedDiffs: new Set(),
+      expandedActivityBatches: new Set(),
+      cols: 120,
+      viewportHeight: 40,
+      streaming,
+    });
+    return materializeConversationRowsWindow({
+      projection,
+      windowStart: 0,
+      windowEnd: projection.totalRows,
+    });
+  };
+
+  it('a task review heading starts its rows on the next line too', () => {
+    expect(
+      sectionRows([
+        {
+          type: 'active-review',
+          startIndex: 0,
+          items: [planCheck],
+          review: {
+            stage: 'review',
+            scope: 'task',
+            afterTaskId: 'T001',
+            fixCyclesBefore: 0,
+            rerunsBefore: 0,
+          },
+        },
+      ]).map(rowText),
+    ).toEqual(['Review T001', 'Plan check K1 · node --test tests/math.test.js · running']);
+  });
+
+  it('a settled brief keeps one blank row between its heading and its body', () => {
+    const rows = sectionRows([
+      {
+        type: 'completed-task',
+        startIndex: 0,
+        items: [makeTaskStart({ ts: 1_000 }), planCheck],
+        summary: { id: 'T001', title: 'Test task', method: 'local', retries: 0, duration: 1_000 },
+      },
+    ]);
+    expect(rows.map((row) => [row.kind, rowText(row)])).toEqual([
+      ['summary', ''],
+      ['spacer', ''],
+      ['message', 'Plan check K1 · node --test tests/math.test.js · running'],
+    ]);
   });
 });
 

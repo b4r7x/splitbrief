@@ -308,7 +308,7 @@ describe('parseStreamLine', () => {
   });
 
   it.each([
-    ['init', { cwd: '/repo', model: 'opus' }, { isSessionInit: true }],
+    ['init', { cwd: '/repo', model: 'opus' }, { isSessionInit: true, resolvedModel: 'opus' }],
     ['hook_started', { hook_id: 'hook-1', hook_name: 'SessionStart:startup' }, {}],
     ['hook_response', { hook_id: 'hook-1', outcome: 'success', exit_code: 0 }, {}],
     ['status', { status: 'requesting' }, {}],
@@ -719,4 +719,26 @@ it('identifies actual native init independently from result session IDs', () => 
       }),
     ).isSessionInit,
   ).toBeUndefined();
+});
+
+it('keeps the model id an init frame reports, and only an init frame', () => {
+  expect(
+    parseStreamLine(
+      jsonLine({
+        type: 'system',
+        subtype: 'init',
+        session_id: 'sess-1',
+        model: 'claude-fable-5-1',
+        claude_code_version: '2.1.278',
+      }),
+    ).resolvedModel,
+  ).toBe('claude-fable-5-1');
+  expect(
+    parseStreamLine(jsonLine({ type: 'system', subtype: 'init', session_id: 'sess-1' })),
+  ).not.toHaveProperty('resolvedModel');
+  expect(
+    parseStreamLine(
+      jsonLine({ type: 'system', subtype: 'status', session_id: 'sess-1', model: 'opus' }),
+    ),
+  ).not.toHaveProperty('resolvedModel');
 });

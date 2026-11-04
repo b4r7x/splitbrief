@@ -242,7 +242,22 @@ describe('runnerActivityLedgerItem', () => {
         kind: 'task',
         label: 'task Task',
       }),
-    ).toMatchObject({ label: 'PLAN', value: 'Task' });
+    ).toMatchObject({ label: 'AGENT', value: 'Task' });
+  });
+
+  it('labels a subagent row Agent with the subagent name, and keeps Plan for a plan row', () => {
+    expect(
+      runnerActivityLedgerItem({
+        stage: 'updated',
+        kind: 'task',
+        label: 'task Explore',
+        target: 'Explore',
+      }),
+    ).toMatchObject({ label: 'AGENT', value: 'Explore' });
+
+    expect(
+      runnerActivityLedgerItem({ stage: 'updated', kind: 'plan', label: 'plan steps' }),
+    ).toMatchObject({ label: 'PLAN' });
   });
 
   it('keeps every word of a target that starts with a verb', () => {

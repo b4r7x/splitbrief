@@ -27,6 +27,8 @@ export interface StreamParseResult {
   sessionId?: string | undefined;
   isResult?: boolean | undefined;
   isSessionInit?: boolean | undefined;
+  /** The model id an `init` frame reports: what the seat's model alias resolved to. */
+  resolvedModel?: string | undefined;
   isError?: boolean | undefined;
   usage?: TokenDelta | undefined;
   usageSemantics?: ParsedUsageSemantics | undefined;
@@ -419,9 +421,11 @@ function parseSystemProgress(event: Record<string, unknown>): StreamParseResult 
   if (type === 'system') {
     const subtype = firstString(event.subtype);
     const warning = systemFrameWarning(subtype, event);
+    const resolvedModel = subtype === 'init' ? firstString(event.model) : undefined;
     return {
       sessionId,
       ...(subtype === 'init' && { isSessionInit: true }),
+      ...(resolvedModel !== undefined && { resolvedModel }),
       ...(warning === null ? { isHeartbeat: true } : { warning: [warning] }),
     };
   }

@@ -39,6 +39,7 @@
 - **Typed seat answers.** Plans, reviews, consults and implementer reports are JSON answers that SPLITBRIEF validates, through each tool's native schema flag where it has one.
 - **Private vulnerability reports.** The security policy describes how to report a vulnerability privately through GitHub.
 - **`--plain` names a seat wait.** When a seat starts waiting for its usage limit to reset, `--plain` writes one line: `waiting: <tool> · resets <clock>`.
+- **The model a Claude Code seat ran.** In the workflow sidebar, a Claude Code seat saved as a model alias, such as `opus`, gets one more row. The row shows the model id that the seat's call reported, such as `claude-opus-5-5`. Your saved seat value does not change.
 
 ### Changed
 
@@ -88,6 +89,7 @@
 - `continue --action restore` says how many files it put back in your checkout, works without a terminal, and leaves the run ready to apply.
 - A headless run stopped by Ctrl+C, SIGTERM or a closed terminal exits with code 130, 143 or 129 and prints the command that continues it.
 - The model list in the picker, the provider scan on home and setup, the Check of a local server and the check of an API seat wait up to one minute instead of two or five seconds. A provider that answers after six seconds is now found, not failed. After ten seconds the screen names the provider and the check, also while a run checks its seat at its start or before a brief. Esc stops the check; during a run, the run's stop ends it.
+- The workflow sidebar shows no waiting row. Before the plan names its briefs, the Tasks panel shows only `No tasks yet`. The header and the line under the composer show the stage.
 
 ### Removed
 
@@ -535,6 +537,8 @@
 - A halt panel no longer repeats the count of its `Attempts` row in the headline.
 - The panel for a review input over the tool's limit ends its size sentence with a full stop and capitalizes only the first word of its choice list.
 - The troubleshooting guide no longer says that a finding with no brief path is never fixed. It states how findings become fix briefs.
+- The first brief in the sidebar's Tasks panel starts on the row under the panel border. Before, an empty row stood between them.
+- A subagent call in an activity batch reads `Agent` with the subagent name, for example `Agent  Explore`, in the dim colour. Before, it read `Plan` in the PLAN colour.
 
 ## [0.1.0] - 2026-08-07
 

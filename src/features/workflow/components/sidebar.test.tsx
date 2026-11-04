@@ -1,13 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Box } from 'ink';
-import { renderFeature, tick, flushEffects } from '#testing/helpers/ink.js';
+import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { resetAllStores, seedBriefs } from '#testing/helpers/stores.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { glyph, spinnerFrames } from '../../../lib/glyphs.js';
-import { PLANNER_INHERITANCE } from '../../../core/crew/identity.js';
+import { CREW_LABEL_WIDTH, PLANNER_INHERITANCE } from '../../../core/crew/identity.js';
+import type { EngineEvent } from '../../../engine/events/types.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { configStore } from '../../../stores/project/config.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
@@ -19,9 +20,14 @@ import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { hydrateFromState } from '../../../stores/workflow/actions/hydrate.js';
 import { Sidebar } from './sidebar.js';
 import { routerStore } from '../../../stores/navigation/router.js';
+import { controlsStore } from '../../../stores/ui/controls.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
+import {
+  makeRunnerCallCompleted,
+  makeRunnerCallStarted,
+} from '#testing/helpers/events/runner-call.js';
 import { taskId } from '../../../core/schemas/task.js';
 import chalk from 'chalk';
 import { defaultTheme } from '../../../components/theme.js';
@@ -270,7 +276,7 @@ describe('Sidebar — passed count', () => {
     ui.unmount();
   });
 
-  it('shows the waiting placeholder while a stage runs with no tasks', async () => {
+  it('shows only the empty note, with no running stage row, while the planner runs', async () => {
     runViewStore.__testReset({ phase: 'researching', briefs: { tasks: [] } });
     lifecycleStore.__testReset({ startedAt: Date.now() - 65_000, status: 'running' });
 
@@ -279,43 +285,25 @@ describe('Sidebar — passed count', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     expect(frame).toContain('No tasks yet');
-    expect(frame).toMatch(/\bPlan\b/);
+    expect(frame).not.toMatch(/\bPlan\b/);
+    for (const spinner of spinnerFrames()) expect(frame).not.toContain(spinner);
 
     ui.unmount();
   });
 
-  it('holds the spinner frame under reduced motion and shows no run clock', async () => {
-    const previousReduceMotion = process.env.SPLITBRIEF_REDUCE_MOTION;
-    process.env.SPLITBRIEF_REDUCE_MOTION = '1';
-    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
-    vi.setSystemTime(0);
+  it('shows only the empty note while the planner waits for an answer', async () => {
+    runViewStore.__testReset({ phase: 'planning', briefs: { tasks: [] } });
+    lifecycleStore.__testReset({ startedAt: Date.now() - 5_000, status: 'running' });
+    controlsStore.setInputMode('question');
 
-    let ui: ReturnType<typeof renderFeature> | null = null;
-    try {
-      runViewStore.__testReset({ phase: 'researching', briefs: { tasks: [] } });
-      lifecycleStore.__testReset({ startedAt: 0, status: 'running' });
+    const ui = renderFeature(<Sidebar width={40} />);
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-      ui = renderFeature(<Sidebar width={30} />);
-      const firstFrame = stripAnsiStyles(ui.lastFrame() ?? '');
-      const firstSpinnerFrame = spinnerFrames()[0] ?? '';
+    expect(frame).toContain('No tasks yet');
+    expect(frame).not.toContain('Waiting for your answer');
 
-      expect(firstFrame).toContain(`${firstSpinnerFrame} Plan`);
-
-      await vi.advanceTimersByTimeAsync(1000);
-      await flushEffects();
-
-      const nextFrame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(nextFrame).toContain(`${firstSpinnerFrame} Plan`);
-      expect(nextFrame).not.toMatch(/\d+:\d{2}/);
-    } finally {
-      ui?.unmount();
-      if (previousReduceMotion === undefined) {
-        delete process.env.SPLITBRIEF_REDUCE_MOTION;
-      } else {
-        process.env.SPLITBRIEF_REDUCE_MOTION = previousReduceMotion;
-      }
-      vi.useRealTimers();
-    }
+    ui.unmount();
   });
 
   it('shows only the empty note when nothing is running', async () => {
@@ -331,7 +319,7 @@ describe('Sidebar — passed count', () => {
     ui.unmount();
   });
 
-  it('sidebar shows a static interrupted line without spinner frames', async () => {
+  it('shows only the empty note while an interrupted planner finishes its step', async () => {
     runViewStore.__testReset({ phase: 'researching', briefs: { tasks: [] } });
     lifecycleStore.__testReset({ status: 'interrupted', startedAt: Date.now() - 5_000 });
 
@@ -339,13 +327,13 @@ describe('Sidebar — passed count', () => {
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('Planner interrupted');
-    expect(frame).not.toMatch(/\bPlan\b/);
+    expect(frame).toContain('No tasks yet');
+    expect(frame).not.toContain('interrupted');
 
     ui.unmount();
   });
 
-  it('marks planning stopped for a run at rest that halted in planning', async () => {
+  it('shows only the empty note for a run at rest that halted in planning', async () => {
     const halt = makeRecoveryIssue({
       reason: 'plan-checks-failed',
       phase: 'planning',
@@ -380,7 +368,8 @@ describe('Sidebar — passed count', () => {
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('Planning stopped');
+    expect(frame).toContain('No tasks yet');
+    expect(frame).not.toContain('Planning stopped');
 
     ui.unmount();
     routerStore.init({ screen: 'home' });
@@ -429,8 +418,8 @@ describe('Sidebar — titled border', () => {
       paint(defaultTheme.textDim, ' Tasks 0/3 ').replace('\u001b[39m', ''),
     );
     expect(getTerminalCellWidth(lines[0] ?? '')).toBe(40);
-    expect(lines[1]).toBe(`${border.side}${' '.repeat(38)}${border.side}`);
-    expect(lines[2]).toContain('task 1');
+    expect(lines[1]).toContain('task 1');
+    expect(lines[2]).toContain('task 2');
     expect(lines).toHaveLength(14);
     expect(lines[13]?.startsWith(border.bottom)).toBe(true);
     expect(lines.filter((line) => line.includes('Tasks'))).toHaveLength(1);
@@ -517,9 +506,10 @@ describe('Sidebar — minimum-height contract', () => {
   });
 
   it.each([
-    { height: 6, crew: ['PLAN', 'BUILD'] },
-    { height: 5, crew: ['PLAN'] },
-    { height: 4, crew: [] },
+    { height: 6, crew: ['PLAN', 'BUILD', 'REVIEW'] },
+    { height: 5, crew: ['PLAN', 'BUILD'] },
+    { height: 4, crew: ['PLAN'] },
+    { height: 3, crew: [] },
   ])('clips the crew inside the bottom border at height $height', async ({ height, crew }) => {
     forceUnicodeGlyphs();
     useOpenCodeBuildSeat();
@@ -529,8 +519,8 @@ describe('Sidebar — minimum-height contract', () => {
     const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
 
     expect(lines).toHaveLength(height);
-    expect(lines[2]?.slice(1, -1)).toBe(` ${'─'.repeat(30)} `);
-    expect(lines.slice(3, -1).map((line) => line.slice(2).split(' ')[0])).toEqual(crew);
+    expect(lines[1]?.slice(1, -1)).toBe(` ${'─'.repeat(30)} `);
+    expect(lines.slice(2, -1).map((line) => line.slice(2).split(' ')[0])).toEqual(crew);
     expect(lines.at(-1)).toBe(`└${'─'.repeat(32)}┘`);
 
     ui.unmount();
@@ -757,13 +747,11 @@ describe('Sidebar — persistent task list', () => {
 
     const ui = renderFeature(<Sidebar width={34} />);
     await tick();
-    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
-    const titleColumn = (needle: string): number =>
-      (lines.find((line) => line.includes(needle)) ?? '').indexOf(needle);
-
-    // The stage label sits on the title column; its spinner takes the marker column, so the empty
-    // state uses the same two-column grid as a populated list.
-    expect(titleColumn('Plan')).toBe(titleColumn('No tasks yet'));
+    const emptyColumn = (
+      stripAnsiStyles(ui.lastFrame() ?? '')
+        .split('\n')
+        .find((line) => line.includes('No tasks yet')) ?? ''
+    ).indexOf('No tasks yet');
     ui.unmount();
 
     seedBriefs({ tasks: [task('1', 'in_progress', 'A real title')] });
@@ -775,7 +763,8 @@ describe('Sidebar — persistent task list', () => {
         .find((line) => line.includes('1 A real title')) ?? ''
     ).indexOf('1 A real title');
 
-    expect(titleColumn('No tasks yet')).toBe(populatedTitle);
+    expect(emptyColumn).toBeGreaterThan(0);
+    expect(emptyColumn).toBe(populatedTitle);
 
     populated.unmount();
   });
@@ -870,7 +859,7 @@ describe('Sidebar — persistent task list', () => {
     ui.unmount();
   });
 
-  it('uses all seven task rows above a three-row crew footer at height fourteen', async () => {
+  it('uses all eight task rows above a three-row crew footer at height fourteen', async () => {
     configStore.__testReset({
       projectDir: '/tmp/project',
       config: makeConfig({
@@ -879,8 +868,8 @@ describe('Sidebar — persistent task list', () => {
       }),
     });
     seedBriefs({
-      tasks: Array.from({ length: 7 }, (_, index) => task(String(index + 1), 'pending')),
-      totalTasks: 7,
+      tasks: Array.from({ length: 8 }, (_, index) => task(String(index + 1), 'pending')),
+      totalTasks: 8,
     });
 
     const ui = renderFeature(<Sidebar width={40} height={14} />);
@@ -888,7 +877,7 @@ describe('Sidebar — persistent task list', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     const lines = frame.split('\n');
 
-    expect(lines.filter((line) => /task \d/u.test(line))).toHaveLength(7);
+    expect(lines.filter((line) => /task \d/u.test(line))).toHaveLength(8);
     expect(frame).not.toMatch(/\b(above|below)\b/u);
     expect(frame).toContain('PLAN');
     expect(frame).toContain('BUILD');
@@ -918,8 +907,8 @@ describe('Sidebar — unbudgeted height', () => {
     const lines = frame.split('\n');
 
     expect(lines[0]).toBe(`┌ Tasks 2/6 ${'─'.repeat(27)}┐`);
-    expect(lines[1]).toBe(`│${' '.repeat(38)}│`);
-    expect(lines[2]).toContain('first title');
+    expect(lines[1]).toContain('first title');
+    expect(lines[2]).toContain('second title');
     expect(frame).toContain('first title');
     expect(frame).toContain('second title');
     expect(frame).toContain('third title');
@@ -1157,30 +1146,6 @@ describe('Sidebar concept colors', () => {
     ui.unmount();
   });
 
-  it('colors Planner and interrupted separately', () => {
-    chalk.level = 3;
-    runViewStore.__testReset({ phase: 'planning' });
-    lifecycleStore.__testReset({ status: 'interrupted' });
-    const ui = renderFeature(<Sidebar width={60} />);
-    expect(ui.lastFrame()).toContain(
-      paint(defaultTheme.planner, 'Planner').replace('\u001b[39m', ''),
-    );
-    expect(ui.lastFrame()).toContain(
-      paint(defaultTheme.warning, 'interrupted').replace('\u001b[39m', ''),
-    );
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Planner interrupted');
-    ui.unmount();
-  });
-
-  it('keeps the planning stage in the planner color without the removed local share', () => {
-    chalk.level = 3;
-    runViewStore.__testReset({ phase: 'planning' });
-    lifecycleStore.__testReset({ status: 'running' });
-    const ui = renderFeature(<Sidebar width={60} />);
-    expect(ui.lastFrame()).toContain(paint(defaultTheme.planner, 'Plan').replace('\u001b[39m', ''));
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('local');
-    ui.unmount();
-  });
   it('colors the summary state words while keeping counts dim', () => {
     chalk.level = 3;
     seedBriefs({ tasks: [task('T001', 'done'), task('T002', 'escalated')] });
@@ -1195,6 +1160,253 @@ describe('Sidebar concept colors', () => {
       paint(defaultTheme.textDim, ' · 1 ').replace('\u001b[39m', ''),
     );
     expect(stripAnsiStyles(ui.lastFrame())).toContain('1 passed · 1 escalated');
+    ui.unmount();
+  });
+});
+
+describe('Sidebar — the model a Claude Code seat resolved', () => {
+  beforeEach(forceUnicodeGlyphs);
+
+  const aliasCrew = (planner: { tool: 'claude-code' | 'codex'; model: string }) =>
+    makeConfig({ planner: { kind: 'cli', ...planner } });
+
+  function sessionEvent(
+    model: string,
+    resolvedModel?: string,
+    runnerName = 'claude-code',
+  ): Extract<EngineEvent, { type: 'runner_call_session_id' }> {
+    return {
+      type: 'runner_call_session_id',
+      ts: 1_000,
+      phase: 'planning',
+      callId: 'call-plan',
+      role: 'planner',
+      backendKind: 'cli',
+      runnerName,
+      model,
+      sequence: 1,
+      nativeSessionId: 'native-plan',
+      ...(resolvedModel !== undefined && { resolvedModel }),
+    };
+  }
+
+  /** The rows of one seat: its label row and the rows under it with a blank label column. */
+  function seatRows(frame: string, label: string): string[] {
+    const lines = stripAnsiStyles(frame)
+      .split('\n')
+      .map((line) => line.replace(/[│┌┐└┘]/g, '').trimEnd());
+    const start = lines.findIndex((line) => line.trimStart().startsWith(`${label} `));
+    const labelRow = lines[start] ?? '';
+    const indent = labelRow.indexOf(label);
+    const rows = [labelRow.slice(indent)];
+    for (const line of lines.slice(start + 1)) {
+      const cells = line.slice(indent);
+      if (!cells.startsWith(' '.repeat(CREW_LABEL_WIDTH)) || cells.trim() === '') break;
+      rows.push(cells.trim());
+    }
+    return rows;
+  }
+
+  async function renderCrew(width = 40) {
+    seedBriefs({ tasks: [task('1', 'pending')] });
+    const ui = renderFeature(<Sidebar width={width} />);
+    await tick();
+    return ui;
+  }
+
+  it('shows the model id a Claude Code call resolved on its own row under the alias', async () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: aliasCrew({ tool: 'claude-code', model: 'opus' }),
+    });
+    const ui = await renderCrew();
+    const before = seatRows(ui.lastFrame() ?? '', 'PLAN');
+
+    addEvent(sessionEvent('opus', 'claude-opus-5-5'));
+    await tick();
+
+    expect(seatRows(ui.lastFrame() ?? '', 'PLAN')).toEqual([...before, 'claude-opus-5-5']);
+    ui.unmount();
+  });
+
+  it('shows the saved alias as today before any call reported a model', async () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: aliasCrew({ tool: 'claude-code', model: 'opus' }),
+    });
+    const ui = await renderCrew();
+
+    expect(seatRows(ui.lastFrame() ?? '', 'PLAN')).toEqual(['PLAN    Claude Code CLI · Opus 5.5']);
+    ui.unmount();
+  });
+
+  it('leaves a seat of another tool unchanged after its call names its session', async () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: aliasCrew({ tool: 'codex', model: 'gpt-6-astra' }),
+    });
+    const ui = await renderCrew();
+    const before = seatRows(ui.lastFrame() ?? '', 'PLAN');
+
+    addEvent(sessionEvent('gpt-6-astra', undefined, 'codex'));
+    await tick();
+
+    expect(seatRows(ui.lastFrame() ?? '', 'PLAN')).toEqual(before);
+    expect(before).toEqual(['PLAN    OpenAI Codex CLI', 'GPT-6-Astra']);
+    ui.unmount();
+  });
+
+  it('keeps the resolved id when a later frame of the call names no model', async () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: aliasCrew({ tool: 'claude-code', model: 'opus' }),
+    });
+    const ui = await renderCrew();
+
+    addEvent(sessionEvent('opus', 'claude-opus-5-5'));
+    addEvent({ ...sessionEvent('opus'), sequence: 2, nativeSessionId: 'native-plan-2' });
+    await tick();
+
+    expect(seatRows(ui.lastFrame() ?? '', 'PLAN').at(-1)).toBe('claude-opus-5-5');
+    ui.unmount();
+  });
+
+  it('shows the model id an automatic Claude Code seat ran, whose call names no model', async () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: aliasCrew({ tool: 'claude-code', model: 'auto' }),
+    });
+    const ui = await renderCrew();
+    const before = seatRows(ui.lastFrame() ?? '', 'PLAN');
+    const { model: _model, ...event } = sessionEvent('auto', 'claude-fable-5-1');
+
+    addEvent(event);
+    await tick();
+
+    expect(seatRows(ui.lastFrame() ?? '', 'PLAN')).toEqual([...before, 'claude-fable-5-1']);
+    ui.unmount();
+  });
+
+  it('shows the model id a Claude Code planner call reported under its command name', async () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: aliasCrew({ tool: 'claude-code', model: 'opus' }),
+    });
+    const ui = await renderCrew();
+    const before = seatRows(ui.lastFrame() ?? '', 'PLAN');
+
+    addEvent(sessionEvent('opus', 'claude-opus-5-5', 'claude'));
+    await tick();
+
+    expect(seatRows(ui.lastFrame() ?? '', 'PLAN')).toEqual([...before, 'claude-opus-5-5']);
+    ui.unmount();
+  });
+
+  it('shows no resolved row while a fallback call of another tool runs on its default model', async () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: aliasCrew({ tool: 'claude-code', model: 'auto' }),
+    });
+    const ui = await renderCrew();
+    const planCall = { phase: 'planning', role: 'planner', backendKind: 'cli' } as const;
+    const { model: _model, ...claudeSession } = sessionEvent('auto', 'claude-fable-5-1', 'claude');
+
+    addEvent(
+      makeRunnerCallStarted({
+        ...planCall,
+        callId: 'call-plan',
+        runnerName: 'claude',
+        ts: 900,
+        sequence: 0,
+      }),
+    );
+    addEvent(claudeSession);
+    addEvent(makeRunnerCallCompleted({ ...planCall, callId: 'call-plan', runnerName: 'claude' }));
+    await tick();
+    expect(seatRows(ui.lastFrame() ?? '', 'PLAN').at(-1)).toBe('claude-fable-5-1');
+
+    addEvent(makeRunnerCallStarted({ ...planCall, callId: 'call-plan-2', runnerName: 'codex' }));
+    await tick();
+
+    expect(seatRows(ui.lastFrame() ?? '', 'PLAN')).toEqual(['PLAN    OpenAI Codex CLI · auto']);
+    ui.unmount();
+  });
+
+  it('shows no resolved row once the seat is saved on another tool', async () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: aliasCrew({ tool: 'claude-code', model: 'auto' }),
+    });
+    const ui = await renderCrew();
+    const { model: _model, ...claudeSession } = sessionEvent('auto', 'claude-fable-5-1', 'claude');
+    addEvent(claudeSession);
+    await tick();
+    expect(seatRows(ui.lastFrame() ?? '', 'PLAN').at(-1)).toBe('claude-fable-5-1');
+
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: aliasCrew({ tool: 'codex', model: 'auto' }),
+    });
+    const { model: _codexModel, ...codexSession } = sessionEvent('auto', undefined, 'codex');
+    addEvent({ ...codexSession, callId: 'call-plan-2', sequence: 2, nativeSessionId: 'native-2' });
+    await tick();
+
+    expect(seatRows(ui.lastFrame() ?? '', 'PLAN')).toEqual(['PLAN    OpenAI Codex CLI · auto']);
+    ui.unmount();
+  });
+
+  it('drops the resolved rows before it cuts the seat identities when the crew runs short of rows', async () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code', model: 'opus', effort: 'high' },
+        implementer: { kind: 'cli', tool: 'claude-code', model: 'sonnet' },
+        reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-6.1-sol', effort: 'high' },
+      }),
+    });
+    seedBriefs({ tasks: [task('1', 'pending')] });
+    // Five wrapped seat rows fill the footer of an 8-row panel; the two resolved rows do not fit.
+    const ui = renderFeature(<Sidebar width={40} height={8} />);
+    await tick();
+    const before = ['PLAN', 'BUILD', 'REVIEW'].map((label) =>
+      seatRows(ui.lastFrame() ?? '', label),
+    );
+
+    addEvent(sessionEvent('opus', 'claude-opus-5-5'));
+    addEvent({
+      ...sessionEvent('sonnet', 'claude-sonnet-5-5'),
+      phase: 'implementing',
+      callId: 'call-build',
+      role: 'implementer',
+    });
+    await tick();
+
+    expect(before[0]).toEqual(['PLAN    Claude Code CLI', 'Opus 5.5 · high']);
+    expect(
+      ['PLAN', 'BUILD', 'REVIEW'].map((label) => seatRows(ui.lastFrame() ?? '', label)),
+    ).toEqual(before);
+    ui.unmount();
+  });
+
+  it.each([
+    ['the seat now saves another alias', 'sonnet', sessionEvent('opus', 'claude-opus-5-5')],
+    [
+      'the seat saves the id the call resolved',
+      'claude-opus-5-5',
+      sessionEvent('claude-opus-5-5', 'claude-opus-5-5'),
+    ],
+  ])('shows no resolved row when %s', async (_name, model, event) => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: aliasCrew({ tool: 'claude-code', model }),
+    });
+    const ui = await renderCrew();
+    const before = seatRows(ui.lastFrame() ?? '', 'PLAN');
+
+    addEvent(event);
+    await tick();
+
+    expect(seatRows(ui.lastFrame() ?? '', 'PLAN')).toEqual(before);
     ui.unmount();
   });
 });

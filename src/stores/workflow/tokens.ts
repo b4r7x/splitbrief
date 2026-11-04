@@ -9,6 +9,8 @@ import {
 import type { EngineEvent } from '../../engine/events/types.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import type { SeatIdentity } from '../../core/providers/seat-identity.js';
+import type { CrewSeatId } from '../../core/crew/identity.js';
+import { seatForRunningCall } from '../../core/runners/seat-roles.js';
 import { attributePhaseTokenDelta } from '../../core/state/token-attribution.js';
 import * as typeGuards from '../../utils/type-guards.js';
 
@@ -65,12 +67,20 @@ export interface PerTaskTokens {
   attempts?: TaskAttemptTokens[] | undefined;
 }
 
+/** The model id a seat's call reported running, beside the runner and model value of that call. */
+export type SeatResolvedModel = Readonly<{
+  runnerName: string | undefined;
+  model: string | undefined;
+  resolvedModel: string;
+}>;
+
 export interface TokensState {
   tokenUsage: TokenUsage | null;
   perPhase: Partial<Record<Phase, PhaseTokens>>;
   perTask: Record<string, PerTaskTokens>;
   /** The seats this run pass holds: the run is priced on them, and the chrome names them. */
   passSeats: SeatIdentity | null;
+  resolvedModels: Partial<Record<CrewSeatId, SeatResolvedModel>>;
 }
 
 const initial: TokensState = {
@@ -78,6 +88,7 @@ const initial: TokensState = {
   perPhase: {},
   perTask: {},
   passSeats: null,
+  resolvedModels: {},
 };
 
 const store = createStore<TokensState>(initial);
@@ -220,6 +231,24 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
       };
     }
 
+    case 'runner_call_session_id': {
+      const seatId = seatForRunningCall(event);
+      // Frames before Claude Code's init, and frames after a session id change, name no model:
+      // the seat keeps the last one a frame named.
+      if (seatId === null || event.resolvedModel === undefined) return state;
+      return {
+        ...state,
+        resolvedModels: {
+          ...state.resolvedModels,
+          [seatId]: {
+            runnerName: event.runnerName,
+            model: event.model,
+            resolvedModel: event.resolvedModel,
+          },
+        },
+      };
+    }
+
     case 'task_completed':
     case 'task_reset':
     case 'task_skipped':
@@ -240,7 +269,6 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     case 'runner_call_usage':
     case 'runner_call_tool_use':
     case 'runner_call_activity':
-    case 'runner_call_session_id':
     case 'runner_call_artifact':
     case 'runner_call_warning':
     case 'runner_call_error':

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 import type { CliExecutableIdentity } from '../../core/discovery/detection.js';
 import { projectRunnerCallEvents } from '../calls/event-projection.js';
+import { parseEngineEvent } from '../events/schema.js';
 import { createRunnerCallRecorder } from '../calls/recorder.js';
 import type { RunnerCallContext, RunnerCallEvent } from '../calls/types.js';
 import { claudeCodeImplementerAdapter, claudeCodePlannerAdapter } from './cli-tools/claude-code.js';
@@ -132,6 +133,7 @@ async function run(opts: {
   script: string;
   lines: readonly string[];
   idle?: { warnMs: number; killMs: number };
+  callContext?: RunnerCallContext;
 }) {
   const output: string[] = [];
   const messageStarts: boolean[] = [];
@@ -140,7 +142,7 @@ async function run(opts: {
     adapter: claudeCodeImplementerAdapter,
     invocation: invocation({ script: opts.script, lines: opts.lines }),
     prompt: '',
-    callContext,
+    callContext: opts.callContext ?? callContext,
     onOutput: (text, opts) => {
       output.push(text);
       messageStarts.push(opts?.messageStart === true);
@@ -512,6 +514,50 @@ describe('invokeCliAdapter streaming a Claude Code capture', () => {
     expect(events.filter((event) => event.type === 'call_session_id')).toEqual([
       expect.objectContaining({ type: 'call_session_id', nativeSessionId: SESSION_ID }),
     ]);
+  });
+
+  itUnix(
+    'records the model Claude Code resolved on the session id and its workflow event',
+    async () => {
+      const { events } = await run({
+        script: EMIT_ALL,
+        callContext: { ...callContext, model: 'opus' },
+        lines: claudeCaptureWithSystemFrames(['Done.']).map((line) =>
+          line === systemFrame('init') ? systemFrame('init', { model: 'claude-fable-5-1' }) : line,
+        ),
+      });
+      const sessions = events.filter((event) => event.type === 'call_session_id');
+      const projected = sessions.flatMap((event) =>
+        projectRunnerCallEvents(event, { rootDir: '/project', phase: 'implementing', sequence: 0 }),
+      );
+
+      expect(sessions.at(-1)).toMatchObject({
+        nativeSessionId: SESSION_ID,
+        model: 'opus',
+        resolvedModel: 'claude-fable-5-1',
+      });
+      expect(projected.at(-1)).toMatchObject({
+        type: 'runner_call_session_id',
+        model: 'opus',
+        resolvedModel: 'claude-fable-5-1',
+      });
+      expect(parseEngineEvent(projected.at(-1))).toMatchObject({
+        resolvedModel: 'claude-fable-5-1',
+      });
+    },
+  );
+
+  itUnix('records no resolved model when Claude Code reports none', async () => {
+    const { events } = await run({
+      script: EMIT_ALL,
+      lines: claudeCaptureWithSystemFrames(['Done.']),
+    });
+    const sessions = events.filter((event) => event.type === 'call_session_id');
+
+    expect(sessions).toEqual([
+      expect.objectContaining({ type: 'call_session_id', nativeSessionId: SESSION_ID }),
+    ]);
+    expect(sessions[0]).not.toHaveProperty('resolvedModel');
   });
 
   itUnix('streams the model text and none of the frames Claude Code keeps for itself', async () => {

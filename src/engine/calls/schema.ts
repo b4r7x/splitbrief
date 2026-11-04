@@ -192,6 +192,8 @@ export const RunnerCallEventSchema = z.discriminatedUnion('type', [
   }),
   callEvent('call_session_id', {
     nativeSessionId: z.string().min(1).max(512),
+    /** The model id the tool reports it runs; `model` stays the saved seat value. */
+    resolvedModel: boundedName.optional(),
   }),
   callEvent('call_artifact', {
     artifact: RunnerCallArtifactSchema,

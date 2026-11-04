@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { createElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App, type AppProps } from '../../../src/app/root.js';
+import { glyph } from '../../../src/lib/glyphs.js';
 import { canonicalizeProjectDir } from '../../../src/cli/setup.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
 import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
@@ -47,7 +48,7 @@ function planWithUnservedCriterion(target: StopContinueFixture): void {
 }
 
 describe('e2e: a run that halted in planning, opened at rest', () => {
-  it('marks planning stopped in the sidebar', async () => {
+  it('marks the halt on the rail and keeps the sidebar to its empty note', async () => {
     resetAllStores();
     fixture = createStopContinueFixture();
     planWithUnservedCriterion(fixture);
@@ -75,7 +76,10 @@ describe('e2e: a run that halted in planning, opened at rest', () => {
     try {
       await vi.waitFor(() => expect(stripAnsiStyles(screen.lastFrame())).toContain('Tasks'));
 
-      expect(stripAnsiStyles(screen.lastFrame())).toContain('Planning stopped');
+      const frame = stripAnsiStyles(screen.lastFrame());
+      expect(frame.split('\n')[0]).toContain(`${glyph('statusFailed')} Plan`);
+      expect(frame).toContain('No tasks yet');
+      expect(frame).not.toContain('Planning stopped');
     } finally {
       screen.unmount();
     }

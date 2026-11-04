@@ -294,6 +294,7 @@ function activityLabelTone(
     case 'READ':
     case 'FIND':
     case 'LIST':
+    case 'AGENT':
       return 'textDim';
     case 'WARN':
     case 'STOP':

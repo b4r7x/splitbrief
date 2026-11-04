@@ -7381,6 +7381,75 @@ const reviewBaseRejectedProjection: WorkflowFixtureProjection = {
   ],
 };
 
+/**
+ * Two Claude Code seats saved as aliases, after a call of each named the model it runs: the
+ * planner's call before the build, and the running brief's call.
+ */
+function claudeResolvedCrewProjection(): WorkflowFixtureProjection {
+  const plannerCall = {
+    phase: 'planning',
+    callId: 'visual-call-plan',
+    role: 'planner',
+    backendKind: 'cli',
+    runnerName: 'claude',
+    model: 'opus',
+  } as const;
+  const buildSeat = {
+    backendKind: 'cli',
+    runnerName: 'claude-code',
+    model: 'sonnet',
+    axes: [],
+  } as const;
+  const events = implementationProjection.events.flatMap((event): EngineEvent[] => {
+    switch (event.type) {
+      case 'workflow_started':
+        return [
+          event,
+          {
+            type: 'runner_call_session_id',
+            ts: FIXED_TS + 20,
+            ...plannerCall,
+            sequence: 1,
+            nativeSessionId: 'visual-plan-session',
+            resolvedModel: 'claude-opus-5-5',
+          },
+        ];
+      case 'task_started':
+        return [{ ...event, tool: 'claude-code', model: 'sonnet', axes: [] }];
+      case 'runner_call_started':
+        return [
+          { ...event, ...buildSeat },
+          {
+            type: 'runner_call_session_id',
+            ts: event.ts + 10,
+            phase: event.phase,
+            ...(event.taskId !== undefined && { taskId: event.taskId }),
+            callId: event.callId,
+            role: event.role,
+            ...buildSeat,
+            sequence: event.sequence,
+            nativeSessionId: 'visual-build-session',
+            resolvedModel: 'claude-sonnet-5-5',
+          },
+        ];
+      case 'runner_call_activity':
+        return [{ ...event, ...buildSeat }];
+      default:
+        return [event];
+    }
+  });
+  return {
+    ...implementationProjection,
+    scenarioId: scenarioId('workflow-crew-claude-resolved'),
+    config: {
+      planner: { kind: 'cli', tool: 'claude-code', model: 'opus', effort: 'high' },
+      implementer: { kind: 'cli', tool: 'claude-code', model: 'sonnet' },
+      reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-6.1-sol', effort: 'high' },
+    },
+    events,
+  };
+}
+
 const projections = [
   reviewResumeProjection,
   reviewCheckCrashProjection,
@@ -7467,6 +7536,7 @@ const projections = [
       }
     }),
   },
+  claudeResolvedCrewProjection(),
   balanceSpentRecoveryProjection,
   cursorRefusalRecoveryProjection,
   modelRefusalProjection('workflow-recovery-route-signed-out', ROUTE_SIGNED_OUT_AUTH),

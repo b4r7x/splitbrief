@@ -185,6 +185,7 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['home-cold-crew', ['120x40', '80x24', '60x18', '200x50']],
   ['workflow-crew-wide', ['120x40', '80x24', '60x18', '160x45', '200x50']],
   ['workflow-crew-kilo', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-crew-claude-resolved', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-seat-switched-balance', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-planning-seat-change', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-final-review-seat-change', ['120x40', '80x24', '60x18', '160x45']],
@@ -983,7 +984,7 @@ describe('visual catalog', () => {
     }
   });
 
-  it('marks planning stopped in the sidebar beside a plan-seat halt', async () => {
+  it('marks the plan-seat halt on the rail and keeps the sidebar to its empty note', async () => {
     const scenario = findVisualScenario('workflow-recovery-plan-seat');
     if (scenario === undefined) throw new Error('Missing plan-seat scenario');
     const checkpoint = scenario.checkpoints[0];
@@ -992,7 +993,9 @@ describe('visual catalog', () => {
     const handle = await mountGalleryScenario({ scenario, checkpoint, viewport: wide });
     try {
       const frame = stripAnsiStyles(await handle.waitForCheckpoint());
-      expect(frame).toContain('Planning stopped');
+      expect(frame.split('\n')[0]).toContain('✗ Plan');
+      expect(frame).toContain('No tasks yet');
+      expect(frame).not.toContain('Planning stopped');
     } finally {
       await handle.unmount();
     }

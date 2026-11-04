@@ -217,7 +217,11 @@ function protocolEvents(parsed: StreamParseResult, line: string): readonly CliPr
   const events: CliProtocolEvent[] = [];
   if (parsed.inputAck !== undefined) events.push({ type: 'input-ack', text: parsed.inputAck });
   if (parsed.sessionId !== undefined) {
-    events.push({ type: 'session', nativeSessionId: parsed.sessionId });
+    events.push({
+      type: 'session',
+      nativeSessionId: parsed.sessionId,
+      ...(parsed.resolvedModel !== undefined && { resolvedModel: parsed.resolvedModel }),
+    });
   }
   if (
     !parsed.isResult &&

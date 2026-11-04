@@ -654,6 +654,33 @@ describe('Claude Code stream protocol adapter', () => {
     },
   );
 
+  it.each([
+    ['one-line', () => claudeProtocolEvents],
+    ['stateful', () => claudeCodeImplementerAdapter.createParser?.()],
+  ] as const)('carries the init model on the session event (%s parser)', (_name, create) => {
+    const parse = create();
+    if (parse === undefined) throw new Error('Claude requires a stateful parser');
+    expect(
+      parse(
+        JSON.stringify({
+          type: 'system',
+          subtype: 'init',
+          session_id: 'session-init',
+          model: 'claude-fable-5-1',
+        }),
+      ),
+    ).toContainEqual({
+      type: 'session',
+      nativeSessionId: 'session-init',
+      resolvedModel: 'claude-fable-5-1',
+    });
+    const withoutModel = parse(
+      JSON.stringify({ type: 'system', subtype: 'init', session_id: 'session-bare' }),
+    ).find((event) => event.type === 'session');
+    expect(withoutModel).toEqual({ type: 'session', nativeSessionId: 'session-bare' });
+    expect(withoutModel).not.toHaveProperty('resolvedModel');
+  });
+
   it('projects assistant/session/usage records and a required terminal result', () => {
     const events = claudeProtocolEvents(
       JSON.stringify({

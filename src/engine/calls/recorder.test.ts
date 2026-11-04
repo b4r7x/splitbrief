@@ -252,6 +252,11 @@ describe('createRunnerCallRecorder', () => {
       ts: 9,
     });
     recorder.sessionId({ nativeSessionId: credential, ts: 10 });
+    recorder.sessionId({
+      nativeSessionId: credential,
+      resolvedModel: `model-${credential}`,
+      ts: 10,
+    });
     recorder.artifact({
       artifact: {
         id: 'artifact-1',
@@ -828,6 +833,34 @@ describe('createRunnerCallRecorder', () => {
       expect.objectContaining({ type: 'call_session_id', nativeSessionId: 'sid-2', ts: 7 }),
     ]);
     expect(recorder.snapshot().nativeSessionId).toBe('sid-2');
+  });
+
+  it('records the model a session reports, and a restatement without it does not hide it', () => {
+    const events: RunnerCallEvent[] = [];
+    const recorder = createRunnerCallRecorder({
+      context: { ...context, model: 'opus' },
+      startedAt: 1,
+      onEvent: (event) => events.push(event),
+    });
+
+    recorder.sessionId({ nativeSessionId: 'sid-1', ts: 2 });
+    recorder.sessionId({ nativeSessionId: 'sid-1', resolvedModel: 'claude-fable-5-1', ts: 3 });
+    recorder.sessionId({ nativeSessionId: 'sid-1', ts: 4 });
+    recorder.sessionId({ nativeSessionId: 'sid-1', resolvedModel: 'claude-fable-5-1', ts: 5 });
+    recorder.sessionId({ nativeSessionId: 'sid-1', resolvedModel: 'claude-sonnet-5-5', ts: 6 });
+    recorder.sessionId({ nativeSessionId: 'sid-2', ts: 7 });
+    recorder.sessionId({ nativeSessionId: 'sid-2', resolvedModel: 'claude-sonnet-5-5', ts: 8 });
+
+    const sessions = events.filter((event) => event.type === 'call_session_id');
+    expect(sessions.map((event) => event.ts)).toEqual([2, 3, 6, 7, 8]);
+    expect(sessions[0]).not.toHaveProperty('resolvedModel');
+    expect(sessions[1]).toMatchObject({ model: 'opus', resolvedModel: 'claude-fable-5-1' });
+    expect(sessions[2]).toMatchObject({ model: 'opus', resolvedModel: 'claude-sonnet-5-5' });
+    expect(sessions[3]).not.toHaveProperty('resolvedModel');
+    expect(sessions[4]).toMatchObject({
+      nativeSessionId: 'sid-2',
+      resolvedModel: 'claude-sonnet-5-5',
+    });
   });
 
   it('sanitizes direct unknown-upstream raw previews before emitting events', () => {

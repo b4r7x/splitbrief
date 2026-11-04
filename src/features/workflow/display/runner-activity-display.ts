@@ -67,6 +67,7 @@ export type RunnerActivityLedgerLabel =
   | 'FIND'
   | 'CALL'
   | 'PLAN'
+  | 'AGENT'
   | 'ART'
   | 'WARN'
   | 'ERR'
@@ -293,8 +294,9 @@ function runnerActivityLedgerLabel(
     case 'unknown':
       return opts.shellCommand ? 'RUN' : 'CALL';
     case 'plan':
-    case 'task':
       return 'PLAN';
+    case 'task':
+      return 'AGENT';
     case 'artifact':
       return 'ART';
     default:

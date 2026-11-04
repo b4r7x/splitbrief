@@ -9,6 +9,7 @@ const ACTIVITY_LABEL_DISPLAY: Record<RunnerActivityLedgerLabel, string> = {
   FIND: 'Search',
   CALL: 'Call',
   PLAN: 'Plan',
+  AGENT: 'Agent',
   ART: 'Art',
   WARN: 'Warn',
   ERR: 'Err',

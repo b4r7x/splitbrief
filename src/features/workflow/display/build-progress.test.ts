@@ -291,6 +291,26 @@ describe('deriveBuildProgress', () => {
       expect(progress.silent).toBe(true);
     });
 
+    it('names an open subagent by the Agent word, not the Plan word', () => {
+      const explore = {
+        activityId: 'call-1:task:explore-1',
+        kind: 'task',
+        label: 'task Explore',
+        target: 'Explore',
+        since: NOW - 342_000,
+      } as const;
+      const progress = deriveBuildProgress(
+        input({
+          operations: operationsState({
+            active: runningOperation({ runnerName: 'opencode', openTools: [explore] }),
+          }),
+          lifecycle: silent,
+        }),
+      );
+
+      expect(progress.freshness).toBe('No output for 5:42 · agent Explore');
+    });
+
     it('gives the hint when a quiet stream reports tools only once they end', () => {
       const progress = deriveBuildProgress(
         input({

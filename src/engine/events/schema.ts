@@ -411,6 +411,8 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   }),
   strictCallPhaseEvent('runner_call_session_id').extend({
     nativeSessionId: z.string(),
+    /** The model id the tool reports it runs; `model` stays the saved seat value. */
+    resolvedModel: z.string().min(1).max(256).optional(),
   }),
   strictCallPhaseEvent('runner_call_artifact').extend({
     artifact: RunnerCallArtifactSchema,

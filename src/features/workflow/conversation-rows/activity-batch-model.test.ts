@@ -3,6 +3,7 @@ import { defaultTheme } from '../../../components/theme.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
 import { colorForTone } from '../../../core/theme/tone-color.js';
 import { runnerActivityBatchWindowRows } from './activity-rows.js';
+import { ACTIVITY_LABEL_PAD } from '../display/activity-label-display.js';
 import {
   activityBatchTone,
   buildActivityBatchViewModel,
@@ -48,6 +49,27 @@ describe('buildActivityBatchViewModel', () => {
     });
     expect(model.visibleItems[0]?.labelTone).toBe('planner');
     expect(model.markerTone).toBe('error');
+  });
+
+  it('reads a subagent row as Agent in the neutral tone, not the planner tone', () => {
+    const model = buildActivityBatchViewModel({
+      batchKey: 'subagent',
+      events: [
+        activity({ role: 'planner', kind: 'task', label: 'task Explore', target: 'Explore' }),
+      ],
+    });
+    expect(model.visibleItems[0]?.labelTone).toBe('textDim');
+
+    const row = runnerActivityBatchWindowRows({
+      model,
+      width: 120,
+      windowStart: 1,
+      windowEnd: 2,
+    })[0];
+    const text = row?.segments.map((segment) => segment.text).join('') ?? '';
+    expect(text).toContain(`${'Agent'.padEnd(ACTIVITY_LABEL_PAD)}  Explore`);
+    expect(text).not.toContain('Plan');
+    expect(row?.segments.find((segment) => segment.text.startsWith('Agent'))?.tone).toBe('textDim');
   });
 
   it('omits historical session activity from rows, counts and disclosure', () => {

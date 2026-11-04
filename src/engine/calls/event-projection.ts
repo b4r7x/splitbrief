@@ -89,6 +89,7 @@ export function projectRunnerCallEvent(
         type: 'runner_call_session_id',
         ...base,
         nativeSessionId: event.nativeSessionId,
+        ...(event.resolvedModel !== undefined && { resolvedModel: event.resolvedModel }),
       };
     case 'call_artifact':
       return { type: 'runner_call_artifact', ...base, artifact: event.artifact };

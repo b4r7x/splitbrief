@@ -81,6 +81,8 @@ function buildConversationRowsProjectionWithContext(
   let renderableCount = 0;
   let hasRenderableBlock = false;
   let lastAppendedType: EngineEvent['type'] | undefined;
+  // A review heading's first row follows it directly; the blank row stands above the heading.
+  let underReviewHeading = false;
   // The feature/prompt, captured from the first user_message so the planner's opening H1 echo of it
   // can be stripped (the prompt already renders as the first transcript row).
   let dedupTitle: string | undefined;
@@ -91,12 +93,16 @@ function buildConversationRowsProjectionWithContext(
     sectionBoundary = false,
   ): void => {
     if (block.rowCount === 0) return;
-    if (hasRenderableBlock && (sectionBoundary || !joinsCheckList(lastAppendedType, eventType))) {
+    if (
+      hasRenderableBlock &&
+      (sectionBoundary || !(underReviewHeading || joinsCheckList(lastAppendedType, eventType)))
+    ) {
       blocks.push(sectionSpacerBlock(block.key));
     }
     blocks.push(block);
     hasRenderableBlock = true;
     lastAppendedType = eventType;
+    underReviewHeading = false;
     renderableCount += block.renderableUnits;
   };
 
@@ -128,7 +134,9 @@ function buildConversationRowsProjectionWithContext(
         continue;
       const key = `review-${step.startIndex}`;
       const block = rowsBlock(key, [segmentedRow(key, stageHeadingParts(step.review), 'section')]);
-      if (block !== null) appendBlock(block, undefined, true);
+      if (block === null) continue;
+      appendBlock(block, undefined, true);
+      underReviewHeading = true;
       continue;
     }
     if (step.kind === 'settled') {

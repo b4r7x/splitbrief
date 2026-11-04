@@ -55,8 +55,8 @@ export function getSidebarStatusColumnCells({ hasStatusTail }: SidebarStatusColu
   return hasStatusTail ? SIDEBAR_TASK_TAIL_CELLS : 0;
 }
 
-// The top border with the count, the blank row under it, the footer divider, and the bottom border.
-const SIDEBAR_LIST_CHROME_ROWS = 4;
+// The top border with the count, the footer divider, and the bottom border.
+const SIDEBAR_LIST_CHROME_ROWS = 3;
 
 // The rows the footer can hold above the bottom border once the list has given up all of its own.
 export function getSidebarFooterBudget(input: { height: number }): number {

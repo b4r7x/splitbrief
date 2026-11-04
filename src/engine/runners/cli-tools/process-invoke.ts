@@ -143,7 +143,10 @@ export function recordCliProtocolEvent(
       recorder.usage({ usage: event.usage, semantics: event.semantics });
       return;
     case 'session':
-      recorder.sessionId({ nativeSessionId: event.nativeSessionId });
+      recorder.sessionId({
+        nativeSessionId: event.nativeSessionId,
+        ...(event.resolvedModel !== undefined && { resolvedModel: event.resolvedModel }),
+      });
       return;
     case 'tool-use-delta':
       recorder.toolUseDelta({

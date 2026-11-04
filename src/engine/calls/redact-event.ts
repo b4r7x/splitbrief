@@ -27,7 +27,11 @@ export function redactRunnerCallEventInput(
     case 'call_tool_use_done':
       return { ...input, toolUse: redactRunnerCallToolUse(input.toolUse, redact) };
     case 'call_session_id':
-      return { ...input, nativeSessionId: redact(input.nativeSessionId) };
+      return {
+        ...input,
+        nativeSessionId: redact(input.nativeSessionId),
+        ...(input.resolvedModel !== undefined && { resolvedModel: redact(input.resolvedModel) }),
+      };
     case 'call_artifact':
       return {
         ...input,

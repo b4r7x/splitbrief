@@ -839,6 +839,30 @@ describe('readRunEvents', () => {
     expect(events[1]).toEqual({ type: 'plan_approved', ts: TS, phase: 'reviewing-plan' });
   });
 
+  it('reads a session id with the model the tool resolved, and one an older log wrote without it', async () => {
+    const dir = sessionDir(projectDir, sessionId);
+    mkdirSync(dir, { recursive: true });
+    const context = { callId: 'call-1', role: 'implementer', backendKind: 'cli', model: 'opus' };
+    const entries = [
+      { ...context, sequence: 1, nativeSessionId: 'native-old' },
+      { ...context, sequence: 2, nativeSessionId: 'native-new', resolvedModel: 'claude-fable-5-1' },
+    ];
+    for (const data of entries) {
+      appendFileSync(
+        join(dir, SESSION_LOG_FILE),
+        `${JSON.stringify({ kind: 'event', ts: new Date(TS).toISOString(), type: 'runner_call_session_id', phase: 'implementing', data })}\n`,
+      );
+    }
+
+    const { events, diagnostics } = await readRunEvents(ref());
+
+    expect(diagnostics.skipped).toBe(0);
+    expect(events.slice(1, -1)).toEqual([
+      { type: 'runner_call_session_id', ts: TS, phase: 'implementing', ...entries[0] },
+      { type: 'runner_call_session_id', ts: TS, phase: 'implementing', ...entries[1] },
+    ]);
+  });
+
   it('reads a seat wait an older log wrote without the saved wait or kept', async () => {
     const started = {
       type: 'seat_wait_started',
