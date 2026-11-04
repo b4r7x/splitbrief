@@ -46,9 +46,9 @@ Record a malformed answer as a failure of the planner. Apply no action.
 
 | Action | Next step |
 |---|---|
-| `guidance` | Keep the brief. Attach instructions and context for one more implementer attempt. |
-| `rewrite-task` | Replace the TaskSpec at the same id and the same criteria. Raise its revision. |
-| `split-task` | Replace with 2–4 subtasks. Keep all criteria. Re-point pending dependents to all children. |
+| `guidance` | Keep the brief. Keep the files the failed attempt left. Attach instructions and context for one more implementer attempt. |
+| `rewrite-task` | Replace the TaskSpec at the same id and the same criteria. Raise its revision. Keep the files the failed attempt left, also its edits to files of earlier briefs. The new brief names what to keep, change or remove. |
+| `split-task` | Replace with 2–4 subtasks. Keep all criteria. Re-point pending dependents to all children. Keep the files the failed attempt left, also its edits to files of earlier briefs. Each child brief names what to keep, change or remove. |
 | `verify` | Run the brief gate and named registered checks. Make no implementer call. |
 | `ask-user` | Ask only when the user alone can answer. Record why, choices and a default. |
 | `cannot` | Stop the brief and ask the user. Name the next step for a user who lets the run decide: `skip-brief` or `end-run`. Make no implementer call. |
@@ -141,6 +141,8 @@ Use this typed engine contract. Register no render checks despite their presence
     - `ask-user` — `question`, `whyOnlyUserCanAnswer`, `choices` (or null) and `default` (or null): only when no other action can unblock the task and the user alone holds the missing decision.
     - `cannot` — `reason` and `next`: the task cannot be done as asked, and no guidance, rewrite, split or answer of the user can change that. `next` is the step for a user who chose Decide for me: `skip-brief` when the run can go on without this task, `end-run` when the rest of the run depends on it; null on a stuck review. SPLITBRIEF stops the brief and asks the user, or takes `next` after Decide for me.
     - `accept` — `note`: a stuck review only. The remaining blockers need no more work; the note says why, and the user reads it before Apply.
+
+    The workspace rule: `guidance`, `rewrite-task` and `split-task` continue on the workspace as the failed attempt left it. The edits of the attempt stay, also its edits to files of earlier done tasks. A rewrite or a split names in its brief what to keep, change or remove of these edits.
 
     The operator rule: the Operator Instructions are the user's own decisions for this task. No action undoes one of them. A question that concerns one of them quotes it, and its default keeps it.
 

@@ -8,6 +8,7 @@ import { publishWarning, publishWarningFromError } from '../events.js';
 import { inferTaskOwnChangedFiles } from '../changed-files-baseline.js';
 import type { WorkflowContext } from '../types.js';
 import { restoreWorkspaceFiles } from '../isolation/entry-snapshot.js';
+import { replacedAttemptWrites } from './booking.js';
 
 /** The restore path runs before a WorkflowContext exists on resume, so it asks for only what it reads. */
 type RestoreContext = Pick<WorkflowContext, 'projectDir' | 'workspaceDir' | 'sessionId' | 'bus'>;
@@ -66,7 +67,8 @@ function restoreTaskFilesFromSnapshot(
 
 /**
  * Every file the brief changed since its task-start snapshot, across all its attempts, goes back.
- * The caller publishes the returned warning where its own events allow it.
+ * A rewritten brief or a split child starts from its own snapshot, so the files of the attempts it
+ * replaced stay. The caller publishes the returned warning where its own events allow it.
  */
 export function restoreExhaustedTaskFiles(opts: {
   wctx: RestoreContext;
@@ -76,45 +78,47 @@ export function restoreExhaustedTaskFiles(opts: {
     wctx: opts.wctx,
     taskStartSnapshot: opts.taskStartSnapshot,
     restoredMessage: (restoredFiles, changes) =>
-      `Restored ${restoredFiles.length} failing task ${changes} to the pre-task state: ${restoredFiles.join(', ')}`,
-    failureMessage: 'Failed to restore failing task changes from the pre-task snapshot',
+      `Restored ${restoredFiles.length} ${changes} of the failing brief to its start: ${restoredFiles.join(', ')}`,
+    failureMessage: 'Failed to restore the changes of the failing brief to its start',
   });
 }
 
-export async function restoreHookDeniedTaskFiles(opts: {
+export function restoreHookDeniedTaskFiles(opts: {
   wctx: RestoreContext;
-  phase: WorkflowState['phase'];
   taskStartSnapshot: ChangedFilesSnapshot;
   hook: 'pre_task' | 'pre_validation';
-}): Promise<void> {
-  const warning = await restoreTaskFilesFromSnapshot({
+}): Promise<string | undefined> {
+  return restoreTaskFilesFromSnapshot({
     wctx: opts.wctx,
     taskStartSnapshot: opts.taskStartSnapshot,
     restoredMessage: (restoredFiles, changes) =>
       `Restored ${restoredFiles.length} unvalidated task ${changes} after ${opts.hook} denied: ${restoredFiles.join(', ')}`,
     failureMessage: `Failed to restore denied ${opts.hook} task changes`,
   });
-  publishRestoreWarning(opts.wctx, opts.phase, warning);
 }
 
 /**
- * The current attempt's own writes go back: every file changed since the attempt's own start
- * snapshot returns to what it held then, so earlier attempts and earlier briefs keep their
- * results.
+ * A skip that closes a lineage also takes back the attempts that a rewrite or a split replaced
+ * (`replacedAttemptWrites`), newest first, so a file several of them wrote ends where the oldest
+ * started. The caller publishes the returned warning.
  */
-export async function restoreAttemptFiles(opts: {
+export async function restoreReplacedAttemptFiles(opts: {
   wctx: RestoreContext;
-  phase: WorkflowState['phase'];
-  attemptSnapshot: ChangedFilesSnapshot;
-}): Promise<void> {
-  const warning = await restoreSnapshotFiles({
-    wctx: opts.wctx,
-    snapshot: opts.attemptSnapshot,
-    restoredMessage: (restoredFiles, changes) =>
-      `Restored ${restoredFiles.length} ${changes} from the failed attempt: ${restoredFiles.join(', ')}`,
-    failureMessage: 'Failed to restore the failed attempt changes from its start snapshot',
-  });
-  publishRestoreWarning(opts.wctx, opts.phase, warning);
+  state: WorkflowState;
+  task: Task;
+}): Promise<string | undefined> {
+  const warnings: string[] = [];
+  for (const snapshot of replacedAttemptWrites(opts.wctx, opts.state, opts.task)) {
+    const warning = await restoreSnapshotFiles({
+      wctx: opts.wctx,
+      snapshot,
+      restoredMessage: (restoredFiles, changes) =>
+        `Restored ${restoredFiles.length} ${changes} of the attempts before the rewrite or split: ${restoredFiles.join(', ')}`,
+      failureMessage: 'Failed to restore the changes of the attempts before the rewrite or split',
+    });
+    if (warning !== undefined) warnings.push(warning);
+  }
+  return warnings.length === 0 ? undefined : warnings.join('. ');
 }
 
 /**

@@ -9,7 +9,7 @@ import { refreshAndPersistCode } from '../task/refresh-code.js';
 import { gateAttemptChanges } from '../task/attempt-gate.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import { withContinuationLoop } from '../continuation.js';
-import { briefContinuation } from '../kept-work.js';
+import { briefContinuation, changedDeclaredFiles } from '../kept-work.js';
 import { recordSteerCorrection } from '../queue/build-corrections.js';
 import { persistRetryApprovalEvidence, recordRetryDenial } from './retry-evidence.js';
 import { validateAndCommit } from './validate-and-commit.js';
@@ -144,6 +144,8 @@ async function runRetryStepAttempt(
           taskStartSnapshot: ctx.taskStartSnapshot,
           partial,
         });
+        // Only a failed or stopped call takes its files back, so a brief with none left was discarded.
+        const left = await changedDeclaredFiles(workspace.projectDir, task, ctx.taskStartSnapshot);
         return withAttemptRestoreScope({
           ref: ctx,
           dir: workspace.projectDir,
@@ -167,6 +169,7 @@ async function runRetryStepAttempt(
               createdByThisTask: recordedApiCreatedPaths(ctx, task, workspace.projectDir),
               deliversAnswer: opts.deliversAnswer,
               ...(continuation !== undefined && { continuation }),
+              discarded: left.length === 0,
               recordOutput,
               seat: { ref: ctx, state, usageCategory },
             }),

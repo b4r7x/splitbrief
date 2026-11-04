@@ -901,7 +901,7 @@ The policy does not catch database-drop tasks: `rails db:drop`, `rake db:drop`, 
 
 ### Symptom: Every task fails validation because the tree was already red
 
-**Likely cause:** A brief check fails on a failure the tree had before the run. This can occur with `workflow.review: task` or a consult `verify`. Its failure goes to the planner's consult with the exact errors, for a plan task and for a fix task. Only the project gate runs at the run base, once during the build with the same command text, and only a red reviewer check is compared with it.
+**Likely cause:** A brief check fails on a failure the tree had before the run, and SPLITBRIEF cannot compare it with the run base. Only the project gate runs at the run base, once during the build. A brief check that runs the same command text as a gate command is compared with that result. A failure that is red there too is pre-existing and does not fail the brief. A brief check whose command no gate command runs is not compared, and each of its failures fails the brief. This occurs when End-of-run checks are off, when the plan names no gate, when the run recorded no workspace, or when the check runs a command that differs from every gate command, for example a test command narrowed to one file. The failure goes to the planner's consult with the exact errors, for a plan task and for a fix task.
 
 A fix check runs once per brief gate. Each new BUILD attempt runs the checks again. A fix check never re-runs at the run base.
 
@@ -915,12 +915,12 @@ A check with no carried keys, or a re-run with no named failure, must pass. Keys
 
 1. Run the failing command in your checkout to confirm the failure.
 2. Make the tree green first, or plan a task that repairs it.
-3. For a reviewer check, read its row. A red row that reads `<m> new, <n> pre-existing` counts the failures that also occur at the run base. The dim rows under it name the failing tests of each side. Read the Checks Log's `pre-existing (also red at the run base)` line. Its pre-existing failures start no fix.
+3. Read the row of the check. A plan check row that reads `pre-existing` failed only on failures that also occur at the run base, and its brief passed. A red row that reads `<m> new, <n> pre-existing` counts the failures that also occur at the run base. The dim rows under it name the failing tests of each side. Read the Checks Log's `pre-existing (also red at the run base)` line. Its pre-existing failures start no fix.
 4. A reviewer check row that reads `<k> not verified at the run base · <reason>`, or a Checks Log line that reads `not verified at the run base (<reason>)`, is red at the run base too, but SPLITBRIEF could not show the same failure: a timeout, or a red with no failing test name and no diagnostic line, for example a red that prints only an `npm` script banner or a `make` error summary. Such a red is never exempt. It reaches the reviewer as a pending input, and the reviewer decides from the output. A fix check with such a red does not pass its gate. To make it comparable, make the command print its failing tests, or raise `validation.timeout_ms`.
 
 To measure the project before a run, run its own commands directly. `doctor` runs no validation command.
 
-**Prevention:** Maintain passing validation commands. The reviewer check's base comparison excludes pre-existing failures from fixes and still blocks failures the run causes. A failure it cannot compare goes to the reviewer, never to the pre-existing list.
+**Prevention:** Maintain passing validation commands. The base comparison keeps pre-existing failures out of the brief gate and out of fixes, and still blocks failures the run causes. A failure it cannot compare goes to the reviewer, never to the pre-existing list.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) (§4 `validation`), [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md).
 

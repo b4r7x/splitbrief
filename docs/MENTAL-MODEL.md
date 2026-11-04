@@ -141,8 +141,8 @@ SPLITBRIEF owns correctness through validation and the final review. No check ru
 If validation fails, SPLITBRIEF asks the planner, read-only, for one typed answer. The planner sees the error message:
 
 - **Guidance** — the implementer retries once more with the planner's instructions in its error block
-- **Rewrite-task** — the brief is replaced at the same id, one revision further, and the failing attempt's own edits are rolled back first
-- **Split-task** — the brief becomes 2–4 subtasks at the next free ids, with every pending dependent re-pointed to them
+- **Rewrite-task** — the brief is replaced at the same id, one revision further, and it continues on the files of the failed attempt
+- **Split-task** — the brief becomes 2–4 subtasks at the next free ids, with every pending dependent re-pointed to them; the subtasks continue on the files of the failed attempt
 - **Verify** — no implementer call: the validation pipeline and the named checks run again, and a clean run completes the task
 - **Ask-user** — the one question the ladder asks you, with a default; the answer continues as guidance
 

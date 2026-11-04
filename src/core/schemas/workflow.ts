@@ -194,6 +194,13 @@ export const LineageRecordSchema = z.object({
   correctionImages: z.array(AttachmentSchema).optional(),
   /** The task start of the lineage's first dispatch; kept only while one of its briefs is open. */
   startSnapshot: ChangedFilesSnapshotSchema.optional(),
+  /**
+   * The task start of each brief a rewrite or a split replaced, oldest first, with the writes of
+   * its attempts and the briefs done when it started; kept only while one of its briefs is open.
+   */
+  replacedStarts: z
+    .array(z.object({ snapshot: ChangedFilesSnapshotSchema, doneAtStart: z.array(TaskIdSchema) }))
+    .optional(),
   attemptFailures: z.array(AttemptFailureSchema).optional(),
 });
 export type LineageRecord = z.infer<typeof LineageRecordSchema>;

@@ -114,8 +114,10 @@ export async function persistTaskEvidence(opts: {
 
 /**
  * A skip takes back the brief's files from its task-start snapshot, so the skipped brief answers
- * only for the files still changed since then, plus the unbooked files of its lineage that it
- * books (`lineageRemainder`).
+ * only for the files still changed since then. A skip that closes the lineage also took back the
+ * attempts a rewrite or a split replaced, so the brief answers only for `lineageFiles`, the
+ * lineage's unbooked files: a file its task start held from a replaced attempt reads as changed,
+ * though the lineage left it as it was.
  */
 export async function persistSkippedBriefFiles(opts: {
   wctx: Pick<WorkflowContext, 'projectDir' | 'sessionId' | 'bus' | 'workspaceDir'>;
@@ -123,21 +125,22 @@ export async function persistSkippedBriefFiles(opts: {
   task: Task;
   reason: string;
   taskStartSnapshot: ChangedFilesSnapshot | undefined;
-  remainderFiles: readonly string[];
+  lineageFiles: readonly string[] | undefined;
 }): Promise<void> {
-  const { wctx, state, task, taskStartSnapshot } = opts;
+  const { wctx, state, task, taskStartSnapshot, lineageFiles } = opts;
   try {
     const keptFiles =
-      taskStartSnapshot === undefined
+      lineageFiles ??
+      (taskStartSnapshot === undefined
         ? undefined
-        : await getChangedFilesSinceSnapshot(wctx.workspaceDir, taskStartSnapshot);
+        : await getChangedFilesSinceSnapshot(wctx.workspaceDir, taskStartSnapshot));
     mutateEvidenceLedger(wctx, (existing) =>
       recordSkippedTaskEvidence({
         ledger: existing ?? getOrCreateLedger({ ref: wctx, state }),
         task,
         reason: opts.reason,
         keptFiles,
-        remainderFiles: opts.remainderFiles,
+        remainderFiles: lineageFiles,
       }),
     );
   } catch (err) {

@@ -36,12 +36,30 @@ function stalledLine(event: Extract<EngineEvent, { type: 'runner_call_stalled' }
   return `stalled: ${event.role}${tool}${SOFT_SEP}no output for ${formatElapsedClock(event.silentMs)}`;
 }
 
+/** The name a check's lines start with: a render's scenario, else the check's moment and id. */
+function checkLabel(event: Extract<EngineEvent, { type: 'full_suite' }>, id: string): string {
+  if ((event.moment === 'plan' || event.moment === 'verify') && event.scenario !== undefined)
+    return `Render ${event.scenario}`;
+  switch (event.moment) {
+    case 'plan':
+      return `plan check ${id}`;
+    case 'verify':
+      return `verify ${id}`;
+    case 'base':
+      return `base re-run ${id}`;
+    case 'brief':
+      return `fix check ${id}`;
+    case 'pre-review':
+      return `reviewer check ${id}`;
+  }
+}
+
 /** The failing tests a split names, one line per side, under its verdict line. */
 function splitNameLines(event: Extract<EngineEvent, { type: 'full_suite' }>): string[] {
   if (event.id === undefined) return [];
-  const label = event.moment === 'base' ? 'base re-run' : 'reviewer check';
+  const label = checkLabel(event, event.id);
   return baseSplitNames(event).map(
-    ({ side, names }) => `${label} ${event.id} ${side}: ${names.join(SOFT_SEP)}`,
+    ({ side, names }) => `${label} ${side}: ${names.join(SOFT_SEP)}`,
   );
 }
 
@@ -50,9 +68,12 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
   if (event.id === undefined || event.status === 'running' || event.status === 'stopped')
     return null;
   const reused = event.reusedAt === undefined ? '' : `${SOFT_SEP}${reusedNote(event.reusedAt)}`;
-  // The split of a red reviewer or verify check; an older run carried it on its base re-run.
+  // The split of a red reviewer, plan or verify check; an older run carried it on its base re-run.
   const split =
-    (event.moment === 'pre-review' || event.moment === 'base' || event.moment === 'verify') &&
+    (event.moment === 'pre-review' ||
+      event.moment === 'base' ||
+      event.moment === 'verify' ||
+      event.moment === 'plan') &&
     event.passed === false &&
     event.newFailures !== undefined &&
     event.preExisting !== undefined
@@ -64,13 +85,8 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
         })
       : null;
   const why = split === null || split.why === null ? '' : `${SOFT_SEP}${split.why}`;
+  const label = checkLabel(event, event.id);
   if (event.moment === 'plan' || event.moment === 'verify') {
-    const label =
-      event.scenario !== undefined
-        ? `Render ${event.scenario}`
-        : event.moment === 'plan'
-          ? `plan check ${event.id}`
-          : `verify ${event.id}`;
     const detail = event.detail === undefined ? '' : ` (${event.detail})`;
     if (event.status === 'refused') return `${label}: refused${detail}`;
     if (event.status === 'not-run') return `${label}: not run${detail}`;
@@ -87,15 +103,9 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
       event.scenario !== undefined ? '' : event.command === '' ? detail : ` (${event.command})`;
     return `${label}: ${verdict}${clock}${why}${command}`;
   }
-  const label =
-    event.moment === 'base'
-      ? 'base re-run'
-      : event.moment === 'brief'
-        ? 'fix check'
-        : 'reviewer check';
   const detail = event.detail ?? 'no detail given';
-  if (event.status === 'refused') return `${label} ${event.id}: refused (${detail})`;
-  if (event.status === 'not-run') return `${label} ${event.id}: not run (${detail})`;
+  if (event.status === 'refused') return `${label}: refused (${detail})`;
+  if (event.status === 'not-run') return `${label}: not run (${detail})`;
   if (
     event.moment === 'brief' &&
     event.own !== undefined &&
@@ -109,15 +119,15 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
       deferredTo: event.deferredTo ?? [],
       others: event.others,
     }).join(SOFT_SEP);
-    return `${label} ${event.id}: ${verdict}${reused} (${event.command})`;
+    return `${label}: ${verdict}${reused} (${event.command})`;
   }
   if (split !== null) {
     const command = event.moment === 'base' ? '' : ` (${event.command})`;
-    return `${label} ${event.id}: ${split.verdict}${reused}${why}${command}`;
+    return `${label}: ${split.verdict}${reused}${why}${command}`;
   }
   if (event.moment === 'base')
-    return `${label} ${event.id}: ${event.passed === true ? 'passes' : 'fails'}${reused}`;
-  return `${label} ${event.id}: ${event.passed === true ? 'passed' : 'failed'}${reused} (${event.command})`;
+    return `${label}: ${event.passed === true ? 'passes' : 'fails'}${reused}`;
+  return `${label}: ${event.passed === true ? 'passed' : 'failed'}${reused} (${event.command})`;
 }
 
 function briefChecks(view: RunView, taskId: string): string {

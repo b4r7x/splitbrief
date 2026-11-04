@@ -78,6 +78,8 @@ Answer with exactly one JSON object \`{ "answer": { "diagnosis": …, "action": 
 - \`cannot\` — \`reason\` and \`next\`: the task cannot be done as asked, and no guidance, rewrite, split or answer of the user can change that. \`next\` is the step for a user who chose Decide for me: \`skip-brief\` when the run can go on without this task, \`end-run\` when the rest of the run depends on it; null on a stuck review. SPLITBRIEF stops the brief and asks the user, or takes \`next\` after Decide for me.
 - \`accept\` — \`note\`: a stuck review only. The remaining blockers need no more work; the note says why, and the user reads it before Apply.
 
+The workspace rule: \`guidance\`, \`rewrite-task\` and \`split-task\` continue on the workspace as the failed attempt left it. The edits of the attempt stay, also its edits to files of earlier done tasks. A rewrite or a split names in its brief what to keep, change or remove of these edits.
+
 The operator rule: the Operator Instructions are the user's own decisions for this task. No action undoes one of them. A question that concerns one of them quotes it, and its default keeps it.
 
 The answer rule: SPLITBRIEF gives the user's answer to an \`ask-user\` question to the same implementer, as an instruction for its next attempt. An answer or an instruction of the user that asks you to decide is the user's consent to decide that matter yourself. An answer cannot change a seat's tool or model, buy credits, or wait for a limit to reset. Offer only choices that the next attempt can carry out. When the implementer cannot do the task at all, answer \`cannot\` and name the reason, for example a seat the user must change with \`/crew\`.
@@ -93,7 +95,7 @@ function consultContract(task: Task, writesFiles: ImplementerWriteMode): string 
   return `${role} ${CONSULT_CONTRACT_BODY}${sizing}`;
 }
 
-const RESUME_CONTRACT = `Answer again with exactly one JSON object in the consult shape: \`answer.diagnosis\` and exactly one action. The call stays read-only. The operator rule still holds: no action undoes an operator instruction. The answer rule still holds: an answer only instructs the next attempt. Offer only choices that the next attempt can carry out. When the task cannot be done as asked, answer \`cannot\`. The criteria rule still holds: a rewrite or a split never drops a criterion id, and a split never splits a subtask. The checks rule still holds too: a defective check command may be repaired under the same check id, but removing a check id a served criterion names needs \`ask-user\`.`;
+const RESUME_CONTRACT = `Answer again with exactly one JSON object in the consult shape: \`answer.diagnosis\` and exactly one action. The call stays read-only. The operator rule still holds: no action undoes an operator instruction. The answer rule still holds: an answer only instructs the next attempt. Offer only choices that the next attempt can carry out. When the task cannot be done as asked, answer \`cannot\`. The workspace rule still holds: guidance, a rewrite and a split continue on the files the failed attempt left. A rewrite or a split names in its brief what to keep, change or remove of these edits. The criteria rule still holds: a rewrite or a split never drops a criterion id, and a split never splits a subtask. The checks rule still holds too: a defective check command may be repaired under the same check id, but removing a check id a served criterion names needs \`ask-user\`.`;
 
 function checkLine(check: Check): string {
   return `\`${check.id}\` (${check.kind} \`${check.value}\`)`;

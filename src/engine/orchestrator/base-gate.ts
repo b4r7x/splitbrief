@@ -7,7 +7,13 @@ import { toErrorMessage } from '../../utils/format-errors.js';
 import { redactSecrets } from '../../utils/redact.js';
 import type { EventBus } from '../events/types.js';
 import { publishReviewCheck, publishWarning } from './events.js';
-import { runBaseOf, withRunBaseTree } from './isolation/base-tree.js';
+import {
+  runBaseIncomplete,
+  runBaseOf,
+  withRunBaseTree,
+  type RunBase,
+} from './isolation/base-tree.js';
+import type { FailureKeys } from './validation/extract-failure-keys.js';
 import { storedCheckRun, type CheckResultStore } from './validation/result-store.js';
 import {
   enabledReviewChecks,
@@ -21,10 +27,121 @@ export type BaseOutcome =
   | { kind: 'ran'; run: CheckRunResult }
   | { kind: 'unavailable'; reason: string };
 
+type BaseSplitCounts = {
+  newFailures: number;
+  preExisting: number;
+  notVerified?: number | undefined;
+  newKeys?: string[] | undefined;
+  preExistingKeys?: string[] | undefined;
+  detail?: string | undefined;
+};
+
+/** How the failures of a red command split against the same command's run at the run base. */
+export type BaseSplit = {
+  preExisting: string[];
+  base?: CheckRunResult | undefined;
+  unavailable?: string | undefined;
+  notVerified?: string | undefined;
+  counts?: BaseSplitCounts | undefined;
+};
+
+/** Why two reds whose keys include a placeholder do not show the same failure. */
+function notVerifiedReason(workspace: FailureKeys, base: FailureKeys): string {
+  if (workspace.placeholder !== undefined && workspace.placeholder === base.placeholder) {
+    return `both runs ${workspace.placeholder}`;
+  }
+  return [
+    workspace.placeholder === undefined ? null : `the workspace run ${workspace.placeholder}`,
+    base.placeholder === undefined ? null : `the run base re-run ${base.placeholder}`,
+  ]
+    .filter((side) => side !== null)
+    .join(' and ');
+}
+
+/**
+ * The failures of a red command split by the same command's outcome at the run base. `preExisting`
+ * are the keys the run base also shows. A red at the run base proves a pre-existing failure only
+ * when both runs name their failures: with a placeholder on either side, or a run base copy with no
+ * base commit, nothing is pre-existing, and `notVerified` says why. A base run that could not run
+ * leaves every key not verified with its reason; a refused or skipped one leaves every key new, and
+ * `unavailable` says why. `counts` is the split the check's row carries.
+ */
+export function splitFailureAtBase(
+  failure: FailureKeys,
+  atBase: BaseOutcome,
+  base: Pick<RunBase, 'head'>,
+): BaseSplit {
+  if (atBase.kind === 'unavailable') {
+    return {
+      preExisting: [],
+      notVerified: atBase.reason,
+      counts: {
+        newFailures: 0,
+        preExisting: 0,
+        notVerified: failure.keys.length,
+        detail: atBase.reason,
+      },
+    };
+  }
+  const { run } = atBase;
+  if (run.status !== 'pass' && run.status !== 'fail') {
+    return {
+      preExisting: [],
+      base: run,
+      unavailable: `${run.status === 'refused' ? 'refused' : 'not run'}: ${run.output}`,
+    };
+  }
+  const baseFailure = run.status === 'fail' ? run.failure : undefined;
+  const reason =
+    baseFailure === undefined
+      ? undefined
+      : (runBaseIncomplete(base) ??
+        (failure.placeholder !== undefined || baseFailure.placeholder !== undefined
+          ? notVerifiedReason(failure, baseFailure)
+          : undefined));
+  const known = new Set(baseFailure?.keys);
+  const keys =
+    baseFailure !== undefined && reason === undefined
+      ? failure.keys.filter((key) => known.has(key))
+      : [];
+  return {
+    preExisting: keys,
+    base: run,
+    notVerified: reason,
+    counts:
+      reason === undefined
+        ? {
+            newFailures: failure.keys.length - keys.length,
+            preExisting: keys.length,
+            newKeys: failure.keys.filter((key) => !known.has(key)),
+            preExistingKeys: keys,
+          }
+        : { newFailures: 0, preExisting: 0, notVerified: failure.keys.length, detail: reason },
+  };
+}
+
+/**
+ * The split of a red command's failures by the gate command that runs the same command text at the
+ * run base. It waits for that command's outcome there. None when no gate command runs it: such a red
+ * stays whole.
+ */
+export async function splitCommandAtBase(
+  gate: BaseGate | undefined,
+  command: string,
+  failure: FailureKeys,
+  base: Pick<RunBase, 'head'> | undefined,
+): Promise<BaseSplit | undefined> {
+  const atBase = gate?.outcomeForCommand(command);
+  if (atBase === undefined || base === undefined) return undefined;
+  return splitFailureAtBase(failure, await atBase, base);
+}
+
 /** The project gate running at the run base beside the build. */
 export type BaseGate = {
   /** Settles once the command of `id` has a result at the run base, or cannot get one. */
   outcome(id: string): Promise<BaseOutcome>;
+  /** The outcome of the gate command with this command text; none when no gate command runs it. */
+  outcomeForCommand(command: string): Promise<BaseOutcome> | undefined;
   /** Cuts the command still running and waits until its process and base tree are gone. */
   stop(): Promise<void>;
 };
@@ -145,11 +262,16 @@ export function startBaseGate(opts: {
     }
   };
   const done = run();
+  const outcome = (id: string): Promise<BaseOutcome> =>
+    outcomes.get(id)?.promise ??
+    Promise.resolve({ kind: 'unavailable', reason: `the project gate names no ${id}` });
 
   return {
-    outcome: (id) =>
-      outcomes.get(id)?.promise ??
-      Promise.resolve({ kind: 'unavailable', reason: `the project gate names no ${id}` }),
+    outcome,
+    outcomeForCommand: (command) => {
+      const check = gate.find((each) => each.value === command);
+      return check === undefined ? undefined : outcome(check.id);
+    },
     stop: async () => {
       cut.abort();
       await done;

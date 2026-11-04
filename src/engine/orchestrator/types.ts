@@ -9,6 +9,7 @@ import type { Implementer, ImplementerFactoryOptions } from '../implementers/typ
 import type { SpecMetadata } from '../../core/paths-io.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { Validator } from './validation/types.js';
+import type { BaseGate } from './base-gate.js';
 import type { RunIsolation } from './isolation/types.js';
 import type { EventBus } from '../events/types.js';
 import type { SteeringPort } from '../calls/steering.js';
@@ -122,6 +123,8 @@ export interface WorkflowContext {
    * step sees nothing.
    */
   continuation?: ContinuationHolder | undefined;
+  /** The project gate running at the run base beside the build; none when no gate runs there. */
+  baseGate?: BaseGate | undefined;
 }
 
 export type WorkflowPersistenceContext = SessionRef & { bus: EventBus };

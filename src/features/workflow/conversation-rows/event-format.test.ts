@@ -428,6 +428,31 @@ describe('fullSuiteRow for a reviewer check', () => {
     expect(fullSuiteTone(red)).toBe('error');
   });
 
+  it('splits a red plan check at the run base, and a red only of pre-existing failures is a neutral row', () => {
+    const red = reviewCheck({
+      id: 'K1',
+      moment: 'plan',
+      phase: 'validating-task',
+      status: 'done',
+      passed: false,
+      duration: 1_000,
+    });
+    const allOld = { ...red, newFailures: 0, preExisting: 1 };
+    const mixed = { ...red, newFailures: 1, preExisting: 1 };
+
+    expect(fullSuiteRow(allOld)).toBe(
+      "Plan check K1 · npm test · pre-existing · 1.0s · the failure also fails before this run's changes",
+    );
+    expect(fullSuiteRow(mixed)).toBe(
+      'Plan check K1 · npm test · 1\u00a0new, 1\u00a0pre-existing · 1.0s',
+    );
+    expect(fullSuiteRow(red)).toBe('Plan check K1 · npm test · failed · 1.0s');
+    expect(fullSuiteTone(allOld)).toBe('textDim');
+    expect(fullSuiteTone(mixed)).toBe('error');
+    expect(fullSuiteTone({ ...red, newFailures: 0, preExisting: 0, notVerified: 1 })).toBe('error');
+    expect(fullSuiteTone(red)).toBe('error');
+  });
+
   it.each(['pre-review', 'base', 'brief', 'plan', 'verify'] as const)(
     'renders a stopped %s check in the warning tone',
     (moment) => {

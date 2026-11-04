@@ -583,6 +583,8 @@ const checkpointPredicates = [
   [checkpointId('first-brief-after-plan'), includesAll('Plan', 'T001', '0/3 briefs passed')],
   [checkpointId('brief-check-slow-provider'), includesAll('Checking tools', 'T001')],
   [checkpointId('build-consult'), includesAll('Claude Code CLI', 'answering the consult on T901')],
+  [checkpointId('build-consult-rewrite'), includesTranscript('rewrote T901 (rev 2)')],
+  [checkpointId('build-consult-split'), includesTranscript('split into T904, T905')],
   [checkpointId('build-brief-check'), includesAll('Plan check K2', 'read after its checks')],
   [
     checkpointId('build-base-rerun'),
@@ -799,6 +801,10 @@ const checkpointPredicates = [
   [checkpointId('plan-check-not-run'), includesAll('Plan check K4 · not')],
   [checkpointId('plan-check-missing-program'), includesAll('Plan check K4 · npm test', 'mocha')],
   [checkpointId('plan-check-no-test-file'), includesAll('Plan check K4 · failed', 'loud.test.mjs')],
+  [
+    checkpointId('plan-check-pre-existing'),
+    includesTranscript('Plan check K1', 'src/legacy/report.test.ts'),
+  ],
   [
     checkpointId('completed-orphan-rows'),
     includesTranscript(

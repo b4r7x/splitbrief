@@ -973,6 +973,38 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-build-consult-rewrite',
+      title: 'Workflow · the planner rewrites a failed brief',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'build-consult-rewrite',
+        title:
+          'The rewrite answer row, and the rewritten brief continues on the files of the failed attempt',
+        kind: 'implementation',
+        marker: 'rewrote T901',
+      },
+      elements: [
+        { id: 'header', title: 'Build progress' },
+        { id: 'transcript', title: 'Running brief' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-build-consult-split',
+      title: 'Workflow · the planner splits a failed brief',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'build-consult-split',
+        title:
+          'The split answer row, and the first child continues on the files of the failed attempt',
+        kind: 'implementation',
+        marker: 'split into T904',
+      },
+      elements: [
+        { id: 'header', title: 'Build progress' },
+        { id: 'transcript', title: 'Running brief' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-build-brief-check',
       title: 'Workflow · a brief running its own check after its BUILD call',
       surface: screenSurface('workflow'),
@@ -1701,6 +1733,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'A failed plan check row with its reason and no empty command slot',
         kind: 'implementation',
         marker: 'Plan check K4',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-plan-check-pre-existing',
+      title: 'Workflow · a plan check red only for a failure already red at the run base',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'plan-check-pre-existing',
+        title: 'A neutral plan check row counts the pre-existing failure, and the brief completes',
+        kind: 'implementation',
+        marker: 'pre-existing',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

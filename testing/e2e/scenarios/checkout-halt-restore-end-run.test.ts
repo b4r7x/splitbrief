@@ -116,7 +116,7 @@ describe('e2e: End run after a checkout brief halted and had its files put back'
     const halted = await cli(target, ['start', 'smoke'], options);
 
     expect(halted.exitCode, `${halted.stdout}\n${halted.stderr}`).toBe(1);
-    expect(halted.stderr).toMatch(/Restored 2 failing task changes/);
+    expect(halted.stderr).toMatch(/Restored 2 changes of the failing brief/);
     expect(existsSync(join(target.projectDir, GREET_FILE))).toBe(false);
     expect(existsSync(join(target.projectDir, MARKER_FILE))).toBe(false);
     const [sessionId = ''] = readdirSync(sessionsRoot(target.projectDir));

@@ -250,7 +250,7 @@ Every workflow run produces files on disk under `.splitbrief/sessions/<id>/`:
 
 **`entries/`** — the content-addressed byte store of the run's snapshots. A staged copy, and a no-git checkout in checkout mode, take their task-start and attempt snapshots without git: hashes and modes in the snapshot, bytes once in this store. A worktree, and a checkout with git in checkout mode, take git's set of uncommitted files instead, and keep the bytes of those files here too. The snapshot, the workspace record and `state.json` therefore stay small however large your files are. A restart restores from this store.
 
-**`reverted/<stamp>/`** — the bytes SPLITBRIEF replaced when it reverted files in the checkout in checkout mode: a failed attempt's rollback, a denied protected write, an exhausted brief or an interrupted brief on restart. A symlink is saved as a link. The revert's warning names the folder.
+**`reverted/<stamp>/`** — the bytes SPLITBRIEF replaced when it reverted files in the checkout in checkout mode: a denied hook, a denied protected write, an exhausted brief or an interrupted brief on restart. A symlink is saved as a link. The revert's warning names the folder.
 
 **On interrupt** (SIGINT, SIGTERM or SIGHUP), `withSignalHandlers()` (`src/engine/orchestrator/signals.ts`) runs `shutdownWorkflow()` (`src/engine/orchestrator/session-lifecycle/shutdown.ts`): it kills all child processes and saves the current state to `state.json`. It does not touch the `.splitbrief/active` marker: `saveFinalSession()` clears that only once the run is closed. Continue later with `splitbrief continue <session-id>` when the saved state is resumable.
 

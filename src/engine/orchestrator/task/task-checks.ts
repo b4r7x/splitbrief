@@ -20,6 +20,8 @@ import {
 import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
 import { runBaseOf } from '../isolation/base-tree.js';
 import { runReviewCheck } from '../review-checks.js';
+import { splitCommandAtBase } from '../base-gate.js';
+import { newFailureKeys } from '../validation/failure-text.js';
 import {
   checkRegistry,
   planApprovesNpmScripts,
@@ -40,7 +42,7 @@ export type TaskChecksResult = Readonly<{
 
 type TaskChecksContext = Pick<
   WorkflowContext,
-  'projectDir' | 'workspaceDir' | 'sessionId' | 'config' | 'bus' | 'signal'
+  'projectDir' | 'workspaceDir' | 'sessionId' | 'config' | 'bus' | 'signal' | 'baseGate'
 >;
 
 /** Per carried check whose own failures are all test failures, the test files they name. */
@@ -100,7 +102,9 @@ function taskCheckOptions(opts: {
  * check that did not run gets a refused or not-run row with its reason.
  * Reviewer checks also get a running row and clock, with commands from the fix task's findings.
  * A fix check runs once. `settled` names each red whose own failures are gone, or left to an
- * unfinished sibling fix task; failures the brief does not own never gate it.
+ * unfinished sibling fix task, or whose every failure the same command of the project gate also
+ * shows red at the run base; failures the brief does not own never gate it. A red of a command no
+ * gate command runs there gates the brief whole.
  */
 export async function runTaskChecks(opts: {
   wctx: TaskChecksContext;
@@ -151,7 +155,7 @@ async function runTaskCheckCommands(
       ),
   );
   const registry = checkRegistry(checkOptions);
-  for (const run of runs) {
+  for (const [index, run] of runs.entries()) {
     if (run.status !== 'fail' && run.status !== 'pass') {
       publishReviewCheck(
         { bus: checkOptions.bus, phase: checkOptions.phase },
@@ -166,7 +170,31 @@ async function runTaskCheckCommands(
       carried.get(run.checkId),
       run.status === 'fail' ? run.failure : null,
     );
-    if (judged === null) continue;
+    if (judged === null) {
+      if (run.status !== 'fail' || run.command === undefined) continue;
+      const split = await splitCommandAtBase(
+        opts.wctx.baseGate,
+        run.command,
+        run.failure,
+        checkOptions.base,
+      );
+      if (split === undefined) continue;
+      publishReviewCheck(
+        { bus: checkOptions.bus, phase: checkOptions.phase },
+        {
+          ...planCheckRow(run.checkId, run.command, registry.get(run.checkId)),
+          status: 'done',
+          passed: false,
+          ...(run.reusedAt !== undefined && { reusedAt: run.reusedAt }),
+          ...split.counts,
+        },
+      );
+      if (split.preExisting.length === 0) continue;
+      const splitRun: CheckRunResult = { ...run, preExisting: split.preExisting };
+      runs[index] = splitRun;
+      if (newFailureKeys(splitRun).length === 0) settled.add(run.checkId);
+      continue;
+    }
     publishReviewCheck(
       { bus: checkOptions.bus, phase: checkOptions.phase },
       {

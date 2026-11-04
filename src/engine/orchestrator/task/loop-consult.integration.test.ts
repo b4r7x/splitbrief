@@ -23,8 +23,12 @@ import type { ImplementerOptions } from '../../implementers/types.js';
 import { processError } from '../../../lib/process/errors.js';
 import * as commandRunner from '../../../lib/process/spawn/run-command.js';
 import { runTaskLoop } from './loop.js';
+import { createImplementerBase } from '../../implementers/pipeline/run.js';
+import { createChangeDetector } from '../../change-detection.js';
+import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { plainUserMessage } from '../../../core/types/user-input.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
+import { sessionDir } from '../../../core/paths.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
 import { mutateEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
@@ -461,7 +465,7 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
     expect(readFileSync(join(ref.projectDir, 'scratch.txt'), 'utf8')).toBe('notes while stopped\n');
   });
 
-  it('repairs a failing task by splitting it, with no user prompt, and keeps earlier work', async () => {
+  it("repairs a failing task by splitting it, with no user prompt, and keeps the attempt's files", async () => {
     const { projectDir, sessionId } = setupProject();
     const tasks = [
       makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'], criteria: ['C1'] }),
@@ -480,8 +484,8 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
     ];
     const state = makeImplState(tasks);
 
-    // T002's attempt leaves a new file behind and overwrites the file T001 completed,
-    // so the split's rollback has to put it back.
+    // T002's attempt leaves a new file behind and overwrites the file T001 completed;
+    // the split children continue on both.
     const implementer = makeImplementer({
       implement: vi.fn().mockImplementation(async (opts: ImplementerOptions) => {
         mkdirSync(join(opts.projectDir, 'src'), { recursive: true });
@@ -559,9 +563,11 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
     expect(result.state.lineages?.T002).toMatchObject({ attempts: 1 });
     expect(result.state.lineages?.T002?.consultRecords).toHaveLength(1);
 
-    // T001's work survived the failed attempt and the split's rollback, in the run
-    // workspace; the checkout never received any of it.
-    expect(readFileSync(join(wctx.workspaceDir, 'src/a.ts'), 'utf-8')).toBe('done by T001\n');
+    // The split keeps the failed attempt's files in the run workspace; the checkout
+    // never received any of it.
+    expect(readFileSync(join(wctx.workspaceDir, 'src/a.ts'), 'utf-8')).toBe(
+      'broken by the T002 attempt\n',
+    );
     expect(existsSync(join(projectDir, 'src/a.ts'))).toBe(false);
 
     expect(events).toContainEqual(
@@ -581,6 +587,216 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
       }),
     );
   });
+
+  it.each(['rewrite', 'split'] as const)(
+    "keeps the failed attempt's files for the brief after a %s",
+    async (kind) => {
+      const ref = setupProject();
+      const check = { id: 'K1', kind: 'cmd', value: 'tsc --noEmit' } as const;
+      const task = makeTask({
+        id: 'T001',
+        suggestedFiles: ['src/a.ts'],
+        criteria: [],
+        checks: [check],
+      });
+      let green = false;
+      vi.spyOn(commandRunner, 'runCommand').mockImplementation(async () => {
+        if (green) return { stdout: '', stderr: '', code: 0 };
+        throw processError.exitCode({
+          command: 'tsc',
+          code: 2,
+          stderr: 'not finished',
+          output: '',
+        });
+      });
+      let calls = 0;
+      const seen: Record<string, string | null> = {};
+      const build = async (opts: ImplementerOptions) => {
+        const file = join(opts.projectDir, 'src/a.ts');
+        if (calls++ === 0) {
+          mkdirSync(join(opts.projectDir, 'src'), { recursive: true });
+          writeFileSync(file, 'attempt 1\n');
+        } else {
+          seen[opts.task.id] = existsSync(file) ? readFileSync(file, 'utf8') : null;
+          writeFileSync(
+            join(opts.projectDir, opts.task.suggestedFiles.at(-1) ?? 'src/a.ts'),
+            `${opts.task.id}\n`,
+          );
+        }
+        return { success: true, output: 'implemented' };
+      };
+      const answer: ConsultAnswer =
+        kind === 'rewrite'
+          ? {
+              answer: {
+                diagnosis: 'The brief asks for too little.',
+                action: 'rewrite-task',
+                task: makeTaskSpec({
+                  id: 'T001',
+                  criteria: [],
+                  checks: [check],
+                  suggestedFiles: ['src/a.ts', 'src/b.ts'],
+                }),
+              },
+            }
+          : {
+              answer: {
+                diagnosis: 'T001 carries two jobs.',
+                action: 'split-task',
+                tasks: [
+                  makeTaskSpec({
+                    id: 'T100',
+                    criteria: [],
+                    checks: [],
+                    suggestedFiles: ['src/a.ts', 'src/c.ts'],
+                  }),
+                  makeTaskSpec({
+                    id: 'T101',
+                    criteria: [],
+                    checks: [],
+                    suggestedFiles: ['src/b.ts'],
+                    dependsOn: ['T100'],
+                  }),
+                ],
+              },
+            };
+      const { bus, events } = makeBusRecorder();
+      const wctx = makeWctx({
+        ...ref,
+        bus,
+        config: makeNoValidationConfig({ workflow: { isolation: 'none', review: 'task' } }),
+        planner: makePlanner({
+          typedCall: consultCallAnswering(() => {
+            green = true;
+            return answer;
+          }),
+        }),
+        implementer: makeImplementer({ implement: vi.fn(build), retry: vi.fn(build) }),
+      });
+
+      const result = await runTaskLoop({
+        wctx,
+        initialState: makeImplState([task]),
+        setTrackedState: vi.fn(),
+        setCurrentTask: vi.fn(),
+      });
+
+      expect(result.status).toBe('complete');
+      expect(seen).toEqual(
+        kind === 'rewrite' ? { T001: 'attempt 1\n' } : { T002: 'attempt 1\n', T003: 'attempt 1\n' },
+      );
+      expect(readFileSync(join(ref.projectDir, 'src/a.ts'), 'utf8')).toBe('attempt 1\n');
+      expect(
+        events.flatMap((event) =>
+          event.type === 'warning' && event.message.startsWith('Restored') ? [event.message] : [],
+        ),
+      ).toEqual([]);
+      expect(existsSync(join(sessionDir(ref.projectDir, ref.sessionId), 'reverted'))).toBe(false);
+    },
+  );
+
+  it.each(['rewrite', 'split'] as const)(
+    'does not tell the first attempt after a %s that the failed attempt was discarded',
+    async (kind) => {
+      const ref = setupProject();
+      const check = { id: 'K1', kind: 'cmd', value: 'tsc --noEmit' } as const;
+      const task = makeTask({
+        id: 'T001',
+        title: 'Original brief',
+        suggestedFiles: ['src/a.ts'],
+        criteria: [],
+        checks: [check],
+      });
+      let green = false;
+      vi.spyOn(commandRunner, 'runCommand').mockImplementation(async () => {
+        if (green) return { stdout: '', stderr: '', code: 0 };
+        throw processError.exitCode({
+          command: 'tsc',
+          code: 2,
+          stderr: 'not finished',
+          output: '',
+        });
+      });
+      const titles = ['Original brief', 'Rewritten brief', 'First child', 'Second child'];
+      const prompts: Record<string, string> = {};
+      const answer: ConsultAnswer =
+        kind === 'rewrite'
+          ? {
+              answer: {
+                diagnosis: 'The brief asks for too little.',
+                action: 'rewrite-task',
+                task: makeTaskSpec({
+                  id: 'T001',
+                  title: 'Rewritten brief',
+                  criteria: [],
+                  checks: [check],
+                  suggestedFiles: ['src/a.ts', 'src/b.ts'],
+                }),
+              },
+            }
+          : {
+              answer: {
+                diagnosis: 'T001 carries two jobs.',
+                action: 'split-task',
+                tasks: [
+                  makeTaskSpec({
+                    id: 'T100',
+                    title: 'First child',
+                    criteria: [],
+                    checks: [],
+                    suggestedFiles: ['src/a.ts', 'src/c.ts'],
+                  }),
+                  makeTaskSpec({
+                    id: 'T101',
+                    title: 'Second child',
+                    criteria: [],
+                    checks: [],
+                    suggestedFiles: ['src/b.ts'],
+                    dependsOn: ['T100'],
+                  }),
+                ],
+              },
+            };
+      const wctx = makeWctx({
+        ...ref,
+        config: makeNoValidationConfig({ workflow: { isolation: 'none', review: 'task' } }),
+        planner: makePlanner({
+          typedCall: consultCallAnswering(() => {
+            green = true;
+            return answer;
+          }),
+        }),
+        implementer: createImplementerBase({
+          extractsCode: false,
+          detectChanges: createChangeDetector('Tool implementer (test)'),
+          invoke: async ({ projectDir: runDir, prompt }) => {
+            const title = titles.find((candidate) => prompt.includes(candidate)) ?? 'unknown';
+            prompts[title] ??= prompt;
+            mkdirSync(join(runDir, 'src'), { recursive: true });
+            const file = { 'Rewritten brief': 'src/b.ts', 'First child': 'src/c.ts' }[title];
+            writeFileSync(join(runDir, file ?? 'src/a.ts'), `${title}\n`);
+            return makeRunnerCallResult({ status: 'completed', text: `wrote ${title}` });
+          },
+        }),
+      });
+
+      const result = await runTaskLoop({
+        wctx,
+        initialState: makeImplState([task]),
+        setTrackedState: vi.fn(),
+        setCurrentTask: vi.fn(),
+      });
+
+      expect(result.status).toBe('complete');
+      const firstAttempts =
+        kind === 'rewrite' ? ['Rewritten brief'] : ['First child', 'Second child'];
+      expect(Object.keys(prompts).sort()).toEqual(['Original brief', ...firstAttempts].sort());
+      for (const title of firstAttempts) {
+        expect(prompts[title]).not.toContain('discarded');
+        expect(prompts[title]).not.toContain('[Continuation]');
+      }
+    },
+  );
 
   it('reviews a split child that a consult verified before its sibling starts', async () => {
     const { projectDir, sessionId } = setupProject();

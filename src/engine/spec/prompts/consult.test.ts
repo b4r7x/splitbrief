@@ -512,6 +512,27 @@ describe('buildConsultPrompt', () => {
     expect(resumed.length).toBeLessThan(full.length);
   });
 
+  it.each([false, true])(
+    'tells the planner (resumed=%s) that the next attempt continues on the files the failed attempt left',
+    (resumed) => {
+      const prompt = buildConsultPrompt(consultInput({ resumed }));
+
+      expect(prompt).toContain(
+        resumed
+          ? 'The workspace rule still holds: guidance, a rewrite and a split continue on the files the failed attempt left.'
+          : 'The workspace rule: `guidance`, `rewrite-task` and `split-task` continue on the workspace as the failed attempt left it.',
+      );
+      expect(prompt).toContain(
+        'A rewrite or a split names in its brief what to keep, change or remove of these edits.',
+      );
+      if (!resumed) {
+        expect(prompt).toContain(
+          'The edits of the attempt stay, also its edits to files of earlier done tasks.',
+        );
+      }
+    },
+  );
+
   it('names the decision ledger Decisions in the resumed turn', () => {
     const resumed = buildConsultPrompt(
       consultInput({

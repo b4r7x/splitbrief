@@ -39,7 +39,7 @@ import { reconcileWorkspaceToBase } from '../isolation/acquisition.js';
 import { error } from '../../../utils/error.js';
 import { hasBaseline } from '../../snapshots/manifest.js';
 import { runCodeDir } from '../kept-work.js';
-import { startBaseGate, type BaseGate } from '../base-gate.js';
+import { startBaseGate } from '../base-gate.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 
 export type RunTasksAndReviewOptions = {
@@ -325,13 +325,12 @@ export async function runTasksAndReview(
   // killed base command is never stored as a red.
   try {
     return await buildAndReview({
-      wctx,
+      wctx: { ...wctx, baseGate },
       state,
       ref,
       summaryBase,
       setTrackedState: trackState,
       setCurrentTask,
-      baseGate,
     });
   } finally {
     await baseGate?.stop();
@@ -346,9 +345,8 @@ async function buildAndReview(args: {
   summaryBase: SummaryBase;
   setTrackedState: (s: WorkflowState) => void;
   setCurrentTask: RunTasksAndReviewOptions['setCurrentTask'];
-  baseGate: BaseGate | undefined;
 }): Promise<{ summary: Summary; completed: boolean; state: WorkflowState }> {
-  const { wctx, ref, summaryBase, setTrackedState, setCurrentTask, baseGate } = args;
+  const { wctx, ref, summaryBase, setTrackedState, setCurrentTask } = args;
   const { callbacks } = wctx;
   let { state } = args;
   let taskResult = await runTaskLoop({
@@ -522,7 +520,7 @@ async function buildAndReview(args: {
       ...(!reviewAgain && {
         preReview: (s: WorkflowState) => runPreReview({ wctx, state: s, setTrackedState }),
       }),
-      ...(!reviewAgain && { reviewChecks: { baseGate } }),
+      ...(!reviewAgain && { reviewChecks: { baseGate: wctx.baseGate } }),
     });
     state = review.state;
     setTrackedState(state);

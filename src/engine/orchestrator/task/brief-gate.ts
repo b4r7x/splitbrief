@@ -16,7 +16,14 @@ import { withAttemptRestoreScope } from './restore-scope.js';
 
 type BriefGateContext = Pick<
   WorkflowContext,
-  'projectDir' | 'workspaceDir' | 'sessionId' | 'config' | 'bus' | 'signal' | 'validator'
+  | 'projectDir'
+  | 'workspaceDir'
+  | 'sessionId'
+  | 'config'
+  | 'bus'
+  | 'signal'
+  | 'validator'
+  | 'baseGate'
 >;
 
 export const CORRECTION_AFTER_CHECKS =

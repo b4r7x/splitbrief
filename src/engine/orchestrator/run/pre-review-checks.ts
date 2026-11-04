@@ -25,7 +25,13 @@ import {
   type CheckRunResult,
   type RunChecksOptions,
 } from '../validation/run-checks.js';
-import { checkFailureText, failureKeysForFile } from '../validation/failure-text.js';
+import {
+  checkFailureText,
+  failureKeysForFile,
+  newFailureKeys,
+} from '../validation/failure-text.js';
+import { splitCommandAtBase, type BaseGate } from '../base-gate.js';
+import { runBaseOf, type RunBase } from '../isolation/base-tree.js';
 import { throwIfAborted } from '../../../utils/abort.js';
 import { capitalize } from '../../../utils/capitalize.js';
 import type { ValidationCommandRunner } from '../validation/types.js';
@@ -38,6 +44,9 @@ export async function runCheckWithRows(input: {
   moment: 'plan' | 'verify';
   /** The failures this review saw red at the run base: a red keeps them as pre-existing. */
   atBase?: readonly string[] | undefined;
+  /** A red splits by the gate command that runs the same command text at the run base. */
+  baseGate?: BaseGate | undefined;
+  base?: RunBase | undefined;
 }): Promise<CheckRunResult> {
   const { check, notices } = input;
   const prepared = input.prepare(check);
@@ -49,7 +58,11 @@ export async function runCheckWithRows(input: {
   const unranRed = run.status === 'fail' && run.command === undefined;
   const failures =
     run.status === 'fail' && run.failure.placeholder === undefined ? run.failure.keys : [];
-  const preExisting = failures.filter((key) => input.atBase?.includes(key));
+  const split =
+    run.status === 'fail' && run.command !== undefined
+      ? await splitCommandAtBase(input.baseGate, run.command, run.failure, input.base)
+      : undefined;
+  const preExisting = split?.preExisting ?? failures.filter((key) => input.atBase?.includes(key));
   publishReviewCheck(notices, {
     ...identity,
     command: unranRed ? '' : (run.command ?? prepared.command),
@@ -61,10 +74,12 @@ export async function runCheckWithRows(input: {
             ? { duration: Date.now() - startedAt }
             : { reusedAt: run.reusedAt }),
           ...(unranRed && { detail: run.output }),
-          ...(preExisting.length > 0 && {
-            newFailures: failures.length - preExisting.length,
-            preExisting: preExisting.length,
-          }),
+          ...(split === undefined
+            ? preExisting.length > 0 && {
+                newFailures: failures.length - preExisting.length,
+                preExisting: preExisting.length,
+              }
+            : split.counts),
         }
       : unranCheckRow(run)),
   });
@@ -105,7 +120,7 @@ export function buildPreReviewInputs(input: {
   const inputs: TriageInput[] = [];
   for (const run of input.failed) {
     const check = input.registry.get(run.checkId);
-    const keys = run.status === 'fail' ? run.failure.keys : [];
+    const keys = newFailureKeys(run);
     const named = failingFilesFromKeys(keys, input.workspaceDir);
     const files =
       named.length > 0
@@ -116,7 +131,7 @@ export function buildPreReviewInputs(input: {
     for (const file of files) {
       const owner = fileOwnerSentence(input.ledger, input.tasks, file);
       const failureKeys = failureKeysForFile({
-        failure: run.status === 'fail' ? run.failure : null,
+        failure: run.status === 'fail' ? { ...run.failure, keys } : null,
         file,
       });
       inputs.push({
@@ -147,6 +162,8 @@ export type RunPreReviewChecksOptions = {
   npmScriptsApproved: boolean;
   /** The review the checks come before; a task review runs only the checks it covers. */
   scope?: ReviewScope['kind'] | undefined;
+  /** The project gate at the run base; a red plan check splits by the same command there. */
+  baseGate?: BaseGate | undefined;
   signal?: AbortSignal | undefined;
   runCommand?: ValidationCommandRunner | undefined;
 };
@@ -203,12 +220,30 @@ export async function runPreReviewChecks(
   };
   const notices = { bus: opts.bus, phase: opts.phase };
   const prepare = createCheckRunner(checkOptions);
+  const base = runBaseOf(opts, opts.state);
   const runs: CheckRunResult[] = [];
   for (const check of checks) {
     throwIfAborted(opts.signal);
-    runs.push(await runCheckWithRows({ check, prepare, notices, moment: 'plan' }));
+    runs.push(
+      await runCheckWithRows({
+        check,
+        prepare,
+        notices,
+        moment: 'plan',
+        baseGate: opts.baseGate,
+        base,
+      }),
+    );
   }
-  const { failed, unrunnable } = classifyRequiredChecks(runs);
+  // A red whose every failure the same command also shows at the run base fails no review.
+  const settled = new Set(
+    runs
+      .filter((run) => run.preExisting !== undefined && newFailureKeys(run).length === 0)
+      .map((run) => run.checkId),
+  );
+  const { failed, unrunnable } = classifyRequiredChecks(
+    runs.filter((run) => !settled.has(run.checkId)),
+  );
   const defects = buildPreReviewInputs({
     failed,
     registry,
@@ -226,7 +261,7 @@ export async function runPreReviewChecks(
           (state.plan?.checks ?? []).some((check) => check.id === run.checkId)),
     );
     if (owned.length === 0) continue;
-    state = await recordTaskCheckRuns({ wctx: opts, state, task, runs: owned });
+    state = await recordTaskCheckRuns({ wctx: opts, state, task, runs: owned, settled });
   }
   return { state, runs, failed, defects, unrunnable };
 }
@@ -280,6 +315,7 @@ export async function runPreReview(args: {
     phase: state.phase,
     npmScriptsApproved: planApprovesNpmScripts({ config: wctx.config, state }),
     scope: args.scope,
+    baseGate: wctx.baseGate,
     ...(wctx.signal !== undefined && { signal: wctx.signal }),
   });
   state = checks.state;

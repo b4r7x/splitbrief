@@ -630,6 +630,84 @@ describe('createStdoutTextSink', () => {
     ]);
   });
 
+  it('splits the line of a red plan check at the run base, and only with both counts', () => {
+    const red: EngineEventOf<'full_suite'> = {
+      type: 'full_suite',
+      ts,
+      phase: 'validating-task',
+      status: 'done',
+      id: 'K1',
+      command: 'npm test',
+      moment: 'plan',
+      passed: false,
+      duration: 14_200,
+    };
+    expect(
+      collect([
+        { ...red, newFailures: 1, preExisting: 2 },
+        { ...red, newFailures: 0, preExisting: 1 },
+        red,
+      ]),
+    ).toEqual([
+      'phase: validating-task',
+      'plan check K1: 1\u00a0new, 2\u00a0pre-existing · 14.2s (npm test)',
+      "plan check K1: pre-existing · 14.2s · the failure also fails before this run's changes (npm test)",
+      'plan check K1: failed · 14.2s (npm test)',
+    ]);
+  });
+
+  it('names the failing tests of a split plan check under the label of its line', () => {
+    expect(
+      collect([
+        {
+          type: 'full_suite',
+          ts,
+          phase: 'validating-task',
+          status: 'done',
+          id: 'K1',
+          command: 'npm test',
+          moment: 'plan',
+          passed: false,
+          newFailures: 1,
+          preExisting: 1,
+          newKeys: ['src/ledger.test.ts'],
+          preExistingKeys: ['src/a.test.ts::adds'],
+        },
+      ]),
+    ).toEqual([
+      'phase: validating-task',
+      'plan check K1: 1 new, 1 pre-existing (npm test)',
+      'plan check K1 new: src/ledger.test.ts',
+      'plan check K1 pre-existing: src/a.test.ts::adds',
+    ]);
+  });
+
+  it('names the failing tests of a split verify check under the label of its line', () => {
+    expect(
+      collect([
+        {
+          type: 'full_suite',
+          ts,
+          phase: 'validating-task',
+          status: 'done',
+          id: 'K1',
+          command: 'npm test',
+          moment: 'verify',
+          passed: false,
+          newFailures: 1,
+          preExisting: 1,
+          newKeys: ['src/ledger.test.ts'],
+          preExistingKeys: ['src/a.test.ts::adds'],
+        },
+      ]),
+    ).toEqual([
+      'phase: validating-task',
+      'verify K1: 1 new, 1 pre-existing (npm test)',
+      'verify K1 new: src/ledger.test.ts',
+      'verify K1 pre-existing: src/a.test.ts::adds',
+    ]);
+  });
+
   it('marks a reused reviewer check, plan check and base re-run with the time it ran', () => {
     const reusedAt = new Date().toISOString();
     const note = reusedNote(reusedAt);

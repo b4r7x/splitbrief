@@ -403,7 +403,7 @@ describe('applyConsultAnswer', () => {
       action: 'unanswered',
       question: expect.stringContaining('SPLITBRIEF asked the planner to fix T003'),
     });
-    // The guard runs before the rollback: the attempt's write is still on disk.
+    // The guard asks before anything applies: the attempt's write is still on disk.
     expect(readFileSync(join(projectDir, 'src/greet.ts'), 'utf-8')).toBe(ATTEMPT_GREET);
     expect(states).toHaveLength(0);
   });
@@ -562,12 +562,12 @@ describe('applyConsultAnswer', () => {
       action: 'unanswered',
       question: expect.stringContaining('SPLITBRIEF asked the planner to fix T003'),
     });
-    // The guard runs before the rollback: the attempt's write is still on disk.
+    // The guard asks before anything applies: the attempt's write is still on disk.
     expect(readFileSync(join(projectDir, 'src/greet.ts'), 'utf-8')).toBe(ATTEMPT_GREET);
     expect(states).toHaveLength(0);
   });
 
-  it('rewrite-task rolls the attempt back, replaces the task and publishes task_replaced', async () => {
+  it("rewrite-task keeps the attempt's files, replaces the task and publishes task_replaced", async () => {
     const { projectDir, sessionId } = setupRepo(dirs);
     const task = makeTask({
       id: 'T003',
@@ -596,7 +596,8 @@ describe('applyConsultAnswer', () => {
       attempt,
     );
 
-    expect(readFileSync(join(projectDir, 'src/greet.ts'), 'utf-8')).toBe(BASE_GREET);
+    expect(readFileSync(join(projectDir, 'src/greet.ts'), 'utf-8')).toBe(ATTEMPT_GREET);
+    expect(events.filter((event) => event.type === 'warning')).toEqual([]);
     if (result.action !== 'rewrite-task') throw new Error(`expected rewrite, got ${result.action}`);
     expect(result.task.revision).toBe(2);
     expect(result.task.status).toBe('pending');
@@ -617,7 +618,7 @@ describe('applyConsultAnswer', () => {
     );
   });
 
-  it('split-task rolls the attempt back, inserts the subtasks and publishes tasks_inserted', async () => {
+  it("split-task keeps the attempt's files, inserts the subtasks and publishes tasks_inserted", async () => {
     const { projectDir, sessionId } = setupRepo(dirs);
     const task = makeTask({
       id: 'T003',
@@ -647,7 +648,8 @@ describe('applyConsultAnswer', () => {
       attempt,
     );
 
-    expect(readFileSync(join(projectDir, 'src/greet.ts'), 'utf-8')).toBe(BASE_GREET);
+    expect(readFileSync(join(projectDir, 'src/greet.ts'), 'utf-8')).toBe(ATTEMPT_GREET);
+    expect(events.filter((event) => event.type === 'warning')).toEqual([]);
     if (result.action !== 'split-task') throw new Error(`expected split, got ${result.action}`);
     expect(result.tasks.map((child) => child.id)).toEqual(['T004', 'T005']);
     expect(result.tasks.map((child) => child.parentId)).toEqual(['T003', 'T003']);
@@ -721,7 +723,6 @@ describe('a consult on a brief that created its files', () => {
 
   /**
    * The lineage start is recorded at the brief's first dispatch; attempt 1 then writes `files`.
-   * The current attempt starts on them, so its restore keeps them.
    */
   async function startedLineage(
     projectDir: string,

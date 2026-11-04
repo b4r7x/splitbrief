@@ -57,7 +57,7 @@ describe('e2e: Skip on a planner-call halt', () => {
       expect.objectContaining({
         type: 'warning',
         message: expect.stringMatching(
-          /^Restored 1 failing task change to the pre-task state: src\/alpha\.mjs/,
+          /^Restored 1 change of the failing brief to its start: src\/alpha\.mjs/,
         ),
       }),
     );
@@ -66,7 +66,9 @@ describe('e2e: Skip on a planner-call halt', () => {
     expect(recoveryRows).toHaveLength(2);
     expect(recoveryRows[0]).toMatch(/Planner call failed\s*$/);
     expect(recoveryRows[1]).toMatch(/Skip task.*skipped\s*$/);
-    const restoredAt = lines.findIndex((line) => line.includes('Restored 1 failing task change'));
+    const restoredAt = lines.findIndex((line) =>
+      line.includes('Restored 1 change of the failing brief'),
+    );
     expect(restoredAt).toBeGreaterThan(lines.indexOf(recoveryRows[0] ?? ''));
     expect(lines.indexOf(recoveryRows[1] ?? '')).toBeGreaterThan(restoredAt);
   });

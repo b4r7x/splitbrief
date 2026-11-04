@@ -349,10 +349,12 @@ function table(header: readonly string[], rows: readonly (readonly string[])[]):
 
 function consultTable(): string {
   const actions: Record<ConsultAnswer['answer']['action'], string> = {
-    guidance: 'Keep the brief. Attach instructions and context for one more implementer attempt.',
+    guidance:
+      'Keep the brief. Keep the files the failed attempt left. Attach instructions and context for one more implementer attempt.',
     'rewrite-task':
-      'Replace the TaskSpec at the same id and the same criteria. Raise its revision.',
-    'split-task': 'Keep all criteria. Re-point pending dependents to all children.',
+      'Replace the TaskSpec at the same id and the same criteria. Raise its revision. Keep the files the failed attempt left, also its edits to files of earlier briefs. The new brief names what to keep, change or remove.',
+    'split-task':
+      'Keep all criteria. Re-point pending dependents to all children. Keep the files the failed attempt left, also its edits to files of earlier briefs. Each child brief names what to keep, change or remove.',
     verify: 'Run the brief gate and named registered checks. Make no implementer call.',
     'ask-user': 'Ask only when the user alone can answer. Record why, choices and a default.',
     cannot:

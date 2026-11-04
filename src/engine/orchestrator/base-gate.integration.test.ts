@@ -115,6 +115,65 @@ describe('startBaseGate', { timeout: 60_000 }, () => {
     });
   });
 
+  it('answers a command text with the run base outcome of the gate command that runs it', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-base-gate-by-command' }, async (run) => {
+      const state = gateState(run, ['npm test', 'npm run lint']);
+      vi.spyOn(commandRunner, 'runCommand').mockImplementation(async (cmd, args) => {
+        if (args.includes('lint')) return { stdout: 'ok', stderr: '', code: 0 };
+        throw processError.exitCode({
+          command: [cmd, ...args].join(' '),
+          code: 1,
+          stderr: '',
+          output: OLD_RED,
+        });
+      });
+      const gate = startBaseGate({
+        ref: { projectDir: run.dir, sessionId: run.sessionId },
+        workspaceDir: run.ws,
+        config: makeConfig(),
+        bus: makeBusRecorder().bus,
+        state,
+        phase: () => 'implementing',
+      });
+
+      const outcomes = await Promise.all([
+        gate?.outcomeForCommand('npm test'),
+        gate?.outcomeForCommand('npm run lint'),
+      ]);
+      await gate?.stop();
+
+      expect(outcomes.map((outcome) => outcome?.kind === 'ran' && outcome.run.status)).toEqual([
+        'fail',
+        'pass',
+      ]);
+    });
+  });
+
+  it('answers no outcome for a command text that no gate command runs', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-base-gate-other-command' }, async (run) => {
+      const state = gateState(run, ['npm test']);
+      vi.spyOn(commandRunner, 'runCommand').mockResolvedValue({
+        stdout: 'ok',
+        stderr: '',
+        code: 0,
+      });
+      const gate = startBaseGate({
+        ref: { projectDir: run.dir, sessionId: run.sessionId },
+        workspaceDir: run.ws,
+        config: makeConfig(),
+        bus: makeBusRecorder().bus,
+        state,
+        phase: () => 'implementing',
+      });
+
+      const outcome = gate?.outcomeForCommand('npm run lint');
+      await gate?.outcome('V1');
+      await gate?.stop();
+
+      expect(outcome).toBeUndefined();
+    });
+  });
+
   it('makes no base tree when every gate command has a stored run base result', async () => {
     await withApplyRun(FILES, { sessionId: 'sess-base-gate-stored' }, async (run) => {
       const state = gateState(run, ['npm test']);

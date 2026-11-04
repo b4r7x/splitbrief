@@ -870,6 +870,152 @@ const buildConsultProjection: WorkflowFixtureProjection = {
   ],
 };
 
+// The brief's check failed and the planner answered the consult with a rewrite or a split, in the
+// order the engine publishes them. The files of the failed attempt stay, so no row names restored
+// files, and the next attempt starts on them.
+const consultFailedEvents: EngineEvent[] = [
+  ...implementationProjection.events.slice(0, 3),
+  {
+    type: 'task_validating',
+    ts: FIXED_TS + 300,
+    phase: 'validating-task',
+    taskId: WORKFLOW_FIXTURE_TASK_ID,
+    check: { id: 'K1', command: 'npm test -- src/parser.test.ts' },
+  },
+  {
+    type: 'checks_run',
+    ts: FIXED_TS + 320,
+    phase: 'validating-task',
+    taskId: WORKFLOW_FIXTURE_TASK_ID,
+    results: [{ id: 'K1', status: 'fail' }],
+  },
+  {
+    type: 'task_escalating',
+    ts: FIXED_TS + 330,
+    phase: 'escalating',
+    taskId: WORKFLOW_FIXTURE_TASK_ID,
+  },
+];
+
+const REWRITTEN_TITLE = 'Project the workflow activity and its fallback';
+
+const buildConsultRewriteProjection: WorkflowFixtureProjection = {
+  ...implementationProjection,
+  scenarioId: scenarioId('workflow-build-consult-rewrite'),
+  events: [
+    ...consultFailedEvents,
+    {
+      type: 'consult_answered',
+      ts: FIXED_TS + 400,
+      phase: 'escalating',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      reason: 'failed',
+      action: 'rewrite-task',
+      diagnosis: 'The brief misses the fallback; keep the new projection and add the fallback.',
+      newTaskIds: null,
+      revision: 2,
+    },
+    {
+      ...FIXTURE_TASKS_PLANNED,
+      ts: FIXED_TS + 410,
+      phase: 'escalating',
+      tasks: FIXTURE_TASKS_PLANNED.tasks.map((task) =>
+        task.id === WORKFLOW_FIXTURE_TASK_ID ? { ...task, title: REWRITTEN_TITLE } : task,
+      ),
+    },
+    {
+      type: 'task_replaced',
+      ts: FIXED_TS + 420,
+      phase: 'escalating',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      revision: 2,
+    },
+    {
+      type: 'task_started',
+      ts: FIXED_TS + 500,
+      phase: 'implementing',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      title: REWRITTEN_TITLE,
+      index: 0,
+      total: 3,
+      lineageAttempt: 2,
+      file: WORKFLOW_FIXTURE_REVIEW_FILE,
+      files: [WORKFLOW_FIXTURE_REVIEW_FILE, WORKFLOW_FIXTURE_SECOND_FILE],
+      action: 'modify',
+      tool: 'ollama',
+      model: FIXED_RUNNER_MODEL,
+    },
+  ],
+};
+
+const SPLIT_FIRST_ID = taskId('T904');
+const SPLIT_SECOND_ID = taskId('T905');
+
+const buildConsultSplitProjection: WorkflowFixtureProjection = {
+  ...implementationProjection,
+  scenarioId: scenarioId('workflow-build-consult-split'),
+  events: [
+    ...consultFailedEvents,
+    {
+      type: 'consult_answered',
+      ts: FIXED_TS + 400,
+      phase: 'escalating',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      reason: 'failed',
+      action: 'split-task',
+      diagnosis: 'The brief carries two jobs; the projection stays, the fallback moves to T905.',
+      newTaskIds: [SPLIT_FIRST_ID, SPLIT_SECOND_ID],
+    },
+    {
+      ...FIXTURE_TASKS_PLANNED,
+      ts: FIXED_TS + 410,
+      phase: 'escalating',
+      total: 4,
+      tasks: [
+        {
+          id: SPLIT_FIRST_ID,
+          title: 'Project the workflow activity',
+          index: 0,
+          file: WORKFLOW_FIXTURE_REVIEW_FILE,
+          action: 'modify',
+        },
+        {
+          id: SPLIT_SECOND_ID,
+          title: 'Add the activity fallback',
+          index: 1,
+          file: WORKFLOW_FIXTURE_SECOND_FILE,
+          action: 'modify',
+        },
+        ...FIXTURE_TASKS_PLANNED.tasks
+          .slice(1)
+          .map((task, index) => ({ ...task, index: index + 2 })),
+      ],
+    },
+    {
+      type: 'tasks_inserted',
+      ts: FIXED_TS + 420,
+      phase: 'escalating',
+      parentId: WORKFLOW_FIXTURE_TASK_ID,
+      taskIds: [SPLIT_FIRST_ID, SPLIT_SECOND_ID],
+    },
+    {
+      type: 'task_started',
+      ts: FIXED_TS + 500,
+      phase: 'implementing',
+      taskId: SPLIT_FIRST_ID,
+      title: 'Project the workflow activity',
+      index: 0,
+      total: 4,
+      lineageAttempt: 2,
+      file: WORKFLOW_FIXTURE_REVIEW_FILE,
+      files: [WORKFLOW_FIXTURE_REVIEW_FILE],
+      action: 'modify',
+      tool: 'ollama',
+      model: FIXED_RUNNER_MODEL,
+    },
+  ],
+};
+
 // The brief's BUILD call ended and its own check runs: no seat call is open, and the screen names
 // the check and its clock rather than an implementing brief.
 const buildBriefCheckProjection: WorkflowFixtureProjection = {
@@ -1119,6 +1265,55 @@ const planCheckNoTestFileProjection: WorkflowFixtureProjection = {
     }
     return event;
   }),
+};
+
+// The suite was red before the run: the project gate finds `npm test` red at the run base, and the
+// brief's plan check runs the same command with only that failure, so the brief completes.
+const planCheckPreExistingProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-plan-check-pre-existing'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  events: [
+    ...touchedNotSuggestedProjection.events.filter(
+      (event) => event.type === 'workflow_started' || event.type === 'tasks_planned',
+    ),
+    {
+      type: 'full_suite',
+      ts: FIXED_TS + 60,
+      phase: 'implementing',
+      moment: 'base',
+      id: 'V1',
+      command: 'npm test',
+      status: 'done',
+      passed: false,
+      duration: 12_000,
+    },
+    ...touchedNotSuggestedProjection.events.filter((event) => event.type === 'task_started'),
+    {
+      type: 'full_suite',
+      ts: FIXED_TS + 390,
+      phase: 'validating-task',
+      moment: 'plan',
+      id: 'K1',
+      command: 'npm test',
+      status: 'done',
+      passed: false,
+      duration: 11_400,
+      newFailures: 0,
+      preExisting: 1,
+      newKeys: [],
+      preExistingKeys: ['src/legacy/report.test.ts > formats the legacy total'],
+    },
+    {
+      type: 'checks_run',
+      ts: FIXED_TS + 400,
+      phase: 'validating-task',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      results: [{ id: 'K1', status: 'pass' }],
+    },
+    ...touchedNotSuggestedProjection.events.filter((event) => event.type === 'task_completed'),
+  ],
 };
 
 /** What production code publishes on a bus of its own, stamped in order from `ts`. */
@@ -4117,7 +4312,7 @@ const resolvedSkipRecoveryProjection: WorkflowFixtureProjection = {
         publishWarning({
           bus,
           phase,
-          message: `Restored 1 failing task change to the pre-task state: ${WORKFLOW_FIXTURE_REVIEW_FILE}`,
+          message: `Restored 1 change of the failing brief to its start: ${WORKFLOW_FIXTURE_REVIEW_FILE}`,
         });
         bus.publish({ type: 'workflow_resumed', ts: FIXED_TS, phase: 'final-review' });
         bus.publish(finalReviewStarted(FIXED_TS, BASE_PLANNER));
@@ -7547,6 +7742,8 @@ const projections = [
   balanceSeatSwitchProjection,
   stopSheetRecoveryProjection,
   buildConsultProjection,
+  buildConsultRewriteProjection,
+  buildConsultSplitProjection,
   buildBriefCheckProjection,
   buildBaseRerunProjection,
   buildFixConsultProjection,
@@ -7893,6 +8090,7 @@ const projections = [
     ),
   },
   planCheckNoTestFileProjection,
+  planCheckPreExistingProjection,
 
   completedOrphanRowsProjection,
   usageLimitRecoveryProjection,

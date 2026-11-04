@@ -113,7 +113,7 @@ describe('runSingleTask — recovery', () => {
     expect(restored).toEqual([
       expect.objectContaining({
         message: expect.stringMatching(
-          /^Restored 2 failing task changes to the pre-task state: src\/extra\.ts, src\/main\.ts/,
+          /^Restored 2 changes of the failing brief to its start: src\/extra\.ts, src\/main\.ts/,
         ),
       }),
     ]);

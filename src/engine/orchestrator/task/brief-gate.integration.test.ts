@@ -16,9 +16,10 @@ import { processError } from '../../../lib/process/errors.js';
 import { enqueueUserMessage } from '../queue/submit.js';
 import { clearPendingQueue } from '../queue/clear.js';
 import type { ValidationCommandRunner } from '../validation/types.js';
+import type { BaseGate } from '../base-gate.js';
+import type { EngineEvent } from '../../events/types.js';
 import { CORRECTION_AFTER_CHECKS, runBriefGate } from './brief-gate.js';
-import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
-import { restoreAttemptFiles } from './rollback.js';
+import { captureWorkspaceSnapshot, restoreWorkspaceFiles } from '../isolation/entry-snapshot.js';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
 import type { HooksConfig } from '../../../core/schemas/hooks.js';
@@ -128,7 +129,12 @@ describe('brief gate', () => {
           'generated.txt',
         );
         writeFileSync(join(ref.projectDir, 'user.txt'), 'user notes\n');
-        await restoreAttemptFiles({ wctx, phase: result.state.phase, attemptSnapshot });
+        await restoreWorkspaceFiles({
+          ref,
+          dir: ref.projectDir,
+          snapshot: attemptSnapshot,
+          files: undefined,
+        });
         expect(existsSync(join(ref.projectDir, 'generated.txt'))).toBe(false);
         expect(readFileSync(join(ref.projectDir, 'source.txt'), 'utf8')).toBe('before attempt\n');
         expect(readFileSync(join(ref.projectDir, 'user.txt'), 'utf8')).toBe('user notes\n');
@@ -200,8 +206,8 @@ describe('brief gate', () => {
       await vi.waitFor(() => expect(spawnHook).toHaveBeenCalledOnce());
       controller.abort();
       await vi.waitFor(() => expect(returned).toBe(true));
-      const result = await gated;
-      await restoreAttemptFiles({ wctx, phase: result.state.phase, attemptSnapshot: snapshot });
+      await gated;
+      await restoreWorkspaceFiles({ ref, dir: ref.projectDir, snapshot, files: undefined });
       expect(existsSync(join(ref.projectDir, 'attempt.txt'))).toBe(false);
       expect(readFileSync(join(ref.projectDir, 'hook-output.txt'), 'utf8')).toBe(
         'user hook output\n',
@@ -755,5 +761,118 @@ describe('brief gate', () => {
         expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'V1', status: 'refused' }]);
       });
     });
+  });
+});
+
+describe('brief gate against the run base', () => {
+  const OLD = 'src/a.test.ts::a > old';
+  const NEW = 'src/a.test.ts::a > new';
+  const RED_SUITE = 'node --version';
+
+  /** A project gate that ran `command` at the run base, red with `keys`. */
+  function baseGateRunning(command: string, keys: string[]): BaseGate {
+    return {
+      outcome: () => Promise.reject(new Error('the brief gate asks by command text')),
+      outcomeForCommand: (asked) =>
+        asked === command
+          ? Promise.resolve({
+              kind: 'ran',
+              run: { checkId: 'V1', status: 'fail', output: '', command, failure: { keys } },
+            })
+          : undefined,
+      stop: async () => {},
+    };
+  }
+
+  async function gateRed(input: { command: string; failing: string[]; baseGate: BaseGate }) {
+    const ref = setup();
+    const { bus, events } = makeBusRecorder();
+    const task = makeTask({
+      id: 'T001',
+      checks: [{ id: 'K1', kind: 'cmd', value: input.command }],
+    });
+    const stderr = input.failing
+      .map((key) => {
+        const [file, name] = key.split('::');
+        return ` FAIL  ${file} > ${name}`;
+      })
+      .join('\n');
+    const result = await runBriefGate({
+      wctx: makeWctx({
+        ...ref,
+        bus,
+        config: makeNoValidationConfig({ workflow: { review: 'task' } }),
+        baseGate: input.baseGate,
+      }),
+      task,
+      state: makeImplState([task], {
+        workspace: {
+          kind: 'checkout',
+          path: ref.projectDir,
+          base: { snapshotId: 'base', head: 'a'.repeat(40) },
+        },
+      }),
+      changedFiles: [],
+      taskStartSnapshot: null,
+      runCommand: vi
+        .fn()
+        .mockRejectedValue(processError.exitCode({ command: 'node', code: 1, stderr })),
+    });
+    const rows = events.filter(
+      (event): event is Extract<EngineEvent, { type: 'full_suite' }> =>
+        event.type === 'full_suite' && event.id === 'K1' && event.status === 'done',
+    );
+    return { result, rows };
+  }
+
+  it('accepts a brief whose every failure the same command shows red at the run base', async () => {
+    const { result, rows } = await gateRed({
+      command: RED_SUITE,
+      failing: [OLD],
+      baseGate: baseGateRunning(RED_SUITE, [OLD]),
+    });
+
+    expect(result.acceptance).toEqual({ accepted: true });
+    expect(result.error).toBe('');
+    expect(rows).toMatchObject([
+      {
+        moment: 'plan',
+        command: RED_SUITE,
+        passed: false,
+        newFailures: 0,
+        preExisting: 1,
+        preExistingKeys: [OLD],
+      },
+    ]);
+  });
+
+  it('fails a brief on a new failure and names the pre-existing one apart', async () => {
+    const { result, rows } = await gateRed({
+      command: RED_SUITE,
+      failing: [OLD, NEW],
+      baseGate: baseGateRunning(RED_SUITE, [OLD]),
+    });
+
+    expect(result.acceptance).toEqual({ accepted: false });
+    expect(result.error).toMatch(
+      /^check K1 did not pass \(fail\): 2 failures\nNew failures:\n- src\/a\.test\.ts::a > new\nPre-existing failures \(also red at the run base\):\n- src\/a\.test\.ts::a > old\n/,
+    );
+    expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'K1', status: 'fail' }]);
+    expect(rows).toMatchObject([
+      { passed: false, newFailures: 1, preExisting: 1, newKeys: [NEW], preExistingKeys: [OLD] },
+    ]);
+  });
+
+  it('fails a brief on a red whose command no gate command runs at the run base', async () => {
+    const { result, rows } = await gateRed({
+      command: RED_SUITE,
+      failing: [OLD],
+      baseGate: baseGateRunning('npm test', [OLD]),
+    });
+
+    expect(result.acceptance).toEqual({ accepted: false });
+    expect(result.error).toMatch(/^check K1 did not pass \(fail\): 1 failure\nFailures:\n- /);
+    expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'K1', status: 'fail' }]);
+    expect(rows).toEqual([]);
   });
 });

@@ -1,12 +1,16 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
-import { publishTaskSkipped } from '../events.js';
+import { publishTaskSkipped, publishWarning } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { persistSkippedBriefFiles } from '../evidence/persistence.js';
 import { captureTaskReviewChanges } from '../evidence/review-capture.js';
 import { lineageRemainder } from './booking.js';
-import { restoreExhaustedTaskFiles, restoreHookDeniedTaskFiles } from './rollback.js';
+import {
+  restoreExhaustedTaskFiles,
+  restoreHookDeniedTaskFiles,
+  restoreReplacedAttemptFiles,
+} from './rollback.js';
 
 type SkipBriefOptions = {
   wctx: Pick<WorkflowContext, 'projectDir' | 'workspaceDir' | 'sessionId' | 'bus'>;
@@ -19,22 +23,22 @@ type SkipBriefOptions = {
 
 /**
  * A skipped brief leaves no files behind: every file it changed since its task-start snapshot goes
- * back, and the ledger books on it only the files still changed and the unbooked files of its
- * lineage that it books (`lineageRemainder`). Without a snapshot no attempt of the brief ran, so
- * there is nothing to take back.
+ * back, and so do the attempts that a rewrite or a split of its lineage replaced. The ledger books
+ * on it only the files still changed, or the lineage's unbooked files when it closes the lineage
+ * (`recordSkip`). Without a snapshot no attempt of the brief ran, so there is nothing of its own to
+ * take back.
  */
 export async function skipBrief(
   opts: SkipBriefOptions & { skippedBy: 'pre_task' | 'pre_validation' },
 ): Promise<WorkflowState> {
   const { wctx, state, taskStartSnapshot, skippedBy } = opts;
-  if (taskStartSnapshot !== undefined) {
-    await restoreHookDeniedTaskFiles({
-      wctx,
-      phase: state.phase,
-      taskStartSnapshot,
-      hook: skippedBy,
-    });
-  }
+  const own =
+    taskStartSnapshot === undefined
+      ? undefined
+      : await restoreHookDeniedTaskFiles({ wctx, taskStartSnapshot, hook: skippedBy });
+  const warning = await withReplacedAttempts(opts, own);
+  if (warning !== undefined)
+    publishWarning({ bus: wctx.bus, phase: state.phase, message: warning });
   return recordSkip(opts);
 }
 
@@ -46,38 +50,62 @@ export async function skipHaltedBrief(
   opts: SkipBriefOptions,
 ): Promise<{ state: WorkflowState; restoreWarning: string | undefined }> {
   const { wctx, taskStartSnapshot } = opts;
-  const restoreWarning =
+  const own =
     taskStartSnapshot === undefined
       ? undefined
       : await restoreExhaustedTaskFiles({ wctx, taskStartSnapshot });
+  const restoreWarning = await withReplacedAttempts(opts, own);
   return { state: await recordSkip(opts), restoreWarning };
 }
 
+/**
+ * A skip that closes a lineage also takes back the attempts that a rewrite or a split replaced,
+ * after the brief's own files, so a file both changed ends where the replaced attempts started,
+ * unless a brief done since then booked it. One warning names both restores.
+ */
+async function withReplacedAttempts(
+  opts: SkipBriefOptions,
+  own: string | undefined,
+): Promise<string | undefined> {
+  const replaced = await restoreReplacedAttemptFiles({
+    wctx: opts.wctx,
+    state: opts.state,
+    task: opts.task,
+  });
+  const warnings = [own, replaced].filter((warning) => warning !== undefined);
+  return warnings.length === 0 ? undefined : warnings.join('. ');
+}
+
+/**
+ * Only the skip that closes the lineage books the lineage's unbooked files, after its take-back.
+ * A skip that leaves a brief of the lineage open books none of them: the skip that closes it later
+ * takes back the files that no completed brief booked.
+ */
 async function recordSkip(opts: SkipBriefOptions): Promise<WorkflowState> {
   const { wctx, task, reason, taskStartSnapshot } = opts;
   // Read before the transition: the skip that closes the lineage drops its start.
-  const lineage = await lineageRemainder({
+  const remainder = await lineageRemainder({
     ref: wctx,
     workspaceDir: wctx.workspaceDir,
     state: opts.state,
     task,
   });
-  const remainderFiles = lineage?.files ?? [];
+  const lineage = remainder?.closes === true ? remainder : undefined;
   await persistSkippedBriefFiles({
     wctx,
     state: opts.state,
     task,
     reason,
     taskStartSnapshot,
-    remainderFiles,
+    lineageFiles: lineage?.files,
   });
-  if (lineage !== undefined && remainderFiles.length > 0) {
+  if (lineage !== undefined && lineage.files.length > 0) {
     await captureTaskReviewChanges({
       ref: wctx,
       workspaceDir: wctx.workspaceDir,
       task,
       since: lineage.since,
-      files: remainderFiles,
+      files: lineage.files,
     });
   }
   const state = transitionAndSave(

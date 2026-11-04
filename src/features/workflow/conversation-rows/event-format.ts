@@ -169,7 +169,10 @@ export function fullSuiteSegments(
     ]);
   }
   const split =
-    (event.moment === 'pre-review' || event.moment === 'base' || event.moment === 'verify') &&
+    (event.moment === 'pre-review' ||
+      event.moment === 'base' ||
+      event.moment === 'verify' ||
+      event.moment === 'plan') &&
     event.passed === false &&
     event.newFailures !== undefined &&
     event.preExisting !== undefined
@@ -232,9 +235,11 @@ function separatedSegments(parts: readonly ConversationRowSegment[]): Conversati
   ]);
 }
 
-// A red reviewer or fix check is an error, unless every failure is pre-existing. A red at the run
-// base is a warning: it says only what the run base shows. In an older run the base row carried the
-// split, and a red there was an error when new failures remained. Refused commands stay warning.
+// A red reviewer, plan or fix check is an error, unless every failure is pre-existing: then a
+// reviewer or verify check is a warning, and a plan check is a neutral note, as its brief passes. A
+// red at the run base is a warning: it says only what the run base shows. In an older run the base
+// row carried the split, and a red there was an error when new failures remained. Refused commands
+// stay warning.
 export function fullSuiteTone(
   event: Extract<EngineEvent, { type: 'full_suite' }>,
 ): ConversationRowTone {
@@ -247,9 +252,9 @@ export function fullSuiteTone(
       ? stateTone('attention')
       : stateTone('failed');
   }
-  return (event.moment === 'pre-review' || event.moment === 'verify') &&
-    event.newFailures === 0 &&
-    (event.notVerified ?? 0) === 0
+  if (event.newFailures !== 0 || (event.notVerified ?? 0) !== 0) return stateTone('failed');
+  if (event.moment === 'plan') return 'textDim';
+  return event.moment === 'pre-review' || event.moment === 'verify'
     ? stateTone('attention')
     : stateTone('failed');
 }

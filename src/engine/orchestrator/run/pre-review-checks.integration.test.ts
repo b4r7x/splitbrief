@@ -519,6 +519,34 @@ describe('pre-review checks', () => {
     expect(inputs[0]?.text).not.toContain('Output tail:');
   });
 
+  it('raises an input only for the new failures of a red split at the run base', () => {
+    const check: Check = { id: 'K1', kind: 'cmd', value: 'npm test' };
+    const inputs = buildPreReviewInputs({
+      failed: [
+        {
+          checkId: check.id,
+          status: 'fail',
+          output: '',
+          failure: { keys: ['src/a.test.ts::a > new', 'src/b.test.ts::b > old'] },
+          preExisting: ['src/b.test.ts::b > old'],
+          command: 'npm test',
+        },
+      ],
+      registry: new Map([[check.id, check]]),
+      tasks: [],
+      ledger: null,
+      workspaceDir: projectDir,
+    });
+
+    expect(inputs).toMatchObject([
+      {
+        file: 'src/a.test.ts',
+        failureKeys: ['src/a.test.ts::a > new'],
+        redKeys: ['src/a.test.ts::a > new', 'src/b.test.ts::b > old'],
+      },
+    ]);
+  });
+
   it('names no owner for a red whole-suite command whose output names no file', () => {
     const output = 'Error: boom';
     const check: Check = { id: 'K1', kind: 'cmd', value: 'npm test' };

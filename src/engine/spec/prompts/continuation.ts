@@ -12,7 +12,7 @@ export type ComposeContinuationInput = Readonly<{
   steer?: string | undefined;
   /** Seat-specific facts the next attempt needs, e.g. files already changed. */
   extra?: string | undefined;
-  /** The step is a retry, so an earlier attempt was discarded and its error leads the prompt. */
+  /** The step is a retry whose earlier attempts left no files in the workspace; its error leads the prompt. */
   discarded?: boolean | undefined;
 }>;
 

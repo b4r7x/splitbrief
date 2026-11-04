@@ -22,12 +22,12 @@ import { askOperator } from '../planning/call-loop.js';
 import { DECIDE_YOURSELF_ANSWER } from '../../../core/recovery/decide.js';
 import { recordBriefCorrection, transitionAndSave } from '../state-ops.js';
 import { validateCommitAndAdvance } from '../task/commit.js';
-import { restoreAttemptFiles } from '../task/rollback.js';
 import { lineageAnchorAction } from '../task/refresh-code.js';
 import { runBriefGate } from '../task/brief-gate.js';
 import type { OrchestratorCallbacks, WorkflowSinks } from '../types.js';
 import { checkRegistry } from '../validation/run-checks.js';
 import type { ValidationCommandRunner, Validator } from '../validation/types.js';
+import type { BaseGate } from '../base-gate.js';
 
 export type ConsultApplyContext = Readonly<{
   projectDir: string;
@@ -45,6 +45,8 @@ export type ConsultApplyContext = Readonly<{
   /** Where the brief's first attempt started. */
   taskStartSnapshot: ChangedFilesSnapshot;
   runCommand?: ValidationCommandRunner | undefined;
+  /** A `verify` red splits by the project gate at the run base. */
+  baseGate?: BaseGate | undefined;
   /** Receives the state after each saved transition: the replacement, the inserted tasks. */
   onStateChange?: ((state: WorkflowState) => void) | undefined;
 }>;
@@ -158,14 +160,12 @@ async function continuedTask(ctx: ConsultApplyContext, task: Task, earlier: Task
   return { ...task, action };
 }
 
-/** Rewrites the task in place; `attempt` is the current attempt's start snapshot. */
+/** Rewrites the task in place; the new brief continues on the files the failed attempt left. */
 async function applyRewrite(
   ctx: ConsultApplyContext,
   task: Task,
   action: RewriteAction,
-  attempt: ChangedFilesSnapshot,
 ): Promise<ConsultApplyOutcome> {
-  await restoreAttemptFiles({ wctx: ctx, phase: ctx.state.phase, attemptSnapshot: attempt });
   const state = transitionAndSave(
     { projectDir: ctx.projectDir, sessionId: ctx.sessionId },
     ctx.state,
@@ -187,9 +187,7 @@ async function applySplit(
   ctx: ConsultApplyContext,
   task: Task,
   action: SplitAction,
-  attempt: ChangedFilesSnapshot,
 ): Promise<ConsultApplyOutcome> {
-  await restoreAttemptFiles({ wctx: ctx, phase: ctx.state.phase, attemptSnapshot: attempt });
   const inserted = await Promise.all(
     insertTasks(action.tasks, ctx.state.tasks, (spec) => taskFromSpec(spec, ctx.workspaceDir)).map(
       (child) => continuedTask(ctx, child, task),
@@ -409,7 +407,7 @@ async function applyAskUser(
 
 /**
  * Moves the run on the planner's consult answer: guidance hands back what the next attempt's error
- * block carries; a rewrite or a split rolls the current attempt back and replaces the task;
+ * block carries; a rewrite or a split replaces the task and keeps the failed attempt's files;
  * verify completes the task when its selection covers the criteria and the validation and
  * checks pass, and a pre_validation deny of that gate skips the task; ask-user puts the planner's
  * one question to the operator and hands the answer back as guidance, or hands back the question
@@ -433,9 +431,9 @@ export async function applyConsultAnswer(
     case 'guidance':
       return { action: 'guidance', instructions: action.instructions, context: action.context };
     case 'rewrite-task':
-      return applyRewrite(ctx, task, action, attempt);
+      return applyRewrite(ctx, task, action);
     case 'split-task':
-      return applySplit(ctx, task, action, attempt);
+      return applySplit(ctx, task, action);
     case 'verify':
       return applyVerify(ctx, task, action, attempt);
     case 'ask-user':

@@ -73,7 +73,10 @@ export type RetryStepOutcome = {
   attempts: number;
   result?: RetryResult;
   lastFailure?: RetryAttemptFailure | undefined;
-  /** This attempt's start snapshot: the rollback baseline a consult applies against. */
+  /**
+   * This attempt's start snapshot: the consult reads the attempt's changed files from it, and a
+   * verify runs the brief gate against it.
+   */
   attemptSnapshot?: ChangedFilesSnapshot | undefined;
 };
 
@@ -108,6 +111,8 @@ export type RetryInvokeArgs = {
   deliversAnswer?: boolean | undefined;
   /** What the cut attempt this call continues left: its partial and the declared files it kept. */
   continuation?: ImplementerOptions['continuation'];
+  /** No declared file of the brief changed since it started: the earlier attempts left no work here. */
+  discarded: boolean;
   /** Receives the call's output, the partial a stop of this call continues on. */
   recordOutput?: ((text: string) => void) | undefined;
   /** The seat-trouble wrapper's target; the step supplies the live state and usage category. */

@@ -180,7 +180,7 @@ describe('createImplementerBase — continuation', () => {
     expect(seenPrompt).toContain('start from the top');
   });
 
-  it('tells a retry carrying a correction that its previous attempt was discarded', async () => {
+  it('tells a retry whose earlier attempt went back that it was discarded', async () => {
     let seenPrompt = '';
     const invoke = vi.fn().mockImplementation(async (opts) => {
       seenPrompt = opts.prompt;
@@ -196,8 +196,8 @@ describe('createImplementerBase — continuation', () => {
       onOutput: vi.fn(),
       error: 'tsc: Type X is not assignable to Y',
       attempt: 1,
-      kind: 'correction',
-      continuation: { steer: 'keep the exported name' },
+      kind: 'consult',
+      continuation: { steer: 'keep the exported name', discarded: true },
     });
 
     expect(seenPrompt).toContain(
@@ -207,6 +207,30 @@ describe('createImplementerBase — continuation', () => {
     expect(seenPrompt.indexOf('tsc: Type X is not assignable to Y')).toBeLessThan(
       seenPrompt.indexOf('[Continuation]'),
     );
+  });
+
+  it('does not tell a correction retry whose files stay that its attempt was discarded', async () => {
+    let seenPrompt = '';
+    const invoke = vi.fn().mockImplementation(async (opts) => {
+      seenPrompt = opts.prompt;
+      return makeRunnerCallResult({ status: 'completed', text: 'done', usage: null });
+    });
+    const implementer = createImplementerBase(makeBaseConfig({ extractsCode: false, invoke }));
+
+    await implementer.retry({
+      task: makeTask({ title: 'Add the retry ladder' }),
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+      error: 'the reviewer says the error is swallowed',
+      attempt: 1,
+      kind: 'correction',
+      continuation: { steer: 'keep the exported name', discarded: false },
+    });
+
+    expect(seenPrompt).toContain('The user says: keep the exported name');
+    expect(seenPrompt).not.toContain('discarded');
   });
 
   it('does not tell a continued retry that kept its edits that its attempt was discarded', async () => {

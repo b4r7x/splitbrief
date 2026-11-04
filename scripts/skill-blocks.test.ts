@@ -258,6 +258,13 @@ describe('skill-blocks', () => {
     expect(consult).toContain('same id and the same criteria');
     expect(consult).toContain('Replace with 2–4 subtasks');
     expect(consult).toContain('earlier answers on the lineage, across splits and resume');
+    for (const action of ['guidance', 'rewrite-task', 'split-task']) {
+      expect(consult.split('\n').find((line) => line.startsWith(`| \`${action}\` |`))).toContain(
+        'Keep the files the failed attempt left',
+      );
+    }
+    expect(consult).toContain('The new brief names what to keep, change or remove.');
+    expect(consult).toContain('Each child brief names what to keep, change or remove.');
     expect(consult).not.toMatch(/takeover|ladder/iu);
     expect(renderBlock('ladder-table')).toBeNull();
     expect(renderBlock('takeover-prompt')).toBeNull();

@@ -111,6 +111,8 @@ export interface ImplementerOptions extends UndeclaredWritesPolicy, Pick<InvokeO
    * behind. `extra` carries the declared files that already changed, so the
    * implementer edits on top of them instead of rewriting from scratch; `kept`
    * names them when a cut attempt left them, for the call's own done row.
+   * `discarded` says that the attempts before this retry left none of the
+   * brief's files in the workspace: a failed or stopped call took them back.
    */
   continuation?:
     | {
@@ -118,6 +120,7 @@ export interface ImplementerOptions extends UndeclaredWritesPolicy, Pick<InvokeO
         steer?: string | undefined;
         extra?: string | undefined;
         kept?: readonly string[] | undefined;
+        discarded?: boolean | undefined;
       }
     | undefined;
   languageContext?: LanguageContext | undefined;
