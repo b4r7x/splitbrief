@@ -11,6 +11,7 @@ import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
+import { moveCursorTo } from '../helpers/move-cursor.js';
 import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
@@ -22,20 +23,6 @@ const MODELS_VERBOSE = fileURLToPath(
 // `kilo auth list` on kilo 7.0.49: a Copilot sign-in and an OpenAI key.
 const AUTH_LIST =
   '┌  Credentials ~/.local/share/kilo/auth.json\n│\n●  GitHub Copilot oauth\n│\n└  1 credentials\n\n┌  Environment\n│\n●  OpenAI OPENAI_API_KEY\n│\n└  1 environment variables\n';
-
-/** Moves the cursor with `key` until the row matching `row` holds it. */
-async function moveTo(
-  text: () => string,
-  write: (keys: string) => void,
-  key: string,
-  row: RegExp,
-): Promise<void> {
-  for (let step = 0; step < 8 && !row.test(text()); step++) {
-    write(key);
-    await delay(200);
-  }
-  await vi.waitFor(() => expect(text()).toMatch(row), { timeout: 10_000 });
-}
 
 describe('e2e: a Kilo Code seat names the route it runs through', { timeout: 120_000 }, () => {
   it('reads via github-copilot in Settings after the BUILD seat moves to the Copilot route', async (context) => {
@@ -146,12 +133,12 @@ process.exit(1);`,
             write('\r');
             await shows('Settings');
             await shows('Kilo Code CLI · GPT-5.5 · via openai');
-            await moveTo(text, write, '\x1b[B', /▌ BUILD/);
+            await moveCursorTo(text, write, '\x1b[B', /▌ BUILD/);
             write('\r');
             await shows('BUILD · tool, model, effort');
             // The picker opens on the seat's model, expanded to its routes, once Kilo's listing lands.
             await shows(/├─ github-copilot +signed in/, 30_000);
-            await moveTo(text, write, '\x1b[A', /▌ ├─ github-copilot/);
+            await moveCursorTo(text, write, '\x1b[A', /▌ ├─ github-copilot/);
             write('\r');
 
             await shows('Kilo Code CLI · GPT-5.5 · via github-copilot');

@@ -11,6 +11,7 @@ import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
+import { moveCursorTo } from '../helpers/move-cursor.js';
 import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
@@ -176,22 +177,13 @@ process.exit(1);`,
   });
 }
 
-/** Moves the model column's cursor with `key` until the row matching `row` holds it. */
-async function moveTo(screen: Screen, key: string, row: RegExp): Promise<void> {
-  for (let step = 0; step < 5 && !row.test(screen.text()); step++) {
-    screen.write(key);
-    await delay(200);
-  }
-  await screen.shows(row);
-}
-
 const CUSTOM_MODEL = 'anthropic/claude-haiku-4-5';
 const CUSTOM_SIGN_IN =
   'OpenCode CLI has no credential for anthropic — run opencode auth login anthropic before start';
 
 /** Opens the BUILD picker from Settings and moves to its model column. */
 async function openBuildPicker(screen: Screen): Promise<void> {
-  await moveTo(screen, '\x1b[B', /▌ BUILD/);
+  await moveCursorTo(screen.text, screen.write, '\x1b[B', /▌ BUILD/);
   screen.write('\r');
   await screen.shows('BUILD · tool, model, effort');
   await screen.shows('DeepSeek V4.1 Flash', 30_000);
@@ -207,7 +199,7 @@ async function addCustomModel(screen: Screen): Promise<void> {
   await screen.shows('Settings');
   await openBuildPicker(screen);
   await screen.shows(/▌ DeepSeek V4\.1 Flash/);
-  await moveTo(screen, '\x1b[A', /▌ \+ Add custom model…/);
+  await moveCursorTo(screen.text, screen.write, '\x1b[A', /▌ \+ Add custom model…/);
   screen.write('\r');
   await screen.shows('Model id for OpenCode CLI');
   screen.write(CUSTOM_MODEL);

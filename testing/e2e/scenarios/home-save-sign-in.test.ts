@@ -11,6 +11,7 @@ import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
+import { moveCursorTo } from '../helpers/move-cursor.js';
 import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
@@ -135,13 +136,6 @@ process.exit(1);`,
                     : expect(text()).toMatch(expected),
                 { timeout },
               );
-            const moveTo = async (key: string, row: RegExp) => {
-              for (let step = 0; step < 5 && !row.test(text()); step++) {
-                child.write(key);
-                await delay(200);
-              }
-              await shows(row);
-            };
             const dataListener = child.onData((data) => terminal.write(data));
             const exitListener = child.onExit((event) => {
               didExit = true;
@@ -158,7 +152,12 @@ process.exit(1);`,
               await shows('DeepSeek V4.1', 30_000);
               child.write('\x1b[C');
               await shows(/▌ DeepSeek V4\.1/);
-              await moveTo('\x1b[A', /▌ \+ Add custom model…/);
+              await moveCursorTo(
+                text,
+                (keys) => child.write(keys),
+                '\x1b[A',
+                /▌ \+ Add custom model…/,
+              );
               child.write('\r');
               await shows('Model id for OpenCode CLI');
               child.write(CUSTOM_MODEL);
