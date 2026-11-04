@@ -2604,12 +2604,29 @@ describe('event row dispatch', () => {
     },
   );
 
-  it.each([60, 80])('preserves a path after answer prose at %i columns', (width) => {
-    for (const path of [
-      '/Users/me/notes/product-planning/brief.md',
-      '/Users/me/notes/product-planning/archive/receiving-workflow/brief.md',
-    ]) {
-      const answer = `Please use @${path}`;
+  const brief = '@/Users/me/notes/product-planning/brief.md';
+  const archivedBrief = '@/Users/me/notes/product-planning/archive/receiving-workflow/brief.md';
+
+  it.each([
+    { width: 52, path: brief, answers: ['You → Please use ', brief] },
+    { width: 60, path: brief, answers: ['You → Please use ', brief] },
+    { width: 64, path: brief, answers: ['You → Please use ', brief] },
+    { width: 80, path: brief, answers: [`You → Please use ${brief}`] },
+    {
+      width: 60,
+      path: archivedBrief,
+      answers: [
+        'You → Please use @/Users/me/notes/product-planning/',
+        'archive/receiving-workflow/brief.md',
+      ],
+    },
+    { width: 79, path: archivedBrief, answers: ['You → Please use ', archivedBrief] },
+    { width: 80, path: archivedBrief, answers: ['You → Please use ', archivedBrief] },
+    { width: 91, path: archivedBrief, answers: ['You → Please use ', archivedBrief] },
+  ])(
+    'preserves $path after answer prose at $width columns',
+    ({ width, path, answers: expected }) => {
+      const answer = `Please use ${path}`;
       const rows = eventRows({
         event: {
           type: 'user_message',
@@ -2622,10 +2639,67 @@ describe('event row dispatch', () => {
         expanded: false,
         ctx: { width, viewportRows: 20, streaming },
       });
+      const answers = rows.slice(2).map(rowText);
 
-      expect(rows.slice(2).map(rowText).join('')).toBe(`You → ${answer}`);
-    }
+      expect(answers).toEqual(expected);
+      expect(answers.join('')).toBe(`You → ${answer}`);
+    },
+  );
+
+  it('pulls a short last word of prose down at a narrow width', () => {
+    const question = 'Which constraints should the plan respect?';
+    const answer =
+      'Keep the public API stable and only refactor the internal implementation details';
+    const rows = eventRows({
+      event: {
+        type: 'user_message',
+        ts: 0,
+        phase: 'planning',
+        text: `1. ${question}\n${answer}`,
+        qa: [{ question, answer }],
+      },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 49, viewportRows: 20, streaming },
+    });
+
+    expect(rows.slice(2).map(rowText)).toEqual([
+      'You → Keep the public API stable and only ',
+      'refactor the internal',
+      'implementation details',
+    ]);
   });
+
+  it.each([
+    {
+      width: 50,
+      answer:
+        '👍🏽👍🏽👍🏽 that is right, go ahead and use @/Users/me/notes/product-planning/brief.md',
+    },
+    { width: 40, answer: 'Please read the go 日本語のテキストを修正する設定フ' },
+  ])(
+    'keeps every reply row within the body in cells at $width columns for $answer',
+    ({ width, answer }) => {
+      const rows = eventRows({
+        event: {
+          type: 'user_message',
+          ts: 0,
+          phase: 'planning',
+          text: `1. Which brief?\n${answer}`,
+          qa: [{ question: 'Which brief?', answer }],
+        },
+        globalIndex: 0,
+        expanded: false,
+        ctx: { width, viewportRows: 20, streaming },
+      });
+      const answers = rows.slice(2).map(rowText);
+      const bodyWidth = width - rowLeadingCells('message') - 3;
+
+      expect(Math.max(...answers.map((line) => getTerminalCellWidth(line)))).toBeLessThanOrEqual(
+        bodyWidth,
+      );
+    },
+  );
 
   it('pulls a stranded wrap word down so no line ends the block as one lone word', () => {
     const rows = eventRows({

@@ -120,11 +120,19 @@ describe('wrappedPrefixedRowTexts', () => {
     ]);
   });
 
-  it('uses the last slash in the remaining room even when the whole path fits a new row', () => {
-    expect(wrappedPrefixedRowTexts('Use @/a/b/c.md', 16, 'You → ')).toEqual([
-      'You → Use @/a/b/',
-      'c.md',
-    ]);
+  // A path that fits a row is not cut, as in a callout and every other prose row.
+  it('moves a path that fits a new row to that row whole', () => {
+    const lines = wrappedPrefixedRowTexts('Use @/a/b/c.md', 16, 'You → ');
+
+    expect(lines).toEqual(['You → Use ', '@/a/b/c.md']);
+    expect(lines.join('')).toBe('You → Use @/a/b/c.md');
+  });
+
+  it('keeps a path on the row of a break space instead of opening a blank row', () => {
+    const lines = wrappedPrefixedRowTexts('aaaa bbbb abcdefghi/z', 9, '');
+
+    expect(lines.every((line) => line.trim() !== '')).toBe(true);
+    expect(lines.join('')).toBe('aaaa bbbb abcdefghi/z');
   });
 
   it('measures Unicode paths in terminal cells and sanitizes control sequences', () => {
@@ -233,6 +241,14 @@ describe('wrappedProseTexts', () => {
     expect(
       wrappedProseTexts('first\n· item\n · item\n  · indented\n  indented · detail\n', 30),
     ).toEqual(['first', '· item', ' · item', '  · indented', '  indented · detail', '']);
+  });
+
+  it('breaks a path wider than the row after a slash', () => {
+    expect(wrappedProseTexts('see the file frontend/src/components/app.ts', 20)).toEqual([
+      'see the file ',
+      'frontend/src/',
+      'components/app.ts',
+    ]);
   });
 
   it('hard wraps an oversized token after a separator', () => {

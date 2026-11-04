@@ -480,9 +480,16 @@ async function runFixture(
           writeFileSync(join(artifactDir, 'workflow-copied.txt'), copied.eventText);
           continue;
         }
-        const key = index === 1 ? 'x' : 'Escape';
-        await page.keyboard.press(key);
-        await delay(120);
+        // The Ctrl+C above already cleared selection 0. A key after it would reach the app: Escape
+        // opens the stop sheet, and the sheet then takes the wheel.
+        const key = index === 0 ? 'Control+c' : index === 1 ? 'x' : 'Escape';
+        if (index > 0) await page.keyboard.press(key);
+        await waitForPage(
+          page,
+          `!window.__terminalHighlighted(${JSON.stringify(selection.prefix)})`,
+          `${key} clearing the selection`,
+          2_000,
+        ).catch(() => undefined);
         const cleared = !(await page.evaluate(
           `window.__terminalHighlighted(${JSON.stringify(selection.prefix)})`,
         ));

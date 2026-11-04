@@ -116,6 +116,7 @@
 
 ### Fixed
 
+- A file path in the transcript or in a card now moves whole to the next row when it fits there. A longer path breaks after a `/`, not inside a file or folder name. Before, a path could break in the middle of a name, and an answer that ended in a long path could leave one word alone on its first row.
 - A check or hook that was still running when SPLITBRIEF ended unexpectedly is now stopped the next time SPLITBRIEF starts.
 - A finished Claude Code answer is kept when a background task reports after it. The call ends on that answer, and SPLITBRIEF stops the tool, so the late turn does not run. Before, the call failed and the answer was lost.
 - A long answer is now read whole, from a CLI tool and from a `shell` or `agent` seat. Before, an answer line longer than 1 MB failed a CLI tool's call and was lost from a `shell` or `agent` seat. A `shell` or `agent` seat with `stream-json` output now keeps every message of its answer. Before, it kept only the last message.

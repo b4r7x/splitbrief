@@ -17,6 +17,11 @@ const LINE_BREAK_PLACEHOLDER_PREFIX = `\ue000${SPLITBRIEF_IDENTITY.slug}-line-br
 // so `length` is the exact rendered width.
 const PRINTABLE_ASCII_ROW = /^[ -~]*$/;
 
+// Splits a line into its path words and the prose runs between them. Each prose run wraps in one
+// call, so a line with no path costs what wrappedRowTexts costs. A path that fits a row wraps as
+// prose and moves to the next row whole; only a path wider than the row breaks after a slash.
+const PATH_WORD = /(?<![^ ])([^ ]*\/[^ ]*)/u;
+
 export function sanitizeRowDisplayText(text: string): string {
   if (!text.includes('\n')) return sanitizeTerminalDisplayText(text);
 
@@ -57,8 +62,8 @@ export function wrappedPrefixedRowTexts(text: string, width: number, prefix: str
 
   for (const sourceLine of source.split('\n')) {
     let line = '';
-    for (let word of sourceLine.split(/( +)/u)) {
-      if (!word.includes('/')) {
+    for (let word of sourceLine.split(PATH_WORD)) {
+      if (!word.includes('/') || getTerminalCellWidth(word) <= wrapWidth) {
         const wrapped = wrappedRowTexts(`${line}${word}`, wrapWidth);
         wrapped.forEach((part, index) => {
           if (index < wrapped.length - 1) lines.push(part);
@@ -84,7 +89,10 @@ export function wrappedPrefixedRowTexts(text: string, width: number, prefix: str
         }
         const slash = head.lastIndexOf('/');
         const fitting = slash < 0 ? head : head.slice(0, slash + 1);
-        if (getTerminalCellWidth(fitting) > room && line !== '') {
+        if (
+          (slash < 0 && line.trim() !== '') ||
+          (getTerminalCellWidth(fitting) > room && line !== '')
+        ) {
           lines.push(line);
           line = '';
           continue;
@@ -116,7 +124,7 @@ export function wrappedProseTexts(text: string, width: number): string[] {
 
 function wrappedProseLineParts(text: string, width: number): { text: string; start: number }[] {
   let offset = 0;
-  return wrappedRowTexts(text.replaceAll(SOFT_SEP, ` ${BOUND_SEP_DOT}`), width).map(
+  return wrappedPrefixedRowTexts(text.replaceAll(SOFT_SEP, ` ${BOUND_SEP_DOT}`), width, '').map(
     (line, index) => {
       let trim = index > 0 && line.startsWith(' ') ? 1 : 0;
       if (index > 0 && line.startsWith(BOUND_SEP_DOT, trim)) trim += BOUND_SEP_DOT.length;

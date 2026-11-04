@@ -1,5 +1,6 @@
 import type { AnsweredQuestion, ClarificationQuestion } from '../../../../core/schemas/question.js';
 import { questionLine } from '../../../../core/state/planning-conversation.js';
+import { getTerminalCellWidth } from '../../../../utils/display-text.js';
 import { countNoun } from '../../../../utils/pluralize.js';
 import { rowsBlock } from '../row-block-compose.js';
 import { wrapWidthFor } from '../row-markers.js';
@@ -13,7 +14,9 @@ import type {
 } from '../types.js';
 
 // A greedy wrap strands the last line as one lone word at some widths; pulling the previous
-// line's last word down keeps the card's ragged edge from hanging a single word.
+// line's last word down keeps the card's ragged edge from hanging a single word. A lone word wider
+// than what the line above would keep, such as a path that fills its row, stays alone. Widths are
+// terminal cells, as the wrap counts them, so the new last line is never wider than the line above.
 function wrappedLines(text: string, width: number, prefix: string): string[] {
   const lines = wrappedPrefixedRowTexts(text, width, prefix);
   const last = lines.length - 1;
@@ -26,9 +29,9 @@ function wrappedLines(text: string, width: number, prefix: string): string[] {
   const cut = previous.lastIndexOf(' ');
   if (lone === '' || lone.includes(' ') || cut === -1) return lines;
   if (last === 1 && cut < prefix.length) return lines;
-  const moved = previous.slice(cut + 1);
-  if (moved.length + 1 + lone.length > width) return lines;
-  return [...lines.slice(0, last - 1), previous.slice(0, cut), `${moved} ${lone}`];
+  const kept = previous.slice(0, cut);
+  if (getTerminalCellWidth(lone) > getTerminalCellWidth(kept)) return lines;
+  return [...lines.slice(0, last - 1), kept, `${previous.slice(cut + 1)} ${lone}`];
 }
 
 // The wrapper keeps the space it broke on (`trim: false`): usually it trails the line above, but at

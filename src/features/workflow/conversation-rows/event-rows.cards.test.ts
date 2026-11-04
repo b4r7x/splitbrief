@@ -376,4 +376,41 @@ describe('cardRowsBlock label wrapping', () => {
       expect(getTerminalCellWidth(rowText(rowValue))).toBeLessThanOrEqual(wrapWidth);
     }
   });
+
+  it.each([
+    {
+      label: 'SPLITBRIEF',
+      path: '.splitbrief/sessions/visual-workflow/reverted/2026-07-13T16-00-00-300Z.',
+      value: (path: string) => `T901 attempt reverted: 2 files. The replaced bytes are in ${path}`,
+    },
+    {
+      label: 'Blocking F1',
+      path: 'src/features/workflow/conversation-rows/row-format/label-card.ts',
+      value: (path: string) => `The row text goes through ${path} and cuts the path.`,
+    },
+  ])('breaks a $label path only after a slash', ({ label, path, value }) => {
+    const segments = path.split(/(?<=\/)/u);
+    for (const width of [56, 57, 58, 59, 60]) {
+      const block = cardRowsBlock({
+        keyPrefix: 'c',
+        label,
+        value: value(path),
+        width,
+        labelTone: 'textDim',
+      });
+      expect(block).not.toBeNull();
+      if (block === null) return;
+      const lines = block.createRows(0, block.rowCount).map(rowText);
+
+      for (const segment of segments) {
+        expect(
+          lines.some((line) => line.includes(segment)),
+          `${segment} whole at ${width}: ${JSON.stringify(lines)}`,
+        ).toBe(true);
+      }
+      for (const line of lines) {
+        expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(wrapWidthFor('card', width));
+      }
+    }
+  });
 });
