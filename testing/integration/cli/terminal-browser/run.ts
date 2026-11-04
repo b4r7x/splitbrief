@@ -4,8 +4,8 @@ import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium, type Browser, type Page } from 'playwright';
+import { loadNodePtyCapability, type PtyProcess, type PtySpawn } from '../pty/capability.js';
 
-type PtyProcess = import('node-pty').IPty;
 type FixtureMode = 'off' | 'tracking';
 type ChildMode = FixtureMode | 'composer';
 type FailureKind = 'setup' | 'harness' | 'product';
@@ -83,8 +83,7 @@ function childState(artifactDir: string, mode: ChildMode): Record<string, unknow
   return readJson(join(artifactDir, `${mode}-state.json`));
 }
 
-function spawnChild(mode: ChildMode, artifactDir: string): PtyProcess {
-  const nodePty = require('node-pty') as typeof import('node-pty');
+function spawnChild(spawn: PtySpawn, mode: ChildMode, artifactDir: string): PtyProcess {
   const environment = Object.fromEntries(
     Object.entries({
       ...process.env,
@@ -100,7 +99,7 @@ function spawnChild(mode: ChildMode, artifactDir: string): PtyProcess {
       CI: 'false',
     }).filter((entry): entry is [string, string] => entry[1] !== undefined),
   );
-  return nodePty.spawn(
+  return spawn(
     '/bin/zsh',
     [
       '-f',
@@ -260,6 +259,7 @@ async function wheel(
 
 async function runFixture(
   browser: Browser,
+  spawn: PtySpawn,
   mode: FixtureMode,
   artifactDir: string,
 ): Promise<{
@@ -273,7 +273,7 @@ async function runFixture(
   let outputWrite: Promise<unknown> = Promise.resolve();
   let ansi = '';
   try {
-    const child = spawnChild(mode, artifactDir);
+    const child = spawnChild(spawn, mode, artifactDir);
     childRef.current = child;
     child.onData((data) => {
       ansi += data;
@@ -603,6 +603,7 @@ async function runFixture(
 
 async function runComposer(
   browser: Browser,
+  spawn: PtySpawn,
   artifactDir: string,
 ): Promise<{
   readonly checks: readonly Check[];
@@ -614,7 +615,7 @@ async function runComposer(
   const failures: { kind: FailureKind; message: string }[] = [];
   let outputWrite: Promise<unknown> = Promise.resolve();
   try {
-    const child = spawnChild('composer', artifactDir);
+    const child = spawnChild(spawn, 'composer', artifactDir);
     childRef.current = child;
     child.onData((data) => {
       outputWrite = outputWrite
@@ -793,15 +794,20 @@ fs.renameSync(target + '.' + process.pid, target);
       failures.push({ kind: 'setup', message: `Playwright Chromium is missing at ${executable}` });
       return saveReport({ status: 'setup-failed', artifacts, checks, failures });
     }
+    const pty = await loadNodePtyCapability();
+    if (pty.kind === 'setup-failed') {
+      failures.push({ kind: 'setup', message: pty.reason });
+      return saveReport({ status: 'setup-failed', artifacts, checks, failures });
+    }
     browser = await chromium.launch({ headless: true });
     const browserVersion = browser.version();
-    const off = await runFixture(browser, 'off', artifacts);
+    const off = await runFixture(browser, pty.spawn, 'off', artifacts);
     checks.push(...off.checks);
     failures.push(...off.failures);
-    const tracking = await runFixture(browser, 'tracking', artifacts);
+    const tracking = await runFixture(browser, pty.spawn, 'tracking', artifacts);
     checks.push(...tracking.checks);
     failures.push(...tracking.failures);
-    const composer = await runComposer(browser, artifacts);
+    const composer = await runComposer(browser, pty.spawn, artifacts);
     checks.push(...composer.checks);
     failures.push(...composer.failures);
     const hasHarnessFailure = failures.some(({ kind }) => kind === 'harness');

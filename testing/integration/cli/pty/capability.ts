@@ -1,4 +1,9 @@
+import { chmodSync, statSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, resolve } from 'node:path';
 import type { PtySetupFailureCategory } from './contract.js';
+
+const require = createRequire(import.meta.url);
 
 const NODE_PTY_PACKAGE = 'node-pty';
 const POST_SPAWN_API_INCOMPATIBLE_ERROR_NAME = 'pty-post-spawn-api-incompatible';
@@ -38,13 +43,15 @@ export type PtySpawn = (
   options: PtySpawnOptions,
 ) => PtyProcess;
 
+type PtySetupFailed = {
+  readonly kind: 'setup-failed';
+  readonly category: Exclude<PtySetupFailureCategory, 'spawn-failed'>;
+  readonly reason: string;
+};
+
 export type PtyCapability =
   | { readonly kind: 'available'; readonly spawn: PtySpawn }
-  | {
-      readonly kind: 'setup-failed';
-      readonly category: Exclude<PtySetupFailureCategory, 'spawn-failed'>;
-      readonly reason: string;
-    };
+  | PtySetupFailed;
 
 export async function loadNodePtyCapability(): Promise<PtyCapability> {
   let loaded: unknown;
@@ -66,7 +73,41 @@ export async function loadNodePtyCapability(): Promise<PtyCapability> {
       reason: 'node-pty has an incompatible spawn API',
     };
   }
+  if (process.platform === 'darwin') {
+    const helperFailure = makeSpawnHelperExecutable();
+    if (helperFailure !== null) return helperFailure;
+  }
   return { kind: 'available', spawn };
+}
+
+// node-pty 1.1.0 ships its darwin spawn-helper prebuilds as mode 644, so every spawn fails until the exec bit is set.
+function makeSpawnHelperExecutable(): PtySetupFailed | null {
+  const utilsPath = require.resolve(`${NODE_PTY_PACKAGE}/lib/utils.js`);
+  const utils: unknown = require(utilsPath);
+  const native =
+    isRecord(utils) && isCallable(utils['loadNativeModule'])
+      ? utils['loadNativeModule']('pty')
+      : undefined;
+  if (!isRecord(native) || typeof native['dir'] !== 'string') {
+    return {
+      kind: 'setup-failed',
+      category: 'api-incompatible',
+      reason: 'node-pty does not expose the directory of its native module',
+    };
+  }
+  const helperPath = resolve(dirname(utilsPath), native['dir'], 'spawn-helper');
+  const stats = statSync(helperPath, { throwIfNoEntry: false });
+  if (stats === undefined || (stats.mode & 0o100) !== 0) return null;
+  try {
+    chmodSync(helperPath, stats.mode | 0o111);
+  } catch (error) {
+    return {
+      kind: 'setup-failed',
+      category: 'module-unavailable',
+      reason: `node-pty spawn-helper at ${helperPath} is not executable and chmod failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+  return null;
 }
 
 export function isPostSpawnApiIncompatibleError(error: unknown): boolean {
