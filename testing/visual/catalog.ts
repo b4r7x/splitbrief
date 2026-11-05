@@ -5162,6 +5162,24 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-implementation-shell-seat-resolved',
+      title: 'Workflow · a custom shell BUILD seat that runs Claude Code names the model it ran',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'implementation-shell-seat-resolved',
+        title: 'Every surface names the seat Custom Shell',
+        kind: 'implementation',
+        marker: 'Custom Shell',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-build-brief-check-seat-change',
       title: 'Workflow · a seat saved while the brief runs its check between attempts',
       surface: screenSurface('workflow'),

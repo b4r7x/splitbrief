@@ -16,7 +16,6 @@ import type {
 import { validateCliArgs } from './validate-args.js';
 import { parseStreamLine, type StreamParseResult } from '../../streaming/parse-stream-json.js';
 import { error } from '../../../utils/error.js';
-import { isRecord } from '../../../utils/type-guards.js';
 import { createClaudeReplyParser } from './claude-reply-parser.js';
 import { readImagesAsBase64 } from '../../streaming/attachments.js';
 import { spawnPipeError, type SpawnStdinWriter } from '../../../lib/process/spawn/lifecycle.js';
@@ -206,14 +205,14 @@ function validateArgs(input: { invocationArgs: readonly string[]; baseArgs: read
 
 function createClaudeParser(): (line: string) => readonly CliProtocolEvent[] {
   const parse = createClaudeReplyParser();
-  return (line) => protocolEvents(parse(line), line);
+  return (line) => protocolEvents(parse(line));
 }
 
 function toProtocolEvents(line: string): readonly CliProtocolEvent[] {
-  return protocolEvents(parseStreamLine(line), line);
+  return protocolEvents(parseStreamLine(line));
 }
 
-function protocolEvents(parsed: StreamParseResult, line: string): readonly CliProtocolEvent[] {
+function protocolEvents(parsed: StreamParseResult): readonly CliProtocolEvent[] {
   const events: CliProtocolEvent[] = [];
   if (parsed.inputAck !== undefined) events.push({ type: 'input-ack', text: parsed.inputAck });
   if (parsed.sessionId !== undefined) {
@@ -227,16 +226,11 @@ function protocolEvents(parsed: StreamParseResult, line: string): readonly CliPr
     !parsed.isResult &&
     ((parsed.text !== undefined && parsed.text.length > 0) || parsed.textSemantics === 'final')
   ) {
-    const record: unknown = parsed.isSubagent ? JSON.parse(line) : null;
-    const subagentId =
-      isRecord(record) && typeof record.parent_tool_use_id === 'string'
-        ? record.parent_tool_use_id
-        : undefined;
     events.push({
       type: 'text',
       channel: parsed.channel ?? 'assistant',
       text: parsed.text ?? '',
-      ...(subagentId !== undefined && { subagentId }),
+      ...(parsed.subagentId !== undefined && { subagentId: parsed.subagentId }),
       ...(parsed.textSemantics !== undefined && { semantics: parsed.textSemantics }),
     });
   }

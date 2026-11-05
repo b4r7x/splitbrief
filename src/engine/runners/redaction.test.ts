@@ -141,6 +141,8 @@ describe('custom runner environment and redaction boundary', () => {
     const parsed: ParsedLine = {
       text: `result ${canary} ${markerCollision}`,
       sessionId: `session-${canary}`,
+      resolvedModel: `model-${canary}`,
+      subagentId: `subagent-${canary}`,
       toolUse: [
         {
           id: `tool-${canary}`,

@@ -6923,6 +6923,32 @@ const implementationShellSeatProjection: WorkflowFixtureProjection = {
   }),
 };
 
+const implementationShellSeatResolvedProjection: WorkflowFixtureProjection = {
+  ...implementationShellSeatProjection,
+  scenarioId: scenarioId('workflow-implementation-shell-seat-resolved'),
+  events: implementationShellSeatProjection.events.flatMap((event): EngineEvent[] => {
+    if (event.type !== 'runner_call_started') return [event];
+    return [
+      event,
+      {
+        type: 'runner_call_session_id',
+        ts: event.ts + 10,
+        phase: event.phase,
+        ...(event.taskId !== undefined && { taskId: event.taskId }),
+        callId: event.callId,
+        role: event.role,
+        backendKind: 'shell',
+        runnerName: SHELL_BUILD_SEAT.command,
+        model: SHELL_BUILD_SEAT.model,
+        axes: [],
+        sequence: event.sequence,
+        nativeSessionId: 'visual-shell-build-session',
+        resolvedModel: 'claude-sonnet-5-5',
+      },
+    ];
+  }),
+};
+
 // The BUILD seat saved to Claude Code while its Ollama quota halt waits. The clock stays in the
 // halt title; the seat on screen has no limit to wait for, so it carries no reset note.
 const usageLimitSeatSavedProjection: WorkflowFixtureProjection = {
@@ -8273,6 +8299,7 @@ const projections = [
   implementationSeatChangeProjection,
   buildBriefCheckSeatChangeProjection,
   implementationShellSeatProjection,
+  implementationShellSeatResolvedProjection,
   usageLimitSeatSavedProjection,
   recoveryEmptyEnterProjection,
   finalReviewSeatChangeProjection,

@@ -19,6 +19,27 @@ export function reconcileFinalText(
   return { kind: 'replace', text: finalText };
 }
 
+export function createStreamedBlock(): {
+  delta: (text: string) => void;
+  close: (finalText: string | undefined) => string;
+} {
+  let streamedText = '';
+  return {
+    delta(text) {
+      streamedText += text;
+    },
+    close(finalText) {
+      let text = '';
+      if (finalText !== undefined) {
+        const reconciliation = reconcileFinalText(streamedText, finalText);
+        if (reconciliation.kind !== 'none') text = reconciliation.text;
+      }
+      streamedText = '';
+      return text;
+    },
+  };
+}
+
 /**
  * Appends one whole message so it starts on its own line after a blank one: a
  * verdict line or a heading a parser anchors on never lands mid-line behind the

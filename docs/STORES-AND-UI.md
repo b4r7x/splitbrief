@@ -426,11 +426,11 @@ introduce a second breakpoint or hidden bottom row.
 Sidebar seats keep the tool, model and effort words. An identity that exceeds its column wraps after the tool.
 When neither the tool and model nor the model and route fit one row, an OpenCode or Kilo Code seat takes three rows: the tool, the model, then the route and effort.
 Each later row starts in the identity column and keeps the seat color. Each row uses the existing segment rule.
-A Claude Code seat saved as an alias, such as `opus`, or as `auto`, adds one read-only row with the model id its last call reported, such as `claude-opus-5-5`.
-`runner_call_session_id` carries that id as `resolvedModel`, and `tokensStore.resolvedModels` keeps it per seat beside the runner name and the model the call was given.
+A Claude Code seat saved as an alias, such as `opus`, or as `auto`, adds one read-only row with the model id its last call reported, such as `claude-opus-5-5`. A `shell` or `agent` seat with `stream-json` output that runs Claude Code gets the same row.
+`runner_call_session_id` carries that id as `resolvedModel`, and `tokensStore.resolvedModels` keeps it per seat beside the runner name, the recorded backend kind, and the model the call was given.
 `resolvedSeatModel` (`display/running-seats.ts`) shows the id only when the shown seat runs that tool, still saves that model, and the id differs from it.
-The Claude runner names its planner calls `claude`, so the runner name resolves to its tool through `cliToolIdForCommand` first.
-Before the first call, and for every other tool, the seat has no such row.
+The runner name resolves to its tool through `recordedSeatTool` (`engine/providers/model/display-names.ts`), the rule of a recorded seat: a `shell` or `agent` call reads by its kind word, and a `cli` call goes through `cliToolIdForCommand`, because the Claude runner names its planner calls `claude`.
+Before the first call, and for a tool that reports no model, the seat has no such row.
 The task list pays for every seat row. An inherited review seat stays on one row as `REVIEW = PLAN`.
 When the list has no rows left and the seats still do not fit, the resolved model rows go first. Then each seat takes one row with the same segment rule.
 A panel too short even for that clips the seat rows inside its bottom border.

@@ -176,6 +176,16 @@ export async function spawnAndCollect(
   let toolInputCapacityExceeded = false;
   let stdoutRedactor = createStdoutRedactor();
   let stdoutChannel: ParsedTextChannel = 'stdout';
+  const subagentRedactors = new Map<string, ReturnType<typeof createStdoutRedactor>>();
+  const flushSubagentText = (
+    subagentIds: readonly string[] = [...subagentRedactors.keys()],
+  ): void => {
+    for (const subagentId of subagentIds) {
+      const text = subagentRedactors.get(subagentId)?.flush() ?? '';
+      subagentRedactors.delete(subagentId);
+      if (text.length > 0) parsedRecorder.apply({ text, channel: 'assistant', subagentId });
+    }
+  };
   const flushText = (): void => {
     const text = stdoutRedactor.flush();
     if (text.length > 0) parsedRecorder.apply({ text, channel: stdoutChannel });
@@ -184,9 +194,25 @@ export async function spawnAndCollect(
     const parsedText = parsed.text;
     const redacted =
       opts.redact === undefined ? parsed : redactCustomRunnerParsedLine(parsed, redactCredential);
+    if (redacted.subagentId !== undefined && parsedText !== undefined) {
+      const subagentId = redacted.subagentId;
+      const existing = subagentRedactors.get(subagentId);
+      const redactor = existing ?? createStdoutRedactor();
+      if (existing === undefined) subagentRedactors.set(subagentId, redactor);
+      parsedRecorder.apply({ ...redacted, text: redactor.push(parsedText) });
+      return;
+    }
     const channel = redacted.channel ?? (redacted.isResult ? 'result' : 'stdout');
     const isFinalBoundary = redacted.isResult === true || channel === 'result';
     const isStreamingText = channel === 'assistant' || channel === 'stdout';
+
+    if (isFinalBoundary) flushSubagentText();
+    // The main-loop `tool_result` of a subagent's tool use ends that subagent.
+    if (redacted.toolUse !== undefined) {
+      flushSubagentText(
+        redacted.toolUse.flatMap((tool) => (tool.id === undefined ? [] : [tool.id])),
+      );
+    }
 
     if (isFinalBoundary && parsedText !== undefined) {
       const terminal = stdoutRedactor.flushBeforeTerminal(parsedText);
@@ -218,6 +244,7 @@ export async function spawnAndCollect(
   };
   const flushStdout = (): void => {
     flushToolInput();
+    flushSubagentText();
     flushText();
   };
   const applyParsed = (parsed: ParsedLine): void => {

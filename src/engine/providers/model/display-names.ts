@@ -62,6 +62,14 @@ export function resolveModelDisplayName(input: {
   return formatModelName(model, cliVocabularyTool(providerId, kind));
 }
 
+export function recordedSeatTool(seat: Pick<SeatIds, 'tool' | 'kind'>): string {
+  return seat.kind === 'shell' || seat.kind === 'agent'
+    ? seat.kind
+    : seat.kind === 'cli' || seat.kind === undefined
+      ? (cliToolIdForCommand(seat.tool) ?? seat.tool)
+      : seat.tool;
+}
+
 /**
  * Resolves a recorded command and model through the same catalog as a configured seat. A shell or
  * agent seat reads by its kind word, as its saved seat does, never by its command.
@@ -75,12 +83,7 @@ export function recordedSeatIdentityInput({
   role: ActiveRunnerRole;
   cache: ModelCacheAccessor;
 }): Parameters<typeof formatSeatIdentity>[0] {
-  const tool =
-    seat.kind === 'shell' || seat.kind === 'agent'
-      ? seat.kind
-      : seat.kind === 'cli' || seat.kind === undefined
-        ? (cliToolIdForCommand(seat.tool) ?? seat.tool)
-        : seat.tool;
+  const tool = recordedSeatTool(seat);
   const displayName =
     seat.model === undefined
       ? undefined

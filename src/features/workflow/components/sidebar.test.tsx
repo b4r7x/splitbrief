@@ -1409,4 +1409,43 @@ describe('Sidebar — the model a Claude Code seat resolved', () => {
     expect(seatRows(ui.lastFrame() ?? '', 'PLAN')).toEqual(before);
     ui.unmount();
   });
+
+  it.each([
+    ['shell', './claude-wrapper.sh'],
+    ['agent', 'claude'],
+  ] as const)(
+    'shows the model id a %s seat with the command %s reported on its own row',
+    async (kind, command) => {
+      configStore.__testReset({
+        projectDir: '/tmp/project',
+        config: makeConfig({
+          planner: { kind, command },
+        }),
+      });
+      const ui = await renderCrew();
+      const before = seatRows(ui.lastFrame() ?? '', 'PLAN');
+      const { model: _model, ...event } = sessionEvent('auto', 'claude-opus-5-5', command);
+
+      addEvent({ ...event, backendKind: kind });
+      await tick();
+
+      expect(seatRows(ui.lastFrame() ?? '', 'PLAN')).toEqual([...before, 'claude-opus-5-5']);
+      ui.unmount();
+    },
+  );
+
+  it('shows no resolved row on a Claude Code seat for a call that a shell seat made with the command claude', async () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: aliasCrew({ tool: 'claude-code', model: 'opus' }),
+    });
+    const ui = await renderCrew();
+    const before = seatRows(ui.lastFrame() ?? '', 'PLAN');
+
+    addEvent({ ...sessionEvent('opus', 'claude-opus-5-5', 'claude'), backendKind: 'shell' });
+    await tick();
+
+    expect(seatRows(ui.lastFrame() ?? '', 'PLAN')).toEqual(before);
+    ui.unmount();
+  });
 });

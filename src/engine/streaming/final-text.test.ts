@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { appendMessage, onlyAddsLineBreaks, reconcileFinalText } from './final-text.js';
+import {
+  appendMessage,
+  createStreamedBlock,
+  onlyAddsLineBreaks,
+  reconcileFinalText,
+} from './final-text.js';
 
 describe('reconcileFinalText', () => {
   it('takes the final text whole when nothing streamed', () => {
@@ -22,6 +27,39 @@ describe('reconcileFinalText', () => {
 
   it('replaces the streamed text when the final text differs', () => {
     expect(reconcileFinalText('draft', 'final')).toEqual({ kind: 'replace', text: 'final' });
+  });
+});
+
+describe('createStreamedBlock', () => {
+  it('gives nothing when the record restates its deltas', () => {
+    const block = createStreamedBlock();
+    block.delta('Hel');
+    block.delta('lo');
+    expect(block.close('Hello')).toBe('');
+  });
+
+  it('gives the tail the deltas did not carry', () => {
+    const block = createStreamedBlock();
+    block.delta('Hel');
+    expect(block.close('Hello')).toBe('lo');
+  });
+
+  it('keeps a record that differs from its deltas whole', () => {
+    const block = createStreamedBlock();
+    block.delta('Hel');
+    block.delta('world.');
+    expect(block.close('Hello world.')).toBe('Hello world.');
+  });
+
+  it('starts a new block after a record with no text', () => {
+    const block = createStreamedBlock();
+    block.delta('Done.');
+    expect(block.close(undefined)).toBe('');
+    expect(block.close('Done.')).toBe('Done.');
+  });
+
+  it('gives a record whole when no delta streamed', () => {
+    expect(createStreamedBlock().close('A.')).toBe('A.');
   });
 });
 

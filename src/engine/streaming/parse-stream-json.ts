@@ -39,8 +39,8 @@ export interface StreamParseResult {
   toolUseStart?: ToolUseInfo[] | undefined;
   toolUseDelta?: ToolUseDeltaInfo[] | undefined;
   warning?: ParsedWarningInfo[] | undefined;
-  /** A non-null `parent_tool_use_id`: the record belongs to a subagent, not the main loop. */
-  isSubagent?: boolean | undefined;
+  /** A string `parent_tool_use_id`: the subagent id of the record, not the main loop. */
+  subagentId?: string | undefined;
   /** A `message_start` opened a message. */
   isMessageStart?: boolean | undefined;
   /** `message_delta.delta.stop_reason`: why the open message ended. */
@@ -528,7 +528,8 @@ function parseLine(
     const event: unknown = JSON.parse(line);
     const record = isRecord(event) ? event : null;
     const usage = record === null ? undefined : collectUsage?.(record);
-    const isSubagent = record?.parent_tool_use_id != null;
+    const parentToolUseId = record?.parent_tool_use_id;
+    const subagentId = typeof parentToolUseId === 'string' ? parentToolUseId : undefined;
 
     const assistant = AssistantEvent.safeParse(event);
     if (assistant.success) {
@@ -560,7 +561,7 @@ function parseLine(
         // The input is whole, but the tool has not run yet: its `tool_result` closes it.
         toolUseInput: tools.length > 0 ? tools : undefined,
         ...(usage !== undefined && { usage, usageSemantics: 'cumulative' }),
-        ...(isSubagent && { isSubagent }),
+        ...(subagentId !== undefined && { subagentId }),
       };
     }
 
@@ -598,7 +599,7 @@ function parseLine(
         return {
           sessionId: user.data.session_id ?? undefined,
           toolUse: closed,
-          ...(isSubagent && { isSubagent }),
+          ...(subagentId !== undefined && { subagentId }),
         };
       }
     }
@@ -607,7 +608,7 @@ function parseLine(
       const streamEvent = parseStreamEvent(record);
       if (streamEvent) {
         rememberTools(openTools, streamEvent.toolUseStart ?? []);
-        const scoped = isSubagent ? { ...streamEvent, isSubagent } : streamEvent;
+        const scoped = subagentId !== undefined ? { ...streamEvent, subagentId } : streamEvent;
         if (collectUsage === undefined) return scoped;
         const { usage: _messageUsage, usageSemantics: _semantics, ...rest } = scoped;
         return { ...rest, ...(usage !== undefined && { usage, usageSemantics: 'cumulative' }) };

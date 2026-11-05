@@ -6,7 +6,11 @@ import type {
   CliInvocation,
   CliPlannerAdapter,
 } from './cli-tools/contract.js';
-import { onlyAddsLineBreaks, reconcileFinalText } from '../streaming/final-text.js';
+import {
+  createStreamedBlock,
+  onlyAddsLineBreaks,
+  reconcileFinalText,
+} from '../streaming/final-text.js';
 import { invokeProcessCli, type ToolUseGuard } from './cli-tools/process-invoke.js';
 import { SANDBOX_CREDENTIAL_VALUES, sandboxCredentialValues } from './sandbox-credential-values.js';
 import { boundedRunnerCallMessage } from '../calls/status.js';
@@ -72,18 +76,24 @@ function createCliTextReconciler(
   onOutput: Parameters<typeof createCliTextForwarder>[0],
 ): ReturnType<typeof createCliTextForwarder> {
   let streamedText = '';
-  let blockText = '';
   let nextAssistantStartsMessage = false;
-  const stream = (
+  const block = createStreamedBlock();
+  const emit = (
     text: string,
     event: Extract<RunnerCallEvent, { type: 'call_text_delta' }>,
   ): void => {
     if (text.length === 0) return;
     streamedText += text;
-    blockText += text;
     const messageStart = event.channel === 'assistant' && nextAssistantStartsMessage;
     onOutput?.(text, { messageStart }, event);
     if (messageStart) nextAssistantStartsMessage = false;
+  };
+  const stream = (
+    text: string,
+    event: Extract<RunnerCallEvent, { type: 'call_text_delta' }>,
+  ): void => {
+    block.delta(text);
+    emit(text, event);
   };
   const forwardText = (event: Extract<RunnerCallEvent, { type: 'call_text_delta' }>): void => {
     if (!contributesToStreamedText(event.channel)) {
@@ -97,29 +107,26 @@ function createCliTextReconciler(
     // `final` text restates rather than extends: an assistant record restates
     // the block its partial deltas already streamed, and the terminal result
     // restates the whole message. Only the part never streamed is new.
-    const alreadyStreamed = event.channel === 'result' ? streamedText : blockText;
-    const reconciliation = reconcileFinalText(alreadyStreamed, event.text);
+    if (event.channel !== 'result') {
+      emit(block.close(event.text), event);
+      return;
+    }
+    const reconciliation = reconcileFinalText(streamedText, event.text);
     if (reconciliation.kind === 'full' || reconciliation.kind === 'suffix') {
       stream(reconciliation.text, event);
     } else if (reconciliation.kind === 'replace') {
-      if (event.channel === 'result') {
-        if (streamedText.endsWith(reconciliation.text)) return;
-        // A final group that only puts its streamed messages on their own lines is not new text.
-        if (onlyAddsLineBreaks(streamedText, reconciliation.text)) return;
-        if (reconciliation.text.startsWith(streamedText)) {
-          const tail = reconciliation.text.slice(streamedText.length);
-          streamedText = reconciliation.text;
-          if (tail.length > 0) onOutput?.(tail, undefined, event);
-        } else {
-          streamedText = reconciliation.text;
-          onOutput?.(reconciliation.text, undefined, event);
-        }
+      if (streamedText.endsWith(reconciliation.text)) return;
+      // A final group that only puts its streamed messages on their own lines is not new text.
+      if (onlyAddsLineBreaks(streamedText, reconciliation.text)) return;
+      if (reconciliation.text.startsWith(streamedText)) {
+        const tail = reconciliation.text.slice(streamedText.length);
+        streamedText = reconciliation.text;
+        if (tail.length > 0) onOutput?.(tail, undefined, event);
       } else {
-        blockText = '';
-        stream(reconciliation.text, event);
+        streamedText = reconciliation.text;
+        onOutput?.(reconciliation.text, undefined, event);
       }
     }
-    if (event.channel !== 'result') blockText = '';
   };
 
   return (event) => {

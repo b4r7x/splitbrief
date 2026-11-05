@@ -326,6 +326,8 @@ export function redactCustomRunnerParsedLine(
     ...line,
     ...(line.text === undefined ? {} : { text: redact(line.text) }),
     ...(line.sessionId === undefined ? {} : { sessionId: redact(line.sessionId) }),
+    ...(line.resolvedModel === undefined ? {} : { resolvedModel: redact(line.resolvedModel) }),
+    ...(line.subagentId === undefined ? {} : { subagentId: redact(line.subagentId) }),
     ...(line.toolUse === undefined
       ? {}
       : { toolUse: line.toolUse.map((toolUse) => redactToolUse(toolUse, redact)) }),

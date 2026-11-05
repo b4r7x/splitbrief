@@ -10,6 +10,7 @@ import { createRecoveryBus } from '../../../../src/engine/orchestrator/recovery/
 import { saveState } from '../../../../src/core/state/persistence.js';
 import { writeEvidenceLedger } from '../../../../src/core/evidence/ledger-storage.js';
 import { WORKFLOW_STATE_VERSION } from '../../../../src/core/schemas/workflow.js';
+import { getWorkflowSidebarWidth } from '../../../../src/features/workflow/layout/rect.js';
 import { readConversationScrollSnapshot } from '../../../../src/features/workflow/layout/snapshot.js';
 import {
   getConversationRowsProjection,
@@ -599,6 +600,19 @@ const checkpointPredicates = [
   ],
   [checkpointId('build-brief-check-seat-change'), includesAll('Plan check K2')],
   [checkpointId('implementation-shell-seat'), includesAll('Custom Shell')],
+  [
+    checkpointId('implementation-shell-seat-resolved'),
+    (context) =>
+      includesAll(
+        'Custom Shell',
+        ...(getWorkflowSidebarWidth({
+          cols: context.viewport.cols,
+          sidebarVisible: true,
+        }) > 0
+          ? ['claude-sonnet-5-5']
+          : []),
+      )(context),
+  ],
   [
     checkpointId('build-fix-consult'),
     includesAll('PLAN → T904', 'Claude Code CLI', 'answering the consult on T904'),

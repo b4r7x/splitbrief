@@ -18,7 +18,7 @@ import { recordedSeatIdentityInput } from './recorded-seat-identity.js';
 import type { RunnerConfig } from '../../../core/config/accessors/runner-config.js';
 import type { SeatResolvedModel } from '../../../stores/workflow/tokens.js';
 import { resolveCliModel } from '../../../core/providers/automatic-model.js';
-import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
+import { recordedSeatTool } from '../../../engine/providers/model/display-names.js';
 import type { ActiveOperation } from '../../../stores/workflow/operations/state.js';
 import { isStatusFallback } from '../../../stores/workflow/operations/planner-status.js';
 import type { LifecycleState } from '../../../stores/workflow/lifecycle.js';
@@ -163,7 +163,7 @@ export function deriveRunningSeats(input: {
  * The model id the seat's last call ran, when the seat shown saves another value: a Claude Code
  * alias such as `opus`, or `auto`, names no id until its call reports one. A call made on a tool
  * or a model the seat no longer saves names nothing. The Claude runner names its calls `claude`,
- * its command, not its id.
+ * its command, not its id. A shell or agent call reads by its kind word, never by its command.
  */
 export function resolvedSeatModel(
   shown: RunnerConfig | SeatIds,
@@ -172,7 +172,7 @@ export function resolvedSeatModel(
   if (record?.runnerName === undefined) return undefined;
   const { tool, model } = idsOf(shown);
   const saved = resolveCliModel(model, tool);
-  return (cliToolIdForCommand(record.runnerName) ?? record.runnerName) === tool &&
+  return recordedSeatTool({ tool: record.runnerName, kind: record.backendKind }) === tool &&
     resolveCliModel(record.model, tool) === saved &&
     record.resolvedModel !== saved
     ? record.resolvedModel

@@ -72,6 +72,8 @@ export type ParsedLine =
       isResult?: boolean | undefined;
       isError?: boolean | undefined;
       sessionId?: string | undefined;
+      resolvedModel?: string | undefined;
+      subagentId?: string | undefined;
       toolUse?: ToolUseInfo[] | undefined;
       toolUseStart?: ToolUseInfo[] | undefined;
       toolUseDelta?: ToolUseDeltaInfo[] | undefined;
@@ -87,6 +89,8 @@ export type ParsedLine =
       isResult?: boolean | undefined;
       isError?: boolean | undefined;
       sessionId?: string | undefined;
+      resolvedModel?: string | undefined;
+      subagentId?: string | undefined;
       toolUse?: ToolUseInfo[] | undefined;
       toolUseStart?: ToolUseInfo[] | undefined;
       toolUseDelta?: ToolUseDeltaInfo[] | undefined;
@@ -102,6 +106,8 @@ export type ParsedLine =
       isResult?: undefined;
       isError?: boolean | undefined;
       sessionId?: string | undefined;
+      resolvedModel?: string | undefined;
+      subagentId?: string | undefined;
       toolUse?: ToolUseInfo[] | undefined;
       toolUseStart?: ToolUseInfo[] | undefined;
       toolUseDelta?: ToolUseDeltaInfo[] | undefined;

@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import type { RunnerCallEvent } from '../calls/types.js';
 import { invokeCommandRunner } from './command-based.js';
 import { requestTyped } from './typed-output.js';
 
@@ -81,6 +82,7 @@ function lines(frames: Frame[]): string {
 /** A stream-json seat that reads its prompt, prints `stdout` and exits. */
 async function invokeSeat(stdout: string, env: NodeJS.ProcessEnv = process.env) {
   const output: string[] = [];
+  const events: RunnerCallEvent[] = [];
   const call = await invokeCommandRunner({
     source: {
       kind: 'config',
@@ -100,8 +102,9 @@ async function invokeSeat(stdout: string, env: NodeJS.ProcessEnv = process.env) 
     cwd: process.cwd(),
     callContext: { callId: 'call-partial', role: 'review', backendKind: 'shell' },
     onOutput: (chunk) => output.push(chunk),
+    onCallEvent: (event) => events.push(event),
   });
-  return { call, output: output.join('') };
+  return { call, output: output.join(''), events };
 }
 
 describe('a stream-json shell seat that prints partial messages', () => {
@@ -215,7 +218,82 @@ describe('a stream-json shell seat that prints partial messages', () => {
       ]),
     );
 
-    expect(call.text).toBe('Delegating.A says hi.B says hi.ANSWER.');
+    expect(call.text).toBe('Delegating.ANSWER.');
     expect(output).toBe('Delegating.A says hi.B says hi.ANSWER.');
+  });
+
+  it('redacts a credential that one subagent splits across two deltas while another subagent streams between them', async () => {
+    const secret = 'partial-secret-0123456789';
+    const { call, output } = await invokeSeat(
+      lines([
+        ...partialMessage(['Deleg', 'ating.']),
+        ...toolUse('toolu_a', 'Task'),
+        ...toolUse('toolu_b', 'Task'),
+        ...textDeltas([`token ${secret.slice(0, 12)}`], 'toolu_a'),
+        ...textDeltas(['B says ', 'hi.'], 'toolu_b'),
+        ...textDeltas([`${secret.slice(12)} end`], 'toolu_a'),
+        assistant([{ type: 'text', text: `token ${secret} end` }], 'toolu_a'),
+        assistant([{ type: 'text', text: 'B says hi.' }], 'toolu_b'),
+        toolResult('toolu_a'),
+        toolResult('toolu_b'),
+        ...partialMessage(['ANS', 'WER.']),
+        result('ANSWER.'),
+      ]),
+      { ...process.env, SEAT_API_KEY: secret },
+    );
+
+    expect(output).toContain('***REDACTED*** end');
+    expect(output).not.toContain('partial-secr');
+    expect(output).not.toContain('0123456789');
+    expect(call.text).toBe('Delegating.ANSWER.');
+  });
+
+  it('prints the held end of a subagent text where the subagent ends, before the main answer', async () => {
+    const { call, output } = await invokeSeat(
+      lines([
+        ...toolUse('toolu_a', 'Task'),
+        ...partialMessage(['A ran ', 'tests'], 'toolu_a'),
+        toolResult('toolu_a'),
+        ...partialMessage(['ANS', 'WER.']),
+        result('ANSWER.'),
+      ]),
+      { ...process.env, SEAT_API_KEY: 'sk-test-0123456789abcdef' },
+    );
+
+    expect(output).toMatch(/^A ran test[\s\S]+ANSWER\.$/);
+    expect(call.text).toBe('ANSWER.');
+  });
+
+  it('records the held end of an open subagent text before an error result fails the call', async () => {
+    const secret = 'partial-secret-0123456789';
+    const { call, events } = await invokeSeat(
+      lines([
+        ...toolUse('toolu_a', 'Task'),
+        ...partialMessage(['A says ', `token ${secret.slice(0, 12)}`], 'toolu_a'),
+        { type: 'result', subtype: 'error_during_execution', is_error: true, session_id: SESSION },
+      ]),
+      { ...process.env, SEAT_API_KEY: secret },
+    );
+    const subagentText = events
+      .flatMap((event) =>
+        event.type === 'call_text_delta' && event.subagentId === 'toolu_a' ? [event.text] : [],
+      )
+      .join('');
+
+    expect(call.status).toBe('failed');
+    expect(subagentText).toBe('A says token ***REDACTED***');
+  });
+
+  it('prints the held end of a subagent text when the stream stops with no result', async () => {
+    const secret = 'partial-secret-0123456789';
+    const { output } = await invokeSeat(
+      lines([
+        ...toolUse('toolu_a', 'Task'),
+        ...partialMessage(['A says ', `token ${secret.slice(0, 12)}`], 'toolu_a'),
+      ]),
+      { ...process.env, SEAT_API_KEY: secret },
+    );
+
+    expect(output).toBe('A says token ***REDACTED***');
   });
 });

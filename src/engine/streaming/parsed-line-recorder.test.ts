@@ -13,6 +13,7 @@ const context = {
 function createHarness() {
   const events: RunnerCallEvent[] = [];
   const text: string[] = [];
+  const sessionIds: string[] = [];
   const recorder = createRunnerCallRecorder({
     context,
     startedAt: 1,
@@ -21,8 +22,9 @@ function createHarness() {
   const parsed = createParsedLineRecorder({
     recorder,
     onText: (chunk) => text.push(chunk),
+    onSessionId: (id) => sessionIds.push(id),
   });
-  return { events, parsed, recorder, text };
+  return { events, parsed, recorder, text, sessionIds };
 }
 
 describe('createParsedLineRecorder', () => {
@@ -38,6 +40,23 @@ describe('createParsedLineRecorder', () => {
         type: 'call_text_delta',
         channel: 'assistant',
         text: 'assistant answer',
+      }),
+    );
+  });
+
+  it('keeps subagent text out of the call text and gives it to the live output', () => {
+    const { events, parsed, recorder, text } = createHarness();
+
+    parsed.apply({ text: 'A says hi.', channel: 'assistant', subagentId: 'toolu_a' });
+    parsed.apply({ text: 'ANSWER.', channel: 'assistant' });
+
+    expect(recorder.snapshot().text).toBe('ANSWER.');
+    expect(text).toEqual(['A says hi.', 'ANSWER.']);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'call_text_delta',
+        text: 'A says hi.',
+        subagentId: 'toolu_a',
       }),
     );
   });
@@ -166,6 +185,23 @@ describe('createParsedLineRecorder', () => {
     expect(text).toEqual([]);
     expect(events).toContainEqual(expect.objectContaining({ type: 'call_heartbeat' }));
     expect(events.some((event) => event.type === 'call_text_delta')).toBe(false);
+  });
+
+  it('records the model of an init frame after a hook frame of the same session', () => {
+    const { events, parsed, sessionIds } = createHarness();
+
+    parsed.apply({ sessionId: 's1' });
+    parsed.apply({ sessionId: 's1', resolvedModel: 'claude-opus-5-5' });
+
+    const sessions = events.filter((event) => event.type === 'call_session_id');
+    expect(sessions.at(-1)).toEqual(
+      expect.objectContaining({
+        type: 'call_session_id',
+        nativeSessionId: 's1',
+        resolvedModel: 'claude-opus-5-5',
+      }),
+    );
+    expect(sessionIds).toEqual(['s1']);
   });
 
   it('preserves parsed tool ids in structured tool events', () => {

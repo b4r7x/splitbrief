@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
+import { getWorkflowSidebarWidth } from '../../src/features/workflow/layout/rect.js';
 import { getWorkflowPromptRows } from '../../src/features/workflow/prompt-rows/workflow.js';
 import { approvalPromptStore } from '../../src/stores/approval-prompt/prompt.js';
 import { configStore } from '../../src/stores/project/config.js';
@@ -16,6 +17,7 @@ import { readConversationScrollSnapshot } from '../../src/features/workflow/layo
 import { flushEffects, tick } from '#testing/helpers/ink.js';
 import { reviewStore } from '../../src/stores/workflow/review.js';
 import { streamingOutputStore } from '../../src/stores/workflow/streaming-output.js';
+import { tokensStore } from '../../src/stores/workflow/tokens.js';
 import { selectRunningBrief, selectTaskListView } from '../../src/core/run-view/briefs.js';
 import { stripTerminalControls } from '../../src/utils/display-text.js';
 import { EngineEventSchema } from '../../src/engine/events/schema.js';
@@ -1095,6 +1097,35 @@ describe('workflow visual fixtures', () => {
           'BUILD seat changed',
         ]) {
           expect(reached).not.toContain(stale);
+        }
+      } finally {
+        await ui.unmount();
+      }
+    },
+  );
+
+  it.each(WIDE_VIEWPORTS)(
+    'shows the shell resolved model when the sidebar is visible at $cols x $rows',
+    async (renderViewport) => {
+      const scenario = findVisualScenario('workflow-implementation-shell-seat-resolved');
+      const checkpoint = scenario?.checkpoints[0];
+      if (!scenario || !checkpoint) throw new Error('Missing shell resolved model scenario');
+      const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: renderViewport });
+      try {
+        const frame = stripTerminalControls(await ui.waitForCheckpoint(), {
+          preserveLineBreaks: true,
+        });
+        expect(frame).toContain('Custom Shell');
+        expect(tokensStore.get().resolvedModels.build).toMatchObject({
+          backendKind: 'shell',
+          resolvedModel: 'claude-sonnet-5-5',
+        });
+        if (getWorkflowSidebarWidth({ cols: renderViewport.cols, sidebarVisible: true }) > 0) {
+          const lines = frame.split('\n');
+          const buildIndex = lines.findIndex((line) => line.includes('BUILD   Custom Shell'));
+          expect(buildIndex).toBeGreaterThanOrEqual(0);
+          expect(lines[buildIndex]).not.toContain('claude-sonnet-5-5');
+          expect(lines[buildIndex + 1]).toContain('claude-sonnet-5-5');
         }
       } finally {
         await ui.unmount();

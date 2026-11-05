@@ -56,6 +56,14 @@ describe('wrapStreamParser field projections', () => {
     );
   });
 
+  it('carries the model an init frame reports', () => {
+    expect(
+      parse(
+        jsonLine({ type: 'system', subtype: 'init', session_id: 's1', model: 'claude-opus-5-5' }),
+      ),
+    ).toEqual(expect.objectContaining({ sessionId: 's1', resolvedModel: 'claude-opus-5-5' }));
+  });
+
   it('forwards toolUse when a tool_result closes the tool', () => {
     parse(
       jsonLine({
@@ -123,6 +131,38 @@ describe('wrapStreamParser field projections', () => {
       sessionId: 'only-session',
       isHeartbeat: true,
     });
+  });
+
+  it('carries the subagent id of a subagent text delta', () => {
+    const parseLine = getLineParser('stream-json');
+    expect(
+      parseLine(
+        jsonLine({
+          type: 'stream_event',
+          parent_tool_use_id: 'toolu_a',
+          event: {
+            type: 'content_block_delta',
+            delta: { type: 'text_delta', text: 'live' },
+          },
+        }),
+      ),
+    ).toEqual({
+      text: 'live',
+      channel: 'assistant',
+      subagentId: 'toolu_a',
+    });
+    expect(
+      parseLine(
+        jsonLine({
+          type: 'stream_event',
+          parent_tool_use_id: null,
+          event: {
+            type: 'content_block_delta',
+            delta: { type: 'text_delta', text: 'live' },
+          },
+        }),
+      ),
+    ).toEqual({ text: 'live', channel: 'assistant' });
   });
 });
 

@@ -1,10 +1,10 @@
 import { createStreamParser, type StreamParseResult } from '../../streaming/parse-stream-json.js';
-import { appendMessage, reconcileFinalText } from '../../streaming/final-text.js';
+import { appendMessage, createStreamedBlock } from '../../streaming/final-text.js';
 import { isRecord } from '../../../utils/type-guards.js';
 
 export function createClaudeReplyParser(): (line: string) => StreamParseResult {
   const parse = createStreamParser();
-  let blockText = '';
+  let block = createStreamedBlock();
   let messageText = '';
   let carriedText = '';
   let resumesCut = false;
@@ -21,7 +21,7 @@ export function createClaudeReplyParser(): (line: string) => StreamParseResult {
     const parsed = parse(line);
     sessionId = parsed.sessionId ?? sessionId;
     if (turnEnded && !parsed.isResult) {
-      blockText = '';
+      block = createStreamedBlock();
       messageText = '';
       carriedText = '';
       resumesCut = false;
@@ -31,7 +31,7 @@ export function createClaudeReplyParser(): (line: string) => StreamParseResult {
       tools.clear();
       turnEnded = false;
     }
-    if (!parsed.isSubagent) {
+    if (parsed.subagentId === undefined) {
       if (parsed.isMessageStart) {
         const closed = chainText(messageText);
         if (closed.length > 0) lastClosedText = closed;
@@ -40,25 +40,20 @@ export function createClaudeReplyParser(): (line: string) => StreamParseResult {
         carriedText = continues ? closed : '';
         resumesCut = cut;
         inChain = continues;
-        blockText = '';
+        block = createStreamedBlock();
         messageText = '';
         stopReason = undefined;
       }
       if (parsed.stopReason !== undefined) stopReason = parsed.stopReason;
-      if (
+      if (parsed.textSemantics === 'final') {
+        messageText += block.close(parsed.text);
+      } else if (
         parsed.text &&
         !parsed.isResult &&
         (parsed.channel === 'assistant' || parsed.channel === 'stdout')
       ) {
-        if (parsed.textSemantics === 'final') {
-          const reconciliation = reconcileFinalText(blockText, parsed.text);
-          if (reconciliation.kind === 'full' || reconciliation.kind === 'suffix')
-            messageText += reconciliation.text;
-          blockText = '';
-        } else {
-          blockText += parsed.text;
-          messageText += parsed.text;
-        }
+        block.delta(parsed.text);
+        messageText += parsed.text;
       }
     }
     const rebuilt: StreamParseResult = {

@@ -39,7 +39,7 @@
 - **Typed seat answers.** Plans, reviews, consults and implementer reports are JSON answers that SPLITBRIEF validates, through each tool's native schema flag where it has one.
 - **Private vulnerability reports.** The security policy describes how to report a vulnerability privately through GitHub.
 - **`--plain` names a seat wait.** When a seat starts waiting for its usage limit to reset, `--plain` writes one line: `waiting: <tool> · resets <clock>`.
-- **The model a Claude Code seat ran.** In the workflow sidebar, a Claude Code seat saved as a model alias, such as `opus`, gets one more row. The row shows the model id that the seat's call reported, such as `claude-opus-5-5`. Your saved seat value does not change.
+- **The model a Claude Code seat ran.** In the workflow sidebar, a Claude Code seat saved as a model alias, such as `opus`, gets one more row. The row shows the model id that the seat's call reported, such as `claude-opus-5-5`. A `shell` or `agent` seat with `stream-json` output that runs Claude Code gets the same row. Your saved seat value does not change.
 
 ### Changed
 
@@ -126,7 +126,7 @@
 - A stop that you ask for no longer shows the `Workspace kept` warning. With `SPLITBRIEF_DEBUG` set, the [debug log](./docs/TROUBLESHOOTING.md#debug-environment-variables) records it.
 - A check or hook that was still running when SPLITBRIEF ended unexpectedly is now stopped the next time SPLITBRIEF starts.
 - A finished Claude Code answer is kept when a background task reports after it. The call ends on that answer, and SPLITBRIEF stops the tool, so the late turn does not run. Before, the call failed and the answer was lost.
-- A long answer is now read whole, from a CLI tool and from a `shell` or `agent` seat. Before, an answer line longer than 1 MB failed a CLI tool's call and was lost from a `shell` or `agent` seat. A `shell` or `agent` seat with `stream-json` output now keeps every message of its answer. Before, it kept only the last message.
+- A long answer is now read whole, from a CLI tool and from a `shell` or `agent` seat. Before, an answer line longer than 1 MB failed a CLI tool's call and was lost from a `shell` or `agent` seat. A `shell` or `agent` seat with `stream-json` output now keeps every message of its answer, without the replies of its subagents. Before, it kept only the last message.
 - A `shell` or `agent` seat with `stream-json` output that runs Claude Code with `--include-partial-messages` now shows each message once in its live output. Before, the live output showed each message twice.
 - `/steer` and `ctrl+⏎` now work on every attempt of a brief, also on an attempt after the planner's answer and on a fix brief. The attempt keeps its work and continues with your text.
 - After Apply, each red check reaches the reviewer once, not twice.

@@ -62,12 +62,21 @@ export function createParsedLineRecorder(opts: {
     opts.recorder.text({ channel: 'result', text: reconciliation.text, semantics: 'final' });
   }
 
-  function applyDeltaText(channel: ParsedTextChannel, textDelta: string): void {
+  function applyDeltaText(
+    channel: ParsedTextChannel,
+    textDelta: string,
+    subagentId: string | undefined,
+  ): void {
     const accepted = acceptTextDelta(textDelta);
     if (accepted.text.length > 0 && contributesToRunnerResult(channel)) {
       opts.onText?.(accepted.text);
     }
-    opts.recorder.text({ channel, text: textDelta, semantics: 'delta' });
+    opts.recorder.text({
+      channel,
+      text: textDelta,
+      semantics: 'delta',
+      ...(subagentId !== undefined && { subagentId }),
+    });
   }
 
   return {
@@ -83,7 +92,7 @@ export function createParsedLineRecorder(opts: {
         if (channel === 'result') {
           applyResultText(parsed.text);
         } else {
-          applyDeltaText(channel, parsed.text);
+          applyDeltaText(channel, parsed.text, parsed.subagentId);
         }
       }
 
@@ -95,10 +104,15 @@ export function createParsedLineRecorder(opts: {
         opts.recorder.usage({ usage: parsed.usage, semantics });
       }
 
-      if (parsed.sessionId && parsed.sessionId !== sessionId) {
-        sessionId = parsed.sessionId;
-        opts.recorder.sessionId({ nativeSessionId: parsed.sessionId });
-        opts.onSessionId?.(parsed.sessionId);
+      if (parsed.sessionId) {
+        if (parsed.sessionId !== sessionId) {
+          sessionId = parsed.sessionId;
+          opts.onSessionId?.(parsed.sessionId);
+        }
+        opts.recorder.sessionId({
+          nativeSessionId: parsed.sessionId,
+          ...(parsed.resolvedModel !== undefined && { resolvedModel: parsed.resolvedModel }),
+        });
       }
 
       if (parsed.toolUseStart) {

@@ -295,8 +295,85 @@ describe('parseStreamLine', () => {
     ).toEqual({
       sessionId: 'sess-tool',
       toolUse: [{ id: 'toolu_9', name: 'tool_use', input: {} }],
-      isSubagent: true,
+      subagentId: 'toolu_parent',
     });
+  });
+
+  it('reads a string parent_tool_use_id as the subagent id', () => {
+    expect(
+      parseStreamLine(
+        jsonLine({
+          type: 'assistant',
+          session_id: 'sess-sub',
+          parent_tool_use_id: 'toolu_parent',
+          message: { content: [{ type: 'text', text: 'nested answer' }] },
+        }),
+      ),
+    ).toEqual({
+      text: 'nested answer',
+      channel: 'assistant',
+      textSemantics: 'final',
+      sessionId: 'sess-sub',
+      subagentId: 'toolu_parent',
+    });
+    expect(
+      parseStreamLine(
+        jsonLine({
+          type: 'stream_event',
+          session_id: 'sess-sub',
+          parent_tool_use_id: 'toolu_parent',
+          event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'live' } },
+        }),
+      ),
+    ).toEqual({
+      text: 'live',
+      channel: 'assistant',
+      textSemantics: 'delta',
+      sessionId: 'sess-sub',
+      subagentId: 'toolu_parent',
+    });
+  });
+
+  it('omits subagent identity when parent_tool_use_id is null or not a string', () => {
+    for (const parent of [null, 1, true, { id: 'toolu_parent' }]) {
+      expect(
+        parseStreamLine(
+          jsonLine({
+            type: 'assistant',
+            session_id: 'sess-main',
+            parent_tool_use_id: parent,
+            message: { content: [{ type: 'text', text: 'main' }] },
+          }),
+        ),
+      ).toEqual({
+        text: 'main',
+        channel: 'assistant',
+        textSemantics: 'final',
+        sessionId: 'sess-main',
+      });
+      expect(
+        parseStreamLine(
+          jsonLine({
+            type: 'stream_event',
+            parent_tool_use_id: parent,
+            event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'live' } },
+          }),
+        ),
+      ).toEqual({ text: 'live', channel: 'assistant', textSemantics: 'delta' });
+      expect(
+        parseStreamLine(
+          jsonLine({
+            type: 'user',
+            session_id: 'sess-tool',
+            parent_tool_use_id: parent,
+            message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_9', content: 'ok' }] },
+          }),
+        ),
+      ).toEqual({
+        sessionId: 'sess-tool',
+        toolUse: [{ id: 'toolu_9', name: 'tool_use', input: {} }],
+      });
+    }
   });
 
   it('reads a user record without a tool_result as before', () => {

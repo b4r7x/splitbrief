@@ -7,7 +7,7 @@ import {
   type TokenUsage,
 } from '../../core/schemas/tokens.js';
 import type { EngineEvent } from '../../engine/events/types.js';
-import type { Phase } from '../../core/schemas/enums.js';
+import type { Phase, RunnerKind } from '../../core/schemas/enums.js';
 import type { SeatIdentity } from '../../core/providers/seat-identity.js';
 import type { CrewSeatId } from '../../core/crew/identity.js';
 import { seatForRunningCall } from '../../core/runners/seat-roles.js';
@@ -72,6 +72,7 @@ export type SeatResolvedModel = Readonly<{
   runnerName: string | undefined;
   model: string | undefined;
   resolvedModel: string;
+  backendKind: RunnerKind;
 }>;
 
 export interface TokensState {
@@ -244,6 +245,7 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
             runnerName: event.runnerName,
             model: event.model,
             resolvedModel: event.resolvedModel,
+            backendKind: event.backendKind,
           },
         },
       };

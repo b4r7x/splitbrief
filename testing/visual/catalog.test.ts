@@ -193,6 +193,7 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-implementation-seat-change', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-build-brief-check-seat-change', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-implementation-shell-seat', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-implementation-shell-seat-resolved', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-seat-crew-changed', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-seat-review-no-image', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-review-fix-cycles', ['120x40', '80x24', '60x18', '160x45']],

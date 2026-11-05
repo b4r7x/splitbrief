@@ -1,7 +1,7 @@
 import type { OutputFormat } from '../../core/schemas/enums.js';
 import type { ParsedLine } from '../runners/types.js';
-import { assertNever, isRecord } from '../../utils/type-guards.js';
-import { reconcileFinalText } from './final-text.js';
+import { assertNever } from '../../utils/type-guards.js';
+import { createStreamedBlock } from './final-text.js';
 import { createStreamParser, type StreamParseResult } from './parse-stream-json.js';
 import { parseJsonlLine } from './parse-jsonl.js';
 import { parseTextLine } from './parse-text.js';
@@ -21,6 +21,8 @@ function streamParsedLine(r: StreamParseResult): ParsedLine {
     ...(r.isResult !== undefined ? { isResult: r.isResult } : {}),
     ...(r.isError !== undefined ? { isError: r.isError } : {}),
     ...(r.sessionId !== undefined ? { sessionId: r.sessionId } : {}),
+    ...(r.resolvedModel !== undefined ? { resolvedModel: r.resolvedModel } : {}),
+    ...(r.subagentId !== undefined ? { subagentId: r.subagentId } : {}),
     ...(r.toolUse !== undefined ? { toolUse: r.toolUse } : {}),
     ...(toolUseStart !== undefined ? { toolUseStart } : {}),
     ...(r.toolUseDelta !== undefined ? { toolUseDelta: r.toolUseDelta } : {}),
@@ -33,23 +35,23 @@ function streamParsedLine(r: StreamParseResult): ParsedLine {
  * With partial messages on, an `assistant` record restates the deltas its block
  * streamed: keep only the text no delta streamed. Each subagent streams its own blocks.
  */
-function createFinalRecordReconciler(): (r: StreamParseResult, line: string) => StreamParseResult {
-  const openBlocks = new Map<string, string>();
-  return (r, line) => {
+function createFinalRecordReconciler(): (r: StreamParseResult) => StreamParseResult {
+  const openBlocks = new Map<string, ReturnType<typeof createStreamedBlock>>();
+  return (r) => {
     if (r.textSemantics === undefined) return r;
-    const record: unknown = r.isSubagent ? JSON.parse(line) : null;
-    const block = isRecord(record) ? String(record.parent_tool_use_id) : '';
-    const blockText = openBlocks.get(block) ?? '';
+    const key = r.subagentId ?? '';
+    let block = openBlocks.get(key);
+    if (block === undefined) {
+      block = createStreamedBlock();
+      openBlocks.set(key, block);
+    }
     if (r.textSemantics === 'delta') {
-      openBlocks.set(block, blockText + (r.text ?? ''));
+      block.delta(r.text ?? '');
       return r;
     }
-    openBlocks.delete(block);
-    if (r.text === undefined) return r;
-    const reconciliation = reconcileFinalText(blockText, r.text);
-    return reconciliation.kind === 'none'
-      ? { ...r, text: undefined, channel: undefined }
-      : { ...r, text: reconciliation.text };
+    const text = block.close(r.text);
+    if (text.length === 0) return { ...r, text: undefined, channel: undefined };
+    return { ...r, text };
   };
 }
 
@@ -58,7 +60,7 @@ export function getLineParser(format: OutputFormat): (line: string) => ParsedLin
     case 'stream-json': {
       const parse = createStreamParser();
       const reconcile = createFinalRecordReconciler();
-      return (line) => streamParsedLine(reconcile(parse(line), line));
+      return (line) => streamParsedLine(reconcile(parse(line)));
     }
     case 'jsonl':
       return parseJsonlLine;
