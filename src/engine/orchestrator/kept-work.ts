@@ -14,13 +14,15 @@ export function runCodeDir(projectDir: string, workspace: WorkflowState['workspa
 
 /**
  * The brief's own declared files that changed since it started, in the brief's file order: the work
- * an earlier, cut attempt of the brief left on disk.
+ * an earlier, cut attempt of the brief left on disk. It is undefined when the code cannot be
+ * compared with the brief's start (a snapshot head the operator rewrote), so a caller does not
+ * read a failed compare as no change.
  */
 export async function changedDeclaredFiles(
   codeDir: string,
   task: Task,
   taskStartSnapshot: ChangedFilesSnapshot,
-): Promise<string[]> {
+): Promise<string[] | undefined> {
   try {
     const patterns = taskDeclaredPatterns(task);
     const changed = (await getChangedFilesSinceSnapshot(codeDir, taskStartSnapshot)).filter(
@@ -28,8 +30,7 @@ export async function changedDeclaredFiles(
     );
     return orderChangedFiles(changed, task.suggestedFiles);
   } catch {
-    // Best-effort: a snapshot head the operator rewrote must not stop the restart or the stop.
-    return [];
+    return undefined;
   }
 }
 
@@ -73,8 +74,10 @@ export async function keptBriefFiles(
  * A restarted attempt is told about the declared files that already moved, so it
  * edits what is there instead of writing the file again from nothing.
  */
-export function changedDeclaredFilesNote(changed: readonly string[]): { extra?: string } {
-  if (changed.length === 0) return {};
+export function changedDeclaredFilesNote(changed: readonly string[] | undefined): {
+  extra?: string;
+} {
+  if (changed === undefined || changed.length === 0) return {};
   return {
     extra: `These declared files changed since this brief started (an earlier attempt of this brief left them): ${changed.join(', ')}`,
   };
@@ -86,17 +89,15 @@ export function changedDeclaredFilesNote(changed: readonly string[]): { extra?: 
  * since a call that finds them complete changes nothing of its own. An attempt that was not cut and
  * carries no steer continues nothing.
  */
-export async function briefContinuation(opts: {
-  codeDir: string;
-  task: Task;
-  taskStartSnapshot: ChangedFilesSnapshot;
+export function briefContinuation(opts: {
+  changed: readonly string[] | undefined;
   partial: string | undefined;
   steer?: string | undefined;
-}): Promise<ImplementerOptions['continuation']> {
-  const { partial, steer } = opts;
+}): ImplementerOptions['continuation'] {
+  const { changed, partial, steer } = opts;
   if (partial === undefined && steer === undefined) return undefined;
-  const changed = await changedDeclaredFiles(opts.codeDir, opts.task, opts.taskStartSnapshot);
-  const kept = partial !== undefined && changed.length > 0 ? changed : undefined;
+  const kept =
+    partial !== undefined && changed !== undefined && changed.length > 0 ? changed : undefined;
   return {
     ...(partial !== undefined && { partial }),
     ...(steer !== undefined && { steer }),

@@ -186,10 +186,13 @@ export async function runImplementation(opts: {
           await settleMidCallDeliveries({ projectDir, sessionId });
           absorb();
           const correction = buildCorrectionInput(state, task, wctx);
-          const continuation = await briefContinuation({
-            codeDir: workspace.projectDir,
+          const changed = await changedDeclaredFiles(
+            workspace.projectDir,
             task,
-            taskStartSnapshot: opts.taskStartSnapshot,
+            opts.taskStartSnapshot,
+          );
+          const continuation = briefContinuation({
+            changed,
             partial,
             steer: correction.continuation?.steer,
           });

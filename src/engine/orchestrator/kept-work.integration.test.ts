@@ -7,8 +7,9 @@ import {
   cleanupTaskProjects,
   setupTaskProject as setupProject,
 } from '#testing/helpers/orchestrator-task-context.js';
+import { getChangedFilesSnapshot } from './approval/file-snapshots/capture.js';
 import { captureWorkspaceSnapshot } from './isolation/entry-snapshot.js';
-import { keptBriefFiles } from './kept-work.js';
+import { changedDeclaredFiles, keptBriefFiles } from './kept-work.js';
 import { withAttemptRestoreScope } from './task/restore-scope.js';
 
 afterEach(cleanupTaskProjects);
@@ -49,5 +50,18 @@ describe('keptBriefFiles', () => {
     expect(
       await keptBriefFiles(projectDir, state, { kind: 'brief', taskId: task.id, attempt: 0 }),
     ).toEqual(['src/main.ts', 'src/helper.ts']);
+  });
+});
+
+describe('changedDeclaredFiles', () => {
+  it('gives no list when the brief start cannot be compared with the code', async () => {
+    const { projectDir } = setupProject({ 'src/main.ts': 'export const main = 0;\n' });
+    const task = makeTask({ suggestedFiles: ['src/main.ts'] });
+    const snapshot = {
+      ...(await getChangedFilesSnapshot(projectDir)),
+      head: '0123456789abcdef0123456789abcdef01234567',
+    };
+    writeFileSync(join(projectDir, 'src/main.ts'), 'export const main = 1;\n');
+    expect(await changedDeclaredFiles(projectDir, task, snapshot)).toBeUndefined();
   });
 });

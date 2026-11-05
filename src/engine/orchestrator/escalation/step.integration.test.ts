@@ -1233,3 +1233,90 @@ describe('runRetryStep — gate denial', () => {
     ).toMatchObject([{ briefKept: 0 }]);
   });
 });
+
+describe('runRetryStep — what a retry hears about the earlier attempts', () => {
+  const userSays = 'Keep the exported name.';
+  const noEarlierOutput =
+    '[Continuation] No output from an earlier attempt of this step is available.';
+  const discardedAttempt =
+    '[Continuation] Your previous attempt was discarded; its error is above.';
+
+  it.each([
+    ['a start the code cannot be compared with', 'bad-head', 'write', noEarlierOutput],
+    ['no declared file left', 'real', 'absent', discardedAttempt],
+    ['a declared file left', 'real', 'write', noEarlierOutput],
+  ] as const)('%s', async (_title, head, declaredFile, heard) => {
+    const ref = setupProject();
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
+    const state = makeImplState([task]);
+    saveState(ref, state);
+    const { bus } = makeBusRecorder();
+    enqueueUserMessage({
+      ...ref,
+      state,
+      message: plainUserMessage(userSays),
+      phase: state.phase,
+      bus,
+    });
+    const captured = await getChangedFilesSnapshot(ref.projectDir);
+    const taskStartSnapshot =
+      head === 'bad-head'
+        ? { ...captured, head: '0123456789abcdef0123456789abcdef01234567' }
+        : captured;
+    if (declaredFile === 'write') {
+      mkdirSync(join(ref.projectDir, 'src'), { recursive: true });
+      writeFileSync(join(ref.projectDir, 'src/a.ts'), 'export const a = 1;\n');
+    }
+    const prompts: string[] = [];
+    const implementer = createImplementerBase({
+      extractsCode: false,
+      detectChanges: createChangeDetector('Tool implementer (test)'),
+      invoke: async ({ prompt }) => {
+        prompts.push(prompt);
+        return makeRunnerCallResult({
+          status: 'failed',
+          text: 'stopped half way',
+          error: { code: 'turn-failed', message: 'The tool stopped half way.' },
+        });
+      },
+    });
+    try {
+      const ctx = {
+        ...makeWctx({
+          ...ref,
+          bus,
+          config: makeNoValidationConfig({ workflow: { isolation: 'none' } }),
+          implementer,
+        }),
+        taskStartSnapshot,
+        dependsOnFiles: [],
+      };
+      await runRetryStep({
+        ctx,
+        task,
+        state,
+        lastError: 'failed check',
+        attempts: 1,
+        method: 'local',
+        transitionType: 'VALIDATION_PASS',
+        usageCategory: 'implementer',
+        retryFailureFallback: 'retry failed',
+        invokeRetry: makeImplementerRetryInvoker({
+          context: ctx.context,
+          kind: 'correction',
+          sessionId: ref.sessionId,
+          languageContext: buildLanguageContext('typescript'),
+          phase: state.phase,
+        }),
+      });
+      const prompt = prompts[0];
+      if (prompt === undefined) throw new Error('missing retry prompt');
+      expect(prompts).toHaveLength(1);
+      expect(prompt).toContain(`${heard} The user says:`);
+      expect(prompt).toContain(userSays);
+      if (heard === noEarlierOutput) expect(prompt).not.toContain('discarded');
+    } finally {
+      await disposeWctxIsolations();
+    }
+  });
+});

@@ -1051,6 +1051,34 @@ const buildBriefCheckProjection: WorkflowFixtureProjection = {
   ],
 };
 
+const buildBriefCheckBaseWaitProjection: WorkflowFixtureProjection = {
+  ...buildBriefCheckProjection,
+  scenarioId: scenarioId('workflow-build-brief-check-base-wait'),
+  events: [
+    ...implementationProjection.events.slice(0, 2),
+    {
+      type: 'full_suite',
+      ts: FIXED_TS,
+      phase: 'implementing',
+      status: 'running',
+      id: 'V2',
+      command: 'npm test -- src/parser.test.ts',
+      moment: 'base',
+    },
+    ...buildBriefCheckProjection.events.slice(2),
+    {
+      type: 'full_suite',
+      ts: FIXED_TS + 9_300,
+      phase: 'validating-task',
+      status: 'running',
+      id: 'K2',
+      command: 'npm test -- src/parser.test.ts',
+      moment: 'plan',
+      waitsOnBase: true,
+    },
+  ],
+};
+
 // A session from before reviewer checks: a brief gate whose red stages are also red at the run base
 // accepts them as pre-existing failures. The rows stay for replaying such a session.
 const validationProjection: WorkflowFixtureProjection = {
@@ -7817,6 +7845,7 @@ const projections = [
   buildConsultRewriteProjection,
   buildConsultSplitProjection,
   buildBriefCheckProjection,
+  buildBriefCheckBaseWaitProjection,
   buildBaseRerunProjection,
   buildFixConsultProjection,
   implementationRetryProjection,

@@ -139,14 +139,14 @@ async function runRetryStepAttempt(
         if (steerInput !== undefined) {
           state = recordSteerCorrection({ ...ctx, state, taskId: task.id, message: steerInput });
         }
-        const continuation = await briefContinuation({
-          codeDir: workspace.projectDir,
-          task,
-          taskStartSnapshot: ctx.taskStartSnapshot,
-          partial,
-        });
         // Only a failed or stopped call takes its files back, so a brief with none left was discarded.
-        const left = await changedDeclaredFiles(workspace.projectDir, task, ctx.taskStartSnapshot);
+        // A start the code cannot be compared with says nothing about what was left.
+        const changed = await changedDeclaredFiles(
+          workspace.projectDir,
+          task,
+          ctx.taskStartSnapshot,
+        );
+        const continuation = briefContinuation({ changed, partial });
         return withAttemptRestoreScope({
           ref: ctx,
           dir: workspace.projectDir,
@@ -170,7 +170,7 @@ async function runRetryStepAttempt(
               createdByThisTask: recordedApiCreatedPaths(ctx, task, workspace.projectDir),
               deliversAnswer: opts.deliversAnswer,
               ...(continuation !== undefined && { continuation }),
-              discarded: left.length === 0,
+              discarded: changed !== undefined && changed.length === 0,
               recordOutput,
               seat: { ref: ctx, state, usageCategory },
             }),

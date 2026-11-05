@@ -20,7 +20,7 @@ import {
   planApprovesNpmScripts,
   runChecks,
 } from '../validation/run-checks.js';
-import { checkFailureText } from '../validation/failure-text.js';
+import { checkFailureText, newFailureKeys } from '../validation/failure-text.js';
 import {
   classifyRequiredChecks,
   haltRequiredChecksUnrunnable,
@@ -36,10 +36,11 @@ import { SNAPSHOT_BASELINE_ID } from '../../../core/paths.js';
 import type { PlanningPhaseResult } from '../planning/types.js';
 import { createSnapshot } from '../../snapshots/create.js';
 import { reconcileWorkspaceToBase } from '../isolation/acquisition.js';
+import { runBaseOf } from '../isolation/base-tree.js';
 import { error } from '../../../utils/error.js';
 import { hasBaseline } from '../../snapshots/manifest.js';
 import { runCodeDir } from '../kept-work.js';
-import { startBaseGate } from '../base-gate.js';
+import { splitCommandAtBase, startBaseGate } from '../base-gate.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 
 export type RunTasksAndReviewOptions = {
@@ -151,6 +152,7 @@ async function recheckMergedCandidate(
 
   const { wctx, setTrackedState } = opts;
   const ref = { projectDir: wctx.projectDir, sessionId: wctx.sessionId };
+  const base = runBaseOf(ref, state);
   if (state.phase === 'implementing') {
     state = transitionAndSave(ref, state, { type: 'ALL_DONE' });
     setTrackedState(state);
@@ -168,12 +170,17 @@ async function recheckMergedCandidate(
     signal: wctx.signal,
     results: { ref, state, tree: 'workspace' as const },
   };
-  const collectRuns = (owner: string, runs: readonly CheckRunResult[]) => {
+  const collectRuns = (
+    owner: string,
+    runs: readonly CheckRunResult[],
+    settled: ReadonlySet<string>,
+  ) => {
     const classified = classifyRequiredChecks(runs);
     for (const check of classified.unrunnable) {
       if (unrunnable.has(check.checkId) === false) unrunnable.set(check.checkId, check);
     }
     for (const run of runs) {
+      if (settled.has(run.checkId)) continue;
       if (run.status === 'fail') {
         failures.push(`${owner} ${checkFailureText(run)}`);
       } else if (run.status !== 'pass') {
@@ -182,11 +189,29 @@ async function recheckMergedCandidate(
       }
     }
   };
+  const splitRuns = async (runs: CheckRunResult[]) => {
+    const settled = new Set<string>();
+    for (const [index, run] of runs.entries()) {
+      if (run.status !== 'fail' || run.command === undefined) continue;
+      const split = await splitCommandAtBase({
+        gate: wctx.baseGate,
+        command: run.command,
+        failure: run.failure,
+        base,
+      });
+      if (split === undefined || split.preExisting.length === 0) continue;
+      const splitRun: CheckRunResult = { ...run, preExisting: split.preExisting };
+      runs[index] = splitRun;
+      if (newFailureKeys(splitRun).length === 0) settled.add(run.checkId);
+    }
+    return settled;
+  };
   for (const task of state.tasks) {
     const runs = await runChecks(
       (task.checks ?? []).map((check) => check.id),
       { ...checkOptions, task },
     );
+    const settled = await splitRuns(runs);
     await recordCheckRuns({
       projectDir: wctx.projectDir,
       sessionId: wctx.sessionId,
@@ -199,11 +224,14 @@ async function recheckMergedCandidate(
       state = transitionAndSave(ref, state, {
         type: 'RECORD_CHECK_RESULTS',
         taskId: task.id,
-        results: runs.map((run) => ({ id: run.checkId, status: run.status })),
+        results: runs.map((run) => ({
+          id: run.checkId,
+          status: settled.has(run.checkId) ? ('pass' as const) : run.status,
+        })),
       });
       setTrackedState(state);
     }
-    collectRuns(task.id, runs);
+    collectRuns(task.id, runs, settled);
   }
   const lastTask = state.tasks.at(-1);
   const plan = state.plan;
@@ -212,6 +240,7 @@ async function recheckMergedCandidate(
       plan.checks.map((check) => check.id),
       { ...checkOptions, task: lastTask },
     );
+    const settled = await splitRuns(runs);
     await recordCheckRuns({
       projectDir: wctx.projectDir,
       sessionId: wctx.sessionId,
@@ -220,7 +249,7 @@ async function recheckMergedCandidate(
       task: lastTask,
       runs,
     });
-    collectRuns('plan', runs);
+    collectRuns('plan', runs, settled);
   }
   state = transitionAndSave(ref, state, { type: 'RECORD_APPLY_RECHECK', failures, notRun });
   setTrackedState(state);

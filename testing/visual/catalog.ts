@@ -1035,6 +1035,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-build-brief-check-base-wait',
+      title: 'Workflow · a brief check waits for the same command at the run base',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'build-brief-check-base-wait',
+        title: 'The activity line names the base command the brief check waits on, with its clock',
+        kind: 'implementation',
+        marker: 'Base re-run V2',
+      },
+      elements: [
+        { id: 'header', title: 'Build progress' },
+        { id: 'transcript', title: 'Running brief' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-build-base-rerun',
       title: 'Workflow · the project gate runs at the run base beside the build',
       surface: screenSurface('workflow'),

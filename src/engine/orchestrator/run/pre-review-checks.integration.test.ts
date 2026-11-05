@@ -662,6 +662,66 @@ describe('pre-review checks', () => {
       'K3: validation.render is not set',
     ]);
   });
+
+  it('marks a red plan check as waiting on the run base before its done row', async () => {
+    const bus = createEventBus();
+    const events: EngineEventOf<'full_suite'>[] = [];
+    bus.subscribe((event) => {
+      if (event.type === 'full_suite' && event.id === 'K1') events.push(event);
+    });
+    const state = makeImplState([], {
+      plan: makePlan([{ id: 'K1', kind: 'cmd', value: 'node --version' }]),
+      workspace: {
+        kind: 'checkout',
+        path: projectDir,
+        base: { snapshotId: 'base', head: 'a'.repeat(40) },
+      },
+    });
+    const runCommand: ValidationCommandRunner = async () => {
+      throw processError.exitCode({
+        command: 'node',
+        code: 1,
+        stderr: ' FAIL  src/a.test.ts > a > old',
+      });
+    };
+    await runPreReviewChecks(
+      options({
+        state,
+        bus,
+        runCommand,
+        baseGate: {
+          outcome: () => Promise.reject(new Error('the brief gate asks by command text')),
+          outcomeForCommand: (asked) =>
+            asked === 'node --version'
+              ? Promise.resolve({
+                  kind: 'ran',
+                  run: {
+                    checkId: 'V1',
+                    status: 'fail',
+                    output: '',
+                    command: 'node --version',
+                    failure: { keys: ['src/a.test.ts::a > old'] },
+                  },
+                })
+              : undefined,
+          stop: async () => {},
+        },
+      }),
+    );
+
+    expect(events).toMatchObject([
+      { status: 'running', id: 'K1', command: 'node --version', moment: 'plan' },
+      {
+        status: 'running',
+        id: 'K1',
+        command: 'node --version',
+        moment: 'plan',
+        waitsOnBase: true,
+      },
+      { status: 'done', id: 'K1', newFailures: 0, preExisting: 1 },
+    ]);
+    expect(events[0]?.waitsOnBase).toBeUndefined();
+  });
 });
 
 describe('pre-review checks run each command once per workspace state', () => {

@@ -590,6 +590,10 @@ const checkpointPredicates = [
   [checkpointId('build-consult-split'), includesTranscript('split into T904, T905')],
   [checkpointId('build-brief-check'), includesAll('Plan check K2', 'read after its checks')],
   [
+    checkpointId('build-brief-check-base-wait'),
+    (context) => includesAll()(context) && excludesAll('briefs passed · Base re-run V2')(context),
+  ],
+  [
     checkpointId('build-base-rerun'),
     includesAll(WORKFLOW_FIXTURE_TEXT.implementation, '0/3 briefs passed'),
   ],

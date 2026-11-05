@@ -1946,6 +1946,165 @@ function ledgerFor(tasks: Task[], changed: Record<string, string[]>): EvidenceLe
 }
 
 describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
+  it.each<[string, Config, string[], string[]]>([
+    [
+      'every failure pre-existing',
+      makeNoValidationConfig({ validation: { endChecks: true } }),
+      ['src/a.test.ts::a > old'],
+      ['src/a.test.ts::a > old'],
+    ],
+    [
+      'a new failure beside a pre-existing one',
+      makeNoValidationConfig({ validation: { endChecks: true } }),
+      ['src/a.test.ts::a > old', 'src/a.test.ts::a > new'],
+      ['src/a.test.ts::a > old'],
+    ],
+    ['no gate at the run base', makeNoValidationConfig(), ['src/a.test.ts::a > old'], []],
+  ])(
+    'splits an Apply re-check red at the run base: %s',
+    async (name, config, workspaceKeys, baseKeys) => {
+      const { projectDir, sessionId, head } = setupProject();
+      const T001 = makeTask({
+        id: 'T001',
+        suggestedFiles: ['src/alpha.ts'],
+        status: 'done',
+        checks: [{ id: 'K1', kind: 'cmd', value: 'node --version' }],
+      });
+      const state = {
+        ...integrationReviewState([T001], head, 0),
+        plan: gatePlan(['node --version']),
+      };
+      vi.spyOn(commandRunner, 'runCommand').mockImplementation(async (cmd, args, options) => {
+        const command = [cmd, ...args].join(' ');
+        if (cmd === 'node') {
+          const keys = options?.cwd?.startsWith(runBaseTreesRoot()) ? baseKeys : workspaceKeys;
+          const stderr = keys
+            .map((key) => {
+              const [file, title] = key.split('::');
+              return ` FAIL  ${file} > ${title}`;
+            })
+            .join('\n');
+          throw processError.exitCode({ command, code: 1, stderr });
+        }
+        return { stdout: 'ok', stderr: '', code: 0 };
+      });
+      const controller = new AbortController();
+      const { options, reviewPrompts } = runOptions({
+        projectDir,
+        sessionId,
+        state,
+        config,
+        review: (prompt) => {
+          controller.abort();
+          return passingReviewVerdict(prompt);
+        },
+        onComplete: vi.fn(),
+        signal: controller.signal,
+      });
+      options.wctx.isolation = makeWorktreeIsolation({ projectDir, sessionId });
+
+      try {
+        await runTasksAndReview(options);
+        const section = reviewPrompts[0]
+          ?.split('## Checks re-run at Apply\n')[1]
+          ?.split('\n## ')[0]
+          ?.trim();
+        const failures = loadState({ projectDir, sessionId })?.applyReview?.failures;
+        const k1Entries = (readEvidenceLedger({ projectDir, sessionId })?.tasks ?? [])
+          .find((entry) => entry.id === 'T001')
+          ?.checks?.filter((check) => check.id === 'K1');
+        if (name !== 'no gate at the run base') {
+          expect(k1Entries?.[0]?.preExisting).toEqual(['src/a.test.ts::a > old']);
+        }
+        if (name === 'every failure pre-existing') {
+          expect(section).toBe('All re-run checks passed.');
+          expect(failures).toEqual([]);
+          return;
+        }
+        if (name === 'a new failure beside a pre-existing one') {
+          expect(
+            section?.startsWith(
+              [
+                '- T001 check K1 did not pass (fail): 2 failures',
+                'New failures:',
+                '- src/a.test.ts::a > new',
+                'Pre-existing failures (also red at the run base):',
+                '- src/a.test.ts::a > old',
+                '',
+              ].join('\n'),
+            ),
+          ).toBe(true);
+          expect(failures).toHaveLength(1);
+          expect(
+            failures?.[0]?.startsWith(
+              'T001 check K1 did not pass (fail): 2 failures\nNew failures:',
+            ),
+          ).toBe(true);
+          return;
+        }
+        expect(
+          section?.startsWith(
+            [
+              '- T001 check K1 did not pass (fail): 1 failure',
+              'Failures:',
+              '- src/a.test.ts::a > old',
+            ].join('\n'),
+          ),
+        ).toBe(true);
+        expect(failures).toHaveLength(1);
+        expect(failures?.[0]?.startsWith('T001 check K1 did not pass (fail): 1 failure')).toBe(
+          true,
+        );
+      } finally {
+        await options.wctx.isolation.dispose();
+      }
+    },
+  );
+
+  it('records a pass for an Apply re-check check whose every failure is red at the run base', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const T001 = makeTask({
+      id: 'T001',
+      suggestedFiles: ['src/alpha.ts'],
+      status: 'done',
+      checks: [
+        { id: 'K1', kind: 'cmd', value: 'node --version' },
+        { id: 'K2', kind: 'cmd', value: 'npm run deploy' },
+      ],
+    });
+    const state = {
+      ...integrationReviewState([T001], head, 0),
+      plan: gatePlan(['node --version']),
+    };
+    vi.spyOn(commandRunner, 'runCommand').mockImplementation(async (cmd, args) => {
+      if (cmd === 'node') {
+        const command = [cmd, ...args].join(' ');
+        throw processError.exitCode({ command, code: 1, stderr: ' FAIL  src/a.test.ts > a > old' });
+      }
+      return { stdout: 'ok', stderr: '', code: 0 };
+    });
+    const { options, reviewPrompts } = runOptions({
+      projectDir,
+      sessionId,
+      state,
+      config: makeNoValidationConfig({ validation: { endChecks: true } }),
+      review: (prompt) => passingReviewVerdict(prompt),
+      onComplete: vi.fn(),
+    });
+    options.wctx.isolation = makeWorktreeIsolation({ projectDir, sessionId });
+    try {
+      const result = await runTasksAndReview(options);
+      expect(result.state.pendingRecovery?.reason).toBe('required-checks-unrunnable');
+      expect(reviewPrompts).toEqual([]);
+      expect(loadState({ projectDir, sessionId })?.tasks[0]?.checkResults).toEqual([
+        { id: 'K1', status: 'pass' },
+        { id: 'K2', status: 'refused' },
+      ]);
+    } finally {
+      await options.wctx.isolation.dispose();
+    }
+  });
+
   it.each(['task', 'plan'] as const)(
     'keeps an unassigned Rust failure in the Apply %s end-check input',
     async (origin) => {

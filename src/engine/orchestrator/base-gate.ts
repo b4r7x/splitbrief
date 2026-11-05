@@ -122,18 +122,35 @@ export function splitFailureAtBase(
 
 /**
  * The split of a red command's failures by the gate command that runs the same command text at the
- * run base. It waits for that command's outcome there. None when no gate command runs it: such a red
+ * run base. It waits for that command's outcome there. With `wait`, it marks the check's running
+ * row as waiting on the run base before it waits. None when no gate command runs it: such a red
  * stays whole.
  */
-export async function splitCommandAtBase(
-  gate: BaseGate | undefined,
-  command: string,
-  failure: FailureKeys,
-  base: Pick<RunBase, 'head'> | undefined,
-): Promise<BaseSplit | undefined> {
-  const atBase = gate?.outcomeForCommand(command);
-  if (atBase === undefined || base === undefined) return undefined;
-  return splitFailureAtBase(failure, await atBase, base);
+export async function splitCommandAtBase(opts: {
+  gate: BaseGate | undefined;
+  command: string;
+  failure: FailureKeys;
+  base: Pick<RunBase, 'head'> | undefined;
+  wait?: {
+    notices: { bus: EventBus; phase: Phase };
+    row: {
+      id: string;
+      command: string;
+      moment: 'plan' | 'verify';
+      scenario?: string | undefined;
+    };
+  };
+}): Promise<BaseSplit | undefined> {
+  const atBase = opts.gate?.outcomeForCommand(opts.command);
+  if (atBase === undefined || opts.base === undefined) return undefined;
+  if (opts.wait !== undefined) {
+    publishReviewCheck(opts.wait.notices, {
+      ...opts.wait.row,
+      status: 'running',
+      waitsOnBase: true,
+    });
+  }
+  return splitFailureAtBase(opts.failure, await atBase, opts.base);
 }
 
 /** The project gate running at the run base beside the build. */

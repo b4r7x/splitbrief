@@ -790,8 +790,8 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     moment: z.enum(['pre-review', 'base', 'brief', 'plan', 'verify']),
     scenario: z.string().optional(),
     /**
-     * On a red reviewer check's running update: its workspace run ended, and the review waits on
-     * the run of the same id at the run base.
+     * On a red check's running update. A red check waits on the run base: a reviewer check on the
+     * base run of its id, a plan or task check on the gate command of the same command text.
      */
     waitsOnBase: z.literal(true).optional(),
     passed: z.boolean().optional(),

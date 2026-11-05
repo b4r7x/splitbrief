@@ -116,6 +116,9 @@
 
 ### Fixed
 
+- When Apply merges your checkout edits and runs the checks again, a check whose failures are all red at the run base too no longer counts as a failure of the run. The review reads only the new failures, listed apart from the pre-existing ones, and Accept as is no longer records a pre-existing failure as an accepted finding.
+- While a brief check, or a plan check before the final review, waits for the same command at the run base, the build block names that base command with its clock, as it does for a reviewer check. Before, it showed the check with a clock that kept counting after its command ended.
+- A retry no longer tells the implementer that its earlier work was discarded when the brief's files cannot be compared with its start, for example after a rewrite of the Git history.
 - A file path in the transcript or in a card now moves whole to the next row when it fits there. A longer path breaks after a `/`, not inside a file or folder name. Before, a path could break in the middle of a name, and an answer that ended in a long path could leave one word alone on its first row.
 - With End-of-run checks off, a fix brief no longer runs the reviewer check of the finding it answers. The run shows one dim row, such as `Fix check V1 · off`, for each check it leaves out.
 - When SPLITBRIEF puts back the files of a failed attempt, the transcript shows one neutral row, for example `T002 attempt reverted: 2 files`. In your checkout the row also names the folder that holds the replaced bytes. A denied protected write shows no revert row: its error row names the discarded files and, in your checkout, that folder.

@@ -507,7 +507,7 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 // are new, pre-existing and not verified at the run base, and its `detail` says why
 // a failure is not verified; an older run carried them on its base done event. A red
 // reviewer check publishes a second running event with `waitsOnBase: true` while the
-// review waits on the base run of its id. `moment: 'brief'`
+// review waits on the base run of its id. A red plan or task check whose command text a gate command runs publishes one too, while it waits on that command's base result. `moment: 'brief'`
 // is a fix brief's check, run once per brief gate with no base re-run. `moment: 'plan'`
 // is a plan or task check run before the review; a render check also carries its
 // `scenario`. Only a base command publishes `stopped`, when the end of the run loop

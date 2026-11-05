@@ -173,12 +173,16 @@ async function runTaskCheckCommands(
     );
     if (judged === null) {
       if (run.status !== 'fail' || run.command === undefined) continue;
-      const split = await splitCommandAtBase(
-        opts.wctx.baseGate,
-        run.command,
-        run.failure,
-        checkOptions.base,
-      );
+      const split = await splitCommandAtBase({
+        gate: opts.wctx.baseGate,
+        command: run.command,
+        failure: run.failure,
+        base: checkOptions.base,
+        wait: {
+          notices: { bus: checkOptions.bus, phase: checkOptions.phase },
+          row: planCheckRow(run.checkId, run.command, registry.get(run.checkId)),
+        },
+      });
       if (split === undefined) continue;
       publishReviewCheck(
         { bus: checkOptions.bus, phase: checkOptions.phase },

@@ -16,7 +16,7 @@ import { processError } from '../../../lib/process/errors.js';
 import { enqueueUserMessage } from '../queue/submit.js';
 import { clearPendingQueue } from '../queue/clear.js';
 import type { ValidationCommandRunner } from '../validation/types.js';
-import type { BaseGate } from '../base-gate.js';
+import type { BaseGate, BaseOutcome } from '../base-gate.js';
 import type { EngineEvent } from '../../events/types.js';
 import { CORRECTION_AFTER_CHECKS, runBriefGate } from './brief-gate.js';
 import { captureWorkspaceSnapshot, restoreWorkspaceFiles } from '../isolation/entry-snapshot.js';
@@ -847,23 +847,35 @@ describe('brief gate against the run base', () => {
   const RED_SUITE = 'node --version';
 
   /** A project gate that ran `command` at the run base, red with `keys`. */
-  function baseGateRunning(command: string, keys: string[]): BaseGate {
+  function baseGateRunning(command: string, keys: string[], onSettled?: () => void): BaseGate {
     return {
       outcome: () => Promise.reject(new Error('the brief gate asks by command text')),
-      outcomeForCommand: (asked) =>
-        asked === command
-          ? Promise.resolve({
-              kind: 'ran',
-              run: { checkId: 'V1', status: 'fail', output: '', command, failure: { keys } },
-            })
-          : undefined,
+      outcomeForCommand: (asked) => {
+        if (asked !== command) return undefined;
+        const outcome: BaseOutcome = {
+          kind: 'ran',
+          run: { checkId: 'V1', status: 'fail', output: '', command, failure: { keys } },
+        };
+        const settled = Promise.resolve(outcome);
+        if (onSettled === undefined) return settled;
+        return settled.then((value) => {
+          onSettled();
+          return value;
+        });
+      },
       stop: async () => {},
     };
   }
 
-  async function gateRed(input: { command: string; failing: string[]; baseGate: BaseGate }) {
+  async function gateRed(input: {
+    command: string;
+    failing: string[];
+    baseGate: BaseGate | ((events: EngineEvent[]) => BaseGate);
+  }) {
     const ref = setup();
-    const { bus, events } = makeBusRecorder();
+    const { bus, events: recorded } = makeBusRecorder();
+    const baseGate =
+      typeof input.baseGate === 'function' ? input.baseGate(recorded) : input.baseGate;
     const task = makeTask({
       id: 'T001',
       checks: [{ id: 'K1', kind: 'cmd', value: input.command }],
@@ -879,7 +891,7 @@ describe('brief gate against the run base', () => {
         ...ref,
         bus,
         config: makeNoValidationConfig({ workflow: { review: 'task' } }),
-        baseGate: input.baseGate,
+        baseGate,
       }),
       task,
       state: makeImplState([task], {
@@ -895,11 +907,12 @@ describe('brief gate against the run base', () => {
         .fn()
         .mockRejectedValue(processError.exitCode({ command: 'node', code: 1, stderr })),
     });
-    const rows = events.filter(
+    const events = recorded.filter(
       (event): event is Extract<EngineEvent, { type: 'full_suite' }> =>
-        event.type === 'full_suite' && event.id === 'K1' && event.status === 'done',
+        event.type === 'full_suite' && event.id === 'K1',
     );
-    return { result, rows };
+    const rows = events.filter((event) => event.status === 'done');
+    return { result, rows, events };
   }
 
   it('accepts a brief whose every failure the same command shows red at the run base', async () => {
@@ -951,5 +964,55 @@ describe('brief gate against the run base', () => {
     expect(result.error).toMatch(/^check K1 did not pass \(fail\): 1 failure\nFailures:\n- /);
     expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'K1', status: 'fail' }]);
     expect(rows).toEqual([]);
+  });
+
+  it('marks a brief check as waiting on the run base before the base result settles', async () => {
+    let settledAt = 0;
+    let recorded: EngineEvent[] = [];
+    const { events } = await gateRed({
+      command: RED_SUITE,
+      failing: [OLD],
+      baseGate: (all) => {
+        recorded = all;
+        return baseGateRunning(RED_SUITE, [OLD], () => {
+          settledAt = all.length;
+        });
+      },
+    });
+
+    expect(events).toMatchObject([
+      {
+        status: 'running',
+        id: 'K1',
+        command: RED_SUITE,
+        moment: 'plan',
+        waitsOnBase: true,
+      },
+      {
+        status: 'done',
+        moment: 'plan',
+        command: RED_SUITE,
+        passed: false,
+        newFailures: 0,
+        preExisting: 1,
+        preExistingKeys: [OLD],
+      },
+    ]);
+    const markIndex = recorded.findIndex(
+      (event) => event.type === 'full_suite' && event.id === 'K1' && event.waitsOnBase === true,
+    );
+    expect(markIndex).toBeGreaterThanOrEqual(0);
+    expect(markIndex).toBeLessThan(settledAt);
+  });
+
+  it('sends no wait mark for a red whose command no gate command runs', async () => {
+    const { result, events } = await gateRed({
+      command: RED_SUITE,
+      failing: [OLD],
+      baseGate: baseGateRunning('npm test', [OLD]),
+    });
+
+    expect(result.acceptance).toEqual({ accepted: false });
+    expect(events.some((event) => event.waitsOnBase === true)).toBe(false);
   });
 });

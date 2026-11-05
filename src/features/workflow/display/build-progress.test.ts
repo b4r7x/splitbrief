@@ -934,6 +934,49 @@ describe('deriveBuildProgress', () => {
     expect(progress.freshness).toBe('running 0:11');
   });
 
+  it('names the base command a brief check waits on, on the base clock, with no base tail on the counts line', () => {
+    const command = 'npm test -- src/parser.test.ts';
+    resetWorkflow();
+    addEvent({
+      type: 'full_suite',
+      ts: NOW - 40_000,
+      phase: 'implementing',
+      status: 'running',
+      id: 'V2',
+      command,
+      moment: 'base',
+    });
+    addEvent({
+      type: 'task_validating',
+      ts: NOW - 11_000,
+      phase: 'validating-task',
+      taskId: taskId('T001'),
+      check: { id: 'K2', command },
+    });
+    addEvent({
+      type: 'full_suite',
+      ts: NOW - 5_000,
+      phase: 'validating-task',
+      status: 'running',
+      id: 'K2',
+      command,
+      moment: 'plan',
+      waitsOnBase: true,
+    });
+    const progress = deriveBuildProgress(
+      input({
+        lifecycle: lifecycleStore.get(),
+        runView: runViewStore.get(),
+        operations: operationsStore.get(),
+      }),
+    );
+    resetWorkflow();
+
+    expect(progress.activity).toBe(`Base re-run V2 · ${command}`);
+    expect(progress.freshness).toBe('running 0:40');
+    expect(progress.base).toBeNull();
+  });
+
   // Render of workflow-review-base-rerun at 60 columns: `… legacy.test.ts · running…` lost its clock.
   it('cuts a long command, never the clock that follows it, where they share a row', () => {
     const command = `npm test -- ${[

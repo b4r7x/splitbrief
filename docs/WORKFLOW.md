@@ -306,7 +306,7 @@ Apply merges the current checkout into the run workspace. It uses the three stat
 
 A conflict raises the `apply-conflict` halt. You choose the result for each file in the workspace. Resolve every conflict before checks or review. The available choices and recovery steps are in [Apply conflicts](./APPROVAL-AND-RECOVERY.md#apply-conflicts).
 
-If the merge or a repair changes the reviewed candidate, SPLITBRIEF runs validation and every check again. The review seat then reviews the whole run diff, from the workspace base to the candidate, with checkout hunks marked. This re-review counts as a final-review fix cycle.
+If the merge or a repair changes the reviewed candidate, SPLITBRIEF runs validation and every check again. A red check that runs the same command text as a gate command is compared with that command's result at the run base. The review reads only its new failures, listed apart from the pre-existing ones. A check with only pre-existing failures counts as passed. The review seat then reviews the whole run diff, from the workspace base to the candidate, with checkout hunks marked. This re-review counts as a final-review fix cycle.
 
 Before the first checkout write, Apply saves a backup under `.splitbrief/sessions/<id>/apply/<backup-id>/`. It records replaced files and symlinks, created paths and expected results, and freezes the assessed candidate. `APPLY_START` persists the backup id. The writer uses one hash-guarded call for the result. Its guard compares the checkout with the bytes Apply read for the merge. A later checkout edit cannot silently replace that baseline.
 

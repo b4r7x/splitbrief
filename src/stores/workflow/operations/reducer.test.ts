@@ -1128,6 +1128,86 @@ describe('operationsStore', () => {
     });
   });
 
+  it('leads with the base command while a brief check of the same command text waits on it', () => {
+    const command = 'npm test -- src/parser.test.ts';
+    addEvent({
+      type: 'full_suite',
+      ts: 1_000,
+      phase: 'implementing',
+      status: 'running',
+      id: 'V2',
+      command,
+      moment: 'base',
+    });
+    addEvent({
+      type: 'task_validating',
+      ts: 5_000,
+      phase: 'validating-task',
+      taskId: taskId('T001'),
+      check: { id: 'K2', command },
+    });
+    addEvent({
+      type: 'full_suite',
+      ts: 9_000,
+      phase: 'validating-task',
+      status: 'running',
+      id: 'K2',
+      command,
+      moment: 'plan',
+      waitsOnBase: true,
+    });
+    expect(operationsStore.get().suiteStage).toEqual({
+      id: 'K2',
+      command,
+      moment: 'plan',
+      waitsOnBase: true,
+      stageStartedTs: 5_000,
+    });
+    expect(selectRunningSuite(operationsStore.get())).toEqual({
+      id: 'V2',
+      command,
+      moment: 'base',
+      stageStartedTs: 1_000,
+    });
+  });
+
+  it('keeps a waiting brief check in the lead while the base runs another command', () => {
+    const command = 'npm test -- src/parser.test.ts';
+    addEvent({
+      type: 'full_suite',
+      ts: 1_000,
+      phase: 'implementing',
+      status: 'running',
+      id: 'V2',
+      command: 'npx tsc --noEmit',
+      moment: 'base',
+    });
+    addEvent({
+      type: 'task_validating',
+      ts: 5_000,
+      phase: 'validating-task',
+      taskId: taskId('T001'),
+      check: { id: 'K2', command },
+    });
+    addEvent({
+      type: 'full_suite',
+      ts: 9_000,
+      phase: 'validating-task',
+      status: 'running',
+      id: 'K2',
+      command,
+      moment: 'plan',
+      waitsOnBase: true,
+    });
+    expect(selectRunningSuite(operationsStore.get())).toEqual({
+      id: 'K2',
+      command,
+      moment: 'plan',
+      waitsOnBase: true,
+      stageStartedTs: 5_000,
+    });
+  });
+
   it('keeps a running base re-run through a steer and an in-process continue, and clears it on an end or with no process', () => {
     const baseRunning = () =>
       addEvent({

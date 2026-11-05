@@ -93,7 +93,10 @@ export interface RunningSuiteStage {
   command: string;
   moment: EngineEventOf<'full_suite'>['moment'];
   scenario?: string | undefined;
-  /** A red reviewer check waits on the run of the same id at the run base. */
+  /**
+   * A red check waits on the run base: a reviewer check on the base run of its id, a plan or task
+   * check on the gate command of the same command text.
+   */
   waitsOnBase?: true | undefined;
   stageStartedTs: number;
 }
@@ -133,15 +136,19 @@ export interface OperationsState {
 }
 
 /**
- * The command the run is inside: the running check, or, while a reviewer check waits on the same
- * command's run at the run base, that base command.
+ * The command the run is inside: the running check, or, while a red check waits on the base
+ * run of the same id or of the same command text, that base command.
  */
 export function selectRunningSuite(
   state: Pick<OperationsState, 'suiteStage' | 'baseStage'>,
 ): RunningSuiteStage | null {
   const suite = state.suiteStage ?? null;
   const base = state.baseStage ?? null;
-  return base !== null && suite?.waitsOnBase === true && suite.id === base.id ? base : suite;
+  return base !== null &&
+    suite?.waitsOnBase === true &&
+    (suite.id === base.id || suite.command === base.command)
+    ? base
+    : suite;
 }
 
 /**

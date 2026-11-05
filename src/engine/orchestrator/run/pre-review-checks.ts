@@ -60,7 +60,13 @@ export async function runCheckWithRows(input: {
     run.status === 'fail' && run.failure.placeholder === undefined ? run.failure.keys : [];
   const split =
     run.status === 'fail' && run.command !== undefined
-      ? await splitCommandAtBase(input.baseGate, run.command, run.failure, input.base)
+      ? await splitCommandAtBase({
+          gate: input.baseGate,
+          command: run.command,
+          failure: run.failure,
+          base: input.base,
+          wait: { notices: input.notices, row: { ...identity, command: run.command } },
+        })
       : undefined;
   const preExisting = split?.preExisting ?? failures.filter((key) => input.atBase?.includes(key));
   publishReviewCheck(notices, {
