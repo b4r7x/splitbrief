@@ -1,6 +1,5 @@
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { CliAuthChannelId } from '../../core/runners/cli-tool-catalog.js';
-import type { CliExecutableIdentity } from '../../core/discovery/detection.js';
 import type { EffortLevel } from '../../core/schemas/enums.js';
 import type { RunnerAttemptCallbacks } from '../calls/callback-buffer.js';
 import type { SteeringPort } from '../calls/steering.js';
@@ -17,8 +16,7 @@ import { claudeCodePlannerAdapter } from '../runners/cli-tools/claude-code.js';
 import type { CliProtocolEvent, CliSchemaInput } from '../runners/cli-tools/contract.js';
 import { invokeCliAdapter, toCliEnvironment } from '../runners/invoke-cli-adapter.js';
 import { withCliInvocationIdentity } from '../runners/invocation-identity.js';
-import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
-import { assertCliStartGate } from '../runners/start-gate.js';
+import { callAdmittedCli, requireCliSeat, type CliSeat } from '../runners/start-gate.js';
 import { error } from '../../utils/error.js';
 import { isSessionExpiredError, sessionResumeExpiredError } from '../session-expiry.js';
 
@@ -32,9 +30,7 @@ export async function invokeClaudePlanner(opts: {
   };
   callContext: RunnerCallContext;
   env: NodeJS.ProcessEnv;
-  trustedCli?:
-    | { executable: CliExecutableIdentity; installedVersion?: string | undefined }
-    | undefined;
+  cliSeat?: CliSeat | undefined;
   model?: string | undefined;
   authChannel: CliAuthChannelId;
   configuredAuthChannel: CliAuthChannelId | undefined;
@@ -50,14 +46,6 @@ export async function invokeClaudePlanner(opts: {
   schema?: CliSchemaInput | undefined;
 }): Promise<RunnerCallResult> {
   const args = buildClaudeArgs(opts);
-  const executable = await resolveCliExecutable({
-    command: 'claude',
-    projectDir: opts.projectDir,
-    trust: assertCliStartGate(
-      'claude-code',
-      opts.trustedCli === undefined ? undefined : { tool: 'claude-code', ...opts.trustedCli },
-    ),
-  });
   const redact = createRunnerCallCredentialRedactor(
     claudeCredentialValues(opts.authChannel, opts.env),
   );
@@ -70,48 +58,53 @@ export async function invokeClaudePlanner(opts: {
   const adapter = claudeCodePlannerAdapter;
   const steering = adapter.steering;
   let stderr = '';
-  const result = await invokeCliAdapter({
-    adapter: {
-      ...adapter,
-      createParser: () => observeInit(adapter.createParser?.() ?? adapter.parse),
-      ...(steering !== undefined && {
-        steering: {
-          ...steering,
-          open: async (input) => {
-            const transport = await steering.open(input);
-            return { ...transport, parse: observeInit(transport.parse) };
-          },
+  const result = await callAdmittedCli(
+    requireCliSeat('claude-code', opts.cliSeat),
+    opts.signal,
+    (executable, gate) =>
+      invokeCliAdapter({
+        adapter: {
+          ...adapter,
+          createParser: () => observeInit(adapter.createParser?.() ?? adapter.parse),
+          ...(steering !== undefined && {
+            steering: {
+              ...steering,
+              open: async (input) => {
+                const transport = await steering.open(input);
+                return { ...transport, parse: observeInit(transport.parse) };
+              },
+            },
+          }),
         },
+        invocation: {
+          executable,
+          args,
+          baseArgs: args.slice(0, args.length - (opts.configuredArgs?.length ?? 0)),
+          promptTransport: adapter.promptTransport,
+          environment: toCliEnvironment(opts.env),
+          cwd: opts.projectDir,
+          images: opts.images,
+          timeoutMs: opts.timeoutMs,
+          signal: opts.signal,
+        },
+        prompt: opts.prompt,
+        steering: opts.callbacks.steering,
+        installedVersion: gate.installedVersion,
+        callContext: withCliInvocationIdentity({
+          runner: { kind: 'cli', tool: 'claude-code', authChannel: opts.configuredAuthChannel },
+          callContext: opts.callContext,
+          executable,
+        }),
+        onOutput: opts.callbacks.onOutput,
+        onSessionId: opts.callbacks.onSessionId,
+        onCallEvent: (event) => {
+          if (event.type === 'call_stderr_delta') stderr = `${stderr}${event.text}`.slice(-8_192);
+          opts.callbacks.onCallEvent?.(event);
+        },
+        idle: { warnMs: opts.idleWarnMs, killMs: opts.idleKillMs },
+        maxToolCalls: opts.maxToolCalls,
       }),
-    },
-    invocation: {
-      executable,
-      args,
-      baseArgs: args.slice(0, args.length - (opts.configuredArgs?.length ?? 0)),
-      promptTransport: adapter.promptTransport,
-      environment: toCliEnvironment(opts.env),
-      cwd: opts.projectDir,
-      images: opts.images,
-      timeoutMs: opts.timeoutMs,
-      signal: opts.signal,
-    },
-    prompt: opts.prompt,
-    steering: opts.callbacks.steering,
-    installedVersion: opts.trustedCli?.installedVersion,
-    callContext: withCliInvocationIdentity({
-      runner: { kind: 'cli', tool: 'claude-code', authChannel: opts.configuredAuthChannel },
-      callContext: opts.callContext,
-      executable,
-    }),
-    onOutput: opts.callbacks.onOutput,
-    onSessionId: opts.callbacks.onSessionId,
-    onCallEvent: (event) => {
-      if (event.type === 'call_stderr_delta') stderr = `${stderr}${event.text}`.slice(-8_192);
-      opts.callbacks.onCallEvent?.(event);
-    },
-    idle: { warnMs: opts.idleWarnMs, killMs: opts.idleKillMs },
-    maxToolCalls: opts.maxToolCalls,
-  });
+  );
   if (result.status !== 'completed') {
     const failureText = `${result.error?.message ?? result.text}\n${stderr}`;
     if (opts.sessionId !== null && isSessionExpiredError(failureText)) {

@@ -8,7 +8,7 @@ import {
   makeWctx,
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeImplementer } from '#testing/helpers/orchestrator-factories.js';
-import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
+import { makeRunnerGate, testCliSeats } from '#testing/helpers/runner-gate.js';
 import { ConfigSchema, type Config } from '../../../core/schemas/config.js';
 import type { ImplementerConfig } from '../../../core/schemas/implementer-config.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
@@ -251,6 +251,7 @@ describe('createTaskImplementer configured profile admission', () => {
               preparedConfig: config,
               preparationId: 'routing-missing-gate',
               gates: [],
+              cliSeats: testCliSeats([]),
               slot: { role: 'implementer', profile: selected.name },
             }),
         }),

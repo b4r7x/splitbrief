@@ -61,6 +61,7 @@ export const REASON_HALT = {
   'runner-unauthenticated': 'seat-down',
   'runner-usage-limit': 'seat-down',
   'runner-timeout-repeated': 'seat-down',
+  'runner-check-failed': 'seat-down',
   'implementer-recipe-invalid': 'seat-down',
   'implementer-left-isolation': 'seat-down',
   'context-overflow': 'seat-down',

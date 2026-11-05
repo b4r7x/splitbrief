@@ -27,6 +27,7 @@ import {
   prepareStartExecution,
   readConfiguredCliRoutes,
 } from './readiness.js';
+import { testCliSeats } from '#testing/helpers/runner-gate.js';
 
 // The fresh model-list read spawns the tool; each case sees only the read it answers.
 vi.mock('../../../engine/detection/runner-evidence.js', async (importOriginal) => {
@@ -241,6 +242,7 @@ describe('start preparation', () => {
               preparationId: 'readiness-emission-failure',
               report,
               gates: [],
+              cliSeats: testCliSeats([]),
               session: { kind: 'new', ...prepared.session },
               runtime: {
                 feature: 'failed readiness emission',

@@ -17,6 +17,7 @@ describe('recovery halts', () => {
         'implementer-recipe-invalid',
         'planner-call-failed',
         'review-input-too-large',
+        'runner-check-failed',
         'runner-timeout-repeated',
         'runner-unauthenticated',
         'runner-usage-limit',

@@ -14,7 +14,9 @@ import { resolveCustomExecutable } from '../../../src/engine/runners/resolve-cli
 import {
   parsePreparedConfig,
   type PreparedExecution,
+  type RunnerGate,
 } from '../../../src/engine/runners/prepared-execution.js';
+import { testCliSeats } from '#testing/helpers/runner-gate.js';
 
 const dirs: string[] = [];
 let originalPath: string | undefined;
@@ -199,6 +201,22 @@ async function runCliWorkflow(endChecks: boolean) {
     sessionId,
     generation: '1a111111-1111-4111-8111-111111111111',
   };
+  const gates: RunnerGate[] = [
+    {
+      kind: 'cli',
+      slot: { role: 'planner' },
+      preparationId,
+      tool: 'codex',
+      executable: plannerResolution.executable,
+    },
+    {
+      kind: 'cli',
+      slot: { role: 'implementer', profile: 'default' },
+      preparationId,
+      tool: 'opencode',
+      executable: implementerResolution.executable,
+    },
+  ];
   const prepared: PreparedExecution = {
     purpose: 'new-workflow',
     config,
@@ -213,22 +231,8 @@ async function runCliWorkflow(endChecks: boolean) {
       sections: [],
       metadata: {},
     },
-    gates: [
-      {
-        kind: 'cli',
-        slot: { role: 'planner' },
-        preparationId,
-        tool: 'codex',
-        executable: plannerResolution.executable,
-      },
-      {
-        kind: 'cli',
-        slot: { role: 'implementer', profile: 'default' },
-        preparationId,
-        tool: 'opencode',
-        executable: implementerResolution.executable,
-      },
-    ],
+    gates,
+    cliSeats: testCliSeats(gates),
     session: { kind: 'existing', ref: { projectDir, sessionId }, active },
     runtime: { feature, allowRepoRunners: false, allowHooks: false },
   };

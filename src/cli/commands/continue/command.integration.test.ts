@@ -44,6 +44,7 @@ import { Command } from 'commander';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { setupWorkflow } from '../../setup.js';
 import { registerContinueCommand } from './register.js';
+import { testCliSeats } from '#testing/helpers/runner-gate.js';
 
 vi.mock('../../../engine/orchestrator/approval/file-snapshots/entry.js', async (importOriginal) => {
   const actual =
@@ -164,6 +165,7 @@ async function prepareResume(input: PrepareExecutionInput) {
       preparationId: 'resume-preparation',
       report: readyReport(input.existingSession.projectDir),
       gates: [],
+      cliSeats: testCliSeats([]),
       session: {
         kind: 'existing' as const,
         ref: input.existingSession,

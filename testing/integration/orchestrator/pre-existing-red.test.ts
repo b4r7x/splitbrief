@@ -26,6 +26,7 @@ import { executableReceipt } from '#testing/helpers/custom-command-based.js';
 import {
   parsePreparedConfig,
   type PreparedExecution,
+  type RunnerGate,
 } from '../../../src/engine/runners/prepared-execution.js';
 import {
   cannotConsult,
@@ -34,6 +35,7 @@ import {
   planFromTasks,
   typedCallPlanAndReview,
 } from '#testing/helpers/typed-planner.js';
+import { testCliSeats } from '#testing/helpers/runner-gate.js';
 
 const dirs: string[] = [];
 
@@ -116,6 +118,21 @@ function preparedExecution(input: {
     sessionId: input.sessionId,
     generation: '7a777777-7777-4777-8777-777777777777',
   };
+  const gates: RunnerGate[] = [
+    {
+      kind: 'cli',
+      slot: { role: 'planner' },
+      preparationId,
+      tool: 'claude-code',
+      executable: executableReceipt(),
+    },
+    {
+      kind: 'agent',
+      slot: { role: 'implementer', profile: 'default' },
+      preparationId,
+      command: { kind: 'validated-config' },
+    },
+  ];
   return {
     purpose: 'new-workflow',
     config,
@@ -130,21 +147,8 @@ function preparedExecution(input: {
       sections: [],
       metadata: {},
     },
-    gates: [
-      {
-        kind: 'cli',
-        slot: { role: 'planner' },
-        preparationId,
-        tool: 'claude-code',
-        executable: executableReceipt(),
-      },
-      {
-        kind: 'agent',
-        slot: { role: 'implementer', profile: 'default' },
-        preparationId,
-        command: { kind: 'validated-config' },
-      },
-    ],
+    gates,
+    cliSeats: testCliSeats(gates),
     session: {
       kind: 'existing',
       ref: { projectDir: input.projectDir, sessionId: input.sessionId },

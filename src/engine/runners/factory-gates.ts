@@ -13,7 +13,7 @@ import type { ConfiguredCustomRunner } from './custom-trust.js';
 import type { AdmittedCustomRunnerInvocation } from './custom-launchability.js';
 import type { CustomRunnerRuntimePort } from './types.js';
 import { runnerConfigError } from './errors.js';
-import { runnerGateFor, type CliStartGate } from './start-gate.js';
+import { runnerGateFor, type CliSeat, type CliSeatGates } from './start-gate.js';
 import type {
   PreparedConfig,
   RunnerGate,
@@ -31,6 +31,7 @@ export type RunnerFactoryAuthority = Readonly<{
   preparedConfig: PreparedConfig;
   preparationId: string;
   gates: readonly RunnerGate[];
+  cliSeats: CliSeatGates;
   slot: RunnerSlot;
 }>;
 
@@ -183,8 +184,8 @@ export function assertCliImplementerTool(tool: string): void {
  * crosses this decision before any adapter exists, so no backend can bypass
  * capability admission. A configured argument vector that overrides authority
  * SPLITBRIEF owns is a typed zero-dispatch refusal; an admitted CLI tool is
- * bound to its prepared start gate, which the adapter revalidates immediately
- * before every spawn.
+ * bound to its run seat, whose gate the adapter revalidates immediately before
+ * every spawn.
  */
 export function admitPlannerBackend(
   input: Readonly<{
@@ -192,7 +193,7 @@ export function admitPlannerBackend(
     authority: RunnerFactoryAuthority;
     seat: PlannerTierRole;
   }>,
-): Readonly<{ trustedCli?: CliStartGate | undefined }> {
+): Readonly<{ cliSeat?: CliSeat | undefined }> {
   const runner = input.config.planner;
   if (runner.kind === 'cli') {
     assertCliPlannerTool(runner.tool, input.seat);
@@ -214,13 +215,7 @@ export function admitPlannerBackend(
     }),
   );
   return gate.kind === 'cli'
-    ? {
-        trustedCli: {
-          tool: gate.tool,
-          executable: gate.executable,
-          installedVersion: gate.installedVersion,
-        },
-      }
+    ? { cliSeat: input.authority.cliSeats.seat(input.authority.slot) }
     : {};
 }
 

@@ -84,7 +84,7 @@ function diagnosticCommand(command: string): string {
 
 /**
  * The words for a run call whose executable no longer matches the one SPLITBRIEF checked, most
- * often after the tool updated itself. Try again prepares the run again, which checks it again.
+ * often after the tool updated itself. Try again checks the tool again for every seat on it.
  */
 export function executableChangedMessage(toolName: string): string {
   return `${toolName} changed after SPLITBRIEF checked it, for example in an update. Try again checks it again.`;
@@ -250,9 +250,11 @@ function exactTrustMatches(identity: CliExecutableReceipt, trust: CliExecutableT
 }
 
 /**
- * Re-reads the admitted executable immediately before a probe or spawn.
- * Bare legacy identities remain a metadata-only compatibility shape; fresh
- * start admission never creates one.
+ * Re-reads the admitted real file immediately before a probe or spawn. The
+ * PATH entry that led to it is not read again: a symlink moved to a new
+ * release leaves the admitted file the one that runs. Bare legacy identities
+ * remain a metadata-only compatibility shape; fresh start admission never
+ * creates one.
  */
 export async function revalidateCliExecutableIdentity(
   identity: Detection.CliExecutableTrust,
@@ -260,9 +262,7 @@ export async function revalidateCliExecutableIdentity(
   const trustedReceipt = receiptFromTrust(identity);
   if (trustedReceipt === null) return 'drift';
   try {
-    const actual = await readExecutableIdentity(
-      trustedReceipt?.executableIdentity.canonicalPath ?? identity.path,
-    );
+    const actual = await readExecutableIdentity(identity.path);
     if (actual === null) return 'drift';
     if (
       actual.path !== identity.path ||
@@ -270,12 +270,12 @@ export async function revalidateCliExecutableIdentity(
     ) {
       return 'drift';
     }
+    const expected = trustedReceipt?.executableIdentity;
     if (
-      trustedReceipt !== undefined &&
-      !executionIdentitiesEqual({
-        expected: trustedReceipt.executableIdentity,
-        actual: actual.executableIdentity,
-      })
+      expected !== undefined &&
+      (actual.executableIdentity.realPath !== expected.realPath ||
+        actual.executableIdentity.platformFileId !== expected.platformFileId ||
+        actual.executableIdentity.fingerprint !== expected.fingerprint)
     ) {
       return 'drift';
     }

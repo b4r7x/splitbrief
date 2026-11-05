@@ -467,7 +467,16 @@ describe('prepareExecution', () => {
     const withStub = await run();
 
     expect(withoutStub.kind).toBe('prepared');
-    expect(withStub).toEqual(withoutStub);
+    expect(withStub.kind).toBe('prepared');
+    if (withoutStub.kind !== 'prepared' || withStub.kind !== 'prepared') return;
+    const { cliSeats: seatsWithout, ...without } = withoutStub.execution;
+    const { cliSeats: seatsWith, ...withShadow } = withStub.execution;
+    expect(withShadow).toEqual(without);
+    const cliGates = without.gates.filter((gate) => gate.kind === 'cli');
+    expect(cliGates).not.toHaveLength(0);
+    for (const gate of cliGates) {
+      expect(seatsWith.seat(gate.slot).current()).toEqual(seatsWithout.seat(gate.slot).current());
+    }
   });
 
   it('blocks an explicit auth channel the enforcement matrix cannot guarantee', async () => {

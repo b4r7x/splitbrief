@@ -10,8 +10,11 @@ import {
   changedFilesSinceBaseline,
   type ChangedFilesBaseline,
 } from '../../orchestrator/changed-files-baseline.js';
+import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import { createImplementer, createPlanner } from '../factory.js';
 import type { RunnerGate } from '../prepared-execution.js';
+import { executableChangedMessage } from '../resolve-cli-executable.js';
+import { createCliSeatGates, type RecheckCliTool } from '../start-gate.js';
 import {
   CLI_CONFORMANCE_EXIT_CODES,
   safeReason,
@@ -45,6 +48,15 @@ export type FactoryEffectConformanceOptions = Readonly<{
 }>;
 
 const EFFECT_CANDIDATE_ID = 'opencode' as const;
+
+/** The harness proves one receipt: a file that changed after it fails closed with the run's words. */
+const refuseRecheck: RecheckCliTool = async (tool) => ({
+  kind: 'blocked',
+  failure: {
+    message: executableChangedMessage(CLI_TOOL_CATALOG[tool].displayName),
+    fix: 'Run the conformance check again on the current file.',
+  },
+});
 
 function effectOutcome(
   exitCode: CliConformanceExitCode,
@@ -188,6 +200,7 @@ async function runPlannerEffect(
     projectDir: options.projectDir,
     preparationId,
     gates,
+    cliSeats: createCliSeatGates({ gates, recheck: refuseRecheck }),
     slot,
     initialSessionId: null,
   });
@@ -213,6 +226,7 @@ async function runImplementerEffect(input: {
     preparedConfig: config,
     preparationId,
     gates,
+    cliSeats: createCliSeatGates({ gates, recheck: refuseRecheck }),
     slot,
   });
   return implementer.implement({

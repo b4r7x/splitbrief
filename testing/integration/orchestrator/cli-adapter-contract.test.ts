@@ -41,6 +41,7 @@ import {
   type ContractShimMode,
   type ContractShimProfile,
 } from '#testing/helpers/command-shim.js';
+import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
 
 const ADMITTED_IMPLEMENTER_IDS = [...IMPLEMENTER_CLI_TOOL_IDS] as const;
 
@@ -386,7 +387,7 @@ async function runImplement(
   resetCapture(fixture);
   const config = makeConfig({ implementer: implementerConfig(fixture.toolId, opts.config) });
   const implementer = createCliImplementer(implementerConfig(fixture.toolId, opts.config), {
-    trustedCli: fixture.trustedGate,
+    cliSeat: admittedCliSeat(fixture.trustedGate),
   });
   return implementer.implement({
     task: contractTask(),
@@ -682,7 +683,7 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
     expect(authFailure.auth).toBe(AUTH_FAILURE_FACTS_BY_PROBE_CONTRACT[toolId]);
 
     const untrusted = await createCliImplementer(implementerConfig(toolId), {
-      trustedCli: undefined,
+      cliSeat: undefined,
     }).implement({
       task: contractTask(),
       projectDir: fixture.projectDir,
@@ -714,7 +715,7 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
     const fixture = createFixture(toolId);
     installShim(fixture, 'timeout', { sleepMs: 5_000 });
     const timeoutImplementer = createCliImplementer(implementerConfig(toolId, { timeout: 50 }), {
-      trustedCli: fixture.trustedGate,
+      cliSeat: admittedCliSeat(fixture.trustedGate),
     });
     const result = await timeoutImplementer.implement({
       task: makeTask({ suggestedFiles: ['src/contract.ts'] }),
@@ -899,6 +900,7 @@ describe('T-017 stable CLI outcome taxonomy', () => {
       'missing-model',
       'no-progress-cut',
       'tool-use-limit',
+      'runner-check-failed',
     ]);
     expect([...RUNNER_OUTCOME_STATES].sort()).toEqual([...covered].sort());
   });

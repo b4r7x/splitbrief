@@ -10,6 +10,7 @@ import type { RunnerCallContext, RunnerCallEvent } from '../calls/types.js';
 import { createClaudeCodePlanner } from '../planners/claude-code.js';
 import { createCliPlanner } from '../planners/cli.js';
 import { createCliImplementer } from '../implementers/cli.js';
+import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
 
 type Outcome = 'completed' | 'failed' | 'aborted';
 
@@ -124,18 +125,18 @@ const codexPlanner = (authChannel: Channel) =>
     config: makeConfig({
       planner: { kind: 'cli', tool: 'codex', ...(authChannel !== undefined && { authChannel }) },
     }),
-    trustedCli: trustedShimGate({ dir: shimDir, tool: 'codex' }),
+    cliSeat: admittedCliSeat(trustedShimGate({ dir: shimDir, tool: 'codex' })),
   });
 
 const claudePlanner = (authChannel: Channel) =>
   createClaudeCodePlanner({
     authChannel,
-    trustedCli: trustedShimGate({ dir: shimDir, tool: 'claude-code' }),
+    cliSeat: admittedCliSeat(trustedShimGate({ dir: shimDir, tool: 'claude-code' })),
   });
 
 function build(implementer: CliImplementerConfig) {
   return createCliImplementer(implementer, {
-    trustedCli: trustedShimGate({ dir: shimDir, tool: implementer.tool }),
+    cliSeat: admittedCliSeat(trustedShimGate({ dir: shimDir, tool: implementer.tool })),
   }).implement({
     task: makeTask(),
     projectDir,

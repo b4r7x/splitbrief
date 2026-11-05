@@ -303,6 +303,8 @@ export interface ArgVectorPreflightCheckInput {
   projectDir: string;
   /** The seats this run reaches; a seat the run never calls is not preflighted. */
   roles: readonly ActiveRunnerRole[];
+  /** Only this tool's seats, as a run's re-check of one tool needs; every CLI seat when absent. */
+  tool?: CliToolId | undefined;
   /** The release readiness admitted per tool, so the vector is the one dispatch would build. */
   installedVersions?: Readonly<Partial<Record<CliToolId, string>>> | undefined;
   runHelp?: (tool: CliToolId, argv: readonly string[]) => Promise<string | null>;
@@ -365,6 +367,7 @@ export async function collectArgVectorPreflightChecks(
   }
   const checks: ReadinessCheck[] = [];
   for (const runner of runners) {
+    if (input.tool !== undefined && runner.tool !== input.tool) continue;
     checks.push(await buildPreflightCheck(runner, input.projectDir, runHelp));
   }
   return checks;

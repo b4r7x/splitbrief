@@ -28,6 +28,8 @@ import { resolveImplementerProfiles } from '../../core/config/accessors/implemen
 import { prepareExecution } from './prepare-execution/prepare-execution.js';
 import type { ReadinessReport } from '../../core/readiness/types.js';
 import { processError } from '../../lib/process/errors.js';
+import { testCliSeats } from '#testing/helpers/runner-gate.js';
+import type { RunnerGate } from './prepared-execution.js';
 
 type CustomRunnerRole = 'planner' | 'implementer';
 type CustomCommandContract = 'output' | 'direct';
@@ -90,20 +92,22 @@ async function createPlanner(
   }
   const preparationId = 'factory-configured-planner';
   const slot = { role: 'planner' as const };
+  const gates: RunnerGate[] = [
+    {
+      kind: runner.command.contract === 'output' ? 'shell' : 'agent',
+      slot,
+      preparationId,
+      command: { kind: 'configured-custom', invocation: admission.invocation },
+    },
+  ];
   return createPreparedPlanner(config, {
     ...options,
     initialSessionId,
     preparedConfig: config,
     preparationId,
     slot,
-    gates: [
-      {
-        kind: runner.command.contract === 'output' ? 'shell' : 'agent',
-        slot,
-        preparationId,
-        command: { kind: 'configured-custom', invocation: admission.invocation },
-      },
-    ],
+    gates,
+    cliSeats: testCliSeats(gates),
   });
 }
 
@@ -126,19 +130,21 @@ async function createReviewer(config: Config, options: PlannerFactoryOptions) {
   }
   const preparationId = 'factory-configured-reviewer';
   const slot = { role: 'reviewer' as const };
+  const gates: RunnerGate[] = [
+    {
+      kind: runner.command.contract === 'output' ? 'shell' : 'agent',
+      slot,
+      preparationId,
+      command: { kind: 'configured-custom', invocation: admission.invocation },
+    },
+  ];
   return createPreparedReviewer(config, {
     ...options,
     preparedConfig: config,
     preparationId,
     slot,
-    gates: [
-      {
-        kind: runner.command.contract === 'output' ? 'shell' : 'agent',
-        slot,
-        preparationId,
-        command: { kind: 'configured-custom', invocation: admission.invocation },
-      },
-    ],
+    gates,
+    cliSeats: testCliSeats(gates),
   });
 }
 
@@ -165,19 +171,21 @@ async function createImplementer(config: Config, options: ImplementerFactoryOpti
     role: 'implementer' as const,
     profile: resolveImplementerProfiles(config).defaultProfile.name,
   };
+  const gates: RunnerGate[] = [
+    {
+      kind: runner.command.contract === 'output' ? 'shell' : 'agent',
+      slot,
+      preparationId,
+      command: { kind: 'configured-custom', invocation: admission.invocation },
+    },
+  ];
   return createPreparedImplementer(config, {
     ...options,
     preparedConfig: config,
     preparationId,
     slot,
-    gates: [
-      {
-        kind: runner.command.contract === 'output' ? 'shell' : 'agent',
-        slot,
-        preparationId,
-        command: { kind: 'configured-custom', invocation: admission.invocation },
-      },
-    ],
+    gates,
+    cliSeats: testCliSeats(gates),
   });
 }
 

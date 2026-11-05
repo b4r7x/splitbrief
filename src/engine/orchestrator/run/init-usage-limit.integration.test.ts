@@ -8,7 +8,7 @@ import {
   makePlanner,
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
+import { makeRunnerGate, testCliSeats } from '#testing/helpers/runner-gate.js';
 import { loadState } from '../../../core/state/persistence.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
@@ -82,6 +82,7 @@ async function preparedTestExecution(
         metadata: {},
       },
       gates,
+      cliSeats: testCliSeats(gates),
       session: {
         kind: 'existing',
         ref: { projectDir: input.projectDir, sessionId: input.sessionId },

@@ -194,6 +194,7 @@ export function registerReviewCommand(program: Command, deps: ReviewCommandDeps 
         preparedConfig: execution.config,
         preparationId: execution.preparationId,
         gates: execution.gates,
+        cliSeats: execution.cliSeats,
         slot: { role: 'reviewer' },
         customRuntime: createCustomRunnerRuntime({
           projectDir,

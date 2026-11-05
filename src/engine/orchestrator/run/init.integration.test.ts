@@ -20,7 +20,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { makeAttemptBrief } from '#testing/helpers/factories/attempt-brief.js';
-import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
+import { makeRunnerGate, testCliSeats } from '#testing/helpers/runner-gate.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { AttachedInput } from '../../../core/schemas/attachment.js';
@@ -133,6 +133,7 @@ async function preparedTestExecution(
         metadata: {},
       },
       gates,
+      cliSeats: testCliSeats(gates),
       session: {
         kind: 'existing',
         ref: { projectDir: input.projectDir, sessionId: input.sessionId },

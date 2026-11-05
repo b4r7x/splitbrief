@@ -33,6 +33,7 @@ import {
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
+import { versionedCli } from '#testing/helpers/versioned-cli.js';
 import {
   RUNNER_CALL_RETAINED_OUTPUT_MAX_BYTES,
   RUNNER_CALL_STDERR_MAX_BYTES,
@@ -1523,6 +1524,31 @@ describe('invokeProcessCli', () => {
       });
       expect(result.error?.message).not.toContain(executablePath);
       expect(existsSync(markerPath)).toBe(false);
+    });
+  });
+
+  itUnix('runs the admitted release after the PATH symlink moves to a new release', async () => {
+    await withTempDir('splitbrief-cli-versioned', async (dir) => {
+      const cli = versionedCli({ root: dir, command: 'vendor-cli' });
+      const release = (name: string) =>
+        `#!/bin/sh\nprintf '%s\\n' ran >> ${JSON.stringify(join(dir, `${name}.ran`))}\necho RESULT\n`;
+      cli.write('a', release('a'));
+      cli.write('b', release('b'));
+      cli.pointTo('a');
+      const admitted = await resolveCliExecutable({
+        command: join(cli.binDir, 'vendor-cli'),
+        projectDir: process.cwd(),
+      });
+
+      cli.pointTo('b');
+      const result = await run(
+        adapter({ kind: 'stdin' }),
+        invocation({ executable: admitted, script: '', environment: { PATH: '/usr/bin:/bin' } }),
+      );
+
+      expect(result.status).toBe('completed');
+      expect(readFileSync(join(dir, 'a.ran'), 'utf8')).toBe('ran\n');
+      expect(existsSync(join(dir, 'b.ran'))).toBe(false);
     });
   });
 

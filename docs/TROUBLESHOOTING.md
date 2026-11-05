@@ -804,6 +804,25 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 
 ---
 
+### Symptom: a CLI tool updated itself during a run
+
+**Likely cause:** A coding tool such as Claude Code, OpenAI Codex or Cursor Agent updated itself while the run was open. SPLITBRIEF checks each CLI tool when the run starts, and every call of the run starts the exact file it checked.
+
+- When the update puts the new version next to the old one and only moves the command on `PATH`, the run keeps the checked version and shows nothing. The next run checks the new version and uses it.
+- When the update replaces the checked file in place or removes it, SPLITBRIEF checks the new version the same way it checked the tool at the start. It checks once for every seat on that tool, and the call goes on with no extra row.
+- When the new version fails that check, the run stops on the recovery issue `runner-check-failed` instead of retrying the brief or asking the planner. On BUILD it reads `<tool> changed during the run and failed its check on T00N`, and its details carry the words of the check and its fix. A check that fails on the sign-in opens the sign-in halt instead.
+
+**Fix:**
+1. Read the issue's details and do what the fix names, for example install the supported version or sign in again.
+2. Choose **Try again**. It checks the tool again, and the run goes on when the check passes. The halt is *Seat down*, so it also offers switch seat (when another ready tool was detected), skip the brief, or end the run. Headless, the stderr block prints the exact line to paste, for example `splitbrief continue <session> --action retry`.
+3. When the halt or its details read `<tool> changed after SPLITBRIEF checked it`, the file changed again right after its new check, often because the update was still writing. Wait until the update is complete, then choose **Try again**.
+
+**Prevention:** Update your coding tools between runs, or turn off a tool's automatic update while a run is open.
+
+**See also:** [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md), [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
+
+---
+
 ### Symptom: Implementer ignores constraints listed in the brief
 
 **Likely cause:** The implementer model is too small to follow long constraint lists. Tiny models drop instructions silently.
@@ -1026,7 +1045,7 @@ A killed process's `base-<pid>-*` tree under `$XDG_STATE_HOME/splitbrief/bases/`
 
 ### Symptom: continuing a run re-opens the planner halt instead of building
 
-**Likely cause:** The run stopped on a planner-seat recovery — `planner-call-failed`, `plan-questions-exhausted`, `plan-checks-failed`, a planner `seat-protocol-error`, or a *Seat down* `runner-unauthenticated` / `runner-usage-limit` on the **plan** seat. A halt is answered before any work runs, so continuing shows the panel first. That is the design: the run is waiting on a decision, not stuck.
+**Likely cause:** The run stopped on a planner-seat recovery — `planner-call-failed`, `plan-questions-exhausted`, `plan-checks-failed`, a planner `seat-protocol-error`, or a *Seat down* `runner-unauthenticated` / `runner-usage-limit` / `runner-check-failed` on the **plan** seat. A halt is answered before any work runs, so continuing shows the panel first. That is the design: the run is waiting on a decision, not stuck.
 
 **Fix:**
 1. In the TUI, answer the panel. The issue carries its own `seat`, so a swap offer names the seat that is actually blocked.

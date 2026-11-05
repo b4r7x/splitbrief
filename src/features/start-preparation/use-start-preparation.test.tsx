@@ -17,6 +17,7 @@ import type {
   PreparedExecution,
 } from '../../engine/runners/prepared-execution.js';
 import { useStartPreparation } from './use-start-preparation.js';
+import { testCliSeats } from '#testing/helpers/runner-gate.js';
 
 const OWNERSHIP_FILE = '.prepare-owner.json';
 const tempDirs: string[] = [];
@@ -112,6 +113,7 @@ function prepared(id: string): Extract<PreparationOutcome, { kind: 'prepared' }>
       preparationId: `preparation-${id}`,
       report,
       gates: [],
+      cliSeats: testCliSeats([]),
       session: {
         kind: 'new',
         ...result.session,

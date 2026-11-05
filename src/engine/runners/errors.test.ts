@@ -67,6 +67,7 @@ describe('runner outcome taxonomy', () => {
       'runner-timeout-repeated',
       'missing-model',
       'tool-use-limit',
+      'runner-check-failed',
       'success',
     ]);
     expectTypeOf<RunnerOutcomeState>().toEqualTypeOf<(typeof RUNNER_OUTCOME_STATES)[number]>();

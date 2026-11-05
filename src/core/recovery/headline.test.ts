@@ -97,6 +97,10 @@ describe('formatRecoveryHeadline', () => {
         'Repository changed under T001 · branch topic · hook pre-commit',
       ],
       [{ reason: 'runner-timeout-repeated' }, 'Two timeouts in a row on T001'],
+      [
+        { reason: 'runner-check-failed', facts: { tool: 'Codex' } },
+        'Codex changed and failed its check',
+      ],
       [{ reason: 'planner-call-failed' }, 'Planner call failed'],
       [{ reason: 'planner-call-failed', seat: 'review' }, 'Reviewer call failed'],
       [{ reason: 'planner-returned-no-briefs' }, 'Planner returned no briefs'],

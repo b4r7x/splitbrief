@@ -363,7 +363,8 @@ function recoveryCauseParts(issue: RecoveryIssue): ConversationRowSegment[] {
     issue.reason === 'required-checks-unrunnable' ||
     issue.reason === 'plan-questions-exhausted' ||
     issue.reason === 'plan-checks-failed' ||
-    issue.reason === 'runner-timeout-repeated'
+    issue.reason === 'runner-timeout-repeated' ||
+    issue.reason === 'runner-check-failed'
   ) {
     return recoveryHeadlineParts(issue);
   }

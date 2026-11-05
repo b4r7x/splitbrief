@@ -38,6 +38,7 @@ import { eventRowBlock } from '../../../src/features/workflow/conversation-rows/
 import { runPlanningSession } from '../../../src/engine/orchestrator/planning/session.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { eventsStore } from '../../../src/stores/workflow/events.js';
+import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
 
 let projectDir = '';
 let ui: ReturnType<typeof mountWorkflowScreen> | undefined;
@@ -95,7 +96,7 @@ emit({type: 'result', is_error: false, result: '', structured_output: {result: a
     restorePath = prependPath(projectDir);
     const planner = createClaudeCodePlanner({
       authChannel: undefined,
-      trustedCli: trustedShimGate({ dir: projectDir, tool: 'claude-code' }),
+      cliSeat: admittedCliSeat(trustedShimGate({ dir: projectDir, tool: 'claude-code' })),
     });
     const finished = Promise.withResolvers<void>();
     let sessionId = '';
@@ -913,7 +914,7 @@ emit({type: 'result', is_error: false, result: '', structured_output: {result: a
     restorePath = prependPath(projectDir);
     const planner = createClaudeCodePlanner({
       authChannel: undefined,
-      trustedCli: trustedShimGate({ dir: projectDir, tool: 'claude-code' }),
+      cliSeat: admittedCliSeat(trustedShimGate({ dir: projectDir, tool: 'claude-code' })),
     });
     const finished = Promise.withResolvers<string>();
     let runRef = { projectDir, sessionId: '' };

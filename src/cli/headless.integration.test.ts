@@ -52,6 +52,7 @@ import { makePreparedExecution } from '#testing/helpers/factories/prepared-execu
 import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import { makeAttemptBrief } from '#testing/helpers/factories/attempt-brief.js';
 import { writeCursorRefusalShim } from '#testing/helpers/cursor-refusal.js';
+import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
 
 // The two terminal guards read state and session after the run; skipping the run
 // itself is what makes them reachable without driving a whole workflow.
@@ -1563,7 +1564,7 @@ describe('runHeadless — the seat-down policy and the record', () => {
           // The first timeout goes to the consult; its guidance runs the retry that times out again.
           _planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
           _implementer: createCliImplementer(seat, {
-            trustedCli: trustedShimGate({ dir: shimDir, tool: 'opencode' }),
+            cliSeat: admittedCliSeat(trustedShimGate({ dir: shimDir, tool: 'opencode' })),
           }),
           onSeatDown: 'switch',
           _prepare: async (input) => ({
@@ -1737,7 +1738,7 @@ describe('runHeadless — the seat-down policy and the record', () => {
     saveState(ref, state);
     await rememberDetectedTools(projectDir, cliDetectionsFor('ready', ['cursor', 'claude-code']));
     const cursor = createCliImplementer(seat, {
-      trustedCli: trustedShimGate({ dir: shimDir, tool: 'cursor' }),
+      cliSeat: admittedCliSeat(trustedShimGate({ dir: shimDir, tool: 'cursor' })),
     });
     const implementer = makeImplementer({
       implement: vi.fn<Implementer['implement']>(async (input) => {

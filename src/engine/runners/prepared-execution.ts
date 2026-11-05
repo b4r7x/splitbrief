@@ -12,6 +12,7 @@ import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
 import type { CliExecutableReceipt } from '../../core/discovery/detection.js';
 import type { DeepReadonly, RunnerConfigSlot } from '../../core/config/accessors/runner-config.js';
 import type { AdmittedCustomRunnerInvocation } from './custom-launchability.js';
+import type { CliSeatGates } from './start-gate.js';
 
 export type RunnerSlot = RunnerConfigSlot;
 
@@ -80,6 +81,8 @@ export type PreparedExecution = Readonly<{
   preparationId: string;
   report: ReadinessReport;
   gates: ReadonlyArray<RunnerGate>;
+  /** The run's CLI seats: each call starts the gate its seat holds now. */
+  cliSeats: CliSeatGates;
   session: PreparedExecutionSession;
   runtime: Readonly<{
     feature: string;
@@ -103,6 +106,7 @@ export type PreparedReviewExecution = Readonly<{
   preparationId: string;
   report: ReadinessReport;
   gates: ReadonlyArray<RunnerGate>;
+  cliSeats: CliSeatGates;
 }>;
 
 export type PreparationOutcome<Execution = PreparedExecution> =

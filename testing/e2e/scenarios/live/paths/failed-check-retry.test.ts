@@ -74,6 +74,7 @@ describe('live paths: failed check, then retry', { timeout: 2 * LIVE_PATHS_TIMEO
                 preparedConfig: prepared.config,
                 preparationId: prepared.preparationId,
                 gates: prepared.gates,
+                cliSeats: prepared.cliSeats,
                 slot: {
                   role: 'implementer',
                   profile: resolveImplementerProfiles(prepared.config).defaultProfile.name,

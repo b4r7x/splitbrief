@@ -114,6 +114,7 @@ function failureStateFromCode(code: string): RunnerFailureOutcomeState | null {
     case 'runner-timeout-repeated':
     case 'missing-model':
     case 'tool-use-limit':
+    case 'runner-check-failed':
       return code;
     default:
       return null;

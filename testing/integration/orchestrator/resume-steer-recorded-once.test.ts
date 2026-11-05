@@ -29,7 +29,9 @@ import { executableReceipt } from '#testing/helpers/custom-command-based.js';
 import {
   parsePreparedConfig,
   type PreparedExecution,
+  type RunnerGate,
 } from '../../../src/engine/runners/prepared-execution.js';
+import { testCliSeats } from '#testing/helpers/runner-gate.js';
 
 const dirs: string[] = [];
 
@@ -121,6 +123,21 @@ describe('a steer that resumes a run is recorded exactly once', { timeout: 90_00
       sessionId,
       generation: '9a999999-9999-4999-8999-999999999999',
     };
+    const gates: RunnerGate[] = [
+      {
+        kind: 'cli',
+        slot: { role: 'planner' },
+        preparationId,
+        tool: 'claude-code',
+        executable: executableReceipt(),
+      },
+      {
+        kind: 'agent',
+        slot: { role: 'implementer', profile: 'default' },
+        preparationId,
+        command: { kind: 'validated-config' },
+      },
+    ];
     const prepared: PreparedExecution = {
       purpose: 'resume',
       config,
@@ -135,21 +152,8 @@ describe('a steer that resumes a run is recorded exactly once', { timeout: 90_00
         sections: [],
         metadata: {},
       },
-      gates: [
-        {
-          kind: 'cli',
-          slot: { role: 'planner' },
-          preparationId,
-          tool: 'claude-code',
-          executable: executableReceipt(),
-        },
-        {
-          kind: 'agent',
-          slot: { role: 'implementer', profile: 'default' },
-          preparationId,
-          command: { kind: 'validated-config' },
-        },
-      ],
+      gates,
+      cliSeats: testCliSeats(gates),
       session: { kind: 'existing', ref: { projectDir, sessionId }, active },
       runtime: {
         feature,

@@ -6,7 +6,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-factories.js';
-import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
+import { makeRunnerGate, testCliSeats } from '#testing/helpers/runner-gate.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { ConfigSchema } from '../../../core/schemas/config.js';
@@ -153,6 +153,7 @@ async function initializeConfiguredDirectWorkflow(
           metadata: {},
         },
         gates,
+        cliSeats: testCliSeats(gates),
         session: {
           kind: 'existing',
           ref: { projectDir: input.projectDir, sessionId: input.sessionId },

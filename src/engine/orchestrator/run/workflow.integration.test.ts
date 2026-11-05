@@ -33,7 +33,7 @@ import { taskFromSpec } from '../../spec/plan-tasks.js';
 import { formatTasks } from '../../spec/formatter.js';
 import { parsePlanJson } from '../../../core/sessions/plan-file.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
+import { makeRunnerGate, testCliSeats } from '#testing/helpers/runner-gate.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 import { WorkflowStateSchema, type WorkflowState } from '../../../core/schemas/workflow.js';
@@ -319,6 +319,7 @@ async function runWorkflow(input: WorkflowTestOptions) {
       preparationId,
       report: readyReport(projectDir),
       gates,
+      cliSeats: testCliSeats(gates),
       session: { kind: 'existing', ref: { projectDir, sessionId }, active },
       runtime: {
         feature,
@@ -454,6 +455,14 @@ describe('runWorkflow — smoke', () => {
       command: '/changed/after/preparation',
     };
 
+    const gates: RunnerGate[] = [
+      makeRunnerGate(config.planner, { role: 'planner' }, preparationId),
+      makeRunnerGate(
+        config.implementer,
+        { role: 'implementer', profile: 'default' },
+        preparationId,
+      ),
+    ];
     const summary = await runTrackedWorkflow({
       prepared: {
         purpose: 'new-workflow',
@@ -461,14 +470,8 @@ describe('runWorkflow — smoke', () => {
         sourceConfig: config,
         preparationId,
         report: readyReport(projectDir),
-        gates: [
-          makeRunnerGate(config.planner, { role: 'planner' }, preparationId),
-          makeRunnerGate(
-            config.implementer,
-            { role: 'implementer', profile: 'default' },
-            preparationId,
-          ),
-        ],
+        gates,
+        cliSeats: testCliSeats(gates),
         session: { kind: 'existing', ref: { projectDir, sessionId }, active },
         runtime: { feature, allowRepoRunners: false, allowHooks: false },
       },

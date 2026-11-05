@@ -20,6 +20,7 @@ import type { CliImplementerConfig } from '../../../core/schemas/implementer-con
 import { createCliImplementer } from '../../implementers/cli.js';
 import { formatRecoveryPrompt } from '../../../features/workflow/recovery-prompt.js';
 import { runTaskLoop } from './loop.js';
+import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
 
 afterEach(cleanupTaskProjects);
 
@@ -81,7 +82,7 @@ describe('a BUILD tool that takes the prompt on stdin', { timeout: 90_000 }, () 
       projectDir,
       sessionId,
       implementer: createCliImplementer(seat, {
-        trustedCli: trustedShimGate({ dir: shimDir, tool }),
+        cliSeat: admittedCliSeat(trustedShimGate({ dir: shimDir, tool })),
       }),
       // One answer, then the planner fails: no count stops the consults of a brief that keeps failing.
       planner: makePlanner({
@@ -148,7 +149,7 @@ describe('a BUILD tool that takes the prompt on stdin', { timeout: 90_000 }, () 
       projectDir,
       sessionId,
       implementer: createCliImplementer(seat, {
-        trustedCli: trustedShimGate({ dir: shimDir, tool: 'copilot' }),
+        cliSeat: admittedCliSeat(trustedShimGate({ dir: shimDir, tool: 'copilot' })),
       }),
       planner: makePlanner({ typedCall: consultCallAnswering(consult) }),
       bus,

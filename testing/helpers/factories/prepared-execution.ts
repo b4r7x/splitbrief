@@ -7,7 +7,7 @@ import {
   type PreparedExecution,
   type RunnerGate,
 } from '../../../src/engine/runners/prepared-execution.js';
-import { makeRunnerGate } from '../runner-gate.js';
+import { makeRunnerGate, testCliSeats } from '../runner-gate.js';
 
 function seatGates(config: Config, preparationId: string): ReadonlyArray<RunnerGate> {
   return [
@@ -49,6 +49,7 @@ export function makePreparedExecution(input: {
       metadata: {},
     },
     gates,
+    cliSeats: testCliSeats(gates),
     session: {
       kind: 'existing',
       ref: { projectDir: input.projectDir, sessionId: input.sessionId },

@@ -11,7 +11,7 @@ import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runn
 import { admitApiCall, type PreparedApiSeat } from './api-budget.js';
 import type { ProviderDef } from './types.js';
 import type { ApiDeadlineRun } from './api-deadlines.js';
-import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
+import { makeRunnerGate, testCliSeats } from '#testing/helpers/runner-gate.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { callPlanner } from '#testing/helpers/planner-call.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -156,11 +156,13 @@ function authority(
   runner: Config['planner'],
 ): RunnerFactoryAuthority {
   const preparationId = `api-runtime-${slot.role}`;
+  const gates = [makeRunnerGate(runner, slot, preparationId)];
   return {
     preparedConfig: cfg as RunnerFactoryAuthority['preparedConfig'],
     preparationId,
     slot,
-    gates: [makeRunnerGate(runner, slot, preparationId)],
+    gates,
+    cliSeats: testCliSeats(gates),
   };
 }
 

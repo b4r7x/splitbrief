@@ -25,6 +25,7 @@ export const RUNNER_OUTCOME_STATES = [
   'runner-timeout-repeated',
   'missing-model',
   'tool-use-limit',
+  'runner-check-failed',
   'success',
 ] as const;
 
@@ -88,6 +89,8 @@ function defaultRemediation(state: RunnerFailureOutcomeState): string {
       return 'Pick a model the tool lists, then retry.';
     case 'tool-use-limit':
       return 'The attempt reached the maxToolCalls limit of the seat and was stopped; the planner consults on the last calls.';
+    case 'runner-check-failed':
+      return 'The tool changed during the run and did not pass its new check. Fix what the check names, then try again.';
     default: {
       const _exhaustive: never = state;
       return _exhaustive;

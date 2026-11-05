@@ -21,6 +21,7 @@ import {
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { cleanupTempDir, createTempDir, normalizeMacTmpPath } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
+import { testCliSeats } from '#testing/helpers/runner-gate.js';
 
 const NONCE = 'nonce-\u03b1\u03b2-\u2713-\ud83d\ude80-7f3a9c11';
 const SENTINEL_A = 'final-\u03b1\u03b2-\u2713-\ud83d\ude80-sentinel-A';
@@ -52,7 +53,7 @@ function plannerAuthority(receipt: CliExecutableReceipt) {
   const gates: readonly RunnerGate[] = [
     { kind: 'cli', slot, preparationId, tool: 'opencode', executable: receipt },
   ];
-  return { slot, preparationId, gates };
+  return { slot, preparationId, gates, cliSeats: testCliSeats(gates) };
 }
 
 function finalResponseBody(): string {

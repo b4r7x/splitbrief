@@ -42,6 +42,7 @@ import {
   sessionSelectStore,
   type SessionSelectDeps,
 } from './session-select.js';
+import { testCliSeats } from '#testing/helpers/runner-gate.js';
 
 let tmp: string;
 
@@ -70,6 +71,7 @@ function preparedResumeExecution(
       metadata: {},
     },
     gates: [],
+    cliSeats: testCliSeats([]),
     session: {
       kind: 'existing',
       ref: { projectDir, sessionId },

@@ -28,6 +28,7 @@ export type PlannerSeatFailure =
   | 'usage-limit'
   | 'missing-model'
   | 'input-too-large'
+  | 'runner-check-failed'
   | 'call-failed';
 
 const PLANNER_FAILURE_REASONS = {
@@ -35,6 +36,7 @@ const PLANNER_FAILURE_REASONS = {
   'usage-limit': 'runner-usage-limit',
   'missing-model': 'planner-call-failed',
   'input-too-large': 'planner-call-failed',
+  'runner-check-failed': 'runner-check-failed',
   'call-failed': 'planner-call-failed',
 } as const satisfies Record<PlannerSeatFailure, RecoveryReason>;
 

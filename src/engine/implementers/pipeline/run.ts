@@ -58,6 +58,7 @@ import { readImplementerReport } from '../../../core/schemas/consult.js';
 import { getRunnerCatalogDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { processError } from '../../../lib/process/errors.js';
 import { isApiDeadlineError } from '../../providers/api-deadlines.js';
+import { cliToolCheckError, cliToolCheckWords } from '../../runners/start-gate.js';
 import {
   checkoutChanges,
   formatCheckoutChanges,
@@ -617,6 +618,20 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
       }
       if (shouldThrow(err)) throw err;
       const output = errorOutput(err);
+      // A tool that changed during the run and failed its new check: a sign-in
+      // failure takes the sign-out route, which quotes the check's words and
+      // gives its own login step; every other cause halts on the check and its fix.
+      if (cliToolCheckError.isFailed(err)) {
+        const signedOut = err.data.cause === 'unauthenticated';
+        const error = signedOut ? err.message : cliToolCheckWords(err);
+        failTask(opts, error);
+        return {
+          success: false,
+          output,
+          error,
+          outcome: signedOut ? 'unauthenticated' : 'runner-check-failed',
+        };
+      }
       // API backends throw their provider errors instead of returning a
       // failed call result, so the one classifier reads them here too. The raw
       // provider detail is kept over the rewritten hint: the recovery needs

@@ -20,6 +20,7 @@ import {
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { cleanupTempDir, createTempDir, normalizeMacTmpPath } from '#testing/helpers/temp-dir.js';
+import { testCliSeats } from '#testing/helpers/runner-gate.js';
 
 const SENTINEL = 'final-\u03b1\u03b2-\u2713-\ud83d\ude80-matrix-sentinel';
 const DRAFT = 'draft bytes before the final group';
@@ -30,7 +31,7 @@ function plannerAuthority(receipt: CliExecutableReceipt, tool: CliToolId, prepar
   const gates: readonly RunnerGate[] = [
     { kind: 'cli', slot, preparationId, tool, executable: receipt },
   ];
-  return { slot, preparationId, gates };
+  return { slot, preparationId, gates, cliSeats: testCliSeats(gates) };
 }
 
 function textEvent(text: string): string {

@@ -39,6 +39,7 @@ import { withLocalCatalog } from '#testing/helpers/faux/local-catalog.js';
 import { CURSOR_MODEL_REFUSAL, writeCursorRefusalShim } from '#testing/helpers/cursor-refusal.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
 import { loadState } from '../../../core/state/persistence.js';
+import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
 
 afterEach(cleanupTaskProjects);
 
@@ -92,6 +93,40 @@ describe('handleFailedImplementation — runner defects halt before the ladder',
     });
     // The halt counts the one call the tool refused, on the brief's lineage.
     expect(next.pendingRecovery?.details).toContain('Attempts: 1');
+  });
+
+  it('a changed tool that fails its check again halts the first attempt without a retry', async () => {
+    const task = makeTask({ id: 'T001' });
+    const state = implementingState([task]);
+    const implementer = makeImplementer({ retry: vi.fn() });
+    const { bus } = makeBusRecorder();
+    const wctx = makeWorkflowContext({ implementer, bus });
+
+    const next = await handleFailedImplementation({
+      wctx,
+      task,
+      state,
+      implState: implState({
+        success: false,
+        output: '',
+        outcome: 'runner-check-failed',
+        error: 'OpenAI Codex CLI version is not compatible.',
+      }),
+      taskStartSnapshot: await getChangedFilesSnapshot(wctx.projectDir),
+      tokensBefore: { ...state.tokenUsage },
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+    });
+
+    expect(implementer.retry).not.toHaveBeenCalled();
+    expect(next.pendingRecovery).toMatchObject({
+      reason: 'runner-check-failed',
+      taskId: 'T001',
+      recommendedAction: 'retry-same-worker',
+    });
+    expect(
+      [next.pendingRecovery?.message, ...(next.pendingRecovery?.details ?? [])].join('\n'),
+    ).toContain('OpenAI Codex CLI version is not compatible.');
   });
 
   it('an implementer that left its isolation directory halts on the evidence', async () => {
@@ -640,7 +675,7 @@ describe('runTaskLoop — a seat that times out twice on one brief is a seat-dow
     const { state } = await runUntilHalt(
       config,
       createCliImplementer(seat, {
-        trustedCli: trustedShimGate({ dir: shimDir, tool: 'opencode' }),
+        cliSeat: admittedCliSeat(trustedShimGate({ dir: shimDir, tool: 'opencode' })),
       }),
     );
 
@@ -775,7 +810,7 @@ describe('runTaskLoop — a Cursor seat that refuses the account is a seat-down 
       projectDir,
       sessionId,
       implementer: createCliImplementer(seat, {
-        trustedCli: trustedShimGate({ dir: shimDir, tool: 'cursor' }),
+        cliSeat: admittedCliSeat(trustedShimGate({ dir: shimDir, tool: 'cursor' })),
       }),
       planner: makePlanner({ typedCall: consultCallAnswering(consult) }),
       bus,

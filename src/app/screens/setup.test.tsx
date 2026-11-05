@@ -51,6 +51,7 @@ import {
   trackToolCheck,
 } from '../../engine/probe-activity.js';
 import { PRESET_SECTION, SetupScreen } from './setup.js';
+import { testCliSeats } from '#testing/helpers/runner-gate.js';
 
 vi.mock('../../lib/git/files.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../lib/git/files.js')>()),
@@ -177,6 +178,7 @@ function preparedExecution(input: PrepareExecutionInput): PreparedExecution {
     preparationId: 'setup-preparation',
     report: readiness,
     gates: [],
+    cliSeats: testCliSeats([]),
     session: {
       kind: 'new',
       ...prepared.session,

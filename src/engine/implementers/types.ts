@@ -8,7 +8,7 @@ import type { LanguageContext } from '../spec/prompts/language-context.js';
 import type { CustomRunnerRuntimePort, RunnerRuntime } from '../runners/types.js';
 import type { RunnerFailureOutcomeState } from '../runners/errors.js';
 import type { RunnerCallContext, RunnerCallEvent } from '../calls/types.js';
-import type { CliStartGate } from '../runners/start-gate.js';
+import type { CliSeat } from '../runners/start-gate.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import type * as ImplementerConfig from '../../core/schemas/implementer-config.js';
 import type { RunnerSlot } from '../runners/prepared-execution.js';
@@ -85,8 +85,8 @@ export interface UndeclaredWritesPolicy {
 
 export interface ImplementerFactoryOptions {
   publisher?: ImplementerPublisher | undefined;
-  /** Canonical CLI identity admitted by the start-readiness gate. */
-  trustedCli?: CliStartGate | undefined;
+  /** The run seat whose admitted CLI gate every call of the adapter starts from. */
+  cliSeat?: CliSeat | undefined;
   customRuntime?: CustomRunnerRuntimePort | undefined;
   slot?: Extract<RunnerSlot, { role: 'implementer' }> | undefined;
   /** The run's signal: a stop during the availability gate is not a verdict on the seat. */

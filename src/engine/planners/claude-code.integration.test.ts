@@ -9,12 +9,14 @@ import {
 import { createClaudeCodePlanner } from './claude-code.js';
 import { writeCommandShim, writeFakeCli } from '#testing/helpers/command-shim.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { versionedCli } from '#testing/helpers/versioned-cli.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
 import { sandboxRoot } from '../runners/sandbox-state-paths.js';
 import { callPlanner } from '#testing/helpers/planner-call.js';
 import { diagnosePlannerCallFailure } from '../orchestrator/recovery/planner-call-failure.js';
 import { probeActivitySnapshot, subscribeProbeActivity } from '../probe-activity.js';
+import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
 
 let shimDir: string;
 let projectDir: string;
@@ -51,7 +53,7 @@ async function createTrustedClaudeCodePlanner(
 ): Promise<ReturnType<typeof createClaudeCodePlanner>> {
   return createClaudeCodePlanner({
     ...opts,
-    trustedCli: { executable: await trustedClaudeExecutable() },
+    cliSeat: admittedCliSeat({ tool: 'claude-code', executable: await trustedClaudeExecutable() }),
   });
 }
 
@@ -673,6 +675,33 @@ Create the Claude retry file.
     } finally {
       home.restore();
     }
+  });
+});
+
+describe('createClaudeCodePlanner on a versioned install', () => {
+  it('answers from the admitted release after the PATH symlink moves to a new release', async () => {
+    const cli = versionedCli({ root: shimDir, command: 'claude' });
+    const release = (name: string) =>
+      [
+        '#!/bin/sh',
+        'cat >/dev/null',
+        `printf '%s\\n' ran >> '${join(shimDir, `${name}.ran`)}'`,
+        `printf '%s\\n' '${JSON.stringify({ type: 'result', result: `answer from ${name}` })}'`,
+        '',
+      ].join('\n');
+    cli.write('a', release('a'));
+    cli.write('b', release('b'));
+    cli.pointTo('a');
+    process.env['PATH'] = `${cli.binDir}:${originalPath ?? ''}`;
+    const planner = await createTrustedClaudeCodePlanner({ authChannel: undefined });
+
+    cli.pointTo('b');
+
+    await expect(
+      planner.review('prompt', projectDir, { onOutput: () => {} }),
+    ).resolves.toMatchObject({ text: 'answer from a' });
+    expect(readFileSync(join(shimDir, 'a.ran'), 'utf8')).toBe('ran\n');
+    expect(existsSync(join(shimDir, 'b.ran'))).toBe(false);
   });
 });
 

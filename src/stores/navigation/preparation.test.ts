@@ -21,6 +21,7 @@ import {
 import { terminalSizeStore } from '../ui/terminal-size.js';
 import { preparationStore, type PreparationRequest } from './preparation.js';
 import { routerStore } from './router.js';
+import { testCliSeats } from '#testing/helpers/runner-gate.js';
 
 const SESSION_ID = 'sess-prepare';
 let projectDir = '';
@@ -53,6 +54,7 @@ function prepared(active: ActiveSessionReceipt) {
     preparationId: `preparation-${active.generation}`,
     report: report(),
     gates: [],
+    cliSeats: testCliSeats([]),
     session: { kind: 'existing', ref: { projectDir, sessionId: SESSION_ID }, active },
     runtime: { feature: 'prepare', allowRepoRunners: false, allowHooks: false },
   };

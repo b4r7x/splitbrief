@@ -2,7 +2,7 @@ import { WorkflowScreen } from '../../src/app/screens/workflow.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { renderFeature } from '#testing/helpers/ink.js';
-import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
+import { makeRunnerGate, testCliSeats } from '#testing/helpers/runner-gate.js';
 import { resolveImplementerProfiles } from '../../src/core/config/accessors/implementer-profiles.js';
 import type { Config } from '../../src/core/schemas/config.js';
 import type { WorkflowState } from '../../src/core/schemas/workflow.js';
@@ -80,6 +80,7 @@ export function prepareWorkflowExecution({
     preparationId,
     report,
     gates,
+    cliSeats: testCliSeats(gates),
     session,
     runtime: {
       feature,

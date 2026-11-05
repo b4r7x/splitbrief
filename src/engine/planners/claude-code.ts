@@ -24,18 +24,13 @@ import {
   typedOutputCapability,
 } from '../../core/runners/cli-tool-catalog.js';
 import { createRunnerSandboxEnv, resolveCliRunnerAuth } from '../runners/sandbox-env.js';
-import type { CliExecutableIdentity } from '../../core/discovery/detection.js';
-
-type ClaudeStartGate = Readonly<{
-  executable: CliExecutableIdentity;
-  installedVersion?: string | undefined;
-}>;
+import type { CliSeat } from '../runners/start-gate.js';
 
 const CLAUDE_TOOL = 'claude-code' as const;
 
 export function createClaudeCodePlanner(opts: {
   authChannel: CliAuthChannelId | undefined;
-  trustedCli?: ClaudeStartGate | undefined;
+  cliSeat?: CliSeat | undefined;
   model?: string | undefined;
   initialSessionId?: string | null | undefined;
   effort?: EffortLevel | undefined;
@@ -48,7 +43,7 @@ export function createClaudeCodePlanner(opts: {
   skillRoots?: readonly string[] | undefined;
 }): Planner {
   const {
-    trustedCli,
+    cliSeat,
     model,
     initialSessionId,
     effort,
@@ -85,7 +80,7 @@ export function createClaudeCodePlanner(opts: {
       authChannel,
       configuredAuthChannel: opts.authChannel,
       env: input.env,
-      trustedCli,
+      cliSeat,
       ...(effort !== undefined && { effort }),
       configuredArgs: args,
       ...(skillRoots !== undefined && { skillRoots }),
@@ -204,7 +199,7 @@ export function createClaudeCodePlanner(opts: {
 
     ...createCommandExistsAvailability(['claude']),
     ...identityConfig,
-    typedOutput: typedOutputCapability(CLAUDE_TOOL, trustedCli?.installedVersion),
+    typedOutput: typedOutputCapability(CLAUDE_TOOL, cliSeat?.current().installedVersion),
 
     async injectUserTurn(injection): Promise<PlannerUserTurnResult> {
       const sessionId = session.getResumeId();

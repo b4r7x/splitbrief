@@ -20,6 +20,7 @@ import { trustedShimGate } from '#testing/helpers/command-shim.js';
 import { createClaudeCodePlanner } from '../../planners/claude-code.js';
 import { withPlannerCallPublishing } from '../run/call-publishing.js';
 import { drainAndFormat } from '../planning/queue-drain.js';
+import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
 
 const message: QueuedMessage = {
   id: 'msg-1',
@@ -114,7 +115,7 @@ describe('dispatchNativeInjection', () => {
     const planner = withPlannerCallPublishing(
       createClaudeCodePlanner({
         authChannel: 'session',
-        trustedCli: trustedShimGate({ dir: shimDir, tool: 'claude-code' }),
+        cliSeat: admittedCliSeat(trustedShimGate({ dir: shimDir, tool: 'claude-code' })),
       }),
       { bus, getPhase: () => state.phase },
     );

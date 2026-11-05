@@ -10,6 +10,15 @@ import type { CliProbeContract } from '../cli-tools/contract.js';
 import { resolveCustomExecutable } from '../resolve-cli-executable.js';
 import { collectRunnerAdmissionChecks, prepareExecution } from './prepare-execution.js';
 import type { PrepareExecutionDependencies } from './types.js';
+import {
+  activateCompatibleCliShim,
+  installCompatibleCliShim,
+} from '#testing/helpers/compatible-cli-shim.js';
+import { createTestGitRepo } from '#testing/helpers/git.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import { createImplementerSeat } from '../../orchestrator/run/init-seats.js';
+import { createEventBus } from '../../events/bus.js';
+import { createCustomRunnerRuntime } from '../custom-runner-runtime.js';
 
 const tempDirs: string[] = [];
 
@@ -199,4 +208,113 @@ describe('three seats on one CLI whose --version hangs', () => {
     },
     30_000,
   );
+});
+
+describe('a CLI tool written over in place during a run', () => {
+  const seat = { kind: 'cli', tool: 'codex', model: 'gpt-6-mini' } as const;
+
+  function codexRelease(directory: string, version: string) {
+    return installCompatibleCliShim({
+      directory,
+      tool: 'codex',
+      authChannel: 'session',
+      version,
+      invocation: {
+        stdoutLines: [
+          JSON.stringify({
+            type: 'item.completed',
+            item: { type: 'agent_message', text: `built by ${version}` },
+          }),
+          JSON.stringify({ type: 'turn.completed' }),
+        ],
+      },
+    });
+  }
+
+  /** Prepares a run whose every seat is the Codex release on PATH, and builds its BUILD seat. */
+  async function preparedBuildSeat(projectDir: string) {
+    const config = makeConfig({ planner: seat, implementer: seat, reviewer: seat });
+    const outcome = await prepareExecution({
+      feature: 'rewrite in place',
+      projectDir,
+      effectiveConfig: config,
+      signal: new AbortController().signal,
+      policy: {
+        purpose: 'new-workflow',
+        interaction: 'headless',
+        unverifiedAuth: 'denied',
+        allowRepoRunners: false,
+        allowHooks: true,
+      },
+      deps: { collectReadiness: async () => ({ report: readyReport(projectDir), config }) },
+    });
+    if (outcome.kind !== 'prepared') {
+      throw new Error(`Preparation did not admit the seats: ${JSON.stringify(outcome)}`);
+    }
+    const { implementer } = await createImplementerSeat({
+      config: outcome.execution.config,
+      prepared: outcome.execution,
+      customRuntime: createCustomRunnerRuntime({
+        projectDir,
+        sessionId: 'rewrite-in-place',
+        sweepStaleReviews: false,
+        admission: { interaction: 'headless', allowRepoRunners: false },
+        onArtifactApproval: async () => ({ approved: true as const }),
+      }),
+      signal: undefined,
+      bus: createEventBus(),
+      injectedImplementer: undefined,
+    });
+    return {
+      build: () =>
+        implementer.implement({
+          task: makeTask(),
+          projectDir,
+          config: outcome.execution.config,
+          context: { name: 'rewrite-in-place', dir: projectDir },
+          onOutput: () => {},
+          allowNoChange: true,
+        }),
+    };
+  }
+
+  it('BUILD checks a newer release written over the admitted file and finishes the call on it', async () => {
+    const projectDir = tempDir('rewrite-in-place-project');
+    createTestGitRepo(projectDir);
+    const binDir = tempDir('rewrite-in-place-bin');
+    const restoreShim = activateCompatibleCliShim(codexRelease(binDir, '0.40.0'));
+    try {
+      const { build } = await preparedBuildSeat(projectDir);
+      expect(await build()).toMatchObject({ success: true, output: 'built by 0.40.0' });
+
+      codexRelease(binDir, '0.41.0');
+      const result = await build();
+
+      expect(result.error).toBeUndefined();
+      expect(result).toMatchObject({ success: true, output: 'built by 0.41.0' });
+    } finally {
+      restoreShim();
+    }
+  });
+
+  it('BUILD stops on a check failure when the release written over the admitted file is too old', async () => {
+    const projectDir = tempDir('rewrite-too-old-project');
+    createTestGitRepo(projectDir);
+    const binDir = tempDir('rewrite-too-old-bin');
+    const restoreShim = activateCompatibleCliShim(codexRelease(binDir, '0.40.0'));
+    try {
+      const { build } = await preparedBuildSeat(projectDir);
+
+      codexRelease(binDir, '0.0.1');
+      const result = await build();
+
+      expect(result).toMatchObject({
+        success: false,
+        outcome: 'runner-check-failed',
+        error: expect.stringContaining('OpenAI Codex CLI version is not compatible.'),
+      });
+    } finally {
+      restoreShim();
+    }
+  });
 });

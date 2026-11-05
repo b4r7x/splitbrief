@@ -18,9 +18,11 @@ import {
   resolveCliExecutable,
   resolveCliExecutableAliases,
   resolveCustomExecutable,
+  revalidateCliExecutableIdentity,
   sanitizedRuntimePath,
 } from './resolve-cli-executable.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { versionedCli } from '#testing/helpers/versioned-cli.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 const CURSOR_PRIMARY_EXECUTABLE = 'cursor-agent';
@@ -648,4 +650,44 @@ describe('sanitizedRuntimePath', () => {
     expect(entries).not.toContain(realpathSync(dotDotBin));
     expect(entries).toContain(realpathSync(repoOther));
   });
+});
+
+describe('revalidateCliExecutableIdentity on a versioned install', () => {
+  async function admittedReleaseA() {
+    const root = createTempDir('revalidate-versioned');
+    const projectDir = createTempDir('revalidate-versioned-project');
+    dirs.push(root, projectDir);
+    const cli = versionedCli({ root, command: 'vendor-cli' });
+    cli.write('a', '#!/bin/sh\necho a\n');
+    cli.write('b', '#!/bin/sh\necho release-b\n');
+    cli.pointTo('a');
+    setEnv('PATH', cli.binDir);
+    const receipt = await resolveCliExecutable({ command: 'vendor-cli', projectDir });
+    expect(receipt.path).toBe(realpathSync(cli.executable('a')));
+    return { cli, receipt };
+  }
+
+  itUnix(
+    'keeps matching the admitted release after the PATH symlink moves to a new one',
+    async () => {
+      const { cli, receipt } = await admittedReleaseA();
+
+      cli.pointTo('b');
+
+      await expect(revalidateCliExecutableIdentity(receipt)).resolves.toBe('match');
+    },
+  );
+
+  itUnix(
+    'reports the admitted release rewritten in place as drift and deleted as missing',
+    async () => {
+      const { cli, receipt } = await admittedReleaseA();
+
+      cli.write('a', '#!/bin/sh\necho a rewritten in place\n');
+      await expect(revalidateCliExecutableIdentity(receipt)).resolves.toBe('drift');
+
+      cli.prune('a');
+      await expect(revalidateCliExecutableIdentity(receipt)).resolves.toBe('missing');
+    },
+  );
 });

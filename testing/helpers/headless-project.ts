@@ -2,7 +2,7 @@ import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
+import { makeRunnerGate, testCliSeats } from '#testing/helpers/runner-gate.js';
 import { SPLITBRIEF_DIR, CONFIG_FILE } from '../../src/core/paths.js';
 import { resolveImplementerProfiles } from '../../src/core/config/accessors/implementer-profiles.js';
 import { configuredReviewerRunner } from '../../src/core/config/accessors/reviewer-runner.js';
@@ -50,6 +50,7 @@ export function preparedHeadlessExecution(input: {
       metadata: {},
     },
     gates,
+    cliSeats: testCliSeats(gates),
     session: { kind: 'existing', ref, active },
     runtime: {
       feature: input.feature,

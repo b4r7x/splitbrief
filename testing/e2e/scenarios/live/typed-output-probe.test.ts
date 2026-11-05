@@ -15,6 +15,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { runLiveToolRow } from '../../helpers/live-harness.js';
+import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
 
 const itLive = process.env.SPLITBRIEF_REAL_CLI_E2E === '1' ? it : it.skip;
 
@@ -120,13 +121,16 @@ describe('live typed-output probe', () => {
               const gate = { ...trustedShimGate({ dir: binDir, tool }), installedVersion: version };
               const planner =
                 tool === 'claude-code'
-                  ? createClaudeCodePlanner({ authChannel: undefined, trustedCli: gate })
+                  ? createClaudeCodePlanner({
+                      authChannel: undefined,
+                      cliSeat: admittedCliSeat(gate),
+                    })
                   : createCliPlanner({
                       config: makeConfig({
                         planner: { kind: 'cli', tool, model },
                         implementer: { service: 'ollama', offering: 'local' },
                       }),
-                      trustedCli: gate,
+                      cliSeat: admittedCliSeat(gate),
                     });
 
               const call = planner.typedCall({

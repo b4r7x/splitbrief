@@ -9,7 +9,7 @@ import { writeActive } from '../../core/sessions/active-pointer.js';
 import { currentProcessStartTimeMs } from '../../lib/process/start-time.js';
 import { checkSessionLiveness } from '../../core/sessions/lockfile.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
-import { parsePreparedConfig } from '../../engine/runners/prepared-execution.js';
+import { parsePreparedConfig, type RunnerGate } from '../../engine/runners/prepared-execution.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -18,6 +18,7 @@ import { writeConfig } from '../../core/config/load/io.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../core/paths.js';
 import { installDiagnosticSink, warnStderr } from '../../lib/warn.js';
 import type { ResumeTailDeps } from './continue/resume.js';
+import { testCliSeats } from '#testing/helpers/runner-gate.js';
 
 let tmp: string;
 
@@ -173,6 +174,25 @@ describe('resume command', () => {
             sessionId: input.existingSession.sessionId,
             generation: '55555555-5555-4555-8555-555555555555',
           };
+          const gates: RunnerGate[] = [
+            {
+              kind: 'cli',
+              tool: 'claude-code',
+              slot: { role: 'planner' },
+              preparationId: 'prepared-cli-resume',
+              executable: {
+                path: '/usr/local/bin/claude',
+                fingerprint: { dev: 1, ino: 2, size: 3, mtimeMs: 4 },
+                executableIdentity: {
+                  canonicalPath: '/usr/local/bin/claude',
+                  realPath: '/usr/local/bin/claude',
+                  platformFileId: '1:2',
+                  fingerprint: `1:2:3:4:sha256:${'a'.repeat(64)}`,
+                  resolvedAt: 1,
+                },
+              },
+            },
+          ];
           return {
             kind: 'prepared',
             execution: {
@@ -189,25 +209,8 @@ describe('resume command', () => {
                 sections: [],
                 metadata: {},
               },
-              gates: [
-                {
-                  kind: 'cli',
-                  tool: 'claude-code',
-                  slot: { role: 'planner' },
-                  preparationId: 'prepared-cli-resume',
-                  executable: {
-                    path: '/usr/local/bin/claude',
-                    fingerprint: { dev: 1, ino: 2, size: 3, mtimeMs: 4 },
-                    executableIdentity: {
-                      canonicalPath: '/usr/local/bin/claude',
-                      realPath: '/usr/local/bin/claude',
-                      platformFileId: '1:2',
-                      fingerprint: `1:2:3:4:sha256:${'a'.repeat(64)}`,
-                      resolvedAt: 1,
-                    },
-                  },
-                },
-              ],
+              gates,
+              cliSeats: testCliSeats(gates),
               session: { kind: 'existing', ref: input.existingSession, active },
               runtime: {
                 feature: input.feature,

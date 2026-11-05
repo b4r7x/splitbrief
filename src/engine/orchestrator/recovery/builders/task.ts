@@ -873,6 +873,45 @@ export function buildRepeatedTimeoutRecoveryIssue(
 }
 
 /**
+ * A tool that changed during the run and failed its new check. Every attempt
+ * would start the same changed tool, so the brief halts on the check, and Try
+ * again checks the tool again.
+ */
+export function buildRunnerCheckFailedRecoveryIssue(
+  opts: RunnerFailureRecoveryOptions,
+): RecoveryIssue {
+  const displayName = getRunnerCatalogDisplayName(opts.runner);
+  const seatSwap = switchSeatOffer(opts.seatSwap);
+  const actions = haltActions('runner-check-failed', [
+    'retry-same-worker',
+    seatSwap === undefined ? undefined : 'switch-seat',
+    'skip-current-task',
+    'end-run',
+  ]);
+  return createRecoveryIssue({
+    id: opts.id,
+    seat: 'build',
+    reason: 'runner-check-failed',
+    phase: opts.phase ?? 'implementing',
+    task: opts.task,
+    files: taskFiles(opts.task),
+    affectedTaskIds: [opts.task.id],
+    message: `${displayName} changed during the run and failed its check on ${opts.task.id}`,
+    details: [
+      opts.toolMessage,
+      'The run stopped instead of starting a tool that did not pass its check.',
+      ...attemptDetails(opts.attempts),
+    ],
+    selectedImplementerProfile: opts.selectedImplementerProfile,
+    ...(seatSwap !== undefined && { switchSeat: seatSwap }),
+    facts: compactFacts({ tool: displayName, model: runnerModel(opts.runner) }),
+    availableActions: actions,
+    recommendedAction: chooseRecommended(actions),
+    createdAt: opts.createdAt,
+  });
+}
+
+/**
  * A halt on what the isolation checks found around one implementer call.
  * The checkout gets nothing until Apply, or, in checkout mode, gets the attempt's
  * edits put back, so the brief halts on the evidence
@@ -1035,6 +1074,7 @@ const RUNNER_DEFECT_BUILDERS: Partial<
   'missing-model': buildMissingModelRecoveryIssue,
   'runner-timeout-repeated': buildRepeatedTimeoutRecoveryIssue,
   'input-too-large': buildRunnerInputTooLargeRecoveryIssue,
+  'runner-check-failed': buildRunnerCheckFailedRecoveryIssue,
 };
 
 /**

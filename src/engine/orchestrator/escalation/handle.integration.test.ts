@@ -609,6 +609,54 @@ describe('handleRetryAndEscalation', () => {
     });
   });
 
+  it('a changed tool that fails its check again halts the ladder with a check-failed recovery, without a second consult', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const { callbacks } = makeCallbacks();
+    const { bus, events: busEvents } = makeBusRecorder();
+    const task = makeTask({ id: 'T007' });
+    const state: WorkflowState = { ...makeValidatingState(), tasks: [task] };
+    const { planner, prompts } = consultPlanner([guidanceAnswer('The tool changed', 'Retry.')]);
+    const implementer = makeImplementer({
+      retry: vi.fn().mockResolvedValue({
+        success: false,
+        output: '',
+        error: 'OpenAI Codex CLI version is not compatible.',
+        outcome: 'runner-check-failed',
+      }),
+    });
+
+    const { result, state: finalState } = await handleRetryAndEscalation({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig(),
+        planner,
+        callbacks,
+        implementer,
+        bus,
+      }),
+      task,
+      initialError: 'type error',
+      currentState: state,
+    });
+
+    expect(result.completed).toBe(false);
+    expect(prompts).toHaveLength(1);
+    expect(finalState.pendingRecovery).toMatchObject({
+      reason: 'runner-check-failed',
+      taskId: 'T007',
+      availableActions: expect.arrayContaining([
+        'retry-same-worker',
+        'skip-current-task',
+        'end-run',
+      ]),
+      recommendedAction: 'retry-same-worker',
+    });
+    expect(busEvents.find((e) => e.type === 'recovery_prompted')).toMatchObject({
+      reason: 'runner-check-failed',
+    });
+  });
+
   it('a retry refused for a spent provider balance halts on the seat without a second consult', async () => {
     // Recorded on 2026-10-05: opencode with `deepseek/deepseek-flash` on a spent DeepSeek account.
     const balance =

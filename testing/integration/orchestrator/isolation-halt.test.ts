@@ -12,6 +12,7 @@ import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { createChangeDetector } from '../../../src/engine/change-detection.js';
 import { createCliImplementer } from '../../../src/engine/implementers/cli.js';
 import { createImplementerBase } from '../../../src/engine/implementers/pipeline/run.js';
+import type { CliSeat } from '../../../src/engine/runners/start-gate.js';
 import type { ImplementerPublisher, InvokeOpts } from '../../../src/engine/implementers/types.js';
 import { createImplementerPublisher } from '../../../src/engine/orchestrator/events.js';
 import { applyRecoveryAction } from '../../../src/engine/orchestrator/recovery/actions.js';
@@ -37,6 +38,7 @@ import {
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
+import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
 
 const TARGET = 'src/greet.ts';
 const SOURCE = 'export const greet = (name: string): string => name;\n';
@@ -134,10 +136,10 @@ function installEscapingOpencodeShim(checkoutFile: string): void {
     { mode: 0o755 },
   );
   restorePath = prependPath(shimDir);
-  shimGates.push(trustedShimGate({ dir: shimDir, tool: 'opencode' }));
+  shimSeats.push(admittedCliSeat(trustedShimGate({ dir: shimDir, tool: 'opencode' })));
 }
 
-const shimGates: ReturnType<typeof trustedShimGate>[] = [];
+const shimSeats: CliSeat[] = [];
 
 describe('isolation halt through the orchestrator', { timeout: 90_000 }, () => {
   it('stops a CLI implementer at a tool call into the checkout, halts the brief, and a retry finishes it', async () => {
@@ -159,7 +161,7 @@ describe('isolation halt through the orchestrator', { timeout: 90_000 }, () => {
           config,
           isolation: makeWorktreeIsolation({ projectDir, sessionId }),
           implementer: createCliImplementer(opencodeConfig(), {
-            trustedCli: shimGates.at(-1),
+            cliSeat: shimSeats.at(-1),
           }),
         }),
         initialState,

@@ -257,7 +257,7 @@ describe('createConfiguredCustomPlanner admission and output behavior', () => {
 
       await expect(
         planner.review('review this', projectDir, { onOutput: vi.fn() }),
-      ).rejects.toMatchObject({ kind: 'custom-runner-executable-drifted' });
+      ).rejects.toMatchObject({ kind: 'custom-runner-executable-resolution-drifted' });
 
       expect(existsSync(admittedSentinel)).toBe(false);
       expect(existsSync(competingSentinel)).toBe(false);

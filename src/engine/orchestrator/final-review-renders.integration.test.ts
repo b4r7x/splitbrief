@@ -38,6 +38,7 @@ import { runFinalReviewPhase } from './final-review.js';
 import { NO_VISION_REVIEW } from './review-renders.js';
 import { createCliPlanner } from '../planners/cli.js';
 import type { ConfiguredProviderRuntime } from '../detection/provider-outcomes.js';
+import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
 
 const dirs: string[] = [];
 
@@ -354,7 +355,7 @@ describe('final review render delivery', () => {
     try {
       const reviewer = createCliPlanner({
         config: makeNoValidationConfig({ planner: { kind: 'cli', tool: 'codex' } }),
-        trustedCli: trustedShimGate({ dir: shimDir, tool: 'codex' }),
+        cliSeat: admittedCliSeat(trustedShimGate({ dir: shimDir, tool: 'codex' })),
       });
 
       const result = await runFinalReviewPhase({

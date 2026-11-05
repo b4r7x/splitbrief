@@ -27,6 +27,7 @@ import {
 } from '#testing/helpers/cursor-refusal.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import type { ImplementerPublisher } from './types.js';
+import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
 
 let projectDir: string;
 let shimDir: string;
@@ -38,7 +39,8 @@ function createCliImplementer(
 ): ReturnType<typeof createCliImplementerImpl> {
   return createCliImplementerImpl(config, {
     ...options,
-    trustedCli: options?.trustedCli ?? trustedShimGate({ dir: shimDir, tool: config.tool }),
+    cliSeat:
+      options?.cliSeat ?? admittedCliSeat(trustedShimGate({ dir: shimDir, tool: config.tool })),
   });
 }
 
@@ -168,10 +170,10 @@ it('attaches the shared steering port to the fallback implementer after a Codex 
   expect(port.current()).toBeNull();
   let delivery: Promise<SteerOutcome> | undefined;
   const fallback = createCliImplementer(cliClaudeImplementer, {
-    trustedCli: {
+    cliSeat: admittedCliSeat({
       ...trustedShimGate({ dir: shimDir, tool: 'claude-code' }),
       installedVersion: '2.1.296',
-    },
+    }),
     publisher: {
       publishRunning: () => {},
       publishDone: () => {},
@@ -218,10 +220,10 @@ it('steers OpenCode through the implementer sandbox with bridged credentials and
   const port = createSteeringPort();
   let delivery: Promise<SteerOutcome> | undefined;
   const implementer = createCliImplementer(runner, {
-    trustedCli: {
+    cliSeat: admittedCliSeat({
       ...trustedShimGate({ dir: shimDir, tool: 'opencode' }),
       installedVersion: '2.0.26',
-    },
+    }),
     publisher: {
       publishRunning: () => {},
       publishDone: () => {},
@@ -1513,10 +1515,10 @@ it.each(['implement', 'retry'] as const)(
     const sends: Promise<SteerOutcome>[] = [];
     let started = false;
     const implementer = createCliImplementer(cliClaudeImplementer, {
-      trustedCli: {
+      cliSeat: admittedCliSeat({
         ...trustedShimGate({ dir: shimDir, tool: 'claude-code' }),
         installedVersion: '2.1.296',
-      },
+      }),
       publisher: {
         publishRunning: () => {},
         publishDone: () => {},

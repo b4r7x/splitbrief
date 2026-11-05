@@ -9,7 +9,7 @@ import {
   makeImplementer,
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
+import { makeRunnerGate, testCliSeats } from '#testing/helpers/runner-gate.js';
 import { initializeWorkflow } from './init.js';
 import { createRunIsolation } from '../isolation/create.js';
 import type { RunIsolation } from '../isolation/types.js';
@@ -157,6 +157,7 @@ async function initializeFromCaller(args: ReturnType<typeof makeInitArgs>) {
           metadata: {},
         },
         gates,
+        cliSeats: testCliSeats(gates),
         session: {
           kind: 'existing',
           ref: { projectDir: args.projectDir, sessionId: args.sessionId },

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { chmod, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { CliExecutableReceiptSchema } from '../../core/discovery/detection.js';
@@ -8,9 +8,14 @@ import { withTempDir } from '#testing/helpers/temp-dir.js';
 import {
   admitFreshCliStart,
   assertCliStartGate,
+  callAdmittedCli,
+  createCliSeatGates,
   runnerGateFor,
   type CliStartGate,
+  type CliToolRecheck,
 } from './start-gate.js';
+import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
+import { error } from '../../utils/error.js';
 import type { RunnerGate, RunnerGateExpectation } from './prepared-execution.js';
 import type { AdmittedCustomRunnerInvocation } from './custom-launchability.js';
 
@@ -384,6 +389,154 @@ describe('start-gate receipt recheck against disk', () => {
       };
 
       expect(assertCliStartGate('codex', gate)).toEqual(gate.executable);
+    });
+  });
+
+  describe('the run-scoped CLI seat cell', () => {
+    const preparationId = 'preparation-1';
+    const planner = { role: 'planner' } as const;
+    const implementer = { role: 'implementer', profile: 'default' } as const;
+    const reviewer = { role: 'reviewer' } as const;
+
+    function cliGate(slot: RunnerGate['slot'], gate: CliStartGate): RunnerGate {
+      return { kind: 'cli', slot, preparationId, tool: gate.tool, executable: freshOf(gate) };
+    }
+
+    function freshOf(gate: CliStartGate) {
+      return CliExecutableReceiptSchema.parse(gate.executable);
+    }
+
+    function admitted(gates: readonly RunnerGate[]): CliToolRecheck {
+      return {
+        kind: 'admitted',
+        gates: gates.flatMap((gate) => (gate.kind === 'cli' ? [gate] : [])),
+      };
+    }
+
+    it('re-checks a tool once for every seat on it and gives each of those seats the new receipt', async () => {
+      await withTempDir('cli-seat-single-flight', async (directory) => {
+        const codexPath = join(directory, 'codex');
+        const claudePath = join(directory, 'claude');
+        await writeFile(codexPath, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+        await writeFile(claudePath, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+        const codex = await receiptFor(codexPath);
+        const claude: CliStartGate = { ...(await receiptFor(claudePath)), tool: 'claude-code' };
+        await writeFile(codexPath, '#!/bin/sh\nexit 0 # updated\n', { mode: 0o755 });
+        const updated = await receiptFor(codexPath);
+        const calls: CliToolId[] = [];
+        let answer: () => void = () => {};
+        const answered = new Promise<void>((resolve) => {
+          answer = resolve;
+        });
+        const cell = createCliSeatGates({
+          gates: [cliGate(planner, codex), cliGate(implementer, codex), cliGate(reviewer, claude)],
+          recheck: async (tool) => {
+            calls.push(tool);
+            await answered;
+            return admitted([cliGate(planner, updated), cliGate(implementer, updated)]);
+          },
+        });
+
+        const both = Promise.all([
+          cell.seat(planner).recheck(undefined),
+          cell.seat(implementer).recheck(undefined),
+        ]);
+        answer();
+        await both;
+
+        expect(calls).toEqual(['codex']);
+        expect(cell.seat(planner).current().executable).toEqual(updated.executable);
+        expect(cell.seat(implementer).current().executable).toEqual(updated.executable);
+        expect(cell.seat(reviewer).current().executable).toEqual(claude.executable);
+
+        await cell.seat(implementer).recheck(undefined);
+        expect(calls).toEqual(['codex', 'codex']);
+      });
+    });
+
+    it.each(['cli-executable-identity-drift', 'spawn-not-found'] as const)(
+      'takes a call that ends with %s before spawn as a drift: one re-check, then one call on the new receipt',
+      async (code) => {
+        await withTempDir('cli-seat-result-drift', async (directory) => {
+          const path = join(directory, 'codex');
+          await writeFile(path, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+          const admittedGate = await receiptFor(path);
+          const calls: CliToolId[] = [];
+          const cell = createCliSeatGates({
+            gates: [cliGate(implementer, admittedGate)],
+            recheck: async (tool) => {
+              calls.push(tool);
+              return admitted([cliGate(implementer, await receiptFor(path))]);
+            },
+          });
+          const executables: unknown[] = [];
+          const call = vi.fn(async (executable: unknown) => {
+            executables.push(executable);
+            return executables.length === 1
+              ? makeRunnerCallResult({ status: 'failed', text: '', error: { code, message: 'x' } })
+              : makeRunnerCallResult({ status: 'completed', text: 'done' });
+          });
+
+          const result = await callAdmittedCli(cell.seat(implementer), undefined, call);
+
+          expect(result).toMatchObject({ status: 'completed', text: 'done' });
+          expect(calls).toEqual(['codex']);
+          expect(call).toHaveBeenCalledTimes(2);
+        });
+      },
+    );
+
+    it('throws one typed check failure when the changed tool fails its re-check, and calls nothing', async () => {
+      await withTempDir('cli-seat-blocked', async (directory) => {
+        const path = join(directory, 'codex');
+        await writeFile(path, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+        const admittedGate = await receiptFor(path);
+        await writeFile(path, '#!/bin/sh\nexit 0 # updated in place\n', { mode: 0o755 });
+        const failure = {
+          message: 'OpenAI Codex CLI version is not compatible.',
+          fix: 'Install the tested OpenAI Codex CLI version (0.40.0), then run `splitbrief doctor` again.',
+          cause: 'incompatible-version',
+        } as const;
+        const cell = createCliSeatGates({
+          gates: [cliGate(implementer, admittedGate)],
+          recheck: async () => ({ kind: 'blocked', failure }),
+        });
+        const call = vi.fn(async () => makeRunnerCallResult({ status: 'completed', text: 'done' }));
+
+        await expect(
+          callAdmittedCli(cell.seat(implementer), undefined, call),
+        ).rejects.toMatchObject({
+          kind: 'cli-tool-check-failed',
+          message: failure.message,
+          data: { tool: 'codex', fix: failure.fix, cause: 'incompatible-version' },
+        });
+        expect(call).not.toHaveBeenCalled();
+      });
+    });
+
+    it('passes a failure that is not a drift through without a re-check', async () => {
+      await withTempDir('cli-seat-no-drift', async (directory) => {
+        const path = join(directory, 'codex');
+        await writeFile(path, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+        const recheck = vi.fn(async () => admitted([]));
+        const seat = createCliSeatGates({
+          gates: [cliGate(implementer, await receiptFor(path))],
+          recheck,
+        }).seat(implementer);
+        const exited = makeRunnerCallResult({
+          status: 'failed',
+          text: '',
+          error: { code: 'non-zero-exit', message: 'exit 2' },
+        });
+
+        await expect(callAdmittedCli(seat, undefined, async () => exited)).resolves.toBe(exited);
+        await expect(
+          callAdmittedCli(seat, undefined, async () => {
+            throw error('runner-auth-channel-unenforced', 'not proven');
+          }),
+        ).rejects.toMatchObject({ kind: 'runner-auth-channel-unenforced' });
+        expect(recheck).not.toHaveBeenCalled();
+      });
     });
   });
 });

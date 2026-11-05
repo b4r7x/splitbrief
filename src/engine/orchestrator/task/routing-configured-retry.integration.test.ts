@@ -29,6 +29,7 @@ import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { createValidator } from '../validation/run.js';
 import { configForProfile, createTaskImplementer } from './routing.js';
 import type { EscalationContext } from '../escalation/types.js';
+import { testCliSeats } from '#testing/helpers/runner-gate.js';
 
 let dirs: string[] = [];
 
@@ -239,6 +240,7 @@ async function configuredRetryContext(
         preparedConfig: input.config,
         preparationId,
         gates,
+        cliSeats: testCliSeats(gates),
         slot: factoryOptions.slot ?? { role: 'implementer', profile: 'default' },
       }),
   };

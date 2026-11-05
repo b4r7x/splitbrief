@@ -6,12 +6,12 @@ import type { CustomRunnerRuntimePort, RunnerRuntime } from '../runners/types.js
 import type { RunnerCallContext, RunnerCallEvent } from '../calls/types.js';
 import type { TypedSeatCall } from '../runners/typed-output.js';
 import type { PlannerTierRole } from '../../core/runners/seat-roles.js';
-import type { CliStartGate } from '../runners/start-gate.js';
+import type { CliSeat } from '../runners/start-gate.js';
 import type { ApiRuntimeContext } from '../providers/runtime-context.js';
 
 export interface PlannerFactoryOptions {
-  /** Canonical CLI identity admitted by the start-readiness gate. */
-  trustedCli?: CliStartGate | undefined;
+  /** The run seat whose admitted CLI gate every call of the adapter starts from. */
+  cliSeat?: CliSeat | undefined;
   customRuntime?: CustomRunnerRuntimePort | undefined;
   /** The run's global skills, which the seat may read and never write. */
   skillRoots?: readonly string[] | undefined;

@@ -20,6 +20,7 @@ import {
   installClaudeSlowShim,
   makeClaudeTestImage,
 } from '#testing/helpers/claude-cli-shim.js';
+import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
 
 /**
  * These tests exercise the real subprocess seam. Each test installs a shim
@@ -109,7 +110,7 @@ describe('shared Claude planner invocation', () => {
     const events: RunnerCallEvent[] = [];
     const planner = createClaudeCodePlanner({
       authChannel: undefined,
-      trustedCli: { executable: trustedClaudeExecutable() },
+      cliSeat: admittedCliSeat({ tool: 'claude-code', executable: trustedClaudeExecutable() }),
     });
     const result = await planner
       .typedCall({
@@ -166,7 +167,7 @@ describe('shared Claude planner invocation', () => {
       );
       const planner = createClaudeCodePlanner({
         authChannel: undefined,
-        trustedCli: { executable: trustedClaudeExecutable() },
+        cliSeat: admittedCliSeat({ tool: 'claude-code', executable: trustedClaudeExecutable() }),
       });
       const result = await planner
         .typedCall({ projectDir, seat: 'planner', callbacks: { onOutput: () => {} } })
@@ -211,7 +212,7 @@ describe('shared Claude planner invocation', () => {
       ]);
       const planner = createClaudeCodePlanner({
         authChannel: undefined,
-        trustedCli: { executable: trustedClaudeExecutable() },
+        cliSeat: admittedCliSeat({ tool: 'claude-code', executable: trustedClaudeExecutable() }),
       });
       const result = await planner
         .typedCall({ projectDir, seat: 'planner', callbacks: { onOutput: () => {} } })
@@ -240,7 +241,7 @@ describe('shared Claude planner invocation', () => {
     const chunks: string[] = [];
     const planner = createClaudeCodePlanner({
       authChannel: undefined,
-      trustedCli: { executable: trustedClaudeExecutable() },
+      cliSeat: admittedCliSeat({ tool: 'claude-code', executable: trustedClaudeExecutable() }),
     });
     const result = await planner
       .typedCall({

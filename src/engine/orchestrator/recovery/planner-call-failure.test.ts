@@ -10,6 +10,7 @@ import { CURSOR_MODEL_REFUSAL } from '#testing/helpers/cursor-refusal.js';
 import { inputTooLargeRefusal } from '../../runners/input-limit.js';
 import { streamError } from '../../streaming/stream-errors.js';
 import { buildPlannerCallFailedRecoveryIssue } from './builders/planner.js';
+import { formatRecoveryPrompt } from '../../../features/workflow/recovery-prompt.js';
 import {
   diagnosePlannerCallFailure,
   plannerCallHaltIssue,
@@ -342,6 +343,59 @@ describe('a model refusal on a planner-tier seat', () => {
       expect(failed.failure).toBe('call-failed');
       expect(plannerHaltRow(issue, failed)).toBe(failed.message);
     });
+  });
+});
+
+describe('a planner-tier tool that changed and failed its check again', () => {
+  const runner = cliSeat('codex');
+  const task = makeTask({ id: 'T001', suggestedFiles: ['src/greet.ts'] });
+  const fix =
+    'Install the tested OpenAI Codex CLI version (0.40.0), then run `splitbrief doctor` again.';
+
+  function haltFor(
+    cause: 'incompatible-version' | 'unauthenticated',
+    message: string,
+    seat: 'plan' | 'review' = 'plan',
+  ) {
+    const diagnosis = diagnosePlannerCallFailure({
+      err: error('cli-tool-check-failed', message, { tool: 'codex', fix, cause }),
+      label: seat === 'plan' ? 'Planner consult for T001 failed' : 'Final review call failed',
+      runner,
+      seat,
+    });
+    const issue = buildPlannerCallFailedRecoveryIssue({
+      diagnosis,
+      ...(seat === 'plan' && { task }),
+      phase: 'implementing',
+      runner,
+      seat,
+      createdAt: '2026-11-05T12:00:00.000Z',
+    });
+    return { diagnosis, issue };
+  }
+
+  it.each(['plan', 'review'] as const)(
+    'halts the %s seat on a check-failed panel that names the check and its fix and offers Try again',
+    (seat) => {
+      const words = 'OpenAI Codex CLI version is not compatible.';
+      const { diagnosis, issue } = haltFor('incompatible-version', words, seat);
+
+      expect(diagnosis.failure).toBe('runner-check-failed');
+      expect(issue.reason).toBe('runner-check-failed');
+      expect(formatRecoveryPrompt(issue).split('\n')).toContain(`${words} ${fix}`);
+      expect(issue.recommendedAction).toBe('retry-same-worker');
+    },
+  );
+
+  it('reads a check that failed on the sign-in as a sign-out', () => {
+    const { diagnosis, issue } = haltFor(
+      'unauthenticated',
+      'OpenAI Codex CLI credentials are invalid.',
+    );
+
+    expect(diagnosis.failure).toBe('unauthenticated');
+    expect(diagnosis.seatDown?.classification).toEqual({ class: 'account', cause: 'auth' });
+    expect(issue.reason).toBe('runner-unauthenticated');
   });
 });
 

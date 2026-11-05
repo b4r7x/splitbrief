@@ -3,6 +3,7 @@ import { execSync } from 'node:child_process';
 import { existsSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createImplementerBase } from './run.js';
+import { error } from '../../../utils/error.js';
 import type { ImplementerOptions } from '../types.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
@@ -1086,6 +1087,48 @@ describe('createImplementerBase — thrown provider auth failures', () => {
       expect(result.error).toBe(providerDetail);
     }
   });
+});
+
+describe('createImplementerBase — a changed CLI tool that fails its check again', () => {
+  beforeAll(setupProject);
+  afterAll(cleanupProject);
+
+  const fix = 'Fix the tool, then run `splitbrief doctor` again.';
+
+  it.each([
+    [
+      'incompatible-version',
+      'runner-check-failed',
+      'OpenAI Codex CLI version is not compatible.',
+      `OpenAI Codex CLI version is not compatible. ${fix}`,
+    ],
+    [
+      'unauthenticated',
+      'unauthenticated',
+      'OpenAI Codex CLI credentials are invalid.',
+      'OpenAI Codex CLI credentials are invalid.',
+    ],
+  ] as const)(
+    'a re-check that fails on %s ends the attempt with outcome %s and the words its halt quotes',
+    async (cause, outcome, message, words) => {
+      const invoke = vi
+        .fn()
+        .mockRejectedValue(error('cli-tool-check-failed', message, { tool: 'codex', fix, cause }));
+      const implementer = createImplementerBase(
+        makeBaseConfig({ extractsCode: false, backendKind: 'cli', invoke }),
+      );
+
+      const result = await implementer.implement({
+        task: makeTask(),
+        projectDir,
+        config: makeConfig(),
+        context: defaultContext,
+        onOutput: vi.fn(),
+      });
+
+      expect(result).toMatchObject({ success: false, outcome, error: words });
+    },
+  );
 });
 
 describe('createImplementerBase — unavailabilityReason', () => {

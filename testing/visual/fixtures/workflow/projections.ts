@@ -80,6 +80,7 @@ import {
   buildLeftIsolationRecoveryIssue,
   buildCheckoutChangedRecoveryIssue,
   buildRepeatedTimeoutRecoveryIssue,
+  buildRunnerCheckFailedRecoveryIssue,
   buildDependencyBlockedRecoveryIssue,
   buildMissingModelRecoveryIssue,
   runnerDefectRow,
@@ -90,6 +91,9 @@ import {
 import { parseUsageLimitReset } from '../../../../src/engine/runners/usage-limit.js';
 import { getRunnerCatalogDisplayName } from '../../../../src/core/config/accessors/runner-config.js';
 import { timedOutMessage } from '../../../../src/lib/process/errors.js';
+import { executableChangedMessage } from '../../../../src/engine/runners/resolve-cli-executable.js';
+import { cliToolCheckError } from '../../../../src/engine/runners/start-gate.js';
+import { CLI_TOOL_CATALOG } from '../../../../src/core/runners/cli-tool-catalog.js';
 import type { SeatFailureClassification } from '../../../../src/engine/runners/seat-failure.js';
 import {
   consultHaltDetails,
@@ -4295,6 +4299,44 @@ const repeatedTimeoutRecoveryProjection: WorkflowFixtureProjection = {
   resumeState: haltedResumeState(repeatedTimeoutRecoveryIssue),
 };
 
+const agyName = getRunnerCatalogDisplayName(AGY_BUILD_SEAT);
+
+/** agy changed during the run, an update still in progress, and its new check found no tool. */
+const runnerCheckFailedRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-recovery-runner-check-failed'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  events: [],
+  config: AGY_CREW,
+  resumeState: haltedResumeState(
+    buildRunnerCheckFailedRecoveryIssue({
+      id: 'rec_visual_runner_check_failed',
+      task: HALTED_TASK,
+      runner: AGY_BUILD_SEAT,
+      toolMessage: `${agyName} is not installed. Install ${agyName}, then run \`splitbrief doctor\` again.`,
+      attempts: 1,
+      createdAt: new Date(FIXED_TS).toISOString(),
+    }),
+  ),
+};
+
+/** agy passed its new check, then changed again before the call started. */
+const runnerCheckFailedDriftRecoveryIssue = buildRunnerCheckFailedRecoveryIssue({
+  id: 'rec_visual_runner_check_failed_drift',
+  task: HALTED_TASK,
+  runner: AGY_BUILD_SEAT,
+  toolMessage: `${executableChangedMessage(agyName)} Wait until the ${agyName} update is complete.`,
+  attempts: 1,
+  createdAt: new Date(FIXED_TS).toISOString(),
+});
+
+const runnerCheckFailedDriftRecoveryProjection: WorkflowFixtureProjection = {
+  ...runnerCheckFailedRecoveryProjection,
+  scenarioId: scenarioId('workflow-recovery-runner-check-failed-drift'),
+  resumeState: haltedResumeState(runnerCheckFailedDriftRecoveryIssue),
+};
+
 /** The step a halt on the fixture brief resumes at. */
 const briefStep: StepRef = { kind: 'brief', taskId: WORKFLOW_FIXTURE_TASK_ID, attempt: 0 };
 
@@ -4856,6 +4898,90 @@ const reviewSeatRecoveryProjection: WorkflowFixtureProjection = {
       startedAt: RESUMED_RUN_STARTED_AT,
       phase: 'final-review',
       pendingRecovery: reviewSeatRecoveryIssue(),
+    });
+  },
+};
+
+const codexName = getRunnerCatalogDisplayName(CODEX_PLAN_SEAT);
+
+/** Codex on the plan seat changed during planning, and its new check found an untested version. */
+function planRunnerCheckFailedRecoveryIssue(): RecoveryIssue {
+  const tested = CLI_TOOL_CATALOG.codex.compatibility.testedVersion;
+  return buildPlannerCallFailedRecoveryIssue({
+    id: 'rec_visual_plan_runner_check_failed',
+    diagnosis: diagnosePlannerCallFailure({
+      seat: 'plan',
+      err: cliToolCheckError.failed('codex', {
+        message: `${codexName} version is not compatible.`,
+        fix: `Install the tested ${codexName} version (${tested}), then run \`splitbrief doctor\` again.`,
+        cause: 'incompatible-version',
+      }),
+      label: 'Planning failed',
+      runner: CODEX_PLAN_SEAT,
+    }),
+    phase: 'planning',
+    runner: CODEX_PLAN_SEAT,
+    seatSwap: plannerSeatSwap('plan', 'codex', ['codex', 'claude-code', 'opencode']),
+    createdAt: new Date(FIXED_TS).toISOString(),
+  });
+}
+
+const planRunnerCheckFailedRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-recovery-plan-runner-check-failed'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  get events() {
+    return haltErrorEvents(planRunnerCheckFailedRecoveryIssue());
+  },
+  config: CODEX_PLAN_CREW,
+  get resumeState() {
+    return makeWorkflowState({
+      feature: WORKFLOW_FEATURE,
+      startedAt: RESUMED_RUN_STARTED_AT,
+      phase: 'planning',
+      pendingRecovery: planRunnerCheckFailedRecoveryIssue(),
+    });
+  },
+};
+
+/** Codex on the review seat passed its new check, then changed again before the review call. */
+function reviewRunnerCheckFailedDriftRecoveryIssue(): RecoveryIssue {
+  return buildPlannerCallFailedRecoveryIssue({
+    id: 'rec_visual_review_runner_check_failed_drift',
+    diagnosis: diagnosePlannerCallFailure({
+      seat: 'review',
+      err: cliToolCheckError.failed('codex', {
+        message: executableChangedMessage(codexName),
+        fix: `Wait until the ${codexName} update is complete.`,
+      }),
+      label: 'Final review failed',
+      runner: CODEX_PLAN_SEAT,
+    }),
+    seat: 'review',
+    phase: 'final-review',
+    runner: CODEX_PLAN_SEAT,
+    details: reviewSeatDetails(true),
+    seatSwap: plannerSeatSwap('review', 'codex', ['codex', 'claude-code', 'opencode']),
+    createdAt: new Date(FIXED_TS).toISOString(),
+  });
+}
+
+const reviewRunnerCheckFailedDriftRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-recovery-review-runner-check-failed-drift'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  get events() {
+    return haltErrorEvents(reviewRunnerCheckFailedDriftRecoveryIssue());
+  },
+  config: CODEX_PLAN_CREW,
+  get resumeState() {
+    return makeImplState([{ ...HALTED_TASK, status: 'done' }], {
+      feature: WORKFLOW_FEATURE,
+      startedAt: RESUMED_RUN_STARTED_AT,
+      phase: 'final-review',
+      pendingRecovery: reviewRunnerCheckFailedDriftRecoveryIssue(),
     });
   },
 };
@@ -8315,6 +8441,8 @@ const projections = [
   leftIsolationInPlaceRecoveryProjection,
   checkoutChangedRecoveryProjection,
   repeatedTimeoutRecoveryProjection,
+  runnerCheckFailedRecoveryProjection,
+  runnerCheckFailedDriftRecoveryProjection,
   resolvedRetryRecoveryProjection,
   resolvedSkipRecoveryProjection,
   resolvedDependencySkipRecoveryProjection,
@@ -8325,10 +8453,12 @@ const projections = [
   apiContextRecoveryProjection,
   planSeatRecoveryProjection,
   planTimeoutRecoveryProjection,
+  planRunnerCheckFailedRecoveryProjection,
   planChecksRecoveryProjection,
   planQuestionsRecoveryProjection,
   planSeatSwappedProjection,
   reviewSeatRecoveryProjection,
+  reviewRunnerCheckFailedDriftRecoveryProjection,
   hintSeatRecoveryProjection,
   seatSwitchedProjection,
   manualSeatSwitchedProjection,
@@ -8471,6 +8601,7 @@ export function assertProjectionBounds(projection: WorkflowFixtureProjection): v
     reviewPromptTooLargeRecoveryIssue,
     buildPromptTooLargeRecoveryIssue,
     cursorRefusalRecoveryIssue(),
+    runnerCheckFailedDriftRecoveryIssue,
   ];
   const engineHaltText = [
     ...halts.flatMap((issue) => [issue.message, ...issue.details]),

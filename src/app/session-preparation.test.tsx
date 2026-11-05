@@ -27,6 +27,7 @@ import { overlayStore } from '../stores/ui/overlay.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../lib/terminal/typeahead-grace.js';
 import { SOFT_SEP } from '../core/separators.js';
 import { SessionPreparation } from './session-preparation.js';
+import { testCliSeats } from '#testing/helpers/runner-gate.js';
 
 const ESC = '\u001b';
 
@@ -77,6 +78,7 @@ function preparedExecution(
     preparationId: `resume-${sessionId}`,
     report: readyReport(),
     gates: [],
+    cliSeats: testCliSeats([]),
     session: {
       kind: 'existing',
       ref: { projectDir, sessionId },

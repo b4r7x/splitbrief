@@ -4622,6 +4622,38 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-recovery-plan-runner-check-failed',
+      title: 'Workflow · a PLAN tool that changed during the run and failed its new check',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery-plan-runner-check-failed',
+        title: 'Plan-seat changed-tool check recovery menu',
+        kind: 'question',
+        marker: 'Seat down · OpenAI Codex CLI changed',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-review-runner-check-failed-drift',
+      title: 'Workflow · a REVIEW tool that changed again after its new check passed',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery-review-runner-check-failed-drift',
+        title: 'Review-seat second-change check recovery menu',
+        kind: 'question',
+        marker: 'Seat down · OpenAI Codex CLI changed',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-recovery-repeated-timeout',
       title: 'Workflow · a BUILD seat that timed out twice on one brief',
       surface: screenSurface('workflow'),
@@ -4630,6 +4662,38 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Repeated-timeout recovery menu',
         kind: 'question',
         marker: 'Seat down · Two timeouts in a row',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-runner-check-failed',
+      title: 'Workflow · a BUILD tool that changed during the run and failed its new check',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'runner-check-failed',
+        title: 'Changed-tool check recovery menu',
+        kind: 'question',
+        marker: 'Seat down · Google Antigravity CLI changed',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-runner-check-failed-drift',
+      title: 'Workflow · a BUILD tool that changed again after its new check passed',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'runner-check-failed-drift',
+        title: 'Second-change check recovery menu',
+        kind: 'question',
+        marker: 'Seat down · Google Antigravity CLI changed',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

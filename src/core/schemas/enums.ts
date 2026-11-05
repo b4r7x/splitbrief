@@ -124,6 +124,7 @@ export const RECOVERY_REASONS = [
   'implementer-left-isolation',
   'checkout-changed',
   'runner-timeout-repeated',
+  'runner-check-failed',
   'review-failed',
   'review-input-too-large',
   'required-checks-unrunnable',

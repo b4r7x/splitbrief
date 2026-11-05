@@ -8,6 +8,7 @@ import { buildRequiredChecksUnrunnableRecoveryIssue } from '../../engine/orchest
 import {
   buildCheckoutChangedRecoveryIssue,
   buildReviewFailedRecoveryIssue,
+  buildRunnerCheckFailedRecoveryIssue,
 } from '../../engine/orchestrator/recovery/builders/task.js';
 import { buildApplyPartialRecoveryIssue } from '../../engine/orchestrator/recovery/builders/apply.js';
 import { formatTruncatedList } from '../../core/formatting.js';
@@ -978,6 +979,20 @@ describe('recovery prompt', () => {
     };
     expect(formatRecoveryPrompt(legacyIssue).split('\n')[0]).toBe('Needs you · T005 failed');
     expect(formatRecoveryPrompt(legacyIssue)).not.toContain(legacyWords);
+  });
+
+  it('heads a changed-tool check halt with the cause the Recovery row reads', () => {
+    const issue = buildRunnerCheckFailedRecoveryIssue({
+      task: makeTask({ id: 'T004' }),
+      runner: makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }).implementer,
+      toolMessage: 'OpenAI Codex CLI is not installed. Install OpenAI Codex CLI, then try again.',
+      attempts: 1,
+      createdAt: '2026-04-28T12:00:00.000Z',
+    });
+
+    expect(formatRecoveryPrompt(issue).split('\n')[0]).toBe(
+      'Seat down · OpenAI Codex CLI changed and failed its check',
+    );
   });
 
   it('leaves a substantive review failure on the words it earned', async () => {

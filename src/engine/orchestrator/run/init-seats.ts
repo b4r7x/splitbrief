@@ -42,6 +42,7 @@ export async function createPlannerSeat(input: PlannerSeatInput): Promise<Planne
       preparedConfig: prepared.config,
       preparationId: prepared.preparationId,
       gates: prepared.gates,
+      cliSeats: prepared.cliSeats,
       slot: { role: 'planner' },
       customRuntime,
       skillRoots: input.skillRoots,
@@ -56,6 +57,7 @@ export async function createPlannerSeat(input: PlannerSeatInput): Promise<Planne
           preparedConfig: prepared.config,
           preparationId: prepared.preparationId,
           gates: prepared.gates,
+          cliSeats: prepared.cliSeats,
           slot: { role: 'reviewer' },
           customRuntime,
           skillRoots: input.skillRoots,
@@ -89,6 +91,7 @@ export async function createImplementerSeat(input: ImplementerSeatInput): Promis
       preparedConfig: prepared.config,
       preparationId: prepared.preparationId,
       gates: prepared.gates,
+      cliSeats: prepared.cliSeats,
       slot,
     });
   };

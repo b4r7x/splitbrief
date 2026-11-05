@@ -21,6 +21,7 @@ import {
   buildRepeatedTimeoutRecoveryIssue,
   buildRetryExhaustedRecoveryIssue,
   buildReviewFailedRecoveryIssue,
+  buildRunnerCheckFailedRecoveryIssue,
   buildRunnerInputTooLargeRecoveryIssue,
   buildSeatDownIssue,
   runnerDefectRow,
@@ -1463,6 +1464,59 @@ describe('buildRepeatedTimeoutRecoveryIssue', () => {
       'end-run',
     ]);
     expect(issue.recommendedAction).toBe('switch-seat');
+    expect(issue.switchSeat).toEqual({ seat: 'build', candidates: [{ tool: 'claude-code' }] });
+    expectValidRecoveryIssue(issue);
+  });
+});
+
+describe('buildRunnerCheckFailedRecoveryIssue', () => {
+  const toolMessage =
+    'OpenAI Codex CLI version is not compatible. Install the tested OpenAI Codex CLI version (0.128.0), then run `splitbrief doctor` again.';
+
+  it('names the changed tool, keeps its check words and recommends the retry that checks it again', () => {
+    const issue = buildRunnerCheckFailedRecoveryIssue({
+      task: makeTask({ id: 'T024' }),
+      runner: makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }).implementer,
+      toolMessage,
+      attempts: 1,
+      createdAt,
+    });
+
+    expect(issue.reason).toBe('runner-check-failed');
+    expect(issue.message).toBe(
+      'OpenAI Codex CLI changed during the run and failed its check on T024',
+    );
+    expect(issue.details).toEqual([
+      toolMessage,
+      'The run stopped instead of starting a tool that did not pass its check.',
+      'Attempts: 1',
+    ]);
+    expect(issue.availableActions).toEqual(['retry-same-worker', 'skip-current-task', 'end-run']);
+    expect(issue.recommendedAction).toBe('retry-same-worker');
+    expectValidRecoveryIssue(issue);
+  });
+
+  it('offers the seat switch when another ready tool exists and still recommends the retry', () => {
+    const issue = buildRunnerCheckFailedRecoveryIssue({
+      task: makeTask({ id: 'T024' }),
+      runner: makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }).implementer,
+      toolMessage,
+      attempts: 1,
+      createdAt,
+      seatSwap: {
+        seat: 'build',
+        currentTool: 'codex',
+        detectedTools: [{ tool: 'claude-code', ready: true }],
+      },
+    });
+
+    expect(issue.availableActions).toEqual([
+      'retry-same-worker',
+      'switch-seat',
+      'skip-current-task',
+      'end-run',
+    ]);
+    expect(issue.recommendedAction).toBe('retry-same-worker');
     expect(issue.switchSeat).toEqual({ seat: 'build', candidates: [{ tool: 'claude-code' }] });
     expectValidRecoveryIssue(issue);
   });

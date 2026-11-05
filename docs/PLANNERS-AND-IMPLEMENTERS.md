@@ -26,7 +26,7 @@ Local execution is admitted by `prepareExecution()` in `src/engine/runners/prepa
 
 | `kind` | Authority carried into execution |
 |---|---|
-| `cli` | Fresh exact-context trust, compatibility, authentication, and executable receipt. The executable identity is resolved again before session creation and revalidated immediately before each spawn. |
+| `cli` | Fresh exact-context trust, compatibility, authentication, and executable receipt. The executable identity is resolved again before session creation. Each call starts the exact file that admission checked and re-reads that file (identity on disk and content digest) immediately before each spawn. It does not look the name up on `PATH` again. When that file changed in place or is gone, the seat checks the tool again once through preparation, and every seat on that tool takes the new receipt; a failed check halts as `runner-check-failed`. |
 | `api` | The current provider credential and endpoint-policy validation, bound to the provider and endpoint origin. |
 | `shell` | The current configured-command trust/admission result. |
 | `agent` | The current configured-command trust/admission result. |

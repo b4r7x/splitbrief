@@ -35,6 +35,7 @@ import { createCliPlanner } from '../../planners/cli.js';
 import { callPlanner } from '#testing/helpers/planner-call.js';
 import { prependPath, trustedShimGate } from '#testing/helpers/command-shim.js';
 import { CURSOR_MODEL_REFUSAL, writeCursorRefusalShim } from '#testing/helpers/cursor-refusal.js';
+import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
 
 let dirs: string[] = [];
 
@@ -109,7 +110,7 @@ describe('handlePlanningFailure', () => {
         writeConfig(ref.projectDir, config);
         const planner = createCliPlanner({
           config,
-          trustedCli: trustedShimGate({ dir: shimDir, tool: 'cursor' }),
+          cliSeat: admittedCliSeat(trustedShimGate({ dir: shimDir, tool: 'cursor' })),
         });
         const err = await callPlanner(planner, {
           prompt: 'plan a change',

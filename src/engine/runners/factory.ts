@@ -53,7 +53,7 @@ async function loadPlanner(
         const mod = await loadClaudeCodePlanner();
         return mod.createClaudeCodePlanner({
           authChannel: config.planner.authChannel,
-          trustedCli: options?.trustedCli,
+          cliSeat: options?.cliSeat,
           model: config.planner.model,
           initialSessionId,
           effort: config.planner.effort,
@@ -108,7 +108,7 @@ export async function createPlanner(
     const admission = admitPlannerBackend({ config, authority, seat: 'planner' });
     planner = await loadPlanner(config, 'planner', options.initialSessionId, {
       ...options,
-      ...(admission.trustedCli !== undefined && { trustedCli: admission.trustedCli }),
+      ...(admission.cliSeat !== undefined && { cliSeat: admission.cliSeat }),
     });
   }
 
@@ -154,7 +154,7 @@ export async function createReviewer(
     const admission = admitPlannerBackend({ config: reviewerConfig, authority, seat: 'reviewer' });
     reviewer = await loadPlanner(reviewerConfig, 'reviewer', null, {
       ...options,
-      ...(admission.trustedCli !== undefined && { trustedCli: admission.trustedCli }),
+      ...(admission.cliSeat !== undefined && { cliSeat: admission.cliSeat }),
     });
   }
 
@@ -204,13 +204,7 @@ export async function createImplementer(
   );
   const adapterOptions: ImplementerFactoryOptions = {
     ...options,
-    ...(gate.kind === 'cli' && {
-      trustedCli: {
-        tool: gate.tool,
-        executable: gate.executable,
-        installedVersion: gate.installedVersion,
-      },
-    }),
+    ...(gate.kind === 'cli' && { cliSeat: authority.cliSeats.seat(authority.slot) }),
   };
   switch (kind) {
     case 'cli': {

@@ -19,7 +19,7 @@ import {
   CURSOR_MODEL_REFUSAL_FORMS,
   writeCursorRefusalShim,
 } from '#testing/helpers/cursor-refusal.js';
-import { processError } from '../../lib/process/errors.js';
+import { cliToolCheckError } from '../runners/start-gate.js';
 import { TASKS_FILE } from '../../core/paths.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import type { PlannerFactoryOptions } from './types.js';
@@ -37,6 +37,7 @@ import { saveState } from '../../core/state/persistence.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
 import { runPlanningPhase } from '../orchestrator/planning/run.js';
 import { diagnosePlannerCallFailure } from '../orchestrator/recovery/planner-call-failure.js';
+import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
 
 const invokeCliAdapterDeadlines = vi.hoisted(() => [] as Array<number | undefined>);
 
@@ -98,7 +99,7 @@ function createCliPlanner(
     config,
     initialSessionId,
     ...options,
-    trustedCli: options?.trustedCli ?? trustedShimGate({ dir: shimDir, tool }),
+    cliSeat: options?.cliSeat ?? admittedCliSeat(trustedShimGate({ dir: shimDir, tool })),
   });
 }
 
@@ -868,20 +869,28 @@ Create \`src/text.test.ts\` with vitest tests for the \`titleCase\` function cre
       data: { files: [TASKS_FILE] },
     });
   });
-  it('rejects with a not-found error when the CLI binary is missing from PATH', async () => {
+  it('re-checks the tool once and rejects with its check failure when the admitted binary is gone', async () => {
     // Admit the actual shim identity, then remove the executable before the
-    // launch. The start gate must not fall back to an ambient PATH entry.
-    const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'codex' } }));
+    // launch. The seat re-checks the tool instead of falling back to an ambient PATH entry.
+    const recheck = vi.fn(async () => {
+      throw cliToolCheckError.failed('codex', {
+        message: 'OpenAI Codex CLI is not installed.',
+        fix: 'Install OpenAI Codex CLI, then try again.',
+      });
+    });
+    const planner = createCliPlanner(
+      makeConfig({ planner: { kind: 'cli', tool: 'codex' } }),
+      null,
+      {
+        cliSeat: { ...admittedCliSeat(trustedShimGate({ dir: shimDir, tool: 'codex' })), recheck },
+      },
+    );
     unlinkSync(join(shimDir, 'codex'));
-    process.env['PATH'] = createTempDir('empty-path');
 
-    try {
-      await expect(planner.review('prompt', projectDir, { onOutput: vi.fn() })).rejects.toSatisfy(
-        processError.isNotFound,
-      );
-    } finally {
-      cleanupTempDir(process.env['PATH']!);
-    }
+    await expect(planner.review('prompt', projectDir, { onOutput: vi.fn() })).rejects.toMatchObject(
+      { kind: 'cli-tool-check-failed' },
+    );
+    expect(recheck).toHaveBeenCalledOnce();
   });
 
   it('appends cfg.args to the tool argv when planner.args is set', async () => {
@@ -1266,10 +1275,10 @@ describe('createCliPlanner — typed calls', () => {
   it('asks a codex release older than the proven one for the prompt fallback', () => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'codex' } });
     const older = createCliPlanner(config, null, {
-      trustedCli: {
+      cliSeat: admittedCliSeat({
         ...trustedShimGate({ dir: shimDir, tool: 'codex' }),
         installedVersion: '0.40.0',
-      },
+      }),
     });
 
     expect(
@@ -1359,10 +1368,10 @@ itUnix.each(['planner', 'reviewer'] as const)(
       makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
       null,
       {
-        trustedCli: {
+        cliSeat: admittedCliSeat({
           ...trustedShimGate({ dir: shimDir, tool: 'claude-code' }),
           installedVersion: '2.1.296',
-        },
+        }),
       },
     );
     const call = planner.typedCall({

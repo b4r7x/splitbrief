@@ -202,6 +202,8 @@ export function formatRecoveryHeadlineSpans(
       ];
     case 'runner-timeout-repeated':
       return [{ text: `Two timeouts in a row on ${taskName(issue)}` }];
+    case 'runner-check-failed':
+      return [{ text: `${toolName(issue)} changed and failed its check` }];
     case 'planner-call-failed': {
       const refusal = modelRefusalCause(issue);
       if (refusal !== undefined) return [{ text: refusal }];

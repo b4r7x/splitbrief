@@ -7,6 +7,7 @@ import { makeConfig as makeBaseConfig, defaultContext } from '#testing/helpers/f
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createImplementer } from '../runners/factory.js';
+import { testCliSeats } from '#testing/helpers/runner-gate.js';
 
 type ShellConfig = Extract<Config['implementer'], { kind: 'shell' }>;
 
@@ -38,7 +39,7 @@ function implementerAuthority(config: Config) {
       command: { kind: 'validated-config' },
     },
   ];
-  return { preparedConfig: config, preparationId, gates, slot };
+  return { preparedConfig: config, preparationId, gates, cliSeats: testCliSeats(gates), slot };
 }
 
 async function implementTask(

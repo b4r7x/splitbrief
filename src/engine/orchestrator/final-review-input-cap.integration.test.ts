@@ -55,6 +55,7 @@ import { createCliPlanner } from '../planners/cli.js';
 import type { CliPlannerConfig } from '../../core/schemas/planner-config.js';
 import { CLI_TOOL_CATALOG, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
 import { prependPath, trustedShimGate, writeFakeNodeCli } from '#testing/helpers/command-shim.js';
+import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
 
 const CODEX_CAP = 1_048_576;
 // Captured live from `codex exec` (gpt-6.1-sol) on 2026-10-05.
@@ -607,7 +608,7 @@ describe('a review seat that takes the prompt on stdin', () => {
         writeConfig(ref.projectDir, config);
         const reviewer = createCliPlanner({
           config: { ...config, planner: seat },
-          trustedCli: trustedShimGate({ dir: shimDir, tool }),
+          cliSeat: admittedCliSeat(trustedShimGate({ dir: shimDir, tool })),
         });
 
         const result = await review(ref, doneState(task), reviewer, makeBusRecorder().bus, config);
@@ -657,7 +658,7 @@ describe('an OpenCode reviewer whose provider refuses the credential', () => {
       writeConfig(ref.projectDir, config);
       const reviewer = createCliPlanner({
         config: { ...config, planner: seat },
-        trustedCli: trustedShimGate({ dir: shimDir, tool: 'opencode' }),
+        cliSeat: admittedCliSeat(trustedShimGate({ dir: shimDir, tool: 'opencode' })),
       });
 
       const result = await review(ref, doneState(task), reviewer, makeBusRecorder().bus, config);

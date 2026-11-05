@@ -22,6 +22,12 @@ stripped, so a state written before those subsystems were removed still loads.
 The version number itself has one home, `WORKFLOW_STATE_VERSION`; no reader and
 no writer spells `4`.
 
+A pending recovery's `reason` is one of `RECOVERY_REASONS`
+(`src/core/schemas/enums.ts`), and the [reason table](./APPROVAL-AND-RECOVERY.md#recovery)
+describes each one. `runner-check-failed` is the reason for a CLI tool that changed
+during the run and failed its new check. `stateVersion` did not change for it: a
+reason is additive, and a state without it still parses.
+
 A Task Brief may enter implementation only when the plan it was compiled from passed `checkPlan` and the context fit.
 A plan that fails `checkPlan` never reaches the plan card, and an edited `plan.json` that fails its checks is not applied.
 Approving the plan card never overrides a failed check.

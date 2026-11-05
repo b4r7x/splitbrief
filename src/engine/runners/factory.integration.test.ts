@@ -1,13 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { ConfigSchema, type Config } from '../../core/schemas/config.js';
 import { matches } from '../../utils/error.js';
 import type { RunnerCallEvent } from '../calls/types.js';
-import { makeConfig } from '#testing/helpers/factories/config.js';
+import { defaultContext, makeConfig } from '#testing/helpers/factories/config.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import { versionedCli } from '#testing/helpers/versioned-cli.js';
 import { prependPath, writeCommandShim } from '#testing/helpers/command-shim.js';
 import { installClaudeRecordingShim } from '#testing/helpers/claude-cli-shim.js';
-import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
+import { makeRunnerGate, testCliSeats } from '#testing/helpers/runner-gate.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import {
@@ -17,18 +27,23 @@ import {
 } from './factory.js';
 import { customRunnerFactoryError, type RunnerFactoryAuthority } from './factory-gates.js';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
-import type { CliStartGate } from './start-gate.js';
+import {
+  createCliSeatGates,
+  type CliStartGate,
+  type CliToolCheckFailure,
+  type RecheckCliTool,
+} from './start-gate.js';
 import type { CustomRunnerRuntimePort } from './types.js';
 import { executableReceipt } from '#testing/helpers/custom-command-based.js';
-import type { RunnerSlot } from './prepared-execution.js';
+import type { RunnerGate, RunnerSlot } from './prepared-execution.js';
 import { resolveConfiguredCustomRunner } from './configured-custom.js';
 import { customRunnerSecurityPosture } from './custom-trust.js';
 import type { AdmittedCustomRunnerInvocation } from './custom-launchability.js';
 import type { PlannerFactoryOptions } from '../planners/types.js';
-import type { ImplementerFactoryOptions } from '../implementers/types.js';
+import type { Implementer, ImplementerFactoryOptions } from '../implementers/types.js';
 import { resolveCliExecutableAliases } from './resolve-cli-executable.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
-import { CUSTOM_ONLY_CLI_TOOL_IDS } from '../../core/runners/cli-tool-catalog.js';
+import { CUSTOM_ONLY_CLI_TOOL_IDS, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
 import type { PlannerCreationOptions } from './factory.js';
 import { CliExecutableReceiptSchema } from '../../core/discovery/detection.js';
 import { installClaudeSteeringShim } from '#testing/helpers/claude-steering-shim.js';
@@ -73,17 +88,17 @@ type ImplementerAuthority = RunnerFactoryAuthority & {
 function authorityFor(
   config: Config,
   role: 'planner',
-  trustedCli?: CliStartGate | undefined,
+  cliGate?: CliStartGate | undefined,
 ): PlannerAuthority;
 function authorityFor(
   config: Config,
   role: 'implementer',
-  trustedCli?: CliStartGate | undefined,
+  cliGate?: CliStartGate | undefined,
 ): ImplementerAuthority;
 function authorityFor(
   config: Config,
   role: CustomRunnerRole,
-  trustedCli?: CliStartGate | undefined,
+  cliGate?: CliStartGate | undefined,
 ): RunnerFactoryAuthority {
   const preparationId = `factory-${role}`;
   const slot: RunnerSlot =
@@ -92,69 +107,64 @@ function authorityFor(
       : { role: 'implementer', profile: resolveImplementerProfiles(config).defaultProfile.name };
   const configured = customInvocation(config, role);
   if (configured !== null) {
-    return {
-      preparedConfig: config,
-      preparationId,
-      slot,
-      gates: [
-        {
-          kind: configured.runner.command.contract === 'output' ? 'shell' : 'agent',
-          slot,
-          preparationId,
-          command: { kind: 'configured-custom', invocation: configured },
-        },
-      ],
-    };
+    const gates: RunnerGate[] = [
+      {
+        kind: configured.runner.command.contract === 'output' ? 'shell' : 'agent',
+        slot,
+        preparationId,
+        command: { kind: 'configured-custom', invocation: configured },
+      },
+    ];
+    return { preparedConfig: config, preparationId, slot, gates, cliSeats: testCliSeats(gates) };
   }
   const runner = config[role];
   const gate = makeRunnerGate(runner, slot, preparationId);
-  if (gate.kind === 'cli' && trustedCli !== undefined) {
+  if (gate.kind === 'cli' && cliGate !== undefined) {
     const executable =
-      'executableIdentity' in trustedCli.executable
-        ? trustedCli.executable
-        : executableReceipt(trustedCli.executable.path);
-    return {
-      preparedConfig: config,
-      preparationId,
-      slot,
-      gates: [
-        {
-          ...gate,
-          executable,
-        },
-      ],
-    };
+      'executableIdentity' in cliGate.executable
+        ? cliGate.executable
+        : executableReceipt(cliGate.executable.path);
+    const gates = [{ ...gate, executable }];
+    return { preparedConfig: config, preparationId, slot, gates, cliSeats: testCliSeats(gates) };
   }
-  return { preparedConfig: config, preparationId, slot, gates: [gate] };
+  return {
+    preparedConfig: config,
+    preparationId,
+    slot,
+    gates: [gate],
+    cliSeats: testCliSeats([gate]),
+  };
 }
 
 function createPlanner(
   config: Config,
   initialSessionId?: string | null,
-  options: Partial<PlannerCreationOptions> & PlannerFactoryOptions = {},
+  {
+    cliGate,
+    ...options
+  }: Partial<PlannerCreationOptions> & PlannerFactoryOptions & { cliGate?: CliStartGate } = {},
 ) {
   return createPreparedPlanner(config, {
     ...options,
     initialSessionId,
-    ...authorityFor(config, 'planner', options.trustedCli),
+    ...authorityFor(config, 'planner', cliGate),
   });
 }
 
 function reviewerAuthority(config: Config): RunnerFactoryAuthority {
   const preparationId = 'factory-reviewer';
   const slot: RunnerSlot = { role: 'reviewer' };
-  return {
-    preparedConfig: config,
-    preparationId,
-    slot,
-    gates: [makeRunnerGate(resolveReviewerRunner(config).runner, slot, preparationId)],
-  };
+  const gates = [makeRunnerGate(resolveReviewerRunner(config).runner, slot, preparationId)];
+  return { preparedConfig: config, preparationId, slot, gates, cliSeats: testCliSeats(gates) };
 }
 
-function createImplementer(config: Config, options: ImplementerFactoryOptions = {}) {
+function createImplementer(
+  config: Config,
+  { cliGate, ...options }: ImplementerFactoryOptions & { cliGate?: CliStartGate } = {},
+) {
   return createPreparedImplementer(config, {
     ...options,
-    ...authorityFor(config, 'implementer', options.trustedCli),
+    ...authorityFor(config, 'implementer', cliGate),
   });
 }
 
@@ -259,17 +269,19 @@ describe('factory Claude mid-call steering', () => {
         const slot: RunnerSlot = { role: seat };
         const gate = makeRunnerGate(claude, slot, preparationId);
         if (gate.kind !== 'cli') throw new Error('expected a CLI gate');
+        const gates = [
+          {
+            ...gate,
+            executable: CliExecutableReceiptSchema.parse(executable),
+            installedVersion: '2.1.296',
+          },
+        ];
         const authority = {
           preparedConfig: config,
           preparationId,
           slot,
-          gates: [
-            {
-              ...gate,
-              executable: CliExecutableReceiptSchema.parse(executable),
-              installedVersion: '2.1.296',
-            },
-          ],
+          gates,
+          cliSeats: testCliSeats(gates),
           initialSessionId: seat === 'planner' ? 'steering-session' : null,
           skillRoots: ['/tmp/factory-steering-skills'],
         };
@@ -473,11 +485,11 @@ describe('createPlanner', () => {
         commands: ['claude'],
         projectDir: process.cwd(),
       });
-      const trustedCli: CliStartGate = {
+      const cliGate: CliStartGate = {
         tool: 'claude-code',
         executable: resolved.executable,
       };
-      const planner = await createPlanner(config, undefined, { trustedCli });
+      const planner = await createPlanner(config, undefined, { cliGate });
 
       const events: RunnerCallEvent[] = [];
       const result = await planner.review('prompt', shimDir, {
@@ -511,7 +523,7 @@ describe("claude-code seats and the run's global skills", () => {
       commands: ['claude'],
       projectDir: process.cwd(),
     });
-    const trustedCli: CliStartGate = { tool: 'claude-code', executable: resolved.executable };
+    const cliGate: CliStartGate = { tool: 'claude-code', executable: resolved.executable };
     const claude = { kind: 'cli', tool: 'claude-code', model: 'test' } as const;
     const skillRoots = ['/home/me/.claude/skills/auth'];
     const readRoots = (): unknown => {
@@ -521,7 +533,7 @@ describe("claude-code seats and the run's global skills", () => {
     };
 
     const planner = await createPlanner(withPlanner(claude), undefined, {
-      trustedCli,
+      cliGate,
       skillRoots,
     });
     await planner.review('prompt', shimDir, { onOutput: () => {} });
@@ -531,19 +543,21 @@ describe("claude-code seats and the run's global skills", () => {
     const slot: RunnerSlot = { role: 'reviewer' };
     const gate = makeRunnerGate(claude, slot, 'factory-reviewer');
     if (gate.kind !== 'cli') throw new Error('expected a CLI gate');
+    const gates = [
+      {
+        ...gate,
+        executable:
+          'executableIdentity' in cliGate.executable
+            ? cliGate.executable
+            : executableReceipt(cliGate.executable.path),
+      },
+    ];
     const reviewer = await createPreparedReviewer(config, {
       preparedConfig: config,
       preparationId: 'factory-reviewer',
       slot,
-      gates: [
-        {
-          ...gate,
-          executable:
-            'executableIdentity' in trustedCli.executable
-              ? trustedCli.executable
-              : executableReceipt(trustedCli.executable.path),
-        },
-      ],
+      gates,
+      cliSeats: testCliSeats(gates),
       skillRoots,
     });
     await reviewer.review('prompt', shimDir, { onOutput: () => {} });
@@ -889,13 +903,15 @@ describe('prepared generic gate enforcement', () => {
     if (runnerB === undefined) throw new Error('Missing named profile fixture.');
     const preparationId = 'named-profile-b';
     const slot = { role: 'implementer' as const, profile: 'review' };
+    const gates = [makeRunnerGate(runnerB, slot, preparationId)];
 
     await expect(
       createPreparedImplementer(configA, {
         preparedConfig: configB,
         preparationId,
         slot,
-        gates: [makeRunnerGate(runnerB, slot, preparationId)],
+        gates,
+        cliSeats: testCliSeats(gates),
       }),
     ).rejects.toMatchObject({ kind: 'runner-gate-mismatch' });
   });
@@ -911,13 +927,15 @@ describe('prepared generic gate enforcement', () => {
     });
     const slot = { role: 'reviewer' as const };
     const preparationId = 'reviewer-seat';
+    const gates = [makeRunnerGate(config.planner, slot, preparationId)];
 
     await expect(
       createPreparedPlanner(config, {
         preparedConfig: config,
         preparationId,
         slot,
-        gates: [makeRunnerGate(config.planner, slot, preparationId)],
+        gates,
+        cliSeats: testCliSeats(gates),
       }),
     ).rejects.toMatchObject({ kind: 'runner-gate-mismatch' });
   });
@@ -948,11 +966,13 @@ describe('createReviewer', () => {
 
     await expect(createPreparedReviewer(config, reviewerAuthority(config))).resolves.toBeDefined();
 
+    const gates = [makeRunnerGate(config.planner, { role: 'reviewer' }, 'factory-reviewer')];
     const plannerGated: RunnerFactoryAuthority = {
       preparedConfig: config,
       preparationId: 'factory-reviewer',
       slot: { role: 'reviewer' },
-      gates: [makeRunnerGate(config.planner, { role: 'reviewer' }, 'factory-reviewer')],
+      gates,
+      cliSeats: testCliSeats(gates),
     };
     await expect(createPreparedReviewer(config, plannerGated)).rejects.toMatchObject({
       kind: 'runner-gate-mismatch',
@@ -1057,12 +1077,12 @@ describe('planner admission path', () => {
         commands: ['opencode'],
         projectDir,
       });
-      const trustedCli: CliStartGate = {
+      const cliGate: CliStartGate = {
         tool: 'opencode',
         executable: resolved.executable,
       };
 
-      const planner = await createPlanner(config, undefined, { trustedCli });
+      const planner = await createPlanner(config, undefined, { cliGate });
       const result = await planner.review('review the fixture', projectDir, {
         onOutput: () => {},
       });
@@ -1077,5 +1097,355 @@ describe('planner admission path', () => {
       cleanupTempDir(shimDir);
       cleanupTempDir(observationDir);
     }
+  });
+});
+
+describe('a CLI tool that updates itself during a run', () => {
+  let projectDir: string;
+  let toolRoot: string;
+  let restorePath: () => void = () => {};
+
+  beforeEach(() => {
+    projectDir = createTempDir('factory-update-project');
+    createTestGitRepo(projectDir);
+    toolRoot = createTempDir('factory-update-tool');
+  });
+
+  afterEach(() => {
+    restorePath();
+    restorePath = () => {};
+    cleanupTempDir(projectDir);
+    cleanupTempDir(toolRoot);
+  });
+
+  function ranCount(release: string): number {
+    const log = join(toolRoot, `${release}.ran`);
+    return existsSync(log) ? readFileSync(log, 'utf8').split('\n').filter(Boolean).length : 0;
+  }
+
+  function ranLine(release: string): string {
+    return `printf '%s\\n' "$*" >> ${JSON.stringify(join(toolRoot, `${release}.ran`))}`;
+  }
+
+  /** A Claude Code build release: it logs its run, appends to the brief's file and reports done. */
+  function claudeBuildRelease(release: string): string {
+    return [
+      '#!/bin/sh',
+      'cat >/dev/null',
+      ranLine(release),
+      `mkdir -p ${JSON.stringify(join(projectDir, 'src'))}`,
+      `printf '%s\\n' ${JSON.stringify(release)} >> ${JSON.stringify(join(projectDir, 'src', 'hello.ts'))}`,
+      `printf '%s\\n' '{"type":"result","result":"done"}'`,
+      '',
+    ].join('\n');
+  }
+
+  function claudePlanRelease(release: string): string {
+    return [
+      '#!/bin/sh',
+      'cat >/dev/null',
+      ranLine(release),
+      `printf '%s\\n' '${JSON.stringify({ type: 'result', result: `answer from ${release}` })}'`,
+      '',
+    ].join('\n');
+  }
+
+  function opencodePlanRelease(release: string): string {
+    return [
+      '#!/bin/sh',
+      'if [ "$1" = "--version" ]; then',
+      "  printf '%s\\n' '1.18.15'",
+      '  exit 0',
+      'fi',
+      ranLine(release),
+      `printf '%s\\n' '{"type":"text","sessionID":"ses-open","part":{"type":"text","text":"answer from ${release}"}}'`,
+      'exit 0',
+      '',
+    ].join('\n');
+  }
+
+  /** Installs releases a and b, points PATH at a, and admits it the way preparation does. */
+  async function admitReleaseA(
+    command: string,
+    tool: CliToolId,
+    release: (name: string) => string,
+  ) {
+    const cli = versionedCli({ root: toolRoot, command });
+    cli.write('a', release('a'));
+    cli.write('b', release('b'));
+    cli.pointTo('a');
+    restorePath = prependPath(cli.binDir);
+    const resolved = await resolveCliExecutableAliases({ commands: [command], projectDir });
+    const gate: CliStartGate = { tool, executable: resolved.executable };
+    return { cli, gate };
+  }
+
+  function implementOnce(implementer: Implementer, config: Config) {
+    return implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config,
+      context: { ...defaultContext, dir: projectDir },
+      onOutput: () => {},
+    });
+  }
+
+  const claudeBuild = () => withImplementer({ kind: 'cli', tool: 'claude-code', model: 'test' });
+
+  it('BUILD runs the admitted release after the PATH symlink moves to a new release', async () => {
+    const config = claudeBuild();
+    const { cli, gate } = await admitReleaseA('claude', 'claude-code', claudeBuildRelease);
+    const implementer = await createImplementer(config, { cliGate: gate });
+
+    cli.pointTo('b');
+    const result = await implementOnce(implementer, config);
+
+    expect(result.error).toBeUndefined();
+    expect(result.success).toBe(true);
+    expect(ranCount('a')).toBe(1);
+    expect(ranCount('b')).toBe(0);
+  });
+
+  it('PLAN runs the admitted OpenCode release after the PATH symlink moves to a new release', async () => {
+    const config = withPlanner({ kind: 'cli', tool: 'opencode', model: 'test' });
+    const { cli, gate } = await admitReleaseA('opencode', 'opencode', opencodePlanRelease);
+    const planner = await createPlanner(config, undefined, { cliGate: gate });
+
+    cli.pointTo('b');
+
+    await expect(
+      planner.review('review the fixture', projectDir, { onOutput: () => {} }),
+    ).resolves.toMatchObject({ text: expect.stringContaining('answer from a') });
+    expect(ranCount('a')).toBe(1);
+    expect(ranCount('b')).toBe(0);
+  });
+
+  it('BUILD does not run a same-named tool that appears earlier on PATH after admission', async () => {
+    const config = claudeBuild();
+    const { gate } = await admitReleaseA('claude', 'claude-code', claudeBuildRelease);
+    const implementer = await createImplementer(config, { cliGate: gate });
+    const shadowDir = join(toolRoot, 'shadow');
+    mkdirSync(shadowDir);
+    writeFileSync(join(shadowDir, 'claude'), claudeBuildRelease('shadow'), 'utf8');
+    chmodSync(join(shadowDir, 'claude'), 0o755);
+    const restoreAdmittedPath = restorePath;
+    const restoreShadowPath = prependPath(shadowDir);
+    restorePath = () => {
+      restoreShadowPath();
+      restoreAdmittedPath();
+    };
+
+    const result = await implementOnce(implementer, config);
+
+    expect(result.error).toBeUndefined();
+    expect(result.success).toBe(true);
+    expect(ranCount('a')).toBe(1);
+    expect(ranCount('shadow')).toBe(0);
+  });
+
+  describe('when the admitted file itself changed', () => {
+    function cliGates(gates: readonly RunnerGate[]): Extract<RunnerGate, { kind: 'cli' }>[] {
+      return gates.flatMap((gate) => (gate.kind === 'cli' ? [gate] : []));
+    }
+
+    /**
+     * The re-check port a fresh preparation answers through: it records each call and admits
+     * the tool's current PATH answer. `afterAdmit` runs between that admission and the reply.
+     */
+    function admittingRecheck(
+      config: Config,
+      role: 'planner' | 'implementer',
+      command: string,
+      afterAdmit: () => void = () => {},
+    ) {
+      const calls: CliToolId[] = [];
+      const recheck: RecheckCliTool = async (tool) => {
+        calls.push(tool);
+        const resolved = await resolveCliExecutableAliases({ commands: [command], projectDir });
+        afterAdmit();
+        const gate: CliStartGate = { tool, executable: resolved.executable };
+        const authority =
+          role === 'planner'
+            ? authorityFor(config, 'planner', gate)
+            : authorityFor(config, 'implementer', gate);
+        return { kind: 'admitted', gates: cliGates(authority.gates) };
+      };
+      return { calls, recheck };
+    }
+
+    function blockingRecheck(failure: CliToolCheckFailure) {
+      const calls: CliToolId[] = [];
+      const recheck: RecheckCliTool = async (tool) => {
+        calls.push(tool);
+        return { kind: 'blocked', failure };
+      };
+      return { calls, recheck };
+    }
+
+    async function seatedImplementer(config: Config, gate: CliStartGate, recheck: RecheckCliTool) {
+      const authority = authorityFor(config, 'implementer', gate);
+      const cliSeats = createCliSeatGates({ gates: authority.gates, recheck });
+      const implementer = await createPreparedImplementer(config, { ...authority, cliSeats });
+      return { implementer, seat: cliSeats.seat(authority.slot) };
+    }
+
+    async function seatedPlanner(config: Config, gate: CliStartGate, recheck: RecheckCliTool) {
+      const authority = authorityFor(config, 'planner', gate);
+      const cliSeats = createCliSeatGates({ gates: authority.gates, recheck });
+      const planner = await createPreparedPlanner(config, {
+        initialSessionId: undefined,
+        ...authority,
+        cliSeats,
+      });
+      return { planner, seat: cliSeats.seat(authority.slot) };
+    }
+
+    function onDisk(path: string) {
+      const real = realpathSync(path);
+      const info = statSync(real);
+      return { path: real, fingerprint: { ino: info.ino, size: info.size, mtimeMs: info.mtimeMs } };
+    }
+
+    it('runs no re-check when only the PATH symlink moved', async () => {
+      const config = claudeBuild();
+      const { cli, gate } = await admitReleaseA('claude', 'claude-code', claudeBuildRelease);
+      const port = admittingRecheck(config, 'implementer', 'claude');
+      const { implementer, seat } = await seatedImplementer(config, gate, port.recheck);
+
+      cli.pointTo('b');
+      const result = await implementOnce(implementer, config);
+
+      expect(result.error).toBeUndefined();
+      expect(result.success).toBe(true);
+      expect(port.calls).toEqual([]);
+      expect(ranCount('a')).toBe(1);
+      expect(ranCount('b')).toBe(0);
+      expect(seat.current().executable).toMatchObject(onDisk(cli.executable('a')));
+    });
+
+    it('BUILD adopts a release rewritten in place after one re-check, and the next call re-checks nothing', async () => {
+      const config = claudeBuild();
+      const { cli, gate } = await admitReleaseA('claude', 'claude-code', claudeBuildRelease);
+      const port = admittingRecheck(config, 'implementer', 'claude');
+      const { implementer, seat } = await seatedImplementer(config, gate, port.recheck);
+
+      cli.write('a', claudeBuildRelease('a-updated'));
+      const first = await implementOnce(implementer, config);
+
+      expect(first.error).toBeUndefined();
+      expect(first.success).toBe(true);
+      expect(port.calls).toEqual(['claude-code']);
+      expect(ranCount('a-updated')).toBe(1);
+      expect(seat.current().executable).toMatchObject(onDisk(cli.executable('a')));
+
+      const second = await implementOnce(implementer, config);
+
+      expect(second.error).toBeUndefined();
+      expect(second.success).toBe(true);
+      expect(port.calls).toEqual(['claude-code']);
+      expect(ranCount('a-updated')).toBe(2);
+    });
+
+    it('BUILD adopts the PATH answer after one re-check when the admitted release was pruned', async () => {
+      const config = claudeBuild();
+      const { cli, gate } = await admitReleaseA('claude', 'claude-code', claudeBuildRelease);
+      const port = admittingRecheck(config, 'implementer', 'claude');
+      const { implementer, seat } = await seatedImplementer(config, gate, port.recheck);
+
+      cli.pointTo('b');
+      cli.prune('a');
+      const result = await implementOnce(implementer, config);
+
+      expect(result.error).toBeUndefined();
+      expect(result.success).toBe(true);
+      expect(port.calls).toEqual(['claude-code']);
+      expect(ranCount('b')).toBe(1);
+      expect(seat.current().executable).toMatchObject(onDisk(cli.executable('b')));
+    });
+
+    it.each([
+      [
+        'incompatible-version',
+        'runner-check-failed',
+        'Claude Code CLI version is not compatible.',
+        'Install the tested Claude Code CLI version, then run `splitbrief doctor` again.',
+      ],
+      [
+        'unauthenticated',
+        'unauthenticated',
+        'Claude Code CLI is not signed in.',
+        'Sign in to Claude Code CLI, then run `splitbrief doctor` again.',
+      ],
+    ] as const)(
+      'BUILD stops with outcome %s → %s when the changed file fails its re-check, and never runs it',
+      async (cause, outcome, message, fix) => {
+        const config = claudeBuild();
+        const { cli, gate } = await admitReleaseA('claude', 'claude-code', claudeBuildRelease);
+        const port = blockingRecheck({ message, fix, cause });
+        const { implementer } = await seatedImplementer(config, gate, port.recheck);
+
+        cli.write('a', claudeBuildRelease('a-updated'));
+        const result = await implementOnce(implementer, config);
+
+        expect(result).toMatchObject({
+          success: false,
+          outcome,
+          error: expect.stringContaining(message),
+        });
+        expect(port.calls).toEqual(['claude-code']);
+        expect(ranCount('a-updated')).toBe(0);
+      },
+    );
+
+    it('BUILD fails closed when the file changes again after its re-check passed', async () => {
+      const config = claudeBuild();
+      const { cli, gate } = await admitReleaseA('claude', 'claude-code', claudeBuildRelease);
+      const port = admittingRecheck(config, 'implementer', 'claude', () =>
+        cli.write('a', claudeBuildRelease('a-updated-twice')),
+      );
+      const { implementer } = await seatedImplementer(config, gate, port.recheck);
+
+      cli.write('a', claudeBuildRelease('a-updated'));
+      const result = await implementOnce(implementer, config);
+
+      expect(result).toMatchObject({
+        success: false,
+        outcome: 'runner-check-failed',
+        error: expect.stringContaining('Claude Code CLI changed after SPLITBRIEF checked it'),
+      });
+      expect(port.calls).toEqual(['claude-code']);
+      expect(ranCount('a-updated')).toBe(0);
+      expect(ranCount('a-updated-twice')).toBe(0);
+    });
+
+    it('PLAN on OpenCode adopts a release rewritten in place after one re-check', async () => {
+      const config = withPlanner({ kind: 'cli', tool: 'opencode', model: 'test' });
+      const { cli, gate } = await admitReleaseA('opencode', 'opencode', opencodePlanRelease);
+      const port = admittingRecheck(config, 'planner', 'opencode');
+      const { planner } = await seatedPlanner(config, gate, port.recheck);
+
+      cli.write('a', opencodePlanRelease('a-updated'));
+
+      await expect(
+        planner.review('review the fixture', projectDir, { onOutput: () => {} }),
+      ).resolves.toMatchObject({ text: expect.stringContaining('answer from a-updated') });
+      expect(port.calls).toEqual(['opencode']);
+      expect(ranCount('a-updated')).toBe(1);
+    });
+
+    it('PLAN on Claude Code adopts a release rewritten in place after one re-check', async () => {
+      const config = withPlanner({ kind: 'cli', tool: 'claude-code', model: 'test' });
+      const { cli, gate } = await admitReleaseA('claude', 'claude-code', claudePlanRelease);
+      const port = admittingRecheck(config, 'planner', 'claude');
+      const { planner } = await seatedPlanner(config, gate, port.recheck);
+
+      cli.write('a', claudePlanRelease('a-updated'));
+
+      await expect(
+        planner.review('review the fixture', projectDir, { onOutput: () => {} }),
+      ).resolves.toMatchObject({ text: 'answer from a-updated' });
+      expect(port.calls).toEqual(['claude-code']);
+      expect(ranCount('a-updated')).toBe(1);
+    });
   });
 });

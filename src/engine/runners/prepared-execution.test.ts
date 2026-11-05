@@ -17,6 +17,7 @@ import {
   rollbackPreparedExecutionOwnership,
   type PreparedExecution,
 } from './prepared-execution.js';
+import { testCliSeats } from '#testing/helpers/runner-gate.js';
 
 const OWNERSHIP_FILE = '.prepare-owner.json';
 const tempDirs: string[] = [];
@@ -42,6 +43,7 @@ function executionWithSession(session: PreparedExecution['session']): PreparedEx
       metadata: {},
     },
     gates: [],
+    cliSeats: testCliSeats([]),
     session,
     runtime: {
       feature: 'ownership helper test',

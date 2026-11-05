@@ -19,7 +19,9 @@ import { markHooksConfigTrusted } from '../../../src/core/hooks/trust.js';
 import {
   parsePreparedConfig,
   type PreparedExecution,
+  type RunnerGate,
 } from '../../../src/engine/runners/prepared-execution.js';
+import { testCliSeats } from '#testing/helpers/runner-gate.js';
 
 const DENY_PRE_TASK_HOOKS: HooksConfig = {
   pre_task: [
@@ -101,6 +103,20 @@ function preparedExecution(
       ],
     },
   );
+  const gates: RunnerGate[] = [
+    {
+      kind: 'shell',
+      slot: { role: 'planner' },
+      preparationId,
+      command: { kind: 'validated-config' },
+    },
+    {
+      kind: 'shell',
+      slot: { role: 'implementer', profile: 'default' },
+      preparationId,
+      command: { kind: 'validated-config' },
+    },
+  ];
   return {
     purpose: 'resume',
     config,
@@ -115,20 +131,8 @@ function preparedExecution(
       sections: [],
       metadata: {},
     },
-    gates: [
-      {
-        kind: 'shell',
-        slot: { role: 'planner' },
-        preparationId,
-        command: { kind: 'validated-config' },
-      },
-      {
-        kind: 'shell',
-        slot: { role: 'implementer', profile: 'default' },
-        preparationId,
-        command: { kind: 'validated-config' },
-      },
-    ],
+    gates,
+    cliSeats: testCliSeats(gates),
     session: { kind: 'existing', ref: { projectDir, sessionId }, active },
     runtime: { feature, allowRepoRunners: true, allowHooks: true, resumeState },
   };

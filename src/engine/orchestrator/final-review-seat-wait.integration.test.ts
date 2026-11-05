@@ -31,6 +31,7 @@ import { runFinalReviewPhase, type FinalReviewResult } from './final-review.js';
 import { createCliPlanner } from '../planners/cli.js';
 import { prependPath, trustedShimGate } from '#testing/helpers/command-shim.js';
 import { CURSOR_MODEL_REFUSAL, writeCursorRefusalShim } from '#testing/helpers/cursor-refusal.js';
+import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
 
 const CODEX_REVIEWER = makeNoValidationConfig({ reviewer: { kind: 'cli', tool: 'codex' } });
 const RESET_IN_BOUND = 'HTTP 429: rate limit reached (retry-after: 120)';
@@ -319,7 +320,7 @@ describe('a Cursor reviewer that refuses the account', () => {
         writeConfig(ref.projectDir, config);
         const reviewer = createCliPlanner({
           config: { ...config, planner: seat },
-          trustedCli: trustedShimGate({ dir: shimDir, tool: 'cursor' }),
+          cliSeat: admittedCliSeat(trustedShimGate({ dir: shimDir, tool: 'cursor' })),
         });
         const { bus, events } = makeBusRecorder();
 

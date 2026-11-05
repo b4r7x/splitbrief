@@ -1,8 +1,5 @@
-import { matches } from '../../utils/error.js';
-
 import type { Config } from '../../core/schemas/config.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
-import type { CliExecutableIdentity } from '../../core/discovery/detection.js';
 import type { Planner, PlannerCallbacks, PlannerFactoryOptions } from './types.js';
 import { ONE_SHOT_API_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
@@ -11,7 +8,7 @@ import { invokeCliAdapter, toCliEnvironment } from '../runners/invoke-cli-adapte
 import { lookupCliPlannerAdapter } from '../runners/cli-tools/registry.js';
 import { typedOutputCapability } from '../../core/runners/cli-tool-catalog.js';
 import { seatSupportsImages } from '../../core/runners/capabilities.js';
-import type { CliPlannerAdapter, CliSchemaInput } from '../runners/cli-tools/contract.js';
+import type { CliSchemaInput } from '../runners/cli-tools/contract.js';
 import type { TypedSchemaInput } from '../runners/typed-output.js';
 import { withSchemaFile } from '../runners/schema-file.js';
 import { resolveCliModel } from '../../core/providers/automatic-model.js';
@@ -29,16 +26,9 @@ import {
 } from '../orchestrator/planning/mutation-guard.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
 import { seatAxisWords } from '../../core/runners/effort-channel.js';
-import { resolveCliExecutableAliases } from '../runners/resolve-cli-executable.js';
-import { assertCliStartGate } from '../runners/start-gate.js';
-import { processError } from '../../lib/process/errors.js';
+import { callAdmittedCli, requireCliSeat } from '../runners/start-gate.js';
 import { createRunnerSandboxEnv, resolveCliRunnerAuth } from '../runners/sandbox-env.js';
 import { withCliInvocationIdentity } from '../runners/invocation-identity.js';
-const isCliExecutableUnavailable = matches('cli-executable-unavailable');
-
-function cliNotFoundMessage(descriptor: CliPlannerAdapter['descriptor']): string {
-  return `${descriptor.displayName} not found. See ${descriptor.compatibility.installUrl}`;
-}
 
 function isRecoverableResumeNoise(event: RunnerCallEvent, resumeId: string): boolean {
   switch (event.type) {
@@ -54,13 +44,11 @@ function isRecoverableResumeNoise(event: RunnerCallEvent, resumeId: string): boo
 export function createCliPlanner(
   opts: PlannerFactoryOptions & { config: Config; initialSessionId?: string | null | undefined },
 ): Planner {
-  const { config, initialSessionId, trustedCli } = opts;
+  const { config, initialSessionId, cliSeat } = opts;
   const plannerCfg = assertPlannerKind(config, 'cli');
   resolveCliRunnerAuth(plannerCfg);
   const resolvedModel = resolveCliModel(plannerCfg.model, plannerCfg.tool);
   const adapter = lookupCliPlannerAdapter(plannerCfg.tool);
-  const command = adapter.descriptor.command;
-  const notFoundMessage = cliNotFoundMessage(adapter.descriptor);
   const { supportsSessionResume, supportsEffort } = adapter;
 
   // The only thread a CLI resumes is one it reported itself. The SPLITBRIEF session
@@ -72,23 +60,6 @@ export function createCliPlanner(
   const variant = plannerCfg.variant;
   const timeout = plannerCfg.timeout;
   const extraArgs = plannerCfg.args ?? [];
-
-  async function resolveExecutable(projectDir: string): Promise<CliExecutableIdentity> {
-    try {
-      return (
-        await resolveCliExecutableAliases({
-          commands: adapter.descriptor.executableAliases,
-          projectDir,
-          trust: assertCliStartGate(plannerCfg.tool, trustedCli),
-        })
-      ).executable;
-    } catch (err) {
-      if (isCliExecutableUnavailable(err)) {
-        throw processError.notFound(command, notFoundMessage);
-      }
-      throw err;
-    }
-  }
 
   async function runOnce(opts: {
     prompt: string;
@@ -124,56 +95,61 @@ export function createCliPlanner(
       callbacks.onCallEvent?.(event);
     };
 
-    const executable = await resolveExecutable(projectDir);
-    const baseArgs = adapter.baseArgs({
-      model: resolvedModel,
-      projectDir,
-      configuredArgs: extraArgs,
-      sessionId: supportsSessionResume ? resumeId : null,
-      oneShot: !threaded,
-      effort: supportsEffort ? effort : undefined,
-      variant,
-      installedVersion: trustedCli?.installedVersion,
-      schema: opts.schema,
-      ...(images !== undefined && images.length > 0
-        ? { imagePaths: images.map((image) => image.path) }
-        : {}),
-    });
-    const result = await invokeCliAdapter({
-      adapter,
-      invocation: {
-        executable,
-        args: [...baseArgs, ...extraArgs],
-        baseArgs,
-        promptTransport: adapter.promptTransport,
-        environment: toCliEnvironment(sandboxEnv),
-        cwd: projectDir,
-        images,
-        timeoutMs: timeout,
-        signal,
+    const result = await callAdmittedCli(
+      requireCliSeat(plannerCfg.tool, cliSeat),
+      signal,
+      (executable, gate) => {
+        const baseArgs = adapter.baseArgs({
+          model: resolvedModel,
+          projectDir,
+          configuredArgs: extraArgs,
+          sessionId: supportsSessionResume ? resumeId : null,
+          oneShot: !threaded,
+          effort: supportsEffort ? effort : undefined,
+          variant,
+          installedVersion: gate.installedVersion,
+          schema: opts.schema,
+          ...(images !== undefined && images.length > 0
+            ? { imagePaths: images.map((image) => image.path) }
+            : {}),
+        });
+        return invokeCliAdapter({
+          adapter,
+          invocation: {
+            executable,
+            args: [...baseArgs, ...extraArgs],
+            baseArgs,
+            promptTransport: adapter.promptTransport,
+            environment: toCliEnvironment(sandboxEnv),
+            cwd: projectDir,
+            images,
+            timeoutMs: timeout,
+            signal,
+          },
+          prompt,
+          steering: callbacks.steering,
+          installedVersion: gate.installedVersion,
+          callContext: withCliInvocationIdentity({ runner: plannerCfg, callContext, executable }),
+          onOutput: (text: string) => callbacks.onOutput(text),
+          onCallEvent,
+          onSessionId: threaded
+            ? (id: string) => {
+                if (resumeId && id !== resumeId) {
+                  unexpectedResumeSessionId = id;
+                  return;
+                }
+                nativeSession.capture(id);
+                callbacks.onSessionId?.(id);
+              }
+            : undefined,
+          idle: {
+            warnMs: plannerCfg.idleWarnMs,
+            killMs: plannerCfg.idleKillMs,
+          },
+          maxToolCalls: plannerCfg.maxToolCalls,
+        });
       },
-      prompt,
-      steering: callbacks.steering,
-      installedVersion: trustedCli?.installedVersion,
-      callContext: withCliInvocationIdentity({ runner: plannerCfg, callContext, executable }),
-      onOutput: (text: string) => callbacks.onOutput(text),
-      onCallEvent,
-      onSessionId: threaded
-        ? (id: string) => {
-            if (resumeId && id !== resumeId) {
-              unexpectedResumeSessionId = id;
-              return;
-            }
-            nativeSession.capture(id);
-            callbacks.onSessionId?.(id);
-          }
-        : undefined,
-      idle: {
-        warnMs: plannerCfg.idleWarnMs,
-        killMs: plannerCfg.idleKillMs,
-      },
-      maxToolCalls: plannerCfg.maxToolCalls,
-    });
+    );
 
     const returnedSessionId = result.nativeSessionId ?? unexpectedResumeSessionId;
     if (resumeId && returnedSessionId !== null && returnedSessionId !== resumeId) {
@@ -203,7 +179,6 @@ export function createCliPlanner(
     schema?: TypedSchemaInput | undefined;
   }): Promise<RunnerCallResult> {
     const { prompt, projectDir, callbacks, callContext, accessMode, signal, schema } = opts;
-    await resolveExecutable(projectDir);
     const environment = await createRunnerSandboxEnv(projectDir, plannerCfg, 'planner');
     const mutationBaseline = await capturePlanningMutationBaseline(projectDir);
 
@@ -283,7 +258,7 @@ export function createCliPlanner(
     runnerName: plannerCfg.tool,
     axes: seatAxisWords(plannerCfg),
     ...(resolvedModel !== undefined && { model: resolvedModel }),
-    typedOutput: typedOutputCapability(plannerCfg.tool, trustedCli?.installedVersion),
+    typedOutput: typedOutputCapability(plannerCfg.tool, cliSeat?.current().installedVersion),
 
     ...createCommandExistsAvailability(adapter.descriptor.executableAliases),
 

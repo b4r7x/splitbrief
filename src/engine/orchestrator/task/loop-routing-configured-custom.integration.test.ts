@@ -25,6 +25,7 @@ import { prepareCustomRunnerAdmission } from '../../runners/custom-admission.js'
 import type { RunnerGate } from '../../runners/prepared-execution.js';
 import { configForProfile } from './routing.js';
 import { runTaskLoop } from './loop.js';
+import { testCliSeats } from '#testing/helpers/runner-gate.js';
 
 let dirs: string[] = [];
 
@@ -313,6 +314,7 @@ describe('runTaskLoop configured custom routing', { timeout: 90_000 }, () => {
               preparedConfig: config,
               preparationId,
               gates,
+              cliSeats: testCliSeats(gates),
               slot: options.slot,
             });
             return dynamicImplementer;

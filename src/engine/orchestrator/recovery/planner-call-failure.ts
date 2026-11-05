@@ -12,6 +12,7 @@ import {
   typedRunnerCallErrorMessage,
 } from '../../implementers/pipeline/call-result.js';
 import { runnerLoginInstruction } from '../../runners/auth-failure.js';
+import { cliToolCheckError, cliToolCheckWords } from '../../runners/start-gate.js';
 import type { SeatFailureClassification } from '../../runners/seat-failure.js';
 import { usageLimitAdvice } from '../../runners/usage-limit.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
@@ -120,6 +121,29 @@ export function diagnosePlannerCallFailure(
       inputSize,
     };
   }
+  // A tool that changed during the run and failed its new check halts on that
+  // check; a check that failed on the sign-in is the sign-out it names.
+  if (cliToolCheckError.isFailed(err)) {
+    if (err.data.cause === 'unauthenticated') {
+      return {
+        failure: 'unauthenticated',
+        message: `${endSentence(message)} ${runnerLoginInstruction(runner)}`,
+        tool,
+        details: [],
+        words: err.message,
+        resetsAt: null,
+        seatDown: { classification: { class: 'account', cause: 'auth' } },
+      };
+    }
+    return {
+      failure: 'runner-check-failed',
+      message,
+      tool,
+      details: [cliToolCheckWords(err)],
+      words: err.message,
+      resetsAt: null,
+    };
+  }
   // The one classifier reads the tool's own words. A limit outranks the auth
   // check: its message must never earn login advice, because logging in does
   // not restore quota.
@@ -168,6 +192,7 @@ export function plannerHaltRow(issue: RecoveryIssue, diagnosis: PlannerCallDiagn
   switch (diagnosis.failure) {
     case 'call-failed':
     case 'input-too-large':
+    case 'runner-check-failed':
       return diagnosis.message;
     case 'missing-model':
       return runnerDefectRow(issue, diagnosis.tool, diagnosis.words);

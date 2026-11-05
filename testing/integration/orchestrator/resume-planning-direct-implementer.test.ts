@@ -24,7 +24,9 @@ import { executableReceipt } from '#testing/helpers/custom-command-based.js';
 import {
   parsePreparedConfig,
   type PreparedExecution,
+  type RunnerGate,
 } from '../../../src/engine/runners/prepared-execution.js';
+import { testCliSeats } from '#testing/helpers/runner-gate.js';
 
 const dirs: string[] = [];
 
@@ -110,6 +112,21 @@ describe('resume planning continuation with a direct-writing implementer', {
       sessionId,
       generation: '8a888888-8888-4888-8888-888888888888',
     };
+    const gates: RunnerGate[] = [
+      {
+        kind: 'cli',
+        slot: { role: 'planner' },
+        preparationId,
+        tool: 'claude-code',
+        executable: executableReceipt(),
+      },
+      {
+        kind: 'agent',
+        slot: { role: 'implementer', profile: 'default' },
+        preparationId,
+        command: { kind: 'validated-config' },
+      },
+    ];
     const prepared: PreparedExecution = {
       purpose: 'resume',
       config,
@@ -124,21 +141,8 @@ describe('resume planning continuation with a direct-writing implementer', {
         sections: [],
         metadata: {},
       },
-      gates: [
-        {
-          kind: 'cli',
-          slot: { role: 'planner' },
-          preparationId,
-          tool: 'claude-code',
-          executable: executableReceipt(),
-        },
-        {
-          kind: 'agent',
-          slot: { role: 'implementer', profile: 'default' },
-          preparationId,
-          command: { kind: 'validated-config' },
-        },
-      ],
+      gates,
+      cliSeats: testCliSeats(gates),
       session: { kind: 'existing', ref: { projectDir, sessionId }, active },
       runtime: {
         feature,

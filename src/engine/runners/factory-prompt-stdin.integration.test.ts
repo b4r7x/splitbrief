@@ -14,7 +14,7 @@ import { prepareCustomRunnerAdmission } from './custom-admission.js';
 import { customRunnerSecurityPosture } from './custom-trust.js';
 import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
+import { makeRunnerGate, testCliSeats } from '#testing/helpers/runner-gate.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
   configuredPlanner,
@@ -81,12 +81,8 @@ function authorityFor<S extends RunnerSlot>(
   runner: RunnerConfig,
 ): RunnerFactoryAuthority & { slot: S } {
   const preparationId = `prompt-stdin-${slot.role}`;
-  return {
-    preparedConfig: config,
-    preparationId,
-    slot,
-    gates: [makeRunnerGate(runner, slot, preparationId)],
-  };
+  const gates = [makeRunnerGate(runner, slot, preparationId)];
+  return { preparedConfig: config, preparationId, slot, gates, cliSeats: testCliSeats(gates) };
 }
 
 async function callSeat(

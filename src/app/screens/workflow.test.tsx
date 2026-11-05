@@ -61,6 +61,7 @@ import {
   REVIEW_COMMENT_HINTS,
   REVIEW_DOCUMENT_HINTS,
 } from '../../features/workflow/prompt-rows/approval.js';
+import { testCliSeats } from '#testing/helpers/runner-gate.js';
 
 const runWorkflow = vi.fn<(opts: RunWorkflowOptions) => Promise<Summary>>();
 const workflowDeps = { runWorkflow };
@@ -113,6 +114,7 @@ function preparedExecution(projectDir: string, feature: string): PreparedExecuti
       metadata: {},
     },
     gates: [],
+    cliSeats: testCliSeats([]),
     session: {
       kind: 'new',
       ref: { projectDir, sessionId },

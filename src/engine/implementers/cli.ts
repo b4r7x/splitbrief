@@ -1,5 +1,4 @@
 import type { CliImplementerConfig } from '../../core/schemas/implementer-config.js';
-import type { CliExecutableIdentity } from '../../core/discovery/detection.js';
 import type { OutputFormat } from '../../core/schemas/enums.js';
 import type { Implementer, ImplementerFactoryOptions, InvokeOpts } from './types.js';
 import {
@@ -12,9 +11,7 @@ import { processError } from '../../lib/process/errors.js';
 import { invokeCliAdapter, toCliEnvironment } from '../runners/invoke-cli-adapter.js';
 import { createCommandExistsAvailability } from '../availability.js';
 import { resolveCliModel } from '../../core/providers/automatic-model.js';
-import { resolveCliExecutableAliases } from '../runners/resolve-cli-executable.js';
-import { assertCliStartGate, type CliStartGate } from '../runners/start-gate.js';
-import { matches } from '../../utils/error.js';
+import { callAdmittedCli, requireCliSeat } from '../runners/start-gate.js';
 import { createRunnerSandboxEnv, resolveCliRunnerAuth } from '../runners/sandbox-env.js';
 import { withOutputFormat } from '../runners/cli-tools/output-format.js';
 import { withCliInvocationIdentity } from '../runners/invocation-identity.js';
@@ -29,12 +26,6 @@ import {
   formatIsolationBreach,
   isolationToolUseGuard,
 } from './isolation/boundary.js';
-
-const isCliExecutableUnavailable = matches('cli-executable-unavailable');
-
-function cliNotFoundMessage(displayName: string, installUrl: string): string {
-  return `${displayName} not found. Install it from ${installUrl}`;
-}
 
 /**
  * REQ-016 declared-effect gate: a direct-write CLI implementer succeeds when
@@ -105,14 +96,9 @@ export function createCliImplementer(
 ): Implementer {
   const toolName = config.tool;
   resolveCliRunnerAuth(config);
-  const trustedCli: CliStartGate | undefined = options?.trustedCli;
+  const cliSeat = options?.cliSeat;
   const registryAdapter = lookupCliImplementerAdapter(toolName);
   const descriptor = registryAdapter.descriptor;
-  const command = descriptor.command;
-  const notFoundMessage = cliNotFoundMessage(
-    descriptor.displayName,
-    descriptor.compatibility.installUrl,
-  );
   const deadlineMs = config.timeout;
   const runnerLabel = descriptor.displayName;
 
@@ -151,73 +137,62 @@ export function createCliImplementer(
             });
 
       try {
-        let executable: CliExecutableIdentity;
-        try {
-          executable = (
-            await resolveCliExecutableAliases({
-              commands: descriptor.executableAliases,
-              projectDir,
-              trust: assertCliStartGate(toolName, trustedCli),
-            })
-          ).executable;
-        } catch (err) {
-          if (isCliExecutableUnavailable(err)) {
-            throw processError.notFound(command, notFoundMessage);
-          }
-          throw err;
-        }
-
         const configuredArgs = config.args ?? [];
-        const baseArgs = adapter.baseArgs({
-          model: effectiveModel,
-          projectDir,
-          configuredArgs,
-          effort: config.effort,
-          variant: config.variant,
-          installedVersion: trustedCli?.installedVersion,
-          skillRoots: opts.skillRoots,
-          imagePaths: opts.images?.map((image) => image.path),
-        });
-
-        const result = await invokeCliAdapter({
-          adapter,
-          invocation: {
-            executable,
-            args: [...baseArgs, ...configuredArgs],
-            baseArgs,
-            promptTransport: adapter.promptTransport,
-            environment: toCliEnvironment(env),
-            cwd: projectDir,
-            images: opts.images,
-            timeoutMs: deadlineMs,
-            signal: composedSignal,
+        const result = await callAdmittedCli(
+          requireCliSeat(toolName, cliSeat),
+          composedSignal,
+          (executable, gate) => {
+            const baseArgs = adapter.baseArgs({
+              model: effectiveModel,
+              projectDir,
+              configuredArgs,
+              effort: config.effort,
+              variant: config.variant,
+              installedVersion: gate.installedVersion,
+              skillRoots: opts.skillRoots,
+              imagePaths: opts.images?.map((image) => image.path),
+            });
+            return invokeCliAdapter({
+              adapter,
+              invocation: {
+                executable,
+                args: [...baseArgs, ...configuredArgs],
+                baseArgs,
+                promptTransport: adapter.promptTransport,
+                environment: toCliEnvironment(env),
+                cwd: projectDir,
+                images: opts.images,
+                timeoutMs: deadlineMs,
+                signal: composedSignal,
+              },
+              prompt,
+              steering: opts.steering,
+              installedVersion: gate.installedVersion,
+              callContext: withCliInvocationIdentity({ runner: config, callContext, executable }),
+              onOutput,
+              onCallEvent: opts.onCallEvent,
+              idle: {
+                warnMs: config.idleWarnMs,
+                killMs: config.idleKillMs,
+              },
+              maxToolCalls: config.maxToolCalls,
+              toolUseGuard:
+                boundary === undefined
+                  ? undefined
+                  : isolationToolUseGuard(boundary, {
+                      onOutsideRead: (breach) => {
+                        if (opts.phase === undefined) return;
+                        options?.publisher?.publishWarning({
+                          phase: opts.phase,
+                          taskId: opts.task.id,
+                          message: `Task ${opts.task.id} ${formatIsolationBreach(breach)}`,
+                          safety: { category: 'implementer', code: 'isolation_outside_read' },
+                        });
+                      },
+                    }),
+            });
           },
-          prompt,
-          steering: opts.steering,
-          installedVersion: trustedCli?.installedVersion,
-          callContext: withCliInvocationIdentity({ runner: config, callContext, executable }),
-          onOutput,
-          onCallEvent: opts.onCallEvent,
-          idle: {
-            warnMs: config.idleWarnMs,
-            killMs: config.idleKillMs,
-          },
-          maxToolCalls: config.maxToolCalls,
-          toolUseGuard:
-            boundary === undefined
-              ? undefined
-              : isolationToolUseGuard(boundary, {
-                  onOutsideRead: (breach) => {
-                    if (opts.phase === undefined) return;
-                    options?.publisher?.publishWarning({
-                      phase: opts.phase,
-                      taskId: opts.task.id,
-                      message: `Task ${opts.task.id} ${formatIsolationBreach(breach)}`,
-                      safety: { category: 'implementer', code: 'isolation_outside_read' },
-                    });
-                  },
-                }),
-        });
+        );
         if (timeoutSignal?.aborted === true && !signal?.aborted && deadlineMs !== undefined) {
           throw processError.timeout({
             command: runnerLabel,

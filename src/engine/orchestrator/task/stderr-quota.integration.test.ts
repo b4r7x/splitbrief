@@ -22,6 +22,7 @@ import { createCliImplementer } from '../../implementers/cli.js';
 import { antigravityImplementerAdapter } from '../../runners/cli-tools/antigravity.js';
 import { invokeProcessCli } from '../../runners/cli-tools/process-invoke.js';
 import { runTaskLoop } from './loop.js';
+import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
 
 const QUOTA_LINE =
   'error: Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 2h6m30s.';
@@ -147,7 +148,7 @@ describe('a quota line that arrives during a live call', { timeout: 30_000 }, ()
       projectDir,
       sessionId,
       implementer: createCliImplementer(seat, {
-        trustedCli: trustedShimGate({ dir: shimDir, tool: 'antigravity' }),
+        cliSeat: admittedCliSeat(trustedShimGate({ dir: shimDir, tool: 'antigravity' })),
       }),
       planner: makePlanner({ typedCall: consultCallAnswering(consult) }),
       bus,

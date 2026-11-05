@@ -9,6 +9,7 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createCliImplementer } from './cli.js';
 import type { ImplementerPublisher } from './types.js';
+import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
 
 const OPENCODE_STREAM = join(
   import.meta.dirname,
@@ -95,7 +96,7 @@ async function implement(
     publishWarning,
   };
   const implementer = createCliImplementer(opencode, {
-    trustedCli: installShim(command),
+    cliSeat: admittedCliSeat(installShim(command)),
     publisher,
   });
   return implementer.implement({
@@ -157,7 +158,7 @@ describe("createCliImplementer — the run's attached skills", { timeout: 30_000
     );
     const claude: CliImplementerConfig = { kind: 'cli', tool: 'claude-code', contextLength: 4096 };
     const implementer = createCliImplementer(claude, {
-      trustedCli: trustedShimGate({ dir: shimDir, tool: 'claude-code' }),
+      cliSeat: admittedCliSeat(trustedShimGate({ dir: shimDir, tool: 'claude-code' })),
     });
 
     const result = await implementer.implement({

@@ -26,6 +26,7 @@ import {
   type RunnerGate,
   type RunnerSlot,
 } from '../../runners/prepared-execution.js';
+import { testCliSeats } from '#testing/helpers/runner-gate.js';
 
 function makeCopyingIsolation(projectDir: string, sessionId: string): RunIsolation {
   return createRunIsolation({
@@ -100,6 +101,7 @@ function preparedExecution(
     preparationId: input.preparationId,
     report: readyReport(input.projectDir),
     gates: input.gates,
+    cliSeats: testCliSeats(input.gates),
     session: {
       kind: 'existing',
       ref: { projectDir: input.projectDir, sessionId: active.sessionId },

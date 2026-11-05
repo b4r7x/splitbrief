@@ -178,6 +178,7 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
           customRuntime,
           preparationId: execution.preparationId,
           gates: execution.gates,
+          cliSeats: execution.cliSeats,
           slot: { role: 'planner' },
         });
       } catch (cause) {

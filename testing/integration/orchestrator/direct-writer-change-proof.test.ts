@@ -51,6 +51,7 @@ import { ensureSessionDir } from '../../../src/core/paths-io.js';
 import { persistReadyExecutionState } from '#testing/helpers/persisted-execution.js';
 import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
 import { shellQuoteArg } from '../../../src/utils/shell-quote.js';
+import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
 
 const TARGET_SRC = 'src/change-proof.ts';
 const TARGET_TEST = 'tests/change-proof.test.mjs';
@@ -297,7 +298,9 @@ async function runDirectWriterImplementation(
       validation: { endChecks: false, testCommand: 'noop' },
     }),
   });
-  wctx.implementer = createCliImplementer(implementerConfig(), { trustedCli: fixture.trustedGate });
+  wctx.implementer = createCliImplementer(implementerConfig(), {
+    cliSeat: admittedCliSeat(fixture.trustedGate),
+  });
 
   return runImplementation({
     wctx,
@@ -383,7 +386,7 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
           sessionId,
           isolation,
           implementer: createCliImplementer(implementerConfig(), {
-            trustedCli: fixture.trustedGate,
+            cliSeat: admittedCliSeat(fixture.trustedGate),
           }),
           config: makeConfig({
             implementer: implementerConfig(),
@@ -443,7 +446,7 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
           sessionId,
           isolation,
           implementer: createCliImplementer(implementerConfig(), {
-            trustedCli: fixture.trustedGate,
+            cliSeat: admittedCliSeat(fixture.trustedGate),
           }),
           config: makeConfig({
             implementer: implementerConfig(),

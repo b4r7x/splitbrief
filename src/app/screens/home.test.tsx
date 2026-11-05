@@ -55,6 +55,7 @@ import { SOFT_SEP } from '../../core/separators.js';
 import { overlayRect } from '../../core/navigation/overlay-rect.js';
 import { trackProbe } from '../../engine/probe-activity.js';
 import { HomeScreen, type HomeScreenDeps } from './home.js';
+import { testCliSeats } from '#testing/helpers/runner-gate.js';
 
 const prepareExecutionMock = vi.fn<(input: PrepareExecutionInput) => Promise<PreparationOutcome>>();
 
@@ -137,6 +138,7 @@ function preparedExecution(input: PrepareExecutionInput): PreparedExecution {
     preparationId: 'home-preparation',
     report,
     gates: [],
+    cliSeats: testCliSeats([]),
     session:
       'existingSession' in input
         ? { kind: 'existing', ref: input.existingSession, active: receipt }
@@ -180,6 +182,7 @@ function preparedResumeExecution(
     preparationId: 'home-resume-preparation',
     report: readinessReport(),
     gates: [],
+    cliSeats: testCliSeats([]),
     session: { kind: 'existing', ref: input.ref, active },
     runtime: {
       feature: input.state.feature,
