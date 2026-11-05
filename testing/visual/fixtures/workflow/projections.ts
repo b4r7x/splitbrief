@@ -8350,6 +8350,21 @@ const projections = [
   questionProjection,
   { ...questionProjection, scenarioId: scenarioId('workflow-question-short') },
   { ...questionProjection, scenarioId: scenarioId('workflow-planner-question-short') },
+  {
+    ...questionProjection,
+    scenarioId: scenarioId('workflow-planner-question-free-short'),
+    question: {
+      prompt: 'Type your answer…',
+      answer: '',
+      questions: [
+        {
+          id: 'target',
+          type: 'input',
+          text: 'Which file or module do you want refactored?',
+        },
+      ],
+    },
+  },
   questionOverflowProjection,
   questionDefaultProjection,
   questionInputProjection,

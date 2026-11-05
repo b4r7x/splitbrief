@@ -118,6 +118,7 @@
 
 ### Fixed
 
+- On a short terminal, a planner question that hides rows shows `↑ more` or `↓ more`, also in a panel of one row. While you write an answer to a planner question, the question stays above or beside the answer field. Before, a short panel showed one choice and no sign of the others, or only `›` and an empty answer field.
 - At the start of the build and between two briefs, the composer, the line under it and `/queue show` name the brief that reads a message for BUILD, for example `Message BUILD on T002 · read when its call ends…`, as the transcript does. Before, they named no brief until that brief started.
 - When Apply merges your checkout edits and runs the checks again, a check whose failures are all red at the run base too no longer counts as a failure of the run. The review reads only the new failures, listed apart from the pre-existing ones, and Accept as is no longer records a pre-existing failure as an accepted finding.
 - While a brief check, or a plan check before the final review, waits for the same command at the run base, the build block names that base command with its clock, as it does for a reviewer check. Before, it showed the check with a clock that kept counting after its command ended.

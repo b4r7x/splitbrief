@@ -5,6 +5,7 @@ import { renderFeature } from '#testing/helpers/ink.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { stateTone } from '../../core/theme/state-tone.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
+import { DEFAULT_REDACTION_MARKER } from '../../utils/redact.js';
 import { PromptBody } from './components/prompt-body.js';
 import { QuestionPrompt } from './components/question-prompt.js';
 import {
@@ -250,6 +251,50 @@ describe('promptBodyRows', () => {
         .filter((row) => row.kind === 'facts-line')
         .map((row) => row.text),
     ).toEqual(['  First   ', '  second   ']);
+  });
+
+  it.each([
+    { key: 'password', quote: '"' },
+    { key: 'password', quote: "'" },
+    { key: 'secret', quote: '"' },
+    { key: 'secret', quote: "'" },
+    { key: 'api_key', quote: '"' },
+    { key: 'api_key', quote: "'" },
+  ])(
+    'masks a multiline quoted secret in a string prompt: $key in $quote quotes',
+    ({ key, quote }) => {
+      const serialized = JSON.stringify(
+        promptBodyRows(`Why it stopped\n${key}: ${quote}CANARYa\nCANARYb${quote}`, 76),
+      );
+
+      expect(serialized).not.toContain('CANARY');
+      expect(serialized).toContain('Why it stopped');
+      expect(serialized).toContain(DEFAULT_REDACTION_MARKER);
+    },
+  );
+
+  it('keeps the second line of a plain string prompt', () => {
+    const serialized = JSON.stringify(promptBodyRows('Plain hint\nsecond line', 76));
+
+    expect(serialized).toContain('second line');
+  });
+
+  it('masks array rows separately without pairing quotes across rows', () => {
+    const serialized = JSON.stringify(
+      promptBodyRows(
+        [
+          { kind: 'headline', tone: 'text', text: 'Why it stopped' },
+          { kind: 'message', text: 'first password: "abc' },
+          { kind: 'message', text: 'keep this text" tail' },
+        ],
+        76,
+      ),
+    );
+
+    expect(serialized).toContain('Why it stopped');
+    expect(serialized).not.toContain('abc');
+    expect(serialized).toContain(DEFAULT_REDACTION_MARKER);
+    expect(serialized).toContain('keep this text\\" tail');
   });
 
   beforeEach(() => {

@@ -33,6 +33,36 @@ describe('summarizeText', () => {
 
     expect(summary).not.toContain('CANARY');
   });
+
+  it.each([
+    ['an LF token line', 'Check failed\ntoken: CANARYvalue', 'Check failed token: ***REDACTED***'],
+    [
+      'a CRLF token line',
+      'Check failed\r\ntoken: CANARYvalue',
+      'Check failed token: ***REDACTED***',
+    ],
+    [
+      'an indented auth_token line',
+      'Check failed\n  auth_token: CANARYvalue',
+      'Check failed auth_token: ***REDACTED***',
+    ],
+    ['a TOKEN assignment', 'Check failed\nTOKEN=CANARYvalue', 'Check failed TOKEN=***REDACTED***'],
+    [
+      'prose that names a token',
+      'Failed to refresh token: denied',
+      'Failed to refresh token: denied',
+    ],
+    [
+      'prose below a check failure',
+      'Check failed\nFailed to refresh token: denied',
+      'Check failed Failed to refresh token: denied',
+    ],
+  ] as const)(
+    'preserves prose while masking credentials before line breaks collapse: %s',
+    (_label, input, expected) => {
+      expect(summarizeText(input)).toBe(expected);
+    },
+  );
 });
 
 describe('a hand-back quote', () => {
@@ -55,6 +85,25 @@ describe('a hand-back quote', () => {
 
     expect(issue.details.join('\n')).not.toContain('CANARY');
   });
+
+  it.each([
+    ['an LF token line', 'Check failed\ntoken: CANARYvalue'],
+    ['a CRLF token line', 'Check failed\r\ntoken: CANARYvalue'],
+    ['an indented auth_token line', 'Check failed\n  auth_token: CANARYvalue'],
+  ] as const)(
+    'masks line-start credentials before collapsing a hand-back: %s',
+    (_label, handBack) => {
+      const issue = buildRetryExhaustedRecoveryIssue({
+        task: makeTask({ id: 'T012' }),
+        createdAt: '2026-04-28T12:00:00.000Z',
+        attempts: 1,
+        validationSummary: 'x',
+        handBack,
+      });
+
+      expect(issue.details.join('\n')).not.toContain('CANARY');
+    },
+  );
 });
 
 describe('a retry-exhausted halt panel', () => {

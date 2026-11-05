@@ -2222,6 +2222,23 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [{ id: 'header', title: 'Workflow header' }],
     }),
     defineScenario({
+      id: 'workflow-planner-question-free-short',
+      title: 'Workflow · free-text planner question in a panel of few rows',
+      surface: screenSurface('workflow'),
+      viewports: [
+        viewport({ cols: 80, rows: 10 }),
+        viewport({ cols: 80, rows: 9 }),
+        viewport({ cols: 80, rows: 8 }),
+      ],
+      checkpoint: {
+        id: 'planner-question-free-short',
+        title: 'Free-text planner question with its question and field in view',
+        kind: 'question',
+        marker: 'Which file or module',
+      },
+      elements: [{ id: 'header', title: 'Workflow header' }],
+    }),
+    defineScenario({
       id: 'workflow-question',
       title: 'Workflow · clarification question',
       surface: screenSurface('workflow'),

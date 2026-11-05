@@ -857,6 +857,7 @@ const checkpointPredicates = [
   [checkpointId('plan-card-short'), includesAll('Approve plan')],
   [checkpointId('question-short'), includesAll('Reviewer/planner seat')],
   [checkpointId('planner-question-short'), includesAll('Reviewer/planner seat')],
+  [checkpointId('planner-question-free-short'), includesAll()],
   [checkpointId('recovery-short'), includesAll('Try again')],
   [checkpointId('plan-card'), planCardReady],
   [

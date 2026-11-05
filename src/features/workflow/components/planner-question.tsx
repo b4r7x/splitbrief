@@ -7,6 +7,7 @@ import {
   questionMenu,
   questionRows,
   QUESTION_ANSWER_ROWS,
+  type QuestionRow,
 } from '../prompt-rows/question.js';
 import { MultilineInput } from '../../../components/input/multiline-input.js';
 import { borderStyleFor } from '../../../lib/glyphs.js';
@@ -15,7 +16,7 @@ import { formatKeyHints, SELECT_HINT } from '../prompt-rows/approval.js';
 import { fitKeyLegend } from '../../../core/key-legend.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../lib/terminal/typeahead-grace.js';
-import { truncateTerminalDisplayText } from '../../../utils/display-text.js';
+import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../../utils/display-text.js';
 import { clamp } from '../../../utils/math.js';
 import { stopMenuChrome } from '../stop/options.js';
 
@@ -45,10 +46,11 @@ export function PlannerQuestion({
   const writing = state.focus === 'answer';
   const choices = question ? questionOptions(question) : [];
   const showAnswer = writing || (choices.length === 0 && height > QUESTION_ANSWER_ROWS);
-  const answerRows = showAnswer ? QUESTION_ANSWER_ROWS : 0;
   const innerWidth = Math.max(1, width - 4);
   const rows = question ? questionRows(question, state.index, innerWidth) : [];
-  const chrome = stopMenuChrome(height, 1 + answerRows);
+  const chrome = stopMenuChrome(height, showAnswer ? QUESTION_ANSWER_ROWS + 1 : 1);
+  // The question keeps a row, so a short panel never shows an answer field alone.
+  const answerRows = showAnswer ? clamp(chrome.listRows - 1, 1, QUESTION_ANSWER_ROWS) : 0;
   const bodyHeight = Math.max(chrome.extraRows, chrome.listRows - answerRows);
   const maxOffset = Math.max(0, rows.length - bodyHeight);
   const visibleOffset = clamp(offset, 0, maxOffset);
@@ -114,12 +116,36 @@ export function PlannerQuestion({
   );
 
   if (!question) return null;
-  const asked = visibleOffset > 0 ? `${SOFT_SEP}${rows[0]?.text}` : '';
-  // One row holds the option and the question together, so a long option leaves the question half.
-  const rowText = (text: string): string =>
-    chrome.titled || asked === ''
-      ? text
-      : truncateTerminalDisplayText(text.trimEnd(), Math.ceil(innerWidth / 2));
+  const mark = [visibleOffset > 0 ? '↑ more' : '', visibleOffset < maxOffset ? '↓ more' : '']
+    .filter((word) => word !== '')
+    .join(SOFT_SEP);
+  const inlineMark = chrome.extraRows === 0 ? mark : '';
+  const asked =
+    visibleOffset > 0
+      ? `${SOFT_SEP}${inlineMark === '' ? '' : `${inlineMark}${SOFT_SEP}`}${rows[0]?.text}`
+      : inlineMark === ''
+        ? ''
+        : `${SOFT_SEP}${inlineMark}`;
+  // One row holds the option and the question together: from a later offset a long option keeps
+  // half the row, less the mark's cells; at the top the question keeps what the mark leaves.
+  const markCells = getTerminalCellWidth(`${SOFT_SEP}${inlineMark}${SOFT_SEP}`);
+  const rowText = (row: QuestionRow): string => {
+    if (chrome.titled || asked === '') return row.text;
+    const defaultCells = row.defaultLabel ? getTerminalCellWidth(` ${row.defaultLabel}`) : 0;
+    const cut =
+      visibleOffset > 0
+        ? Math.min(Math.ceil(innerWidth / 2), innerWidth - 2 - defaultCells - markCells)
+        : innerWidth - getTerminalCellWidth(asked);
+    return truncateTerminalDisplayText(row.text.trimEnd(), Math.max(1, cut));
+  };
+  const answerWidth = Math.max(1, bodyHeight === 0 ? Math.ceil(innerWidth / 2) : innerWidth - 2);
+  const besideQuestion =
+    bodyHeight === 0 && rows.length > 0
+      ? truncateTerminalDisplayText(
+          `${SOFT_SEP}${mark === '' ? '' : `${mark}${SOFT_SEP}`}${rows[0]?.text ?? ''}`,
+          Math.max(1, innerWidth - 2 - answerWidth),
+        )
+      : '';
   const finalQuestion = state.index === (state.questions?.length ?? 0) - 1;
   const next = finalQuestion ? 'send answers' : 'next';
   const reply = { key: 'esc', verb: 'type a reply' };
@@ -176,7 +202,7 @@ export function PlannerQuestion({
             {row.option === undefined
               ? ''
               : listRowLead(focused && row.first && row.option === selected ? 'active' : 'default')}
-            {rowText(row.text) || (row.defaultLabel ? '' : ' ')}
+            {rowText(row) || (row.defaultLabel ? '' : ' ')}
             {row.defaultLabel && (
               <Text color={t.textDim} bold={false}>
                 {' '}
@@ -192,18 +218,18 @@ export function PlannerQuestion({
         ))}
       </Box>
       {showAnswer && (
-        <Box height={QUESTION_ANSWER_ROWS} flexShrink={0}>
+        <Box height={answerRows} flexShrink={0}>
           <Text color={writing ? t.accent : t.textDim}>› </Text>
-          <Box width={Math.max(1, innerWidth - 2)} flexDirection="column">
+          <Box width={answerWidth} flexDirection="column">
             <MultilineInput
               key={state.index}
               value={state.drafts[state.index]?.text ?? ''}
               onChange={(text) => questionPromptStore.setFocus('answer', text)}
               onSubmit={onAnswer}
               placeholder="Your answer…"
-              columns={Math.max(1, innerWidth - 2)}
-              rows={QUESTION_ANSWER_ROWS}
-              maxRows={QUESTION_ANSWER_ROWS}
+              columns={answerWidth}
+              rows={answerRows}
+              maxRows={answerRows}
               focus={writing && !disabled}
               isActive={writing && !disabled}
               keyBindings={{
@@ -227,14 +253,15 @@ export function PlannerQuestion({
               }}
             />
           </Box>
+          {besideQuestion !== '' && (
+            <Text color={t.textDim} wrap="truncate-end">
+              {besideQuestion}
+            </Text>
+          )}
         </Box>
       )}
       {chrome.extraRows > 0 && (
-        <Text color={t.textDim}>
-          {maxOffset > 0
-            ? `${visibleOffset > 0 ? '↑ more · ' : ''}${visibleOffset < maxOffset ? '↓ more · ' : ''}pgup/pgdn scroll`
-            : ' '}
-        </Text>
+        <Text color={t.textDim}>{maxOffset > 0 ? `${mark}${SOFT_SEP}pgup/pgdn scroll` : ' '}</Text>
       )}
       {chrome.legend && <Text color={t.textDim}>{legend}</Text>}
     </Box>

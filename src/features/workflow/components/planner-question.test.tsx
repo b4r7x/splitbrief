@@ -32,6 +32,8 @@ afterAll(() => {
 
 const down = '\u001b[B';
 const shiftDown = '\u001b[1;2B';
+const home = '\u001b[H';
+const end = '\u001b[F';
 afterEach(() => {
   store.reset();
   vi.restoreAllMocks();
@@ -75,6 +77,19 @@ function renderQuestion(width = 80, height = 12) {
       onPrevious={() => {}}
     />,
   );
+}
+
+const sixChoices: ClarificationQuestion = {
+  id: 'seat',
+  type: 'choice',
+  text: 'Which seat?',
+  options: ['First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth'],
+};
+
+function markLines(frame: string): string[] {
+  return stripAnsiStyles(frame)
+    .split('\n')
+    .filter((line) => line.includes('↑ more') || line.includes('↓ more'));
 }
 
 it('guards typeahead and reads rapid navigation synchronously before confirming', async () => {
@@ -736,7 +751,315 @@ it('leaves half of a one-row panel to the question beside a long option', async 
   const ui = renderQuestion(80, 1);
   await flushEffects();
   expect(stripAnsiStyles(ui.lastFrame())).toMatch(
-    /A very long option.*… · Which seat performs the review\?/,
+    /A very long option.*… · ↑ more · ↓ more · Which seat/,
   );
+  ui.unmount();
+});
+
+it('keeps a long option beside the mark in a one-row panel', async () => {
+  store.setQuestions([
+    {
+      id: 'seat',
+      type: 'choice',
+      text: 'Which seat performs the per-slice review?',
+      options: [
+        'Reviewer/planner seat (review-only tool, per existing split-review design)',
+        'Implementer seat reviewing its own diff slices',
+      ],
+      default: 'Reviewer/planner seat (review-only tool, per existing split-review design)',
+    },
+  ]);
+  const ui = renderQuestion(80, 1);
+  await flushEffects();
+  const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+  expect(frame).toContain('Reviewer/planner seat');
+  expect(frame).toContain('↑ more · ↓ more · Which seat');
+  ui.unmount();
+});
+
+it('shows the whole question beside the mark at the top of a one-row panel', async () => {
+  let now = 1000;
+  vi.spyOn(Date, 'now').mockImplementation(() => now);
+  const text = 'Which file or module do you want refactored?';
+  const asked = `${text} · ↓ more`;
+  const endsWithAsked = (frame: string): boolean =>
+    stripAnsiStyles(frame)
+      .split('\n')
+      .map((line) => line.trimEnd())
+      .some((line) => line.endsWith(asked));
+
+  store.setQuestions([{ id: 'target', type: 'input', text }]);
+  const field = renderQuestion(80, 2);
+  await flushEffects();
+  expect(endsWithAsked(field.lastFrame() ?? '')).toBe(true);
+  field.unmount();
+
+  store.setQuestions([{ ...sixChoices, text }]);
+  const list = renderQuestion(80, 1);
+  await flushEffects();
+  now += 200;
+  list.stdin.write(home);
+  await flushEffects();
+  expect(endsWithAsked(list.lastFrame() ?? '')).toBe(true);
+  list.unmount();
+});
+
+it.each([1, 2, 3, 4, 5])('says the list goes on in a panel of %i rows', async (height) => {
+  for (const width of [80, 60]) {
+    store.setQuestions([sixChoices]);
+    const ui = renderQuestion(width, height);
+    await flushEffects();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    const marks = markLines(frame);
+    expect(marks).toHaveLength(1);
+    expect(marks[0]).toContain('↑ more');
+    expect(marks[0]).toContain('↓ more');
+    expect(frame).toContain('First');
+    ui.unmount();
+  }
+});
+
+it.each([1, 2, 3, 4, 5])(
+  'says only what lies below at the top of a panel of %i rows',
+  async (height) => {
+    let now = 1000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    for (const width of [80, 60]) {
+      store.setQuestions([sixChoices]);
+      const ui = renderQuestion(width, height);
+      await flushEffects();
+      now += 200;
+      ui.stdin.write(home);
+      await flushEffects();
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      const marks = markLines(frame);
+      expect(marks).toHaveLength(1);
+      expect(marks[0]).toContain('↓ more');
+      expect(marks[0]).not.toContain('↑ more');
+      expect(frame.match(/Which seat\?/gu)).toHaveLength(1);
+      ui.unmount();
+    }
+  },
+);
+
+it.each([1, 2, 3, 4, 5])(
+  'says only what lies above at the end of a panel of %i rows',
+  async (height) => {
+    let now = 1000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    for (const width of [80, 60]) {
+      store.setQuestions([sixChoices]);
+      const ui = renderQuestion(width, height);
+      await flushEffects();
+      now += 200;
+      ui.stdin.write(end);
+      await flushEffects();
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      const marks = markLines(frame);
+      expect(marks).toHaveLength(1);
+      expect(marks[0]).toContain('↑ more');
+      expect(marks[0]).not.toContain('↓ more');
+      expect(frame).toContain('Decide for me');
+      ui.unmount();
+    }
+  },
+);
+
+it.each([1, 2, 3, 4, 5])('moves the mark with ↓ in a panel of %i rows', async (height) => {
+  let now = 1000;
+  vi.spyOn(Date, 'now').mockImplementation(() => now);
+  for (const width of [80, 60]) {
+    store.setQuestions([sixChoices]);
+    const ui = renderQuestion(width, height);
+    await flushEffects();
+    now += 200;
+    ui.stdin.write(home);
+    await flushEffects();
+    ui.stdin.write(down);
+    await flushEffects();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    const marks = markLines(frame);
+    expect(store.get().drafts[0]?.selected).toBe(1);
+    expect(marks).toHaveLength(1);
+    expect(marks[0]).toContain('↑ more');
+    expect(marks[0]).toContain('↓ more');
+    expect(frame).toContain('Second');
+    ui.unmount();
+  }
+});
+
+it.each([
+  [3, 'Fourth'],
+  [5, 'Sixth'],
+] as const)('keeps both ways marked after %i ↓ presses', async (presses, label) => {
+  let now = 1000;
+  vi.spyOn(Date, 'now').mockImplementation(() => now);
+  for (const height of [1, 2, 3, 4, 5]) {
+    for (const width of [80, 60]) {
+      store.setQuestions([sixChoices]);
+      const ui = renderQuestion(width, height);
+      await flushEffects();
+      now += 200;
+      for (let press = 0; press < presses; press++) ui.stdin.write(down);
+      await flushEffects();
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      const marks = markLines(frame);
+      expect(store.get().drafts[0]?.selected).toBe(presses);
+      expect(marks).toHaveLength(1);
+      expect(marks[0]).toContain('↑ more');
+      expect(marks[0]).toContain('↓ more');
+      expect(frame).toContain(label);
+      ui.unmount();
+    }
+  }
+});
+
+it.each([80, 60])('leaves a fitting list without a mark, %i columns wide', async (width) => {
+  store.setQuestions([
+    { id: 'seat', type: 'choice', text: 'Which seat?', options: ['Planner', 'Builder'] },
+  ]);
+  const ui = renderQuestion(width, 12);
+  await flushEffects();
+  const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+  expect(markLines(frame)).toHaveLength(0);
+  expect(frame).not.toContain('pgup/pgdn scroll');
+  ui.unmount();
+});
+
+it.each([80, 60])(
+  'keeps the six-choice mark on its own row in a panel of 6 rows, %i columns wide',
+  async (width) => {
+    store.setQuestions([sixChoices]);
+    const ui = renderQuestion(width, 6);
+    await flushEffects();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    const marks = markLines(frame);
+    expect(marks).toHaveLength(1);
+    expect(marks[0]).toContain('↑ more');
+    expect(marks[0]).toContain('↓ more');
+    expect(marks[0]).toContain('pgup/pgdn scroll');
+    expect(frame).toContain('Question 1 of 1 · Which seat?');
+    ui.unmount();
+  },
+);
+
+it.each([1, 2, 3])(
+  'keeps the mark beside a question wrapping to two rows in a panel of %i rows',
+  async (height) => {
+    for (const width of [80, 60]) {
+      store.setQuestions([
+        {
+          id: 'cache',
+          type: 'choice',
+          text: 'Which cache key must the repair preserve across a restart of the whole workflow?',
+          options: ['First', 'Second'],
+        },
+      ]);
+      const ui = renderQuestion(width, height);
+      await flushEffects();
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      const marks = markLines(frame);
+      expect(marks).toHaveLength(1);
+      expect(marks[0]).toContain('↑ more');
+      expect(marks[0]).toContain('↓ more');
+      expect(marks[0]).toContain('Which cache key');
+      ui.unmount();
+    }
+  },
+);
+
+it.each([1, 2, 3, 4, 5])(
+  'keeps a free-text question over its answer field at %i rows',
+  async (height) => {
+    const questions: readonly (readonly [ClarificationQuestion, string])[] = [
+      [{ id: 'name', type: 'input', text: 'Which name?' }, 'Which name?'],
+      [
+        {
+          id: 'cache',
+          type: 'input',
+          text: 'Which cache key must the repair preserve across a restart of the whole workflow?',
+        },
+        'Which cache',
+      ],
+      [
+        { id: 'seat', type: 'choice', text: 'Which seat?', options: ['Planner', 'Builder'] },
+        'Which seat?',
+      ],
+    ];
+    for (const width of [80, 60]) {
+      for (const [question, start] of questions) {
+        store.setQuestions([question]);
+        store.setFocus('answer');
+        const ui = renderQuestion(width, height);
+        await flushEffects();
+        const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+        expect(frame).toContain('›');
+        expect(frame).toContain(start);
+        ui.unmount();
+      }
+    }
+  },
+);
+
+it.each([1, 3])(
+  'submits a typed answer while keeping the question visible in %i rows',
+  async (height) => {
+    let now = 1000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    store.setQuestions([{ id: 'name', type: 'input', text: 'Which name?' }]);
+    const onAnswer = vi.fn();
+    const ui = renderFeature(
+      <PlannerQuestion
+        width={80}
+        height={height}
+        disabled={false}
+        onAnswer={onAnswer}
+        onCompose={() => {}}
+        onDecide={() => {}}
+        onPrevious={() => {}}
+      />,
+    );
+    await flushEffects();
+    now += 200;
+    ui.stdin.write('Ada');
+    await flushEffects();
+    const typed = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(typed).toContain('›');
+    expect(typed).toContain('Which name?');
+    expect(typed).toContain('Ada');
+    ui.stdin.write('\r');
+    await flushEffects();
+    expect(onAnswer).toHaveBeenCalledExactlyOnceWith('Ada');
+    ui.unmount();
+  },
+);
+
+it('keeps the answer draft when resized from three rows to one', async () => {
+  let now = 1000;
+  vi.spyOn(Date, 'now').mockImplementation(() => now);
+  store.setQuestions([
+    { id: 'cache', type: 'input', text: 'Which cache key must the repair preserve?' },
+  ]);
+  const props = {
+    width: 80,
+    disabled: false,
+    onAnswer: () => {},
+    onCompose: () => {},
+    onDecide: () => {},
+    onPrevious: () => {},
+  };
+  const ui = renderFeature(<PlannerQuestion {...props} height={3} />);
+  await flushEffects();
+  now += 200;
+  ui.stdin.write('src/cache.ts');
+  await flushEffects();
+  expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('src/cache.ts');
+
+  ui.rerender(<PlannerQuestion {...props} height={1} />);
+  await flushEffects();
+  const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+  expect(frame).toContain('src/cache.ts');
+  expect(frame).toContain('Which cache key');
+  expect(store.get().drafts[0]?.text).toBe('src/cache.ts');
   ui.unmount();
 });
