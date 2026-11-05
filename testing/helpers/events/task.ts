@@ -95,6 +95,30 @@ export function makeReviewFixInsertedEvents(announce = true): EngineEvent[] {
   return events;
 }
 
+type BriefBoundary = 'run-start' | 'between-briefs' | 'after-last-brief';
+
+/** A build of two briefs, T001 and T002, stopped at a moment when no brief runs. */
+export function makeBriefBoundaryEvents(boundary: BriefBoundary): EngineEvent[] {
+  const ts = 1_783_958_400_000;
+  const tasks = [taskId('T001'), taskId('T002')].map((id, index) => ({
+    id,
+    title: `Task ${index + 1}`,
+    index,
+    file: `src/task-${index + 1}.ts`,
+    action: 'modify' as const,
+  }));
+  const settled = { 'run-start': 0, 'between-briefs': 1, 'after-last-brief': 2 }[boundary];
+  return [
+    { type: 'tasks_planned', ts, phase: 'implementing', total: tasks.length, tasks },
+    ...tasks
+      .slice(0, settled)
+      .flatMap((task) => [
+        makeTaskStart({ ...task, taskId: task.id, ts: ts + 10 * task.index + 1, total: 2 }),
+        makeTaskComplete({ taskId: task.id, title: task.title, ts: ts + 10 * task.index + 2 }),
+      ]),
+  ];
+}
+
 export function makeTaskSkipped(
   overrides?: Partial<EventOfType<'task_skipped'>>,
 ): EventOfType<'task_skipped'> {

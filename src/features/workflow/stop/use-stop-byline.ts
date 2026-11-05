@@ -56,6 +56,7 @@ export function useStopByline(): StopByline | null {
         ? null
         : {
             id: suiteStage.id,
+            taskId: suiteStage.taskId,
             moment: suiteStage.moment,
             scenario: suiteStage.scenario,
             command: suiteStage.command,

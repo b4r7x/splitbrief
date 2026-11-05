@@ -688,8 +688,7 @@ it.each(['planning', 'implementing', 'final-review'] as const)(
               { text: ' · ', tone: 'textDim' },
             ]
           : []),
-        { text: 'Plan', tone: 'planner' },
-        { text: ' check V1', tone: 'textDim' },
+        { text: 'Plan check V1', tone: 'accent' },
         { text: ' · ', tone: 'textDim' },
         { text: 'npm test', tone: 'textDim' },
       ],

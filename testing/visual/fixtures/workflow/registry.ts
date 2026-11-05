@@ -589,7 +589,8 @@ const checkpointPredicates = [
   [checkpointId('build-consult'), includesAll('Claude Code CLI', 'answering the consult on T901')],
   [checkpointId('build-consult-rewrite'), includesTranscript('rewrote T901 (rev 2)')],
   [checkpointId('build-consult-split'), includesTranscript('split into T904, T905')],
-  [checkpointId('build-brief-check'), includesAll('Plan check K2', 'read after its checks')],
+  [checkpointId('build-brief-check'), includesAll('T901 check K2', 'read after its checks')],
+  [checkpointId('build-brief-check-own-id'), includesAll('Check T901-K2', 'read after its checks')],
   [
     checkpointId('build-brief-check-base-wait'),
     (context) => includesAll()(context) && excludesAll('briefs passed · Base re-run V2')(context),
@@ -598,7 +599,7 @@ const checkpointPredicates = [
     checkpointId('build-base-rerun'),
     includesAll(WORKFLOW_FIXTURE_TEXT.implementation, '0/3 briefs passed'),
   ],
-  [checkpointId('build-brief-check-seat-change'), includesAll('Plan check K2')],
+  [checkpointId('build-brief-check-seat-change'), includesAll('T901 check K2')],
   [checkpointId('implementation-shell-seat'), includesAll('Custom Shell')],
   [
     checkpointId('implementation-shell-seat-resolved'),
@@ -758,6 +759,14 @@ const checkpointPredicates = [
     checkpointId('final-review-plan-check'),
     includesAll('Final review', 'Review · OpenAI Codex CLI'),
   ],
+  [
+    checkpointId('final-review-plan-check-running'),
+    includesAll(
+      'Review · Plan check K1 · npm test',
+      'running 0:12',
+      'Plan check K1 · npm test 0:12',
+    ),
+  ],
   [checkpointId('review-answering-again'), includesAll('did not match its contract')],
   [
     checkpointId('review-verify'),
@@ -818,13 +827,14 @@ const checkpointPredicates = [
   [checkpointId('validation'), includesAll('Validate', 'test skipped')],
   [checkpointId('planner-commands-refused'), includesAll('Validation')],
   [checkpointId('touched-not-suggested'), includesAll('also changed')],
-  [checkpointId('plan-check-refused'), includesAll('Plan check K2', 'refused')],
-  [checkpointId('plan-check-not-run'), includesAll('Plan check K4 · not')],
-  [checkpointId('plan-check-missing-program'), includesAll('Plan check K4 · npm test', 'mocha')],
-  [checkpointId('plan-check-no-test-file'), includesAll('Plan check K4 · failed', 'loud.test.mjs')],
+  [checkpointId('between-briefs'), includesAll('1/3 briefs passed', 'Message BUILD on T902')],
+  [checkpointId('plan-check-refused'), includesAll('T901 check K2', 'refused')],
+  [checkpointId('plan-check-not-run'), includesAll('T901 check K4 · not')],
+  [checkpointId('plan-check-missing-program'), includesAll('T901 check K4 · npm test', 'mocha')],
+  [checkpointId('plan-check-no-test-file'), includesAll('T901 check K4 · failed', 'loud.test.mjs')],
   [
     checkpointId('plan-check-pre-existing'),
-    includesTranscript('Plan check K1', 'src/legacy/report.test.ts'),
+    includesTranscript('T901 check K1', 'src/legacy/report.test.ts'),
   ],
   [
     checkpointId('completed-orphan-rows'),

@@ -16,6 +16,7 @@ function collect(events: EngineEvent[]): string[] {
 }
 
 const ts = 1;
+const NO_TEST_COMMAND = 'no test command for an unrecognised stack; set validation.test_command';
 
 describe('createStdoutTextSink', () => {
   it('omits the absent task anchor from a schema-valid review completion', () => {
@@ -173,6 +174,57 @@ describe('createStdoutTextSink', () => {
       'verify V6: passed · 14.2s (npm test)',
     ]);
   });
+
+  it('names the brief whose own checks run a plan check during the build', () => {
+    const row = {
+      type: 'full_suite',
+      ts,
+      phase: 'validating-task',
+      taskId: taskId('T007'),
+      id: 'K034',
+      moment: 'plan',
+    } as const;
+    expect(
+      collect([
+        { ...row, status: 'not-run', command: '', detail: NO_TEST_COMMAND },
+        {
+          ...row,
+          command: 'npx vitest run',
+          status: 'done',
+          passed: false,
+          newFailures: 1,
+          preExisting: 2,
+          newKeys: ['src/a.test.ts::adds'],
+          preExistingKeys: ['src/b.test.ts::one', 'src/b.test.ts::two'],
+        },
+      ]),
+    ).toEqual([
+      'phase: validating-task',
+      `T007 check K034: not run (${NO_TEST_COMMAND})`,
+      'T007 check K034: 1 new, 2 pre-existing (npx vitest run)',
+      'T007 check K034 new: src/a.test.ts::adds',
+      'T007 check K034 pre-existing: src/b.test.ts::one · src/b.test.ts::two',
+    ]);
+  });
+
+  it('names a brief check whose id starts with the brief id once', () => {
+    expect(
+      collect([
+        {
+          type: 'full_suite',
+          ts,
+          phase: 'validating-task',
+          taskId: taskId('T001'),
+          id: 'T001-K1',
+          moment: 'plan',
+          command: '',
+          status: 'not-run',
+          detail: NO_TEST_COMMAND,
+        },
+      ]),
+    ).toEqual(['phase: validating-task', `check T001-K1: not run (${NO_TEST_COMMAND})`]);
+  });
+
   it('writes one line per phase change, task, review and completion', () => {
     const lines = collect([
       { type: 'workflow_started', ts, phase: 'researching', feature: 'add a widget' },

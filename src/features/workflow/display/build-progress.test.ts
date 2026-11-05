@@ -930,7 +930,7 @@ describe('deriveBuildProgress', () => {
     );
     resetWorkflow();
 
-    expect(progress.activity).toBe('Plan check K2 · node --test test/sleep.test.mjs');
+    expect(progress.activity).toBe('T001 check K2 · node --test test/sleep.test.mjs');
     expect(progress.freshness).toBe('running 0:11');
   });
 
@@ -1240,10 +1240,7 @@ describe('buildProgressRows', () => {
     },
     {
       suite: { id: 'C1', moment: 'plan', command: 'npm test' },
-      labelSpans: [
-        { text: 'Plan', tone: 'planner' },
-        { text: ' check C1', tone: 'textDim' },
-      ],
+      labelSpans: [{ text: 'Plan check C1', tone: 'accent' }],
     },
     {
       suite: { id: 'B1', moment: 'base', command: 'npm test' },

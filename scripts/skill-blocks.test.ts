@@ -384,6 +384,16 @@ describe('skill-blocks', () => {
     }
   });
 
+  it('asks the skill reviewer if each test a task adds fails when the named behaviour breaks', () => {
+    const lines = (renderBlock('review-packet') ?? '').split('\n').map((line) => line.trim());
+    const start = lines.indexOf('## Instructions');
+    const end = lines.findIndex((line, index) => index > start && line.startsWith('## '));
+    expect(start).toBeGreaterThan(-1);
+    expect(lines.slice(start + 1, end)).toContain(
+      'For each test a task adds, check that the test fails when the behaviour the task names breaks. A test that still passes with that behaviour broken is a finding.',
+    );
+  });
+
   it('renders typed review coverage and appends fixes instead of reopening completed tasks', () => {
     const packet = renderBlock('review-packet') ?? '';
     expect(packet).toContain('Plan context');

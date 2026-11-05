@@ -89,6 +89,8 @@ export interface RunningValidationStage {
  */
 export interface RunningSuiteStage {
   id?: string | undefined;
+  /** The brief whose own checks run a plan check during the build. */
+  taskId?: EngineEventOf<'full_suite'>['taskId'];
   stage?: NonNullable<ValidationStage> | undefined;
   command: string;
   moment: EngineEventOf<'full_suite'>['moment'];

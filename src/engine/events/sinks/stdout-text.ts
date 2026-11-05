@@ -7,6 +7,7 @@ import { EMPTY_RUN_VIEW, reduceRunView, type RunView } from '../../../core/run-v
 import { seatWaitParts } from '../../../core/sessions/seat-wait-line.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { checksSummary } from '../../../core/validation/checks-summary.js';
+import { planCheckName } from '../../../core/validation/plan-check-name.js';
 import { reusedNote } from '../../../core/validation/reused-note.js';
 import { oneLineDisplayText, stripTerminalControls } from '../../../utils/display-text.js';
 import { formatDuration, formatElapsedClock } from '../../../utils/format-time.js';
@@ -42,7 +43,7 @@ function checkLabel(event: Extract<EngineEvent, { type: 'full_suite' }>, id: str
     return `Render ${event.scenario}`;
   switch (event.moment) {
     case 'plan':
-      return `plan check ${id}`;
+      return planCheckName({ id, taskId: event.taskId });
     case 'verify':
       return `verify ${id}`;
     case 'base':
@@ -165,6 +166,9 @@ function briefChecks(view: RunView, taskId: string): string {
  *   fix check V1: off
  *   plan check K1: passed · 14.2s (<command>) | failed · 14.2s (<command>)
  *   plan check K1: refused (<detail>) | not run (<detail>)
+ *   T007 check K1: <M> new, <N> pre-existing (<command>)   (a brief's own red check, split at the run base)
+ *   T007 check K1: refused (<detail>) | not run (<detail>)   (a passed brief check has no line)
+ *   check T007-K1: not run (<detail>)   (a brief check whose id starts with the brief id)
  *   verify K1: passed · 14.2s (<command>) | failed · 14.2s (<command>)
  *   verify K1: refused (<detail>) | not run (<detail>)
  *   reviewer check V1: passed · reused, ran 11:53 (<command>)   (and on every check verdict above)

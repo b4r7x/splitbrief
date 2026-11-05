@@ -1,6 +1,6 @@
 import type { Phase } from '../../core/schemas/enums.js';
 import type { Config } from '../../core/schemas/config.js';
-import type { Check } from '../../core/schemas/task.js';
+import type { Check, TaskId } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
@@ -66,11 +66,12 @@ function notVerifiedReason(workspace: FailureKeys, base: FailureKeys): string {
  * leaves every key not verified with its reason; a refused or skipped one leaves every key new, and
  * `unavailable` says why. `counts` is the split the check's row carries.
  */
-export function splitFailureAtBase(
-  failure: FailureKeys,
-  atBase: BaseOutcome,
-  base: Pick<RunBase, 'head'>,
-): BaseSplit {
+export function splitFailureAtBase(opts: {
+  failure: FailureKeys;
+  atBase: BaseOutcome;
+  base: Pick<RunBase, 'head'>;
+}): BaseSplit {
+  const { failure, atBase, base } = opts;
   if (atBase.kind === 'unavailable') {
     return {
       preExisting: [],
@@ -135,6 +136,7 @@ export async function splitCommandAtBase(opts: {
     notices: { bus: EventBus; phase: Phase };
     row: {
       id: string;
+      taskId?: TaskId | undefined;
       command: string;
       moment: 'plan' | 'verify';
       scenario?: string | undefined;
@@ -150,7 +152,7 @@ export async function splitCommandAtBase(opts: {
       waitsOnBase: true,
     });
   }
-  return splitFailureAtBase(opts.failure, await atBase, opts.base);
+  return splitFailureAtBase({ failure: opts.failure, atBase: await atBase, base: opts.base });
 }
 
 /** The project gate running at the run base beside the build. */

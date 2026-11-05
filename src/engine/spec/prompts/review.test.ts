@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { buildFinalReviewPrompt, planBody, triageLines, type ReviewPlanData } from './review.js';
 
+const TEST_STRENGTH_ITEM =
+  '7. **Test Strength**: For each test a task adds, check that the test fails when the behaviour the task names breaks. A test that still passes with that behaviour broken is a finding.';
+
 const DECLARED_NOTE =
   'The implementer of a task declared each decision that has a task id. Nobody confirmed these decisions: judge them against the criteria and the code.';
 
@@ -34,6 +37,19 @@ describe('buildFinalReviewPrompt', () => {
       'Use git only to read (status, diff, log, show); never commit, branch, tag, checkout, switch, stash, reset, restore, rebase, merge, add, or change git config or hooks',
     );
   });
+
+  it.each([
+    ['task', '1. **Acceptance Criteria**: Check each due criterion and each reviewed task brief.'],
+    ['final', '1. **Acceptance Criteria**: Check each criterion from the spec and task briefs.'],
+  ] as const)(
+    'asks the %s review if each test a task adds fails when the named behaviour breaks',
+    (reviewKind, firstItem) => {
+      const prompt = buildFinalReviewPrompt({ spec: 'spec', taskBriefs: 'briefs', reviewKind });
+      const checklist = prompt.split('\n## Review Checklist\n')[1]?.split('\n## ')[0] ?? '';
+      expect(checklist).toContain(firstItem);
+      expect(checklist).toContain(TEST_STRENGTH_ITEM);
+    },
+  );
 });
 
 describe('planBody', () => {

@@ -214,6 +214,7 @@ Read the workspace without editing it. Answer from this packet and the current c
 
 ## Instructions
 Check the accepted behaviour, exclusions, edge cases, tests and repository rules.
+For each test a task adds, check that the test fails when the behaviour the task names breaks. A test that still passes with that behaviour broken is a finding.
 Quote recorded output for each validation claim. State when evidence is absent.
 Only registered check ids can verify a criterion. Old evidence cannot verify changed code.
 Pending criteria are pending. Do not report them as a plan gap.

@@ -41,7 +41,7 @@ import {
   makeRunnerCallStalled,
 } from '#testing/helpers/events/runner-call.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
-import { makeTaskComplete } from '#testing/helpers/events/task.js';
+import { makeBriefBoundaryEvents, makeTaskComplete } from '#testing/helpers/events/task.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { markWaitEnded, markWaitStarted } from '../../../stores/workflow/actions/wait.js';
 import { loadEvents } from '../../../stores/workflow/actions/load.js';
@@ -1052,6 +1052,33 @@ describe('InputFooter', () => {
     ui.unmount();
     terminalSizeStore.reset();
   });
+
+  it.each([
+    ['run-start', '1 queued for BUILD on T001'],
+    ['between-briefs', '1 queued for BUILD on T002'],
+    ['after-last-brief', '1 queued for BUILD'],
+  ] as const)(
+    'names the brief the queue waits for at the %s boundary, where no brief runs',
+    (boundary, summary) => {
+      onTestFinished(() => {
+        vi.useRealTimers();
+        terminalSizeStore.reset();
+      });
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(1_783_958_460_000);
+      terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+      runViewStore.__testReset({ phase: 'implementing' });
+      lifecycleStore.__testReset({ status: 'running', queueDepth: 1 });
+      for (const event of makeBriefBoundaryEvents(boundary)) addEvent(event);
+
+      const ui = renderFeature(<InputFooter />);
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+      expect(frame).toContain(summary);
+      if (boundary === 'after-last-brief') expect(frame).not.toContain(`${summary} on`);
+      ui.unmount();
+    },
+  );
 
   it('names REVIEW for the queue while a task review runs inside the build phase', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });

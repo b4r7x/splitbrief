@@ -549,6 +549,24 @@ describe('the preview answers for the effects it cannot simulate', () => {
   });
 });
 
+describe('the preview queue copy names the seat and the brief the product names', () => {
+  it('names the brief a BUILD message goes to between two briefs', async () => {
+    const preview = await open('workflow-between-briefs');
+    const ctx = preview.session.props.interactionDeps?.runtimeContext();
+    expect(ctx?.getQueueCopy(1).summary).toBe('1 queued for BUILD on T902');
+    await preview.close();
+    expectNoProductionEffect();
+  });
+
+  it('names REVIEW while a task review runs inside the build', async () => {
+    const preview = await open('workflow-review-task-cadence');
+    const ctx = preview.session.props.interactionDeps?.runtimeContext();
+    expect(ctx?.getQueueCopy(1).summary).toBe('1 queued for REVIEW');
+    await preview.close();
+    expectNoProductionEffect();
+  });
+});
+
 /** Walks the crew list to Continue; Enter anywhere else edits a seat instead. */
 async function activateContinue(ui: RenderFeatureResult): Promise<void> {
   const underCursor = `${glyph('liveBar')} Continue`;

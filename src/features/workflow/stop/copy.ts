@@ -39,6 +39,7 @@ export interface StopBylineInput {
   /** The command run before a review now, which a pause armed between briefs waits on. */
   readonly suite: {
     readonly id?: string | undefined;
+    readonly taskId?: RunningSuiteStage['taskId'];
     readonly moment: RunningSuiteStage['moment'];
     readonly scenario?: string | undefined;
     readonly command: string;

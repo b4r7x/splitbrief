@@ -984,12 +984,14 @@ describe('brief gate against the run base', () => {
       {
         status: 'running',
         id: 'K1',
+        taskId: 'T001',
         command: RED_SUITE,
         moment: 'plan',
         waitsOnBase: true,
       },
       {
         status: 'done',
+        taskId: 'T001',
         moment: 'plan',
         command: RED_SUITE,
         passed: false,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PHASES } from '../../../core/schemas/enums.js';
+import { taskId } from '../../../core/schemas/task.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { operationsStore } from '../../../stores/workflow/operations/state.js';
@@ -94,6 +95,13 @@ it.each([
   ],
   [{ id: 'V1', moment: 'base', command: 'npm test' }, 'Base re-run V1'],
   [{ id: 'V1', moment: 'brief', command: 'npm test' }, 'Fix check V1'],
+  [{ id: 'K034', moment: 'plan', taskId: taskId('T007'), command: 'npm test' }, 'T007 check K034'],
+  [{ id: 'P1', moment: 'plan', command: 'npm test' }, 'Plan check P1'],
+  [{ id: 'T001-K1', moment: 'plan', taskId: taskId('T001'), command: 'npm test' }, 'Check T001-K1'],
+  [
+    { id: 'T002-K1', moment: 'plan', taskId: taskId('T001'), command: 'npm test' },
+    'T001 check T002-K1',
+  ],
   [{ moment: 'base', command: 'npm test' }, 'Base re-run'],
   [{ moment: 'brief', command: 'npm test' }, 'Fix check'],
 ] as const)('paints the %s lead for live activity and transcript rows', (suite, lead) => {
@@ -103,7 +111,7 @@ it.each([
   ] as const) {
     expect(suiteStageParts(suite, context)).toEqual([
       { text: lead, tone },
-      ...(suite.moment === 'plan'
+      ...('scenario' in suite
         ? []
         : [
             { text: ' · ', tone: 'textDim' },
@@ -113,32 +121,25 @@ it.each([
   }
 });
 
-it.each(['live', 'transcript'] as const)(
-  'keeps a %s Plan check seat word planner and its metadata dim',
-  (context) => {
-    expect(suiteStageParts({ id: 'P1', moment: 'plan', command: 'npm test' }, context)).toEqual([
-      { text: 'Plan', tone: 'planner' },
-      { text: ' check P1', tone: 'textDim' },
-      { text: ' · ', tone: 'textDim' },
-      { text: 'npm test', tone: 'textDim' },
-    ]);
-  },
-);
-
-it.each(['live', 'transcript'] as const)(
+it.each([
+  ['live', 'accent'],
+  ['transcript', 'textDim'],
+] as const)(
   'ends a %s check that has no command on its lead, with no empty slot',
-  (context) => {
-    expect(suiteStageParts({ id: 'K4', moment: 'plan', command: '' }, context)).toEqual([
-      { text: 'Plan', tone: 'planner' },
-      { text: ' check K4', tone: 'textDim' },
-    ]);
+  (context, tone) => {
+    expect(
+      suiteStageParts({ id: 'K4', moment: 'plan', taskId: taskId('T002'), command: '' }, context),
+    ).toEqual([{ text: 'T002 check K4', tone }]);
   },
 );
 
 it('ends the live status of a check that has no command on its lead', () => {
   expect(
-    suiteStatusText({ phase: 'implementing', suite: { id: 'K4', moment: 'plan', command: '' } }),
-  ).toBe('Plan check K4');
+    suiteStatusText({
+      phase: 'implementing',
+      suite: { id: 'K4', moment: 'plan', taskId: taskId('T002'), command: '' },
+    }),
+  ).toBe('T002 check K4');
 });
 
 describe('activeVerb', () => {

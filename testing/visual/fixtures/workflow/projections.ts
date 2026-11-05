@@ -1051,6 +1051,18 @@ const buildBriefCheckProjection: WorkflowFixtureProjection = {
   ],
 };
 
+// The plan named the check after its brief, `T901-K2`: the screen names the brief once.
+const buildBriefCheckOwnIdProjection: WorkflowFixtureProjection = {
+  ...buildBriefCheckProjection,
+  scenarioId: scenarioId('workflow-build-brief-check-own-id'),
+  events: buildBriefCheckProjection.events.map(
+    (event): EngineEvent =>
+      event.type === 'task_validating' && event.check !== undefined
+        ? { ...event, check: { ...event.check, id: `${WORKFLOW_FIXTURE_TASK_ID}-K2` } }
+        : event,
+  ),
+};
+
 const buildBriefCheckBaseWaitProjection: WorkflowFixtureProjection = {
   ...buildBriefCheckProjection,
   scenarioId: scenarioId('workflow-build-brief-check-base-wait'),
@@ -1070,6 +1082,7 @@ const buildBriefCheckBaseWaitProjection: WorkflowFixtureProjection = {
       type: 'full_suite',
       ts: FIXED_TS + 9_300,
       phase: 'validating-task',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
       status: 'running',
       id: 'K2',
       command: 'npm test -- src/parser.test.ts',
@@ -1181,6 +1194,16 @@ const touchedNotSuggestedProjection: WorkflowFixtureProjection = {
   ],
 };
 
+// The moment between two briefs: T901 completed and T902 has not started, so no BUILD call is open
+// and the composer names the brief BUILD reads a message on.
+const betweenBriefsProjection: WorkflowFixtureProjection = {
+  ...touchedNotSuggestedProjection,
+  scenarioId: scenarioId('workflow-between-briefs'),
+  events: touchedNotSuggestedProjection.events.filter(
+    (event) => event.type !== 'task_touched_not_suggested',
+  ),
+};
+
 // A plan names `npm run lint`, and the run no longer approves the plan, so the plan command policy
 // refuses the check: the brief's checks show it as a refused row with the rule it broke, and the
 // brief completes on the check that ran.
@@ -1198,6 +1221,7 @@ const planCheckRefusedProjection: WorkflowFixtureProjection = {
       type: 'full_suite',
       ts: FIXED_TS + 390,
       phase: 'validating-task',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
       moment: 'plan',
       id: 'K2',
       command: 'npm run lint',
@@ -1233,6 +1257,7 @@ const planCheckNotRunProjection: WorkflowFixtureProjection = {
       type: 'full_suite',
       ts: FIXED_TS + 390,
       phase: 'validating-task',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
       moment: 'plan',
       id: 'K4',
       command: '',
@@ -1263,6 +1288,7 @@ const planCheckNoTestFileProjection: WorkflowFixtureProjection = {
         type: 'full_suite',
         ts: event.ts,
         phase: event.phase,
+        taskId: WORKFLOW_FIXTURE_TASK_ID,
         moment: 'plan',
         id: 'K4',
         command: '',
@@ -1312,6 +1338,7 @@ const planCheckPreExistingProjection: WorkflowFixtureProjection = {
       type: 'full_suite',
       ts: FIXED_TS + 390,
       phase: 'validating-task',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
       moment: 'plan',
       id: 'K1',
       command: 'npm test',
@@ -2266,6 +2293,27 @@ const finalReviewPlanCheckProjection: WorkflowFixtureProjection = {
           ]
         : [event],
     );
+  },
+};
+
+// Every brief passed and the plan check runs in the review phase, twelve seconds in; the review call
+// has not started.
+const finalReviewPlanCheckRunningProjection: WorkflowFixtureProjection = {
+  ...finalReviewProjection,
+  scenarioId: scenarioId('workflow-final-review-plan-check-running'),
+  get events(): EngineEvent[] {
+    return [
+      ...everyBriefPassed(),
+      {
+        type: 'full_suite',
+        ts: FIXED_TS + 30_000,
+        phase: 'final-review',
+        status: 'running',
+        id: 'K1',
+        command: 'npm test',
+        moment: 'plan',
+      },
+    ];
   },
 };
 
@@ -7871,6 +7919,7 @@ const projections = [
   buildConsultRewriteProjection,
   buildConsultSplitProjection,
   buildBriefCheckProjection,
+  buildBriefCheckOwnIdProjection,
   buildBriefCheckBaseWaitProjection,
   buildBaseRerunProjection,
   buildFixConsultProjection,
@@ -7884,6 +7933,7 @@ const projections = [
   reviewFixNoChangeProjection,
   finalReviewProjection,
   finalReviewPlanCheckProjection,
+  finalReviewPlanCheckRunningProjection,
   reviewVerifyProjection,
   reviewVerifyPreExistingProjection,
   stoppingReviewProjection,
@@ -8199,6 +8249,7 @@ const projections = [
   failureProjection,
   plannerCommandsRefusedProjection,
   touchedNotSuggestedProjection,
+  betweenBriefsProjection,
   planCheckRefusedProjection,
   planCheckNotRunProjection,
   {

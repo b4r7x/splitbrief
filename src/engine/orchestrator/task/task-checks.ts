@@ -157,13 +157,14 @@ async function runTaskCheckCommands(
   );
   const registry = checkRegistry(checkOptions);
   for (const [index, run] of runs.entries()) {
+    const row = {
+      ...planCheckRow(run.checkId, run.command ?? '', registry.get(run.checkId)),
+      taskId: task.id,
+    };
     if (run.status !== 'fail' && run.status !== 'pass') {
       publishReviewCheck(
         { bus: checkOptions.bus, phase: checkOptions.phase },
-        {
-          ...planCheckRow(run.checkId, run.command ?? '', registry.get(run.checkId)),
-          ...unranCheckRow(run),
-        },
+        { ...row, ...unranCheckRow(run) },
       );
       continue;
     }
@@ -180,14 +181,14 @@ async function runTaskCheckCommands(
         base: checkOptions.base,
         wait: {
           notices: { bus: checkOptions.bus, phase: checkOptions.phase },
-          row: planCheckRow(run.checkId, run.command, registry.get(run.checkId)),
+          row,
         },
       });
       if (split === undefined) continue;
       publishReviewCheck(
         { bus: checkOptions.bus, phase: checkOptions.phase },
         {
-          ...planCheckRow(run.checkId, run.command, registry.get(run.checkId)),
+          ...row,
           status: 'done',
           passed: false,
           ...(run.reusedAt !== undefined && { reusedAt: run.reusedAt }),

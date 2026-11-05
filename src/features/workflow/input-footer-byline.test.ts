@@ -1,6 +1,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import type { ConversationRowSegment } from './conversation-rows/types.js';
 import { glyph } from '../../lib/glyphs.js';
+import { taskId } from '../../core/schemas/task.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { getChromeContentWidth } from './layout/chrome-rows.js';
 import {
@@ -30,6 +31,12 @@ describe('buildInputFooterByline', () => {
     ],
     ['final-review', { id: 'V1', moment: 'base', command: 'npm test' }, 'Base re-run V1'],
     ['implementing', { id: 'V1', moment: 'brief', command: 'npm test' }, 'Fix check V1'],
+    [
+      'validating-task',
+      { id: 'K034', moment: 'plan', taskId: taskId('T007'), command: 'npx vitest run' },
+      'T007 check K034',
+    ],
+    ['final-review', { id: 'K1', moment: 'plan', command: 'npm test' }, 'Plan check K1'],
   ] as const)('keeps the %s running lead accent and its clock dim for %s', (phase, suite, lead) => {
     for (const cols of [120, 80, 60]) {
       const byline = buildInputFooterByline({
@@ -40,7 +47,7 @@ describe('buildInputFooterByline', () => {
       });
       expect(byline).toContainEqual({ text: lead, tone: 'accent' });
       expect(byline.at(-1)).toEqual({ text: ' 0:42', tone: 'textDim' });
-      if (suite.moment !== 'plan')
+      if (!('scenario' in suite))
         expect(byline).toContainEqual({ text: suite.command, tone: 'textDim' });
       for (const span of byline.filter((part) => part.text === ' · '))
         expect(span.tone).toBe('textDim');

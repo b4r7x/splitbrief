@@ -9,6 +9,7 @@ import { resetAllStores, seedBriefs } from '#testing/helpers/stores.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
+import { makeBriefBoundaryEvents } from '#testing/helpers/events/task.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
@@ -248,6 +249,23 @@ describe('WorkflowFooter', () => {
     expect(ui.lastFrame()).toContain('Message BUILD · read when its call ends…');
     ui.unmount();
   });
+
+  it.each([
+    ['run-start', 'Message BUILD on T001 · read when its call ends…'],
+    ['between-briefs', 'Message BUILD on T002 · read when its call ends…'],
+    ['after-last-brief', 'Message BUILD · read when its call ends…'],
+  ] as const)(
+    'names the brief BUILD reads a message on at the %s boundary, where no brief runs',
+    async (boundary, placeholder) => {
+      runViewStore.__testReset({ phase: 'implementing' });
+      lifecycleStore.__testReset({ status: 'running' });
+      for (const event of makeBriefBoundaryEvents(boundary)) addEvent(event);
+      const ui = renderFooter();
+      await flushEffects();
+      expect(ui.lastFrame()).toContain(placeholder);
+      ui.unmount();
+    },
+  );
 
   it('hands a slash typed over a panel to the composer, the whole chunk at once', async () => {
     const { cols, rows } = terminalSizeStore.get();

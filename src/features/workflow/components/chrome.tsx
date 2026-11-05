@@ -17,7 +17,7 @@ import type { readClipboardImage as readSystemClipboardImage } from '../../../co
 import type { listProjectFiles as listFiles } from '../../../lib/file-listing.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
-import { selectRunningBrief } from '../../../core/run-view/briefs.js';
+import { selectBuildMessageBrief } from '../../../core/run-view/briefs.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import {
   operationsStore,
@@ -139,9 +139,7 @@ export function WorkflowFooter({
   const phase = runViewStore.use((state) => state.phase);
   const running = lifecycleStore.use((state) => state.status === 'running');
   const steerableSeat = lifecycleStore.use((state) => state.steerableCall?.seat ?? null);
-  const taskId = runViewStore.use(
-    (view) => selectRunningBrief(view.briefs, view.phase).current?.id,
-  );
+  const taskId = runViewStore.use((view) => selectBuildMessageBrief(view.briefs)?.id);
   const stopping = stopStore.use((state) => state.intent !== 'none');
   const reviewing = operationsStore.use(selectScheduledReview);
   const placeholder = queuePlaceholder({

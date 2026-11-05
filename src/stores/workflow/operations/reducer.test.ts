@@ -1150,6 +1150,7 @@ describe('operationsStore', () => {
       type: 'full_suite',
       ts: 9_000,
       phase: 'validating-task',
+      taskId: taskId('T001'),
       status: 'running',
       id: 'K2',
       command,
@@ -1158,6 +1159,7 @@ describe('operationsStore', () => {
     });
     expect(operationsStore.get().suiteStage).toEqual({
       id: 'K2',
+      taskId: taskId('T001'),
       command,
       moment: 'plan',
       waitsOnBase: true,
@@ -1193,6 +1195,7 @@ describe('operationsStore', () => {
       type: 'full_suite',
       ts: 9_000,
       phase: 'validating-task',
+      taskId: taskId('T001'),
       status: 'running',
       id: 'K2',
       command,
@@ -1201,6 +1204,7 @@ describe('operationsStore', () => {
     });
     expect(selectRunningSuite(operationsStore.get())).toEqual({
       id: 'K2',
+      taskId: taskId('T001'),
       command,
       moment: 'plan',
       waitsOnBase: true,
@@ -1314,6 +1318,7 @@ describe('operationsStore', () => {
     addEvent({ ...base, ts: 9_000, check: { id: 'K2', command: 'npm test' } });
     expect(operationsStore.get().suiteStage).toEqual({
       id: 'K2',
+      taskId: taskId('T001'),
       command: 'npm test',
       moment: 'plan',
       stageStartedTs: 9_000,

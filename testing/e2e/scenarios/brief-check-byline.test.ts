@@ -143,7 +143,7 @@ it('names the brief check it runs and offers no running BUILD call while it runs
               (entry) => entry.kind === 'event' && entry.type === type,
             );
 
-          await expect.poll(byline, STEERING_WAIT).toContain('Plan check T001-K1 · node ');
+          await expect.poll(byline, STEERING_WAIT).toContain('Check T001-K1 · node ');
           expect(screen()).toContain('Message BUILD on T001 · read after its checks…');
           expect(screen()).not.toContain('read when its call ends');
           expect(screen()).not.toContain('Implementing…');

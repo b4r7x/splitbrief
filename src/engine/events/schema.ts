@@ -786,6 +786,8 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     status: z.enum(['running', 'done', 'not-run', 'refused', 'stopped', 'off']),
     stage: z.enum(['typecheck', 'lint', 'test']).optional(),
     id: z.string().optional(),
+    /** On a plan check a brief's own checks run during the build: the brief. */
+    taskId: TaskIdSchema.optional(),
     command: z.string(),
     moment: z.enum(['pre-review', 'base', 'brief', 'plan', 'verify']),
     scenario: z.string().optional(),

@@ -96,7 +96,7 @@ describe('runTaskChecks', () => {
     expect(recordedChecks(projectDir, sessionId).map((entry) => entry.id)).toEqual(['K1']);
   });
 
-  it('records refused and not-run plan checks and shows each row as the pre-review row reads', async () => {
+  it('records refused and not-run plan checks and names the brief on each row', async () => {
     const { projectDir, sessionId } = setup('task-checks-refused');
     const task = makeTask({
       id: 'T001',
@@ -130,17 +130,26 @@ describe('runTaskChecks', () => {
     expect(
       events
         .filter((event): event is EngineEventOf<'full_suite'> => event.type === 'full_suite')
-        .map((row) => [row.id, row.moment, row.status, row.command, row.scenario, row.detail]),
+        .map((row) => [
+          row.id,
+          row.taskId,
+          row.moment,
+          row.status,
+          row.command,
+          row.scenario,
+          row.detail,
+        ]),
     ).toEqual([
       [
         'K2',
+        'T001',
         'plan',
         'refused',
         'npm run lint',
         undefined,
         'runs a package script or binary (npm run)',
       ],
-      ['K3', 'plan', 'not-run', '', 'home', 'validation.render is not set'],
+      ['K3', 'T001', 'plan', 'not-run', '', 'home', 'validation.render is not set'],
     ]);
     expect(
       recordedChecks(projectDir, sessionId).map((entry) => [entry.id, entry.status, entry.output]),

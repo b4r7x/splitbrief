@@ -1,5 +1,4 @@
-import { queueCopy } from '../../../src/features/workflow/queue-copy.js';
-import { phaseStage } from '../../../src/core/rail-stages.js';
+import { currentQueueCopy } from '../../../src/features/workflow/queue-copy.js';
 import { isAbsolute, relative, resolve } from 'node:path';
 import type { AppInteractionDeps, AppProps } from '../../../src/app/root.js';
 import type { AppKeyDeps } from '../../../src/app/keys.js';
@@ -32,9 +31,7 @@ import { overlayStore } from '../../../src/stores/ui/overlay.js';
 import { projectFilesStore } from '../../../src/stores/ui/project-files.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { detachImage, listAttachments } from '../../../src/stores/workflow/attachments.js';
-import { lifecycleStore } from '../../../src/stores/workflow/lifecycle.js';
 import { runViewStore } from '../../../src/stores/workflow/run-view.js';
-import { selectRunningBrief } from '../../../src/core/run-view/briefs.js';
 import { activeApply } from '../../../src/engine/orchestrator/session-lifecycle/shutdown.js';
 import { prepareWorkflowExecution } from '../../helpers/workflow-screen.js';
 import {
@@ -258,14 +255,7 @@ function createPreviewCommandContext(): RuntimeCommandContext {
     resumeRun: () => false,
     steerRun: () => false,
     endRun: () => false,
-    getQueueCopy: (count) => {
-      const { phase } = runViewStore.get();
-      return queueCopy({
-        seat: phaseStage(phase),
-        taskId: selectRunningBrief(runViewStore.get().briefs, phase).current?.id,
-        count: count ?? lifecycleStore.get().queueDepth,
-      });
-    },
+    getQueueCopy: currentQueueCopy,
     clearQueue: () => unavailable,
     attachImage: unavailableInPreview,
     plannerSupportsImages: () => false,

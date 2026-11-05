@@ -46,6 +46,7 @@ function runningSuiteStage(event: SuiteEvent): RunningSuiteStage | null {
   if (event.status !== 'running') return null;
   return {
     ...(event.id !== undefined && { id: event.id }),
+    ...(event.taskId !== undefined && { taskId: event.taskId }),
     ...(event.stage !== undefined && { stage: event.stage }),
     command: event.command,
     moment: event.moment,
@@ -159,6 +160,7 @@ function updateRunningOperations(state: OperationsState, event: EngineEvent): Op
         ...state,
         suiteStage: {
           id: event.check.id,
+          taskId: event.taskId,
           command: event.check.command,
           moment: 'plan',
           ...(event.check.scenario !== undefined && { scenario: event.check.scenario }),

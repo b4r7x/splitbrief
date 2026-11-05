@@ -89,7 +89,11 @@ async function splitAtRunBase(input: {
     moment: 'pre-review',
     waitsOnBase: true,
   });
-  return splitFailureAtBase(input.failure, await input.gate.outcome(input.id), input.base);
+  return splitFailureAtBase({
+    failure: input.failure,
+    atBase: await input.gate.outcome(input.id),
+    base: input.base,
+  });
 }
 
 /**

@@ -7,6 +7,8 @@ import type {
 } from '../../../stores/workflow/operations/state.js';
 import { phaseStage } from '../../../core/rail-stages.js';
 import { assertNever } from '../../../utils/type-guards.js';
+import { capitalize } from '../../../utils/capitalize.js';
+import { planCheckName } from '../../../core/validation/plan-check-name.js';
 import { runnerActivityRoleLabel } from './runner-activity-display.js';
 import { isStatusFallback } from '../../../stores/workflow/operations/planner-status.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
@@ -137,7 +139,7 @@ export function reviewActivitySpans(parts: ReviewActivityParts): ConversationRow
 
 export function suiteStatusParts(
   phase: Phase,
-  suite: Pick<RunningSuiteStage, 'id' | 'moment' | 'command' | 'scenario'>,
+  suite: Pick<RunningSuiteStage, 'id' | 'taskId' | 'moment' | 'command' | 'scenario'>,
   operation: ActiveOperation | null = null,
 ): ConversationRowSegment[] {
   const reviewing =
@@ -147,7 +149,7 @@ export function suiteStatusParts(
 }
 
 export function suiteStageParts(
-  suite: Pick<RunningSuiteStage, 'id' | 'moment' | 'command' | 'scenario'>,
+  suite: Pick<RunningSuiteStage, 'id' | 'taskId' | 'moment' | 'command' | 'scenario'>,
   context: 'live' | 'transcript',
 ): ConversationRowSegment[] {
   const leadTone = context === 'live' ? stateTone('running') : 'textDim';
@@ -162,16 +164,13 @@ export function suiteStageParts(
 }
 
 function suiteMomentParts(
-  suite: Pick<RunningSuiteStage, 'id' | 'moment'>,
+  suite: Pick<RunningSuiteStage, 'id' | 'taskId' | 'moment'>,
   leadTone: ConversationRowSegment['tone'],
 ): ConversationRowSegment[] {
   const id = suite.id === undefined ? '' : ` ${suite.id}`;
   switch (suite.moment) {
     case 'plan':
-      return [
-        { text: 'Plan', tone: CREW_SEAT_ROLES.plan },
-        { text: ` check${id}`, tone: 'textDim' },
-      ];
+      return [{ text: capitalize(planCheckName(suite)), tone: leadTone }];
     case 'base':
       return [{ text: `Base re-run${id}`, tone: leadTone }];
     case 'brief':

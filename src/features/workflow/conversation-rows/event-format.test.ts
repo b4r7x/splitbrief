@@ -370,7 +370,7 @@ describe('fullSuiteRow for a reviewer check', () => {
     expect(spans.find((span) => span.text.includes('npm test'))?.tone).toBe('textDim');
     if (moment === 'pre-review')
       expect(spans).toContainEqual({ text: 'Reviewer', tone: 'reviewer' });
-    if (moment === 'plan') expect(spans).toContainEqual({ text: 'Plan', tone: 'planner' });
+    if (moment === 'plan') expect(spans).toContainEqual({ text: 'Plan check V1', tone: 'textDim' });
     expect(spans.filter((span) => span.text === ' · ')).toHaveLength(3);
   });
   it('names plan checks and renders without displaying render commands', () => {
@@ -433,6 +433,7 @@ describe('fullSuiteRow for a reviewer check', () => {
       id: 'K1',
       moment: 'plan',
       phase: 'validating-task',
+      taskId: taskId('T002'),
       status: 'done',
       passed: false,
       duration: 1_000,
@@ -441,12 +442,12 @@ describe('fullSuiteRow for a reviewer check', () => {
     const mixed = { ...red, newFailures: 1, preExisting: 1 };
 
     expect(fullSuiteRow(allOld)).toBe(
-      "Plan check K1 · npm test · pre-existing · 1.0s · the failure also fails before this run's changes",
+      "T002 check K1 · npm test · pre-existing · 1.0s · the failure also fails before this run's changes",
     );
     expect(fullSuiteRow(mixed)).toBe(
-      'Plan check K1 · npm test · 1\u00a0new, 1\u00a0pre-existing · 1.0s',
+      'T002 check K1 · npm test · 1\u00a0new, 1\u00a0pre-existing · 1.0s',
     );
-    expect(fullSuiteRow(red)).toBe('Plan check K1 · npm test · failed · 1.0s');
+    expect(fullSuiteRow(red)).toBe('T002 check K1 · npm test · failed · 1.0s');
     expect(fullSuiteTone(allOld)).toBe('textDim');
     expect(fullSuiteTone(mixed)).toBe('error');
     expect(fullSuiteTone({ ...red, newFailures: 0, preExisting: 0, notVerified: 1 })).toBe('error');
@@ -493,6 +494,7 @@ describe('fullSuiteRow for a reviewer check', () => {
       fullSuiteRow(
         reviewCheck({
           phase: 'implementing',
+          taskId: taskId('T002'),
           id: 'K4',
           moment: 'plan',
           command: '',
@@ -500,7 +502,7 @@ describe('fullSuiteRow for a reviewer check', () => {
           detail: 'no affected test file found',
         }),
       ),
-    ).toBe('Plan check K4 · not\u00a0run · no affected test file found');
+    ).toBe('T002 check K4 · not\u00a0run · no affected test file found');
   });
 
   it('names why a plan check that ran no command failed', () => {

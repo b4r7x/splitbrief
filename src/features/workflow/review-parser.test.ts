@@ -15,6 +15,7 @@ import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
 import { addEvent } from '../../stores/workflow/actions/event.js';
 import { seedBriefs } from '#testing/helpers/stores.js';
+import { makeBriefBoundaryEvents } from '#testing/helpers/events/task.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { setActiveTerminalHandover } from '../../lib/terminal/editor-handover.js';
 import { terminalSequences } from '../../lib/terminal/control.js';
@@ -540,6 +541,26 @@ describe('review input effects', () => {
       isError: false,
     });
   });
+
+  it.each([
+    ['run-start', 'Queued for BUILD on T001 · ctrl+⏎ sends now'],
+    ['between-briefs', 'Queued for BUILD on T002 · ctrl+⏎ sends now'],
+    ['after-last-brief', 'Queued for BUILD · ctrl+⏎ sends now'],
+  ] as const)(
+    'names the brief BUILD reads a correction on at the %s boundary, where no brief runs',
+    async (boundary, message) => {
+      runViewStore.__testReset({ phase: 'implementing' });
+      lifecycleStore.__testReset({ status: 'running' });
+      for (const event of makeBriefBoundaryEvents(boundary)) addEvent(event);
+      const effects = makeEffects(async () => ({ status: 'accepted' as const, messageId: 'm-1' }));
+
+      await createReviewInputHandler(makeInputMode('normal'), effects).handleInput(
+        plainUserMessage('smaller diffs'),
+      );
+
+      expect(feedbackStore.get()).toEqual({ message, isError: false });
+    },
+  );
 
   it('confirms a message queued during the final review is for the reviewer', async () => {
     runViewStore.__testReset({ phase: 'final-review' });

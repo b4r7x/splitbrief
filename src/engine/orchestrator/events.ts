@@ -241,6 +241,7 @@ export function publishReviewCheck(
   opts: {
     status: 'running' | 'done' | 'not-run' | 'refused' | 'stopped' | 'off';
     id: string;
+    taskId?: TaskId | undefined;
     command: string;
     moment: 'pre-review' | 'base' | 'brief' | 'plan' | 'verify';
     scenario?: string | undefined;
@@ -267,6 +268,7 @@ export function publishReviewCheck(
     phase: ctx.phase,
     status: opts.status,
     id: opts.id,
+    ...(opts.taskId !== undefined && { taskId: opts.taskId }),
     command: opts.command,
     moment: opts.moment,
     ...(opts.scenario !== undefined && { scenario: opts.scenario }),

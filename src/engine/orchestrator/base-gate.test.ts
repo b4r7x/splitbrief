@@ -5,9 +5,9 @@ const BASE = { head: 'abc123' };
 
 describe('splitFailureAtBase', () => {
   it('marks the keys the same command also shows red at the run base as pre-existing', () => {
-    const split = splitFailureAtBase(
-      { keys: ['a.test.ts::old', 'a.test.ts::new'] },
-      {
+    const split = splitFailureAtBase({
+      failure: { keys: ['a.test.ts::old', 'a.test.ts::new'] },
+      atBase: {
         kind: 'ran',
         run: {
           checkId: 'V1',
@@ -16,8 +16,8 @@ describe('splitFailureAtBase', () => {
           failure: { keys: ['a.test.ts::old'] },
         },
       },
-      BASE,
-    );
+      base: BASE,
+    });
 
     expect(split.preExisting).toEqual(['a.test.ts::old']);
     expect(split.notVerified).toBeUndefined();
@@ -30,11 +30,11 @@ describe('splitFailureAtBase', () => {
   });
 
   it('leaves every key new when the command passes at the run base', () => {
-    const split = splitFailureAtBase(
-      { keys: ['a.test.ts::new'] },
-      { kind: 'ran', run: { checkId: 'V1', status: 'pass', output: 'ok' } },
-      BASE,
-    );
+    const split = splitFailureAtBase({
+      failure: { keys: ['a.test.ts::new'] },
+      atBase: { kind: 'ran', run: { checkId: 'V1', status: 'pass', output: 'ok' } },
+      base: BASE,
+    });
 
     expect(split.preExisting).toEqual([]);
     expect(split.counts).toEqual({
@@ -46,9 +46,9 @@ describe('splitFailureAtBase', () => {
   });
 
   it('does not verify a red whose keys are a placeholder on both sides', () => {
-    const split = splitFailureAtBase(
-      { keys: ['timed out'], placeholder: 'timed out' },
-      {
+    const split = splitFailureAtBase({
+      failure: { keys: ['timed out'], placeholder: 'timed out' },
+      atBase: {
         kind: 'ran',
         run: {
           checkId: 'V1',
@@ -57,8 +57,8 @@ describe('splitFailureAtBase', () => {
           failure: { keys: ['timed out'], placeholder: 'timed out' },
         },
       },
-      BASE,
-    );
+      base: BASE,
+    });
 
     expect(split.preExisting).toEqual([]);
     expect(split.notVerified).toBe('both runs timed out');

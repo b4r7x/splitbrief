@@ -16,7 +16,11 @@ import { runnerSilenceMs, silenceTail, silenceText } from '../display/build-prog
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { formatElapsedClock } from '../../../utils/format-time.js';
-import { selectRunningBrief, selectTaskListView } from '../../../core/run-view/briefs.js';
+import {
+  selectBuildMessageBrief,
+  selectRunningBrief,
+  selectTaskListView,
+} from '../../../core/run-view/briefs.js';
 import {
   operationsStore,
   selectRunningSuite,
@@ -310,7 +314,7 @@ export function InputFooter({
     lifecycle.queueDepth > 0 && (atRestStatus === null || atRestStatus === 'open')
       ? queueCopy({
           seat: messageSeat(runView.phase, selectScheduledReview(operations)),
-          taskId: runningBriefId,
+          taskId: selectBuildMessageBrief(runView.briefs)?.id,
           count: lifecycle.queueDepth,
         })
       : null;

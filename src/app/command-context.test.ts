@@ -10,6 +10,7 @@ import {
   restoreClipboardExecFixture,
 } from '#testing/helpers/clipboard-exec-fixture.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeBriefBoundaryEvents } from '#testing/helpers/events/task.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
@@ -245,6 +246,21 @@ describe('buildCommandContext', () => {
     });
     expect(feedbackStore.get().message).toBe('Queue is empty');
   });
+
+  it.each([
+    ['run-start', '1 queued for BUILD on T001'],
+    ['between-briefs', '1 queued for BUILD on T002'],
+    ['after-last-brief', '1 queued for BUILD'],
+  ] as const)(
+    'names the brief BUILD reads the queue on at the %s boundary, where no brief runs',
+    (boundary, summary) => {
+      runViewStore.__testReset({ phase: 'implementing' });
+      lifecycleStore.__testReset({ status: 'running' });
+      for (const event of makeBriefBoundaryEvents(boundary)) addEvent(event);
+
+      expect(build().getQueueCopy(1).summary).toBe(summary);
+    },
+  );
 
   it.each([0, 2])(
     'delegates /queue clear and formats its result with shared copy for %s messages',

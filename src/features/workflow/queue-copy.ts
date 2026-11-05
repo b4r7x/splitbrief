@@ -1,4 +1,9 @@
 import { CREW_SEAT_LABELS, type CrewSeatId } from '../../core/crew/identity.js';
+import { messageSeat } from '../../core/queue-state.js';
+import { selectBuildMessageBrief } from '../../core/run-view/briefs.js';
+import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { operationsStore, selectScheduledReview } from '../../stores/workflow/operations/state.js';
+import { runViewStore } from '../../stores/workflow/run-view.js';
 import { pluralize } from '../../utils/pluralize.js';
 
 export function queueCopy(input: {
@@ -57,4 +62,14 @@ export function queueCopy(input: {
       value: `${count} ${pluralize(count, 'image')} went to ${target} as paths · this seat takes no images`,
     },
   };
+}
+
+/** The queue copy of the run on screen: the seat that reads a message typed now, and its brief. */
+export function currentQueueCopy(count?: number) {
+  const { phase, briefs } = runViewStore.get();
+  return queueCopy({
+    seat: messageSeat(phase, selectScheduledReview(operationsStore.get())),
+    taskId: selectBuildMessageBrief(briefs)?.id,
+    count: count ?? lifecycleStore.get().queueDepth,
+  });
 }

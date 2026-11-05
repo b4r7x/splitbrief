@@ -853,7 +853,7 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 
 ### Symptom: A plan check is `refused`
 
-**Likely cause:** The plan command policy refused the planner's command when the check ran. The row names the rule, for example `Plan check K2 · npm run lint · refused · runs a package script or binary (npm run)`. A package script (`npm run <script>`) runs only under an approved plan. `checkPlan` already sends a plan back to the planner when a check breaks the policy, so a refusal during Build usually means that `workflow.approve` changed after planning. A check whose script `package.json` does not define is not refused: it fails, and the reviewer can answer it with a fix task.
+**Likely cause:** The plan command policy refused the planner's command when the check ran. The row names the rule, for example `T001 check K2 · npm run lint · refused · runs a package script or binary (npm run)` during Build, or `Plan check K2 · …` before review. A package script (`npm run <script>`) runs only under an approved plan. `checkPlan` already sends a plan back to the planner when a check breaks the policy, so a refusal during Build usually means that `workflow.approve` changed after planning. A check whose script `package.json` does not define is not refused: it fails, and the reviewer can answer it with a fix task.
 
 A refused check did not run. SPLITBRIEF records it as refused, not as failed, and the reviewer sees it as refused. A refused check halts the run before the review with `Checks cannot run: <id>`.
 

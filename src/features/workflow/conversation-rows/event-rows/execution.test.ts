@@ -39,12 +39,7 @@ describe('fullSuiteRowBlock', () => {
               { text: 'Reviewer', tone: 'reviewer' },
               { text: ' check V2', tone: 'textDim' },
             ]
-          : moment === 'plan'
-            ? [
-                { text: 'Plan', tone: 'planner' },
-                { text: ' check V2', tone: 'textDim' },
-              ]
-            : [{ text: `${label} V2`, tone: 'textDim' }]),
+          : [{ text: `${label} V2`, tone: 'textDim' }]),
         { text: ' · ', tone: 'textDim' },
         { text: 'npm test', tone: 'textDim' },
         { text: ' · ', tone: 'textDim' },

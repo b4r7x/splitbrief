@@ -34,12 +34,8 @@ import {
   isOpenRunAtRest,
   routerStore,
 } from '../stores/navigation/router.js';
-import { lifecycleStore } from '../stores/workflow/lifecycle.js';
 import { runViewStore } from '../stores/workflow/run-view.js';
-import { queueCopy } from '../features/workflow/queue-copy.js';
-import { messageSeat } from '../core/queue-state.js';
-import { operationsStore, selectScheduledReview } from '../stores/workflow/operations/state.js';
-import { selectRunningBrief } from '../core/run-view/briefs.js';
+import { currentQueueCopy } from '../features/workflow/queue-copy.js';
 import { projectFilesStore } from '../stores/ui/project-files.js';
 import { skillsStore } from '../stores/project/skills.js';
 import { refreshSkills } from './refresh-skills.js';
@@ -398,14 +394,7 @@ export function buildCommandContext({
       return requestSteer(submission.message);
     },
     endRun: requestEndRun,
-    getQueueCopy: (count) => {
-      const { phase, briefs } = runViewStore.get();
-      return queueCopy({
-        seat: messageSeat(phase, selectScheduledReview(operationsStore.get())),
-        taskId: selectRunningBrief(briefs, phase).current?.id,
-        count: count ?? lifecycleStore.get().queueDepth,
-      });
-    },
+    getQueueCopy: currentQueueCopy,
     clearQueue: workflow.requestClearQueue,
     insertImage: insertImageIntoComposer,
     attachImage,

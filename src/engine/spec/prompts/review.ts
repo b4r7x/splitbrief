@@ -29,7 +29,8 @@ const REVIEW_CHECKLIST = `1. **Acceptance Criteria**: Check each criterion from 
 3. **Error Handling**: Are error cases handled as specified?
 4. **Edge Cases**: Are boundary conditions addressed?
 5. **Type Safety**: Are types correct and complete?
-6. **Code Quality**: Are there obvious bugs, security issues, or performance problems?`;
+6. **Code Quality**: Are there obvious bugs, security issues, or performance problems?
+7. **Test Strength**: For each test a task adds, check that the test fails when the behaviour the task names breaks. A test that still passes with that behaviour broken is a finding.`;
 
 const REQUIRED_RESULTS = `Answer with one result per listed id, in the schema you were given. Every task not met and every failed criterion needs a blocking finding naming it. A red pending input already blocks the review: do not restate it as a new finding. When a failed criterion or a task not met needs a finding for that input, give the input's id to one such finding only. A finding a fix cycle left open keeps its id, and a new finding never takes an id the triage log names. Mark a criterion unverified when no recorded evidence proves it, and name its checkIds. Verify a render only when its current-candidate images are attached and you critique the scenario. A manifest alone leaves the render unverified. Finding kinds are defect, plan-gap, unverified and question; minor findings are notes.`;
 

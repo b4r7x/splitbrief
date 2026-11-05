@@ -1026,11 +1026,26 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'build-brief-check',
         title: 'The screen names the check the brief runs and offers no running BUILD call',
         kind: 'implementation',
-        marker: 'Plan check K2',
+        marker: 'T901 check K2',
       },
       elements: [
         { id: 'header', title: 'Build progress' },
         { id: 'transcript', title: 'Running brief' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-build-brief-check-own-id',
+      title: 'Workflow · a brief check whose id starts with the brief id',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'build-brief-check-own-id',
+        title: 'The check row names the brief once',
+        kind: 'implementation',
+        marker: 'Check T901-K2',
+      },
+      elements: [
+        { id: 'header', title: 'Build progress' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
@@ -1336,6 +1351,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Review transcript' },
         { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-final-review-plan-check-running',
+      title: 'Workflow · a plan check running before the review call',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'final-review-plan-check-running',
+        title: 'The plan check, its command and its clock in the build block and the byline',
+        kind: 'review',
+        marker: 'Review · Plan check K1',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header and build progress' },
+        { id: 'transcript', title: 'Review transcript with the running plan check' },
+        { id: 'composer', title: 'Review stage, plan check and clock' },
       ],
     }),
     defineScenario({
@@ -1707,6 +1738,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-between-briefs',
+      title: 'Workflow · the composer between two briefs',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'between-briefs',
+        title: 'One brief completed, the next not started',
+        kind: 'implementation',
+        marker: 'Message BUILD on T902',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-plan-check-refused',
       title: 'Workflow · a plan check the command policy refused',
       surface: screenSurface('workflow'),
@@ -1714,7 +1761,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'plan-check-refused',
         title: 'A refused plan check row with its reason',
         kind: 'implementation',
-        marker: 'Plan check K2',
+        marker: 'T901 check K2',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1730,7 +1777,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'plan-check-not-run',
         title: 'A not-run plan check row with its reason and no empty command slot',
         kind: 'implementation',
-        marker: 'Plan check K4',
+        marker: 'T901 check K4',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1746,7 +1793,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'plan-check-missing-program',
         title: 'A not-run plan check row with its command and the shell message',
         kind: 'implementation',
-        marker: 'Plan check K4',
+        marker: 'T901 check K4',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1762,7 +1809,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'plan-check-no-test-file',
         title: 'A failed plan check row with its reason and no empty command slot',
         kind: 'implementation',
-        marker: 'Plan check K4',
+        marker: 'T901 check K4',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -5188,7 +5235,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'build-brief-check-seat-change',
         title: 'The brief keeps its seat during its checks',
         kind: 'implementation',
-        marker: 'Plan check K2',
+        marker: 'T901 check K2',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

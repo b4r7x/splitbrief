@@ -1,5 +1,5 @@
 import { Text } from 'ink';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
@@ -8,6 +8,7 @@ import { resetAllStores, seedBriefs } from '#testing/helpers/stores.js';
 import type { StepRef } from '../../../core/schemas/run-step.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { routerStore } from '../../../stores/navigation/router.js';
+import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
@@ -111,6 +112,33 @@ describe('useStopByline', () => {
     const ui = renderFeature(<Lead />);
 
     expect(ui.lastFrame().trim()).toBe('Finishing T003');
+    ui.unmount();
+  });
+
+  it('names the brief whose own check the pause waits on', () => {
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(1_783_958_460_000);
+    runViewStore.__testReset({ phase: 'validating-task' });
+    lifecycleStore.__testReset({ status: 'running' });
+    seedBriefs({
+      tasks: [{ id: 'T001', title: 'first', status: 'in_progress' }],
+      currentTask: 1,
+      totalTasks: 1,
+    });
+    stopStore.request('pause-after-brief');
+    addEvent({
+      type: 'task_validating',
+      ts: Date.now(),
+      phase: 'validating-task',
+      taskId: taskId('T001'),
+      check: { id: 'K2', command: 'npm test' },
+    });
+    const ui = renderFeature(<Lead />);
+
+    expect(ui.lastFrame().trim()).toBe('T001 check K2 · npm test');
     ui.unmount();
   });
 

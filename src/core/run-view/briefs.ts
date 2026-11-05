@@ -1,7 +1,7 @@
 import type { EventTypeCarrier } from '../event-phase.js';
 import type { SeatChangePoint } from '../crew/seats.js';
 import type { FileAction, Phase, RunnerKind, TaskStatus } from '../schemas/enums.js';
-import type { CheckResult } from '../schemas/task.js';
+import { isTaskSettled, type CheckResult } from '../schemas/task.js';
 import { isImplementerPhase } from '../phases.js';
 import { taskStatusForCompletionMethod } from '../task-completion.js';
 import type { BriefEvent } from './events.js';
@@ -261,6 +261,15 @@ export function selectRunningBrief(briefs: BriefFocus, phase: Phase): RunningBri
     (current?.status === 'pending' && isImplementerPhase(phase));
   if (current === undefined || !onIt) return { current: null, next: null };
   return { current, next: briefs.tasks[index + 1] ?? null };
+}
+
+/**
+ * The brief a BUILD message goes to: the first brief from the one the run is on that has not
+ * settled, the brief the engine names when it queues the message. None after the last brief.
+ */
+export function selectBuildMessageBrief(briefs: BriefFocus): WorkflowTask | null {
+  const from = Math.max(briefs.currentTask - 1, 0);
+  return briefs.tasks.slice(from).find((task) => !isTaskSettled(task.status)) ?? null;
 }
 
 /** The brief the run last finished and has not yet handed on from. */

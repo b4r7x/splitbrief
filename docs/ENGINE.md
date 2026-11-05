@@ -489,7 +489,7 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 // gate (`planned`, `skipped`) drop on replay.
 
 { type: 'full_suite'; status: 'running' | 'done' | 'not-run' | 'refused' | 'stopped';
-  id?: string; stage?: 'typecheck' | 'lint' | 'test'; command: string;
+  id?: string; taskId?: TaskId; stage?: 'typecheck' | 'lint' | 'test'; command: string;
   moment: 'pre-review' | 'base' | 'brief' | 'plan'; scenario?: string; waitsOnBase?: true;
   passed?: boolean; detail?: string; duration?: number;
   newFailures?: number; preExisting?: number; notVerified?: number;
@@ -509,7 +509,8 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 // reviewer check publishes a second running event with `waitsOnBase: true` while the
 // review waits on the base run of its id. A red plan or task check whose command text a gate command runs publishes one too, while it waits on that command's base result. `moment: 'brief'`
 // is a fix brief's check, run once per brief gate with no base re-run. `moment: 'plan'`
-// is a plan or task check run before the review; a render check also carries its
+// is a plan or task check run before the review, or by a brief's own checks during
+// the build, which carry the brief's `taskId`; a render check also carries its
 // `scenario`. Only a base command publishes `stopped`, when the end of the run loop
 // cuts it; the events store settles every other running command that a stop cut.
 // A reviewer check uses the command the finding carries, under the reviewer
