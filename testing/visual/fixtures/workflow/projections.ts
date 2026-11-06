@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
+import { replacedFilesSavedIn } from '../../../../src/core/runtime/commands/messages.js';
 import { projectRunnerCallActivity } from '../../../../src/engine/calls/activity.js';
 import { reviewResumeProjection, reviewCheckCrashProjection } from './review-resume-projection.js';
 import {
@@ -3867,6 +3868,8 @@ const reviewUnverifiedRecoveryProjection: WorkflowFixtureProjection = {
     pendingRecovery: buildReviewFailedRecoveryIssue({
       id: 'rec_visual_review_unverified',
       unverified: 6,
+      cannot: 'No fix brief can verify these criteria: each one needs a person to try the app.',
+      details: ['Unverified criteria: C1, C2, C3, C4, C5, C6'],
       phase: 'complete',
       acceptAsIs: true,
       createdAt: new Date(FIXED_TS).toISOString(),
@@ -7769,7 +7772,7 @@ const attemptRevertedCheckoutProjection: WorkflowFixtureProjection = {
   sidebarVisible: true,
   config: { workflow: { isolation: 'none' } },
   events: attemptRevertedEvents(
-    `${ATTEMPT_REVERTED}. The replaced bytes are in ${ATTEMPT_REVERTED_SAVED_TO}.`,
+    `${ATTEMPT_REVERTED}. ${replacedFilesSavedIn(ATTEMPT_REVERTED_SAVED_TO)}.`,
   ),
 };
 

@@ -381,7 +381,8 @@ describe('cardRowsBlock label wrapping', () => {
     {
       label: 'SPLITBRIEF',
       path: '.splitbrief/sessions/visual-workflow/reverted/2026-07-13T16-00-00-300Z.',
-      value: (path: string) => `T901 attempt reverted: 2 files. The replaced bytes are in ${path}`,
+      value: (path: string) =>
+        `T901 attempt reverted: 2 files. The replaced files are saved in ${path}`,
     },
     {
       label: 'Blocking F1',

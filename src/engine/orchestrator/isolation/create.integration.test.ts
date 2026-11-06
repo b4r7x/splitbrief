@@ -2160,7 +2160,7 @@ describe('the attempt revert row', () => {
       const [stamp] = readdirSync(reverted);
       expect(rows).toEqual([
         {
-          message: `T002 attempt reverted: 2 files. The replaced bytes are in ${relative(dir, join(reverted, stamp ?? ''))}.`,
+          message: `T002 attempt reverted: 2 files. The replaced files are saved in ${relative(dir, join(reverted, stamp ?? ''))}.`,
           briefKept: 0,
         },
       ]);
@@ -2319,7 +2319,7 @@ describe('the attempt revert row', () => {
             '{"denied":true}\n',
           );
           expect(denialMessage({ subject: 'Task', denial: outcome.denial, blocked: false })).toBe(
-            `${lead} The replaced bytes are in ${relative(dir, join(reverted, stamp ?? ''))}.`,
+            `${lead} The replaced files are saved in ${relative(dir, join(reverted, stamp ?? ''))}.`,
           );
         }
         await run.dispose();

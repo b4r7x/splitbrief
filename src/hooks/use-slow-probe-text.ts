@@ -15,8 +15,8 @@ export function useProbeActivity(): Readonly<{ snapshot: ProbeActivitySnapshot; 
   return { snapshot, now };
 }
 
-/** The slow check's tool or provider and the check with its time, kept apart so a short row can cut the name. */
-export type SlowProbeText = Readonly<{ tool: string; check: string }>;
+/** The slow check's tool or provider name and the check with its time, kept apart so a short row can cut the name. */
+export type SlowProbeText = Readonly<{ name: string; check: string }>;
 
 /**
  * The check that has run ten seconds or more (`OpenCode CLI`, `sign-in 12s`), else null.
@@ -30,5 +30,5 @@ export function useSlowProbeText(provider?: string): SlowProbeText | null {
       : snapshot.probes.filter((probe) => 'provider' in probe && probe.provider === provider);
   const slowest = slowestProbe(probes, now);
   if (!slowest) return null;
-  return { tool: probeSubjectName(slowest), check: probeCheckText(slowest, now) };
+  return { name: probeSubjectName(slowest), check: probeCheckText(slowest, now) };
 }

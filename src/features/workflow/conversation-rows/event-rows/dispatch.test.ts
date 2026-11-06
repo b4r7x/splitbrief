@@ -2670,6 +2670,65 @@ describe('event row dispatch', () => {
     ]);
   });
 
+  const HINDI =
+    'a मौजूदा मौजूदा इस्तेमाल सिर्फ़ किताबें हाँ, module फिर createConversationRowBlockForAnsweredQuestions';
+
+  it.each([
+    {
+      width: 53,
+      answer:
+        'Please do not touch the shared module and read @/Users/me/notes/product-planning/brief.md',
+      expected: [
+        'You → Please do not touch the shared module and',
+        'read @/Users/me/notes/product-planning/brief.md',
+      ],
+    },
+    {
+      width: 24,
+      answer: 'should to of extraordinarily on',
+      expected: ['You → should to of', 'extraordinarily on'],
+    },
+    {
+      width: 32,
+      answer: 'keep rename the file brief documentation please',
+      expected: ['You → keep rename the file', 'brief documentation ', 'please'],
+    },
+    {
+      width: 20,
+      answer: 'ที่ใช้อยู่ it configuration',
+      expected: ['You → ที่ใช้อยู่ it', 'configuration'],
+    },
+    {
+      width: 52,
+      answer: HINDI,
+      expected: [
+        `You → ${HINDI.slice(0, HINDI.indexOf('create'))}`,
+        'createConversationRowBlockForAnsweredQuestions',
+      ],
+    },
+  ])(
+    'pulls a lone last word of an answer down only where it fits, at $width columns: $answer',
+    ({ width, answer, expected }) => {
+      const rows = eventRows({
+        event: {
+          type: 'user_message',
+          ts: 0,
+          phase: 'planning',
+          text: `1. Which brief?\n${answer}`,
+          qa: [{ question: 'Which brief?', answer }],
+        },
+        globalIndex: 0,
+        expanded: false,
+        ctx: { width, viewportRows: 20, streaming },
+      });
+      const answers = rows.slice(2).map(rowText);
+      const bodyWidth = width - rowLeadingCells('message') - 3;
+
+      expect(answers).toEqual(expected);
+      expect(getTerminalCellWidth(answers.at(-1) ?? '')).toBeLessThanOrEqual(bodyWidth);
+    },
+  );
+
   it.each([
     {
       width: 50,

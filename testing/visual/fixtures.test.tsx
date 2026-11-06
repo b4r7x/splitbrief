@@ -130,6 +130,7 @@ describe('visual screen and overlay fixtures', () => {
       expect(frame).toContain('Saved Claude crew, Codex review');
       expect(frame).toContain('.splitbrief/config.yaml');
       expect(frame).not.toContain('No config.');
+      expect(frame).not.toContain('.gitignore');
       for (const label of ['PLAN', 'BUILD', 'REVIEW', 'Continue', '↑↓ select']) {
         expect(frame).toContain(label);
       }

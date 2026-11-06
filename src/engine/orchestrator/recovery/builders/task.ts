@@ -23,6 +23,7 @@ import {
 } from '../../../../core/crew/identity.js';
 import { CREW_SEAT_ROLES } from '../../../../core/crew/seats.js';
 import { automaticSwitchUsed } from '../../../../core/crew/fallback.js';
+import { replacedFilesSavedIn } from '../../../../core/runtime/commands/messages.js';
 import { recordedSeatIdentityInput } from '../../../providers/model/display-names.js';
 import { NULL_CACHE, type ModelCacheAccessor } from '../../../providers/model/resolution.js';
 import { recoveryActionLabel } from '../../../../core/recovery/action-label.js';
@@ -966,7 +967,7 @@ export function buildLeftIsolationRecoveryIssue(opts: RunnerFailureRecoveryOptio
         evidence,
         opts.inPlace === undefined
           ? "Your checkout gets the run's changes only through Apply."
-          : `SPLITBRIEF put back what this attempt changed in your checkout; the bytes it replaced are in ${opts.inPlace.revertedDir}.`,
+          : `SPLITBRIEF put back what this attempt changed in your checkout. ${replacedFilesSavedIn(opts.inPlace.revertedDir)}.`,
       ],
       actions: haltActions('implementer-left-isolation', [
         'retry-same-worker',
@@ -999,7 +1000,7 @@ export function buildCheckoutChangedRecoveryIssue(
         `Changed while ${getRunnerCatalogDisplayName(opts.runner)} ran; the audit cannot tell who made the change.`,
         opts.inPlace === undefined
           ? "Your checkout gets the run's changes only through Apply, and nothing in your checkout was reverted."
-          : `SPLITBRIEF put back the files this attempt changed in your checkout (the bytes it replaced are in ${opts.inPlace.revertedDir}); the git change stays for you to check.`,
+          : `SPLITBRIEF put back the files this attempt changed in your checkout. ${replacedFilesSavedIn(opts.inPlace.revertedDir)}. The git change stays for you to check.`,
       ],
       actions: haltActions('checkout-changed', [
         'retry-same-worker',

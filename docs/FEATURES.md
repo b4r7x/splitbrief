@@ -373,7 +373,7 @@ Older files can name retired actions; `RETIRED_RECOVERY_ACTIONS` reads `revise-s
 
 ### Where the implementer works
 
-**What it does.** `workflow.isolation` chooses where every build seat writes. `worktree` (the default) gives the run one linked git worktree. `staged-copy` gives it one project copy. Both deliver the result to your checkout at Apply. `none` ("your checkout") lets the implementer edit your checkout directly: validation and review run there, and a passing review closes the run with no Apply. In `none`, a git write during a call halts `checkout-changed`, an edit of yours between calls is a warning, and every revert first saves the replaced bytes under `.splitbrief/sessions/<id>/reverted/<stamp>/`.
+**What it does.** `workflow.isolation` chooses where every build seat writes. `worktree` (the default) gives the run one linked git worktree. `staged-copy` gives it one project copy. Both deliver the result to your checkout at Apply. `none` ("your checkout") lets the implementer edit your checkout directly: validation and review run there, and a passing review closes the run with no Apply. In `none`, a git write during a call halts `checkout-changed`, an edit of yours between calls is a warning, and every revert first saves the replaced files under `.splitbrief/sessions/<id>/reverted/<stamp>/`.
 
 **How to use.** Set the key in `.splitbrief/config.yaml`; `splitbrief init` does not write it. In Settings, highlight `Isolation` and press Space to cycle the choices. Details and trade-offs: [CONFIGURATION.md §5](./CONFIGURATION.md#implementer-isolation).
 

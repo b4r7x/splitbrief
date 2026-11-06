@@ -36,7 +36,7 @@ function joinBylineParts(parts: readonly (string | null | undefined)[]): string 
 
 /**
  * The text after `frame` on the row of a check the user waits on, fitted to `width` cells with the
- * frame. `esc cancel` and the slow check with its time stay whole. The tool's name gives up its
+ * frame. `esc cancel` and the slow check with its time stay whole. The name gives up its
  * middle words first and keeps its first word, the maker; then the stage goes and the name gives
  * up its middle words again; then the slow check goes and the stage comes back.
  */
@@ -53,10 +53,10 @@ export function fitCheckingRow(
   const row = (probe: string | null) => joinBylineParts([input.stage, probe, cancel]);
   if (input.slowProbe === null) return row(null);
   const room = input.width - getTerminalCellWidth(`${input.frame} `);
-  const { tool, check } = input.slowProbe;
-  const [maker, ...rest] = tool.split(' ');
+  const { name, check } = input.slowProbe;
+  const [maker, ...rest] = name.split(' ');
   const named = [
-    `${tool} ${check}`,
+    `${name} ${check}`,
     ...rest.map((_, dropped) => [maker, ELLIPSIS, ...rest.slice(dropped + 1), check].join(' ')),
   ];
   const fitted = [

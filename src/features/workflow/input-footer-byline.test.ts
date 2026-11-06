@@ -432,7 +432,7 @@ describe('fitCheckingRow', () => {
   const row = {
     frame: '⠋',
     stage: 'Checking tools',
-    slowProbe: { tool: 'Google Antigravity CLI', check: 'model list 59s' },
+    slowProbe: { name: 'Google Antigravity CLI', check: 'model list 59s' },
   };
 
   it('keeps the whole row when it fits', () => {
@@ -459,14 +459,14 @@ describe('fitCheckingRow', () => {
     expect(fitCheckingRow({ ...row, cancellable: true, width: 50 })).toBe(
       'Google … CLI model list 59s · esc cancel',
     );
-    const slowProbe = { tool: 'Ollama', check: 'model list 12s' };
+    const slowProbe = { name: 'Ollama', check: 'model list 12s' };
     expect(fitCheckingRow({ ...row, slowProbe, cancellable: true, width: 50 })).toBe(
       'Ollama model list 12s · esc cancel',
     );
   });
 
   it('keeps the check whole past a minute, when its time has two words', () => {
-    const slowProbe = { tool: 'OpenCode CLI', check: 'sign-in 1m 5s' };
+    const slowProbe = { name: 'OpenCode CLI', check: 'sign-in 1m 5s' };
     expect(fitCheckingRow({ ...row, slowProbe, cancellable: true, width: 56 })).toBe(
       'Checking tools · OpenCode … sign-in 1m 5s · esc cancel',
     );

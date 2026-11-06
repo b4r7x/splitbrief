@@ -3,6 +3,11 @@ import { formatTruncatedList } from '../../formatting.js';
 import { countNoun } from '../../../utils/pluralize.js';
 import { capitalize } from '../../../utils/capitalize.js';
 
+/** The words every row and halt panel use for the folder that holds the files a put-back replaced. */
+export function replacedFilesSavedIn(folder: string): string {
+  return `The replaced files are saved in ${folder}`;
+}
+
 /**
  * What a restore did, for an Apply backup and for a checkout reject. `removed` is the part of
  * `restored` that Apply or the run had created.
@@ -70,7 +75,7 @@ export function formatRejectRunMessage(facts: RunRejectFacts): string {
     ...(facts.missing === 0
       ? []
       : [`${countNoun(facts.missing, 'file')} had no saved copy to put back.`]),
-    ...(facts.savedTo === undefined ? [] : [`The replaced files are saved in ${facts.savedTo}.`]),
+    ...(facts.savedTo === undefined ? [] : [`${replacedFilesSavedIn(facts.savedTo)}.`]),
     ...(leftBehind(facts) ? ['The run stays open, so you can reject it again.'] : []),
   ].join(' ');
 }

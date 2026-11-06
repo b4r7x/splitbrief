@@ -1,5 +1,6 @@
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { Task } from '../../../core/schemas/task.js';
+import { replacedFilesSavedIn } from '../../../core/runtime/commands/messages.js';
 import {
   gateChangedFiles,
   type GateChangedFilesDecision,
@@ -44,7 +45,7 @@ export function denialMessage(input: {
     discardedFiles.length === 0
       ? "SPLITBRIEF discarded none of this attempt's writes."
       : `SPLITBRIEF discarded this attempt's writes to ${discardedFiles.join(', ')}.`;
-  const saved = savedTo === undefined ? '' : ` The replaced bytes are in ${savedTo}.`;
+  const saved = savedTo === undefined ? '' : ` ${replacedFilesSavedIn(savedTo)}.`;
   return `${lead} ${discarded}${saved}`;
 }
 

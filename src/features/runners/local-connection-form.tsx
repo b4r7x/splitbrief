@@ -254,7 +254,7 @@ function connectionStatus(input: {
     return plain(
       input.slow === null
         ? `${input.frame} Checking…`
-        : `${input.frame} Checking…${SOFT_SEP}${input.slow.tool} ${input.slow.check}`,
+        : `${input.frame} Checking…${SOFT_SEP}${input.slow.name} ${input.slow.check}`,
     );
   }
   if (probe.kind === 'failed') return plain('The check could not run', probe.message);

@@ -5539,7 +5539,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'attempt-reverted-checkout',
-        title: 'The revert row names where the replaced bytes are saved',
+        title: 'The revert row names where the replaced files are saved',
         kind: 'implementation',
         marker: 'attempt reverted: 2 files',
       },

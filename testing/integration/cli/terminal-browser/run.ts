@@ -50,12 +50,12 @@ function readJson(path: string): Record<string, unknown> {
 
 async function waitFor(
   description: string,
-  read: () => boolean,
+  read: () => boolean | Promise<boolean>,
   timeoutMs = 10_000,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (read()) return;
+    if (await read()) return;
     await delay(40);
   }
   throw new Error(`Timed out waiting for ${description}`);
@@ -69,14 +69,18 @@ async function waitForPage(
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (await page.evaluate(expression)) return;
+    if (await readTerminal(page, expression)) return;
     await delay(40);
   }
   throw new Error(`Timed out waiting for ${description}`);
 }
 
+function readTerminal(page: Page, expression: string): Promise<unknown> {
+  return page.evaluate(`window.__terminalRendered(() => ${expression})`);
+}
+
 async function pageState(page: Page): Promise<Record<string, unknown>> {
-  return page.evaluate('window.__terminalState()') as Promise<Record<string, unknown>>;
+  return readTerminal(page, 'window.__terminalState()') as Promise<Record<string, unknown>>;
 }
 
 function childState(artifactDir: string, mode: ChildMode): Record<string, unknown> {
@@ -186,6 +190,20 @@ function cellPoint(
   };
 }
 
+async function findOnScreen(
+  page: Page,
+  prefix: string,
+): Promise<{ row: number; column: number; length: number } | null> {
+  const found = (await readTerminal(page, `window.__terminalFind(${JSON.stringify(prefix)})`)) as {
+    row: number;
+    column: number;
+    length: number;
+    viewportY: number;
+  } | null;
+  if (found === null) return null;
+  return { row: found.row - found.viewportY, column: found.column, length: found.length };
+}
+
 async function dragSelection(
   page: Page,
   prefix: string,
@@ -195,22 +213,13 @@ async function dragSelection(
   endOffset?: number,
 ): Promise<void> {
   const screen = await grid(page);
-  const start = (await page.evaluate(`window.__terminalFind(${JSON.stringify(prefix)})`)) as {
-    row: number;
-    column: number;
-    viewportY: number;
-  } | null;
-  const end = (await page.evaluate(`window.__terminalFind(${JSON.stringify(endPrefix)})`)) as {
-    row: number;
-    column: number;
-    length: number;
-    viewportY: number;
-  } | null;
+  const start = await findOnScreen(page, prefix);
+  const end = await findOnScreen(page, endPrefix);
   if (start === null || end === null) throw new Error(`Could not locate ${prefix}`);
-  const startPoint = cellPoint(screen, start.row - start.viewportY, start.column);
+  const startPoint = cellPoint(screen, start.row, start.column);
   const endPoint = cellPoint(
     screen,
-    end.row - end.viewportY,
+    end.row,
     endOffset === undefined ? Math.max(0, end.length - 1) : end.column + endOffset,
   );
   const from = reverse ? endPoint : startPoint;
@@ -238,15 +247,36 @@ async function wheel(
   const screen = await grid(page);
   const x = screen.x + screen.width / 2;
   const y = screen.y + screen.height / 2;
+  const markerRow = async () => (await findOnScreen(page, ascii))?.row ?? null;
   const before = await pageState(page);
   const childBefore = readChild();
+  const markerBefore = await markerRow();
   await page.mouse.move(x, y);
   await page.mouse.wheel(0, -700);
-  await delay(150);
+  await waitFor(
+    'the wheel to move the terminal or the conversation',
+    async () => {
+      const marker = await markerRow();
+      return (
+        marker !== null &&
+        marker !== markerBefore &&
+        ((await pageState(page))['viewportY'] !== before['viewportY'] ||
+          readChild()['scrollOffset'] !== childBefore['scrollOffset'])
+      );
+    },
+    2_000,
+  ).catch(() => undefined);
   const middle = await pageState(page);
   const childMiddle = readChild();
   await page.mouse.wheel(0, 700);
-  await delay(150);
+  await waitFor(
+    'the wheel to bring the terminal and the conversation back',
+    async () =>
+      (await markerRow()) === markerBefore &&
+      (await pageState(page))['viewportY'] === before['viewportY'] &&
+      readChild()['scrollOffset'] === childBefore['scrollOffset'],
+    2_000,
+  ).catch(() => undefined);
   return {
     before,
     middle,
@@ -294,7 +324,7 @@ async function runFixture(
       `window.__terminalText().includes(${JSON.stringify(ascii)})`,
       `${mode} terminal output`,
     );
-    const rendered = (await page.evaluate('window.__terminalText()')) as string;
+    const rendered = (await readTerminal(page, 'window.__terminalText()')) as string;
     writeFileSync(join(artifactDir, `${mode}-render.txt`), rendered);
     const exactMarkersRendered = [ascii, ...multiline.split('\n'), unicode].every((value) =>
       rendered.includes(value),
@@ -346,7 +376,8 @@ async function runFixture(
       rmSync(clipboardPath, { force: true });
       const expected =
         mode === 'tracking' && selection.endPrefix
-          ? ((await page.evaluate(
+          ? ((await readTerminal(
+              page,
               `window.__terminalExpectedRange(${JSON.stringify(selection.prefix)}, ${JSON.stringify(selection.endPrefix)})`,
             )) as string)
           : selection.expected;
@@ -360,7 +391,8 @@ async function runFixture(
         async () => {
           copiedDuringDrag = existsSync(clipboardPath);
           highlightedDuringDrag = Boolean(
-            await page.evaluate(
+            await readTerminal(
+              page,
               `window.__terminalHighlighted(${JSON.stringify(selection.prefix)})`,
             ),
           );
@@ -385,7 +417,10 @@ async function runFixture(
       }
       const state = await pageState(page);
       const highlightedAfterRelease = Boolean(
-        await page.evaluate(`window.__terminalHighlighted(${JSON.stringify(selection.prefix)})`),
+        await readTerminal(
+          page,
+          `window.__terminalHighlighted(${JSON.stringify(selection.prefix)})`,
+        ),
       );
       const copied =
         mode === 'off'
@@ -490,7 +525,8 @@ async function runFixture(
           `${key} clearing the selection`,
           2_000,
         ).catch(() => undefined);
-        const cleared = !(await page.evaluate(
+        const cleared = !(await readTerminal(
+          page,
           `window.__terminalHighlighted(${JSON.stringify(selection.prefix)})`,
         ));
         checks.push({ kind: 'selection-clear', key, cleared });
@@ -507,7 +543,10 @@ async function runFixture(
       const moved =
         afterSelectionWheel.childMiddle['scrollOffset'] !==
         afterSelectionWheel.childBefore['scrollOffset'];
-      const cleared = !(await page.evaluate(`window.__terminalHighlighted('COPY-ME-UNICODE-')`));
+      const cleared = !(await readTerminal(
+        page,
+        `window.__terminalHighlighted('COPY-ME-UNICODE-')`,
+      ));
       checks.push({ kind: 'wheel-after-selection', moved, cleared });
       if (!cleared)
         failures.push({
@@ -549,7 +588,7 @@ async function runFixture(
         2_000,
       ).catch(() => undefined);
       const resumed = Boolean(
-        await page.evaluate("window.__terminalText().includes('STREAM-UPDATE-VISIBLE')"),
+        await readTerminal(page, "window.__terminalText().includes('STREAM-UPDATE-VISIBLE')"),
       );
       const exact = copied === 'ASCII-Alpha';
       checks.push({ kind: 'live-partial-selection', copied, exact, resumed });
@@ -661,7 +700,7 @@ async function runComposer(
       false,
       async () => {
         highlighted = Boolean(
-          await page.evaluate("window.__terminalHighlighted('composer input')"),
+          await readTerminal(page, "window.__terminalHighlighted('composer input')"),
         );
         await page.screenshot({
           path: join(artifactDir, 'composer-selection-drag.png'),

@@ -26,6 +26,7 @@ import type { EvidenceLedger, EvidenceReview } from '../../../core/schemas/evide
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { AttemptWorkspace } from '../isolation/types.js';
 import { EVIDENCE_FILE, revertedDir, sessionDir } from '../../../core/paths.js';
+import { replacedFilesSavedIn } from '../../../core/runtime/commands/messages.js';
 import { sessionFileFailure } from '../../../core/sessions/errors.js';
 import { sessionRelativePath } from '../../../core/sessions/ownership-marker.js';
 import { checkSessionLockStatus } from '../../../core/sessions/lockfile-status.js';
@@ -279,7 +280,7 @@ export async function raiseApiApplyRecovery(opts: {
       message,
       details: [
         inPlace
-          ? `The partial writes were put back to the attempt start in your checkout. The replaced bytes are in ${revertedDir(wctx)}.`
+          ? `The partial writes were put back to the attempt start in your checkout. ${replacedFilesSavedIn(revertedDir(wctx))}.`
           : `The partial writes stay in the run workspace at ${workspacePath}; the checkout is unchanged.`,
       ],
       facts: { apiApplyIncomplete: true, workspacePath },

@@ -149,7 +149,7 @@ describe('runSingleTask — approval gates', () => {
     expect(implementer.retry).not.toHaveBeenCalled();
     const error = events.find((e) => e.type === 'error');
     expect(error?.message).toMatch(
-      /^Approval gate denied \.env\.local: no\. SPLITBRIEF discarded this attempt's writes to \.env\.local\. The replaced bytes are in \.splitbrief\/sessions\/sess-task-step\/reverted\/\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.$/,
+      /^Approval gate denied \.env\.local: no\. SPLITBRIEF discarded this attempt's writes to \.env\.local\. The replaced files are saved in \.splitbrief\/sessions\/sess-task-step\/reverted\/\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.$/,
     );
     expect(error?.message).not.toMatch(/attempt reverted/i);
     expect(error).toMatchObject({ briefKept: 1 });

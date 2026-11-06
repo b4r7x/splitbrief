@@ -235,7 +235,7 @@ The full path from engine to pixel:
 3. `addEvent` dispatches to workflow sub-stores synchronously:
    - `runViewStore` — folds the event into the run view: the phase, when the run first entered each phase, the seat wait, the halt, the briefs, what the run asks, why it stopped and the Apply clock (`reduceRunView`, `src/core/run-view/reduce.ts`). `planner_questions_asked` sets the open question round and the next `user_message` clears it; `plan_card_opened` opens the plan card and `plan_approved`, `plan_rejected` or `plan_regenerated` closes it; `turn_interrupted` sets the files the stop kept and `run_failed` the error the run stopped on, and `workflow_resumed` clears both; `apply_started` starts the Apply clock and `apply_finished` stops it; `workflow_started` clears all of them. `recovery_prompted` carries the halt (`issue`) and the step the run resumes at (`at`); `recovery_resolved` with the same id, `workflow_cancelled`, `workflow_complete` and `workflow_started` clear it. This fold runs before the cancellation gate, so a late event still moves the view
    - `eventsStore` — appends the TUI-safe event-log projection
-   - `tokensStore` — updates cost and token usage
+   - `tokensStore` — updates cost and token usage, the seats of the run pass (`passSeats`, from `workflow_config`) and the model id each seat's last call reported (`resolvedModels`, from `runner_call_session_id`)
    - `lifecycleStore` — updates run status, queue depth, terminal workflow timing; it reads a phase change from the run view's fold of the same event
    - `operationsStore` — updates active/last runner operation lifecycle for compact status
 4. React components using `runViewStore.use((s) => s.briefs)` re-render when their selector output changes

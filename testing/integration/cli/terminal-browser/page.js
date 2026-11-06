@@ -42,6 +42,16 @@
     void window.sendPtyInput(data);
   });
 
+  // xterm draws a synchronized update only when it ends, or after its 1 s timeout. A read waits for
+  // that draw, so it never sees a half-written repaint that the screen never shows.
+  const reads = [];
+  terminal.onRender(() => {
+    for (const resolve of reads.splice(0)) resolve();
+  });
+  window.__terminalRendered = (read) =>
+    terminal.modes.synchronizedOutputMode
+      ? new Promise((resolve) => reads.push(resolve)).then(read)
+      : read();
   window.__terminalWrite = (data) =>
     new Promise((resolve) => {
       terminal.write(data, resolve);

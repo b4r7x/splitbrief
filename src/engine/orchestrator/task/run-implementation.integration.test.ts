@@ -19,6 +19,7 @@ import type { Task } from '../../../core/schemas/task.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
+import { revertedDir } from '../../../core/paths.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { recordedApiCreatedPaths } from '../evidence/task.js';
@@ -1476,13 +1477,17 @@ describe.each(['implementation', 'retry-invoker'] as const)(
         expect(recordedApiCreatedPaths(ref, task, projectDir)).toEqual(['src/a.ts', 'src/b.ts']);
         const receipt = result.applyResult;
         if (receipt?.status !== 'partial') throw new Error('Expected partial application');
-        await raiseApiApplyRecovery({
+        const raised = await raiseApiApplyRecovery({
           wctx,
           state: loadState(ref) ?? state,
           task,
           result: receipt,
           workspace,
         });
+
+        expect(raised.pendingRecovery?.details).toEqual([
+          `The partial writes were put back to the attempt start in your checkout. The replaced files are saved in ${revertedDir(ref)}.`,
+        ]);
 
         expect(existsSync(join(projectDir, 'src/a.ts'))).toBe(false);
         expect(existsSync(join(projectDir, 'src/b.ts'))).toBe(false);

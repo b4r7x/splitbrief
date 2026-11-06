@@ -13,10 +13,12 @@ import type {
   ConversationRowTone,
 } from '../types.js';
 
-// A greedy wrap strands the last line as one lone word at some widths; pulling the previous
-// line's last word down keeps the card's ragged edge from hanging a single word. A lone word wider
-// than what the line above would keep, such as a path that fills its row, stays alone. Widths are
-// terminal cells, as the wrap counts them, so the new last line is never wider than the line above.
+// A greedy wrap can leave the last line as one lone word. Pull the last word of the line above
+// down to it when the lone word is no wider than the line it leaves, as that line is painted
+// (a continuation loses its leading space), and when the new last line fits `width`. The callers
+// drop a continuation that the pull-down empties; the first line always keeps a word. Widths are
+// `getTerminalCellWidth` cells. The prose wrap counts a Thai or Hindi mark as no cell, so the new
+// last line is measured again here.
 function wrappedLines(text: string, width: number, prefix: string): string[] {
   const lines = wrappedPrefixedRowTexts(text, width, prefix);
   const last = lines.length - 1;
@@ -30,8 +32,12 @@ function wrappedLines(text: string, width: number, prefix: string): string[] {
   if (lone === '' || lone.includes(' ') || cut === -1) return lines;
   if (last === 1 && cut < prefix.length) return lines;
   const kept = previous.slice(0, cut);
-  if (getTerminalCellWidth(lone) > getTerminalCellWidth(kept)) return lines;
-  return [...lines.slice(0, last - 1), kept, `${previous.slice(cut + 1)} ${lone}`];
+  const shown = last === 1 ? kept : kept.trimStart();
+  const pulled = `${previous.slice(cut + 1)} ${lone}`;
+  if (shown === '' && last === 1) return lines;
+  if (shown !== '' && getTerminalCellWidth(lone) > getTerminalCellWidth(shown)) return lines;
+  if (getTerminalCellWidth(pulled) > width) return lines;
+  return [...lines.slice(0, last - 1), kept, pulled];
 }
 
 // The wrapper keeps the space it broke on (`trim: false`): usually it trails the line above, but at

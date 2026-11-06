@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, relative } from 'node:path';
+import { replacedFilesSavedIn } from '../../../core/runtime/commands/messages.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type {
@@ -410,7 +411,7 @@ export function createRunIsolation(opts: {
     if (restoredFiles.length === 0) return;
     const reverted = `${brief.task.id} attempt reverted: ${countNoun(restoredFiles.length, 'file')}`;
     const message =
-      savedTo === undefined ? reverted : `${reverted}. The replaced bytes are in ${savedTo}.`;
+      savedTo === undefined ? reverted : `${reverted}. ${replacedFilesSavedIn(savedTo)}.`;
     const kept = await briefKeptFiles(dir, brief.taskStartSnapshot);
     infoPublisher?.({ message, briefKept: kept?.length });
   }

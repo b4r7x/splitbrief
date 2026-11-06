@@ -1271,7 +1271,13 @@ const checkpointPredicates = [
   [checkpointId('review-fix-again'), recoveryRows(['Recovery  Fix again', 'continued'])],
   [
     checkpointId('review-unverified'),
-    includesAll(WORKFLOW_FIXTURE_TEXT.reviewFailed, 'Accept as is', 'unverified criteria'),
+    includesAll(
+      WORKFLOW_FIXTURE_TEXT.reviewFailed,
+      'Accept as is',
+      'Decide for me',
+      'Planner said:',
+      'Unverified criteria: C1, C2, C3, C4, C5, C6',
+    ),
   ],
   [checkpointId('review-no-image'), includesAll('needs a REVIEW seat', 'Accept as is')],
   [
@@ -1402,13 +1408,13 @@ const checkpointPredicates = [
   [checkpointId('fix-check-off'), includesAll('Fix check V2 · off')],
   [
     checkpointId('attempt-reverted'),
-    // SPLITBRIEF's own neutral row, not a warning; a worktree attempt saves no replaced bytes.
+    // SPLITBRIEF's own neutral row, not a warning; a worktree attempt saves no replaced files.
     (context) => {
       const text = workflowTranscriptText().replace(/\s/g, '');
       return (
         includesTranscript()(context) &&
         text.includes('SPLITBRIEFT901attemptreverted:2files') &&
-        !/Warning|replacedbytes/.test(text)
+        !/Warning|replacedfiles/.test(text)
       );
     },
   ],
@@ -1420,7 +1426,7 @@ const checkpointPredicates = [
       return (
         includesTranscript()(context) &&
         text.includes(
-          'SPLITBRIEFT901attemptreverted:2files.Thereplacedbytesarein.splitbrief/sessions/visual-workflow/reverted/',
+          'SPLITBRIEFT901attemptreverted:2files.Thereplacedfilesaresavedin.splitbrief/sessions/visual-workflow/reverted/',
         ) &&
         !text.includes('Warning')
       );

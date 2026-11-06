@@ -190,6 +190,18 @@ async function renderProjection(projection: WorkflowFixtureProjection): Promise<
 }
 
 describe('workflow visual fixtures', () => {
+  it('builds the review-unverified halt as the production halt builds it', () => {
+    const projection = workflowFixtureProjections.get(
+      scenarioId('workflow-recovery-review-unverified'),
+    );
+    if (projection === undefined) throw new Error('Missing review-unverified recovery scenario');
+    expect(projection.resumeState?.pendingRecovery?.details).toEqual([
+      'Planner said: No fix brief can verify these criteria: each one needs a person to try the app.',
+      'Unverified criteria: C1, C2, C3, C4, C5, C6',
+    ]);
+    expect(projection.resumeState?.pendingRecovery?.availableActions).toContain('decide-for-me');
+  });
+
   it('offers an inherited REVIEW its own seat and explains the switch', async () => {
     const projection = workflowFixtureProjections.get(scenarioId('workflow-recovery-review-seat'));
     if (projection === undefined) throw new Error('Missing inherited REVIEW recovery scenario');

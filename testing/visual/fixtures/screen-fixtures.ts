@@ -527,10 +527,11 @@ export function createSetupFixture(
       if (state === 'cached-refresh') {
         releaseToolChecks = holdToolChecks({ checking: ['claude-code', 'opencode'] });
       }
-      // Its own repository, so the first save is the one that adds the .splitbrief/ rule.
-      if (state === 'saved-ignore-rule') {
-        createTestGitRepo(VISUAL_FIXTURE_PROJECT_DIR, { '.gitignore': 'node_modules/\n' });
-      }
+      // Every state gets its own repository; only the first-save state lacks the .splitbrief/ rule.
+      createTestGitRepo(VISUAL_FIXTURE_PROJECT_DIR, {
+        '.gitignore':
+          state === 'saved-ignore-rule' ? 'node_modules/\n' : 'node_modules/\n.splitbrief/\n',
+      });
       if (state !== 'unavailable' && state !== 'signed-out' && state !== 'config-only') {
         loadVisualProjectWithoutConfig();
       }
