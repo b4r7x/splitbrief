@@ -106,7 +106,7 @@ describe('runApplyAtRest', { timeout: 60_000 }, () => {
         });
         await expect(start()).rejects.toMatchObject({
           kind: 'workflow-session-already-live',
-          message: `session '${SESSION_ID}' is already running (pid ${process.pid}) — stop it before resuming, or run 'splitbrief continue ${SESSION_ID}' once it stops.`,
+          message: `Run ${SESSION_ID} is still running. Stop it in the window that runs it, then run 'splitbrief continue ${SESSION_ID}'.`,
         });
         await new Promise((resolve) => setTimeout(resolve, 50));
         expect(shutDown).toBe(false);

@@ -4,6 +4,7 @@ import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js'
 import { initStores } from '../../bootstrap/init.js';
 import { renderApp } from '../../render/app.js';
 import { cliError } from '../../errors.js';
+import { sessionError } from '../../../core/sessions/errors.js';
 import { loadRunRecord } from '../../../core/sessions/run-record.js';
 import { defaultRunRecordDeps } from '../../../core/sessions/run-record-io.js';
 import { recordWriterFor, runHeadless } from '../../headless.js';
@@ -166,7 +167,7 @@ export async function continueCommand(
   }
 
   if (record.status.kind === 'running') {
-    throw cliError(`session '${sessionId}' is still running — stop it before continuing.`, 1);
+    throw cliError(sessionError.stillActive(sessionId).message, 1);
   }
 
   let resumed: { state: WorkflowState; config?: Config; seatSwitch?: SwitchedSeat };

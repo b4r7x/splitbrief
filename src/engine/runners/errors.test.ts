@@ -103,9 +103,7 @@ describe('runner outcome taxonomy', () => {
   });
 
   test('names the output token limit when a provider ends the answer at its max tokens', () => {
-    expect(
-      runnerCallOutcome(callResult('truncated', 'openai_finish_reason_length')).remediation,
-    ).toBe(
+    expect(runnerCallOutcome(callResult('truncated', 'output-token-limit')).remediation).toBe(
       'The provider ended the answer at its output token limit. Ask for a shorter answer or choose a model with a larger output limit, then retry.',
     );
   });

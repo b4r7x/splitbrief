@@ -131,7 +131,7 @@ export function recoveryComposerHint(issue: RecoveryIssue, menuFocused: boolean)
 /** An empty ⏎ in the composer runs no action: words or a row do. */
 export const RECOVERY_EMPTY_ENTER_NOTICE = 'Nothing to send. Tab to choose an action.';
 
-const REVIEW_FAILED_REVISE_CONSEQUENCE = 'runs another fix cycle with your note';
+const REVIEW_FAILED_REVISE_CONSEQUENCE = 'sends your note to the reviewer';
 
 function applyRecoveryConsequence(
   action: RecoveryAction,

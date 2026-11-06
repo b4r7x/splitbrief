@@ -373,7 +373,7 @@ it.each<[string, Partial<RecoveryIssue>, string]>([
       availableActions: ['revise', 'accept-as-is', 'end-run'],
       recommendedAction: 'revise',
     },
-    'Fix again',
+    'Review again',
   ],
   ['a PLAN halt on a brief', { seat: 'plan', phase: 'escalating' }, 'Try again'],
   ['a REVIEW halt on a brief', { seat: 'review', phase: 'implementing' }, 'Try again'],

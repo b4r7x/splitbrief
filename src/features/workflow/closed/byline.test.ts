@@ -681,7 +681,7 @@ describe('openRunByline on a halt whose action was chosen', () => {
     ['Needs you', 'skip-current-task', 'skip task', {}],
     ['Needs you', 'end-run', 'end run', {}],
     ['Needs you', 'continue', 'continue', {}],
-    ['Needs you', 'revise', 'fix again', { reason: 'review-failed' }],
+    ['Needs you', 'revise', 'review again', { reason: 'review-failed' }],
     ['Needs you', 'accept-as-is', 'accept as is', { reason: 'review-failed' }],
     ['Seat down', 'accept-as-is', 'skip review with a note', { reason: 'review-input-too-large' }],
     ['Needs you', 'revise', 'send a correction', { reason: 'plan-checks-failed' }],

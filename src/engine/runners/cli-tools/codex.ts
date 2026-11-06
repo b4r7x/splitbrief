@@ -214,7 +214,7 @@ function protocolFailure(
     usage: null,
     nativeSessionId: null,
     error: {
-      code,
+      code: message.includes('max_output_tokens') ? 'output-token-limit' : code,
       message,
       ...(providerType !== undefined && { providerType }),
     },

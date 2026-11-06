@@ -21,6 +21,7 @@ import { feedbackStore } from '../../../src/stores/ui/feedback.js';
 import { overlayStore } from '../../../src/stores/ui/overlay.js';
 import { cancelEscapeAction } from '../../../src/lib/terminal/escape-debounce.js';
 import * as handlers from '../../../src/features/workflow/handlers.js';
+import { installDiagnosticSink } from '../../../src/lib/warn.js';
 
 // End-to-end regression guards. ESC and Ctrl+C bytes travel through the production
 // FilteredStdin (mouse filter + bracketed-paste stripper) before reaching Ink — the path
@@ -51,11 +52,13 @@ function WorkflowApp({ exit = () => {} }: { exit?: () => void }) {
 
 describe('ESC through the real FilteredStdin pipeline (live workflow)', () => {
   let projectDir = '';
+  let releaseSink: () => void;
 
   beforeEach(() => {
     resetAllStores();
     handlers.clearAllHandlers();
     cancelEscapeAction();
+    releaseSink = installDiagnosticSink(() => {});
     projectDir = createTempDir('filtered-stdin-workflow');
     const prepared = prepareWorkflowExecution({
       projectDir,
@@ -74,6 +77,7 @@ describe('ESC through the real FilteredStdin pipeline (live workflow)', () => {
   });
 
   afterEach(() => {
+    releaseSink();
     cancelEscapeAction();
     stopStore.__testReset();
     handlers.clearAllHandlers();

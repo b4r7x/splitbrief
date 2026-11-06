@@ -1,8 +1,11 @@
 import { readdirSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { ScenarioDefinition } from '../contracts/catalog.js';
 import { viewport } from '../contracts/geometry.js';
 import { findVisualScenario, listVisualScenarios } from '../catalog.js';
+import { createCropCellGrid } from '../artifacts/crop.js';
+import { teardownVisualFixture } from '../fixtures/screen-fixtures.js';
+import { mountGalleryScenario } from '../gallery/mount.js';
 import { LOCATOR_FAILURE_CODE } from './types.js';
 import { LOCATOR_REGISTRY } from './registry.js';
 import { resolveElementLocator, tryResolveElementLocator } from './resolve.js';
@@ -26,6 +29,8 @@ function requireScenario(id: string): ScenarioDefinition {
 }
 
 describe('semantic visual locators', { timeout: 90_000 }, () => {
+  afterEach(teardownVisualFixture);
+
   it('registers a locator for every catalog element and nothing else', () => {
     const registryKeys = new Set<string>();
     for (const scenario of listVisualScenarios()) {
@@ -163,4 +168,76 @@ describe('semantic visual locators', { timeout: 90_000 }, () => {
       }),
     ).toMatchObject({ ok: false, failure: { code: LOCATOR_FAILURE_CODE.crossFrame } });
   });
+
+  it('resolves the output-token recovery panel when its checkpoint marker repeats or is truncated', async () => {
+    const scenario = requireScenario('workflow-recovery-plan-output-limit');
+    const checkpoint = requireCheckpoint(scenario);
+    const viewports = [
+      viewport({ cols: 120, rows: 40 }),
+      viewport({ cols: 80, rows: 24 }),
+      viewport({ cols: 60, rows: 18 }),
+      viewport({ cols: 160, rows: 45 }),
+    ];
+
+    for (const frameViewport of viewports) {
+      const handle = await mountGalleryScenario({
+        scenario,
+        checkpoint,
+        viewport: frameViewport,
+      });
+      try {
+        const frame = await handle.waitForCheckpoint();
+        const grid = await createFrameGrid(scenario, frameViewport, frame);
+        const locator = resolveElementLocator({
+          scenario,
+          checkpoint,
+          grid,
+          elementId: 'question-panel',
+        });
+        const crop = createCropCellGrid({ frame: grid, locator });
+        const text = crop.cells.map((row) => row.map((cell) => cell.grapheme).join('')).join('\n');
+        expect(text).toContain('Try again');
+        expect(text).toContain('Change PLAN tool');
+        expect(text).toContain('End run');
+      } finally {
+        await handle.unmount();
+      }
+    }
+  });
+
+  it.each(
+    [
+      { id: 'workflow-question-input', count: 'Question 1 of 2' },
+      { id: 'workflow-question-overflow', count: 'Question 2 of 3' },
+    ].flatMap(({ id, count }) =>
+      [VIEWPORT, WIDE_VIEWPORT, SIDEBAR_VIEWPORT, viewport({ cols: 60, rows: 18 })].map(
+        (frameViewport) => ({ id, count, frameViewport }),
+      ),
+    ),
+  )(
+    'crops the whole $id question panel at $frameViewport.cols x $frameViewport.rows',
+    async ({ id, count, frameViewport }) => {
+      const scenario = requireScenario(id);
+      const checkpoint = requireCheckpoint(scenario);
+      const handle = await mountGalleryScenario({ scenario, checkpoint, viewport: frameViewport });
+      try {
+        const frame = await handle.waitForCheckpoint();
+        const grid = await createFrameGrid(scenario, frameViewport, frame);
+        const locator = resolveElementLocator({
+          scenario,
+          checkpoint,
+          grid,
+          elementId: 'question-panel',
+        });
+        const rows = createCropCellGrid({ frame: grid, locator }).cells.map((row) =>
+          row.map((cell) => cell.grapheme).join(''),
+        );
+        expect(rows[0]).toMatch(/^\s*┌/);
+        expect(rows.join('\n')).toContain(count);
+        expect(rows.at(-1)).toMatch(/^\s*└/);
+      } finally {
+        await handle.unmount();
+      }
+    },
+  );
 });

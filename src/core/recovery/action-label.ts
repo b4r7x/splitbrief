@@ -64,7 +64,7 @@ export function recoveryActionParts(
         : [{ text: 'Change ' }, { text: CREW_SEAT_LABELS[seat], seat }, { text: ' tool' }];
     }
     case 'revise':
-      return [{ text: context.reason === 'review-failed' ? 'Fix again' : 'Send a correction' }];
+      return [{ text: context.reason === 'review-failed' ? 'Review again' : 'Send a correction' }];
     case 'accept-as-is':
       return [
         {

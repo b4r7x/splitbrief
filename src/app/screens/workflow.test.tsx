@@ -1529,7 +1529,7 @@ describe('WorkflowScreen showing a run at rest', () => {
 
     ui.stdin.write('\r');
     await vi.waitFor(() => {
-      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Fix again');
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Review again');
     });
     const panelFocused = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(panelFocused).toContain('Choose an action above, or tab to type a correction…');
@@ -1549,7 +1549,7 @@ describe('WorkflowScreen showing a run at rest', () => {
 
     ui.stdin.write('\r');
     await vi.waitFor(() => {
-      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Fix again');
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Review again');
     });
     ui.stdin.write('\t');
     await flushEffects();

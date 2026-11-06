@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { sessionError, sessionFileFailure } from './errors.js';
+import { sessionError, sessionFileFailure, stillRunningText } from './errors.js';
 
 describe('sessionError factories', () => {
   test('invalidData carries sessionId + reason', () => {
@@ -23,6 +23,19 @@ describe('sessionError.isStillActive', () => {
   test('matches stillActive factory output', () => {
     expect(sessionError.isStillActive(sessionError.stillActive('sess-1'))).toBe(true);
     expect(sessionError.isStillActive(sessionError.invalidData('id', 'why'))).toBe(false);
+  });
+});
+
+describe('a run another window still runs', () => {
+  test('gives one text to every refusal', () => {
+    const text = stillRunningText('2026-11-06-a');
+    expect(text.summary).toBe('Run 2026-11-06-a is still running.');
+    expect(text.fix).toBe(
+      "Stop it in the window that runs it, then run 'splitbrief continue 2026-11-06-a'.",
+    );
+    expect(sessionError.stillActive('2026-11-06-a').message).toBe(
+      "Run 2026-11-06-a is still running. Stop it in the window that runs it, then run 'splitbrief continue 2026-11-06-a'.",
+    );
   });
 });
 

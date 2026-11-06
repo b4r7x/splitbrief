@@ -55,7 +55,9 @@ describe('CLI integration: start with a live session', { timeout: 90_000 }, () =
     const { exitCode, stderr } = await runCommand(['start', '--project', tmp, 'another feature']);
 
     expect(exitCode).toBe(1);
-    expect(stderr).toContain("session '2026-04-18-live' is still active");
+    expect(stderr).toContain(
+      "Run 2026-04-18-live is still running. Stop it in the window that runs it, then run 'splitbrief continue 2026-04-18-live'.",
+    );
     expect(readFileSync(join(tmp, SPLITBRIEF_DIR, 'active'), 'utf-8').trim()).toBe(existingId);
     const sessionsRoot = join(tmp, SPLITBRIEF_DIR, 'sessions');
     const otherSessions = existsSync(sessionsRoot) ? readdirSync(sessionsRoot) : [];

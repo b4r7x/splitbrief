@@ -1,7 +1,7 @@
 import { countNoun } from '../../../utils/pluralize.js';
 import type { InProgressGitOp } from '../../../lib/git/repository.js';
 import { revertedDir } from '../../paths.js';
-import { stillActiveFix } from '../../sessions/errors.js';
+import { stillRunningText } from '../../sessions/errors.js';
 import type { IsolationStrategy } from '../../schemas/enums.js';
 import type { SessionRef } from '../../types/session-ref.js';
 import type { ReadinessCheck } from '../types.js';
@@ -92,13 +92,14 @@ export function buildRepoChecks(
   }
 
   if (repo.activeSession) {
+    const stillRunning = repo.activeSessionLive ? stillRunningText(repo.activeSession) : undefined;
     checks.push({
       id: repo.activeSessionLive ? ACTIVE_SESSION_LIVE_CHECK : 'repo.active-session-stale',
       severity: repo.activeSessionLive ? 'blocker' : 'info',
-      summary: repo.activeSessionLive
-        ? `Active session ${repo.activeSession} is still live.`
-        : `Stale active session marker ${repo.activeSession} can be cleared.`,
-      fix: repo.activeSessionLive ? stillActiveFix(repo.activeSession) : undefined,
+      summary:
+        stillRunning?.summary ??
+        `Stale active session marker ${repo.activeSession} can be cleared.`,
+      fix: stillRunning?.fix,
       nextAction: repo.activeSessionLive ? 'clean-or-isolate-repo' : undefined,
       metadata: { sessionId: repo.activeSession, live: repo.activeSessionLive === true },
     });

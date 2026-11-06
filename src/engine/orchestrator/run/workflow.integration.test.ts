@@ -1758,7 +1758,7 @@ describe('runWorkflow — smoke', () => {
         sessionId,
         sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       }),
-    ).rejects.toThrow(/already running/);
+    ).rejects.toThrow(/still running/);
   });
 
   it('rejects a concurrent workflow before its planner crosses a provider boundary', async () => {
@@ -1802,7 +1802,7 @@ describe('runWorkflow — smoke', () => {
         }),
       ).rejects.toMatchObject({
         kind: 'workflow-session-already-live',
-        message: `session '${sessionId}' is already running (pid ${process.pid}) — stop it before resuming, or run 'splitbrief continue ${sessionId}' once it stops.`,
+        message: `Run ${sessionId} is still running. Stop it in the window that runs it, then run 'splitbrief continue ${sessionId}'.`,
       });
       expect(secondPlanner.isAvailable).not.toHaveBeenCalled();
       expect(secondPlanner.typedCall).not.toHaveBeenCalled();

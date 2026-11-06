@@ -399,7 +399,7 @@ The selected candidate travels back to the run loop as `switchSeat`. Before the 
 
 `revise` — Queues the operator's correction as a user message and resolves recovery, so the next planner turn carries it. Offered for the halts where the planner's own output is the problem.
 
-`revise` on `review-failed` queues the operator correction as a pending input of kind `defect` and source `user`. `REVIEW_CORRECTION` moves a failed final review back to `final-review`. The reviewer judges the candidate again with that input and without running the gates. A scheduled review stays in `implementing` and follows the same answer. The action records the note, and the answer to it runs another fix cycle. This is **fix again with a note**.
+`revise` on `review-failed` queues the operator correction as a pending input of kind `defect` and source `user`. `REVIEW_CORRECTION` moves a failed final review back to `final-review`. The reviewer judges the candidate again with that input and without running the gates. A scheduled review stays in `implementing` and follows the same answer. The action sends the note to the reviewer, and fix work in the reviewer's answer runs another fix cycle. This is **Review again with a note**.
 
 `end-run` — Uses `closeRunIfOpen()` through the same path as the stop menu and `/end`. It refuses an unfinished Apply: restore or retry Apply first. It preserves unapplied workspace work before closure. See [Apply](./WORKFLOW.md#apply).
 
@@ -407,7 +407,7 @@ The selected candidate travels back to the run loop as `switchSeat`. Before the 
 
 The recovery state tracks the issue lifecycle:
 1. `SET_PENDING_RECOVERY` — Issue attached to state, status `awaiting-user`.
-2. `MARK_RECOVERY_APPLYING` — User picked an action, status `applying`. `revise`, **fix again with a note**, `accept-as-is` and `retry-same-worker` on a seat or a brief save this step, the typed note and step 3 in one write. A stop then leaves the whole answer saved or none of it, and the note is never applied twice. Re-run Apply and Restore backup keep status `applying` while Apply runs.
+2. `MARK_RECOVERY_APPLYING` — User picked an action, status `applying`. `revise`, **Review again with a note**, `accept-as-is` and `retry-same-worker` on a seat or a brief save this step, the typed note and step 3 in one write. A stop then leaves the whole answer saved or none of it, and the note is never applied twice. Re-run Apply and Restore backup keep status `applying` while Apply runs.
 3. `RESOLVE_PENDING_RECOVERY` — Action applied, issue cleared from state.
 4. `CLOSE_RUN` — User chose **End run**: the close is recorded on the state and the pending issue is cleared with it.
 

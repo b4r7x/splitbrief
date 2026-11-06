@@ -182,7 +182,7 @@ describe('CLI integration: resume interrupted session', { timeout: 90_000 }, () 
     // resume must refuse (it does NOT re-enter resumeSavedSession and double-execute).
     expect(exitCode).toBe(1);
     expect(stderr).toContain(
-      `session '${sessionId}' is running — stop it before resuming, or use \`splitbrief continue\` once it stops.`,
+      `Run ${sessionId} is still running. Stop it in the window that runs it, then run 'splitbrief continue ${sessionId}'.`,
     );
     expect(stdout).not.toMatch(/Resuming/);
     // The saved state is left untouched — no second run gutted or advanced it.

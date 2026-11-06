@@ -188,7 +188,7 @@ describe('recovery menu and composer keyboard ownership', () => {
   });
 
   it.each(['menu', 'composer'])(
-    'sends the note of Fix again from the %s after a failed final review',
+    'sends the note of Review again from the %s after a failed final review',
     async (source) => {
       const note = 'Keep the total exact';
       const ref = { projectDir, sessionId: `recover-review-failed-${source}` };
@@ -237,7 +237,7 @@ describe('recovery menu and composer keyboard ownership', () => {
       const screen = ui;
       await vi.waitFor(() =>
         expect(stripAnsiStyles(screen.lastFrame())).toContain(
-          'Fix again · runs another fix cycle with your note',
+          'Review again · sends your note to the reviewer',
         ),
       );
       await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
@@ -324,7 +324,7 @@ describe('the note question of a failed review', () => {
     const screen = ui;
     await vi.waitFor(() =>
       expect(stripAnsiStyles(screen.lastFrame())).toContain(
-        'Fix again · runs another fix cycle with your note',
+        'Review again · sends your note to the reviewer',
       ),
     );
     await flushEffects();

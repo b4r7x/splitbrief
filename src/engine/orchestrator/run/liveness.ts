@@ -1,9 +1,8 @@
-import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { LOCKFILE, sessionDir } from '../../../core/paths.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { warnStderr } from '../../../lib/warn.js';
-import { sessionFileFailure } from '../../../core/sessions/errors.js';
+import { sessionError, sessionFileFailure } from '../../../core/sessions/errors.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { error } from '../../../utils/error.js';
 import { startHeartbeat } from './heartbeat.js';
@@ -17,11 +16,10 @@ import {
 
 const workflowLivenessError = {
   sessionAlreadyLive: (sessionId: string, pid: number) =>
-    error(
-      'workflow-session-already-live',
-      `session '${sessionId}' is already running (pid ${pid}) — stop it before resuming, or run '${SPLITBRIEF_IDENTITY.executable} continue ${sessionId}' once it stops.`,
-      { sessionId, pid },
-    ),
+    error('workflow-session-already-live', sessionError.stillActive(sessionId).message, {
+      sessionId,
+      pid,
+    }),
 };
 
 type LivenessOpts = {

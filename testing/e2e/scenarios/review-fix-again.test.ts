@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
+import { arrowSep } from '../../../src/core/separators.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
 import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
 import { plainUserMessage } from '../../../src/core/types/user-input.js';
@@ -191,8 +192,8 @@ console.log('Implemented ' + title);
 `;
 }
 
-describe('e2e: Fix again after a failed final review', { timeout: 300_000 }, () => {
-  it('sends the note to the reviewer, builds the fix brief it answers with, and records Fix again', async () => {
+describe('e2e: Review again after a failed final review', { timeout: 300_000 }, () => {
+  it('sends the note to the reviewer, builds the fix brief it answers with, and records Review again', async () => {
     fixture = createStopContinueFixture(() => '');
     const target = fixture;
     restorePath = activateSafeCliShimPath(target.tmpDir);
@@ -224,7 +225,7 @@ describe('e2e: Fix again after a failed final review', { timeout: 300_000 }, () 
     const sessionId = readActive(target.projectDir);
     if (sessionId === null) throw new Error(`The halted run saved no session: ${halted.stderr}`);
     expect(halted.stderr).toContain(
-      `Continue with: splitbrief continue ${sessionId}, then choose Fix again in the recovery panel`,
+      `Continue with: splitbrief continue ${sessionId}, then choose Review again in the recovery panel`,
     );
     expect(halted.stderr).toContain('Final review made no progress on F1 after fix cycle 2');
     expect(halted.stderr).toContain(`Planner said: ${CANNOT}`);
@@ -312,11 +313,11 @@ describe('e2e: Fix again after a failed final review', { timeout: 300_000 }, () 
     });
 
     const transcript = transcriptText(events);
-    expect(transcript).toContain('Recovery  Fix again');
+    expect(transcript).toContain(`Recovery  Review again${arrowSep()}continued`);
     expect(transcript.match(/Recovery {2}/g)).toHaveLength(1);
-    expect(transcript.split('\n').find((line) => line.includes('Recovery  Fix again'))).toContain(
-      'continued',
-    );
+    expect(
+      transcript.split('\n').find((line) => line.includes('Recovery  Review again')),
+    ).toContain('continued');
     expect(transcript).toContain(NOTE);
     expect(transcript).not.toContain('Send a correction');
   });

@@ -315,7 +315,20 @@ describe('triageContractErrors', () => {
     };
 
     expect(triageContractErrors(result, plan, findings, [], [], undefined, FINAL_SCOPE)).toEqual([
-      'Fix task T002 names unknown criterion C9.',
+      'Fix task T002 names an unknown criterion: C9',
+    ]);
+  });
+
+  it('puts a criterion the seat wrote as a sentence after a colon, with no full stop of its own', () => {
+    const criterion = 'The TS2345 failure at review-commands.ts:81 is absent.';
+    const result: TriageResult = {
+      fixTasks: [{ ...fixTaskSpec(), criteria: [criterion] }],
+      rejected: [],
+      ask: null,
+    };
+
+    expect(triageContractErrors(result, plan, findings, [], [], undefined, FINAL_SCOPE)).toEqual([
+      'Fix task T002 names an unknown criterion: The TS2345 failure at review-commands.ts:81 is absent.',
     ]);
   });
 
@@ -331,7 +344,7 @@ describe('triageContractErrors', () => {
         reviewChecks,
         FINAL_SCOPE,
       ),
-    ).toEqual(['Finding F1 names unknown check V3.']);
+    ).toEqual(['Finding F1 names an unknown check: V3']);
   });
 
   it('refuses an answer that covers a finding twice and an id that names nothing', () => {
@@ -374,7 +387,7 @@ describe('triageContractErrors', () => {
     };
 
     expect(triageContractErrors(ask, plan, findings, [], [], undefined, FINAL_SCOPE)).toEqual([
-      'Fix task T002 names unknown criterion C9.',
+      'Fix task T002 names an unknown criterion: C9',
     ]);
   });
 });

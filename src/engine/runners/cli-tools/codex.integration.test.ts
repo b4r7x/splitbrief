@@ -566,6 +566,37 @@ describe('Codex JSONL protocol adapter', () => {
     });
   });
 
+  it('reads a Codex answer cut at the output token limit as output-token-limit', () => {
+    const message = 'Incomplete response returned, reason: max_output_tokens';
+    const errorLine = JSON.stringify({ type: 'error', message });
+    const failedLine = JSON.stringify({ type: 'turn.failed', error: { message } });
+
+    expect(terminalInput(codexPlannerAdapter, codexProtocolEvents(errorLine))).toMatchObject({
+      status: 'failed',
+      error: { code: 'output-token-limit', message },
+    });
+    expect(terminalInput(codexPlannerAdapter, codexProtocolEvents(failedLine))).toMatchObject({
+      status: 'failed',
+      error: { code: 'output-token-limit', message },
+    });
+
+    const errorThenFailed = [errorLine, failedLine].flatMap((line) => [
+      ...codexProtocolEvents(line),
+    ]);
+    expect(terminalInput(codexPlannerAdapter, errorThenFailed)).toMatchObject({
+      status: 'failed',
+      error: { code: 'output-token-limit', message },
+    });
+
+    const failedThenError = [failedLine, errorLine].flatMap((line) => [
+      ...codexProtocolEvents(line),
+    ]);
+    expect(terminalInput(codexPlannerAdapter, failedThenError)).toMatchObject({
+      status: 'failed',
+      error: { code: 'output-token-limit', message },
+    });
+  });
+
   it('a double-encoded turn.failed body yields the inner human message as the failure message', () => {
     const humanMessage =
       "The 'gpt-5-totally-bogus-model' model is not supported when using Codex with a ChatGPT account.";

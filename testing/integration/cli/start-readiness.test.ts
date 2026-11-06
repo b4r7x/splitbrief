@@ -42,7 +42,7 @@ describe('start command — readiness', () => {
     const output = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
     expect(isCliError(captured)).toBe(true);
     expect(output).not.toContain('repo.active-session-live');
-    expect(output.match(/Active session 2026-04-28-live is still live\./gu)).toHaveLength(1);
+    expect(output.match(/Run 2026-04-28-live is still running\./gu)).toHaveLength(1);
     expect(output).not.toContain('repo.dirty-worktree');
     expect(output).not.toContain('scratch.txt');
     // Interactive feature starts mount Ink in parallel with preparation (T-037).

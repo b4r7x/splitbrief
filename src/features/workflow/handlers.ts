@@ -16,6 +16,8 @@ import { routerStore, type RouteData } from '../../stores/navigation/router.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
+import { continueRunCommand } from '../../core/recovery/resume-command.js';
+import { warnStderr } from '../../lib/warn.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import { markCancellationRequested } from '../../stores/workflow/actions/interrupt.js';
 import { markWorkflowResumed } from '../../stores/workflow/actions/resume.js';
@@ -334,7 +336,23 @@ function leave(departure: Departure | null): void {
     discardPendingSessionDrafts();
   }
   // A quit names an old draft it could not remove before its screen unmounts; a home lands first.
-  if (departure?.kind === 'quit') nameDraftsNotRemoved('at-exit');
+  if (departure?.kind === 'quit') {
+    nameDraftsNotRemoved('at-exit');
+    const route = routerStore.get();
+    if (route.screen === 'workflow') {
+      try {
+        const record = readRunRecord(route.run.ref);
+        if (record.status.kind !== 'closed') {
+          warnStderr(
+            `Continue this run with: ${continueRunCommand(route.run.ref.sessionId)}`,
+            'at-exit',
+          );
+        }
+      } catch (err) {
+        warnStderr(toErrorMessage(err), 'at-exit');
+      }
+    }
+  }
   try {
     departure?.run();
   } catch (err) {

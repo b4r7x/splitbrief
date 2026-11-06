@@ -402,8 +402,9 @@ describe('final review input cap', () => {
     const { reviewer: measuringReviewer } = countingReviewer();
     const packetPath = join(sessionDir(ref.projectDir, ref.sessionId), REVIEW_PACKET_JSON_FILE);
 
-    await review(ref, doneState(task), measuringReviewer);
+    const measure = await review(ref, doneState(task), measuringReviewer);
 
+    expect(measure.failure).toMatchObject({ kind: 'input-too-large' });
     const firstPacket = ReviewPacketSchema.parse(JSON.parse(readFileSync(packetPath, 'utf8')));
     const measured = firstPacket.reviewInput?.size;
     if (measured === undefined) throw new Error('the review recorded no input size');

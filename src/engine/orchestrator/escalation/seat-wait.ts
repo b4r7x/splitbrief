@@ -166,6 +166,7 @@ export async function resumeSeatWait(
 type SeatLadderPort = Readonly<{
   signal?: AbortSignal | undefined;
   onRetry: (info: SeatRetryInfo) => void;
+  /** Whether the call waits for the reset its limit named; false gives the limit back to the caller. */
   waits: () => Promise<boolean>;
   wait: (deadline: Date) => Promise<void>;
 }>;

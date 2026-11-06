@@ -448,7 +448,7 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
     { route: 'task', review: 'task' as const, failsFrom: 2 },
     { route: 'final', review: 'end' as const, failsFrom: 1 },
   ])(
-    'gives the $route review a Fix again note while a required check still fails',
+    'gives the $route review a Review again note while a required check still fails',
     async ({ review, failsFrom }) => {
       const { projectDir, sessionId, head } = setupProject({
         'package.json': `${JSON.stringify({ name: 'cadence', private: true, scripts: { test: 'test ! -f src/beta.ts' } })}\n`,

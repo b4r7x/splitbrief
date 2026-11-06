@@ -1,6 +1,6 @@
 import { fileErrorReason, fileFailure, toErrorMessage } from '../../utils/format-errors.js';
 import { error, matches, type AppError } from '../../utils/error.js';
-import { SPLITBRIEF_IDENTITY } from '../identity.js';
+import { continueRunCommand } from '../recovery/resume-command.js';
 import { SOFT_SEP } from '../separators.js';
 import type { SessionRef } from '../types/session-ref.js';
 
@@ -33,9 +33,11 @@ export const sessionPreparationError = {
     ),
 } as const;
 
-/** What works on a run another process still runs: stop it there, then continue it. */
-export function stillActiveFix(sessionId: string): string {
-  return `Stop it, then run '${SPLITBRIEF_IDENTITY.executable} continue ${sessionId}' — or delete ${SPLITBRIEF_IDENTITY.stateDir}/active to discard it.`;
+export function stillRunningText(sessionId: string): Readonly<{ summary: string; fix: string }> {
+  return {
+    summary: `Run ${sessionId} is still running.`,
+    fix: `Stop it in the window that runs it, then run '${continueRunCommand(sessionId)}'.`,
+  };
 }
 
 /** `<what>: <cause> · <project-relative file>`. */
@@ -68,12 +70,10 @@ export const sessionError = {
       `Cannot save session summary for '${requestedId}': session payload id is '${sessionId}'`,
       { requestedId, sessionId },
     ),
-  stillActive: (sessionId: string) =>
-    error(
-      'session-still-active',
-      `session '${sessionId}' is still active.\n${stillActiveFix(sessionId)}`,
-      { sessionId },
-    ),
+  stillActive: (sessionId: string) => {
+    const text = stillRunningText(sessionId);
+    return error('session-still-active', `${text.summary} ${text.fix}`, { sessionId });
+  },
   invalidId: (sessionId: string) =>
     error('session-invalid-id', 'invalid session id', { sessionId }),
   draftNotSaved: (relativePath: string, cause: unknown) =>

@@ -143,7 +143,7 @@ export function triageContractErrors(
       }
       for (const checkId of finding?.checkIds ?? []) {
         if (!checks.has(checkId)) {
-          errors.push(`Finding ${id} names unknown check ${checkId}.`);
+          errors.push(`Finding ${id} names an unknown check: ${checkId}`);
         }
       }
     }
@@ -157,7 +157,7 @@ export function triageContractErrors(
         );
       }
       if (!criteria.has(criterionId)) {
-        errors.push(`Fix task ${task.id} names unknown criterion ${criterionId}.`);
+        errors.push(`Fix task ${task.id} names an unknown criterion: ${criterionId}`);
       }
     }
   }

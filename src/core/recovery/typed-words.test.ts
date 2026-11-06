@@ -81,7 +81,7 @@ describe('statusLeavesWordsUnread at a halt', () => {
 
   it.each<[string, RecoveryIssue]>([
     ['a pending failed review', FAILED_REVIEW],
-    ['a chosen Fix again', { ...FAILED_REVIEW, status: 'applying', selectedAction: 'revise' }],
+    ['a chosen Review again', { ...FAILED_REVIEW, status: 'applying', selectedAction: 'revise' }],
     ['a chosen action not saved', { ...APPLY_PARTIAL, status: 'applying' }],
     [
       'a halt only End run answers',

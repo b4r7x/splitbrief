@@ -634,7 +634,7 @@ describe('applyRecoveryAction: Try again on a review its seat could not see', ()
     expect(result.state.pendingRecovery).toBeUndefined();
   });
 
-  it('queues a typed note for the review that runs again, as Fix again does', async () => {
+  it('queues a typed note for the review that runs again, as Review again does', async () => {
     const { projectDir, sessionId } = setupSession('recovery-review-no-images-note');
     const state = noImagesHalt(projectDir, sessionId);
     const { bus } = makeBusRecorder();

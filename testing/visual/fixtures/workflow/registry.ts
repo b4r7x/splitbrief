@@ -1170,6 +1170,30 @@ const checkpointPredicates = [
       includesAll(WORKFLOW_FIXTURE_TEXT.recoveryPlan)(context) &&
       (context.viewport.cols < 80 || includesAll('A retry sends the same prompt.')(context)),
   ],
+  [
+    checkpointId('recovery-plan-output-limit'),
+    (context) => {
+      const visible = context.output;
+      const normalizedVisible = visible.replace(/\s+/g, ' ');
+      const hasVisible = (text: string) =>
+        visible.includes(text) || normalizedVisible.includes(text);
+      if (
+        !hasVisible('Planning failed') ||
+        !hasVisible('Change PLAN tool') ||
+        !hasVisible('Try again')
+      ) {
+        return false;
+      }
+      if (context.viewport.cols >= 80 && !hasVisible('A retry can run as long')) {
+        return false;
+      }
+      if (context.viewport.cols >= 120 && !hasVisible(context.checkpoint.marker)) {
+        return false;
+      }
+      const transcript = workflowTranscriptText().replace(/\s+/g, ' ');
+      return transcript.includes(context.checkpoint.marker);
+    },
+  ],
   [checkpointId('recovery-plan-questions'), includesAll('Which store keeps the greeting?')],
   [checkpointId('recovery-review'), includesAll()],
   [checkpointId('recovery-model-pick'), includesAll('Pick another REVIEW model')],
@@ -1276,7 +1300,7 @@ const checkpointPredicates = [
   ],
   [checkpointId('recovery-slash-list'), includesAll('/skills', 'tab fill')],
   [checkpointId('review-failed'), includesAll(WORKFLOW_FIXTURE_TEXT.reviewFailed, 'Accept as is')],
-  [checkpointId('review-fix-again'), recoveryRows(['Recovery  Fix again', 'continued'])],
+  [checkpointId('review-fix-again'), recoveryRows(['Recovery  Review again', 'continued'])],
   [
     checkpointId('review-unverified'),
     includesAll(

@@ -1699,7 +1699,7 @@ describe('buildReviewFailedRecoveryIssue', () => {
     expectValidRecoveryIssue(issue);
   });
 
-  it('keeps Fix again on a review with unverified criteria its seat could see', () => {
+  it('keeps Review again on a review with unverified criteria its seat could see', () => {
     const issue = buildReviewFailedRecoveryIssue({
       createdAt,
       blocking: 0,

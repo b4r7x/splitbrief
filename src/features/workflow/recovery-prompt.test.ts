@@ -257,13 +257,13 @@ it('carries the action seat and consequence before formatting the label', () => 
   ]);
 });
 
-it('keeps a fix action hint dim', () => {
+it('keeps the Review again hint dim', () => {
   expect(
     recoveryMenuParts('revise', makeRecoveryIssue({ reason: 'review-failed' }), false),
   ).toEqual([
-    { text: 'Fix again', tone: 'text' },
+    { text: 'Review again', tone: 'text' },
     { text: ' · ', tone: 'textDim' },
-    { text: 'runs another fix cycle with your note', tone: 'textDim' },
+    { text: 'sends your note to the reviewer', tone: 'textDim' },
   ]);
 });
 
@@ -1018,7 +1018,7 @@ describe('recovery prompt', () => {
     expect(visible).not.toContain('Nothing was sent');
     expect(visible).not.toContain('retry');
     expect(recoveryMenuText('revise', issue)).toBe(
-      'Fix again · runs another fix cycle with your note',
+      'Review again · sends your note to the reviewer',
     );
   });
 

@@ -1387,7 +1387,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
       expect(issue?.availableActions).not.toContain('revise');
     });
 
-    it('keeps Fix again when a criterion with no render check is also unverified', async () => {
+    it('keeps Review again when a criterion with no render check is also unverified', async () => {
       const issue = await haltOnUnverified([
         { id: 'C1', text: 'The rendered greeting is checked', checkIds: ['K1'] },
         { id: 'C2', text: 'The greeting names the user', checkIds: [] },
@@ -1400,7 +1400,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
       });
     });
 
-    it('keeps Fix again when a review seat that reads images left a render criterion unverified', async () => {
+    it('keeps Review again when a review seat that reads images left a render criterion unverified', async () => {
       const issue = await haltOnUnverified(
         [{ id: 'C1', text: 'The rendered greeting is checked', checkIds: ['K1'] }],
         { kind: 'cli', tool: 'claude-code' },

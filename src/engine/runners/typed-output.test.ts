@@ -747,6 +747,38 @@ describe('requestTyped repair notice', () => {
     expect(notices[0]).not.toContain('findings.0');
   });
 
+  it('closes each contract rule once, also after a value that ends its own sentence', async () => {
+    const schema = z.object({}).superRefine((_value, ctx) => {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Fix task T010 names an unknown criterion: The TS2345 failure is absent.',
+      });
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Fix task T011 names an unknown criterion: C9',
+      });
+    });
+    const { call } = makeSeatCall({
+      seat: 'reviewer',
+      typedOutput: 'fallback',
+      results: [completed('{}'), completed('{}')],
+    });
+    const notices: string[] = [];
+
+    await requestTyped({
+      prompt: 'Review it',
+      schema,
+      jsonSchema,
+      schemaName: 'probe',
+      call,
+      onRepair: (message) => notices.push(message),
+    });
+
+    expect(notices).toEqual([
+      'The reviewer seat answer did not match its contract. Fix task T010 names an unknown criterion: The TS2345 failure is absent. Fix task T011 names an unknown criterion: C9. Asking the seat again.',
+    ]);
+  });
+
   it('lists at most three reasons', async () => {
     const schema = z.object({}).superRefine((_value, ctx) => {
       for (const id of ['T1', 'T2', 'T3', 'T4', 'T5']) {

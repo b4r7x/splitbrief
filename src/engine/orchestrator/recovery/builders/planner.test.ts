@@ -61,6 +61,37 @@ describe('buildPlannerCallFailedRecoveryIssue', () => {
     expectValidRecoveryIssue(issue);
   });
 
+  it('recommends another tool for an answer cut at the output token limit, and keeps the retry', () => {
+    const withSwap = buildPlannerCallFailedRecoveryIssue({
+      diagnosis: {
+        failure: 'output-token-limit',
+        message: 'Planning failed: output token limit reached',
+      },
+      phase: 'planning',
+      runner: plannerRunner,
+      seatSwap: plannerSeatSwap,
+      createdAt,
+    });
+
+    expect(withSwap.availableActions).toEqual(['retry-same-worker', 'switch-seat', 'end-run']);
+    expect(withSwap.recommendedAction).toBe('switch-seat');
+    expectValidRecoveryIssue(withSwap);
+
+    const withoutSwap = buildPlannerCallFailedRecoveryIssue({
+      diagnosis: {
+        failure: 'output-token-limit',
+        message: 'Planning failed: output token limit reached',
+      },
+      phase: 'planning',
+      runner: plannerRunner,
+      createdAt,
+    });
+
+    expect(withoutSwap.availableActions).toEqual(['retry-same-worker', 'end-run']);
+    expect(withoutSwap.recommendedAction).toBe('retry-same-worker');
+    expectValidRecoveryIssue(withoutSwap);
+  });
+
   describe('on an OpenCode route refusal (provider.no-route)', () => {
     const route = 'ollama-cloud/deepseek-v4.1-flash';
     const words = `provider.no-route: Model unavailable: ${route}`;

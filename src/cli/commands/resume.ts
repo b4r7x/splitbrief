@@ -4,6 +4,7 @@ import { defaultRunRecordDeps } from '../../core/sessions/run-record-io.js';
 import { addWorkflowOptions } from '../options.js';
 import { canonicalizeProjectDir } from '../setup.js';
 import { cliError } from '../errors.js';
+import { sessionError } from '../../core/sessions/errors.js';
 import { readActive } from '../../core/sessions/active-pointer.js';
 import { checkSessionLiveness } from '../../core/sessions/lockfile.js';
 import { sessionDir } from '../../core/paths.js';
@@ -35,10 +36,7 @@ export async function resumeCommand(
 
   const status = deps.checkSessionLiveness(sessionDir(projectDir, sessionId));
   if (status.alive) {
-    throw cliError(
-      `session '${sessionId}' is running — stop it before resuming, or use \`splitbrief continue\` once it stops.`,
-      1,
-    );
+    throw cliError(sessionError.stillActive(sessionId).message, 1);
   }
 
   if (status.processAlive) {

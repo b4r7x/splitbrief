@@ -3,6 +3,7 @@ import {
   getWorkflowSidebarWidth,
 } from '../../../src/features/workflow/layout/rect.js';
 import { getReviewDocumentPromptRows } from '../../../src/features/workflow/prompt-rows/approval.js';
+import { getRecoveryPromptRows } from '../../../src/features/workflow/prompt-rows/recovery.js';
 import {
   getContentTopRowIndex,
   getProgressRows,
@@ -16,8 +17,9 @@ import {
 } from '../../../src/features/home/layout.js';
 import { getLogoHeight } from '../../../src/features/home/logo.js';
 import {
-  workflowFixtureProjections,
+  fixtureHalt,
   getWorkflowFixturePromptRows,
+  workflowFixtureProjections,
   type WorkflowFixtureProjection,
 } from '../fixtures/workflow/projections.js';
 import { projectionChromeFacts } from '../fixtures/workflow/projection-chrome.js';
@@ -88,10 +90,9 @@ const BASE_LOCATOR_REGISTRY: Record<string, LocatorDefinition> = {
     rowsBelow: 2,
   },
   'workflow:question-panel': {
-    kind: 'marker',
-    description: 'Question panel around its checkpoint marker',
-    rowsAbove: 1,
-    rowsBelow: 3,
+    kind: 'layout',
+    description: 'Complete question panel bounds',
+    resolve: resolveWorkflowQuestionPanel,
   },
   'workflow:preparation-panel': {
     kind: 'layout',
@@ -258,6 +259,24 @@ function resolveWorkflowApprovalPanel(context: LocatorContext): CellRect {
           cols,
           getReviewPanelBudget({ rows, inputRows: DEFAULT_INPUT_ROWS }),
         )
+      : getWorkflowFixturePromptRows(projection, cols);
+  const height = Math.min(promptRows, transcript.height);
+  return CellRectSchema.parse({
+    x: transcript.x,
+    y: transcript.y + transcript.height - height,
+    width: transcript.width,
+    height,
+  });
+}
+
+function resolveWorkflowQuestionPanel(context: LocatorContext): CellRect {
+  const projection = projectionFor(context);
+  const { cols } = context.grid.identity.provenance.viewport;
+  const transcript = resolveWorkflowTranscript(context);
+  const halt = fixtureHalt(projection);
+  const promptRows =
+    halt !== undefined
+      ? getRecoveryPromptRows(halt, cols)
       : getWorkflowFixturePromptRows(projection, cols);
   const height = Math.min(promptRows, transcript.height);
   return CellRectSchema.parse({

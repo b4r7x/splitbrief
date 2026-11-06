@@ -1897,8 +1897,8 @@ describe('prepareReviewExecution', () => {
             {
               id: 'repo.active-session-live',
               severity: 'blocker',
-              summary: 'Active session live-one is still live.',
-              fix: "Stop it, then run 'splitbrief continue live-one' — or delete .splitbrief/active to discard it.",
+              summary: 'Run live-one is still running.',
+              fix: "Stop it in the window that runs it, then run 'splitbrief continue live-one'.",
               nextAction: 'clean-or-isolate-repo',
               metadata: { sessionId: 'live-one', live: true },
             },

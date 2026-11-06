@@ -146,17 +146,26 @@ describe('buildRepoChecks dirty worktree', () => {
 
 describe('buildRepoChecks active session', () => {
   it('tells a live run to stop and continue, as every refusal of a live run does', () => {
+    const runId = '2026-11-06-a';
     const live = buildRepoChecks({
       ...cleanRepo,
-      activeSession: 'session-abc',
+      activeSession: runId,
       activeSessionLive: true,
     }).find((check) => check.id === 'repo.active-session-live');
 
     expect(live?.severity).toBe('blocker');
+    expect(live?.summary).toBe(`Run ${runId} is still running.`);
     expect(live?.fix).toBe(
-      "Stop it, then run 'splitbrief continue session-abc' — or delete .splitbrief/active to discard it.",
+      `Stop it in the window that runs it, then run 'splitbrief continue ${runId}'.`,
     );
-    expect(sessionError.stillActive('session-abc').message).toContain(live?.fix);
+
+    const activeError = sessionError.stillActive(runId);
+    expect(activeError.message).toContain(live?.summary);
+    expect(activeError.message).toContain(live?.fix);
+    expect(activeError.message).not.toContain('delete');
+    expect(activeError.message).not.toContain('discard');
+    expect(activeError.message).not.toContain('.splitbrief/active');
+    expect(activeError.message.toLowerCase()).not.toContain('session');
   });
 
   it('keeps the stale marker as information with no fix', () => {

@@ -42,6 +42,7 @@ import {
   registeredProcessCount,
   registerProcess,
 } from '../../../lib/process/registry.js';
+import { installDiagnosticSink } from '../../../lib/warn.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
@@ -170,6 +171,7 @@ function finalReviewState(): WorkflowState {
 describe('run-loop stop completion', () => {
   let projectDir: string;
   let mounted: ReturnType<typeof renderFeature> | undefined;
+  let releaseSink: () => void;
 
   beforeEach(() => {
     projectDir = createTempDir('run-loop-stop-');
@@ -177,12 +179,14 @@ describe('run-loop stop completion', () => {
     resetAllStores();
     configStore.__testReset({ projectDir });
     clearAllHandlers();
+    releaseSink = installDiagnosticSink(() => {});
   });
 
   afterEach(async () => {
     mounted?.unmount();
     mounted = undefined;
     await killAllProcesses();
+    releaseSink();
     clearAllHandlers();
     resetAllStores();
     cleanupTempDir(projectDir);

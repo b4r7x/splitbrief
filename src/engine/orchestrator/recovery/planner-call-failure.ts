@@ -121,6 +121,16 @@ export function diagnosePlannerCallFailure(
       inputSize,
     };
   }
+  if (code === 'output-token-limit') {
+    return {
+      failure: 'output-token-limit',
+      message: `${input.label}: output token limit reached`,
+      tool,
+      details,
+      words: said,
+      resetsAt: null,
+    };
+  }
   // A tool that changed during the run and failed its new check halts on that
   // check; a check that failed on the sign-in is the sign-out it names.
   if (cliToolCheckError.isFailed(err)) {
@@ -192,6 +202,7 @@ export function plannerHaltRow(issue: RecoveryIssue, diagnosis: PlannerCallDiagn
   switch (diagnosis.failure) {
     case 'call-failed':
     case 'input-too-large':
+    case 'output-token-limit':
     case 'runner-check-failed':
       return diagnosis.message;
     case 'missing-model':

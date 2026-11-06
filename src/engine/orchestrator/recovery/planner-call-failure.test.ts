@@ -58,6 +58,35 @@ function cliSeat(tool: CliToolId) {
   return { kind: 'cli', tool, authChannel: defaultCliAuthChannel(tool).id } as const;
 }
 
+const apiSeat = makeConfig({
+  planner: {
+    kind: 'api',
+    provider: 'openai-account',
+    service: 'openai-account',
+    offering: 'payg',
+    apiBase: 'https://api.openai.com/v1',
+    apiKey: 'test-key',
+    model: 'gpt-5',
+  },
+}).planner;
+
+function callFailure(
+  code: string,
+  message: string,
+  status: 'failed' | 'truncated' = 'failed',
+): unknown {
+  return error('runner-call-failed', 'Planner call failed', {
+    status,
+    error: { code, message },
+  });
+}
+
+const calls = [
+  { seat: 'plan', label: 'Planning failed' },
+  { seat: 'plan', label: 'Planner consult for T001 failed' },
+  { seat: 'review', label: 'Final review failed' },
+] as const;
+
 /** A planner-tier call that failed with the tool's own words, as `requireCompletedCall` throws it. */
 function failedCall(words: string): unknown {
   return error('runner-call-failed', 'Planner review call failed', {
@@ -128,19 +157,6 @@ describe('diagnosePlannerCallFailure', () => {
 });
 
 describe('diagnosePlannerCallFailure on an API seat', () => {
-  // An OpenAI account configured the way a custom endpoint is.
-  const apiSeat = makeConfig({
-    planner: {
-      kind: 'api',
-      provider: 'openai-account',
-      service: 'openai-account',
-      offering: 'payg',
-      apiBase: 'https://api.openai.com/v1',
-      apiKey: 'test-key',
-      model: 'gpt-5',
-    },
-  }).planner;
-
   // The provider's error arrives under a rewritten hint that gives advice of its own; the halt
   // gives the one piece of advice the menu backs, so it starts from the provider's words.
   it.each([
@@ -451,19 +467,6 @@ describe('a planner call the tool refused as too large', () => {
     expect(issue.availableActions).not.toContain('retry-same-worker');
   });
 
-  function callFailure(code: string, message: string): unknown {
-    return error('runner-call-failed', 'Planner call failed', {
-      status: 'failed',
-      error: { code, message },
-    });
-  }
-
-  const calls = [
-    { seat: 'plan', label: 'Planning failed' },
-    { seat: 'plan', label: 'Planner consult for T001 failed' },
-    { seat: 'review', label: 'Final review failed' },
-  ] as const;
-
   it.each(calls)('$label: a Codex refusal that names only its limit', ({ seat, label }) => {
     const diagnosis = diagnosePlannerCallFailure({
       err: callFailure(
@@ -478,5 +481,77 @@ describe('a planner call the tool refused as too large', () => {
     expect(diagnosis.details).toEqual([
       'The prompt is larger than the 1,000,000 characters OpenAI Codex CLI takes.',
     ]);
+  });
+});
+
+describe('a planner answer cut at the output token limit', () => {
+  const task = makeTask({ id: 'T001', suggestedFiles: ['src/greet.ts'] });
+
+  function haltFor(
+    err: unknown,
+    label: string,
+    seat: 'plan' | 'review',
+    runner: Parameters<typeof diagnosePlannerCallFailure>[0]['runner'] = cliSeat('codex'),
+  ) {
+    const diagnosis = diagnosePlannerCallFailure({
+      err,
+      label,
+      runner,
+      seat,
+    });
+    const issue = buildPlannerCallFailedRecoveryIssue({
+      diagnosis,
+      ...(label.includes('T001') && { task }),
+      phase: label === 'Planning failed' ? 'planning' : 'implementing',
+      runner,
+      seat,
+      createdAt: '2026-11-05T12:00:00.000Z',
+    });
+    return { diagnosis, issue };
+  }
+
+  it.each(calls)('$label: a Codex answer cut at the output token limit', ({ seat, label }) => {
+    const { diagnosis, issue } = haltFor(
+      callFailure('output-token-limit', 'Incomplete response returned, reason: max_output_tokens'),
+      label,
+      seat,
+    );
+
+    expect(diagnosis.failure).toBe('output-token-limit');
+    expect(issue.reason).toBe('planner-call-failed');
+    expect(issue.message).toBe(`${label}: output token limit reached`);
+    expect(issue.details).toContain(
+      'OpenAI Codex CLI reported: Incomplete response returned, reason: max_output_tokens',
+    );
+    expect(issue.details).toContain(
+      'A retry can run as long and stop at the same limit. Type a correction that asks for a shorter answer, or change the tool.',
+    );
+    expect(issue.availableActions).toContain('retry-same-worker');
+    expect(plannerHaltRow(issue, diagnosis)).toBe(diagnosis.message);
+  });
+
+  it('an API seat cut at the output token limit', () => {
+    const { diagnosis, issue } = haltFor(
+      callFailure(
+        'output-token-limit',
+        'OpenAI response ended because the max token limit was reached',
+        'truncated',
+      ),
+      'Planning failed',
+      'plan',
+      apiSeat,
+    );
+
+    expect(diagnosis.failure).toBe('output-token-limit');
+    expect(issue.reason).toBe('planner-call-failed');
+    expect(issue.message).toBe('Planning failed: output token limit reached');
+    expect(issue.details).toContain(
+      'openai-account reported: OpenAI response ended because the max token limit was reached',
+    );
+    expect(issue.details).toContain(
+      'A retry can run as long and stop at the same limit. Type a correction that asks for a shorter answer, or change the tool.',
+    );
+    expect(issue.availableActions).toContain('retry-same-worker');
+    expect(plannerHaltRow(issue, diagnosis)).toBe(diagnosis.message);
   });
 });

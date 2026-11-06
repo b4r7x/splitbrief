@@ -230,6 +230,7 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-approval-confirm', ['120x40', '80x24', '60x18', '120x16', '120x14', '120x12']],
   ['workflow-approval-confirm-secret', ['120x40', '80x24', '60x18', '120x16', '120x14', '120x12']],
   ['workflow-recovery-plan-input-too-large', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-recovery-plan-output-limit', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-recovery-plan-seat', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-recovery-review-model-not-listed', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-seat-switched', ['120x40', '80x24', '60x18', '160x45', '64x20', '56x18']],

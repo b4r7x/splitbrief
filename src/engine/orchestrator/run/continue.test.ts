@@ -420,7 +420,7 @@ describe('continueRun on a halt whose action reads no typed words', () => {
         selectedAction: 'continue',
       },
     ],
-    ['Fix again', { ...OLDER_ACCEPT, selectedAction: 'revise' }],
+    ['Review again', { ...OLDER_ACCEPT, selectedAction: 'revise' }],
     [
       'Skip review with a note',
       {

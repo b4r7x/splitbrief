@@ -1130,6 +1130,30 @@ function createHomePreparationNoCommitsFixture(): FixtureLifecycle {
   };
 }
 
+function createHomePreparationRunStillRunningFixture(): FixtureLifecycle {
+  const home = createHomeFixture();
+  return {
+    setup: async (context) => {
+      await home.setup(context);
+      submitSettledCheck({
+        kind: 'blocked',
+        report: preparationReport(
+          buildRepoChecks({
+            isGitRepo: true,
+            hasCommits: true,
+            dirtyFiles: [],
+            untrackedFiles: [],
+            activeSession: '2026-11-06-fix-the-plan-card',
+            activeSessionLive: true,
+          }),
+          { section: { id: 'repo', title: 'Repository' } },
+        ),
+      });
+    },
+    teardown: home.teardown,
+  };
+}
+
 const CONTINUING_FEATURE = 'Refine terminal navigation';
 
 function createWorkflowContinuingFixture(): FixtureLifecycle {
@@ -1708,6 +1732,7 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('home-preparation-blocked'), createHomePreparationBlockedFixture],
   [scenarioId('home-preparation-isolation-blocked'), createHomePreparationIsolationBlockedFixture],
   [scenarioId('home-preparation-no-commits'), createHomePreparationNoCommitsFixture],
+  [scenarioId('home-preparation-run-still-running'), createHomePreparationRunStillRunningFixture],
   [
     scenarioId('home-preparation-runner-trust'),
     () => createHomePreparationRunnerTrustFixture(false),

@@ -152,7 +152,7 @@ function emitOpenAiTerminal(
       recorder.finishFailed({
         status: 'truncated',
         error: {
-          code: 'openai_finish_reason_length',
+          code: 'output-token-limit',
           message: 'OpenAI response ended because the max token limit was reached',
         },
         usage,

@@ -198,7 +198,7 @@ export const WORKFLOW_FIXTURE_TEXT = Object.freeze({
   recovery: 'Change BUILD tool',
   recoveryPlan: 'Change PLAN tool',
   retryExhausted: 'failed',
-  reviewFailed: 'Fix again',
+  reviewFailed: 'Review again',
   reviewFixTask: 'Fix the finding the review raised',
   leftIsolation: 'Seat down · T901 left the isolation directory',
   checkoutChanged: 'Needs you · Repository changed under T901',
@@ -3832,7 +3832,7 @@ const reviewFailedRecoveryProjection: WorkflowFixtureProjection = {
   }),
 };
 
-/** The same halt answered with Fix again and a note: the reviewer judges again with the note. */
+/** The same halt answered with Review again and a note: the reviewer judges again with the note. */
 const reviewFixAgainProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-recovery-review-fix-again'),
   feature: WORKFLOW_FEATURE,
@@ -5060,6 +5060,57 @@ const planInputTooLargeRecoveryProjection: WorkflowFixtureProjection = {
   },
   get resumeState() {
     return haltedResumeState(planInputTooLargeRecoveryIssue());
+  },
+};
+
+function planOutputLimitDiagnosis() {
+  return diagnosePlannerCallFailure({
+    seat: 'plan',
+    err: error(
+      'runner-call-failed',
+      'Codex runner call failed: Incomplete response returned, reason: max_output_tokens',
+      {
+        status: 'failed',
+        error: {
+          code: 'output-token-limit',
+          message: 'Incomplete response returned, reason: max_output_tokens',
+        },
+      },
+    ),
+    label: 'Planning failed',
+    runner: CODEX_PLAN_SEAT,
+  });
+}
+
+function planOutputLimitRecoveryIssue(): RecoveryIssue {
+  return buildPlannerCallFailedRecoveryIssue({
+    id: 'rec_visual_plan_output_limit',
+    diagnosis: planOutputLimitDiagnosis(),
+    phase: 'planning',
+    runner: CODEX_PLAN_SEAT,
+    seatSwap: plannerSeatSwap('plan', 'codex', ['codex', 'claude-code']),
+    createdAt: new Date(FIXED_TS).toISOString(),
+  });
+}
+
+const planOutputLimitRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-recovery-plan-output-limit'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  get events() {
+    const issue = planOutputLimitRecoveryIssue();
+    return publishedEvents(FIXED_TS + 100, (bus) =>
+      publishError({
+        bus,
+        phase: issue.phase,
+        message: plannerHaltRow(issue, planOutputLimitDiagnosis()),
+      }),
+    );
+  },
+  config: CODEX_PLAN_CREW,
+  get resumeState() {
+    return haltedResumeState(planOutputLimitRecoveryIssue());
   },
 };
 
@@ -6902,7 +6953,7 @@ const finalReviewSeatRetryProjection: WorkflowFixtureProjection = {
       ...finalReviewProjection.events,
       {
         type: 'warning',
-        ts: FIXED_TS + 520,
+        ts: FIXED_TS + 530,
         phase: 'final-review',
         message:
           'Review input trimmed to fit OpenAI Codex CLI (1,048,376 of 1,048,576 characters): task-evidence: Deterministic Drift Report',
@@ -8226,6 +8277,7 @@ const projections = [
   modelRefusalProjection('workflow-recovery-model-refused', MODEL_REFUSED_AUTH),
   reviewModelRefusalProjection,
   planInputTooLargeRecoveryProjection,
+  planOutputLimitRecoveryProjection,
   balanceSeatSwitchProjection,
   stopSheetRecoveryProjection,
   buildConsultProjection,
@@ -8282,7 +8334,7 @@ const projections = [
         ts: FIXED_TS + 20_010,
         phase: 'final-review',
         message:
-          'The reviewer seat answer did not match its contract. Task T903 is missing from the verdict. Asking the seat again.',
+          'The reviewer seat answer did not match its contract. Fix task T903 names an unknown criterion: The greeting names the user. Asking the seat again.',
         category: 'reviewer',
         code: SEAT_ANSWER_REFUSED_CODE,
       },
@@ -8760,6 +8812,9 @@ export function getWorkflowFixturePromptRows(
     questionHint,
     // Esc closed the panel: the round has left the prompt for the transcript.
     questions: projection.questionPreview === 'closed' ? [] : projection.question?.questions,
+    // The question the fixture's afterMount leaves on screen, and whether its answer is focused.
+    questionIndex: projection.questionPreview === 'overflow-back' ? 1 : 0,
+    questionWriting: projection.questionPreview === 'write',
     // The chrome facts ask whether a panel is open, not how tall it is at one height, so the plan
     // card is measured unshed.
     review: {

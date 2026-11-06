@@ -4,6 +4,7 @@ import { plainUserMessage } from '../../core/types/user-input.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { STATE_FILE, sessionDir } from '../../core/paths.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import {
@@ -430,6 +431,7 @@ describe('requestQuit', () => {
 describe('departure with an unsent draft that cannot be saved', () => {
   let projectDir: string;
   let dir: string;
+  let releaseSink: () => void;
   const run = () => makeRunRecord({ ref: ref() });
   const openRun = () =>
     routerStore.init({ screen: 'workflow', run: run(), execution: { kind: 'at-rest' } });
@@ -444,8 +446,10 @@ describe('departure with an unsent draft that cannot be saved', () => {
     mkdirSync(dir, { recursive: true });
     chmodSync(dir, 0o555);
     openRun();
+    releaseSink = installDiagnosticSink(() => {});
   });
   afterEach(() => {
+    releaseSink();
     chmodSync(dir, 0o755);
     __testDiscardPending();
     clearAllHandlers();
@@ -612,7 +616,10 @@ describe('leaving with an empty composer over an old draft that cannot be remove
     const exit = vi.fn();
     requestQuit(exit);
     expect(exit).toHaveBeenCalledTimes(1);
-    expect(diagnostics).toEqual([{ message: NOTE, presentation: 'at-exit' }]);
+    expect(diagnostics).toEqual([
+      { message: NOTE, presentation: 'at-exit' },
+      { message: 'Continue this run with: splitbrief continue one', presentation: 'at-exit' },
+    ]);
   });
 });
 
@@ -766,6 +773,8 @@ describe('departure while this process applies the run at rest', () => {
   const at = '2026-10-19T00:00:00.000Z';
   let projectDir = '';
   let settle: (state: WorkflowState) => Promise<void> = async () => {};
+  let diagnostics: { message: string; presentation: string }[];
+  let releaseSink: () => void;
 
   const readyState = (): WorkflowState =>
     makeWorkflowState({
@@ -806,10 +815,15 @@ describe('departure while this process applies the run at rest', () => {
       await activeApply();
       await new Promise((resolve) => setImmediate(resolve));
     };
+    diagnostics = [];
+    releaseSink = installDiagnosticSink((message, presentation) =>
+      diagnostics.push({ message, presentation }),
+    );
   });
 
   afterEach(async () => {
     await settle(readyState());
+    releaseSink();
     clearAllHandlers();
     stopStore.reset();
     routerStore.reset();
@@ -822,9 +836,16 @@ describe('departure while this process applies the run at rest', () => {
     requestQuit(exit);
     requestQuit(exit);
     expect(exit).not.toHaveBeenCalled();
+    expect(diagnostics).toEqual([]);
 
     await settle(readyState());
     expect(exit).toHaveBeenCalledTimes(1);
+    expect(diagnostics).toEqual([
+      {
+        message: 'Continue this run with: splitbrief continue applying-run',
+        presentation: 'at-exit',
+      },
+    ]);
   });
 
   it('goes home once the Apply settles with the run applied', async () => {
@@ -862,5 +883,148 @@ describe('departure while this process applies the run at rest', () => {
 
     await settle(appliedState());
     expect(routerStore.get().screen).toBe('home');
+  });
+});
+
+describe('a quit names the command that continues the run', () => {
+  const sessionId = 'resumable-run';
+  let projectDir: string;
+  let diagnostics: { message: string; presentation: string }[];
+  let releaseSink: () => void;
+
+  function saveState(state: WorkflowState): void {
+    writeFileSync(join(sessionDir(projectDir, sessionId), STATE_FILE), JSON.stringify(state));
+  }
+
+  beforeEach(() => {
+    clearAllHandlers();
+    stopStore.__testReset();
+    feedbackStore.reset();
+    projectDir = createTempDir('handlers-quit-continue-');
+    mkdirSync(sessionDir(projectDir, sessionId), { recursive: true });
+    routerStore.init({
+      screen: 'workflow',
+      run: makeRunRecord({ ref: { projectDir, sessionId } }),
+      execution: { kind: 'at-rest' },
+    });
+    diagnostics = [];
+    releaseSink = installDiagnosticSink((message, presentation) =>
+      diagnostics.push({ message, presentation }),
+    );
+  });
+
+  afterEach(() => {
+    releaseSink();
+    clearAllHandlers();
+    stopStore.__testReset();
+    feedbackStore.reset();
+    routerStore.reset();
+    cleanupTempDir(projectDir);
+  });
+
+  it.each([
+    [
+      'stopped',
+      makeWorkflowState({
+        phase: 'implementing',
+        interruptedStep: {
+          step: { kind: 'review', cycle: 0 },
+          source: 'user',
+          cut: 'boundary',
+          at: '2026-10-19T00:00:00.000Z',
+        },
+      }),
+    ],
+    [
+      'halted',
+      makeWorkflowState({
+        phase: 'implementing',
+        pendingRecovery: makeRecoveryIssue(),
+      }),
+    ],
+    [
+      'waiting for an answer',
+      makeWorkflowState({
+        phase: 'planning',
+        pendingPlannerConversation: {
+          call: 'plan',
+          text: 'Which DB?',
+          questions: [],
+          answers: [],
+          answered: false,
+        },
+      }),
+    ],
+    [
+      'ready to apply',
+      makeWorkflowState({
+        phase: 'complete',
+        reviewStatus: 'passed',
+        workspace: {
+          kind: 'staged-copy',
+          path: '/tmp/run-workspace',
+          base: { snapshotId: 'workspace-base', head: null },
+        },
+      }),
+    ],
+  ] as const)('names the continue command on stderr after a quit from a %s run', (_name, state) => {
+    saveState(state);
+    const exit = vi.fn();
+    requestQuit(exit);
+    expect(exit).toHaveBeenCalledTimes(1);
+    expect(diagnostics).toEqual([
+      {
+        message: `Continue this run with: splitbrief continue ${sessionId}`,
+        presentation: 'at-exit',
+      },
+    ]);
+  });
+
+  it('writes no continue line after a quit from a closed run', () => {
+    for (const as of ['applied', 'ended'] as const) {
+      diagnostics = [];
+      saveState(
+        makeWorkflowState({
+          closed: { at: '2026-10-19T00:00:00.000Z', as },
+        }),
+      );
+      const exit = vi.fn();
+      requestQuit(exit);
+      expect(exit).toHaveBeenCalledTimes(1);
+      expect(diagnostics).toEqual([]);
+    }
+  });
+
+  it('writes no continue line after a quit from home', () => {
+    routerStore.navigate({ to: 'home' });
+    const exit = vi.fn();
+    requestQuit(exit);
+    expect(exit).toHaveBeenCalledTimes(1);
+    expect(diagnostics).toEqual([]);
+  });
+
+  it('names an old draft before the continue line', () => {
+    const dir = sessionDir(projectDir, sessionId);
+    writeSessionDraft({ projectDir, sessionId }, createDraftDocument('my unsent draft'));
+    chmodSync(dir, 0o555);
+    try {
+      saveSessionDraft({ projectDir, sessionId }, createDraftDocument(''));
+      const exit = vi.fn();
+      requestQuit(exit);
+      expect(exit).toHaveBeenCalledTimes(1);
+      expect(diagnostics).toEqual([
+        {
+          message: `Could not remove the old draft: permission denied · .splitbrief/sessions/${sessionId}/draft.json · its text comes back when you restart SPLITBRIEF and open that run`,
+          presentation: 'at-exit',
+        },
+        {
+          message: `Continue this run with: splitbrief continue ${sessionId}`,
+          presentation: 'at-exit',
+        },
+      ]);
+    } finally {
+      chmodSync(dir, 0o755);
+      __testDiscardPending();
+    }
   });
 });

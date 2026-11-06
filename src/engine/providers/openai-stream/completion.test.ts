@@ -454,7 +454,7 @@ describe('streamCompletion', () => {
       status: 'truncated',
       text: 'cut off',
       partial: true,
-      error: { code: 'openai_finish_reason_length' },
+      error: { code: 'output-token-limit' },
     });
     expect(progress.some((line) => line.includes('truncated'))).toBe(true);
   });

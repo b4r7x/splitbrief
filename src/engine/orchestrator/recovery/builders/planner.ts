@@ -28,6 +28,7 @@ export type PlannerSeatFailure =
   | 'usage-limit'
   | 'missing-model'
   | 'input-too-large'
+  | 'output-token-limit'
   | 'runner-check-failed'
   | 'call-failed';
 
@@ -36,6 +37,7 @@ const PLANNER_FAILURE_REASONS = {
   'usage-limit': 'runner-usage-limit',
   'missing-model': 'planner-call-failed',
   'input-too-large': 'planner-call-failed',
+  'output-token-limit': 'planner-call-failed',
   'runner-check-failed': 'runner-check-failed',
   'call-failed': 'planner-call-failed',
 } as const satisfies Record<PlannerSeatFailure, RecoveryReason>;
@@ -114,6 +116,7 @@ export function buildPlannerCallFailedRecoveryIssue(
       : modelRefusalHalt(opts.runner, modelRefusalKind, opts.seatSwap);
   const offer = modelRefusal === undefined ? switchSeatOffer(opts.seatSwap) : modelRefusal.offer;
   const inputTooLarge = diagnosis.failure === 'input-too-large';
+  const outputTokenLimit = diagnosis.failure === 'output-token-limit';
   const actions = haltActions(reason, [
     inputTooLarge ? undefined : 'retry-same-worker',
     offer === undefined ? undefined : 'switch-seat',
@@ -135,6 +138,11 @@ export function buildPlannerCallFailedRecoveryIssue(
       ...(modelRefusalKind === undefined ? [] : [refusalStopDetail(modelRefusalKind)]),
       ...(opts.details ?? []),
       ...(inputTooLarge ? ['A retry sends the same prompt.'] : []),
+      ...(outputTokenLimit
+        ? [
+            'A retry can run as long and stop at the same limit. Type a correction that asks for a shorter answer, or change the tool.',
+          ]
+        : []),
     ],
     ...(resetsAt !== null && { resetAt: resetsAt.toISOString() }),
     ...(offer !== undefined && { switchSeat: offer }),
@@ -147,7 +155,10 @@ export function buildPlannerCallFailedRecoveryIssue(
     availableActions: actions,
     recommendedAction: chooseRecommended(
       actions,
-      diagnosis.failure === 'usage-limit' || modelRefusal !== undefined || inputTooLarge
+      diagnosis.failure === 'usage-limit' ||
+        modelRefusal !== undefined ||
+        inputTooLarge ||
+        outputTokenLimit
         ? ['switch-seat']
         : [],
     ),

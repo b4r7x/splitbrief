@@ -1409,7 +1409,7 @@ describe('createRecoveryDriver', () => {
     expect(result.state?.closed?.as).toBe('ended');
   });
 
-  it('takes k typed at a failed review as the note of Fix again, not as Accept as is', async () => {
+  it('takes k typed at a failed review as the note of Review again, not as Accept as is', async () => {
     const { prepared, state } = setupFailedReview();
     const halted: WorkflowState = {
       ...state,
@@ -1533,7 +1533,7 @@ describe('createRecoveryDriver', () => {
     ]);
   });
 
-  it('sends a failed review back through another fix cycle with the correction typed on the panel', async () => {
+  it('sends a failed review back to the reviewer with the correction typed on the panel', async () => {
     const { prepared, state } = setupFailedReview();
     const { inputMode, feedbackAtPrompt } = makeInputMode(['keep the error, log it and rethrow']);
 

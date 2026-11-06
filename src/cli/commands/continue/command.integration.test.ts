@@ -39,6 +39,8 @@ import * as entry from '../../../engine/orchestrator/approval/file-snapshots/ent
 import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 import { readyToApplyMessage } from '../../sessions/resolve.js';
 import { readLockfile } from '../../../core/sessions/lockfile.js';
+import { forgetExitInMemory } from '../../../core/sessions/lockfile-status.js';
+import { currentProcessStartTimeMs } from '../../../lib/process/start-time.js';
 import { installDiagnosticSink } from '../../../lib/warn.js';
 import { Command } from 'commander';
 import { createTestGitRepo } from '#testing/helpers/git.js';
@@ -92,10 +94,11 @@ function makeSessionDir(projectDir: string, sessionId: string): string {
 }
 
 function writeLockfile(sessDir: string, overrides: Record<string, unknown> = {}): void {
+  forgetExitInMemory(sessDir);
   const data = {
     version: 1,
     pid: process.pid,
-    startTimeMs: Date.now(),
+    startTimeMs: currentProcessStartTimeMs(),
     lastAliveMs: Date.now(),
     sessionId: 'test-session',
     mode: 'standard',
@@ -273,6 +276,18 @@ describe('continueCommand', () => {
 
     await expect(continueCommand('2025-04-01-my-feature', { projectDir }, deps)).rejects.toThrow(
       /no usable saved state and is not running/,
+    );
+  });
+
+  it('refuses a run another window still runs with the one text', async () => {
+    const projectDir = makeTmpProject();
+    const sessionId = '2025-04-01-still-running';
+    const sessDir = makeSessionDir(projectDir, sessionId);
+    writeLockfile(sessDir, { sessionId });
+    writeState(sessDir, 'implementing');
+
+    await expect(continueCommand(sessionId, { projectDir }, deps)).rejects.toThrow(
+      `Run ${sessionId} is still running. Stop it in the window that runs it, then run 'splitbrief continue ${sessionId}'.`,
     );
   });
 

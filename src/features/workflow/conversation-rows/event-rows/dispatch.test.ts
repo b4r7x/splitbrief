@@ -501,7 +501,7 @@ describe('event row dispatch', () => {
   });
 
   it.each([
-    ['review-failed', 'revise', 'Fix again'],
+    ['review-failed', 'revise', 'Review again'],
     ['required-checks-unrunnable', 'retry-same-worker', 'Run the checks again'],
     ['review-input-too-large', 'accept-as-is', 'Skip review with a note'],
   ] as const)('names %s %s as its menu row does', (reason, action, label) => {

@@ -192,6 +192,20 @@ async function renderProjection(projection: WorkflowFixtureProjection): Promise<
 }
 
 describe('workflow visual fixtures', () => {
+  it('puts each event the review retry adds after the last event of the final review', () => {
+    const base = workflowFixtureProjections.get(scenarioId('workflow-final-review'));
+    const retry = workflowFixtureProjections.get(scenarioId('workflow-final-review-seat-retry'));
+    if (base === undefined) throw new Error('Missing final review scenario');
+    if (retry === undefined) throw new Error('Missing final review seat retry scenario');
+    const baseEvents = base.events;
+    const maxBaseTs = Math.max(...baseEvents.map((event) => event.ts));
+    const addedEvents = retry.events.slice(baseEvents.length);
+    expect(addedEvents.length).toBeGreaterThan(0);
+    for (const event of addedEvents) {
+      expect(event.ts).toBeGreaterThan(maxBaseTs);
+    }
+  });
+
   it('builds the review-unverified halt as the production halt builds it', () => {
     const projection = workflowFixtureProjections.get(
       scenarioId('workflow-recovery-review-unverified'),

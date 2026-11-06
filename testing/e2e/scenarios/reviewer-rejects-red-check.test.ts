@@ -267,7 +267,7 @@ describe('e2e: the reviewer decides a red reviewer check', { timeout: 300_000 },
     expect(readFileSync(join(target.projectDir, TOTAL_FILE), 'utf8')).toBe(TOTAL_SOURCE);
   });
 
-  it('keeps a red input the reviewer does not reject blocking when it asks a question, with Fix again and no Accept as is', async () => {
+  it('keeps a red input the reviewer does not reject blocking when it asks a question, with Review again and no Accept as is', async () => {
     const { target, run, sessionId, events, calls } = await startRun('ask');
     expect(run.exitCode, `${run.stdout}\n${run.stderr}`).not.toBe(0);
 

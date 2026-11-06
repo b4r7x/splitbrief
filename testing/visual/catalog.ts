@@ -413,6 +413,18 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       },
       elements: [{ id: 'preparation-panel', title: 'Preparation problem panel' }],
     }),
+    defineScenario({
+      id: 'home-preparation-run-still-running',
+      title: 'Home · preparation blocked by a run still running',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'failure',
+        title: 'The fix asks to stop the running session',
+        kind: 'failure',
+        marker: 'is still running',
+      },
+      elements: [{ id: 'preparation-panel', title: 'Preparation problem panel' }],
+    }),
     // The trust panel a declared `shell` or `agent` runner opens on its first start.
     defineScenario({
       id: 'home-preparation-runner-trust',
@@ -4005,6 +4017,23 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-recovery-plan-output-limit',
+      title: 'Workflow · PLAN answer cut at the output token limit',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'recovery-plan-output-limit',
+        title: 'Planner output-token limit recovery menu',
+        kind: 'question',
+        marker: 'output token limit',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-recovery-hint-seat',
       title: "Workflow · quota halt on a brief's hint",
       surface: screenSurface('workflow'),
@@ -4409,7 +4438,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'review-failed',
         title: 'Review-failed recovery menu',
         kind: 'question',
-        marker: 'Fix again',
+        marker: 'Review again',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -4419,13 +4448,13 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-recovery-review-fix-again',
-      title: 'Workflow · a failed final review answered with Fix again and a note',
+      title: 'Workflow · a failed final review answered with Review again and a note',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'review-fix-again',
-        title: 'Fix again and its note in the transcript',
+        title: 'Review again and its note in the transcript',
         kind: 'review',
-        marker: 'Fix again',
+        marker: 'Review again',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -4556,7 +4585,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'review-unverified',
         title: 'Review-unverified recovery menu',
         kind: 'question',
-        marker: 'Fix again',
+        marker: 'Review again',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -4604,7 +4633,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'task-review-no-progress',
         title: 'Task-review no-progress recovery menu',
         kind: 'question',
-        marker: 'Fix again',
+        marker: 'Review again',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
