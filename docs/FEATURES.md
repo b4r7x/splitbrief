@@ -296,7 +296,7 @@ Open `/usage` from a live or saved workflow to inspect reported counters and ava
 
 ### Streaming partial output (extracted-code implementers)
 
-**What it does.** For `extracted-code` implementers (`kind: api` and `kind: shell`), the last N lines of generated output stream in real-time via a ring buffer. Users see code materializing instead of staring at a spinner or elapsed-time counter. A `direct` implementer (a CLI tool or an agent) gets no preview: its narration appears in transcript rows; its closing report, bare or in a code fence, reads as one dim `Report  done · M decisions` row with no fence row. CLI messages with known boundaries start distinct rows.
+**What it does.** For `extracted-code` implementers (`kind: api` and `kind: shell`), the last N lines of generated output stream in real-time via a ring buffer. Users see code materializing instead of staring at a spinner or elapsed-time counter. A `direct` implementer (a CLI tool or an agent) gets no preview: its narration appears in transcript rows; its closing report, bare or in a code fence, reads as one dim `Report  done` row, with `· M decisions` when the report names a decision, with no fence row. CLI messages with known boundaries start distinct rows.
 
 **How to use.** Always active for `extracted-code` implementers that stream their output. No configuration needed.
 
@@ -566,7 +566,7 @@ The fraction counts briefs that **completed under their review cadence** — a s
 
 **Crew.** Under the briefs, each seat has its label (`PLAN`, `BUILD`, `REVIEW`) and its seat identity, for example `Claude Code CLI · Opus 5.5 · high`. A long identity continues on the next row. A Claude Code seat saved as a model alias, such as `opus`, or as `auto`, gets one more row after its first call. The row shows the model id that Claude Code reported, such as `claude-opus-5-5`. The row is read-only, and your saved seat value does not change. A `shell` or `agent` seat with `stream-json` output that runs Claude Code gets the same row. A seat that runs another tool, or a seat saved with a full model id, has no such row. Each such row takes one row from the brief list. When the list has no rows left, the sidebar removes these rows before it shortens the seat identities.
 
-**Activity rows.** In an activity batch, a subagent call reads `Agent` with the subagent name, for example `Agent  Explore`, in the dim colour. A plan update reads `Plan` in the PLAN colour.
+**Activity rows.** In an activity batch, a subagent call reads `Agent` with the subagent name, for example `Agent  Explore`, in the dim colour. A plan update reads `Plan` in the PLAN colour. A Read row names the lines that the tool reads, such as `src/app.ts :120-159`, or `biome.json :70-end` when the read names no end. An Edit row counts the lines that the edit writes, such as `src/app.ts · 12 lines`. A Run row shows the description that the tool gives for its command. A script of several lines with no description shows its first line and the count of the other lines, such as `cat a.ts · +2 lines`. A block that hides older rows shows `+N earlier · ctrl+a` under its header.
 
 ### Input footer
 

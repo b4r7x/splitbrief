@@ -118,6 +118,10 @@
 
 ### Fixed
 
+- A Read row in the activity block names the lines that it reads, such as `src/app.ts :120-159`, and an Edit row counts the lines that it writes, such as `src/app.ts · 12 lines`. Before, three reads or three edits of one file showed three identical rows.
+- A Run row in the activity block shows the description that the tool gives for its command. A script of several lines shows its first line and the count of the other lines, such as `cat a.ts · +2 lines`. Before, the row joined all lines of the script into one line and cut its middle.
+- In a collapsed activity block, the row that counts the hidden rows now reads `+N earlier · ctrl+a` and sits under the block header, above the newest rows. Before, it read `+N more` under the newest rows, as if more rows came next.
+- The report row at the end of a brief reads `Report  done` when the report names no decision. Before, it read `Report  done · 0 decisions`.
 - `splitbrief spec` and `splitbrief review` now retry a network failure or a server error from the provider up to ten times, as a run does. Each retry prints one line. A usage limit with a named reset makes the command wait for that reset, then it asks again. Before, the command failed on the first such error.
 - A network failure or a server error on a PLAN, BUILD or REVIEW call now shows one dim row for each retry, such as `PLAN  Network or server failure · retry 1 of 10 in 2s`. Before, only the spinner showed while the call was retried.
 - The `Review input trimmed` warning now shows once for each review. Before, it showed again each time the review call was retried or its answer was repaired.

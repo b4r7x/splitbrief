@@ -11,6 +11,7 @@ import {
   runnerActivityLedgerItem,
   runnerActivityModelRole,
   runnerActivityRoleLabel,
+  type RunnerActivityDisplayInput,
 } from './runner-activity-display.js';
 
 describe('runnerActivityLedgerItem', () => {
@@ -105,6 +106,116 @@ describe('runnerActivityLedgerItem', () => {
         target: 'wc -l CLAUDE.md',
       }),
     ).toMatchObject({ label: 'RUN', value: 'wc -l CLAUDE.md' });
+  });
+
+  it.each<{
+    case: string;
+    input: RunnerActivityDisplayInput;
+    expected: { label: string; value: string; fitMode: 'end' | 'middle' | 'start' };
+  }>([
+    {
+      case: 'described compound grep',
+      input: {
+        stage: 'updated',
+        kind: 'command',
+        label: 'tool Shell',
+        target: 'grep -c action src && git diff --name-only',
+        description: 'Count the action flags and show the changed files',
+      },
+      expected: {
+        label: 'RUN',
+        value: 'Count the action flags and show the changed files',
+        fitMode: 'end',
+      },
+    },
+    {
+      case: 'cat script',
+      input: {
+        stage: 'updated',
+        kind: 'command',
+        label: 'running cat a.ts',
+        target: 'cat a.ts',
+        moreLines: 2,
+      },
+      expected: { label: 'RUN', value: 'cat a.ts · +2 lines', fitMode: 'middle' },
+    },
+    {
+      case: 'npx vitest run',
+      input: {
+        stage: 'updated',
+        kind: 'command',
+        label: 'running npx vitest run',
+        target: 'npx vitest run',
+        moreLines: 1,
+      },
+      expected: { label: 'RUN', value: 'npx vitest run · +1 line', fitMode: 'middle' },
+    },
+    {
+      case: 'description over a script summary',
+      input: {
+        stage: 'updated',
+        kind: 'command',
+        label: 'tool Shell',
+        target: 'cat a.ts',
+        moreLines: 2,
+        description: 'Show the two files',
+      },
+      expected: { label: 'RUN', value: 'Show the two files', fitMode: 'end' },
+    },
+    {
+      case: 'described sed read',
+      input: {
+        stage: 'updated',
+        kind: 'command',
+        label: 'tool Shell',
+        target: "sed -n '1,40p' CLAUDE.md",
+        description: 'Read the rules',
+      },
+      expected: { label: 'READ', value: 'CLAUDE.md :1-40', fitMode: 'start' },
+    },
+  ])(
+    'words a command row from its pretty form, its description or its first line: $case',
+    ({ input, expected }) => {
+      expect(runnerActivityLedgerItem(input)).toMatchObject(expected);
+    },
+  );
+
+  it('keeps a single-line script as its command', () => {
+    expect(
+      runnerActivityLedgerItem({
+        stage: 'completed',
+        kind: 'command',
+        label: "running /bin/zsh -lc 'npm test'",
+        target: "/bin/zsh -lc 'npm test'",
+      }),
+    ).toMatchObject({ label: 'RUN', value: 'npm test', fitMode: 'middle' });
+  });
+
+  it('keeps the failure of a command with a description', () => {
+    const command = "sed -n '1,40p' CLAUDE.md";
+    const description = 'Read the rules';
+    const failure = {
+      stage: 'failed' as const,
+      kind: 'command' as const,
+      label: 'tool Shell',
+      target: command,
+      diagnosticPartial: 'Command failed',
+    };
+    const plain = runnerActivityLedgerItem(failure);
+    const described = runnerActivityLedgerItem({ ...failure, description });
+
+    expect(plain?.value).toBe('Command failed');
+    expect(described?.value).toBe(plain?.value);
+    expect(described).toMatchObject({ label: plain?.label, fitMode: plain?.fitMode });
+    expect(
+      runnerActivityLedgerItem({
+        stage: 'aborted',
+        kind: 'error',
+        label: 'aborted runner_interrupted',
+        diagnosticPartial: 'cancelled',
+        description,
+      })?.value,
+    ).toBe('current turn interrupted: cancelled');
   });
 
   it('keeps every glob in a codex command with adjacent quoted segments', () => {
@@ -241,6 +352,7 @@ describe('runnerActivityLedgerItem', () => {
         stage: 'updated',
         kind: 'task',
         label: 'task Task',
+        description: 'explore the codebase',
       }),
     ).toMatchObject({ label: 'AGENT', value: 'Task' });
   });

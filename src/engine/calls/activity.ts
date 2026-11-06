@@ -1,8 +1,11 @@
 import type { z } from 'zod';
+import { SOFT_SEP } from '../../core/separators.js';
+import { countNoun } from '../../utils/pluralize.js';
 import { redactSecretsWithMetadata } from '../../utils/redact.js';
 import { stripTerminalControls } from '../../utils/display-text.js';
 import { sha256Hex } from '../../utils/sha256.js';
 import { projectRelativePathLabel } from '../../utils/path-links.js';
+import { shellCommandFromText } from '../../utils/shell-quote.js';
 import { assertNever, isRecord } from '../../utils/type-guards.js';
 import {
   type RunnerCallActivityKind,
@@ -25,6 +28,8 @@ export interface RunnerCallActivityProjection {
   kind: RunnerCallActivityKind;
   label: string;
   target?: string | undefined;
+  description?: string | undefined;
+  moreLines?: number | undefined;
   redacted: boolean;
   rawAvailable: boolean;
   expandId: string;
@@ -46,6 +51,8 @@ interface ActivityDetails {
   kind: RunnerCallActivityKind;
   label: string;
   target?: string | undefined;
+  description?: string | undefined;
+  moreLines?: number | undefined;
   rawAvailable?: boolean | undefined;
   redacted?: boolean | undefined;
   textPartial?: string | undefined;
@@ -89,6 +96,8 @@ export function projectRunnerCallActivity(
         label: retained.label,
         redacted: retained.redacted,
         ...(retained.target !== undefined && { target: retained.target }),
+        ...(retained.description !== undefined && { description: retained.description }),
+        ...(retained.moreLines !== undefined && { moreLines: retained.moreLines }),
       };
     }
     case 'call_tool_use_done': {
@@ -209,6 +218,8 @@ function buildActivity(opts: {
   redacted?: boolean | undefined;
   textPartial?: string | undefined;
   diagnosticPartial?: string | undefined;
+  description?: string | undefined;
+  moreLines?: number | undefined;
   originalModel?: string | undefined;
   fallbackModel?: string | undefined;
   endUnknown?: true | undefined;
@@ -228,12 +239,18 @@ function buildActivity(opts: {
     opts.diagnosticPartial === undefined
       ? undefined
       : cleanActivityText(opts.diagnosticPartial, RUNNER_ACTIVITY_TARGET_MAX_LENGTH);
+  const description =
+    opts.description === undefined
+      ? undefined
+      : cleanActivityText(opts.description, RUNNER_ACTIVITY_MAX_LENGTH);
   return {
     activityId: opts.activityId,
     stage: opts.stage,
     kind: opts.kind,
     label: label.text,
     ...(target !== undefined && target !== null && { target: target.text }),
+    ...(description !== undefined && description !== null && { description: description.text }),
+    ...(opts.moreLines !== undefined && { moreLines: opts.moreLines }),
     rawAvailable: opts.rawAvailable === true,
     expandId: opts.activityId,
     ...(textPartial !== undefined && textPartial !== null && { textPartial: textPartial.text }),
@@ -247,7 +264,8 @@ function buildActivity(opts: {
       label.redacted ||
       target?.redacted === true ||
       textPartial?.redacted === true ||
-      diagnosticPartial?.redacted === true,
+      diagnosticPartial?.redacted === true ||
+      description?.redacted === true,
   };
 }
 
@@ -301,14 +319,52 @@ function toolUseDetails(
   const mcpTarget = mcpCallTarget(input);
 
   if (command !== undefined && isCommandTool(normalized)) {
-    return { kind: 'command', label: `running ${command}`, target: command };
+    const description = stringInput(input, 'description');
+    const script = shellCommandFromText(command) ?? command;
+    const lines = script
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    const firstLine = lines[0];
+    if (lines.length >= 2 && firstLine !== undefined) {
+      return {
+        kind: 'command',
+        label: `running ${command}`,
+        target: firstLine,
+        moreLines: lines.length - 1,
+        ...(description !== undefined && { description }),
+      };
+    }
+    return {
+      kind: 'command',
+      label: `running ${command}`,
+      target: command,
+      ...(description !== undefined && { description }),
+    };
   }
   if (isPatchTool(normalized)) return { kind: 'edit', label: 'applying patch' };
   if (filePath !== undefined && isReadTool(normalized)) {
-    return { kind: 'read', label: `reading ${filePath}`, target: filePath };
+    const explicitStart =
+      positiveIntegerInput(input, 'offset') ?? positiveIntegerInput(input, 'StartLine');
+    const endLine = positiveIntegerInput(input, 'EndLine');
+    const limit = positiveIntegerInput(input, 'limit');
+    const start = explicitStart ?? (endLine !== undefined || limit !== undefined ? 1 : undefined);
+    if (start === undefined) {
+      return { kind: 'read', label: `reading ${filePath}`, target: filePath };
+    }
+    const end = endLine ?? (limit === undefined ? 'end' : start + limit - 1);
+    const target = `${filePath} :${start}-${end}`;
+    return { kind: 'read', label: `reading ${target}`, target };
   }
   if (filePath !== undefined && isWriteTool(normalized)) {
-    return { kind: 'write', label: `editing ${filePath}`, target: filePath };
+    const raw = input?.new_string ?? input?.content ?? input?.streamContent;
+    const text = typeof raw === 'string' ? raw : undefined;
+    const lines =
+      text === undefined || text.length === 0
+        ? 0
+        : text.split('\n').length - (text.endsWith('\n') ? 1 : 0);
+    const target = lines === 0 ? filePath : `${filePath}${SOFT_SEP}${countNoun(lines, 'line')}`;
+    return { kind: 'write', label: `editing ${target}`, target };
   }
   if (pattern !== undefined && isGrepTool(normalized)) {
     return { kind: 'search', label: `searching ${pattern}`, target: pattern };
@@ -364,6 +420,15 @@ function mcpCallTarget(input: Record<string, unknown> | null): string | null {
   const toolName = stringInput(input, 'tool_name');
   if (server === undefined && toolName === undefined) return null;
   return [server, toolName].filter((part) => part !== undefined).join('/');
+}
+
+function positiveIntegerInput(
+  input: Record<string, unknown> | null,
+  key: string,
+): number | undefined {
+  const value = input?.[key];
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) return undefined;
+  return value;
 }
 
 function stringInput(input: Record<string, unknown> | null, key: string): string | undefined {

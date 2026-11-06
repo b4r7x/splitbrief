@@ -22,6 +22,7 @@ import { hoverStore } from '../../../../stores/ui/hover.js';
 import { controlsStore } from '../../../../stores/ui/controls.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import { configStore } from '../../../../stores/project/config.js';
+import { rowLeading } from '../../conversation-rows/row-markers.js';
 import * as projectionCache from '../../conversation-rows/projection-cache.js';
 import { resetMarkdownConversationRowsCache } from '../../conversation-rows/markdown-rows.js';
 import { workflowFixtureProjections } from '#testing/visual/fixtures/workflow/projections.js';
@@ -1056,26 +1057,52 @@ describe('ConversationFlow', () => {
     ui.unmount();
   });
 
-  it('shows the +N more disclosure with a ctrl+a hint and no tree connector', () => {
+  it('shows the +N earlier disclosure with a ctrl+a hint', () => {
     const events = makeActivityReads(['src/a.ts', 'src/b.ts', 'src/c.ts', 'src/d.ts']);
     const batchKey = 'activity-batch:0:call-1';
+    const branch = rowLeading('activity-more');
+    const lastChild = rowLeading('activity-child-last');
 
     conversationScrollStore.__testReset({ expandedActivityBatches: new Set() });
     const collapsed = renderConversation(events, 12, 90);
-    const collapsedFrame = collapsed.lastFrame() ?? '';
-    expect(collapsedFrame).toContain('more · ctrl+a');
-    expect(collapsedFrame).not.toContain('▸');
-    expect(collapsedFrame).not.toContain('▾');
+    const collapsedFrame = stripAnsiStyles(collapsed.lastFrame() ?? '');
+    const collapsedLines = collapsedFrame.split('\n');
+    const headerIndex = collapsedLines.findIndex((line) =>
+      line.includes(`${CREW_SEAT_LABELS.plan} activity`),
+    );
+    const disclosureIndex = collapsedLines.findIndex((line) =>
+      line.includes('+1 earlier · ctrl+a'),
+    );
+    const childIndex = collapsedLines.findIndex((line) => line.includes('src/b.ts'));
+    expect(headerIndex).toBeGreaterThanOrEqual(0);
+    expect(disclosureIndex).toBe(headerIndex + 1);
+    expect(childIndex).toBe(disclosureIndex + 1);
+    expect(collapsedLines[disclosureIndex]).toContain(branch);
+    expect(collapsedFrame).not.toContain('src/a.ts');
+    expect(collapsedFrame.indexOf('src/b.ts')).toBeLessThan(collapsedFrame.indexOf('src/c.ts'));
+    expect(collapsedFrame.indexOf('src/c.ts')).toBeLessThan(collapsedFrame.indexOf('src/d.ts'));
+    expect(collapsedLines.find((line) => line.includes('src/d.ts'))).toContain(lastChild);
     collapsed.unmount();
 
     conversationScrollStore.__testReset({
       expandedActivityBatches: new Set([batchKey]),
     });
     const expanded = renderConversation(events, 12, 90);
-    const expandedFrame = expanded.lastFrame() ?? '';
-    expect(expandedFrame).toContain('collapse · ctrl+a');
-    expect(expandedFrame).not.toContain('▸');
-    expect(expandedFrame).not.toContain('▾');
+    const expandedFrame = stripAnsiStyles(expanded.lastFrame() ?? '');
+    const expandedLines = expandedFrame.split('\n');
+    const expandedHeader = expandedLines.findIndex((line) =>
+      line.includes(`${CREW_SEAT_LABELS.plan} activity`),
+    );
+    const collapseIndex = expandedLines.findIndex((line) => line.includes('collapse · ctrl+a'));
+    const firstChild = expandedLines.findIndex((line) => line.includes('src/a.ts'));
+    expect(expandedHeader).toBeGreaterThanOrEqual(0);
+    expect(collapseIndex).toBe(expandedHeader + 1);
+    expect(firstChild).toBe(collapseIndex + 1);
+    expect(expandedLines[collapseIndex]).toContain(branch);
+    expect(expandedFrame.indexOf('src/a.ts')).toBeLessThan(expandedFrame.indexOf('src/b.ts'));
+    expect(expandedFrame.indexOf('src/b.ts')).toBeLessThan(expandedFrame.indexOf('src/c.ts'));
+    expect(expandedFrame.indexOf('src/c.ts')).toBeLessThan(expandedFrame.indexOf('src/d.ts'));
+    expect(expandedLines.find((line) => line.includes('src/d.ts'))).toContain(lastChild);
     expanded.unmount();
   });
 

@@ -215,7 +215,98 @@ describe('projectRunnerCallActivity', () => {
     }
   });
 
-  it('labels the Path input of Antigravity read_file, edit_file and write_file with the path', () => {
+  it.each<[string, Record<string, unknown>, string]>([
+    ['Read', { file_path: 'src/app.ts', offset: 120, limit: 40 }, 'src/app.ts :120-159'],
+    ['Read', { file_path: 'src/app.ts', limit: 40 }, 'src/app.ts :1-40'],
+    ['Read', { file_path: 'src/app.ts', offset: 250 }, 'src/app.ts :250-end'],
+    ['read', { path: 'biome.json', offset: 70 }, 'biome.json :70-end'],
+    ['read', { path: 'biome.json', offset: 39, limit: 20 }, 'biome.json :39-58'],
+    ['read_file', { Path: '/project/src/app.ts', StartLine: 1, EndLine: 40 }, 'src/app.ts :1-40'],
+    ['read_file', { Path: '/project/src/app.ts', EndLine: 40 }, 'src/app.ts :1-40'],
+    [
+      'read_file',
+      { Path: '/project/src/app.ts', StartLine: 10, EndLine: 40, limit: 5 },
+      'src/app.ts :10-40',
+    ],
+  ])('names the lines that a %s read asks for', (name, input, target) => {
+    expect(
+      projectRunnerCallActivity(
+        runnerToolUse({ name, inputDelta: JSON.stringify(input) }),
+        1,
+        '/project',
+      ),
+    ).toMatchObject({ kind: 'read', label: `reading ${target}`, target });
+  });
+
+  it('names only the path of a read that asks for no valid lines', () => {
+    const inputs: ReadonlyArray<Record<string, unknown>> = [
+      { file_path: 'src/app.ts' },
+      { file_path: 'src/app.ts', offset: 0 },
+      { file_path: 'src/app.ts', offset: -5 },
+      { file_path: 'src/app.ts', offset: '12' },
+      { file_path: 'src/app.ts', offset: 1.5 },
+      { file_path: 'src/app.ts', limit: 0 },
+    ];
+    for (const input of inputs) {
+      expect(
+        projectRunnerCallActivity(
+          runnerToolUse({ name: 'Read', inputDelta: JSON.stringify(input) }),
+          1,
+          '/project',
+        ),
+      ).toMatchObject({ kind: 'read', label: 'reading src/app.ts', target: 'src/app.ts' });
+    }
+  });
+
+  it.each<[string, Record<string, unknown>, string]>([
+    ['Edit', { file_path: 'src/app.ts', new_string: 'one\ntwo\nthree' }, 'src/app.ts · 3 lines'],
+    ['Edit', { file_path: 'src/app.ts', new_string: 'one\n' }, 'src/app.ts · 1 line'],
+    ['Edit', { file_path: 'src/app.ts', new_string: 'one\ntwo' }, 'src/app.ts · 2 lines'],
+    ['Edit', { file_path: 'src/app.ts', new_string: 'one\ntwo\n' }, 'src/app.ts · 2 lines'],
+    ['Edit', { file_path: 'src/app.ts', new_string: 'one\n\ntwo' }, 'src/app.ts · 3 lines'],
+    ['Edit', { file_path: 'src/app.ts', new_string: '   ' }, 'src/app.ts · 1 line'],
+    ['Edit', { file_path: 'src/app.ts', new_string: '\n' }, 'src/app.ts · 1 line'],
+    ['Write', { file_path: 'src/app.ts', content: 'one\ntwo\nthree\n' }, 'src/app.ts · 3 lines'],
+    ['edit', { path: 'src/app.ts', streamContent: 'one\n\ntwo' }, 'src/app.ts · 3 lines'],
+    [
+      'edit_file',
+      { file_path: 'src/app.ts', old_string: 'a', new_string: 'one\ntwo\nthree' },
+      'src/app.ts · 3 lines',
+    ],
+    ['write_file', { file_path: 'src/app.ts', content: 'one\n' }, 'src/app.ts · 1 line'],
+  ])('counts the lines that a %s edit writes', (name, input, target) => {
+    expect(
+      projectRunnerCallActivity(
+        runnerToolUse({ name, inputDelta: JSON.stringify(input) }),
+        1,
+        '/project',
+      ),
+    ).toMatchObject({ kind: 'write', label: `editing ${target}`, target });
+  });
+
+  it('names only the path of an edit with no new text', () => {
+    const cases: ReadonlyArray<{ name: string; input: Record<string, unknown> }> = [
+      { name: 'Edit', input: { file_path: 'src/app.ts', new_string: '' } },
+      { name: 'Write', input: { file_path: 'src/app.ts', content: '' } },
+      { name: 'edit', input: { path: 'src/app.ts', streamContent: '' } },
+      {
+        name: 'MultiEdit',
+        input: { file_path: 'src/app.ts', edits: [{ new_string: 'one\ntwo\nthree' }] },
+      },
+      { name: 'edit_file', input: { Path: '/project/src/app.ts' } },
+    ];
+    for (const { name, input } of cases) {
+      expect(
+        projectRunnerCallActivity(
+          runnerToolUse({ name, inputDelta: JSON.stringify(input) }),
+          1,
+          '/project',
+        ),
+      ).toMatchObject({ kind: 'write', label: 'editing src/app.ts', target: 'src/app.ts' });
+    }
+  });
+
+  it('labels the Path input of Antigravity read_file, edit_file and write_file with the path and the lines', () => {
     expect(
       projectRunnerCallActivity(
         runnerToolUse({
@@ -225,7 +316,11 @@ describe('projectRunnerCallActivity', () => {
         1,
         '/project',
       ),
-    ).toMatchObject({ kind: 'read', label: 'reading src/app.ts', target: 'src/app.ts' });
+    ).toMatchObject({
+      kind: 'read',
+      label: 'reading src/app.ts :1-40',
+      target: 'src/app.ts :1-40',
+    });
     for (const name of ['edit_file', 'write_file']) {
       expect(
         projectRunnerCallActivity(
@@ -253,17 +348,18 @@ describe('projectRunnerCallActivity', () => {
     );
 
     expect(activity).toMatchObject({ label: 'task general' });
+    expect(activity).not.toHaveProperty('description');
     expect(activity?.label).not.toContain('prompt');
     expect(activity?.label).not.toContain('explore');
     expect(activity?.label).not.toContain('abcdefghijklmnopqrstuvwxyz');
 
-    expect(
-      projectRunnerCallActivity(
-        runnerToolUse({ name: 'Explore', inputDelta: '{"description":"files"}' }),
-        1,
-        '/project',
-      ),
-    ).toMatchObject({ label: 'tool Explore' });
+    const explore = projectRunnerCallActivity(
+      runnerToolUse({ name: 'Explore', inputDelta: '{"description":"files"}' }),
+      1,
+      '/project',
+    );
+    expect(explore).toMatchObject({ label: 'tool Explore' });
+    expect(explore).not.toHaveProperty('description');
   });
 
   it('uses safe web and MCP targets without leaking URL query strings', () => {
@@ -311,6 +407,96 @@ describe('projectRunnerCallActivity', () => {
       ),
     ).toMatchObject({ kind: 'command', label: 'running command' });
   });
+
+  it('keeps the description that a tool gives for a command', () => {
+    const command = 'grep -c action src && git diff --name-only';
+    const description = 'Count the action flags and show the changed files';
+    for (const name of ['Bash', 'Shell']) {
+      const activity = projectRunnerCallActivity(
+        runnerToolUse({ name, inputDelta: JSON.stringify({ command, description }) }),
+        1,
+        '/project',
+      );
+      expect(activity).toMatchObject({
+        kind: 'command',
+        label: `running ${command}`,
+        target: command,
+        description,
+        redacted: false,
+      });
+      expect(activity).not.toHaveProperty('moreLines');
+    }
+
+    const secret = 'sk-abcdefghijklmnopqrst';
+    const redacted = projectRunnerCallActivity(
+      runnerToolUse({
+        name: 'Bash',
+        inputDelta: JSON.stringify({
+          command: 'npm test',
+          description: `Count ${secret} files`,
+        }),
+      }),
+      1,
+      '/project',
+    );
+    expect(redacted).toMatchObject({
+      kind: 'command',
+      description: 'Count sk-***REDACTED*** files',
+      redacted: true,
+      target: 'npm test',
+    });
+    expect(redacted).not.toHaveProperty('moreLines');
+    expect(redacted?.description).not.toContain('abcdefghijklmnopqrst');
+
+    const longDescription = 'd'.repeat(600);
+    const longActivity = projectRunnerCallActivity(
+      runnerToolUse({
+        name: 'Bash',
+        inputDelta: JSON.stringify({ command: 'npm test', description: longDescription }),
+      }),
+      1,
+      '/project',
+    );
+    expect(longActivity?.description).toHaveLength(512);
+    expect(longActivity?.description?.endsWith('…')).toBe(true);
+    expect(
+      EngineEventSchema.safeParse({
+        ...runnerCallBase,
+        ...longActivity,
+        type: 'runner_call_activity',
+        phase: 'implementing',
+        sequence: 1,
+      }).success,
+    ).toBe(true);
+  });
+
+  it.each<[string, string, string, number | undefined]>([
+    ['Bash', 'cat a.ts\nsed b.ts\ncat c.ts', 'cat a.ts', 2],
+    ['command_execution', "/bin/zsh -lc 'cat a.ts\nsed b.ts'", 'cat a.ts', 1],
+    ['Bash', "cat <<'EOF'\nfirst\nsecond\nEOF", "cat <<'EOF'", 3],
+    ['Bash', '\n  cd src  \n   \n  ls  \n', 'cd src', 1],
+    ['Bash', 'npm test', 'npm test', undefined],
+    ['Bash', "/bin/zsh -lc 'npm test'", "/bin/zsh -lc 'npm test'", undefined],
+  ])(
+    'names the first line of a script and counts the other lines',
+    (name, command, target, moreLines) => {
+      const activity = projectRunnerCallActivity(
+        runnerToolUse({ name, inputDelta: JSON.stringify({ command }) }),
+        1,
+        '/project',
+      );
+      expect(activity).toMatchObject({
+        kind: 'command',
+        target,
+        label: `running ${command.replace(/\s+/g, ' ').trim()}`,
+      });
+      if (moreLines === undefined) {
+        expect(activity).not.toHaveProperty('moreLines');
+      } else {
+        expect(activity).toMatchObject({ moreLines });
+      }
+    },
+  );
 
   it('only projects explicitly system text activity', () => {
     expect(
@@ -459,8 +645,10 @@ describe('projectRunnerCallActivity', () => {
     );
     expect(activity).toMatchObject({
       redacted: true,
-      target: `${prefix}sk-***REDACTED***`,
+      target: prefix.trim(),
+      moreLines: 1,
     });
+    expect(activity?.label).toContain('sk-***REDACTED***');
     expect(activity?.label).not.toContain('abcdefghijklmnopqrst');
   });
 
@@ -734,6 +922,50 @@ describe('projectRunnerCallActivity', () => {
       label: 'running npm test',
       target: 'npm test',
       redacted: false,
+    });
+  });
+
+  it('keeps the description and the line count of a command when a later fragment has no input', () => {
+    const callId = 'command-description-call';
+    const toolUseId = 'tool-bash';
+    const secret = 'sk-abcdefghijklmnopqrst';
+    const description = `Count ${secret} files`;
+    const sanitized = 'Count sk-***REDACTED*** files';
+    const command = 'cat a.ts\nsed b.ts\ncat c.ts';
+    const project = (inputDelta: string) =>
+      projectRunnerCallActivity(
+        runnerToolUse({ callId, toolUseId, name: 'Bash', inputDelta }),
+        1,
+        '/project',
+      );
+
+    expect(project(JSON.stringify({ command, description }))).toMatchObject({
+      kind: 'command',
+      label: 'running cat a.ts sed b.ts cat c.ts',
+      target: 'cat a.ts',
+      moreLines: 2,
+      description: sanitized,
+      redacted: true,
+    });
+    const fragment = project('');
+    expect(fragment).toMatchObject({
+      kind: 'command',
+      stage: 'started',
+      label: 'running cat a.ts sed b.ts cat c.ts',
+      target: 'cat a.ts',
+      moreLines: 2,
+      description: sanitized,
+      redacted: true,
+    });
+    expect(fragment?.description).not.toContain('abcdefghijklmnopqrst');
+    expect(fragment?.label).not.toContain('abcdefghijklmnopqrst');
+    expect(project('{"command":')).toMatchObject({
+      kind: 'command',
+      label: 'running cat a.ts sed b.ts cat c.ts',
+      target: 'cat a.ts',
+      moreLines: 2,
+      description: sanitized,
+      redacted: true,
     });
   });
 

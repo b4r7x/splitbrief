@@ -1470,7 +1470,7 @@ describe('buildConversationRows', () => {
     expect(text).toContain('b.ts');
     expect(text).toContain('c.ts');
     expect(text).toContain('d.ts');
-    expect(text).toContain('+1 more · ctrl+a');
+    expect(text).toContain('+1 earlier · ctrl+a');
     expect(text).not.toContain('/activity');
     expect(text).not.toContain('Ctrl+A');
     expect(text).not.toContain('┌─');
@@ -1914,8 +1914,8 @@ describe('buildConversationRows', () => {
     expect(implementerText).toContain(
       `${CREW_SEAT_LABELS.build} activity  6 updates  [${CLAUDE_CODE_LABEL} · auto]`,
     );
-    expect(plannerText).toContain('+3 more');
-    expect(implementerText).toContain('+3 more');
+    expect(plannerText).toContain('+3 earlier');
+    expect(implementerText).toContain('+3 earlier');
     expect(implementer.renderableCount).toBe(planner.renderableCount);
     expect(implementer.rows).toHaveLength(planner.rows.length);
   });
@@ -2174,7 +2174,8 @@ describe('buildConversationRows', () => {
     ui.unmount();
 
     expect(text).toContain('src/clamp.js · tests/clamp.test.js');
-    expect(text).toContain('Report  done · 0 decisions');
+    expect(text).toContain('Report  done');
+    expect(text).not.toContain('Report  done · 0 decisions');
     expect(text).not.toContain('1 file');
     expect(text.match(/\d+\.\ds/g)).toEqual(['9.8s']);
   });

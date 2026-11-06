@@ -29,7 +29,7 @@ describe('rowLeading', () => {
     }
     expect(rowLeading('activity-child')).toBe(` ${glyph('treeBranch')} `);
     expect(rowLeading('activity-child-last')).toBe(` ${glyph('treeLast')} `);
-    expect(rowLeading('activity-more')).toBe('   ');
+    expect(rowLeading('activity-more')).toBe(rowLeading('activity-child'));
     expect(rowLeadingCells('activity-more')).toBe(3);
     expect(rowLeadingCells('activity')).toBe(3);
   });

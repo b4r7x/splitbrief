@@ -1034,6 +1034,17 @@ describe('projectEventForTuiEventLog', () => {
     expect(projectEventForTuiEventLog(makeRunnerCallHeartbeat())).toBeNull();
   });
 
+  it('keeps the description and the line count of a command activity', () => {
+    const description = 'Count the action flags\nand show the changed files\u001b[31m';
+    expect(
+      projectEventForTuiEventLog(makeRunnerActivity({ description, moreLines: 2 })),
+    ).toMatchObject({
+      description: 'Count the action flags and show the changed files',
+      moreLines: 2,
+      redacted: true,
+    });
+  });
+
   it('keeps the end of a finished call without its session, usage or runner', () => {
     expect(
       projectEventForTuiEventLog(

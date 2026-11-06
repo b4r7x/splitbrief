@@ -6953,6 +6953,120 @@ const implementationShellWrapperProjection: WorkflowFixtureProjection = {
   }),
 };
 
+const TOOL_DETAIL_EDIT = Array.from({ length: 12 }, (_, index) => `renewal ${index + 1}`).join(
+  '\n',
+);
+const TOOL_DETAIL_SCRIPT = [
+  'cat src/loans/renewals.ts',
+  "sed -n '960,1048p' src/loans/overdue.ts",
+  'cat package.json',
+].join('\n');
+const TOOL_DETAIL_DESCRIPTION = 'Count the action flags and show the changed files';
+const TOOL_DETAIL_COMMAND = 'grep -c action src && git diff --name-only';
+
+const implementationToolDetailsProjection: WorkflowFixtureProjection = {
+  ...implementationSilentBareProjection,
+  scenarioId: scenarioId('workflow-implementation-tool-details'),
+  events: implementationSilentBareProjection.events.flatMap((event): EngineEvent[] => {
+    if (event.type === 'tasks_planned') {
+      return [{ ...event, tasks: event.tasks.slice(0, 1), total: 1 }];
+    }
+    if (event.type === 'task_started') return [{ ...event, total: 1 }];
+    if (event.type !== 'runner_call_started') return [event];
+    const renewalsPath = resolve(VISUAL_FIXTURE_PROJECT_DIR, 'src/loans/renewals.ts');
+    const biomePath = resolve(VISUAL_FIXTURE_PROJECT_DIR, 'biome.json');
+    const callContext = {
+      callId: event.callId,
+      role: event.role,
+      backendKind: event.backendKind,
+      ...(event.runnerName !== undefined && { runnerName: event.runnerName }),
+      ...(event.model !== undefined && { model: event.model }),
+      ...(event.axes !== undefined && { axes: event.axes }),
+      ...(event.attempt !== undefined && { attempt: event.attempt }),
+    };
+    const calls: readonly RunnerCallEvent[] = [
+      {
+        ...callContext,
+        ts: event.ts + 1_000,
+        type: 'call_tool_use_done',
+        channel: 'tool',
+        toolUse: {
+          id: 'visual-tool-read-range',
+          name: 'Read',
+          input: { file_path: renewalsPath, offset: 120, limit: 40 },
+        },
+      },
+      {
+        ...callContext,
+        ts: event.ts + 2_000,
+        type: 'call_tool_use_done',
+        channel: 'tool',
+        toolUse: {
+          id: 'visual-tool-read-open',
+          name: 'read',
+          input: { path: biomePath, offset: 70 },
+        },
+      },
+      {
+        ...callContext,
+        ts: event.ts + 3_000,
+        type: 'call_tool_use_done',
+        channel: 'tool',
+        toolUse: {
+          id: 'visual-tool-read-window',
+          name: 'read',
+          input: { path: biomePath, offset: 39, limit: 20 },
+        },
+      },
+      {
+        ...callContext,
+        ts: event.ts + 4_000,
+        type: 'call_tool_use_done',
+        channel: 'tool',
+        toolUse: {
+          id: 'visual-tool-edit-lines',
+          name: 'edit',
+          input: { path: renewalsPath, streamContent: TOOL_DETAIL_EDIT },
+        },
+      },
+      {
+        ...callContext,
+        ts: event.ts + 5_000,
+        type: 'call_tool_use_done',
+        channel: 'tool',
+        toolUse: {
+          id: 'visual-tool-command-description',
+          name: 'Bash',
+          input: { command: TOOL_DETAIL_COMMAND, description: TOOL_DETAIL_DESCRIPTION },
+        },
+      },
+      {
+        ...callContext,
+        ts: event.ts + 6_000,
+        type: 'call_tool_use_delta',
+        channel: 'tool',
+        toolUseId: 'visual-tool-script',
+        name: 'command_execution',
+        inputDelta: JSON.stringify({ command: `/bin/zsh -lc "${TOOL_DETAIL_SCRIPT}"` }),
+      },
+    ];
+    return [
+      event,
+      ...calls.map((call, index) => {
+        const activity = projectRunnerCallActivity(call, index + 1, VISUAL_FIXTURE_PROJECT_DIR);
+        if (activity === null) throw new Error('Missing tool detail fixture activity');
+        return {
+          ...event,
+          ...activity,
+          type: 'runner_call_activity' as const,
+          ts: call.ts,
+          sequence: index + 1,
+        };
+      }),
+    ];
+  }),
+};
+
 // Every brief passed, and the pre-review full suite is ten minutes into `npm test`. No seat is on a
 // call: the suite is the whole of what the run is doing.
 const PRE_REVIEW_TEST_STARTED_TS = FIXED_TS + 42_000 - 602_000;
@@ -8548,6 +8662,7 @@ const projections = [
   implementationStreamedTargetsProjection,
   implementationSilentBareProjection,
   implementationShellWrapperProjection,
+  implementationToolDetailsProjection,
   reviewCheckRunningProjection,
   reviewCheckReusedProjection,
   reviewRenderRunningProjection,

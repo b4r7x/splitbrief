@@ -19,6 +19,8 @@ import { reviewStore } from '../../src/stores/workflow/review.js';
 import { streamingOutputStore } from '../../src/stores/workflow/streaming-output.js';
 import { tokensStore } from '../../src/stores/workflow/tokens.js';
 import { selectRunningBrief, selectTaskListView } from '../../src/core/run-view/briefs.js';
+import { SOFT_SEP } from '../../src/core/separators.js';
+import { glyph } from '../../src/lib/glyphs.js';
 import { stripTerminalControls } from '../../src/utils/display-text.js';
 import { EngineEventSchema } from '../../src/engine/events/schema.js';
 import { deriveRunStatus } from '../../src/core/sessions/run-status.js';
@@ -413,8 +415,8 @@ describe('workflow visual fixtures', () => {
         const text = workflowTranscriptText();
         expect(text.match(/BUILD activity {2}5 updates/g)).toHaveLength(1);
         expect(text.match(/BUILD activity {2}4 updates/g)).toHaveLength(1);
-        expect(text.match(/\+2 more · ctrl\+a/g)).toHaveLength(1);
-        expect(text.match(/\+1 more · ctrl\+a/g)).toHaveLength(1);
+        expect(text.match(/\+2 earlier · ctrl\+a/g)).toHaveLength(1);
+        expect(text.match(/\+1 earlier · ctrl\+a/g)).toHaveLength(1);
         expect(frame).toContain('● Plan → × Build → ○ Review');
         if (renderViewport.cols === 200) expect(frame).toContain('Stopped before the review');
         expect(text.match(/Recovery {2}/g)).toHaveLength(1);
@@ -426,7 +428,7 @@ describe('workflow visual fixtures', () => {
           'working on',
         ])
           expect(text).not.toContain(stale);
-        expect(text.match(/Report {2}done · 0 decisions/g)).toHaveLength(2);
+        expect(text.match(/Report {2}done$/gm)).toHaveLength(2);
         for (const name of ['text', 'preview']) {
           const line = text.split('\n').find((row) => row.startsWith(`src/${name}.js ·`));
           expect(line?.split(`src/${name}.js`)).toHaveLength(2);
@@ -551,7 +553,7 @@ describe('workflow visual fixtures', () => {
           '● Plan',
           '● T001',
           'lowStockItems',
-          '+2 more · ctrl+a',
+          '+2 earlier · ctrl+a',
           'Report  done',
           'Validate',
           'Fix check V1',
@@ -1291,6 +1293,132 @@ describe('workflow visual fixtures', () => {
       }
     },
   );
+  it('shows distinct tool-call details in the expanded activity block', async () => {
+    const projection = workflowFixtureProjections.get(
+      scenarioId('workflow-implementation-tool-details'),
+    );
+    if (projection === undefined) throw new Error('Missing tool-details scenario');
+    const activities = projection.events.filter((event) => event.type === 'runner_call_activity');
+    expect(activities).toHaveLength(6);
+    expect(activities.map((event) => event.stage)).toEqual([
+      'completed',
+      'completed',
+      'completed',
+      'completed',
+      'completed',
+      'updated',
+    ]);
+    expect(activities.map((event) => event.sequence)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(activities.map((event) => event.activityId.split(':').at(-1))).toEqual([
+      'visual-tool-read-range',
+      'visual-tool-read-open',
+      'visual-tool-read-window',
+      'visual-tool-edit-lines',
+      'visual-tool-command-description',
+      'visual-tool-script',
+    ]);
+    expect(
+      activities.map((event) => ({
+        kind: event.kind,
+        target: event.target,
+        label: event.label,
+        ...(event.description !== undefined && { description: event.description }),
+        ...(event.moreLines !== undefined && { moreLines: event.moreLines }),
+      })),
+    ).toEqual([
+      {
+        kind: 'read',
+        target: 'src/loans/renewals.ts :120-159',
+        label: 'reading src/loans/renewals.ts :120-159',
+      },
+      {
+        kind: 'read',
+        target: 'biome.json :70-end',
+        label: 'reading biome.json :70-end',
+      },
+      {
+        kind: 'read',
+        target: 'biome.json :39-58',
+        label: 'reading biome.json :39-58',
+      },
+      {
+        kind: 'write',
+        target: `src/loans/renewals.ts${SOFT_SEP}12 lines`,
+        label: `editing src/loans/renewals.ts${SOFT_SEP}12 lines`,
+      },
+      {
+        kind: 'command',
+        target: 'grep -c action src && git diff --name-only',
+        label: 'running grep -c action src && git diff --name-only',
+        description: 'Count the action flags and show the changed files',
+      },
+      {
+        kind: 'command',
+        target: 'cat src/loans/renewals.ts',
+        label: [
+          'running /bin/zsh -lc "cat src/loans/renewals.ts',
+          "sed -n '960,1048p' src/loans/overdue.ts",
+          'cat package.json"',
+        ].join(' '),
+        moreLines: 2,
+      },
+    ]);
+    for (const activity of activities.slice(0, 4)) {
+      expect(activity).not.toHaveProperty('description');
+      expect(activity).not.toHaveProperty('moreLines');
+    }
+    const described = activities[4];
+    const script = activities[5];
+    if (described === undefined || script === undefined) {
+      throw new Error('Missing tool detail activity');
+    }
+    expect(described).not.toHaveProperty('moreLines');
+    expect(script).not.toHaveProperty('description');
+
+    const scenario = findVisualScenario(projection.scenarioId);
+    const checkpoint = scenario?.checkpoints[0];
+    if (scenario === undefined || checkpoint === undefined) {
+      throw new Error('Missing tool-details checkpoint');
+    }
+    for (const renderViewport of REQUIRED_VIEWPORTS) {
+      const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: renderViewport });
+      try {
+        const frame = stripAnsiStyles(await ui.waitForCheckpoint());
+        const lines = workflowTranscriptText().split('\n');
+        const header = lines.findIndex(
+          (line) => line.includes('BUILD activity') && line.includes('6 updates'),
+        );
+        expect(header).toBeGreaterThanOrEqual(0);
+        expect(lines[header + 1]).toContain('collapse · ctrl+a');
+        const details = lines.slice(header + 2, header + 8);
+        expect(details[0]).toContain('src/loans/renewals.ts :120-159');
+        expect(details[1]).toContain('biome.json :70-end');
+        expect(details[2]).toContain('biome.json :39-58');
+        expect(details[3]).toContain(`src/loans/renewals.ts${SOFT_SEP}12 lines`);
+        expect(details[4]).toContain('Count the action flags');
+        if (renderViewport.cols > 60) {
+          expect(details[4]).toContain('Count the action flags and show the changed files');
+        }
+        expect(details[5]).toContain(`cat src/loans/renewals.ts${SOFT_SEP}+2 lines`);
+        expect(lines[header + 8] ?? '').toBe('');
+        const frameLines = frame.split('\n');
+        const disclosureIndex = frameLines.findIndex((line) => line.includes('collapse · ctrl+a'));
+        const headerIndex = frameLines.findIndex((line) => line.includes('BUILD activity'));
+        const firstRead = frameLines.find((line) => line.includes('renewals.ts :120-159'));
+        const newest = frameLines.find(
+          (line) => line.includes(glyph('treeLast')) && line.includes('+2 lines'),
+        );
+        expect(disclosureIndex).toBeGreaterThanOrEqual(0);
+        expect(frameLines[disclosureIndex]).toContain(glyph('treeBranch'));
+        if (headerIndex >= 0) expect(disclosureIndex).toBe(headerIndex + 1);
+        expect(firstRead).toContain(glyph('treeBranch'));
+        expect(newest).toBeDefined();
+      } finally {
+        await ui.unmount();
+      }
+    }
+  });
+
   beforeEach(() => {
     forceUnicodeGlyphs();
   });

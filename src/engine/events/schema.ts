@@ -399,6 +399,10 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     kind: RunnerCallActivityKindSchema,
     label: z.string().min(1).max(512),
     target: z.string().min(1).max(2048).optional(),
+    /** The tool's words for a command. */
+    description: z.string().min(1).max(512).optional(),
+    /** How many lines of a script follow its first line. */
+    moreLines: z.number().int().positive().optional(),
     redacted: z.boolean(),
     rawAvailable: z.boolean().optional(),
     expandId: z.string().min(1).max(512).optional(),

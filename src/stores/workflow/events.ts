@@ -334,6 +334,7 @@ function projectRunnerActivityForTuiEventLog(
   if (label === null) return null;
 
   const target = cleanOptionalTuiEventLogText(event.target);
+  const description = cleanOptionalTuiEventLogText(event.description);
   const textPartial = cleanOptionalTuiEventLogText(event.textPartial);
   const diagnosticPartial = cleanOptionalTuiEventLogText(event.diagnosticPartial);
   const rawAvailable = event.rawAvailable === true;
@@ -346,6 +347,7 @@ function projectRunnerActivityForTuiEventLog(
     event.redacted ||
     label.changed ||
     target?.changed === true ||
+    description?.changed === true ||
     textPartial?.changed === true ||
     diagnosticPartial?.changed === true ||
     runnerName?.changed === true ||
@@ -372,6 +374,8 @@ function projectRunnerActivityForTuiEventLog(
     kind: event.kind,
     label: label.text,
     ...(target !== undefined && { target: target.text }),
+    ...(description !== undefined && { description: description.text }),
+    ...(event.moreLines !== undefined && { moreLines: event.moreLines }),
     redacted,
     ...(rawAvailable && { rawAvailable: true }),
     ...(textPartial !== undefined && { textPartial: textPartial.text }),

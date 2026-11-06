@@ -291,6 +291,29 @@ describe('deriveBuildProgress', () => {
       expect(progress.silent).toBe(true);
     });
 
+    it('names an open command by its description, as its row does', () => {
+      const described = {
+        activityId: 'call-1:tool:shell-1',
+        kind: 'command',
+        label: 'tool Shell',
+        target: 'grep -c action src && git diff --name-only',
+        description: 'Find where Claude tool events are parsed',
+        since: NOW - 342_000,
+      } as const;
+      const progress = deriveBuildProgress(
+        input({
+          operations: operationsState({
+            active: runningOperation({ runnerName: 'opencode', openTools: [described] }),
+          }),
+          lifecycle: silent,
+        }),
+      );
+
+      expect(progress.freshness).toBe(
+        'No output for 5:42 · running Find where Claude tool events are parsed',
+      );
+    });
+
     it('names an open subagent by the Agent word, not the Plan word', () => {
       const explore = {
         activityId: 'call-1:task:explore-1',

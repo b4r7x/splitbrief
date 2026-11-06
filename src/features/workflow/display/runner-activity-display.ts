@@ -1,6 +1,7 @@
 import { CREW_SEAT_LABELS } from '../../../core/crew/identity.js';
 import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
 import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
+import { SOFT_SEP } from '../../../core/separators.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
 import { resolveModelDisplayName } from '../../../engine/providers/model/display-names.js';
 import type { ModelCacheAccessor } from '../../../engine/providers/model/resolution.js';
@@ -9,6 +10,7 @@ import {
   sanitizeTerminalDisplayText,
   truncateTerminalDisplayText,
 } from '../../../utils/display-text.js';
+import { countNoun } from '../../../utils/pluralize.js';
 import { shellCommandFromText } from '../../../utils/shell-quote.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import type { ActivityDisplayValueFit } from './activity-display-text.js';
@@ -23,6 +25,8 @@ export interface RunnerActivityDisplayInput {
   kind: Exclude<EngineEventOf<'runner_call_activity'>['kind'], 'session'>;
   label: string;
   target?: string | undefined;
+  description?: string | undefined;
+  moreLines?: number | undefined;
   textPartial?: string | undefined;
   diagnosticPartial?: string | undefined;
   rawAvailable?: boolean | undefined;
@@ -118,9 +122,19 @@ export function runnerActivityLedgerItem(
     shellCommandFromText(withoutVerb) !== null || shellCommandFromText(source) !== null;
   const rawLabel = runnerActivityLedgerLabel(display, { interrupted, shellCommand });
   const rawValue = runnerActivityLedgerValue(display, { interrupted });
-  const pretty = rawLabel === 'RUN' ? prettifyShellActivity(rawValue) : null;
+  const ordinaryRun = rawLabel === 'RUN' && !interrupted && !isDiagnosticActivity(display);
+  const pretty =
+    rawLabel === 'RUN' && display.moreLines === undefined ? prettifyShellActivity(rawValue) : null;
+  const description = ordinaryRun && pretty === null ? display.description : undefined;
+  const scriptLines =
+    ordinaryRun && pretty === null && description === undefined ? display.moreLines : undefined;
   const label = pretty?.label ?? rawLabel;
-  const value = pretty?.value ?? rawValue;
+  const value =
+    pretty?.value ??
+    description ??
+    (scriptLines === undefined
+      ? rawValue
+      : `${rawValue}${SOFT_SEP}+${countNoun(scriptLines, 'line')}`);
   const diagnosticPreview = runnerActivityDiagnosticPreview(display);
   const severity = runnerActivitySeverity(display, { interrupted });
   // A stopped call reads in the user's words; the raw tag is not for that row.
@@ -378,7 +392,10 @@ function activityFitMode(
   input: RunnerActivityDisplayInput,
   value: string,
 ): ActivityDisplayValueFit {
-  if (label === 'RUN') return 'middle';
+  if (label === 'RUN') {
+    const described = value === input.description && !isDiagnosticActivity(input);
+    return described ? 'end' : 'middle';
+  }
   if (label === 'READ' || label === 'EDIT' || label === 'LIST' || input.kind === 'file') {
     return isProse(value) ? 'end' : 'start';
   }

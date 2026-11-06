@@ -228,7 +228,7 @@ describe('stop after the brief wrote its files → continue', { timeout: 240_000
     // the one list: it names them both, says this call kept them rather than wrote them, and
     // carries no call time beside the brief's own.
     for (const rows of await resumedRows(target, parked.sessionId)) {
-      const report = rows.indexOf('Report  done · 0 decisions');
+      const report = rows.indexOf('Report  done');
       expect(report).toBeGreaterThan(0);
       expect(rows.slice(report + 1, report + 4)).toEqual([
         '',

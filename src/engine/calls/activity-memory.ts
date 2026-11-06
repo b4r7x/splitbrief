@@ -11,6 +11,8 @@ interface RememberedActivityDetails {
   label: string;
   target: string;
   redacted: boolean;
+  description?: string | undefined;
+  moreLines?: number | undefined;
 }
 
 interface ActivityTargetDetails {
@@ -18,6 +20,8 @@ interface ActivityTargetDetails {
   label: string;
   target?: string | undefined;
   redacted: boolean;
+  description?: string | undefined;
+  moreLines?: number | undefined;
 }
 
 const memoryByCall = new Map<string, Map<string, RememberedActivityDetails>>();
@@ -38,6 +42,8 @@ export function retainToolDeltaTarget(
       label: activity.label,
       target: activity.target,
       redacted: activity.redacted,
+      ...(activity.description !== undefined && { description: activity.description }),
+      ...(activity.moreLines !== undefined && { moreLines: activity.moreLines }),
     });
     return activity;
   }
@@ -49,6 +55,8 @@ export function retainToolDeltaTarget(
     label: remembered.label,
     target: remembered.target,
     redacted: remembered.redacted,
+    ...(remembered.description !== undefined && { description: remembered.description }),
+    ...(remembered.moreLines !== undefined && { moreLines: remembered.moreLines }),
   };
 }
 

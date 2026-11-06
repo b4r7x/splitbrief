@@ -20,9 +20,9 @@ export function rowLeading(kind: ConversationRowKind, status: RowMarkerStatus = 
   }
   if (kind === 'callout-top' || kind === 'callout-body')
     return `${ROW_LEADING}${glyph('treeMid')} `;
-  if (kind === 'activity-child') return `${ROW_LEADING}${glyph('treeBranch')} `;
+  if (kind === 'activity-child' || kind === 'activity-more')
+    return `${ROW_LEADING}${glyph('treeBranch')} `;
   if (kind === 'activity-child-last') return `${ROW_LEADING}${glyph('treeLast')} `;
-  if (kind === 'activity-more') return TEXT_LEADING;
   return TEXT_LEADING;
 }
 

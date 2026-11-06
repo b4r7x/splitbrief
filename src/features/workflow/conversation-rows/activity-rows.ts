@@ -106,9 +106,11 @@ export function runnerActivityBatchWindowRows(input: {
     );
   }
 
-  const visibleCount = model.visibleItems.length;
-  const hasDisclosure = model.hiddenCount > 0;
-  const lastItemIndex = visibleCount - 1;
+  if (model.hiddenCount > 0) {
+    appendVisibleRow(() => activityDisclosureRow({ model, width }));
+  }
+
+  const lastItemIndex = model.visibleItems.length - 1;
 
   for (const [index, item] of model.visibleItems.entries()) {
     const isLastVisible = index === lastItemIndex;
@@ -126,10 +128,6 @@ export function runnerActivityBatchWindowRows(input: {
       }),
     );
     if (rowIndex >= end) return rows;
-  }
-
-  if (hasDisclosure) {
-    appendVisibleRow(() => activityDisclosureRow({ model, width }));
   }
 
   return rows;
@@ -189,7 +187,7 @@ function activityDisclosureRow(input: {
 }): ConversationRow {
   const prefixCells = rowLeadingCells('activity-more');
   const budget = Math.max(0, input.width - prefixCells);
-  const label = input.model.expanded ? 'collapse' : `+${input.model.hiddenCount} more`;
+  const label = input.model.expanded ? 'collapse' : `+${input.model.hiddenCount} earlier`;
   const text = truncateTerminalDisplayText(`${label}${activityDisclosureHint()}`, budget);
 
   return segmentedRow(

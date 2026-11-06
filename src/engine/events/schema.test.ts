@@ -532,6 +532,32 @@ describe('parseEngineEvent', () => {
     );
   });
 
+  it('accepts the description and the line count of a command activity', () => {
+    const event = {
+      type: 'runner_call_activity',
+      ts: 1,
+      phase: 'planning',
+      callId: 'call-1',
+      role: 'planner',
+      backendKind: 'cli',
+      sequence: 1,
+      activityId: 'call-1:tool:tool-1',
+      stage: 'completed',
+      kind: 'command',
+      label: 'running npm test',
+      target: 'npm test',
+      description: 'Count the action flags and show the changed files',
+      moreLines: 2,
+      redacted: false,
+    };
+    expect(parseEngineEvent(event)).toEqual(event);
+    expect(parseEngineEvent({ ...event, description: 'a'.repeat(512) })).toMatchObject({
+      description: 'a'.repeat(512),
+    });
+    expect(parseEngineEvent({ ...event, moreLines: 0 })).toBeNull();
+    expect(parseEngineEvent({ ...event, description: 'a'.repeat(513) })).toBeNull();
+  });
+
   it('accepts planner heartbeat events with a runner call id', () => {
     expect(
       parseEngineEvent({

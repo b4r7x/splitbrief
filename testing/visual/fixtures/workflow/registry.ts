@@ -350,7 +350,10 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
       afterMount: () => feedbackStore.setMessage(formatCopyResult('native')),
     });
   }
-  if (projection.scenarioId === 'workflow-implementation-shell-wrapper') {
+  if (
+    projection.scenarioId === 'workflow-implementation-shell-wrapper' ||
+    projection.scenarioId === 'workflow-implementation-tool-details'
+  ) {
     return () => ({
       ...base(),
       afterMount: async (write) => {
@@ -748,11 +751,11 @@ const checkpointPredicates = [
   [
     checkpointId('resumed-kept-work'),
     // At 60 columns the verdict wraps before "further change".
-    includesTranscript(
-      'Report  done · 0 decisions',
-      "verified · kept the interrupted attempt's work",
-      'further change',
-    ),
+    (context) =>
+      includesTranscript(
+        "verified · kept the interrupted attempt's work",
+        'further change',
+      )(context) && /Report {2}done$/m.test(workflowTranscriptText()),
   ],
   [checkpointId('final-review'), includesAll('3/3 briefs passed', 'Review · OpenAI Codex CLI')],
   [
@@ -1235,12 +1238,12 @@ const checkpointPredicates = [
   ],
   [
     checkpointId('spent-b2-replay-t001-activity'),
-    includesAll('+2 more · ctrl+a', 'Edit    test/text.test.js'),
+    includesAll('+2 earlier · ctrl+a', 'Edit    test/text.test.js'),
   ],
   [checkpointId('spent-b2-replay-t001-completion'), includesAll()],
   [
     checkpointId('spent-b2-replay-t002-activity'),
-    includesAll('+1 more · ctrl+a', 'Edit    test/preview.test.js'),
+    includesAll('+1 earlier · ctrl+a', 'Edit    test/preview.test.js'),
   ],
   [checkpointId('spent-b2-replay-t002-completion'), includesAll()],
   [checkpointId('plan-activity'), includesAll('src/core/crew/identity.ts')],
@@ -1333,6 +1336,16 @@ const checkpointPredicates = [
   [
     checkpointId('implementation-shell-wrapper'),
     includesAll('src/loans/renewals.ts', 'renewal window', 'overdue'),
+  ],
+  [
+    checkpointId('implementation-tool-details'),
+    includesAll(
+      'renewals.ts :120-159',
+      'biome.json :70-end',
+      'Count the action flags',
+      '+2 lines',
+      'collapse · ctrl+a',
+    ),
   ],
   [checkpointId('implementation-silent-bare'), includesAll('Implementing…', 'No output for')],
   [

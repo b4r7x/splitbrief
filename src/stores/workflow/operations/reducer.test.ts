@@ -212,6 +212,35 @@ describe('the tools a running call has open', () => {
 
     expect(operationsStore.get().active?.openTools ?? []).toEqual([]);
   });
+
+  it('keeps the description and the line count of an open command', () => {
+    addEvent(runnerStarted());
+    addEvent(
+      runnerActivity({
+        description: 'Count the action flags and show the changed files',
+        moreLines: 2,
+      }),
+    );
+    addEvent(
+      runnerActivity({
+        ts: 1_400,
+        description: 'Count the action flags and show the changed files',
+        moreLines: 2,
+      }),
+    );
+
+    expect(operationsStore.get().active?.openTools).toEqual([
+      {
+        activityId: 'call-1:tool:a',
+        kind: 'command',
+        label: 'bash',
+        target: 'npx vitest run',
+        description: 'Count the action flags and show the changed files',
+        moreLines: 2,
+        since: 1_100,
+      },
+    ]);
+  });
 });
 
 describe('the scheduled task review', () => {

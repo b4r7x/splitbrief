@@ -669,12 +669,12 @@ describe('visual catalog', () => {
   it.each([
     [
       'spent-b2-replay-t001-activity',
-      ['BUILD activity  5 updates', '+2 more · ctrl+a', 'Edit    test/text.test.js'],
+      ['BUILD activity  5 updates', '+2 earlier · ctrl+a', 'Edit    test/text.test.js'],
     ],
     ['spent-b2-replay-t001-completion', ['src/text.js · test/text.test.js']],
     [
       'spent-b2-replay-t002-activity',
-      ['BUILD activity  4 updates', '+1 more · ctrl+a', 'Edit    test/preview.test.js'],
+      ['BUILD activity  4 updates', '+1 earlier · ctrl+a', 'Edit    test/preview.test.js'],
     ],
     ['spent-b2-replay-t002-completion', ['src/preview.js · test/preview.test.js']],
   ])('captures visible replay rows at 60x18 for %s', async (id, markers) => {
@@ -710,6 +710,30 @@ describe('visual catalog', () => {
           : WIDE_VIEWPORTS,
     );
     expect(scenario?.checkpoints[0]?.marker).toBe(marker);
+  });
+
+  it('registers the tool-details activity scenario at every required viewport', () => {
+    const scenario = findVisualScenario('workflow-implementation-tool-details');
+    const shell = findVisualScenario('workflow-implementation-shell-wrapper');
+    expect(scenario?.title).toBe(
+      'Workflow · read ranges, edit line counts and command descriptions in the activity rows',
+    );
+    expect(scenario?.viewports).toEqual(REQUIRED_VIEWPORTS);
+    expect(scenario?.checkpoints[0]).toMatchObject({
+      id: 'implementation-tool-details',
+      title: 'Each activity row tells its call apart',
+      kind: 'implementation',
+      marker: 'Count the action flags',
+    });
+    expect(scenario?.elements.map((element) => element.id)).toEqual(
+      shell?.elements.map((element) => element.id),
+    );
+    expect(workflowFixtureRegistry.has(scenarioId('workflow-implementation-tool-details'))).toBe(
+      true,
+    );
+    expect(workflowCheckpointPredicates.has(checkpointId('implementation-tool-details'))).toBe(
+      true,
+    );
   });
 
   it.each([

@@ -32,6 +32,8 @@ export interface OpenTool {
   kind: Exclude<ActivityEvent['kind'], 'session'>;
   label: string;
   target?: string;
+  description?: string;
+  moreLines?: number;
   since: number;
 }
 

@@ -73,12 +73,39 @@ describe('planner text rows', () => {
     ]);
   });
 
+  it('drops a zero count from the report row', () => {
+    for (const [report, summary] of [
+      [
+        '{"status":"done","filesChanged":["a.ts"],"touchedNotSuggested":[],"notes":null,"decisions":[]}',
+        'Report  done',
+      ],
+      [
+        '{"status":"blocked","question":"Where is the schema?","filesNeeded":[]}',
+        'Report  blocked',
+      ],
+    ] as const) {
+      const rows = eventRows({
+        event: {
+          type: 'planner_text',
+          ts: 0,
+          phase: 'implementing',
+          role: 'implementer',
+          text: report,
+        },
+        globalIndex: 0,
+        expanded: false,
+        ctx: { width: 160, viewportRows: 20, streaming },
+      });
+      expect(rows.map(rowText)).toEqual([summary]);
+    }
+  });
+
   it('replays unmarked hand-backs with plain dim narration and one report row', () => {
     const narration = 'Updated `a.ts` and [b.ts](file:///tmp/b.ts).';
     for (const [report, summary] of [
       [
         '{"status":"done","filesChanged":["a.ts","b.ts"],"touchedNotSuggested":[],"notes":null,"decisions":[]}',
-        'Report  done · 0 decisions',
+        'Report  done',
       ],
       [
         '{"status":"blocked","question":"Where is the schema?","filesNeeded":["schema.ts"]}',
@@ -349,7 +376,7 @@ describe('planner text rows', () => {
       ctx: { width: 80, viewportRows: 20, streaming },
     }).map(rowText);
 
-    expect(lines).toEqual(['Implemented the row.', 'Report  done · 0 decisions']);
+    expect(lines).toEqual(['Implemented the row.', 'Report  done']);
   });
 
   it('renders a code block in narration before a bare report', () => {
@@ -381,7 +408,7 @@ describe('planner text rows', () => {
     expect(text).not.toContain('```');
     expect(rows.some((row) => row.codeBg === true)).toBe(true);
     expect(rows.map(rowText).filter((line) => line.startsWith('Report  '))).toEqual([
-      'Report  done · 0 decisions',
+      'Report  done',
     ]);
   });
 

@@ -6,8 +6,10 @@ import { taskId } from '../../../core/schemas/task.js';
 import { eventRows } from '#testing/helpers/event-rows.js';
 import { ACTIVITY_LABEL_PAD, displayActivityLabel } from '../display/activity-label-display.js';
 import { colorForTone } from '../../../core/theme/tone-color.js';
+import { glyph } from '../../../lib/glyphs.js';
 import { buildActivityBatchViewModel } from './activity-batch-model.js';
 import { runnerActivityBatchRowBlock } from './activity-rows.js';
+import { rowLeading } from './row-markers.js';
 import { rowText } from './row-format/rows.js';
 import type { ConversationRow } from './types.js';
 
@@ -131,26 +133,44 @@ describe('runnerActivityBatchRowBlock tree markers', () => {
     expect(rows.map(rowText).join('')).toContain('Read');
   });
 
-  it('terminates the tree on the last real child and marks the +more affordance separately', () => {
+  it('puts the count of the earlier rows under the header, inside the tree', () => {
     const rows = blockRows([
       activity({ sequence: 1, activityId: 'a', kind: 'read', label: 'reading src/a.ts' }),
       activity({ sequence: 2, activityId: 'b', kind: 'read', label: 'reading src/b.ts' }),
       activity({ sequence: 3, activityId: 'c', kind: 'read', label: 'reading src/c.ts' }),
       activity({ sequence: 4, activityId: 'd', kind: 'read', label: 'reading src/d.ts' }),
     ]);
+    const header = rows[0];
+    const disclosure = rows[1];
+    const items = rows.slice(2);
+    const last = items.at(-1);
+    if (header === undefined || disclosure === undefined || last === undefined) {
+      throw new Error('Missing activity header, disclosure, or last child');
+    }
 
-    const last = rows.filter((rowValue) => rowValue.kind === 'activity-child-last');
-    const more = rows.filter((rowValue) => rowValue.kind === 'activity-more');
-    const lastText = last.map(rowText).join('');
-    const moreText = more.map(rowText).join('');
-    expect(last).toHaveLength(1);
-    expect(more).toHaveLength(1);
-    expect(lastText).toContain('d.ts');
-    expect(lastText).not.toContain('more');
-    expect(moreText).toContain('more');
+    expect(header.kind).toBe('activity');
+    expect(rowText(header)).toContain('4 updates');
+    expect(disclosure.kind).toBe('activity-more');
+    expect(disclosure.key).toBe('activity-batch-hidden');
+    expect(rowText(disclosure)).toBe('+1 earlier · ctrl+a');
+    expect(disclosure.segments[0]?.tone).toBe('textDim');
+    expect(rowLeading(disclosure.kind)).toBe(` ${glyph('treeBranch')} `);
+    expect(items.map((item) => item.kind)).toEqual([
+      'activity-child',
+      'activity-child',
+      'activity-child-last',
+    ]);
+    expect(items.map(rowText)).toEqual([
+      activityLine('READ', 'src/b.ts'),
+      activityLine('READ', 'src/c.ts'),
+      activityLine('READ', 'src/d.ts'),
+    ]);
+    expect(last.kind).toBe('activity-child-last');
+    expect(rowLeading(last.kind)).toBe(` ${glyph('treeLast')} `);
+    expect(rows.map(rowText).join('\n')).not.toContain('src/a.ts');
   });
 
-  it('terminates the expanded batch on the last real child and marks a collapse disclosure', () => {
+  it('puts the collapse row of an expanded batch under the header', () => {
     const rows = blockRows(
       [
         activity({ sequence: 1, activityId: 'a', kind: 'read', label: 'reading src/a.ts' }),
@@ -160,16 +180,72 @@ describe('runnerActivityBatchRowBlock tree markers', () => {
       ],
       { expanded: true },
     );
+    const header = rows[0];
+    const disclosure = rows[1];
+    const items = rows.slice(2);
+    const last = items.at(-1);
+    if (header === undefined || disclosure === undefined || last === undefined) {
+      throw new Error('Missing activity header, disclosure, or last child');
+    }
 
-    const last = rows.filter((rowValue) => rowValue.kind === 'activity-child-last');
-    const more = rows.filter((rowValue) => rowValue.kind === 'activity-more');
-    const lastText = last.map(rowText).join('');
-    const moreText = more.map(rowText).join('');
-    expect(last).toHaveLength(1);
-    expect(more).toHaveLength(1);
-    expect(lastText).toContain('d.ts');
-    expect(moreText).toContain('collapse');
-    expect(moreText).not.toContain('more');
+    expect(header.kind).toBe('activity');
+    expect(rowText(header)).toContain('4 updates');
+    expect(disclosure.kind).toBe('activity-more');
+    expect(disclosure.key).toBe('activity-batch-hidden');
+    expect(rowText(disclosure)).toBe('collapse · ctrl+a');
+    expect(disclosure.segments[0]?.tone).toBe('textDim');
+    expect(rowLeading(disclosure.kind)).toBe(` ${glyph('treeBranch')} `);
+    expect(items.map((item) => item.kind)).toEqual([
+      'activity-child',
+      'activity-child',
+      'activity-child',
+      'activity-child-last',
+    ]);
+    expect(items.map(rowText)).toEqual([
+      activityLine('READ', 'src/a.ts'),
+      activityLine('READ', 'src/b.ts'),
+      activityLine('READ', 'src/c.ts'),
+      activityLine('READ', 'src/d.ts'),
+    ]);
+    expect(last.kind).toBe('activity-child-last');
+    expect(rowLeading(last.kind)).toBe(` ${glyph('treeLast')} `);
+  });
+
+  it.each([1, 2, 7])('counts %i earlier rows under the header', (hidden) => {
+    const total = hidden + 3;
+    const rows = blockRows(
+      Array.from({ length: total }, (_, index) =>
+        activity({
+          sequence: index + 1,
+          activityId: `file-${index}`,
+          kind: 'read',
+          label: `reading file-${index}.ts`,
+        }),
+      ),
+    );
+    const header = rows[0];
+    const disclosure = rows[1];
+    const items = rows.slice(2);
+    const last = items.at(-1);
+    if (header === undefined || disclosure === undefined || last === undefined) {
+      throw new Error('Missing activity header, disclosure, or last child');
+    }
+
+    expect(header.kind).toBe('activity');
+    expect(rowText(header)).toContain(`${total} updates`);
+    expect(disclosure.kind).toBe('activity-more');
+    expect(rowText(disclosure)).toBe(`+${hidden} earlier · ctrl+a`);
+    expect(disclosure.segments[0]?.tone).toBe('textDim');
+    expect(rowLeading(disclosure.kind)).toBe(` ${glyph('treeBranch')} `);
+    expect(items.map((item) => item.kind)).toEqual([
+      'activity-child',
+      'activity-child',
+      'activity-child-last',
+    ]);
+    expect(items.map(rowText)).toEqual(
+      [total - 3, total - 2, total - 1].map((index) => activityLine('READ', `file-${index}.ts`)),
+    );
+    expect(rowLeading(last.kind)).toBe(` ${glyph('treeLast')} `);
   });
 });
 

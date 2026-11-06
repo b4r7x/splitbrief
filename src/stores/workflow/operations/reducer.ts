@@ -123,6 +123,8 @@ function nextOpenTools(
       kind: event.kind,
       label: event.label,
       ...(event.target !== undefined && { target: event.target }),
+      ...(event.description !== undefined && { description: event.description }),
+      ...(event.moreLines !== undefined && { moreLines: event.moreLines }),
       since: opened?.since ?? event.ts,
     },
   ];

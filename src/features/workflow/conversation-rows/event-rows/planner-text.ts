@@ -126,10 +126,12 @@ function splitImplementerHandBack(
 function reportSummaryLine(report: ImplementerReport): string {
   const head = `Report  ${report.status}`;
   if (report.status === 'blocked') {
+    if (report.filesNeeded.length === 0) return head;
     return `${head}${SOFT_SEP}${countNoun(report.filesNeeded.length, 'file')} needed`;
   }
   // The files the call changed are listed by its done row, measured from the workspace; a count
   // of the files the report claims would be a second, possibly different, list.
+  if (report.decisions.length === 0) return head;
   return `${head}${SOFT_SEP}${countNoun(report.decisions.length, 'decision')}`;
 }
 
