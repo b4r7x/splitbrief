@@ -118,6 +118,8 @@ export interface ImplementerOptions extends UndeclaredWritesPolicy, Pick<InvokeO
     | {
         partial?: string | undefined;
         steer?: string | undefined;
+        /** The planner's guidance on a guided attempt of this brief that was stopped. */
+        guidance?: string | undefined;
         extra?: string | undefined;
         kept?: readonly string[] | undefined;
         discarded?: boolean | undefined;

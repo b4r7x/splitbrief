@@ -1425,6 +1425,43 @@ describe('event row dispatch', () => {
   });
 
   it.each([
+    ['plan', 'planning', 'PLAN'],
+    ['build', 'implementing', 'BUILD'],
+    ['review', 'final-review', 'REVIEW'],
+  ] as const)('shows a %s transient retry as one dim row', (seat, phase, label) => {
+    const event: EngineEvent = {
+      type: 'seat_retry',
+      ts: 0,
+      phase,
+      seat,
+      attempt: 2,
+      delayMs: 4_000,
+    };
+    const line = `${label}  Network or server failure · retry 2 of 10 in 4s`;
+    const rows = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+    expect(rows.map(rowText)).toEqual([line]);
+    const tones = rows.flatMap((row) => row.segments).map((segment) => segment.tone);
+    expect(tones.length).toBeGreaterThan(0);
+    expect(tones.every((tone) => tone === 'textDim')).toBe(true);
+
+    const narrow = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 60, viewportRows: 20, streaming },
+    });
+    expect(narrow.length).toBeLessThanOrEqual(2);
+    const narrowTones = narrow.flatMap((row) => row.segments).map((segment) => segment.tone);
+    expect(narrowTones.length).toBeGreaterThan(0);
+    expect(narrowTones.every((tone) => tone === 'textDim')).toBe(true);
+  });
+
+  it.each([
     ['balance', 'Balance spent on OpenCode CLI'],
     ['billing', 'Billing refused by OpenCode CLI'],
     ['quota', 'Quota spent on OpenCode CLI'],
@@ -3671,14 +3708,6 @@ describe('consult answer rows', () => {
         phase: 'implementing',
         seat: 'plan',
         resetAt: '2026-05-01T10:00:00.000Z',
-      },
-      {
-        type: 'seat_retry',
-        ts: 0,
-        phase: 'implementing',
-        seat: 'plan',
-        attempt: 2,
-        delayMs: 500,
       },
       {
         type: 'no_progress_cut',

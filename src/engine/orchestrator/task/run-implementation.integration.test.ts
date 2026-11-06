@@ -14,8 +14,15 @@ import { normalizeCustomCommand } from '../../../core/config/custom-commands.js'
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
-import type { WorkflowState, ChangedFilesSnapshot } from '../../../core/schemas/workflow.js';
-import type { Task } from '../../../core/schemas/task.js';
+import type {
+  AttemptFailure,
+  ChangedFilesSnapshot,
+  ConsultRecord,
+  LineageRecord,
+  WorkflowState,
+} from '../../../core/schemas/workflow.js';
+import { taskId, type Task } from '../../../core/schemas/task.js';
+import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
@@ -960,6 +967,174 @@ describe('runImplementation correction at a stop', () => {
 
     expect(implement).toHaveBeenCalledTimes(2);
     expect(loadState({ projectDir, sessionId })?.lineages?.T062?.corrections).toEqual([correction]);
+  });
+});
+
+describe('runImplementation planner guidance after a stop', () => {
+  const instructions = 'Use the shared parser.';
+  const context = 'src/parse.ts holds it.';
+
+  function guidanceRecord(task: Task, overrides: Partial<ConsultRecord> = {}): ConsultRecord {
+    return {
+      reason: 'failed',
+      action: 'guidance',
+      diagnosis: 'd',
+      at: '2026-11-01T00:00:00.000Z',
+      taskId: task.id,
+      revision: 1,
+      answer: {
+        answer: {
+          action: 'guidance',
+          diagnosis: 'd',
+          instructions,
+          context,
+        },
+      },
+      afterAttempt: 1,
+      ...overrides,
+    };
+  }
+
+  function failureAt(task: Task, attempt: number): AttemptFailure {
+    return { attempt, taskId: task.id, revision: 1, line: 'tsc failed' };
+  }
+
+  function rewriteRecord(task: Task): ConsultRecord {
+    return {
+      reason: 'failed',
+      action: 'rewrite-task',
+      diagnosis: 'd',
+      at: '2026-11-01T00:00:00.000Z',
+      taskId: task.id,
+      revision: 1,
+      answer: {
+        answer: { action: 'rewrite-task', diagnosis: 'd', task: makeTaskSpec({ id: task.id }) },
+      },
+      afterAttempt: 2,
+    };
+  }
+
+  type Row = readonly [
+    name: string,
+    revision: number,
+    lineage: (task: Task) => LineageRecord,
+    expected: string | undefined,
+  ];
+
+  const rows: readonly Row[] = [
+    [
+      'a stop cut the guided attempt',
+      1,
+      (task) => ({
+        attempts: 2,
+        dispatchedRevision: {},
+        replacedParents: [],
+        consultRecords: [guidanceRecord(task)],
+        attemptFailures: [failureAt(task, 1)],
+      }),
+      `${instructions}\n\n${context}`,
+    ],
+    [
+      'a stop came before the guided attempt began',
+      1,
+      (task) => ({
+        attempts: 1,
+        dispatchedRevision: {},
+        replacedParents: [],
+        consultRecords: [guidanceRecord(task)],
+        attemptFailures: [failureAt(task, 1)],
+      }),
+      `${instructions}\n\n${context}`,
+    ],
+    [
+      'the guided attempt failed',
+      1,
+      (task) => ({
+        attempts: 2,
+        dispatchedRevision: {},
+        replacedParents: [],
+        consultRecords: [guidanceRecord(task)],
+        attemptFailures: [failureAt(task, 1), failureAt(task, 2)],
+      }),
+      undefined,
+    ],
+    [
+      'the brief was rewritten after the guidance',
+      2,
+      (task) => ({
+        attempts: 2,
+        dispatchedRevision: {},
+        replacedParents: [],
+        consultRecords: [guidanceRecord(task)],
+        attemptFailures: [failureAt(task, 1)],
+      }),
+      undefined,
+    ],
+    [
+      'the last answer is a rewrite',
+      1,
+      (task) => ({
+        attempts: 2,
+        dispatchedRevision: {},
+        replacedParents: [],
+        consultRecords: [guidanceRecord(task), rewriteRecord(task)],
+        attemptFailures: [failureAt(task, 1)],
+      }),
+      undefined,
+    ],
+    [
+      'an older record has no afterAttempt',
+      1,
+      (task) => ({
+        attempts: 1,
+        dispatchedRevision: {},
+        replacedParents: [],
+        consultRecords: [guidanceRecord(task, { afterAttempt: undefined })],
+        attemptFailures: [failureAt(task, 1)],
+      }),
+      undefined,
+    ],
+    [
+      'the last record is on another brief of the lineage',
+      1,
+      (task) => ({
+        attempts: 1,
+        dispatchedRevision: {},
+        replacedParents: [],
+        consultRecords: [guidanceRecord(task), guidanceRecord(task, { taskId: taskId('T052') })],
+        attemptFailures: [failureAt(task, 1)],
+      }),
+      undefined,
+    ],
+  ];
+
+  it.each(rows)('%s', async (name, revision, lineage, expected) => {
+    const slug = name.replace(/[^a-z0-9]+/gi, '-');
+    const { projectDir } = setupProject(`guidance-${slug}`);
+    const sessionId = `guidance-${slug}-session`;
+    ensureSessionDir(projectDir, sessionId);
+    const ref = { projectDir, sessionId };
+    const task = makeTask({
+      id: 'T051',
+      suggestedFiles: ['src/parse.ts'],
+      action: 'create',
+      revision,
+    });
+    const state = makeImplState([task], { lineages: { T051: lineage(task) } });
+    saveState(ref, state);
+    const implementer = makeImplementer();
+
+    await runImplementation({
+      wctx: makeWctx({ projectDir, sessionId, implementer }),
+      task,
+      state,
+      taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
+      setTrackedState: vi.fn(),
+      recordApprovalDenial: vi.fn(),
+    });
+
+    const continuation = vi.mocked(implementer.implement).mock.calls[0]?.[0].continuation;
+    expect(continuation?.guidance).toBe(expected);
   });
 });
 

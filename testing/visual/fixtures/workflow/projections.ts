@@ -6857,6 +6857,65 @@ const finalReviewSeatWaitProjection: WorkflowFixtureProjection = {
   },
 };
 
+// The planning call hit two network or server failures: each retry shows as a dim row in the transcript.
+const planningSeatRetryProjection: WorkflowFixtureProjection = {
+  ...planningProjection,
+  scenarioId: scenarioId('workflow-planning-seat-retry'),
+  events: [
+    ...planningProjection.events,
+    {
+      type: 'seat_retry',
+      ts: FIXED_TS + 200,
+      phase: 'planning',
+      seat: 'plan',
+      attempt: 1,
+      delayMs: 2_000,
+    },
+    {
+      type: 'seat_retry',
+      ts: FIXED_TS + 2_300,
+      phase: 'planning',
+      seat: 'plan',
+      attempt: 2,
+      delayMs: 4_000,
+    },
+  ],
+};
+
+// The final review call trimmed its input and hit two network or server failures: one trim warning and two dim retry rows.
+const finalReviewSeatRetryProjection: WorkflowFixtureProjection = {
+  ...finalReviewProjection,
+  scenarioId: scenarioId('workflow-final-review-seat-retry'),
+  get events(): EngineEvent[] {
+    return [
+      ...finalReviewProjection.events,
+      {
+        type: 'warning',
+        ts: FIXED_TS + 520,
+        phase: 'final-review',
+        message:
+          'Review input trimmed to fit OpenAI Codex CLI (1,048,376 of 1,048,576 characters): task-evidence: Deterministic Drift Report',
+      },
+      {
+        type: 'seat_retry',
+        ts: FIXED_TS + 600,
+        phase: 'final-review',
+        seat: 'review',
+        attempt: 1,
+        delayMs: 2_000,
+      },
+      {
+        type: 'seat_retry',
+        ts: FIXED_TS + 2_700,
+        phase: 'final-review',
+        seat: 'review',
+        attempt: 2,
+        delayMs: 4_000,
+      },
+    ];
+  },
+};
+
 const implementationShellWrapperProjection: WorkflowFixtureProjection = {
   ...implementationSilentBareProjection,
   scenarioId: scenarioId('workflow-implementation-shell-wrapper'),
@@ -8521,6 +8580,8 @@ const projections = [
   liveSeatWaitProjection,
   planningSeatWaitProjection,
   finalReviewSeatWaitProjection,
+  planningSeatRetryProjection,
+  finalReviewSeatRetryProjection,
 ] as const;
 
 export const workflowFixtureProjections: ReadonlyMap<ScenarioId, WorkflowFixtureProjection> =

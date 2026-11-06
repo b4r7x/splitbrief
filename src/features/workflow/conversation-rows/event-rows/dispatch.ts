@@ -5,6 +5,7 @@ import { formatRecordedSeatChangeIdentities } from '../../display/recorded-seat-
 import { COLLAPSE_HINT } from '../implementer-diff-card-block.js';
 import type { DriftFinding } from '../../../../core/schemas/drift.js';
 import { CREW_SEAT_ROLES } from '../../../../core/crew/seats.js';
+import { seatRetrySentence } from '../../../../core/sessions/seat-wait-line.js';
 import { stateTone } from '../../../../core/theme/state-tone.js';
 import { stuckAnswerWords } from '../../../../core/review/stuck.js';
 import { setAsideLabel } from '../../../../core/review/verdict.js';
@@ -248,6 +249,13 @@ export function eventRowBlock(options: {
         // The build block counts attempts, first try included. A retry index over a retry budget
         // beside it would put two numbers on one screen for one fact.
         text: `Retry  attempt ${event.lineageAttempt ?? event.attempt + 1}`,
+        width: ctx.width,
+        tone: 'textDim',
+      });
+    case 'seat_retry':
+      return wrappedTextBlock({
+        keyPrefix,
+        text: `${CREW_SEAT_LABELS[event.seat]}  ${seatRetrySentence(event)}`,
         width: ctx.width,
         tone: 'textDim',
       });

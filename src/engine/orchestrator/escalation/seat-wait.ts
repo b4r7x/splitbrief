@@ -6,7 +6,11 @@ import type { CrewSeatId } from '../../../core/crew/identity.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { SeatWait, WorkflowState } from '../../../core/schemas/workflow.js';
 import { heldSeatOf, seatWaitMoved } from '../../../core/sessions/held-seat.js';
-import { seatWaitToolWord } from '../../../core/sessions/seat-wait-line.js';
+import {
+  seatRetrySentence,
+  seatWaitSentence,
+  seatWaitToolWord,
+} from '../../../core/sessions/seat-wait-line.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { thrownSeatFailure } from '../../implementers/pipeline/call-result.js';
 import type { RunnerFailureOutcomeState } from '../../runners/errors.js';
@@ -16,6 +20,7 @@ import {
   withSeatRetry,
   type SeatAttempt,
   type SeatFailure,
+  type SeatRetryInfo,
 } from '../../runners/transient.js';
 import { parseUsageLimitReset } from '../../runners/usage-limit.js';
 import { publishSeatRetry, publishSeatWaitEnded, publishSeatWaitStarted } from '../events.js';
@@ -158,6 +163,38 @@ export async function resumeSeatWait(
   });
 }
 
+type SeatLadderPort = Readonly<{
+  signal?: AbortSignal | undefined;
+  onRetry: (info: SeatRetryInfo) => void;
+  waits: () => Promise<boolean>;
+  wait: (deadline: Date) => Promise<void>;
+}>;
+
+async function seatCallLadder<T>(
+  call: (signal: AbortSignal) => Promise<SeatAttempt<T>>,
+  onDiscarded: (value: T) => void,
+  port: SeatLadderPort,
+): Promise<SeatAttempt<T>> {
+  const attempt = (): Promise<SeatAttempt<T>> =>
+    withSeatRetry(call, {
+      ...(port.signal !== undefined && { signal: port.signal }),
+      onRetry: port.onRetry,
+      onDiscarded,
+    });
+  const first = await attempt();
+  if (first.ok) return first;
+  const deadline = seatResetWaitDeadline(first.failure);
+  if (deadline === undefined) return first;
+  const waits = await port.waits().catch((error: unknown) => {
+    onDiscarded(first.value);
+    throw error;
+  });
+  if (!waits) return first;
+  onDiscarded(first.value);
+  await port.wait(deadline);
+  return attempt();
+}
+
 /**
  * One seat call with the whole seat-trouble ladder around it: a transient
  * failure retries with backoff. A limit comes back at once as the failure the
@@ -178,14 +215,6 @@ export async function runSeatCall<T>(
   call: (signal: AbortSignal) => Promise<SeatAttempt<T>>,
   onDiscarded: (value: T) => void,
 ): Promise<SeatAttempt<T>> {
-  const attempt = (): Promise<SeatAttempt<T>> =>
-    withSeatRetry(call, {
-      ...(ctx.signal !== undefined && { signal: ctx.signal }),
-      onRetry: (info) =>
-        publishSeatRetry({ bus: ctx.ref.bus, phase: ctx.state.phase }, { seat: ctx.seat, ...info }),
-      onDiscarded,
-    });
-
   let state = ctx.state;
   const head = loadState(ctx.ref) ?? state;
   if (head.seatWait?.seat === ctx.seat) {
@@ -194,39 +223,58 @@ export async function runSeatCall<T>(
     ctx.onStateChange?.(state);
   }
 
-  const first = await attempt();
-  if (first.ok) return first;
-  const deadline = seatResetWaitDeadline(first.failure);
-  if (deadline === undefined) return first;
-  const seatSwap = await loadSeatSwapContext({
-    projectDir: ctx.ref.projectDir,
-    seat: ctx.seat,
-    runner: ctx.runner,
-    config: ctx.config,
-    // The context only decides the move here; the halt names the fallback with its own cache.
-    modelCache: undefined,
-    signal: ctx.signal,
-    implementerProfile: ctx.profile,
-  }).catch((error: unknown) => {
-    onDiscarded(first.value);
-    throw error;
-  });
-  if (automaticSeatSwitch(seatSwap, state.seatSwitches) !== undefined) return first;
-  onDiscarded(first.value);
-  const resumed = await waitForSeatReset({
-    ref: ctx.ref,
-    state,
-    wait: {
-      seat: ctx.seat,
-      resetAt: deadline.toISOString(),
-      tool: getRunnerDisplayName(ctx.runner),
-      kind: ctx.runner.kind,
-      holds: heldSeatOf(ctx.runner, ctx.profile),
-    },
+  return seatCallLadder(call, onDiscarded, {
     ...(ctx.signal !== undefined && { signal: ctx.signal }),
+    onRetry: (info) =>
+      publishSeatRetry({ bus: ctx.ref.bus, phase: ctx.state.phase }, { seat: ctx.seat, ...info }),
+    waits: async () => {
+      const seatSwap = await loadSeatSwapContext({
+        projectDir: ctx.ref.projectDir,
+        seat: ctx.seat,
+        runner: ctx.runner,
+        config: ctx.config,
+        // The context only decides the move here; the halt names the fallback with its own cache.
+        modelCache: undefined,
+        signal: ctx.signal,
+        implementerProfile: ctx.profile,
+      });
+      return automaticSeatSwitch(seatSwap, state.seatSwitches) === undefined;
+    },
+    wait: async (deadline) => {
+      const resumed = await waitForSeatReset({
+        ref: ctx.ref,
+        state,
+        wait: {
+          seat: ctx.seat,
+          resetAt: deadline.toISOString(),
+          tool: getRunnerDisplayName(ctx.runner),
+          kind: ctx.runner.kind,
+          holds: heldSeatOf(ctx.runner, ctx.profile),
+        },
+        ...(ctx.signal !== undefined && { signal: ctx.signal }),
+      });
+      ctx.onStateChange?.(resumed);
+    },
   });
-  ctx.onStateChange?.(resumed);
-  return attempt();
+}
+
+type ThrownSeatAnswer<T> = Readonly<{ answer: T }> | Readonly<{ thrown: unknown }>;
+
+function throwingAttempt<T>(
+  call: (signal: AbortSignal) => Promise<T>,
+): (signal: AbortSignal) => Promise<SeatAttempt<ThrownSeatAnswer<T>>> {
+  return async (signal) => {
+    try {
+      return { ok: true, value: { answer: await call(signal) } };
+    } catch (thrown) {
+      return { ok: false, failure: seatFailureFromError(thrown), value: { thrown } };
+    }
+  };
+}
+
+function answerOrThrow<T>(attempt: SeatAttempt<ThrownSeatAnswer<T>>): T {
+  if ('thrown' in attempt.value) throw attempt.value.thrown;
+  return attempt.value.answer;
 }
 
 /**
@@ -237,18 +285,29 @@ export async function runThrowingSeatCall<T>(
   ctx: SeatCallContext,
   call: (signal: AbortSignal) => Promise<T>,
 ): Promise<T> {
-  const attempt = await runSeatCall<Readonly<{ answer: T }> | Readonly<{ thrown: unknown }>>(
-    ctx,
-    async (signal) => {
-      try {
-        return { ok: true, value: { answer: await call(signal) } };
-      } catch (thrown) {
-        return { ok: false, failure: seatFailureFromError(thrown), value: { thrown } };
-      }
-    },
-    // A thrown call carries no usage to keep.
-    () => {},
+  // A thrown call carries no usage to keep.
+  return answerOrThrow(await runSeatCall(ctx, throwingAttempt(call), () => {}));
+}
+
+/**
+ * The seat call of a one-shot command (`splitbrief spec`, `splitbrief review`):
+ * a transient failure retries with backoff and a named usage-limit reset is
+ * waited out once. There is no saved state to park on a wait and no fallback
+ * seat to consider, so `write` receives the retry and wait lines instead.
+ */
+export async function runCommandSeatCall<T>(
+  opts: Readonly<{ tool: string; write: (line: string) => void }>,
+  call: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  return answerOrThrow(
+    await seatCallLadder(throwingAttempt(call), () => {}, {
+      onRetry: (info) => opts.write(seatRetrySentence(info)),
+      waits: async () => true,
+      wait: async (deadline) => {
+        const line = seatWaitSentence(opts.tool, deadline.toISOString());
+        if (line !== null) opts.write(line);
+        await abortableDelay(deadline.getTime() - Date.now(), undefined);
+      },
+    }),
   );
-  if ('thrown' in attempt.value) throw attempt.value.thrown;
-  return attempt.value.answer;
 }

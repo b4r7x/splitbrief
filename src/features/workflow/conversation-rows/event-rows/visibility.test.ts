@@ -23,6 +23,19 @@ describe('isTranscriptRowlessEvent', () => {
     expect(isTranscriptRowlessEvent(park)).toBe(false);
   });
 
+  it('keeps a seat retry as a transcript row', () => {
+    expect(
+      isTranscriptRowlessEvent({
+        type: 'seat_retry',
+        ts: 0,
+        phase: 'planning',
+        seat: 'plan',
+        attempt: 1,
+        delayMs: 2_000,
+      }),
+    ).toBe(false);
+  });
+
   it('is true for row-less event types and false for visible rows', () => {
     const heartbeat: EngineEvent = {
       type: 'planner_heartbeat',

@@ -257,6 +257,8 @@ splitbrief spec --allow-hooks "tighten zod schemas"
 
 - The line printed before planning starts names the feature and the planner: `Planning feature: <feature> (planner: <name>)`.
 - The planner's stream is not echoed: its answer is typed JSON.
+- A network failure or a server error on the planner call retries the same call up to 10 times. The first wait is 2s, each wait doubles, and no wait is longer than 60s. A `retry-after` from the provider sets the wait instead. Each retry prints one line: `Network or server failure · retry <n> of 10 in <wait>`.
+- A usage limit that names its reset makes the command wait until that reset. Then it calls the planner once more. The wait prints one line: `Waiting for <tool> · resets <clock>`. A limit that names no reset, or a limit on the call after the wait, fails the command with exit code `1`.
 - Questions: the planner may ask up to three questions per round, for at most two rounds, and every question carries a default. `spec` prints them under `The planner asks:`. In a terminal it reads one line (`Your answer (⏎ takes the defaults): `), and an empty line takes the defaults. Without a terminal every question takes its default.
 - The planner is told the BUILD context a headless `start` measures: the profile's declared `contextLength`, else the model catalog. `spec` takes no `--skills`, so its prompt carries no skills block, as a `start` with no skills selected.
 - `spec` shows no plan card. `--mode` and `--approve` were removed and fail the command with exit code 1.
@@ -331,6 +333,7 @@ splitbrief review --project ../service-a
 - The reviewer runs in its tool's read-only mode (for Claude Code, `--permission-mode plan`).
 - A clean tree prints `nothing to review` and exits `0` before any runner is constructed — the command never spawns a tool with nothing to say.
 - Before the call the command prints one line that names the subject and the seat: `Reviewing the working tree (reviewer: <seat>)`, or `Reviewing changes since <ref> (reviewer: <seat>)` with `--base`.
+- The reviewer call takes the same retries and the same wait as `splitbrief spec`. It prints the same lines: `Network or server failure · retry <n> of 10 in <wait>` and `Waiting for <tool> · resets <clock>`.
 - The reviewer's live output is not printed. After the call, the rendered review prints with terminal control sequences stripped, then the verdict, each finding by severity (`critical`, `warning`, `note`) and the path of `review.md`.
 
 ---

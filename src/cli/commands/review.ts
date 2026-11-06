@@ -35,6 +35,7 @@ import { createCustomRunnerRuntime } from '../../engine/runners/custom-runner-ru
 import { requestTyped } from '../../engine/runners/typed-output.js';
 import type { ArtifactApprovalReview } from '../../engine/runners/types.js';
 import { buildFinalReviewPrompt, reviewChangeText } from '../../engine/spec/prompts/review.js';
+import { runCommandSeatCall } from '../../engine/orchestrator/escalation/seat-wait.js';
 import { seatReadsChangeFile } from '../../core/runners/capabilities.js';
 import { confinedWriteFile } from '../../lib/confined-fs.js';
 import { writeConfinedSecureFileAsync } from '../../lib/fs.js';
@@ -236,23 +237,28 @@ export function registerReviewCommand(program: Command, deps: ReviewCommandDeps 
         await writeConfinedSecureFileAsync(projectDir, changeFile, reviewChangeText({ diff }));
       }
       const verdict = await withCliErrors(async () => {
-        const typed = await requestTyped({
-          prompt: buildFinalReviewPrompt({
-            spec: NO_SPECIFICATION,
-            taskBriefs: NO_TASK_BRIEFS,
-            ...(readsChangeFile
-              ? { changeFile: { path: join(projectDir, changeFile), provenance: false } }
-              : { diff }),
-          }),
-          schema: verdictSchema,
-          jsonSchema: REVIEW_VERDICT_JSON_SCHEMA,
-          schemaName: 'review_verdict',
-          call: reviewer.typedCall({
-            projectDir,
-            seat: 'reviewer',
-            callbacks: { onOutput: () => {} },
-          }),
+        const prompt = buildFinalReviewPrompt({
+          spec: NO_SPECIFICATION,
+          taskBriefs: NO_TASK_BRIEFS,
+          ...(readsChangeFile
+            ? { changeFile: { path: join(projectDir, changeFile), provenance: false } }
+            : { diff }),
         });
+        const typed = await runCommandSeatCall(
+          { tool: getRunnerCatalogDisplayName(seat.runner), write: (line) => console.log(line) },
+          (signal) =>
+            requestTyped({
+              prompt,
+              schema: verdictSchema,
+              jsonSchema: REVIEW_VERDICT_JSON_SCHEMA,
+              schemaName: 'review_verdict',
+              call: reviewer.typedCall({
+                projectDir,
+                seat: 'reviewer',
+                callbacks: { onOutput: () => {}, signal },
+              }),
+            }),
+        );
         if ('error' in typed) throw typed.error;
         return typed.value;
       });

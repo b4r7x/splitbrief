@@ -47,6 +47,7 @@ import { captureTaskReviewChanges } from './evidence/review-capture.js';
 import { resolveRunUniverse } from './evidence/review-packet/sections-io.js';
 import { getOrCreateLedger } from './evidence/persistence.js';
 import { writeEvidenceLedger } from '../../core/evidence/ledger-storage.js';
+import type { EngineEvent, EventBus } from '../events/types.js';
 import { runFinalReviewPhase, type FinalReviewResult } from './final-review.js';
 import { applyRecoveryAction } from './recovery/actions.js';
 import { haltVerdictlessReview } from './run/review.js';
@@ -79,9 +80,25 @@ const CLAUDE_PROMPT_TOO_LONG = 'Prompt is too long';
 
 const dirs: string[] = [];
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   for (const dir of dirs.splice(0)) cleanupTempDir(dir);
 });
+
+// The run's git helpers pause on short real timers, so the fake clock also moves with real time.
+function seatClock(): void {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'], shouldAdvanceTime: true });
+}
+
+function nextEvent(bus: EventBus, type: EngineEvent['type']): Promise<EngineEvent> {
+  return new Promise((resolve) => {
+    const stop = bus.subscribe((event) => {
+      if (event.type !== type) return;
+      stop();
+      resolve(event);
+    });
+  });
+}
 
 function lines(prefix: string, count: number): string {
   return Array.from(
@@ -369,6 +386,89 @@ describe('final review input cap', () => {
     const issue = (await halt(ref, result)).pendingRecovery;
     expect(issue?.reason).toBe('review-input-too-large');
     expect(issue?.details.join('\n')).not.toContain('Largest diffs');
+  });
+
+  it('shows one Review input trimmed warning while the trimmed review retries a dropped connection twice', async () => {
+    const ref = project();
+    writeSpecFile(ref, SPEC_FILE, 's'.repeat(CODEX_CAP + 10_000), null);
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/big.ts'], action: 'modify' });
+    // Files outside the brief give the drift report findings long enough to trim.
+    await completeTask(ref, task, {
+      'src/big.ts': 'export const start = 1;\n',
+      ...Object.fromEntries(
+        Array.from({ length: 40 }, (_, i) => [`src/extra-${i}.ts`, `export const e${i} = 1;\n`]),
+      ),
+    });
+    const { reviewer: measuringReviewer } = countingReviewer();
+    const packetPath = join(sessionDir(ref.projectDir, ref.sessionId), REVIEW_PACKET_JSON_FILE);
+
+    await review(ref, doneState(task), measuringReviewer);
+
+    const firstPacket = ReviewPacketSchema.parse(JSON.parse(readFileSync(packetPath, 'utf8')));
+    const measured = firstPacket.reviewInput?.size;
+    if (measured === undefined) throw new Error('the review recorded no input size');
+    // Shrink the spec so the prompt still trims, and the trim lands 200 under the cap.
+    writeSpecFile(
+      ref,
+      SPEC_FILE,
+      's'.repeat(CODEX_CAP + 10_000 - (measured - CODEX_CAP) - 200),
+      null,
+    );
+
+    seatClock();
+    let calls = 0;
+    const invoke = vi.fn(async ({ prompt }: { prompt: string }) => {
+      calls += 1;
+      if (calls <= 2) {
+        return makeRunnerCallResult({
+          status: 'failed',
+          text: '',
+          error: { code: 'codex-turn-failed', message: 'stream error: connection reset by peer' },
+        });
+      }
+      return makeRunnerCallResult({
+        status: 'completed',
+        text: JSON.stringify(passingReviewVerdict(prompt)),
+      });
+    });
+    const reviewer = makePlanner({
+      typedCall: (ctx) => ({
+        seat: ctx.seat,
+        typedOutput: 'strict-native',
+        canResume: false,
+        invoke,
+      }),
+    });
+    const { bus, events } = makeBusRecorder();
+
+    const retried = nextEvent(bus, 'seat_retry');
+    const running = review(ref, doneState(task), reviewer, bus);
+    expect(await Promise.race([retried, running])).toMatchObject({
+      type: 'seat_retry',
+      seat: 'review',
+      attempt: 1,
+      delayMs: 2_000,
+    });
+    const retriedAgain = nextEvent(bus, 'seat_retry');
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(await Promise.race([retriedAgain, running])).toMatchObject({
+      type: 'seat_retry',
+      attempt: 2,
+      delayMs: 4_000,
+    });
+    await vi.advanceTimersByTimeAsync(4_000);
+    const passed = await running;
+
+    expect(passed.reviewStatus).toBe('written');
+    expect(invoke).toHaveBeenCalledTimes(3);
+    const trimmedWarnings = events.filter(
+      (event) => event.type === 'warning' && event.message.startsWith('Review input trimmed'),
+    );
+    expect(trimmedWarnings).toHaveLength(1);
+    const packet = ReviewPacketSchema.parse(JSON.parse(readFileSync(packetPath, 'utf8')));
+    expect(packet.reviewInput?.dropped).toEqual([
+      { trim: 'task-evidence', items: ['Deterministic Drift Report'] },
+    ]);
   });
 
   it('halts the same way when a repair answer grows the prompt over the cap', async () => {

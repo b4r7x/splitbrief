@@ -2716,6 +2716,38 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-planning-seat-retry',
+      title: 'Workflow · planning retries a PLAN call after a network or server failure',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'planning-seat-retry',
+        title: 'Planning shows each PLAN retry as a dim row',
+        kind: 'planning',
+        marker: 'retry 2 of 10',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Planning transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-final-review-seat-retry',
+      title: 'Workflow · the final review retries a REVIEW call after a network or server failure',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'final-review-seat-retry',
+        title: 'The final review shows one trim warning and each REVIEW retry as a dim row',
+        kind: 'review',
+        marker: 'retry 2 of 10',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Review transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-at-rest-halted-chosen',
       title: 'Workflow · a halted run killed after its action was chosen',
       surface: screenSurface('workflow'),

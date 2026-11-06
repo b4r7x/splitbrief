@@ -487,6 +487,109 @@ describe('spec command — reporting', () => {
   });
 });
 
+describe('spec command seat trouble', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function seatClock(): void {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'], shouldAdvanceTime: true });
+  }
+
+  function loggedLines(): string[] {
+    return consoleSpy.mock.calls.map(([line]) => String(line));
+  }
+
+  function nextLoggedLine(holds: (line: string) => boolean): Promise<string> {
+    return new Promise((resolve) => {
+      consoleSpy.mockImplementation((...args: unknown[]) => {
+        const line = args.map(String).join(' ');
+        if (holds(line)) resolve(line);
+      });
+    });
+  }
+
+  function runSpec(): Promise<Command> {
+    const program = new Command();
+    program.exitOverride();
+    registerSpecCommand(program, { createPlanner: createPlannerMock });
+    return program.parseAsync([
+      'node',
+      'splitbrief',
+      'spec',
+      '--project',
+      tmp,
+      '--allow-hooks',
+      'add health endpoint',
+    ]);
+  }
+
+  function onlySessionDir(): string {
+    const [session, ...rest] = readdirSync(sessionsRoot());
+    expect(rest).toHaveLength(0);
+    if (session === undefined) throw new Error('expected one session folder');
+    return join(sessionsRoot(), session);
+  }
+
+  it('retries a 503 once, prints the retry line and writes the plan', async () => {
+    seatClock();
+    const typed = scriptedTypedCall([
+      Object.assign(new Error('503 Service Unavailable'), { status: 503 }),
+      planFromTasks([makeTask()]),
+    ]);
+    createPlannerMock.mockResolvedValue(makePlanner({ typedCall: typed.typedCall }));
+
+    const printed = nextLoggedLine((line) => line.includes('retry 1 of 10'));
+    const parsing = runSpec();
+    await Promise.race([printed, parsing]);
+    await vi.advanceTimersByTimeAsync(2_000);
+    await parsing;
+
+    expect(loggedLines()).toContain('Network or server failure · retry 1 of 10 in 2s');
+    expect(typed.prompts).toHaveLength(2);
+    expect(existsSync(join(onlySessionDir(), PLAN_FILE))).toBe(true);
+  });
+
+  it('waits for a named usage-limit reset, prints the wait line, then plans', async () => {
+    seatClock();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+    const typed = scriptedTypedCall([
+      Object.assign(new Error("You've hit your usage limit. Try again in 40 minutes."), {
+        status: 429,
+      }),
+      planFromTasks([makeTask()]),
+    ]);
+    createPlannerMock.mockResolvedValue(makePlanner({ typedCall: typed.typedCall }));
+
+    const printed = nextLoggedLine((line) => line.startsWith('Waiting for '));
+    const parsing = runSpec();
+    const waitLine = await Promise.race([printed, parsing]);
+    await vi.advanceTimersByTimeAsync(40 * 60_000);
+    await parsing;
+
+    const planningLine = loggedLines().find((line) => line.startsWith('Planning feature:'));
+    const name = /\(planner: (.+)\)/.exec(planningLine ?? '')?.[1];
+    if (name === undefined) throw new Error('the pre-planning line names no planner');
+    const reset = new Date(Date.parse('2026-01-01T00:00:00.000Z') + 40 * 60_000);
+    const clock = reset.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    expect(waitLine).toBe(`Waiting for ${name} · resets ${clock}`);
+    expect(typed.prompts).toHaveLength(2);
+    expect(existsSync(join(onlySessionDir(), PLAN_FILE))).toBe(true);
+  });
+
+  it('fails at once on an error that is not seat trouble', async () => {
+    seatClock();
+    const typed = scriptedTypedCall([
+      Object.assign(new Error('401 Unauthorized: invalid api key'), { status: 401 }),
+    ]);
+    createPlannerMock.mockResolvedValue(makePlanner({ typedCall: typed.typedCall }));
+
+    await expect(runSpec()).rejects.toThrow('401');
+    expect(typed.prompts).toHaveLength(1);
+    expect(loggedLines().some((line) => line.includes('retry 1 of 10'))).toBe(false);
+  });
+});
+
 describe('spec command — preparation ownership across the planner call', () => {
   it('a failing planner call leaves no session directory behind and clears the active pointer', async () => {
     createPlannerMock.mockResolvedValue(

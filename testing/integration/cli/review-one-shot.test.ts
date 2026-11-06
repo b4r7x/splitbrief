@@ -229,7 +229,10 @@ function readRunLog(): Array<{ args: string[]; prompt: string; cwd?: string }> {
     .map((line) => JSON.parse(line) as { args: string[]; prompt: string; cwd?: string });
 }
 
-async function runReview(args: string[]): Promise<{ stdout: string; exitCode: number }> {
+async function runReview(
+  args: string[],
+  onLine?: (line: string) => void,
+): Promise<{ stdout: string; exitCode: number }> {
   const program = new Command();
   program.name('splitbrief').exitOverride();
   registerReviewCommand(program);
@@ -245,7 +248,9 @@ async function runReview(args: string[]): Promise<{ stdout: string; exitCode: nu
   const originalLog = console.log;
   const originalWrite = process.stdout.write.bind(process.stdout);
   console.log = (...parts: unknown[]) => {
-    chunks.push(parts.map(String).join(' ') + '\n');
+    const line = parts.map(String).join(' ');
+    onLine?.(line);
+    chunks.push(line + '\n');
   };
   vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
     chunks.push(String(chunk));
@@ -277,6 +282,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   restoreCliShim?.();
@@ -429,6 +435,55 @@ describe('CLI integration: splitbrief review', () => {
     const reviewsRoot = join(tmp, SPLITBRIEF_DIR, REVIEWS_DIR);
     const stamps = readdirSync(reviewsRoot);
     expect(existsSync(join(reviewsRoot, stamps[0] ?? '', REVIEW_CHANGE_FILE))).toBe(false);
+  });
+
+  it('retries a 503 from an API reviewer once and prints the review', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'], shouldAdvanceTime: true });
+    writeConfig(tmp, {
+      reviewer: {
+        kind: 'api',
+        provider: 'custom-endpoint',
+        service: 'custom-endpoint',
+        offering: 'payg',
+        apiBase: 'https://api.example.test/v1',
+        apiKey: 'test-key',
+        model: 'custom/test-review-model',
+        contextLength: 200_000,
+      },
+    });
+    writeFileSync(join(tmp, 'init.txt'), `init\n${CHANGED_LINE}\n`, 'utf-8');
+    const prompts: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = new Request(input, init);
+        if (request.url.includes('/models')) {
+          return Response.json({ data: [{ id: 'custom/test-review-model' }] });
+        }
+        prompts.push(await request.text());
+        if (prompts.length === 1) return new Response('upstream unavailable', { status: 503 });
+        return makeOpenAiSseResponse([
+          { content: REVIEW_TEXT },
+          { usage: { prompt_tokens: 40, completion_tokens: 20 } },
+        ]);
+      }),
+    );
+
+    let markPrinted: () => void = () => {};
+    const retryLine = new Promise<void>((resolve) => {
+      markPrinted = () => resolve();
+    });
+    const running = runReview(['--project', tmp, '--allow-repo-runners'], (line) => {
+      if (line.includes('retry 1 of 10')) markPrinted();
+    });
+    await Promise.race([retryLine, running]);
+    await vi.advanceTimersByTimeAsync(2_000);
+    const { stdout, exitCode } = await running;
+
+    expect(exitCode, stdout).toBe(0);
+    expect(stdout).toContain('Network or server failure · retry 1 of 10 in 2s');
+    expect(prompts).toHaveLength(2);
+    expect(stdout).toContain('pass_with_notes');
   });
 
   it('reviews through an inline shell reviewer without admitting any other runner', async () => {

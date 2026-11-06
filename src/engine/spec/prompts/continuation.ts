@@ -3,6 +3,9 @@ export const PARTIAL_MAX_CHARS = 8_000;
 
 const DEFAULT_STEER = 'continue from where you left off';
 
+/** The heading the planner's guidance travels under wherever a seat reads it. */
+export const PLANNER_GUIDANCE_HEADING = '## Guidance from the planner:';
+
 export type ComposeContinuationInput = Readonly<{
   /** The step's own prompt. It leads; the continuation block trails it. */
   basePrompt: string;
@@ -10,6 +13,8 @@ export type ComposeContinuationInput = Readonly<{
   partial?: string | undefined;
   /** What the operator typed when they resumed. */
   steer?: string | undefined;
+  /** The planner's guidance on the attempt that was stopped before it finished. */
+  guidance?: string | undefined;
   /** Seat-specific facts the next attempt needs, e.g. files already changed. */
   extra?: string | undefined;
   /** The step is a retry whose earlier attempts left no files in the workspace; its error leads the prompt. */
@@ -36,6 +41,7 @@ const NO_EARLIER_OUTPUT = 'No output from an earlier attempt of this step is ava
 export function continuationBlock(input: Omit<ComposeContinuationInput, 'basePrompt'>): string {
   const partial = input.partial?.trim() ?? '';
   const extra = input.extra?.trim() ?? '';
+  const guidance = input.guidance?.trim() ?? '';
   const steer = input.steer?.trim() ? input.steer : DEFAULT_STEER;
   const opening =
     partial !== ''
@@ -45,11 +51,12 @@ export function continuationBlock(input: Omit<ComposeContinuationInput, 'basePro
         : NO_EARLIER_OUTPUT;
   // A correction typed at a halt travels in this block too, so only an attempt
   // that left output is called interrupted.
-  if (partial === '' && extra === '') {
+  if (partial === '' && extra === '' && guidance === '') {
     return `[Continuation] ${opening} The user says: ${steer}`;
   }
   const blocks = [`[Continuation] ${opening}`];
   if (partial !== '') blocks.push(`Partial output so far:\n${trimPartial(partial)}`);
+  if (guidance !== '') blocks.push(`${PLANNER_GUIDANCE_HEADING}\n${guidance}`);
   if (extra !== '') blocks.push(extra);
   blocks.push(`The user says: ${steer}`);
   return blocks.join('\n\n');

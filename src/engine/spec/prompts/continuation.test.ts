@@ -81,6 +81,24 @@ describe('continuationBlock', () => {
     expect(block).toContain('The user says: finish it');
   });
 
+  it('carries the planner guidance under its heading, between the partial and the extra', () => {
+    const block = continuationBlock({
+      partial: 'half done',
+      guidance: 'Use the shared parser.',
+      extra: 'Files already changed: src/a.ts',
+    });
+
+    expect(block).toBe(
+      '[Continuation] The previous attempt of this step was interrupted.\n\nPartial output so far:\nhalf done\n\n## Guidance from the planner:\nUse the shared parser.\n\nFiles already changed: src/a.ts\n\nThe user says: continue from where you left off',
+    );
+  });
+
+  it('carries the guidance alone, with no partial and no extra', () => {
+    expect(continuationBlock({ guidance: 'Use the shared parser.' })).toBe(
+      '[Continuation] No output from an earlier attempt of this step is available.\n\n## Guidance from the planner:\nUse the shared parser.\n\nThe user says: continue from where you left off',
+    );
+  });
+
   it('reports no earlier output when only a note follows the steer', () => {
     const note =
       'These declared files already differ from the commit this brief started on: src/a.ts';

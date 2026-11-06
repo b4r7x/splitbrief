@@ -757,8 +757,11 @@ export async function runFinalReviewPhase(opts: {
             evidencePaths,
           });
           if (limit !== undefined) {
+            // The prompt is rebuilt on each retry and repair, so the trim
+            // warning shows once for each review.
+            const trimmedBefore = (reviewInput?.dropped.length ?? 0) > 0;
             reviewInput = { size: result.size, limit, dropped: [...result.dropped] };
-            if (result.dropped.length > 0) {
+            if (result.dropped.length > 0 && !trimmedBefore) {
               publishWarning({
                 bus,
                 phase: state.phase,

@@ -20,6 +20,7 @@ import { buildProjectLanguageContext } from '../../spec/prompts/language-context
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { isAbortError } from '../../../utils/abort.js';
 import { implementerSeatAttempt, runSeatCall } from '../escalation/seat-wait.js';
+import { unfinishedGuidance } from '../escalation/consult-guidance.js';
 import { addUsageAndSave, rebaseOnPersistedWorkflowState } from '../state-ops.js';
 import { isResumableWorkspaceStop, retentionError } from '../isolation/retention.js';
 import { recordedApiCreatedPaths } from '../evidence/task.js';
@@ -196,6 +197,8 @@ export async function runImplementation(opts: {
             partial,
             steer: correction.continuation?.steer,
           });
+          const guidance = unfinishedGuidance(state, task);
+          const resumed = guidance === undefined ? continuation : { ...continuation, guidance };
           // A fix task may already have its code on disk when none of its findings needs a change,
           // and a cut attempt may find its kept work complete: either call may change nothing.
           const allowNoChange = task.fix !== undefined || continuation?.kept !== undefined;
@@ -204,7 +207,7 @@ export async function runImplementation(opts: {
             ...correction,
             signal: attemptSignal,
             ...creationOwnership(),
-            ...(continuation !== undefined && { continuation }),
+            ...(resumed !== undefined && { continuation: resumed }),
             ...(allowNoChange && { allowNoChange }),
           };
           return runWithCorrectionPasses({

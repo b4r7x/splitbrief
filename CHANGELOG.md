@@ -118,6 +118,10 @@
 
 ### Fixed
 
+- `splitbrief spec` and `splitbrief review` now retry a network failure or a server error from the provider up to ten times, as a run does. Each retry prints one line. A usage limit with a named reset makes the command wait for that reset, then it asks again. Before, the command failed on the first such error.
+- A network failure or a server error on a PLAN, BUILD or REVIEW call now shows one dim row for each retry, such as `PLAN  Network or server failure · retry 1 of 10 in 2s`. Before, only the spinner showed while the call was retried.
+- The `Review input trimmed` warning now shows once for each review. Before, it showed again each time the review call was retried or its answer was repaired.
+- A brief that you stop during its attempt after the planner's guidance gets that guidance again when it continues. Before, the continued attempt ran without it.
 - A finished answer is kept when its CLI tool does not exit after it, as Antigravity can do. SPLITBRIEF gives the tool two seconds to exit by itself, then stops it, and the call ends with that answer. A `timeout` or an idle cut that comes after the answer no longer discards it. Before, the call did not end, or it failed at its `timeout` and the answer was lost.
 - On a short terminal, a planner question that hides rows shows `↑ more` or `↓ more`, also in a panel of one row. While you write an answer to a planner question, the question stays above or beside the answer field. Before, a short panel showed one choice and no sign of the others, or only `›` and an empty answer field.
 - At the start of the build and between two briefs, the composer, the line under it and `/queue show` name the brief that reads a message for BUILD, for example `Message BUILD on T002 · read when its call ends…`, as the transcript does. Before, they named no brief until that brief started.

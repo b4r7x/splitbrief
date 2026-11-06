@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import type { SeatWait, WorkflowState } from '../schemas/workflow.js';
 import { createInitialState } from '../state/machine.js';
-import { seatWaitToolWord } from './seat-wait-line.js';
+import { seatRetrySentence, seatWaitToolWord } from './seat-wait-line.js';
+
+describe('seatRetrySentence', () => {
+  it.each([
+    [1, 2_000, 'Network or server failure · retry 1 of 10 in 2s'],
+    [6, 60_000, 'Network or server failure · retry 6 of 10 in 1m 0s'],
+  ] as const)('says retry %i and its wait', (attempt, delayMs, expected) => {
+    expect(seatRetrySentence({ attempt, delayMs })).toBe(expected);
+  });
+});
 
 describe('seatWaitToolWord', () => {
   const resetAt = '2026-09-01T17:00:00.000Z';

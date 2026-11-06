@@ -1,4 +1,6 @@
+import { formatTime } from '../../utils/format-time.js';
 import { CREW_SEAT_LABELS } from '../crew/identity.js';
+import { BOUNDS } from '../pipeline-spec/bounds.js';
 import { getRunnerIdentityDisplayName } from '../providers/catalog.js';
 import { formatResetNote } from '../recovery/reset-clock.js';
 import type { SeatWait, WorkflowState } from '../schemas/workflow.js';
@@ -26,6 +28,14 @@ export function seatWaitSentence(
   now: number = Date.now(),
 ): string | null {
   return seatWaitParts(tool, resetAt, now)?.join(SOFT_SEP) ?? null;
+}
+
+/** The retry line a command prints for a transient seat failure: the attempt and its wait. */
+export function seatRetrySentence(info: Readonly<{ attempt: number; delayMs: number }>): string {
+  return [
+    'Network or server failure',
+    `retry ${info.attempt} of ${BOUNDS.transientRetries} in ${formatTime(info.delayMs)}`,
+  ].join(SOFT_SEP);
 }
 
 /**

@@ -1343,6 +1343,11 @@ const checkpointPredicates = [
   ],
   [checkpointId('planning-seat-wait'), includesAll('Waiting for Claude Code')],
   [checkpointId('final-review-seat-wait'), includesAll('Waiting for OpenAI Codex CLI')],
+  [checkpointId('planning-seat-retry'), includesAll('Network or server failure', 'retry 1 of 10')],
+  [
+    checkpointId('final-review-seat-retry'),
+    includesAll('Network or server failure', 'retry 1 of 10', 'Review input trimmed'),
+  ],
   [checkpointId('review-check-running'), includesAll('Review · Reviewer check V2')],
   [checkpointId('review-check-reused'), includesAll('Reviewer check V2', 'reused,')],
   [checkpointId('review-pause-requested'), includesAll('Review · Reviewer check V2')],

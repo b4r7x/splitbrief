@@ -33,6 +33,7 @@ import {
   planFullTurn,
   type PlanRound,
 } from '../../engine/spec/prompts/plan-session.js';
+import { runCommandSeatCall } from '../../engine/orchestrator/escalation/seat-wait.js';
 import {
   runPlanSession,
   type PlanSessionOutcome,
@@ -209,19 +210,27 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
             ask: async (turn) => {
               if (turn.kind === 'answers')
                 rounds.push({ reply: asked, answer: turn.reply.message.text });
-              return requestTyped({
-                prompt: await turnText((prompt) =>
-                  planFullTurn(prompt, rounds, turn.kind === 'repair' ? turn : undefined),
-                ),
-                schema: PlanAnswerSchema,
-                jsonSchema: PLAN_ANSWER_JSON_SCHEMA,
-                schemaName: 'plan_result',
-                call: planner.typedCall({
-                  projectDir,
-                  seat: 'planner',
-                  callbacks: { onOutput: () => {} },
-                }),
-              });
+              const prompt = await turnText((prompt) =>
+                planFullTurn(prompt, rounds, turn.kind === 'repair' ? turn : undefined),
+              );
+              return runCommandSeatCall(
+                {
+                  tool: getRunnerCatalogDisplayName(config.planner),
+                  write: (line) => console.log(line),
+                },
+                (signal) =>
+                  requestTyped({
+                    prompt,
+                    schema: PlanAnswerSchema,
+                    jsonSchema: PLAN_ANSWER_JSON_SCHEMA,
+                    schemaName: 'plan_result',
+                    call: planner.typedCall({
+                      projectDir,
+                      seat: 'planner',
+                      callbacks: { onOutput: () => {}, signal },
+                    }),
+                  }),
+              );
             },
             // Without a terminal nobody can answer, so every question takes its default.
             answer: async (questions) => {
