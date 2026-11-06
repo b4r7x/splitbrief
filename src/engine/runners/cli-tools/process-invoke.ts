@@ -83,6 +83,12 @@ function droppableBytes(event: CliProtocolEvent): number | null {
 type CliAdapter = CliProcessAdapter;
 
 /**
+ * The time a structured tool gets to exit by itself after its terminal result, so its exit code
+ * and stderr still decide the call. SPLITBRIEF then stops the tool, and the call keeps the result.
+ */
+const TERMINAL_EXIT_GRACE_MS = 2_000;
+
+/**
  * Inspects one tool call as the stream reports it: once when its start and its
  * end carry the same input, and again when the end brings an input the start
  * lacked — Claude Code opens a call with none. A returned error stops the call
@@ -311,17 +317,25 @@ export async function invokeProcessCli(
   let stderr = '';
   let storedHalt: { code: string; message: string } | undefined;
   let terminalSeen = false;
+  // Once a structured call holds its terminal result, that result decides the call: a configured
+  // timeout or an idle cut that fires after it stops the tool and keeps the result.
+  const holdsTerminal = () => terminalSeen && adapter.outputContract.kind === 'structured-terminal';
+  const settle = new AbortController();
+  const settled = new DOMException('CLI call settled on its result', 'AbortError');
+  let graceTimer: NodeJS.Timeout | undefined;
   const timeoutController = new AbortController();
   // A seat call has no default total: only a configured `timeout` arms one.
   const timeoutMs = context.invocation.timeoutMs;
   const timeout =
     timeoutMs === undefined
       ? undefined
-      : setTimeout(
-          () =>
-            timeoutController.abort(new DOMException('CLI invocation timed out', 'TimeoutError')),
-          timeoutMs,
-        );
+      : setTimeout(() => {
+          if (holdsTerminal()) {
+            settle.abort(settled);
+            return;
+          }
+          timeoutController.abort(new DOMException('CLI invocation timed out', 'TimeoutError'));
+        }, timeoutMs);
   timeout?.unref?.();
   const guardController = new AbortController();
   let guardFailure: ReturnType<ToolUseGuard> = null;
@@ -427,10 +441,6 @@ export async function invokeProcessCli(
     };
 
     const parse = steeringSession?.parse ?? adapter.createParser?.() ?? adapter.parse;
-    // A steered tool keeps running after its result: a background task can open a new turn on
-    // its own. The call settles on that result, and SPLITBRIEF stops the tool unread.
-    const settle = new AbortController();
-    const settled = new DOMException('CLI call settled on its result', 'AbortError');
     const lineBuffer = createLineBuffer((line) => {
       if (settle.signal.aborted) return;
       let parsed: readonly CliProtocolEvent[];
@@ -443,7 +453,12 @@ export async function invokeProcessCli(
       stdoutLastLine = parsed.length === 0 ? '' : line;
       const turnBoundary = steeringSession?.onLine(line, parsed) ?? false;
       for (const event of parsed) applyProtocolEvent(event, turnBoundary);
+      // A steered tool keeps running after its result: a background task can open a new turn on
+      // its own. The call settles on that result at once, and SPLITBRIEF stops the tool unread.
       if (steeringSession !== undefined && terminalSeen) settle.abort(settled);
+      else if (holdsTerminal()) {
+        graceTimer ??= setTimeout(() => settle.abort(settled), TERMINAL_EXIT_GRACE_MS);
+      }
     });
 
     const executableState = await revalidateCliExecutableIdentity(invocation.executable);
@@ -534,9 +549,12 @@ export async function invokeProcessCli(
         return { exitCode, signal: processSignal, stderr };
       },
     }).catch((cause: unknown) => {
-      if (cause !== settled) throw cause;
-      // The stop after the result is SPLITBRIEF's, so it is not a failed exit of the tool.
-      return { exitCode: 0, signal: null, stderr };
+      // The stop after the result is SPLITBRIEF's, so it is not a failed exit of the tool. An idle
+      // cut inside the grace stopped the tool group the same way.
+      if (cause === settled || (holdsTerminal() && processError.isIdleTimeout(cause))) {
+        return { exitCode: 0, signal: null, stderr };
+      }
+      throw cause;
     });
     // The process can finish on its own before the guard's abort reaches it.
     if (guardFailure !== null) {
@@ -812,6 +830,7 @@ export async function invokeProcessCli(
     signal.removeEventListener('abort', onAbort);
     removeTransportListener?.();
     clearTimeout(timeout);
+    clearTimeout(graceTimer);
     onAbort();
   }
 }

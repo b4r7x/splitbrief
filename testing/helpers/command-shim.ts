@@ -135,7 +135,6 @@ export interface ContractShimOptions {
   exitCode?: number;
   versionExitCode?: number;
   authExitCode?: number;
-  sleepMs?: number;
   outsidePath?: string;
   providerStateRelPath?: string;
   versionLine?: string;

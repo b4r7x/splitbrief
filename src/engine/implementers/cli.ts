@@ -7,7 +7,6 @@ import {
   summarizeChanges,
 } from '../change-detection.js';
 import { createImplementerBase } from './pipeline/run.js';
-import { processError } from '../../lib/process/errors.js';
 import { invokeCliAdapter, toCliEnvironment } from '../runners/invoke-cli-adapter.js';
 import { createCommandExistsAvailability } from '../availability.js';
 import { resolveCliModel } from '../../core/providers/automatic-model.js';
@@ -99,7 +98,6 @@ export function createCliImplementer(
   const cliSeat = options?.cliSeat;
   const registryAdapter = lookupCliImplementerAdapter(toolName);
   const descriptor = registryAdapter.descriptor;
-  const deadlineMs = config.timeout;
   const runnerLabel = descriptor.displayName;
 
   return createImplementerBase({
@@ -110,14 +108,6 @@ export function createCliImplementer(
     async invoke(opts: InvokeOpts) {
       const { prompt, projectDir, onOutput, signal, callContext } = opts;
       const effectiveModel = resolveCliModel(config.model, toolName);
-      const timeoutSignal: AbortSignal | undefined =
-        deadlineMs === undefined ? undefined : AbortSignal.timeout(deadlineMs);
-      const composedSignal =
-        timeoutSignal === undefined
-          ? signal
-          : signal
-            ? AbortSignal.any([signal, timeoutSignal])
-            : timeoutSignal;
       const env =
         opts.sandboxEnv ?? (await createRunnerSandboxEnv(projectDir, config, 'implementer'));
       const adapter = resolveImplementerAdapter(toolName, config.outputFormat);
@@ -136,93 +126,73 @@ export function createCliImplementer(
               ...(opts.skillRoots !== undefined && { skillRoots: opts.skillRoots }),
             });
 
-      try {
-        const configuredArgs = config.args ?? [];
-        const result = await callAdmittedCli(
-          requireCliSeat(toolName, cliSeat),
-          composedSignal,
-          (executable, gate) => {
-            const baseArgs = adapter.baseArgs({
-              model: effectiveModel,
-              projectDir,
-              configuredArgs,
-              effort: config.effort,
-              variant: config.variant,
-              installedVersion: gate.installedVersion,
-              skillRoots: opts.skillRoots,
-              imagePaths: opts.images?.map((image) => image.path),
-            });
-            return invokeCliAdapter({
-              adapter,
-              invocation: {
-                executable,
-                args: [...baseArgs, ...configuredArgs],
-                baseArgs,
-                promptTransport: adapter.promptTransport,
-                environment: toCliEnvironment(env),
-                cwd: projectDir,
-                images: opts.images,
-                timeoutMs: deadlineMs,
-                signal: composedSignal,
-              },
-              prompt,
-              steering: opts.steering,
-              installedVersion: gate.installedVersion,
-              callContext: withCliInvocationIdentity({ runner: config, callContext, executable }),
-              onOutput,
-              onCallEvent: opts.onCallEvent,
-              idle: {
-                warnMs: config.idleWarnMs,
-                killMs: config.idleKillMs,
-              },
-              maxToolCalls: config.maxToolCalls,
-              toolUseGuard:
-                boundary === undefined
-                  ? undefined
-                  : isolationToolUseGuard(boundary, {
-                      onOutsideRead: (breach) => {
-                        if (opts.phase === undefined) return;
-                        options?.publisher?.publishWarning({
-                          phase: opts.phase,
-                          taskId: opts.task.id,
-                          message: `Task ${opts.task.id} ${formatIsolationBreach(breach)}`,
-                          safety: { category: 'implementer', code: 'isolation_outside_read' },
-                        });
-                      },
-                    }),
-            });
-          },
-        );
-        if (timeoutSignal?.aborted === true && !signal?.aborted && deadlineMs !== undefined) {
-          throw processError.timeout({
-            command: runnerLabel,
-            label: runnerLabel,
-            timeoutMs: deadlineMs,
-            output: result.text,
+      const configuredArgs = config.args ?? [];
+      const result = await callAdmittedCli(
+        requireCliSeat(toolName, cliSeat),
+        signal,
+        (executable, gate) => {
+          const baseArgs = adapter.baseArgs({
+            model: effectiveModel,
+            projectDir,
+            configuredArgs,
+            effort: config.effort,
+            variant: config.variant,
+            installedVersion: gate.installedVersion,
+            skillRoots: opts.skillRoots,
+            imagePaths: opts.images?.map((image) => image.path),
           });
-        }
-        if (result.status === 'completed') {
-          return assertDeclaredEffect({
-            result,
-            changed: (await summarizeChanges(projectDir, effectBaseline)).files,
-            task: opts.task,
-            label: runnerLabel,
-            undeclaredWrites: opts.undeclaredWrites ?? 'gate',
-            allowNoChange: opts.allowNoChange === true,
+          return invokeCliAdapter({
+            adapter,
+            invocation: {
+              executable,
+              args: [...baseArgs, ...configuredArgs],
+              baseArgs,
+              promptTransport: adapter.promptTransport,
+              environment: toCliEnvironment(env),
+              cwd: projectDir,
+              images: opts.images,
+              timeoutMs: config.timeout,
+              signal,
+            },
+            prompt,
+            steering: opts.steering,
+            installedVersion: gate.installedVersion,
+            callContext: withCliInvocationIdentity({ runner: config, callContext, executable }),
+            onOutput,
+            onCallEvent: opts.onCallEvent,
+            idle: {
+              warnMs: config.idleWarnMs,
+              killMs: config.idleKillMs,
+            },
+            maxToolCalls: config.maxToolCalls,
+            toolUseGuard:
+              boundary === undefined
+                ? undefined
+                : isolationToolUseGuard(boundary, {
+                    onOutsideRead: (breach) => {
+                      if (opts.phase === undefined) return;
+                      options?.publisher?.publishWarning({
+                        phase: opts.phase,
+                        taskId: opts.task.id,
+                        message: `Task ${opts.task.id} ${formatIsolationBreach(breach)}`,
+                        safety: { category: 'implementer', code: 'isolation_outside_read' },
+                      });
+                    },
+                  }),
           });
-        }
-        return result;
-      } catch (err: unknown) {
-        if (timeoutSignal?.aborted === true && !signal?.aborted && deadlineMs !== undefined) {
-          throw processError.timeout({
-            command: runnerLabel,
-            label: runnerLabel,
-            timeoutMs: deadlineMs,
-            output: '',
-          });
-        }
-        throw err;
+        },
+      );
+      if (result.status === 'completed') {
+        return assertDeclaredEffect({
+          result,
+          changed: (await summarizeChanges(projectDir, effectBaseline)).files,
+          task: opts.task,
+          label: runnerLabel,
+          undeclaredWrites: opts.undeclaredWrites ?? 'gate',
+          allowNoChange: opts.allowNoChange === true,
+        });
       }
+      return result;
     },
 
     detectChanges: createChangeDetector(runnerLabel),

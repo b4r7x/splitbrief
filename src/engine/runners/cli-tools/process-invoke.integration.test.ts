@@ -33,6 +33,8 @@ import {
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
+import { killOrphanRunner } from '#testing/helpers/orphan-runner.js';
+import { canSignalProcess } from '../../../lib/process/liveness.js';
 import { versionedCli } from '#testing/helpers/versioned-cli.js';
 import {
   RUNNER_CALL_RETAINED_OUTPUT_MAX_BYTES,
@@ -43,7 +45,7 @@ import {
   CURSOR_MODEL_REFUSAL,
   CURSOR_MODEL_REFUSAL_FORMS,
 } from '#testing/helpers/cursor-refusal.js';
-import type { RunnerCallContext, RunnerCallEvent } from '../../calls/types.js';
+import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../../calls/types.js';
 import type {
   CliImplementerAdapter,
   CliInvocation,
@@ -53,7 +55,7 @@ import type {
 import { invokeProcessCli } from './process-invoke.js';
 import { runnerCallOutcome, runnerOwnWords } from '../../implementers/pipeline/call-result.js';
 import { requireCompletedCall } from '../../planners/require-completed-call.js';
-import { antigravityImplementerAdapter } from './antigravity.js';
+import { antigravityImplementerAdapter, antigravityPlannerAdapter } from './antigravity.js';
 import { copilotImplementerAdapter } from './copilot.js';
 import { cursorImplementerAdapter } from './cursor.js';
 import { claudeCodeImplementerAdapter, claudeCodePlannerAdapter } from './claude-code.js';
@@ -331,7 +333,7 @@ describe('process steering lifecycle boundary', () => {
     },
   );
 
-  itUnix('keeps the call timeout active during cleanup', async () => {
+  itUnix('keeps the answer when the timeout fires during cleanup after the result', async () => {
     const selected = adapter({ kind: 'stdin' });
     let cleanupStarted = false;
     const result = await invokeProcessCli(
@@ -353,7 +355,8 @@ describe('process steering lifecycle boundary', () => {
       },
       {
         invocation: invocation({
-          script: "process.stdin.resume(); process.stdin.on('end',()=>console.log('RESULT'))",
+          script:
+            "process.stdin.resume(); process.stdin.on('end',()=>console.log('RESULT:'+Buffer.from('final answer').toString('base64')))",
           timeoutMs: 1_000,
         }),
         prompt: 'initial',
@@ -362,7 +365,7 @@ describe('process steering lifecycle boundary', () => {
       },
     );
     expect(cleanupStarted).toBe(true);
-    expect(result).toMatchObject({ status: 'timeout', error: { code: 'timeout' } });
+    expect(result).toMatchObject({ status: 'completed', text: 'final answer', error: null });
   });
 });
 
@@ -1786,6 +1789,298 @@ describe('invokeProcessCli antigravity stream-json liveness', () => {
       });
     },
   );
+});
+
+describe('invokeProcessCli structured call after its terminal result', () => {
+  // agy 1.5.1 can print its completed result and then never exit, and it ignores SIGTERM.
+  // The deadline only bounds a call that never returns: a call that settles returns far inside it.
+  const DEADLINE_MS = 15_000;
+  const STILL_RUNNING = Symbol('still running');
+  const SESSION_ID = 'agy-conversation-1';
+  // Halt words in the answer show a diagnosis that reads the tool's own stdout.
+  const HALT_WORDS_ANSWER =
+    'The probe printed 401 Unauthorized: invalid api key while the network was down, so the plan retries the key check.';
+  const NEUTRAL_ANSWER = 'The plan is ready.';
+  const LINGER = 'sleep 600';
+
+  function resultLine(fields: Readonly<Record<string, unknown>>): string {
+    const result = {
+      conversation_id: SESSION_ID,
+      usage: { input_tokens: 12, output_tokens: 5 },
+      ...fields,
+    };
+    return `${JSON.stringify({ event: 'result', result })}\n`;
+  }
+
+  function answerLine(response: string): string {
+    return resultLine({ status: 'SUCCESS', response, structured_output: { verdict: 'approved' } });
+  }
+
+  function invokeAgy(
+    dir: string,
+    body: string,
+    opts: {
+      files?: Readonly<Record<string, string>>;
+      timeoutMs?: number;
+      idle?: Readonly<{ warnMs: number; killMs: number }>;
+    } = {},
+  ) {
+    for (const [name, content] of Object.entries(opts.files ?? {})) {
+      writeFileSync(join(dir, name), content);
+    }
+    const shimPath = join(dir, 'agy');
+    // The fake reads its whole prompt first, as agy does, so no exit races the prompt write.
+    writeFileSync(shimPath, `#!/bin/bash\ncat > /dev/null\n${body}\n`, { mode: 0o755 });
+    chmodSync(shimPath, 0o755);
+    const events: RunnerCallEvent[] = [];
+    let pid: number | undefined;
+    onTestFinished(() => {
+      if (pid !== undefined) killOrphanRunner(pid);
+    });
+    const call = invokeProcessCli(antigravityPlannerAdapter, {
+      invocation: {
+        executable: executableIdentity(shimPath),
+        args: [],
+        promptTransport: antigravityPlannerAdapter.promptTransport,
+        environment: { PATH: process.env.PATH ?? '' },
+        cwd: dir,
+        timeoutMs: opts.timeoutMs,
+        signal: undefined,
+      },
+      prompt: 'fixture prompt',
+      callContext: { ...callContext, role: 'planner' },
+      idle: opts.idle,
+      onEvent: (event) => events.push(event),
+      onSpawned: (child) => {
+        pid = child.pid;
+      },
+    });
+    const groupAlive = () => {
+      if (pid === undefined) throw new Error('the fake agy never started');
+      // A negative pid names the process group.
+      return canSignalProcess(-pid);
+    };
+    return { call, events, groupAlive };
+  }
+
+  async function settleWithin<T>(call: Promise<T>): Promise<T> {
+    const deadline = new AbortController();
+    const outcome = await Promise.race([
+      call,
+      delay(DEADLINE_MS, STILL_RUNNING, { signal: deadline.signal }),
+    ]).finally(() => deadline.abort());
+    if (outcome === STILL_RUNNING) {
+      throw new Error(`the call was still running after ${DEADLINE_MS} ms`);
+    }
+    return outcome;
+  }
+
+  function expectAnswer(
+    result: RunnerCallResult,
+    events: readonly RunnerCallEvent[],
+    response: string,
+  ) {
+    expect(result).toMatchObject({
+      status: 'completed',
+      error: null,
+      text: response,
+      nativeSessionId: SESSION_ID,
+      usage: { inputTokens: 12, outputTokens: 5 },
+      structured: { verdict: 'approved' },
+    });
+    expect(result.warnings.filter((warning) => warning.surface !== 'debug')).toEqual([]);
+    const types = events.map((event) => event.type);
+    expect(types).toContain('call_completed');
+    expect(types).not.toContain('call_error');
+  }
+
+  itUnix('completes a held answer whose tool never exits, and stops the tool group', async () => {
+    await withTempDir('splitbrief-agy-linger', async (dir) => {
+      const fake = invokeAgy(dir, `cat result.ndjson\n${LINGER}`, {
+        files: { 'result.ndjson': answerLine(HALT_WORDS_ANSWER) },
+      });
+      const result = await settleWithin(fake.call);
+
+      expectAnswer(result, fake.events, HALT_WORDS_ANSWER);
+      expect(runnerCallOutcome(result).state).toBe('success');
+      expect(fake.groupAlive()).toBe(false);
+    });
+  });
+
+  itUnix(
+    'completes a held answer whose tool ignores SIGTERM, and kills the tool group',
+    async () => {
+      await withTempDir('splitbrief-agy-linger-term', async (dir) => {
+        const fake = invokeAgy(dir, `trap '' TERM\ncat result.ndjson\n${LINGER}`, {
+          files: { 'result.ndjson': answerLine(HALT_WORDS_ANSWER) },
+        });
+        const result = await settleWithin(fake.call);
+
+        expectAnswer(result, fake.events, HALT_WORDS_ANSWER);
+        expect(fake.groupAlive()).toBe(false);
+      });
+    },
+  );
+
+  itUnix('fails closed when the tool exits 1 right after its completed answer', async () => {
+    await withTempDir('splitbrief-agy-exit-1', async (dir) => {
+      const fake = invokeAgy(dir, 'cat result.ndjson\nexit 1', {
+        files: { 'result.ndjson': answerLine(NEUTRAL_ANSWER) },
+      });
+      const result = await settleWithin(fake.call);
+
+      expect(result).toMatchObject({
+        status: 'failed',
+        error: { code: 'non-zero-exit', message: 'CLI exited with code 1' },
+      });
+    });
+  });
+
+  itUnix('fails when the tool dies by a signal right after its completed answer', async () => {
+    await withTempDir('splitbrief-agy-crash', async (dir) => {
+      const fake = invokeAgy(dir, 'cat result.ndjson\nkill -9 $$', {
+        files: { 'result.ndjson': answerLine(NEUTRAL_ANSWER) },
+      });
+      const result = await settleWithin(fake.call);
+
+      expect(result).toMatchObject({
+        status: 'failed',
+        error: { code: 'signal-exit', message: 'CLI exited from signal SIGKILL' },
+      });
+    });
+  });
+
+  itUnix('waits for the rest of a terminal line the tool printed in two parts', async () => {
+    await withTempDir('splitbrief-agy-split', async (dir) => {
+      const line = answerLine(NEUTRAL_ANSWER);
+      const cut = line.indexOf('ready.');
+      const step = {
+        event: 'step_update',
+        step_update: {
+          conversation_id: SESSION_ID,
+          step_index: 0,
+          state: 'ACTIVE',
+          step_type: 'agent_response',
+          text_delta: 'The plan',
+        },
+      };
+      const ready = join(dir, 'ready');
+      const go = join(dir, 'go');
+      const fake = invokeAgy(
+        dir,
+        [
+          'cat head.part',
+          `: > ${JSON.stringify(ready)}`,
+          `until [ -e ${JSON.stringify(go)} ]; do sleep 0.05; done`,
+          'cat tail.part',
+        ].join('\n'),
+        {
+          files: {
+            'head.part': `${JSON.stringify(step)}\n${line.slice(0, cut)}`,
+            'tail.part': line.slice(cut),
+          },
+        },
+      );
+      let ended = false;
+      void fake.call.finally(() => {
+        ended = true;
+      });
+      await vi.waitFor(() => {
+        const streamed = fake.events.some((event) => event.type === 'call_text_delta');
+        expect(ended || (streamed && existsSync(ready))).toBe(true);
+      });
+      writeFileSync(go, '');
+      const result = await settleWithin(fake.call);
+
+      expectAnswer(result, fake.events, NEUTRAL_ANSWER);
+    });
+  });
+
+  itUnix('completes when the tool exits 0 right after its answer', async () => {
+    await withTempDir('splitbrief-agy-exit-0', async (dir) => {
+      const fake = invokeAgy(dir, 'cat result.ndjson', {
+        files: { 'result.ndjson': answerLine(NEUTRAL_ANSWER) },
+      });
+      const result = await settleWithin(fake.call);
+
+      expectAnswer(result, fake.events, NEUTRAL_ANSWER);
+    });
+  });
+
+  // The fake ignores SIGTERM, so no stop ends the call inside two seconds of the answer: the
+  // 1.9 s timeout fires after the answer is held and before the call returns.
+  itUnix('keeps a held answer when the configured timeout fires after it', async () => {
+    await withTempDir('splitbrief-agy-late-timeout', async (dir) => {
+      const fake = invokeAgy(dir, `trap '' TERM\ncat result.ndjson\n${LINGER}`, {
+        files: { 'result.ndjson': answerLine(NEUTRAL_ANSWER) },
+        timeoutMs: 1_900,
+      });
+      const result = await settleWithin(fake.call);
+
+      expectAnswer(result, fake.events, NEUTRAL_ANSWER);
+      expect(fake.groupAlive()).toBe(false);
+    });
+  });
+
+  // SPLITBRIEF sends SIGTERM 2 s after the answer and SIGKILL 2 s after that. The fake ignores
+  // SIGTERM, so the 3 s timeout fires while SPLITBRIEF waits for its stop to work.
+  itUnix(
+    'keeps a held answer when the configured timeout fires while the tool ignores its stop',
+    async () => {
+      await withTempDir('splitbrief-agy-stop-timeout', async (dir) => {
+        const fake = invokeAgy(dir, `trap '' TERM\ncat result.ndjson\n${LINGER}`, {
+          files: { 'result.ndjson': answerLine(NEUTRAL_ANSWER) },
+          timeoutMs: 3_000,
+        });
+        const result = await settleWithin(fake.call);
+
+        expectAnswer(result, fake.events, NEUTRAL_ANSWER);
+        expect(runnerCallOutcome(result).state).toBe('success');
+        expect(fake.groupAlive()).toBe(false);
+      });
+    },
+  );
+
+  // The idle clock restarts on the answer, so the cut fires 1.5 s after it.
+  itUnix('keeps a held answer when the idle cut fires after it', async () => {
+    await withTempDir('splitbrief-agy-late-idle', async (dir) => {
+      const fake = invokeAgy(dir, `cat result.ndjson\n${LINGER}`, {
+        files: { 'result.ndjson': answerLine(NEUTRAL_ANSWER) },
+        idle: { warnMs: 1_000, killMs: 1_500 },
+      });
+      const result = await settleWithin(fake.call);
+
+      expectAnswer(result, fake.events, NEUTRAL_ANSWER);
+      expect(fake.groupAlive()).toBe(false);
+    });
+  });
+
+  itUnix('keeps the diagnosis of a failed result whose tool never exits', async () => {
+    await withTempDir('splitbrief-agy-linger-failed', async (dir) => {
+      const fake = invokeAgy(dir, `cat result.ndjson\n${LINGER}`, {
+        files: {
+          'result.ndjson': resultLine({
+            status: 'ERROR',
+            error: { message: 'The model ended the turn early.' },
+            response: HALT_WORDS_ANSWER,
+          }),
+        },
+      });
+      const result = await settleWithin(fake.call);
+
+      expect(result).toMatchObject({
+        status: 'failed',
+        error: {
+          code: 'antigravity-result-failed',
+          message: 'The model ended the turn early.',
+        },
+        nativeSessionId: SESSION_ID,
+        partial: true,
+      });
+      expect(fake.events.map((event) => event.type)).not.toContain('call_completed');
+      expect(fake.groupAlive()).toBe(false);
+    });
+  });
 });
 
 describe('invokeProcessCli tool-use guard', () => {

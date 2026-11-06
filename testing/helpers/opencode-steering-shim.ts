@@ -30,6 +30,7 @@ const http = require('node:http');
 const mode = ${JSON.stringify(mode)};
 const password = ${JSON.stringify(password)};
 const requestsFile = ${JSON.stringify(requestsFile)};
+const serverFile = ${JSON.stringify(serverFile)};
 const args = process.argv.slice(2);
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const environment = {
@@ -39,7 +40,9 @@ const environment = {
   unrelatedSecret: process.env.UNRELATED_HOST_SECRET,
 };
 if (args[0] === 'serve') {
-  fs.writeFileSync(${JSON.stringify(serverFile)}, JSON.stringify({pid:process.pid, home:process.env.HOME, cwd:process.cwd(), args, ...environment}));
+  // A test stops this sidecar as soon as the file exists, so the file appears whole by a rename.
+  fs.writeFileSync(serverFile + '.tmp', JSON.stringify({pid:process.pid, home:process.env.HOME, cwd:process.cwd(), args, ...environment}));
+  fs.renameSync(serverFile + '.tmp', serverFile);
   if (mode === 'serve-exit') process.exit(7);
   let inbox = [];
   const messages = [];

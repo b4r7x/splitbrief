@@ -329,7 +329,6 @@ function installShim(
     versionLine?: string;
     versionExitCode?: number;
     authExitCode?: number;
-    sleepMs?: number;
   } = {},
 ): void {
   const profile = SHIM_PROFILES[fixture.toolId];
@@ -346,7 +345,6 @@ function installShim(
     ...(opts.versionLine !== undefined ? { versionLine: opts.versionLine } : {}),
     ...(opts.versionExitCode !== undefined ? { versionExitCode: opts.versionExitCode } : {}),
     ...(opts.authExitCode !== undefined ? { authExitCode: opts.authExitCode } : {}),
-    ...(opts.sleepMs !== undefined ? { sleepMs: opts.sleepMs } : {}),
   });
   refreshTrustedGate(fixture);
 }
@@ -712,8 +710,9 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
   }, 60_000);
 
   it('times out a run that outlives its configured budget', async () => {
+    vi.useRealTimers();
     const fixture = createFixture(toolId);
-    installShim(fixture, 'timeout', { sleepMs: 5_000 });
+    installShim(fixture, 'timeout');
     const timeoutImplementer = createCliImplementer(implementerConfig(toolId, { timeout: 50 }), {
       cliSeat: admittedCliSeat(fixture.trustedGate),
     });

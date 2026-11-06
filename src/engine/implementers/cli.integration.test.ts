@@ -28,6 +28,7 @@ import {
 import type { RunnerCallEvent } from '../calls/types.js';
 import type { ImplementerPublisher } from './types.js';
 import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
+import { killOrphanRunner } from '#testing/helpers/orphan-runner.js';
 
 let projectDir: string;
 let shimDir: string;
@@ -643,55 +644,6 @@ describe('createCliImplementer (claude-code)', () => {
     });
 
     expect(result.success).toBe(true);
-  });
-
-  it('applies no deadline when timeout is unset', async () => {
-    installRecordingClaudeShim('src/hello.ts');
-    const config = makeClaudeConfig();
-    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
-
-    try {
-      const implementer = createCliImplementer(cliClaudeImplementer);
-      const result = await implementer.implement({
-        task: makeTask(),
-        projectDir,
-        config,
-        context: { ...defaultContext, dir: projectDir },
-        onOutput: () => {},
-      });
-
-      expect(result.success).toBe(true);
-      expect(cliClaudeImplementer.timeout).toBeUndefined();
-      expect(timeoutSpy).not.toHaveBeenCalled();
-    } finally {
-      timeoutSpy.mockRestore();
-    }
-  });
-
-  it('applies a configured deadline when timeout is set', async () => {
-    installRecordingClaudeShim('src/hello.ts');
-    const customClaudeImplementer: CliImplementerConfig = {
-      ...cliClaudeImplementer,
-      timeout: 5_000,
-    };
-    const config = makeConfig({ implementer: customClaudeImplementer });
-    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
-
-    try {
-      const implementer = createCliImplementer(customClaudeImplementer);
-      const result = await implementer.implement({
-        task: makeTask(),
-        projectDir,
-        config,
-        context: { ...defaultContext, dir: projectDir },
-        onOutput: () => {},
-      });
-
-      expect(result.success).toBe(true);
-      expect(timeoutSpy).toHaveBeenCalledWith(5_000);
-    } finally {
-      timeoutSpy.mockRestore();
-    }
   });
 
   it('reports result usage from the structured terminal as implementer usage', async () => {
@@ -1504,6 +1456,128 @@ describe('createCliImplementer (timeout surfacing)', () => {
 
     expect(result).toMatchObject({ success: false, outcome: 'timeout' });
     expect(result.error).toBe('OpenCode CLI timed out after 0s');
+  });
+});
+
+describe('createCliImplementer (a held answer and the configured timeout)', () => {
+  // Each fake prints its answer at about 0.2 s, the 2 s grace ends at about 2.2 s, and the SIGKILL
+  // comes 2 s after the SIGTERM. Each timeout is about 1 s from the event before and after it.
+  const answer = 'The brief is built.';
+  const antigravityImplementer: CliImplementerConfig = {
+    kind: 'cli',
+    tool: 'antigravity',
+    contextLength: 8192,
+    temperature: 0.3,
+  };
+  const antigravityResult = JSON.stringify({
+    event: 'result',
+    result: {
+      conversation_id: 'agy-conversation-1',
+      usage: { input_tokens: 12, output_tokens: 5 },
+      status: 'SUCCESS',
+      response: answer,
+    },
+  });
+  const claudeResult = JSON.stringify({
+    type: 'result',
+    result: answer,
+    usage: { input_tokens: 12, output_tokens: 5 },
+  });
+
+  // The pid file appears whole: a teardown that read it half written would signal group 0.
+  function installAnsweringShim(executable: 'agy' | 'claude', lines: readonly string[]): void {
+    const target = join(projectDir, 'src/hello.ts');
+    const pidFile = join(shimDir, 'pid');
+    const shimPath = join(shimDir, executable);
+    const script = [
+      '#!/bin/bash',
+      `echo $$ > '${pidFile}.part' && mv '${pidFile}.part' '${pidFile}'`,
+      'cat > /dev/null',
+      `mkdir -p "$(dirname '${target}')"`,
+      `printf '%s' 'generated' > '${target}'`,
+      ...lines,
+    ].join('\n');
+    writeFileSync(shimPath, `${script}\n`, 'utf8');
+    chmodSync(shimPath, 0o755);
+  }
+
+  function shimPid(): number {
+    return Number(readFileSync(join(shimDir, 'pid'), 'utf8'));
+  }
+
+  function startBuild(config: CliImplementerConfig, signal?: AbortSignal) {
+    const eventTypes: RunnerCallEvent['type'][] = [];
+    const publisher: ImplementerPublisher = {
+      publishRunning: () => {},
+      publishCallEvent: ({ event }) => eventTypes.push(event.type),
+      publishDone: () => {},
+      publishFailed: () => {},
+      publishWarning: () => {},
+    };
+    const result = createCliImplementer(config, { publisher }).implement({
+      task: makeTask(),
+      projectDir,
+      config: makeConfig({ implementer: config }),
+      context: { ...defaultContext, dir: projectDir },
+      onOutput: () => {},
+      phase: 'implementing',
+      signal,
+    });
+    return { eventTypes, result };
+  }
+
+  const callEnd = (type: RunnerCallEvent['type']) =>
+    type === 'call_completed' || type === 'call_error';
+
+  afterEach(() => {
+    if (existsSync(join(shimDir, 'pid'))) killOrphanRunner(shimPid());
+  });
+
+  it.each([
+    { window: 'in the two seconds after it', timeout: 1_200 },
+    { window: 'while SPLITBRIEF stops the tool', timeout: 3_200 },
+  ])('keeps the answer when the timeout fires $window', async ({ timeout }) => {
+    installAnsweringShim('agy', [
+      "trap '' TERM",
+      `printf '%s\\n' '${antigravityResult}'`,
+      'sleep 600',
+    ]);
+    const build = startBuild({ ...antigravityImplementer, timeout });
+
+    const result = await build.result;
+
+    expect(result.outcome).toBeUndefined();
+    expect(result).toMatchObject({ success: true, output: answer });
+    expect(build.eventTypes.filter(callEnd)).toEqual(['call_completed']);
+    expect(processIsAbsent(-shimPid())).toBe(true);
+  });
+
+  it('keeps the answer of a tool that stays after it, when the timeout comes before the tool exits', async () => {
+    installAnsweringShim('claude', [`printf '%s\\n' '${claudeResult}'`, 'sleep 2', 'exit 0']);
+    const build = startBuild({ ...cliClaudeImplementer, timeout: 1_200 });
+
+    const result = await build.result;
+
+    expect(result.outcome).toBeUndefined();
+    expect(result).toMatchObject({ success: true, output: answer });
+    expect(build.eventTypes.filter(callEnd)).toEqual(['call_completed']);
+    expect(processIsAbsent(-shimPid())).toBe(true);
+  });
+
+  it('a Stop after the answer stays stopped by you when a timeout is set', async () => {
+    installAnsweringShim('claude', [`printf '%s\\n' '${claudeResult}'`, 'sleep 600']);
+    const controller = new AbortController();
+    const build = startBuild({ ...cliClaudeImplementer, timeout: 10_000 }, controller.signal);
+
+    await vi.waitFor(() => expect(build.eventTypes).toContain('call_usage'));
+    controller.abort();
+
+    expect(await build.result).toMatchObject({
+      success: false,
+      outcome: 'user-abort',
+      error: 'Aborted',
+    });
+    expect(processIsAbsent(-shimPid())).toBe(true);
   });
 });
 
