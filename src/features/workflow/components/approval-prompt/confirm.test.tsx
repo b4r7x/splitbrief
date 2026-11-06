@@ -616,6 +616,9 @@ describe('runner trust panel', () => {
 });
 
 describe('a confirm prompt in a short terminal', () => {
+  const longPath =
+    'write src/features/workflow/components/approval-prompt/confirm-panel-long-name.tsx';
+
   it.each([1, 2, 3, 4, 5])('names the action in %i rows', async (height) => {
     terminalSizeStore.__testReset({ cols: 80, rows: 12, isSmall: true });
     void openApprovalPrompt(makeConfirmRequest('write package.json', 'package_change'));
@@ -624,6 +627,43 @@ describe('a confirm prompt in a short terminal', () => {
     const frame = stripColor(ui.lastFrame());
     expect(frame).toContain('write package.json');
     expect(frame).toContain('Confirm');
+    ui.unmount();
+  });
+
+  it.each([2, 4, 6])('names the path in a panel of %i rows at 60 columns', async (height) => {
+    terminalSizeStore.__testReset({ cols: 60, rows: 12, isSmall: true });
+    void openApprovalPrompt(makeConfirmRequest(longPath, 'write_out_of_scope'));
+    const ui = render(<ApprovalPrompt clampedBoxRows={height} />);
+    await flushEffects();
+
+    const frame = stripColor(ui.lastFrame());
+    expect(frame).toContain('write src/features/workflow/components/approval-promp…');
+    const rows = frame
+      .replace(/\n$/, '')
+      .split('\n')
+      .map((row) => row.trim());
+    expect(rows).not.toContain('write');
+
+    ui.unmount();
+  });
+
+  it('keeps the path beside the reason input in a panel of one row', async () => {
+    terminalSizeStore.__testReset({ cols: 60, rows: 12, isSmall: true });
+    const pending = openApprovalPrompt(makeConfirmRequest(longPath, 'write_out_of_scope'));
+    const ui = renderFeature(<ApprovalPrompt clampedBoxRows={1} />, { cols: 60, rows: 12 });
+    await tick(PAST_GRACE);
+
+    ui.stdin.write('r');
+    await tick(20);
+    ui.stdin.write('r');
+    await tick(20);
+
+    const rows = stripColor(ui.lastFrame()).replace(/\n$/, '').split('\n');
+    const reasonRow = rows.find((row) => row.includes(glyph('prompt')));
+    expect(reasonRow).toContain('· write src/features');
+
+    ui.stdin.write(ESC);
+    await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_denied' });
     ui.unmount();
   });
 });

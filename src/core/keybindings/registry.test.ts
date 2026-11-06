@@ -53,7 +53,7 @@ describe('workflow scroll shortcut', () => {
         'ctrl+d',
         'ctrl+e',
         'shift+↑/↓, pgup/pgdn, home/end',
-        '/activity, ctrl+a',
+        'ctrl+a',
       ]),
     );
     expect(labels.some((label) => /[A-Z]/.test(label))).toBe(false);
@@ -75,10 +75,10 @@ describe('workflow scroll shortcut', () => {
     });
   });
 
-  it('advertises activity expansion through the command path', () => {
+  it('advertises activity expansion by its key chord', () => {
     const activity = getShortcutsForScreen('workflow').find((s) => s.id === 'activity');
     expect(activity).toMatchObject({
-      key: '/activity, ctrl+a',
+      key: 'ctrl+a',
       description: 'Expand activity rows',
     });
     expect(activity?.key).not.toContain('Alt+A');

@@ -92,6 +92,9 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
       },
     });
   }
+  if (projection.scenarioId === 'workflow-plan-card-typed-command') {
+    return () => ({ ...base(), afterMount: () => composerDraftStore.request('e') });
+  }
   if (projection.scenarioId === 'workflow-composer-long-draft') {
     return () => ({
       ...base(),
@@ -857,6 +860,7 @@ const checkpointPredicates = [
   [checkpointId('approval-confirm'), includesAll('Confirm with a reason')],
   [checkpointId('approval-confirm-secret'), includesAll('Confirm with a reason')],
   [checkpointId('approval-confirm-short'), includesAll('Confirm')],
+  [checkpointId('approval-confirm-long-path'), includesAll('src/features/workflow')],
   [checkpointId('plan-card-short'), includesAll('Approve plan')],
   [checkpointId('question-short'), includesAll('Reviewer/planner seat')],
   [checkpointId('planner-question-short'), includesAll('Reviewer/planner seat')],
@@ -868,6 +872,7 @@ const checkpointPredicates = [
     (context) =>
       planCardReady(context) && includesAll(PLAN_CARD_COMMENT_DRAFT, REVIEW_COMMENT_HINTS)(context),
   ],
+  [checkpointId('plan-card-typed-command'), includesAll('Edit plan.json', '⏎ confirm · esc back')],
   [
     checkpointId('plan-card-request-empty'),
     (context) => planCardReady(context) && includesAll(REVIEW_COMMENT_HINTS)(context),

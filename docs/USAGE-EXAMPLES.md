@@ -873,16 +873,16 @@ Press `Ctrl+K` from any screen.
 │  ▌ /help                   Show help                            ctrl+/ █ │
 │    /skills                 Skills for every seat  <skill-id …>         █ │
 │    /sessions               Browse past sessions                        █ │
-│    /settings               Crew, fallback, validation, workflow ctrl+, █ │
+│    /settings               Crew, fallback, validation, workfl…  ctrl+, █ │
 │    /home                   Return to home screen                       █ │
 │    /quit                   Exit application                     ctrl+q █ │
-│    Skill · Terminal layout Check spacing and terminal-width behavior   █ │
-│    Skill · Release checks  Run deterministic quality gates             │ │
 │  Crew                                                                  │ │
 │    /crew                   Who fills each seat  [plan|build|review]    │ │
 │    /refresh                Re-detect available tools                   │ │
 │  Workflow                                                              │ │
 │    /stop                   Open stop and session options               │ │
+│    /queue                  Show or clear the message queue             │ │
+│    /run                    Apply or discard this run, or undo its App… │ │
 │   ↓ 10 more                                                              │
 │                                                                          │
 │  ↑↓ select · ⏎ run or fill in · esc close                                │
@@ -890,12 +890,12 @@ Press `Ctrl+K` from any screen.
 ╰──────────────────────────────────────────────────────────────────────────╯
 ```
 
-Captured at 80x24 on the workflow screen, in a project with two skills (the `Skill ·` rows); the bar on the right is the scrollbar. Start typing to fuzzy-filter the list. Enter on a no-argument command runs it; Enter on a command that takes an argument prefills `/name ` in the composer so you can complete it. Press Escape to dismiss without invoking.
+Captured at 80x24 on the workflow screen, in a project with two skills. Their `Skill ·` rows sit in the `Skills` section at the end of the list, below this first view. The bar on the right is the scrollbar. Start typing to fuzzy-filter the list. Enter on a no-argument command runs it; Enter on a command that takes an argument prefills `/name ` in the composer so you can complete it. Press Escape to dismiss without invoking.
 
 **Notes:**
 - The palette is disabled while another overlay (help, settings, skills) is active.
 - Commands whose `validScreens` excludes your current screen are hidden from the list.
-- With an empty query the rows are grouped under the five command categories — `Navigate`, `Crew`, `Workflow`, `View`, `Input & output`. The headers collapse when the panel has fewer than 12 list slots (60x18), and the panel itself grows with the terminal instead of sitting at a fixed width.
+- With an empty query the commands are grouped under the five command categories — `Navigate`, `Crew`, `Workflow`, `View`, `Input & output`. Skills have their own `Skills` section after the commands, the tasks and the sessions. The headers collapse when the panel has fewer than 12 list slots (60x18), and the panel itself grows with the terminal instead of sitting at a fixed width.
 - `/crew` opens Settings on the Crew section with `plan` focused; `/crew plan`, `/crew build` and `/crew review` skip Settings and open that seat's picker; the seat's tool and model are changed from there, and its effort travels with the model.
 - Effort is no longer its own command — it is chosen with the model in the seat picker, and the crew row mirrors it read-only. Which backends can spend a level: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) and [CONFIGURATION.md](./CONFIGURATION.md).
 - `Ctrl+K` is handled by `src/app/keys.ts`.

@@ -145,9 +145,7 @@ describe('/activity command', () => {
 
     expect(commands.find((command) => command.name === '/scroll')?.label).toBe('scroll');
     expect(commands.find((command) => command.name === '/activity')?.label).toBe('activity');
-    expect(commands.find((command) => command.name === '/activity')?.shortcut).toBe(
-      '/activity, ctrl+a',
-    );
+    expect(commands.find((command) => command.name === '/activity')?.shortcut).toBe('ctrl+a');
   });
 });
 

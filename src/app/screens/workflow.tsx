@@ -74,6 +74,7 @@ import {
   reviewArtifactForPhase,
   reviewDocumentOptions,
 } from '../../features/workflow/prompt-rows/approval.js';
+import { reviewDraftTarget } from '../../features/workflow/review-commands.js';
 import { reviewKeysStore } from '../../stores/ui/review-keys.js';
 import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
@@ -131,6 +132,8 @@ export function WorkflowScreen({
   const reviewSelectedRef = useRef(reviewSelected);
   reviewSelectedRef.current = reviewSelected;
   const reviewKeysCommenting = reviewKeysStore.use((state) => state.commenting);
+  const reviewKeysRequested = reviewKeysStore.use((state) => state.requested);
+  const composerDraftText = composerLiveStore.use((state) => state.text);
   const reviewOwnerToken = reviewStore.use((state) => state.ownerToken);
   const reviewConfirms = reviewStore.use((state) => state.confirms);
   const recoveryIssue = runViewStore.use((view) => view.halt?.issue ?? null);
@@ -149,8 +152,11 @@ export function WorkflowScreen({
       ? reviewArtifactForPhase(model.phase)
       : null;
   // A draft in the composer is what turns the letters back into text, so the flag the composer
-  // publishes decides whether the panel advertises them or the two keys a comment answers to.
-  const reviewCommenting = reviewArtifact !== null && reviewKeysCommenting;
+  // publishes decides whether the panel follows the draft or the row ↓ moved to.
+  const reviewDraft =
+    reviewArtifact !== null && reviewKeysCommenting
+      ? reviewDraftTarget(composerDraftText, reviewKeysRequested)
+      : null;
 
   useLayoutEffect(() => {
     reviewSelectedRef.current = 0;
@@ -223,7 +229,7 @@ export function WorkflowScreen({
     if (reviewArtifact !== null && message.displayText.trim() === '') {
       // An open change request takes ⏎ as `send`, and an empty one has nothing to send.
       // With no row in view there is no row for ⏎ to take.
-      if (reviewCommenting || promptBoxRows === 0) return;
+      if (reviewDraft !== null || promptBoxRows === 0) return;
       const row = reviewDocumentOptions(reviewArtifact)[reviewSelectedRef.current];
       // The comment row hands the keyboard to the composer the same way a typed `c` does: one
       // empty change request, so there is one way into a review comment and not two.
@@ -648,7 +654,7 @@ export function WorkflowScreen({
                     confirms: reviewConfirms,
                     budgetRows: reviewBudgetRows,
                     selectedIndex: reviewSelected,
-                    commenting: reviewCommenting,
+                    draft: reviewDraft,
                   },
                 })}
           />

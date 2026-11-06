@@ -60,6 +60,7 @@ import { saveFinalSession } from '../../engine/orchestrator/session-lifecycle/fi
 import {
   REVIEW_COMMENT_HINTS,
   REVIEW_DOCUMENT_HINTS,
+  REVIEW_TYPED_ROW_HINTS,
 } from '../../features/workflow/prompt-rows/approval.js';
 import { testCliSeats } from '#testing/helpers/runner-gate.js';
 
@@ -629,6 +630,88 @@ describe('WorkflowScreen chrome calibration', () => {
         message: { text: 'no', displayText: 'no', images: [], attachedInputs: [] },
       });
     });
+    ui.unmount();
+  });
+
+  it.each([
+    ['e', 'Edit plan.json'],
+    ['approve', 'Approve plan and start the build'],
+    ['q', 'End run (close this run)'],
+    ['c', 'Request changes (type what to change)'],
+  ] as const)(
+    'highlights the row ⏎ takes when %s is typed at the plan card',
+    async (typed, row) => {
+      vi.useFakeTimers({ toFake: ['Date'], now: FIXED_TS });
+      const reviewPath = join(projectDir, 'plan.md');
+      writeFileSync(reviewPath, 'Greet people by name.', 'utf8');
+      configStore.__testReset({ config: makeConfig(), projectDir });
+      terminalSizeStore.__testReset({ cols: 120, rows: 40 });
+      navigatePreparedWorkflow(projectDir, 'plan card typed row');
+      runWorkflow.mockImplementation(async (opts) => {
+        publishEvent(opts, {
+          type: 'workflow_started',
+          ts: FIXED_TS,
+          phase: 'reviewing-plan',
+          feature: 'plan card typed row',
+        });
+        await opts.callbacks.onApprovalNeeded('plan', reviewPath, []);
+        return pendingWorkflow();
+      });
+
+      const ui = renderFeature(
+        <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+      );
+      await vi.waitFor(() => {
+        expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Greet people by name.');
+      });
+      vi.advanceTimersByTime(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+      await flushEffects();
+      for (const key of typed) {
+        ui.stdin.write(key);
+        await flushEffects();
+      }
+
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame).toContain(`${listRowLead('active')}${row}`);
+      expect(frame).toContain(REVIEW_TYPED_ROW_HINTS);
+      ui.unmount();
+    },
+  );
+
+  it('keeps a sentence that opens with a command word on Request changes', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: FIXED_TS });
+    const reviewPath = join(projectDir, 'plan.md');
+    writeFileSync(reviewPath, 'Greet people by name.', 'utf8');
+    configStore.__testReset({ config: makeConfig(), projectDir });
+    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
+    navigatePreparedWorkflow(projectDir, 'plan card command word');
+    runWorkflow.mockImplementation(async (opts) => {
+      publishEvent(opts, {
+        type: 'workflow_started',
+        ts: FIXED_TS,
+        phase: 'reviewing-plan',
+        feature: 'plan card command word',
+      });
+      await opts.callbacks.onApprovalNeeded('plan', reviewPath, []);
+      return pendingWorkflow();
+    });
+
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+    );
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Greet people by name.');
+    });
+    vi.advanceTimersByTime(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+    await flushEffects();
+    for (const key of 'q drop T003') {
+      ui.stdin.write(key);
+      await flushEffects();
+    }
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain(`${listRowLead('active')}Request changes (type what to change)`);
+    expect(frame).toContain(REVIEW_COMMENT_HINTS);
     ui.unmount();
   });
 

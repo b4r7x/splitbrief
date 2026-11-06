@@ -47,11 +47,13 @@ const LABEL_COLUMN_SHARE = 0.5;
 // Cells a widened label leaves behind for the status word a session or task row carries.
 const STATUS_RESERVE = 14;
 
-// Command and skill rows carry a category and are sectioned by it, so they never reach this map.
+// Command rows carry a category and are sectioned by it; every other source, skills included, is
+// sectioned by its own name.
 const SOURCE_HEADERS: Record<Exclude<PaletteSource, CategorizedPaletteSource>, string> = {
   task: 'Tasks',
   session: 'Sessions',
   custom: 'Actions',
+  skill: 'Skills',
 };
 
 function sectionLabel(result: PaletteResult): string {
@@ -163,9 +165,9 @@ export function CommandPaletteOverlay({ commands, onRuntimeCommand }: CommandPal
 
   const t = useTheme();
   const { innerWidth } = overlayRect({ cols, rows, density: PANEL_DENSITY });
-  // Skill rows section with the commands, so one column serves both: the registry's widest command
-  // name widened to the widest discovered skill label. A skill name past the cap is cut there
-  // rather than opening a description column of its own.
+  // Skill rows share the command label column, so one column serves both: the registry's widest
+  // command name widened to the widest discovered skill label. A skill name past the cap is cut
+  // there rather than opening a description column of its own.
   const labelCeiling = sources.skillItems.reduce(
     (widest, skill) => Math.max(widest, getTerminalCellWidth(skill.label)),
     commandLabelWidth(commands),
@@ -199,15 +201,15 @@ export function CommandPaletteOverlay({ commands, onRuntimeCommand }: CommandPal
           }}
           placeholder={<Text color={t.textDim}>No matching commands</Text>}
           renderItem={(result, ctx) => {
-            // Everything sectioned by category — commands and skills — shares one column so the
-            // description edge holds still down a section and across screens. A session or task
-            // title is the whole row, so it widens its own label instead of being cut to that width.
+            // A command or skill row shares one label column so the description edge holds still
+            // down a section and across screens. A session or task title is the whole row, so it
+            // widens its own label instead of being cut to that width.
             const labelWidth = Math.min(
               labelCeiling,
               Math.floor(ctx.contentWidth * LABEL_COLUMN_SHARE),
             );
             const rowLabelWidth =
-              result.category !== null
+              result.source === 'command' || result.source === 'skill'
                 ? labelWidth
                 : Math.max(
                     labelWidth,

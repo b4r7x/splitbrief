@@ -118,6 +118,12 @@
 
 ### Fixed
 
+- At the plan card, a typed word such as `e` or `approve` now highlights the row that ⏎ takes for it, and the legend reads `⏎ confirm · esc back`. Before, any typed text highlighted Request changes with `⏎ send`, and ⏎ then did what the word said.
+- A confirm prompt in a short terminal shows the start of the file path beside the action, such as `write src/features/workflow/…`. Before, a long path left the prompt with only `write`.
+- The Rates rows of `/usage` name each tool as the Billing rows do, such as `OpenAI Codex CLI`. Before, they showed the raw tool id, such as `codex`.
+- The command palette lists skills in their own Skills section after the commands, the tasks and the sessions. Before, every skill sat under Navigate, above most commands.
+- The `/activity` row of the command palette shows its shortcut as `ctrl+a`. Before, it showed `/activity, ctrl+a` and cut the description.
+- A Settings save while a run is open or checks its tools says that the value applies at the next run or Resume, for example `End-of-run checks · off applies at the next run or Resume`. Before, it said `Saved` while the run went on with the old value.
 - A Read row in the activity block names the lines that it reads, such as `src/app.ts :120-159`, and an Edit row counts the lines that it writes, such as `src/app.ts · 12 lines`. Before, three reads or three edits of one file showed three identical rows.
 - A Run row in the activity block shows the description that the tool gives for its command. A script of several lines shows its first line and the count of the other lines, such as `cat a.ts · +2 lines`. Before, the row joined all lines of the script into one line and cut its middle.
 - In a collapsed activity block, the row that counts the hidden rows now reads `+N earlier · ctrl+a` and sits under the block header, above the newest rows. Before, it read `+N more` under the newest rows, as if more rows came next.

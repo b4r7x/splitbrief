@@ -152,7 +152,8 @@ describe('HelpOverlay', () => {
     expect(frame).toContain('shift+↑/↓, pgup/pgdn, home/end');
     expect(frame).toContain('PageUp/PageDown');
     expect(frame).toContain('/scroll top|bottom');
-    expect(frame).toContain('/activity, ctrl+a');
+    expect(frame).toContain('ctrl+a');
+    expect(frame).not.toContain('/activity, ctrl+a');
     expect(frame).toContain('Expand activity rows');
     expect(frame).not.toContain('ctrl+e');
 

@@ -59,7 +59,7 @@ Commands that open an overlay or change which screen is active. `category: 'navi
 - **Args**: optional, and repeatable on one line — one or more whitespace-separated skill ids, from the ids `ctx.listSkills()` reports. Matching is fuzzy (`match: 'fuzzy'`), so a partial id resolves as long as it is unambiguous. The `/` menu completes them project-first, then already-selected global skills, then the rest, each row showing the skill's name and description, so a skill can be found by what it is for rather than by its id. Unknown ids print `"Unknown skill: <x>"` (`"Unknown skills: …"` for several).
 - **Shortcut**: `Ctrl+S` (home screen only — see `src/core/keybindings/registry.ts`).
 - **Example**: `/skills`, `/skills testing-standards`, `/skills testing-standards security-review`
-- **Behavior**: Every invocation re-runs discovery first (`refreshSkills` in `src/app/refresh-skills.ts`), so a skill directory added since startup is present whether you open the picker or toggle by id. Bare `/skills` then opens the `skills` overlay; with arguments it toggles each named skill instead and reports through feedback (`Attached: …`, `Detached: …`). Toggling accumulates: `/skills alpha` then `/skills bravo` leaves both attached. The command palette additionally lists one `Skill · <name>` row per discovered skill, hinted `attached` when it is selected, which toggles it directly. Selection lives in `skillsStore` for the session only and is not written to `config.yaml`; headless and resumed runs select the same skills with `--skills <id,…>`. Picking `/skills` in the command palette prefills `/skills ` in the composer, the same as every other argument-taking command.
+- **Behavior**: Every invocation re-runs discovery first (`refreshSkills` in `src/app/refresh-skills.ts`), so a skill directory added since startup is present whether you open the picker or toggle by id. Bare `/skills` then opens the `skills` overlay; with arguments it toggles each named skill instead and reports through feedback (`Attached: …`, `Detached: …`). Toggling accumulates: `/skills alpha` then `/skills bravo` leaves both attached. The command palette lists one `Skill · <name>` row per discovered skill, hinted `attached` when it is selected, which toggles it directly. Skills have their own **Skills** section after the commands, the tasks and the sessions. Selection lives in `skillsStore` for the session only and is not written to `config.yaml`; headless and resumed runs select the same skills with `--skills <id,…>`. Picking `/skills` in the command palette prefills `/skills ` in the composer, the same as every other argument-taking command.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/navigate.ts`; opens overlay via `overlayStore.open`.
 - **See also**: `/settings`, `/crew`.
 
@@ -81,7 +81,7 @@ Commands that open an overlay or change which screen is active. `category: 'navi
 - **Args**: none.
 - **Shortcut**: `Ctrl+,` (`src/core/keybindings/registry.ts`).
 - **Example**: `/settings`
-- **Behavior**: Opens the `settings` overlay. Crew is first, with one read-only row per seat: PLAN, BUILD, REVIEW. Enter opens the seat's tool/model picker. Fallback is directly below Crew, with one fallback row per seat. Enter opens the same picker in its fallback slot; None clears the fallback. See [Configuration §fallback](./CONFIGURATION.md#fallback) for REVIEW inheritance and picker rules. The section order is Crew → Fallback → Tuning → Workflow → Validation. The Workflow group carries Plan approval (`plan` or `none`), Compaction format and Isolation. Space cycles Isolation through `worktree`, `staged copy` and `your checkout`, saving `workflow.isolation` as `worktree`, `staged-copy` or `none`. Show spend and Commit strategy controls have been removed. Mutations are persisted to project config on save.
+- **Behavior**: Opens the `settings` overlay. Crew is first, with one read-only row per seat: PLAN, BUILD, REVIEW. Enter opens the seat's tool/model picker. Fallback is directly below Crew, with one fallback row per seat. Enter opens the same picker in its fallback slot; None clears the fallback. See [Configuration §fallback](./CONFIGURATION.md#fallback) for REVIEW inheritance and picker rules. The section order is Crew → Fallback → Tuning → Workflow → Validation. The Workflow group carries Plan approval (`plan` or `none`), Compaction format and Isolation. Space cycles Isolation through `worktree`, `staged copy` and `your checkout`, saving `workflow.isolation` as `worktree`, `staged-copy` or `none`. Show spend and Commit strategy controls have been removed. Mutations are persisted to project config on save. A run keeps the settings it started with. A Settings save while a run is open or checks its tools says `<setting> · <value> applies at the next run or Resume`. Resume in Session options reads the saved file.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/navigate.ts`; opens the overlay via `overlayStore.open`; a focus of `seat:<id>`, `fallback:<seat>` or `filter:<text>` is parsed by `parseSettingsFocus` (`src/features/settings/focus.ts`).
 - **See also**: `/crew`, `/skills`.
 
@@ -257,7 +257,7 @@ Commands that change what the workflow screen shows without touching the run. `c
 - **Screens**: `workflow`, live or at rest.
 - **Args**: none.
 - **Example**: `/usage`
-- **Behavior**: Opens the `usage-details` overlay for the current run. Missing or partial usage remains labelled; unknown pricing is not zero cost. Closing the details returns to a workflow without token or cost counters.
+- **Behavior**: Opens the `usage-details` overlay for the current run. Missing or partial usage remains labelled; unknown pricing is not zero cost. Closing the details returns to a workflow without token or cost counters. The Rates rows and the Billing rows name each tool or endpoint with the same words.
 - **Implementation**: `src/core/runtime/commands/defs/view.ts`, `src/app/overlays/usage.tsx`.
 - **See also**: `/sessions`, `/copy`.
 
@@ -396,7 +396,7 @@ When the review pane has a `filePath` set (the plan card's `plan.md`), these key
 
 ### The plan card
 
-While the plan card waits, `↑`/`↓` move the cursor over its rows and a bare `⏎` takes the highlighted row. The rows carry no letter keys, because the composer holds the keyboard: a letter is text, and a word settles the card only when it is sent with `⏎`. The panel legend reads `approve · comment <text> · end-run · edit` (`REVIEW_HINT`). Typed text goes through `src/features/workflow/review-commands.ts`; any text that is not one of the words below is a correction, so a sentence that opens with `q` or `y` never ends or approves the run.
+While the plan card waits, `↑`/`↓` move the cursor over its rows and a bare `⏎` takes the highlighted row. The rows carry no letter keys, because the composer holds the keyboard: a letter is text, and a word settles the card only when it is sent with `⏎`. While you type, the highlight moves to the row that ⏎ takes for the text, and the legend reads `⏎ confirm · esc back`: `e` highlights **Edit plan.json**, `approve` highlights **Approve plan and start the build**, and `q` highlights **End run**. Any other text highlights **Request changes**, and the legend reads `⏎ send · esc back` (`reviewDraftTarget`). Typed text goes through `src/features/workflow/review-commands.ts`; any text that is not one of the words below is a correction, so a sentence that opens with `q` or `y` never ends or approves the run.
 
 | Typed | Action |
 |---|---|
@@ -460,7 +460,7 @@ The `SHORTCUTS` table in `src/core/keybindings/registry.ts` is the single source
 | `toggle-diff` | `ctrl+d` | Toggle diff | workflow |
 | `scroll` | `shift+↑/↓, pgup/pgdn, home/end` | Scroll; PageUp/PageDown; /scroll top\|bottom | workflow |
 | `review-edit` | `ctrl+e` | Open editor in review mode only | workflow |
-| `activity` | `/activity, ctrl+a` | Expand activity rows | workflow |
+| `activity` | `ctrl+a` | Expand activity rows | workflow |
 
 ---
 

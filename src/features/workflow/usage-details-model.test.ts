@@ -323,6 +323,63 @@ describe('usage details money', () => {
   });
 });
 
+describe('usage details rates', () => {
+  it.each([
+    ['cli:codex', 'OpenAI Codex CLI'],
+    ['cli:claude-code', 'Claude Code CLI'],
+    ['api:opencode', 'opencode'],
+    ['codex', 'codex'],
+  ])('names the rate card of %s as its Billing row does', (key, label) => {
+    const input = {
+      tokenUsage: usage({ plannerInput: 500 }),
+      costBreakdown: breakdown({
+        providerRunMetadata: {
+          [key]: {
+            service: key,
+            offering: 'payg' as const,
+            normalizedEndpoint: key,
+            billing: 'unknown' as const,
+            asOf: '',
+          },
+        },
+        requestEstimate: {
+          amount: null,
+          currency: 'USD' as const,
+          basis: 'unavailable' as const,
+          completeness: 'unavailable' as const,
+          knownSubtotal: 0,
+          reasons: ['unpriced-model' as const],
+          items: [
+            {
+              callId: 'c1',
+              role: 'planner' as const,
+              usageBoundary: 'single-request' as const,
+              amount: null,
+              knownSubtotal: 0,
+              completeness: 'unavailable' as const,
+              reasons: ['unpriced-model' as const],
+              billing: { posture: 'unknown' as const, basis: 'unknown' as const },
+              rates: {
+                source: 'unpriced' as const,
+                provider: key,
+                model: 'haiku',
+                inputPer1M: 0,
+                outputPer1M: 0,
+                capturedAt: 1_700_000_000_000,
+              },
+            },
+          ],
+        },
+      }),
+    };
+
+    const rateRow = rows(input).find((row) => row.key === 'rates:0');
+    expect(rateRow?.label).toBe(label);
+    expect(deriveUsageDetails(input).billing.map((row) => row.tool)).toEqual([label]);
+    expect(rows(input).find((row) => row.key === `billing:${key}`)?.label).toBe(label);
+  });
+});
+
 describe('usage details billing', () => {
   it('keeps distinct recorded identities keyed separately when their display labels match', () => {
     const keys = ['agent:agent', 'api:Agent', 'Agent'];

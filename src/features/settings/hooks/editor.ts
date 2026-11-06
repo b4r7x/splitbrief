@@ -4,9 +4,10 @@ import {
   formatConfigSaveSuccess,
   reportConfigSaveFailure,
 } from '../../../stores/project/save-feedback.js';
+import { keepsPreparedSettings } from '../../../stores/workflow/stop.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import type { SettingDef } from '../../../core/settings/catalog.js';
-import { matchesFilter, settingSaveSubject } from '../presentation.js';
+import { matchesFilter, settingChangeWords, settingSaveSubject } from '../presentation.js';
 import type { SettingsItem } from '../items.js';
 import { getConfigValue, applyEdits } from '../../../core/config/accessors/values.js';
 import { configError } from '../../../core/config/errors.js';
@@ -77,8 +78,11 @@ async function saveSetting(def: SettingDef, value: unknown): Promise<void> {
   const current = getCurrentConfig();
   const result = await configStore.save(applyEdits(current, { [def.id]: value }));
   if (reportConfigSaveFailure(result)) return;
+  const subject = settingSaveSubject(def, value, current);
   feedbackStore.setMessage(
-    formatConfigSaveSuccess(settingSaveSubject(def, value, current), result),
+    keepsPreparedSettings()
+      ? settingChangeWords(subject)
+      : formatConfigSaveSuccess(subject, result),
   );
 }
 

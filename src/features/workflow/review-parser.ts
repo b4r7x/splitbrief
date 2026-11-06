@@ -345,16 +345,7 @@ export function createReviewInputHandler(
           inputMode.resolve({ approved: false, action: 'revise', message: correctionMessage });
           return;
         }
-        const result = reviewCommandToApprovalReviewResult(parsed.command);
-        if (result) {
-          inputMode.resolve(result);
-          return;
-        }
-        if (parsed.command.action === 'save_draft') {
-          feedbackStore.setError('Draft save is not available in the TUI. Use edit-file instead.');
-          return;
-        }
-        feedbackStore.setMessage('Review prompt is still pending.');
+        inputMode.resolve(reviewCommandToApprovalReviewResult(parsed.command));
         return;
       }
       if (parsed.kind === 'comment-draft') {

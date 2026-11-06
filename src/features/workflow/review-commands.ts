@@ -1,6 +1,7 @@
 import type { ApprovalReviewResult } from '../../core/approval/types.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { assertNever } from '../../utils/type-guards.js';
+import type { ReviewDocumentCommand } from './prompt-rows/approval.js';
 
 // Both review phases take the same four typed commands; the composer holds the keys, so no letter acts.
 export const REVIEW_HINT = `approve${SOFT_SEP}comment <text>${SOFT_SEP}end-run${SOFT_SEP}edit`;
@@ -13,12 +14,9 @@ const APPROVE_ALIASES = new Set(['approve', 'yes', 'y', 'ok', 'lgtm', 'continue'
 // The gate no longer rejects, it ends the run; the words it used to take still parse.
 const END_RUN_ALIASES = new Set(['end-run', 'end run', 'end', 'quit', 'q', 'reject', 'no', 'n']);
 
-type LocalBriefReviewAction = 'approve' | 'end-run' | 'status';
+type LocalBriefReviewAction = 'approve' | 'end-run';
 
-export type LegacyReviewCommand =
-  | { readonly action: 'revise'; readonly comment: string }
-  | { readonly action: 'save_draft' }
-  | { readonly action: 'external_edit_applied' };
+export type LegacyReviewCommand = { readonly action: 'revise'; readonly comment: string };
 
 export type ReviewCommand = { readonly action: LocalBriefReviewAction } | LegacyReviewCommand;
 
@@ -27,6 +25,8 @@ export type ReviewAction =
   | { kind: 'open-editor' }
   | { kind: 'comment-draft' }
   | null;
+
+export type ReviewDraftTarget = ReviewDocumentCommand | 'send';
 
 export function reviewOpeningPromptMessage(): string {
   return `Review prompt is opening. Once active, use: ${REVIEW_HINT}`;
@@ -37,13 +37,6 @@ export function parseReviewCommand(text: string): ReviewAction {
   const cmd = raw.toLowerCase();
   if (APPROVE_ALIASES.has(cmd)) return briefReviewAction('approve');
   if (END_RUN_ALIASES.has(cmd)) return briefReviewAction('end-run');
-  if (cmd === 'external_edit_applied') {
-    return legacyReviewAction({ action: 'external_edit_applied' });
-  }
-  if (cmd === 'save_draft' || cmd === 'save') {
-    return legacyReviewAction({ action: 'save_draft' });
-  }
-  if (cmd === 'status') return briefReviewAction('status');
   if (cmd === 'edit-file' || cmd === 'edit' || cmd === 'e') {
     return { kind: 'open-editor' };
   }
@@ -58,28 +51,37 @@ export function parseReviewCommand(text: string): ReviewAction {
   return null;
 }
 
+export function reviewDraftTarget(text: string, requested: boolean): ReviewDraftTarget {
+  if (requested) return 'send';
+  const parsed = parseReviewCommand(text);
+  if (parsed === null) return 'send';
+  if (parsed.kind === 'comment-draft') return 'comment';
+  if (parsed.kind === 'open-editor') return 'edit-file';
+  switch (parsed.command.action) {
+    case 'approve':
+      return 'approve';
+    case 'end-run':
+      return 'end-run';
+    case 'revise':
+      return 'send';
+    default:
+      return assertNever(parsed.command);
+  }
+}
+
 export function reviewCommandToApprovalReviewResult(
   command: Exclude<ReviewCommand, { action: 'revise' }>,
-): ApprovalReviewResult | null {
+): ApprovalReviewResult {
   switch (command.action) {
     case 'approve':
       return { approved: true };
     case 'end-run':
       return { approved: false, action: 'end-run' };
-    case 'external_edit_applied':
-      return { approved: false, action: 'edit' };
-    case 'save_draft':
-    case 'status':
-      return null;
     default:
-      return assertNever(command);
+      return assertNever(command.action);
   }
 }
 
 function briefReviewAction(action: LocalBriefReviewAction): ReviewAction {
   return { kind: 'brief-review-command', command: { action } };
-}
-
-function legacyReviewAction(command: LegacyReviewCommand): ReviewAction {
-  return { kind: 'brief-review-command', command };
 }

@@ -3,6 +3,7 @@ import {
   REVIEW_HINT,
   REVIEW_UNKNOWN_COMMAND_MESSAGE,
   parseReviewCommand,
+  reviewDraftTarget,
   reviewOpeningPromptMessage,
 } from './review-commands.js';
 import { fitKeyLegend } from '../../core/key-legend.js';
@@ -70,15 +71,16 @@ describe('parseReviewCommand', () => {
     ['e', { kind: 'open-editor' }],
     ['E', { kind: 'open-editor' }],
     ['edit-file', { kind: 'open-editor' }],
-    [
-      'external_edit_applied',
-      { kind: 'brief-review-command', command: { action: 'external_edit_applied' } },
-    ],
-    ['save_draft', { kind: 'brief-review-command', command: { action: 'save_draft' } }],
-    ['status', { kind: 'brief-review-command', command: { action: 'status' } }],
   ] as const)('keeps the typed review routes canonical: %s', (text, expected) => {
     expect(parseReviewCommand(text)).toEqual(expected);
   });
+
+  it.each(['status', 'save', 'save_draft', 'external_edit_applied'])(
+    'reads the old word %s as plain text',
+    (word) => {
+      expect(parseReviewCommand(word)).toBeNull();
+    },
+  );
 
   it('returns null for unknown input', () => {
     expect(parseReviewCommand('unknown command here')).toBeNull();
@@ -93,5 +95,23 @@ describe('parseReviewCommand', () => {
   it('opens the comment draft for a bare comment, the word the comment row stands for', () => {
     expect(parseReviewCommand('comment')).toEqual({ kind: 'comment-draft' });
     expect(parseReviewCommand('C')).toEqual({ kind: 'comment-draft' });
+  });
+});
+
+describe('reviewDraftTarget', () => {
+  it.each([
+    { text: 'e', requested: false, target: 'edit-file' },
+    { text: 'Edit', requested: false, target: 'edit-file' },
+    { text: 'approve', requested: false, target: 'approve' },
+    { text: 'lgtm', requested: false, target: 'approve' },
+    { text: 'q', requested: false, target: 'end-run' },
+    { text: 'end run', requested: false, target: 'end-run' },
+    { text: 'c', requested: false, target: 'comment' },
+    { text: 'comment split T002', requested: false, target: 'send' },
+    { text: 'q drop T003', requested: false, target: 'send' },
+    { text: 'e', requested: true, target: 'send' },
+    { text: 'approve', requested: true, target: 'send' },
+  ])('aims ⏎ for the draft $text at $target', ({ text, requested, target }) => {
+    expect(reviewDraftTarget(text, requested)).toBe(target);
   });
 });

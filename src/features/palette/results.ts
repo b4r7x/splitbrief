@@ -2,8 +2,8 @@ import { fuzzyMatchExtended } from './fuzzy-match.js';
 import { COMMAND_CATEGORIES } from '../../core/runtime/commands/types.js';
 import type { CommandCategory } from '../../core/runtime/commands/types.js';
 
-export type CategorizedPaletteSource = 'command' | 'skill';
-export type PaletteSource = CategorizedPaletteSource | 'task' | 'session' | 'custom';
+export type CategorizedPaletteSource = 'command';
+export type PaletteSource = CategorizedPaletteSource | 'task' | 'session' | 'custom' | 'skill';
 
 export type PaletteAction =
   | { kind: 'run'; run: () => void | Promise<void> }
@@ -19,8 +19,12 @@ export interface PaletteCommandItem {
   action: PaletteAction;
 }
 
-/** A discovered skill, ranked beside the command rows: `⏎` attaches or detaches it. */
-export type PaletteSkillItem = Omit<PaletteCommandItem, 'shortcut'> & { id: string; name: string };
+/** A discovered skill with a section of its own: `⏎` attaches or detaches it. */
+export type PaletteSkillItem = Omit<PaletteCommandItem, 'shortcut' | 'category'> & {
+  id: string;
+  name: string;
+  category: null;
+};
 
 interface PaletteCandidateBase {
   id: string;
@@ -33,10 +37,9 @@ interface PaletteCandidateBase {
   action: PaletteAction;
 }
 
-// Only command and skill rows carry a category; the discriminant lets a `category === null` check
-// narrow a row to the sources that need a source-name header. A skill row sections with the
-// commands but keeps a source of its own so its `Skill · <name>` label takes its own width instead
-// of the command column's.
+// Only command rows carry a category; the discriminant lets a `category === null` check narrow a
+// row to the sources that need a source-name header. A skill row is a source of its own, so it
+// sections under its own header while its `Skill · <name>` label sets the shared label column.
 type PaletteCandidate = PaletteCandidateBase &
   (
     | { source: CategorizedPaletteSource; category: CommandCategory }
@@ -81,20 +84,6 @@ function buildCandidates(inputs: PaletteInputs): PaletteCandidate[] {
     });
   }
 
-  for (const item of inputs.skillItems) {
-    candidates.push({
-      id: 'skill:' + item.id,
-      name: item.name,
-      label: item.label,
-      description: item.description,
-      hint: item.hint,
-      source: 'skill',
-      category: item.category,
-      shortcut: null,
-      action: item.action,
-    });
-  }
-
   for (const item of inputs.taskItems) {
     candidates.push({
       id: 'task:' + item.id,
@@ -134,6 +123,20 @@ function buildCandidates(inputs: PaletteInputs): PaletteCandidate[] {
       category: null,
       shortcut: null,
       action: { kind: 'run', run: item.action },
+    });
+  }
+
+  for (const item of inputs.skillItems) {
+    candidates.push({
+      id: 'skill:' + item.id,
+      name: item.name,
+      label: item.label,
+      description: item.description,
+      hint: item.hint,
+      source: 'skill',
+      category: null,
+      shortcut: null,
+      action: item.action,
     });
   }
 

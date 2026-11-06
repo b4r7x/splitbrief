@@ -4,9 +4,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { configStore } from '../../../stores/project/config.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
+import {
+  CHECKING_TOOLS_STAGE,
+  preparationStore,
+  type PreparationOrigin,
+} from '../../../stores/navigation/preparation.js';
+import { routerStore } from '../../../stores/navigation/router.js';
+import { markCancellationRequested } from '../../../stores/workflow/actions/interrupt.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
+import { stopStore } from '../../../stores/workflow/stop.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { SETTINGS_DEFS, type SettingDef } from '../../../core/settings/catalog.js';
 import { buildSettingsItems, type SettingsItem } from '../items.js';
@@ -297,6 +310,172 @@ describe('useSettingsEditor', () => {
     expect(feedbackStore.get().message).toBeNull();
     ui.unmount();
   });
+
+  const END_CHECKS_KEY = 'validation.endChecks';
+  const TIMING_LINE = 'End-of-run checks · off applies at the next run or Resume';
+  const SAVED_LINE = 'Saved End-of-run checks · off to .splitbrief/config.yaml';
+
+  function openLocalRoute(config: Config): void {
+    const prepared = makePreparedExecution({
+      projectDir,
+      sessionId: 'sess-settings-save',
+      feature: 'settings save',
+      config,
+    });
+    routerStore.init({
+      screen: 'workflow',
+      run: makeRunRecord({ ref: prepared.session.ref }),
+      execution: { kind: 'local', prepared },
+    });
+  }
+
+  function checkTools(origin: PreparationOrigin): void {
+    preparationStore.submit({
+      origin,
+      stage: CHECKING_TOOLS_STAGE,
+      prepare: () => new Promise(() => {}),
+      onPrepared: () => {},
+    });
+  }
+
+  /** The config document exists before the measured save, so the ignore rule is already added. */
+  async function seedSavedConfig(config: Config): Promise<Config> {
+    configStore.__testReset({ projectDir, config });
+    await configStore.save(config);
+    feedbackStore.reset();
+    return configStore.get().config ?? config;
+  }
+
+  async function toggleEndChecks(config: Config, message: string): Promise<void> {
+    const items = buildSettingsItems({ config, defs: SETTINGS_DEFS, cliTools: [] });
+    const ui = renderFeature(
+      createElement(Harness, { config, items, initialKey: END_CHECKS_KEY, activated: [] }),
+    );
+    await flushEffects();
+    ui.stdin.write(' ');
+    await vi.waitFor(() => {
+      expect(feedbackStore.get().message).not.toBeNull();
+    });
+    expect(feedbackStore.get()).toEqual({ message, isError: false });
+    ui.unmount();
+  }
+
+  const timingStates: ReadonlyArray<readonly [string, () => void]> = [
+    [
+      'running',
+      () => {
+        lifecycleStore.__testReset({ status: 'running' });
+      },
+    ],
+    [
+      'paused',
+      () => {
+        lifecycleStore.__testReset({ status: 'paused' });
+      },
+    ],
+    [
+      'halted',
+      () => {
+        lifecycleStore.__testReset({ status: 'running' });
+        runViewStore.__testReset({
+          halt: { issue: makeRecoveryIssue(), at: { kind: 'review', cycle: 0 } },
+        });
+      },
+    ],
+  ];
+
+  it.each(timingStates)(
+    'says when the setting applies while the run is %s',
+    async (_state, setRow) => {
+      const config = makeConfig();
+      seed(config);
+      openLocalRoute(config);
+      setRow();
+
+      await toggleEndChecks(config, TIMING_LINE);
+    },
+  );
+
+  const savedLineStates: ReadonlyArray<readonly [string, (config: Config) => void]> = [
+    [
+      'the run is complete',
+      (config) => {
+        openLocalRoute(config);
+        lifecycleStore.__testReset({ status: 'complete' });
+      },
+    ],
+    [
+      'a stop ended the run',
+      (config) => {
+        openLocalRoute(config);
+        lifecycleStore.__testReset({ status: 'cancelled' });
+        stopStore.end();
+      },
+    ],
+    ['the route is home', () => routerStore.init({ screen: 'home' })],
+    [
+      'End run is requested at a halt',
+      (config) => {
+        openLocalRoute(config);
+        lifecycleStore.__testReset({ status: 'running' });
+        runViewStore.__testReset({
+          halt: { issue: makeRecoveryIssue(), at: { kind: 'review', cycle: 0 } },
+        });
+        stopStore.request('end-run');
+        markCancellationRequested();
+      },
+    ],
+  ];
+
+  it.each(savedLineStates)('keeps the saved line when %s', async (_state, setRow) => {
+    const config = await seedSavedConfig(makeConfig());
+    setRow(config);
+
+    await toggleEndChecks(config, SAVED_LINE);
+  });
+
+  it('says a setting saved during a stopped call applies at the next run or Resume', async () => {
+    const config = makeConfig();
+    seed(config);
+    openLocalRoute(config);
+    lifecycleStore.__testReset({ status: 'paused' });
+    stopStore.request('stop-now');
+    stopStore.park('mid-brief', 'T001', () => {});
+
+    await toggleEndChecks(config, TIMING_LINE);
+  });
+
+  const checkStates: ReadonlyArray<readonly [string, () => void]> = [
+    [
+      'a start on the home route',
+      () => {
+        routerStore.init({ screen: 'home' });
+        checkTools('start');
+      },
+    ],
+    [
+      'a Resume of the run at rest',
+      () => {
+        routerStore.init({
+          screen: 'workflow',
+          run: makeRunRecord(),
+          execution: { kind: 'at-rest' },
+        });
+        checkTools('continue');
+      },
+    ],
+  ];
+
+  it.each(checkStates)(
+    'says when the setting applies while %s checks its tools',
+    async (_state, setRow) => {
+      const config = makeConfig();
+      seed(config);
+      setRow();
+
+      await toggleEndChecks(config, TIMING_LINE);
+    },
+  );
 });
 
 describe('hintFor', () => {

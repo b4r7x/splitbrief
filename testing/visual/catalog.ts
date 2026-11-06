@@ -1982,6 +1982,26 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [{ id: 'header', title: 'Workflow header' }],
     }),
     defineScenario({
+      id: 'workflow-approval-confirm-long-path',
+      title: 'Workflow · confirm gate for a long path in a short terminal',
+      surface: screenSurface('workflow'),
+      viewports: [
+        viewport({ cols: 60, rows: 10 }),
+        viewport({ cols: 60, rows: 12 }),
+        viewport({ cols: 60, rows: 14 }),
+        viewport({ cols: 60, rows: 15 }),
+        viewport({ cols: 60, rows: 16 }),
+        viewport({ cols: 80, rows: 12 }),
+      ],
+      checkpoint: {
+        id: 'approval-confirm-long-path',
+        title: 'Confirm gate that names a long path',
+        kind: 'review',
+        marker: 'src/features/workflow',
+      },
+      elements: [{ id: 'header', title: 'Workflow header' }],
+    }),
+    defineScenario({
       id: 'workflow-approval-confirm-secret',
       title: 'Workflow · CI or secret file confirm gate',
       surface: screenSurface('workflow'),
@@ -2050,6 +2070,24 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Plan card while typing a change request',
         kind: 'review',
         marker: 'Request changes (type what to change)',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Plan transcript' },
+        { id: 'approval-panel', title: 'Plan card panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-plan-card-typed-command',
+      title: 'Workflow · plan card with a command word typed in the composer',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'plan-card-typed-command',
+        title: 'Plan card while a command word is typed',
+        kind: 'review',
+        marker: 'Edit plan.json',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -5927,6 +5965,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
           'Overlay · command palette with a skill name typed after a session of that word was opened',
         marker: 'Skill · verify',
       },
+      {
+        id: 'overlay-command-palette-typed-activity',
+        title: 'Overlay · command palette with /activity typed on the workflow screen',
+        marker: 'Expand',
+      },
     ],
   }),
   skills: overlayGroup({
@@ -6059,6 +6102,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         id: 'overlay-settings-saved',
         title: 'Overlay · settings · a toggle saved',
         marker: 'Saved End-of-run checks',
+      },
+      {
+        id: 'overlay-settings-saved-during-run',
+        title: 'Overlay · settings · a toggle saved while a run is open',
+        marker: 'applies at the next run',
       },
       {
         id: 'overlay-settings-error-path',

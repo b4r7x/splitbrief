@@ -6,6 +6,7 @@ import {
   REVIEW_COMMENT_HINTS,
   REVIEW_DOCUMENT_HINTS,
   REVIEW_CONFIRMS_INDENT,
+  REVIEW_TYPED_ROW_HINTS,
   reviewConfirmsCount,
   reviewDocumentFit,
   reviewDocumentForm,
@@ -13,6 +14,7 @@ import {
   reviewDocumentRowLines,
   type ReviewArtifact,
 } from '../../prompt-rows/approval.js';
+import type { ReviewDraftTarget } from '../../review-commands.js';
 import { approvalTextWidth } from '../../prompt-rows/measure.js';
 import { fitKeyLegend } from '../../../../core/key-legend.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
@@ -24,7 +26,7 @@ export interface DocumentReviewPromptProps {
   confirms: readonly string[];
   budgetRows: number;
   selectedIndex: number;
-  commenting: boolean;
+  draft: ReviewDraftTarget | null;
   clampedBoxRows?: number | undefined;
 }
 
@@ -37,7 +39,7 @@ export function DocumentReviewPrompt({
   confirms,
   budgetRows,
   selectedIndex,
-  commenting,
+  draft,
   clampedBoxRows,
 }: DocumentReviewPromptProps) {
   const t = useTheme();
@@ -51,9 +53,15 @@ export function DocumentReviewPrompt({
     cols,
     boxRows: clampedBoxRows ?? Number.POSITIVE_INFINITY,
   });
-  // A comment being typed approves nothing, so where the legend was shed the confirms rows teach
-  // the two keys that are still live instead.
-  const commentLegendInConfirms = commenting && !form.legend;
+  const draftLegend =
+    draft === null
+      ? REVIEW_DOCUMENT_HINTS
+      : draft === 'send'
+        ? REVIEW_COMMENT_HINTS
+        : REVIEW_TYPED_ROW_HINTS;
+  // A typed row approves nothing, so where the legend was shed the confirms rows teach its keys
+  // instead. Approve keeps the line: ⏎ still grants what it lists.
+  const draftLegendInConfirms = draft !== null && draft !== 'approve' && !form.legend;
   // A panel with no row for the confirms line says it on the row that approves.
   const confirmsOnRow = form.confirmsText !== null && !fit.confirms;
 
@@ -74,9 +82,9 @@ export function DocumentReviewPrompt({
           height={form.confirmsText.split('\n').length}
           flexShrink={0}
         >
-          {commentLegendInConfirms ? (
+          {draftLegendInConfirms ? (
             <Text color={t.textDim}>
-              {fitKeyLegend(REVIEW_COMMENT_HINTS, width - REVIEW_CONFIRMS_INDENT)}
+              {fitKeyLegend(draftLegend, width - REVIEW_CONFIRMS_INDENT)}
             </Text>
           ) : (
             <Text color={t.warning}>{form.confirmsText}</Text>
@@ -93,7 +101,11 @@ export function DocumentReviewPrompt({
           ]),
         }))}
         selectedIndex={
-          commenting ? options.findIndex((option) => option.command === 'comment') : selectedIndex
+          draft === null
+            ? selectedIndex
+            : options.findIndex(
+                (option) => option.command === (draft === 'send' ? 'comment' : draft),
+              )
         }
         marked
         rowBudget={fit.listRows}
@@ -105,10 +117,7 @@ export function DocumentReviewPrompt({
       {form.legend ? (
         <Box paddingLeft={form.framed ? 0 : MARK_SLOT_CELLS}>
           <Text color={t.textDim}>
-            {fitKeyLegend(
-              commenting ? REVIEW_COMMENT_HINTS : REVIEW_DOCUMENT_HINTS,
-              form.framed ? width : Math.max(1, width - MARK_SLOT_CELLS),
-            )}
+            {fitKeyLegend(draftLegend, form.framed ? width : Math.max(1, width - MARK_SLOT_CELLS))}
           </Text>
         </Box>
       ) : null}

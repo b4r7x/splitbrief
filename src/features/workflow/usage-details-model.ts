@@ -411,19 +411,23 @@ const PROVEN_BASES: ReadonlySet<BillingAttribution['basis']> = new Set([
   'local-transport',
 ]);
 
+// A kind-qualified key is named in the words of the identity it kept — a custom API provider stays
+// literal — while a legacy name-only key stays exactly as recorded.
+function runnerKeyLabel(key: string): string {
+  const { kind, id } = parseRunnerIdentityKey(key);
+  return kind === undefined ? id : getRunnerIdentityDisplayName(kind, id);
+}
+
 // What the run proved outranks what the catalog assumes: a tool enforced onto an API key is
 // metered here even where its catalogued default reads subscription-included. With nothing proven
-// the catalogued posture stands, and the row says it is a default. A kind-qualified key is named
-// in the words of the identity it kept — a custom API provider stays literal — while a legacy
-// name-only key stays exactly as recorded.
+// the catalogued posture stands, and the row says it is a default.
 function deriveBilling(breakdown: CostBreakdown | null): UsageBillingRow[] {
   return Object.entries(breakdown?.providerRunMetadata ?? {}).map(([key, metadata]) => {
-    const { kind, id } = parseRunnerIdentityKey(key);
     const attribution = metadata.billingAttribution;
     const proven = attribution !== undefined && PROVEN_BASES.has(attribution.basis);
     return {
       key,
-      tool: kind === undefined ? id : getRunnerIdentityDisplayName(kind, id),
+      tool: runnerKeyLabel(key),
       posture: proven && attribution !== undefined ? attribution.posture : metadata.billing,
       basis: attribution?.basis ?? 'legacy-unattributed',
       proven,
@@ -745,7 +749,7 @@ export function usageDetailRows(view: UsageDetailsView): UsageDetailRow[] {
     rows.push(entry('rates:none', 'Source', ['not recorded'], 'textDim'));
   }
   for (const [index, row] of view.rates.entries()) {
-    rows.push(entry(`rates:${index}`, row.rates.provider, rateFacts(row), 'text'));
+    rows.push(entry(`rates:${index}`, runnerKeyLabel(row.rates.provider), rateFacts(row), 'text'));
   }
 
   rows.push(...header('billing', 'Billing'));

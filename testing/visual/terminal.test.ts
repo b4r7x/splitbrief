@@ -109,6 +109,30 @@ describe('terminal cell parsing', () => {
     expect(txt).not.toContain('\u009b');
     expect(txt).not.toContain('\u009d');
   });
+
+  it('captures the synthetic long-path continuation at 60x15', async () => {
+    const identity = createIdentity(60, 15);
+    const ansi = [
+      `${ESC}[2J`,
+      `${ESC}[3;4HWrite outside the brief's declared fil…  … 1 more line`,
+      `${ESC}[4;4Hwrite src/features/workflow/components/approval-prompt`,
+      `${ESC}[5;4H/confirm-panel-long-name.tsx`,
+      `${ESC}[6;4H▌ y   Confirm`,
+      `${ESC}[7;4H  r   Confirm with a reason`,
+      `${ESC}[8;4H  x   Deny`,
+      `${ESC}[9;4H↑↓ select · ⏎ confirm · esc deny`,
+    ].join('');
+
+    const grid = await parseTerminalFrame({ ansi, identity, projectRoot: process.cwd() });
+
+    expect(grid.rect).toEqual({ x: 0, y: 0, width: 60, height: 15 });
+    expect(textFromRow(grid.cells[3])).toContain(
+      'write src/features/workflow/components/approval-prompt',
+    );
+    expect(requireCell(grid.cells[4], 3).grapheme).toBe('/');
+    expect(textFromRow(grid.cells[4]).trimEnd()).toBe('   /confirm-panel-long-name.tsx');
+    expect(serializeTxt(grid)).toContain('/confirm-panel-long-name.tsx');
+  });
 });
 
 function createIdentity(cols: number, rows: number) {

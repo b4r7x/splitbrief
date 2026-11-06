@@ -199,9 +199,7 @@ function activityDisclosureRow(input: {
 
 function activityDisclosureHint(): string {
   const shortcut = getShortcutKey('activity');
-  if (shortcut === null) return '';
-  const chord = (shortcut.split(',').at(-1) ?? shortcut).trim().toLowerCase();
-  return chord.length === 0 ? '' : ` · ${chord}`;
+  return shortcut === null ? '' : ` · ${shortcut}`;
 }
 
 function resolveActivityBatchRowsOptions(options: RunnerActivityBatchRowsOptions): {

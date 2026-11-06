@@ -487,6 +487,29 @@ describe('workflow visual fixtures', () => {
     },
   );
 
+  it.each([
+    [60, 10, 'write src/features/workflow/components/approval-promp…'],
+    [60, 12, 'write src/features/workflow/components/approval-promp…'],
+    [80, 12, 'write src/features/workflow/components/approval-prompt/confirm-panel-long…'],
+  ])('marks the cut path of the confirm gate at %ix%i', async (cols, rows, subject) => {
+    const scenario = findVisualScenario('workflow-approval-confirm-long-path');
+    const checkpoint = scenario?.checkpoints[0];
+    const renderViewport = scenario?.viewports.find(
+      (value) => value.cols === cols && value.rows === rows,
+    );
+    if (!scenario || !checkpoint || !renderViewport) throw new Error('Missing long-path confirm');
+    const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: renderViewport });
+    try {
+      const frame = stripTerminalControls(await ui.waitForCheckpoint(), {
+        preserveLineBreaks: true,
+      });
+      const row = frame.split('\n').find((line) => line.includes('write src/features/workflow'));
+      expect(row).toContain(subject);
+    } finally {
+      await ui.unmount();
+    }
+  });
+
   it("shows the planner's cannot answer on the skipped brief as cannot be done", async () => {
     const scenario = findVisualScenario('workflow-closed-decided-skip');
     const checkpoint = scenario?.checkpoints[0];

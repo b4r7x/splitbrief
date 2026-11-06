@@ -49,3 +49,8 @@ export function settingSaveSubject(def: SettingDef, value: unknown, config: Conf
   const shown = def.kind === 'boolean' ? (value ? 'on' : 'off') : displayValue(def, value);
   return `${label}${SOFT_SEP}${shown}`;
 }
+
+/** When a save lands while the run keeps the config it prepared: at the next run, or at Resume. */
+export function settingChangeWords(subject: string): string {
+  return `${subject} applies at the next run or Resume`;
+}

@@ -280,6 +280,44 @@ describe('fitConfirmPanel', () => {
     });
     expect(fitIn(1)).toMatchObject({ title: false, subject: [], options: 1, legend: false });
   });
+
+  const longPath =
+    'write src/features/workflow/components/approval-prompt/confirm-panel-long-name.tsx';
+  const fitLongPath = (boxRows: number) =>
+    fitConfirmPanel({
+      actionClass: 'write_out_of_scope',
+      actionDescription: longPath,
+      frame: ownConfirmFrame(getChromeContentWidth(60)),
+      boxRows,
+    });
+
+  it.each([2, 3, 4, 5, 6])('keeps the path beside the verb in a panel of %i rows', (boxRows) => {
+    expect(fitLongPath(boxRows)).toMatchObject({
+      subject: ['write src/features/workflow/components/approval-promp…'],
+      hidden: 2,
+    });
+  });
+
+  it('shows the end of the path on the second row of a panel of 7 rows', () => {
+    expect(fitLongPath(7)).toMatchObject({
+      subject: [
+        'write src/features/workflow/components/approval-prompt',
+        '/confirm-panel-long-name.tsx',
+      ],
+      hidden: 1,
+    });
+  });
+
+  it('keeps the path segments whole when the whole line fits', () => {
+    expect(fitLongPath(8)).toMatchObject({
+      subject: [
+        'write',
+        'src/features/workflow/components/approval-prompt/',
+        'confirm-panel-long-name.tsx',
+      ],
+      hidden: 1,
+    });
+  });
 });
 
 describe('reviewArtifactForPhase', () => {

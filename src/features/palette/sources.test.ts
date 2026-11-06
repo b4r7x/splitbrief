@@ -287,7 +287,7 @@ describe('buildPaletteSources skill rows', () => {
     expect(rows[0]).toMatchObject({
       id: 'terminal-layout',
       description: 'Check spacing and terminal-width behavior',
-      category: 'navigate',
+      category: null,
     });
   });
 

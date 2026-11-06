@@ -172,7 +172,7 @@ describe('rate provenance', () => {
 
     expect(stored.requestEstimate?.items[0]?.rates).toEqual({
       source: 'models-dev',
-      provider: 'acme',
+      provider: 'api:acme',
       model: 'metered-model',
       inputPer1M: 1,
       outputPer1M: 10,
@@ -190,6 +190,16 @@ describe('rate provenance', () => {
       stored.requestEstimate?.items[0]?.rates,
     );
     expect(exported.amountBasis).toBe('catalog-estimate');
+  });
+
+  it('records the runner of a rate card with its kind', () => {
+    const breakdown = meteredBreakdown(makeModelCacheAccessor({ catalog: catalogAt(1, 10) }), [
+      makeCall({ callId: 'api-1', runnerName: 'acme', backendKind: 'api', model: 'metered-model' }),
+      makeCall({ callId: 'cli-1', runnerName: 'codex', backendKind: 'cli', model: 'gpt-5-codex' }),
+    ]);
+
+    const items = breakdown.requestEstimate?.items ?? [];
+    expect(items.map((item) => item.rates?.provider)).toEqual(['api:acme', 'cli:codex']);
   });
 
   it('records the lookup time without manufacturing a rate date', () => {
@@ -479,7 +489,7 @@ describe('kind-qualified runner identity', () => {
     const items = breakdown.requestEstimate?.items ?? [];
     expect(items).toHaveLength(2);
     expect(items[0]?.completeness).toBe('complete');
-    expect(items[0]?.rates?.provider).toBe('claude-code');
+    expect(items[0]?.rates?.provider).toBe('api:claude-code');
     expect(items[1]?.completeness).toBe('unavailable');
     expect(items[1]?.reasons).toContain('unpriced-model');
   });

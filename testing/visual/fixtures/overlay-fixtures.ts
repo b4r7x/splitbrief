@@ -79,6 +79,7 @@ import { controlsStore } from '../../../src/stores/ui/controls.js';
 import { markWorkflowPaused } from '../../../src/stores/workflow/actions/pause.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
 import { seatChangeWords } from '../../../src/core/crew/seats.js';
+import { settingChangeWords } from '../../../src/features/settings/presentation.js';
 import {
   formatConfigSaveSuccess,
   reportConfigSaveFailure,
@@ -1032,6 +1033,10 @@ const createPaletteTypedSkillFixture: FixtureFactory = () => ({
   }),
   afterMount: (write) => write('verify'),
 });
+const createPaletteTypedActivityFixture: FixtureFactory = () => ({
+  ...createOverlayFixture({ overlay: 'command-palette', underlyingScreen: 'workflow' }),
+  afterMount: (write) => write('activity'),
+});
 const createSkillsFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'skills', seed: seedSkills });
 const createSkillsEmptyFixture: FixtureFactory = () => createOverlayFixture({ overlay: 'skills' });
@@ -1216,6 +1221,12 @@ const createSettingsSavedFixture: FixtureFactory = () => ({
     feedbackStore.setMessage(
       formatConfigSaveSuccess('End-of-run checks · off', { ignoreRuleAdded: false }),
     );
+  },
+});
+const createSettingsSavedDuringRunFixture: FixtureFactory = () => ({
+  ...createSettingsEndChecksOffFixture(),
+  afterMount: () => {
+    feedbackStore.setMessage(settingChangeWords('End-of-run checks · off'));
   },
 });
 const createSettingsErrorPathFixture: FixtureFactory = () => ({
@@ -2809,9 +2820,9 @@ const USAGE_UNPRICED_BREAKDOWN: CostBreakdown = {
     reasons: ['unpriced-model'],
     items: (
       [
-        ['call-planner-1', 'planner', 'claude-code', 'haiku'],
-        ['call-planner-2', 'planner', 'claude-code', 'haiku'],
-        ['call-review-1', 'review', 'antigravity', 'gemini-3-pro'],
+        ['call-planner-1', 'planner', 'cli:claude-code', 'haiku'],
+        ['call-planner-2', 'planner', 'cli:claude-code', 'haiku'],
+        ['call-review-1', 'review', 'cli:antigravity', 'gemini-3-pro'],
       ] as const
     ).map(([callId, role, provider, model]) => ({
       callId,
@@ -2906,7 +2917,7 @@ const USAGE_API_TWIN_BREAKDOWN: CostBreakdown = {
         billing: { posture: 'api-metered', basis: 'observed-invocation' },
         rates: {
           source: 'models-dev',
-          provider: 'opencode',
+          provider: 'api:opencode',
           model: 'gpt-5',
           inputPer1M: 1.25,
           outputPer1M: 10,
@@ -2991,6 +3002,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-command-palette-session-task'), createPaletteSessionTaskFixture],
   [scenarioId('overlay-command-palette-typed-name'), createPaletteTypedNameFixture],
   [scenarioId('overlay-command-palette-typed-skill'), createPaletteTypedSkillFixture],
+  [scenarioId('overlay-command-palette-typed-activity'), createPaletteTypedActivityFixture],
   [scenarioId('overlay-skills'), createSkillsEmptyFixture],
   [scenarioId('overlay-skills-list'), createSkillsFixture],
   [scenarioId('overlay-settings'), createSettingsFixture],
@@ -3020,6 +3032,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-settings-end-checks'), createSettingsEndChecksFixture],
   [scenarioId('overlay-settings-end-checks-off'), createSettingsEndChecksOffFixture],
   [scenarioId('overlay-settings-saved'), createSettingsSavedFixture],
+  [scenarioId('overlay-settings-saved-during-run'), createSettingsSavedDuringRunFixture],
   [scenarioId('overlay-settings-error-path'), createSettingsErrorPathFixture],
   [scenarioId('overlay-settings-saved-route-sign-in'), createSettingsSavedRouteSignInFixture],
   [

@@ -7,10 +7,12 @@ import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import {
   REVIEW_COMMENT_HINTS,
   REVIEW_DOCUMENT_HINTS,
+  REVIEW_TYPED_ROW_HINTS,
   getReviewDocumentPromptRows,
 } from '../../prompt-rows/approval.js';
 import { getReviewPanelBudget } from '../../layout/rect.js';
 import { DocumentReviewPrompt } from './document.js';
+import type { ReviewDraftTarget } from '../../review-commands.js';
 
 afterEach(() => {
   terminalSizeStore.reset();
@@ -35,7 +37,7 @@ describe('DocumentReviewPrompt', () => {
         confirms={[]}
         budgetRows={40}
         selectedIndex={0}
-        commenting={false}
+        draft={null}
       />,
     );
 
@@ -51,7 +53,7 @@ describe('DocumentReviewPrompt', () => {
         confirms={[]}
         budgetRows={40}
         selectedIndex={0}
-        commenting={false}
+        draft={null}
       />,
     );
 
@@ -66,7 +68,7 @@ describe('DocumentReviewPrompt', () => {
         confirms={[]}
         budgetRows={40}
         selectedIndex={0}
-        commenting={false}
+        draft={null}
       />,
     );
 
@@ -83,7 +85,7 @@ describe('DocumentReviewPrompt', () => {
         confirms={[]}
         budgetRows={40}
         selectedIndex={0}
-        commenting={false}
+        draft={null}
       />,
     );
 
@@ -101,7 +103,7 @@ describe('DocumentReviewPrompt', () => {
           confirms={[]}
           budgetRows={40}
           selectedIndex={selectedIndex}
-          commenting
+          draft="send"
         />,
       );
 
@@ -119,12 +121,34 @@ describe('DocumentReviewPrompt', () => {
         confirms={[]}
         budgetRows={40}
         selectedIndex={1}
-        commenting
+        draft="send"
       />,
     );
 
     expect(frame).toContain(REVIEW_COMMENT_HINTS);
     expect(frame).not.toContain('c comment');
+  });
+
+  it.each([
+    ['approve', 'Approve plan and start the build'],
+    ['comment', 'Request changes (type what to change)'],
+    ['edit-file', 'Edit plan.json'],
+    ['end-run', 'End run (close this run)'],
+  ] as const)('highlights the row ⏎ takes for the target %s', (draft, row) => {
+    const frame = frameOf(
+      <DocumentReviewPrompt
+        artifact="plan"
+        confirms={[]}
+        budgetRows={40}
+        selectedIndex={draft === 'approve' ? 2 : 0}
+        draft={draft}
+      />,
+    );
+
+    expect(frame).toContain(`${listRowLead('active')}${row}`);
+    expect(frame.split(listRowLead('active')).length - 1).toBe(1);
+    expect(frame).toContain(REVIEW_TYPED_ROW_HINTS);
+    expect(frame).not.toContain(REVIEW_COMMENT_HINTS);
   });
 
   it('paints exactly the rows the layout budgeted for it', () => {
@@ -135,7 +159,7 @@ describe('DocumentReviewPrompt', () => {
         confirms={[]}
         budgetRows={40}
         selectedIndex={0}
-        commenting={false}
+        draft={null}
       />,
     );
 
@@ -145,21 +169,25 @@ describe('DocumentReviewPrompt', () => {
   describe('at 60×18, where the plan keeps one row', () => {
     const budgetRows = getReviewPanelBudget({ rows: 18, inputRows: 3 });
 
-    function shortFrame(confirms: string[], commenting: boolean): string {
+    function shortFrame(
+      confirms: string[],
+      draft: ReviewDraftTarget | null,
+      selectedIndex = 0,
+    ): string {
       terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: false });
       return frameOf(
         <DocumentReviewPrompt
           artifact="plan"
           confirms={confirms}
           budgetRows={budgetRows}
-          selectedIndex={0}
-          commenting={commenting}
+          selectedIndex={selectedIndex}
+          draft={draft}
         />,
       );
     }
 
     it('gives the legend row to what approving confirms', () => {
-      const frame = shortFrame(['write package.json'], false);
+      const frame = shortFrame(['write package.json'], null);
 
       expect(frame).toContain('Approving also confirms: write package.json');
       expect(frame).not.toContain(REVIEW_DOCUMENT_HINTS);
@@ -167,18 +195,34 @@ describe('DocumentReviewPrompt', () => {
     });
 
     it('counts what approving confirms when the list would take a second row', () => {
-      const frame = shortFrame(['write package.json', 'write .github/workflows/ci.yml'], false);
+      const frame = shortFrame(['write package.json', 'write .github/workflows/ci.yml'], null);
 
       expect(frame).toContain('Approving also confirms 2 protected operations');
       expect(frame).not.toContain('ci.yml');
       expect(frame.split('\n').length).toBe(budgetRows);
     });
 
+    it('keeps what approving confirms in view while approve is typed', () => {
+      const frame = shortFrame(['write package.json'], 'approve', 2);
+
+      expect(frame).toContain('Approving also confirms: write package.json');
+      expect(frame).toContain(`${listRowLead('active')}Approve plan and start the build`);
+      expect(frame.split('\n').length).toBe(budgetRows);
+    });
+
     it('teaches the live keys in that row while a comment is typed', () => {
-      const frame = shortFrame(['write package.json'], true);
+      const frame = shortFrame(['write package.json'], 'send');
 
       expect(frame).toContain(REVIEW_COMMENT_HINTS);
       expect(frame).toContain(`${listRowLead('active')}Request changes (type what to change)`);
+      expect(frame).not.toContain('Approving also confirms');
+      expect(frame.split('\n').length).toBe(budgetRows);
+    });
+
+    it('teaches the live keys of a typed row in that row', () => {
+      const frame = shortFrame(['write package.json'], 'edit-file');
+
+      expect(frame).toContain(REVIEW_TYPED_ROW_HINTS);
       expect(frame).not.toContain('Approving also confirms');
       expect(frame.split('\n').length).toBe(budgetRows);
     });
@@ -195,7 +239,7 @@ describe('DocumentReviewPrompt', () => {
           confirms={confirms}
           budgetRows={40}
           selectedIndex={0}
-          commenting={false}
+          draft={null}
         />,
       );
 

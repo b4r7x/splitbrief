@@ -106,7 +106,9 @@ function estimateRequest(
   capturedAt: number,
 ): RequestEstimateItem {
   const usage = call.usage;
-  const rates = pricing === undefined ? undefined : rateSnapshot(pricing, undefined, capturedAt);
+  const runnerKey = callRunnerKey(call);
+  const rates =
+    pricing === undefined ? undefined : rateSnapshot(pricing, undefined, capturedAt, runnerKey);
   if (usage === null) return unavailable(call, ['usage-not-reported'], rates);
   if (pricing === undefined || !pricing.isPriced) {
     return unavailable(call, ['unpriced-model'], rates);
@@ -138,6 +140,7 @@ function estimateRequest(
     selected,
     selectedThreshold(pricing, contextTokens),
     capturedAt,
+    runnerKey,
   );
   const categories: Record<'input' | 'cacheRead' | 'cacheCreate', PricedCategory> = {
     input: { tokens: usage.inputTokens, rate: selected.inputPer1M },
@@ -227,10 +230,11 @@ function rateSnapshot(
   pricing: ResolvedPricing,
   selectedThresholdTokens: number | undefined,
   capturedAt: number,
+  runnerKey: string | undefined,
 ): RateSnapshot {
   return {
     source: pricing.source,
-    provider: pricing.provider,
+    provider: runnerKey ?? pricing.provider,
     model: pricing.name,
     inputPer1M: pricing.inputPer1M,
     outputPer1M: pricing.outputPer1M,

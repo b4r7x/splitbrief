@@ -2604,6 +2604,17 @@ const approvalConfirmSecretProjection: WorkflowFixtureProjection = {
   },
 };
 
+const approvalConfirmLongPathProjection: WorkflowFixtureProjection = {
+  ...approvalConfirmProjection,
+  scenarioId: scenarioId('workflow-approval-confirm-long-path'),
+  approval: {
+    actionClass: 'write_out_of_scope',
+    actionDescription:
+      'write src/features/workflow/components/approval-prompt/confirm-panel-long-name.tsx',
+    answer: WORKFLOW_FIXTURE_TEXT.reviewAnswer,
+  },
+};
+
 // The plan card: two batches and one protected operation, rendered by the same formatter the
 // planning session writes plan.md with.
 const PLAN_CARD_PLAN = makePlanProposal({
@@ -8500,9 +8511,11 @@ const projections = [
   approvalConfirmProjection,
   approvalConfirmSecretProjection,
   { ...approvalConfirmProjection, scenarioId: scenarioId('workflow-approval-confirm-short') },
+  approvalConfirmLongPathProjection,
   planCardProjection,
   { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-short') },
   { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-commenting') },
+  { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-typed-command') },
   { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-request-empty') },
   {
     ...planCompiledProjection,

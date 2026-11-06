@@ -1,4 +1,6 @@
 import { createStore, storeBase } from '../create-store.js';
+import { preparationStore } from '../navigation/preparation.js';
+import { routerStore } from '../navigation/router.js';
 import type { UserMessageInput } from '../../core/types/user-input.js';
 import { lifecycleStore } from './lifecycle.js';
 import { runViewStore } from './run-view.js';
@@ -67,6 +69,24 @@ function request(intent: Exclude<StopIntent, 'none'>): void {
 export function takesSeatAtBoundary(): boolean {
   const { status } = lifecycleStore.get();
   return (status === 'running' || status === 'paused') && runViewStore.get().halt === null;
+}
+
+/**
+ * Whether a setting saved now lands only when the run runs again or continues from its Resume: a
+ * start or a Resume checking its tools runs on the config it read before the check, on whatever
+ * route it waits, and the local run this process drives keeps the config it prepared. A run at
+ * rest, a finished run and a stop that ended the run prepare again from the file, so their save is
+ * a plain save.
+ */
+export function keepsPreparedSettings(): boolean {
+  if (preparationStore.get().kind === 'checking') return true;
+  const route = routerStore.get();
+  if (route.screen !== 'workflow' || route.execution.kind !== 'local') return false;
+  const stop = store.get();
+  if (stop.phase === 'ended') return false;
+  const { status } = lifecycleStore.get();
+  if (status === 'complete') return false;
+  return status === 'running' || status === 'paused' || parksCutCall(stop);
 }
 
 /** A stop parked the run inside a call, and the run goes on with that call when it continues. */

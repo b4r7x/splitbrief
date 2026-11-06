@@ -160,8 +160,14 @@ function enterWorkflowScreen(): void {
   });
 }
 
-// Command rows are sectioned by category; task, session and custom rows by their source.
-const GROUP_HEADERS = [...Object.values(COMMAND_CATEGORY_LABELS), 'Tasks', 'Sessions', 'Actions'];
+// Command rows are sectioned by category; task, session, custom and skill rows by their source.
+const GROUP_HEADERS = [
+  ...Object.values(COMMAND_CATEGORY_LABELS),
+  'Tasks',
+  'Sessions',
+  'Actions',
+  'Skills',
+];
 
 function innerText(line: string): string {
   // Strip the OverlayPanel frame (vertical borders + padding) so the checks below see the bare
@@ -1007,7 +1013,7 @@ describe('CommandPaletteOverlay', () => {
     skillsStore.setAvailable([
       {
         id: 'terminal-layout',
-        name: 'Terminal layout',
+        name: 'Terminal layout checks for narrow overlay panels',
         description: 'Check spacing and terminal-width behavior',
         path: 'fixtures/skills/terminal-layout/SKILL.md',
         scope: 'project',
@@ -1028,12 +1034,48 @@ describe('CommandPaletteOverlay', () => {
     await tick(1);
 
     const rows = paletteResultRows(instance.lastFrame() ?? '');
-    const longSkill = 'Skill · Terminal layout';
+    // The long skill label is wider than half the row, so the shared column cuts it; its
+    // description is found by its own first words.
+    const longSkillRow = stripAnsiStyles(rowContaining(rows, 'Skill · Terminal layout'));
     const shortSkill = 'Skill · Release checks';
     const commandColumn = descriptionStart(rowContaining(rows, '/help'), '/help');
 
-    expect(descriptionStart(rowContaining(rows, longSkill), longSkill)).toBe(commandColumn);
+    expect(longSkillRow).not.toContain('Skill · Terminal layout checks for narrow overlay panels');
+    expect(longSkillRow.indexOf('Check spacing')).toBe(commandColumn);
     expect(descriptionStart(rowContaining(rows, shortSkill), shortSkill)).toBe(commandColumn);
+    instance.unmount();
+  });
+
+  it('puts a typed skill under its own Skills header', async () => {
+    skillsStore.setAvailable([
+      {
+        id: 'terminal-layout',
+        name: 'Terminal layout',
+        description: 'Check spacing and terminal-width behavior',
+        path: 'fixtures/skills/terminal-layout/SKILL.md',
+        scope: 'project',
+        projectDir,
+      },
+      {
+        id: 'release-checks',
+        name: 'Release checks',
+        description: 'Run deterministic quality gates',
+        path: 'fixtures/skills/release-checks/SKILL.md',
+        scope: 'global',
+      },
+    ]);
+
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    const instance = renderCommandPalette();
+    await tick(1);
+    await tick(1);
+
+    await write(instance, 'layout');
+    await tick(1);
+    await tick(1);
+
+    const frame = instance.lastFrame() ?? '';
+    expect(sectionHeaders(frame)).toEqual(['Skills']);
     instance.unmount();
   });
 

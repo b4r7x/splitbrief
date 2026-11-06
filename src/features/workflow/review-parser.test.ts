@@ -386,6 +386,26 @@ describe('review input effects', () => {
     expect(feedbackStore.get().message).toBeNull();
   });
 
+  it('sends an old hidden word as a correction at the plan card', async () => {
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
+    const reviewFile = join(tempDir, 'plan.md');
+    writeFileSync(reviewFile, '# Plan\n');
+    writeFileSync(join(tempDir, 'plan.json'), '{}\n');
+    reviewStore.setReviewFile(reviewFile);
+    const inputMode = makeInputMode('review');
+
+    await createReviewInputHandler(inputMode, makeEffects()).handleInput(
+      plainUserMessage('status'),
+    );
+
+    expect(inputMode.resolve).toHaveBeenCalledWith({
+      approved: false,
+      action: 'revise',
+      message: plainUserMessage('status'),
+    });
+  });
+
   it('opens the comment draft for a bare c instead of sending the letter to the planner', async () => {
     runViewStore.__testReset({ phase: 'reviewing-plan' });
     lifecycleStore.__testReset({ status: 'running' });

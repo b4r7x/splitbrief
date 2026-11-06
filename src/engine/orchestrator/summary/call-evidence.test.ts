@@ -126,7 +126,7 @@ describe('run call evidence', () => {
     expect(items).toHaveLength(1);
     expect(items[0]?.rates).toEqual({
       source: 'models-dev',
-      provider: SEAT_TOOL,
+      provider: `api:${SEAT_TOOL}`,
       model: SEAT_MODEL,
       inputPer1M: 0.14,
       outputPer1M: 0.28,

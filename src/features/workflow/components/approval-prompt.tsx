@@ -16,6 +16,7 @@ import type { OverlayCard } from '../../../components/overlays/overlay-panel.js'
 import { ConfirmApprovalPrompt, PROMPT_ZONE_Z } from './approval-prompt/confirm.js';
 import { DocumentReviewPrompt } from './approval-prompt/document.js';
 import type { ReviewArtifact } from '../prompt-rows/approval.js';
+import type { ReviewDraftTarget } from '../review-commands.js';
 
 export { PROMPT_ZONE_Z };
 
@@ -25,7 +26,7 @@ export interface ReviewPanelProps {
   /** The rows the panel may take (`getReviewPanelBudget`); the page budgets the same number. */
   budgetRows: number;
   selectedIndex: number;
-  commenting: boolean;
+  draft: ReviewDraftTarget | null;
 }
 
 interface ApprovalPromptProps {

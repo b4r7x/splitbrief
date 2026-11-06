@@ -5,13 +5,14 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { reviewKeysStore } from '../../stores/ui/review-keys.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../lib/terminal/typeahead-grace.js';
-import { parseReviewCommand } from '../../features/workflow/review-commands.js';
+import { parseReviewCommand, reviewDraftTarget } from '../../features/workflow/review-commands.js';
 import { ApprovalPrompt } from '../../features/workflow/components/approval-prompt.js';
 import {
   REVIEW_COMMENT_HINTS,
   REVIEW_DOCUMENT_HINTS,
 } from '../../features/workflow/prompt-rows/approval.js';
 import { controlsStore } from '../../stores/ui/controls.js';
+import { composerLiveStore } from '../../stores/ui/composer-live.js';
 import { Composer } from './composer.js';
 
 const PAST_GRACE = PROMPT_TYPEAHEAD_GRACE_MS + 30;
@@ -29,11 +30,13 @@ function reviewComposer(submissions: string[]) {
   );
 }
 
-// The workflow screen reads the panel's `commenting` from the flag the composer writes
+// The workflow screen reads the panel's draft from the text and the flags the composer writes
 // (`src/app/screens/workflow.tsx`); mirroring that read is what lets the keystroke and the legend
 // be one render apart here as they are on screen.
 function ReviewPanel() {
   const commenting = reviewKeysStore.use((s) => s.commenting);
+  const requested = reviewKeysStore.use((s) => s.requested);
+  const text = composerLiveStore.use((s) => s.text);
   return (
     <ApprovalPrompt
       review={{
@@ -41,7 +44,7 @@ function ReviewPanel() {
         confirms: [],
         budgetRows: 40,
         selectedIndex: 1,
-        commenting,
+        draft: commenting ? reviewDraftTarget(text, requested) : null,
       }}
     />
   );
@@ -160,8 +163,8 @@ describe('Composer review action keys', () => {
     ui.stdin.write('split T002');
     await flushEffects();
 
-    // The panel is a mirror of `reviewKeysStore.commenting`, so the draft and the legend change in the
-    // same render.
+    // The panel is a mirror of the draft and the flags the composer publishes, so the legend
+    // changes in the same render.
     const frame = stripAnsiStyles(ui.lastFrame());
     expect(frame).toContain(REVIEW_COMMENT_HINTS);
     expect(frame).not.toContain(REVIEW_DOCUMENT_HINTS);

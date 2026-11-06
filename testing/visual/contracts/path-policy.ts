@@ -27,7 +27,7 @@ const POSIX_PATH_PATTERN = new RegExp(
 // A command a narrow hint cuts short ends in an ellipsis.
 const SLASH_COMMAND_PATTERN = /^\/[a-z][a-z0-9-]*[!),.:;?\]}…]*$/u;
 const TRAILING_PROSE_PUNCTUATION_PATTERN = /[!),.:;?\]}]+$/u;
-// These exact synthetic fixture paths identify no operator machine; other host paths remain forbidden.
+// These exact synthetic fixture strings identify no operator machine; other host paths remain forbidden.
 const FIXTURE_HOST_PATHS = new Set([
   '/Users/dev/notes/brief.md',
   '/Users/me/notes/product-planning/archive/receiving-workflow/brief.md',
@@ -36,6 +36,7 @@ const FIXTURE_HOST_PATHS = new Set([
   '/Volumes/design/receiving-flow.png',
   '/usr/local/bin/review-bot',
   '/opt/homebrew/Cellar/review-bot/2.5.0/bin/review-bot',
+  '/confirm-panel-long-name.tsx',
 ]);
 // The HTTP route the OpenCode listing source names in the picker byline; no file system path.
 const PRODUCT_ROUTE_PATHS = new Set(['/api/model']);

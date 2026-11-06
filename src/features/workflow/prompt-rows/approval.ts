@@ -1,4 +1,8 @@
-import { getTerminalCellWidth, sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
+import {
+  getTerminalCellWidth,
+  sanitizeTerminalDisplayText,
+  truncateTerminalDisplayText,
+} from '../../../utils/display-text.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { fitKeyLegend } from '../../../core/key-legend.js';
 import type { ActionClass, Phase } from '../../../core/schemas/enums.js';
@@ -163,6 +167,8 @@ export const REVIEW_COMMENT_HINTS = formatKeyHints([
   { key: '⏎', verb: 'send' },
   { key: 'esc', verb: 'back' },
 ]);
+
+export const REVIEW_TYPED_ROW_HINTS = formatKeyHints([CONFIRM_HINT, { key: 'esc', verb: 'back' }]);
 
 // Below this the panel draws no border: a box around a gate whose document has a few columns left
 // is decoration.
@@ -438,11 +444,11 @@ export interface ConfirmPanelFit {
  * filled in this order:
  * the option rows, the title, the legend, the disclosure, the label, the irreversible note, the
  * blank row above the options, the blank row above the legend. The panel never asks blind: two
- * rows or more keep the first line of the action ahead of that order, cut to the rows it gets, and
- * one row carries it after the option. The label restates the title, so it gives way before any
- * disclosure line. The disclosure gives way from the bottom, a whole line at a time, because the
- * first lines name what runs. A row under the kept lines counts the cut
- * rows, with a blank row under it, as `clipPromptBodyRows` keeps the facts off the keys. With
+ * rows or more keep the first line of the action ahead of that order, cut to the rows it gets with
+ * `…` at the cut, and one row carries it after the option. The label restates the title, so it
+ * gives way before any disclosure line. The disclosure gives way from the bottom, a whole line at a
+ * time, because the first lines name what runs. A row under the kept lines counts the cut rows,
+ * with a blank row under it, as `clipPromptBodyRows` keeps the facts off the keys. With
  * fewer than three rows for the text, or with every disclosure line in view and only the label
  * cut, the title carries the count, so no row holds the count alone. A row the whole lines leave
  * free goes to the label. A region too short for the option rows and the title drops the title,
@@ -458,9 +464,8 @@ export function fitConfirmPanel(input: {
 }): ConfirmPanelFit {
   const { frame } = input;
   const rows = confirmPanelRows(input.actionClass, frame.width);
-  const lines = formatApprovalActionDescription(input.actionDescription)
-    .split('\n')
-    .map((line) => wrapPathAwareText(line, frame.width).split('\n'));
+  const descriptionLines = formatApprovalActionDescription(input.actionDescription).split('\n');
+  const lines = descriptionLines.map((line) => wrapPathAwareText(line, frame.width).split('\n'));
   const subjectRows = lines.flat();
   const minRows = confirmPanelMinRows(input, frame);
   const spare = input.boxRows - minRows;
@@ -507,9 +512,21 @@ export function fitConfirmPanel(input: {
   const countRow = subjectRows.length > textRoom && textRoom >= 3;
   const lineRoom = countRow ? textRoom - 2 : textRoom;
   const subject: string[] = [];
+  let cutRows: string[] | null = null;
   for (const line of lines) {
     if (subject.length + line.length > lineRoom) {
-      if (subject.length === 0) subject.push(...line.slice(0, lineRoom));
+      if (subject.length === 0) {
+        const hardRows = wrapHard(descriptionLines[0] ?? '', frame.width).split('\n');
+        const kept = hardRows.slice(0, lineRoom);
+        if (kept.length > 0 && kept.length < hardRows.length) {
+          kept[kept.length - 1] = truncateTerminalDisplayText(
+            hardRows.slice(kept.length - 1).join(''),
+            frame.width,
+          );
+        }
+        subject.push(...kept);
+        cutRows = [...hardRows.slice(kept.length), ...lines.slice(1).flat()];
+      }
       break;
     }
     subject.push(...line);
@@ -518,7 +535,7 @@ export function fitConfirmPanel(input: {
   const label = rows.label <= lineRoom - subject.length;
   const hidden =
     (label ? 0 : rows.label) +
-    subjectRows.slice(subject.length).filter((row) => row.trim() !== '').length;
+    (cutRows ?? subjectRows.slice(subject.length)).filter((row) => row.trim() !== '').length;
   const markRow = countRow && hidden > 0 && (label || subject.length > 0);
   room -= (label ? rows.label : 0) + subject.length + (markRow ? 1 : 0);
   const note = room - (markRow ? 1 : 0) >= rows.note;

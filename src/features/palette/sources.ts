@@ -136,7 +136,7 @@ function buildSkillItems(skills: SkillMeta[], selected: ReadonlySet<string>): Pa
     label: `Skill · ${skill.name}`,
     description: skill.description,
     hint: selected.has(skill.id) ? 'attached' : null,
-    category: 'navigate',
+    category: null,
     action: {
       kind: 'run',
       run: () => {

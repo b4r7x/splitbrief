@@ -245,7 +245,7 @@ describe('buildPaletteResults', () => {
     expect(commandItems.map((item) => item.label)).toEqual(originalOrder);
   });
 
-  it('ranks a skill row beside the command rows in its category', () => {
+  it('ranks a skill row in its own section', () => {
     const toggle = vi.fn();
     const results = buildPaletteResults(
       makeInputs({
@@ -267,7 +267,7 @@ describe('buildPaletteResults', () => {
             label: 'Skill · Terminal layout',
             description: 'Check spacing and terminal-width behavior',
             hint: 'attached',
-            category: 'navigate',
+            category: null,
             action: { kind: 'run', run: toggle },
           },
         ],
@@ -275,7 +275,7 @@ describe('buildPaletteResults', () => {
     );
 
     expect(results.map((result) => result.id)).toEqual(['skill:terminal-layout']);
-    expect(results[0]).toMatchObject({ source: 'skill', category: 'navigate', hint: 'attached' });
+    expect(results[0]).toMatchObject({ source: 'skill', category: null, hint: 'attached' });
 
     const action = results[0]?.action;
     if (action?.kind === 'run') void action.run();
@@ -302,7 +302,7 @@ describe('buildPaletteResults', () => {
             label: 'Skill · Terminal layout',
             description: 'Check spacing',
             hint: null,
-            category: 'navigate',
+            category: null,
             action: run,
           },
         ],
@@ -313,7 +313,7 @@ describe('buildPaletteResults', () => {
     );
 
     const sources: PaletteSource[] = results.map((result) => result.source);
-    expect(sources).toEqual(['command', 'skill', 'task', 'session', 'custom']);
+    expect(sources).toEqual(['command', 'task', 'session', 'custom', 'skill']);
     expectTypeOf<PaletteResult['source']>().toEqualTypeOf<PaletteSource>();
   });
 });
@@ -351,7 +351,7 @@ describe('a command name typed in the palette', () => {
         label: 'Skill · crew',
         description: 'Sessions, settings and the home screen',
         hint: null,
-        category: 'navigate' as const,
+        category: null,
         action: run,
       },
     ],
@@ -452,7 +452,7 @@ describe('a row name typed in the palette', () => {
         label: `Skill · ${row.name}`,
         description: 'A skill',
         hint: null,
-        category: 'navigate' as const,
+        category: null,
         action: run,
       })),
       taskItems: of('task').map((row) => ({ id: row.id, title: row.name, action: noop })),
