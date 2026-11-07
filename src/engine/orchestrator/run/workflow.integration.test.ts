@@ -1346,6 +1346,81 @@ describe('runWorkflow — smoke', () => {
             expect(ignoredBeforeSecondCall).toBe('ignored by the call\n');
           },
         );
+
+        it.each(['worktree', 'checkout'] as const)(
+          '%s, after a retry whose save fails, continued in this process',
+          async (isolation) => {
+            const projectDir = createTempDir('run-workflow-test');
+            dirs.push(projectDir);
+            createTestGitRepo(projectDir, committed);
+            writeFileSync(join(projectDir, 'dirty.txt'), 'dirty by the user\n');
+            const sessionId = `restore-kept-retry-${isolation}-sid`;
+            const ref = { projectDir, sessionId };
+            const config = makeConfig({
+              validation: { endChecks: false, testCommand: 'noop' },
+              workflow: {
+                approve: 'none',
+                isolation: isolation === 'checkout' ? 'none' : 'worktree',
+              },
+            });
+            let taskStart: Record<string, string | null> = {};
+            const implement = vi.fn().mockImplementationOnce(async (opts: ImplementerOptions) => {
+              taskStart = contents(opts.projectDir);
+              writeFileSync(join(opts.projectDir, 'src/hello.ts'), 'hello by the first call\n');
+              writeFileSync(join(opts.projectDir, 'docs/notes.md'), 'notes by the first call\n');
+              throw new Error('boom');
+            });
+            const retry = vi.fn().mockImplementationOnce(async (opts: ImplementerOptions) => {
+              unlinkSync(join(opts.projectDir, 'docs/old.md'));
+              writeFileSync(join(opts.projectDir, 'docs/new.md'), 'new by the retry\n');
+              writeFileSync(join(opts.projectDir, 'dirty.txt'), 'dirty by the retry\n');
+              return { success: true, output: '', usage: null };
+            });
+            // Armed on the first call's failure, so the save that fails is the retry's.
+            const failed = await runWithStateWrite(
+              sessionId,
+              { from: 'recordWrites', fails: 'eio' },
+              'error',
+              {
+                projectDir,
+                config,
+                _planner: makePlanner({
+                  typedCall: typedCallPlanAndConsult(
+                    () => planFromTasks([makeTask({ id: 'T001' })]),
+                    () => guidanceConsult(),
+                  ),
+                }),
+                _implementer: makeImplementer({ implement, retry }),
+              },
+            );
+            expect(implement).toHaveBeenCalledTimes(1);
+            expect(retry).toHaveBeenCalledTimes(1);
+            expect(failed.status).toMatchObject({ kind: 'open', stop: { kind: 'stopped' } });
+            const onDisk = WorkflowStateSchema.parse(
+              JSON.parse(readFileSync(join(sessionDir(projectDir, sessionId), STATE_FILE), 'utf8')),
+            ).changedFilesBaseline?.activeTaskSnapshot?.restoreFiles;
+            expect(onDisk).toContain('docs/notes.md');
+            expect(onDisk ?? []).not.toContain('docs/new.md');
+
+            let beforeSecondCall: Record<string, string | null> = {};
+            const second = vi.fn().mockImplementation(async (opts: ImplementerOptions) => {
+              beforeSecondCall = contents(opts.projectDir);
+              return { success: true, output: '', usage: null };
+            });
+            const kept = loadOwnerWorkflowState(ref);
+            const again = await runWithStateWrite(sessionId, undefined, 'start', {
+              projectDir,
+              config,
+              savedState: kept.kind === 'loaded' ? kept.state : undefined,
+              purpose: 'resume',
+              _implementer: makeImplementer({ implement: second }),
+            });
+
+            expect(again.thrown).toBeUndefined();
+            expect(second).toHaveBeenCalledTimes(1);
+            expect(beforeSecondCall).toEqual(taskStart);
+          },
+        );
       });
 
       // Only that one write is refused; every state write still lands.

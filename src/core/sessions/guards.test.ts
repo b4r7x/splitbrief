@@ -114,7 +114,9 @@ describe('assertNoLiveSession', () => {
     writeLockfile(dir, sessionId);
     writeActive({ projectDir: dir, sessionId });
 
-    expect(() => assertNoLiveSession(dir)).toThrow(/still active/);
+    expect(() => assertNoLiveSession(dir)).toThrow(
+      expect.objectContaining({ kind: 'session-still-active', data: { sessionId } }),
+    );
     expect(existsSync(activeFile(dir))).toBe(true);
   });
 });

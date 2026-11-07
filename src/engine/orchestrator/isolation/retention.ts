@@ -12,7 +12,7 @@ import {
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { deriveRunStatus } from '../../../core/sessions/run-status.js';
-import { sessionFileFailure } from '../../../core/sessions/errors.js';
+import { sessionError, sessionFileFailure } from '../../../core/sessions/errors.js';
 import {
   WORKSPACE_KEPT_CODE,
   WORKSPACE_NOTICE_CATEGORY,
@@ -58,8 +58,9 @@ export function isResumableWorkspaceStop(signal: AbortSignal | undefined): boole
 }
 
 /**
- * Settles the workspace of a BUILD call that threw. Only a stop takes the call's files back, and a
- * stop the run can resume keeps them for it; a call that failed keeps them for the consult.
+ * Settles the workspace of a BUILD call that threw. A stop takes the call's files back, and a stop
+ * the run can resume keeps them for it. A failed save of the run takes them back too, because the
+ * run stops with no consult. A call that failed keeps them for the consult.
  */
 export async function settleThrownCall(
   workspace: IsolatedWorkspace,
@@ -67,7 +68,11 @@ export async function settleThrownCall(
   err: unknown,
 ): Promise<void> {
   if (isAbortError(err) && isResumableWorkspaceStop(signal)) await workspace.retain?.();
-  else if (isAbortError(err) || (signal?.aborted && !retentionError.isFailed(err)))
+  else if (
+    isAbortError(err) ||
+    sessionError.isLocalSaveFailure(err) ||
+    (signal?.aborted && !retentionError.isFailed(err))
+  )
     workspace.cleanup();
 }
 
