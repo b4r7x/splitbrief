@@ -84,7 +84,7 @@ afterEach(() => cleanupTempDir(fixture.tmpDir));
 
 async function runInteractive(
   args: readonly string[],
-  observe: (screen: () => string, firstCard: () => string | undefined) => Promise<void>,
+  observe: (screen: () => string, firstCard: () => string | undefined) => Promise<string>,
 ): Promise<void> {
   const result = await runWithPtyChild(
     {
@@ -128,7 +128,7 @@ async function runInteractive(
         });
       });
       try {
-        await observe(screen, () => firstCard);
+        const exitStderr = await observe(screen, () => firstCard);
         expect(readFileSync(stderrPath, 'utf8')).toBe('');
         expect(rawIo).toContain(terminalSequences.enterAltBuffer);
         expect(rawIo).toContain(terminalSequences.hideCursor);
@@ -137,7 +137,7 @@ async function runInteractive(
         child.write('\x03');
         await vi.waitFor(() => expect(didExit, rawIo).toBe(true), { timeout: 5000 });
         expect(await exited.promise).toMatchObject({ exitCode: 0 });
-        expect(readFileSync(stderrPath, 'utf8')).toBe('');
+        expect(readFileSync(stderrPath, 'utf8')).toBe(exitStderr);
         expect(rawIo.lastIndexOf(terminalSequences.exitAltBuffer)).toBeGreaterThan(
           rawIo.lastIndexOf(terminalSequences.enterAltBuffer),
         );
@@ -166,6 +166,7 @@ describe('e2e: interactive first-run copy', () => {
       });
       expect(existsSync(stderrPath)).toBe(true);
       expect(readFileSync(stderrPath, 'utf8')).toBe('');
+      return '';
     });
   });
 
@@ -193,6 +194,8 @@ describe('e2e: interactive first-run copy', () => {
       });
       expect(replay.events.some((event) => event.type === 'task_started')).toBe(false);
       expect(existsSync(fixture.markerPath)).toBe(false);
+      // A quit from an open run names the command that continues it, on stderr after the exit.
+      return `Continue this run with: splitbrief continue ${sessionId}\n`;
     });
   });
 });
