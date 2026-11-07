@@ -131,7 +131,7 @@ The full union has many variants, but the pattern is consistent: every event is 
 
 `runFinalReviewPhase` publishes `review_started` and `review_completed` for both `task` and `final` scopes. Each start has one completion, including a failed call or a stop. A `preReview` halt publishes neither event. The review seat uses the configured reviewer, or the planner when no reviewer is configured. Both events carry that seat's `tool`, optional `model`, and nonempty `axes` from `seatAxisWords`. The review publishes no `planner_status`; that event belongs to planning.
 
-Task reviews carry `afterTaskId`, the completed brief that scheduled the review. Final reviews omit it. A completion carries the derived verdict and `duration` in milliseconds. `findings` counts blocking and minor findings only when a verdict exists. A failed call records `no-verdict`; a stop records `stopped`. Neither outcome carries findings.
+Task reviews carry `afterTaskId`, the completed brief that scheduled the review. Final reviews omit it. A completion carries the derived verdict and `duration` in milliseconds. `findings` counts blocking and minor findings only when a verdict exists. It also carries `unverifiedCriteria` when a criterion remains unverified: the count of criteria no check verified, each of which fails the review. The count is positive and optional, and a review with none unverified omits it, so older event logs keep their display. A failed call records `no-verdict`; a stop records `stopped`. Neither outcome carries findings.
 
 `review_step` names the engine's current step: `verdict`, the reviewer's call. A review after an answered question starts at `verdict`. The stores carry the recorded step into each review call and the gaps between calls.
 
@@ -465,9 +465,12 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 { type: 'review_completed'; scope: 'final' | 'task'; afterTaskId?: string;
   tool: string; model?: string; axes?: string[];
   verdict: 'pass' | 'pass-with-notes' | 'fail' | 'no-verdict' | 'stopped';
-  findings?: { blocking: number; minor: number; outOfScope?: number };
+  findings?: { blocking: number; minor: number; outOfScope?: number;
+               unverifiedCriteria?: number };
   setAside?: { id: string; reason: string }[]; duration: number }
 // New findings carry outOfScope. Older logs may omit it.
+// unverifiedCriteria is the count of criteria no check verified; each one fails the review.
+// Positive and optional: a review with none unverified omits it, so old events read as before.
 // setAside: each red input the reviewer rejected with a reason; it no longer blocks the review.
 // The transcript review row counts notes as minor + (outOfScope ?? 0).
 

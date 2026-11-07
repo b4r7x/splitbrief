@@ -605,6 +605,29 @@ const checkpointPredicates = [
     checkpointId('build-base-rerun'),
     includesAll(WORKFLOW_FIXTURE_TEXT.implementation, '0/3 briefs passed'),
   ],
+  [
+    checkpointId('base-rerun-long-command'),
+    () => {
+      const rows = workflowTranscriptText()
+        .split('\n')
+        .map((row) => row.replaceAll('\u00a0', ' '));
+      return rows.some(
+        (row) => row.includes('Base re-run V5') && row.endsWith('passes at the run base · 1m 34s'),
+      );
+    },
+  ],
+  [
+    checkpointId('check-timed-out'),
+    () => {
+      const rows = workflowTranscriptText()
+        .split('\n')
+        .map((row) => row.replaceAll('\u00a0', ' ').trim());
+      const matches = rows.filter(
+        (row) => row === 'Fix check V1 · npm run release-check · timed out · 1h 0m 0s',
+      );
+      return matches.length === 1;
+    },
+  ],
   [checkpointId('build-brief-check-seat-change'), includesAll('T901 check K2')],
   [checkpointId('implementation-shell-seat'), includesAll('Custom Shell')],
   [
@@ -816,6 +839,10 @@ const checkpointPredicates = [
     includesTranscript('Set aside V2.1', 'Transient 60 s'),
   ],
   [checkpointId('review-settled-failed'), includesTranscript('✗ Final review failed', '7.0s')],
+  [
+    checkpointId('review-settled-unverified'),
+    includesTranscript('✗ Final review failed  4 unverified criteria'),
+  ],
   [
     checkpointId('review-corrected'),
     includesTranscript('T902', 'Final review failed', '7.0s', 'Final review re-run passed', '5.0s'),

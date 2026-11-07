@@ -716,6 +716,22 @@ describe('parseEngineEvent', () => {
     ).toBeNull();
   });
 
+  it('keeps the timeout of a finished full_suite row and omits it on a row without one', () => {
+    const event = {
+      type: 'full_suite',
+      ts: 1,
+      phase: 'implementing',
+      status: 'done',
+      id: 'V1',
+      command: 'npm test',
+      moment: 'brief',
+      passed: false,
+    };
+    const kept = parseEngineEvent({ ...event, timedOut: true });
+    expect(kept?.type === 'full_suite' ? kept.timedOut : undefined).toBe(true);
+    expect(parseEngineEvent(event)).not.toHaveProperty('timedOut');
+  });
+
   it('accepts queued message events with preview text', () => {
     expect(
       parseEngineEvent({

@@ -14,13 +14,16 @@ import type {
 import { formatDuration } from '../../../utils/format-time.js';
 import { formatContextLength } from '../../../core/formatting.js';
 import { glyph } from '../../../lib/glyphs.js';
-import { truncateTerminalDisplayText } from '../../../utils/display-text.js';
+import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../../utils/display-text.js';
 import { formatUsageTokens } from '../usage-details-model.js';
 import { suiteStageParts } from '../display/phase-verb.js';
 import { formatRecordedSeatIdentity } from '../display/recorded-seat-identity.js';
+import { wrapWidthFor } from './row-markers.js';
 import type { ConversationRowSegment, ConversationRowTone } from './types.js';
 
 const NOT_RUN = 'not\u00a0run';
+const MAX_SUITE_COMMAND_CELLS = 48;
+const MIN_SUITE_COMMAND_CELLS = 16;
 
 // The value's own facts, one label each. A label can carry the separator inside it — the tool and
 // its model are one label — so callers that lay the value out themselves need the parts, not the
@@ -119,42 +122,74 @@ function rowDuration(ms: number): string {
 
 export function fullSuiteSegments(
   event: Extract<EngineEvent, { type: 'full_suite' }>,
+  width: number,
 ): ConversationRowSegment[] {
-  const lead = suiteStageParts(
-    {
-      ...event,
-      command: truncateTerminalDisplayText(event.command, 48),
-    },
-    'transcript',
-  );
-  const append = (parts: readonly ConversationRowSegment[]): ConversationRowSegment[] => [
-    ...lead,
-    ...separatedSegments(parts),
-  ];
   const detail: ConversationRowSegment[] =
     event.detail === undefined ? [] : [{ text: firstLine(event.detail), tone: 'textDim' }];
   // A reused result shows when its command ran, in place of the clock of a run; a wrap keeps it whole.
   const clock: ConversationRowSegment[] =
-    event.reusedAt !== undefined
-      ? [{ text: reusedNote(event.reusedAt).replaceAll(' ', '\u00a0'), tone: 'textDim' }]
-      : event.duration === undefined
-        ? []
-        : [{ text: rowDuration(event.duration), tone: 'textDim' }];
-  if (event.status === 'running') return append([{ text: 'running', tone: fullSuiteTone(event) }]);
-  if (event.status === 'stopped') return append([{ text: 'stopped', tone: fullSuiteTone(event) }]);
-  if (event.status === 'off') return append([{ text: 'off', tone: fullSuiteTone(event) }]);
+    event.status !== 'done'
+      ? []
+      : event.reusedAt !== undefined
+        ? [{ text: reusedNote(event.reusedAt).replaceAll(' ', '\u00a0'), tone: 'textDim' }]
+        : event.duration === undefined
+          ? []
+          : [{ text: rowDuration(event.duration), tone: 'textDim' }];
+  const outcome = fullSuiteOutcome(event, detail);
+  const lead = suiteStageParts(
+    { ...event, command: suiteCommandForRow(event, outcome.verdict, clock, width) },
+    'transcript',
+  );
+  return [...lead, ...separatedSegments([...outcome.verdict, ...clock, ...outcome.trail])];
+}
+
+function suiteCommandForRow(
+  event: Extract<EngineEvent, { type: 'full_suite' }>,
+  verdict: readonly ConversationRowSegment[],
+  clock: readonly ConversationRowSegment[],
+  width: number,
+): string {
+  if (event.scenario !== undefined || event.command === '') return event.command;
+  const leadCells = segmentCells(suiteStageParts({ ...event, command: '' }, 'transcript'));
+  const reserved =
+    leadCells +
+    getTerminalCellWidth(SOFT_SEP) +
+    segmentCells(separatedSegments([...verdict, ...clock]));
+  const available = wrapWidthFor('message', width) - reserved;
+  return truncateTerminalDisplayText(
+    event.command,
+    available < MIN_SUITE_COMMAND_CELLS
+      ? MAX_SUITE_COMMAND_CELLS
+      : Math.min(MAX_SUITE_COMMAND_CELLS, available),
+  );
+}
+
+function segmentCells(segments: readonly ConversationRowSegment[]): number {
+  return segments.reduce((total, segment) => total + getTerminalCellWidth(segment.text), 0);
+}
+
+function fullSuiteOutcome(
+  event: Extract<EngineEvent, { type: 'full_suite' }>,
+  detail: readonly ConversationRowSegment[],
+): { verdict: ConversationRowSegment[]; trail: ConversationRowSegment[] } {
+  if (event.status === 'running')
+    return { verdict: [{ text: 'running', tone: fullSuiteTone(event) }], trail: [] };
+  if (event.status === 'stopped')
+    return { verdict: [{ text: 'stopped', tone: fullSuiteTone(event) }], trail: [] };
+  if (event.status === 'off')
+    return { verdict: [{ text: 'off', tone: fullSuiteTone(event) }], trail: [] };
   if (event.status === 'not-run')
-    return append([{ text: NOT_RUN, tone: fullSuiteTone(event) }, ...detail]);
+    return { verdict: [{ text: NOT_RUN, tone: fullSuiteTone(event) }], trail: [...detail] };
   if (event.status === 'refused')
-    return append([{ text: 'refused', tone: fullSuiteTone(event) }, ...detail]);
+    return { verdict: [{ text: 'refused', tone: fullSuiteTone(event) }], trail: [...detail] };
   if (
     event.moment === 'brief' &&
     event.own !== undefined &&
     event.ownLeft !== undefined &&
     event.others !== undefined
   ) {
-    return append([
-      ...fixCheckVerdict({
+    return {
+      verdict: fixCheckVerdict({
         own: event.own,
         ownLeft: event.ownLeft,
         deferred: event.deferred ?? 0,
@@ -166,8 +201,8 @@ export function fullSuiteSegments(
           tone: index === 0 ? fullSuiteTone(event) : 'textDim',
         }),
       ),
-      ...clock,
-    ]);
+      trail: [],
+    };
   }
   const split =
     (event.moment === 'pre-review' ||
@@ -189,22 +224,27 @@ export function fullSuiteSegments(
     (event.moment === 'base'
       ? event.passed === true
         ? 'passes at the run base'
-        : 'red at the run base'
+        : event.timedOut === true
+          ? 'timed out at the run base'
+          : 'red at the run base'
       : event.passed === true
         ? event.scenario === undefined
           ? 'passed'
           : 'rendered'
-        : 'failed');
+        : event.timedOut === true
+          ? 'timed out'
+          : 'failed');
   // The clock follows the verdict, as on every other row; the reason a red is pre-existing, or not
   // verified at the run base, follows it.
-  return append([
-    { text: verdict, tone: fullSuiteTone(event) },
-    ...clock,
-    ...(split === null || split.why === null
-      ? []
-      : [{ text: split.why, tone: 'textDim' as const }]),
-    ...(event.passed === false && event.command === '' ? detail : []),
-  ]);
+  return {
+    verdict: [{ text: verdict, tone: fullSuiteTone(event) }],
+    trail: [
+      ...(split === null || split.why === null
+        ? []
+        : [{ text: split.why, tone: 'textDim' as const }]),
+      ...(event.passed === false && event.command === '' ? detail : []),
+    ],
+  };
 }
 
 /**

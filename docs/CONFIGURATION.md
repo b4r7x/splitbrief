@@ -822,7 +822,7 @@ workflow:
   review: task
 ```
 
-Both cadences use `runFinalReviewPhase`, which publishes `review_started` and one `review_completed` per start. The events name the review seat's tool, optional model, and nonempty effort axes. Task reviews carry `afterTaskId`; final reviews omit it. The completion records the verdict, available `blocking`, `minor`, and `outOfScope` counts, and duration. A failed call records `no-verdict`; a stop records `stopped`; neither carries findings. A `preReview` halt publishes neither event.
+Both cadences use `runFinalReviewPhase`, which publishes `review_started` and one `review_completed` per start. The events name the review seat's tool, optional model, and nonempty effort axes. Task reviews carry `afterTaskId`; final reviews omit it. The completion records the verdict, available `blocking`, `minor`, and `outOfScope` counts, and duration. It also records `unverifiedCriteria` when a criterion remains unverified: the count of criteria no check verified, each of which fails the review. The count is positive and optional, and a review with none unverified omits it, so older event logs keep their display. A failed call records `no-verdict`; a stop records `stopped`; neither carries findings. A `preReview` halt publishes neither event.
 
 Review events never fire hooks. `workflow_complete` fires `on_complete`. The review seat publishes no `planner_status`, even when the planner holds it. See [the review event fields](./ENGINE.md#key-event-shapes).
 

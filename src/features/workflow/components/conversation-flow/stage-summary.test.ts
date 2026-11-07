@@ -169,6 +169,30 @@ describe('stageSummaryRow', () => {
       { blocking: 1, minor: 0 },
       '✗ Review T001 failed  1 blocking · npm test, 1 check · fixes T006 · 1m 2s',
     ],
+    [
+      'final',
+      'failed',
+      { blocking: 0, minor: 0, unverifiedCriteria: 4 },
+      '✗ Final review failed  4 unverified criteria · npm test, 1 check · fixes T006 · 1m 2s',
+    ],
+    [
+      'task',
+      'failed',
+      { blocking: 0, minor: 0, unverifiedCriteria: 1 },
+      '✗ Review T001 failed  1 unverified criterion · npm test, 1 check · fixes T006 · 1m 2s',
+    ],
+    [
+      'final',
+      'failed',
+      { blocking: 2, minor: 0, unverifiedCriteria: 1 },
+      '✗ Final review failed  2 blocking · 1 unverified criterion · npm test, 1 check · fixes T006 · 1m 2s',
+    ],
+    [
+      'final',
+      'failed',
+      { blocking: 0, minor: 0 },
+      '✗ Final review failed  0 blocking · npm test, 1 check · fixes T006 · 1m 2s',
+    ],
     ['final', 'no-verdict', undefined, '✗ Final review no verdict  1m 2s'],
     ['task', 'stopped', undefined, '× Review T001 stopped  1m 2s'],
   ] as const)(

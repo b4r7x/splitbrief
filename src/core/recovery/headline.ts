@@ -66,9 +66,14 @@ export function reviewNoProgressCause(
     : `${review} made no progress on ${ids} after fix cycle ${fixCycle}`;
 }
 
+/** The criteria no check verified, in the one wording the halt and the review row share. */
+export function unverifiedCriteriaCount(count: number): string {
+  return countNoun(count, 'unverified criterion', 'unverified criteria');
+}
+
 /** A review that failed on claims no check could verify, with nothing for the planner to fix. */
 export function reviewUnverifiedCause(review: string, criteria: number): string {
-  return `${review} failed with ${countNoun(criteria, 'unverified criterion', 'unverified criteria')}`;
+  return `${review} failed with ${unverifiedCriteriaCount(criteria)}`;
 }
 
 /**

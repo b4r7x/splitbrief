@@ -166,7 +166,7 @@ export function fullSuiteRowBlock(
   return compositeBlock(keyPrefix, [
     wrappedSegmentsBlock({
       keyPrefix,
-      segments: fullSuiteSegments(event),
+      segments: fullSuiteSegments(event, width),
       width,
       continuationIndent: 2,
     }),

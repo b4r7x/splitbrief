@@ -49,6 +49,15 @@ function checkVerificationOutput(runs: readonly CheckRunResult[]): string {
     .join('\n');
 }
 
+/** The status and output of one claim, read only from the runs of the checks it selects. */
+export function claimVerification(
+  runs: readonly CheckRunResult[],
+  checkIds: readonly string[],
+): { status: 'pass' | 'fail' | 'unverified'; output: string } {
+  const selected = runs.filter((run) => checkIds.includes(run.checkId));
+  return { status: checkVerificationStatus(selected), output: checkVerificationOutput(selected) };
+}
+
 export type TriageContext = Readonly<{
   projectDir: string;
   workspaceDir: string;
@@ -183,10 +192,11 @@ export function fixTaskTargetErrors(
 }
 
 /**
- * Runs the checks behind one claim of a review and records them, taking each stored result of the
- * same command on this tree. `rerunRedBefore` runs a red stored before that time again: the planner
- * re-runs a red it thinks is flaky. A red keeps as pre-existing the failures `preExistingChecks`,
- * this review's run base split, names for the same check.
+ * Runs the checks behind the claims of a review once each and records them, taking each stored
+ * result of the same command on this tree. `rerunRedBefore` runs a red stored before that time
+ * again: the planner re-runs a red it thinks is flaky. A red keeps as pre-existing the failures
+ * `preExistingChecks`, this review's run base split, names for the same check. Each caller reads
+ * one claim from the runs its own check ids select (`claimVerification`).
  */
 export async function verifyClaimChecks(
   ctx: TriageContext,
@@ -194,7 +204,7 @@ export async function verifyClaimChecks(
   checkIds: readonly string[],
   preExistingChecks: NonNullable<ReviewRecord['preExistingChecks']>,
   rerunRedBefore: string | undefined,
-): Promise<{ status: 'pass' | 'fail' | 'unverified'; output: string }> {
+): Promise<CheckRunResult[]> {
   const checkOptions: RunChecksOptions = {
     plan: state.plan,
     tasks: state.tasks,
@@ -244,7 +254,7 @@ export async function verifyClaimChecks(
     state,
     runs,
   });
-  return { status: checkVerificationStatus(runs), output: checkVerificationOutput(runs) };
+  return runs;
 }
 
 function findingFor(

@@ -6,6 +6,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -432,6 +433,69 @@ describe('closeRunIfOpen on a workspace run before Apply', () => {
     );
     const patchFiles = [...patch.matchAll(/^diff --git a\/(\S+) b\//gm)].map((match) => match[1]);
     expect(summary.changedFiles).toEqual(patchFiles);
+    expect(summary.stoppedAt).toEqual({ taskId: 'T002', partialFiles: ['src/partial.ts'] });
+  });
+
+  it('End run inside a brief of a worktree run books no node_modules link', {
+    timeout: 60_000,
+  }, async () => {
+    const projectDir = realpathSync(createTempDir('close-run-node-modules-'));
+    dirs.push(projectDir);
+    createTestGitRepo(projectDir, {
+      '.gitignore': 'node_modules/\n',
+      'src/keep.ts': 'export const one = 1;\nexport const two = 2;\n',
+      'src/gone.ts': 'export const gone = true;\n',
+    });
+    const { ref, state, workspaceDir } = await startWorkspaceRun({
+      strategy: 'worktree',
+      sessionId: SESSION_ID,
+      dirs,
+      projectDir,
+    });
+    const first = makeTask({ id: 'T001', title: 'First', suggestedFiles: ['src/keep.ts'] });
+    const second = makeTask({ id: 'T002', title: 'Second', suggestedFiles: ['src/partial.ts'] });
+    writeEvidenceLedger(
+      ref,
+      recordLocalTaskEvidence({
+        ledger: createEvidenceLedger({
+          sessionId: SESSION_ID,
+          feature: state.feature,
+          tasks: [first, second],
+        }),
+        task: first,
+        status: 'done',
+        changedFiles: ['assets/logo.bin', 'src/gone.ts', 'src/keep.ts', 'src/new.ts'],
+      }),
+    );
+    const secondStart = await captureWorkspaceSnapshot(workspaceDir, ref);
+    mkdirSync(join(projectDir, 'node_modules', 'pkg'), { recursive: true });
+    writeFileSync(join(projectDir, 'node_modules', 'pkg', 'index.js'), 'export const pkg = 1;\n');
+    symlinkSync(join(projectDir, 'node_modules'), join(workspaceDir, 'node_modules'), 'dir');
+    writeFileSync(join(workspaceDir, 'src/partial.ts'), 'export const partial = true;\n');
+    const stopped: WorkflowState = {
+      ...state,
+      tasks: [
+        { ...first, status: 'done' },
+        { ...second, status: 'in_progress' },
+      ],
+      currentTaskIndex: 1,
+      changedFilesBaseline: { head: null, fingerprints: {}, activeTaskSnapshot: secondStart },
+    };
+    saveState(ref, stopped);
+    expect(
+      execFileSync('git', ['status', '--porcelain'], { cwd: workspaceDir, encoding: 'utf8' }),
+    ).toContain('?? node_modules');
+
+    const closure = await closeRunIfOpen({ ...ref, bus: makeBusRecorder().bus }, stopped);
+    const summary = finalizeRunAtRest({ ref, state: closure.state });
+
+    const patch = readFileSync(
+      join(sessionDir(ref.projectDir, ref.sessionId), 'run.patch'),
+      'utf8',
+    );
+    const patchFiles = [...patch.matchAll(/^diff --git a\/(\S+) b\//gm)].map((match) => match[1]);
+    expect(summary.changedFiles).toEqual(patchFiles);
+    expect(summary.changedFiles).not.toContain('node_modules');
     expect(summary.stoppedAt).toEqual({ taskId: 'T002', partialFiles: ['src/partial.ts'] });
   });
 

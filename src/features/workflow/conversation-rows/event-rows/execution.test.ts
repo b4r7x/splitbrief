@@ -1,10 +1,35 @@
 import { describe, expect, it } from 'vitest';
 import { taskId } from '../../../../core/schemas/task.js';
+import { reusedNote } from '../../../../core/validation/reused-note.js';
 import type { EngineEventOf } from '../../../../engine/events/types.js';
-import { getTerminalCellWidth } from '../../../../utils/display-text.js';
+import { ELLIPSIS, getTerminalCellWidth } from '../../../../utils/display-text.js';
 import { rowText } from '../row-format/rows.js';
 import { wrapWidthFor } from '../row-markers.js';
 import { fullSuiteRowBlock, implementerDoneRowBlock } from './execution.js';
+
+const LONG_CHECK_COMMAND =
+  'npx --no-install vitest run --project integration src/features/workflow/run-history.integration.test.ts src/features/workflow/conversation-rows/run-transcript.integration.test.ts';
+
+function baseCheckRows(
+  width: number,
+  overrides: Partial<EngineEventOf<'full_suite'>> = {},
+): string[] {
+  const event = {
+    type: 'full_suite' as const,
+    ts: 0,
+    phase: 'final-review' as const,
+    moment: 'base' as const,
+    id: 'V5',
+    command: LONG_CHECK_COMMAND,
+    status: 'done' as const,
+    passed: true,
+    duration: 94_108,
+    ...overrides,
+  };
+  const block = fullSuiteRowBlock('check', event, width);
+  if (block === null) throw new Error('Expected a base check block');
+  return block.createRows(0, block.rowCount).map(rowText);
+}
 
 describe('fullSuiteRowBlock', () => {
   it.each(['pre-review', 'plan', 'brief', 'base'] as const)(
@@ -50,27 +75,25 @@ describe('fullSuiteRowBlock', () => {
     },
   );
 
-  it('fullSuiteRowBlock keeps a wrapped verdict attached to its check', () => {
+  it('fullSuiteRowBlock keeps a long command under its verdict and clock', () => {
     const examples = [
       {
         width: 59,
         id: 'V3',
         command: 'node --test test/member.test.js',
         duration: 100,
-        check: 'Reviewer check V3 · node --test test/member.test.js ',
-        verdict: '  passed · 0.1s',
+        row: 'Reviewer check V3 · node --test test/me… · passed · 0.1s',
       },
       {
         width: 79,
         id: 'V4',
         command: 'node --test test/checkout.test.js test/returns.test.js',
         duration: 200,
-        check: 'Reviewer check V4 · node --test test/checkout.test.js test/returns.… ',
-        verdict: '  passed · 0.2s',
+        row: 'Reviewer check V4 · node --test test/checkout.test.js test/… · passed · 0.2s',
       },
     ];
 
-    for (const { width, id, command, duration, check, verdict } of examples) {
+    for (const { width, id, command, duration, row: expected } of examples) {
       const event: EngineEventOf<'full_suite'> = {
         type: 'full_suite',
         ts: 0,
@@ -88,9 +111,8 @@ describe('fullSuiteRowBlock', () => {
       if (block === null) throw new Error('Expected a reviewer check block');
 
       const rows = block.createRows(0, block.rowCount);
-      expect(block.rowCount).toBe(2);
-      expect(rows).toHaveLength(2);
-      expect(rows.map(rowText)).toEqual([check, verdict]);
+      expect(block.rowCount).toBe(1);
+      expect(rows.map(rowText)).toEqual([expected]);
       for (const row of rows) {
         expect(rowText(row).trimStart().startsWith('·')).toBe(false);
         expect(rowText(row).trimEnd().endsWith(' ·')).toBe(false);
@@ -109,10 +131,140 @@ describe('fullSuiteRowBlock', () => {
           wrapWidthFor('message', width),
         );
       }
-      expect(block.createRows(1, 2)).toEqual(rows.slice(1));
-      expect(block.createRows(1, 2).map(rowText)).toEqual([verdict]);
+      expect(block.createRows(1, 2)).toEqual([]);
     }
   });
+
+  it.each([48, 52])(
+    'keeps a wrapped verdict with its tone under its check at width %i',
+    (width) => {
+      const event: EngineEventOf<'full_suite'> = {
+        type: 'full_suite',
+        ts: 0,
+        phase: 'final-review',
+        moment: 'pre-review',
+        id: 'V3',
+        command: 'node --test test/member.test.js',
+        status: 'done',
+        passed: true,
+        duration: 100,
+      };
+      const block = fullSuiteRowBlock('reviewer-check', event, width);
+      if (block === null) throw new Error('Expected a reviewer check block');
+
+      const rows = block.createRows(0, block.rowCount);
+      expect(rows.map(rowText)).toEqual([
+        'Reviewer check V3 · node --test ',
+        '  test/member.test.js · passed · 0.1s',
+      ]);
+      for (const row of rows) {
+        expect(rowText(row).trimStart().startsWith('·')).toBe(false);
+        expect(
+          row.segments.every(
+            (segment) =>
+              segment.tone ===
+              (segment.text === 'Reviewer'
+                ? 'reviewer'
+                : segment.text === 'passed'
+                  ? 'success'
+                  : 'textDim'),
+          ),
+        ).toBe(true);
+        expect(getTerminalCellWidth(rowText(row))).toBeLessThanOrEqual(
+          wrapWidthFor('message', width),
+        );
+      }
+      expect(block.createRows(1, 2)).toEqual(rows.slice(1));
+    },
+  );
+
+  it.each([101, 120])(
+    'keeps the clock of a long check row on its first row at width %i',
+    (width) => {
+      const [row] = baseCheckRows(width);
+      expect(row?.endsWith('passes at the run base · 1m\u00a034s')).toBe(true);
+      expect(getTerminalCellWidth(row ?? '')).toBeLessThanOrEqual(wrapWidthFor('message', width));
+    },
+  );
+
+  it.each([140, 150])(
+    'keeps the clock of a long fix check row with an ownership verdict on its first row at width %i',
+    (width) => {
+      const event: EngineEventOf<'full_suite'> = {
+        type: 'full_suite',
+        ts: 0,
+        phase: 'implementing',
+        moment: 'brief',
+        id: 'V1',
+        command: LONG_CHECK_COMMAND,
+        status: 'done',
+        passed: false,
+        own: 2,
+        ownLeft: 1,
+        others: 1,
+        duration: 94_108,
+      };
+      const block = fullSuiteRowBlock('check', event, width);
+      if (block === null) throw new Error('Expected a fix check block');
+
+      const rows = block.createRows(0, block.rowCount).map(rowText);
+      expect(rows).toHaveLength(1);
+      const [row] = rows;
+      expect(row?.endsWith('· 1m\u00a034s')).toBe(true);
+      expect(getTerminalCellWidth(row ?? '')).toBeLessThanOrEqual(wrapWidthFor('message', width));
+    },
+  );
+
+  it.each([101, 120])(
+    'keeps the reused note of a long check row whole on its first row at width %i',
+    (width) => {
+      const reusedAt = '2026-10-27T11:53:00.000Z';
+      const note = reusedNote(reusedAt).replaceAll(' ', '\u00a0');
+      const [row] = baseCheckRows(width, { reusedAt });
+      expect(row?.endsWith(`passes at the run base · ${note}`)).toBe(true);
+      expect(getTerminalCellWidth(row ?? '')).toBeLessThanOrEqual(wrapWidthFor('message', width));
+    },
+  );
+
+  it('keeps the 48-cell command cap on a wide check row', () => {
+    const [row] = baseCheckRows(160);
+    if (row === undefined) throw new Error('Expected a base check row');
+    const command = row.split(' · ')[1] ?? '';
+    expect(getTerminalCellWidth(command)).toBe(48);
+    expect(command.endsWith(ELLIPSIS)).toBe(true);
+  });
+
+  it.each([60, 67])('keeps a long check row clock whole at %i columns', (width) => {
+    const rows = baseCheckRows(width);
+    expect(rows.length).toBeGreaterThan(1);
+    expect(rows.filter((row) => row.includes('1m\u00a034s'))).toHaveLength(1);
+    for (const row of rows) expect(row).not.toMatch(/\b1m\s*$/u);
+  });
+
+  it.each([56, 60, 62])(
+    'keeps the whole command of a short check row whose budget is below 16 cells at width %i',
+    (width) => {
+      const event: EngineEventOf<'full_suite'> = {
+        type: 'full_suite',
+        ts: 0,
+        phase: 'final-review',
+        moment: 'verify',
+        id: 'V2',
+        command: 'npm run test:integration',
+        status: 'done',
+        passed: false,
+        newFailures: 1,
+        preExisting: 2,
+        duration: 21_400,
+      };
+      const block = fullSuiteRowBlock('check', event, width);
+      if (block === null) throw new Error('Expected a verify check block');
+      expect(block.createRows(0, block.rowCount).map(rowText)).toEqual([
+        'Verify V2 · npm run test:integration · 1 new, ',
+        '  2 pre-existing · 21.4s',
+      ]);
+    },
+  );
 
   it.each<{
     name: string;

@@ -21,7 +21,7 @@ function segmentText(segments: readonly ConversationRowSegment[]): string {
 }
 
 function fullSuiteRow(event: Extract<EngineEvent, { type: 'full_suite' }>): string {
-  return segmentText(fullSuiteSegments(event));
+  return segmentText(fullSuiteSegments(event, 160));
 }
 
 function reviewChecksRow(event: Extract<EngineEvent, { type: 'review_checks' }>): string {
@@ -349,7 +349,7 @@ describe('fullSuiteRow for a reviewer check', () => {
     (overrides, verdict, tone) => {
       for (const scenario of [undefined, 'workflow-x']) {
         const event = reviewCheck({ ...overrides, scenario, duration: 1_000 });
-        const spans = fullSuiteSegments(event);
+        const spans = fullSuiteSegments(event, 160);
         const word = scenario !== undefined && verdict === 'passed' ? 'rendered' : verdict;
         expect(spans).toContainEqual({ text: word, tone });
         expect(
@@ -365,6 +365,7 @@ describe('fullSuiteRow for a reviewer check', () => {
   it.each(['plan', 'brief', 'pre-review'] as const)('dims the %s label and command', (moment) => {
     const spans = fullSuiteSegments(
       reviewCheck({ moment, status: 'done', passed: false, duration: 1_000 }),
+      160,
     );
     expect(spans.find((span) => span.text.includes('check V1'))?.tone).toBe('textDim');
     expect(spans.find((span) => span.text.includes('npm test'))?.tone).toBe('textDim');
@@ -569,6 +570,76 @@ describe('fullSuiteRow for a reviewer check', () => {
     ).toBe('Base re-run V1 · npm test · not\u00a0run · no check V1');
   });
 
+  it.each(['brief', 'pre-review', 'verify', 'plan'] as const)(
+    'reads timed out for a %s check that hit its time limit',
+    (moment) => {
+      const event = reviewCheck({
+        moment,
+        status: 'done',
+        passed: false,
+        timedOut: true,
+        duration: 3_600_000,
+      });
+      expect(fullSuiteRow(event).endsWith('timed out · 1h\u00a00m\u00a00s')).toBe(true);
+    },
+  );
+
+  it('reads timed out at the run base for a base check that hit its time limit', () => {
+    const event = reviewCheck({
+      moment: 'base',
+      status: 'done',
+      passed: false,
+      timedOut: true,
+      duration: 3_600_000,
+    });
+    const row = fullSuiteRow(event);
+    expect(row.endsWith('timed out at the run base · 1h\u00a00m\u00a00s')).toBe(true);
+  });
+
+  it.each(['brief', 'pre-review', 'verify', 'plan'] as const)(
+    'keeps a %s check that failed without timeout evidence reading failed',
+    (moment) => {
+      const row = fullSuiteRow(
+        reviewCheck({ moment, status: 'done', passed: false, duration: 3_000 }),
+      );
+      expect(row.endsWith('failed · 3.0s')).toBe(true);
+      expect(row).not.toContain('timed out');
+    },
+  );
+
+  it('keeps a red at the run base without timeout evidence reading red', () => {
+    const row = fullSuiteRow(
+      reviewCheck({ moment: 'base', status: 'done', passed: false, duration: 2_000 }),
+    );
+    expect(row.endsWith('red at the run base · 2.0s')).toBe(true);
+    expect(row).not.toContain('timed out');
+  });
+
+  it('keeps a split verdict ahead of the timeout wording', () => {
+    const split = reviewCheck({
+      moment: 'base',
+      status: 'done',
+      passed: false,
+      timedOut: true,
+      newFailures: 0,
+      preExisting: 2,
+      duration: 2_000,
+    });
+    expect(fullSuiteRow(split)).toBe(
+      "Base re-run V1 · npm test · pre-existing · 2.0s · all 2 failures also fail before this run's changes",
+    );
+    const unverified = {
+      ...split,
+      newFailures: 0,
+      preExisting: 0,
+      notVerified: 1,
+      detail: 'both runs timed out',
+    };
+    expect(fullSuiteRow(unverified)).toBe(
+      'Base re-run V1 · npm test · 1\u00a0not verified at the run base · 2.0s · both runs timed out',
+    );
+  });
+
   // Q2 review B2: a fix brief re-ran V1 with no row of its own.
   it('names a reviewer check a fix brief runs again as a fix check, by its id', () => {
     const fix = reviewCheck({ phase: 'implementing', moment: 'brief' });
@@ -596,7 +667,7 @@ describe('fullSuiteRow for a reviewer check', () => {
       status: 'off',
     });
     expect(fullSuiteRow(off)).toBe('Fix check V1 · off');
-    expect(fullSuiteSegments(off).at(-1)).toEqual({ text: 'off', tone: 'textDim' });
+    expect(fullSuiteSegments(off, 160).at(-1)).toEqual({ text: 'off', tone: 'textDim' });
     expect(fullSuiteTone(off)).toBe('textDim');
   });
 
@@ -635,15 +706,15 @@ describe('fullSuiteRow for a reviewer check', () => {
       'Fix check V1 · npm run test-ci · 1\u00a0of\u00a0your\u00a02\u00a0failures\u00a0gone · 1\u00a0left\u00a0to\u00a0T025 · 1\u00a0other\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review · 4.0s',
     );
     expect(fullSuiteTone(deferred)).toBe('success');
-    expect(fullSuiteSegments(deferred)).toContainEqual({
+    expect(fullSuiteSegments(deferred, 160)).toContainEqual({
       text: '1\u00a0of\u00a0your\u00a02\u00a0failures\u00a0gone',
       tone: 'success',
     });
-    expect(fullSuiteSegments(deferred)).toContainEqual({
+    expect(fullSuiteSegments(deferred, 160)).toContainEqual({
       text: '1\u00a0left\u00a0to\u00a0T025',
       tone: 'textDim',
     });
-    expect(fullSuiteSegments(gone)).toContainEqual({
+    expect(fullSuiteSegments(gone, 160)).toContainEqual({
       text: '3\u00a0others\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review',
       tone: 'textDim',
     });

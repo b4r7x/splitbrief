@@ -120,6 +120,12 @@
 
 ### Fixed
 
+- A failed review with no blocking finding now says how many criteria no check verified.
+- A check that two review claims share now runs and shows once.
+- The clock of a check row with a long command stays on its row.
+- A check that hits its time limit now reads `timed out`, not `failed`.
+- Biome notes and warnings of a passing lint step no longer count as failures at the run base.
+- An ended run no longer lists the `node_modules` link as a changed file.
 - At the plan card, a typed word such as `e` or `approve` now highlights the row that ⏎ takes for it, and the legend reads `⏎ confirm · esc back`. Before, any typed text highlighted Request changes with `⏎ send`, and ⏎ then did what the word said.
 - A confirm prompt in a short terminal shows the start of the file path beside the action, such as `write src/features/workflow/…`. Before, a long path left the prompt with only `write`.
 - The Rates rows of `/usage` name each tool as the Billing rows do, such as `OpenAI Codex CLI`. Before, they showed the raw tool id, such as `codex`.

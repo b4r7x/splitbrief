@@ -17,11 +17,12 @@ import type { Plan } from '../../core/schemas/plan.js';
 import type { ReviewRecord, WorkflowState } from '../../core/schemas/workflow.js';
 import {
   applyTriage,
+  claimVerification,
   fixTaskTargetErrors,
   triageContractErrors,
   verifyClaimChecks,
 } from './triage.js';
-import { enabledReviewChecks } from './validation/run-checks.js';
+import { enabledReviewChecks, type CheckRunResult } from './validation/run-checks.js';
 import { processError } from '../../lib/process/errors.js';
 
 const dirs: string[] = [];
@@ -438,18 +439,21 @@ describe('review fix work', () => {
         output: ` FAIL  src/a.test.ts > adds\nAssertionError: expected 1 to be 2\n${noise}`,
       }),
     );
-    const verification = await verifyClaimChecks(
-      {
-        ...ref,
-        workspaceDir: ref.projectDir,
-        config: makeConfig({}),
-        bus: makeBusRecorder().bus,
-        runCommand,
-      },
-      { ...triageState(), plan: GATE_PLAN },
+    const verification = claimVerification(
+      await verifyClaimChecks(
+        {
+          ...ref,
+          workspaceDir: ref.projectDir,
+          config: makeConfig({}),
+          bus: makeBusRecorder().bus,
+          runCommand,
+        },
+        { ...triageState(), plan: GATE_PLAN },
+        ['V2'],
+        [],
+        undefined,
+      ),
       ['V2'],
-      [],
-      undefined,
     );
 
     expect(verification.status).toBe('fail');
@@ -470,7 +474,7 @@ describe('review fix work', () => {
     ) => {
       const ref = setupProject(dirs);
       const { bus, events } = makeBusRecorder();
-      const verification = await verifyClaimChecks(
+      const runs = await verifyClaimChecks(
         {
           ...ref,
           workspaceDir: ref.projectDir,
@@ -483,6 +487,7 @@ describe('review fix work', () => {
         preExistingChecks,
         undefined,
       );
+      const verification = claimVerification(runs, ['V2']);
       const row = events.findLast((event) => event.type === 'full_suite');
       return { ...verification, row, recorded: readEvidenceLedger(ref)?.verifyChecks };
     };
@@ -552,7 +557,7 @@ describe('review fix work', () => {
     const ref = setupProject(dirs);
     const state = triageState();
     const runCommand = makeCommandRunner({ stdout: 'ok', stderr: '', code: 0 });
-    const verification = await verifyClaimChecks(
+    const runs = await verifyClaimChecks(
       {
         ...ref,
         workspaceDir: ref.projectDir,
@@ -566,7 +571,31 @@ describe('review fix work', () => {
       undefined,
     );
     expect(runCommand.calls.map((call) => call.cmd)).toEqual(['tsc']);
-    expect(verification).toEqual({ status: 'pass', output: 'K1: pass — ok' });
+    expect(claimVerification(runs, ['K1'])).toEqual({ status: 'pass', output: 'K1: pass — ok' });
+  });
+
+  it('reads each claim from the runs of its own checks', () => {
+    const runs: CheckRunResult[] = [
+      { checkId: 'K1', status: 'pass', output: 'greeting ok' },
+      {
+        checkId: 'K2',
+        status: 'fail',
+        output: ' FAIL  src/b.test.ts > subtracts\nAssertionError: expected 3 to be 1\n',
+        failure: {
+          keys: ['src/b.test.ts::subtracts'],
+          messages: new Map([['src/b.test.ts::subtracts', 'expected 3 to be 1']]),
+        },
+      },
+    ];
+
+    expect(claimVerification(runs, ['K1'])).toEqual({
+      status: 'pass',
+      output: 'K1: pass — greeting ok',
+    });
+    const finding = claimVerification(runs, ['K2']);
+    expect(finding.status).toBe('fail');
+    expect(finding.output).toContain('src/b.test.ts::subtracts');
+    expect(finding.output).not.toContain('K1');
   });
 
   it('shows each verify check on its own row while it runs and files it under the review', async () => {
@@ -607,18 +636,21 @@ describe('review fix work', () => {
     const state = { ...triageState(), plan: GATE_PLAN };
     const verify = async (endChecks: boolean) => {
       const runCommand = makeCommandRunner({ stdout: 'ok', stderr: '', code: 0 });
-      const verification = await verifyClaimChecks(
-        {
-          ...ref,
-          workspaceDir: ref.projectDir,
-          config: makeConfig({ endChecks }),
-          bus: makeBusRecorder().bus,
-          runCommand,
-        },
-        state,
+      const verification = claimVerification(
+        await verifyClaimChecks(
+          {
+            ...ref,
+            workspaceDir: ref.projectDir,
+            config: makeConfig({ endChecks }),
+            bus: makeBusRecorder().bus,
+            runCommand,
+          },
+          state,
+          ['V1'],
+          [],
+          undefined,
+        ),
         ['V1'],
-        [],
-        undefined,
       );
       return { verification, commands: runCommand.calls.map((call) => call.cmd) };
     };

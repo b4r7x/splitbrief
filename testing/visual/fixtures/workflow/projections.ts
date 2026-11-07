@@ -1776,18 +1776,20 @@ function finalReviewCompleted({
   verdict,
   seat,
   setAside,
+  findings,
 }: {
   ts: number;
   duration: number;
   verdict: 'pass' | 'fail';
   seat: Pick<EngineEventOf<'review_started'>, 'tool' | 'model'>;
   setAside?: EngineEventOf<'review_completed'>['setAside'];
+  findings?: EngineEventOf<'review_completed'>['findings'];
 }): EngineEventOf<'review_completed'> {
   return {
     ...finalReviewStarted(ts, seat),
     type: 'review_completed',
     verdict,
-    findings: { blocking: verdict === 'fail' ? 1 : 0, minor: 0, outOfScope: 0 },
+    findings: findings ?? { blocking: verdict === 'fail' ? 1 : 0, minor: 0, outOfScope: 0 },
     ...(setAside !== undefined && { setAside }),
     duration,
   };
@@ -1813,6 +1815,7 @@ function reviewCheck(
         moment?: 'base' | 'brief';
         passed: boolean;
         duration?: number;
+        timedOut?: true;
         newFailures?: number;
         preExisting?: number;
         notVerified?: number;
@@ -1851,6 +1854,41 @@ const buildBaseRerunProjection: WorkflowFixtureProjection = {
       FIXED_TS,
       REVIEW_CHECK_TYPECHECK,
       { status: 'running', moment: 'base' },
+      'implementing',
+    ),
+    ...implementationProjection.events.slice(2),
+  ],
+};
+
+const BASE_RERUN_LONG_COMMAND =
+  'npx --no-install vitest run --project integration src/features/workflow/run-history.integration.test.ts src/features/workflow/conversation-rows/run-transcript.integration.test.ts';
+
+const baseRerunLongCommandProjection: WorkflowFixtureProjection = {
+  ...implementationProjection,
+  scenarioId: scenarioId('workflow-base-rerun-long-command'),
+  sidebarVisible: true,
+  events: [
+    ...implementationProjection.events.slice(0, 2),
+    reviewCheck(
+      FIXED_TS,
+      { id: 'V5', command: BASE_RERUN_LONG_COMMAND },
+      { status: 'done', moment: 'base', passed: true, duration: 94_108 },
+      'implementing',
+    ),
+    ...implementationProjection.events.slice(2),
+  ],
+};
+
+const checkTimedOutProjection: WorkflowFixtureProjection = {
+  ...implementationProjection,
+  scenarioId: scenarioId('workflow-check-timed-out'),
+  sidebarVisible: true,
+  events: [
+    ...implementationProjection.events.slice(0, 2),
+    reviewCheck(
+      FIXED_TS,
+      { id: 'V1', command: 'npm run release-check' },
+      { status: 'done', moment: 'brief', passed: false, timedOut: true, duration: 3_600_417 },
       'implementing',
     ),
     ...implementationProjection.events.slice(2),
@@ -8287,6 +8325,8 @@ const projections = [
   buildBriefCheckOwnIdProjection,
   buildBriefCheckBaseWaitProjection,
   buildBaseRerunProjection,
+  baseRerunLongCommandProjection,
+  checkTimedOutProjection,
   buildFixConsultProjection,
   implementationRetryProjection,
   reviewFixProjection,
@@ -8490,6 +8530,30 @@ const projections = [
       ],
     }),
   ),
+  {
+    scenarioId: scenarioId('workflow-review-settled-unverified'),
+    feature: WORKFLOW_FEATURE,
+    inputMode: 'normal',
+    sidebarVisible: true,
+    events: [
+      { type: 'workflow_started', ts: FIXED_TS, phase: 'planning', feature: WORKFLOW_FEATURE },
+      { type: 'plan_approved', ts: FIXED_TS + 50, phase: 'reviewing-plan' },
+      { ...FIXTURE_TASKS_PLANNED, ts: FIXED_TS + 60 },
+      ...FIXTURE_PLANNED_BRIEFS.flatMap((brief, index) => [
+        orphanBriefStarted(brief, FIXED_TS + 100 * (index + 1)),
+        fixtureBriefPassed(brief, FIXED_TS + 100 * (index + 1) + 10),
+      ]),
+      finalReviewStarted(FIXED_TS + 1_000, BASE_PLANNER),
+      finalReviewCompleted({
+        ts: FIXED_TS + 8_000,
+        duration: 7_000,
+        verdict: 'fail',
+        seat: BASE_PLANNER,
+        findings: { blocking: 0, minor: 0, outOfScope: 0, unverifiedCriteria: 4 },
+      }),
+      { type: 'workflow_complete', ts: FIXED_TS + 8_000, phase: 'complete', review: 'failed' },
+    ],
+  },
   {
     scenarioId: scenarioId('workflow-review-settled-set-aside'),
     feature: WORKFLOW_FEATURE,
@@ -8904,6 +8968,7 @@ export function assertProjectionBounds(projection: WorkflowFixtureProjection): v
       value !== RESUMED_REPORT_TEXT &&
       value !== FIX_CHECK_RETRY_TEXT &&
       value !== NO_IMAGE_REVIEW_SEAT_NOTE &&
+      value !== BASE_RERUN_LONG_COMMAND &&
       !value.includes(LONG_QUESTION) &&
       !retainedWorkspaceNotices.includes(value) &&
       !engineHaltText.includes(value) &&

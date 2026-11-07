@@ -31,6 +31,8 @@ export const ReviewFindingCountsSchema = z.object({
   blocking: z.number().int().nonnegative(),
   minor: z.number().int().nonnegative(),
   outOfScope: z.number().int().nonnegative().optional(),
+  /** The criteria no check verified; each one fails the review. Older logs omit it. */
+  unverifiedCriteria: z.number().int().positive().optional(),
 });
 export type ReviewFindingCounts = z.infer<typeof ReviewFindingCountsSchema>;
 

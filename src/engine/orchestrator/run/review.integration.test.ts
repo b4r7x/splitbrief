@@ -56,7 +56,7 @@ import { error } from '../../../utils/error.js';
 import { REVIEW_FILE } from '../../../core/paths.js';
 import { makeCommandRunner } from '#testing/helpers/validation-fixtures.js';
 import { stuckTarget } from '../../../core/review/stuck.js';
-import { verifyClaimChecks } from '../triage.js';
+import { claimVerification, verifyClaimChecks } from '../triage.js';
 import { processError } from '../../../lib/process/errors.js';
 
 const evidence = vi.hoisted(() => ({ detectRunnerEvidence: vi.fn() }));
@@ -1257,7 +1257,7 @@ describe('the review that judges a fix cycle', () => {
         [],
         new Date().toISOString(),
       );
-      expect(stored.status).toBe('fail');
+      expect(claimVerification(stored, ['K9']).status).toBe('fail');
       const reviewer = triaged(state, fixTask('T901', 'F1'));
       const { planner } = consultPlanner([verifyK9]);
       const result = await follow(reviewer, fixTask('T901', 'F1'), { planner }, ref);

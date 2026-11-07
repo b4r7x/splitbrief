@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import {
   REVIEW_VERDICT_JSON_SCHEMA,
+  ReviewFindingCountsSchema,
   ReviewVerdictSchema,
   ReviewAnswerSchema,
   REVIEW_ANSWER_JSON_SCHEMA,
@@ -43,6 +44,19 @@ describe('ReviewVerdictSchema', () => {
       findings: [{ ...verdict.findings[0], severity: 'critical' }],
     };
     expect(ReviewVerdictSchema.safeParse(badSeverity).success).toBe(false);
+  });
+});
+
+describe('ReviewFindingCountsSchema', () => {
+  it('keeps a positive unverified count and refuses a count below one', () => {
+    const counts = { blocking: 0, minor: 0, unverifiedCriteria: 1 };
+    expect(ReviewFindingCountsSchema.parse(counts)).toEqual(counts);
+    expect(ReviewFindingCountsSchema.safeParse({ ...counts, unverifiedCriteria: 0 }).success).toBe(
+      false,
+    );
+    expect(ReviewFindingCountsSchema.safeParse({ ...counts, unverifiedCriteria: -1 }).success).toBe(
+      false,
+    );
   });
 });
 

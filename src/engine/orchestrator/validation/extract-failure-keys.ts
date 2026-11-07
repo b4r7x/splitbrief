@@ -305,31 +305,41 @@ function tokenOf(line: string): string | undefined {
   return undefined;
 }
 
+/** The heavy-dash rule that ends a Biome header line, after its location or its rule label. */
+const BIOME_HEAVY_RULE = /━+$/;
+/** The mark that starts a Biome note or warning message; an error message starts with × or ✖. */
+const BIOME_NOTE_OR_WARNING = /^[iℹ!⚠] /;
+
 /**
  * The failure keys of a command's output: diagnostic lines from their path token onward, else its
  * non-empty lines. `diagnostics` is false when the keys are those raw lines. Such a key can be
  * runner output (an `npm` script banner, a `make` error summary) that names no failure.
  * A check-mark row, a test node id without FAILED or ERROR, a warning-severity row and a line of
  * Node's TAP stream are not failure keys; the severity is read where the tool prints it, never
- * from the message text.
+ * from the message text. A Biome header takes its severity from the message mark on the next
+ * line: a note or a warning (`i`, `ℹ`, `!`, `⚠`) leaves the header out, and every other header
+ * stays, such as one with an error (`×`, `✖`) or with no message line.
  */
 export function extractFailureKeys(rawOutput: string): { keys: string[]; diagnostics: boolean } {
   const lines = readNodeTap(rawOutput)
     .rest.split('\n')
-    .map((line) => line.trim().replace(/\s*━+$/, ''))
-    .filter((line) => line.length > 0);
+    .map((line) => line.trim())
+    .map((line) => ({ text: line.replace(/\s*━+$/, ''), header: BIOME_HEAVY_RULE.test(line) }))
+    .filter((line) => line.text.length > 0);
   const tokens: string[] = [];
-  for (const line of lines) {
-    if (STACK_FRAME.test(line) || /^[✓√]|^.+:\d+: in \S+/.test(line) || /^warning\b/i.test(line))
+  for (const [index, line] of lines.entries()) {
+    const text = line.text;
+    if (line.header && BIOME_NOTE_OR_WARNING.test(lines[index + 1]?.text ?? '')) continue;
+    if (STACK_FRAME.test(text) || /^[✓√]|^.+:\d+: in \S+/.test(text) || /^warning\b/i.test(text))
       continue;
-    const token = tokenOf(line);
+    const token = tokenOf(text);
     if (token === undefined) continue;
-    if (isTestNodeKey(token) ? !/\b(?:FAILED|ERROR)\b/.test(line) : WARNING_SEVERITY.test(token)) {
+    if (isTestNodeKey(token) ? !/\b(?:FAILED|ERROR)\b/.test(text) : WARNING_SEVERITY.test(token)) {
       continue;
     }
     tokens.push(token);
   }
   return tokens.length > 0
     ? { keys: [...new Set(tokens)], diagnostics: true }
-    : { keys: [...new Set(lines)], diagnostics: false };
+    : { keys: [...new Set(lines.map((line) => line.text))], diagnostics: false };
 }

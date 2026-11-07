@@ -10,9 +10,14 @@ export type RestoreChangedFilesResult = {
 };
 
 export function uniqueProjectFiles(files: string[]): string[] {
-  return uniqueInOrder(files)
-    .filter((file) => file.length > 0)
-    .filter((file) => !file.endsWith('/'))
-    .filter((file) => !isInternalGitStatusPath(file))
-    .sort();
+  return (
+    uniqueInOrder(files)
+      .filter((file) => file.length > 0)
+      .filter((file) => !file.endsWith('/'))
+      .filter((file) => !isInternalGitStatusPath(file))
+      // The run workspace links node_modules at its root; the entry walker and the
+      // run patch leave it out too.
+      .filter((file) => file !== 'node_modules')
+      .sort()
+  );
 }

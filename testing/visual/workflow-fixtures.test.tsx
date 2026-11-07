@@ -667,6 +667,26 @@ describe('workflow visual fixtures', () => {
     },
   );
 
+  it('shows four unverified criteria on the settled failed review row', async () => {
+    const scenario = findVisualScenario('workflow-review-settled-unverified');
+    const checkpoint = scenario?.checkpoints[0];
+    if (scenario === undefined || checkpoint === undefined) {
+      throw new Error('Missing settled unverified review scenario');
+    }
+    const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: VIEWPORT });
+    try {
+      await ui.waitForCheckpoint();
+      const completed = eventsStore.get().events.find((event) => event.type === 'review_completed');
+      expect(completed).toMatchObject({
+        verdict: 'fail',
+        findings: { blocking: 0, minor: 0, outOfScope: 0, unverifiedCriteria: 4 },
+      });
+      expect(workflowTranscriptText()).toContain('✗ Final review failed  4 unverified criteria');
+    } finally {
+      await ui.unmount();
+    }
+  });
+
   it.each([true, false])(
     'shows the narrow rail fraction only with the build block down %s',
     async (blockDown) => {
@@ -1293,6 +1313,88 @@ describe('workflow visual fixtures', () => {
       await ui.unmount();
     }
   });
+
+  it('shows the timeout cause and duration on the fix-check row', async () => {
+    const scenario = findVisualScenario('workflow-check-timed-out');
+    const checkpoint = scenario?.checkpoints[0];
+    const projection = workflowFixtureProjections.get(scenarioId('workflow-check-timed-out'));
+    if (scenario === undefined || checkpoint === undefined || projection === undefined) {
+      throw new Error('Missing timed-out fix check scenario');
+    }
+    const check = projection.events.find((event) => event.type === 'full_suite');
+    expect(check).toMatchObject({
+      id: 'V1',
+      moment: 'brief',
+      status: 'done',
+      passed: false,
+      timedOut: true,
+      duration: 3_600_417,
+      command: 'npm run release-check',
+    });
+    expect(projection.sidebarVisible).toBe(true);
+    const renderViewport = scenario.viewports.find((value) => value.cols === 120);
+    if (renderViewport === undefined) {
+      throw new Error('Missing timed-out fix check viewport');
+    }
+    const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: renderViewport });
+    try {
+      await ui.waitForCheckpoint();
+      const rows = workflowTranscriptText()
+        .split('\n')
+        .map((row) => row.replaceAll('\u00a0', ' ').trim());
+      expect(
+        rows.filter((row) => row === 'Fix check V1 · npm run release-check · timed out · 1h 0m 0s'),
+      ).toHaveLength(1);
+    } finally {
+      await ui.unmount();
+    }
+  });
+
+  it.each([140, 120])(
+    'keeps the long base-check clock on its verdict row at %i columns',
+    async (cols) => {
+      const scenario = findVisualScenario('workflow-base-rerun-long-command');
+      const checkpoint = scenario?.checkpoints[0];
+      const projection = workflowFixtureProjections.get(
+        scenarioId('workflow-base-rerun-long-command'),
+      );
+      if (scenario === undefined || checkpoint === undefined || projection === undefined) {
+        throw new Error('Missing long base re-run scenario');
+      }
+      const base = projection.events.find(
+        (event) => event.type === 'full_suite' && event.moment === 'base',
+      );
+      expect(base).toMatchObject({
+        id: 'V5',
+        moment: 'base',
+        status: 'done',
+        passed: true,
+        duration: 94_108,
+        command:
+          'npx --no-install vitest run --project integration src/features/workflow/run-history.integration.test.ts src/features/workflow/conversation-rows/run-transcript.integration.test.ts',
+      });
+      expect(projection.sidebarVisible).toBe(true);
+      expect(projection.events.filter((event) => event.type === 'full_suite')).toHaveLength(1);
+      const renderViewport = scenario.viewports.find((value) => value.cols === cols);
+      if (renderViewport === undefined) {
+        throw new Error(`Missing long base re-run viewport at ${cols} columns`);
+      }
+      const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: renderViewport });
+      try {
+        await ui.waitForCheckpoint();
+        const rows = workflowTranscriptText()
+          .split('\n')
+          .map((row) => row.replaceAll('\u00a0', ' '));
+        const matching = rows.filter(
+          (row) =>
+            row.includes('Base re-run V5') && row.endsWith('passes at the run base · 1m 34s'),
+        );
+        expect(matching).toHaveLength(1);
+      } finally {
+        await ui.unmount();
+      }
+    },
+  );
 
   it('replays the completed briefs and the mid-step stop at T003 in the paused run', async () => {
     const scenario = findVisualScenario('workflow-at-rest-paused');

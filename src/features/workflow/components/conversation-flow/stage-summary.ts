@@ -9,7 +9,7 @@ import { CREW_SEAT_ROLES } from '../../../../core/crew/seats.js';
 import { formatStageLabel } from '../../../../core/phase-display.js';
 import { stateTone } from '../../../../core/theme/state-tone.js';
 import { oneLineDisplayText } from '../../../../utils/display-text.js';
-import { finalReviewAnchor } from '../../../../core/recovery/headline.js';
+import { finalReviewAnchor, unverifiedCriteriaCount } from '../../../../core/recovery/headline.js';
 
 export function stageSummaryRow(summary: StageSummary): {
   state: Extract<TaskSummaryState, { kind: 'stage' }>;
@@ -87,7 +87,13 @@ export function stageSummaryRow(summary: StageSummary): {
 
   const failures = [...summary.failedCommands];
   if (summary.failedChecks > 0) failures.push(countNoun(summary.failedChecks, 'check'));
-  const detail = summary.findings ? [`${summary.findings.blocking} blocking`] : [];
+  const findings = summary.findings;
+  const unverified = findings?.unverifiedCriteria;
+  const detail =
+    findings !== undefined && (unverified === undefined || findings.blocking > 0)
+      ? [`${findings.blocking} blocking`]
+      : [];
+  if (unverified !== undefined) detail.push(unverifiedCriteriaCount(unverified));
   if (failures.length > 0) detail.push(failures.join(', '));
   if (summary.fixes.length > 0) detail.push(`fixes ${summary.fixes.join(' ')}`);
   detail.push(duration);

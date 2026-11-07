@@ -1149,7 +1149,7 @@ describe('a failure a sibling carries under another check id', { timeout: 60_000
       createStdoutTextSink({ output })(event);
 
       expect(
-        fullSuiteSegments(event)
+        fullSuiteSegments(event, 160)
           .map((segment) => segment.text)
           .join(''),
       ).toContain('1 of your 2 failures gone · 1 left to T003');

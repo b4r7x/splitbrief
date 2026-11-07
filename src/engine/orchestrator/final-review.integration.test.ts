@@ -1040,6 +1040,7 @@ describe('runFinalReviewPhase', () => {
       })),
     }));
 
+    const { bus, events } = makeBusRecorder();
     const result = await runFinalReviewPhase({
       modelCache: undefined,
       projectDir,
@@ -1047,7 +1048,7 @@ describe('runFinalReviewPhase', () => {
       sessionId,
       config: makeNoValidationConfig(),
       callbacks: makeCallbacks().callbacks,
-      bus: makeBusRecorder().bus,
+      bus,
       state: {
         ...allTasksDoneState(
           [
@@ -1078,6 +1079,9 @@ describe('runFinalReviewPhase', () => {
     ]);
     expect(record.outcome).toBe('pass');
     expect(result.verdict?.outcome.kind).toBe('pass');
+    const [completion] = events.filter((event) => event.type === 'review_completed');
+    if (completion?.type !== 'review_completed') throw new Error('expected a review completion');
+    expect(completion.findings).not.toHaveProperty('unverifiedCriteria');
   });
 
   it('keeps a render-checked criterion unverified, and that fails the review', async () => {
@@ -1127,6 +1131,55 @@ describe('runFinalReviewPhase', () => {
     ]);
     expect(record.outcome).toBe('fail');
     expect(result.verdict?.outcome.unverifiedCriteria).toEqual(['C1']);
+  });
+
+  it('publishes the unverified criteria of a review that fails only on them', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, PLAN_FILE, '# Plan\n\nRender the gallery.\n', null);
+    const { reviewer } = makeReviewer((prompt) => {
+      const base = passingReviewVerdict(prompt);
+      return {
+        ...base,
+        criteria: base.criteria.map((criterion) => ({
+          ...criterion,
+          status: 'unverified' as const,
+        })),
+      };
+    });
+    const { bus, events } = makeBusRecorder();
+
+    await runFinalReviewPhase({
+      modelCache: undefined,
+      projectDir,
+      workspaceDir: projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks: makeCallbacks().callbacks,
+      bus,
+      state: {
+        ...allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+        plan: {
+          summary: 'Render the gallery.',
+          decisions: [],
+          criteria: [{ id: 'C1', text: 'The gallery renders', checkIds: ['K1'] }],
+          checks: [{ id: 'K1', kind: 'render', value: 'gallery/hello' }],
+          validation: null,
+        },
+      },
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+    });
+
+    const [completion] = events.filter((event) => event.type === 'review_completed');
+    if (completion?.type !== 'review_completed') throw new Error('expected a review completion');
+    expect(completion.verdict).toBe('fail');
+    expect(completion.findings).toEqual({
+      blocking: 0,
+      minor: 0,
+      outOfScope: 0,
+      unverifiedCriteria: 1,
+    });
   });
 
   it('turns an unverified finding with a passing check into a note', async () => {
@@ -1184,6 +1237,156 @@ describe('runFinalReviewPhase', () => {
     expect(record.outcome).toBe('pass-with-notes');
     expect(result.verdict?.outcome.minor).toHaveLength(1);
     expect(result.verdict?.outcome.blocking).toHaveLength(0);
+  });
+
+  it('runs a check that two unverified claims share once, with one row', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, PLAN_FILE, '# Plan\n\nGreet people by name.\n', null);
+    writeFileSync(
+      join(projectDir, 'package.json'),
+      JSON.stringify({ name: 'review-check', version: '1.0.0', scripts: { test: 'echo ok' } }),
+    );
+    const { reviewer } = makeReviewer((prompt) => ({
+      ...passingReviewVerdict(prompt),
+      criteria: [
+        { id: 'C1', status: 'unverified' as const, evidence: 'The greeting check says so.' },
+      ],
+      findings: [
+        {
+          id: 'F1',
+          kind: 'unverified' as const,
+          severity: 'blocking' as const,
+          taskId: null,
+          file: null,
+          line: null,
+          text: 'the greeting path needs a check',
+          acceptance: null,
+          checkIds: ['K1'],
+          criterionId: null,
+        },
+        {
+          id: 'F2',
+          kind: 'unverified' as const,
+          severity: 'blocking' as const,
+          taskId: null,
+          file: null,
+          line: null,
+          text: 'the greeting check is not named here',
+          acceptance: null,
+          checkIds: null,
+          criterionId: 'C1',
+        },
+      ],
+    }));
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runFinalReviewPhase({
+      modelCache: undefined,
+      projectDir,
+      workspaceDir: projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks: makeCallbacks().callbacks,
+      bus,
+      state: {
+        ...allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+        plan: {
+          summary: 'Greet people by name.',
+          decisions: [],
+          criteria: [{ id: 'C1', text: 'A name gets a greeting', checkIds: ['K1'] }],
+          checks: [{ id: 'K1', kind: 'cmd', value: 'npm test' }],
+          validation: null,
+        },
+      },
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+    });
+
+    const rows = events.flatMap((event) =>
+      event.type === 'full_suite' && event.moment === 'verify'
+        ? [{ status: event.status, id: event.id }]
+        : [],
+    );
+    expect(rows).toEqual([
+      { status: 'running', id: 'K1' },
+      { status: 'done', id: 'K1' },
+    ]);
+    expect(readReviewRecord(projectDir, sessionId).verification).toEqual([
+      { id: 'criterion:C1', status: 'pass', output: expect.stringContaining('K1: pass') },
+      { id: 'finding:F1', status: 'pass', output: expect.stringContaining('K1: pass') },
+      { id: 'finding:F2', status: 'pass', output: expect.stringContaining('K1: pass') },
+    ]);
+    expect(result.verdict?.outcome.kind).toBe('pass-with-notes');
+  });
+
+  it('reads each claim from its own checks', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, PLAN_FILE, '# Plan\n\nGreet people by name.\n', null);
+    writeFileSync(
+      join(projectDir, 'package.json'),
+      JSON.stringify({
+        name: 'review-check',
+        version: '1.0.0',
+        scripts: { test: 'echo ok', lint: 'exit 1' },
+      }),
+    );
+    const { reviewer } = makeReviewer((prompt) => ({
+      ...passingReviewVerdict(prompt),
+      criteria: [
+        { id: 'C1', status: 'unverified' as const, evidence: 'The greeting check says so.' },
+      ],
+      findings: [
+        {
+          id: 'F1',
+          kind: 'unverified' as const,
+          severity: 'blocking' as const,
+          taskId: null,
+          file: null,
+          line: null,
+          text: 'the greeting module needs a clean lint',
+          acceptance: null,
+          checkIds: ['K2'],
+          criterionId: null,
+        },
+      ],
+    }));
+
+    await runFinalReviewPhase({
+      modelCache: undefined,
+      projectDir,
+      workspaceDir: projectDir,
+      sessionId,
+      config: makeNoValidationConfig({ workflow: { approve: 'plan' } }),
+      callbacks: makeCallbacks().callbacks,
+      bus: makeBusRecorder().bus,
+      state: {
+        ...allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+        approve: 'plan',
+        plan: {
+          summary: 'Greet people by name.',
+          decisions: [],
+          criteria: [{ id: 'C1', text: 'A name gets a greeting', checkIds: ['K1'] }],
+          checks: [
+            { id: 'K1', kind: 'cmd', value: 'npm test' },
+            { id: 'K2', kind: 'cmd', value: 'npm run lint' },
+          ],
+          validation: null,
+        },
+      },
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+    });
+
+    expect(readReviewRecord(projectDir, sessionId).verification).toEqual([
+      { id: 'criterion:C1', status: 'pass', output: expect.stringContaining('K1: pass') },
+      {
+        id: 'finding:F1',
+        status: 'fail',
+        output: expect.stringContaining('check K2 did not pass (fail)'),
+      },
+    ]);
   });
 
   it('verifies a claim on a re-review whose check fails only on what the run base failed too', async () => {

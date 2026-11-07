@@ -140,7 +140,12 @@ import { currentCandidateId } from './evidence/record-checks.js';
 import { deserializeChangedFilesBaseline } from './changed-files-baseline.js';
 import type { RequestTypedResult, SeatProtocolError } from '../runners/typed-output.js';
 import { fixCyclesOf } from '../../core/schemas/workflow.js';
-import { fixTaskTargetErrors, triageContractErrors, verifyClaimChecks } from './triage.js';
+import {
+  claimVerification,
+  fixTaskTargetErrors,
+  triageContractErrors,
+  verifyClaimChecks,
+} from './triage.js';
 import type { PreReviewResult } from './run/pre-review-checks.js';
 import type { BaseGate } from './base-gate.js';
 import { runReviewChecks } from './review-checks.js';
@@ -262,9 +267,11 @@ type ReviewVerification = {
 
 /**
  * The checks of every unverified criterion and finding, read from the stored results of this tree
- * and run through the same runner briefs use only when none is stored. A pass needs every named
- * check to pass or to fail only on what `preExistingChecks` saw red at the run base; any other
- * failure is a failure; anything not runnable stays unverified and cannot verify a claim.
+ * and run through the same runner briefs use only when none is stored. The claims are collected
+ * first, so a check that two claims name runs once. Each claim then reads its status and output
+ * from its own checks. A pass needs every named check to pass or to fail only on what
+ * `preExistingChecks` saw red at the run base; any other failure is a failure; anything not
+ * runnable stays unverified and cannot verify a claim.
  */
 async function verifyReviewClaims(args: {
   verdict: ReviewVerdict;
@@ -286,36 +293,41 @@ async function verifyReviewClaims(args: {
   }
   const criterionCheckIds = (criterionId: string | null): readonly string[] =>
     args.state.plan?.criteria.find((criterion) => criterion.id === criterionId)?.checkIds ?? [];
-  const run = async (
+  const claims: { key: string; checkIds: readonly string[] }[] = [];
+  const collect = (
     kind: 'criterion' | 'finding',
     id: string,
     checkIds: readonly string[],
-  ): Promise<void> => {
+  ): void => {
     if (checkIds.length === 0) return;
-    const { status, output } = await verifyClaimChecks(
-      args,
-      args.state,
-      checkIds,
-      args.preExistingChecks,
-      undefined,
-    );
-    const key = verificationKey(kind, id);
-    map.set(key, status);
-    entries.push({ id: key, status, output });
+    claims.push({ key: verificationKey(kind, id), checkIds });
   };
   for (const criterion of args.verdict.criteria) {
     if (criterion.status !== 'unverified') continue;
-    await run('criterion', criterion.id, criterionCheckIds(criterion.id));
+    collect('criterion', criterion.id, criterionCheckIds(criterion.id));
   }
   for (const finding of args.verdict.findings) {
     if (!findingInReviewScope(finding, args.scope)) continue;
     if (finding.kind !== 'unverified') continue;
     const named = finding.checkIds ?? [];
-    await run(
+    collect(
       'finding',
       finding.id,
       named.length > 0 ? named : criterionCheckIds(finding.criterionId),
     );
+  }
+  if (claims.length === 0) return { entries, map };
+  const runs = await verifyClaimChecks(
+    args,
+    args.state,
+    claims.flatMap((claim) => claim.checkIds),
+    args.preExistingChecks,
+    undefined,
+  );
+  for (const claim of claims) {
+    const { status, output } = claimVerification(runs, claim.checkIds);
+    map.set(claim.key, status);
+    entries.push({ id: claim.key, status, output });
   }
   return { entries, map };
 }
@@ -1081,6 +1093,9 @@ export async function runFinalReviewPhase(opts: {
           blocking: blockingFindings.length,
           minor: verdict.outcome.minor.length,
           outOfScope: verdict.outcome.outOfScope.length,
+          ...(verdict.outcome.unverifiedCriteria.length > 0 && {
+            unverifiedCriteria: verdict.outcome.unverifiedCriteria.length,
+          }),
         },
       }),
       ...(blockingFindings.length > 0 && { blockingFindings }),

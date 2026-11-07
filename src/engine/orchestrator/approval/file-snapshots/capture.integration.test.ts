@@ -288,6 +288,49 @@ describe('getChangedFilesSinceSnapshot', () => {
       cleanupTempDir(dir);
     }
   });
+
+  it('leaves out a node_modules link at the root that only a directory pattern ignores', async () => {
+    const dir = createTempDir('snapshot-node-modules-link');
+    const deps = createTempDir('snapshot-node-modules-deps');
+    try {
+      createTestGitRepo(dir, {
+        '.gitignore': 'node_modules/\n',
+        'src/a.ts': 'export const a = 1;\n',
+      });
+      const snapshot = await getChangedFilesSnapshot(dir);
+
+      symlinkSync(deps, join(dir, 'node_modules'), 'dir');
+      writeFileSync(join(dir, 'src', 'a.ts'), 'export const a = 2;\n');
+
+      expect(execSync('git status --porcelain', { cwd: dir, encoding: 'utf8' })).toContain(
+        '?? node_modules',
+      );
+      expect(await getChangedFilesSinceSnapshot(dir, snapshot)).toEqual(['src/a.ts']);
+    } finally {
+      cleanupTempDir(dir);
+      cleanupTempDir(deps);
+    }
+  });
+
+  it('still lists a changed tracked file under node_modules', async () => {
+    const dir = createTempDir('snapshot-node-modules-tracked');
+    try {
+      createTestGitRepo(dir, {
+        '.gitignore': 'node_modules/\n',
+        'node_modules/pkg/index.js': 'export const pkg = 1;\n',
+        'src/a.ts': 'export const a = 1;\n',
+      });
+      const snapshot = await getChangedFilesSnapshot(dir);
+
+      writeFileSync(join(dir, 'node_modules', 'pkg', 'index.js'), 'export const pkg = 2;\n');
+
+      expect(await getChangedFilesSinceSnapshot(dir, snapshot)).toEqual([
+        'node_modules/pkg/index.js',
+      ]);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
 });
 
 describe('getChangedFilesSinceSnapshot — baseline files that leave git status', () => {

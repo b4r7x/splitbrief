@@ -1094,6 +1094,41 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-base-rerun-long-command',
+      title: 'Workflow · the long base command keeps its verdict and clock on one row',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'base-rerun-long-command',
+        title:
+          'The long base check keeps its verdict and clock on one row at both requested widths',
+        kind: 'implementation',
+        marker: 'Base re-run V5',
+      },
+      viewports: [viewport({ cols: 140, rows: 40 }), viewport({ cols: 120, rows: 40 })],
+      elements: [
+        { id: 'header', title: 'Build progress' },
+        { id: 'transcript', title: 'Running brief and long base re-run' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-check-timed-out',
+      title: 'Workflow · a fix check that reaches its time limit',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'check-timed-out',
+        title: 'The fix check row names the timeout as its cause and keeps its clock',
+        kind: 'implementation',
+        marker: 'timed out',
+      },
+      viewports: [viewport({ cols: 120, rows: 40 })],
+      elements: [
+        { id: 'header', title: 'Build progress' },
+        { id: 'transcript', title: 'Running brief and fix check' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-build-fix-consult',
       title: 'Workflow · planner consult on a fix task',
       surface: screenSurface('workflow'),
@@ -1625,6 +1660,23 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       checkpoint: {
         id: 'review-settled-failed',
         title: 'Settled terminal Review',
+        kind: 'implementation',
+        marker: 'Final review failed',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Settled Review transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-review-settled-unverified',
+      viewports: WIDE_VIEWPORTS,
+      title: 'Workflow · terminal Review failed with unverified criteria',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-settled-unverified',
+        title: 'Settled terminal Review with unverified criteria',
         kind: 'implementation',
         marker: 'Final review failed',
       },

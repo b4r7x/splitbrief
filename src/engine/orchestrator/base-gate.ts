@@ -247,6 +247,7 @@ export function startBaseGate(opts: {
               ? {
                   status: 'done',
                   passed: ran.status === 'pass',
+                  ...(ran.timedOut !== undefined && { timedOut: ran.timedOut }),
                   ...(ran.reusedAt === undefined
                     ? { duration: Date.now() - startedAt }
                     : { reusedAt: ran.reusedAt }),

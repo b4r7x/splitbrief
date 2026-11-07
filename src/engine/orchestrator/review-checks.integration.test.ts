@@ -558,6 +558,10 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         'npx --no-install vitest run @ base',
         'npm test @ workspace',
       ]);
+      const baseDone = rows(events).find(
+        (row) => row.moment === 'base' && row.status === 'done' && row.id === 'V1',
+      );
+      expect(baseDone).toMatchObject({ id: 'V1', passed: false, timedOut: true });
       const reviewDone = rows(events).find(
         (row) => row.moment === 'pre-review' && row.status === 'done',
       );
@@ -568,6 +572,7 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         preExisting: 0,
         notVerified: 1,
         detail: 'both runs timed out',
+        timedOut: true,
       });
       expect(reviewDone).not.toHaveProperty('newKeys');
       expect(reviewDone).not.toHaveProperty('preExistingKeys');

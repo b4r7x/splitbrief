@@ -280,6 +280,34 @@ describe('publishReviewCheck', () => {
     });
   });
 
+  it('carries the timeout of a finished check and omits the field on one that did not time out', () => {
+    const { bus, events } = makeBusRecorder();
+    publishReviewCheck(
+      { bus, phase: 'final-review' },
+      {
+        status: 'done',
+        id: 'V1',
+        command: 'npm test',
+        moment: 'base',
+        passed: false,
+        timedOut: true,
+      },
+    );
+    publishReviewCheck(
+      { bus, phase: 'final-review' },
+      {
+        status: 'done',
+        id: 'V2',
+        command: 'npm run lint',
+        moment: 'base',
+        passed: true,
+      },
+    );
+
+    expect(parseEngineEvent(events[0])).toMatchObject({ status: 'done', timedOut: true });
+    expect(parseEngineEvent(events[1])).not.toHaveProperty('timedOut');
+  });
+
   it('names the first failing tests of each side of a base split and omits an empty side', () => {
     const { bus, events } = makeBusRecorder();
     publishReviewCheck(

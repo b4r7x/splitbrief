@@ -401,6 +401,23 @@ describe('runTaskChecks for a fix task that answers a reviewer check', { timeout
     });
   });
 
+  it('marks the done row of a fix check that timed out', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-fix-check-timeout' }, async (run) => {
+      const { result, rows, places } = await fixChecks(run, () => {
+        throw processError.timeout({ command: 'npm test', timeoutMs: 1000, output: '' });
+      });
+
+      expect(places).toEqual(['workspace']);
+      expect(rows.at(-1)).toMatchObject({
+        id: 'V1',
+        moment: 'brief',
+        status: 'done',
+        timedOut: true,
+      });
+      expect(result.runs.at(-1)).toMatchObject({ checkId: 'V1', timedOut: true });
+    });
+  });
+
   it('keeps a carried failure that only the head of a long output names', async () => {
     await withApplyRun(FILES, { sessionId: 'sess-fix-check-long' }, async (run) => {
       const noise = Array.from(

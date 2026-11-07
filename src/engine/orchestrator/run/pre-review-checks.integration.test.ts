@@ -21,7 +21,7 @@ import { readEvidenceLedger, writeEvidenceLedger } from '../../../core/evidence/
 import { buildRequiredChecksUnrunnableRecoveryIssue } from '../recovery/builders/checks.js';
 import { failingFilesFromKeys } from '../task/file-owner.js';
 import { failureKeys } from '../validation/extract-failure-keys.js';
-import { verifyClaimChecks } from '../triage.js';
+import { claimVerification, verifyClaimChecks } from '../triage.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { abortError } from '../../../utils/abort.js';
 import {
@@ -832,8 +832,10 @@ describe('pre-review checks run each command once per workspace state', () => {
     const run = await checkoutRun('once-timeout');
     const timedOut = processError.timeout({ command: 'tsc', timeoutMs: 1000, output: '' });
     const first = makeCommandRunner(timedOut, timedOut, timedOut);
-    await preReview(run, first).result;
+    const { result, rows } = preReview(run, first);
+    await result;
     expect(first.calls).toHaveLength(3);
+    expect(rows.at(0)).toMatchObject({ id: 'K1', status: 'done', timedOut: true });
 
     const again = makeCommandRunner();
     await preReview(run, again).result;
@@ -875,7 +877,7 @@ describe('pre-review checks run each command once per workspace state', () => {
       new Date().toISOString(),
     );
     expect(verifyRun.calls).toHaveLength(1);
-    expect(verified.status).toBe('pass');
+    expect(claimVerification(verified, ['K1']).status).toBe('pass');
 
     const next = makeCommandRunner();
     const after = await preReview(run, next).result;
@@ -903,7 +905,7 @@ describe('pre-review checks run each command once per workspace state', () => {
       undefined,
     );
     expect(verifyRun.calls).toHaveLength(0);
-    expect(verified.status).toBe('pass');
+    expect(claimVerification(verified, ['K1', 'K2']).status).toBe('pass');
   });
 
   it('lets a claim verify read a stored red as it is, without running it again', async () => {
@@ -927,7 +929,7 @@ describe('pre-review checks run each command once per workspace state', () => {
       undefined,
     );
     expect(verifyRun.calls).toHaveLength(0);
-    expect(verified.status).toBe('fail');
+    expect(claimVerification(verified, ['K1']).status).toBe('fail');
   });
 
   it('lets a planner verify run a stored red once for two ids with one command', async () => {
@@ -951,6 +953,6 @@ describe('pre-review checks run each command once per workspace state', () => {
       new Date().toISOString(),
     );
     expect(verifyRun.calls).toHaveLength(1);
-    expect(verified.status).toBe('fail');
+    expect(claimVerification(verified, ['K1', 'K2']).status).toBe('fail');
   });
 });

@@ -833,6 +833,8 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     duration: z.number().optional(),
     /** On done events: nothing ran, the result came from the run of the same command at this ISO time. */
     reusedAt: z.string().optional(),
+    /** The command hit its time limit. */
+    timedOut: z.literal(true).optional(),
   }),
   phaseEvent('escalate').extend({
     taskId: TaskIdSchema,

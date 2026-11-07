@@ -260,6 +260,7 @@ export function publishReviewCheck(
     detail?: string | undefined;
     duration?: number | undefined;
     reusedAt?: string | undefined;
+    timedOut?: true | undefined;
   },
 ): void {
   ctx.bus.publish({
@@ -291,6 +292,7 @@ export function publishReviewCheck(
     ...(opts.detail !== undefined && { detail: opts.detail }),
     ...(opts.duration !== undefined && { duration: opts.duration }),
     ...(opts.reusedAt !== undefined && { reusedAt: opts.reusedAt }),
+    ...(opts.timedOut !== undefined && { timedOut: opts.timedOut }),
   });
 }
 

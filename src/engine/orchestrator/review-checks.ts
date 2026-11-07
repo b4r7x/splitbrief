@@ -160,6 +160,7 @@ export async function runReviewCheck(
     command: run.command ?? command,
     moment,
     passed: run.status === 'pass' || judged?.left.length === 0,
+    ...(run.timedOut !== undefined && { timedOut: run.timedOut }),
     ...clock,
     ...(judged !== null && fixCheckCounts(judged)),
     ...split?.counts,

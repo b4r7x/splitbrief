@@ -76,6 +76,7 @@ export async function runCheckWithRows(input: {
       ? {
           status: 'done',
           passed: run.status === 'pass',
+          ...(run.timedOut !== undefined && { timedOut: run.timedOut }),
           ...(run.reusedAt === undefined
             ? { duration: Date.now() - startedAt }
             : { reusedAt: run.reusedAt }),
