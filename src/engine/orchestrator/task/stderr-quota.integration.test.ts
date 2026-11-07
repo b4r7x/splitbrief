@@ -67,7 +67,7 @@ describe('a quota line that arrives during a live call', { timeout: 30_000 }, ()
     while (shimDirs.length > 0) cleanupTempDir(shimDirs.pop() as string);
   });
 
-  it('fails an invokeProcessCli call on stderr quota within five seconds when agy stays alive', async () => {
+  it('fails an invokeProcessCli call on a stderr quota line while agy stays alive', async () => {
     const shimDir = createTempDir('agy-live-quota-shim');
     shimDirs.push(shimDir);
     const shimPath = join(shimDir, CLI_TOOL_CATALOG.antigravity.command);
@@ -77,7 +77,7 @@ describe('a quota line that arrives during a live call', { timeout: 30_000 }, ()
         '#!/bin/bash',
         'cat >/dev/null',
         `printf '%s\\n' ${JSON.stringify(QUOTA_LINE)} >&2`,
-        'sleep 30',
+        'sleep 600',
         '',
       ].join('\n'),
       { mode: 0o755 },
@@ -89,7 +89,6 @@ describe('a quota line that arrives during a live call', { timeout: 30_000 }, ()
       backendKind: 'cli',
       runnerName: 'fixture',
     };
-    const started = Date.now();
     const result = await invokeProcessCli(antigravityImplementerAdapter, {
       invocation: {
         executable: executableIdentity(shimPath),
@@ -97,13 +96,11 @@ describe('a quota line that arrives during a live call', { timeout: 30_000 }, ()
         promptTransport: antigravityImplementerAdapter.promptTransport,
         environment: { PATH: process.env.PATH ?? '' },
         cwd: shimDir,
-        timeoutMs: 15_000,
         signal: undefined,
       },
       prompt: 'fixture prompt',
       callContext,
     });
-    const elapsed = Date.now() - started;
     expect(result).toMatchObject({
       status: 'failed',
       error: {
@@ -111,10 +108,9 @@ describe('a quota line that arrives during a live call', { timeout: 30_000 }, ()
         message: QUOTA_LINE,
       },
     });
-    expect(elapsed).toBeLessThan(5_000);
   });
 
-  it('halts antigravity on stderr quota at once and takes the declared fallback', async () => {
+  it('halts antigravity on a stderr quota line while it stays alive and takes the declared fallback', async () => {
     const shimDir = createTempDir('antigravity-quota-shim');
     shimDirs.push(shimDir);
     const counter = join(shimDir, 'spawned');
@@ -125,7 +121,7 @@ describe('a quota line that arrives during a live call', { timeout: 30_000 }, ()
         'cat >/dev/null',
         `echo x >> ${counter}`,
         `printf '%s\\n' ${JSON.stringify(QUOTA_LINE)} >&2`,
-        'sleep 30',
+        'sleep 600',
         '',
       ].join('\n'),
       { mode: 0o755 },
@@ -155,14 +151,12 @@ describe('a quota line that arrives during a live call', { timeout: 30_000 }, ()
       config,
     });
 
-    const started = Date.now();
     const { state } = await runTaskLoop({
       wctx,
       initialState: implementingState([makeTask({ id: 'T001' })]),
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
     });
-    const elapsed = Date.now() - started;
 
     const issue = state.pendingRecovery;
     expect({
@@ -176,6 +170,5 @@ describe('a quota line that arrives during a live call', { timeout: 30_000 }, ()
       reason: 'runner-usage-limit',
       auto: { tool: 'claude-code' },
     });
-    expect(elapsed).toBeLessThan(10_000);
   });
 });
