@@ -18,11 +18,10 @@ import { persistApprovalEvidence } from '../evidence/persistence.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
-import { isAbortError } from '../../../utils/abort.js';
 import { implementerSeatAttempt, runSeatCall } from '../escalation/seat-wait.js';
 import { unfinishedGuidance } from '../escalation/consult-guidance.js';
 import { addUsageAndSave, rebaseOnPersistedWorkflowState } from '../state-ops.js';
-import { isResumableWorkspaceStop, retentionError } from '../isolation/retention.js';
+import { settleThrownCall } from '../isolation/retention.js';
 import { recordedApiCreatedPaths } from '../evidence/task.js';
 import {
   absorbBuildCorrections,
@@ -280,8 +279,7 @@ export async function runImplementation(opts: {
       },
     });
   } catch (err) {
-    if (isAbortError(err) && isResumableWorkspaceStop(wctx.signal)) await workspace.retain?.();
-    else if (!retentionError.isFailed(err)) workspace.cleanup();
+    await settleThrownCall(workspace, wctx.signal, err);
     throw err;
   } finally {
     streamingFeed.stop();

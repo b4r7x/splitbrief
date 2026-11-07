@@ -1238,14 +1238,12 @@ describe('runRetryStep — what a retry hears about the earlier attempts', () =>
   const userSays = 'Keep the exported name.';
   const noEarlierOutput =
     '[Continuation] No output from an earlier attempt of this step is available.';
-  const discardedAttempt =
-    '[Continuation] Your previous attempt was discarded; its error is above.';
 
   it.each([
-    ['a start the code cannot be compared with', 'bad-head', 'write', noEarlierOutput],
-    ['no declared file left', 'real', 'absent', discardedAttempt],
-    ['a declared file left', 'real', 'write', noEarlierOutput],
-  ] as const)('%s', async (_title, head, declaredFile, heard) => {
+    ['a start the code cannot be compared with', 'bad-head', 'write'],
+    ['no declared file left', 'real', 'absent'],
+    ['a declared file left', 'real', 'write'],
+  ] as const)('%s', async (_title, head, declaredFile) => {
     const ref = setupProject();
     const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
     const state = makeImplState([task]);
@@ -1312,9 +1310,9 @@ describe('runRetryStep — what a retry hears about the earlier attempts', () =>
       const prompt = prompts[0];
       if (prompt === undefined) throw new Error('missing retry prompt');
       expect(prompts).toHaveLength(1);
-      expect(prompt).toContain(`${heard} The user says:`);
+      expect(prompt).toContain(`${noEarlierOutput} The user says:`);
       expect(prompt).toContain(userSays);
-      if (heard === noEarlierOutput) expect(prompt).not.toContain('discarded');
+      expect(prompt).not.toContain('discarded');
     } finally {
       await disposeWctxIsolations();
     }

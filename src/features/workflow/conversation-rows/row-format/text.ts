@@ -112,7 +112,23 @@ export function wrappedPrefixedRowTexts(text: string, width: number, prefix: str
 // when the word before the break fills the row exactly, the space leads the continuation instead
 // and starts it one cell off its row's column. Prose continues from the break, never from the space
 // in it, so a continuation drops that one cell.
-//
+function wrappedLineParts(text: string, width: number): { text: string; start: number }[] {
+  let offset = 0;
+  return wrappedPrefixedRowTexts(text, width, '').map((line, index) => {
+    const trim = index > 0 && line.startsWith(' ') ? 1 : 0;
+    const part = { text: line.slice(trim), start: offset + trim };
+    offset += line.length;
+    return part;
+  });
+}
+
+/** The user's own words wrap as prose with no dot rule, so every character they typed stays. */
+export function wrappedUserTexts(text: string, width: number): string[] {
+  return sanitizeRowDisplayText(text)
+    .split('\n')
+    .flatMap((line) => wrappedLineParts(line, width).map((part) => part.text));
+}
+
 // A row joins its parts with SOFT_SEP, and a break after its dot leaves the dot trailing the line
 // above. A no-break space binds the dot to the part it introduces while the row wraps, so the row
 // breaks before the dot; soft continuations drop the dot before restoring plain separator spaces.
@@ -123,17 +139,13 @@ export function wrappedProseTexts(text: string, width: number): string[] {
 }
 
 function wrappedProseLineParts(text: string, width: number): { text: string; start: number }[] {
-  let offset = 0;
-  return wrappedPrefixedRowTexts(text.replaceAll(SOFT_SEP, ` ${BOUND_SEP_DOT}`), width, '').map(
-    (line, index) => {
-      let trim = index > 0 && line.startsWith(' ') ? 1 : 0;
-      if (index > 0 && line.startsWith(BOUND_SEP_DOT, trim)) trim += BOUND_SEP_DOT.length;
-      const part = {
-        text: line.slice(trim).replaceAll(BOUND_SEP_DOT, `${SOFT_SEP.trim()} `),
-        start: offset + trim,
+  return wrappedLineParts(text.replaceAll(SOFT_SEP, ` ${BOUND_SEP_DOT}`), width).map(
+    (part, index) => {
+      const trim = index > 0 && part.text.startsWith(BOUND_SEP_DOT) ? BOUND_SEP_DOT.length : 0;
+      return {
+        text: part.text.slice(trim).replaceAll(BOUND_SEP_DOT, `${SOFT_SEP.trim()} `),
+        start: part.start + trim,
       };
-      offset += line.length;
-      return part;
     },
   );
 }

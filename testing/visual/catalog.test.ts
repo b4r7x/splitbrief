@@ -267,6 +267,8 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-question-input', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-question-overflow', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-stop-menu-ended-rewound-gate', ['120x40', '80x24', '60x18', '60x40']],
+  ['workflow-attempt-reverted', ['120x40', '80x24', '60x18', '60x40']],
+  ['workflow-attempt-reverted-checkout', ['120x40', '80x24', '60x18', '60x40']],
   ['workflow-stop-sheet-fix-inserted', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-stop-sheet', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-stop-sheet-short', ['80x15', '80x14', '80x12', '80x10', '60x12', '40x12']],

@@ -23,7 +23,7 @@ import type { Summary } from '../../../../src/core/schemas/summary.js';
 import { retainedWorkspaceNotices, retainedWorkspaceProjection } from './retained-workspace.js';
 import { closedQueueProjection } from './closed-queue-projection.js';
 import { cliStopContinuedProjection } from './cli-stop-continued.js';
-import { taskId } from '../../../../src/core/schemas/task.js';
+import { taskId, type Task } from '../../../../src/core/schemas/task.js';
 import { SEAT_ANSWER_REFUSED_CODE } from '../../../../src/core/runners/seat-answer-notice.js';
 import { buildRepoChecks } from '../../../../src/core/readiness/checks/repo.js';
 import {
@@ -3446,8 +3446,8 @@ const HALTED_TASK = makeTask({
 const RESUMED_RUN_STARTED_AT = new Date(FIXED_TS).toISOString();
 
 /** The run the engine saves at a halt: the brief still in flight, at the phase the halt was raised in. */
-function haltedResumeState(issue: RecoveryIssue): WorkflowState {
-  return makeImplState([HALTED_TASK], {
+function haltedResumeState(issue: RecoveryIssue, task: Task = HALTED_TASK): WorkflowState {
+  return makeImplState([task], {
     feature: WORKFLOW_FEATURE,
     startedAt: RESUMED_RUN_STARTED_AT,
     phase: issue.phase,
@@ -4012,7 +4012,7 @@ const reviewFixAgainProjection: WorkflowFixtureProjection = {
           type: 'user_message',
           ts: FIXED_TS,
           phase: 'complete',
-          text: 'Keep the cache key stable across restarts; the review is right about F2.',
+          text: 'Keep the cache key stable across restarts and deploys · F2 is right.',
         });
         publishRecoveryResolved({ ...halt, phase: 'final-review', outcome: 'continued' });
       }),
@@ -8149,17 +8149,45 @@ const fixCheckOffProjection: WorkflowFixtureProjection = {
   },
 };
 
-// A failed first attempt puts back the files it changed before the brief goes on, so none of the
-// brief's files is left changed. In the project checkout the attempt's own bytes are saved first,
-// and the row names where.
+// A first BUILD call whose runner reported a defect puts back the files it changed, as that halt
+// asks no consult, so none of the brief's files is left changed. The revert row lands after the
+// halt. In the project checkout the attempt's own bytes are saved first, and the row names where.
 const ATTEMPT_REVERTED_TS = FIXED_TS + 300;
 const ATTEMPT_REVERTED = `${WORKFLOW_FIXTURE_TASK_ID} attempt reverted: 2 files`;
 const ATTEMPT_REVERTED_SAVED_TO = join(
   revertedDir({ projectDir: VISUAL_FIXTURE_PROJECT_DIR, sessionId: VISUAL_WORKFLOW_SESSION_ID }),
   new Date(ATTEMPT_REVERTED_TS).toISOString().replace(/[:.]/g, '-'),
 );
+const ATTEMPT_REVERTED_TASK: Task = {
+  ...HALTED_TASK,
+  suggestedFiles: [WORKFLOW_FIXTURE_REVIEW_FILE, WORKFLOW_FIXTURE_SECOND_FILE],
+};
+const ATTEMPT_REVERTED_WRITE =
+  'wrote to ../outside.txt (outside the workspace) with run_command: touch ../outside.txt';
 
-function attemptRevertedEvents(message: string): EngineEvent[] {
+function attemptRevertedIssue(inPlace?: { revertedDir: string }): RecoveryIssue {
+  return buildLeftIsolationRecoveryIssue({
+    id: 'rec_visual_attempt_reverted',
+    task: ATTEMPT_REVERTED_TASK,
+    runner: AGY_BUILD_SEAT,
+    toolMessage: ATTEMPT_REVERTED_WRITE,
+    attempts: 1,
+    inPlace,
+    seatSwap: {
+      seat: 'build',
+      currentTool: 'antigravity',
+      detectedTools: [{ tool: 'codex', ready: true }],
+    },
+    createdAt: new Date(FIXED_TS).toISOString(),
+  });
+}
+const attemptRevertedWorktreeIssue = attemptRevertedIssue();
+const attemptRevertedCheckoutIssue = attemptRevertedIssue({
+  revertedDir: `.splitbrief/sessions/${VISUAL_WORKFLOW_SESSION_ID}/reverted`,
+});
+
+function attemptRevertedEvents(defect: { issue: RecoveryIssue; reverted: string }): EngineEvent[] {
+  const { issue, reverted } = defect;
   return [
     { type: 'workflow_started', ts: FIXED_TS, phase: 'implementing', feature: WORKFLOW_FEATURE },
     FIXTURE_TASKS_PLANNED,
@@ -8172,42 +8200,56 @@ function attemptRevertedEvents(message: string): EngineEvent[] {
       index: 0,
       total: 3,
       file: WORKFLOW_FIXTURE_REVIEW_FILE,
-      files: [WORKFLOW_FIXTURE_REVIEW_FILE, WORKFLOW_FIXTURE_SECOND_FILE],
+      files: [...ATTEMPT_REVERTED_TASK.suggestedFiles],
       action: 'modify',
-      tool: 'ollama',
-      model: FIXED_RUNNER_MODEL,
+      tool: AGY_BUILD_SEAT.tool,
+      model: AGY_BUILD_SEAT.model,
     },
     {
       type: 'implementer_generate_failed',
       ts: FIXED_TS + 200,
       phase: 'implementing',
       taskId: WORKFLOW_FIXTURE_TASK_ID,
-      model: FIXED_RUNNER_MODEL,
-      error: WORKFLOW_FIXTURE_TEXT.implementerFailure,
+      model: AGY_BUILD_SEAT.model,
+      error: ATTEMPT_REVERTED_WRITE,
     },
-    ...publishedEvents(ATTEMPT_REVERTED_TS, (bus) =>
-      publishInfo({ bus, phase: 'implementing', message, briefKept: 0 }),
-    ),
+    ...publishedEvents(ATTEMPT_REVERTED_TS, (bus) => {
+      const phase = 'implementing';
+      publishError({
+        bus,
+        phase,
+        message: runnerDefectRow(issue, agyName, ATTEMPT_REVERTED_WRITE),
+      });
+      publishRecoveryPrompted({ bus, phase }, VISUAL_WORKFLOW_SESSION_ID, issue, briefStep);
+      publishInfo({ bus, phase, message: reverted, briefKept: 0 });
+    }),
   ];
 }
 
 const attemptRevertedProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-attempt-reverted'),
   feature: WORKFLOW_FEATURE,
-  inputMode: 'normal',
+  inputMode: 'question',
   sidebarVisible: true,
-  events: attemptRevertedEvents(ATTEMPT_REVERTED),
+  config: AGY_CREW,
+  resumeState: haltedResumeState(attemptRevertedWorktreeIssue, ATTEMPT_REVERTED_TASK),
+  events: attemptRevertedEvents({
+    issue: attemptRevertedWorktreeIssue,
+    reverted: ATTEMPT_REVERTED,
+  }),
 };
 
 const attemptRevertedCheckoutProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-attempt-reverted-checkout'),
   feature: WORKFLOW_FEATURE,
-  inputMode: 'normal',
+  inputMode: 'question',
   sidebarVisible: true,
-  config: { workflow: { isolation: 'none' } },
-  events: attemptRevertedEvents(
-    `${ATTEMPT_REVERTED}. ${replacedFilesSavedIn(ATTEMPT_REVERTED_SAVED_TO)}.`,
-  ),
+  config: { ...AGY_CREW, workflow: { isolation: 'none' } },
+  resumeState: haltedResumeState(attemptRevertedCheckoutIssue, ATTEMPT_REVERTED_TASK),
+  events: attemptRevertedEvents({
+    issue: attemptRevertedCheckoutIssue,
+    reverted: `${ATTEMPT_REVERTED}. ${replacedFilesSavedIn(ATTEMPT_REVERTED_SAVED_TO)}.`,
+  }),
 };
 
 const BASE_NOT_VERIFIED_E2E = {

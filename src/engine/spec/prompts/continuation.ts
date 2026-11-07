@@ -17,8 +17,6 @@ export type ComposeContinuationInput = Readonly<{
   guidance?: string | undefined;
   /** Seat-specific facts the next attempt needs, e.g. files already changed. */
   extra?: string | undefined;
-  /** The step is a retry whose earlier attempts left no files in the workspace; its error leads the prompt. */
-  discarded?: boolean | undefined;
 }>;
 
 function trimPartial(partial: string): string {
@@ -44,11 +42,7 @@ export function continuationBlock(input: Omit<ComposeContinuationInput, 'basePro
   const guidance = input.guidance?.trim() ?? '';
   const steer = input.steer?.trim() ? input.steer : DEFAULT_STEER;
   const opening =
-    partial !== ''
-      ? 'The previous attempt of this step was interrupted.'
-      : input.discarded
-        ? 'Your previous attempt was discarded; its error is above.'
-        : NO_EARLIER_OUTPUT;
+    partial !== '' ? 'The previous attempt of this step was interrupted.' : NO_EARLIER_OUTPUT;
   // A correction typed at a halt travels in this block too, so only an attempt
   // that left output is called interrupted.
   if (partial === '' && extra === '' && guidance === '') {

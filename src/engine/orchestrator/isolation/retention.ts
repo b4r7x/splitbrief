@@ -25,6 +25,7 @@ import { writeConfinedSecureFileAsync, writeSecureFile } from '../../../lib/fs.j
 import { createLogger } from '../../../lib/logger.js';
 import { assertPathConfined } from '../../../lib/path-confinement.js';
 import { isENOENT } from '../../../lib/process/errors.js';
+import { isAbortError } from '../../../utils/abort.js';
 import { canonicalJSON } from '../../../utils/canonical-json.js';
 import { error, matches } from '../../../utils/error.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
@@ -54,6 +55,20 @@ export const retentionError = {
 
 export function isResumableWorkspaceStop(signal: AbortSignal | undefined): boolean {
   return signal?.aborted === true && workflowCancelledReasonFromSignal(signal) === undefined;
+}
+
+/**
+ * Settles the workspace of a BUILD call that threw. Only a stop takes the call's files back, and a
+ * stop the run can resume keeps them for it; a call that failed keeps them for the consult.
+ */
+export async function settleThrownCall(
+  workspace: IsolatedWorkspace,
+  signal: AbortSignal | undefined,
+  err: unknown,
+): Promise<void> {
+  if (isAbortError(err) && isResumableWorkspaceStop(signal)) await workspace.retain?.();
+  else if (isAbortError(err) || (signal?.aborted && !retentionError.isFailed(err)))
+    workspace.cleanup();
 }
 
 export function workspaceOwner(input: { sessionId: string; config: Config }): WorkspaceOwner {

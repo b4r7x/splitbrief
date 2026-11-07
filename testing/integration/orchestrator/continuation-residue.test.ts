@@ -88,7 +88,6 @@ describe('a stopped production implementer call', () => {
           task: fixture.task,
           lastError: 'validation failed',
           attempts: 1,
-          discarded: false,
           projectDir: fixture.workspaceDir,
           fileIgnoreProjectDir: fixture.projectDir,
           config: fixture.config,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
-import { wrappedTextBlock, wrappedSegmentsBlock } from './row-block-compose.js';
+import { promptTextBlock, wrappedTextBlock, wrappedSegmentsBlock } from './row-block-compose.js';
 import { rowText } from './row-format/rows.js';
 import { rowLeadingCells } from './row-markers.js';
 
@@ -156,4 +156,37 @@ describe('wrappedSegmentsBlock', () => {
     expect(block.createRows(1, block.rowCount)).toEqual(rows.slice(1));
     expect(rows.every((row) => row.kind === 'card')).toBe(true);
   });
+});
+
+describe('promptTextBlock', () => {
+  const text = 'Run npm test · then fix the lint error';
+
+  it.each([15, 16, 17, 18, 19, 20, 21])(
+    'keeps every character of a user message that wraps at its dot at width %i',
+    (width) => {
+      const block = promptTextBlock({ keyPrefix: 'user', text, width });
+      if (block === null) throw new Error('Expected a prompt block');
+      const rows = block.createRows(0, block.rowCount);
+      const shown = rows.map(rowText);
+
+      expect(shown.join('').match(/·/gu) ?? []).toHaveLength(1);
+      expect(shown.join(' ').split(/\s+/u).filter(Boolean)).toEqual(text.split(' '));
+      for (const row of rows) {
+        expect(getTerminalCellWidth(rowText(row)) + rowLeadingCells(row.kind)).toBeLessThanOrEqual(
+          width,
+        );
+      }
+    },
+  );
+
+  it.each([15, 16, 17, 18, 19, 20, 21])(
+    'starts no row of a user message with the space it broke on at width %i',
+    (width) => {
+      const block = promptTextBlock({ keyPrefix: 'user', text, width });
+      if (block === null) throw new Error('Expected a prompt block');
+      const shown = block.createRows(0, block.rowCount).map(rowText);
+
+      expect(shown.filter((line) => line.startsWith(' '))).toEqual([]);
+    },
+  );
 });

@@ -17,7 +17,7 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
-import { consultCallAnswering, guidanceConsult } from '#testing/helpers/typed-planner.js';
+import { consultCallAnswering } from '#testing/helpers/typed-planner.js';
 import type { ConsultAnswer } from '../../../core/schemas/consult.js';
 import type { ImplementerOptions } from '../../implementers/types.js';
 import { processError } from '../../../lib/process/errors.js';
@@ -52,11 +52,20 @@ function setupProject(): { projectDir: string; sessionId: string } {
   return { projectDir, sessionId };
 }
 
-async function haltCheckoutBrief() {
+/**
+ * Halts a brief and keeps its files: a call that stops on a usage limit parks the brief and takes
+ * no file back. A halt of the ladder puts every file of the brief back to its task start. With
+ * `try-again` the brief halts there first, which records its evidence, and the call of Try again
+ * parks. With `rewrite` the planner rewrites the brief after its failing check: the rewritten brief
+ * keeps the files and the check output of the attempt it replaced, and its first call parks.
+ */
+async function haltCheckoutBrief(via: 'try-again' | 'rewrite' = 'try-again') {
   const ref = setupProject();
+  const check = { id: 'check', kind: 'cmd', value: 'tsc --noEmit' } as const;
   const task = makeTask({
     suggestedFiles: ['src/attempt.ts', 'src/later.ts'],
-    checks: [{ id: 'check', kind: 'cmd', value: 'tsc --noEmit' }],
+    criteria: [],
+    checks: [check],
   });
   const writeAttempt = async (opts: ImplementerOptions) => {
     mkdirSync(join(opts.projectDir, 'src'), { recursive: true });
@@ -75,31 +84,60 @@ async function haltCheckoutBrief() {
     ...ref,
     bus,
     config: makeNoValidationConfig({ workflow: { isolation: 'none', review: 'task' } }),
-    // One guidance answer, then the planner fails: the guided attempt writes the brief's files
-    // and runs its failing check before the halt.
     planner: makePlanner({
       typedCall: consultCallAnswering(() => {
-        if (++consults > 1) throw new Error('Planner call failed');
-        return guidanceConsult();
+        if (via === 'try-again' || ++consults > 1) throw new Error('Planner call failed');
+        return {
+          answer: {
+            diagnosis: 'The brief asks for too little.',
+            action: 'rewrite-task',
+            task: makeTaskSpec({
+              id: task.id,
+              criteria: [],
+              checks: [check],
+              suggestedFiles: task.suggestedFiles,
+            }),
+          },
+        };
       }),
     }),
-    // The first attempt fails as an implementation, so the halt keeps the brief's files.
     implementer: makeImplementer({
-      implement: vi.fn(async (opts: ImplementerOptions) => ({
-        ...(await writeAttempt(opts)),
-        success: false,
-        error: 'The implementer crashed.',
-      })),
+      implement: vi
+        .fn()
+        .mockImplementationOnce(writeAttempt)
+        .mockImplementation(async (opts: ImplementerOptions) => ({
+          ...(await writeAttempt(opts)),
+          success: false,
+          outcome: 'usage-limit',
+          error: 'The implementer reached its usage limit.',
+        })),
       retry: vi.fn(writeAttempt),
     }),
   });
-  const halted = await runTaskLoop({
+  let halted = await runTaskLoop({
     wctx,
     initialState: makeImplState([task]),
     setTrackedState: vi.fn(),
     setCurrentTask: vi.fn(),
   });
-  expect(halted.state.pendingRecovery?.reason).toBe('planner-call-failed');
+  if (via === 'try-again') {
+    expect(halted.state.pendingRecovery?.reason).toBe('planner-call-failed');
+    const again = await applyRecoveryAction({
+      ...ref,
+      state: halted.state,
+      action: 'retry-same-worker',
+      bus,
+      config: wctx.config,
+    });
+    expect(again.ok).toBe(true);
+    halted = await runTaskLoop({
+      wctx,
+      initialState: loadState(ref) ?? halted.state,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+  }
+  expect(halted.state.pendingRecovery?.reason).toBe('runner-usage-limit');
   return {
     ref,
     wctx,
@@ -221,7 +259,7 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
   );
 
   it('removes output from failing checks when the halted brief is skipped', async () => {
-    const { ref, bus, generatedFiles } = await haltCheckoutBrief();
+    const { ref, bus, generatedFiles } = await haltCheckoutBrief('rewrite');
     const persisted = loadState(ref);
     if (persisted === null) throw new Error('Missing halted state');
     expect(generatedFiles().length).toBeGreaterThan(0);

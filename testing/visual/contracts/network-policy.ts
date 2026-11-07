@@ -3,7 +3,7 @@ import { parse } from 'tldts';
 
 const URI_REFERENCE_PATTERN = /(?<![a-z0-9+.-])([a-z][a-z0-9+.-]*:[^\s'"<>{}]+)/giu;
 const TRAILING_PROSE_PUNCTUATION_PATTERN = /[!),.;?\]}]+$/u;
-const STATUS_LABEL_PATTERN = /^[a-z][a-z0-9+.-]*:[a-z0-9_-]+$/iu;
+const STATUS_LABEL_PATTERN = /^[a-z][a-z0-9+.-]*:[a-z0-9_-]+…?$/iu;
 const URI_ONLY_SCHEMES = new Set([
   'data',
   'file',

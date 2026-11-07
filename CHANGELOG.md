@@ -131,6 +131,9 @@
 - The status line clock in the build counts the time the current brief has worked. A stop, a Continue or a steer no longer starts it again, and a brief after the final review no longer counts the review.
 - A saved edit of `plan.json` shows the `Plan` or `Tasks` block again only when the edit changed it.
 - A review heading, a halt, `review.md` and the closed run count only the fix cycles that ran a fix brief. A review after a cycle with no fix brief, such as a check the planner ran again, reads `re-run`.
+- A message you send keeps every character you typed, also a · where the line wraps.
+- When a build call fails, for example at the tool's turn limit, on a timeout or on a tool error, SPLITBRIEF keeps the files it wrote. The planner sees what the call changed, and the next attempt continues from those files.
+- When an API response stops part way through its writes on a retry, the brief keeps its files, and Try again continues on them. In your checkout, SPLITBRIEF still puts back the writes of that response. Before, after a failed check, SPLITBRIEF put the brief back to its start, also when the error said that the partial changes stayed in the run workspace.
 - A failed review with no blocking finding now says how many criteria no check verified.
 - A check that two review claims share now runs and shows once.
 - The clock of a check row with a long command stays on its row.

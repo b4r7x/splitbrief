@@ -7,7 +7,7 @@ import { recordTaskUsage } from '../tokens.js';
 import { toErrorMessage, labelError } from '../../../utils/format-errors.js';
 import { sessionError } from '../../../core/sessions/errors.js';
 import { isAbortError } from '../../../utils/abort.js';
-import { publishError, publishTaskValidating, publishWarning } from '../events.js';
+import { publishError, publishTaskValidating } from '../events.js';
 import {
   addUsageAndSave,
   parkStoppedRun,
@@ -34,7 +34,6 @@ import { isResumableWorkspaceStop, retentionError } from '../isolation/retention
 import { runImplementation } from './run-implementation.js';
 import { gateAttemptChanges } from './attempt-gate.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
-import { restoreExhaustedTaskFiles } from './rollback.js';
 import { handleFailedImplementation } from './implementation-failure.js';
 import { runBriefGate } from './brief-gate.js';
 
@@ -393,12 +392,6 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   if (consultHandedBackToLoop(retry.state, task)) {
     const rerun = await rerunReplacedTask(opts, retry.state);
     return rerun ?? retry.state;
-  }
-  if (!retry.completed && retry.state.pendingRecovery !== undefined) {
-    const restored = await restoreExhaustedTaskFiles({ wctx, taskStartSnapshot });
-    if (restored !== undefined) {
-      publishWarning({ bus: wctx.bus, phase: retry.state.phase, ...restored });
-    }
   }
   return retry.state;
 }

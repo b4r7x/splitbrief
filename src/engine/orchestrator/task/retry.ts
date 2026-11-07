@@ -10,7 +10,7 @@ import { sessionError } from '../../../core/sessions/errors.js';
 import { retentionError } from '../isolation/retention.js';
 import { isAbortError } from '../../../utils/abort.js';
 import { nowIso } from '../../../utils/format-time.js';
-import { publishError } from '../events.js';
+import { publishError, publishWarning } from '../events.js';
 import { handleRetryAndEscalation } from '../escalation/handle.js';
 import type { BlockedReport } from '../escalation/step.js';
 import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
@@ -34,6 +34,7 @@ import { isConsultError } from '../consult/request.js';
 import { typedOutputError } from '../../runners/typed-output.js';
 import { seatProtocolHaltIssue } from '../recovery/seat-protocol-halt.js';
 import { readBriefWorkedMs } from './worked-time.js';
+import { restoreExhaustedTaskFiles } from './rollback.js';
 
 export type RetryAndRecordOptions = {
   wctx: WorkflowContext;
@@ -188,15 +189,21 @@ export async function handleTaskPlannerCallFailure(
   return nextState;
 }
 
+/**
+ * The ladder of a brief whose first attempt failed, in its BUILD call or on validation. Either way
+ * the attempt's files stay for the consult and the next attempt; a halt puts every file the brief
+ * changed back to its task start. The halt of an edit bundle that stopped part way keeps them:
+ * Try again continues on them, and Skip restores them.
+ */
 export async function retryAndRecord(
   opts: RetryAndRecordOptions,
 ): Promise<{ state: WorkflowState; completed: boolean }> {
-  const { wctx, task, initialError, tokensBefore, taskBreakdowns, setTrackedState } = opts;
+  const { wctx, task, initialError } = opts;
   let taskStartSnapshot = opts.taskStartSnapshot;
   // The attempt that reached the ladder counts on the lineage before the retry it
   // earned: one implementer call, one attempt, whether it failed on validation or
   // on its own output.
-  let state: WorkflowState =
+  const state: WorkflowState =
     wctx.signal?.aborted === true
       ? opts.state
       : transitionAndSave(wctx, opts.state, {
@@ -216,6 +223,25 @@ export async function retryAndRecord(
       return { state, completed: false };
     }
   }
+  const retry = await escalateAndRecord(opts, state, taskStartSnapshot);
+  const recovery = retry.state.pendingRecovery;
+  if (!retry.completed && recovery !== undefined && recovery.facts?.apiApplyIncomplete !== true) {
+    const restored = await restoreExhaustedTaskFiles({ wctx, taskStartSnapshot });
+    if (restored !== undefined) {
+      publishWarning({ bus: wctx.bus, phase: retry.state.phase, ...restored });
+    }
+  }
+  return retry;
+}
+
+/** Runs the ladder from the counted first attempt and records how the brief ended. */
+async function escalateAndRecord(
+  opts: RetryAndRecordOptions,
+  counted: WorkflowState,
+  taskStartSnapshot: ChangedFilesSnapshot,
+): Promise<{ state: WorkflowState; completed: boolean }> {
+  const { wctx, task, initialError, tokensBefore, taskBreakdowns, setTrackedState } = opts;
+  let state = counted;
   let result: Awaited<ReturnType<typeof handleRetryAndEscalation>>['result'];
   try {
     ({ state, result } = await handleRetryAndEscalation({

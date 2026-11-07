@@ -7,7 +7,11 @@ import type {
 } from './types.js';
 import { cardRowsLayout, cardRowsWindow } from './row-format/label-card.js';
 import { blankRow, row, segmentedRow } from './row-format/rows.js';
-import { sanitizeRowDisplayText, wrappedProseSegments } from './row-format/text.js';
+import {
+  sanitizeRowDisplayText,
+  wrappedProseSegments,
+  wrappedUserTexts,
+} from './row-format/text.js';
 import { wrapWidthFor } from './row-markers.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { SOFT_SEP } from '../../../core/separators.js';
@@ -149,7 +153,7 @@ export function promptTextBlock(input: {
   width: number;
 }): ConversationRowBlock | null {
   const wrapWidth = wrapWidthFor('prompt', input.width);
-  const lines = eventWrappedLines(sanitizeRowDisplayText(input.text), wrapWidth);
+  const lines = wrappedUserTexts(input.text, wrapWidth);
   const rowCount = lines.length;
   if (rowCount === 0) return null;
   return {

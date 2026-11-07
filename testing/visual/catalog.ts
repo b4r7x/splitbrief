@@ -5755,24 +5755,27 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-attempt-reverted',
-      title: 'Workflow · a failed attempt puts its files back',
+      title: 'Workflow · a call whose runner reported a defect puts its files back',
       surface: screenSurface('workflow'),
+      viewports: [...REQUIRED_VIEWPORTS, viewport({ cols: 60, rows: 40 })],
       checkpoint: {
         id: 'attempt-reverted',
-        title: 'The neutral row after the failed attempt names the files put back',
+        title: 'The neutral row after the runner defect names the files put back',
         kind: 'implementation',
         marker: 'attempt reverted: 2 files',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
-        { id: 'transcript', title: 'Failed attempt and revert row' },
+        { id: 'transcript', title: 'Runner defect and revert row' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
     defineScenario({
       id: 'workflow-attempt-reverted-checkout',
-      title: 'Workflow · a failed attempt in the project checkout puts its files back',
+      title:
+        'Workflow · a call whose runner reported a defect in the project checkout puts its files back',
       surface: screenSurface('workflow'),
+      viewports: [...REQUIRED_VIEWPORTS, viewport({ cols: 60, rows: 40 })],
       checkpoint: {
         id: 'attempt-reverted-checkout',
         title: 'The revert row names where the replaced files are saved',
@@ -5781,7 +5784,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
-        { id: 'transcript', title: 'Failed attempt and revert row' },
+        { id: 'transcript', title: 'Runner defect and revert row' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
@@ -6851,7 +6854,7 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       },
       {
         id: 'workflow-stop-sheet-after-revert',
-        title: 'Workflow · stop options after the attempt was put back',
+        title: 'Workflow · stop options after a runner defect put the attempt back',
         marker: 'keep the run open',
       },
       {

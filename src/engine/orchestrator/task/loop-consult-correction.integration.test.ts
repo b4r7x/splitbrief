@@ -161,10 +161,10 @@ describe('a guided retry that carries a queued correction', { timeout: 90_000 },
     expect(later?.prompt).not.toContain('discarded');
   });
 
-  it('tells a guided retry that its attempt was discarded when the failed call took the files back', async () => {
+  it('keeps the files of a failed call for a guided retry and does not tell it the attempt was discarded', async () => {
     const ref = setupGitSessionProject({
-      prefix: 'loop-consult-correction-discarded',
-      sessionId: 'sess-consult-correction-discarded',
+      prefix: 'loop-consult-correction-kept',
+      sessionId: 'sess-consult-correction-kept',
     });
     dirs.push(ref.projectDir);
     vi.spyOn(commandRunner, 'runCommand').mockResolvedValue({ stdout: '', stderr: '', code: 0 });
@@ -224,10 +224,74 @@ describe('a guided retry that carries a queued correction', { timeout: 90_000 },
     expect(result.status).toBe('complete');
     expect(calls).toHaveLength(2);
     const retry = calls[1];
-    expect(retry?.fileStayed).toBe(false);
-    expect(retry?.prompt).toContain(
-      '[Continuation] Your previous attempt was discarded; its error is above. The user says:',
-    );
+    expect(retry?.fileStayed).toBe(true);
     expect(retry?.prompt).toContain('Keep the exported name.');
+    expect(retry?.prompt).not.toContain('discarded');
+  });
+
+  it('does not tell a guided retry its attempt was discarded when the failed call changed no declared file', async () => {
+    const ref = setupGitSessionProject({
+      prefix: 'loop-consult-correction-unchanged',
+      sessionId: 'sess-consult-correction-unchanged',
+    });
+    dirs.push(ref.projectDir);
+    vi.spyOn(commandRunner, 'runCommand').mockResolvedValue({ stdout: '', stderr: '', code: 0 });
+    const { bus } = makeBusRecorder();
+    const prompts: string[] = [];
+    const wctx = makeWctx({
+      ...ref,
+      bus,
+      config: makeNoValidationConfig({ workflow: { isolation: 'none', review: 'task' } }),
+      planner: makePlanner({
+        typedCall: consultCallAnswering(() => {
+          const current = loadState(ref);
+          if (current === null) throw new Error('Missing state during the consult');
+          enqueueUserMessage({
+            ...ref,
+            state: current,
+            message: plainUserMessage('Keep the exported name.'),
+            phase: current.phase,
+            bus,
+          });
+          return guidanceConsult();
+        }),
+      }),
+      implementer: createImplementerBase({
+        extractsCode: false,
+        detectChanges: createChangeDetector('Tool implementer (test)'),
+        invoke: async ({ projectDir: runDir, prompt }) => {
+          prompts.push(prompt);
+          if (prompts.length === 1) {
+            return makeRunnerCallResult({
+              status: 'failed',
+              text: 'stopped before any edit',
+              error: { code: 'turn-failed', message: 'The tool stopped before any edit.' },
+            });
+          }
+          mkdirSync(join(runDir, 'src'), { recursive: true });
+          writeFileSync(join(runDir, 'src/a.ts'), 'export const a = 1;\n');
+          return makeRunnerCallResult({ status: 'completed', text: 'wrote src/a.ts' });
+        },
+      }),
+    });
+    const task = makeTask({
+      id: 'T001',
+      title: 'Add the alias',
+      suggestedFiles: ['src/a.ts'],
+      criteria: [],
+      checks: [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit' }],
+    });
+
+    const result = await runTaskLoop({
+      wctx,
+      initialState: makeImplState([task]),
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.status).toBe('complete');
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain('Keep the exported name.');
+    expect(prompts[1]).not.toContain('discarded');
   });
 });

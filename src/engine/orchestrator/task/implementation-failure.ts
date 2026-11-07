@@ -158,7 +158,6 @@ export async function handleFailedImplementation(opts: {
     });
     return raisePendingRecovery(wctx, state, issue, setTrackedState);
   }
-  implState.workspace.cleanup();
   // A defect the runner itself reported fails every attempt the same way, so
   // the ladder is not entered at all.
   const buildDefectIssue =
@@ -166,6 +165,7 @@ export async function handleFailedImplementation(opts: {
       ? undefined
       : recoveryBuilderForRunnerOutcome(implState.implResult.outcome);
   if (buildDefectIssue !== undefined) {
+    implState.workspace.cleanup();
     const toolMessage = implState.implResult.error ?? 'The runner refused the invocation';
     const seatSwap = await loadSeatSwapContext({
       projectDir: wctx.projectDir,

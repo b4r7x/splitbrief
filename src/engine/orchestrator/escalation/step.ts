@@ -18,9 +18,8 @@ import type { RetryInvokeResult, RetryStepOpts, RetryStepOutcome } from './types
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { recordedApiCreatedPaths } from '../evidence/task.js';
 import { raiseApiApplyRecovery } from '../evidence/persistence.js';
-import { isAbortError } from '../../../utils/abort.js';
 import { isRecord } from '../../../utils/type-guards.js';
-import { isResumableWorkspaceStop } from '../isolation/retention.js';
+import { isResumableWorkspaceStop, settleThrownCall } from '../isolation/retention.js';
 import type { AttemptWorkspace } from '../isolation/types.js';
 import { commitWorkflowState, stateOpsError } from '../state-ops.js';
 import { withAttemptRestoreScope } from '../task/restore-scope.js';
@@ -139,8 +138,6 @@ async function runRetryStepAttempt(
         if (steerInput !== undefined) {
           state = recordSteerCorrection({ ...ctx, state, taskId: task.id, message: steerInput });
         }
-        // Only a failed or stopped call takes its files back, so a brief with none left was discarded.
-        // A start the code cannot be compared with says nothing about what was left.
         const changed = await changedDeclaredFiles(
           workspace.projectDir,
           task,
@@ -170,7 +167,6 @@ async function runRetryStepAttempt(
               createdByThisTask: recordedApiCreatedPaths(ctx, task, workspace.projectDir),
               deliversAnswer: opts.deliversAnswer,
               ...(continuation !== undefined && { continuation }),
-              discarded: changed !== undefined && changed.length === 0,
               recordOutput,
               seat: { ref: ctx, state, usageCategory },
             }),
@@ -178,8 +174,7 @@ async function runRetryStepAttempt(
       },
     });
   } catch (err) {
-    if (isAbortError(err) && isResumableWorkspaceStop(ctx.signal)) await workspace.retain?.();
-    else workspace.cleanup();
+    await settleThrownCall(workspace, ctx.signal, err);
     throw err;
   }
   const retryResult = loop.value;
@@ -206,7 +201,6 @@ async function runRetryStepAttempt(
   }
 
   if (!retryResult.success) {
-    workspace.cleanup();
     const handBack = boundedHandBack(retryResult.output);
     const blocked = blockedReportOf(retryResult);
     return {

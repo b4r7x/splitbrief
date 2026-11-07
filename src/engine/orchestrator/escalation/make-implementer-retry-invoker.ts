@@ -42,7 +42,6 @@ export function makeImplementerRetryInvoker(opts: {
     createdByThisTask,
     deliversAnswer,
     continuation,
-    discarded,
     recordOutput,
     seat,
   }) => {
@@ -94,7 +93,7 @@ export function makeImplementerRetryInvoker(opts: {
         plan: state.plan,
         ...correction,
         ...((continuation !== undefined || correction.continuation !== undefined) && {
-          continuation: { ...continuation, ...correction.continuation, discarded },
+          continuation: { ...continuation, ...correction.continuation },
         }),
         allowNoChange:
           task.fix !== undefined || deliversAnswer === true || continuation?.kept !== undefined,

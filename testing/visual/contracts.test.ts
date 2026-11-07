@@ -297,6 +297,23 @@ describe('visual contract boundaries', () => {
     expect(GitRevisionSchema.safeParse('ABCDEF1').success).toBe(false);
   });
 
+  it('reads a cut name:sub script name as a status label and keeps URI-only schemes unsafe', () => {
+    for (const uri of ['mailto:x…', 'ftp:x']) {
+      expect(containsUnsafeNetworkReference({ value: uri })).toBe(true);
+    }
+    for (const cut of ['npm run test:in…', 'pnpm lint:fix…']) {
+      expect(containsUnsafeNetworkReference({ value: cut })).toBe(false);
+    }
+  });
+
+  it('keeps a frame row that cuts a name:sub script name as safe terminal text', () => {
+    expect(
+      isSafePersistedTerminalText(
+        '  ✓ Verify V2 · npm run test:integr… · 1 new, 2 pre-existing · 21.4s',
+      ),
+    ).toBe(true);
+  });
+
   it('allows synthetic fixture paths and their rendered forms while rejecting other host paths', () => {
     for (const safe of [
       '/Users/dev/notes/brief.md',

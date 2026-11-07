@@ -71,7 +71,10 @@ import {
   publishInfo,
   publishRecoveryPrompted,
 } from '../../../src/engine/orchestrator/events.js';
-import { buildApprovalDeniedRecoveryIssue } from '../../../src/engine/orchestrator/recovery/builders/task.js';
+import {
+  buildApprovalDeniedRecoveryIssue,
+  buildLeftIsolationRecoveryIssue,
+} from '../../../src/engine/orchestrator/recovery/builders/task.js';
 import { reviewStore } from '../../../src/stores/workflow/review.js';
 import { stopStore } from '../../../src/stores/workflow/stop.js';
 import { recoveryNoticeStore } from '../../../src/stores/workflow/recovery-notice.js';
@@ -3346,30 +3349,57 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   ],
   [
     scenarioId('workflow-stop-sheet-after-revert'),
-    // The first brief's failed first attempt was put back, which left none of its files changed,
-    // and no brief has finished, so stopping keeps no changes.
+    // The runner of the first brief's first call reported a defect. The run halts and puts the
+    // attempt back, which left none of its files changed, and no brief has finished, so stopping
+    // keeps no changes.
     () =>
       createOverlayFixture({
         overlay: 'stop-sheet',
         underlyingScreen: 'workflow',
         seed: () => {
+          seedConfig({
+            implementer: { kind: 'cli', tool: 'antigravity', model: 'gemini-3.8-flash-high' },
+          })();
           seedStopSheetFirstBrief();
+          const toolMessage =
+            'wrote to ../options.ts (outside the workspace) with run_command: cp options.ts ../options.ts';
           addEvent({
             type: 'implementer_generate_failed',
             ts: STOP_SHEET_TS + 5_000,
             phase: 'implementing',
             taskId: taskId('T001'),
-            error:
-              'Edit bundle did not apply: src/features/workflow/stop/options.ts hunk 2 no longer matches',
+            error: toolMessage,
           });
           const bus = createEventBus();
           bus.subscribe((event) => addEvent({ ...event, ts: STOP_SHEET_TS + 5_010 }));
+          const issue = buildLeftIsolationRecoveryIssue({
+            id: 'rec_visual_stop_defect',
+            task: makeTask({
+              id: 'T001',
+              title: 'Add the stop sheet rows',
+              action: 'create',
+              suggestedFiles: ['src/features/workflow/stop/options.ts'],
+            }),
+            runner: { kind: 'cli', tool: 'antigravity', model: 'gemini-3.8-flash-high' },
+            toolMessage,
+            attempts: 1,
+            createdAt: new Date(STOP_SHEET_TS + 5_010).toISOString(),
+          });
+          publishError({ bus, phase: 'implementing', message: issue.message });
+          publishRecoveryPrompted({ bus, phase: 'implementing' }, OVERLAY_SESSION_ID, issue, {
+            kind: 'brief',
+            taskId: taskId('T001'),
+            attempt: 0,
+          });
           publishInfo({
             bus,
             phase: 'implementing',
             message: 'T001 attempt reverted: 1 file',
             briefKept: 0,
           });
+          // The halt's panel asks the operator, as the recovery driver leaves it.
+          recoveryNoticeStore.ask(true);
+          controlsStore.setInputMode('question');
         },
       }),
   ],

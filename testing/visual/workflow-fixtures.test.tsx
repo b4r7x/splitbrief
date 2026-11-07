@@ -98,6 +98,27 @@ it.each(['workflow-continuous-transcript', 'workflow-continuous-transcript-ready
   },
 );
 
+it.each(['workflow-attempt-reverted', 'workflow-attempt-reverted-checkout'])(
+  'halts %s on a write outside the workspace and names every file of the brief',
+  (id) => {
+    const projection = workflowFixtureProjections.get(scenarioId(id));
+    if (projection === undefined) throw new Error(`Missing scenario ${id}`);
+    const started = projection.events.find((event) => event.type === 'task_started');
+    const failed = projection.events.find((event) => event.type === 'implementer_generate_failed');
+    if (
+      started?.type !== 'task_started' ||
+      failed?.type !== 'implementer_generate_failed' ||
+      failed.error === undefined
+    ) {
+      throw new Error(`Missing the brief start or the BUILD failure in ${id}`);
+    }
+    const halt = projection.resumeState?.pendingRecovery;
+    expect.soft(halt?.files).toEqual(started.files);
+    expect.soft(failed.error).toMatch(/^wrote to \S+ \(outside the workspace\) with run_command: /);
+    expect(halt?.message.endsWith(failed.error)).toBe(true);
+  },
+);
+
 function lifecycleFor(scenarioId: ScenarioId): FixtureLifecycle {
   const factory = workflowFixtureRegistry.get(scenarioId);
   if (!factory) throw new Error(`Missing workflow fixture ${scenarioId}`);
@@ -816,7 +837,7 @@ describe('workflow visual fixtures', () => {
   });
 
   it.each(REQUIRED_VIEWPORTS)(
-    'promises no changes once a revert left none of the running brief files at $cols x $rows',
+    'promises no changes at the halt once a runner defect put back every file at $cols x $rows',
     async (viewport) => {
       const scenario = findVisualScenario('workflow-stop-sheet-after-revert');
       const checkpoint = scenario?.checkpoints[0];
@@ -826,10 +847,19 @@ describe('workflow visual fixtures', () => {
         const frame = stripTerminalControls(await handle.waitForCheckpoint())
           .replaceAll('│', '')
           .replace(/\s+/g, ' ');
+        // The halt row scrolls out of a 60x18 transcript, so it is read from the whole transcript,
+        // with its Error heading: without that row, a Recovery card shows the same headline.
+        const transcript = workflowTranscriptText().replaceAll('│', '').replace(/\s+/g, ' ');
         expect(runViewStore.get().briefKept).toBe(0);
+        expect(transcript).toContain('Error T001 left the isolation directory');
+        expect(transcript).toContain(
+          'wrote to ../options.ts (outside the workspace) with run_command: cp options.ts ../options.ts',
+        );
+        expect(frame).toContain('○ Choose how to continue');
+        expect(recoveryNoticeStore.get().open).toBe(true);
         expect(frame).toContain('Stop now · stop execution; keep the run open');
-        expect(frame).toContain('finish T001');
         expect(frame).toContain('End run · stop execution; close this run');
+        expect(frame).not.toContain('finish T001');
         expect(frame).not.toContain('keep partial changes');
         expect(frame).not.toContain('keep changes');
         expect(frame).not.toContain('Changes stay');
@@ -860,6 +890,26 @@ describe('workflow visual fixtures', () => {
         expect(frame).not.toContain('keep partial changes');
         expect(frame).not.toContain('keep changes');
         expect(frame).not.toContain('Changes stay');
+      } finally {
+        await handle.unmount();
+      }
+    },
+  );
+
+  it.each(REQUIRED_VIEWPORTS)(
+    'keeps the separator dot where a user message wraps at $cols x $rows',
+    async (viewport) => {
+      const scenario = findVisualScenario('workflow-recovery-review-fix-again');
+      const checkpoint = scenario?.checkpoints[0];
+      if (!scenario || !checkpoint) throw new Error('Missing review fix again scenario');
+      const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
+      try {
+        const frame = stripTerminalControls(await handle.waitForCheckpoint())
+          .replaceAll('│', '')
+          .replace(/\s+/g, ' ');
+        expect(frame).toContain(
+          'Keep the cache key stable across restarts and deploys · F2 is right.',
+        );
       } finally {
         await handle.unmount();
       }

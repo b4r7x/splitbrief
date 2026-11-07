@@ -1542,26 +1542,41 @@ const checkpointPredicates = [
   [checkpointId('fix-check-off'), includesAll('Fix check V2 · off')],
   [
     checkpointId('attempt-reverted'),
-    // SPLITBRIEF's own neutral row, not a warning; a worktree attempt saves no replaced files.
+    // SPLITBRIEF's own neutral row below the runner defect's halt row, not a warning; a worktree
+    // attempt saves no replaced files. In a frame under 40 rows, the halt panel leaves no room
+    // for the row. The halt row is read with its Error heading: without that row, a Recovery
+    // card shows the same headline.
     (context) => {
+      const row = 'SPLITBRIEFT901attemptreverted:2files';
+      if (context.viewport.rows >= 40 && !context.output.replace(/\s/g, '').includes(row)) {
+        return false;
+      }
       const text = workflowTranscriptText().replace(/\s/g, '');
+      const halt = text.indexOf('ErrorT901lefttheisolationdirectory');
       return (
         includesTranscript()(context) &&
-        text.includes('SPLITBRIEFT901attemptreverted:2files') &&
+        halt >= 0 &&
+        halt < text.indexOf(row) &&
         !/Warning|replacedfiles/.test(text)
       );
     },
   ],
   [
     checkpointId('attempt-reverted-checkout'),
-    // The saved path wraps, and breaks inside itself at 60 columns.
+    // The saved path wraps, and the 60x40 frame shows it break inside itself. In a frame under
+    // 40 rows, the halt panel leaves no room for the row.
     (context) => {
+      const row =
+        'SPLITBRIEFT901attemptreverted:2files.Thereplacedfilesaresavedin.splitbrief/sessions/visual-workflow/reverted/';
+      if (context.viewport.rows >= 40 && !context.output.replace(/\s/g, '').includes(row)) {
+        return false;
+      }
       const text = workflowTranscriptText().replace(/\s/g, '');
+      const halt = text.indexOf('ErrorT901lefttheisolationdirectory');
       return (
         includesTranscript()(context) &&
-        text.includes(
-          'SPLITBRIEFT901attemptreverted:2files.Thereplacedfilesaresavedin.splitbrief/sessions/visual-workflow/reverted/',
-        ) &&
+        halt >= 0 &&
+        halt < text.indexOf(row) &&
         !text.includes('Warning')
       );
     },
