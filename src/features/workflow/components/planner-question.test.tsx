@@ -777,6 +777,22 @@ it('keeps a long option beside the mark in a one-row panel', async () => {
   ui.unmount();
 });
 
+it('keeps the mark beside a long default option in a one-row panel 60 columns wide', async () => {
+  store.setQuestions([
+    {
+      id: 'seat',
+      type: 'choice',
+      text: 'Which seat performs the review?',
+      options: ['Reviewer/planner seat (review-only tool)', 'Implementer seat'],
+      default: 'Reviewer/planner seat (review-only tool)',
+    },
+  ]);
+  const ui = renderQuestion(60, 1);
+  await flushEffects();
+  expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('default · ↑ more · ↓ more');
+  ui.unmount();
+});
+
 it('shows the whole question beside the mark at the top of a one-row panel', async () => {
   let now = 1000;
   vi.spyOn(Date, 'now').mockImplementation(() => now);
@@ -946,6 +962,8 @@ it.each([80, 60])(
 it.each([1, 2, 3])(
   'keeps the mark beside a question wrapping to two rows in a panel of %i rows',
   async (height) => {
+    let now = 1000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
     for (const width of [80, 60]) {
       store.setQuestions([
         {
@@ -963,6 +981,15 @@ it.each([1, 2, 3])(
       expect(marks[0]).toContain('↑ more');
       expect(marks[0]).toContain('↓ more');
       expect(marks[0]).toContain('Which cache key');
+      now += 200;
+      ui.stdin.write(home);
+      await flushEffects();
+      const atHome = stripAnsiStyles(ui.lastFrame() ?? '');
+      const homeMarks = markLines(atHome);
+      expect(homeMarks).toHaveLength(1);
+      expect(homeMarks[0]).toContain('↓ more');
+      expect(homeMarks[0]).not.toContain('↑ more');
+      expect(atHome).toContain('Which cache key');
       ui.unmount();
     }
   },
@@ -997,6 +1024,28 @@ it.each([1, 2, 3, 4, 5])(
         expect(frame).toContain(start);
         ui.unmount();
       }
+    }
+  },
+);
+
+it.each([1, 2, 3])(
+  'keeps the mark beside a wrapping free-text question over its answer field at %i rows',
+  async (height) => {
+    for (const width of [80, 60]) {
+      store.setQuestions([
+        {
+          id: 'cache',
+          type: 'input',
+          text: 'Which cache key must the repair preserve across a restart of the whole workflow?',
+        },
+      ]);
+      const ui = renderQuestion(width, height);
+      await flushEffects();
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame).toContain('›');
+      expect(frame).toContain('Which cache');
+      expect(frame).toContain('↓ more');
+      ui.unmount();
     }
   },
 );
@@ -1063,3 +1112,21 @@ it('keeps the answer draft when resized from three rows to one', async () => {
   expect(store.get().drafts[0]?.text).toBe('src/cache.ts');
   ui.unmount();
 });
+
+it.each([80, 60])(
+  'keeps the end of a long draft in view in a one-row panel, %i columns wide',
+  async (width) => {
+    let now = 1000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    store.setQuestions([
+      { id: 'cache', type: 'input', text: 'Which cache key must the repair preserve?' },
+    ]);
+    const ui = renderQuestion(width, 1);
+    await flushEffects();
+    now += 200;
+    ui.stdin.write('src/engine/orchestrator/recovery/builders/issue.ts');
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('issue.ts');
+    ui.unmount();
+  },
+);

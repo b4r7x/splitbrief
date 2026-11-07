@@ -126,8 +126,9 @@ export function PlannerQuestion({
       : inlineMark === ''
         ? ''
         : `${SOFT_SEP}${inlineMark}`;
-  // One row holds the option and the question together: from a later offset a long option keeps
-  // half the row, less the mark's cells; at the top the question keeps what the mark leaves.
+  // One row holds the option and the question together: from a later offset a long option keeps at
+  // most half the row, and less when its default label and the mark would not fit; at the top the
+  // question keeps what the mark leaves.
   const markCells = getTerminalCellWidth(`${SOFT_SEP}${inlineMark}${SOFT_SEP}`);
   const rowText = (row: QuestionRow): string => {
     if (chrome.titled || asked === '') return row.text;
@@ -140,9 +141,9 @@ export function PlannerQuestion({
   };
   const answerWidth = Math.max(1, bodyHeight === 0 ? Math.ceil(innerWidth / 2) : innerWidth - 2);
   const besideQuestion =
-    bodyHeight === 0 && rows.length > 0
+    bodyHeight === 0
       ? truncateTerminalDisplayText(
-          `${SOFT_SEP}${mark === '' ? '' : `${mark}${SOFT_SEP}`}${rows[0]?.text ?? ''}`,
+          `${SOFT_SEP}${mark}${SOFT_SEP}${rows[0]?.text ?? ''}`,
           Math.max(1, innerWidth - 2 - answerWidth),
         )
       : '';

@@ -527,7 +527,8 @@ export function createSetupFixture(
       if (state === 'cached-refresh') {
         releaseToolChecks = holdToolChecks({ checking: ['claude-code', 'opencode'] });
       }
-      // Every state gets its own repository; only the first-save state lacks the .splitbrief/ rule.
+      // Every state gets its own repository, so a render never reads the ignore rules of the repo
+      // around it. Only the first-save state lacks the .splitbrief/ rule: its save adds the rule.
       createTestGitRepo(VISUAL_FIXTURE_PROJECT_DIR, {
         '.gitignore':
           state === 'saved-ignore-rule' ? 'node_modules/\n' : 'node_modules/\n.splitbrief/\n',

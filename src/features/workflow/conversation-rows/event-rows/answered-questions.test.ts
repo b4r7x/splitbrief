@@ -28,6 +28,24 @@ describe('answeredQuestionsRowBlock', () => {
     ]);
     expect(rows[2]?.segments[0]?.tone).toBe('text');
   });
+
+  it('keeps a word on the first row of an answer line that starts with a space', () => {
+    const block = answeredQuestionsRowBlock({
+      keyPrefix: 'qa',
+      qa: [{ question: 'Which brief?', answer: 'Use T004\n configuration ok' }],
+      width: 22,
+    });
+    if (block === null) throw new Error('Missing answered questions block');
+    const rows = block.createRows(0, block.rowCount);
+
+    expect(rows.map(rowText)).toEqual([
+      'Answered · 1 question',
+      '1. Which brief?',
+      'You → Use T004',
+      ' configuration ',
+      'ok',
+    ]);
+  });
 });
 
 describe('repliedQuestionsRowBlock', () => {
