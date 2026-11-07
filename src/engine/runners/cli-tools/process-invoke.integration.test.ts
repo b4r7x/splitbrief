@@ -367,6 +367,88 @@ describe('process steering lifecycle boundary', () => {
     expect(cleanupStarted).toBe(true);
     expect(result).toMatchObject({ status: 'completed', text: 'final answer', error: null });
   });
+
+  function steeredTextCall(
+    script: string,
+    opts: Readonly<{ close: () => Promise<void>; signal?: AbortSignal | undefined }>,
+  ) {
+    const selected = adapter({ kind: 'stdin' }, { output: 'text' });
+    return invokeProcessCli(
+      {
+        ...selected,
+        steering: {
+          supportsVersion: () => true,
+          open: async (input) => ({
+            invocation: input.invocation,
+            prompt: input.prompt,
+            parse: selected.parse,
+            onLine: () => false,
+            close: opts.close,
+          }),
+        },
+      },
+      {
+        invocation: invocation({
+          script: `process.stdin.resume();process.stdin.on('end',()=>{${script}})`,
+          timeoutMs: 1_000,
+          ...(opts.signal !== undefined && { signal: opts.signal }),
+        }),
+        prompt: 'initial',
+        steering: createSteeringPort(),
+        callContext,
+      },
+    );
+  }
+
+  itUnix.each([
+    {
+      name: 'its answer',
+      script: "console.log('final answer')",
+      expected: { status: 'completed', text: 'final answer', error: null },
+    },
+    {
+      name: 'its failed exit',
+      script: 'process.exitCode = 3',
+      expected: {
+        status: 'failed',
+        error: { code: 'non-zero-exit', message: 'CLI exited with code 3' },
+      },
+    },
+  ] as const)(
+    'keeps $name when the timeout fires during the steering cleanup of a text-exit call',
+    async ({ script, expected }) => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      onTestFinished(() => {
+        vi.useRealTimers();
+      });
+      const result = await steeredTextCall(script, {
+        close: async () => {
+          await vi.advanceTimersByTimeAsync(1_000);
+        },
+      });
+
+      expect(result).toMatchObject(expected);
+    },
+  );
+
+  itUnix('ends stopped when the user stops the call during the steering cleanup', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const controller = new AbortController();
+    const result = await steeredTextCall("console.log('final answer')", {
+      signal: controller.signal,
+      close: async () => {
+        controller.abort();
+      },
+    });
+
+    expect(result).toMatchObject({
+      status: 'aborted',
+      error: { code: 'runner_interrupted', message: 'stopped by you' },
+    });
+  });
 });
 
 function o4DirectEnvelopeExitScript(envelope: string): string {

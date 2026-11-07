@@ -690,6 +690,8 @@ export async function invokeProcessCli(
       (finish) => ({ status: 'fulfilled', finish }) as const,
       (cause: unknown) => ({ status: 'rejected', cause }) as const,
     );
+    // The tool has closed, so its own outcome decides the call. A steering cleanup that outlasts the call timeout keeps that outcome.
+    clearTimeout(timeout);
     try {
       try {
         closeAdmission();
@@ -829,7 +831,6 @@ export async function invokeProcessCli(
   } finally {
     signal.removeEventListener('abort', onAbort);
     removeTransportListener?.();
-    clearTimeout(timeout);
     clearTimeout(graceTimer);
     onAbort();
   }

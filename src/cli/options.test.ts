@@ -176,23 +176,14 @@ describe('parseContinueActionOption', () => {
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("unknown option '--action'");
 
-    const originalWrite = process.stdout.write;
-    const written: string[] = [];
-    process.stdout.write = ((chunk: string | Uint8Array) => {
-      if (typeof chunk === 'string') written.push(chunk);
-      return true;
-    }) as typeof process.stdout.write;
-    const resume = await runCommand(['resume', '--help']).finally(() => {
-      process.stdout.write = originalWrite;
-    });
-    const resumeHelp = `${resume.stdout}${written.join('')}`;
+    const resume = await runCommand(['resume', '--help']);
     expect(resume.exitCode).toBe(0);
-    expect(resumeHelp).toContain('Resume the most recent run');
-    expect(resumeHelp).not.toContain('--action');
+    expect(resume.stdout).toContain('Resume the most recent run');
+    expect(resume.stdout).not.toContain('--action');
 
     const resumeRejected = await runCommand(['resume', '--action', 'skip']);
     expect(resumeRejected.exitCode).toBe(1);
-    expect(resumeRejected.stderr).toContain("unknown option '--action'");
+    expect(resumeRejected.stderr).toBe("error: unknown option '--action'\n");
   });
 
   it('describes continue actions with the seat grammar the parser accepts', async () => {
@@ -204,16 +195,8 @@ describe('parseContinueActionOption', () => {
     expect(help).not.toContain('switch-seat:<seat>');
     expect(help).not.toContain('`continue` only');
 
-    const originalWrite = process.stdout.write;
-    const written: string[] = [];
-    process.stdout.write = ((chunk: string | Uint8Array) => {
-      if (typeof chunk === 'string') written.push(chunk);
-      return true;
-    }) as typeof process.stdout.write;
-    const registered = await runCommand(['continue', '--help']).finally(() => {
-      process.stdout.write = originalWrite;
-    });
-    const registeredHelp = `${registered.stdout}${written.join('')}`.replace(/\s+/g, ' ');
+    const registered = await runCommand(['continue', '--help']);
+    const registeredHelp = registered.stdout.replace(/\s+/g, ' ');
     expect(registered.exitCode).toBe(0);
     expect(registeredHelp).toContain(description);
     expect(registeredHelp).not.toContain('switch-seat:<seat>');

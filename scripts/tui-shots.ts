@@ -5,6 +5,8 @@ import { z } from 'zod';
 import { getSplitbriefVersion } from '../src/core/paths-io.js';
 import { getCurrentCommitSha } from '../src/lib/git/refs.js';
 import { listVisualScenarios, VISUAL_CATALOG_VERSION } from '../testing/visual/catalog.js';
+import { getFailureProvenance } from '../testing/visual/contracts/failure-identity.js';
+import type { Failure } from '../testing/visual/contracts/failures.js';
 import { formatViewport } from '../testing/visual/contracts/geometry.js';
 import type { CaptureSelection } from '../testing/visual/contracts/selection.js';
 import {
@@ -47,7 +49,7 @@ export interface TuiShotsCaptureResult {
   readonly manifestPath: string;
   readonly artifactCount: number;
   readonly warningCount: number;
-  readonly failureCount: number;
+  readonly failures: readonly Failure[];
 }
 
 export interface TuiShotsDependencies {
@@ -93,7 +95,7 @@ export async function runTuiShots(
       selection,
     });
     printSummary({ io, cwd, selection, result });
-    return result.failureCount === 0 ? 0 : 1;
+    return result.failures.length === 0 ? 0 : 1;
   } catch (error) {
     if (error instanceof CommanderError) return error.exitCode;
     io.stderr(`Error: ${errorMessage(error)}\n`);
@@ -185,22 +187,31 @@ function printSummary(options: {
   readonly selection: CaptureSelection;
   readonly result: TuiShotsCaptureResult;
 }): void {
+  const failures = options.result.failures;
   const requestedArtifacts = options.selection.targets.reduce(
     (count, target) => count + 1 + target.elementIds.length,
     0,
   );
   options.io.stdout(
     [
-      options.result.failureCount === 0 ? 'tui-shots: complete' : 'tui-shots: failed',
+      failures.length === 0 ? 'tui-shots: complete' : 'tui-shots: failed',
       `output: ${displayPath(options.cwd, options.result.runRoot)}`,
       `manifest: ${displayPath(options.cwd, options.result.manifestPath)}`,
       `captures: ${options.selection.targets.length}`,
       `artifacts: ${options.result.artifactCount}/${requestedArtifacts}`,
       `warnings: ${options.result.warningCount}`,
-      `failures: ${options.result.failureCount}`,
+      `failures: ${failures.length}`,
       '',
     ].join('\n'),
   );
+  for (const failure of failures) options.io.stderr(`${formatFailureLine(failure)}\n`);
+}
+
+function formatFailureLine(failure: Failure): string {
+  const provenance = getFailureProvenance(failure);
+  if (provenance === null) return `Error: ${failure.code}: ${failure.message}`;
+  const viewport = formatViewport(provenance.viewport);
+  return `Error: ${provenance.scenarioId} ${viewport}: ${failure.code}: ${failure.message}`;
 }
 
 async function captureWithGallery(options: TuiShotsCaptureOptions): Promise<TuiShotsCaptureResult> {
@@ -210,7 +221,7 @@ async function captureWithGallery(options: TuiShotsCaptureOptions): Promise<TuiS
     manifestPath: publication.manifestPath,
     artifactCount: publication.manifest.artifacts.length,
     warningCount: publication.manifest.warnings.length,
-    failureCount: publication.manifest.failures.length,
+    failures: publication.manifest.failures,
   };
 }
 

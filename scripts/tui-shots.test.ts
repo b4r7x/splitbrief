@@ -9,6 +9,7 @@ import {
   type TuiShotsDependencies,
 } from './tui-shots.js';
 import { VISUAL_FIXTURE_VERSION } from '../testing/visual/catalog.js';
+import { FailureSchema } from '../testing/visual/contracts/failures.js';
 
 const temporaryRoots: string[] = [];
 
@@ -239,10 +240,43 @@ describe('tui-shots CLI behavior', () => {
 
   it('returns nonzero and prints a stable failed-capture summary', async () => {
     const cwd = await createTemporaryCwd();
+    const provenance = {
+      scenarioId: 'home-empty',
+      scenarioTitle: 'Home · empty project',
+      fixtureVersion: VISUAL_FIXTURE_VERSION,
+      checkpointId: 'ready',
+      viewport: { cols: 60, rows: 18 },
+    };
+    const failures = [
+      FailureSchema.parse({
+        stage: 'checkpoint',
+        code: 'checkpoint-capture-failed',
+        message: 'Checkpoint was not reached for the selected scenario and viewport',
+        provenance,
+      }),
+      FailureSchema.parse({
+        stage: 'png',
+        code: 'png-raster-failed',
+        message: 'PNG rasterization failed for the selected artifact',
+        artifact: {
+          kind: 'frame',
+          key: 'home-empty:ready:60x18:frame',
+          provenance,
+          elementId: null,
+          parentFrameKey: null,
+        },
+      }),
+      FailureSchema.parse({
+        stage: 'cleanup',
+        code: 'run-cleanup-failed',
+        message: 'Run cleanup failed',
+        target: { kind: 'run' },
+      }),
+    ];
     const capture: CaptureFunction = async (options) => ({
       ...successfulCapture(options.outputRoot, 1),
       warningCount: 1,
-      failureCount: 2,
+      failures,
     });
     const args = [
       '--scenario',
@@ -260,7 +294,7 @@ describe('tui-shots CLI behavior', () => {
     expect(await runTuiShots(args, first.dependencies)).toBe(1);
     expect(await runTuiShots(args, second.dependencies)).toBe(1);
     expect(first.stdout()).toBe(second.stdout());
-    expect(first.stderr()).toBe('');
+    expect(first.stderr()).toBe(second.stderr());
     expect(first.stdout()).toBe(
       [
         'tui-shots: failed',
@@ -269,7 +303,15 @@ describe('tui-shots CLI behavior', () => {
         'captures: 1',
         'artifacts: 1/2',
         'warnings: 1',
-        'failures: 2',
+        'failures: 3',
+        '',
+      ].join('\n'),
+    );
+    expect(first.stderr()).toBe(
+      [
+        'Error: home-empty 60x18: checkpoint-capture-failed: Checkpoint was not reached for the selected scenario and viewport',
+        'Error: home-empty 60x18: png-raster-failed: PNG rasterization failed for the selected artifact',
+        'Error: run-cleanup-failed: Run cleanup failed',
         '',
       ].join('\n'),
     );
@@ -308,7 +350,7 @@ function successfulCapture(outputRoot: string, artifactCount: number): TuiShotsC
     manifestPath: resolve(runRoot, 'manifest.json'),
     artifactCount,
     warningCount: 0,
-    failureCount: 0,
+    failures: [],
   };
 }
 

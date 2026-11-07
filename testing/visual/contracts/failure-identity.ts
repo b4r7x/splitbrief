@@ -6,7 +6,7 @@ import {
 } from './artifact-identity.js';
 import type { Failure } from './failures.js';
 import type { ArtifactKey } from './identifiers.js';
-import { captureAccountingKey } from './selection.js';
+import { captureAccountingKey, type ArtifactProvenance } from './selection.js';
 
 export function validateFailureUniqueness(options: {
   readonly failures: readonly Failure[];
@@ -65,6 +65,37 @@ export function getFailureArtifactIdentity(failure: Failure): ArtifactIdentity |
           return null;
         case 'artifact':
           return failure.target.artifact;
+        default:
+          return assertNever(failure.target);
+      }
+    default:
+      return assertNever(failure);
+  }
+}
+
+export function getFailureProvenance(failure: Failure): ArtifactProvenance | null {
+  switch (failure.stage) {
+    case 'selection':
+      return failure.target.provenance;
+    case 'fixture':
+    case 'checkpoint':
+    case 'terminal':
+    case 'pty':
+    case 'locator':
+      return failure.provenance;
+    case 'serialization':
+    case 'svg':
+    case 'png':
+    case 'write':
+      return getFailureArtifactIdentity(failure)?.provenance ?? null;
+    case 'cleanup':
+      switch (failure.target.kind) {
+        case 'run':
+          return null;
+        case 'capture':
+          return failure.target.provenance;
+        case 'artifact':
+          return getFailureArtifactIdentity(failure)?.provenance ?? null;
         default:
           return assertNever(failure.target);
       }

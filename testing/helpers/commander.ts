@@ -1,4 +1,4 @@
-import { Command } from 'commander';
+import { Command, CommanderError } from 'commander';
 import { defaultStartDeps, registerStartCommand } from '../../src/cli/commands/start/register.js';
 import type { StartDeps } from '../../src/cli/commands/start/types.js';
 import { registerSpecCommand } from '../../src/cli/commands/spec.js';
@@ -21,14 +21,6 @@ export async function runCommand(
   const program = new Command();
   program.name('splitbrief').version('0.1.0').exitOverride();
 
-  registerStartCommand(program, { ...defaultStartDeps, ...startDeps });
-  registerSpecCommand(program);
-  registerInitCommand(program);
-  registerStatusCommand(program);
-  registerResumeCommand(program);
-  registerReviewCommand(program);
-  registerContinueCommand(program);
-
   const stdoutChunks: string[] = [];
   const stderrChunks: string[] = [];
   program.configureOutput({
@@ -39,6 +31,14 @@ export async function runCommand(
       stderrChunks.push(str);
     },
   });
+
+  registerStartCommand(program, { ...defaultStartDeps, ...startDeps });
+  registerSpecCommand(program);
+  registerInitCommand(program);
+  registerStatusCommand(program);
+  registerResumeCommand(program);
+  registerReviewCommand(program);
+  registerContinueCommand(program);
 
   const origLog = console.log;
   const origErr = console.error;
@@ -53,10 +53,10 @@ export async function runCommand(
   try {
     await program.parseAsync(['node', 'splitbrief', ...args]);
   } catch (err) {
-    const commanderErr = err as { exitCode?: number; code?: string; message?: string };
-    exitCode = typeof commanderErr.exitCode === 'number' ? commanderErr.exitCode : 1;
-    if (commanderErr.message && commanderErr.code !== 'commander.helpDisplayed') {
-      stderrChunks.push(commanderErr.message + '\n');
+    const failure = err as { exitCode?: number; message?: string };
+    exitCode = typeof failure.exitCode === 'number' ? failure.exitCode : 1;
+    if (!(err instanceof CommanderError) && failure.message) {
+      stderrChunks.push(failure.message + '\n');
     }
   } finally {
     console.log = origLog;

@@ -757,7 +757,7 @@ A successful filtered run has this shape:
 - every frame or crop identity, provenance, rectangle, dimensions, locator, and relative file path;
 - warnings and structured failures.
 
-A failed required artifact does not appear as a successful PNG. Its failure remains in the manifest with the stage and artifact identity.
+A failed required artifact does not appear as a successful PNG. Its failure remains in the manifest with the stage and artifact identity. The command also prints each failure on one stderr line, `Error: <scenario> <cols>x<rows>: <code>: <message>`, so a failed `render` check names its cause.
 
 ### Frames, crops, and diagnostic truth
 
