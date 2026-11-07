@@ -11,7 +11,6 @@ import {
 import { taskTargetLabel } from './brief-labels.js';
 import { taskId, type CheckResult } from '../schemas/task.js';
 import {
-  makeRetry,
   makeTaskStart,
   makeTaskComplete,
   makeTaskSkipped,
@@ -101,7 +100,7 @@ describe('reduceBriefs', () => {
     expect(briefs.taskMap.get('T003')!.status).toBe('done');
   });
 
-  it('keeps the latest task route current across retries and completion', () => {
+  it('keeps the latest task route current across a restart and completion', () => {
     apply(
       makeTaskStart({
         taskId: taskId('T001'),
@@ -124,12 +123,6 @@ describe('reduceBriefs', () => {
       runner: 'codex',
       model: 'gpt-5.6',
     });
-
-    // A retry changes only the attempt counter; the task map and its route are the same objects.
-    const beforeRetry = briefs;
-    apply(makeRetry({ taskId: taskId('T001') }));
-    expect(briefs.taskMap).toBe(beforeRetry.taskMap);
-    expect(briefs.currentAttempt).toBe(2);
 
     apply(makeTaskComplete({ taskId: taskId('T001') }));
     expect(briefs.taskMap.get('T001')?.route).toEqual({

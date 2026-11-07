@@ -593,8 +593,18 @@ const checkpointPredicates = [
   [checkpointId('first-brief-after-plan'), includesAll('Plan', 'T001', '0/3 briefs passed')],
   [checkpointId('brief-check-slow-provider'), includesAll('Checking tools', 'T001')],
   [checkpointId('build-consult'), includesAll('Claude Code CLI', 'answering the consult on T901')],
-  [checkpointId('build-consult-rewrite'), includesTranscript('rewrote T901 (rev 2)')],
-  [checkpointId('build-consult-split'), includesTranscript('split into T904, T905')],
+  [
+    checkpointId('build-consult-rewrite'),
+    (context) =>
+      includesTranscript('rewrote T901 (rev 2)')(context) &&
+      excludesAll('passed · attempt', 'failed · attempt')(context),
+  ],
+  [
+    checkpointId('build-consult-split'),
+    (context) =>
+      includesTranscript('split into T904, T905')(context) &&
+      excludesAll('passed · attempt', 'failed · attempt')(context),
+  ],
   [checkpointId('build-brief-check'), includesAll('T901 check K2', 'read after its checks')],
   [checkpointId('build-brief-check-own-id'), includesAll('Check T901-K2', 'read after its checks')],
   [
@@ -688,7 +698,12 @@ const checkpointPredicates = [
     checkpointId('implementation-steerable'),
     includesAll('mid-call to BUILD on T003', 'Message BUILD on T003 · read after this tool…'),
   ],
-  [checkpointId('implementation-retry'), includesAll('briefs passed')],
+  [
+    checkpointId('implementation-retry'),
+    (context) =>
+      includesAll('Retry  attempt 7', 'briefs passed')(context) &&
+      excludesAll('passed · attempt', 'failed · attempt')(context),
+  ],
   [checkpointId('implementation-after-retry'), includesAll()],
   [checkpointId('recovery-resolved-retry'), includesAll()],
   [checkpointId('recovery-resolved-skip'), recoveryRows(['Recovery  Skip task', 'skipped'])],
@@ -765,7 +780,10 @@ const checkpointPredicates = [
   ],
   [
     checkpointId('apply-rereview'),
-    includesTranscript('Final review after 1 fix cycle passed', 'Final review after 2 fix cycles'),
+    includesTranscript(
+      'Final review after 1 fix cycle passed',
+      'Final review after 1 fix cycle, re-run',
+    ),
   ],
   [
     checkpointId('complete-after-fix-tasks'),
@@ -813,6 +831,12 @@ const checkpointPredicates = [
     includesAll('Verify K1', 'Review · Verify K2 · npm test', 'running 0:12'),
   ],
   [checkpointId('review-verify-pre-existing'), includesAll('Verify V1', 'Verify V2')],
+  [
+    checkpointId('review-verify-rerun'),
+    (context) =>
+      includesTranscript('✗ Final review failed', 'Final review re-run passed')(context) &&
+      excludesAll('fix cycle')(context),
+  ],
   [
     checkpointId('review-render-running'),
     includesAll(
@@ -926,6 +950,20 @@ const checkpointPredicates = [
   [checkpointId('plan-card-no-image-reviewer'), planCardReady],
   [checkpointId('plan-card-shared-command'), planCardReady],
   [checkpointId('plan-card-session-path'), planCardReady],
+  [
+    checkpointId('plan-card-edited'),
+    (context) => {
+      if (!planCardReady(context)) return false;
+      if (!stripAnsiStyles(context.output).includes('Plan 0/2')) return false;
+      const rows = workflowTranscriptText()
+        .split('\n')
+        .map((row) => row.trimEnd());
+      return (
+        rows.filter((row) => row === 'Plan').length === 1 &&
+        rows.filter((row) => row === 'Tasks').length === 1
+      );
+    },
+  ],
   // The two briefs whose long headers the card once skipped, beside the first and the last.
   [checkpointId('tasks-card'), includesAll('T001', 'T004', 'T006', 'T007')],
   // The subsections the spec card does not nest, and the briefs after T001's unclosed sample.
@@ -1059,10 +1097,12 @@ const checkpointPredicates = [
     checkpointId('cli-stop-continued'),
     (context) => {
       const text = workflowTranscriptText();
+      const frame = stripAnsiStyles(context.output);
       return (
         includesTranscript('interrupted')(context) &&
+        frame.includes('Implementing… 0:16') &&
         !/Workspace kept|user-abort|\berr\b/i.test(text) &&
-        !stripAnsiStyles(context.output).includes('◉ BUILD activity')
+        !frame.includes('◉ BUILD activity')
       );
     },
   ],

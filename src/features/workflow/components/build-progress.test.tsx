@@ -46,7 +46,6 @@ beforeEach(() => {
   lifecycleStore.__testReset({ status: 'running' });
   seedBriefs({
     totalTasks: 3,
-    currentAttempt: 1,
     tasks: [
       { id: 'T001', title: 'One', status: 'done' },
       { id: 'T002', title: 'Two', status: 'in_progress' },
@@ -77,7 +76,7 @@ afterEach(() => {
 });
 
 describe('BuildProgressBlock', () => {
-  it('states the counts, and the attempt only once a retry has spent one', () => {
+  it('states the counts alone, with no attempt and no ETA', () => {
     const first = renderFeature(<BuildProgressBlock cols={120} />);
     expect(stripAnsiStyles(first.lastFrame())).toContain('1/3 briefs passed');
     expect(first.lastFrame()).toContain(`${colorOpen(defaultTheme.textDim)}1/3 briefs passed`);
@@ -85,11 +84,6 @@ describe('BuildProgressBlock', () => {
     expect(first.lastFrame() ?? '').not.toContain('attempt');
     expect(first.lastFrame() ?? '').not.toContain('ETA');
     first.unmount();
-
-    seedBriefs({ ...runViewStore.get().briefs, currentAttempt: 2 });
-    const retry = renderFeature(<BuildProgressBlock cols={120} />);
-    expect(stripAnsiStyles(retry.lastFrame() ?? '')).toContain('1/3 briefs passed · attempt 2');
-    retry.unmount();
   });
 
   it('spreads the same facts over more rows when the terminal is narrow', () => {

@@ -142,7 +142,7 @@ describe('review fix task order through the engine and stores', () => {
       expect(started.pendingScheduledReview).toBeUndefined();
       expect(events.filter((event) => event.type === 'tasks_planned')).toEqual([]);
       expect(events.find((event) => event.type === 'review_fix_started')).toMatchObject({
-        cycle: 1,
+        cycle: 0,
         taskIds: [],
       });
       expect(selectScheduledReview(operationsStore.get())).toBe(false);

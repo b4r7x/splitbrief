@@ -253,6 +253,7 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-review-fix-narrow-rail', ['22x45', '160x45']],
   ['workflow-task-statuses', ['160x45', '80x24']],
   ['workflow-plan-card', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-plan-card-edited', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-plan-card-commenting', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-plan-card-typed-command', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-plan-card-request-empty', ['120x40', '80x24', '60x18', '160x45']],

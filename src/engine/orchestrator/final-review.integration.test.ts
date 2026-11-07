@@ -2755,7 +2755,7 @@ describe('runFinalReviewPhase', () => {
 });
 
 describe('review record', () => {
-  it('counts the fix cycle already spent when it records the review', async () => {
+  it('counts the fix cycle already spent in the review record, and on the ledger only the fix cycles that ran a fix brief', async () => {
     const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
     const { reviewer } = makeReviewer();
@@ -2770,7 +2770,7 @@ describe('review record', () => {
       bus: makeBusRecorder().bus,
       state: {
         ...allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
-        fixCycles: { used: 2, notes: [] },
+        fixCycles: { used: 2, briefed: 1, notes: [] },
       },
       reviewer,
       summaryBase: SUMMARY_BASE,
@@ -2779,6 +2779,7 @@ describe('review record', () => {
     const record = readReviewRecord(projectDir, sessionId);
     expect(record.cycle).toBe(2);
     expect(result.state.review?.cycle).toBe(2);
+    expect(readEvidenceLedger({ projectDir, sessionId })?.reviews?.at(-1)?.cycle).toBe(1);
   });
 
   it('runs only the fix brief after a failed review, never a brief the user skipped', async () => {

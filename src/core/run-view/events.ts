@@ -52,7 +52,6 @@ export type TaskStartedEvent = {
   taskId: string;
   title: string;
   total: number;
-  lineageAttempt?: number | undefined;
   file: string;
   files?: readonly string[] | undefined;
   action: FileAction;
@@ -72,15 +71,6 @@ export type TaskSkippedEvent = { type: 'task_skipped'; taskId: string };
 export type TaskEscalatingEvent = { type: 'task_escalating'; taskId: string };
 export type TaskFullFailEvent = { type: 'task_full_fail'; taskId: string };
 export type TaskResetEvent = { type: 'task_reset'; taskId: string };
-export type TaskRetryEvent = {
-  type: 'task_retry';
-  attempt: number;
-  lineageAttempt?: number | undefined;
-};
-export type ImplementerGenerateRunningEvent = {
-  type: 'implementer_generate_running';
-  lineageAttempt?: number | undefined;
-};
 export type ChecksRunEvent = {
   type: 'checks_run';
   taskId: string;
@@ -100,7 +90,5 @@ export type BriefEvent =
   | TaskEscalatingEvent
   | TaskFullFailEvent
   | TaskResetEvent
-  | TaskRetryEvent
-  | ImplementerGenerateRunningEvent
   | ChecksRunEvent
   | WorkflowCompleteEvent;

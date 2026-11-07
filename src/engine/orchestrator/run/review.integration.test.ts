@@ -417,7 +417,11 @@ describe('review answer follower', () => {
     expect(corrected.ok).toBe(true);
     if (!corrected.ok) throw new Error(corrected.message);
     expect(corrected.state.phase).toBe('final-review');
-    expect(corrected.state.fixCycles).toEqual({ used: 2, notes: ['Fix the typecheck failure'] });
+    expect(corrected.state.fixCycles).toEqual({
+      used: 2,
+      notes: ['Fix the typecheck failure'],
+      briefed: 2,
+    });
     expect(corrected.state.pendingTriage?.inputs).toEqual([
       input,
       expect.objectContaining({ text: 'Fix the typecheck failure' }),
@@ -1267,6 +1271,11 @@ describe('the review that judges a fix cycle', () => {
       expect(rows).toEqual(['running', 'done']);
       expect(result).toMatchObject({ next: 'fix' });
       expect(result.state.tasks.filter((task) => task.fix?.cycle === 2)).toEqual([]);
+      expect(result.events.filter((event) => event.type === 'review_fix_started')).toMatchObject([
+        { cycle: 1, taskIds: [] },
+      ]);
+      expect(result.state.fixCycles?.used).toBe(2);
+      expect(fixCyclesOf(result.state).briefed).toBe(1);
       expect(result.events.filter((event) => event.type === 'consult_answered')).toMatchObject([
         { action: 'verify', checkIds: ['K9'] },
       ]);
@@ -1281,7 +1290,7 @@ describe('the review that judges a fix cycle', () => {
       expect(again.prompts).toHaveLength(1);
       expect(next).toMatchObject({ next: 'stop' });
       expect(next.state.pendingRecovery?.message).toBe(
-        'Final review made no progress on F1 after fix cycle 2',
+        'Final review made no progress on F1 after fix cycle 1',
       );
     });
 

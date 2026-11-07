@@ -25,6 +25,8 @@ const base = {
   plannerCallStartedTs: null,
   suiteStage: null,
   activeOperation: null,
+  briefClock: null,
+  now: 0,
 };
 
 it.each([

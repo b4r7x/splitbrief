@@ -41,7 +41,11 @@ import {
   makeRunnerCallStalled,
 } from '#testing/helpers/events/runner-call.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
-import { makeBriefBoundaryEvents, makeTaskComplete } from '#testing/helpers/events/task.js';
+import {
+  makeBriefBoundaryEvents,
+  makeTaskComplete,
+  makeTaskStart,
+} from '#testing/helpers/events/task.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { markWaitEnded, markWaitStarted } from '../../../stores/workflow/actions/wait.js';
 import { loadEvents } from '../../../stores/workflow/actions/load.js';
@@ -390,6 +394,170 @@ describe('InputFooter', () => {
 
     ui.unmount();
     terminalSizeStore.reset();
+  });
+
+  describe('the build clock', () => {
+    it('counts the brief the run is on from its start, not from the start of the build', () => {
+      terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+      const now = Date.now();
+      const ago = (minutes: number) => now - minutes * 60_000;
+      runViewStore.__testReset();
+      addEvent({ type: 'workflow_started', ts: ago(30), phase: 'implementing', feature: 'demo' });
+      for (const event of makeBriefBoundaryEvents('run-start')) addEvent(event);
+      addEvent(makeTaskStart({ taskId: taskId('T001'), ts: ago(30) }));
+      addEvent(makeTaskComplete({ taskId: taskId('T001'), ts: ago(4) }));
+      addEvent(makeTaskStart({ taskId: taskId('T002'), ts: ago(3) }));
+
+      const ui = renderFeature(<InputFooter />);
+
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toMatch(/Implementing… 3:0\d/);
+
+      ui.unmount();
+      terminalSizeStore.reset();
+    });
+
+    it('keeps counting a brief across a stop and a Continue in this process', () => {
+      terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+      const now = Date.now();
+      const ago = (minutes: number) => now - minutes * 60_000;
+      runViewStore.__testReset();
+      addEvent({ type: 'workflow_started', ts: ago(21), phase: 'implementing', feature: 'demo' });
+      for (const event of makeBriefBoundaryEvents('run-start')) addEvent(event);
+      addEvent(makeTaskStart({ taskId: taskId('T001'), ts: ago(21) }));
+      addEvent(makeRunnerCallStarted({ taskId: taskId('T001'), ts: ago(21) }));
+      addEvent({
+        type: 'turn_interrupted',
+        ts: ago(6),
+        phase: 'implementing',
+        at: 'mid-step',
+        source: 'user',
+        step: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
+      });
+      markWorkflowPaused(ago(6));
+      markWorkflowResumed(ago(1));
+      addEvent(makeRunnerCallStarted({ taskId: taskId('T001'), ts: ago(1) }));
+
+      const ui = renderFeature(<InputFooter />);
+
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toMatch(/Implementing… 16:0\d/);
+
+      ui.unmount();
+      terminalSizeStore.reset();
+    });
+
+    it('keeps counting a brief that a steer continued', () => {
+      terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+      const now = Date.now();
+      const ago = (minutes: number) => now - minutes * 60_000;
+      runViewStore.__testReset();
+      addEvent({ type: 'workflow_started', ts: ago(10), phase: 'implementing', feature: 'demo' });
+      for (const event of makeBriefBoundaryEvents('run-start')) addEvent(event);
+      addEvent(makeTaskStart({ taskId: taskId('T001'), ts: ago(10) }));
+      addEvent(makeRunnerCallStarted({ taskId: taskId('T001'), ts: ago(10) }));
+      addEvent({
+        type: 'turn_interrupted',
+        ts: ago(4),
+        phase: 'implementing',
+        at: 'mid-step',
+        source: 'user',
+        step: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
+      });
+      markWorkflowPaused(ago(4));
+      addEvent(makeRunnerCallStarted({ taskId: taskId('T001'), ts: ago(4) }));
+
+      const ui = renderFeature(<InputFooter />);
+
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toMatch(/Implementing… 10:0\d/);
+
+      ui.unmount();
+      terminalSizeStore.reset();
+    });
+
+    it('keeps counting a brief that a new process continued, without the time it sat stopped', () => {
+      terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+      const now = Date.now();
+      const ago = (minutes: number) => now - minutes * 60_000;
+      runViewStore.__testReset();
+      loadEvents([
+        { type: 'workflow_started', ts: ago(60), phase: 'implementing', feature: 'demo' },
+        ...makeBriefBoundaryEvents('run-start'),
+        makeTaskStart({ taskId: taskId('T001'), ts: ago(40) }),
+        makeRunnerCallStarted({ taskId: taskId('T001'), ts: ago(40) }),
+        {
+          type: 'turn_interrupted',
+          ts: ago(25),
+          phase: 'implementing',
+          at: 'mid-step',
+          source: 'user',
+          step: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
+        },
+      ]);
+      hydrateFromState(
+        makeWorkflowState({
+          phase: 'implementing',
+          startedAt: new Date(ago(60)).toISOString(),
+        }),
+      );
+      addEvent({ type: 'workflow_resumed', ts: ago(2), phase: 'implementing' });
+      addEvent(makeTaskStart({ taskId: taskId('T001'), ts: ago(2) }));
+
+      const ui = renderFeature(<InputFooter />);
+
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toMatch(/Implementing… 17:0\d/);
+
+      ui.unmount();
+      terminalSizeStore.reset();
+    });
+
+    it('counts a fix brief from its own start, not from the Try again of the final review', () => {
+      terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+      const now = Date.now();
+      const ago = (minutes: number) => now - minutes * 60_000;
+      runViewStore.__testReset();
+      addEvent({ type: 'workflow_started', ts: ago(60), phase: 'implementing', feature: 'demo' });
+      for (const event of makeBriefBoundaryEvents('run-start')) addEvent(event);
+      addEvent(makeTaskStart({ taskId: taskId('T001'), ts: ago(60) }));
+      addEvent(makeTaskComplete({ taskId: taskId('T001'), ts: ago(40) }));
+      addEvent({
+        type: 'review_started',
+        ts: ago(40),
+        phase: 'final-review',
+        scope: 'final',
+        tool: 'codex',
+      });
+      addEvent({
+        type: 'review_completed',
+        ts: ago(20),
+        phase: 'final-review',
+        scope: 'final',
+        tool: 'codex',
+        verdict: 'fail',
+        duration: 20 * 60_000,
+      });
+      addEvent({
+        type: 'recovery_prompted',
+        ts: ago(20),
+        phase: 'final-review',
+        issueId: 'rec-review-failed',
+        reason: 'review-failed',
+        files: [],
+        affectedTaskIds: [],
+        availableActions: ['retry-same-worker'],
+        recommendedAction: 'retry-same-worker',
+        headline: 'Review failed',
+        resumeCommand: 'splitbrief continue demo',
+      });
+      markWorkflowPaused(ago(20));
+      markWorkflowResumed(ago(8));
+      addEvent(makeTaskStart({ taskId: taskId('T002'), ts: ago(3) }));
+
+      const ui = renderFeature(<InputFooter />);
+
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toMatch(/Implementing… 3:0\d/);
+
+      ui.unmount();
+      terminalSizeStore.reset();
+    });
   });
 
   // The plan stage holds two planner calls and the verb names the one running, so the clock counts

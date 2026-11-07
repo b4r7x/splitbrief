@@ -145,7 +145,7 @@ export function publishReviewEvent(
   ctx.bus.publish({ ...event, ts: Date.now(), phase: ctx.phase });
 }
 
-/** Every spent fix cycle announces itself with the count the cap halt reads. */
+/** The fix cycles so far that ran a fix brief: the count the user reads. */
 export function publishFixCycleStarted(
   bus: EventBus,
   state: WorkflowState,
@@ -155,7 +155,7 @@ export function publishFixCycleStarted(
     type: 'review_fix_started',
     ts: Date.now(),
     phase: state.phase,
-    cycle: fixCyclesOf(state).used,
+    cycle: fixCyclesOf(state).briefed,
     taskIds: [...taskIds],
   });
 }

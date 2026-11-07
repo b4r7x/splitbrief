@@ -2,7 +2,6 @@ import { expectTypeOf, it } from 'vitest';
 import type {
   BriefKeptEvent,
   ChecksRunEvent,
-  ImplementerGenerateRunningEvent,
   PlannerQuestionsAskedEvent,
   RecoveryPromptedEvent,
   RecoveryResolvedEvent,
@@ -14,7 +13,6 @@ import type {
   TaskEscalatingEvent,
   TaskFullFailEvent,
   TaskResetEvent,
-  TaskRetryEvent,
   TaskSkippedEvent,
   TaskStartedEvent,
   TasksPlannedEvent,
@@ -35,10 +33,6 @@ it('gives the run view every field it folds from each engine event', () => {
   expectTypeOf<EngineEventOf<'task_escalating'>>().toExtend<TaskEscalatingEvent>();
   expectTypeOf<EngineEventOf<'task_full_fail'>>().toExtend<TaskFullFailEvent>();
   expectTypeOf<EngineEventOf<'task_reset'>>().toExtend<TaskResetEvent>();
-  expectTypeOf<EngineEventOf<'task_retry'>>().toExtend<TaskRetryEvent>();
-  expectTypeOf<
-    EngineEventOf<'implementer_generate_running'>
-  >().toExtend<ImplementerGenerateRunningEvent>();
   expectTypeOf<EngineEventOf<'checks_run'>>().toExtend<ChecksRunEvent>();
   expectTypeOf<EngineEventOf<'workflow_complete'>>().toExtend<WorkflowCompleteEvent>();
 });

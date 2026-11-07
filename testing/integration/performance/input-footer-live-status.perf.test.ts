@@ -63,6 +63,8 @@ function derivationLoopMs({
     plannerCall: state.plannerCall ?? null,
     plannerCallStartedTs: state.plannerCallStartedTs ?? null,
     suiteStage: null,
+    briefClock: state.briefClock ?? null,
+    now: Date.now(),
   };
   let live = 0;
   const derivations = (): void => {

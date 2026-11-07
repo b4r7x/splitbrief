@@ -133,6 +133,8 @@ export function InputFooter({
           plannerCallStartedTs: lifecycle.plannerCallStartedTs ?? null,
           suiteStage: selectRunningSuite(operations),
           activeOperation: operations.active,
+          briefClock: lifecycle.briefClock ?? null,
+          now: Date.now(),
         });
   // A run on screen that is paused with no stop of its own and no record byline has been
   // continued: the engine is reaping, restoring and re-entering before its first event.

@@ -215,6 +215,8 @@ export function lineageAttemptsOf(
 
 export const FixCyclesSchema = z.object({
   used: nonnegativeInteger,
+  /** The fix cycles that ran a fix brief: the count the user reads. A state from before this field reads used. */
+  briefed: nonnegativeInteger.optional(),
   notes: z.array(z.string()),
   /** The fix cycle that started and that no review has judged yet, with the id of its last inserted fix task. */
   open: z.object({ cycle: nonnegativeInteger, lastFixTaskId: TaskIdSchema.optional() }).optional(),
@@ -557,11 +559,12 @@ export type WorkflowState = WorkflowStateAssembly;
 export type QueuedMessage = z.infer<typeof QueuedMessageSchema>;
 export type PersistedChangedFilesBaseline = z.infer<typeof ChangedFilesBaselineSchema>;
 
-export function fixCyclesOf(state: Pick<WorkflowState, 'fixCycles' | 'reviewFixes'>): FixCycles {
-  return (
-    state.fixCycles ?? {
-      used: state.reviewFixes?.cycle ?? 0,
-      notes: [],
-    }
-  );
+export function fixCyclesOf(
+  state: Pick<WorkflowState, 'fixCycles' | 'reviewFixes'>,
+): FixCycles & { briefed: number } {
+  const fixCycles: FixCycles = state.fixCycles ?? {
+    used: state.reviewFixes?.cycle ?? 0,
+    notes: [],
+  };
+  return { ...fixCycles, briefed: fixCycles.briefed ?? fixCycles.used };
 }

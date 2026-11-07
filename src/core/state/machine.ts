@@ -479,6 +479,7 @@ export function transition(
         fixCycles: {
           ...fixCycles,
           used: fixCycles.used + 1,
+          ...(action.lastFixTaskId !== undefined && { briefed: fixCycles.briefed + 1 }),
           open: {
             cycle: fixCycles.used + 1,
             ...(action.lastFixTaskId !== undefined && { lastFixTaskId: action.lastFixTaskId }),

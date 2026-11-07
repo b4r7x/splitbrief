@@ -3081,7 +3081,7 @@ describe('event row dispatch', () => {
     expect(text.trimEnd()).toBe('Stopped at T002');
   });
 
-  it('task_retry counts attempts the way the build block does', () => {
+  it('task_retry counts attempts from the first try', () => {
     const event: EngineEventOf<'task_retry'> = {
       type: 'task_retry',
       ts: 0,

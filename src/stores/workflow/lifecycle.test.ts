@@ -14,6 +14,7 @@ import { markWorkflowPaused } from './actions/pause.js';
 import { markWaitEnded, markWaitStarted } from './actions/wait.js';
 import { resetWorkflow } from './actions/reset.js';
 import { hydrateFromState } from './actions/hydrate.js';
+import { loadEvents } from './actions/load.js';
 import { makePlannerStatus, makePlannerText } from '#testing/helpers/events/planner.js';
 import {
   makeRunnerCallActivity,
@@ -24,9 +25,16 @@ import {
   makeRunnerCallStallCleared,
   makeRunnerCallStarted,
 } from '#testing/helpers/events/runner-call.js';
-import { makeRetry, makeTaskStart } from '#testing/helpers/events/task.js';
+import {
+  makeRetry,
+  makeTaskComplete,
+  makeTaskSkipped,
+  makeTaskStart,
+} from '#testing/helpers/events/task.js';
 import { taskId } from '../../core/schemas/task.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
+import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 
 describe('lifecycleStore', () => {
   beforeEach(() => resetWorkflow());
@@ -561,18 +569,17 @@ describe('runner call stall', () => {
     });
   });
 
-  it('tracks the last runner event and the attempt start for the build-progress block', () => {
+  it('tracks the last runner event for the build-progress block', () => {
     addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
     addEvent(
       makeTaskStart({ taskId: taskId('T001'), title: 'One', index: 0, total: 2, ts: 2_000 }),
     );
-    expect(lifecycleStore.get().attemptStartedTs).toBe(2_000);
+    expect(lifecycleStore.get().lastRunnerEventTs).toBeNull();
 
     addEvent(makePlannerText({ text: 'thinking', ts: 3_000 }));
     expect(lifecycleStore.get().lastRunnerEventTs).toBe(3_000);
 
     addEvent(makeRetry({ taskId: taskId('T001'), attempt: 1, ts: 4_000 }));
-    expect(lifecycleStore.get().attemptStartedTs).toBe(4_000);
     expect(lifecycleStore.get().lastRunnerEventTs).toBe(3_000);
   });
 
@@ -685,5 +692,156 @@ describe('runner call stall', () => {
       status: 'none',
     });
     expect(lifecycleStore.get().lastRunnerEventTs).toBe(5_000);
+  });
+});
+
+describe('brief clock', () => {
+  beforeEach(() => resetWorkflow());
+
+  it('starts a fresh clock when another brief starts', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+    addEvent(
+      makeTaskStart({ taskId: taskId('T001'), title: 'One', index: 0, total: 2, ts: 2_000 }),
+    );
+    addEvent(
+      makeTaskStart({ taskId: taskId('T002'), title: 'Two', index: 1, total: 2, ts: 5_000 }),
+    );
+
+    expect(lifecycleStore.get().briefClock).toEqual({
+      taskId: 'T002',
+      workedMs: 0,
+      stretch: { start: 5_000, latest: 5_000 },
+      cut: false,
+    });
+  });
+
+  it('keeps the accumulated time when the same brief starts again', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+    addEvent(
+      makeTaskStart({ taskId: taskId('T001'), title: 'One', index: 0, total: 1, ts: 2_000 }),
+    );
+    addEvent(makeRetry({ taskId: taskId('T001'), attempt: 1, ts: 4_000 }));
+    addEvent(
+      makeTaskStart({ taskId: taskId('T001'), title: 'One', index: 0, total: 1, ts: 6_000 }),
+    );
+
+    expect(lifecycleStore.get().briefClock).toEqual({
+      taskId: 'T001',
+      workedMs: 2_000,
+      stretch: { start: 6_000, latest: 6_000 },
+      cut: false,
+    });
+  });
+
+  it('clears the clock when a new run starts', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+    addEvent(
+      makeTaskStart({ taskId: taskId('T001'), title: 'One', index: 0, total: 1, ts: 2_000 }),
+    );
+    addEvent({ type: 'workflow_started', ts: 5_000, phase: 'implementing', feature: 'again' });
+
+    expect(lifecycleStore.get().briefClock).toBeNull();
+  });
+
+  it.each(['task_completed', 'task_skipped', 'task_full_fail'] as const)(
+    'clears the clock when %s ends the brief',
+    (type) => {
+      addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+      addEvent(
+        makeTaskStart({ taskId: taskId('T001'), title: 'One', index: 0, total: 1, ts: 2_000 }),
+      );
+      addEvent(
+        type === 'task_completed'
+          ? makeTaskComplete({ ts: 3_000 })
+          : type === 'task_skipped'
+            ? makeTaskSkipped({ ts: 3_000 })
+            : {
+                type: 'task_full_fail',
+                ts: 3_000,
+                phase: 'implementing',
+                taskId: taskId('T001'),
+              },
+      );
+
+      expect(lifecycleStore.get().briefClock).toBeNull();
+    },
+  );
+
+  it('leaves the clock alone for the replay markers', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+    addEvent(
+      makeTaskStart({ taskId: taskId('T001'), title: 'One', index: 0, total: 1, ts: 2_000 }),
+    );
+    const clock = lifecycleStore.get().briefClock;
+
+    addEvent({ type: 'replay_started', ts: 350_000, phase: 'implementing', totalEvents: 3 });
+    addEvent({
+      type: 'replay_complete',
+      ts: 352_000,
+      phase: 'implementing',
+      totalEvents: 3,
+      durationMs: 2_000,
+    });
+
+    expect(lifecycleStore.get().briefClock).toBe(clock);
+  });
+
+  it('rebuilds the brief clock from a replayed log', () => {
+    loadEvents([
+      { type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' },
+      makeTaskStart({ taskId: taskId('T001'), title: 'One', index: 0, total: 2, ts: 2_000 }),
+      makeTaskComplete({ ts: 5_000 }),
+      makeTaskStart({ taskId: taskId('T002'), title: 'Two', index: 1, total: 2, ts: 6_000 }),
+    ]);
+
+    expect(lifecycleStore.get().briefClock).toEqual({
+      taskId: 'T002',
+      workedMs: 0,
+      stretch: { start: 6_000, latest: 6_000 },
+      cut: false,
+    });
+  });
+
+  it('keeps the brief clock across a workflow_resumed and a state hydrate', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+    addEvent(
+      makeTaskStart({ taskId: taskId('T001'), title: 'One', index: 0, total: 1, ts: 2_000 }),
+    );
+    addEvent(makePlannerText({ text: 'working', ts: 3_000 }));
+    addEvent({
+      type: 'turn_interrupted',
+      ts: 4_000,
+      phase: 'implementing',
+      source: 'user',
+      at: 'mid-step',
+      step: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
+    });
+
+    expect(lifecycleStore.get().briefClock).toEqual({
+      taskId: 'T001',
+      workedMs: 2_000,
+      stretch: null,
+      cut: true,
+    });
+
+    addEvent({ type: 'workflow_resumed', ts: 9_000, phase: 'implementing' });
+
+    expect(lifecycleStore.get().briefClock).toEqual({
+      taskId: 'T001',
+      workedMs: 2_000,
+      stretch: null,
+      cut: false,
+    });
+
+    hydrateFromState(
+      makeWorkflowState({ phase: 'implementing', tasks: [makeTask({ id: 'T001' })] }),
+    );
+
+    expect(lifecycleStore.get().briefClock).toEqual({
+      taskId: 'T001',
+      workedMs: 2_000,
+      stretch: null,
+      cut: false,
+    });
   });
 });

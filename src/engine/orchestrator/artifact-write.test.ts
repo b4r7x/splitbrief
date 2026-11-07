@@ -54,6 +54,7 @@ describe('writeAndPublishPlanArtifacts', () => {
       metadata: { planner: crew.plan, implementer: crew.build, reviewer: crew.review },
       planMarkdown: '# Plan\n\nSteps.',
       tasks: TASKS,
+      replacedTasks: [],
     });
     for (const filename of [PLAN_FILE, TASKS_FILE]) {
       const content = readSpecFile({ projectDir, sessionId: SESSION_ID }, filename);
@@ -78,6 +79,7 @@ describe('writeAndPublishPlanArtifacts', () => {
       metadata: METADATA,
       planMarkdown: '# Plan\n\nSteps.',
       tasks: TASKS,
+      replacedTasks: [],
     });
 
     const ref = { projectDir, sessionId: SESSION_ID };
@@ -99,6 +101,7 @@ describe('writeAndPublishPlanArtifacts', () => {
       metadata: null,
       planMarkdown: '# Plan\n\nSteps.',
       tasks: TASKS,
+      replacedTasks: [],
     });
 
     expect(
@@ -122,6 +125,7 @@ describe('writeAndPublishPlanArtifacts', () => {
       metadata: null,
       planMarkdown: '# Plan\n\nNo metadata.',
       tasks: TASKS,
+      replacedTasks: [],
     });
 
     expect(readSpecFile({ projectDir, sessionId: SESSION_ID }, PLAN_FILE)).toBe(

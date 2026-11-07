@@ -37,7 +37,7 @@ function lifecycleFromState(current: LifecycleState, state: WorkflowState): Life
     steerableCall: null,
     stall: null,
     lastRunnerEventTs: current.lastRunnerEventTs ?? null,
-    attemptStartedTs: current.attemptStartedTs ?? null,
+    briefClock: current.briefClock ?? null,
     startedAt,
     reason: null,
     restored: true,

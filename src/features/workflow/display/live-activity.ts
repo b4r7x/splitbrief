@@ -1,4 +1,5 @@
 import { PHASES, type Phase, type RunnerKind } from '../../../core/schemas/enums.js';
+import { type BriefClockState, briefClockMs } from '../../../core/brief-clock.js';
 import type { PlannerCall } from '../../../core/schemas/run-step.js';
 import type { PhaseFirstSeen } from '../../../core/run-view/reduce.js';
 import type { CliToolId } from '../../../core/runners/cli-tool-catalog.js';
@@ -71,6 +72,8 @@ export function deriveLiveStatus(input: {
   plannerCallStartedTs: number | null;
   suiteStage: RunningSuiteStage | null;
   activeOperation?: ActiveOperation | null;
+  briefClock: BriefClockState | null;
+  now: number;
 }): LiveStatus | null {
   if (input.status !== 'running') return null;
   if (input.cancelled) return null;
@@ -104,6 +107,18 @@ export function deriveLiveStatus(input: {
   if (RAIL_GATE_PHASES.has(input.phase) && input.plannerCall === null) return null;
   const activeIndex = getRailActiveIndex(input.phase);
   if (activeIndex < 0 || activeStage === null) return null;
+  const tone = input.phase === 'escalating' ? CREW_SEAT_ROLES.plan : stageTone;
+  const parts =
+    input.phase === 'final-review'
+      ? reviewActivitySpans(reviewActivityParts(input.activeOperation, input.reviewerLabel))
+      : [{ text: activeVerb(input.phase, null, input.plannerCall), tone }];
+  if (activeStage.stage === 'build' && input.briefClock !== null) {
+    return {
+      parts,
+      stageStart: input.now - briefClockMs(input.briefClock, input.now),
+      waitedMs: 0,
+    };
+  }
   const completionTimes = railStageCompletionTimesFromPhaseFirstSeen(input.phaseFirstSeen);
   const stageOpened =
     activeIndex > 0 ? (completionTimes[activeIndex - 1] ?? 0) : (input.startedAt ?? 0);
@@ -116,11 +131,6 @@ export function deriveLiveStatus(input: {
       getRailActiveIndex(phase) === activeIndex ? total + (input.waitedMs[phase] ?? 0) : total,
     0,
   );
-  const tone = input.phase === 'escalating' ? CREW_SEAT_ROLES.plan : stageTone;
-  const parts =
-    input.phase === 'final-review'
-      ? reviewActivitySpans(reviewActivityParts(input.activeOperation, input.reviewerLabel))
-      : [{ text: activeVerb(input.phase, null, input.plannerCall), tone }];
   return {
     parts,
     stageStart,

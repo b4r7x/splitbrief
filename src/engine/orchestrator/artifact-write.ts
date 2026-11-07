@@ -1,5 +1,5 @@
 import type { SpecFileRef, SpecMetadata } from '../../core/paths-io.js';
-import { writeSpecFile } from '../../core/paths-io.js';
+import { readSpecFile, writeSpecFile } from '../../core/paths-io.js';
 import { PLAN_FILE, TASKS_FILE } from '../../core/paths.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import type { Task } from '../../core/schemas/task.js';
@@ -30,16 +30,25 @@ export function writeAndPublishPlanArtifacts(opts: {
   metadata: SpecMetadata | null | undefined;
   planMarkdown: string;
   tasks: Task[];
+  replacedTasks: readonly Task[];
 }): void {
   const ref = { projectDir: opts.projectDir, sessionId: opts.sessionId };
+  const previousPlan = readSpecFile(ref, PLAN_FILE);
+  const previousTasks = readSpecFile(ref, TASKS_FILE);
   writeSpecFile(ref, PLAN_FILE, opts.planMarkdown, opts.metadata);
   const tasksMarkdown = writeTasksArtifact(ref, opts.tasks, opts.metadata);
   const card = { bus: opts.bus, phase: opts.phase, ...ref };
-  publishArtifactWritten({ ...card, filename: PLAN_FILE, text: opts.planMarkdown });
+  publishArtifactWritten({
+    ...card,
+    filename: PLAN_FILE,
+    text: opts.planMarkdown,
+    replaced: previousPlan === null ? null : { text: previousPlan },
+  });
   publishArtifactWritten({
     ...card,
     filename: TASKS_FILE,
     text: tasksMarkdown,
     briefs: opts.tasks,
+    replaced: previousTasks === null ? null : { text: previousTasks, briefs: opts.replacedTasks },
   });
 }

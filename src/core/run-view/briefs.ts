@@ -29,7 +29,6 @@ export interface RunBriefs {
   readonly taskMap: ReadonlyMap<string, WorkflowTask>;
   /** The position of the brief the run is on, from 1; 0 when it is on none. */
   readonly currentTask: number;
-  readonly currentAttempt: number;
   readonly totalTasks: number;
   readonly checks: ReadonlyMap<string, readonly CheckResult[]>;
   /** The run's completed briefs as its last `workflow_complete` counted them, an earlier process's included. */
@@ -40,7 +39,6 @@ export const EMPTY_BRIEFS: RunBriefs = {
   tasks: [],
   taskMap: new Map(),
   currentTask: 0,
-  currentAttempt: 1,
   totalTasks: 0,
   checks: new Map(),
   completedTasks: null,
@@ -55,8 +53,6 @@ const BRIEF_EVENT_TYPES: Record<BriefEvent['type'], true> = {
   task_escalating: true,
   task_full_fail: true,
   task_reset: true,
-  task_retry: true,
-  implementer_generate_running: true,
   checks_run: true,
   workflow_complete: true,
 };
@@ -82,7 +78,6 @@ export function reduceBriefs(briefs: RunBriefs, event: EventTypeCarrier): RunBri
     taskMap === briefs.taskMap &&
     tasks === briefs.tasks &&
     counts.currentTask === briefs.currentTask &&
-    counts.currentAttempt === briefs.currentAttempt &&
     counts.totalTasks === briefs.totalTasks
   ) {
     return briefs;
@@ -179,28 +174,17 @@ function updateTaskCounts(
   briefs: RunBriefs,
   event: BriefEvent,
   tasks: readonly WorkflowTask[],
-): Pick<RunBriefs, 'currentTask' | 'currentAttempt' | 'totalTasks'> {
-  let { currentAttempt, totalTasks } = briefs;
+): Pick<RunBriefs, 'currentTask' | 'totalTasks'> {
+  let { totalTasks } = briefs;
   const focusedId =
     event.type === 'task_started' || event.type === 'task_reset'
       ? event.taskId
       : briefs.tasks[briefs.currentTask - 1]?.id;
   const currentTask = tasks.findIndex((task) => task.id === focusedId) + 1;
-  if (event.type === 'tasks_planned') {
+  if (event.type === 'tasks_planned' || event.type === 'task_started') {
     totalTasks = event.total;
   }
-  if (event.type === 'task_started') {
-    currentAttempt = event.lineageAttempt ?? 1;
-    totalTasks = event.total;
-  }
-  // `attempt` counts the retries already spent, so the attempt now running is one past it.
-  if (event.type === 'task_retry') {
-    currentAttempt = event.lineageAttempt ?? event.attempt + 1;
-  }
-  if (event.type === 'implementer_generate_running') {
-    currentAttempt = event.lineageAttempt ?? currentAttempt;
-  }
-  return { currentTask, currentAttempt, totalTasks };
+  return { currentTask, totalTasks };
 }
 
 export interface TaskListView {

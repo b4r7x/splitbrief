@@ -963,7 +963,7 @@ export async function runFinalReviewPhase(opts: {
       review: {
         scope: scope.kind,
         ...(state.review?.afterTaskId !== undefined && { afterTaskId: state.review.afterTaskId }),
-        cycle: record.cycle,
+        cycle: fixCyclesOf(state).briefed,
         outcome: record.outcome,
         blocking: blockingEntries(outcome),
         ...(setAside.length > 0 && { setAside }),

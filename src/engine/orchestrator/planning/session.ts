@@ -622,6 +622,7 @@ function compilePlan(
     metadata: wctx.metadata,
     planMarkdown: formatPlanMarkdown(plan, renderCheckNotes(plan, config, wctx.modelCache)),
     tasks,
+    replacedTasks: state.tasks,
   });
   const manifest = readManifestCommands(projectDir);
   const stack = detectStack(projectDir, config.validation.stack);

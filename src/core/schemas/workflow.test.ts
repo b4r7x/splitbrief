@@ -434,6 +434,29 @@ describe('WorkflowStateSchema v4', () => {
     expect(parsed.fixCycles).toEqual({ used: 1, notes: [] });
   });
 
+  it('loads a briefed fix-cycle count and leaves it absent on a state that has none', () => {
+    const briefed = WorkflowStateSchema.parse({
+      ...state({ phase: 'final-review' }),
+      fixCycles: { used: 3, briefed: 1, notes: [] },
+    });
+    const older = WorkflowStateSchema.parse({
+      ...state({ phase: 'final-review' }),
+      fixCycles: { used: 3, notes: [] },
+    });
+
+    expect(briefed.fixCycles).toEqual({ used: 3, briefed: 1, notes: [] });
+    expect(older.fixCycles).not.toHaveProperty('briefed');
+  });
+
+  it('refuses a negative briefed fix-cycle count', () => {
+    const parsed = WorkflowStateSchema.safeParse({
+      ...state({ phase: 'final-review' }),
+      fixCycles: { used: 3, briefed: -1, notes: [] },
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+
   it('loads an older lineage that counted planner answers and drops the count', () => {
     const parsed = WorkflowStateSchema.parse({
       ...state({ phase: 'implementing' }),

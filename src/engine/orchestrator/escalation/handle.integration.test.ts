@@ -44,13 +44,6 @@ import { enqueueUserMessage } from '../queue/submit.js';
 import { CORRECTION_AFTER_CHECKS } from '../task/brief-gate.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
-import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
-import { operationsStore } from '../../../stores/workflow/operations/state.js';
-import { runViewStore } from '../../../stores/workflow/run-view.js';
-import {
-  buildProgressRows,
-  deriveBuildProgress,
-} from '../../../features/workflow/display/build-progress.js';
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -409,23 +402,17 @@ describe('handleRetryAndEscalation', () => {
       for (let index = 0; index < used; index += 1) {
         currentState = transition(currentState, { type: 'COUNT_ATTEMPT', taskId: task.id });
       }
-      const { bus } = makeBusRecorder();
+      const { bus, events } = makeBusRecorder();
       bus.subscribe(addEvent);
       addEvent(makeTaskStart({ taskId: task.id, total: 1 }));
-      const counts: string[] = [];
+      let invocations = 0;
       const invoke = vi.fn(() => {
-        const progress = deriveBuildProgress({
-          lifecycle: lifecycleStore.get(),
-          operations: operationsStore.get(),
-          runView: runViewStore.get(),
-          now: Date.now(),
-        });
-        counts.push(buildProgressRows(progress, 118)[0]?.text ?? '');
+        invocations += 1;
         return Promise.resolve(
           makeRunnerCallResult({
             status: 'completed',
             text:
-              kind === 'consult' && counts.length === 1
+              kind === 'consult' && invocations === 1
                 ? 'No code yet'
                 : '```ts\nexport const hello = "world";\n```',
           }),
@@ -448,11 +435,12 @@ describe('handleRetryAndEscalation', () => {
       });
 
       expect(outcome.result.completed).toBe(true);
-      expect(counts.map((line) => line.split(' · ').at(-1))).toEqual(
-        kind === 'consult' ? ['attempt 2', 'attempt 3'] : ['attempt 3'],
-      );
+      expect(
+        events
+          .filter((event) => event.type === 'implementer_generate_running')
+          .map((event) => event.lineageAttempt),
+      ).toEqual(kind === 'consult' ? [2, 3] : [3]);
       expect(lineageAttemptsOf(outcome.state, task)).toBe(3);
-      expect(runViewStore.get().briefs).toMatchObject({ currentAttempt: 3 });
     },
   );
 

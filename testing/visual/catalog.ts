@@ -1311,9 +1311,9 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'apply-rereview',
-        title: 'The merged review counts the cycle Apply spent',
+        title: 'The merged review reads as a re-run after the one fix cycle',
         kind: 'implementation',
-        marker: 'Final review after 2 fix cycles',
+        marker: 'Final review after 1 fix cycle, re-run',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1477,6 +1477,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [
         { id: 'header', title: 'Workflow header and build progress' },
         { id: 'transcript', title: 'Review transcript with the split verify rows' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-review-verify-rerun',
+      title: 'Workflow · final review re-run before any fix brief',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-verify-rerun',
+        title: 'A failed final review and its passing re-run in the same cycle',
+        kind: 'implementation',
+        marker: 'Final review re-run passed',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Review transcript with its re-run' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
@@ -2130,6 +2146,24 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       checkpoint: {
         id: 'plan-card',
         title: 'Plan card',
+        kind: 'review',
+        marker: 'Approve plan and start the build',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Plan transcript' },
+        { id: 'approval-panel', title: 'Plan card panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-plan-card-edited',
+      title: 'Workflow · plan card after an edit of plan.json',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'plan-card-edited',
+        title: 'The card open again over one Plan and one Tasks card',
         kind: 'review',
         marker: 'Approve plan and start the build',
       },

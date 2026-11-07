@@ -34,7 +34,6 @@ function lifecycleState(overrides: { lastRunnerEventTs?: number | null } = {}): 
     steerableCall: null,
     stall: null,
     lastRunnerEventTs: overrides.lastRunnerEventTs ?? null,
-    attemptStartedTs: null,
     startedAt: null,
     endedAt: null,
     durationMs: null,

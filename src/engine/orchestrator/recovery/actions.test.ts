@@ -555,6 +555,7 @@ describe('applyRecoveryAction: revise on a failed review', () => {
     expect(result.state.fixCycles).toEqual({
       used: 2,
       notes: ['log the error, then rethrow it'],
+      briefed: 2,
     });
     // The correction never resets a brief; the fix work is triaged into new tasks.
     expect(result.state.tasks[0]?.status).toBe('done');

@@ -28,7 +28,7 @@
 - **`splitbrief continue <id> --action <action>`** answers a recovery with no terminal attached: `skip`, `retry`, `switch-seat:<tool>[:<model>][@<word>]`, `end-run`, `apply`, `discard` or `restore`. It exits 1 while the run stays blocked, and 2 when the value names no recovery action.
 - **Accept as is** for a failed final review, on every run. A checkout run closes; a worktree or staged-copy run becomes ready to apply with the open findings, and Apply asks once.
 - **The stop sheet.** On the workflow screen, `esc` opens Stop options: **Stop now**, **Pause after this brief** and **End run**. No option reverts files, and your draft is kept.
-- **Build progress block.** While briefs run, a block under the header shows the passed briefs of the total, what the seat is doing, the attempt number from the second attempt, and how long ago the seat last reported.
+- **Build progress block.** While briefs run, a block under the header shows the passed briefs of the total, what the seat is doing, and how long ago the seat last reported.
 - **`--plain` output.** A headless run with `--plain` prints one plain-text line per phase. `--json` emits the NDJSON event stream.
 - **Cursor Agent CLI (`cursor`), Command Code (`command-code`) and Antigravity (`agy`)** are supported CLI tools.
 - **Skills for every seat.** `--skills <ids>` on `start`, `resume` and `continue`, or `/skills`, attaches project or global skills. Every seat call carries them.
@@ -45,6 +45,7 @@
 
 - A recovery answer that continues the run no longer adds a `Run continued` row under its Recovery row.
 - A review result now puts one blank row between two findings.
+- The build block shows the passed briefs without an attempt number. A halt names the attempts.
 - **Supported Node.js versions.** SPLITBRIEF supports Node.js 22 and Node.js 24, and the package declares that range.
 - **Scope is guidance.** A brief's files are suggestions. The implementer may edit another ordinary project file that the change needs, and SPLITBRIEF records it. Only a protected path asks: dependency manifests and lockfiles, `.git` and `.splitbrief`, CI configuration, and env or key files. It asks once per path per run.
 - **A failed check goes straight to the planner.** A brief has no local retry before its consult. A correction that you send while the checks run goes to the next attempt. When the checks pass, the build tool gets one more attempt for that correction. `workflow.max_retries` is retired.
@@ -127,6 +128,9 @@
 - A message sent before a brief starts now says that BUILD reads it when its call starts.
 - Command Code no longer stops a build, plan or review call after 100 turns. To set a turn cap, add `--max-turns` to the seat `args`.
 - A CLI call whose tool already exited keeps its answer, or its own error, when the call's `timeout` passes while SPLITBRIEF still closes the link that carries your messages to the tool, such as the OpenCode server. Before, the call ended as a timeout and the answer was lost.
+- The status line clock in the build counts the time the current brief has worked. A stop, a Continue or a steer no longer starts it again, and a brief after the final review no longer counts the review.
+- A saved edit of `plan.json` shows the `Plan` or `Tasks` block again only when the edit changed it.
+- A review heading, a halt, `review.md` and the closed run count only the fix cycles that ran a fix brief. A review after a cycle with no fix brief, such as a check the planner ran again, reads `re-run`.
 - A failed review with no blocking finding now says how many criteria no check verified.
 - A check that two review claims share now runs and shows once.
 - The clock of a check row with a long command stays on its row.

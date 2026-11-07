@@ -185,6 +185,8 @@ describe.each(SEATS)('a $kind seat reads one name on every surface', (seat) => {
       plannerCallStartedTs: null,
       suiteStage: null,
       activeOperation: operationsStore.get().active,
+      briefClock: null,
+      now: 0,
     })
       ?.parts.map((part) => part.text)
       .join('');

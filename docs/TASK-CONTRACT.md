@@ -387,6 +387,7 @@ If two tools need to coordinate, they agree on a key (e.g., `external.vcs-sync`)
 | `TriageRecord.blocking` | the record keeps no keys of the problems that failed its review, so the next review cannot halt as no progress against it |
 | `TriageRecord.scope` | the record does not say whether a task review or the final review wrote it, so no review compares its keys with it |
 | `FixCycles.open` | no fix cycle waits for the review that judges it |
+| `FixCycles.briefed` | the state is from before the field; it reads `used` |
 | `ReviewRecord.judges` | the review judged no fix cycle, so it compares its blockers with no triage record |
 | `ReviewRecord.unseenRenderCriteria` | no render criterion stayed unverified because the review seat takes no images, so a failed review of this record does not point at the review seat |
 | `WorkflowState.pendingTriage` | no check, operator or Apply input waits for the reviewer |

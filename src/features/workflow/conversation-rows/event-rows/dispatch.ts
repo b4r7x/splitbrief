@@ -247,8 +247,7 @@ export function eventRowBlock(options: {
     case 'task_retry':
       return wrappedTextBlock({
         keyPrefix,
-        // The build block counts attempts, first try included. A retry index over a retry budget
-        // beside it would put two numbers on one screen for one fact.
+        // The lineage's attempt, first try included, as the halt's Attempts: N counts it.
         text: `Retry  attempt ${event.lineageAttempt ?? event.attempt + 1}`,
         width: ctx.width,
         tone: 'textDim',

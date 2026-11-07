@@ -1,7 +1,6 @@
 import { CREW_SEAT_LABELS, cutSeatIdentity, type CrewSeatId } from '../../../core/crew/identity.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import { stateTone } from '../../../core/theme/state-tone.js';
-import { isImplementerPhase } from '../../../core/phases.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
 import { SOFT_SEP } from '../../../core/separators.js';
@@ -50,11 +49,6 @@ export interface BuildProgress {
   total: number;
   escalated: number;
   failed: number;
-  /**
-   * The attempt number of the brief now running. `null` outside the build, where the review seat
-   * runs no brief, and on a brief's first attempt, which is the normal case.
-   */
-  attempt: number | null;
   /**
    * The project gate command running at the run base beside the build, with its clock, when the
    * activity line does not already name it.
@@ -300,7 +294,6 @@ function baseRun(input: DeriveBuildProgressInput): readonly BuildProgressSpan[] 
 export function deriveBuildProgress(input: DeriveBuildProgressInput): BuildProgress {
   const { briefs } = input.runView;
   const view = selectTaskListView(briefs);
-  const retrying = isImplementerPhase(input.runView.phase) && briefs.currentAttempt >= 2;
   const wait = input.runView.seatWait;
   const waitParts = wait?.live ? seatWaitParts(wait.tool, wait.wait.resetAt, input.now) : null;
   return {
@@ -308,7 +301,6 @@ export function deriveBuildProgress(input: DeriveBuildProgressInput): BuildProgr
     total: view.total,
     escalated: view.escalated,
     failed: view.failed,
-    attempt: retrying ? briefs.currentAttempt : null,
     base: baseRun(input),
     ...(waitParts === null
       ? { ...activityLine(input), ...freshnessOf(input) }
@@ -353,12 +345,6 @@ function countsSpans(progress: BuildProgress): BuildProgressSpan[] {
     passedFractionSpans(`${progress.passed}/${progress.total} briefs`),
     progress,
   );
-  if (progress.attempt !== null) {
-    parts.push(
-      { text: SOFT_SEP, tone: 'textDim' },
-      { text: `attempt ${progress.attempt}`, tone: 'textDim' },
-    );
-  }
   if (progress.base !== null) parts.push({ text: SOFT_SEP, tone: 'textDim' }, ...progress.base);
   return parts;
 }

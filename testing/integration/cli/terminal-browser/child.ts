@@ -219,7 +219,7 @@ async function startTracking(): Promise<void> {
       _lifecycleInternal.set((current) =>
         current.status !== 'running'
           ? current
-          : { ...current, startedAt: now, lastRunnerEventTs: now, attemptStartedTs: now },
+          : { ...current, startedAt: now, lastRunnerEventTs: now },
       );
       if (lifecycleStore.get().status === 'running') {
         _runViewInternal.set((view) => ({ ...view, phaseFirstSeen: { implementing: now } }));

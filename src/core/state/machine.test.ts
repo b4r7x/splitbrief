@@ -1630,7 +1630,7 @@ describe('fix cycles, review and triage records', () => {
     const next = transition(state, { type: 'START_FIX_CYCLE' });
 
     expect(next.phase).toBe('implementing');
-    expect(next.fixCycles).toEqual({ used: 2, notes: [], open: { cycle: 2 } });
+    expect(next.fixCycles).toEqual({ used: 2, notes: [], briefed: 1, open: { cycle: 2 } });
     expect(next.reviewStatus).toBeUndefined();
     expect(next.completedAt).toBeUndefined();
     expect(next.pendingTriage).toBeUndefined();
@@ -1643,7 +1643,21 @@ describe('fix cycles, review and triage records', () => {
 
     const next = transition(state, { type: 'START_FIX_CYCLE' });
 
-    expect(next.fixCycles).toEqual({ used: 2, notes: [], open: { cycle: 2 } });
+    expect(next.fixCycles).toEqual({ used: 2, notes: [], briefed: 1, open: { cycle: 2 } });
+  });
+
+  it('START_FIX_CYCLE counts a cycle the user reads only when it ran a fix brief', () => {
+    const state = failedReviewState({ fixCycles: { used: 0, notes: [] } });
+
+    const briefed = transition(state, { type: 'START_FIX_CYCLE', lastFixTaskId: taskId('T002') });
+    expect(briefed.fixCycles?.used).toBe(1);
+    expect(fixCyclesOf(briefed).briefed).toBe(1);
+
+    const empty = transition(briefed, { type: 'START_FIX_CYCLE' });
+    expect(empty.fixCycles?.used).toBe(2);
+    expect(fixCyclesOf(empty).briefed).toBe(1);
+
+    expect(fixCyclesOf({ fixCycles: { used: 2, notes: [] } }).briefed).toBe(2);
   });
 
   it('START_FIX_CYCLE clears the scheduled review and its triage', () => {
@@ -1773,7 +1787,7 @@ describe('fix cycles, review and triage records', () => {
     const next = transition(state, { type: 'START_FIX_CYCLE' });
 
     expect(next.phase).toBe('implementing');
-    expect(next.fixCycles).toEqual({ used: 1, notes: [], open: { cycle: 1 } });
+    expect(next.fixCycles).toEqual({ used: 1, notes: [], briefed: 0, open: { cycle: 1 } });
     expect(next.currentTaskIndex).toBe(1);
     expect(next.pendingTriage).toBeUndefined();
     expect(next.tasks.map((task) => task.status)).toEqual(['done', 'pending', 'pending']);
@@ -1805,6 +1819,7 @@ describe('fix cycles, review and triage records', () => {
     });
     expect(next.fixCycles).toEqual({
       used: 1,
+      briefed: 1,
       notes: ['earlier note', 'Use the shared greeting helper'],
     });
   });
@@ -1897,6 +1912,7 @@ describe('fix cycles, review and triage records', () => {
     );
     expect(started.fixCycles).toEqual({
       used: 1,
+      briefed: 1,
       notes: [],
       open: { cycle: 1, lastFixTaskId: 'T004' },
     });
@@ -2043,7 +2059,7 @@ describe('the run workspace and Apply', () => {
     expect(next.reviewStatus).toBeUndefined();
     expect(next.applyReview).toEqual({ merged, failures: [] });
     expect(next.acceptedAsIs).toBeUndefined();
-    expect(next.fixCycles).toEqual({ used: 2, notes: [] });
+    expect(next.fixCycles).toEqual({ used: 2, notes: [], briefed: 1 });
     const passed = transition(next, {
       type: 'REVIEW_DONE',
       reviewStatus: 'passed',
@@ -2085,7 +2101,7 @@ describe('the run workspace and Apply', () => {
     expect(WorkflowStateSchema.parse(state).pendingTriage?.inputs).toEqual(triage);
 
     const fixed = transition(state, { type: 'START_FIX_CYCLE' });
-    expect(fixed.fixCycles).toEqual({ used: 2, notes: [], open: { cycle: 2 } });
+    expect(fixed.fixCycles).toEqual({ used: 2, notes: [], briefed: 1, open: { cycle: 2 } });
     expect(fixed.pendingTriage).toBeUndefined();
   });
 

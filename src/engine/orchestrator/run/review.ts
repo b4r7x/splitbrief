@@ -44,7 +44,11 @@ import {
 import { askOperator } from '../planning/call-loop.js';
 import type { TriageInput, TriageResult } from '../../../core/schemas/review.js';
 import type { ReviewOutcome } from '../../../core/review/verdict.js';
-import type { ReviewRecord, WorkflowState } from '../../../core/schemas/workflow.js';
+import {
+  fixCyclesOf,
+  type ReviewRecord,
+  type WorkflowState,
+} from '../../../core/schemas/workflow.js';
 import type { OrchestratorCallbacks, WorkflowContext } from '../types.js';
 
 function noVerdictFailure(review: FinalReviewResult, name: string): FinalReviewFailure | undefined {
@@ -385,6 +389,7 @@ export async function followReviewAnswer(args: {
     judged.judges === undefined
       ? undefined
       : state.triage?.findLast((record) => record.cycle === judged.judges);
+  const briefed = fixCyclesOf(state).briefed;
   const before =
     started !== undefined && started.result.fixTasks.length > 0 ? started.blocking : undefined;
   const stuck =
@@ -432,7 +437,10 @@ export async function followReviewAnswer(args: {
           redInputs,
           cannot: asked.reason,
           ...(blocking > 0
-            ? { noProgress: blockers, fixCycle: started?.cycle }
+            ? {
+                noProgress: blockers,
+                fixCycle: started === undefined || briefed === 0 ? undefined : briefed,
+              }
             : unverified.length > 0 && {
                 unverified: unverified.length,
                 reviewSeatNoImages: unverified.every(

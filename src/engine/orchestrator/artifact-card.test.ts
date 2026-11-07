@@ -4,8 +4,9 @@ import { join } from 'node:path';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { PLAN_FILE, SPEC_FILE, TASKS_FILE, sessionDir } from '../../core/paths.js';
 import { buildSpecFrontmatter } from '../../core/paths-io.js';
-import { taskId } from '../../core/schemas/task.js';
+import { taskId, type Task } from '../../core/schemas/task.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
+import type { EventBus } from '../events/types.js';
 import { buildArtifactExcerpt, publishArtifactWritten } from './artifact-card.js';
 
 function filler(label: string, count: number): string[] {
@@ -474,6 +475,7 @@ describe('publishArtifactWritten', () => {
       sessionId: 'sess-1',
       filename: PLAN_FILE,
       text: '# Plan\n\nBody.\n',
+      replaced: null,
     });
 
     expect(events).toEqual([
@@ -501,8 +503,116 @@ describe('publishArtifactWritten', () => {
       sessionId: 'sess-1',
       filename: PLAN_FILE,
       text: '\n\n',
+      replaced: null,
     });
 
     expect(events).toEqual([]);
+  });
+});
+
+describe('publishArtifactWritten — an edited artifact', () => {
+  type CardBrief = Pick<Task, 'id' | 'title'>;
+
+  const brief = (id: string, title: string): CardBrief => ({ id: taskId(id), title });
+
+  function publish(
+    bus: EventBus,
+    input: {
+      text: string;
+      briefs?: readonly CardBrief[];
+      replaced: { text: string; briefs?: readonly CardBrief[] } | null;
+    },
+  ): void {
+    publishArtifactWritten({
+      bus,
+      phase: 'planning',
+      projectDir: '/proj',
+      sessionId: 'sess-1',
+      filename: TASKS_FILE,
+      ...input,
+    });
+  }
+
+  const cardsOf = (events: ReturnType<typeof makeBusRecorder>['events']) =>
+    events.filter((event) => event.type === 'artifact_written');
+
+  it('publishes a card whose contents did not change only once', () => {
+    const { bus, events } = makeBusRecorder();
+    const text = '# Plan\n\nBody.\n';
+
+    publish(bus, { text, replaced: null });
+    publish(bus, { text, replaced: { text } });
+
+    expect(events).toHaveLength(1);
+  });
+
+  it('publishes again when only the line count changes', () => {
+    const { bus, events } = makeBusRecorder();
+    const briefs = [brief('T001', 'Brief 1')];
+    const before = ['## Overview', ...filler('body', 10)].join('\n');
+    const after = `${before}\nOne more line`;
+
+    publish(bus, { text: before, briefs, replaced: null });
+    publish(bus, { text: after, briefs, replaced: { text: before, briefs } });
+
+    const cards = cardsOf(events);
+    expect(cards.map((event) => event.lineCount)).toEqual([11, 12]);
+    expect(cards[1]?.excerpt).toEqual(cards[0]?.excerpt);
+  });
+
+  it('publishes again when a row changes', () => {
+    const { bus, events } = makeBusRecorder();
+    const before = '# Plan\n\nBody.\n';
+    const after = '# Plan\n\nOther body.\n';
+
+    publish(bus, { text: before, replaced: null });
+    publish(bus, { text: after, replaced: { text: before } });
+
+    const cards = cardsOf(events);
+    expect(cards).toHaveLength(2);
+    expect(cards[1]?.excerpt).not.toEqual(cards[0]?.excerpt);
+  });
+
+  it('publishes again when only the omitted count changes', () => {
+    const { bus, events } = makeBusRecorder();
+    const text = ['## Overview', ...filler('body', 10)].join('\n');
+    const ten = Array.from({ length: 10 }, (_, index) =>
+      brief(`T${String(index + 1).padStart(3, '0')}`, `Brief ${index + 1}`),
+    );
+
+    publish(bus, { text, briefs: ten, replaced: null });
+    publish(bus, {
+      text,
+      briefs: [...ten, brief('T011', 'Brief 11')],
+      replaced: { text, briefs: ten },
+    });
+
+    const cards = cardsOf(events);
+    expect(cards.map((event) => event.omittedCount)).toEqual([0, 1]);
+    expect(cards[1]?.excerpt).toEqual(cards[0]?.excerpt);
+  });
+
+  it('publishes again when only the omitted unit changes', () => {
+    const { bus, events } = makeBusRecorder();
+    const text = [
+      '## T001  Brief 1',
+      '',
+      ...filler('one', 5),
+      '',
+      '## T002  Brief 2',
+      '',
+      ...filler('two', 5),
+    ].join('\n');
+
+    publish(bus, { text, replaced: null });
+    publish(bus, {
+      text,
+      briefs: [brief('T001', 'Brief 1'), brief('T002', 'Brief 2')],
+      replaced: { text },
+    });
+
+    const cards = cardsOf(events);
+    expect(cards.map((event) => event.omittedUnit)).toEqual(['section', 'task']);
+    expect(cards[1]?.excerpt).toEqual(cards[0]?.excerpt);
   });
 });

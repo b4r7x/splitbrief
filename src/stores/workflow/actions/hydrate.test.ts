@@ -8,7 +8,7 @@ import { lifecycleStore } from '../lifecycle.js';
 import { runViewStore } from '../run-view.js';
 import { configStore } from '../../project/config.js';
 import { taskId } from '../../../core/schemas/task.js';
-import { makeCostUpdate, makeTaskStart, makeRetry } from '#testing/helpers/events/task.js';
+import { makeCostUpdate } from '#testing/helpers/events/task.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
@@ -83,16 +83,6 @@ describe('hydrateFromState', () => {
       expect(lifecycleStore.get().steerableCall).toBeNull();
     },
   );
-
-  it('keeps replayed lineage attempts after state hydration', () => {
-    loadEvents([
-      makeTaskStart({ lineageAttempt: 6 }),
-      makeRetry({ attempt: 1, lineageAttempt: 7 }),
-    ]);
-    hydrateFromState(makeWorkflowState({ phase: 'implementing', tasks: [makeTask()] }));
-    expect(runViewStore.get().briefs).toMatchObject({ currentAttempt: 7 });
-    expect(runViewStore.get().briefs).not.toHaveProperty('attemptAllowance');
-  });
 
   it('restores observable workflow state from a persisted snapshot', () => {
     hydrateFromState({

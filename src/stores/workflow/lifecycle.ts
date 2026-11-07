@@ -1,7 +1,15 @@
+import {
+  type BriefClockState,
+  briefMarkTaskId,
+  endsBriefClock,
+  foldBriefClock,
+} from '../../core/brief-clock.js';
 import type { CrewSeatId } from '../../core/crew/identity.js';
+import { isInfrastructurePhaseEvent } from '../../core/event-phase.js';
 import type { Phase, RunnerKind } from '../../core/schemas/enums.js';
 import type { PlannerCall } from '../../core/schemas/run-step.js';
 import type { EngineEvent } from '../../engine/events/types.js';
+import { narrowRecord } from '../../utils/type-guards.js';
 import { createStore, storeBase } from '../create-store.js';
 
 const STALL_CLEARING_EVENT_TYPES = new Set<EngineEvent['type']>([
@@ -29,8 +37,7 @@ interface LifecycleBase {
   stall: LifecycleStall;
   /** When the run last produced any sign of life, so a silent seat can be named as silent. */
   lastRunnerEventTs?: number | null;
-  /** When the attempt now running began, so its elapsed time is not the whole brief's. */
-  attemptStartedTs?: number | null;
+  briefClock?: BriefClockState | null;
   /** The planner call the phase is on, when the engine named one: a phase can hold two. */
   plannerCall?: PlannerCall | null;
   /**
@@ -141,7 +148,7 @@ const initial: LifecycleState = {
   steerableCall: null,
   stall: null,
   lastRunnerEventTs: null,
-  attemptStartedTs: null,
+  briefClock: null,
   plannerCall: null,
   plannerCallStartedTs: null,
   waitingSince: null,
@@ -190,22 +197,35 @@ const RUNNER_HEARTBEAT_EVENT_TYPES = new Set<EngineEvent['type']>([
   'review_completed',
 ]);
 
-/** The two clocks the build-progress block reads: last sign of life, and this attempt's start. */
+/** The two clocks the build-progress block reads: last sign of life, and the brief's time. */
 function updateRunClocks(state: LifecycleState, event: EngineEvent): LifecycleState {
   const lastRunnerEventTs = RUNNER_HEARTBEAT_EVENT_TYPES.has(event.type)
     ? event.ts
     : (state.lastRunnerEventTs ?? null);
-  const attemptStartedTs =
-    event.type === 'task_started' || event.type === 'task_retry'
-      ? event.ts
-      : (state.attemptStartedTs ?? null);
-  if (
-    lastRunnerEventTs === state.lastRunnerEventTs &&
-    attemptStartedTs === state.attemptStartedTs
-  ) {
+  const previousClock = state.briefClock ?? null;
+  let briefClock = previousClock;
+  if (!isInfrastructurePhaseEvent(event)) {
+    const markTaskId = narrowRecord(event)?.taskId;
+    const taskId = briefMarkTaskId({
+      taskId: typeof markTaskId === 'string' ? markTaskId : undefined,
+      ...(event.type === 'turn_interrupted' && { at: event.at, step: event.step }),
+    });
+    if (event.type === 'workflow_started') {
+      briefClock = null;
+    } else {
+      if (event.type === 'task_started' && taskId !== undefined && briefClock?.taskId !== taskId) {
+        briefClock = { taskId, workedMs: 0, stretch: null, cut: false };
+      }
+      if (briefClock !== null) {
+        const mark = { type: event.type, ts: event.ts, ...(taskId !== undefined && { taskId }) };
+        briefClock = endsBriefClock(briefClock, mark) ? null : foldBriefClock(briefClock, mark);
+      }
+    }
+  }
+  if (lastRunnerEventTs === state.lastRunnerEventTs && briefClock === previousClock) {
     return state;
   }
-  return { ...state, lastRunnerEventTs, attemptStartedTs };
+  return { ...state, lastRunnerEventTs, briefClock };
 }
 
 // The status event is the whole truth about the call: a running status names the call it opens,
@@ -233,17 +253,15 @@ export function updatePhase(
   event: EngineEvent,
   phaseChanged: boolean,
 ): LifecycleState {
+  const clocked = updateRunClocks(state, event);
   if (event.type === 'steerable_call') {
     const steerableCall =
       event.seat === undefined
         ? null
         : { seat: event.seat, ...(event.taskId !== undefined && { taskId: event.taskId }) };
-    return { ...state, steerableCall };
+    return { ...clocked, steerableCall };
   }
-  return updatePlannerCall(
-    updatePhaseOnly(updateRunClocks(state, event), event, phaseChanged),
-    event,
-  );
+  return updatePlannerCall(updatePhaseOnly(clocked, event, phaseChanged), event);
 }
 
 function updatePhaseOnly(
@@ -263,6 +281,7 @@ function updatePhaseOnly(
       queuedMessageIds: state.queuedMessageIds,
       startedAt: state.startedAt ?? event.ts,
       resumedAt: event.resumedAt ?? event.ts,
+      briefClock: state.briefClock ?? null,
     });
   }
 
@@ -474,7 +493,7 @@ function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
       steerableCall: null,
       stall: null,
       lastRunnerEventTs: null,
-      attemptStartedTs: null,
+      briefClock: null,
       startedAt,
       endedAt,
       durationMs: next.durationMs ?? durationFromStart(startedAt, endedAt),
@@ -493,7 +512,7 @@ function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
       steerableCall: null,
       stall: null,
       lastRunnerEventTs: null,
-      attemptStartedTs: null,
+      briefClock: null,
       startedAt,
       endedAt,
       durationMs: next.durationMs ?? durationFromStart(startedAt, endedAt),
@@ -533,7 +552,11 @@ function applyPhaseChange(
 ): LifecycleState {
   if (!phaseChanged) return state;
   if (state.status === 'idle') {
-    return runningLifecycleState({ queuedMessageIds: state.queuedMessageIds, startedAt: ts });
+    return runningLifecycleState({
+      queuedMessageIds: state.queuedMessageIds,
+      startedAt: ts,
+      briefClock: state.briefClock ?? null,
+    });
   }
   if (state.status === 'running' || state.status === 'interrupted' || state.status === 'paused') {
     return { ...state, stall: null };
@@ -545,7 +568,7 @@ function runningLifecycleState(input: {
   queuedMessageIds: ReadonlySet<string>;
   startedAt: number | null;
   lastRunnerEventTs?: number | null;
-  attemptStartedTs?: number | null;
+  briefClock?: BriefClockState | null;
   resumedAt?: number | null;
 }): RunningLifecycleState {
   return {
@@ -557,7 +580,7 @@ function runningLifecycleState(input: {
     steerableCall: null,
     stall: null,
     lastRunnerEventTs: input.lastRunnerEventTs ?? null,
-    attemptStartedTs: input.attemptStartedTs ?? null,
+    briefClock: input.briefClock ?? null,
     plannerCall: null,
     plannerCallStartedTs: null,
     waitingSince: null,

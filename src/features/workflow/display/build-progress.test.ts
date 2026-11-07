@@ -19,7 +19,7 @@ import type {
 import { EMPTY_BRIEFS, type RunBriefs, type WorkflowTask } from '../../../core/run-view/briefs.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
-import { makeRetry, makeTaskStart } from '#testing/helpers/events/task.js';
+import { makeRetry, makeTaskComplete, makeTaskStart } from '#testing/helpers/events/task.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { operationsStore } from '../../../stores/workflow/operations/state.js';
@@ -163,7 +163,6 @@ function lifecycleState(
     steerableCall: null,
     stall: null,
     lastRunnerEventTs: NOW,
-    attemptStartedTs: NOW,
     startedAt: NOW,
     endedAt: null,
     durationMs: null,
@@ -428,11 +427,9 @@ describe('deriveBuildProgress', () => {
     expect(progress.freshness).toBe('last event 5s ago');
   });
 
-  // A brief's first attempt is the normal case: the bound only matters once a retry has spent one.
   it('states no attempt while the first one runs', () => {
     const progress = deriveBuildProgress(input());
 
-    expect(progress.attempt).toBeNull();
     for (const width of [getChromeContentWidth(120), 80, 60]) {
       expect(
         buildProgressRows(progress, width)
@@ -442,17 +439,65 @@ describe('deriveBuildProgress', () => {
     }
   });
 
+  it('states no attempt on the counts line while a split brief, a retry or a consult runs', () => {
+    resetWorkflow();
+    addEvent({
+      type: 'tasks_planned',
+      ts: NOW,
+      phase: 'implementing',
+      total: 5,
+      tasks: [
+        { id: taskId('T001'), title: 'One', index: 0, file: 'src/one.ts', action: 'modify' },
+        { id: taskId('T002'), title: 'Two', index: 1, file: 'src/two.ts', action: 'modify' },
+        { id: taskId('T003'), title: 'Three', index: 2, file: 'src/three.ts', action: 'modify' },
+        { id: taskId('T004'), title: 'Four', index: 3, file: 'src/four.ts', action: 'modify' },
+        { id: taskId('T005'), title: 'Five', index: 4, file: 'src/five.ts', action: 'modify' },
+      ],
+    });
+    addEvent(makeTaskComplete({ taskId: taskId('T001'), title: 'One' }));
+    addEvent(
+      makeTaskStart({
+        taskId: taskId('T004'),
+        title: 'Four',
+        index: 3,
+        total: 5,
+        lineageAttempt: 2,
+      }),
+    );
+
+    const expectBriefCounts = () => {
+      for (const width of [getChromeContentWidth(120), 80, 60]) {
+        const rows = buildProgressRows(
+          deriveBuildProgress(input({ tasks: runViewStore.get().briefs })),
+          width,
+        );
+        expect(rows[0]?.text).toBe('1/5 briefs passed');
+      }
+    };
+    expectBriefCounts();
+
+    addEvent(makeRetry({ taskId: taskId('T004'), attempt: 1, lineageAttempt: 3 }));
+    expectBriefCounts();
+
+    addEvent({
+      type: 'implementer_generate_running',
+      ts: NOW,
+      phase: 'implementing',
+      taskId: taskId('T004'),
+      lineageAttempt: 4,
+    });
+    expectBriefCounts();
+    resetWorkflow();
+  });
+
   it('quotes no estimate of the time left at any width', () => {
     const progress = deriveBuildProgress(
       input({
-        tasks: tasksState(
-          [
-            { id: 'T001', title: 'One', status: 'done' },
-            { id: 'T002', title: 'Two', status: 'done' },
-            { id: 'T003', title: 'Three', status: 'in_progress' },
-          ],
-          { currentAttempt: 3 },
-        ),
+        tasks: tasksState([
+          { id: 'T001', title: 'One', status: 'done' },
+          { id: 'T002', title: 'Two', status: 'done' },
+          { id: 'T003', title: 'Three', status: 'in_progress' },
+        ]),
       }),
     );
 
@@ -469,9 +514,7 @@ describe('deriveBuildProgress', () => {
   it('ends the counts line with the base re-run that runs beside the build, on its own clock', () => {
     const progress = deriveBuildProgress(
       input({
-        tasks: tasksState([{ id: 'T001', title: 'One', status: 'in_progress' }], {
-          currentAttempt: 2,
-        }),
+        tasks: tasksState([{ id: 'T001', title: 'One', status: 'in_progress' }]),
         operations: operationsState({
           active: runningOperation(),
           suiteStage: {
@@ -492,7 +535,7 @@ describe('deriveBuildProgress', () => {
 
     for (const width of [getChromeContentWidth(120), 80, 60]) {
       const rows = buildProgressRows(progress, width);
-      expect(rows[0]?.text.endsWith('attempt 2 · Base re-run V1 0:42')).toBe(true);
+      expect(rows[0]?.text.endsWith('Base re-run V1 0:42')).toBe(true);
       expect(rows[0]?.spans).toContainEqual({ text: 'Base re-run V1', tone: 'accent' });
       expect(
         rows
@@ -501,56 +544,6 @@ describe('deriveBuildProgress', () => {
           .join(' '),
       ).toContain('Plan check K1');
     }
-  });
-
-  it('states the attempt number without a maximum', () => {
-    const progress = deriveBuildProgress(
-      input({
-        tasks: tasksState([{ id: 'T001', title: 'One', status: 'in_progress' }], {
-          currentAttempt: 2,
-        }),
-      }),
-    );
-
-    expect(progress.attempt).toBe(2);
-    const counts = buildProgressRows(progress, getChromeContentWidth(120))[0]?.text;
-    expect(counts).toContain('attempt 2');
-    expect(counts).not.toContain(' of ');
-  });
-
-  // A brief resumed after Continue is on its lineage's sixth attempt, not on a fresh first one:
-  // the block states the count the engine recorded.
-  it('states the lineage attempt the task events carry, after a continue', () => {
-    resetWorkflow();
-    addEvent(makeTaskStart({ taskId: taskId('T001'), lineageAttempt: 6 }));
-
-    const resumed = deriveBuildProgress(input({ tasks: runViewStore.get().briefs }));
-    expect(resumed.attempt).toBe(6);
-    expect(buildProgressRows(resumed, getChromeContentWidth(120))[0]?.text).toContain('attempt 6');
-
-    addEvent(makeRetry({ taskId: taskId('T001'), attempt: 1, lineageAttempt: 7 }));
-    const retried = deriveBuildProgress(input({ tasks: runViewStore.get().briefs }));
-    expect(retried.attempt).toBe(7);
-    addEvent({
-      type: 'implementer_generate_running',
-      ts: NOW,
-      phase: 'implementing',
-      taskId: taskId('T001'),
-      lineageAttempt: 8,
-    });
-    const consulted = deriveBuildProgress(input({ tasks: runViewStore.get().briefs }));
-    expect(consulted.attempt).toBe(8);
-    expect(buildProgressRows(consulted, getChromeContentWidth(120))[0]?.text).toContain(
-      'attempt 8',
-    );
-    addEvent({
-      type: 'implementer_generate_running',
-      ts: NOW + 1,
-      phase: 'implementing',
-      taskId: taskId('T001'),
-    });
-    expect(runViewStore.get().briefs).toMatchObject({ currentAttempt: 8 });
-    resetWorkflow();
   });
 
   it('names the seat and what it is doing, and no usage beside them', () => {
@@ -1155,17 +1148,14 @@ describe('buildProgressRows', () => {
     },
   );
 
-  it('carries count states, separators and attempts as separate tones', () => {
+  it('carries count states and separators as separate tones', () => {
     const progress = deriveBuildProgress(
       input({
-        tasks: tasksState(
-          [
-            { id: 'T001', title: 'One', status: 'done' },
-            { id: 'T002', title: 'Two', status: 'escalated' },
-            { id: 'T003', title: 'Three', status: 'failed' },
-          ],
-          { currentAttempt: 2 },
-        ),
+        tasks: tasksState([
+          { id: 'T001', title: 'One', status: 'done' },
+          { id: 'T002', title: 'Two', status: 'escalated' },
+          { id: 'T003', title: 'Three', status: 'failed' },
+        ]),
       }),
     );
     expect(buildProgressRows(progress, 160)[0]?.spans).toEqual([
@@ -1174,8 +1164,6 @@ describe('buildProgressRows', () => {
       { text: 'escalated', tone: 'warning' },
       { text: ' · 1 ', tone: 'textDim' },
       { text: 'failed', tone: 'error' },
-      { text: ' · ', tone: 'textDim' },
-      { text: 'attempt 2', tone: 'textDim' },
     ]);
   });
 
@@ -1495,18 +1483,11 @@ describe('buildProgressRows', () => {
     ).toHaveLength(2);
   });
 
-  it('3 lines at 80 and at 60 columns, with or without an attempt to state', () => {
-    const retry = input({
-      tasks: tasksState([{ id: 'T001', title: 'One', status: 'in_progress' }], {
-        currentAttempt: 2,
-      }),
-    });
+  it('3 lines at 80 and at 60 columns', () => {
     for (const width of [80, 60]) {
-      expect(buildProgressRows(deriveBuildProgress(input()), width)).toHaveLength(3);
-      expect(buildProgressRows(deriveBuildProgress(retry), width)).toHaveLength(3);
-      expect(buildProgressRows(deriveBuildProgress(retry), width)[0]?.text).toBe(
-        '0/1 briefs passed · attempt 2',
-      );
+      const rows = buildProgressRows(deriveBuildProgress(input()), width);
+      expect(rows).toHaveLength(3);
+      expect(rows[0]?.text).toBe('1/2 briefs passed');
     }
   });
 
@@ -1555,13 +1536,10 @@ describe('the build block during the final review', () => {
   // The review seat runs no brief: it has no attempt to count and no briefs left to estimate.
   function review(): DeriveBuildProgressInput {
     return input({
-      tasks: tasksState(
-        [
-          { id: 'T001', title: 'One', status: 'done' },
-          { id: 'T002', title: 'Two', status: 'done' },
-        ],
-        { currentAttempt: 1 },
-      ),
+      tasks: tasksState([
+        { id: 'T001', title: 'One', status: 'done' },
+        { id: 'T002', title: 'Two', status: 'done' },
+      ]),
       runView: phaseView('final-review'),
       operations: operationsState({
         active: runningOperation({ role: 'review', phase: 'final-review', runnerName: 'codex' }),
@@ -1591,7 +1569,6 @@ describe('the build block during the final review', () => {
 
   it('states no attempt', () => {
     const progress = deriveBuildProgress(review());
-    expect(progress.attempt).toBeNull();
     for (const width of [getChromeContentWidth(120), 80, 60]) {
       const block = buildProgressRows(progress, width)
         .map((row) => row.text)
@@ -1606,19 +1583,5 @@ describe('the build block during the final review', () => {
     for (const width of [getChromeContentWidth(120), 80, 60]) {
       expect(buildProgressRows(progress, width)).toHaveLength(buildProgressRowCount(width));
     }
-  });
-
-  it('paints the budgeted rows while a retry builds', () => {
-    const progress = deriveBuildProgress(
-      input({
-        tasks: tasksState([{ id: 'T001', title: 'One', status: 'in_progress' }], {
-          currentAttempt: 2,
-        }),
-      }),
-    );
-    for (const width of [getChromeContentWidth(120), 80, 60]) {
-      expect(buildProgressRows(progress, width)).toHaveLength(buildProgressRowCount(width));
-    }
-    expect(progress.attempt).not.toBeNull();
   });
 });

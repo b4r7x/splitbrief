@@ -1139,9 +1139,9 @@ describe('runApply integration review', { timeout: 60_000 }, () => {
     });
   });
 
-  // The run spent its first fix cycle on T002; the integration review spends the second, the
-  // count a no-progress halt after it names.
-  it('names the integration re-review after the fix cycle Apply spent, the count a halt names', async () => {
+  // The run's first internal fix cycle spent T002 on a fix brief; the integration review spends the
+  // second internal round, while the displayed count stays at the fix cycles that ran a fix brief.
+  it('names the integration re-review a re-run after the fix cycles that ran a fix brief', async () => {
     await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
       writeFileSync(join(run.ws, 'a.txt'), lines('ONE', 'two', 'three', 'four', 'five'));
       const state = {
@@ -1158,10 +1158,10 @@ describe('runApply integration review', { timeout: 60_000 }, () => {
       });
 
       expect(result.outcome).toBe('review');
-      const spent = fixCyclesOf(savedState(run)).used;
-      expect(spent).toBe(2);
+      const spent = fixCyclesOf(savedState(run));
+      expect(spent).toMatchObject({ used: 2, briefed: 1 });
       expect(events.filter((event) => event.type === 'review_fix_started')).toMatchObject([
-        { phase: 'final-review', cycle: spent, taskIds: [] },
+        { phase: 'final-review', cycle: 1, taskIds: [] },
       ]);
       const final = (ts: number, verdict: 'pass' | 'fail'): EngineEvent[] => [
         { type: 'review_started', ts, phase: 'final-review', scope: 'final', tool: 'codex' },
@@ -1201,7 +1201,7 @@ describe('runApply integration review', { timeout: 60_000 }, () => {
       expect(finals).toMatchObject([
         { outcome: 'failed', fixCyclesBefore: 0, rerunsBefore: 0 },
         { outcome: 'passed', fixCyclesBefore: 1, rerunsBefore: 0 },
-        { outcome: 'failed', fixCyclesBefore: spent, rerunsBefore: 0 },
+        { outcome: 'failed', fixCyclesBefore: 1, rerunsBefore: 1 },
       ]);
     });
   });

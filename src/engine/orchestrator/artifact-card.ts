@@ -91,12 +91,27 @@ export function publishArtifactWritten(input: {
   filename: string;
   text: string;
   briefs?: readonly Brief[] | undefined;
+  replaced: { text: string; briefs?: readonly Brief[] } | null;
 }): void {
   const { lineCount, excerpt, omittedCount, omittedUnit } = buildArtifactExcerpt(
     input.text,
     input.filename,
     input.briefs,
   );
+  if (input.replaced !== null) {
+    const previous = buildArtifactExcerpt(
+      input.replaced.text,
+      input.filename,
+      input.replaced.briefs,
+    );
+    const unchanged =
+      previous.lineCount === lineCount &&
+      previous.omittedCount === omittedCount &&
+      previous.omittedUnit === omittedUnit &&
+      previous.excerpt.length === excerpt.length &&
+      previous.excerpt.every((row, index) => row === excerpt[index]);
+    if (unchanged) return;
+  }
   if (excerpt.length === 0) return;
   input.bus.publish({
     type: 'artifact_written',

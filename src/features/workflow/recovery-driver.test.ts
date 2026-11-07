@@ -1562,6 +1562,7 @@ describe('createRecoveryDriver', () => {
     expect(result.state.fixCycles).toEqual({
       used: 2,
       notes: ['keep the error, log it and rethrow'],
+      briefed: 2,
     });
     // The correction never resets a brief; the fix work is a new appended task.
     expect(result.state.tasks[0]?.status).toBe('done');

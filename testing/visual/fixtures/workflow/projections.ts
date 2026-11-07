@@ -2092,7 +2092,7 @@ const applyRereviewProjection: WorkflowFixtureProjection = {
       type: 'review_fix_started',
       ts: FIXED_TS + 7_000,
       phase: 'final-review',
-      cycle: 2,
+      cycle: 1,
       taskIds: [],
     },
     {
@@ -2104,6 +2104,47 @@ const applyRereviewProjection: WorkflowFixtureProjection = {
     { type: 'workflow_resumed', ts: FIXED_TS + 8_000, phase: 'final-review', inProcess: true },
     finalReviewStarted(FIXED_TS + 8_100, CODEX_REVIEW_SEAT),
     reviewCheck(FIXED_TS + 8_200, REVIEW_CHECK_TYPECHECK, { status: 'running' }),
+  ],
+};
+
+const REVIEW_VERIFY_RERUN_FAILED_REVIEW_TS = FIXED_TS + 4_000;
+
+const reviewVerifyRerunProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-review-verify-rerun'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  config: { reviewer: CODEX_REVIEW_SEAT },
+  events: [
+    ...reviewFixCyclesProjection.events.slice(
+      0,
+      reviewFixCyclesProjection.events.findIndex(
+        (event) =>
+          event.type === 'review_completed' && event.ts === REVIEW_VERIFY_RERUN_FAILED_REVIEW_TS,
+      ) + 1,
+    ),
+    {
+      type: 'review_fix_started',
+      ts: FIXED_TS + 4_100,
+      phase: 'implementing',
+      cycle: 0,
+      taskIds: [],
+    },
+    finalReviewStarted(FIXED_TS + 4_200, CODEX_REVIEW_SEAT),
+    reviewCheck(FIXED_TS + 4_300, REVIEW_CHECK_TYPECHECK, { status: 'done', passed: true }),
+    finalReviewCompleted({
+      ts: FIXED_TS + 4_800,
+      duration: 600,
+      verdict: 'pass',
+      seat: CODEX_REVIEW_SEAT,
+    }),
+    {
+      type: 'workflow_complete',
+      ts: FIXED_TS + 4_800,
+      phase: 'complete',
+      review: 'passed',
+      completedTasks: 3,
+    },
   ],
 };
 
@@ -2737,28 +2778,32 @@ const PLAN_CARD_PLAN = makePlanProposal({
   ],
 });
 
+function planCardTasksPlanned(ts: number): TasksPlannedEvent {
+  return {
+    type: 'tasks_planned',
+    ts,
+    phase: 'reviewing-plan',
+    tasks: PLAN_CARD_PLAN.tasks.map((spec, index) => {
+      const task = taskFromSpec(spec, VISUAL_FIXTURE_PROJECT_DIR);
+      return {
+        id: task.id,
+        title: task.title,
+        index,
+        file: task.suggestedFiles[0],
+        action: task.action,
+      };
+    }),
+    total: PLAN_CARD_PLAN.tasks.length,
+  };
+}
+
 const planCardProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-plan-card'),
   feature: WORKFLOW_FEATURE,
   inputMode: 'review',
   sidebarVisible: true,
   events: [
-    {
-      type: 'tasks_planned',
-      ts: FIXED_TS,
-      phase: 'reviewing-plan',
-      tasks: PLAN_CARD_PLAN.tasks.map((spec, index) => {
-        const task = taskFromSpec(spec, VISUAL_FIXTURE_PROJECT_DIR);
-        return {
-          id: task.id,
-          title: task.title,
-          index,
-          file: task.suggestedFiles[0],
-          action: task.action,
-        };
-      }),
-      total: PLAN_CARD_PLAN.tasks.length,
-    },
+    planCardTasksPlanned(FIXED_TS),
     {
       type: 'workflow_started',
       ts: FIXED_TS,
@@ -2907,6 +2952,27 @@ const planCompiledProjection: WorkflowFixtureProjection = {
       ...buildArtifactExcerpt(formatTasks(PLAN_CARD_TASKS), 'tasks.md', PLAN_CARD_TASKS),
     },
   ],
+};
+
+const planCardEditedProjection: WorkflowFixtureProjection = {
+  ...planCompiledProjection,
+  scenarioId: scenarioId('workflow-plan-card-edited'),
+  inputMode: 'review',
+  events: [
+    ...planCompiledProjection.events,
+    planCardTasksPlanned(FIXED_TS + 250),
+    { type: 'plan_card_opened', ts: FIXED_TS + 300, phase: 'reviewing-plan' },
+    {
+      type: 'plan_regenerated',
+      ts: FIXED_TS + 400,
+      phase: 'reviewing-plan',
+      comment: '(edited plan.json)',
+    },
+    planCardTasksPlanned(FIXED_TS + 450),
+    { type: 'plan_card_opened', ts: FIXED_TS + 500, phase: 'reviewing-plan' },
+  ],
+  reviewArtifact: 'plan',
+  ...(planCardProjection.review !== undefined && { review: planCardProjection.review }),
 };
 
 const questionProjection: WorkflowFixtureProjection = {
@@ -8328,6 +8394,7 @@ const projections = [
   planningPathNoticeProjection,
   startReadinessWarningProjection,
   planCompiledProjection,
+  planCardEditedProjection,
   firstBriefAfterPlanProjection,
   // The same brief while its API seat check has run twelve seconds (held by the registry).
   {
@@ -8429,6 +8496,7 @@ const projections = [
   reviewStuckPlannerProjection,
   rejectedRerunProjection,
   applyRereviewProjection,
+  reviewVerifyRerunProjection,
   completeAfterFixTasksProjection,
   reviewFixNoChangeProjection,
   finalReviewProjection,
