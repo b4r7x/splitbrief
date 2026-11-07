@@ -136,6 +136,8 @@ describe('Command Code role adapters', () => {
       '--trust',
       '--skip-onboarding',
       '--no-auto-update',
+      '--max-turns',
+      '2147483647',
       '--permission-mode',
       'plan',
     ]);
@@ -150,8 +152,22 @@ describe('Command Code role adapters', () => {
       '--trust',
       '--skip-onboarding',
       '--no-auto-update',
+      '--max-turns',
+      '2147483647',
       '--yolo',
     ]);
+  });
+
+  it('turns the tool turn cap off on every planner and implementer vector', () => {
+    for (const args of [
+      plannerArgs(),
+      plannerArgs({ model: 'deepseek/deepseek-v4-flash', effort: 'high' }),
+      implementerArgs(),
+      implementerArgs({ model: 'deepseek/deepseek-v4-flash', effort: 'low' }),
+    ]) {
+      const at = args.indexOf('--max-turns');
+      expect(args.slice(at, at + 2)).toEqual(['--max-turns', '2147483647']);
+    }
   });
 
   it('appends -m only when a model is configured', () => {
@@ -184,6 +200,10 @@ describe('Command Code role adapters', () => {
     expect(implementerArgs({ configuredArgs: ['--verbose'] })).toEqual([
       ...implementerBase,
       '--verbose',
+    ]);
+    expect(implementerArgs({ configuredArgs: ['--max-turns', '50'] }).slice(-2)).toEqual([
+      '--max-turns',
+      '50',
     ]);
   });
 

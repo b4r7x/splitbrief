@@ -83,10 +83,10 @@ Timeouts:
 
 - binary `cmd` · version `cmd --version` · auth `cmd status` · models `cmd --list-models` (`vendor/model`) · effort `low|medium|high`
 <!-- generated: recipe:command-code -->
-- implementer: `nohup sh -c 'cmd -p --output-format json --trust --skip-onboarding --no-auto-update --yolo -m $M --effort $E < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- implementer (no model): `nohup sh -c 'cmd -p --output-format json --trust --skip-onboarding --no-auto-update --yolo < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- reviewer: `nohup sh -c 'cmd -p --output-format json --trust --skip-onboarding --no-auto-update --permission-mode plan -m $M --effort $E < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- reviewer (no model): `nohup sh -c 'cmd -p --output-format json --trust --skip-onboarding --no-auto-update --permission-mode plan < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- implementer: `nohup sh -c 'cmd -p --output-format json --trust --skip-onboarding --no-auto-update --max-turns 2147483647 --yolo -m $M --effort $E < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- implementer (no model): `nohup sh -c 'cmd -p --output-format json --trust --skip-onboarding --no-auto-update --max-turns 2147483647 --yolo < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- reviewer: `nohup sh -c 'cmd -p --output-format json --trust --skip-onboarding --no-auto-update --max-turns 2147483647 --permission-mode plan -m $M --effort $E < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- reviewer (no model): `nohup sh -c 'cmd -p --output-format json --trust --skip-onboarding --no-auto-update --max-turns 2147483647 --permission-mode plan < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 <!-- /generated -->
 - `--permission-mode auto-accept` is not enough in `-p` invocation (verified on 1.50.1: every write and shell tool answers `requires permissions. Use --yolo`); `--yolo` is the headless write flag. The implementer recipe was exercised end-to-end on 1.50.1 on 2026-09-08.
 - terminal record: the final `result` line of the NDJSON stream; its `finalText` field is the final text. Exit 8 = the `--max-turns` cap → failure `turn cap hit`.

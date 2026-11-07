@@ -120,6 +120,7 @@
 
 ### Fixed
 
+- Command Code no longer stops a build, plan or review call after 100 turns. To set a turn cap, add `--max-turns` to the seat `args`.
 - A CLI call whose tool already exited keeps its answer, or its own error, when the call's `timeout` passes while SPLITBRIEF still closes the link that carries your messages to the tool, such as the OpenCode server. Before, the call ended as a timeout and the answer was lost.
 - A failed review with no blocking finding now says how many criteria no check verified.
 - A check that two review claims share now runs and shows once.

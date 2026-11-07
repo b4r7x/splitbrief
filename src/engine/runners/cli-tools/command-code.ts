@@ -11,6 +11,9 @@ const COMMAND_CODE_ID = 'command-code' as const;
 const COMMAND_CODE_COMMAND = 'cmd' as const;
 const COMMAND_CODE_PROMPT_TRANSPORT = Object.freeze({ kind: 'stdin' } as const);
 const COMMAND_CODE_VERSION_ARGS = Object.freeze(['--version', '--no-auto-update'] as const);
+// `cmd -p` stops after 100 turns and `--max-turns` takes only a positive integer, so the
+// largest int32 turns the cap off. A configured `--max-turns` comes later and wins.
+const COMMAND_CODE_NO_TURN_CAP = '2147483647';
 
 export const COMMAND_CODE_PROTECTED_FLAGS = new Set([
   '-p',
@@ -68,6 +71,8 @@ function plannerBaseArgs(input: CommandCodePlannerBuildInput): string[] {
     '--trust',
     '--skip-onboarding',
     '--no-auto-update',
+    '--max-turns',
+    COMMAND_CODE_NO_TURN_CAP,
     '--permission-mode',
     'plan',
     ...(input.model === undefined ? [] : ['-m', input.model]),
@@ -83,6 +88,8 @@ function implementerBaseArgs(input: CommandCodeImplementerBuildInput): string[] 
     '--trust',
     '--skip-onboarding',
     '--no-auto-update',
+    '--max-turns',
+    COMMAND_CODE_NO_TURN_CAP,
     // `--permission-mode auto-accept` still prompts for every write and shell call in
     // `-p` mode (cmd 1.50.1 answers "requires permissions. Use --yolo"); `--yolo` is the
     // headless write flag.
