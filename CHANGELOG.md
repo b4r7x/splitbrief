@@ -43,6 +43,8 @@
 
 ### Changed
 
+- A recovery answer that continues the run no longer adds a `Run continued` row under its Recovery row.
+- A review result now puts one blank row between two findings.
 - **Supported Node.js versions.** SPLITBRIEF supports Node.js 22 and Node.js 24, and the package declares that range.
 - **Scope is guidance.** A brief's files are suggestions. The implementer may edit another ordinary project file that the change needs, and SPLITBRIEF records it. Only a protected path asks: dependency manifests and lockfiles, `.git` and `.splitbrief`, CI configuration, and env or key files. It asks once per path per run.
 - **A failed check goes straight to the planner.** A brief has no local retry before its consult. A correction that you send while the checks run goes to the next attempt. When the checks pass, the build tool gets one more attempt for that correction. `workflow.max_retries` is retired.
@@ -120,6 +122,9 @@
 
 ### Fixed
 
+- A BUILD call that retries after a network or server failure no longer shows a `BUILD failed` row before each retry.
+- `--plain` now prints a `retrying:` line each time a seat retries after a network or server failure.
+- A message sent before a brief starts now says that BUILD reads it when its call starts.
 - Command Code no longer stops a build, plan or review call after 100 turns. To set a turn cap, add `--max-turns` to the seat `args`.
 - A CLI call whose tool already exited keeps its answer, or its own error, when the call's `timeout` passes while SPLITBRIEF still closes the link that carries your messages to the tool, such as the OpenCode server. Before, the call ended as a timeout and the answer was lost.
 - A failed review with no blocking finding now says how many criteria no check verified.
@@ -144,7 +149,7 @@
 - A brief that you stop during its attempt after the planner's guidance gets that guidance again when it continues. Before, the continued attempt ran without it.
 - A finished answer is kept when its CLI tool does not exit after it, as Antigravity can do. SPLITBRIEF gives the tool two seconds to exit by itself, then stops it, and the call ends with that answer. A `timeout` or an idle cut that comes after the answer no longer discards it. Before, the call did not end, or it failed at its `timeout` and the answer was lost.
 - On a short terminal, a planner question that hides rows shows `↑ more` or `↓ more`, also in a panel of one row. While you write an answer to a planner question, the question stays above or beside the answer field. Before, a short panel showed one choice and no sign of the others, or only `›` and an empty answer field.
-- At the start of the build and between two briefs, the composer, the line under it and `/queue show` name the brief that reads a message for BUILD, for example `Message BUILD on T002 · read when its call ends…`, as the transcript does. Before, they named no brief until that brief started.
+- At the start of the build and between two briefs, the composer, the line under it and `/queue show` name the brief that reads a message for BUILD, for example `Message BUILD on T002 · read when its call starts…`, as the transcript does. Before, they named no brief until that brief started.
 - When Apply merges your checkout edits and runs the checks again, a check whose failures are all red at the run base too no longer counts as a failure of the run. The review reads only the new failures, listed apart from the pre-existing ones, and Accept as is no longer records a pre-existing failure as an accepted finding.
 - While a brief check, or a plan check before the final review, waits for the same command at the run base, the build block names that base command with its clock, as it does for a reviewer check. Before, it showed the check with a clock that kept counting after its command ended.
 - A retry no longer tells the implementer that its earlier work was discarded when the brief's files cannot be compared with its start, for example after a rewrite of the Git history.
@@ -282,7 +287,7 @@
 - OpenCode 2 signed in with `opencode auth login` now reads as signed in. Before, the model picker marked its `opencode/…` models `needs sign-in`, and a run on them did not start, with "OpenCode CLI is not signed in". Its models on the other providers it is signed in to now read `signed in · stored credential` instead of `available`.
 - Session options, the command palette, help and `/` completion no longer offer End run while an Apply is unfinished; restore or retry Apply first.
 - When a run continues into Apply, the header keeps Plan, Build and Review marked done and adds the Apply stage: `✗ Apply` while an Apply halt waits for you, and Apply as the current stage while Apply runs. Before, the header showed `○ Plan → ○ Build → ○ Review`, as if the run had not started.
-- After **Re-run Apply** or **Restore backup** on an Apply halt, the transcript shows one Recovery row, such as `Recovery  Re-run Apply → continued`, then `Run continued`. Before, it split the choice and its outcome into two Recovery rows and named **Re-run Apply** as *Try again*.
+- After **Re-run Apply** or **Restore backup** on an Apply halt, the transcript shows one Recovery row, such as `Recovery  Re-run Apply → continued`. Before, it split the choice and its outcome into two Recovery rows and named **Re-run Apply** as *Try again*.
 - **Re-run Apply** finishes after an Apply was cut off and its re-run stopped part way. Before, the next **Re-run Apply** stopped with an error, and **Restore backup** followed by Apply could write leftover temporary files into your checkout.
 - Backspace in the plan.json editor deletes the character before the caret, and Alt+Backspace or Ctrl+Backspace the word before it, as in the composer. Before, they deleted forward.
 - A test check that names a command instead of a test file now goes back to the planner or the reviewer for one correction before any brief runs. Before, such a check in a fix brief could not run, and the run stopped at the final review with only End run to get out.

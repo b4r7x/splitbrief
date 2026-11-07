@@ -410,7 +410,8 @@ describe('e2e: seat down switched from the recovery menu', { timeout: 150_000 },
     try {
       await press('\u001B[A');
       await press('\r');
-      await vi.waitFor(() => expect(frame()).toContain('Run continued'));
+      // Run continued no longer follows a recovery answer; the Recovery row reads retried.
+      await vi.waitFor(() => expect(frame()).toContain('retried'));
       await vi.waitFor(() => expect(frame()).toContain('Change BUILD tool'), { timeout: 60_000 });
       expect(engine).toHaveBeenCalledTimes(1);
       expect(lifecycleStore.get().status).toBe('running');
@@ -485,7 +486,8 @@ describe('e2e: seat down switched from the recovery menu', { timeout: 150_000 },
         writeFileSync(codexHold, '');
         await press('\u001B[A');
         await press('\r');
-        await vi.waitFor(() => expect(frame()).toContain('Run continued'));
+        // Run continued no longer follows a recovery answer; the Recovery row reads retried.
+        await vi.waitFor(() => expect(frame()).toContain('retried'));
         expect(engine).toHaveBeenCalledTimes(1);
         const current = configStore.get().config;
         if (current === null) throw new Error('the screen loaded no config');

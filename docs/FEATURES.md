@@ -583,7 +583,7 @@ Enter with text queues a message for the seat that reads it next: the seat of th
 | Stage | Placeholder |
 |---|---|
 | PLAN | `Message PLAN · read at its next call…` |
-| BUILD | `Message BUILD on T003 · read when its call ends…` |
+| BUILD | `Message BUILD on T003 · read when its call ends…`, or `· read when its call starts…` before the brief starts |
 | BUILD, while the brief's checks run | `Message BUILD on T003 · read after its checks…` |
 | REVIEW | `Message REVIEW · read at its verdict call…` |
 
@@ -595,7 +595,7 @@ The `queueCopy` function supplies the placeholder, byline, transcript labels, an
 |---|---|
 | Byline and `/queue show` | `1 queued for BUILD on T003` |
 | Feedback | `Queued for BUILD on T003 · ctrl+⏎ sends now` |
-| Transcript, pending | `Queued for BUILD on T003 · read when its call ends`, or `· read after its checks` while the brief's checks run |
+| Transcript, pending | `Queued for BUILD on T003 · read when its call ends`, or `· read after its checks` while the brief's checks run, or `· read when its call starts` before the brief starts |
 | Transcript, delivered | `Delivered to BUILD on T003` |
 
 When a steerable call of the receiving seat is attached, SPLITBRIEF offers the message to that running call. The seat reads it after its current tool. `steerable_call` events tell the UI which call can receive messages. One copy function supplies these texts:
@@ -609,7 +609,7 @@ When a steerable call of the receiving seat is attached, SPLITBRIEF offers the m
 
 The byline stays `1 queued for BUILD on T003` until the first delivery event removes that message from the queued count. PLAN and REVIEW use the same byline pattern. Without a matching steerable call, the copy in the first table stays unchanged.
 
-`message_queued` has optional `steerable: boolean`. It records whether the queue captured a matching call for this submission. The transcript uses this saved value to select the pending row's delivery timing.
+`message_queued` has optional `steerable: boolean`. It records whether the queue captured a matching call for this submission. The transcript uses this saved value to select the pending row's delivery timing. It also carries optional `starting: true` when BUILD has not started the brief. The pending row then reads `read when its call starts`.
 
 `message_queued` and `queue_drained` supply the transcript's optional `seat` and `taskId`. A mid-call delivery adds `via: 'mid-call'` to `queue_drained`. Older events without these fields still render. `/queue show` reports the queued count. `/queue clear` removes only messages awaiting first delivery. See [Queued count](./ENGINE.md#queued-count) and [Delivery to a running call](./ENGINE.md#delivery-to-a-running-call) for state fields and delivery outcomes.
 

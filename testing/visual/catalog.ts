@@ -1385,6 +1385,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-final-review-findings',
+      title: 'Workflow · final review with blocking findings and set aside',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'final-review-findings',
+        title: 'Final review with blocking findings and set aside',
+        kind: 'review',
+        marker: 'Blocking F1',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Review transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-final-review-plan-check',
       title: 'Workflow · final review running after its plan check',
       surface: screenSurface('workflow'),
@@ -2830,6 +2846,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Planning transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-build-seat-retry',
+      title: 'Workflow · implementation retries a BUILD call after a network or server failure',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'build-seat-retry',
+        title: 'Implementation shows each BUILD retry as a dim row',
+        kind: 'implementation',
+        marker: 'retry 2 of 10',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),

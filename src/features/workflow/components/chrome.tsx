@@ -140,6 +140,9 @@ export function WorkflowFooter({
   const running = lifecycleStore.use((state) => state.status === 'running');
   const steerableSeat = lifecycleStore.use((state) => state.steerableCall?.seat ?? null);
   const taskId = runViewStore.use((view) => selectBuildMessageBrief(view.briefs)?.id);
+  const starting = runViewStore.use(
+    (view) => selectBuildMessageBrief(view.briefs)?.status === 'pending',
+  );
   const stopping = stopStore.use((state) => state.intent !== 'none');
   const reviewing = operationsStore.use(selectScheduledReview);
   const placeholder = queuePlaceholder({
@@ -150,6 +153,7 @@ export function WorkflowFooter({
     reviewing,
     taskId,
     steerableSeat,
+    starting,
   });
   // A slash typed while a panel holds the keys is a command: the composer takes the whole read, so
   // a pasted `/settings` arrives in one piece, and the screen moves the keys to it.

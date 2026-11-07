@@ -873,6 +873,8 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     seat: z.enum(CREW_SEAT_IDS).optional(),
     taskId: z.string().optional(),
     steerable: z.boolean().optional(),
+    /** BUILD has not started the brief, so it reads the message when the brief's first call starts. */
+    starting: z.boolean().optional(),
   }),
   phaseEvent('message_injected_native').extend({ id: z.string(), preview: z.string().optional() }),
   phaseEvent('queue_drained').extend({

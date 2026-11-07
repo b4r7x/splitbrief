@@ -696,7 +696,14 @@ const checkpointPredicates = [
     checkpointId('recovery-resolved-dependency-skip'),
     recoveryRows(['Recovery  Skip task', 'skipped'], ['Recovery  Dependency blocked']),
   ],
-  [checkpointId('recovery-resolved-apply-retry'), includesAll('Run continued')],
+  [
+    checkpointId('recovery-resolved-apply-retry'),
+    // The old check waited for Run continued; the Recovery row now says the run went on.
+    (context) =>
+      recoveryRows(['Recovery  Re-run Apply', 'continued'])(context) &&
+      excludesAll('Run continued')(context) &&
+      !workflowTranscriptText().includes('Run continued'),
+  ],
   [checkpointId('review-fix'), includesAll()],
   [
     checkpointId('review-after-pause'),
@@ -785,6 +792,10 @@ const checkpointPredicates = [
   ],
   [checkpointId('final-review'), includesAll('3/3 briefs passed', 'Review · OpenAI Codex CLI')],
   [
+    checkpointId('final-review-findings'),
+    includesTranscript('Blocking F1', 'Blocking F2', 'Set aside V6.1'),
+  ],
+  [
     checkpointId('final-review-plan-check'),
     includesAll('Final review', 'Review · OpenAI Codex CLI'),
   ],
@@ -860,7 +871,10 @@ const checkpointPredicates = [
   [checkpointId('validation'), includesAll('Validate', 'test skipped')],
   [checkpointId('planner-commands-refused'), includesAll('Validation')],
   [checkpointId('touched-not-suggested'), includesAll('also changed')],
-  [checkpointId('between-briefs'), includesAll('1/3 briefs passed', 'Message BUILD on T902')],
+  [
+    checkpointId('between-briefs'),
+    includesAll('1/3 briefs passed', 'Message BUILD on T902', 'read when its call starts'),
+  ],
   [checkpointId('plan-check-refused'), includesAll('T901 check K2', 'refused')],
   [checkpointId('plan-check-not-run'), includesAll('T901 check K4 · not')],
   [checkpointId('plan-check-missing-program'), includesAll('T901 check K4 · npm test', 'mocha')],
@@ -1413,6 +1427,12 @@ const checkpointPredicates = [
   [checkpointId('planning-seat-wait'), includesAll('Waiting for Claude Code')],
   [checkpointId('final-review-seat-wait'), includesAll('Waiting for OpenAI Codex CLI')],
   [checkpointId('planning-seat-retry'), includesAll('Network or server failure', 'retry 1 of 10')],
+  [
+    checkpointId('build-seat-retry'),
+    (context) =>
+      includesAll('retry 2 of 10')(context) &&
+      excludesAll('BUILD failed', 'BUILD  failed')(context),
+  ],
   [
     checkpointId('final-review-seat-retry'),
     includesAll('Network or server failure', 'retry 1 of 10', 'Review input trimmed'),

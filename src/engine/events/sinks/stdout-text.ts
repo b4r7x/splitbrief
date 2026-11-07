@@ -1,10 +1,11 @@
+import { CREW_SEAT_LABELS } from '../../../core/crew/identity.js';
 import { baseSplit, baseSplitNames } from '../../../core/review/base-split.js';
 import { fixCheckVerdict } from '../../../core/review/fix-task.js';
 import { stuckAnswerWords } from '../../../core/review/stuck.js';
 import { setAsideLine } from '../../../core/review/verdict.js';
 import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
 import { EMPTY_RUN_VIEW, reduceRunView, type RunView } from '../../../core/run-view/reduce.js';
-import { seatWaitParts } from '../../../core/sessions/seat-wait-line.js';
+import { seatRetrySentence, seatWaitParts } from '../../../core/sessions/seat-wait-line.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { checksSummary } from '../../../core/validation/checks-summary.js';
 import { planCheckName } from '../../../core/validation/plan-check-name.js';
@@ -175,6 +176,7 @@ function briefChecks(view: RunView, taskId: string): string {
  *   Render workflow-x: rendered · 14.2s | failed · 14.2s
  *   Render workflow-x: refused (<detail>) | not run (<detail>)
  *   stalled: implementer (opencode) · no output for 5:00
+ *   retrying: BUILD · Network or server failure · retry 1 of 10 in 2s
  *   review: passed | failed [(<n> blocking)] | no verdict | stopped
  *   review: Set aside V6.1: <reason>
  *   review: stuck after T004 · planner: new fix brief T006 · <diagnosis>
@@ -228,6 +230,11 @@ export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSin
       }
       case 'runner_call_stalled':
         write(stalledLine(bounded));
+        return;
+      case 'seat_retry':
+        write(
+          `retrying: ${CREW_SEAT_LABELS[bounded.seat]}${SOFT_SEP}${seatRetrySentence(bounded)}`,
+        );
         return;
       case 'task_completed':
         write(`task ${bounded.taskId}: done (${briefChecks(view, bounded.taskId)})`);

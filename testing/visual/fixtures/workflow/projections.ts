@@ -304,6 +304,7 @@ const WORKFLOW_REVIEW_ID = scenarioId('workflow-review');
 const WORKFLOW_REVIEW_FIX_ID = scenarioId('workflow-review-fix');
 const WORKFLOW_REVIEW_FIX_NO_CHANGE_ID = scenarioId('workflow-review-fix-no-change');
 const WORKFLOW_FINAL_REVIEW_ID = scenarioId('workflow-final-review');
+const WORKFLOW_FINAL_REVIEW_FINDINGS_ID = scenarioId('workflow-final-review-findings');
 const WORKFLOW_APPROVAL_CONFIRM_ID = scenarioId('workflow-approval-confirm');
 const WORKFLOW_QUESTION_ID = scenarioId('workflow-question');
 const WORKFLOW_PAUSED_MID_BRIEF_ID = scenarioId('workflow-paused-mid-brief');
@@ -1204,9 +1205,21 @@ const touchedNotSuggestedProjection: WorkflowFixtureProjection = {
 const betweenBriefsProjection: WorkflowFixtureProjection = {
   ...touchedNotSuggestedProjection,
   scenarioId: scenarioId('workflow-between-briefs'),
-  events: touchedNotSuggestedProjection.events.filter(
-    (event) => event.type !== 'task_touched_not_suggested',
-  ),
+  events: [
+    ...touchedNotSuggestedProjection.events.filter(
+      (event) => event.type !== 'task_touched_not_suggested',
+    ),
+    {
+      type: 'message_queued',
+      ts: FIXED_TS + 501,
+      phase: 'implementing',
+      id: 'visual-build-message',
+      seat: 'build',
+      taskId: WORKFLOW_FIXTURE_TASK_ID_2,
+      starting: true,
+      preview: 'Use the new date helper',
+    },
+  ],
 };
 
 // A plan names `npm run lint`, and the run no longer approves the plan, so the plan command policy
@@ -1776,6 +1789,7 @@ function finalReviewCompleted({
   verdict,
   seat,
   setAside,
+  blockingFindings,
   findings,
 }: {
   ts: number;
@@ -1783,6 +1797,7 @@ function finalReviewCompleted({
   verdict: 'pass' | 'fail';
   seat: Pick<EngineEventOf<'review_started'>, 'tool' | 'model'>;
   setAside?: EngineEventOf<'review_completed'>['setAside'];
+  blockingFindings?: EngineEventOf<'review_completed'>['blockingFindings'];
   findings?: EngineEventOf<'review_completed'>['findings'];
 }): EngineEventOf<'review_completed'> {
   return {
@@ -1790,6 +1805,7 @@ function finalReviewCompleted({
     type: 'review_completed',
     verdict,
     findings: findings ?? { blocking: verdict === 'fail' ? 1 : 0, minor: 0, outOfScope: 0 },
+    ...(blockingFindings !== undefined && { blockingFindings }),
     ...(setAside !== undefined && { setAside }),
     duration,
   };
@@ -2302,6 +2318,44 @@ const finalReviewProjection: WorkflowFixtureProjection = {
         attempt: 1,
         sequence: 0,
       },
+    ];
+  },
+};
+
+const finalReviewFindingsProjection: WorkflowFixtureProjection = {
+  scenarioId: WORKFLOW_FINAL_REVIEW_FINDINGS_ID,
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  config: { reviewer: CODEX_REVIEW_SEAT },
+  get events(): EngineEvent[] {
+    return [
+      ...everyBriefPassed(),
+      finalReviewStarted(FIXED_TS + 450, CODEX_REVIEW_SEAT),
+      finalReviewCompleted({
+        ts: FIXED_TS + 500,
+        duration: 30_600,
+        verdict: 'fail',
+        seat: CODEX_REVIEW_SEAT,
+        blockingFindings: [
+          {
+            id: 'F1',
+            text: 'The test file does not contain the four examples of criterion 5 described in the specification.',
+          },
+          {
+            id: 'F2',
+            text: 'npm test failed: 2 tests.',
+          },
+        ],
+        setAside: [
+          {
+            id: 'V6.1',
+            reason: 'Transient 60 s timeout, passes in 50 s',
+          },
+        ],
+        findings: { blocking: 2, minor: 0, outOfScope: 0 },
+      }),
+      { type: 'workflow_complete', ts: FIXED_TS + 500, phase: 'complete', review: 'failed' },
     ];
   },
 };
@@ -4550,7 +4604,7 @@ const resolvedDependencySkipRecoveryProjection: WorkflowFixtureProjection = {
 
 /**
  * Apply stopped part way and the person chose Re-run Apply. Apply settles the halt after the run
- * resumes, as a real run logs it; the transcript still reads one Recovery row, then the resume.
+ * resumes, as a real run logs it; the transcript reads one Recovery row and no resume row.
  */
 const resolvedApplyRetryRecoveryProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-recovery-resolved-apply-retry'),
@@ -6982,6 +7036,47 @@ const planningSeatRetryProjection: WorkflowFixtureProjection = {
   ],
 };
 
+// The BUILD call hit two network or server failures: each retry shows as a dim row in the transcript.
+const buildSeatRetryProjection: WorkflowFixtureProjection = {
+  ...implementationProjection,
+  scenarioId: scenarioId('workflow-build-seat-retry'),
+  events: [
+    ...implementationProjection.events,
+    {
+      type: 'implementer_generate_failed',
+      ts: FIXED_TS + 400,
+      phase: 'implementing',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      model: FIXED_RUNNER_MODEL,
+      error: 'getaddrinfo ENOTFOUND api.example.com',
+    },
+    {
+      type: 'seat_retry',
+      ts: FIXED_TS + 410,
+      phase: 'implementing',
+      seat: 'build',
+      attempt: 1,
+      delayMs: 2_000,
+    },
+    {
+      type: 'implementer_generate_failed',
+      ts: FIXED_TS + 2_500,
+      phase: 'implementing',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      model: FIXED_RUNNER_MODEL,
+      error: 'getaddrinfo ENOTFOUND api.example.com',
+    },
+    {
+      type: 'seat_retry',
+      ts: FIXED_TS + 2_510,
+      phase: 'implementing',
+      seat: 'build',
+      attempt: 2,
+      delayMs: 4_000,
+    },
+  ],
+};
+
 // The final review call trimmed its input and hit two network or server failures: one trim warning and two dim retry rows.
 const finalReviewSeatRetryProjection: WorkflowFixtureProjection = {
   ...finalReviewProjection,
@@ -8825,7 +8920,9 @@ const projections = [
   planningSeatWaitProjection,
   finalReviewSeatWaitProjection,
   planningSeatRetryProjection,
+  buildSeatRetryProjection,
   finalReviewSeatRetryProjection,
+  finalReviewFindingsProjection,
 ] as const;
 
 export const workflowFixtureProjections: ReadonlyMap<ScenarioId, WorkflowFixtureProjection> =

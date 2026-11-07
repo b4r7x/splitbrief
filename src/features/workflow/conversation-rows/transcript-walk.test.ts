@@ -127,7 +127,7 @@ describe('walkTranscript', () => {
       implementerTool: 'opencode',
     };
 
-    it('keeps one Recovery fold and shows the resume after it', () => {
+    it('keeps one Recovery fold and drops the redundant resume after its outcome', () => {
       const applyResolved: EngineEventOf<'recovery_resolved'> = {
         type: 'recovery_resolved',
         ts: 4_000,
@@ -143,6 +143,7 @@ describe('walkTranscript', () => {
         ),
       ];
 
+      // A recovery answer states its outcome in the Recovery row, so the started resume is dropped.
       expect(steps).toEqual([
         { kind: 'event', event: config, globalIndex: 3 },
         {
@@ -155,11 +156,10 @@ describe('walkTranscript', () => {
             resolved: applyResolved,
           },
         },
-        { kind: 'event', event: resumed, globalIndex: 2 },
       ]);
     });
 
-    it('shows the resume after the open fold when no outcome follows', () => {
+    it('drops the resume after the open fold when no outcome follows', () => {
       const halt: EngineEvent = {
         type: 'error',
         ts: 5_000,
@@ -170,6 +170,7 @@ describe('walkTranscript', () => {
         ...walkTranscript(groupEventsIntoSections([applyPrompted, applySelected, resumed, halt])),
       ];
 
+      // A resume started by a recovery choice is dropped even when no outcome follows.
       expect(steps).toEqual([
         {
           kind: 'recovery',
@@ -180,7 +181,6 @@ describe('walkTranscript', () => {
             selected: applySelected,
           },
         },
-        { kind: 'event', event: resumed, globalIndex: 2 },
         { kind: 'event', event: halt, globalIndex: 3 },
       ]);
     });
@@ -236,6 +236,7 @@ describe('walkTranscript', () => {
       ),
     ];
 
+    // The correction remains after the Recovery row, while the redundant resume is dropped.
     expect(steps).toEqual([
       {
         kind: 'recovery',
@@ -248,7 +249,225 @@ describe('walkTranscript', () => {
         },
       },
       { kind: 'event', event: correction, globalIndex: 2 },
-      { kind: 'event', event: resumed, globalIndex: 4 },
+    ]);
+  });
+
+  it('drops the resume that a recovery answer started, after its outcome', () => {
+    const prompt: EngineEventOf<'recovery_prompted'> = {
+      type: 'recovery_prompted',
+      ts: 1_000,
+      phase: 'implementing',
+      issueId: 'rec-1',
+      reason: 'runner-usage-limit',
+      headline: 'Balance spent on OpenCode CLI',
+      files: [],
+      affectedTaskIds: [],
+      availableActions: ['switch-seat'],
+      recommendedAction: 'switch-seat',
+      resumeCommand: 'splitbrief continue',
+    };
+    const selection: EngineEventOf<'recovery_action_selected'> = {
+      type: 'recovery_action_selected',
+      ts: 2_000,
+      phase: 'implementing',
+      issueId: prompt.issueId,
+      reason: prompt.reason,
+      action: 'switch-seat',
+      seat: 'build',
+    };
+    const correction: EngineEvent = {
+      type: 'user_message',
+      ts: 2_500,
+      phase: 'implementing',
+      text: 'Use deepseek-v4.1',
+    };
+    const resolvedContinued: EngineEventOf<'recovery_resolved'> = {
+      type: 'recovery_resolved',
+      ts: 3_000,
+      phase: 'implementing',
+      issueId: prompt.issueId,
+      reason: prompt.reason,
+      action: 'switch-seat',
+      seat: 'build',
+      outcome: 'continued',
+    };
+    const crewChangedSwitch: EngineEventOf<'seat_switched'> = {
+      type: 'seat_switched',
+      ts: 3_500,
+      phase: 'implementing',
+      seat: 'build',
+      from: { tool: 'opencode', model: 'deepseek/deepseek-flash' },
+      to: { tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash', variant: 'high' },
+      cause: 'crew-changed',
+      auto: false,
+      configRevision: 'test-revision',
+    };
+    const resume: EngineEvent = {
+      type: 'workflow_resumed',
+      ts: 4_000,
+      phase: 'implementing',
+    };
+
+    const steps = [
+      ...walkTranscript(
+        groupEventsIntoSections([
+          prompt,
+          selection,
+          correction,
+          resolvedContinued,
+          crewChangedSwitch,
+          resume,
+        ]),
+      ),
+    ];
+
+    expect(steps).toEqual([
+      {
+        kind: 'recovery',
+        recovery: {
+          firstIndex: 0,
+          issueId: prompt.issueId,
+          prompted: prompt,
+          selected: selection,
+          resolved: resolvedContinued,
+        },
+      },
+      { kind: 'event', event: correction, globalIndex: 2 },
+      { kind: 'event', event: crewChangedSwitch, globalIndex: 4 },
+    ]);
+  });
+
+  it('keeps Run continued for a stop between the answer and the resume', () => {
+    const prompt: EngineEventOf<'recovery_prompted'> = {
+      type: 'recovery_prompted',
+      ts: 1_000,
+      phase: 'implementing',
+      issueId: 'rec-2',
+      reason: 'runner-usage-limit',
+      headline: 'Balance spent on OpenCode CLI',
+      files: [],
+      affectedTaskIds: [],
+      availableActions: ['switch-seat'],
+      recommendedAction: 'switch-seat',
+      resumeCommand: 'splitbrief continue',
+    };
+    const selection: EngineEventOf<'recovery_action_selected'> = {
+      type: 'recovery_action_selected',
+      ts: 2_000,
+      phase: 'implementing',
+      issueId: prompt.issueId,
+      reason: prompt.reason,
+      action: 'switch-seat',
+      seat: 'build',
+    };
+    const stop: EngineEventOf<'turn_interrupted'> = {
+      type: 'turn_interrupted',
+      ts: 2_500,
+      phase: 'implementing',
+      source: 'user',
+      at: 'boundary',
+    };
+    const resume: EngineEvent = {
+      type: 'workflow_resumed',
+      ts: 3_000,
+      phase: 'implementing',
+    };
+
+    const steps = [...walkTranscript(groupEventsIntoSections([prompt, selection, stop, resume]))];
+
+    expect(steps).toEqual([
+      {
+        kind: 'recovery',
+        recovery: {
+          firstIndex: 0,
+          issueId: prompt.issueId,
+          prompted: prompt,
+          selected: selection,
+        },
+      },
+      { kind: 'event', event: stop, globalIndex: 2 },
+      { kind: 'event', event: resume, globalIndex: 3 },
+    ]);
+  });
+
+  it('keeps Run continued when cancelled between the answer and the resume', () => {
+    const prompt: EngineEventOf<'recovery_prompted'> = {
+      type: 'recovery_prompted',
+      ts: 1_000,
+      phase: 'implementing',
+      issueId: 'rec-3',
+      reason: 'runner-usage-limit',
+      headline: 'Balance spent on OpenCode CLI',
+      files: [],
+      affectedTaskIds: [],
+      availableActions: ['switch-seat'],
+      recommendedAction: 'switch-seat',
+      resumeCommand: 'splitbrief continue',
+    };
+    const selection: EngineEventOf<'recovery_action_selected'> = {
+      type: 'recovery_action_selected',
+      ts: 2_000,
+      phase: 'implementing',
+      issueId: prompt.issueId,
+      reason: prompt.reason,
+      action: 'switch-seat',
+      seat: 'build',
+    };
+    const cancel: EngineEventOf<'workflow_cancelled'> = {
+      type: 'workflow_cancelled',
+      ts: 2_500,
+      phase: 'implementing',
+      reason: 'user_cancelled',
+    };
+    const resume: EngineEvent = {
+      type: 'workflow_resumed',
+      ts: 3_000,
+      phase: 'implementing',
+    };
+
+    const steps = [...walkTranscript(groupEventsIntoSections([prompt, selection, cancel, resume]))];
+
+    expect(steps).toEqual([
+      {
+        kind: 'recovery',
+        recovery: {
+          firstIndex: 0,
+          issueId: prompt.issueId,
+          prompted: prompt,
+          selected: selection,
+        },
+      },
+      { kind: 'event', event: cancel, globalIndex: 2 },
+      { kind: 'event', event: resume, globalIndex: 3 },
+    ]);
+  });
+
+  it('keeps Run continued for a continue after a refused answer', () => {
+    const refused: EngineEventOf<'recovery_action_failed'> = {
+      type: 'recovery_action_failed',
+      ts: 2_100,
+      phase: 'implementing',
+      issueId: prompted.issueId,
+      reason: prompted.reason,
+      action: 'skip-current-task',
+      message: 'Failed to record skip evidence: EACCES',
+    };
+    const resume: EngineEvent = { type: 'workflow_resumed', ts: 9_000, phase: 'implementing' };
+
+    const steps = [
+      ...walkTranscript(
+        groupEventsIntoSections([
+          prompted,
+          { ...selected, action: 'skip-current-task' },
+          refused,
+          resume,
+        ]),
+      ),
+    ];
+
+    expect(steps.filter((step) => step.kind === 'event').map((step) => step.event)).toEqual([
+      refused,
+      resume,
     ]);
   });
 
@@ -857,5 +1076,128 @@ describe('walkTranscript after a crew change at a boundary', () => {
       stopped,
       continued,
     ]);
+  });
+});
+
+describe('a BUILD call that retries after a network or server failure', () => {
+  const T001 = taskId('T001');
+  const taskStart = makeTaskStart({ taskId: T001, ts: 1_000 });
+  const runningAttempt = (ts: number): EngineEventOf<'implementer_generate_running'> => ({
+    type: 'implementer_generate_running',
+    ts,
+    phase: 'implementing',
+    taskId: T001,
+    file: 'src/features/workflow/conversation-rows/transcript-walk.ts',
+  });
+  const failedAttempt = (ts: number): EngineEventOf<'implementer_generate_failed'> => ({
+    type: 'implementer_generate_failed',
+    ts,
+    phase: 'implementing',
+    taskId: T001,
+    error: 'getaddrinfo ENOTFOUND api.example.com',
+  });
+  const seatRetry = (attempt: number, ts: number): EngineEventOf<'seat_retry'> => ({
+    type: 'seat_retry',
+    ts,
+    phase: 'implementing',
+    seat: 'build',
+    attempt,
+    delayMs: 2_000 * attempt,
+  });
+
+  it('hides the failed row of each attempt that a BUILD retry follows', () => {
+    const firstRunning = runningAttempt(1_100);
+    const firstFailed = failedAttempt(1_200);
+    const firstRetry = seatRetry(1, 1_300);
+    const secondRunning = runningAttempt(3_300);
+    const secondFailed = failedAttempt(3_400);
+    const secondRetry = seatRetry(2, 3_500);
+    const thirdRunning = runningAttempt(7_500);
+    const done: EngineEventOf<'implementer_generate_done'> = {
+      type: 'implementer_generate_done',
+      ts: 7_600,
+      phase: 'implementing',
+      taskId: T001,
+      file: 'src/features/workflow/conversation-rows/transcript-walk.ts',
+      files: ['src/features/workflow/conversation-rows/transcript-walk.ts'],
+      diff: '',
+      linesAdded: 10,
+      linesRemoved: 0,
+      duration: 100,
+    };
+    const completed = makeTaskComplete({ taskId: T001, ts: 7_700 });
+    const events: EngineEvent[] = [
+      taskStart,
+      firstRunning,
+      firstFailed,
+      firstRetry,
+      secondRunning,
+      secondFailed,
+      secondRetry,
+      thirdRunning,
+      done,
+      completed,
+    ];
+
+    const eventSteps = [...walkTranscript(groupEventsIntoSections(events))].flatMap((step) =>
+      step.kind === 'event' ? [step.event] : [],
+    );
+
+    // Each BUILD attempt followed by a BUILD retry hides its failed row, while the retry rows remain.
+    expect(eventSteps.filter((event) => event.type === 'implementer_generate_failed')).toEqual([]);
+    expect(eventSteps.filter((event) => event.type === 'seat_retry')).toEqual([
+      firstRetry,
+      secondRetry,
+    ]);
+  });
+
+  it('keeps the failed row of the last attempt when no retry follows', () => {
+    const firstRunning = runningAttempt(1_100);
+    const firstFailed = failedAttempt(1_200);
+    const firstRetry = seatRetry(1, 1_300);
+    const secondRunning = runningAttempt(3_300);
+    const secondFailed = failedAttempt(3_400);
+    const events: EngineEvent[] = [
+      taskStart,
+      firstRunning,
+      firstFailed,
+      firstRetry,
+      secondRunning,
+      secondFailed,
+    ];
+
+    const eventSteps = [...walkTranscript(groupEventsIntoSections(events))].flatMap((step) =>
+      step.kind === 'event' ? [step.event] : [],
+    );
+
+    // The first failed attempt was followed by a retry, but the second failed attempt had no retry following it.
+    expect(eventSteps.filter((event) => event.type === 'implementer_generate_failed')).toEqual([
+      secondFailed,
+    ]);
+    expect(eventSteps.filter((event) => event.type === 'seat_retry')).toEqual([firstRetry]);
+  });
+
+  it('keeps a BUILD failed row that a REVIEW retry follows', () => {
+    const running = runningAttempt(1_100);
+    const buildFailed = failedAttempt(1_200);
+    const reviewRetry: EngineEventOf<'seat_retry'> = {
+      type: 'seat_retry',
+      ts: 1_300,
+      phase: 'final-review',
+      seat: 'review',
+      attempt: 1,
+      delayMs: 2_000,
+    };
+    const events: EngineEvent[] = [taskStart, running, buildFailed, reviewRetry];
+
+    const eventSteps = [...walkTranscript(groupEventsIntoSections(events))].flatMap((step) =>
+      step.kind === 'event' ? [step.event] : [],
+    );
+
+    // A REVIEW retry must not hide a BUILD failure.
+    expect(eventSteps.filter((event) => event.type === 'implementer_generate_failed')).toEqual([
+      buildFailed,
+    ]);
+    expect(eventSteps.filter((event) => event.type === 'seat_retry')).toEqual([reviewRetry]);
   });
 });

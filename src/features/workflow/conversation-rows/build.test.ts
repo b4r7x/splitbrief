@@ -462,7 +462,7 @@ describe('automatic recovery from the spent-balance smoke', () => {
     expect(rows.map(rowText).filter((text) => text !== '')).toEqual([
       `Recovery  Balance spent on OpenCode CLI${arrowSep()}continued on fallback  ctrl+d`,
       `BUILD  OpenCode CLI · DeepSeek V4.1 Flash · via deepseek${arrowSep()}OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go · high · automatic fallback`,
-      'Run continued',
+      // No Run continued row here: the Recovery row already says the run went on.
       'T001 Add wordCount to src/text.js  src/text.js (modify) · +1 file · OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go · high',
       'working on src/text.js…',
     ]);

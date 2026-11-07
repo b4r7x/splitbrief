@@ -35,6 +35,7 @@ import {
   compositeBlock,
   promptTextBlock,
   rowsBlock,
+  sectionSpacerBlock,
   wrappedSegmentsBlock,
   wholeSegmentsBlock,
   wrappedTextBlock,
@@ -319,8 +320,8 @@ export function eventRowBlock(options: {
             wholeSegmentsBlock(`${keyPrefix}-to`, destination, ctx.width, 'message'),
           ]);
     }
-    case 'review_completed':
-      return compositeBlock(keyPrefix, [
+    case 'review_completed': {
+      const cards: ConversationRowBlock[] = [
         ...(event.blockingFindings ?? []).map((finding, index) =>
           cardRowsBlock({
             keyPrefix: `${keyPrefix}-finding-${index}`,
@@ -342,7 +343,14 @@ export function eventRowBlock(options: {
             valueTone: 'textDim',
           }),
         ),
-      ]);
+      ].filter((block): block is ConversationRowBlock => block !== null);
+      const blocks: ConversationRowBlock[] = [];
+      for (const card of cards) {
+        if (blocks.length > 0) blocks.push(sectionSpacerBlock(card.key));
+        blocks.push(card);
+      }
+      return compositeBlock(keyPrefix, blocks);
+    }
     case 'task_reset':
       return cardRowsBlock({
         keyPrefix,
@@ -419,6 +427,7 @@ export function eventRowBlock(options: {
         taskId: event.type === 'message_queued' ? event.taskId : undefined,
         steerable: event.type === 'message_queued' && event.steerable,
         checking: event.phase === 'validating-task',
+        starting: event.type === 'message_queued' ? event.starting : undefined,
       });
       const header =
         event.type === 'message_injected_native'

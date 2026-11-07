@@ -53,6 +53,12 @@ describe('queuePlaceholder', () => {
     );
   });
 
+  it('names call-start timing for a pending BUILD brief', () => {
+    expect(
+      queuePlaceholder({ ...working, phase: 'implementing', taskId: 'T002', starting: true }),
+    ).toBe('Message BUILD on T002 · read when its call starts…');
+  });
+
   it('offers no BUILD call while the brief runs its checks: BUILD reads the message after them', () => {
     expect(queuePlaceholder({ ...working, phase: 'validating-task', taskId: 'T003' })).toBe(
       'Message BUILD on T003 · read after its checks…',

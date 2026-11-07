@@ -94,7 +94,9 @@ export function enqueueUserMessage({
   recordUserMessage({ projectDir, sessionId, bus, phase }, input, { queuedMessage: message });
   const preview = formatQueuedMessagePreview(message);
   const seat = messageSeat(phase, next.pendingScheduledReview !== undefined);
-  const taskId = seat === 'build' ? next.tasks[next.currentTaskIndex]?.id : undefined;
+  const brief = seat === 'build' ? next.tasks[next.currentTaskIndex] : undefined;
+  const taskId = brief?.id;
+  const starting = seat === 'build' && brief?.status === 'pending' ? true : undefined;
   bus.publish({
     type: 'message_queued',
     ts: Date.now(),
@@ -102,6 +104,7 @@ export function enqueueUserMessage({
     id: message.id,
     ...(seat !== null && { seat }),
     ...(taskId !== undefined && { taskId }),
+    ...(starting !== undefined && { starting }),
     ...(steerable !== undefined && { steerable }),
     ...(preview.length > 0 && { preview }),
   });

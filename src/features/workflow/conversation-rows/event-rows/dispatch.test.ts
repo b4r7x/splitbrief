@@ -339,6 +339,26 @@ describe('event row dispatch', () => {
       );
     }
   });
+
+  it('names the call start on a BUILD message queued before its brief starts', () => {
+    const text = eventRows({
+      event: {
+        type: 'message_queued',
+        ts: 1,
+        phase: 'implementing',
+        seat: 'build',
+        taskId: 'T002',
+        id: 'm-1',
+        starting: true,
+      },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 120, viewportRows: 20, streaming },
+    })
+      .map(rowText)
+      .join('\n');
+    expect(text).toBe('Queued for BUILD on T002 · read when its call starts');
+  });
   it('says a message queued while the brief runs its checks is read after them', () => {
     const text = eventRows({
       event: {
@@ -3766,6 +3786,8 @@ describe('review_completed rows', () => {
       expect.stringMatching(
         /^Blocking F1 +The test file does not contain the four examples of criterion 5\.$/,
       ),
+      // The old rows put the two cards with no gap; one blank row now separates them.
+      '',
       expect.stringMatching(/^Blocking V2 +npm test failed: 2 tests\.$/),
     ]);
     expect(
@@ -3776,6 +3798,35 @@ describe('review_completed rows', () => {
         ctx: { width: 120, viewportRows: 20, streaming },
       }),
     ).toEqual([]);
+  });
+
+  it('puts one blank row between two cards of a review result', () => {
+    const rows = eventRows({
+      event: {
+        ...completed([
+          { id: 'F1', text: 'The test file does not contain the four examples.' },
+          { id: 'F2', text: 'npm test failed.' },
+        ]),
+        setAside: [
+          { id: 'V6.1', reason: 'Transient timeout' },
+          { id: 'V6.2', reason: 'Pre-existing failure' },
+        ],
+      },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 40, viewportRows: 20, streaming },
+    });
+    expect(rows.map(rowText)).toEqual([
+      // The shared wrapper preserves the space at the wrap boundary.
+      'Blocking F1  The test file does not ',
+      'contain the four examples.',
+      '',
+      expect.stringMatching(/^Blocking F2 +npm test failed\.$/),
+      '',
+      expect.stringMatching(/^Set aside V6\.1 +Transient timeout$/),
+      '',
+      expect.stringMatching(/^Set aside V6\.2 +Pre-existing failure$/),
+    ]);
   });
 
   it('names each input the reviewer set aside, with its reason, after the blocking findings', () => {
@@ -3792,6 +3843,8 @@ describe('review_completed rows', () => {
     ]);
     expect(row({ ...completed([{ id: 'P2', text: 'Typecheck failed' }]), setAside })).toEqual([
       expect.stringMatching(/^Blocking P2 +Typecheck failed$/),
+      // The old rows put the two cards with no gap; one blank row now separates them.
+      '',
       expect.stringMatching(/^Set aside V6\.1 +Transient 60 s timeout, passes in 50 s$/),
     ]);
   });

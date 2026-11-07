@@ -77,4 +77,26 @@ describe('CLI reference plain output example', () => {
       line?.replace('OpenAI Codex CLI', '<tool>').replace(/resets .+$/, 'resets <clock>'),
     ).toBe(shape);
   });
+
+  it('lists the retrying line in the shape the sink writes', () => {
+    const shape = /^- `(retrying: [^`]*)`/m.exec(cliReference)?.[1];
+    expect(shape, 'the reference does not list the retrying line').toBe(
+      'retrying: <seat> · Network or server failure · retry <n> of 10 in <wait>',
+    );
+    const line = sinkLines([
+      {
+        type: 'seat_retry',
+        ts: 1,
+        phase: 'implementing',
+        seat: 'build',
+        attempt: 1,
+        delayMs: 2000,
+      },
+    ]).at(-1);
+    expect(
+      line
+        ?.replace('BUILD', '<seat>')
+        .replace(/retry \d+ of 10 in .+$/, 'retry <n> of 10 in <wait>'),
+    ).toBe(shape);
+  });
 });

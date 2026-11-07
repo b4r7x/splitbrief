@@ -339,6 +339,38 @@ describe('createStdoutTextSink', () => {
     expect(lines).toContain('stalled: review (claude-code) · no output for 1:15:00');
   });
 
+  it('prints one retrying line per seat retry, with the seat, the attempt and the wait', () => {
+    const buildLines = collect([
+      {
+        type: 'seat_retry',
+        ts,
+        phase: 'implementing',
+        seat: 'build',
+        attempt: 1,
+        delayMs: 2000,
+      },
+    ]);
+    expect(buildLines).toEqual([
+      'phase: implementing',
+      'retrying: BUILD · Network or server failure · retry 1 of 10 in 2s',
+    ]);
+
+    const planLines = collect([
+      {
+        type: 'seat_retry',
+        ts,
+        phase: 'planning',
+        seat: 'plan',
+        attempt: 2,
+        delayMs: 4000,
+      },
+    ]);
+    expect(planLines).toEqual([
+      'phase: planning',
+      'retrying: PLAN · Network or server failure · retry 2 of 10 in 4s',
+    ]);
+  });
+
   it('prints a task review verdict and its blocking count once', () => {
     const lines = collect([
       { type: 'task_full_fail', ts, phase: 'implementing', taskId: taskId('T002') },

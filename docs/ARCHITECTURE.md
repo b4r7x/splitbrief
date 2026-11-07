@@ -570,7 +570,7 @@ A diagnostic key includes its path, position and message. Match exact keys first
 
 `message_queued` and `queue_drained` carry optional `seat` and `taskId` fields. `seat` is a `CrewSeatId`: `plan`, `build`, or `review`. BUILD events name the running brief with `taskId`. `commitQueueMessagesDrained` and `drainQueue` include these fields when callers supply them. `drainQueueForReview` publishes `queue_drained` with seat `review` when it drains messages.
 
-`message_queued` also carries optional `steerable: boolean`. The queue sets it to `true` when it captures a matching steerable call. The transcript uses this saved value for delivery timing.
+`message_queued` also carries optional `steerable: boolean`. The queue sets it to `true` when it captures a matching steerable call. The transcript uses this saved value for delivery timing. It also carries optional `starting: true` when BUILD has not started the brief. The pending row then reads `read when its call starts`.
 
 `queue_drained` also has optional `via: 'mid-call'` for delivery into a running call. `steerable_call` has optional `seat: CrewSeatId` and `taskId: string`. Both fields are absent when no steerable call is attached. The lifecycle store resets this live capability on run start and hydration.
 

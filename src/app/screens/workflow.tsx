@@ -33,7 +33,7 @@ import {
 } from '../../features/workflow/hooks/workflow-screen/use-model.js';
 import { closedTranscriptBlock } from '../../features/workflow/closed/block.js';
 import { calloutRowsBlock } from '../../features/workflow/conversation-rows/callout-block.js';
-import { sectionSpacerBlock } from '../../features/workflow/conversation-rows/build.js';
+import { sectionSpacerBlock } from '../../features/workflow/conversation-rows/row-block-compose.js';
 import { applyRunning, openRoundQuestions } from '../../features/workflow/at-rest.js';
 import { unansweredQuestionsRowBlock } from '../../features/workflow/conversation-rows/event-rows/answered-questions.js';
 import { recordedCrewHeader } from '../../features/workflow/closed/header.js';

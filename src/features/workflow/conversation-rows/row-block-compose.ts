@@ -6,7 +6,7 @@ import type {
   ConversationRowTone,
 } from './types.js';
 import { cardRowsLayout, cardRowsWindow } from './row-format/label-card.js';
-import { row, segmentedRow } from './row-format/rows.js';
+import { blankRow, row, segmentedRow } from './row-format/rows.js';
 import { sanitizeRowDisplayText, wrappedProseSegments } from './row-format/text.js';
 import { wrapWidthFor } from './row-markers.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
@@ -217,6 +217,23 @@ export function cardRowsBlock(input: {
         windowStart,
         windowEnd,
       }),
+  };
+}
+
+// One blank row separates consecutive top-level transcript sections, giving the log a calmer
+// one-row rhythm. renderableUnits stays 0 so the spacer never registers as a scrolled-past event.
+const SECTION_SPACER_ROWS = 1;
+
+/** The blank row that goes before the block keyed `key` when it follows another block. */
+export function sectionSpacerBlock(key: string): ConversationRowBlock {
+  return {
+    key: `spacer-${key}`,
+    rowCount: SECTION_SPACER_ROWS,
+    renderableUnits: 0,
+    createRows: (windowStart, windowEnd) =>
+      Array.from({ length: Math.max(0, windowEnd - windowStart) }, (_, offset) =>
+        blankRow(`spacer-${key}-${windowStart + offset}`),
+      ),
   };
 }
 

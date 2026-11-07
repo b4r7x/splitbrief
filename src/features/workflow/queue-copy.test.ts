@@ -21,6 +21,24 @@ describe('queueCopy', () => {
       placeholder: 'Message BUILD on T001 · read after its checks…',
       queued: { label: 'Queued', value: 'for BUILD on T001 · read after its checks' },
     });
+    // Checking timing takes precedence when starting is set.
+    expect(
+      queueCopy({ seat: 'build', taskId: 'T001', checking: true, starting: true }),
+    ).toMatchObject({
+      placeholder: 'Message BUILD on T001 · read after its checks…',
+      queued: { label: 'Queued', value: 'for BUILD on T001 · read after its checks' },
+    });
+  });
+
+  it('says BUILD reads a message when its call starts before its brief starts', () => {
+    expect(queueCopy({ seat: 'build', taskId: 'T002', starting: true })).toMatchObject({
+      placeholder: 'Message BUILD on T002 · read when its call starts…',
+      queued: { label: 'Queued', value: 'for BUILD on T002 · read when its call starts' },
+    });
+    expect(queueCopy({ seat: 'review', taskId: 'T002', starting: true })).toMatchObject({
+      placeholder: 'Message REVIEW · read at its verdict call…',
+      queued: { label: 'Queued', value: 'for REVIEW · read at its verdict call' },
+    });
   });
 
   it('uses the byline copy for /queue and names an empty queue', () => {
@@ -43,6 +61,11 @@ describe('queueCopy', () => {
       feedback: `Sent to ${target} · read after this tool · ctrl+⏎ interrupts`,
       queued: { label: 'Queued', value: `for ${target} · read after this tool` },
       delivered: { label: 'Delivered', value: `to ${target}` },
+    });
+    // Steerable timing takes precedence when starting is set.
+    expect(queueCopy({ seat, taskId: 'T003', steerable: true, starting: true })).toMatchObject({
+      placeholder: `Message ${target} · read after this tool…`,
+      queued: { label: 'Queued', value: `for ${target} · read after this tool` },
     });
   });
 

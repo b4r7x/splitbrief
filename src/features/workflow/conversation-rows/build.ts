@@ -6,7 +6,6 @@ import type {
   ConversationRowBlock,
   RowBuildContext,
 } from './types.js';
-import { blankRow } from './row-format/rows.js';
 import { wrapWidthFor } from './row-markers.js';
 import { activityBatchKey } from './activity-batch-key.js';
 import { buildActivityBatchViewModel } from './activity-batch-model.js';
@@ -29,27 +28,11 @@ import { settledRowBlock } from './settled-row-block.js';
 import { stageHeadingParts } from '../components/conversation-flow/stage-summary.js';
 import { isTranscriptRowlessEvent } from './event-rows/visibility.js';
 import { isRunnerCallTranscriptRowSuppressed } from './runner-call-classification.js';
-import { rowsBlock } from './row-block-compose.js';
+import { rowsBlock, sectionSpacerBlock } from './row-block-compose.js';
 import { segmentedRow } from './row-format/rows.js';
 import { walkTranscript, type RunnerActivityBatch } from './transcript-walk.js';
 
 const MIN_ROW_WIDTH = 1;
-// One blank row separates consecutive top-level transcript sections, giving the log a calmer
-// one-row rhythm. renderableUnits stays 0 so the spacer never registers as a scrolled-past event.
-const SECTION_SPACER_ROWS = 1;
-
-/** The blank row that goes before the block keyed `key` when it follows another section. */
-export function sectionSpacerBlock(key: string): ConversationRowBlock {
-  return {
-    key: `spacer-${key}`,
-    rowCount: SECTION_SPACER_ROWS,
-    renderableUnits: 0,
-    createRows: (windowStart, windowEnd) =>
-      Array.from({ length: Math.max(0, windowEnd - windowStart) }, (_, offset) =>
-        blankRow(`spacer-${key}-${windowStart + offset}`),
-      ),
-  };
-}
 
 export function buildConversationRowsProjection(
   inputs: ConversationRowInputs,

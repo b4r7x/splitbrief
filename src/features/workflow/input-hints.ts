@@ -17,6 +17,7 @@ export function queuePlaceholder(input: {
   reviewing: boolean;
   taskId?: string | null | undefined;
   steerableSeat?: CrewSeatId | null | undefined;
+  starting?: boolean | undefined;
 }): string | undefined {
   if (input.inputMode !== 'normal' || !input.running || input.stopping) return undefined;
   const seat = messageSeat(input.phase, input.reviewing);
@@ -27,6 +28,7 @@ export function queuePlaceholder(input: {
         taskId: input.taskId,
         steerable: input.steerableSeat === seat,
         checking: input.phase === 'validating-task',
+        starting: input.starting,
       }).placeholder;
 }
 

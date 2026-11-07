@@ -690,6 +690,48 @@ describe('enqueue', () => {
     },
   );
 
+  it.each(['pending', 'in_progress'] as const)(
+    'marks a BUILD message for a %s brief as read when its call starts',
+    async (status) => {
+      const { projectDir, sessionId } = setupProject(dirs);
+      const done = makeTask({ id: 'T001', status: 'done' });
+      const current = makeTask({ id: 'T002', status });
+      let state: WorkflowState = {
+        ...makeResearchingState(),
+        phase: 'implementing',
+        tasks: [done, current],
+        currentTaskIndex: 1,
+      };
+      const { bus, events } = makeBusRecorder();
+      const handler = createQueueHandler({
+        config: makeConfig(),
+        projectDir,
+        sessionId,
+        getState: () => state,
+        setState: (next) => {
+          state = next;
+        },
+        bus,
+        planner: makePlanner(),
+        serialize: createWriteSequencer(),
+      });
+
+      expect(await handler(plainUserMessage('check timing'), 'implementing')).toMatchObject({
+        status: 'accepted',
+      });
+
+      const queued = events.find((event) => event.type === 'message_queued');
+      if (queued?.type !== 'message_queued') throw new Error('message_queued missing');
+      expect(queued.taskId).toBe('T002');
+      if (status === 'pending') {
+        expect(queued.starting).toBe(true);
+      } else {
+        expect(queued.starting).toBeUndefined();
+        expect(queued).not.toHaveProperty('starting');
+      }
+    },
+  );
+
   it('enqueues a message into state and emits message-queued event', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
     let state: WorkflowState | undefined = makeResearchingState();

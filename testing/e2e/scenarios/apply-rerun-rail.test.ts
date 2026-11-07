@@ -136,7 +136,8 @@ it('keeps the passed stages on the rail through an Apply halt and Re-run Apply',
   expect(recoveryRows).toEqual([expect.stringContaining('Re-run Apply → continued')]);
   const recoveryAt = transcript.findIndex((line) => /^\s*Recovery\s/.test(line));
   const following = transcript.slice(recoveryAt + 1).find((line) => line.trim() !== '');
-  expect(following?.trim()).toBe('Run continued');
+  // The Recovery row already says the run went on, so its resume no longer adds Run continued.
+  expect(following?.trim()).not.toBe('Run continued');
 
   expect(readFileSync(join(target.projectDir, 'b.txt'), 'utf8')).toBe('run result\n');
 });

@@ -251,8 +251,8 @@ describe('WorkflowFooter', () => {
   });
 
   it.each([
-    ['run-start', 'Message BUILD on T001 · read when its call ends…'],
-    ['between-briefs', 'Message BUILD on T002 · read when its call ends…'],
+    ['run-start', 'Message BUILD on T001 · read when its call starts…'],
+    ['between-briefs', 'Message BUILD on T002 · read when its call starts…'],
     ['after-last-brief', 'Message BUILD · read when its call ends…'],
   ] as const)(
     'names the brief BUILD reads a message on at the %s boundary, where no brief runs',
@@ -262,6 +262,7 @@ describe('WorkflowFooter', () => {
       for (const event of makeBriefBoundaryEvents(boundary)) addEvent(event);
       const ui = renderFooter();
       await flushEffects();
+      // Pending briefs have no open BUILD call, so BUILD reads when its call starts.
       expect(ui.lastFrame()).toContain(placeholder);
       ui.unmount();
     },

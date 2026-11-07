@@ -79,8 +79,9 @@ export type TranscriptWalkStep =
 // event (yielded before that event), or the end of the transcript; row-less events never split it.
 // A recovery folds the same way: its prompt or its selection opens the fold, and the selection,
 // the reset and the outcome of that issue join it until another row-producing event closes it.
-// Its seat switch, a resume and a correction typed with the choice wait for the fold to close,
-// then follow the Recovery row they belong to in log order.
+// Its seat switch and a correction typed with the choice wait for the fold to close,
+// then follow the Recovery row they belong to in log order. A resume that a recovery answer
+// started shows no row: the Recovery row says how the run went on.
 // A prompt the error row before it already states opens nothing. A brief its recovery restarted
 // keeps the one header it opened with: the Recovery row already says it went back to pending.
 // A seat switch folds one matching reconciliation notice before the next run starts or resumes.
@@ -90,22 +91,36 @@ export type TranscriptWalkStep =
 // not carry on reads as the stop it is. A batch of a call that
 // has ended says so, so no batch of a stopped or finished call carries the live mark. A review opens
 // with its heading while it runs and keeps it once it settles, so no row appears above its rows.
+// A BUILD attempt that a network or server retry follows shows no failed row: the retry row says the call goes on.
 export function* walkTranscript(
   sections: readonly Section<EngineEvent>[],
 ): Generator<TranscriptWalkStep> {
   const automatic = automaticRecoveryFolds(sections);
   let workspaceNotice: EngineEventOf<'warning'> | undefined;
   const carriedOn = new Set<EngineEvent>();
+  const answeredResumes = new Set<EngineEvent>();
+  let recoveryAnswerMark = false;
   let seatChangePark: EngineEventOf<'turn_interrupted'> | undefined;
   for (const section of sections) {
     for (const event of section.items) {
       if (event.type === 'warning' && event.code === WORKSPACE_KEPT_CODE) workspaceNotice = event;
       if (event.type === 'workflow_resumed' || event.type === 'workspace_closed')
         workspaceNotice = undefined;
+      if (event.type === 'recovery_action_selected') recoveryAnswerMark = true;
+      if (
+        event.type === 'workflow_cancelled' ||
+        event.type === 'turn_interrupted' ||
+        event.type === 'recovery_action_failed'
+      )
+        recoveryAnswerMark = false;
       if (event.type === 'turn_interrupted' || event.type === 'workflow_cancelled')
         seatChangePark =
           event.type === 'turn_interrupted' && event.cause === 'seat-change' ? event : undefined;
       if (event.type !== 'workflow_resumed') continue;
+      if (recoveryAnswerMark) {
+        answeredResumes.add(event);
+        recoveryAnswerMark = false;
+      }
       if (event.cause === 'seat-change') {
         carriedOn.add(event);
         if (seatChangePark !== undefined) carriedOn.add(seatChangePark);
@@ -115,6 +130,7 @@ export function* walkTranscript(
   }
   const endedAttempts = endedImplementerAttempts(sections);
   const endedActivity = endedCallActivity(sections);
+  const retriedAttempts = retriedImplementerAttempts(sections);
   let activityBatch: RunnerActivityBatch | null = null;
   let recovery: RecoveryFold | null = null;
   let afterRecovery: Extract<TranscriptWalkStep, { kind: 'event' }>[] = [];
@@ -178,7 +194,14 @@ export function* walkTranscript(
         lastRowEvent = event;
         continue;
       }
-      if (automatic.hidden.has(event) || endedAttempts.has(event) || carriedOn.has(event)) continue;
+      if (
+        automatic.hidden.has(event) ||
+        endedAttempts.has(event) ||
+        carriedOn.has(event) ||
+        answeredResumes.has(event) ||
+        retriedAttempts.has(event)
+      )
+        continue;
       if (
         event.type === 'warning' &&
         event.code === WORKSPACE_KEPT_CODE &&
@@ -230,7 +253,7 @@ export function* walkTranscript(
         continue;
       }
       if (
-        (event.type === 'workflow_resumed' || event.type === 'user_message') &&
+        event.type === 'user_message' &&
         recovery !== null &&
         recovery.selected !== undefined &&
         recovery.resolved === undefined
@@ -283,6 +306,26 @@ export function* walkTranscript(
     }
   }
   yield* flush();
+}
+
+function retriedImplementerAttempts(sections: readonly Section<EngineEvent>[]): Set<EngineEvent> {
+  const hidden = new Set<EngineEvent>();
+  let pendingFailure: EngineEventOf<'implementer_generate_failed'> | undefined;
+  for (const section of sections) {
+    for (const event of section.items) {
+      if (event.type === 'implementer_generate_running') {
+        pendingFailure = undefined;
+      } else if (event.type === 'implementer_generate_failed') {
+        pendingFailure = event;
+      } else if (event.type === 'seat_retry' && event.seat === 'build') {
+        if (pendingFailure !== undefined) {
+          hidden.add(pendingFailure);
+          pendingFailure = undefined;
+        }
+      }
+    }
+  }
+  return hidden;
 }
 
 /**
