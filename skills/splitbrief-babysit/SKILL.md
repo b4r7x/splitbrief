@@ -273,11 +273,6 @@ Name every caller affected by a deletion. Respect the configured tool's transpor
 
 ## Between runs
 
-After a run's review, run the gates. `npm run release-check` must be green before the report.
+After a run ends with Apply, land its change with the steps in `after-apply.md` next to this file: review, skeptic, fix, red, green five times, gates, renders, commit and the landing on main. After the last landing of a batch, `npm run release-check` must be green before the report.
 
-```bash
-npm run release-check
-git diff --stat
-```
-
-Report the run ID, outcome, fixed defects, checks, live verification, and any blocker. Leave all changes unstaged for the maintainer.
+Report the run ID, outcome, fixed defects, checks, live verification, and any blocker.
