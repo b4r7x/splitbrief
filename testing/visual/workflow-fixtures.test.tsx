@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { getWorkflowSidebarWidth } from '../../src/features/workflow/layout/rect.js';
@@ -118,6 +120,43 @@ it.each(['workflow-attempt-reverted', 'workflow-attempt-reverted-checkout'])(
     expect(halt?.message.endsWith(failed.error)).toBe(true);
   },
 );
+
+it.each([
+  'workflow-recovery-left-isolation',
+  'workflow-recovery-left-isolation-in-place',
+  'workflow-at-rest-left-isolation',
+])('halts %s on a write outside the workspace, in the words the product writes', (id) => {
+  const projection = workflowFixtureProjections.get(scenarioId(id));
+  if (projection === undefined) throw new Error(`Missing scenario ${id}`);
+  const hydration = projection.atRest?.record.hydration;
+  const halt =
+    hydration?.kind === 'loaded'
+      ? hydration.state.pendingRecovery
+      : projection.resumeState?.pendingRecovery;
+  const evidence = halt?.details[0] ?? '';
+  expect
+    .soft(evidence)
+    .toMatch(/^Google Antigravity CLI wrote to \S+ \(outside the workspace\) with run_command: /);
+  expect(halt?.message).toBe(`${halt?.taskId} left the isolation directory${SOFT_SEP}${evidence}`);
+});
+
+it('logs the error row of the at-rest left-isolation halt as the product writes it', () => {
+  const projection = workflowFixtureProjections.get(scenarioId('workflow-at-rest-left-isolation'));
+  const route = projection?.atRest;
+  if (route === undefined || typeof route.log !== 'string') {
+    throw new Error('Missing at-rest left-isolation log');
+  }
+  const hydration = route.record.hydration;
+  if (hydration.kind !== 'loaded') throw new Error('Missing loaded left-isolation state');
+  const halt = hydration.state.pendingRecovery;
+  const messages = readFileSync(resolve(process.cwd(), route.log), 'utf8')
+    .split('\n')
+    .filter((line) => line !== '')
+    .map((line) => JSON.parse(line))
+    .filter((entry) => entry.type === 'error')
+    .map((entry) => entry.data.message);
+  expect(messages).toEqual([halt?.message]);
+});
 
 function lifecycleFor(scenarioId: ScenarioId): FixtureLifecycle {
   const factory = workflowFixtureRegistry.get(scenarioId);

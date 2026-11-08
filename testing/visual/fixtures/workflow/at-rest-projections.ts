@@ -23,10 +23,11 @@ import {
 } from '../../../../src/engine/providers/cost/breakdown.js';
 import { makeUsage } from '../../../helpers/factories/summary.js';
 import {
+  buildLeftIsolationRecoveryIssue,
   buildRunnerInputTooLargeRecoveryIssue,
   buildSeatDownIssue,
 } from '../../../../src/engine/orchestrator/recovery/builders/task.js';
-import { CODEX_INPUT_TOO_LARGE } from './halt-text-projections.js';
+import { CODEX_INPUT_TOO_LARGE, LEFT_ISOLATION_WRITE } from './halt-text-projections.js';
 import {
   buildApplyConflictRecoveryIssue,
   buildApplyPartialRecoveryIssue,
@@ -883,25 +884,25 @@ const AT_REST_HALTED_CHOSEN = record({
 /** The log carries the rows the halt wrote: the error that states the evidence and the recovery card. */
 export const LEFT_ISOLATION_LOG = 'testing/fixtures/session-log/left-isolation.jsonl';
 
-const LEFT_ISOLATION_HALT: RecoveryIssue = {
+const LEFT_ISOLATION_IMPLEMENTER = {
+  kind: 'cli',
+  tool: 'antigravity',
+  model: 'gemini-3-flash',
+} as const;
+
+const LEFT_ISOLATION_HALT: RecoveryIssue = buildLeftIsolationRecoveryIssue({
   id: 'visual-left-isolation',
-  reason: 'implementer-left-isolation',
+  task: makeTask({
+    id: BRIEFS.wire.id,
+    title: BRIEFS.wire.title,
+    suggestedFiles: [BRIEFS.wire.file],
+  }),
   phase: 'implementing',
-  status: 'awaiting-user',
-  seat: 'build',
-  taskId: BRIEFS.wire.id,
-  files: [BRIEFS.wire.file],
-  affectedTaskIds: [BRIEFS.wire.id],
-  message: `${BRIEFS.wire.id} left the isolation directory · Google Antigravity CLI searched ~ (outside the workspace) with run_command: find ~ -name "form.ts" 2>/dev/null`,
-  details: [
-    'Google Antigravity CLI searched ~ (outside the workspace) with run_command: find ~ -name "form.ts" 2>/dev/null',
-    "Your checkout gets the run's changes only through Apply.",
-  ],
-  facts: { tool: 'Google Antigravity CLI' },
-  availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
-  recommendedAction: 'retry-same-worker',
+  runner: LEFT_ISOLATION_IMPLEMENTER,
+  toolMessage: LEFT_ISOLATION_WRITE,
+  attempts: 1,
   createdAt: STARTED_AT_ISO,
-};
+});
 
 const AT_REST_LEFT_ISOLATION = record({
   sessionId: 'visual-at-rest-left-isolation',

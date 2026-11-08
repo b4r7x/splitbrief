@@ -6,6 +6,7 @@ import { reviewResumeProjection, reviewCheckCrashProjection } from './review-res
 import {
   buildPromptTooLargeProjection,
   buildPromptTooLargeRecoveryIssue,
+  LEFT_ISOLATION_WRITE,
   reviewContractErrorMessage,
   reviewContractProjection,
   reviewContractRecoveryIssue,
@@ -4390,38 +4391,29 @@ const taskReviewCallFailedRecoveryProjection: WorkflowFixtureProjection = {
 };
 
 /**
- * The halt `buildLeftIsolationRecoveryIssue` writes when agy searched the whole home directory
- * from its scratch directory: the evidence rides in the message, and another ready tool is on
- * offer for the seat.
+ * The halt `buildLeftIsolationRecoveryIssue` writes when agy wrote outside the workspace from its
+ * worktree: the evidence rides in the message, and another ready tool is on offer for the seat.
  */
-const leftIsolationRecoveryIssue: RecoveryIssue = {
+const leftIsolationRecoveryIssue: RecoveryIssue = buildLeftIsolationRecoveryIssue({
   id: 'rec_visual_left_isolation',
-  reason: 'implementer-left-isolation',
-  phase: 'implementing',
-  status: 'awaiting-user',
-  seat: 'build',
-  taskId: WORKFLOW_FIXTURE_TASK_ID,
-  taskTitle: WORKFLOW_FIXTURE_TEXT.implementationTask,
-  files: [WORKFLOW_FIXTURE_REVIEW_FILE],
-  affectedTaskIds: [WORKFLOW_FIXTURE_TASK_ID],
-  message: `${WORKFLOW_FIXTURE_TASK_ID} left the isolation directory · Google Antigravity CLI searched ~ (outside the workspace) with run_command: find ~ -name "projections.ts" 2>/dev/null`,
-  details: [
-    'Google Antigravity CLI searched ~ (outside the workspace) with run_command: find ~ -name "projections.ts" 2>/dev/null',
-    "Your checkout gets the run's changes only through Apply.",
-  ],
+  task: HALTED_TASK,
+  runner: AGY_BUILD_SEAT,
+  toolMessage: LEFT_ISOLATION_WRITE,
+  attempts: 1,
   selectedImplementerProfile: 'default',
-  switchSeat: { seat: 'build', candidates: [{ tool: 'codex' }] },
-  facts: { tool: 'Google Antigravity CLI' },
-  availableActions: ['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run'],
-  recommendedAction: 'retry-same-worker',
+  seatSwap: {
+    seat: 'build',
+    currentTool: 'antigravity',
+    detectedTools: [{ tool: 'codex', ready: true }],
+  },
   createdAt: new Date(FIXED_TS).toISOString(),
-};
+});
 
 const leftIsolationInPlaceRecoveryIssue = buildLeftIsolationRecoveryIssue({
   id: 'rec_visual_left_isolation_in_place',
   task: HALTED_TASK,
   runner: AGY_BUILD_SEAT,
-  toolMessage: 'wrote outside the checkout with run_command: touch ../outside.txt',
+  toolMessage: LEFT_ISOLATION_WRITE,
   attempts: 1,
   inPlace: { revertedDir: `.splitbrief/sessions/${VISUAL_WORKFLOW_SESSION_ID}/reverted` },
   seatSwap: {
@@ -8193,15 +8185,12 @@ const ATTEMPT_REVERTED_TASK: Task = {
   ...HALTED_TASK,
   suggestedFiles: [WORKFLOW_FIXTURE_REVIEW_FILE, WORKFLOW_FIXTURE_SECOND_FILE],
 };
-const ATTEMPT_REVERTED_WRITE =
-  'wrote to ../outside.txt (outside the workspace) with run_command: touch ../outside.txt';
-
 function attemptRevertedIssue(inPlace?: { revertedDir: string }): RecoveryIssue {
   return buildLeftIsolationRecoveryIssue({
     id: 'rec_visual_attempt_reverted',
     task: ATTEMPT_REVERTED_TASK,
     runner: AGY_BUILD_SEAT,
-    toolMessage: ATTEMPT_REVERTED_WRITE,
+    toolMessage: LEFT_ISOLATION_WRITE,
     attempts: 1,
     inPlace,
     seatSwap: {
@@ -8242,14 +8231,14 @@ function attemptRevertedEvents(defect: { issue: RecoveryIssue; reverted: string 
       phase: 'implementing',
       taskId: WORKFLOW_FIXTURE_TASK_ID,
       model: AGY_BUILD_SEAT.model,
-      error: ATTEMPT_REVERTED_WRITE,
+      error: LEFT_ISOLATION_WRITE,
     },
     ...publishedEvents(ATTEMPT_REVERTED_TS, (bus) => {
       const phase = 'implementing';
       publishError({
         bus,
         phase,
-        message: runnerDefectRow(issue, agyName, ATTEMPT_REVERTED_WRITE),
+        message: runnerDefectRow(issue, agyName, LEFT_ISOLATION_WRITE),
       });
       publishRecoveryPrompted({ bus, phase }, VISUAL_WORKFLOW_SESSION_ID, issue, briefStep);
       publishInfo({ bus, phase, message: reverted, briefKept: 0 });

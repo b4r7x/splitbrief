@@ -1261,7 +1261,7 @@ describe('runWorkflow — smoke', () => {
           ['checkout', 'another writer', 'conflict', 'this'],
           ['worktree', 'a save it cannot confirm', 'unconfirmed', 'this'],
         ] as const)(
-          '%s, after %s, continued in %s process',
+          '%s, after %s (%s), continued in %s process',
           async (isolation, _label, fails, continuedIn) => {
             const projectDir = createTempDir('run-workflow-test');
             dirs.push(projectDir);

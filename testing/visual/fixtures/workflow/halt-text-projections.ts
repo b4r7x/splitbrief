@@ -79,6 +79,13 @@ export const reviewContractProjection: WorkflowFixtureProjection = {
 export const CODEX_INPUT_TOO_LARGE =
   'Error: turn/start: turn/start failed: Input exceeds the maximum length of 1048576 characters. (code -32602), data: {"input_error_code":"input_too_large","max_chars":1048576,"actual_chars":1106026}';
 
+/**
+ * The evidence a CLI implementer's write outside the workspace halts on, in the words the guard
+ * writes.
+ */
+export const LEFT_ISOLATION_WRITE =
+  'wrote to ../outside.txt (outside the workspace) with run_command: touch ../outside.txt';
+
 /** A seat on the one tool with an input limit, with a fallback that has none. */
 const CODEX_SEAT = {
   kind: 'cli',
