@@ -2538,6 +2538,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-consult-guard-question',
+      title: 'Workflow · the guard question on a failed rewrite',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'consult-guard-question',
+        title: 'The held rewrite question names the added criterion, with no rewrite row',
+        kind: 'question',
+        marker: 'adds C4',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Running brief transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-consult-answer-typed',
       title: 'Workflow · typed consult answer',
       surface: screenSurface('workflow'),

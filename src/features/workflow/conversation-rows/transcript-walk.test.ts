@@ -947,6 +947,167 @@ describe('walkTranscript', () => {
       expect(rows[0]).toMatchObject({ event: { ts: 6_000 } });
     });
   });
+
+  describe('a consult answer that the criteria guard holds', () => {
+    const T003 = taskId('T003');
+    const T004 = taskId('T004');
+    const T005 = taskId('T005');
+    const asked: EngineEventOf<'planner_questions_asked'> = {
+      type: 'planner_questions_asked',
+      ts: 2_100,
+      phase: 'implementing',
+      questions: [{ id: 'Q1', type: 'input', text: 'T003 changes its criteria. Proceed?' }],
+    };
+    const running: EngineEventOf<'implementer_generate_running'> = {
+      type: 'implementer_generate_running',
+      ts: 2_200,
+      phase: 'implementing',
+      taskId: T003,
+      file: 'src/module.ts',
+    };
+    const rewrite = (ts: number, revision: number): EngineEventOf<'consult_answered'> => ({
+      type: 'consult_answered',
+      ts,
+      phase: 'implementing',
+      taskId: T003,
+      reason: 'failed',
+      action: 'rewrite-task',
+      diagnosis: 'The brief asked for the wrong module.',
+      newTaskIds: null,
+      revision,
+    });
+    const answeredSteps = (events: EngineEvent[]) =>
+      [...walkTranscript(groupEventsIntoSections(events))].flatMap((step) =>
+        step.kind === 'event' && step.event.type === 'consult_answered' ? [step.event] : [],
+      );
+
+    it('shows no step for a rewrite that no task_replaced follows', () => {
+      const events: EngineEvent[] = [
+        makeTaskStart({ taskId: T003, ts: 1_000, title: 'Wire the parser' }),
+        rewrite(2_000, 2),
+        asked,
+        running,
+      ];
+
+      expect(answeredSteps(events)).toEqual([]);
+    });
+
+    it('shows no step for a split that no tasks_inserted follows', () => {
+      const split: EngineEventOf<'consult_answered'> = {
+        type: 'consult_answered',
+        ts: 2_000,
+        phase: 'implementing',
+        taskId: T003,
+        reason: 'failed',
+        action: 'split-task',
+        diagnosis: 'The brief carries two jobs.',
+        newTaskIds: [T004, T005],
+      };
+      const events: EngineEvent[] = [
+        makeTaskStart({ taskId: T003, ts: 1_000, title: 'Wire the parser' }),
+        split,
+        asked,
+        running,
+      ];
+
+      expect(answeredSteps(events)).toEqual([]);
+    });
+
+    it('shows only the later rewrite of a brief whose first rewrite the guard held', () => {
+      const laterRewrite = rewrite(2_300, 3);
+      const events: EngineEvent[] = [
+        makeTaskStart({ taskId: T003, ts: 1_000, title: 'Wire the parser' }),
+        rewrite(2_000, 2),
+        asked,
+        running,
+        laterRewrite,
+        {
+          type: 'task_replaced',
+          ts: 2_400,
+          phase: 'implementing',
+          taskId: T003,
+          revision: 3,
+        },
+      ];
+
+      expect(answeredSteps(events)).toEqual([laterRewrite]);
+    });
+
+    it('keeps the step of a rewrite that its task_replaced follows', () => {
+      const kept = rewrite(2_000, 2);
+      const events: EngineEvent[] = [
+        makeTaskStart({ taskId: T003, ts: 1_000, title: 'Wire the parser' }),
+        kept,
+        {
+          type: 'task_replaced',
+          ts: 2_200,
+          phase: 'implementing',
+          taskId: T003,
+          revision: 2,
+        },
+      ];
+
+      expect(answeredSteps(events)).toEqual([kept]);
+    });
+
+    it('keeps the step of a split that its tasks_inserted follows', () => {
+      const split: EngineEventOf<'consult_answered'> = {
+        type: 'consult_answered',
+        ts: 2_000,
+        phase: 'implementing',
+        taskId: T003,
+        reason: 'failed',
+        action: 'split-task',
+        diagnosis: 'The brief carries two jobs.',
+        newTaskIds: [T004, T005],
+      };
+      const events: EngineEvent[] = [
+        makeTaskStart({ taskId: T003, ts: 1_000, title: 'Wire the parser' }),
+        split,
+        {
+          type: 'tasks_inserted',
+          ts: 2_200,
+          phase: 'implementing',
+          parentId: T003,
+          taskIds: [T004, T005],
+        },
+      ];
+
+      expect(answeredSteps(events)).toEqual([split]);
+    });
+
+    it("keeps the step of a stuck review's rewrite answer", () => {
+      const fix: EngineEventOf<'consult_answered'> = {
+        type: 'consult_answered',
+        ts: 2_000,
+        phase: 'final-review',
+        taskId: T003,
+        reason: 'no-progress',
+        action: 'rewrite-task',
+        diagnosis: 'The fix brief edits the wrong file.',
+        newTaskIds: [taskId('T905')],
+      };
+      const events: EngineEvent[] = [makeTaskStart({ taskId: T003, ts: 1_000 }), fix];
+
+      expect(answeredSteps(events)).toEqual([fix]);
+    });
+
+    it('keeps the step of a guidance answer', () => {
+      const guidance: EngineEventOf<'consult_answered'> = {
+        type: 'consult_answered',
+        ts: 2_000,
+        phase: 'implementing',
+        taskId: T003,
+        reason: 'blocked',
+        action: 'guidance',
+        diagnosis: 'The export is missing.',
+        newTaskIds: null,
+      };
+      const events: EngineEvent[] = [makeTaskStart({ taskId: T003, ts: 1_000 }), guidance];
+
+      expect(answeredSteps(events)).toEqual([guidance]);
+    });
+  });
 });
 
 describe('walkTranscript on a stopped run’s workspace', () => {

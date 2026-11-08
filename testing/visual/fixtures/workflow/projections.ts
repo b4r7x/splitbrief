@@ -3299,6 +3299,37 @@ const consultQuestionProjection: WorkflowFixtureProjection = {
   },
 };
 
+const consultGuardQuestionProjection: WorkflowFixtureProjection = {
+  ...consultQuestionProjection,
+  scenarioId: scenarioId('workflow-consult-guard-question'),
+  inputMode: 'question',
+  events: [
+    ...consultQuestionProjection.events.filter((event) => event.type !== 'consult_answered'),
+    {
+      type: 'consult_answered',
+      ts: FIXED_TS + 38_100,
+      phase: 'escalating',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      reason: 'failed',
+      action: 'rewrite-task',
+      diagnosis: 'The brief misses the fallback criterion.',
+      newTaskIds: null,
+      revision: 2,
+    },
+  ],
+  question: {
+    prompt: 'Reply to the planner…',
+    answer: '',
+    questions: [
+      {
+        id: 'ask-user',
+        type: 'input',
+        text: 'SPLITBRIEF asked the planner to fix T901, but the rewritten task changes its criteria: adds C4. How should T901 proceed?',
+      },
+    ],
+  },
+};
+
 const failureProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_FAILURE_ID,
   feature: WORKFLOW_FEATURE,
@@ -8883,6 +8914,7 @@ const projections = [
   repliedQuestionsProjection,
   unansweredQuestionsProjection,
   consultQuestionProjection,
+  consultGuardQuestionProjection,
   {
     ...consultQuestionProjection,
     scenarioId: scenarioId('workflow-consult-answer-typed'),

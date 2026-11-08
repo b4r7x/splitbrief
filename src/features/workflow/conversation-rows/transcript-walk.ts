@@ -92,6 +92,7 @@ export type TranscriptWalkStep =
 // has ended says so, so no batch of a stopped or finished call carries the live mark. A review opens
 // with its heading while it runs and keeps it once it settles, so no row appears above its rows.
 // A BUILD attempt that a network or server retry follows shows no failed row: the retry row says the call goes on.
+// A consult rewrite or split shows its row once the brief is replaced or split; the guard question replaces a held one.
 export function* walkTranscript(
   sections: readonly Section<EngineEvent>[],
 ): Generator<TranscriptWalkStep> {
@@ -131,6 +132,7 @@ export function* walkTranscript(
   const endedAttempts = endedImplementerAttempts(sections);
   const endedActivity = endedCallActivity(sections);
   const retriedAttempts = retriedImplementerAttempts(sections);
+  const heldAnswers = heldConsultAnswers(sections);
   let activityBatch: RunnerActivityBatch | null = null;
   let recovery: RecoveryFold | null = null;
   let afterRecovery: Extract<TranscriptWalkStep, { kind: 'event' }>[] = [];
@@ -199,7 +201,8 @@ export function* walkTranscript(
         endedAttempts.has(event) ||
         carriedOn.has(event) ||
         answeredResumes.has(event) ||
-        retriedAttempts.has(event)
+        retriedAttempts.has(event) ||
+        heldAnswers.has(event)
       )
         continue;
       if (
@@ -326,6 +329,40 @@ function retriedImplementerAttempts(sections: readonly Section<EngineEvent>[]): 
     }
   }
   return hidden;
+}
+
+/**
+ * The consult answers that never applied: a rewrite or a split shows its row once its brief is
+ * replaced or split. An answer that the criteria guard holds waits for the operator, and an answer
+ * a later one on the same brief replaced never applied either.
+ */
+function heldConsultAnswers(sections: readonly Section<EngineEvent>[]): Set<EngineEvent> {
+  const held = new Set<EngineEvent>();
+  const pending = new Map<string, EngineEventOf<'consult_answered'>>();
+  for (const section of sections) {
+    for (const event of section.items) {
+      switch (event.type) {
+        case 'consult_answered': {
+          const previous = pending.get(event.taskId);
+          if (previous !== undefined) held.add(previous);
+          const waits =
+            (event.reason === 'failed' || event.reason === 'blocked') &&
+            (event.action === 'rewrite-task' || event.action === 'split-task');
+          if (waits) pending.set(event.taskId, event);
+          else pending.delete(event.taskId);
+          break;
+        }
+        case 'task_replaced':
+          pending.delete(event.taskId);
+          break;
+        case 'tasks_inserted':
+          pending.delete(event.parentId);
+          break;
+      }
+    }
+  }
+  for (const answer of pending.values()) held.add(answer);
+  return held;
 }
 
 /**

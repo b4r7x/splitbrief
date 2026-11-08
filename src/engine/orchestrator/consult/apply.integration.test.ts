@@ -708,6 +708,123 @@ describe('applyConsultAnswer', () => {
   });
 });
 
+describe('the criteria guard question', () => {
+  const plan: Plan = {
+    summary: 'Fix the greeting',
+    decisions: [],
+    criteria: [
+      { id: 'C1', text: 'A greeting is returned', checkIds: ['K1'] },
+      { id: 'C2', text: 'The greeting is polite', checkIds: [] },
+    ],
+    checks: [{ id: 'K1', kind: 'test', value: 'src/greet.test.ts' }],
+    validation: null,
+  };
+  const K1: TaskSpec['checks'] = [{ id: 'K1', kind: 'test', value: 'src/greet.test.ts' }];
+
+  function guardedTask(): Task {
+    return makeTask({
+      id: 'T003',
+      suggestedFiles: ['src/greet.ts'],
+      criteria: ['C1', 'C2'],
+      checks: K1,
+      status: 'failed',
+    });
+  }
+
+  function rewriteWith(criteria: string[], checks: TaskSpec['checks']): ConsultAnswer {
+    return rewrite(
+      makeTaskSpec({ id: 'T003', criteria, checks, suggestedFiles: ['src/greet.ts'] }),
+    );
+  }
+
+  function splitInto(
+    ...parts: { criteria: string[]; checks: TaskSpec['checks'] }[]
+  ): ConsultAnswer {
+    return split(
+      parts.map((part, index) =>
+        makeTaskSpec({
+          id: index === 0 ? 'T003' : 'T004',
+          criteria: part.criteria,
+          checks: part.checks,
+          suggestedFiles: [`src/split-${index}.ts`],
+          ...(index === 0 ? {} : { dependsOn: ['T003'] }),
+        }),
+      ),
+    );
+  }
+
+  it.each<[string, ConsultAnswer, string]>([
+    [
+      'a rewrite that adds C4',
+      rewriteWith(['C1', 'C2', 'C4'], K1),
+      'the rewritten task changes its criteria: adds C4',
+    ],
+    [
+      'a rewrite that drops C2',
+      rewriteWith(['C1'], K1),
+      'the rewritten task changes its criteria: drops C2',
+    ],
+    [
+      'a rewrite that drops C2 and adds C4',
+      rewriteWith(['C1', 'C4'], K1),
+      'the rewritten task changes its criteria: drops C2 and adds C4',
+    ],
+    [
+      'a rewrite that drops its required check',
+      rewriteWith(['C1', 'C2'], []),
+      'the rewritten task drops the checks its criteria require: K1',
+    ],
+    [
+      'a split that drops C2',
+      splitInto({ criteria: ['C1'], checks: K1 }, { criteria: ['C3'], checks: [] }),
+      'the subtasks together drop C2',
+    ],
+    [
+      'a split that drops its required check',
+      splitInto({ criteria: ['C1'], checks: [] }, { criteria: ['C2'], checks: [] }),
+      'the subtasks together drop the checks their criteria require: K1',
+    ],
+  ])('names what %s changes, with no Dropped criteria line', async (_change, answer, reason) => {
+    const { projectDir, sessionId } = setupRepo(dirs);
+    const task = guardedTask();
+    const onPlannerReply = vi.fn().mockResolvedValue(undefined);
+    const { ctx, states } = contextFor(projectDir, sessionId, task, plan, { onPlannerReply });
+    const attempt = await getChangedFilesSnapshot(projectDir);
+    const question = `SPLITBRIEF asked the planner to fix T003, but ${reason}. How should T003 proceed?`;
+
+    const result = await applyConsultAnswer(ctx, task, answer, attempt);
+
+    expect(onPlannerReply).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        text: question,
+        questions: [expect.objectContaining({ id: 'ask-user', type: 'input', text: question })],
+        answered: false,
+      }),
+    );
+    if (result.action !== 'unanswered')
+      throw new Error(`expected unanswered, got ${result.action}`);
+    expect(result.question).toBe(question);
+    expect(result.question).not.toContain('Dropped criteria');
+    expect(states).toHaveLength(0);
+  });
+
+  it('applies a rewrite that lists the same criteria in another order', async () => {
+    const { projectDir, sessionId } = setupRepo(dirs);
+    const task = guardedTask();
+    const onPlannerReply = vi.fn().mockResolvedValue(undefined);
+    const { ctx, states } = contextFor(projectDir, sessionId, task, plan, { onPlannerReply });
+    const attempt = await getChangedFilesSnapshot(projectDir);
+
+    const result = await applyConsultAnswer(ctx, task, rewriteWith(['C2', 'C1'], K1), attempt);
+
+    expect(onPlannerReply).not.toHaveBeenCalled();
+    if (result.action !== 'rewrite-task') throw new Error(`expected rewrite, got ${result.action}`);
+    expect(result.task.criteria).toEqual(task.criteria);
+    expect(result.task.checks).toEqual(K1);
+    expect(states).toHaveLength(1);
+  });
+});
+
 describe('a consult on a brief that created its files', () => {
   const FRESH = 'export const fresh = 1;\n';
 

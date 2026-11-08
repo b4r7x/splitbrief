@@ -75,16 +75,6 @@ const consultApplyError = {
     }),
 } as const;
 
-function sameCriteria(task: Task, spec: TaskSpec): boolean {
-  const before = new Set(task.criteria ?? []);
-  const after = new Set(spec.criteria);
-  if (before.size !== after.size) return false;
-  for (const criterion of before) {
-    if (!after.has(criterion)) return false;
-  }
-  return true;
-}
-
 function droppedCriteria(task: Task, specs: readonly TaskSpec[]): string[] {
   const kept = new Set(specs.flatMap((spec) => spec.criteria));
   return (task.criteria ?? []).filter((criterion) => !kept.has(criterion));
@@ -109,10 +99,21 @@ function guardViolation(
   action: RewriteAction | SplitAction,
 ): string | null {
   if (action.action === 'rewrite-task') {
-    if (!sameCriteria(task, action.task)) return 'the rewritten task changes its criteria';
-    const dropped = droppedCriteriaChecks(task, plan, [action.task]);
+    const dropped = droppedCriteria(task, [action.task]);
+    const original = new Set(task.criteria ?? []);
+    const added = action.task.criteria.filter((criterion) => !original.has(criterion));
+    if (dropped.length > 0 && added.length > 0) {
+      return `the rewritten task changes its criteria: drops ${dropped.join(', ')} and adds ${added.join(', ')}`;
+    }
     if (dropped.length > 0) {
-      return `the rewritten task drops the checks its criteria require: ${dropped.join(', ')}`;
+      return `the rewritten task changes its criteria: drops ${dropped.join(', ')}`;
+    }
+    if (added.length > 0) {
+      return `the rewritten task changes its criteria: adds ${added.join(', ')}`;
+    }
+    const droppedChecks = droppedCriteriaChecks(task, plan, [action.task]);
+    if (droppedChecks.length > 0) {
+      return `the rewritten task drops the checks its criteria require: ${droppedChecks.join(', ')}`;
     }
     return null;
   }
@@ -132,13 +133,10 @@ async function applyGuardQuestion(
   input: { task: Task; action: RewriteAction | SplitAction; reason: string },
 ): Promise<ConsultApplyOutcome> {
   const { task, action, reason } = input;
-  const specs = action.action === 'rewrite-task' ? [action.task] : action.tasks;
-  const dropped = droppedCriteria(task, specs);
-  const droppedText = dropped.length > 0 ? dropped.join(', ') : 'none';
   return applyAskUser(ctx, task, {
     action: 'ask-user',
     diagnosis: action.diagnosis,
-    question: `SPLITBRIEF asked the planner to fix ${task.id}, but ${reason}. Dropped criteria: ${droppedText}. How should ${task.id} proceed?`,
+    question: `SPLITBRIEF asked the planner to fix ${task.id}, but ${reason}. How should ${task.id} proceed?`,
     whyOnlyUserCanAnswer: `The planner's answer cannot keep every criterion of ${task.id}, and only you can decide how to cover them.`,
     choices: null,
     default: null,

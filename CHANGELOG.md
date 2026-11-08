@@ -123,6 +123,8 @@
 
 ### Fixed
 
+- When SPLITBRIEF asks you about a planner rewrite or split that changes a brief's criteria, the transcript no longer shows a `rewrote` or `split into` row for it. The brief did not change.
+- That question now names the criteria the rewrite adds or drops, and no longer says `Dropped criteria: none`.
 - A BUILD call that retries after a network or server failure no longer shows a `BUILD failed` row before each retry.
 - `--plain` now prints a `retrying:` line each time a seat retries after a network or server failure.
 - A message sent before a brief starts now says that BUILD reads it when its call starts.

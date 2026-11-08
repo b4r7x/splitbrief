@@ -983,6 +983,11 @@ const checkpointPredicates = [
     includesAll('Unanswered · 2 questions', '(yes / no)', 'Type your answer…'),
   ],
   [checkpointId('consult-answer-default'), includesAll('Which store?', 'You → memory')],
+  [
+    checkpointId('consult-guard-question'),
+    (context) =>
+      includesAll('adds C4')(context) && excludesAll('rewrote T901', 'Dropped criteria')(context),
+  ],
   [checkpointId('consult-answer-typed'), includesAll('Which store?', 'You → redis')],
   [
     checkpointId('paused-mid-brief'),

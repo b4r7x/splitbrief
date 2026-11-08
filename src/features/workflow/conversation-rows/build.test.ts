@@ -2179,6 +2179,41 @@ describe('buildConversationRows', () => {
     expect(text).not.toContain('1 file');
     expect(text.match(/\d+\.\ds/g)).toEqual(['9.8s']);
   });
+
+  it('shows no rewrote row for a consult rewrite that the criteria guard held', () => {
+    const T003 = taskId('T003');
+    const events: EngineEvent[] = [
+      makeTaskStart({ taskId: T003, ts: 1_000, title: 'Wire the parser' }),
+      {
+        type: 'consult_answered',
+        ts: 2_000,
+        phase: 'implementing',
+        taskId: T003,
+        reason: 'failed',
+        action: 'rewrite-task',
+        diagnosis: 'The brief asked for the wrong module.',
+        newTaskIds: null,
+        revision: 2,
+      },
+      {
+        type: 'planner_questions_asked',
+        ts: 2_100,
+        phase: 'implementing',
+        questions: [{ id: 'Q1', type: 'input', text: 'T003 changes its criteria. Proceed?' }],
+      },
+      makeImplementerGenerate({ status: 'running', taskId: T003, ts: 2_200 }),
+    ];
+    const { rows } = buildConversationRows({
+      sections: groupEventsIntoSections(events),
+      expandedDiffs: new Set(),
+      expandedActivityBatches: new Set(),
+      cols: 120,
+      viewportHeight: 40,
+      streaming,
+    });
+
+    expect(rows.map(rowText).join('\n')).not.toContain('rewrote T003');
+  });
 });
 
 describe('rows no brief owns stay with the completed briefs', () => {
