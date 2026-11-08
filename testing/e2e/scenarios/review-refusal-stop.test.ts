@@ -269,10 +269,9 @@ globalThis.fetch = async (input, options) => {
             .toContain('Waiting for response');
           expect(frame).toContain('Review · LM Studio · Fixture Review · reviewing changes');
           expect(frame).not.toContain('answering again');
-          expect(frame.match(/seat answer did not match its contract/g)).toHaveLength(1);
-          expect(frame).toContain('The reviewer seat answer did not match its contract.');
-          expect(frame).toContain('Wrong or missing value in tasks, criteria, findings, fixTasks,');
-          expect(frame).toContain('Asking the seat again.');
+          expect(frame).not.toContain('did not match its contract');
+          expect(frame).not.toContain('Wrong or missing value in tasks');
+          expect(frame).not.toContain('Asking the seat again.');
           releaseThird.resolve();
           await expect.poll(screen, WAIT).toContain('Complete · 1/1 briefs passed');
           child.write('\x11');
@@ -294,9 +293,9 @@ globalThis.fetch = async (input, options) => {
     const sessionId = readdirSync(sessionsRoot(target.projectDir))[0];
     if (sessionId === undefined) throw new Error('CLI started without a run');
     const { events } = await readRunEvents({ projectDir: target.projectDir, sessionId });
-    expect(
-      events.filter((event) => event.type === 'warning' && event.code === 'seat_answer_refused'),
-    ).toMatchObject([{ category: 'reviewer' }]);
+    expect(events.filter((event) => event.type === 'seat_answer_refused')).toMatchObject([
+      { seat: 'reviewer' },
+    ]);
     expect(events.filter((event) => event.type === 'turn_interrupted')).toHaveLength(2);
     expect(
       events.filter((event) => event.type === 'runner_call_started' && event.role === 'review'),

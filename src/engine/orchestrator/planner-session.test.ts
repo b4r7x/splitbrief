@@ -213,7 +213,7 @@ describe('askPlannerSession on a refused thread', () => {
 });
 
 describe('askPlannerSession repair', () => {
-  it('says why it asks again on the planner thread', async () => {
+  it('records why it asks again on the planner thread, with no warning', async () => {
     const ref = setupProject(dirs);
     const state = { ...makeResearchingState(), plannerSessionId: 'thread' };
     saveState(ref, state);
@@ -248,13 +248,9 @@ describe('askPlannerSession repair', () => {
 
     expect(answer.result).toMatchObject({ value: { answer: 'ok' } });
     expect(prompts[1]).toMatch(/^Your previous answer failed validation/);
-    expect(events.filter((event) => event.type === 'warning')).toEqual([
-      expect.objectContaining({
-        category: 'planner',
-        code: 'seat_answer_refused',
-        message:
-          'The planner seat answer did not match its contract. Wrong or missing value in answer. Asking the seat again.',
-      }),
+    expect(events.filter((event) => event.type === 'seat_answer_refused')).toEqual([
+      expect.objectContaining({ seat: 'planner', reasons: ['Wrong or missing value in answer.'] }),
     ]);
+    expect(events.filter((event) => event.type === 'warning')).toEqual([]);
   });
 });

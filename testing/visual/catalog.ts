@@ -1438,7 +1438,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'review-answering-again',
-        title: 'Refused answer row and the second reviewer call',
+        title: 'Second reviewer call after a refused answer, with no row for the refusal',
         kind: 'implementation',
         marker: 'answering again',
       },
@@ -5780,6 +5780,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'The fix brief names the reviewer check it does not run',
         kind: 'implementation',
         marker: 'Fix check V2 · off',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Fix brief transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-fix-check-red-then-verify',
+      title: 'Workflow · a fix brief check still fails, then one verify after a repaired consult',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'fix-check-red-then-verify',
+        title: 'The failed render row of the fix brief, then one verify row and no refusal row',
+        kind: 'implementation',
+        marker: 'verify T901-K1, T901-R1',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

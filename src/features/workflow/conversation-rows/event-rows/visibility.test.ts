@@ -36,6 +36,18 @@ describe('isTranscriptRowlessEvent', () => {
     ).toBe(false);
   });
 
+  it('hides a refused seat answer that the seat is asked again for', () => {
+    expect(
+      isTranscriptRowlessEvent({
+        type: 'seat_answer_refused',
+        ts: 0,
+        phase: 'final-review',
+        seat: 'reviewer',
+        reasons: ['Task T001 is missing from the verdict.'],
+      }),
+    ).toBe(true);
+  });
+
   it('is true for row-less event types and false for visible rows', () => {
     const heartbeat: EngineEvent = {
       type: 'planner_heartbeat',

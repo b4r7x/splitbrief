@@ -953,7 +953,7 @@ describe('brief gate against the run base', () => {
     ]);
   });
 
-  it('fails a brief on a red whose command no gate command runs at the run base', async () => {
+  it('fails a brief on a red whose command no gate command runs at the run base, with a failed row and no counts', async () => {
     const { result, rows } = await gateRed({
       command: RED_SUITE,
       failing: [OLD],
@@ -963,7 +963,11 @@ describe('brief gate against the run base', () => {
     expect(result.acceptance).toEqual({ accepted: false });
     expect(result.error).toMatch(/^check K1 did not pass \(fail\): 1 failure\nFailures:\n- /);
     expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'K1', status: 'fail' }]);
-    expect(rows).toEqual([]);
+    expect(rows).toMatchObject([
+      { id: 'K1', taskId: 'T001', moment: 'plan', command: RED_SUITE, passed: false },
+    ]);
+    expect(rows[0]?.newFailures).toBeUndefined();
+    expect(rows[0]?.preExisting).toBeUndefined();
   });
 
   it('marks a brief check as waiting on the run base before the base result settles', async () => {

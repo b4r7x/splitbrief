@@ -129,6 +129,10 @@
 - The note for an effort level that a seat cannot use names the reason, for example `Effort high cleared: the OpenCode CLI variant sets the effort` or `the Google Antigravity CLI model id sets the effort`.
 - A CLI build seat budgets its prompt with the context window that its tool lists for the model. Settings > Tuning > Prompt budget reads `auto (500K)` for a Codex build seat on `gpt-6.1-sol`.
 - An `auto` build seat budgets with the window of the model that its tool selects on this machine. When SPLITBRIEF cannot read that selection, it keeps the conservative window.
+- When a seat's answer does not match its format, SPLITBRIEF asks the seat again and shows no warning row for it. While the review seat answers again, its activity line reads `answering again`.
+- The review prompt lists the check ids beside the task and criterion ids, and says which list each id of the answer comes from, such as the check ids, the criterion ids and the finding ids. The reviewer's first answer is accepted more often.
+- A brief check that still fails always shows its failed row, also when its output names no file and line.
+- When the planner answers a consult with a verify that names the wrong checks, SPLITBRIEF asks it again before any check runs. The transcript no longer shows a verify row for checks that never ran.
 - When SPLITBRIEF asks you about a planner rewrite or split that changes a brief's criteria, the transcript no longer shows a `rewrote` or `split into` row for it. The brief did not change.
 - That question now names the criteria the rewrite adds or drops, and no longer says `Dropped criteria: none`.
 - An answer line that starts with a space no longer adds a blank row to the Answered block.
@@ -211,7 +215,6 @@
 - Claude Code and Codex sign-ins kept in a folder set by `CLAUDE_CONFIG_DIR` or `CODEX_HOME` now work in runs, and a Codex sign-in kept in the system keyring is named as such, with the fix.
 - A reopened run that another process drives now shows when a seat waits for its usage limit to reset, and a wait whose reset has passed no longer shows on the run screen or in `--plain` output.
 - When one field of the implementer's closing report has the wrong shape, SPLITBRIEF keeps the other fields, such as the files it changed and its decisions, and shows one warning that names the field. Before, the whole report was lost and its narration showed as raw JSON.
-- The screen now says when a seat's answer did not match its format, why, and that the seat is asked again.
 - The screen shows the checks the review runs to verify its findings, each on its own row with its clock.
 - The review counts each problem once: when the reviewer names a red check under that check's id, the problem shows once in the blocking count and list, on every surface, for example `4 blocking` for four problems, not `8 blocking`.
 - The reviewer can set aside a failed check that needs no work, such as a flaky test, with a reason. The run continues, the reason shows on the review row, in `review.md`, in `--plain` and in a closed run's Run section, and the run no longer loops on **Review again**.

@@ -589,6 +589,11 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 { type: 'apply_started' }
 { type: 'apply_finished' }
 
+// The planner's or the reviewer's first typed answer broke its contract, and the seat is asked
+// again with these reasons. It paints no row and `--plain` prints nothing for it; the reviewer's
+// next call reads `answering again`. Older logs carry a `warning` with code `seat_answer_refused`.
+{ type: 'seat_answer_refused'; seat: 'planner' | 'reviewer'; reasons: string[] }
+
 // Operational message — `warning` and `info` have the same shape without `resetAt`;
 // `resetAt` is the ISO instant a usage-limit halt's quota comes back. `info` is a status
 // line, such as the planning session's `The revised plan passes its checks.`

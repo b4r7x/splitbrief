@@ -75,6 +75,7 @@ export type ApiReviewContextInput = Readonly<{
   /** The ids the verdict must answer for, as the prompt's Required Results states them. */
   taskIds?: readonly string[] | undefined;
   criterionIds?: readonly string[] | undefined;
+  checkIds?: readonly string[] | undefined;
   /** The plan as data: the criteria with their checks, and the briefs. */
   plan?: ReviewPlanData | undefined;
   touchedNotSuggested?: readonly ReviewTouchedNotSuggested[] | undefined;
@@ -276,6 +277,7 @@ export function buildApiReviewContext(input: ApiReviewContextInput): ApiReviewCo
     ...(input.renders !== undefined && { renders: input.renders }),
     ...(input.taskIds !== undefined && { taskIds: input.taskIds }),
     ...(input.criterionIds !== undefined && { criterionIds: input.criterionIds }),
+    ...(input.checkIds !== undefined && { checkIds: input.checkIds }),
     changeCoverage: coverage,
     driftReport: drift,
     checksLog,

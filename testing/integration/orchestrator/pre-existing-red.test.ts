@@ -448,9 +448,7 @@ describe('a brief check that runs the red suite of the project gate', { timeout:
     const { events } = await runBrief(projectDir, 'export const other = "unrelated";\n');
 
     const review = events.slice(events.findIndex((event) => event.type === 'task_completed'));
-    expect(
-      review.filter((event) => event.type === 'warning' && event.code === 'seat_answer_refused'),
-    ).toEqual([]);
+    expect(review.filter((event) => event.type === 'seat_answer_refused')).toEqual([]);
     expect(review.filter((event) => event.type === 'workflow_complete')).toMatchObject([
       { review: 'passed' },
     ]);

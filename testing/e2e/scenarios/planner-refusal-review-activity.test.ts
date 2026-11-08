@@ -134,11 +134,17 @@ console.log(${JSON.stringify(JSON.stringify(verdict))});
           return frame;
         };
         try {
+          // The refused answer is published before the repair call starts, and the repair call
+          // waits for releaseRepair, so this frame is painted after the refusal.
           await expect
-            .poll(sample, { timeout: 60_000 })
-            .toMatch(/The planner seat answer did not match its contract\.[\s\S]*Planning…/);
-          expect(frame.match(/seat answer did not match its contract/g)).toHaveLength(1);
-          expect(frame).toContain('Wrong or missing value in result. Asking the seat again.');
+            .poll(() => (existsSync(plannerCalls) ? readFileSync(plannerCalls, 'utf8') : ''), {
+              timeout: 60_000,
+            })
+            .toBe('plan\nrepair\n');
+          await expect.poll(sample, { timeout: 10_000 }).toContain('Planning…');
+          expect(frame).not.toContain('did not match its contract');
+          expect(frame).not.toContain('Wrong or missing value in result');
+          expect(frame).not.toContain('Asking the seat again.');
           expect(frame).not.toContain('reviewing changes');
           writeFileSync(releaseRepair, '');
           await expect.poll(() => existsSync(started), { timeout: 60_000 }).toBe(true);
@@ -168,9 +174,9 @@ console.log(${JSON.stringify(JSON.stringify(verdict))});
     const sessionId = readdirSync(sessionsRoot(target.projectDir))[0];
     if (sessionId === undefined) throw new Error('CLI started without a run');
     const { events } = await readRunEvents({ projectDir: target.projectDir, sessionId });
-    expect(
-      events.filter((event) => event.type === 'warning' && event.code === 'seat_answer_refused'),
-    ).toMatchObject([{ category: 'planner' }]);
+    expect(events.filter((event) => event.type === 'seat_answer_refused')).toMatchObject([
+      { seat: 'planner' },
+    ]);
   } finally {
     trustHome.restore();
     cleanupTempDir(target.tmpDir);

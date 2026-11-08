@@ -702,6 +702,11 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     seat: z.enum(CREW_SEAT_IDS),
     silentMs: z.number().int().nonnegative(),
   }),
+  /** The seat's first answer broke its contract, and the seat is asked again with the reasons. */
+  phaseEvent('seat_answer_refused').extend({
+    seat: z.enum(['planner', 'reviewer']),
+    reasons: z.array(z.string()),
+  }),
   phaseEvent('consult_bound_spent'),
   phaseEvent('implementer_generate_running').extend({
     taskId: TaskIdSchema,

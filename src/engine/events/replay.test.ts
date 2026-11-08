@@ -352,6 +352,11 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
     seat: 'build',
     silentMs: 1200000,
   },
+  seat_answer_refused: {
+    phase: 'final-review',
+    seat: 'reviewer',
+    reasons: ['Task T001 is missing from the verdict.'],
+  },
   consult_bound_spent: { phase: 'escalating' },
   implementer_generate_running: { phase: 'implementing', taskId: 'T001' },
   implementer_generate_done: {

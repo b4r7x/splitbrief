@@ -24,8 +24,7 @@ import type { Summary } from '../../../../src/core/schemas/summary.js';
 import { retainedWorkspaceNotices, retainedWorkspaceProjection } from './retained-workspace.js';
 import { closedQueueProjection } from './closed-queue-projection.js';
 import { cliStopContinuedProjection } from './cli-stop-continued.js';
-import { taskId, type Task } from '../../../../src/core/schemas/task.js';
-import { SEAT_ANSWER_REFUSED_CODE } from '../../../../src/core/runners/seat-answer-notice.js';
+import { taskId, type Check, type Task } from '../../../../src/core/schemas/task.js';
 import { buildRepoChecks } from '../../../../src/core/readiness/checks/repo.js';
 import {
   createStartReadinessRecord,
@@ -111,6 +110,8 @@ import {
 } from '../../../../src/engine/orchestrator/recovery/planner-call-failure.js';
 import { consultFailureLabel } from '../../../../src/engine/orchestrator/task/retry.js';
 import {
+  planCheckRow,
+  publishConsultAnswered,
   publishError,
   publishInfo,
   publishRecoveryActionSelected,
@@ -118,6 +119,7 @@ import {
   publishRecoveryResolved,
   publishReviewCheck,
   publishReviewChecks,
+  publishSeatAnswerRefused,
   publishWarning,
   publishSeatSwitched,
   publishTaskStart,
@@ -8240,6 +8242,55 @@ const fixCheckOffProjection: WorkflowFixtureProjection = {
   },
 };
 
+// Each attempt of the fix brief runs again the render check its finding names, before its fix
+// check; a pass draws no row. On the retry the render fails with output that names no file:line,
+// so no carried failure judges it and its row says failed. The planner's first consult answer
+// misses a criterion check and is asked again with no row; one verify row shows the repaired
+// selection.
+const FIX_CHECK_RENDER: Check = { id: 'T901-R1', kind: 'render', value: 'greet-card' };
+const fixCheckRedThenVerifyProjection: WorkflowFixtureProjection = {
+  ...fixCheckDoneProjection,
+  scenarioId: scenarioId('workflow-fix-check-red-then-verify'),
+  get events(): EngineEvent[] {
+    const done = fixCheckDoneProjection.events;
+    return [
+      ...done.slice(0, -1),
+      ...publishedEvents(FIXED_TS + 2_150, (bus) =>
+        publishReviewCheck(
+          { bus, phase: 'implementing' },
+          {
+            ...planCheckRow(
+              FIX_CHECK_RENDER.id,
+              `npm run tui-shots -- --scenario ${FIX_CHECK_RENDER.value} --output /tmp/render-t901-r1`,
+              FIX_CHECK_RENDER,
+            ),
+            taskId: WORKFLOW_FIXTURE_FIX_TASK_ID,
+            status: 'done',
+            passed: false,
+          },
+        ),
+      ),
+      ...done.slice(-1),
+      ...publishedEvents(FIXED_TS + 2_300, (bus) => {
+        publishSeatAnswerRefused({ bus, phase: 'escalating' }, 'planner', [
+          "the verify selection misses the task's criteria checks: T901-K1.",
+        ]);
+        publishConsultAnswered(
+          { bus, phase: 'escalating' },
+          {
+            taskId: WORKFLOW_FIXTURE_FIX_TASK_ID,
+            reason: 'failed',
+            action: 'verify',
+            diagnosis: 'The render service dropped the frame; the fix is right.',
+            newTaskIds: null,
+            checkIds: ['T901-K1', FIX_CHECK_RENDER.id],
+          },
+        );
+      }),
+    ];
+  },
+};
+
 // A first BUILD call whose runner reported a defect puts back the files it changed, as that halt
 // asks no consult, so none of the brief's files is left changed. The revert row lands after the
 // halt. In the project checkout the attempt's own bytes are saved first, and the row names where.
@@ -8512,6 +8563,14 @@ function claudeResolvedCrewProjection(): WorkflowFixtureProjection {
   };
 }
 
+const refusedReviewAnswer: EngineEventOf<'seat_answer_refused'> = {
+  type: 'seat_answer_refused',
+  ts: FIXED_TS + 20_010,
+  phase: 'final-review',
+  seat: 'reviewer',
+  reasons: ['Fix task T903 names an unknown criterion: The greeting names the user.'],
+};
+
 const projections = [
   reviewResumeProjection,
   reviewCheckCrashProjection,
@@ -8635,7 +8694,7 @@ const projections = [
   reviewVerifyProjection,
   reviewVerifyPreExistingProjection,
   stoppingReviewProjection,
-  // The reviewer's first answer broke its contract; one row says why, and the second call answers again.
+  // The reviewer's first answer broke its contract; no row shows the refusal, and the second call answers again.
   {
     ...finalReviewProjection,
     scenarioId: scenarioId('workflow-review-answering-again'),
@@ -8662,15 +8721,7 @@ const projections = [
         usage: null,
         nativeSessionId: null,
       },
-      {
-        type: 'warning',
-        ts: FIXED_TS + 20_010,
-        phase: 'final-review',
-        message:
-          'The reviewer seat answer did not match its contract. Fix task T903 names an unknown criterion: The greeting names the user. Asking the seat again.',
-        category: 'reviewer',
-        code: SEAT_ANSWER_REFUSED_CODE,
-      },
+      refusedReviewAnswer,
       {
         type: 'runner_call_started',
         ts: FIXED_TS + 20_020,
@@ -9108,6 +9159,7 @@ const projections = [
   fixCheckStoppedContinuedProjection,
   fixCheckDoneProjection,
   fixCheckOffProjection,
+  fixCheckRedThenVerifyProjection,
   attemptRevertedProjection,
   attemptRevertedCheckoutProjection,
   reviewBaseNotVerifiedProjection,

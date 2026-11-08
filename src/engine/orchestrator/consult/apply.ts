@@ -10,7 +10,6 @@ import type {
   PlannerConversation,
   WorkflowState,
 } from '../../../core/schemas/workflow.js';
-import { dueCriterionIds } from '../../../core/review/verdict.js';
 import { briefCorrections } from '../../../core/state/machine.js';
 import { insertTasks, lineageIdOf } from '../../../core/state/task-insert.js';
 import { error } from '../../../utils/error.js';
@@ -25,7 +24,7 @@ import { validateCommitAndAdvance } from '../task/commit.js';
 import { lineageAnchorAction } from '../task/refresh-code.js';
 import { runBriefGate } from '../task/brief-gate.js';
 import type { OrchestratorCallbacks, WorkflowSinks } from '../types.js';
-import { checkRegistry } from '../validation/run-checks.js';
+import { criteriaCheckIds } from './request.js';
 import type { ValidationCommandRunner, Validator } from '../validation/types.js';
 import type { BaseGate } from '../base-gate.js';
 
@@ -213,46 +212,12 @@ async function applySplit(
 
 const ASK_USER_QUESTION_ID = 'ask-user';
 
-function criteriaCheckIds(criteria: readonly string[], plan: Plan | undefined): string[] {
-  const served = new Set(criteria);
-  const checkIds = new Set<string>();
-  for (const criterion of plan?.criteria ?? []) {
-    if (!served.has(criterion.id)) continue;
-    for (const checkId of criterion.checkIds) checkIds.add(checkId);
-  }
-  return [...checkIds];
-}
-
-function verifySelectionError(
-  task: Task,
-  state: WorkflowState,
-  checkIds: readonly string[],
-): string | null {
-  if (checkIds.length === 0) return 'the verify selection names no check';
-  const known = checkRegistry({ task, tasks: state.tasks, plan: state.plan });
-  const unknown = checkIds.filter((checkId) => !known.has(checkId));
-  if (unknown.length > 0) return `the verify selection names unknown checks: ${unknown.join(', ')}`;
-  // The brief gate checks a criterion only once it is due, so a later owner's check never binds.
-  const due = new Set(dueCriterionIds(state, task.id));
-  const dueCriteria = (task.criteria ?? []).filter((criterionId) => due.has(criterionId));
-  const missing = criteriaCheckIds(dueCriteria, state.plan).filter(
-    (checkId) => !checkIds.includes(checkId),
-  );
-  if (missing.length > 0) {
-    return `the verify selection misses the task's criteria checks: ${missing.join(', ')}`;
-  }
-  return null;
-}
-
 async function applyVerify(
   ctx: ConsultApplyContext,
   task: Task,
   action: VerifyAction,
   attempt: ChangedFilesSnapshot,
 ): Promise<ConsultApplyOutcome> {
-  const selectionError = verifySelectionError(task, ctx.state, action.checkIds);
-  if (selectionError !== null) return { action: 'failed', reason: selectionError };
-
   const changedFiles = ctx.changedFiles ?? [];
   const gated = await runBriefGate({
     wctx: ctx,
@@ -406,8 +371,8 @@ async function applyAskUser(
 /**
  * Moves the run on the planner's consult answer: guidance hands back what the next attempt's error
  * block carries; a rewrite or a split replaces the task and keeps the failed attempt's files;
- * verify completes the task when its selection covers the criteria and the validation and
- * checks pass, and a pre_validation deny of that gate skips the task; ask-user puts the planner's
+ * verify completes the task when the validation and the checks it names pass, and a
+ * pre_validation deny of that gate skips the task; ask-user puts the planner's
  * one question to the operator and hands the answer back as guidance, or hands back the question
  * when nobody answers it; cannot hands back the planner's reason; an answer that would drop a criterion or one of its checks asks the
  * operator through that same path.

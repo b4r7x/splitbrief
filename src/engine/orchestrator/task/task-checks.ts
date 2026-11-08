@@ -173,18 +173,20 @@ async function runTaskCheckCommands(
       run.status === 'fail' ? run.failure : null,
     );
     if (judged === null) {
-      if (run.status !== 'fail' || run.command === undefined) continue;
-      const split = await splitCommandAtBase({
-        gate: opts.wctx.baseGate,
-        command: run.command,
-        failure: run.failure,
-        base: checkOptions.base,
-        wait: {
-          notices: { bus: checkOptions.bus, phase: checkOptions.phase },
-          row,
-        },
-      });
-      if (split === undefined) continue;
+      if (run.status !== 'fail') continue;
+      const split =
+        run.command === undefined
+          ? undefined
+          : await splitCommandAtBase({
+              gate: opts.wctx.baseGate,
+              command: run.command,
+              failure: run.failure,
+              base: checkOptions.base,
+              wait: {
+                notices: { bus: checkOptions.bus, phase: checkOptions.phase },
+                row,
+              },
+            });
       publishReviewCheck(
         { bus: checkOptions.bus, phase: checkOptions.phase },
         {
@@ -193,10 +195,10 @@ async function runTaskCheckCommands(
           passed: false,
           ...(run.timedOut !== undefined && { timedOut: run.timedOut }),
           ...(run.reusedAt !== undefined && { reusedAt: run.reusedAt }),
-          ...split.counts,
+          ...split?.counts,
         },
       );
-      if (split.preExisting.length === 0) continue;
+      if (split === undefined || split.preExisting.length === 0) continue;
       const splitRun: CheckRunResult = { ...run, preExisting: split.preExisting };
       runs[index] = splitRun;
       if (newFailureKeys(splitRun).length === 0) settled.add(run.checkId);

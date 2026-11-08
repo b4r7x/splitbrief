@@ -1077,3 +1077,115 @@ describe('requestConsult seats', () => {
     expect(retryFailureLabel(new Error('never thrown'), taskId)).toBe(`Retrying ${taskId} failed`);
   });
 });
+
+describe('requestConsult verify selection', () => {
+  function verifyAnswer(checkIds: string[]): ScriptedConsult {
+    return {
+      text: JSON.stringify({
+        answer: {
+          diagnosis: 'The check may predate the task',
+          action: 'verify',
+          checkIds,
+          reason: 'Run the checks again',
+        },
+      }),
+    };
+  }
+
+  function verifyState(): WorkflowState {
+    return {
+      ...consultState(),
+      plan: {
+        summary: 'Greet people by name',
+        decisions: [],
+        criteria: [{ id: 'C1', text: 'A greeting is returned', checkIds: ['K1', 'K2'] }],
+        checks: [
+          { id: 'K1', kind: 'test', value: 'src/greet.test.ts' },
+          { id: 'K2', kind: 'cmd', value: 'node --version' },
+        ],
+        validation: null,
+      },
+    };
+  }
+
+  it.each([
+    { name: 'names no check', checkIds: [], error: 'the verify selection names no check' },
+    {
+      name: 'names an unknown check',
+      checkIds: ['K1', 'K2', 'K9'],
+      error: 'the verify selection names unknown checks: K9',
+    },
+    {
+      name: "misses a due criterion's check",
+      checkIds: ['K1'],
+      error: "the verify selection misses the task's criteria checks: K2",
+    },
+  ])(
+    'repairs a verify selection that $name and takes the fixed selection',
+    async ({ checkIds, error }) => {
+      const { projectDir, sessionId } = setupProject(dirs);
+      const { bus } = makeBusRecorder();
+      const planner = consultPlanner([verifyAnswer(checkIds), verifyAnswer(['K1', 'K2'])], true);
+      const state = verifyState();
+      saveState({ projectDir, sessionId }, state);
+
+      const result = await requestConsult(
+        {
+          projectDir,
+          workspaceDir: projectDir,
+          sessionId,
+          bus,
+          config,
+          planner: planner.planner,
+          state,
+        },
+        { task: state.tasks[0]!, reason: 'failed', failingOutput: 'the failure' },
+      );
+
+      expect(planner.prompts).toHaveLength(2);
+      expect(planner.prompts[1]).toContain(error);
+      expect('answer' in result && result.answer.answer).toMatchObject({
+        action: 'verify',
+        checkIds: ['K1', 'K2'],
+      });
+    },
+  );
+
+  it('records one consult and publishes one answer, the repaired selection, for a selection that misses a due check', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const { bus, events } = makeBusRecorder();
+    const planner = consultPlanner([verifyAnswer(['K1']), verifyAnswer(['K1', 'K2'])], true);
+    const state = verifyState();
+    saveState({ projectDir, sessionId }, state);
+    const seen: WorkflowState[] = [];
+
+    await requestConsult(
+      {
+        projectDir,
+        workspaceDir: projectDir,
+        sessionId,
+        bus,
+        config,
+        planner: planner.planner,
+        state,
+        onStateChange: (next) => seen.push(next),
+      },
+      { task: state.tasks[0]!, reason: 'failed', failingOutput: 'the failure' },
+    );
+
+    expect(planner.prompts).toHaveLength(2);
+    expect(planner.prompts[1]).toContain(
+      "the verify selection misses the task's criteria checks: K2",
+    );
+    expect(events.filter((event) => event.type === 'consult_answered')).toEqual([
+      expect.objectContaining({ taskId: 'T003', action: 'verify', checkIds: ['K1', 'K2'] }),
+    ]);
+    expect(events.filter((event) => event.type === 'seat_answer_refused')).toEqual([
+      expect.objectContaining({ seat: 'planner' }),
+    ]);
+    const records = seen.at(-1)?.lineages?.T003?.consultRecords ?? [];
+    expect(records).toHaveLength(1);
+    expect(records[0]?.answer.answer).toMatchObject({ action: 'verify', checkIds: ['K1', 'K2'] });
+    expect(loadState({ projectDir, sessionId })?.lineages?.T003?.consultRecords).toHaveLength(1);
+  });
+});

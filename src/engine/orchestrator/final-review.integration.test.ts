@@ -512,7 +512,7 @@ describe('runFinalReviewPhase', () => {
     expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
   });
 
-  it('says why it asks the reviewer again, and delivers a queued message once', async () => {
+  it('records why it asks the reviewer again with no warning, and delivers a queued message once', async () => {
     const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nAdd auth.\n', null);
     const { bus, events } = makeBusRecorder();
@@ -544,14 +544,13 @@ describe('runFinalReviewPhase', () => {
 
     expect(result.reviewStatus).toBe('written');
     expect(result.verdict?.outcome.kind).toBe('pass');
-    expect(events.filter((event) => event.type === 'warning')).toEqual([
+    expect(events.filter((event) => event.type === 'seat_answer_refused')).toEqual([
       expect.objectContaining({
-        category: 'reviewer',
-        code: 'seat_answer_refused',
-        message:
-          'The reviewer seat answer did not match its contract. Task T001 is missing from the verdict. Asking the seat again.',
+        seat: 'reviewer',
+        reasons: ['Task T001 is missing from the verdict.'],
       }),
     ]);
+    expect(events.filter((event) => event.type === 'warning')).toEqual([]);
     expect(prompts).toHaveLength(2);
     expect(prompts[0]).toContain('Check the missing authentication guard');
     expect(prompts[1]).toContain('Check the missing authentication guard');
@@ -742,6 +741,65 @@ describe('runFinalReviewPhase', () => {
     ).toEqual(['verdict']);
     expect(result.reviewStatus).toBe('written');
   });
+
+  it.each([
+    { seat: 'CLI', config: () => makeNoValidationConfig({ validation: { endChecks: true } }) },
+    {
+      seat: 'API',
+      config: () =>
+        makeNoValidationConfig({
+          reviewer: { ...REVIEWER_RUNNER, contextLength: 400_000 },
+          validation: { endChecks: true },
+        }),
+    },
+  ])(
+    'lists the red gate check V4 under Check ids in the $seat review prompt, and shows it on its pending input',
+    async ({ config }) => {
+      const passing = 'process.exitCode = 0;\n';
+      const { projectDir, sessionId, runStartHead } = setupProject({
+        'v1.mjs': passing,
+        'v2.mjs': passing,
+        'v3.mjs': passing,
+        'v4.mjs': "console.error('greet drops the name');\nprocess.exitCode = 1;\n",
+      });
+      const { reviewer, prompts } = makeReviewer((prompt) => ({
+        ...passingReviewVerdict(prompt),
+        rejected: [{ findingId: 'V4.1', reason: 'The red is outside this run.' }],
+      }));
+      const done = allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead);
+
+      await runFinalReviewPhase({
+        modelCache: undefined,
+        projectDir,
+        workspaceDir: projectDir,
+        sessionId,
+        config: config(),
+        callbacks: makeCallbacks().callbacks,
+        bus: makeBusRecorder().bus,
+        state: {
+          ...done,
+          plan: {
+            ...GATE_PLAN,
+            gate: ['node v1.mjs', 'node v2.mjs', 'node v3.mjs', 'node v4.mjs'],
+          },
+        },
+        reviewer,
+        metadata: TEST_METADATA,
+        summaryBase: SUMMARY_BASE,
+        reviewChecks: { baseGate: undefined },
+      });
+
+      const prompt = prompts[0] ?? '';
+      const pending = prompt.split('## Pending Inputs\n')[1]?.split('\n## ')[0] ?? '';
+      expect(pending).toMatch(/^- \*\*V4\.1\*\* /m);
+      expect(pending).toContain('checks: V4');
+      const checkIds = prompt.match(/^Check ids: (.+)$/m)?.[1]?.split(', ') ?? [];
+      expect(checkIds).toContain('V4');
+      expect(checkIds).not.toContain('V4.1');
+      const afterIds = prompt.split(/^Criterion ids: .*$/m)[1] ?? '';
+      expect(afterIds).toContain("A fix task's criteria name only ids from Criterion ids");
+    },
+  );
 
   it('runs no gate and publishes no reviewer checks row when the review takes no reviewer checks', async () => {
     const { projectDir, sessionId, runStartHead } = setupProject();

@@ -32,7 +32,7 @@ const REVIEW_CHECKLIST = `1. **Acceptance Criteria**: Check each criterion from 
 6. **Code Quality**: Are there obvious bugs, security issues, or performance problems?
 7. **Test Strength**: For each test a task adds, check that the test fails when the behaviour the task names breaks. A test that still passes with that behaviour broken is a finding.`;
 
-const REQUIRED_RESULTS = `Answer with one result per listed id, in the schema you were given. Every task not met and every failed criterion needs a blocking finding naming it. A red pending input already blocks the review: do not restate it as a new finding. When a failed criterion or a task not met needs a finding for that input, give the input's id to one such finding only. A finding a fix cycle left open keeps its id, and a new finding never takes an id the triage log names. Mark a criterion unverified when no recorded evidence proves it, and name its checkIds. Verify a render only when its current-candidate images are attached and you critique the scenario. A manifest alone leaves the render unverified. Finding kinds are defect, plan-gap, unverified and question; minor findings are notes.`;
+const REQUIRED_RESULTS = `Answer with one result per listed id, in the schema you were given. Every task not met needs a blocking finding whose taskId is that task's id, and every failed criterion needs a blocking finding whose criterionId is that criterion's id. A red pending input already blocks the review: do not restate it as a new finding. When a failed criterion or a task not met needs a finding for that input, give the input's id to one such finding only. A finding a fix cycle left open keeps its id, and a new finding never takes an id the triage log names. Mark a criterion unverified when no recorded evidence proves it, and name its checkIds. Verify a render only when its current-candidate images are attached and you critique the scenario. A manifest alone leaves the render unverified. Finding kinds are defect, plan-gap, unverified and question; minor findings are notes.`;
 
 function fixWorkContract(writesFiles: ImplementerWriteMode | undefined): string {
   const sizing = writesFiles === 'direct' ? ` ${DIRECT_WRITER_TASK_RULE}` : '';
@@ -42,7 +42,7 @@ function fixWorkContract(writesFiles: ImplementerWriteMode | undefined): string 
 - rejected: { findingId, reason } for a pending input that needs no work, for example a red check that fails for a reason outside this run. A rejected red check stops blocking the review, and the user sees the reason. Reject pending inputs only. An Apply conflict always needs a fix task. A finding you would reject is not a blocking finding.
 - ask: { question, whyOnlyUserCanAnswer } or null. Use it only for a change to what is built that the plan and decisions cannot answer.
 
-Unless ask is set, every blocking finding that is not unverified appears exactly once in fixTasks[].findingIds or rejected[].findingId. Every pending input id appears exactly once in rejected[].findingId, or in the findingIds of one or more fix tasks. A blocking finding under a pending input's id follows this rule. With ask set, these two rules do not apply. A fix task's acceptance names only the failures that task fixes; the other failures of the same command belong to their own fix tasks or to the next review. Unverified and minor findings never become fix tasks.`;
+Unless ask is set, every blocking finding that is not unverified appears exactly once in fixTasks[].findingIds or rejected[].findingId. Every pending input id appears exactly once in rejected[].findingId, or in the findingIds of one or more fix tasks. A blocking finding under a pending input's id follows this rule. With ask set, these two rules do not apply. The acceptance of each finding a fix task fixes names only the failures that task fixes; the other failures of the same command belong to their own fix tasks or to the next review. Unverified and minor findings never become fix tasks.`;
 }
 
 const VALIDATION_EVIDENCE_PREAMBLE = `The orchestrator ran these validation commands and recorded their output. This section is the authoritative record of validation results for this run.`;
@@ -206,6 +206,7 @@ function requiredResultsBody(
   taskIds: readonly string[],
   tasks: readonly { id: string; title: string }[],
   criterionIds: readonly string[],
+  checkIds: readonly string[] | undefined,
   fixCycle: number | undefined,
   reviewKind: 'task' | 'final',
   writesFiles: ImplementerWriteMode | undefined,
@@ -218,12 +219,32 @@ function requiredResultsBody(
           'every blocking finding inside the Review Scope that is not unverified',
         )
       : contract;
+  // Each sentence names only the lists this prompt prints: Check ids when the caller passes them,
+  // Pending Inputs and the fix work in a fix cycle.
+  const findingFields =
+    checkIds === undefined
+      ? "a finding's taskId names only ids from Task ids, and its criterionId names only ids from Criterion ids"
+      : "a finding's taskId names only ids from Task ids, its criterionId names only ids from Criterion ids, and its checkIds name only ids from Check ids";
+  const findingRule = `Each id field takes ids from one list, never text: ${findingFields}${
+    fixCycle === undefined ? '' : '; a rejected findingId names only Pending Inputs ids'
+  }.${
+    fixCycle === undefined || checkIds === undefined
+      ? ''
+      : ' A pending input id, for example V4.1, is not a check id: a finding for input V4.1 names its check V4.'
+  }`;
   return [
     REQUIRED_RESULTS,
     ...(fixCycle === undefined ? [] : [scopedContract]),
     '',
     `Task ids: ${taskIds.join(', ') || 'none'}`,
     `Criterion ids: ${criterionIds.join(', ') || 'none'}`,
+    ...(checkIds === undefined ? [] : [`Check ids: ${checkIds.join(', ') || 'none'}`]),
+    findingRule,
+    ...(fixCycle === undefined
+      ? []
+      : [
+          "A fix task's criteria name only ids from Criterion ids, and its findingIds name only the blocking finding ids of this answer and the Pending Inputs ids. Write the words of a fix in the finding's acceptance and in the fix task's intent and steps.",
+        ]),
     ...(tasks.length === 0
       ? []
       : [
@@ -267,6 +288,8 @@ export type FinalReviewPromptInput = {
   /** The ids the verdict must answer for; derived from `plan` when omitted. */
   taskIds?: readonly string[] | undefined;
   criterionIds?: readonly string[] | undefined;
+  /** The ids a finding's checkIds may name; the prompt lists no check ids when omitted. */
+  checkIds?: readonly string[] | undefined;
   driftReport?: string | undefined;
   checksLog?: string | undefined;
   /** The render scenarios the checks log recorded, attached or as a manifest. */
@@ -406,6 +429,7 @@ export function buildFinalReviewPrompt(opts: FinalReviewPromptInput): string {
         taskIds,
         opts.plan?.tasks.filter((task) => taskIds.includes(task.id)) ?? [],
         criterionIds,
+        opts.checkIds,
         opts.fixCycle,
         reviewKind,
         opts.writesFiles,
@@ -430,12 +454,17 @@ export function reviewInputsSection(inputs: readonly TriageInput[]): string {
 function inputLines(inputs: readonly TriageInput[]): string {
   if (inputs.length === 0) return 'None.';
   return inputs
-    .map(
-      (input) =>
-        `- **${input.id}** (${input.source} · ${input.kind}) — ${input.text}${
-          input.file === null ? '' : `\n  File: ${input.file}`
-        }`,
-    )
+    .map((input) => {
+      const checkIds = input.checkIds ?? [];
+      const [headline = '', ...details] = input.text.split('\n');
+      const text =
+        checkIds.length === 0
+          ? input.text
+          : [`${headline} (checks: ${checkIds.join(', ')})`, ...details].join('\n');
+      return `- **${input.id}** (${input.source} · ${input.kind}) — ${text}${
+        input.file === null ? '' : `\n  File: ${input.file}`
+      }`;
+    })
     .join('\n');
 }
 

@@ -320,6 +320,7 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     case 'seat_switched':
     case 'seat_retry':
     case 'no_progress_cut':
+    case 'seat_answer_refused':
     case 'consult_bound_spent':
     case 'implementer_generate_running':
     case 'implementer_generate_done':

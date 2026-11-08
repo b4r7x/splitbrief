@@ -825,7 +825,11 @@ const checkpointPredicates = [
       'Plan check K1 · npm test 0:12',
     ),
   ],
-  [checkpointId('review-answering-again'), includesAll('did not match its contract')],
+  [
+    checkpointId('review-answering-again'),
+    (context) =>
+      includesAll('answering again')(context) && excludesAll('did not match its contract')(context),
+  ],
   [
     checkpointId('review-verify'),
     includesAll('Verify K1', 'Review · Verify K2 · npm test', 'running 0:12'),
@@ -1549,6 +1553,18 @@ const checkpointPredicates = [
       }),
   ],
   [checkpointId('fix-check-off'), includesAll('Fix check V2 · off')],
+  [
+    checkpointId('fix-check-red-then-verify'),
+    // The red row scrolls out of a small frame, so the rows are read from the whole transcript.
+    (context) => {
+      const text = workflowTranscriptText();
+      return (
+        includesTranscript('Render greet-card · failed')(context) &&
+        text.split('\n').filter((row) => row.includes('verify T901-K1, T901-R1')).length === 1 &&
+        !text.includes("misses the task's criteria checks")
+      );
+    },
+  ],
   [
     checkpointId('attempt-reverted'),
     // SPLITBRIEF's own neutral row below the runner defect's halt row, not a warning; a worktree

@@ -238,6 +238,55 @@ describe('runTaskChecks', () => {
     expect(retryChecks).toHaveLength(1);
   });
 
+  it("publishes a failed row for a plain brief's red check that no gate command runs, and none for its passing check", async () => {
+    const { projectDir, sessionId } = setup('task-checks-red-plain');
+    const task = makeTask({
+      id: 'T001',
+      checks: [
+        { id: 'K1', kind: 'cmd', value: 'tsc --noEmit' },
+        { id: 'K2', kind: 'cmd', value: 'node --version' },
+      ],
+    });
+    const state = makeImplState([task]);
+    const { bus, events } = makeBusRecorder();
+    const runCommand: ValidationCommandRunner = async (cmd, args) => {
+      const command = [cmd, ...args].join(' ');
+      if (command !== 'tsc --noEmit') return { stdout: 'v22.0.0', stderr: '', code: 0 };
+      throw processError.exitCode({
+        command,
+        code: 2,
+        stderr: '',
+        output: 'src/a.ts(1,14): error TS2322: Type number is not assignable to type string.',
+      });
+    };
+
+    const result = await runTaskChecks({
+      wctx: makeWctx({ projectDir, sessionId, bus }),
+      state,
+      task,
+      checkIds: ['K1', 'K2'],
+      runCommand,
+    });
+
+    expect(result.runs.map((run) => [run.checkId, run.status])).toEqual([
+      ['K1', 'fail'],
+      ['K2', 'pass'],
+    ]);
+    expect(events.filter((event) => event.type === 'full_suite')).toEqual([
+      {
+        type: 'full_suite',
+        ts: expect.any(Number),
+        phase: state.phase,
+        status: 'done',
+        id: 'K1',
+        taskId: 'T001',
+        command: 'tsc --noEmit',
+        moment: 'plan',
+        passed: false,
+      },
+    ]);
+  });
+
   it('never settles a red fix check that names no failure, and runs nothing at the run base', {
     timeout: 60_000,
   }, async () => {
@@ -555,6 +604,69 @@ describe('runTaskChecks for a fix task that answers a reviewer check', { timeout
           deferred: 0,
           deferredTo: [],
           others: 1,
+        },
+      ]);
+    });
+  });
+
+  // Live run K5-R14: the fix brief's E3 render failed with output that names no file:line, and
+  // the brief showed no row for it before the consult.
+  it('publishes a failed row for a fix check that re-runs red with output naming no file:line', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-fix-check-no-location' }, async (run) => {
+      const typecheck: Check = { id: 'K2', kind: 'cmd', value: 'tsc --noEmit' };
+      const task = makeTask({
+        id: 'T002',
+        checks: [typecheck],
+        fix: {
+          cycle: 1,
+          findings: [
+            {
+              id: 'P1',
+              text: 'Required check K2 failed.',
+              acceptance: null,
+              file: 'src/a.ts',
+              checkIds: ['K2'],
+              commands: { K2: 'tsc --noEmit' },
+              output: OWN_RED,
+              failureKeys: { K2: [OWN_KEY] },
+              redKeys: { K2: [OWN_KEY] },
+            },
+          ],
+        },
+      });
+      const ref = { projectDir: run.dir, sessionId: run.sessionId };
+      const state = makeImplState([task], { workspace: run.workspace });
+      saveState(ref, state);
+      const { bus, events } = makeBusRecorder();
+
+      const result = await runTaskChecks({
+        wctx: makeWctx({ ...ref, workspaceDir: run.ws, bus, config: makeConfig() }),
+        state,
+        task,
+        checkIds: ['K2'],
+        runCommand: makeCommandRunner(
+          processError.exitCode({
+            command: 'tsc --noEmit',
+            code: 1,
+            stderr: '',
+            output:
+              'tui-shots: failed\nfailures: 2\n\nError: workflow-closed-ended-moved-workspace 80x24: checkpoint-capture-failed: the frame never settled',
+          }),
+        ),
+      });
+
+      expect(result.settled.has('K2')).toBe(false);
+      expect(events.filter((event) => event.type === 'full_suite')).toEqual([
+        {
+          type: 'full_suite',
+          ts: expect.any(Number),
+          phase: state.phase,
+          status: 'done',
+          id: 'K2',
+          taskId: 'T002',
+          command: 'tsc --noEmit',
+          moment: 'plan',
+          passed: false,
         },
       ]);
     });

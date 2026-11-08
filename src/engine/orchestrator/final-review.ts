@@ -624,13 +624,15 @@ export async function runFinalReviewPhase(opts: {
         cache: opts.modelCache,
       }),
     });
+    const registry = checkRegistry({
+      plan: state.plan,
+      tasks: state.tasks,
+      reviewChecks: enabledReviewChecks(config, state.plan),
+    });
+    const checkIds = [...registry.keys()];
     const renders = reviewRenders({
       ledger,
-      registry: checkRegistry({
-        plan: state.plan,
-        tasks: state.tasks,
-        reviewChecks: enabledReviewChecks(config, state.plan),
-      }),
+      registry,
       projectDir,
       seatSupportsImages: reviewSeatTakesImages,
       currentCandidateId: reviewCandidateId,
@@ -703,6 +705,7 @@ export async function runFinalReviewPhase(opts: {
             queueText: promptPrefix,
             taskIds: scope.taskIds,
             criterionIds: scope.criterionIds,
+            checkIds,
             plan,
             touchedNotSuggested,
             checkResults,
@@ -758,6 +761,7 @@ export async function runFinalReviewPhase(opts: {
               writesFiles,
               taskIds: scope.taskIds,
               criterionIds: scope.criterionIds,
+              checkIds,
               changeCoverage: promptScope.description,
               driftReport: driftPromptSection,
               checksLog,

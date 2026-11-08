@@ -262,6 +262,41 @@ describe('runReviewerCall', () => {
     expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(0);
   });
 
+  it('publishes the refused first answer with its reasons, and no warning, before it asks again', async () => {
+    const { projectDir, sessionId } = setupProjectDir();
+    const { bus, events } = makeBusRecorder();
+    let calls = 0;
+    const reviewer = typedReviewer(async () =>
+      makeRunnerCallResult({
+        status: 'completed',
+        text: ++calls === 1 ? 'The diff looks fine.' : JSON.stringify(VERDICT),
+      }),
+    );
+
+    const result = await runReviewerCall({
+      reviewer,
+      prompt: 'review the diff',
+      schema: ReviewAnswerSchema,
+      jsonSchema: REVIEW_ANSWER_JSON_SCHEMA,
+      schemaName: 'review_answer',
+      config: makeConfig(),
+      projectDir,
+      workspaceDir: projectDir,
+      sessionId,
+      bus,
+      state: createInitialState('feature'),
+    });
+
+    expect('value' in result.result && result.result.value).toEqual(VERDICT);
+    expect(events.filter((event) => event.type === 'seat_answer_refused')).toEqual([
+      expect.objectContaining({
+        seat: 'reviewer',
+        reasons: ['No JSON object found in the answer.'],
+      }),
+    ]);
+    expect(events.filter((event) => event.type === 'warning')).toEqual([]);
+  });
+
   it('forwards the caller signal so an abort cancels the in-flight reviewer call', async () => {
     const { projectDir, sessionId } = setupProjectDir();
     const { bus } = makeBusRecorder();

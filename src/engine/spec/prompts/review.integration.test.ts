@@ -210,7 +210,7 @@ describe('buildFinalReviewPrompt', () => {
       'Every pending input id appears exactly once in rejected[].findingId, or in the findingIds of one or more fix tasks.',
     );
     expect(result).toContain(
-      "A fix task's acceptance names only the failures that task fixes; the other failures of the same command belong to their own fix tasks or to the next review.",
+      'The acceptance of each finding a fix task fixes names only the failures that task fixes; the other failures of the same command belong to their own fix tasks or to the next review.',
     );
     expect(result).toContain(
       'rejected: { findingId, reason } for a pending input that needs no work, for example a red check that fails for a reason outside this run. A rejected red check stops blocking the review, and the user sees the reason. Reject pending inputs only. An Apply conflict always needs a fix task.',
@@ -382,7 +382,7 @@ describe('buildFinalReviewPrompt', () => {
     expect(bare).toContain('Criterion ids: none');
     expect(bare).toContain('one result per listed id');
     expect(bare).toContain(
-      'Every task not met and every failed criterion needs a blocking finding naming it.',
+      "Every task not met needs a blocking finding whose taskId is that task's id, and every failed criterion needs a blocking finding whose criterionId is that criterion's id.",
     );
     expect(bare).toContain(
       'Mark a criterion unverified when no recorded evidence proves it, and name its checkIds.',
@@ -395,6 +395,8 @@ describe('buildFinalReviewPrompt', () => {
 
   it('lists each required task id with its plan title, and only the reviewed tasks in a task review', () => {
     const requiredResults = (prompt: string) => prompt.split('## Required Results')[1] ?? '';
+    const idRule =
+      "Each id field takes ids from one list, never text: a finding's taskId names only ids from Task ids, and its criterionId names only ids from Criterion ids.";
     const final = buildFinalReviewPrompt({
       spec: SPEC,
       taskBriefs: TASK_BRIEFS,
@@ -404,6 +406,7 @@ describe('buildFinalReviewPrompt', () => {
     expect(requiredResults(final)).toContain(
       [
         `Criterion ids: ${REVIEW_PLAN.criteria.map((criterion) => criterion.id).join(', ')}`,
+        idRule,
         '',
         "Write each task's note about that task's own work:",
         '- T001: Storage',
@@ -426,7 +429,7 @@ describe('buildFinalReviewPrompt', () => {
       }),
     );
     expect(task).toContain(
-      "Criterion ids: C1, C2, C3, C4\n\nWrite each task's note about that task's own work:\n- T001: Storage\n- T002: Scheduling",
+      `Criterion ids: C1, C2, C3, C4\n${idRule}\n\nWrite each task's note about that task's own work:\n- T001: Storage\n- T002: Scheduling`,
     );
     expect(task).not.toContain('- T003: Delivery');
 

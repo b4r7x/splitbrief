@@ -73,12 +73,11 @@ it('says the reviewer answers again on the call after a refused answer', () => {
   resetWorkflow();
   addEvent({ type: 'review_step', ts: 1_000, phase: 'final-review', step: 'verdict' });
   addEvent({
-    type: 'warning',
+    type: 'seat_answer_refused',
     ts: 2_000,
     phase: 'final-review',
-    message: 'The reviewer seat answer did not match its contract.',
-    category: 'reviewer',
-    code: 'seat_answer_refused',
+    seat: 'reviewer',
+    reasons: ['Task T001 is missing from the verdict.'],
   });
   addEvent(makeRunnerCallStarted({ ts: 2_100, phase: 'final-review', role: 'review' }));
   const text = reviewActivitySpans(reviewActivityParts(operationsStore.get().active, null))

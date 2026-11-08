@@ -10,6 +10,8 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { TriageResult } from '../../../core/schemas/review.js';
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import { plannerFixWork, stuckAnswerErrors } from '../../../core/review/stuck.js';
+import { dueCriterionIds } from '../../../core/review/verdict.js';
+import type { Plan } from '../../../core/schemas/plan.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import { lineageIdOf, nextTaskIds } from '../../../core/state/task-insert.js';
 import { isInDeclaredSet } from '../../../core/scope/declared-set.js';
@@ -88,13 +90,48 @@ export function isConsultError(err: unknown): boolean {
   return typeof err === 'object' && err !== null && consultErrors.has(err);
 }
 
+export function criteriaCheckIds(criteria: readonly string[], plan: Plan | undefined): string[] {
+  const served = new Set(criteria);
+  const checkIds = new Set<string>();
+  for (const criterion of plan?.criteria ?? []) {
+    if (!served.has(criterion.id)) continue;
+    for (const checkId of criterion.checkIds) checkIds.add(checkId);
+  }
+  return [...checkIds];
+}
+
+function verifySelectionErrors(
+  task: Task,
+  state: WorkflowState,
+  answer: ConsultAnswer['answer'],
+): string[] {
+  if (answer.action !== 'verify') return [];
+  const { checkIds } = answer;
+  if (checkIds.length === 0) return ['the verify selection names no check'];
+  const known = checkRegistry({ task, tasks: state.tasks, plan: state.plan });
+  const unknown = checkIds.filter((checkId) => !known.has(checkId));
+  if (unknown.length > 0) {
+    return [`the verify selection names unknown checks: ${unknown.join(', ')}`];
+  }
+  // The brief gate checks a criterion only once it is due, so a later owner's check never binds.
+  const due = new Set(dueCriterionIds(state, task.id));
+  const dueCriteria = (task.criteria ?? []).filter((criterionId) => due.has(criterionId));
+  const missing = criteriaCheckIds(dueCriteria, state.plan).filter(
+    (checkId) => !checkIds.includes(checkId),
+  );
+  return missing.length === 0
+    ? []
+    : [`the verify selection misses the task's criteria checks: ${missing.join(', ')}`];
+}
+
 /**
  * The answer contract of one consult. A rewrite or a split never brings in a `cmd` check that the
  * plan command policy refuses or whose npm script no one adds, a `render` check that names no
  * scenario id or that the run cannot render, or a `test` check whose value is not one test file in
  * the workspace or in the files of the answer or of a pending task. A fix task's rewrite or split
- * never targets the user's own files the run left alone, and a stuck review's answer meets
- * `stuckAnswerErrors`. Such an answer fails the schema and the seat gets its one repair.
+ * never targets the user's own files the run left alone. A verify answer names a known check and
+ * every check of the task's due criteria (`verifySelectionErrors`), and a stuck review's answer
+ * meets `stuckAnswerErrors`. Such an answer fails the schema and the seat gets its one repair.
  */
 function answerContract(
   task: Task,
@@ -102,6 +139,8 @@ function answerContract(
   stuck: ConsultRequestInput['stuck'],
   checks: {
     known: ReadonlySet<string>;
+    /** The run a verify selection is checked against: its checks and its due criteria. */
+    state: WorkflowState;
     npmScriptsApproved: boolean;
     projectDir: string;
     renderCommand: string | undefined;
@@ -131,7 +170,7 @@ function answerContract(
         ...unresolvedTestCheckErrors(specs, checks.testChecks, checks.pendingFiles),
         ...fixTaskTargetErrors(specs, checks.userFiles),
         ...(stuck === undefined
-          ? []
+          ? verifySelectionErrors(task, checks.state, value.answer)
           : stuckAnswerErrors(value.answer, { ...stuck, knownChecks: checks.known })),
       ]) {
         ctx.addIssue({ code: 'custom', message });
@@ -305,6 +344,7 @@ export async function requestConsult(
         reviewChecks: enabledReviewChecks(ctx.config, ctx.state.plan),
       }).keys(),
     ),
+    state: ctx.state,
     npmScriptsApproved: planApprovesNpmScripts({ config: ctx.config, state: ctx.state }),
     projectDir: ctx.workspaceDir,
     renderCommand: ctx.config.validation.render,

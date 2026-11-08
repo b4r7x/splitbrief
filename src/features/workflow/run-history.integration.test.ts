@@ -757,6 +757,29 @@ describe('hydrateRun', () => {
     expect(transcriptAt120x40()).toEqual(live);
   });
 
+  it('keeps a refused reviewer answer in the replay and shows no row for it when the run reopens', async () => {
+    const reasons = ['Task T001 is missing from the verdict.'];
+    writeLog([
+      ...RUN,
+      { type: 'review_started', ts: 4_000, phase: 'final-review', scope: 'final', tool: 'codex' },
+      { type: 'seat_answer_refused', ts: 30_000, phase: 'final-review', seat: 'reviewer', reasons },
+    ]);
+
+    await hydrateRun(
+      makeRunRecord({
+        ref: { projectDir, sessionId: SESSION_ID },
+        hydration: { kind: 'loaded', state: { ...savedState(), phase: 'final-review' } },
+      }),
+    );
+
+    expect(
+      eventsStore.get().events.filter((event) => event.type === 'seat_answer_refused'),
+    ).toEqual([expect.objectContaining({ seat: 'reviewer', reasons })]);
+    const transcript = transcriptAt120x40().join(' ');
+    expect(transcript).not.toContain('Task T001 is missing from the verdict.');
+    expect(transcript).not.toContain('did not match its contract');
+  });
+
   it('puts the stores where a live run of the same log would have left them', async () => {
     writeLog(RUN);
     for (const event of RUN) addEvent(event);

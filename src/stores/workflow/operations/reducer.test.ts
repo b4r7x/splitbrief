@@ -8,6 +8,7 @@ import { hydrateFromState } from '../actions/hydrate.js';
 import { markCancellationRequested } from '../actions/interrupt.js';
 import { resetWorkflow } from '../actions/reset.js';
 import { MAX_COMPLETED_OPERATIONS } from './retention.js';
+import { updateOperations } from './reducer.js';
 import { operationsStore, selectRunningSuite, selectScheduledReview } from './state.js';
 import { makePlannerStatus } from '#testing/helpers/events/planner.js';
 import { makeTaskStart, makeValidate } from '#testing/helpers/events/task.js';
@@ -126,16 +127,15 @@ function runnerCompleted(
 
 function refusedAnswer(
   ts: number,
-  category: 'reviewer' | 'planner',
+  seat: 'reviewer' | 'planner',
   phase: 'final-review' | 'planning',
-): EngineEventOf<'warning'> {
+): EngineEventOf<'seat_answer_refused'> {
   return {
-    type: 'warning',
+    type: 'seat_answer_refused',
     ts,
     phase,
-    message: `The ${category} seat answer did not match its contract.`,
-    category,
-    code: 'seat_answer_refused',
+    seat,
+    reasons: ['Task T001 is missing from the verdict.'],
   };
 }
 
@@ -593,14 +593,7 @@ describe('operationsStore', () => {
     addEvent({ type: 'review_step', ts: 1_010, phase: 'final-review', step: 'verdict' });
     addEvent(runnerStarted({ ...review, ts: 1_100, callId: 'call-1' }));
     addEvent(runnerCompleted({ ...review, ts: 2_000, callId: 'call-1' }));
-    addEvent({
-      type: 'warning',
-      ts: 2_001,
-      phase: 'final-review',
-      message: 'The reviewer seat answer did not match its contract.',
-      category: 'reviewer',
-      code: 'seat_answer_refused',
-    });
+    addEvent(refusedAnswer(2_001, 'reviewer', 'final-review'));
     addEvent(runnerStarted({ ...review, ts: 2_100, callId: 'call-2' }));
     expect(operationsStore.get().active).toMatchObject({ callId: 'call-2', answeringAgain: true });
 
@@ -609,15 +602,19 @@ describe('operationsStore', () => {
     expect(operationsStore.get().active?.answeringAgain).toBeUndefined();
   });
 
+  it('reads a refused reviewer answer as the mark for the next reviewer call, and a refused planner answer as none', () => {
+    const idle = operationsStore.get();
+    expect(
+      updateOperations(idle, refusedAnswer(2_001, 'reviewer', 'final-review'))
+        .reviewerAnswerRefused,
+    ).toBe(true);
+    expect(
+      updateOperations(idle, refusedAnswer(2_001, 'planner', 'planning')).reviewerAnswerRefused,
+    ).not.toBe(true);
+  });
+
   it('drops a refused answer the stop cut before its second call', () => {
-    addEvent({
-      type: 'warning',
-      ts: 2_001,
-      phase: 'final-review',
-      message: 'The reviewer seat answer did not match its contract.',
-      category: 'reviewer',
-      code: 'seat_answer_refused',
-    });
+    addEvent(refusedAnswer(2_001, 'reviewer', 'final-review'));
     addEvent({ type: 'workflow_cancelled', ts: 2_050, phase: 'final-review' });
     addEvent(
       runnerStarted({ ts: 9_000, phase: 'final-review', role: 'review', taskId: undefined }),

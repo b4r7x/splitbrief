@@ -125,9 +125,8 @@ describe('e2e: the project gate the plan names', () => {
     const { run, state, calls } = await runPlanGate(7);
 
     expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
-    expect(run.stderr).toContain(
-      'The planner seat answer did not match its contract. Wrong or missing value in gate. Asking the seat again.',
-    );
+    expect(run.stderr).not.toContain('did not match its contract');
+    expect(run.stderr).not.toContain('Asking the seat again.');
     expect(calls.map((call) => call.kind)).toEqual(['plan', 'plan-again', 'review']);
     expect(calls[1]?.prompt).toContain('result.gate: Too big: expected array to have <=6 items');
     expect(state.phase).toBe('complete');

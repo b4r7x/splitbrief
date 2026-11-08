@@ -17,7 +17,6 @@ import {
   type RunningValidationStage,
 } from './state.js';
 import { appendWarning, showsWarningOnPrimarySurface } from './warnings.js';
-import { SEAT_ANSWER_REFUSED_CODE } from '../../../core/runners/seat-answer-notice.js';
 
 type ValidationEvent = Extract<EngineEvent, { type: 'validate' }>;
 type SuiteEvent = Extract<EngineEvent, { type: 'full_suite' }>;
@@ -171,10 +170,8 @@ function updateRunningOperations(state: OperationsState, event: EngineEvent): Op
       };
     case 'checks_run':
       return (state.suiteStage ?? null) === null ? state : { ...state, suiteStage: null };
-    case 'warning':
-      return event.code === SEAT_ANSWER_REFUSED_CODE && event.category === 'reviewer'
-        ? { ...state, reviewerAnswerRefused: true }
-        : state;
+    case 'seat_answer_refused':
+      return event.seat === 'reviewer' ? { ...state, reviewerAnswerRefused: true } : state;
     case 'runner_call_started':
       return startRunnerOperation(closeStatusFallbacks(state, event.ts), event);
     case 'runner_call_runtime_status':

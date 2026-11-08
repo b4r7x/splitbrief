@@ -44,6 +44,7 @@ const TRANSCRIPT_ROWLESS_EVENT_TYPES = [
   'seat_wait_started',
   'seat_wait_ended',
   'no_progress_cut',
+  'seat_answer_refused',
   'consult_bound_spent',
   'cost_update',
   'workspace_closed',

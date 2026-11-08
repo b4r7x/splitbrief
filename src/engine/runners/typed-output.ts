@@ -53,8 +53,8 @@ export type RequestTypedOptions<T> = Readonly<{
   schema: z.ZodType<T>;
   jsonSchema: Readonly<Record<string, unknown>>;
   schemaName: string;
-  /** Hears, before the seat is asked again, why its first answer was refused. */
-  onRepair?: ((message: string) => void) | undefined;
+  /** Hears, before the seat is asked again, the reasons its first answer was refused. */
+  onRepair?: ((reasons: readonly string[]) => void) | undefined;
 }> &
   (TypedRequestInput | Readonly<{ prepareCall: () => Promise<TypedRequestInput> }>);
 
@@ -91,15 +91,6 @@ export function seatProtocolHeadline(
   data: Pick<SeatProtocolErrorData, 'seat' | 'attempts'>,
 ): string {
   return `The ${data.seat} seat answer did not match its contract after ${countNoun(data.attempts, 'attempt')}.`;
-}
-
-const REPAIR_REASONS_SHOWN = 3;
-
-function seatRepairNotice(seat: ActiveRunnerRole, reasons: readonly string[]): string {
-  const shown = reasons.slice(0, REPAIR_REASONS_SHOWN);
-  const more = reasons.length - shown.length;
-  const reason = [...shown, ...(more > 0 ? [`And ${more} more.`] : [])].join(' ');
-  return `The ${seat} seat answer did not match its contract. ${reason} Asking the seat again.`;
 }
 
 export const typedOutputError = {
@@ -431,7 +422,7 @@ export async function requestTyped<T>(
     : freshRepairPrompt(repairInput.prompt, firstCheck.answer, firstCheck.errors);
   const repairPromptSent = repairPrompt + suffix;
   refuseOverLimit(repairPromptSent, repairInput.call.promptLimit);
-  opts.onRepair?.(seatRepairNotice(seat, firstCheck.reasons));
+  opts.onRepair?.(firstCheck.reasons);
   const repair = requireCompletedCall(
     await repairInput.call.invoke({
       prompt: repairPromptSent,

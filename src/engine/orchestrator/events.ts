@@ -19,6 +19,7 @@ import type { AnsweredQuestion, ClarificationQuestion } from '../../core/schemas
 import type { AttachedInput } from '../../core/schemas/attachment.js';
 import type { PlannerCall, StepRef } from '../../core/schemas/run-step.js';
 import type { CrewSeatId } from '../../core/crew/identity.js';
+import type { PlannerTierRole } from '../../core/runners/seat-roles.js';
 import type { SeatIdentity } from '../../core/providers/seat-identity.js';
 import type { EngineEvent, EngineEventOf, EventBus } from '../events/types.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
@@ -455,6 +456,21 @@ export function publishSeatRetry(
   opts: { seat: CrewSeatId; attempt: number; delayMs: number },
 ): void {
   ctx.bus.publish({ type: 'seat_retry', ts: Date.now(), phase: ctx.phase, ...opts });
+}
+
+/** A refused first answer that the seat is asked again for: no row, the reasons stay in the log. */
+export function publishSeatAnswerRefused(
+  ctx: BusContext,
+  seat: PlannerTierRole,
+  reasons: readonly string[],
+): void {
+  ctx.bus.publish({
+    type: 'seat_answer_refused',
+    ts: Date.now(),
+    phase: ctx.phase,
+    seat,
+    reasons: [...reasons],
+  });
 }
 
 export function publishNoProgressCut(
