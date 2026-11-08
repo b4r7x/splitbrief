@@ -164,9 +164,11 @@ export function recoveryMenuActionLabel(action: RecoveryAction, issue: RecoveryI
 /**
  * A menu row's words. A swap says what it runs again, as the applier decides it
  * (`isSeatLevelRetry`): the step the halted seat was on, else the brief the halt
- * names, from its first attempt. So does a retry after a PLAN or REVIEW halt on
- * a brief: "Try again" alone reads as retrying the call that stopped, but it
- * restarts the brief. On a short panel the facts above the rows are what drops.
+ * names. So does a retry after a PLAN or REVIEW halt on a brief: "Try again"
+ * alone reads as retrying the call that stopped. A *Seat down* halt on BUILD or
+ * PLAN parks its brief (`raiseBriefHalt`), so that brief continues on the files
+ * it kept; after any other halt the brief starts again. On a short panel the
+ * facts above the rows are what drops.
  */
 export function recoveryMenuParts(
   action: RecoveryAction,
@@ -202,7 +204,10 @@ function recoveryMenuConsequence(action: RecoveryAction, issue: RecoveryIssue): 
       !seatLevel &&
       (issue.seat === 'plan' || issue.seat === 'review'));
   if (!says) return undefined;
-  if (!seatLevel) return 'restarts this brief';
+  if (!seatLevel)
+    return haltOf(issue.reason) === 'seat-down' && issue.seat !== 'review'
+      ? 'continues this brief'
+      : 'restarts this brief';
   return issue.phase === 'final-review' ? 'runs the review again' : 'runs this step again';
 }
 

@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import type { MachineAction } from '../../core/state/types.js';
 import { briefCorrections, lineageKeyFor, transition } from '../../core/state/machine.js';
 import type { TaskId } from '../../core/schemas/task.js';
+import type { ConsultQuestion } from '../../core/schemas/consult.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import { loadState } from '../../core/state/persistence.js';
 import { keepUnsavedFailure } from '../../core/state/resume-hydration.js';
@@ -12,6 +13,7 @@ import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { WorkflowStateSchema, WORKFLOW_STATE_VERSION } from '../../core/schemas/workflow.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
+import { haltOf } from '../../core/recovery/halt.js';
 import { confinedAtomicWriteFileSync, type ConfigRevision } from '../../lib/confined-fs-atomic.js';
 import { SECURE_FILE_MODE } from '../../lib/fs.js';
 import { STATE_FILE, sessionDir } from '../../core/paths.js';
@@ -759,6 +761,30 @@ export function raisePendingRecovery(
   );
   setTrackedState?.(next);
   return next;
+}
+
+/**
+ * Raises the halt of a brief. A *Seat down* halt also parks the brief's step: the brief keeps the
+ * files its attempt left, and Switch, Try again and Try later continue on them. With `consult`, the
+ * park holds the brief at its consult and the question it asked, so that consult runs again.
+ */
+export function raiseBriefHalt(
+  scope: WorkflowPersistenceContext,
+  state: WorkflowState,
+  halt: { taskId: TaskId; issue: RecoveryIssue; consult?: ConsultQuestion | undefined },
+  setTrackedState?: (s: WorkflowState) => void,
+): WorkflowState {
+  const parked =
+    haltOf(halt.issue.reason) === 'seat-down'
+      ? transitionAndSave(scope, state, {
+          type: 'INTERRUPT_STEP',
+          step: { kind: 'brief', taskId: halt.taskId, attempt: state.attempt },
+          source: 'seat',
+          cut: 'mid-step',
+          ...(halt.consult !== undefined && { consult: halt.consult }),
+        })
+      : state;
+  return raisePendingRecovery(scope, parked, halt.issue, setTrackedState);
 }
 
 /**

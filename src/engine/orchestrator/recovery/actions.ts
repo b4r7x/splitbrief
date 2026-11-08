@@ -541,7 +541,7 @@ async function applySkipCurrentTaskRecoveryAction(
  * A halt that names no brief is about the seat, not a task. PLAN and REVIEW have
  * nothing to reset: a packet the seat was never given, and a review call that
  * never landed, are answered by re-issuing the same step once the seat is
- * corrected. Every other retry replays the brief it names.
+ * corrected. Every other retry runs the brief it names again.
  */
 export function isSeatLevelRetry(issue: RecoveryIssue): boolean {
   return (

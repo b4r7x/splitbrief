@@ -23,7 +23,15 @@ import {
   makeTaskWorkflowContext as makeWorkflowContext,
   setupTaskProject as setupProject,
 } from '#testing/helpers/orchestrator-task-context.js';
-import { consultCallAnswering, guidanceConsult } from '#testing/helpers/typed-planner.js';
+import {
+  cannotConsult,
+  consultCallAnswering,
+  guidanceConsult,
+} from '#testing/helpers/typed-planner.js';
+import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
+import type { ConsultAnswer } from '../../../core/schemas/consult.js';
+import type { TypedCallContext } from '../../planners/types.js';
+import type { TypedSeatCall } from '../../runners/typed-output.js';
 import { isolationWorktreeRoot, SPLITBRIEF_DIR } from '../../../core/paths.js';
 import { createRunIsolation } from '../isolation/create.js';
 import { readWorkspaceRecord } from '../isolation/retention.js';
@@ -34,6 +42,7 @@ import type { BundleApplyResult } from '../../implementers/file-bundle.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { processError } from '../../../lib/process/errors.js';
 import * as commandRunner from '../../../lib/process/spawn/run-command.js';
+import { applyRecoveryAction } from '../recovery/actions.js';
 import { runSingleTask } from './step.js';
 
 afterEach(() => {
@@ -158,9 +167,9 @@ describe('runSingleTask — worktree isolation', () => {
 
     expect(receivedDirs).toEqual([wctx.workspaceDir, wctx.workspaceDir]);
     expect(wctx.workspaceDir).not.toBe(projectDir);
-    // The failing brief's halt took its file back in the run workspace.
+    // The failing brief's *Seat down* halt kept its file in the run workspace.
     expect(readFileSync(join(wctx.workspaceDir, 'src/main.ts'), 'utf-8')).toBe(
-      'export const main = 0;\n',
+      'export const main = 999;\n',
     );
     expect(readFileSync(join(wctx.workspaceDir, 'src/b.ts'), 'utf-8')).toBe(
       'export const b = 999;\n',
@@ -243,18 +252,20 @@ describe('runSingleTask — what a revert or a restore leaves of the brief', () 
    */
   type CallResult = {
     success: boolean;
-    outcome?: 'implementer-left-isolation';
+    outcome?: 'implementer-left-isolation' | 'checkout-changed';
     applyResult?: BundleApplyResult;
   };
 
   /**
    * Runs the brief until a consult fails, and records the prompt of every consult. The task start
-   * is saved as the task loop saves it, so each consult reads the task diff.
+   * is saved as the task loop saves it, so each consult reads the task diff. A consult past the
+   * scripted answers throws, or fails with `consultStop` as the planner tool's own failed call.
    */
   async function runUntilHalt(opts: {
     implement: (dir: string) => CallResult;
     retry?: (dir: string) => CallResult;
-    answers: Array<() => ReturnType<typeof guidanceConsult>>;
+    answers: Array<() => ConsultAnswer>;
+    consultStop?: { code: string; message: string };
   }) {
     const { projectDir, sessionId } = setupProject({
       'src/main.ts': 'export const main = 0;\n',
@@ -298,12 +309,27 @@ describe('runSingleTask — what a revert or a restore leaves of the brief', () 
       },
     });
     const prompts: string[] = [];
-    const typedCall = consultCallAnswering((prompt) => {
+    const answering = consultCallAnswering((prompt) => {
       const answer = opts.answers[prompts.length];
       prompts.push(prompt);
       if (answer === undefined) throw new Error('The planner process stopped unexpectedly.');
       return answer();
     });
+    const typedCall = (ctx: TypedCallContext): TypedSeatCall => {
+      const call = answering(ctx);
+      const stop = opts.consultStop;
+      if (stop === undefined) return call;
+      return {
+        ...call,
+        invoke: async (input) => {
+          if (!input.prompt.includes('# Consult') || opts.answers[prompts.length] !== undefined) {
+            return call.invoke(input);
+          }
+          prompts.push(input.prompt);
+          return makeRunnerCallResult({ status: 'failed', text: '', error: stop });
+        },
+      };
+    };
     const recorder = makeBusRecorder();
     const wctx = await openRunWorkspace(
       makeWorkflowContext({
@@ -334,13 +360,30 @@ describe('runSingleTask — what a revert or a restore leaves of the brief', () 
     await isolation.dispose();
     const warnings = recorder.events.filter((event) => event.type === 'warning');
     const errors = recorder.events.filter((event) => event.type === 'error');
-    return { state, rows, warnings, errors, prompts, workspaceDir: wctx.workspaceDir };
+    return {
+      state,
+      rows,
+      warnings,
+      errors,
+      prompts,
+      workspaceDir: wctx.workspaceDir,
+      projectDir,
+      sessionId,
+      recorder,
+    };
   }
 
   const write = (dir: string, file: string, text: string): void =>
     writeFileSync(join(dir, file), text);
   const read = (dir: string, file: string): string => readFileSync(join(dir, file), 'utf-8');
   const noTaskChange = 'This task has changed no file since it started.';
+  // The failed result frame of an agy consult that ran out of quota, without its reset: a reset
+  // the run can read, with no fallback seat, is waited out instead of halting.
+  const agyQuotaStop = {
+    code: 'antigravity-result-failed',
+    message: 'Individual quota reached. Please upgrade your subscription to increase your limits.',
+  };
+  const restoreRow = expect.objectContaining({ message: expect.stringMatching(/^Restored /) });
 
   it('keeps the files of a failed first call for the consult and the next attempt', {
     timeout: 120_000,
@@ -368,7 +411,7 @@ describe('runSingleTask — what a revert or a restore leaves of the brief', () 
     expect(state.pendingRecovery?.reason).toBe('planner-call-failed');
   });
 
-  it('keeps the files of a failed retry for the consult and the next attempt, and restores every attempt at the halt', {
+  it('keeps the files of a failed retry for the consult and the next attempt, and keeps every attempt at the halt', {
     timeout: 120_000,
   }, async () => {
     const seen: string[] = [];
@@ -398,14 +441,9 @@ describe('runSingleTask — what a revert or a restore leaves of the brief', () 
       expect(prompt).not.toContain(noTaskChange);
     }
     expect(state.pendingRecovery?.reason).toBe('planner-call-failed');
-    expect(warnings).toContainEqual(
-      expect.objectContaining({
-        message: 'Restored 2 changes of the failing brief to its start: src/extra.ts, src/main.ts',
-        briefKept: 0,
-      }),
-    );
-    expect(read(workspaceDir, 'src/main.ts')).toBe('export const main = 0;\n');
-    expect(read(workspaceDir, 'src/extra.ts')).toBe('export const extra = 0;\n');
+    expect(warnings).not.toContainEqual(restoreRow);
+    expect(read(workspaceDir, 'src/main.ts')).toBe('export const main = 1;\n');
+    expect(read(workspaceDir, 'src/extra.ts')).toBe('export const extra = 1;\n');
   });
 
   it('counts no file once the halt restore took back a file outside the declared files', {
@@ -422,13 +460,10 @@ describe('runSingleTask — what a revert or a restore leaves of the brief', () 
         if (retries === 1) write(dir, 'src/extra.ts', 'export const extra = 1;\n');
         return { success: false };
       },
-      answers: [
-        () => guidanceConsult('Fix the type error.'),
-        () => guidanceConsult('Fix the type error.'),
-      ],
+      answers: [() => guidanceConsult('Fix the type error.'), () => cannotConsult()],
     });
 
-    expect(state.pendingRecovery?.reason).toBe('planner-call-failed');
+    expect(state.pendingRecovery?.reason).toBe('retry-exhausted');
     expect(warnings).toContainEqual(
       expect.objectContaining({
         message:
@@ -440,7 +475,7 @@ describe('runSingleTask — what a revert or a restore leaves of the brief', () 
     expect(read(workspaceDir, 'src/extra.ts')).toBe('export const extra = 0;\n');
   });
 
-  it('puts back the files of a call whose runner reported a defect, as that halt asks no consult', {
+  it('keeps the files of a call whose runner reported a defect, as that halt asks no consult', {
     timeout: 120_000,
   }, async () => {
     const { state, prompts, workspaceDir } = await runUntilHalt({
@@ -453,10 +488,26 @@ describe('runSingleTask — what a revert or a restore leaves of the brief', () 
 
     expect(state.pendingRecovery?.reason).toBe('implementer-left-isolation');
     expect(prompts).toEqual([]);
+    expect(read(workspaceDir, 'src/main.ts')).toBe('export const main = 1;\n');
+  });
+
+  it('puts back the files of a call that changed the repository, as that halt needs you', {
+    timeout: 120_000,
+  }, async () => {
+    const { state, prompts, workspaceDir } = await runUntilHalt({
+      implement: (dir) => {
+        write(dir, 'src/main.ts', 'export const main = 1;\n');
+        return { success: false, outcome: 'checkout-changed' };
+      },
+      answers: [],
+    });
+
+    expect(state.pendingRecovery?.reason).toBe('checkout-changed');
+    expect(prompts).toEqual([]);
     expect(read(workspaceDir, 'src/main.ts')).toBe('export const main = 0;\n');
   });
 
-  it('restores the files of a failed first call to the task start when the ladder halts', {
+  it('keeps the files of a failed first call when the consult call fails and the ladder halts', {
     timeout: 120_000,
   }, async () => {
     const { state, warnings, workspaceDir } = await runUntilHalt({
@@ -467,14 +518,92 @@ describe('runSingleTask — what a revert or a restore leaves of the brief', () 
       answers: [],
     });
 
+    expect(warnings).not.toContainEqual(restoreRow);
+    expect(state.pendingRecovery?.reason).toBe('planner-call-failed');
+    expect(read(workspaceDir, 'src/main.ts')).toBe('export const main = 1;\n');
+  });
+
+  it('keeps the files of a first attempt whose check failed when the consult stops on a usage limit', {
+    timeout: 120_000,
+  }, async () => {
+    const { state, warnings, prompts, workspaceDir } = await runUntilHalt({
+      implement: (dir) => {
+        write(dir, 'src/main.ts', 'export const main = 1;\n');
+        return { success: true };
+      },
+      answers: [],
+      consultStop: agyQuotaStop,
+    });
+
+    expect(state.pendingRecovery).toMatchObject({
+      reason: 'runner-usage-limit',
+      seat: 'plan',
+      taskId: 'T001',
+    });
+    expect(prompts).toHaveLength(1);
+    expect(warnings).not.toContainEqual(restoreRow);
+    expect(read(workspaceDir, 'src/main.ts')).toBe('export const main = 1;\n');
+    expect(read(workspaceDir, 'src/extra.ts')).toBe('export const extra = 0;\n');
+  });
+
+  it('still restores the files when the consult answers cannot and the brief halts as retry-exhausted', {
+    timeout: 120_000,
+  }, async () => {
+    const { state, warnings, prompts, workspaceDir } = await runUntilHalt({
+      implement: (dir) => {
+        write(dir, 'src/main.ts', 'export const main = 1;\n');
+        return { success: true };
+      },
+      answers: [() => cannotConsult()],
+    });
+
+    expect(state.pendingRecovery?.reason).toBe('retry-exhausted');
+    expect(prompts).toHaveLength(1);
     expect(warnings).toContainEqual(
       expect.objectContaining({
         message: 'Restored 1 change of the failing brief to its start: src/main.ts',
         briefKept: 0,
       }),
     );
-    expect(state.pendingRecovery?.reason).toBe('planner-call-failed');
     expect(read(workspaceDir, 'src/main.ts')).toBe('export const main = 0;\n');
+  });
+
+  it("puts the brief's files back on Skip after the consult stopped on a usage limit", {
+    timeout: 120_000,
+  }, async () => {
+    const { state, workspaceDir, projectDir, sessionId, recorder } = await runUntilHalt({
+      implement: (dir) => {
+        write(dir, 'src/main.ts', 'export const main = 1;\n');
+        return { success: true };
+      },
+      answers: [],
+      consultStop: agyQuotaStop,
+    });
+    expect(state.pendingRecovery?.reason).toBe('runner-usage-limit');
+
+    const skipped = await applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state: {
+        ...state,
+        workspace: {
+          kind: 'worktree',
+          path: workspaceDir,
+          base: { snapshotId: 'workspace-base', head: null },
+        },
+      },
+      action: 'skip-current-task',
+      bus: recorder.bus,
+    });
+
+    expect(skipped.ok).toBe(true);
+    expect(skipped.state.tasks[0]?.status).toBe('skipped');
+    expect(read(workspaceDir, 'src/main.ts')).toBe('export const main = 0;\n');
+    expect(
+      recorder.events.flatMap((event) =>
+        event.type === 'warning' && event.message.startsWith('Restored ') ? [event.message] : [],
+      ),
+    ).toEqual(['Restored 1 change of the failing brief to its start: src/main.ts']);
   });
 
   it('keeps the files of a first call that threw for the consult and the next attempt', {

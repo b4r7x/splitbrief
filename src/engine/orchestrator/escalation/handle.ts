@@ -1,6 +1,6 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
-import type { ConsultReason } from '../../../core/schemas/consult.js';
+import type { ConsultQuestion, ConsultReason } from '../../../core/schemas/consult.js';
 import type { WorkflowContext } from '../types.js';
 import type { EngineEvent } from '../../events/types.js';
 import { isAbortedOutcome, recordNoProgressCut, runHeldCorrection } from './held-correction.js';
@@ -8,7 +8,7 @@ import { runRetryStep, type BlockedReport } from './step.js';
 import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import { publishError, publishWarning, publishWarningFromError } from '../events.js';
-import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
+import { raiseBriefHalt, raisePendingRecovery, transitionAndSave } from '../state-ops.js';
 import { requestConsult } from '../consult/request.js';
 import { applyConsultAnswer } from '../consult/apply.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
@@ -50,6 +50,10 @@ type HandleRetryOptions = {
   initialBlocked?: BlockedReport | undefined;
   /** The user's answer to a change of what the first attempt reported. */
   initialAnswer?: string | undefined;
+  /** The unfinished calls in a row before a consult that runs again, which its halt kept. */
+  unfinishedCalls?: number | undefined;
+  /** Receives the question of each consult before it is asked, for a halt on that consult. */
+  onConsult?: ((question: ConsultQuestion) => void) | undefined;
 };
 
 function handBackOf(outcome: RetryStepOutcome): string | undefined {
@@ -117,16 +121,8 @@ async function seatDownHalt(
     ),
     ...(issue.resetAt !== undefined && { resetAt: issue.resetAt }),
   });
-  // A seat that is down cuts the brief it was running: the park names the step
-  // and keeps its workspace, so the switch resolves onto the same attempt.
-  const parked = transitionAndSave(ctx, stepOutcome.state, {
-    type: 'INTERRUPT_STEP',
-    step: { kind: 'brief', taskId: task.id, attempt: stepOutcome.state.attempt },
-    source: 'seat',
-    cut: 'mid-step',
-  });
   return {
-    state: raisePendingRecovery(ctx, parked, issue),
+    state: raiseBriefHalt(ctx, stepOutcome.state, { taskId: task.id, issue }),
     result: failedRetry(stepOutcome.attempts),
   };
 }
@@ -184,7 +180,7 @@ async function runnerDefectHalt(
     ),
   });
   return {
-    state: raisePendingRecovery(ctx, stepOutcome.state, issue),
+    state: raiseBriefHalt(ctx, stepOutcome.state, { taskId: task.id, issue }),
     result: failedRetry(stepOutcome.attempts),
   };
 }
@@ -256,7 +252,7 @@ export async function handleRetryAndEscalation(
 
   // Timeouts and no-progress cuts share one count: two unfinished calls in a row halt as
   // `runner-timeout-repeated`; any other outcome resets it.
-  let consecutiveTimeouts = isUnfinishedCall(opts.initialFailure) ? 1 : 0;
+  let consecutiveTimeouts = opts.unfinishedCalls ?? (isUnfinishedCall(opts.initialFailure) ? 1 : 0);
   const countCall = (outcome: RetryStepOutcome) => {
     const failure = outcome.lastFailure;
     consecutiveTimeouts = isUnfinishedCall(failure) ? consecutiveTimeouts + 1 : 0;
@@ -399,6 +395,11 @@ export async function handleRetryAndEscalation(
     const snapshot = attemptSnapshot ?? taskStartSnapshot;
     const changedFiles = await attemptChangedFiles(ctx.workspaceDir, snapshot);
     const reason: ConsultReason = blocked !== undefined ? 'blocked' : 'failed';
+    opts.onConsult?.({
+      failingOutput: lastError,
+      ...(blocked !== undefined && { report: blocked }),
+      unfinishedCalls: consecutiveTimeouts,
+    });
     const consult = await requestConsult(
       {
         projectDir: ctx.projectDir,

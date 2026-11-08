@@ -13,6 +13,7 @@ import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { guidanceConsult, passingVerdict } from '#testing/helpers/typed-planner.js';
 import {
   cli,
+  continueWithCorrection,
   createStopContinueFixture,
   readState,
   type StopContinueFixture,
@@ -52,6 +53,7 @@ let restorePath: (() => void) | undefined;
 afterEach(() => {
   restorePath?.();
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
   if (fixture !== undefined) cleanupTempDir(fixture.tmpDir);
   fixture = undefined;
   restorePath = undefined;
@@ -59,16 +61,18 @@ afterEach(() => {
 
 /**
  * The implementer writes the brief's two files; its first attempt reports itself blocked. The
- * planner process exits 1 on every consult, so the run halts with the files on disk. Every consult
- * logs its reason.
+ * planner process exits 1 on the first consult, so the run halts with the files on disk, and
+ * answers every later consult with guidance. Every consult logs its reason, the files the report
+ * needs, its failing output and the operator instructions it carries.
  */
 function writeRunners(target: StopContinueFixture, callsPath: string) {
   const plannerPath = join(target.tmpDir, 'planner.mjs');
   const implementerPath = join(target.tmpDir, 'implementer.mjs');
   const passing = passingVerdict({ kind: 'final', taskIds: [alpha.id], criterionIds: ['C1'] });
+  const guidance = guidanceConsult('Export the string alpha from src/alpha.mjs.');
   writeFileSync(
     plannerPath,
-    `import { appendFileSync } from 'node:fs';
+    `import { appendFileSync, readFileSync } from 'node:fs';
 const chunks = [];
 for await (const chunk of process.stdin) chunks.push(chunk);
 const prompt = Buffer.concat(chunks).toString('utf8');
@@ -77,9 +81,21 @@ let answer;
 if (prompt.includes('# Final Implementation Review') || prompt.includes('# Task Implementation Review')) {
   answer = ${JSON.stringify(passing)};
 } else if (prompt.includes('# Consult on a failing task') || prompt.includes('# Consult continued')) {
-  log({ kind: 'consult', reason: prompt.match(/^#+ Reason\\s*\\n+\\s*(\\S+) —/m)?.[1] ?? 'unknown' });
-  process.stderr.write('planner process stopped\\n');
-  process.exit(1);
+  const consults = readFileSync(${JSON.stringify(callsPath)}, 'utf8').split('\\n')
+    .filter((line) => line.includes('"kind":"consult"')).length;
+  log({
+    kind: 'consult',
+    reason: prompt.match(/^#+ Reason\\s*\\n+\\s*(\\S+) —/m)?.[1] ?? 'unknown',
+    files: prompt.match(/^Files needed: (.*)$/m)?.[1] ?? null,
+    failing: prompt.match(/^## Failing Output\\n[\\s\\S]*?(?=^## |(?![\\s\\S]))/m)?.[0] ?? null,
+    instructions:
+      prompt.match(/^## Operator Instructions\\n[\\s\\S]*?(?=^## |(?![\\s\\S]))/m)?.[0] ?? null,
+  });
+  if (consults === 0) {
+    process.stderr.write('planner process stopped\\n');
+    process.exit(1);
+  }
+  answer = ${JSON.stringify(guidance)};
 } else if (prompt.includes('# Plan the change')) {
   answer = ${JSON.stringify({ result: plan })};
 } else {
@@ -106,7 +122,7 @@ for (const [file, source] of Object.entries(${JSON.stringify(ALPHA_FILES)})) {
 appendFileSync('src/alpha.mjs', '// attempt ' + attempt + '\\n');
 console.log('Implemented T001');
 console.log(JSON.stringify(attempt === 0
-  ? { status: 'blocked', question: 'Which module should export alpha?', filesNeeded: [] }
+  ? { status: 'blocked', question: 'Which module should export alpha?', filesNeeded: ['src/alpha.mjs'] }
   : {
       status: 'done',
       filesChanged: ${JSON.stringify(Object.keys(ALPHA_FILES))},
@@ -416,6 +432,9 @@ process.stdout.write((current && !ownLinesOnly ? current + '\\n' : '') + own + '
 function readCalls(callsPath: string): {
   kind: string;
   reason?: string;
+  files?: string | null;
+  failing?: string | null;
+  instructions?: string | null;
   prompt?: string;
   title?: string;
   retry?: boolean;
@@ -427,30 +446,43 @@ function readCalls(callsPath: string): {
     .map((line) => JSON.parse(line));
 }
 
-describe('e2e: Try again on a brief that wrote its own files', { timeout: 360_000 }, () => {
-  it('restarts the brief without a stale consult and keeps it creating its files', async () => {
-    fixture = createStopContinueFixture(() => '', { isolation: 'none' });
-    const target = fixture;
-    restorePath = activateSafeCliShimPath(target.tmpDir);
-    const offlinePath = join(target.tmpDir, 'offline.mjs');
-    writeFileSync(
-      offlinePath,
-      "globalThis.fetch = async () => { throw new Error('E2E network disabled'); };\n",
-    );
-    vi.stubEnv('NODE_OPTIONS', `--import=${offlinePath}`);
-    const callsPath = join(target.tmpDir, 'calls.jsonl');
-    writeRunners(target, callsPath);
+/**
+ * Runs the brief whose first attempt reports itself blocked until its consult stops on the planner
+ * process, with the brief's files on disk.
+ */
+async function haltOnFirstConsult() {
+  fixture = createStopContinueFixture(() => '', { isolation: 'none' });
+  const target = fixture;
+  restorePath = activateSafeCliShimPath(target.tmpDir);
+  const offlinePath = join(target.tmpDir, 'offline.mjs');
+  writeFileSync(
+    offlinePath,
+    "globalThis.fetch = async () => { throw new Error('E2E network disabled'); };\n",
+  );
+  vi.stubEnv('NODE_OPTIONS', `--import=${offlinePath}`);
+  const callsPath = join(target.tmpDir, 'calls.jsonl');
+  writeRunners(target, callsPath);
 
-    const halted = await cli(target, ['start', 'smoke'], { timeoutMs: RUN_TIMEOUT_MS });
-    expect(halted.exitCode, `${halted.stdout}\n${halted.stderr}`).toBe(1);
-    const sessionId = readdirSync(sessionsRoot(target.projectDir))[0];
-    if (sessionId === undefined) throw new Error('Missing session');
-    const haltState = readState(target, sessionId);
-    expect(haltState.pendingRecovery).toMatchObject({
-      reason: 'planner-call-failed',
-      taskId: 'T001',
-    });
-    const consultsAtHalt = haltState.lineages?.T001?.consultRecords.length;
+  const halted = await cli(target, ['start', 'smoke'], { timeoutMs: RUN_TIMEOUT_MS });
+  expect(halted.exitCode, `${halted.stdout}\n${halted.stderr}`).toBe(1);
+  const sessionId = readdirSync(sessionsRoot(target.projectDir))[0];
+  if (sessionId === undefined) throw new Error('Missing session');
+  const haltState = readState(target, sessionId);
+  expect(haltState.pendingRecovery).toMatchObject({
+    reason: 'planner-call-failed',
+    taskId: 'T001',
+  });
+  // The *Seat down* halt keeps the files of the blocked attempt.
+  expect(readFileSync(join(target.projectDir, 'src/alpha.mjs'), 'utf8')).toBe(
+    `${ALPHA_FILES['src/alpha.mjs']}// attempt 0\n`,
+  );
+  return { target, callsPath, sessionId, haltState };
+}
+
+describe('e2e: Try again on a brief that wrote its own files', { timeout: 360_000 }, () => {
+  it('runs the consult again on the files the brief kept, and keeps it creating them', async () => {
+    const { target, callsPath, sessionId, haltState } = await haltOnFirstConsult();
+    const consultsAtHalt = haltState.lineages?.T001?.consultRecords.length ?? 0;
 
     const continued = await cli(target, ['continue', sessionId, '--action', 'retry'], {
       timeoutMs: RUN_TIMEOUT_MS,
@@ -458,17 +490,37 @@ describe('e2e: Try again on a brief that wrote its own files', { timeout: 360_00
     expect(continued.exitCode, `${continued.stdout}\n${continued.stderr}`).toBe(0);
 
     const calls = readCalls(callsPath);
-    expect(calls.filter((call) => call.kind === 'consult').map((call) => call.reason)).toEqual([
-      'blocked',
-    ]);
+    const consults = calls.filter((call) => call.kind === 'consult');
+    // The consult that runs again asks the question of the one that stopped.
+    expect(consults.map((call) => call.reason)).toEqual(['blocked', 'blocked']);
+    expect(consults.map((call) => call.files)).toEqual(['src/alpha.mjs', 'src/alpha.mjs']);
+    expect(consults[1]?.failing).toBe(consults[0]?.failing);
     const builds = calls.filter((call) => call.kind === 'implement');
     expect(builds).toHaveLength(2);
     expect(builds[1]?.prompt).not.toContain(STALE_TEXT);
 
     const state = readState(target, sessionId);
     expect(state.phase).toBe('complete');
-    expect(state.lineages?.T001?.consultRecords.length).toBe(consultsAtHalt);
+    expect(state.lineages?.T001?.consultRecords.length).toBe(consultsAtHalt + 1);
     expect(state.tasks[0]?.action).toBe('create');
+  });
+
+  it('gives the consult that runs again the words typed with Try again, recorded once', async () => {
+    const { target, callsPath, sessionId } = await haltOnFirstConsult();
+    const words = 'Export alpha from src/alpha.mjs only; keep the test file as it is.';
+    vi.stubGlobal('fetch', async () => {
+      throw new Error('E2E network disabled');
+    });
+
+    const continued = await continueWithCorrection(target, sessionId, words, { action: 'retry' });
+
+    expect(continued.phase).toBe('complete');
+    const consults = readCalls(callsPath).filter((call) => call.kind === 'consult');
+    expect(consults.map((call) => call.instructions?.includes(words) ?? false)).toEqual([
+      false,
+      true,
+    ]);
+    expect(continued.lineages?.T001?.corrections).toEqual([words]);
   });
 });
 

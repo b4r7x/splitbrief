@@ -1274,7 +1274,7 @@ describe('isolation halts of a call that ran in the checkout itself', () => {
   const runner = makeConfig({ implementer: { kind: 'cli', tool: 'claude-code' } }).implementer;
   const inPlace = { revertedDir: '.splitbrief/sessions/s1/reverted' };
 
-  it('says the attempt was put back and where the replaced files are saved, never promoted', () => {
+  it('says the files stay on a kept halt, and the put-back folder on a halt that puts them back, never promoted', () => {
     const left = buildLeftIsolationRecoveryIssue({
       task: makeTask({ id: 'T004' }),
       runner,
@@ -1292,9 +1292,7 @@ describe('isolation halts of a call that ran in the checkout itself', () => {
       createdAt,
     });
 
-    expect(left.details[1]).toBe(
-      'SPLITBRIEF put back what this attempt changed in your checkout. The replaced files are saved in .splitbrief/sessions/s1/reverted.',
-    );
+    expect(left.details[1]).toBe('The files this attempt changed stay in your checkout.');
     expect(changed.details[1]).toBe(
       'SPLITBRIEF put back the files this attempt changed in your checkout. The replaced files are saved in .splitbrief/sessions/s1/reverted. The git change stays for you to check.',
     );

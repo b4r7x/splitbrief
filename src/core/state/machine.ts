@@ -692,6 +692,15 @@ export function transition(
           cut: action.cut,
           ...(action.partialRef ? { partialRef: action.partialRef } : {}),
           ...(action.kept !== undefined && action.kept.length > 0 && { kept: [...action.kept] }),
+          ...(action.consult !== undefined && {
+            consult: {
+              ...action.consult,
+              failingOutput: truncateByChars(
+                action.consult.failingOutput,
+                BOUNDS.consultFailingOutputChars,
+              ),
+            },
+          }),
           at: now.toISOString(),
         },
         awaitingContinue: true,

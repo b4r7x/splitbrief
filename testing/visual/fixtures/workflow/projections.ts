@@ -38,6 +38,13 @@ import { CURSOR_MODEL_REFUSAL } from '../../../helpers/cursor-refusal.js';
 import { SessionLogEventEntrySchema } from '../../../../src/core/schemas/session-log.js';
 import { engineEventFromLogEntry } from '../../../../src/engine/events/replay.js';
 import { makeReviewFixInsertedEvents } from '../../../helpers/events/task.js';
+import {
+  AGY_QUOTA_FILE,
+  AGY_QUOTA_MODEL,
+  AGY_QUOTA_TASK_ID,
+  AGY_QUOTA_WORDS,
+  haltAndSwitch,
+} from '../../../helpers/events/agy-quota.js';
 import { makePlanProposal, makeTaskSpec } from '../../../helpers/factories/plan.js';
 import { formatPlanMarkdown } from '../../../../src/engine/spec/plan-markdown.js';
 import { renderCheckNotes, reviewSeatRunNote } from '../../../../src/engine/spec/plan-checks.js';
@@ -4908,7 +4915,7 @@ function reviewSeatRecoveryIssue(): RecoveryIssue {
 
 /**
  * The planner out of quota on a brief's consult: the halt is the plan seat's, and it names the
- * brief, so taking the swap replays that brief from its first attempt.
+ * brief, so taking the swap runs that consult again on the files the brief kept.
  */
 function planConsultHaltIssue(): RecoveryIssue {
   const err = plannerCallFailed('escalation', CODEX_LIMIT_WORDS);
@@ -5569,6 +5576,66 @@ const balanceSeatSwitchProjection: WorkflowFixtureProjection = {
 const seatSwitchedProjection: WorkflowFixtureProjection = {
   ...balanceSeatSwitchProjection,
   scenarioId: scenarioId('workflow-seat-switched'),
+};
+
+/**
+ * agy stopped on its quota in the consult of a brief, and PLAN moved at once to its declared
+ * fallback: the call and the halt as the run recorded them, folded into one Recovery row.
+ */
+const consultQuotaFallbackProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-consult-quota-fallback'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  config: {
+    planner: { kind: 'cli', tool: 'claude-code', model: 'claude-opus-5-5', effort: 'high' },
+  },
+  get events(): EngineEvent[] {
+    const task = taskId(AGY_QUOTA_TASK_ID);
+    return [
+      { type: 'workflow_started', ts: FIXED_TS, phase: 'implementing', feature: WORKFLOW_FEATURE },
+      {
+        type: 'task_started',
+        ts: FIXED_TS + 100,
+        phase: 'implementing',
+        taskId: task,
+        title: 'Show the stop reason in the workflow header',
+        action: 'modify',
+        index: 0,
+        total: 1,
+        file: AGY_QUOTA_FILE,
+      },
+      ...publishedEvents(FIXED_TS + 1_000, (bus) => {
+        let sequence = 0;
+        const consult = createRunnerCallRecorder({
+          context: {
+            callId: 'visual-agy-consult-quota',
+            role: 'planner',
+            backendKind: 'cli',
+            runnerName: 'antigravity',
+            model: AGY_QUOTA_MODEL,
+            attempt: 1,
+          },
+          startedAt: FIXED_TS + 1_000,
+          onEvent: (event) => {
+            for (const projected of projectRunnerCallEvents(event, {
+              rootDir: VISUAL_FIXTURE_PROJECT_DIR,
+              phase: 'escalating',
+              taskId: task,
+              sequence: sequence++,
+            }))
+              bus.publish(projected);
+          },
+        });
+        consult.finishFailed({
+          status: 'failed',
+          error: { code: 'antigravity-result-failed', message: AGY_QUOTA_WORDS },
+          endedAt: FIXED_TS + 4_000,
+        });
+      }),
+      ...haltAndSwitch(FIXED_TS + 5_000),
+    ];
+  },
 };
 
 const manualSeatSwitchedProjection: WorkflowFixtureProjection = {
@@ -8291,10 +8358,12 @@ const fixCheckRedThenVerifyProjection: WorkflowFixtureProjection = {
   },
 };
 
-// A first BUILD call whose runner reported a defect puts back the files it changed, as that halt
-// asks no consult, so none of the brief's files is left changed. The revert row lands after the
-// halt. In the project checkout the attempt's own bytes are saved first, and the row names where.
+// A first BUILD call during which the repository's git state changed puts back the files it
+// changed, as that halt asks no consult, so none of the brief's files is left changed. The revert
+// row lands after the halt. In the project checkout the attempt's own bytes are saved first, and
+// the row names where.
 const ATTEMPT_REVERTED_TS = FIXED_TS + 300;
+const ATTEMPT_REVERTED_GIT_CHANGE = 'tag v2.0.0';
 const ATTEMPT_REVERTED = `${WORKFLOW_FIXTURE_TASK_ID} attempt reverted: 2 files`;
 const ATTEMPT_REVERTED_SAVED_TO = join(
   revertedDir({ projectDir: VISUAL_FIXTURE_PROJECT_DIR, sessionId: VISUAL_WORKFLOW_SESSION_ID }),
@@ -8305,18 +8374,13 @@ const ATTEMPT_REVERTED_TASK: Task = {
   suggestedFiles: [WORKFLOW_FIXTURE_REVIEW_FILE, WORKFLOW_FIXTURE_SECOND_FILE],
 };
 function attemptRevertedIssue(inPlace?: { revertedDir: string }): RecoveryIssue {
-  return buildLeftIsolationRecoveryIssue({
+  return buildCheckoutChangedRecoveryIssue({
     id: 'rec_visual_attempt_reverted',
     task: ATTEMPT_REVERTED_TASK,
     runner: AGY_BUILD_SEAT,
-    toolMessage: LEFT_ISOLATION_WRITE,
+    toolMessage: ATTEMPT_REVERTED_GIT_CHANGE,
     attempts: 1,
     inPlace,
-    seatSwap: {
-      seat: 'build',
-      currentTool: 'antigravity',
-      detectedTools: [{ tool: 'codex', ready: true }],
-    },
     createdAt: new Date(FIXED_TS).toISOString(),
   });
 }
@@ -8350,14 +8414,14 @@ function attemptRevertedEvents(defect: { issue: RecoveryIssue; reverted: string 
       phase: 'implementing',
       taskId: WORKFLOW_FIXTURE_TASK_ID,
       model: AGY_BUILD_SEAT.model,
-      error: LEFT_ISOLATION_WRITE,
+      error: ATTEMPT_REVERTED_GIT_CHANGE,
     },
     ...publishedEvents(ATTEMPT_REVERTED_TS, (bus) => {
       const phase = 'implementing';
       publishError({
         bus,
         phase,
-        message: runnerDefectRow(issue, agyName, LEFT_ISOLATION_WRITE),
+        message: runnerDefectRow(issue, agyName, ATTEMPT_REVERTED_GIT_CHANGE),
       });
       publishRecoveryPrompted({ bus, phase }, VISUAL_WORKFLOW_SESSION_ID, issue, briefStep);
       publishInfo({ bus, phase, message: reverted, briefKept: 0 });
@@ -9126,6 +9190,7 @@ const projections = [
   reviewRunnerCheckFailedDriftRecoveryProjection,
   hintSeatRecoveryProjection,
   seatSwitchedProjection,
+  consultQuotaFallbackProjection,
   manualSeatSwitchedProjection,
   crewChangedSeatProjection,
   reviewSeatNoImageProjection,
@@ -9277,6 +9342,7 @@ export function assertProjectionBounds(projection: WorkflowFixtureProjection): v
     buildPromptTooLargeRecoveryIssue,
     cursorRefusalRecoveryIssue(),
     runnerCheckFailedDriftRecoveryIssue,
+    attemptRevertedCheckoutIssue,
   ];
   const engineHaltText = [
     ...halts.flatMap((issue) => [issue.message, ...issue.details]),

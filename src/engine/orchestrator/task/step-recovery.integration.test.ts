@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   makeCallbacks,
@@ -47,7 +47,7 @@ function failBriefChecks(): void {
 }
 
 describe('runSingleTask — recovery', () => {
-  it("restores the brief's files to the task start when the ladder halts", {
+  it("keeps the brief's files when the ladder halts on a signed-out seat", {
     timeout: 90_000,
   }, async () => {
     const { projectDir, sessionId } = setupProject({ 'src/main.ts': 'export const main = 0;\n' });
@@ -101,27 +101,19 @@ describe('runSingleTask — recovery', () => {
     });
 
     expect(result.pendingRecovery?.reason).toBe('runner-unauthenticated');
-    // Every file the brief changed since its task start goes back: the edit and the new file.
+    // Every file the brief changed since its task start stays: the edit and the new file.
     expect(readFileSync(join(wctx.workspaceDir, 'src/main.ts'), 'utf-8')).toBe(
-      'export const main = 0;\n',
+      'export const main = 999; // broken\n',
     );
-    expect(existsSync(join(wctx.workspaceDir, 'src/extra.ts'))).toBe(false);
-    // The halt names the restored files at once; no recovery has been chosen yet.
+    expect(readFileSync(join(wctx.workspaceDir, 'src/extra.ts'), 'utf-8')).toBe(
+      'export const extra = 1;\n',
+    );
+    // The halt restores nothing; only Skip puts the files back.
     const restored = events.filter(
       (event) => event.type === 'warning' && event.message.startsWith('Restored'),
     );
-    expect(restored).toEqual([
-      expect.objectContaining({
-        message: expect.stringMatching(
-          /^Restored 2 changes of the failing brief to its start: src\/extra\.ts, src\/main\.ts/,
-        ),
-      }),
-    ]);
-    const promptedAt = events.findIndex((event) => event.type === 'recovery_prompted');
-    expect(promptedAt).toBeGreaterThan(-1);
-    expect(
-      events.findIndex((event) => event.type === 'warning' && event.message.startsWith('Restored')),
-    ).toBeGreaterThan(promptedAt);
+    expect(restored).toEqual([]);
+    expect(events.findIndex((event) => event.type === 'recovery_prompted')).toBeGreaterThan(-1);
   });
 
   it("does not leak a skipped task's exhausted changes into the next task's validation", {
@@ -572,8 +564,13 @@ describe('runSingleTask — signed-out runner', () => {
     expect(
       events.find((event) => event.type === 'error' && event.message.includes('codex login')),
     ).toBeDefined();
-    // The failing attempt's changes were rolled back like any exhausted task.
-    expect(readFileSync(join(projectDir, 'src/main.ts'), 'utf-8')).toBe('export const main = 0;\n');
+    // A signed-out seat keeps the brief's work for the retry or the next seat.
+    expect(readFileSync(join(projectDir, 'src/main.ts'), 'utf-8')).toBe(
+      'export const main = 999; // broken\n',
+    );
+    expect(events).not.toContainEqual(
+      expect.objectContaining({ type: 'warning', message: expect.stringMatching(/^Restored /) }),
+    );
   });
 });
 
@@ -742,8 +739,13 @@ describe('runSingleTask — usage-limited runner', () => {
     // The failed check earned one consult; the seat-down attempt after it earns none.
     expect(consult).toHaveBeenCalledTimes(1);
     expectResetNamedOnce(events);
-    // The failing attempt's changes were rolled back like any exhausted task.
-    expect(readFileSync(join(projectDir, 'src/main.ts'), 'utf-8')).toBe('export const main = 0;\n');
+    // A seat that stops on its limit keeps the brief's work for the retry or the next seat.
+    expect(readFileSync(join(projectDir, 'src/main.ts'), 'utf-8')).toBe(
+      'export const main = 999; // broken\n',
+    );
+    expect(events).not.toContainEqual(
+      expect.objectContaining({ type: 'warning', message: expect.stringMatching(/^Restored /) }),
+    );
   });
 });
 

@@ -143,8 +143,8 @@ export interface RunnerFailureRecoveryOptions extends RecoveryBuilderBase, TaskR
   seatSwitches?: readonly SeatSwitchRecord[] | undefined;
   /**
    * The call ran in the checkout itself (`workflow.isolation: none`): nothing is
-   * promoted there, and the attempt's files were put back with the bytes they
-   * replaced saved in `revertedDir`.
+   * promoted there. A *Needs you* halt put the attempt's files back with the bytes
+   * they replaced saved in `revertedDir`; a *Seat down* halt keeps them.
    */
   inPlace?: { revertedDir: string } | undefined;
 }
@@ -967,7 +967,7 @@ export function buildLeftIsolationRecoveryIssue(opts: RunnerFailureRecoveryOptio
         evidence,
         opts.inPlace === undefined
           ? "Your checkout gets the run's changes only through Apply."
-          : `SPLITBRIEF put back what this attempt changed in your checkout. ${replacedFilesSavedIn(opts.inPlace.revertedDir)}.`,
+          : 'The files this attempt changed stay in your checkout.',
       ],
       actions: haltActions('implementer-left-isolation', [
         'retry-same-worker',

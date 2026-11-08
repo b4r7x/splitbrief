@@ -162,9 +162,9 @@ it.each([
     'Change REVIEW tool · runs the review again',
   ],
   [
-    "a brief's hint",
+    "a brief's consult",
     { seat: 'plan', phase: 'escalating' },
-    'Change PLAN tool · restarts this brief',
+    'Change PLAN tool · continues this brief',
   ],
   [
     'a planning step',
@@ -191,10 +191,10 @@ it.each([
   ui.unmount();
 });
 
-// On a hint halt "Try again" reads as retrying the hint, but it restarts the brief; a retry that
-// re-runs the call the halt stopped needs no second clause.
+// On a consult halt "Try again" reads as retrying the consult alone, but the brief continues on
+// the files it kept; a retry that re-runs the call the halt stopped needs no second clause.
 it.each([
-  ["a brief's hint", { seat: 'plan', phase: 'escalating' }, 'Try again · restarts this brief'],
+  ["a brief's consult", { seat: 'plan', phase: 'escalating' }, 'Try again · continues this brief'],
   ['a planning step', { seat: 'plan', taskId: undefined, phase: 'planning' }, 'Try again'],
   ['a BUILD call', { seat: 'build', phase: 'implementing' }, 'Try again'],
 ] as const)('says what a retry after a halt on %s runs', async (_halt, halt, label) => {

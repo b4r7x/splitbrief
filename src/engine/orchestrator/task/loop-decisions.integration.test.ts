@@ -432,7 +432,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       return applied.state;
     }
 
-    it("takes back the brief's file at the halt when its planner call fails", async () => {
+    it("keeps the brief's file at the halt when its planner call fails, and Skip takes it back", async () => {
       const { projectDir, sessionId } = setupProjectWithUserWork();
       const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
       const { bus, events } = makeBusRecorder();
@@ -447,8 +447,9 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
         bus,
       });
       expect(halted.state.pendingRecovery?.reason).toBe('planner-call-failed');
-      expect(existsSync(join(projectDir, 'src/a.ts'))).toBe(false);
-      expect(restoreWarnings(events)).toEqual([expect.stringContaining('src/a.ts')]);
+      // The halt keeps the attempt's file for the next seat.
+      expect(readFileSync(join(projectDir, 'src/a.ts'), 'utf-8')).toBe('attempt 1\n');
+      expect(restoreWarnings(events)).toEqual([]);
       // The ledger keeps the decision of the attempt that failed validation.
       expect(halted.state.plan?.decisions).toEqual([
         { text: `${HOW.what} — ${HOW.why}`, taskId: 'T001' },
@@ -458,11 +459,12 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
 
       expect(skipped.tasks[0]?.status).toBe('skipped');
       expect(existsSync(join(projectDir, 'src/a.ts'))).toBe(false);
+      expect(restoreWarnings(events)).toEqual([expect.stringContaining('src/a.ts')]);
       expect(bookedFiles(projectDir, sessionId, 'T001')).toEqual([]);
       expect(readFileSync(join(projectDir, USER_FILE), 'utf-8')).toBe(USER_WORK);
     });
 
-    it('takes back the files of the attempts before and after a Retry', async () => {
+    it('keeps the files of the attempts before and after a Retry at the halt, and Skip takes both back', async () => {
       const { projectDir, sessionId } = setupProjectWithUserWork();
       const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts', 'src/b.ts'] });
       // The attempt before the Retry writes src/a.ts; the attempt after it writes src/b.ts.
@@ -499,15 +501,17 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
         bus,
       });
       expect(second.state.pendingRecovery?.reason).toBe('planner-call-failed');
-      expect(existsSync(join(projectDir, 'src/a.ts'))).toBe(false);
-      expect(existsSync(join(projectDir, 'src/b.ts'))).toBe(false);
-      expect(restoreWarnings(events)).toEqual([
-        expect.stringContaining('src/a.ts'),
-        expect.stringContaining('src/b.ts'),
-      ]);
+      expect(readFileSync(join(projectDir, 'src/a.ts'), 'utf-8')).toBe('attempt 1\n');
+      expect(readFileSync(join(projectDir, 'src/b.ts'), 'utf-8')).toBe('attempt 2\n');
+      expect(restoreWarnings(events)).toEqual([]);
 
       await skip(projectDir, sessionId, second.state, bus);
 
+      expect(existsSync(join(projectDir, 'src/a.ts'))).toBe(false);
+      expect(existsSync(join(projectDir, 'src/b.ts'))).toBe(false);
+      const warnings = restoreWarnings(events);
+      expect(warnings).toEqual([expect.stringContaining('src/a.ts')]);
+      expect(warnings[0]).toContain('src/b.ts');
       expect(bookedFiles(projectDir, sessionId, 'T001')).toEqual([]);
       expect(readFileSync(join(projectDir, USER_FILE), 'utf-8')).toBe(USER_WORK);
     });
@@ -526,12 +530,13 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
         planner: failingPlanner(),
         bus,
       });
-      expect(readFileSync(join(projectDir, USER_FILE), 'utf-8')).toBe(USER_WORK);
-      expect(restoreWarnings(events)).toEqual([expect.stringContaining(USER_FILE)]);
+      expect(readFileSync(join(projectDir, USER_FILE), 'utf-8')).toBe('attempt 1\n');
+      expect(restoreWarnings(events)).toEqual([]);
 
       await skip(projectDir, sessionId, halted.state, bus);
 
       expect(readFileSync(join(projectDir, USER_FILE), 'utf-8')).toBe(USER_WORK);
+      expect(restoreWarnings(events)).toEqual([expect.stringContaining(USER_FILE)]);
       expect(bookedFiles(projectDir, sessionId, 'T001')).toEqual([]);
     });
   });

@@ -7,9 +7,13 @@ import { glyph } from '../../lib/glyphs.js';
 import { buildRequiredChecksUnrunnableRecoveryIssue } from '../../engine/orchestrator/recovery/builders/checks.js';
 import {
   buildCheckoutChangedRecoveryIssue,
+  buildLeftIsolationRecoveryIssue,
   buildReviewFailedRecoveryIssue,
   buildRunnerCheckFailedRecoveryIssue,
+  buildSeatDownIssue,
+  type SeatSwapContext,
 } from '../../engine/orchestrator/recovery/builders/task.js';
+import { buildPlannerCallFailedRecoveryIssue } from '../../engine/orchestrator/recovery/builders/planner.js';
 import { buildApplyPartialRecoveryIssue } from '../../engine/orchestrator/recovery/builders/apply.js';
 import { formatTruncatedList } from '../../core/formatting.js';
 import { SOFT_SEP } from '../../core/separators.js';
@@ -257,6 +261,92 @@ it('carries the action seat and consequence before formatting the label', () => 
   ]);
 });
 
+describe('the words of a row that runs a brief again', () => {
+  const createdAt = '2026-04-29T12:00:00.000Z';
+  const task = makeTask({ id: 'T003', title: 'Patch auth validation' });
+  const config = makeConfig({
+    planner: { kind: 'cli', tool: 'codex' },
+    implementer: { kind: 'cli', tool: 'opencode' },
+  });
+  const swap = (seat: 'plan' | 'build'): SeatSwapContext => ({
+    seat,
+    currentTool: seat === 'plan' ? 'codex' : 'opencode',
+    detectedTools: [{ tool: 'claude-code', ready: true }],
+  });
+  const rows = (issue: RecoveryIssue) =>
+    getRecoveryPromptActions(issue).map((action) => recoveryMenuText(action, issue));
+
+  it.each([
+    {
+      kind: 'a consult halt',
+      issue: buildPlannerCallFailedRecoveryIssue({
+        diagnosis: { failure: 'call-failed', message: 'Planner consult for T003 failed' },
+        task,
+        phase: 'escalating',
+        runner: config.planner,
+        seatSwap: swap('plan'),
+        createdAt,
+      }),
+      expected: [
+        'Try again · continues this brief',
+        'Change PLAN tool · continues this brief',
+        'Skip task',
+        'End run',
+      ],
+    },
+    {
+      kind: 'a defect halt',
+      issue: buildLeftIsolationRecoveryIssue({
+        task,
+        phase: 'implementing',
+        runner: config.implementer,
+        toolMessage: 'The runner wrote outside the run workspace.',
+        attempts: 0,
+        seatSwap: swap('build'),
+        createdAt,
+      }),
+      expected: ['Try again', 'Change BUILD tool · continues this brief', 'Skip task', 'End run'],
+    },
+    {
+      kind: 'a first-call BUILD halt',
+      issue: buildSeatDownIssue({
+        seat: 'build',
+        runner: config.implementer,
+        classification: { class: 'account', cause: 'auth' },
+        words: 'OpenCode CLI is not signed in.',
+        task,
+        phase: 'implementing',
+        seatSwap: swap('build'),
+        createdAt,
+      }),
+      expected: ['Try again', 'Change BUILD tool · continues this brief', 'Skip task', 'End run'],
+    },
+    {
+      kind: 'a review-seat halt that names a brief',
+      issue: makeRecoveryIssue({
+        reason: 'runner-usage-limit',
+        seat: 'review',
+        taskId: taskId('T003'),
+        switchSeat: { seat: 'review', candidates: [{ tool: 'claude-code' }] },
+        availableActions: ['retry-same-worker', 'switch-seat', 'end-run'],
+      }),
+      expected: [
+        'Try again · restarts this brief',
+        'Change REVIEW tool · restarts this brief',
+        'End run',
+      ],
+    },
+    {
+      kind: 'a Needs you halt on a PLAN call of a brief',
+      issue: makeRecoveryIssue({ reason: 'retry-exhausted', seat: 'plan', taskId: taskId('T003') }),
+      expected: ['Try again · restarts this brief', 'Skip task', 'End run'],
+    },
+  ])('says what runs again after $kind', ({ issue, expected }) => {
+    expect(issue.taskId).toBe('T003');
+    expect(rows(issue)).toEqual(expected);
+  });
+});
+
 it('keeps the Review again hint dim', () => {
   expect(
     recoveryMenuParts('revise', makeRecoveryIssue({ reason: 'review-failed' }), false),
@@ -477,7 +567,7 @@ describe('recovery prompt', () => {
       facts: { tool: 'OpenCode CLI' },
     };
 
-    expect(recoveryMenuText('switch-seat', issue)).toBe('Change BUILD tool · restarts this brief');
+    expect(recoveryMenuText('switch-seat', issue)).toBe('Change BUILD tool · continues this brief');
   });
 
   it("names the menu row a model pick when the seat's own tool is the only offer", () => {
@@ -487,7 +577,7 @@ describe('recovery prompt', () => {
     };
 
     expect(recoveryMenuText('switch-seat', issue)).toBe(
-      'Pick another BUILD model · restarts this brief',
+      'Pick another BUILD model · continues this brief',
     );
   });
 
@@ -503,7 +593,7 @@ describe('recovery prompt', () => {
     expect(visible).not.toContain('pause');
     expect(
       getRecoveryPromptActions(issue).map((action) => recoveryMenuText(action, issue)),
-    ).toEqual(['Try again', 'Change BUILD tool · restarts this brief', 'Skip task', 'End run']);
+    ).toEqual(['Try again', 'Change BUILD tool · continues this brief', 'Skip task', 'End run']);
   });
 
   it('reads the seat key whatever the offer holds, and no numbered key', () => {
@@ -913,7 +1003,7 @@ describe('recovery prompt', () => {
     expect(parseRecoveryActionAnswer('retry', issue)).toBe('retry-same-worker');
   });
 
-  it('leaves a halt that names a brief calling its retry what it is: a replay of that brief', () => {
+  it('leaves a halt that names a brief calling its retry what it is: that brief continues', () => {
     const withBrief = apiContextIssue({
       id: 'rec_api_context_brief',
       taskId: taskId('T003'),
@@ -921,7 +1011,7 @@ describe('recovery prompt', () => {
     });
 
     expect(recoveryMenuText('retry-same-worker', withBrief)).toBe(
-      'Try again · restarts this brief',
+      'Try again · continues this brief',
     );
     expect(recoveryMenuText('retry-same-worker', baseIssue)).toBe('Try again');
   });

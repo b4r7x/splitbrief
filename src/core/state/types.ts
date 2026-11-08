@@ -7,7 +7,12 @@ import type {
   SeatWait,
 } from '../schemas/workflow.js';
 import type { RecoveryAction, ReviewStatus } from '../schemas/enums.js';
-import type { ConsultAnswer, ConsultReason, ReportedDecision } from '../schemas/consult.js';
+import type {
+  ConsultAnswer,
+  ConsultQuestion,
+  ConsultReason,
+  ReportedDecision,
+} from '../schemas/consult.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
 import type { Plan } from '../schemas/plan.js';
 import type { TriageInput } from '../schemas/review.js';
@@ -83,6 +88,8 @@ export type StateAction =
       partialRef?: { kind: 'session-log'; index: number };
       /** The files the cut brief wrote that are still changed, its declared files first; recorded only when it kept any. */
       kept?: readonly string[];
+      /** The brief continues with the consult its ended attempt earned, asked this question again. */
+      consult?: ConsultQuestion;
     }
   | { type: 'RESUME_STEP' }
   /** The cut call continues in place: the park clears and the phase stays as it is. */

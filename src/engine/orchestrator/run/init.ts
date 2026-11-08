@@ -599,15 +599,23 @@ export async function resumeContinuation(input: {
   if (state === undefined) return createContinuationHolder();
   const interrupted = state.interruptedStep;
   const task = state.tasks[state.currentTaskIndex];
-  const keepWorkspace =
+  const cutBrief =
+    interrupted?.cut === 'mid-step' && interrupted.step.kind === 'brief'
+      ? interrupted.step
+      : undefined;
+  const parkedBrief =
     state.closed === undefined &&
     state.rewindPending === undefined &&
     isImplementerPhase(state.phase) &&
-    interrupted?.cut === 'mid-step' &&
-    interrupted.step.kind === 'brief' &&
-    task?.id === interrupted.step.taskId &&
+    cutBrief !== undefined &&
+    task?.id === cutBrief.taskId;
+  // A brief parked at its consult continues there, also after Try again reset its attempt.
+  const consult = parkedBrief ? interrupted?.consult : undefined;
+  const keepWorkspace =
+    parkedBrief &&
+    consult === undefined &&
     task.status === 'in_progress' &&
-    state.attempt === interrupted.step.attempt;
+    state.attempt === cutBrief.attempt;
   // A boundary park cut nothing, and a cold crash flushed nothing it can name.
   const partial =
     interrupted !== undefined &&
@@ -615,13 +623,14 @@ export async function resumeContinuation(input: {
     (interrupted.step.kind !== 'brief' || keepWorkspace)
       ? await readInterruptedPartial(ref)
       : undefined;
-  if (partial === undefined && steer === undefined && !keepWorkspace)
+  if (partial === undefined && steer === undefined && !keepWorkspace && consult === undefined)
     return createContinuationHolder();
   return createContinuationHolder({
     step: interrupted?.step ?? resumeStep(state),
     ...(partial !== undefined && { partial }),
     ...(steer !== undefined && { steer }),
     ...(keepWorkspace && { keepWorkspace: true, briefFingerprint: hashTaskBrief([task]) }),
+    ...(consult !== undefined && { consult }),
   });
 }
 

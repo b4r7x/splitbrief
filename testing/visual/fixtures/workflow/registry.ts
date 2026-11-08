@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { renderToString } from 'ink';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { AGY_QUOTA_LEAD } from '#testing/helpers/events/agy-quota.js';
 import { SESSION_LOG_FILE, sessionDir } from '../../../../src/core/paths.js';
 import { toEngineEventEntry } from '../../../../src/core/sessions/log-writer.js';
 import { hydrateRun } from '../../../../src/features/workflow/run-history.js';
@@ -108,6 +109,7 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
     projection.scenarioId === 'workflow-seat-switched' ||
     projection.scenarioId === 'workflow-seat-switched-manual' ||
     projection.scenarioId === 'workflow-seat-switched-balance' ||
+    projection.scenarioId === 'workflow-consult-quota-fallback' ||
     projection.scenarioId === 'workflow-spent-b2-replay'
   ) {
     return () => {
@@ -118,7 +120,7 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
         ...lifecycle,
         setup: async (context) => {
           checkpoint = context.checkpoint.id;
-          expandRecovery = context.checkpoint.id === 'seat-switched-expanded-recovery';
+          expandRecovery = context.checkpoint.id.endsWith('-expanded-recovery');
           await lifecycle.setup(context);
         },
         afterMount: async (write) => {
@@ -1327,6 +1329,23 @@ const checkpointPredicates = [
     includesTranscript('provider.quota: Insufficient Balance', 'ctrl+d to collapse'),
   ],
   [
+    checkpointId('consult-quota-fallback'),
+    (context) => {
+      const text = workflowTranscriptText().replace(/\s+/g, ' ');
+      return (
+        includesTranscript()(context) &&
+        text.includes('continued on fallback') &&
+        !text.includes(AGY_QUOTA_LEAD)
+      );
+    },
+  ],
+  [
+    checkpointId('consult-quota-fallback-expanded-recovery'),
+    (context) =>
+      includesTranscript()(context) &&
+      workflowTranscriptText().replace(/\s+/g, ' ').includes(AGY_QUOTA_LEAD),
+  ],
+  [
     checkpointId('spent-b2-replay'),
     (context) => {
       const text = workflowTranscriptText();
@@ -1567,7 +1586,7 @@ const checkpointPredicates = [
   ],
   [
     checkpointId('attempt-reverted'),
-    // SPLITBRIEF's own neutral row below the runner defect's halt row, not a warning; a worktree
+    // SPLITBRIEF's own neutral row below the git change halt row, not a warning; a worktree
     // attempt saves no replaced files. In a frame under 40 rows, the halt panel leaves no room
     // for the row. The halt row is read with its Error heading: without that row, a Recovery
     // card shows the same headline.
@@ -1577,7 +1596,7 @@ const checkpointPredicates = [
         return false;
       }
       const text = workflowTranscriptText().replace(/\s/g, '');
-      const halt = text.indexOf('ErrorT901lefttheisolationdirectory');
+      const halt = text.indexOf('ErrorRepositorychangedunderT901·tagv2.0.0');
       return (
         includesTranscript()(context) &&
         halt >= 0 &&
@@ -1597,7 +1616,7 @@ const checkpointPredicates = [
         return false;
       }
       const text = workflowTranscriptText().replace(/\s/g, '');
-      const halt = text.indexOf('ErrorT901lefttheisolationdirectory');
+      const halt = text.indexOf('ErrorRepositorychangedunderT901·tagv2.0.0');
       return (
         includesTranscript()(context) &&
         halt >= 0 &&

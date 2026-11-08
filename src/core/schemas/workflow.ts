@@ -11,7 +11,12 @@ import {
 import { TaskSchema, TaskIdSchema, type Task } from './task.js';
 import { PlanSchema } from './plan.js';
 import { ReviewVerdictSchema, TriageInputSchema, TriageResultSchema } from './review.js';
-import { CONSULT_REASONS, CONSULT_SEATS, ConsultAnswerSchema } from './consult.js';
+import {
+  CONSULT_REASONS,
+  CONSULT_SEATS,
+  ConsultAnswerSchema,
+  ConsultQuestionSchema,
+} from './consult.js';
 import { TokenUsageSchema, TaskTokenUsageSchema } from './tokens.js';
 import { RecoveryIssueSchema, SeatSwapCandidateSchema } from './recovery/schemas.js';
 import { StepCutSchema, StepRefSchema } from './run-step.js';
@@ -426,6 +431,12 @@ const WorkflowStateFields = {
        * before the field.
        */
       kept: z.array(z.string()).optional(),
+      /**
+       * The brief's attempt ended and its consult call stopped on a seat that cannot run: the run
+       * continues with that consult, on the files the attempt left, not with a BUILD call. It holds
+       * the question that consult was asked, so the consult that runs again asks it too.
+       */
+      consult: ConsultQuestionSchema.optional(),
       at: z.string(),
     })
     .optional(),

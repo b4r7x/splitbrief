@@ -39,6 +39,7 @@ import {
 import { workflowFixtureRegistry, workflowTranscriptText } from './fixtures/workflow/registry.js';
 import { mountGalleryScenario, type GalleryCaptureHandle } from './gallery/mount.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { AGY_QUOTA_LEAD } from '#testing/helpers/events/agy-quota.js';
 
 const VIEWPORT = viewport({ cols: 80, rows: 24 });
 
@@ -101,7 +102,7 @@ it.each(['workflow-continuous-transcript', 'workflow-continuous-transcript-ready
 );
 
 it.each(['workflow-attempt-reverted', 'workflow-attempt-reverted-checkout'])(
-  'halts %s on a write outside the workspace and names every file of the brief',
+  'halts %s on a git change during the call, in the words the product writes',
   (id) => {
     const projection = workflowFixtureProjections.get(scenarioId(id));
     if (projection === undefined) throw new Error(`Missing scenario ${id}`);
@@ -115,9 +116,9 @@ it.each(['workflow-attempt-reverted', 'workflow-attempt-reverted-checkout'])(
       throw new Error(`Missing the brief start or the BUILD failure in ${id}`);
     }
     const halt = projection.resumeState?.pendingRecovery;
-    expect.soft(halt?.files).toEqual(started.files);
-    expect.soft(failed.error).toMatch(/^wrote to \S+ \(outside the workspace\) with run_command: /);
-    expect(halt?.message.endsWith(failed.error)).toBe(true);
+    expect.soft(halt?.reason).toBe('checkout-changed');
+    expect.soft(halt?.files).toEqual([]);
+    expect(halt?.message).toBe(`Repository changed under ${started.taskId} · ${failed.error}`);
   },
 );
 
@@ -541,6 +542,32 @@ describe('workflow visual fixtures', () => {
     }
   });
 
+  it.each([
+    ['consult-quota-fallback', false],
+    ['consult-quota-fallback-expanded-recovery', true],
+  ])(
+    'folds the usage limit of a consult that moved PLAN to its fallback at %s',
+    async (id, expanded) => {
+      const scenario = findVisualScenario('workflow-consult-quota-fallback');
+      const checkpoint = scenario?.checkpoints.find((value) => value.id === id);
+      if (!scenario || !checkpoint) throw new Error(`Missing consult usage limit checkpoint ${id}`);
+      for (const renderViewport of scenario.viewports) {
+        const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: renderViewport });
+        try {
+          await ui.waitForCheckpoint();
+          const transcript = workflowTranscriptText().replace(/\s+/g, ' ');
+          expect(transcript).toContain('Recovery Usage limit on Google Antigravity CLI');
+          expect(transcript).toContain('continued on fallback');
+          expect(workflowTranscriptText().match(/Recovery {2}/g)).toHaveLength(1);
+          expect(transcript.includes(AGY_QUOTA_LEAD)).toBe(expanded);
+          expect(transcript.includes('ctrl+d to collapse')).toBe(expanded);
+        } finally {
+          await ui.unmount();
+        }
+      }
+    },
+  );
+
   it.each(WIDE_VIEWPORTS)(
     'counts out-of-scope task review notes at $cols x $rows',
     async (renderViewport) => {
@@ -876,7 +903,7 @@ describe('workflow visual fixtures', () => {
   });
 
   it.each(REQUIRED_VIEWPORTS)(
-    'promises no changes at the halt once a runner defect put back every file at $cols x $rows',
+    'promises no changes at the halt once a git change put back every file at $cols x $rows',
     async (viewport) => {
       const scenario = findVisualScenario('workflow-stop-sheet-after-revert');
       const checkpoint = scenario?.checkpoints[0];
@@ -890,10 +917,7 @@ describe('workflow visual fixtures', () => {
         // with its Error heading: without that row, a Recovery card shows the same headline.
         const transcript = workflowTranscriptText().replaceAll('│', '').replace(/\s+/g, ' ');
         expect(runViewStore.get().briefKept).toBe(0);
-        expect(transcript).toContain('Error T001 left the isolation directory');
-        expect(transcript).toContain(
-          'wrote to ../options.ts (outside the workspace) with run_command: cp options.ts ../options.ts',
-        );
+        expect(transcript).toContain('Error Repository changed under T001 · tag v2.0.0');
         expect(frame).toContain('○ Choose how to continue');
         expect(recoveryNoticeStore.get().open).toBe(true);
         expect(frame).toContain('Stop now · stop execution; keep the run open');

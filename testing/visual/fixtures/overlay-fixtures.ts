@@ -74,7 +74,7 @@ import {
 } from '../../../src/engine/orchestrator/events.js';
 import {
   buildApprovalDeniedRecoveryIssue,
-  buildLeftIsolationRecoveryIssue,
+  buildCheckoutChangedRecoveryIssue,
 } from '../../../src/engine/orchestrator/recovery/builders/task.js';
 import { reviewStore } from '../../../src/stores/workflow/review.js';
 import { stopStore } from '../../../src/stores/workflow/stop.js';
@@ -3467,9 +3467,9 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   ],
   [
     scenarioId('workflow-stop-sheet-after-revert'),
-    // The runner of the first brief's first call reported a defect. The run halts and puts the
-    // attempt back, which left none of its files changed, and no brief has finished, so stopping
-    // keeps no changes.
+    // The repository's git state changed during the first brief's first call. The run halts and
+    // puts the attempt back, which left none of its files changed, and no brief has finished, so
+    // stopping keeps no changes.
     () =>
       createOverlayFixture({
         overlay: 'stop-sheet',
@@ -3479,8 +3479,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
             implementer: { kind: 'cli', tool: 'antigravity', model: 'gemini-3.8-flash-high' },
           })();
           seedStopSheetFirstBrief();
-          const toolMessage =
-            'wrote to ../options.ts (outside the workspace) with run_command: cp options.ts ../options.ts';
+          const toolMessage = 'tag v2.0.0';
           addEvent({
             type: 'implementer_generate_failed',
             ts: STOP_SHEET_TS + 5_000,
@@ -3490,8 +3489,8 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
           });
           const bus = createEventBus();
           bus.subscribe((event) => addEvent({ ...event, ts: STOP_SHEET_TS + 5_010 }));
-          const issue = buildLeftIsolationRecoveryIssue({
-            id: 'rec_visual_stop_defect',
+          const issue = buildCheckoutChangedRecoveryIssue({
+            id: 'rec_visual_stop_git_change',
             task: makeTask({
               id: 'T001',
               title: 'Add the stop sheet rows',

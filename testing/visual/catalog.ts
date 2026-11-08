@@ -4229,6 +4229,31 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-consult-quota-fallback',
+      title: 'Workflow · PLAN seat moved automatically to its fallback after a consult usage limit',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: [
+        {
+          id: 'consult-quota-fallback',
+          title: 'The consult usage limit folded into one Recovery row',
+          kind: 'implementation',
+          marker: 'Recovery  Usage limit on Google Antigravity CLI',
+        },
+        {
+          id: 'consult-quota-fallback-expanded-recovery',
+          title: 'Recovery details expanded with ctrl+d',
+          kind: 'implementation',
+          marker: 'ctrl+d to collapse',
+        },
+      ],
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Consult transcript' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-seat-crew-changed',
       title: 'Workflow · BUILD seat changed in the crew before a continue',
       surface: screenSurface('workflow'),
@@ -5805,25 +5830,25 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-attempt-reverted',
-      title: 'Workflow · a call whose runner reported a defect puts its files back',
+      title: 'Workflow · a call during which the git state changed puts its files back',
       surface: screenSurface('workflow'),
       viewports: [...REQUIRED_VIEWPORTS, viewport({ cols: 60, rows: 40 })],
       checkpoint: {
         id: 'attempt-reverted',
-        title: 'The neutral row after the runner defect names the files put back',
+        title: 'The neutral row after the git change halt names the files put back',
         kind: 'implementation',
         marker: 'attempt reverted: 2 files',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
-        { id: 'transcript', title: 'Runner defect and revert row' },
+        { id: 'transcript', title: 'Git change halt and revert row' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
     defineScenario({
       id: 'workflow-attempt-reverted-checkout',
       title:
-        'Workflow · a call whose runner reported a defect in the project checkout puts its files back',
+        'Workflow · a call during which the git state changed in the project checkout puts its files back',
       surface: screenSurface('workflow'),
       viewports: [...REQUIRED_VIEWPORTS, viewport({ cols: 60, rows: 40 })],
       checkpoint: {
@@ -5834,7 +5859,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
-        { id: 'transcript', title: 'Runner defect and revert row' },
+        { id: 'transcript', title: 'Git change halt and revert row' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
@@ -6929,7 +6954,7 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       },
       {
         id: 'workflow-stop-sheet-after-revert',
-        title: 'Workflow · stop options after a runner defect put the attempt back',
+        title: 'Workflow · stop options after a git change put the attempt back',
         marker: 'keep the run open',
       },
       {

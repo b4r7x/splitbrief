@@ -539,11 +539,11 @@ describe('the booking of a lineage after a rewrite or a split', { timeout: 90_00
     const ended = await applyRecoveryAction({ ...ref, state: checkoutRun, action: 'end-run', bus });
 
     expect(ended.ok).toBe(true);
-    // The halt took back src/b.ts, the second child's own file, before the user ended the run.
+    // The halt kept src/b.ts, the second child's own file, so the second child books it.
     expect(booked(ref).byTask).toEqual({
       T001: [],
       T002: ['src/a.ts', 'src/c.ts'],
-      T003: ['gen/x.txt', 'src/retry.ts'],
+      T003: ['gen/x.txt', 'src/b.ts', 'src/retry.ts'],
     });
     const closed = loadState(ref);
     if (closed === null) throw new Error('Missing closed state');
@@ -558,6 +558,7 @@ describe('the booking of a lineage after a rewrite or a split', { timeout: 90_00
     expect(summary.stoppedAt?.taskId).toBe('T003');
     expect([...(summary.stoppedAt?.partialFiles ?? [])].sort()).toEqual([
       'gen/x.txt',
+      'src/b.ts',
       'src/retry.ts',
     ]);
   });
@@ -601,8 +602,8 @@ describe('the booking of a lineage after a rewrite or a split', { timeout: 90_00
       afterConsult: (_call, opts) => write(opts.projectDir, 'src/b.ts', 'export const b = 1;\n'),
     });
     expect(result.state.pendingRecovery?.reason).toBe('planner-call-failed');
-    // The halt goes back to the rewritten brief's start, so Try again continues on the lineage.
-    expect(present(ref, LINEAGE_FILES)).toEqual(['gen/x.txt', 'src/a.ts', 'src/retry.ts']);
+    // The halt keeps the rewritten brief's files, so Try again continues on them.
+    expect(present(ref, LINEAGE_FILES)).toEqual(LINEAGE_FILES);
     const halted = loadState(ref);
     if (halted === null) throw new Error('Missing halted state');
 
@@ -1120,8 +1121,10 @@ describe('the booking of a lineage after a rewrite or a split', { timeout: 90_00
     const ended = await applyRecoveryAction({ ...ref, state: checkoutRun, action: 'end-run', bus });
 
     expect(ended.ok).toBe(true);
-    // The halt took back src/b.ts, the rewritten brief's own file, before the user ended the run.
-    expect(booked(ref).byTask).toEqual({ T001: ['gen/x.txt', 'src/a.ts', 'src/retry.ts'] });
+    // The halt kept src/b.ts, the rewritten brief's own file, so the brief books it.
+    expect(booked(ref).byTask).toEqual({
+      T001: ['gen/x.txt', 'src/a.ts', 'src/b.ts', 'src/retry.ts'],
+    });
   });
 
   it('gives a done child its file back when the user skips a rewritten later child that edited it', async () => {
@@ -1150,7 +1153,8 @@ describe('the booking of a lineage after a rewrite or a split', { timeout: 90_00
       rev2: (projectDir) => write(projectDir, 'src/b.ts', 'export const b = 4;\n'),
     });
     expect(result.state.pendingRecovery?.reason).toBe('planner-call-failed');
-    expect(read(ref, 'src/b.ts')).toBe('export const b = 3;\n');
+    // The halt keeps the second revision's write; Skip takes it back.
+    expect(read(ref, 'src/b.ts')).toBe('export const b = 4;\n');
     const halted = loadState(ref);
     if (halted === null) throw new Error('Missing halted state');
 

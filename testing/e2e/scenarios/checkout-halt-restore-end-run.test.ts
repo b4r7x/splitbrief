@@ -73,10 +73,10 @@ process.exit(1);`,
   );
 }
 
-describe('e2e: End run after a checkout brief halted and had its files put back', {
+describe('e2e: End run after a checkout brief halted on a signed-out seat and kept its files', {
   timeout: 240_000,
 }, () => {
-  it('does not say the files it wrote are still on disk', async () => {
+  it('says the files it wrote are still on disk', async () => {
     fixture = createStopContinueFixture(() => '', { isolation: 'none' });
     const target = fixture;
     trustHome = createTrustHome('e2e-checkout-halt-restore-home');
@@ -116,9 +116,9 @@ describe('e2e: End run after a checkout brief halted and had its files put back'
     const halted = await cli(target, ['start', 'smoke'], options);
 
     expect(halted.exitCode, `${halted.stdout}\n${halted.stderr}`).toBe(1);
-    expect(halted.stderr).toMatch(/Restored 2 changes of the failing brief/);
-    expect(existsSync(join(target.projectDir, GREET_FILE))).toBe(false);
-    expect(existsSync(join(target.projectDir, MARKER_FILE))).toBe(false);
+    expect(halted.stderr).not.toMatch(/Restored \d+ changes? of the failing brief/);
+    expect(existsSync(join(target.projectDir, GREET_FILE))).toBe(true);
+    expect(existsSync(join(target.projectDir, MARKER_FILE))).toBe(true);
     const [sessionId = ''] = readdirSync(sessionsRoot(target.projectDir));
     const ref = { projectDir: target.projectDir, sessionId };
 
@@ -127,11 +127,10 @@ describe('e2e: End run after a checkout brief halted and had its files put back'
     expect(ended.exitCode, `${ended.stdout}\n${ended.stderr}`).toBe(0);
     expect(loadState(ref)?.closed?.as).toBe('ended');
     expect(ended.stdout).toContain(`Run ${sessionId} closed.`);
-    expect(ended.stdout).not.toContain('still on disk');
-    expect(ended.stderr).not.toContain('its changes are already there');
-    expect(readEvidenceLedger(ref)?.tasks.find((task) => task.id === 'T001')).toMatchObject({
-      status: 'in_progress',
-      changedFiles: [],
-    });
+    expect(ended.stdout).toContain('The files it wrote are still on disk.');
+    expect(ended.stderr).toContain('its changes are already there');
+    const booked = readEvidenceLedger(ref)?.tasks.find((task) => task.id === 'T001');
+    expect(booked?.status).toBe('in_progress');
+    expect([...(booked?.changedFiles ?? [])].sort()).toEqual([GREET_FILE, MARKER_FILE].sort());
   });
 });

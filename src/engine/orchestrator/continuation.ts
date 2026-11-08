@@ -1,5 +1,7 @@
 import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { ConsultQuestion } from '../../core/schemas/consult.js';
 import type { StepRef } from '../../core/schemas/run-step.js';
+import type { TaskId } from '../../core/schemas/task.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
 import type { UserMessageInput } from '../../core/types/user-input.js';
 import type { OrchestratorCallbacks, WorkflowSinks } from './types.js';
@@ -112,6 +114,13 @@ export type ContinuationHolder = {
    * attempt was dispatched; the workspace now also holds the attempt's own output.
    */
   resumesAttempt: (step: StepRef, briefFingerprint: string) => boolean;
+  /**
+   * The brief continues with the consult its ended attempt earned: the question that consult was
+   * asked, and the words typed to continue. Consumed once.
+   */
+  takeConsult: (
+    taskId: TaskId,
+  ) => { question: ConsultQuestion; steer?: UserMessageInput | undefined } | undefined;
 };
 
 /**
@@ -136,7 +145,9 @@ function sameStep(a: StepRef, b: StepRef): boolean {
  * the run stopped at — so a later step never inherits another step's partial.
  */
 export function createContinuationHolder(
-  initial?: (ContinuationSeed & { step: StepRef; briefFingerprint?: string }) | undefined,
+  initial?:
+    | (ContinuationSeed & { step: StepRef; briefFingerprint?: string; consult?: ConsultQuestion })
+    | undefined,
 ): ContinuationHolder {
   let pending = initial;
   return {
@@ -164,6 +175,17 @@ export function createContinuationHolder(
         sameStep(pending.step, step) &&
         pending.briefFingerprint === briefFingerprint
       );
+    },
+    takeConsult(taskId) {
+      if (
+        pending?.consult === undefined ||
+        pending.step.kind !== 'brief' ||
+        pending.step.taskId !== taskId
+      )
+        return undefined;
+      const { consult, steer } = pending;
+      pending = undefined;
+      return { question: consult, ...(steer !== undefined && { steer }) };
     },
   };
 }

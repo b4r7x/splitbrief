@@ -40,8 +40,8 @@ describe('e2e: Skip on a planner-call halt', () => {
     const halted = readState(target, sessionId);
     expect(halted.pendingRecovery).toMatchObject({ reason: 'planner-call-failed', taskId: 'T001' });
     const workspaceDir = halted.workspace?.path ?? target.projectDir;
-    // The ladder halt after a failed check takes the brief's file back at once.
-    expect(existsSync(join(workspaceDir, ALPHA_FILE))).toBe(false);
+    // The ladder halt after a failed check keeps the brief's file; Skip takes it back.
+    expect(existsSync(join(workspaceDir, ALPHA_FILE))).toBe(true);
 
     const skipped = await cli(target, ['continue', sessionId, '--plain', '--action', 'skip']);
 
@@ -63,14 +63,13 @@ describe('e2e: Skip on a planner-call halt', () => {
     );
     const lines = transcriptText(events).split('\n');
     const recoveryRows = lines.filter((line) => line.includes('Recovery  '));
-    expect(recoveryRows).toHaveLength(2);
-    expect(recoveryRows[0]).toMatch(/Planner call failed\s*$/);
-    expect(recoveryRows[1]).toMatch(/Skip task.*skipped\s*$/);
+    // No row comes between the halt and Skip, so one Recovery row names both.
+    expect(recoveryRows).toHaveLength(1);
+    expect(recoveryRows[0]).toMatch(/Planner call failed.*Skip task.*skipped\s*$/);
     const restoredAt = lines.findIndex((line) =>
       line.includes('Restored 1 change of the failing brief'),
     );
     expect(restoredAt).toBeGreaterThan(lines.indexOf(recoveryRows[0] ?? ''));
-    expect(lines.indexOf(recoveryRows[1] ?? '')).toBeGreaterThan(restoredAt);
   });
 
   it('shows Skip task on the dependency halt of the next brief as one Recovery row', async () => {
@@ -88,10 +87,11 @@ describe('e2e: Skip on a planner-call halt', () => {
     const { events } = await readRunEvents({ projectDir: target.projectDir, sessionId });
     const lines = transcriptText(events).split('\n');
     const recoveryRows = lines.filter((line) => line.includes('Recovery  '));
-    expect(recoveryRows).toHaveLength(3);
-    expect(recoveryRows[2]).toMatch(/Dependency blocked.*Skip task.*skipped\s*$/);
+    expect(recoveryRows).toHaveLength(2);
+    expect(recoveryRows[0]).toMatch(/Planner call failed.*Skip task.*skipped\s*$/);
+    expect(recoveryRows[1]).toMatch(/Dependency blocked.*Skip task.*skipped\s*$/);
     const settledT002 = lines.findIndex((line) => /T002 Add the beta value .*skipped/.test(line));
-    expect(settledT002).toBeGreaterThan(lines.indexOf(recoveryRows[1] ?? ''));
-    expect(lines.indexOf(recoveryRows[2] ?? '')).toBeGreaterThan(settledT002);
+    expect(settledT002).toBeGreaterThan(lines.indexOf(recoveryRows[0] ?? ''));
+    expect(lines.indexOf(recoveryRows[1] ?? '')).toBeGreaterThan(settledT002);
   });
 });

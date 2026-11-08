@@ -189,6 +189,7 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-crew-kilo', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-crew-claude-resolved', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-seat-switched-balance', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-consult-quota-fallback', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-planning-seat-change', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-final-review-seat-change', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-plan-card-seat-change', ['120x40', '80x24', '60x18', '160x45']],
@@ -673,6 +674,15 @@ describe('visual catalog', () => {
     expect(workflowCheckpointPredicates.has(checkpointId('seat-switched-expanded-recovery'))).toBe(
       true,
     );
+    const consult = findVisualScenario('workflow-consult-quota-fallback');
+    expect(consult?.checkpoints.map((checkpoint) => checkpoint.id)).toEqual([
+      'consult-quota-fallback',
+      'consult-quota-fallback-expanded-recovery',
+    ]);
+    expect(workflowFixtureRegistry.has(scenarioId('workflow-consult-quota-fallback'))).toBe(true);
+    for (const checkpoint of consult?.checkpoints ?? []) {
+      expect(workflowCheckpointPredicates.has(checkpoint.id)).toBe(true);
+    }
   });
 
   it.each([

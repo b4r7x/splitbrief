@@ -30,7 +30,7 @@ These overlays sit on top of any phase. They do not change `phase`:
 
 - **`closed`** records `{ at, as }`. `as` is `applied`, `discarded` or `ended`. Apply, Discard and `CLOSE_RUN` close worktree and staged-copy runs. A passing review or Accept as is override makes them ready to apply. Checkout runs and older runs without a recorded workspace close as `complete` on either result. An override preserves the failed verdict.
 - **`workspace`** records the run's directory, kind and base snapshot. **`applying`** records an Apply in progress and its backup. **`applied`** records the completed write. **`acceptedAsIs`** records an Accept as is override, its open findings and the note you typed (`note`, optional; the Apply warning shows it after the findings). A final review verdict clears it, also when a task-cadence Skip review set it.
-- **`interruptedStep`** — the step a stop cut: `{ step, source, cut, partialRef?, kept?, at }`. `cut` says whether the stop landed `mid-step` inside a call or on a `boundary` where it cut nothing: between two briefs, or at a gate. `source` says what cut it: `user`, `watchdog`, or `seat` for a seat halt. `kept` lists the files the cut brief wrote that are still changed when the stop parked it, its declared files first; it is absent when the brief kept none, and on a state written before the field. The run stays open and picks that step up again.
+- **`interruptedStep`** — the step a stop cut: `{ step, source, cut, partialRef?, kept?, consult?, at }`. `cut` says whether the stop landed `mid-step` inside a call or on a `boundary` where it cut nothing: between two briefs, or at a gate. `source` says what cut it: `user`, `watchdog`, or `seat` for a seat halt. `kept` lists the files the cut brief wrote that are still changed when the stop parked it, its declared files first; it is absent when the brief kept none, and on a state written before the field. `consult` is present when a *Seat down* halt cut the brief's consult: the brief picks up at that consult, on the files its attempts left. It holds the question that consult was asked (`failingOutput`, `report?`, `unfinishedCalls`), and the consult that runs again asks the same question. The run stays open and picks that step up again.
 - **`decideForMe`** — `true` after the user chose **Decide for me** (`DECIDE_FOR_ME`, any phase). Nothing clears it. Planner questions then take their defaults, and a halt with a decided step takes it with no panel ([Decide for me](./APPROVAL-AND-RECOVERY.md#decide-for-me)).
 - **`awaitingContinue`** — the boolean beside it, set by the same action and cleared by `RESUME_STEP`. It predates `interruptedStep`; a state written before that field existed still reads as parked.
 - **`lastFailure`** — `{ step, message, at }`, the error a turn died on. The run is still open; `deriveRunStatus` reports it as `failed` and the operator retries the step. `RESUME_STEP` clears it when the run is re-entered.
@@ -197,7 +197,7 @@ These fire from any phase. They modify sub-state without changing `phase`.
 |--------|--------|
 | `CLOSE_RUN` | Records `closed` as `ended` or `discarded`, clears `interruptedStep` and `pendingRecovery`, and leaves `phase` alone. The shared close path first preserves unapplied workspace work. Repeating it preserves the first closure and timestamp. See [Apply](#apply). |
 | `RECORD_WORKSPACE` | Records the run workspace and its base snapshot. |
-| `INTERRUPT_STEP` | Records `interruptedStep: { step, source, cut, partialRef?, kept?, at }` and sets `awaitingContinue: true`. `cut` is where the stop landed — `mid-step` inside a call, `boundary` where it cut nothing: between two briefs, or at a gate — and `deriveRunStatus` reads it for `paused.at`. `kept` is recorded only when files the cut brief wrote are still changed, and lists them with its declared files first; `settleRunView` reads it for the run view's `stopKept`. The run stays open and resumes at that step. |
+| `INTERRUPT_STEP` | Records `interruptedStep: { step, source, cut, partialRef?, kept?, consult?, at }` and sets `awaitingContinue: true`. `cut` is where the stop landed — `mid-step` inside a call, `boundary` where it cut nothing: between two briefs, or at a gate — and `deriveRunStatus` reads it for `paused.at`. `kept` is recorded only when files the cut brief wrote are still changed, and lists them with its declared files first; `settleRunView` reads it for the run view's `stopKept`. `consult` holds the question of a consult a *Seat down* halt cut, its failing output bounded to `BOUNDS.consultFailingOutputChars`. The run stays open and resumes at that step. |
 | `RESUME_STEP` | Clears `interruptedStep` and sets `awaitingContinue: false`. The run is picking the step up again. |
 | `CONTINUE_STEP` | Clears the same fields as `RESUME_STEP` and keeps `phase`: a call the operator cut continues in place, so a consult-guided attempt stays `escalating`. |
 | `RESTORE_BRIEF_PARK` | Puts a cut brief's park back on resume: the task `in_progress`, `attempt` the cut attempt, `phase: 'implementing'`, `interruptedStep` with `cut: 'mid-step'`, `awaitingContinue: true`. Dispatched only by `initializeWorkflow`, when the state has no park and the session log's most recent brief cut has not run again. |
@@ -468,7 +468,7 @@ At the first thing it has not finished, not at the top. `resumeStep(state)` (`sr
 
 **Planning picks up as one session.** `runPlanningPhases` (`src/engine/orchestrator/run/phases.ts`) sends a brief or a review straight to the task loop, re-opens a parked plan card through `resumeParkedApproval`, and runs everything else as the planning session. A run cut mid-call takes `RESUME_STEP` first. Pending questions resume where they stopped; recorded answers are not asked again.
 
-A run saved inside `validating-task` or `escalating` resets the current task (`RESET_TASK`) and restores that task's files from the changed-files baseline snapshot, so the brief is re-attempted from a clean tree rather than half-validated.
+A run saved inside `validating-task` or `escalating` with no parked step resets the current task (`RESET_TASK`) and restores that task's files from the changed-files baseline snapshot, so the brief is re-attempted from a clean tree rather than half-validated.
 
 ### What it continues on
 
@@ -489,7 +489,7 @@ Pending queue entries remain in `state.json`. A continuation excludes still-pend
 | `stopped` · `paused` · `boundary` | Pause after this brief, or Stop now at a gate | Starts the brief it stopped before; a typed steer is held for that brief. A stop at the plan card re-opens the card |
 | `waiting-for-you` · `gate` | Parked at the plan card, or at an older run's spec or briefs gate | Re-opens the plan card without re-spending the call behind it; an older gate continues as the planning session. At rest the byline reads `⏎ to reopen it` at the plan card and `⏎ to continue` at an older spec or briefs gate |
 | `waiting-for-you` · `halt` | A `pendingRecovery` nobody answered | Shows the recovery panel before any work |
-| `waiting-for-you` · `halt` · seat cut | A *Seat down* halt cut the brief it was running (`interruptedStep.source: seat`, `cut: mid-step`) | Shows the recovery panel. `switch-seat` restarts the cut attempt on the new seat. `retry-later` sets the seat wait to the reset |
+| `waiting-for-you` · `halt` · seat cut | A *Seat down* halt cut the brief it was running, in a BUILD call or in its consult (`interruptedStep.source: seat`, `cut: mid-step`, `consult` with the consult's question for a consult) | Shows the recovery panel. The brief keeps its files. `switch-seat` runs the cut attempt again on the new seat, or the consult after a consult halt. `retry-later` sets the seat wait to the reset |
 | `stopped` · `failed` | `lastFailure` — a turn died on an error | Retries the step it died on |
 | `stopped` · `interrupted` | The process went away recording nothing | Restarts at `resumeStep`; an `in_progress` brief with no `interruptedStep` is a crash, so its own writes — declared or attributed in the workspace — are restored from `activeTaskSnapshot` and it restarts clean |
 
@@ -543,7 +543,7 @@ Recovery actions:
 
 | Action | Effect |
 |--------|--------|
-| `retry-same-worker` | Retries the recorded PLAN/REVIEW step, or resets and reruns the matching BUILD task |
+| `retry-same-worker` | Retries the recorded PLAN/REVIEW step, or resets and reruns the matching BUILD task on the files a *Seat down* halt kept; after a consult halt, the consult runs again first |
 | `switch-seat` | A seat that cannot run at all: moves it to its declared `fallback` or another ready detected tool. The switch prepares the session, writes that one seat to `config.yaml` against the revision the halt read, then resolves the halt. See [Seat down](./APPROVAL-AND-RECOVERY.md#seat-down) |
 | `retry-later` | A *Seat down* action, offered only when the halt names a reset: the seat waits for that reset, then the run continues |
 | `revise` | Clears recovery and queues the operator's correction for the next planner turn; on `review-failed`, records the correction and runs another review fix cycle |
@@ -776,9 +776,15 @@ type WorkflowState = {
   closed?: { at: string; as: 'ended' | 'applied' | 'discarded' }
   interruptedStep?: {                      // the step a stop cut
     step: StepRef
-    source: 'user' | 'watchdog'
+    source: 'user' | 'watchdog' | 'seat'
     cut?: 'mid-step' | 'boundary'
     partialRef?: { kind: 'session-log'; index: number }
+    kept?: string[]                        // files the cut brief wrote that are still changed
+    consult?: {                            // a Seat down halt cut the brief's consult
+      failingOutput: string                // at most BOUNDS.consultFailingOutputChars
+      report?: { status: 'blocked'; question: string; filesNeeded: string[] }
+      unfinishedCalls: number              // timeouts and no-progress cuts in a row
+    }
     at: string                             // ISO 8601
   }
   lastFailure?: { step: StepRef; message: string; at: string }

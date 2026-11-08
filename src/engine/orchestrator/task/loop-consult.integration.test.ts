@@ -54,7 +54,7 @@ function setupProject(): { projectDir: string; sessionId: string } {
 
 /**
  * Halts a brief and keeps its files: a call that stops on a usage limit parks the brief and takes
- * no file back. A halt of the ladder puts every file of the brief back to its task start. With
+ * no file back, and so does a failed consult call of the ladder. With
  * `try-again` the brief halts there first, which records its evidence, and the call of Try again
  * parks. With `rewrite` the planner rewrites the brief after its failing check: the rewritten brief
  * keeps the files and the check output of the attempt it replaced, and its first call parks.
@@ -279,7 +279,7 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
   });
 
   it.each(['skip', 'halt'] as const)(
-    'restores output from consult verification after the %s',
+    'restores output from consult verification only on a skip, not at the halt: %s',
     async (action) => {
       const ref = setupProject();
       const task = makeTask({
@@ -343,9 +343,10 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
         });
         expect(skipped.ok).toBe(true);
       }
-      expect(existsSync(join(ref.projectDir, 'src/attempt.ts'))).toBe(false);
+      const kept = action === 'halt';
+      expect(existsSync(join(ref.projectDir, 'src/attempt.ts'))).toBe(kept);
       for (let index = 1; index <= checks; index++)
-        expect(existsSync(join(ref.projectDir, `generated-${index}.txt`))).toBe(false);
+        expect(existsSync(join(ref.projectDir, `generated-${index}.txt`))).toBe(kept);
       expect(readFileSync(join(ref.projectDir, 'init.txt'), 'utf8')).toBe(
         'user edit while halted\n',
       );
@@ -353,7 +354,7 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
   );
 
   it.each(['failure', 'pre-validation denial'] as const)(
-    'limits automatic rollback after continuation through %s to attempt writes',
+    'limits the rollback after continuation through %s to attempt writes',
     async (outcome) => {
       const { ref, wctx, halted, bus, events, generatedFiles } = await haltCheckoutBrief();
       writeFileSync(join(ref.projectDir, 'init.txt'), 'edited while halted\n');
@@ -419,6 +420,19 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
       expect(resumed.state.pendingRecovery?.reason).toBe(
         outcome === 'failure' ? 'planner-call-failed' : undefined,
       );
+      if (outcome === 'failure') {
+        // The failed consult call keeps the brief's files; Skip takes them back.
+        expect(readFileSync(join(ref.projectDir, 'src/later.ts'), 'utf8')).toBe(
+          'continued attempt\n',
+        );
+        const skipped = await applyRecoveryAction({
+          ...ref,
+          state: loadState(ref) ?? resumed.state,
+          action: 'skip-current-task',
+          bus,
+        });
+        expect(skipped.ok).toBe(true);
+      }
       if (outcome === 'pre-validation denial') {
         expect(resumed.state.tasks[0]?.status).toBe('skipped');
         expect(events).toContainEqual(

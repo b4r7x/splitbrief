@@ -88,13 +88,15 @@ function parseResponseStep(step: Record<string, unknown>): readonly CliProtocolE
 // `user_input` and `system_message` are what agy feeds the model (the prompt; its own notices,
 // such as a finished background task or an auto-approved plan) and carry no text, usage or tools.
 // `checkpoint` (written mid-turn on a long call) and `finish` (closes the turn) carry only a
-// duration, nothing SPLITBRIEF uses.
+// duration, nothing SPLITBRIEF uses. `error_message` repeats the error that agy also writes on
+// stderr and in the failed `result` frame, which SPLITBRIEF reads.
 function parseStep(step: Record<string, unknown>): readonly CliProtocolEvent[] {
   switch (step.step_type) {
     case 'user_input':
     case 'system_message':
     case 'checkpoint':
     case 'finish':
+    case 'error_message':
       return [];
     case 'tool':
       return parseToolStep(step);

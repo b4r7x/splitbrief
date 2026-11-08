@@ -19,7 +19,8 @@ export interface SeatProtocolRecoveryOptions extends RecoveryBuilderBase {
 /**
  * A seat answered twice without matching its typed contract. The seat can be
  * re-issued, moved to another detected tool, or the run stopped on it.
- * A consult names its interrupted brief so recovery replays that brief.
+ * A consult names its brief, which the halt parks, so recovery runs that consult
+ * again on the files the brief kept.
  */
 export function buildSeatProtocolErrorRecoveryIssue(
   opts: SeatProtocolRecoveryOptions,

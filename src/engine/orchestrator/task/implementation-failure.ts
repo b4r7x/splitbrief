@@ -6,7 +6,7 @@ import type { WorkflowContext } from '../types.js';
 import type { runImplementation } from './run-implementation.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { publishError } from '../events.js';
-import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
+import { raiseBriefHalt } from '../state-ops.js';
 import {
   buildSeatDownIssue,
   recoveryBuilderForRunnerOutcome,
@@ -14,6 +14,7 @@ import {
   runnerHaltRow,
 } from '../recovery/builders/task.js';
 import { haltAttempts } from '../recovery/builders/details.js';
+import { haltOf } from '../../../core/recovery/halt.js';
 import { classifySeatFailure } from '../../runners/seat-failure.js';
 import { getRunnerCatalogDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { boundedHandBack } from '../escalation/types.js';
@@ -99,13 +100,7 @@ export async function handleFailedImplementation(opts: {
         toolMessage,
       ),
     });
-    state = transitionAndSave(wctx, state, {
-      type: 'INTERRUPT_STEP',
-      step: { kind: 'brief', taskId: task.id, attempt: state.attempt },
-      source: 'seat',
-      cut: 'mid-step',
-    });
-    return raisePendingRecovery(wctx, state, issue, setTrackedState);
+    return raiseBriefHalt(wctx, state, { taskId: task.id, issue }, setTrackedState);
   }
   // An implementer that ran out of quota halts the same way: retrying
   // before the reset cannot succeed, and escalating would silently move
@@ -150,13 +145,7 @@ export async function handleFailedImplementation(opts: {
       ),
       resetAt: issue.resetAt,
     });
-    state = transitionAndSave(wctx, state, {
-      type: 'INTERRUPT_STEP',
-      step: { kind: 'brief', taskId: task.id, attempt: state.attempt },
-      source: 'seat',
-      cut: 'mid-step',
-    });
-    return raisePendingRecovery(wctx, state, issue, setTrackedState);
+    return raiseBriefHalt(wctx, state, { taskId: task.id, issue }, setTrackedState);
   }
   // A defect the runner itself reported fails every attempt the same way, so
   // the ladder is not entered at all.
@@ -165,7 +154,6 @@ export async function handleFailedImplementation(opts: {
       ? undefined
       : recoveryBuilderForRunnerOutcome(implState.implResult.outcome);
   if (buildDefectIssue !== undefined) {
-    implState.workspace.cleanup();
     const toolMessage = implState.implResult.error ?? 'The runner refused the invocation';
     const seatSwap = await loadSeatSwapContext({
       projectDir: wctx.projectDir,
@@ -191,6 +179,8 @@ export async function handleFailedImplementation(opts: {
       ...(state.workspace?.kind === 'checkout' && { inPlace: { revertedDir: revertedDir(wctx) } }),
       createdAt: nowIso(),
     });
+    // A *Needs you* halt puts the attempt back; a *Seat down* halt keeps it for the next seat.
+    if (haltOf(issue.reason) === 'needs-you') implState.workspace.cleanup();
     publishError({
       bus: wctx.bus,
       phase: state.phase,
@@ -200,7 +190,7 @@ export async function handleFailedImplementation(opts: {
         toolMessage,
       ),
     });
-    return raisePendingRecovery(wctx, state, issue, setTrackedState);
+    return raiseBriefHalt(wctx, state, { taskId: task.id, issue }, setTrackedState);
   }
   const outcome = implState.implResult.outcome;
   const handBack = boundedHandBack(implState.implResult.output);

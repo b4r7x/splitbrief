@@ -132,6 +132,17 @@ export const ImplementerReportSchema = z.discriminatedUnion('status', [
 export type ImplementerReport = z.infer<typeof ImplementerReportSchema>;
 
 /**
+ * What a consult was asked: the failing output, the blocked report when the attempt stopped on one,
+ * and the unfinished calls in a row before it. A consult that runs again asks the same question.
+ */
+export const ConsultQuestionSchema = z.object({
+  failingOutput: z.string(),
+  report: BlockedReportSchema.optional(),
+  unfinishedCalls: z.number().int().nonnegative(),
+});
+export type ConsultQuestion = z.infer<typeof ConsultQuestionSchema>;
+
+/**
  * The implementer's report as SPLITBRIEF reads it. A done or blocked report keeps every field
  * that matches its contract; a field that does not, or is missing, reads as empty and is named
  * in `dropped`. A report without a known status is not read.

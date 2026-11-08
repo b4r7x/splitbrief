@@ -1,4 +1,5 @@
 import type { Task, TaskId } from '../../../core/schemas/task.js';
+import type { ConsultQuestion } from '../../../core/schemas/consult.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage, TokenUsage } from '../../../core/schemas/tokens.js';
 import type { TaskStatus } from '../../../core/schemas/enums.js';
@@ -13,12 +14,13 @@ import { nowIso } from '../../../utils/format-time.js';
 import { publishError, publishWarning } from '../events.js';
 import { handleRetryAndEscalation } from '../escalation/handle.js';
 import type { BlockedReport } from '../escalation/step.js';
-import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
+import { raiseBriefHalt, raisePendingRecovery, transitionAndSave } from '../state-ops.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { recordTaskUsage } from '../tokens.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
 import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/task.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
+import { haltOf } from '../../../core/recovery/halt.js';
 import {
   diagnosePlannerCallFailure,
   plannerCallHaltIssue,
@@ -49,6 +51,8 @@ export type RetryAndRecordOptions = {
   initialBlocked?: BlockedReport | undefined;
   /** The user's answer to a change of what the first attempt reported. */
   initialAnswer?: string | undefined;
+  /** The unfinished calls in a row before a consult that runs again, which its halt kept. */
+  unfinishedCalls?: number | undefined;
   tokensBefore: TokenUsage;
   taskBreakdowns: TaskTokenUsage[];
   setTrackedState: (s: WorkflowState) => void;
@@ -107,12 +111,16 @@ async function recordFailedTask(
   });
 }
 
-/** Recovers a failed consult call during a task from its latest saved state, preserving aborts. */
+/**
+ * Recovers a failed consult call during a task from its latest saved state, preserving aborts.
+ * `consult` is the question the last consult was asked; the park keeps it for a consult failure.
+ */
 export async function handleTaskPlannerCallFailure(
   opts: TaskFailureContext &
     Pick<RetryAndRecordOptions, 'state' | 'setTrackedState'> & {
       err: unknown;
       label: string;
+      consult?: ConsultQuestion | undefined;
     },
 ): Promise<WorkflowState> {
   const { wctx, task, err, setTrackedState } = opts;
@@ -143,8 +151,9 @@ export async function handleTaskPlannerCallFailure(
     return recoveryBaseState;
   }
   // A planner out of quota or signed out on the consult halts on PLAN, not as a brief
-  // that exhausted its retries. The halt names the brief, so retrying it or
-  // moving the seat replays that brief from its start.
+  // that exhausted its retries. A *Seat down* halt parks the brief at its consult and the
+  // question it asked: the brief keeps its files, and Switch, Try again and Try later ask
+  // that consult again.
   let issue: RecoveryIssue;
   let row = diagnosis.message;
   if (typedOutputError.isSeatProtocol(err)) {
@@ -184,16 +193,20 @@ export async function handleTaskPlannerCallFailure(
     row = plannerHaltRow(issue, diagnosis);
   }
   publishRow(row);
-  const nextState = raisePendingRecovery(wctx, recoveryBaseState, issue, setTrackedState);
+  const nextState = raiseBriefHalt(
+    wctx,
+    recoveryBaseState,
+    { taskId: task.id, issue, consult: isConsultError(err) ? opts.consult : undefined },
+    setTrackedState,
+  );
   await recordFailedTask(opts, nextState, recoveryBaseState.attempt);
   return nextState;
 }
 
 /**
- * The ladder of a brief whose first attempt failed, in its BUILD call or on validation. Either way
- * the attempt's files stay for the consult and the next attempt; a halt puts every file the brief
- * changed back to its task start. The halt of an edit bundle that stopped part way keeps them:
- * Try again continues on them, and Skip restores them.
+ * The ladder of a brief whose first attempt failed, in its BUILD call or on validation: the attempt
+ * counts on the lineage, and `continueLadder` runs from it. Either way the attempt's files stay for
+ * the consult and the next attempt.
  */
 export async function retryAndRecord(
   opts: RetryAndRecordOptions,
@@ -223,9 +236,27 @@ export async function retryAndRecord(
       return { state, completed: false };
     }
   }
-  const retry = await escalateAndRecord(opts, state, taskStartSnapshot);
+  return continueLadder({ ...opts, state, taskStartSnapshot });
+}
+
+/**
+ * The ladder from an attempt the lineage already counted: the consult, then the attempts it
+ * guides. A *Needs you* halt puts every file the brief changed back to its task start. A *Seat
+ * down* halt keeps them, and so does the halt of an edit bundle that stopped part way: Try again,
+ * Switch and Try later continue on them, and Skip restores them.
+ */
+export async function continueLadder(
+  opts: RetryAndRecordOptions & { taskStartSnapshot: ChangedFilesSnapshot },
+): Promise<{ state: WorkflowState; completed: boolean }> {
+  const { wctx, taskStartSnapshot } = opts;
+  const retry = await escalateAndRecord(opts, opts.state, taskStartSnapshot);
   const recovery = retry.state.pendingRecovery;
-  if (!retry.completed && recovery !== undefined && recovery.facts?.apiApplyIncomplete !== true) {
+  if (
+    !retry.completed &&
+    recovery !== undefined &&
+    haltOf(recovery.reason) === 'needs-you' &&
+    recovery.facts?.apiApplyIncomplete !== true
+  ) {
     const restored = await restoreExhaustedTaskFiles({ wctx, taskStartSnapshot });
     if (restored !== undefined) {
       publishWarning({ bus: wctx.bus, phase: retry.state.phase, ...restored });
@@ -243,6 +274,7 @@ async function escalateAndRecord(
   const { wctx, task, initialError, tokensBefore, taskBreakdowns, setTrackedState } = opts;
   let state = counted;
   let result: Awaited<ReturnType<typeof handleRetryAndEscalation>>['result'];
+  let asked: ConsultQuestion | undefined;
   try {
     ({ state, result } = await handleRetryAndEscalation({
       wctx,
@@ -254,6 +286,10 @@ async function escalateAndRecord(
       ...(opts.initialFailure !== undefined && { initialFailure: opts.initialFailure }),
       ...(opts.initialBlocked !== undefined && { initialBlocked: opts.initialBlocked }),
       ...(opts.initialAnswer !== undefined && { initialAnswer: opts.initialAnswer }),
+      ...(opts.unfinishedCalls !== undefined && { unfinishedCalls: opts.unfinishedCalls }),
+      onConsult: (question) => {
+        asked = question;
+      },
     }));
   } catch (err) {
     const nextState = await handleTaskPlannerCallFailure({
@@ -261,6 +297,7 @@ async function escalateAndRecord(
       state,
       err,
       label: retryFailureLabel(err, task.id),
+      consult: asked,
     });
     return { state: nextState, completed: false };
   }

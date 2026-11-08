@@ -256,6 +256,16 @@ describe('parseAntigravityLine', () => {
     ).toEqual([]);
   });
 
+  // agy writes this step when a turn stops on its quota; the same words reach SPLITBRIEF on stderr
+  // and in the failed result frame.
+  it('skips the error step of a quota stop', () => {
+    expect(
+      parseAntigravityLine(
+        '{"event":"step_update","step_update":{"conversation_id":"0f4ac269-acaf-439b-b86e-844d3e91e99a","step_index":1,"state":"DONE","step_type":"error_message","error_message":{"error_id":"d7bcf3b5-ecdd-44a7-a3cf-b9e4b44d835f-1","message":"Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 144h5m54s.","short_error":"RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 144h5m54s."}}}',
+      ),
+    ).toEqual([]);
+  });
+
   it('names the step type of an unknown step', () => {
     expect(
       parseAntigravityLine(

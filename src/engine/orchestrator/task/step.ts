@@ -28,7 +28,8 @@ import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture
 import { denialMessage } from './attempt-gate.js';
 import { buildApprovalDeniedRecoveryIssue } from '../recovery/builders/task.js';
 import { nowIso } from '../../../utils/format-time.js';
-import { retryAndRecord, consultHandedBackToLoop } from './retry.js';
+import { retryAndRecord, consultHandedBackToLoop, continueLadder } from './retry.js';
+import { recordSteerCorrection } from '../queue/build-corrections.js';
 import { runPreTaskHooksAndPublish } from './pre-task.js';
 import { isResumableWorkspaceStop, retentionError } from '../isolation/retention.js';
 import { runImplementation } from './run-implementation.js';
@@ -85,21 +86,23 @@ type RunSingleTaskOptions = {
 };
 
 /**
- * A consult replaced or split the brief: the run re-enters the task loop at the
- * current index, which now holds the rewritten task or the split's first child.
- * The state was reset to `implementing` by the retry record, so the brief runs
- * like any other from here.
+ * The state the ladder of `task` handed back. When a consult replaced or split the brief, the run
+ * re-enters the task loop at the current index, which now holds the rewritten task or the split's
+ * first child. The state was reset to `implementing` by the retry record, so the brief runs like
+ * any other from here.
  */
 async function rerunReplacedTask(
   opts: RunSingleTaskOptions,
   state: WorkflowState,
-): Promise<WorkflowState | null> {
+  task: Task,
+): Promise<WorkflowState> {
+  if (!consultHandedBackToLoop(state, task)) return state;
   const index = state.currentTaskIndex;
-  const task = state.tasks[index];
-  if (task === undefined) return null;
+  const current = state.tasks[index];
+  if (current === undefined) return state;
   return runSingleTask({
     ...opts,
-    task,
+    task: current,
     taskCodeRefreshed: false,
     index,
     totalTasks: state.tasks.length,
@@ -155,6 +158,29 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   const tokensBefore = { ...state.tokenUsage };
   if (wctx.signal?.aborted) return state;
 
+  // A brief parked at its consult runs that consult again, on the files its ended attempt left: it
+  // asks the question it was asked, and it reads the words typed to continue as a correction.
+  const parked = wctx.continuation?.takeConsult(task.id);
+  if (parked !== undefined) {
+    if (parked.steer !== undefined) {
+      state = recordSteerCorrection({ ...wctx, state, taskId: task.id, message: parked.steer });
+      setTrackedState(state);
+    }
+    const retry = await continueLadder({
+      wctx,
+      task,
+      initialError: parked.question.failingOutput,
+      initialBlocked: parked.question.report,
+      unfinishedCalls: parked.question.unfinishedCalls,
+      state,
+      taskStartSnapshot,
+      tokensBefore,
+      taskBreakdowns,
+      setTrackedState,
+    });
+    return rerunReplacedTask(opts, retry.state, task);
+  }
+
   let implState: Awaited<ReturnType<typeof runImplementation>>;
   try {
     implState = await runImplementation({
@@ -192,11 +218,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       taskBreakdowns,
       setTrackedState,
     });
-    if (consultHandedBackToLoop(retry.state, task)) {
-      const rerun = await rerunReplacedTask(opts, retry.state);
-      return rerun ?? retry.state;
-    }
-    return retry.state;
+    return rerunReplacedTask(opts, retry.state, task);
   }
 
   state = addUsageAndSave(wctx, implState.state, 'implementer', implState.implResult.usage);
@@ -230,11 +252,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       taskBreakdowns,
       setTrackedState,
     });
-    if (consultHandedBackToLoop(failedState, task)) {
-      const rerun = await rerunReplacedTask(opts, failedState);
-      return rerun ?? failedState;
-    }
-    return failedState;
+    return rerunReplacedTask(opts, failedState, task);
   }
 
   const gate = await gateAttemptChanges({
@@ -389,9 +407,5 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     setTrackedState,
     initialChangedFiles: taskChangedFiles,
   });
-  if (consultHandedBackToLoop(retry.state, task)) {
-    const rerun = await rerunReplacedTask(opts, retry.state);
-    return rerun ?? retry.state;
-  }
-  return retry.state;
+  return rerunReplacedTask(opts, retry.state, task);
 }
