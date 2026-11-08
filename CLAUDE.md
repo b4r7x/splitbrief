@@ -94,6 +94,16 @@ These rules apply everywhere. The linked doc holds the detail.
 - **Change discipline, always.** Load the `change-discipline` skill before you implement, fix or review code, and follow it. Fix the root cause at the function every caller routes through. Reuse what the project already has. Migrate callers and delete the old path in the same change. Do not add speculative options, guards or fallbacks that hide errors. Hand back in its §9 form.
 - **Targeted edits only.** Do not rewrite entire files or modules. Provide targeted patches or unified diffs showing only the modified lines with 3 lines of context.
 
+## Scope: SPLITBRIEF seats
+
+When SPLITBRIEF runs you as its planner, implementer, reviewer or consult seat, the seat prompt is your contract. SPLITBRIEF runs the checks and collects the renders. The supervising session proves the red and gives the findings to a skeptic. Do not run a test or any other check, unless the seat prompt asks for it. A seat prompt that only lets you run a check does not ask for it. These sections then change for you:
+
+- "Reporting findings": report in the form that the seat prompt asks for. Do not start a skeptic or another agent for it.
+- "Fixing a defect" and "Real red, then green": the implementer writes the tests that these rules ask for. The planner, the reviewer and the consult seat name these tests in the briefs that they write. For a change that a user can see, these tests include a replay e2e scenario.
+- "Look-and-logic verification": do not render. SPLITBRIEF renders through `validation.render`.
+
+The other sections still apply.
+
 ## Reporting findings (binding)
 
 A finding from a review, a live check, a test run or an audit is reported only when it is confirmed. Every finding states four things:
@@ -128,8 +138,9 @@ This rule applies to every change that adds or changes a test: a defect fix, a f
    - The implementation does not change these tests, unless it proves a test wrong and states why.
    - Run the same files on the new tree at the end. Keep the passing output.
 3. A test that pins a state the change keeps passes on the old code. Prove its red with a named mutant: break the code on purpose, show the failure, then take the mutant out.
-4. The hand-back states, for each new test: the file, the red output (old tree or mutant) and the green output.
-5. A test with no red proof is not done.
+4. A change that a user can see also adds or extends a replay e2e scenario in `testing/e2e/scenarios/` (`npm run test:e2e`). A `PRODUCT` fix and a feature are such changes. The scenario drives the CLI on the path that the user takes and checks what the user sees. Prove its red like the red of every other new test.
+5. The hand-back states, for each new test: the file, the red output (old tree or mutant) and the green output.
+6. A test with no red proof is not done.
 
 ## User-facing text
 

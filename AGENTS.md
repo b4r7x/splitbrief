@@ -18,6 +18,16 @@ Always use the `change-discipline` skill when you implement, fix or review code.
 
 For conventions, see the **"Core conventions"** section of `CLAUDE.md`. For the source tree and architectural notes, follow the **"Documentation map"** in `CLAUDE.md`.
 
+## Scope: SPLITBRIEF seats
+
+When SPLITBRIEF runs you as its planner, implementer, reviewer or consult seat, the seat prompt is your contract. SPLITBRIEF runs the checks and collects the renders. The supervising session proves the red and gives the findings to a skeptic. Do not run a test or any other check, unless the seat prompt asks for it. A seat prompt that only lets you run a check does not ask for it. These sections then change for you:
+
+- "Reporting findings": report in the form that the seat prompt asks for. Do not start a skeptic or another agent for it.
+- "Fixing a defect" and "Real red, then green": the implementer writes the tests that these rules ask for. The planner, the reviewer and the consult seat name these tests in the briefs that they write. For a change that a user can see, these tests include a replay e2e scenario.
+- "Look-and-logic verification": do not render. SPLITBRIEF renders through `validation.render`.
+
+The other sections still apply.
+
 ## Reporting findings (binding)
 
 A finding from a review, a live check, a test run or an audit is reported only when it is confirmed. Every finding states four things:
@@ -37,7 +47,24 @@ An independent skeptic, not the agent that found it, checks every finding agains
 
 1. **Confirm first.** Before any edit, confirm the defect as "Reporting findings" requires: the evidence, the cause at `file:line`, and that a normal user hits it. A finding that cannot be confirmed is not fixed; report it as not confirmed.
 2. **Plan, then change.** Load the `change-discipline` skill. Write the plan: the one function every caller routes through, the callers to migrate, the old path to delete. Then implement it; no guessed design.
-3. **Tests at the end.** Planning, implementing, reviewing and fixing run no tests (typecheck, lint and format only). After the review passes, run the tests of the change once at the end. When a test fails, fix the root cause, review the fix, and run the tests again until they pass.
+3. **Tests first, then once at the end.** Write the new tests before the fix and prove their red ("Real red, then green" below). Implementing, reviewing and fixing then run no tests (typecheck, lint and format only). After the review passes, run the tests of the change once at the end. When a test fails, first find out if the code is wrong. When the code is wrong, fix the root cause in the code. Do not fit the test to the code. Change a test only when the test itself is proven wrong, and state why. Review the fix, and run the tests again until they pass.
+4. **No flaky tests.** Write every test to be deterministic: wait on an event, a file or an output line, never on a fixed sleep; inject the clock, the random source and the order. A test that passes on one run and fails on the next is a defect, never a verdict. Find the race and fix it at the root, in the test (`TEST`) or in the product (`PRODUCT`). A longer timeout, a retry, `.skip` or a re-run is never the fix. Prove the fix with the file green 5 runs in a row. See [TESTING.md](./docs/TESTING.md#core-rules).
+5. **Real red.** Follow "Real red, then green" below.
+
+## Real red, then green (binding for every change)
+
+This rule applies to every change that adds or changes a test: a defect fix, a feature, a refactor or a docs test.
+
+1. A new test fails on the old code and passes on the new code. A test that passes on the old code proves nothing.
+2. Write the new tests first and prove the red before the implementation starts.
+   - Run the new tests once on the tree before the change. Keep the failing output.
+   - When the tree already holds unfinished work, copy the old tree instead: `git archive HEAD` into the session scratchpad, link `node_modules` from the checkout, add the new test files, and run them there.
+   - The implementation does not change these tests, unless it proves a test wrong and states why.
+   - Run the same files on the new tree at the end. Keep the passing output.
+3. A test that pins a state the change keeps passes on the old code. Prove its red with a named mutant: break the code on purpose, show the failure, then take the mutant out.
+4. A change that a user can see also adds or extends a replay e2e scenario in `testing/e2e/scenarios/` (`npm run test:e2e`). A `PRODUCT` fix and a feature are such changes. The scenario drives the CLI on the path that the user takes and checks what the user sees. Prove its red like the red of every other new test.
+5. The hand-back states, for each new test: the file, the red output (old tree or mutant) and the green output.
+6. A test with no red proof is not done.
 
 ## User-facing text
 
