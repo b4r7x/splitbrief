@@ -88,7 +88,7 @@ export type ApiReviewContextInput = Readonly<{
   renders?: string | undefined;
   /** The run's skills block; counted against the seat like every other part it carries. */
   skillsContext?: string | undefined;
-  /** The reviewer seat's configured window; its allocation is derived from it. */
+  /** The reviewer seat's Prompt budget; only then does a packet over its allocation refuse. */
   contextLength?: number | undefined;
   model?: string | undefined;
 }>;
@@ -151,9 +151,10 @@ function overflowing(parts: readonly Part[], availableTokens: number, model?: st
  * The §4 REVIEW input packet: the whole run diff with the coverage that bounds
  * it, the spec (or, in a run that wrote none, the original request), every
  * task brief, this review's own drift and the recorded validation output. Every
- * one of them is required, so the packet either carries all of them whole or
- * refuses — it is never a success packet with a source missing from it, and no
- * part of it is truncated to be admitted.
+ * one of them is required, so the packet carries all of them whole or refuses —
+ * it is never a success packet with a source missing from it, and no part of it
+ * is truncated to be admitted. Only a Prompt budget the user set refuses a packet
+ * on its size; with none, the provider answers for its own context.
  */
 export function buildApiReviewContext(input: ApiReviewContextInput): ApiReviewContext {
   const { model } = input;
@@ -286,7 +287,7 @@ export function buildApiReviewContext(input: ApiReviewContextInput): ApiReviewCo
   const text = queueText + prompt;
   // Measured on the payload the seat will actually dispatch, whole.
   const requiredTokens = estimateTokens(text, model);
-  if (requiredTokens > availableTokens) {
+  if (input.contextLength !== undefined && requiredTokens > availableTokens) {
     const names = overflowing(parts, availableTokens, model);
     return {
       kind: 'insufficient-context',

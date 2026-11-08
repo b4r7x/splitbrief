@@ -246,10 +246,11 @@ export function apiBuildTargets(task: Task): readonly ApiBudgetBuildTarget[] {
 /**
  * The gate every API generation passes immediately before dispatch: the call's
  * identity must still be the prepared one, the selected model is observed once
- * on that seat's own connection, and the final wire messages are budgeted
- * against what that observation says the context is. A refusal carries its
- * exact figures and nothing is sent. Custom endpoints use unknown runtime facts
- * with the same conservative application budget.
+ * on that seat's own connection, and the final wire messages are measured
+ * against what that observation says the context is. Only a seat with a Prompt
+ * budget (`contextLength`) refuses on that measurement, with its exact figures,
+ * and nothing is sent. With no Prompt budget the call goes out whole, capped at
+ * the reported output ceiling, and the provider answers for its own context.
  */
 export async function admitApiCall(
   options: Readonly<{
@@ -304,6 +305,24 @@ export async function admitApiCall(
     role: SEAT_BUDGET_ROLE[prepared.seat],
     ...(options.buildTargets !== undefined && { buildTargets: options.buildTargets }),
   });
+  if (resolution.context.configuredContextTokens === undefined) {
+    const { outputCap } = measurement;
+    return {
+      kind: 'admitted',
+      context: resolution.context,
+      measurement: {
+        kind: 'fits',
+        inputEstimate: measurement.inputEstimate,
+        estimationMargin: measurement.estimationMargin,
+        outputReserve:
+          measurement.kind === 'fits'
+            ? measurement.outputReserve
+            : measurement.requiredOutputTokens,
+        ...(outputCap !== undefined && { maxTokens: outputCap, outputCap }),
+        applicationContextTokens: measurement.applicationContextTokens,
+      },
+    };
+  }
   if (measurement.kind === 'insufficient') {
     return {
       kind: 'refused',

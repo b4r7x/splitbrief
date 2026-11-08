@@ -80,7 +80,7 @@ describe('resolveProfileContextLength', () => {
     });
   });
 
-  it('labels a declared window equal to the detected value as detected', () => {
+  it('labels a declared window equal to the detected value as explicit', () => {
     const declared: ResolvedImplementerProfile = {
       ...profile(true),
       config: {
@@ -95,7 +95,7 @@ describe('resolveProfileContextLength', () => {
 
     expect(result).toEqual({
       contextLength: 262_144,
-      source: 'detected',
+      source: 'explicit',
       usedConservativeContextLength: false,
     });
   });

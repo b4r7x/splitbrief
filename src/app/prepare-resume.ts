@@ -15,7 +15,12 @@ import { error } from '../utils/error.js';
 
 type InteractivePreparationPolicy = Pick<
   PreparationPolicy,
-  'interaction' | 'allowHooks' | 'unverifiedAuth' | 'onTieredApproval' | 'modelCache'
+  | 'interaction'
+  | 'allowHooks'
+  | 'unverifiedAuth'
+  | 'onTieredApproval'
+  | 'modelCache'
+  | 'getDetectedContextLength'
 >;
 
 export const appPreparationError = {
@@ -28,6 +33,7 @@ export const interactivePreparationPolicy = {
   unverifiedAuth: 'disclosed',
   onTieredApproval: openApprovalPrompt,
   modelCache: modelCacheStore,
+  getDetectedContextLength: configStore.getDetectedContextLength,
 } satisfies InteractivePreparationPolicy;
 
 export async function prepareSessionResume(

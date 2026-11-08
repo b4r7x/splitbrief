@@ -72,7 +72,9 @@ describe('settingsHelpLines', () => {
 
   it('leaves a one-sided bound off the line', () => {
     expect(linesFor('implementer.contextLength')).toEqual([
-      { text: 'Prompt budget for the build seat (auto = detected from the model)' },
+      {
+        text: 'Stop a brief that does not fit this many tokens (auto = no stop; the tool handles its own context)',
+      },
     ]);
   });
 

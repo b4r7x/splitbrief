@@ -84,7 +84,7 @@ These variables control the diagnostics of SPLITBRIEF:
 | Variable | Effect | Source |
 |---|---|---|
 | `SPLITBRIEF_DEBUG` | `1` writes the debug log to `.splitbrief/logs/debug.log` in the project; `0` or `false` turns it off. An installed SPLITBRIEF writes no debug log unless you set it. | `src/core/logger.ts` |
-| `SPLITBRIEF_CONTEXT_LENGTH` | Override detected implementer context length (integer) | `src/engine/providers/capabilities.ts` |
+| `SPLITBRIEF_CONTEXT_LENGTH` | Sets a Prompt budget for the default implementer profile (integer): a brief whose estimate does not fit it stops. See [CONFIGURATION.md](./CONFIGURATION.md#runtime-overrides) | `src/core/config/runtime/overrides/from-options.ts` |
 | `CI` | Suppresses fullscreen TUI (`--no-fullscreen` is equivalent) | `src/cli/setup.ts` |
 
 For finer-grained traces, use the event log. The debug log also holds the notices that the screen does not show. Examples are a plan that went back to the planner once and a format pass that changed files. The API-key-bearing env vars SPLITBRIEF reads are listed in [CONFIGURATION.md §Provider authentication](./CONFIGURATION.md#provider-authentication) — a missing credential fails config load for an API seat and shows as a readiness blocker for a CLI seat.
@@ -1120,14 +1120,12 @@ A killed process's `base-<pid>-*` tree under `$XDG_STATE_HOME/splitbrief/bases/`
 
 ### Symptom: every implementer profile is rejected with `context-overflow`
 
-**Likely cause:** Every candidate profile overflowed the task's estimated prompt tokens — the brief is larger than any available context window. A profile that declares no `contextLength` and whose provider exposes no detected window routes at the single documented default, `DEFAULT_UNKNOWN_CONTEXT_LENGTH = 32768` (`src/core/tokens/context-length.ts`); with the 15% safety margin, a task over roughly 28 000 estimated tokens overflows it. A CLI tool under `model: auto` escapes this floor when SPLITBRIEF knows a window for it: the seat budgets with the window of the model that its tool selects on this machine. When SPLITBRIEF cannot read that selection, the seat keeps the conservative window, the smallest bundled window of the tool (`resolveRunnerContextWindow`, `src/engine/providers/model/context-window.ts`). Before you configure a window by hand, check that the tool keeps a readable model selection or carries a bundled catalog row.
+**Likely cause:** This happens only with a Prompt budget: every candidate profile sets `contextLength` (or the default profile takes `SPLITBRIEF_CONTEXT_LENGTH`), and the task's estimated prompt tokens do not fit any of them. With Prompt budget `auto`, the estimate never stops the task: a profile that fits takes it, else the default profile, else the usable profile with the largest window, and the tool handles its own context.
 
 **Fix:**
-1. Set `implementer.contextLength` (or the `SPLITBRIEF_CONTEXT_LENGTH` environment variable) to the runner's real window — see [docs/CONFIGURATION.md](./CONFIGURATION.md).
-2. Use a profile whose declared or detected window fits the brief, or split the brief into smaller tasks.
-3. The halt offers `retry-same-worker`, `skip-current-task` and `end-run`. Fix the window or the profile first, then retry.
-
-**Prevention:** Configure `contextLength` on implementer profiles that run outside a known catalog, and keep briefs under roughly 28 000 estimated tokens when the window is unknown.
+1. Raise `contextLength` (or `SPLITBRIEF_CONTEXT_LENGTH`) to the runner's real window, or unset it (`auto`) — see [docs/CONFIGURATION.md](./CONFIGURATION.md).
+2. Or split the brief into smaller tasks.
+3. The halt offers `retry-same-worker`, `skip-current-task` and `end-run`. Fix the budget first, then retry.
 
 **See also:** [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md) (`context-overflow` recovery), [docs/CONFIGURATION.md](./CONFIGURATION.md).
 
@@ -1137,14 +1135,12 @@ A killed process's `base-<pid>-*` tree under `$XDG_STATE_HOME/splitbrief/bases/`
 
 ### Symptom: the run halts with `plan-checks-failed` instead of opening the plan card
 
-**Likely cause:** The planner's plan failed `checkPlan` (`src/engine/spec/plan-checks.ts`) or the context fit (`estimatePlanContextFits`) — for example a criterion with no check, a task with no check, a dependency cycle, or a task that does not fit the implementer's context window. A failing plan goes back to the planner once with the failed checks; a second failure halts the run with `plan-checks-failed` and the plan card never opens.
+**Likely cause:** The planner's plan failed `checkPlan` (`src/engine/spec/plan-checks.ts`) or the context fit (`estimatePlanContextFits`) — for example a criterion with no check, a task with no check, a dependency cycle, or, with a Prompt budget, a task over it. A failing plan goes back to the planner once with the failed checks; a second failure halts the run with `plan-checks-failed` and the plan card never opens.
 
 **Fix:**
 1. Read the failed checks: the recovery panel lists each one.
 2. Type a correction at the halt (`revise`, the recommended action) that tells the planner how to fix them — split an oversized task, add the missing check.
 3. Or take `retry-same-worker` to ask the same session again, or `end-run` to close the run.
-
-**Prevention:** Set `contextLength` on implementer profiles outside a known catalog, so the context fit measures against the real window.
 
 **See also:** [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md), [docs/TASK-CONTRACT.md](./TASK-CONTRACT.md).
 

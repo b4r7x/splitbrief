@@ -17,13 +17,33 @@ export type CrewDetection = Readonly<{
   cliCatalog?: SavedCatalogOf | undefined;
 }>;
 
+// A context length is the invocation's Prompt budget: it never chooses a seat, and the saved crew never keeps it.
+function withoutPromptBudgets(overrides: CLIOverrides): CLIOverrides {
+  return {
+    ...overrides,
+    planner: { ...overrides.planner, contextLength: undefined },
+    implementer: { ...overrides.implementer, contextLength: undefined },
+    reviewer: { ...overrides.reviewer, contextLength: undefined },
+    contextLength: undefined,
+  };
+}
+
+function promptBudgets(overrides: CLIOverrides): CLIOverrides {
+  return {
+    planner: { contextLength: overrides.planner?.contextLength },
+    implementer: { contextLength: overrides.implementer?.contextLength },
+    reviewer: { contextLength: overrides.reviewer?.contextLength },
+    contextLength: overrides.contextLength,
+  };
+}
+
 export function resolveInitialCrew(input: { persisted: Config; overrides: CLIOverrides }): Config {
-  const { persisted, overrides } = input;
+  const { persisted } = input;
+  const overrides = withoutPromptBudgets(input.overrides);
   const hasSeatOverride = (role: 'planner' | 'implementer' | 'reviewer') =>
     Object.values(overrides[role] ?? {}).some((value) => value !== undefined) ||
     (role === 'planner' && overrides.plannerEffort !== undefined) ||
-    (role === 'reviewer' && overrides.reviewerEffort !== undefined) ||
-    (role === 'implementer' && overrides.contextLength !== undefined);
+    (role === 'reviewer' && overrides.reviewerEffort !== undefined);
   const invocation = resolveEffectiveConfig({ base: createDefaultConfig(), overrides }).config;
   return {
     ...invocation,
@@ -42,8 +62,12 @@ export function selectInitialCrew(input: { detected: Config | null; overrides: C
   effective: Config;
 } {
   const { detected, overrides } = input;
-  const effective = resolveInitialCrew({ persisted: detected ?? createDefaultConfig(), overrides });
-  return { persisted: detected ?? effective, effective };
+  const crew = resolveInitialCrew({ persisted: detected ?? createDefaultConfig(), overrides });
+  const effective = resolveEffectiveConfig({
+    base: crew,
+    overrides: promptBudgets(overrides),
+  }).config;
+  return { persisted: detected ?? crew, effective };
 }
 
 export function detectedSeatReady(runner: RunnerConfig, detection: CrewDetection): boolean {

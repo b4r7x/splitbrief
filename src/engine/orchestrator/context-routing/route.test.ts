@@ -18,6 +18,10 @@ const context: ProjectContext = {
   dir: '/repo',
 };
 
+const SHELL_MODIFY_120_KB = 'export const value = compute(input);\n'.repeat(
+  Math.floor((120 * 1024) / 37),
+);
+
 function profile(name: string, contextLength?: number): ResolvedImplementerProfile {
   return {
     name,
@@ -496,23 +500,64 @@ describe('routeTaskToImplementerProfile', () => {
     expect(decision.reason).toContain('conservative context-length fallback');
   });
 
-  it('reports a mid-size brief as overflow rather than admitting it on unobserved capacity', () => {
+  it('routes a 30 KB modify to an API profile with no contextLength', () => {
     const decision = routeTaskToImplementerProfile({
-      task: makeTask({
-        action: 'modify',
-        currentCode: Array.from({ length: 1800 }, (_, i) => `export const value${i} = ${i};`).join(
-          '\n',
-        ),
-      }),
+      task: makeTask({ action: 'modify', currentCode: 'export const v = 1;\n'.repeat(1500) }),
       context,
-      profiles: [profile('unknown-model')],
+      profiles: [{ ...profile('unknown-model'), isDefault: true }],
     });
 
-    expect(decision.contextLength).toBe(APPLICATION_DEFAULT_CONTEXT_TOKENS);
-    expect(decision.untruncatedEstimatedTokens).toBeGreaterThan(7_123);
-    expect(decision.currentCodeTruncated).toBe(false);
+    expect(decision.selectedProfile).toBe('unknown-model');
     expect(decision.fit).toBe('overflow');
+    expect(decision.currentCodeTruncated).toBe(false);
+    expect(decision.reason).toContain('Selected profile unknown-model');
+  });
+
+  it('routes to the default profile when no profile fits and no Prompt budget is set', () => {
+    const decision = routeTaskToImplementerProfile({
+      task: makeTask({ action: 'modify', currentCode: SHELL_MODIFY_120_KB }),
+      context,
+      profiles: [
+        shellProfile('alpha-worker'),
+        { ...shellProfile('zeta-default'), isDefault: true },
+      ],
+    });
+
+    expect(decision.selectedProfile).toBe('zeta-default');
+    expect(decision.fit).toBe('overflow');
+    expect(decision.currentCodeTruncated).toBe(false);
+    expect(decision.estimatedTokens).toBe(decision.untruncatedEstimatedTokens);
+  });
+
+  it('routes to the usable profile with the largest window when no profile fits and the default profile cannot run', () => {
+    const decision = routeTaskToImplementerProfile({
+      task: makeTask({ action: 'modify', currentCode: SHELL_MODIFY_120_KB }),
+      context,
+      profiles: [
+        { ...customApiProfile('main-default'), isDefault: true },
+        profile('local-api'),
+        shellProfile('local-shell'),
+      ],
+    });
+
+    expect(decision.selectedProfile).toBe('local-shell');
+    expect(decision.fit).toBe('overflow');
+    expect(decision.contextLength).toBe(32_768);
+  });
+
+  it('stops a brief over a Prompt budget the user set', () => {
+    const decision = routeTaskToImplementerProfile({
+      task: makeTask({ action: 'modify', currentCode: SHELL_MODIFY_120_KB }),
+      context,
+      profiles: [
+        shellProfile('alpha-worker', 4096),
+        { ...shellProfile('zeta-default', 4096), isDefault: true },
+      ],
+    });
+
     expect(decision.selectedProfile).toBeUndefined();
+    expect(decision.fit).toBe('overflow');
+    expect(decision.reason).toBe('No capable implementer profile can fit this task prompt');
   });
 
   it('does not treat catalog context as an observed active API context', () => {

@@ -44,8 +44,13 @@ type ApiPlanningContextInput = Readonly<{
   /** True when this call's prompt carries the map, so the budget counts it. */
   repoMapInPrompt?: boolean | undefined;
   skills?: string | undefined;
-  /** Input-token allocation this packet and everything beside it must fit. */
+  /** Input-token window that optional source packs into, after the required material. */
   availableTokens: number;
+  /**
+   * The input allocation of a Prompt budget the user set. Only then does required material
+   * that does not fit refuse the packet; with none, it goes whole and the provider answers.
+   */
+  userBudgetTokens?: number | undefined;
   /** Selected model, for the estimate's character ratio. */
   model?: string | undefined;
   /** Measures the complete wire prompt, including framing and estimate margin. */
@@ -100,9 +105,9 @@ const NO_TOOLS_NOTICE =
   'Every file SPLITBRIEF read for this call is reproduced below. You have no filesystem, shell or search tool on this call: a path that is not below was not read, and nothing about its contents may be assumed or claimed.';
 
 /**
- * The input allocation a PLAN packet may occupy: the seat's application context
- * minus the reserve its own answer needs. Dispatch-time admission remeasures
- * against the observed context and remains the authority.
+ * The input window a PLAN packet packs optional source into: the seat's
+ * application context minus the reserve its own answer needs. Dispatch-time
+ * admission remeasures against the observed context.
  */
 export function apiPlanningInputBudget(configuredContextLength: number | undefined): number {
   const { applicationContextTokens } = resolveApplicationContextTokens(
@@ -406,10 +411,10 @@ function wholeLinePrefix(
 /**
  * The §4 deterministic PLAN context packet. Required material — project
  * instructions, every artifact the step declares, and the current source of
- * every path the request, the briefs or those artifacts name — is included whole
- * or the packet refuses; optional source follows the repo map's rank into
- * whatever allocation is left, as whole-line prefixes with exact intervals. A
- * file that was not read is a named omission, never an unstated one.
+ * every path the request, the briefs or those artifacts name — is included whole,
+ * and refuses only over a Prompt budget the user set; optional source follows the
+ * repo map's rank into whatever window is left, as whole-line prefixes with exact
+ * intervals. A file that was not read is a named omission, never an unstated one.
  */
 export async function buildApiPlanningContext(
   input: ApiPlanningContextInput,
@@ -524,14 +529,15 @@ export async function buildApiPlanningContext(
     };
   }
 
-  if (requiredTokens > availableTokens) {
-    const overflowing = overflowingSections([...counted, ...requiredBlocks], availableTokens);
+  const { userBudgetTokens } = input;
+  if (userBudgetTokens !== undefined && requiredTokens > userBudgetTokens) {
+    const overflowing = overflowingSections([...counted, ...requiredBlocks], userBudgetTokens);
     return {
       kind: 'insufficient-context',
       cause: 'input-budget',
       missingSections: overflowing,
       requiredTokens,
-      availableTokens,
+      availableTokens: userBudgetTokens,
       // A section that does not fit was read but is not supplied: the manifest
       // says omitted rather than claiming the call would have carried it.
       manifest: manifest.map((entry) =>

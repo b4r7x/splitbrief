@@ -43,19 +43,16 @@ describe('detectCapabilities', () => {
     } as Config;
 
     const result = await detectCapabilities(config);
-    expect(result.contextLength).toBe(32768);
-    expect(result.origin).toBe('config');
+    expect(result).toEqual({ contextLength: 32768, origin: 'config' });
   });
 
-  it('returns 32768 fallback when nothing resolves', async () => {
+  it('names no window when nothing resolves', async () => {
     const config = {
       implementer: { kind: 'cli' as const, tool: 'codex' as const, model: 'gpt-5.4-mini' },
       planner: { kind: 'cli' as const, tool: 'claude-code' as const },
     } as Config;
 
-    const result = await detectCapabilities(config);
-    expect(result.contextLength).toBe(32768);
-    expect(result.origin).toBe('fallback');
+    expect(await detectCapabilities(config)).toBeUndefined();
   });
 
   it('resolves a CLI tool under automatic model selection from its bundled catalog', async () => {
@@ -65,8 +62,7 @@ describe('detectCapabilities', () => {
     } as Config;
 
     const result = await detectCapabilities(config);
-    expect(result.contextLength).toBe(272_000);
-    expect(result.origin).toBe('catalog');
+    expect(result).toEqual({ contextLength: 272_000, origin: 'catalog' });
   });
 
   // codex 0.164.0 `debug models` lists gpt-6.1-sol at 500000; the bundled row says 272000.
@@ -92,11 +88,11 @@ describe('detectCapabilities', () => {
     );
 
     expect(boot).toEqual({ contextLength: 500_000, origin: 'catalog' });
-    expect(run.contextLength).toBe(boot.contextLength);
+    expect(run.contextLength).toBe(boot?.contextLength);
   });
 
   // `kilo models --verbose` lists kilo/openai/gpt-3.5-turbo-0613 at 4095 among 321 rows.
-  it('keeps the fallback window for an automatic Kilo seat whose selection it cannot read', async () => {
+  it('names no window for an automatic Kilo seat whose selection it cannot read', async () => {
     const config = makeConfig({ implementer: { kind: 'cli', tool: 'kilo-code', model: 'auto' } });
     const cache = makeModelCacheAccessor({
       providerModels: {
@@ -107,13 +103,10 @@ describe('detectCapabilities', () => {
       },
     });
 
-    expect(await detectCapabilities(config, cache)).toEqual({
-      contextLength: 32_768,
-      origin: 'fallback',
-    });
+    expect(await detectCapabilities(config, cache)).toBeUndefined();
   });
 
-  it('budgets an automatic OpenCode seat with the window of the model OpenCode selects, as the run does', async () => {
+  it('reads an automatic OpenCode seat at the window of the model OpenCode selects, as the run does', async () => {
     const opencodeState = join(toolHome, 'state', 'opencode');
     mkdirSync(opencodeState, { recursive: true });
     writeFileSync(
@@ -139,7 +132,7 @@ describe('detectCapabilities', () => {
       makeConfig({ implementer: { kind: 'cli', tool: 'opencode', model: 'auto' } }),
       cache,
     );
-    // Start names the selected model on the seat, so the run budgets the prepared config.
+    // Start names the selected model on the seat, so the run reads the prepared config.
     const run = resolveProfileContextLength(
       resolveImplementerProfiles(
         makeConfig({ implementer: { kind: 'cli', tool: 'opencode', model: 'openai/gpt-5.6-sol' } }),
@@ -149,23 +142,11 @@ describe('detectCapabilities', () => {
     );
 
     expect(boot).toEqual({ contextLength: 1_050_000, origin: 'catalog' });
-    expect(run.contextLength).toBe(boot.contextLength);
+    expect(run.contextLength).toBe(boot?.contextLength);
   });
 
   describe('api-kind precedence', () => {
     setupFetchMock();
-
-    let savedEnv: string | undefined;
-
-    beforeEach(() => {
-      savedEnv = process.env.SPLITBRIEF_CONTEXT_LENGTH;
-      delete process.env.SPLITBRIEF_CONTEXT_LENGTH;
-    });
-
-    afterEach(() => {
-      if (savedEnv === undefined) delete process.env.SPLITBRIEF_CONTEXT_LENGTH;
-      else process.env.SPLITBRIEF_CONTEXT_LENGTH = savedEnv;
-    });
 
     function ollamaConfig(contextLength?: number): Config {
       return {
@@ -202,23 +183,12 @@ describe('detectCapabilities', () => {
       return config;
     }
 
-    it('env SPLITBRIEF_CONTEXT_LENGTH wins over provider detection', async () => {
-      process.env.SPLITBRIEF_CONTEXT_LENGTH = '4096';
-      mockDetectedContext(131072);
-
-      const result = await detectCapabilities(ollamaConfig());
-
-      expect(result.contextLength).toBe(4096);
-      expect(result.origin).toBe('env');
-    });
-
     it('explicit config contextLength wins over provider detection', async () => {
       mockDetectedContext(131072);
 
       const result = await detectCapabilities(ollamaConfig(16384));
 
-      expect(result.contextLength).toBe(16384);
-      expect(result.origin).toBe('config');
+      expect(result).toEqual({ contextLength: 16384, origin: 'config' });
     });
 
     it('prefers live detection over catalog', async () => {
@@ -226,17 +196,13 @@ describe('detectCapabilities', () => {
 
       const result = await detectCapabilities(ollamaConfig());
 
-      expect(result.contextLength).toBe(131072);
-      expect(result.origin).toBe('detected');
+      expect(result).toEqual({ contextLength: 131072, origin: 'detected' });
     });
 
-    it('falls back to the default window when detection fails with no bundled row', async () => {
+    it('names no window when detection fails with no bundled row', async () => {
       vi.mocked(globalThis.fetch).mockRejectedValue(new TypeError('offline'));
 
-      const result = await detectCapabilities(customEndpointConfig());
-
-      expect(result.contextLength).toBe(32768);
-      expect(result.origin).toBe('fallback');
+      expect(await detectCapabilities(customEndpointConfig())).toBeUndefined();
     });
 
     it('does not resolve an API implementer named opencode from the CLI bundled rows', async () => {
@@ -254,9 +220,7 @@ describe('detectCapabilities', () => {
       });
       delete config.implementer.contextLength;
 
-      const result = await detectCapabilities(config);
-
-      expect(result).toEqual({ contextLength: 32_768, origin: 'fallback' });
+      expect(await detectCapabilities(config)).toBeUndefined();
     });
 
     // This probe runs during store init, before the TUI paints. A first-run
@@ -269,9 +233,7 @@ describe('detectCapabilities', () => {
       vi.mocked(globalThis.fetch).mockRejectedValue(new TypeError('fetch failed'));
 
       try {
-        const result = await detectCapabilities(ollamaConfig());
-
-        expect(result.origin).toBe('fallback');
+        expect(await detectCapabilities(ollamaConfig())).toBeUndefined();
         expect(stderr).not.toHaveBeenCalled();
       } finally {
         stderr.mockRestore();
@@ -318,7 +280,7 @@ describe('detectCapabilities against a local server that accepts the read and ne
   }
 
   it.each(['lm-studio', 'llama-cpp', 'ollama'] as const)(
-    'settles %s on the fallback window with no warning once the read passes its bound',
+    'settles %s with no window and no warning once the read passes its bound',
     async (provider) => {
       // process.stderr is a sanctioned global spy — see docs/TESTING.md. AbortSignal.timeout is the
       // clock: the test fires the bound once the server holds the request.
@@ -352,7 +314,7 @@ describe('detectCapabilities against a local server that accepts the read and ne
             );
           }
 
-          expect(await detected).toEqual({ contextLength: 32_768, origin: 'fallback' });
+          expect(await detected).toBeUndefined();
           expect(stderr).not.toHaveBeenCalled();
         });
       } finally {

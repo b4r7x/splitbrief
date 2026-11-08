@@ -13,8 +13,15 @@ export type HaltKind = 'input-too-large' | 'auth' | 'usage' | 'missing-model' | 
  * ("requires permissions", "use --yolo") and an auth halt is a 401 spelling.
  */
 export const HALT_SIGNATURES = {
-  // Codex's refusal, structured and plain text, then Claude Code's.
-  inputTooLarge: ['input_too_large', 'input exceeds the maximum length', 'prompt is too long'],
+  // Codex's refusal, structured and plain text, then Claude Code's, then an API provider's
+  // 400, in its own words and by its error code.
+  inputTooLarge: [
+    'input_too_large',
+    'input exceeds the maximum length',
+    'prompt is too long',
+    'maximum context length',
+    'context_length_exceeded',
+  ],
   auth: [
     'access token could not be refreshed',
     'log out and sign in again',

@@ -3,6 +3,7 @@ import type { PreparationPolicy } from '../../engine/runners/prepare-execution/t
 import type { PreparedExecution } from '../../engine/runners/prepared-execution.js';
 import { openApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
+import { configStore } from '../../stores/project/config.js';
 
 type RunTerms = Pick<PreparedExecution['runtime'], 'allowHooks' | 'allowRepoRunners'>;
 
@@ -32,6 +33,7 @@ export function runResumePolicy(
     allowRepoRunners: terms.allowRepoRunners,
     onTieredApproval: openApprovalPrompt,
     modelCache: modelCacheStore,
+    getDetectedContextLength: configStore.getDetectedContextLength,
   };
 }
 

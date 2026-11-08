@@ -94,9 +94,8 @@ export async function loadDiscovery(projectDir: string): Promise<void> {
 async function storeContextLength(config: Config): Promise<void> {
   try {
     const caps = await detectCapabilities(config, modelCacheStore);
-    if (caps.origin === 'env' || caps.origin === 'detected' || caps.origin === 'catalog') {
-      configStore.setContextLength(caps.contextLength, caps.origin !== 'env');
-    }
+    if (caps !== undefined && caps.origin !== 'config')
+      configStore.setDetectedContextLength(caps.contextLength);
   } catch (err) {
     warnError('Could not detect provider capabilities', err);
     feedbackStore.setMessage('Provider detection failed — using defaults');

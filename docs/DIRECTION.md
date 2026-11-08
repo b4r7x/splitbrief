@@ -247,11 +247,13 @@ Each call includes only:
 - escalation rules,
 - retry or hint context when applicable.
 
-If a task does not fit the selected worker's context window, SPLITBRIEF should not stuff more context into the prompt. It should either:
+With a Prompt budget, a task that does not fit it is not stuffed with more context. SPLITBRIEF should either:
 
 1. ask the planner to split the task,
 2. route the task to a larger implementer,
 3. escalate to the planner.
+
+With Prompt budget `auto`, the tool handles its own context: SPLITBRIEF sends the brief whole and stops only when the tool or the provider refuses the prompt.
 
 Large prompts are a planning failure, not a reason to make every worker remember the whole session.
 
@@ -261,7 +263,7 @@ A brief is one coherent, reviewable outcome, not a file: every path it writes is
 
 The grouping rule is `sliceRuleText()` (`src/core/pipeline-spec/brief.ts`). The planner prompts and the portable skills render it; they do not restate it. The rule keeps tests, callers, wiring, fixtures and necessary documentation with their behavior, and it combines related corrections that share a contract, mechanism or code context. It splits independent outcomes, or a complex mechanism, when separate validation, context or recovery makes the work easier to execute correctly.
 
-No brief count, file count or changed-line count decides a boundary, and no mode caps the number of briefs in a run. What bounds one brief is the real limit of its runner: the model context and the prompt transport, with the system text, skills and retry feedback included. A brief that does not fit follows the refusal path above; the brief is never truncated.
+No brief count, file count or changed-line count decides a boundary, and no mode caps the number of briefs in a run. What bounds one brief is the real limit of its runner: the model context and the prompt transport, with the system text, skills and retry feedback included. With a Prompt budget, a brief that does not fit follows the refusal path above; with `auto`, the tool handles its own context. The brief is never truncated.
 
 ### Implementer pool
 

@@ -1029,15 +1029,27 @@ describe('formatTaskStartedParts', () => {
     ]);
   });
 
-  it('keeps the estimate when the context window is unknown', () => {
+  it('shows only the estimate for a brief over its window', () => {
     const parts = taskStartedPartTexts(
-      taskStartedEvent({ contextFit: 'overflow', estimatedTokens: 41_200 }),
+      taskStartedEvent({ contextFit: 'overflow', estimatedTokens: 31_012, contextLength: 32_768 }),
     );
 
     expect(parts).toEqual([
       'src/validate.ts (create)',
       'Claude Code CLI · Opus 5.5',
-      '~41,200 context tokens (overflow)',
+      '~31,012 context tokens',
+    ]);
+  });
+
+  it('keeps the estimate when the context window is unknown', () => {
+    const parts = taskStartedPartTexts(
+      taskStartedEvent({ contextFit: 'tight', estimatedTokens: 41_200 }),
+    );
+
+    expect(parts).toEqual([
+      'src/validate.ts (create)',
+      'Claude Code CLI · Opus 5.5',
+      '~41,200 context tokens (tight)',
     ]);
   });
 });

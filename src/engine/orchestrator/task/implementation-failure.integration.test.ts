@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, watch, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -613,6 +613,27 @@ describe('handleFailedImplementation — an effect failure is no scope fence', (
   });
 });
 
+async function runUntilHalt(config: Config, implementer: Implementer) {
+  const { projectDir, sessionId } = setupProject();
+  await rememberDetectedTools(projectDir, cliDetectionsFor('ready', ['opencode', 'claude-code']));
+  const { bus, events } = makeBusRecorder();
+  const wctx = makeWorkflowContext({
+    projectDir,
+    sessionId,
+    implementer,
+    planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
+    bus,
+    config,
+  });
+  const { state } = await runTaskLoop({
+    wctx,
+    initialState: implementingState([makeTask({ id: 'T001' })]),
+    setTrackedState: vi.fn(),
+    setCurrentTask: vi.fn(),
+  });
+  return { state, events };
+}
+
 describe('runTaskLoop — a seat that times out twice on one brief is a seat-down halt', () => {
   const shimDirs: string[] = [];
   let restorePath: (() => void) | undefined;
@@ -623,27 +644,6 @@ describe('runTaskLoop — a seat that times out twice on one brief is a seat-dow
     vi.unstubAllGlobals();
     while (shimDirs.length > 0) cleanupTempDir(shimDirs.pop() as string);
   });
-
-  async function runUntilHalt(config: Config, implementer: Implementer) {
-    const { projectDir, sessionId } = setupProject();
-    await rememberDetectedTools(projectDir, cliDetectionsFor('ready', ['opencode', 'claude-code']));
-    const { bus, events } = makeBusRecorder();
-    const wctx = makeWorkflowContext({
-      projectDir,
-      sessionId,
-      implementer,
-      planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
-      bus,
-      config,
-    });
-    const { state } = await runTaskLoop({
-      wctx,
-      initialState: implementingState([makeTask({ id: 'T001' })]),
-      setTrackedState: vi.fn(),
-      setCurrentTask: vi.fn(),
-    });
-    return { state, events };
-  }
 
   // The transcript reads `attempt 2` above the halt; the halt states the same count.
   function expectTwoAttempts(state: WorkflowState) {
@@ -760,6 +760,99 @@ describe('runTaskLoop — a seat that times out twice on one brief is a seat-dow
     });
     expect(state.pendingRecovery?.availableActions).toContain('switch-seat');
     expectTwoAttempts(state);
+  });
+});
+
+describe('runTaskLoop — an API BUILD seat the provider refuses as too long', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('halts at once with the input-too-large card and sends the prompt once', async () => {
+    let posts = 0;
+    // A seat that sends the same prompt again never halts; the second post ends the wait.
+    let onSecondPost: () => void = () => {};
+    const sentAgain = new Promise<never>((_resolve, reject) => {
+      onSecondPost = () => reject(new Error('The seat sent the same prompt again before a halt.'));
+    });
+    vi.stubGlobal(
+      'fetch',
+      withLocalCatalog(['qwen2.5-coder:7b'], (input) => {
+        if (!String(input).endsWith('/chat/completions')) {
+          return new Response('not found', { status: 404 });
+        }
+        posts += 1;
+        if (posts === 2) onSecondPost();
+        return new Response(
+          JSON.stringify({
+            error: {
+              message:
+                "This model's maximum context length is 32768 tokens. However, your messages resulted in 40012 tokens. Please reduce the length of the messages.",
+              type: 'invalid_request_error',
+              param: 'messages',
+              code: 'context_length_exceeded',
+            },
+          }),
+          { status: 400, headers: { 'Content-Type': 'application/json' } },
+        );
+      }),
+    );
+    const config = makeConfig({ validation: { endChecks: false, testCommand: 'noop' } });
+
+    const { state } = await Promise.race([
+      runUntilHalt(config, createApiImplementer(config)),
+      sentAgain,
+    ]);
+
+    expect(state.pendingRecovery).toMatchObject({ reason: 'context-overflow', taskId: 'T001' });
+    expect(state.pendingRecovery?.message).toMatch(/^Prompt too large for .+ on T001$/);
+    expect(state.pendingRecovery?.details).toContain('A retry sends the same prompt.');
+    expect(state.pendingRecovery?.details).toContain('Attempts: 1');
+    expect(posts).toBe(1);
+  });
+});
+
+describe('runTaskLoop — a shell BUILD seat whose tool refuses the prompt as too long', () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    while (dirs.length > 0) cleanupTempDir(dirs.pop() as string);
+  });
+
+  it('halts at once with the input-too-large card and runs the seat once', async () => {
+    const dir = createTempDir('too-long-shell');
+    dirs.push(dir);
+    const calls = join(dir, 'calls');
+    writeFileSync(calls, '');
+    // A seat that runs the same prompt again never halts; the second call ends the wait.
+    let onSecondCall: () => void = () => {};
+    const ranAgain = new Promise<never>((_resolve, reject) => {
+      onSecondCall = () => reject(new Error('The seat ran the same prompt again before a halt.'));
+    });
+    const watcher = watch(calls, () => {
+      if (readFileSync(calls, 'utf8').split('\n').length > 2) onSecondCall();
+    });
+    const config = makeConfig({
+      implementer: {
+        kind: 'shell',
+        command: '/bin/sh',
+        args: [
+          '-c',
+          `cat > /dev/null; echo call >> '${calls}'; echo 'Prompt is too long' >&2; exit 1`,
+        ],
+        model: 'test',
+        outputFormat: 'text',
+      },
+      validation: { endChecks: false, testCommand: 'noop' },
+    });
+
+    const { state } = await Promise.race([
+      runUntilHalt(config, createCommandImplementer(config, 'shell')),
+      ranAgain,
+    ]).finally(() => watcher.close());
+
+    expect(state.pendingRecovery).toMatchObject({ reason: 'context-overflow', taskId: 'T001' });
+    expect(state.pendingRecovery?.details).toContain('Attempts: 1');
+    expect(readFileSync(calls, 'utf8')).toBe('call\n');
   });
 });
 

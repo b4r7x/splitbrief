@@ -928,6 +928,10 @@ const checkpointPredicates = [
       'T902 Register the bounded fixture projection',
     ),
   ],
+  [
+    checkpointId('task-rows-context-fit'),
+    includesTranscript('~24,310 of 32K context tokens (tight)'),
+  ],
   // The tiered gate owns this checkpoint: it takes the prompt zone from the document panel, so the
   // panel's own words are never on this frame.
   [checkpointId('review'), includesAll('Confirm with a reason', WORKFLOW_FIXTURE_TEXT.review)],

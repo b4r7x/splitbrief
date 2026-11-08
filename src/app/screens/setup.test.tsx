@@ -365,7 +365,7 @@ describe('SetupScreen', () => {
   it('proposes a ready crew without saving it and explains the first save', async () => {
     await withTempDir('setup-ready-default', async (projectDir) => {
       configStore.load(projectDir, { plannerEffort: 'high' });
-      configStore.setContextLength(8192, true);
+      configStore.setDetectedContextLength(8192);
       freshDiscovery(beginDiscovery(), 1, {
         cliTools: [cliDetectionFor('ready', 'claude-code'), cliDetectionFor('ready', 'opencode')],
         providers: [{ provider: 'ollama', available: false, isLocal: true }],

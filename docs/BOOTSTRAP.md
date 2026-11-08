@@ -56,9 +56,9 @@ initStores(projectDir, opts)
 | `initUIChrome` | Subscribe to terminal resize | sync |
 | `loadProjectState` | `configStore.load()`, `sessionsStore.load()`, `installHistoryPersistence()`, the saved sidebar preference | sync |
 | `ensureHooksTrusted` | reads `config.hooks` from `configStore` → prompts for hook trust before any subprocess discovery | async |
-| `loadDiscovery` | `detectCapabilities()` → `configStore.setContextLength()`, the remembered detection snapshot, then the model-catalog seed and the live detection refresh in the background while skill discovery is awaited | async |
+| `loadDiscovery` | `detectCapabilities()` → `configStore.setDetectedContextLength()`, the remembered detection snapshot, then the model-catalog seed and the live detection refresh in the background while skill discovery is awaited | async |
 
-`detectCapabilities → setContextLength` is the canonical example of **cross-store orchestration**: reads from `configStore`, awaits a provider probe (`src/engine/providers/capabilities.ts`), writes back to `configStore`. This wiring has no natural home inside any single store — it lives in `initStores()`.
+`detectCapabilities → setDetectedContextLength` is the canonical example of **cross-store orchestration**: reads from `configStore`, awaits a provider probe (`src/engine/providers/capabilities.ts`), writes back to `configStore`. This wiring has no natural home inside any single store — it lives in `initStores()`.
 
 ---
 
@@ -144,7 +144,7 @@ The placement follows colocation: UI-ephemeral state lives under `stores/ui/`, a
 
 When step A writes to store X after reading from store Y, or when the result of one external probe feeds a different store's state, the wiring belongs in `initStores()` — never inside a store.
 
-Canonical example: `detectCapabilities()` reads `configStore.get().config`, probes the provider, and writes back via `configStore.setContextLength()`. This is not a `configStore` responsibility — the provider subsystem is an external dependency, and `configStore` stays ignorant of it.
+Canonical example: `detectCapabilities()` reads `configStore.get().config`, probes the provider, and writes back via `configStore.setDetectedContextLength()`. This is not a `configStore` responsibility — the provider subsystem is an external dependency, and `configStore` stays ignorant of it.
 
 ### 6. Track asynchronous discovery without blocking mount
 

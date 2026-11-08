@@ -208,7 +208,7 @@ Run only the planning session. It writes `plan.json`, `plan.md` and `tasks.md` t
 
 Without a config, spec saves a detected ready crew to `.splitbrief/config.yaml`. If no crew is ready, it asks you to run `splitbrief init` and leaves the config absent.
 
-The planning session is the same one `splitbrief start` runs ([WORKFLOW.md](./WORKFLOW.md#3-the-planning-session)): the planner answers with one typed plan, SPLITBRIEF checks it (`checkPlan` plus the context fit), and a plan that fails its checks goes back to the planner once.
+The planning session is the same one `splitbrief start` runs ([WORKFLOW.md](./WORKFLOW.md#3-the-planning-session)): the planner answers with one typed plan, SPLITBRIEF checks it (`checkPlan`, plus the context fit when a Prompt budget is set), and a plan that fails its checks goes back to the planner once.
 
 ### Usage
 
@@ -260,7 +260,7 @@ splitbrief spec --allow-hooks "tighten zod schemas"
 - A network failure or a server error on the planner call retries the same call up to 10 times. The first wait is 2s, each wait doubles, and no wait is longer than 60s. A `retry-after` from the provider sets the wait instead. Each retry prints one line: `Network or server failure · retry <n> of 10 in <wait>`.
 - A usage limit that names its reset makes the command wait until that reset. Then it calls the planner once more. The wait prints one line: `Waiting for <tool> · resets <clock>`. A limit that names no reset, or a limit on the call after the wait, fails the command with exit code `1`.
 - Questions: the planner may ask up to three questions per round, for at most two rounds, and every question carries a default. `spec` prints them under `The planner asks:`. In a terminal it reads one line (`Your answer (⏎ takes the defaults): `), and an empty line takes the defaults. Without a terminal every question takes its default.
-- The planner is told the BUILD context a headless `start` measures: the profile's declared `contextLength`, else the model catalog. `spec` takes no `--skills`, so its prompt carries no skills block, as a `start` with no skills selected.
+- The planner is told the BUILD context when it is known: the profile's declared `contextLength`, else the model catalog. `spec` takes no `--skills`, so its prompt carries no skills block, as a `start` with no skills selected.
 - `spec` shows no plan card. `--mode` and `--approve` were removed and fail the command with exit code 1.
 - The stale-session sweep runs before the new session is prepared — a crashed prior run will not block this one.
 - Session id is generated from the feature. The final summary prints `Planning complete.`, the session id and the path of `plan.json`, `plan.md` and `tasks.md`, with the task count as `(N tasks)`.

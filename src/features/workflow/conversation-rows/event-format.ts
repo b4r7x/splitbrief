@@ -330,6 +330,9 @@ function formatEventContextFit(
   contextLength: number | undefined,
 ): string {
   if (estimatedTokens === undefined) return `context (${contextFit})`;
+  // A brief over its window runs only with Prompt budget `auto`, where the tool handles its own
+  // context, so the row shows the estimate alone.
+  if (contextFit === 'overflow') return `~${formatUsageTokens(estimatedTokens)} context tokens`;
   const window = formatContextLength(contextLength);
   const share = window === '' ? '' : ` of ${window}`;
   return `~${formatUsageTokens(estimatedTokens)}${share} context tokens (${contextFit})`;

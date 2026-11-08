@@ -166,11 +166,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     state = routing.state;
     if (!routing.ok) return { state, status: 'stopped' };
     const { selectedProfile, selectedModel, routingDecision } = routing;
-    const selectedTaskConfig = configForProfile(
-      config,
-      selectedProfile,
-      routingDecision.contextLength,
-    );
+    const selectedTaskConfig = configForProfile(config, selectedProfile);
 
     const taskImplementer = await createTaskImplementer({
       wctx,

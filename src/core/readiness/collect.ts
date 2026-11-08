@@ -111,6 +111,8 @@ export interface CollectReadinessOptions {
   seatDisplayName?: SeatDisplayName | undefined;
   /** The detected image fact of an API seat's model; the REVIEW line needs it for its render note. */
   seatImageFact: SeatImageFact;
+  /** The default build seat's detected window; the context check reads it when no Prompt budget is set. */
+  detectedContextLength?: number | undefined;
 }
 
 const CLI_READINESS_CHECK_IDS = new Set(CLI_TOOL_IDS.map((tool) => cliReadinessCheckId(tool)));
@@ -199,6 +201,9 @@ export async function collectReadiness(
     ...(options.interaction !== undefined && { interaction: options.interaction }),
     ...(options.seatDisplayName !== undefined && { seatDisplayName: options.seatDisplayName }),
     seatImageFact: options.seatImageFact,
+    ...(options.detectedContextLength !== undefined && {
+      detectedContextLength: options.detectedContextLength,
+    }),
   };
 
   let report = buildReadinessReport(input);

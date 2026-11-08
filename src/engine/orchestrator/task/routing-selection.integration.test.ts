@@ -189,6 +189,32 @@ describe('selectRoutingProfile context cache', () => {
     expect(withDetected.routingDecision.selectedProfile).toBe('cheap-detected-worker');
     expect(withDetected.routingDecision.contextLength).toBe(20_000);
   });
+
+  it('selects the default profile and raises no recovery when the brief is over every guessed window', async () => {
+    const task = makeTask({ description: 'large routing input '.repeat(7000) });
+    const state = makeImplStateWithMetadata([task]);
+    const worker = (name: string, isDefault: boolean): ResolvedImplementerProfile => ({
+      name,
+      capabilities: { writesFiles: 'extracted-code' },
+      isDefault,
+      config: { kind: 'agent', command: `${name}-cmd`, model: `${name}-model` },
+    });
+
+    const result = await selectRoutingProfile({
+      wctx: makeTaskWorkflowContext(),
+      state,
+      setTrackedState: () => {},
+      task,
+      resolvedProfiles: [worker('alpha-worker', false), worker('zeta-default', true)],
+      getRunnerModelName,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.state.pendingRecovery).toBeUndefined();
+    if (!result.ok) return;
+    expect(result.selectedProfile.name).toBe('zeta-default');
+    expect(result.routingDecision.fit).toBe('overflow');
+  });
 });
 
 describe('selectRoutingProfile recovery pin', () => {

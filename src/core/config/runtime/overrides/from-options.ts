@@ -21,7 +21,7 @@ export function workflowOptsToCLIOverrides(opts: WorkflowOpts): CLIOverrides {
       apiKey: opts.implementerApiKeyEnv,
       args: opts.implementerArgs,
       outputFormat: opts.implementerOutputFormat,
-      contextLength: opts.implementerContextLength,
+      contextLength: opts.implementerContextLength ?? envContextLength(),
     },
     reviewer: {
       tool: opts.reviewer,
@@ -36,4 +36,9 @@ export function workflowOptsToCLIOverrides(opts: WorkflowOpts): CLIOverrides {
     plannerEffort: opts.plannerEffort,
     reviewerEffort: opts.reviewerEffort,
   };
+}
+
+function envContextLength(): number | undefined {
+  const parsed = Number.parseInt(process.env.SPLITBRIEF_CONTEXT_LENGTH ?? '', 10);
+  return Number.isNaN(parsed) ? undefined : parsed;
 }

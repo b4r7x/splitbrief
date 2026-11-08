@@ -20,7 +20,8 @@ export function questionRoundLimit(decideForMe: boolean | undefined): number {
 /** The implementer the tasks are sized for: its model, its context, and how it writes files. */
 export type BuildSeat = Readonly<{
   model: string | undefined;
-  contextTokens: number;
+  /** The window the seat sets, reports or lists; undefined when no source names one. */
+  contextTokens: number | undefined;
   writesFiles: ImplementerWriteMode;
 }>;
 
@@ -48,7 +49,7 @@ function buildSeatText(build: BuildSeat): string {
   const seat =
     build.writesFiles === 'direct'
       ? `The tasks are built by ${model}, a weaker model. ${DIRECT_WRITER_TASK_RULE}`
-      : `The tasks are built by ${model}, a weaker model with a measured context of ${build.contextTokens.toLocaleString('en-US')} tokens. Each task reaches it with the current code of its suggested and context files, the instructions and the checks, and the whole prompt must fit well inside that context with room left to work.`;
+      : `The tasks are built by ${model}, a weaker model${build.contextTokens === undefined ? '' : ` with a context of ${build.contextTokens.toLocaleString('en-US')} tokens`}. Each task reaches it with the current code of its suggested and context files, the instructions and the checks, and the whole prompt must fit well inside its context with room left to work.`;
   return `${seat} A task is one verifiable behaviour with its tests and callers. Group by coherent outcome, not by count: every task costs a fixed overhead, and every task boundary is a place where one task can break another.`;
 }
 

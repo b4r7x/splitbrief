@@ -23,7 +23,7 @@ const claims = [
   [
     'task-contract-plan-check-admission',
     'taskContract',
-    'A Task Brief may enter implementation only when the plan it was compiled from passed `checkPlan` and the context fit.',
+    'A Task Brief may enter implementation only when the plan it was compiled from passed `checkPlan`, and the context fit when a Prompt budget is set.',
   ],
   [
     'task-contract-failed-plan-not-applied',

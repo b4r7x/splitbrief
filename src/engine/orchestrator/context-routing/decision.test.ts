@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { compareProfileRouteRank, requiredWriteModeForTask } from './decision.js';
+import { compareProfileRouteRank, requiredWriteModeForTask, selectedReason } from './decision.js';
 import type { ProfileFit } from './types.js';
 
 function profileFit(name: string, contextLength: number): ProfileFit {
@@ -25,6 +25,7 @@ function profileFit(name: string, contextLength: number): ProfileFit {
     currentCodeTruncated: false,
     currentCodeContextMode: 'none',
     usedConservativeContextLength: false,
+    userBudget: false,
     requiredWriteMode: 'extracted-code',
   };
 }
@@ -81,5 +82,34 @@ describe('requiredWriteModeForTask', () => {
       requiredWriteModeForTask(makeTask({ suggestedFiles: ['src/hello.ts', 'src/hello.test.ts'] })),
     ).toBe('extracted-code');
     expect(requiredWriteModeForTask(makeTask())).toBe('extracted-code');
+  });
+});
+
+describe('selectedReason', () => {
+  it.each([
+    {
+      name: 'an overflow against the stand-in window',
+      fit: {
+        ...profileFit('default', 32_768),
+        fit: 'overflow' as const,
+        estimatedTokens: 31_012,
+        usedConservativeContextLength: true,
+      },
+      reason:
+        'Selected profile default (overflow, estimated 31012/32768 tokens using conservative context-length fallback; no Prompt budget is set)',
+    },
+    {
+      name: 'an overflow against a known window',
+      fit: { ...profileFit('default', 32_768), fit: 'overflow' as const, estimatedTokens: 28_958 },
+      reason:
+        'Selected profile default (overflow, estimated 28958/32768 tokens; no Prompt budget is set)',
+    },
+    {
+      name: 'a profile that fits',
+      fit: profileFit('default', 32_768),
+      reason: 'Selected profile default (fits, estimated 1000/32768 tokens)',
+    },
+  ])('describes $name', ({ fit, reason }) => {
+    expect(selectedReason(fit)).toBe(reason);
   });
 });

@@ -1306,7 +1306,7 @@ const createSettingsPromptBudgetCodexFixture: FixtureFactory = () =>
     overlay: 'settings',
     seed: () => {
       seedConfig({ implementer: { kind: 'cli', tool: 'codex', model: 'gpt-6.1-sol' } })();
-      configStore.setContextLength(500_000, true);
+      configStore.setDetectedContextLength(500_000);
     },
     focus: 'implementer.contextLength',
   });
@@ -1316,7 +1316,7 @@ const createSettingsPromptBudgetAutoSeatFixture: FixtureFactory = () =>
     overlay: 'settings',
     seed: () => {
       seedConfig({ implementer: { kind: 'cli', tool: 'opencode', model: 'auto' } })();
-      configStore.setContextLength(1_050_000, true);
+      configStore.setDetectedContextLength(1_050_000);
     },
     focus: 'implementer.contextLength',
   });

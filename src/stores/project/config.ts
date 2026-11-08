@@ -12,10 +12,7 @@ import {
   emitEffectiveConfigWarnings,
   resolveEffectiveConfig,
 } from '../../core/config/runtime/effective-config.js';
-import {
-  resolveImplementerProfiles,
-  updateDefaultImplementerConfig,
-} from '../../core/config/accessors/implementer-profiles.js';
+import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { ImplementerConfig } from '../../core/schemas/implementer-config.js';
 import { configError } from '../../core/config/errors.js';
@@ -45,8 +42,8 @@ interface ConfigState {
   refusedEdit: string | undefined;
 }
 
-/** The context length boot discovery found, and the implementer it measured; an env value has none. */
-type Discovery = Readonly<{ contextLength: number; seat: SeatIds | undefined }>;
+/** The context window boot discovery found, and the implementer it measured. */
+type Discovery = Readonly<{ contextLength: number; seat: SeatIds }>;
 
 const initial: ConfigState = {
   config: null,
@@ -121,33 +118,18 @@ function windowSeat(config: Config): SeatIds {
 }
 
 /**
- * Puts the discovered context length into a state whose config was just replaced, as a restart
- * would: an env value fits any implementer, a measured value only the implementer it measured
- * while the file names none. On another implementer the measured value goes.
+ * Puts the discovered context window into a state whose config was just replaced, as a restart
+ * would. A measured window is only the detected window of the implementer it measured, while the
+ * file names no Prompt budget; it never becomes a Prompt budget. On another implementer the
+ * measured window goes.
  */
 function withDiscovery(state: ConfigState): ConfigState {
   const { config, diskConfig, discovery } = state;
   const cleared = { ...state, detectedContextLength: undefined };
   if (config === null || discovery === undefined) return cleared;
   const named = diskConfig !== null && defaultImplementer(diskConfig).contextLength !== undefined;
-  if (discovery.seat === undefined || (!named && sameSeatIds(discovery.seat, windowSeat(config)))) {
-    return {
-      ...state,
-      config: updateDefaultImplementerConfig(config, (existing) => ({
-        ...existing,
-        contextLength: discovery.contextLength,
-      })),
-      detectedContextLength: discovery.seat === undefined ? undefined : discovery.contextLength,
-    };
-  }
-  if (named || defaultImplementer(config).contextLength !== discovery.contextLength) return cleared;
-  return {
-    ...cleared,
-    config: updateDefaultImplementerConfig(
-      config,
-      ({ contextLength: _contextLength, ...existing }) => existing,
-    ),
-  };
+  if (named || !sameSeatIds(discovery.seat, windowSeat(config))) return cleared;
+  return { ...state, detectedContextLength: discovery.contextLength };
 }
 
 /** Loads the file again when it is not the file the store read: a hand edit while SPLITBRIEF is open. */
@@ -293,14 +275,11 @@ function setInitialCrew(config: Config): void {
   });
 }
 
-function setContextLength(contextLength: number, detected = false) {
+function setDetectedContextLength(contextLength: number) {
   store.set((s) =>
     s.config === null
       ? s
-      : withDiscovery({
-          ...s,
-          discovery: { contextLength, seat: detected ? windowSeat(s.config) : undefined },
-        }),
+      : withDiscovery({ ...s, discovery: { contextLength, seat: windowSeat(s.config) } }),
   );
 }
 
@@ -340,7 +319,7 @@ export const configStore = {
   save,
   useConfig,
   setInitialCrew,
-  setContextLength,
+  setDetectedContextLength,
   getDetectedContextLength,
   buildsOnLoadedSeat,
   __testReset,

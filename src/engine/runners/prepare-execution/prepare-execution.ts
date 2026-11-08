@@ -332,6 +332,7 @@ async function admitRunners(input: AdmissionInput, sink: ReportSink): Promise<Ad
       resolveSeatDisplayName(runner, role, input.policy.modelCache ?? NULL_CACHE),
     seatImageFact: (runner, role) =>
       resolveSeatImageFact({ runner, role, cache: input.policy.modelCache ?? NULL_CACHE }),
+    detectedContextLength: input.policy.getDetectedContextLength?.(),
   });
   throwIfAborted(input.signal);
   // collectReadiness is given no probe results, so it emits a placeholder

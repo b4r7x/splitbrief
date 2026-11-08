@@ -1563,6 +1563,37 @@ const completedOrphanRowsProjection: WorkflowFixtureProjection = {
   ],
 };
 
+// Two briefs on a 32K window: the first ran tight, and the live one is over the window, so its row
+// shows the estimate alone. A two-brief plan keeps both rows on the 60x18 frame.
+const taskRowsContextFitProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-task-rows-context-fit'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: false,
+  events: [
+    { type: 'workflow_started', ts: FIXED_TS, phase: 'implementing', feature: WORKFLOW_FEATURE },
+    { ...FIXTURE_TASKS_PLANNED, total: 2, tasks: FIXTURE_TASKS_PLANNED.tasks.slice(0, 2) },
+    {
+      ...orphanBriefStarted(FIXTURE_PLANNED_BRIEFS[0], FIXED_TS + 100),
+      total: 2,
+      contextFit: 'tight',
+      estimatedTokens: 24_310,
+      contextLength: 32_768,
+    },
+    fixtureBriefPassed(FIXTURE_PLANNED_BRIEFS[0], FIXED_TS + 200),
+    {
+      ...orphanBriefStarted(
+        { ...FIXTURE_PLANNED_BRIEFS[1], file: WORKFLOW_FIXTURE_SECOND_FILE },
+        FIXED_TS + 300,
+      ),
+      total: 2,
+      contextFit: 'overflow',
+      estimatedTokens: 31_012,
+      contextLength: 32_768,
+    },
+  ],
+};
+
 /** Every brief passed once; the review appended a fix task, and its build is starting. */
 const reviewFixProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_REVIEW_FIX_ID,
@@ -8965,6 +8996,7 @@ const projections = [
   planCheckPreExistingProjection,
 
   completedOrphanRowsProjection,
+  taskRowsContextFitProjection,
   usageLimitRecoveryProjection,
   noFallbackRecoveryProjection,
   fallbackUsedRecoveryProjection,

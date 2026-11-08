@@ -37,6 +37,8 @@ export interface BuildReadinessReportInput {
   interaction?: 'interactive' | 'headless' | undefined;
   seatDisplayName?: SeatDisplayName | undefined;
   seatImageFact: SeatImageFact;
+  /** The default build seat's detected window; the context check reads it when no Prompt budget is set. */
+  detectedContextLength?: number | undefined;
 }
 
 export function buildReadinessReport(input: BuildReadinessReportInput): ReadinessReport {
@@ -105,7 +107,7 @@ function buildSections(input: BuildReadinessReportInput): ReadinessSection[] {
     {
       id: 'context',
       title: 'Context',
-      checks: buildContextChecks(input.config),
+      checks: buildContextChecks(input.config, input.detectedContextLength),
     },
     {
       id: 'validation',

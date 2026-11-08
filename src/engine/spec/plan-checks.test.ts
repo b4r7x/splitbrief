@@ -562,7 +562,21 @@ describe('checkPlan on the files of the checkout', () => {
       tasks: [makeTaskSpec({ contextFiles: ['src/big.ts', 'src/a.ts'] })],
     });
     expect(
-      checkPlan(plan, dir, new Map([['T001', { fit: 'overflow' } as const]]), undefined, false),
+      checkPlan(
+        plan,
+        dir,
+        new Map([
+          [
+            'T001',
+            {
+              fit: 'overflow',
+              blocked: 'No capable implementer profile can fit this task prompt',
+            } as const,
+          ],
+        ]),
+        undefined,
+        false,
+      ),
     ).toEqual([
       {
         code: 'context-overflow',
@@ -570,6 +584,17 @@ describe('checkPlan on the files of the checkout', () => {
           'Task T001 does not fit the BUILD model’s context. Its context files go in with it: src/big.ts (36,000 characters), src/a.ts (20 characters). Narrow or drop contextFiles, or split the task.',
       },
     ]);
+  });
+
+  it('passes a task whose fit is overflow when no implementer refused it', () => {
+    const dir = checkout();
+    writeFileSync(join(dir, 'src', 'big.ts'), 'x'.repeat(36_000));
+    const plan = makePlanProposal({
+      tasks: [makeTaskSpec({ contextFiles: ['src/big.ts', 'src/a.ts'] })],
+    });
+    expect(
+      checkPlan(plan, dir, new Map([['T001', { fit: 'overflow' } as const]]), undefined, false),
+    ).toEqual([]);
   });
 
   it.each([['.github/workflows/*.yml'], ['.github/'], ['.github/workflows'], ['package.json/']])(

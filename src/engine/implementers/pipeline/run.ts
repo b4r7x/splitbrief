@@ -41,6 +41,7 @@ import {
   type ChangeDetectorBaseline,
 } from '../../change-detection.js';
 import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../../core/schemas/runner-fields.js';
+import { classifyHaltSignature } from '../../../core/pipeline-spec/halts.js';
 import {
   ABORTED_OUTCOME_TEXT,
   createImplementerCallContext,
@@ -646,6 +647,11 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
           error: words,
           outcome: authFailure ? 'unauthenticated' : 'usage-limit',
         };
+      }
+      // A provider or a tool that refuses the prompt as too long refuses the same prompt on every retry.
+      if (classifyHaltSignature([words]) === 'input-too-large') {
+        failTask(opts, words);
+        return { success: false, output, error: words, outcome: 'input-too-large' };
       }
       const error = formatErrorWithHint(typedRunnerCallErrorMessage(err) ?? toErrorMessage(err));
       failTask(opts, error);

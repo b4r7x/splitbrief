@@ -10,14 +10,9 @@ import { error } from '../../../utils/error.js';
 export function configForProfile(
   config: WorkflowContext['config'],
   profile: ResolvedImplementerProfile,
-  contextLength?: number | undefined,
 ): WorkflowContext['config'] {
   const profiles = config.implementerProfiles;
-
-  const implementer =
-    contextLength !== undefined && profile.config.contextLength === undefined
-      ? { ...profile.config, contextLength }
-      : profile.config;
+  const implementer = profile.config;
 
   if (profiles === undefined) {
     return { ...config, implementer };

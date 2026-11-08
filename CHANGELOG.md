@@ -43,6 +43,7 @@
 
 ### Changed
 
+- Prompt budget `auto` no longer stops a plan, a brief or a review on SPLITBRIEF's size estimate. The tool or the provider handles its own context. Set a Prompt budget to get the stop.
 - A recovery answer that continues the run no longer adds a `Run continued` row under its Recovery row.
 - A review result now puts one blank row between two findings.
 - The build block shows the passed briefs without an attempt number. A halt names the attempts.
@@ -127,8 +128,11 @@
 - `off` and `ultra` are effort levels. Config, `--planner-effort` and `--reviewer-effort` accept them, and the Codex picker offers `ultra` on a model that has it.
 - A review seat on an OpenCode or Kilo Code model that reads only text holds render criteria as unverified, and the plan card says that the seat cannot see the renders. A PLAN seat on such a model takes no images.
 - The note for an effort level that a seat cannot use names the reason, for example `Effort high cleared: the OpenCode CLI variant sets the effort` or `the Google Antigravity CLI model id sets the effort`.
-- A CLI build seat budgets its prompt with the context window that its tool lists for the model. Settings > Tuning > Prompt budget reads `auto (500K)` for a Codex build seat on `gpt-6.1-sol`.
-- An `auto` build seat budgets with the window of the model that its tool selects on this machine. When SPLITBRIEF cannot read that selection, it keeps the conservative window.
+- The context window that a CLI build seat's tool lists for the model now orders the choice of a profile, and Settings > Tuning > Prompt budget shows it: `auto (500K)` for a Codex build seat on `gpt-6.1-sol`. This window is not a Prompt budget.
+- An `auto` build seat reads the window of the model that its tool selects on this machine. When SPLITBRIEF cannot read that selection, it reads the smallest window of the tool's known models, so Settings > Tuning > Prompt budget shows `auto (272K)` for a Codex build seat. A tool with no known window shows `auto`.
+- `SPLITBRIEF_CONTEXT_LENGTH` sets the Prompt budget for every command: `splitbrief start` with a feature, `--plain` and `--json`, `splitbrief spec` and `splitbrief continue`. Before, only a feature typed on the home screen and a run resumed inside the TUI read it. The `--implementer-context-length` flag wins over it.
+- On a first run with no config, a context length from `--planner-context-length`, `--implementer-context-length`, `--reviewer-context-length` or `SPLITBRIEF_CONTEXT_LENGTH` keeps the detected tools and sets only the Prompt budget, and the saved config does not keep that budget. Before, such a value replaced the detected seat with the built-in default seat.
+- When the provider of an API build seat, or a shell or agent build seat, refuses the prompt as too long, the brief stops at once on the *Prompt too large* card. Before, SPLITBRIEF sent the same prompt again.
 - When a seat's answer does not match its format, SPLITBRIEF asks the seat again and shows no warning row for it. While the review seat answers again, its activity line reads `answering again`.
 - The review prompt lists the check ids beside the task and criterion ids, and says which list each id of the answer comes from, such as the check ids, the criterion ids and the finding ids. The reviewer's first answer is accepted more often.
 - A brief check that still fails always shows its failed row, also when its output names no file and line.

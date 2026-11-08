@@ -75,7 +75,7 @@ All four kinds implement the same `Planner` / `Implementer` interface (`src/engi
 
 ## Planning session
 
-Every run plans in one typed planning session (`src/engine/orchestrator/planning/session.ts`). The planner may ask up to 3 questions per round, each with a default, for at most 2 rounds; then it answers one typed plan (`PlanAnswerSchema`): criteria, checks and tasks. SPLITBRIEF checks the plan (`checkPlan` plus the context fit), sends a failing plan back once, writes `plan.json`, and renders `plan.md` and `tasks.md` from it. There are no workflow modes: `workflow.mode` is a retired key that loads with one notice, and the CLI has no `--mode` flag. Full flow: [WORKFLOW.md §3](./WORKFLOW.md#3-the-planning-session).
+Every run plans in one typed planning session (`src/engine/orchestrator/planning/session.ts`). The planner may ask up to 3 questions per round, each with a default, for at most 2 rounds; then it answers one typed plan (`PlanAnswerSchema`): criteria, checks and tasks. SPLITBRIEF checks the plan (`checkPlan`, plus the context fit when a Prompt budget is set), sends a failing plan back once, writes `plan.json`, and renders `plan.md` and `tasks.md` from it. There are no workflow modes: `workflow.mode` is a retired key that loads with one notice, and the CLI has no `--mode` flag. Full flow: [WORKFLOW.md §3](./WORKFLOW.md#3-the-planning-session).
 
 ---
 

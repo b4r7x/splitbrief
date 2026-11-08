@@ -14,6 +14,7 @@ import { detectionStore } from '../../../src/stores/project/detection.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
+import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
@@ -278,6 +279,34 @@ console.log(${JSON.stringify(JSON.stringify({ version: 1, files: [{ path: 'src/g
       if (session === null) throw new Error('Expected a ready run');
       expect(readState(target, session).phase).toBe('complete');
       expect(run.stderr).toContain('Saved a ready crew to .splitbrief/config.yaml.');
+    },
+  );
+
+  it.each([
+    { source: 'flag', args: ['--implementer-context-length', '200000'] },
+    { source: 'env', args: [] },
+  ])(
+    'keeps the detected crew and applies a Prompt budget from the $source on a first run',
+    async ({ source, args }) => {
+      const { target, bin, calls, home } = freshProject();
+      readyClaude(bin, calls, home);
+      if (source === 'env') vi.stubEnv('SPLITBRIEF_CONTEXT_LENGTH', '200000');
+
+      const run = await cli(target, ['start', ...args, 'Add a greeting helper'], {
+        timeoutMs: 90_000,
+      });
+
+      expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
+      const saved = loadConfig(target.projectDir).config.implementer;
+      expect(saved).toMatchObject({ kind: 'cli', tool: 'claude-code' });
+      expect(saved.contextLength).toBeUndefined();
+      expect(readFileSync(calls, 'utf8')).toContain('"seat":"build"');
+      const session = readActive(target.projectDir);
+      if (session === null) throw new Error('Expected a ready run');
+      const { events } = await readRunEvents({ projectDir: target.projectDir, sessionId: session });
+      expect(events.find((event) => event.type === 'task_started')).toMatchObject({
+        contextLength: 200_000,
+      });
     },
   );
 

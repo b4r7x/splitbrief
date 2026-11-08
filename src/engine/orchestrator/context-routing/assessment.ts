@@ -3,7 +3,6 @@ import { apiBuildTargets, estimateBundleOutputReserve } from '../../providers/ap
 import type { ResolvedImplementerProfile } from '../../../core/config/accessors/implementer-profiles.js';
 import { missingRunnerCredential } from '../../../core/config/accessors/runner-credentials.js';
 import { estimateTokens } from '../../../core/tokens/estimate.js';
-import { DEFAULT_UNKNOWN_CONTEXT_LENGTH } from '../../../core/tokens/context-length.js';
 import { formatImplementerSystemPreamble, formatTaskPrompt } from '../../spec/prompt-formatter.js';
 import { buildLanguageContext } from '../../spec/prompts/language-context.js';
 import type { ProfileFit, RouteTaskOptions } from './types.js';
@@ -29,14 +28,14 @@ export function assessProfile(
   opts: RouteTaskOptions,
   profile: ResolvedImplementerProfile,
 ): ProfileFit {
-  const conservativeContextLength =
-    opts.conservativeContextLength ?? DEFAULT_UNKNOWN_CONTEXT_LENGTH;
   const { contextLength, usedConservativeContextLength } = resolveProfileContextLength(
     profile,
-    conservativeContextLength,
+    opts.conservativeContextLength,
     opts.modelCache,
     opts.detectedContextLength,
   );
+  // With no Prompt budget the prompt is sent whole, so the estimate counts the whole prompt.
+  const userBudget = profile.config.contextLength !== undefined;
   const modelId = profileEffectiveModelId(profile);
   const languageContext = opts.languageContext ?? buildLanguageContext(undefined);
   const writesFiles = profile.capabilities.writesFiles;
@@ -56,7 +55,7 @@ export function assessProfile(
   const prompt = formatTaskPrompt({
     task: opts.task,
     context: opts.context,
-    contextLength,
+    contextLength: userBudget ? contextLength : undefined,
     languageContext,
     writesFiles,
     outputContract,
@@ -106,6 +105,7 @@ export function assessProfile(
     currentCodeTruncated,
     currentCodeContextMode: mode,
     usedConservativeContextLength,
+    userBudget,
     requiredWriteMode,
     credentialFailure,
     capabilityFailure,

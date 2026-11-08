@@ -126,8 +126,8 @@ After `splitbrief init` and the first `splitbrief start`, SPLITBRIEF creates a `
 Sessions are durable workflow records for resume, history, filtering/search, and artifact review. They are scoped to one workflow each — see [docs/VISION.md](./docs/VISION.md) for the full list of non-goals.
 
 If using Ollama, configure the model's real context window first (for example, set
-`num_ctx` in the model/template you run). Then set SPLITBRIEF's prompt-budget view
-to match when auto-detection is wrong:
+`num_ctx` in the model/template you run). To have SPLITBRIEF stop a brief that does
+not fit that window, set a Prompt budget:
 
 ```bash
 export SPLITBRIEF_CONTEXT_LENGTH=32768
@@ -203,7 +203,7 @@ workflow:
   approve: plan
 ```
 
-`contextLength` sets the application budget without changing server capacity. API calls use configured context, observed active context or an 8192-token default; PLAN and REVIEW reserve 2048 output tokens plus a 15% input-estimation margin. BUILD reserves for the declared file bundle. Optional implementer profiles still keep one implementer role: SPLITBRIEF selects the capable profile with the smallest sufficient context window for each Task Brief instead of becoming a multi-agent manager.
+`contextLength` sets a Prompt budget without changing server capacity. With no `contextLength`, SPLITBRIEF sends the whole prompt and the provider handles it. With `contextLength`, the prompt is measured against it before dispatch: PLAN and REVIEW reserve 2048 output tokens plus a 15% input-estimation margin, and BUILD reserves for the declared file bundle. Optional implementer profiles still keep one implementer role: SPLITBRIEF selects the capable profile with the smallest sufficient context window for each Task Brief instead of becoming a multi-agent manager.
 
 SPLITBRIEF leaves Git staging and commits to you.
 
@@ -325,7 +325,7 @@ SPLITBRIEF loads model metadata from [models.dev](https://models.dev) first. Run
 | 16 GB | Qwen 2.5 Coder 14B Q4 | 16-32K | `contextLength: 16384` |
 | 32 GB+ | Qwen3 Coder 30B Q4 | 32K+ | `contextLength: 32768` |
 
-When a file does not fit the implementer's token budget and the Task Brief names a target function, SPLITBRIEF switches from whole-file to function-level context — imports plus that function. If the brief names no function, the file is truncated in the middle instead. Small-context models can still modify large files this way, as long as the brief is specific about where the change goes.
+When you set a Prompt budget and a file does not fit it, and the Task Brief names a target function, SPLITBRIEF switches from whole-file to function-level context — imports plus that function. If the brief names no function, the file is truncated in the middle instead. Small-context models can still modify large files this way, as long as the brief is specific about where the change goes. With Prompt budget `auto`, the file goes whole.
 
 ### Local (free)
 

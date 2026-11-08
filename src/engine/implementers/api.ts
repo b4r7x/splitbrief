@@ -18,7 +18,6 @@ import { providerError } from '../providers/errors.js';
 import { dispatchStreamCompletion } from '../providers/dispatch-stream.js';
 import { toStreamClient } from '../providers/openai-stream/client.js';
 import type { StreamClient } from '../providers/openai-stream/request.js';
-import { DEFAULT_UNKNOWN_CONTEXT_LENGTH } from '../../core/tokens/context-length.js';
 import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../core/schemas/runner-fields.js';
 import { apiInvocationEvidence } from '../runners/invocation-identity.js';
 import {
@@ -81,14 +80,10 @@ export function createApiImplementer(
     // API backends send the system preamble as a separate system message.
     prependSystemPreamble: false,
 
-    // An omitted contextLength resolves to the same default the request builder
-    // uses (api.ts invoke), so the prompt is budgeted against the window the
-    // request will actually enforce instead of being inserted unbudgeted.
     buildPrompt: (opts: ImplementerOptions) =>
       formatTaskPrompt({
         task: opts.task,
         context: opts.context,
-        contextLength: opts.config.implementer.contextLength ?? DEFAULT_UNKNOWN_CONTEXT_LENGTH,
         languageContext: opts.languageContext,
         outputContract: 'file-bundle-v1',
         plan: opts.plan,
@@ -100,7 +95,6 @@ export function createApiImplementer(
         error: opts.error,
         attempt: opts.attempt,
         kind: opts.kind,
-        contextLength: opts.config.implementer.contextLength ?? DEFAULT_UNKNOWN_CONTEXT_LENGTH,
         languageContext: opts.languageContext,
         outputContract: 'file-bundle-v1',
         plan: opts.plan,

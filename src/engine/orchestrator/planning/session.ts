@@ -34,7 +34,6 @@ import {
 import { appendMessage } from '../../../core/sessions/log-writer.js';
 import { parsePlanJson, writePlanJson } from '../../../core/sessions/plan-file.js';
 import { resumeStep } from '../../../core/sessions/run-status.js';
-import { DEFAULT_UNKNOWN_CONTEXT_LENGTH } from '../../../core/tokens/context-length.js';
 import { readManifestCommands } from '../../../core/validation/manifest-commands.js';
 import { detectStack } from '../../../core/validation/stacks/registry.js';
 import { createLogger } from '../../../lib/logger.js';
@@ -120,14 +119,15 @@ export type PlanCheckContext = Pick<
 
 function buildSeat(wctx: PlanCheckContext): BuildSeat {
   const profile = resolveImplementerProfiles(wctx.config).defaultProfile;
+  const window = resolveProfileContextLength(
+    profile,
+    undefined,
+    wctx.modelCache,
+    wctx.detectedContextLength,
+  );
   return {
     model: profileEffectiveModelId(profile),
-    contextTokens: resolveProfileContextLength(
-      profile,
-      DEFAULT_UNKNOWN_CONTEXT_LENGTH,
-      wctx.modelCache,
-      wctx.detectedContextLength,
-    ).contextLength,
+    contextTokens: window.usedConservativeContextLength ? undefined : window.contextLength,
     writesFiles: profile.capabilities.writesFiles,
   };
 }

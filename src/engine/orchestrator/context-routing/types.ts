@@ -72,6 +72,8 @@ export interface ProfileFit {
   currentCodeTruncated: boolean;
   currentCodeContextMode: CurrentCodeContextMode;
   usedConservativeContextLength: boolean;
+  /** The profile sets a Prompt budget (`contextLength`); only then does an overflow stop the brief. */
+  userBudget: boolean;
   requiredWriteMode: ImplementerWriteMode;
   credentialFailure?: string | undefined;
   capabilityFailure?: string | undefined;

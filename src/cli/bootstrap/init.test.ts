@@ -233,7 +233,7 @@ describe('initStores', () => {
     expect(
       await loadDetectionCacheSnapshot({ projectDir: dir, contextKey: contexts.readiness }),
     ).not.toBeNull();
-    capabilities.resolve({ contextLength: 32_768, origin: 'fallback' });
+    capabilities.resolve(undefined);
     await vi.waitFor(() => expect(loadDetection).toHaveBeenCalledOnce());
 
     const remembered = detectionStore.get();
@@ -321,7 +321,7 @@ describe('initStores', () => {
         cliTools: [remembered],
       },
     });
-    capabilities.resolve({ contextLength: 32_768, origin: 'fallback' });
+    capabilities.resolve(undefined);
     await vi.waitFor(() => expect(loadDetection).toHaveBeenCalledOnce());
 
     // Warm start: the foreign record renders as stale rows while lanes refresh.
@@ -564,7 +564,7 @@ describe('initStores', () => {
     expect(configStore.getDetectedContextLength()).toBeUndefined();
   }, 30_000);
 
-  it('does not push a fallback-origin context length into the store', async () => {
+  it('does not push a context length into the store when no source names one', async () => {
     const dir = makeProjectDir();
     writeConfigYaml(
       dir,
@@ -596,7 +596,7 @@ describe('initStores', () => {
 
     await initStores(dir);
 
-    expect(requireConfig().implementer.contextLength).toBe(272_000);
+    expect(requireConfig().implementer.contextLength).toBeUndefined();
     expect(configStore.getDetectedContextLength()).toBe(272_000);
     expect(readFileSync(configPath, 'utf-8')).toBe(before);
   }, 30_000);
@@ -622,16 +622,16 @@ describe('initStores', () => {
 
     await initStores(dir);
 
-    expect(requireConfig().implementer.contextLength).toBe(262_144);
+    expect(requireConfig().implementer.contextLength).toBeUndefined();
     expect(configStore.getDetectedContextLength()).toBe(262_144);
-    expect(configStore.get().config?.implementer.contextLength).toBe(262_144);
+    expect(configStore.get().config?.implementer.contextLength).toBeUndefined();
   }, 30_000);
 
   it('fresh default config with no live provider does not claim a static local context limit', async () => {
     const dir = makeProjectDir();
     const caps = await detectCapabilities(createDefaultConfig());
 
-    expect(caps).toEqual({ contextLength: 32768, origin: 'fallback' });
+    expect(caps).toBeUndefined();
 
     await initStores(dir);
 
@@ -702,7 +702,7 @@ describe('initStoresForTuiMount', () => {
     await new Promise<void>((resolve) => setImmediate(resolve));
     expect(detect).toHaveBeenCalledOnce();
     expect(discovered).toBe(false);
-    capabilities.resolve({ contextLength: 32_768, origin: 'fallback' });
+    capabilities.resolve(undefined);
     await settled;
     expect(discovered).toBe(true);
   }, 30_000);

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { applyCLIOverrides } from './apply.js';
 import { workflowOptsToCLIOverrides } from './from-options.js';
 import type { Config } from '../../../schemas/config.js';
@@ -35,6 +35,25 @@ describe('applyCLIOverrides — contextLength', () => {
   it('preserves a configured approve level when no approve override is given', () => {
     const config: Config = { ...baseConfig, workflow: { ...baseConfig.workflow, approve: 'none' } };
     expect(applyCLIOverrides(config, {}).workflow.approve).toBe('none');
+  });
+});
+
+describe('workflowOptsToCLIOverrides with SPLITBRIEF_CONTEXT_LENGTH', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('sets the Prompt budget of the default implementer profile', () => {
+    vi.stubEnv('SPLITBRIEF_CONTEXT_LENGTH', '4096');
+    expect(
+      applyCLIOverrides(baseConfig, workflowOptsToCLIOverrides({})).implementer.contextLength,
+    ).toBe(4096);
+  });
+
+  it('lets the --implementer-context-length flag win over it', () => {
+    vi.stubEnv('SPLITBRIEF_CONTEXT_LENGTH', '4096');
+    expect(
+      applyCLIOverrides(baseConfig, workflowOptsToCLIOverrides({ implementerContextLength: 8192 }))
+        .implementer.contextLength,
+    ).toBe(8192);
   });
 });
 

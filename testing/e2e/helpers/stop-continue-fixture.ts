@@ -530,8 +530,6 @@ function fixtureConfig(isolation?: IsolationStrategy): Config {
       args: ['./tools/implementer.mjs'],
       outputFormat: 'text',
       model: 'fixture',
-      // A fixture model has no catalog window, and routing refuses a profile it cannot prove
-      // the brief fits: without this the run halts on context-overflow before the script runs.
       contextLength: 200_000,
     },
     // The plan's `test` checks name the greeting file; a command that exits 0 lets them run without a project test script.

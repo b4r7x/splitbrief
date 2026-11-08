@@ -422,7 +422,11 @@ describe('planning context completeness', () => {
       );
 
       const result = insufficient(
-        await build(dir, { request: 'Modify `src/big.ts` end to end.', availableTokens: 100 }),
+        await build(dir, {
+          request: 'Modify `src/big.ts` end to end.',
+          availableTokens: 100,
+          userBudgetTokens: 100,
+        }),
       );
 
       expect(result.cause).toBe('input-budget');
@@ -431,6 +435,33 @@ describe('planning context completeness', () => {
       expect(result.requiredTokens).toBeGreaterThan(100);
       // Read, but not supplied: never reported as if the call would carry it.
       expect(entryFor(result.manifest, 'src/big.ts')?.state).toBe('omitted');
+    });
+  });
+
+  it('supplies required source over the window whole when no Prompt budget is set, and still packs optional source into the window', async () => {
+    await withTempDir('api-context', async (dir) => {
+      const big = Array.from({ length: 400 }, (_, i) => `export const b${i} = ${i};`).join('\n');
+      write(dir, 'src/big.ts', big);
+      write(dir, 'src/gamma.ts', 'export const gamma = 0;\n');
+
+      const result = await build(dir, {
+        request: 'Modify `src/big.ts` end to end.',
+        repoMap: 'src/gamma.ts:\n  export const gamma',
+        availableTokens: 100,
+      });
+
+      expect(result.kind).toBe('complete');
+      if (result.kind !== 'complete') return;
+      expect(result.text).toContain(big);
+      expect(entryFor(result.manifest, 'src/big.ts')?.state).toBe('included');
+      expect(entryFor(result.manifest, 'src/gamma.ts')).toEqual({
+        path: 'src/gamma.ts',
+        kind: 'optional',
+        state: 'omitted',
+      });
+      expect(result.text).toContain(
+        "- src/gamma.ts — not supplied, outside this call's context allocation",
+      );
     });
   });
 

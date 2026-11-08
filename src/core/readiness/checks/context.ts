@@ -5,7 +5,11 @@ import { formatSlotLabel } from '../../crew/identity.js';
 
 const CONTEXT_FLOOR = 32_000;
 
-export function buildContextChecks(config: Config): ReadinessCheck[] {
+/** `detectedContextLength` is the default build seat's detected window, read when it sets no Prompt budget. */
+export function buildContextChecks(
+  config: Config,
+  detectedContextLength?: number | undefined,
+): ReadinessCheck[] {
   const checks: ReadinessCheck[] = [
     contextLengthCheck(
       'planner',
@@ -27,7 +31,7 @@ export function buildContextChecks(config: Config): ReadinessCheck[] {
       contextLengthCheck(
         'implementer',
         formatSlotLabel({ role: 'implementer', profile: profile.name }),
-        profile.config.contextLength,
+        profile.config.contextLength ?? detectedContextLength,
         key,
         key === 'implementer.contextLength' ? `Settings > Tuning > ${label}` : undefined,
       ),

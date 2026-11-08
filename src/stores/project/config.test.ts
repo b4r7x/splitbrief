@@ -148,7 +148,7 @@ describe('configStore.load', () => {
   it('refreshes persisted metadata while keeping the prepared config and runtime provenance', () => {
     writeConfigYaml({ implementer: UNSIZED_IMPLEMENTER });
     configStore.load(tmpDir, { implementer: { model: 'override-model' } });
-    configStore.setContextLength(131072, true);
+    configStore.setDetectedContextLength(131072);
     const prepared = {
       ...loadedConfig(),
       planner: { kind: 'cli' as const, tool: 'claude-code' as const, model: 'prepared-model' },
@@ -343,11 +343,10 @@ describe('configStore.save', () => {
     expect(diskConfig.implementer.model).toBe('qwen2.5-coder:7b');
   });
 
-  it('does not persist runtime context length detection when saving an unrelated setting', async () => {
+  it('does not persist a Prompt budget override when saving an unrelated setting', async () => {
     writeConfigYaml();
-    configStore.load(tmpDir);
-    expect(loadedConfig().implementer.contextLength).toBe(8192);
-    configStore.setContextLength(16384);
+    configStore.load(tmpDir, { implementer: { contextLength: 16384 } });
+    expect(loadedConfig().implementer.contextLength).toBe(16384);
 
     const result = await configStore.save({ ...loadedConfig(), escalation: { enabled: true } });
 
@@ -358,18 +357,14 @@ describe('configStore.save', () => {
     expect(diskConfig.implementer.contextLength).toBe(8192);
   });
 
-  it('records boot-detected provenance only when the value is flagged detected', () => {
+  it('keeps a detected window out of the Prompt budget', () => {
     writeConfigYaml({ implementer: UNSIZED_IMPLEMENTER });
     configStore.load(tmpDir);
     expect(configStore.getDetectedContextLength()).toBeUndefined();
 
-    configStore.setContextLength(131072, true);
-    expect(loadedConfig().implementer.contextLength).toBe(131072);
+    configStore.setDetectedContextLength(131072);
+    expect(loadedConfig().implementer.contextLength).toBeUndefined();
     expect(configStore.getDetectedContextLength()).toBe(131072);
-
-    configStore.setContextLength(16384, false);
-    expect(loadedConfig().implementer.contextLength).toBe(16384);
-    expect(configStore.getDetectedContextLength()).toBeUndefined();
   });
 
   it('returns error result when write fails', async () => {
@@ -477,7 +472,7 @@ describe('configStore.save', () => {
   it('loads the hand edit a refused save met, so the next save lands on it', async () => {
     writeConfigYaml({ implementer: { kind: 'cli', tool: 'opencode' } });
     configStore.load(tmpDir);
-    configStore.setContextLength(131072, true);
+    configStore.setDetectedContextLength(131072);
     const path = join(tmpDir, SPLITBRIEF_DIR, CONFIG_FILE);
     writeFileSync(path, readFileSync(path, 'utf8').replace('max_retries: 3', 'review: task'));
 
@@ -485,7 +480,8 @@ describe('configStore.save', () => {
 
     expect(refused.kind).toBe('conflict');
     expect(loadedConfig().workflow.review).toBe('task');
-    expect(loadedConfig().implementer.contextLength).toBe(131072);
+    expect(loadedConfig().implementer.contextLength).toBeUndefined();
+    expect(configStore.getDetectedContextLength()).toBe(131072);
     const retried = await configStore.save({ ...loadedConfig(), escalation: { enabled: true } });
     expect(retried.kind).toBe('saved');
     const disk = loadConfig(tmpDir).config;
@@ -495,8 +491,7 @@ describe('configStore.save', () => {
 
   it('reloads the config only when the file on disk changed', () => {
     writeConfigYaml();
-    configStore.load(tmpDir);
-    configStore.setContextLength(16384);
+    configStore.load(tmpDir, { implementer: { contextLength: 16384 } });
     configStore.reloadIfChanged();
     expect(loadedConfig().implementer.contextLength).toBe(16384);
 
@@ -509,7 +504,7 @@ describe('configStore.save', () => {
   it('drops a measured context length when a hand edit changes the implementer', () => {
     writeConfigYaml({ implementer: UNSIZED_IMPLEMENTER });
     configStore.load(tmpDir);
-    configStore.setContextLength(131072, true);
+    configStore.setDetectedContextLength(131072);
 
     writeConfigYaml({ implementer: { kind: 'cli', tool: 'codex', model: 'gpt-5.5' } });
     configStore.reloadIfChanged();
@@ -518,10 +513,9 @@ describe('configStore.save', () => {
     expect(configStore.getDetectedContextLength()).toBeUndefined();
   });
 
-  it('keeps the env context length when a hand edit changes the implementer, as a restart does', () => {
+  it('keeps a Prompt budget override when a hand edit changes the implementer, as a restart does', () => {
     writeConfigYaml({ implementer: UNSIZED_IMPLEMENTER });
-    configStore.load(tmpDir);
-    configStore.setContextLength(50000);
+    configStore.load(tmpDir, { implementer: { contextLength: 50000 } });
 
     writeConfigYaml({ implementer: { kind: 'cli', tool: 'codex', model: 'gpt-5.5' } });
     configStore.reloadIfChanged();
@@ -533,7 +527,7 @@ describe('configStore.save', () => {
   it('keeps a measured context length over a save of the same implementer and drops it for another model', async () => {
     writeConfigYaml({ implementer: UNSIZED_IMPLEMENTER });
     configStore.load(tmpDir);
-    configStore.setContextLength(131072, true);
+    configStore.setDetectedContextLength(131072);
 
     await configStore.save({ ...loadedConfig(), escalation: { enabled: true } });
     expect(configStore.getDetectedContextLength()).toBe(131072);

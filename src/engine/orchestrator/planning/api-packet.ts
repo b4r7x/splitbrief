@@ -19,7 +19,8 @@ const TRANSPORT_REPAIR_TOKENS = BASE_OUTPUT_RESERVE_TOKENS;
  * The project context of a planner that reads no files of its own: project instructions, the
  * current source of every path the request or the earlier planning names, and a named list of what
  * was not read. `compose` places it in the turn that is sent, so the whole turn is measured against
- * the seat's context. An incomplete or oversized packet refuses before anything is dispatched.
+ * the seat's context. An incomplete packet refuses before anything is dispatched, and so does an
+ * oversized one when the user set a Prompt budget.
  */
 export async function apiPlanningPacket(opts: {
   projectDir: string;
@@ -40,12 +41,17 @@ export async function apiPlanningPacket(opts: {
       messages: [...(opts.priorMessages ?? []), { role: 'user', content: compose(packet) }],
       role: 'plan',
     });
+  const userBudget = context.configuredContextTokens !== undefined;
   const minimum = measure('');
-  if (minimum.kind === 'insufficient' && minimum.reason === 'output') {
+  if (userBudget && minimum.kind === 'insufficient' && minimum.reason === 'output') {
     throw apiBudgetError.contextInsufficient('planner', minimum, model, {
       budgetSource: context.budgetSource,
     });
   }
+  const inputAllocation = Math.max(
+    0,
+    context.applicationContextTokens - BASE_OUTPUT_RESERVE_TOKENS - TRANSPORT_REPAIR_TOKENS,
+  );
 
   const packet = await buildApiPlanningContext({
     projectDir: opts.projectDir,
@@ -58,10 +64,8 @@ export async function apiPlanningPacket(opts: {
     ...(opts.priorMessages !== undefined && { priorMessages: opts.priorMessages }),
     ...(opts.repoMap !== undefined && { repoMap: opts.repoMap, repoMapInPrompt: true }),
     ...(opts.skills !== undefined && { skills: opts.skills }),
-    availableTokens: Math.max(
-      0,
-      context.applicationContextTokens - BASE_OUTPUT_RESERVE_TOKENS - TRANSPORT_REPAIR_TOKENS,
-    ),
+    availableTokens: inputAllocation,
+    ...(userBudget && { userBudgetTokens: inputAllocation }),
     measureInput: (text) => {
       const measurement = measure(text);
       return measurement.inputEstimate + measurement.estimationMargin;

@@ -48,6 +48,38 @@ describe('selectInitialCrew', () => {
     });
     expect(selected.effective.reviewer).toBeUndefined();
   });
+
+  it('keeps the detected seats when only a Prompt budget is given, and applies it to the invocation', () => {
+    const detected = selectDefaultCrew({
+      cliTools: [cliDetectionFor('ready', 'codex')],
+      providers: [],
+    });
+    if (detected === null) throw new Error('Expected a ready crew');
+    const selected = selectInitialCrew({
+      detected,
+      overrides: { planner: { contextLength: 200_000 }, implementer: { contextLength: 32_768 } },
+    });
+    expect(selected.persisted).toEqual(detected);
+    expect(selected.effective.planner).toMatchObject({
+      kind: 'cli',
+      tool: 'codex',
+      contextLength: 200_000,
+    });
+    expect(selected.effective.implementer).toMatchObject({
+      kind: 'cli',
+      tool: 'codex',
+      contextLength: 32_768,
+    });
+  });
+
+  it('keeps a Prompt budget out of the saved crew when no crew is detected', () => {
+    const selected = selectInitialCrew({
+      detected: null,
+      overrides: { implementer: { contextLength: 4096 } },
+    });
+    expect(selected.effective.implementer.contextLength).toBe(4096);
+    expect(selected.persisted).toEqual(createDefaultConfig());
+  });
 });
 
 describe('selectDefaultCrew', () => {

@@ -54,7 +54,8 @@ export const SETTINGS_DEFS: SettingDef[] = [
     id: 'implementer.contextLength',
     label: 'Context length',
     section: 'Tuning',
-    description: 'Prompt budget for the build seat (auto = detected from the model)',
+    description:
+      'Stop a brief that does not fit this many tokens (auto = no stop; the tool handles its own context)',
     kind: 'number',
     min: 1024,
     integer: true,

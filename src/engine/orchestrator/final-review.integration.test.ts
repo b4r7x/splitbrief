@@ -1728,6 +1728,43 @@ describe('runFinalReviewPhase', () => {
     expect(result.failure?.kind).toBe('insufficient-context');
   });
 
+  it('dispatches an API review of a 30,000-character diff and writes it when no Prompt budget is set', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nRewrite big.\n', null);
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/big.ts'], status: 'done' });
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(
+      join(projectDir, 'src/big.ts'),
+      `${'export const v = 1;\n'.repeat(1500)}export const LAST_LINE = 2;\n`,
+    );
+    await recordPromotion({ projectDir, sessionId, task, path: 'src/big.ts' });
+    writeEvidenceLedger(
+      { projectDir, sessionId },
+      createEvidenceLedger({ sessionId, feature: 'feat', tasks: [task] }),
+    );
+    const { reviewer, prompts } = makeReviewer();
+
+    const result = await runFinalReviewPhase({
+      modelCache: undefined,
+      projectDir,
+      workspaceDir: projectDir,
+      sessionId,
+      config: makeNoValidationConfig({ reviewer: REVIEWER_RUNNER }),
+      callbacks: makeCallbacks().callbacks,
+      bus: makeBusRecorder().bus,
+      state: allTasksDoneState([task], runStartHead),
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+    });
+
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain('+export const LAST_LINE = 2;');
+    expect(result.failure).toBeUndefined();
+    expect(result.reviewStatus).toBe('written');
+    expect(existsSync(join(sessionDir(projectDir, sessionId), REVIEW_FILE))).toBe(true);
+  });
+
   describe('a checks log above the prompt cap', () => {
     function writeLargeLedger(projectDir: string, sessionId: string, tasks: Task[]): void {
       const ledger = createEvidenceLedger({ sessionId, feature: 'feat', tasks });

@@ -477,11 +477,35 @@ describe('a planner that reads no files of its own', () => {
     expect(pathNotices(run.events)).toEqual([]);
   });
 
+  it('plans with an observed 2,200-token context when no Prompt budget is set', async () => {
+    const run = await plan({
+      script: [makePlanProposal()],
+      planner: {
+        resolvePlanningContext: async () => ({
+          ...ROOMY_CONTEXT,
+          applicationContextTokens: 2_200,
+          activeContextTokens: 2_200,
+          budgetSource: 'observed-active' as const,
+        }),
+      },
+      feature: 'Modify `src/hello.ts` so it greets people by name.',
+      setup: writeHello,
+    });
+
+    expect(run.prompts).toHaveLength(1);
+    expect(run.prompts[0]).toContain('export const HELLO_SENTINEL = 1;');
+    expect(run.result.disposition).toBe('ready-for-tasks');
+  });
+
   it('halts before any call when the named source does not fit the model', async () => {
     const run = await plan({
       script: [makePlanProposal()],
       planner: {
-        resolvePlanningContext: async () => ({ ...ROOMY_CONTEXT, applicationContextTokens: 2_200 }),
+        resolvePlanningContext: async () => ({
+          ...ROOMY_CONTEXT,
+          applicationContextTokens: 2_200,
+          configuredContextTokens: 2_200,
+        }),
       },
       feature: 'Modify `src/hello.ts` so it greets people by name.',
       setup: writeHello,
@@ -737,6 +761,28 @@ describe('the planning session on the live path', () => {
       reason: 'plan-checks-failed',
       details: ['Criterion C2 is served by no task.'],
     });
+  });
+
+  it('reaches the plan card with a task over the old 32768 guess when no Prompt budget is set', async () => {
+    const run = await plan({
+      script: [makePlanProposal(), makePlanProposal()],
+      config: makeConfig({
+        codebase: { enabled: false, tokenBudget: 4000 },
+        implementer: { kind: 'shell', command: 'gen', model: 'gen' },
+      }),
+      setup: (projectDir) => {
+        mkdirSync(join(projectDir, 'src'), { recursive: true });
+        writeFileSync(
+          join(projectDir, 'src', 'hello.ts'),
+          'export const value = compute(input);\n'.repeat(Math.floor((120 * 1024) / 37)),
+        );
+      },
+    });
+
+    expect(run.prompts).toHaveLength(1);
+    expect(run.sendBacks()).toEqual([]);
+    expect(run.onApprovalNeeded).toHaveBeenCalledTimes(1);
+    expect(run.result.disposition).toBe('ready-for-tasks');
   });
 
   it('sends render checks back once while validation.render is unset, then names them on the card', async () => {

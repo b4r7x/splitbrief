@@ -177,6 +177,20 @@ describe('the packet an API review seat is handed', () => {
     });
   });
 
+  it('sends a 30,000-character diff whole to a seat with no contextLength', () => {
+    const fullDiff = diffOfLength('src/login.ts', 30_000);
+    const packet = buildApiReviewContext({ ...WHOLE, fullDiff, contextLength: undefined });
+
+    expect(packet.kind).toBe('complete');
+    if (packet.kind !== 'complete') return;
+    expect(packet.text).toContain(fullDiff);
+    expect(packet.manifest).toContainEqual({
+      path: 'src/login.ts',
+      kind: 'required',
+      state: 'included',
+    });
+  });
+
   it('reserves 2048 tokens of the seat window for the review’s own answer', () => {
     const measured = (contextLength: number | undefined): number =>
       refused({ contextLength, driftSection: '' }).availableTokens;

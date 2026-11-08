@@ -29,10 +29,8 @@ export function displayValue(
   const detectedContextLength = ctx?.detectedContextLength;
   if (
     def.id === 'implementer.contextLength' &&
-    value !== undefined &&
-    value !== null &&
-    detectedContextLength !== undefined &&
-    value === detectedContextLength
+    value === undefined &&
+    detectedContextLength !== undefined
   ) {
     return `auto (${formatContextLength(detectedContextLength)})`;
   }

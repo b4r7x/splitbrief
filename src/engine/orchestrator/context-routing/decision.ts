@@ -62,7 +62,9 @@ export function selectedReason(profileFit: ProfileFit): string {
     : '';
   const reductionNote = currentCodeReductionNote(profileFit, ',');
   const capabilityNote = profileFit.requiredWriteMode === 'direct' ? ', direct-write capable' : '';
-  return `Selected profile ${profileFit.profile.name} (${profileFit.fit}, estimated ${profileFit.estimatedTokens}/${profileFit.contextLength} tokens${fallbackNote}${capabilityNote}${reductionNote})`;
+  // Only a Prompt budget stops a brief, so a selected profile over its window has none.
+  const budgetNote = profileFit.fit === 'overflow' ? '; no Prompt budget is set' : '';
+  return `Selected profile ${profileFit.profile.name} (${profileFit.fit}, estimated ${profileFit.estimatedTokens}/${profileFit.contextLength} tokens${fallbackNote}${capabilityNote}${reductionNote}${budgetNote})`;
 }
 
 function currentCodeReductionNote(profileFit: ProfileFit, prefix: string): string {

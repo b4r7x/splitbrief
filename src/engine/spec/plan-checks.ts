@@ -452,7 +452,7 @@ export function checkPlan(
 
   for (const task of plan.tasks) {
     const estimate = taskFits.get(task.id);
-    if (estimate?.fit === 'overflow') {
+    if (estimate?.blocked !== undefined && estimate.fit === 'overflow') {
       fail(
         'context-overflow',
         `Task ${task.id} does not fit the BUILD model’s context${contextFilesText(task, projectDir)}`,

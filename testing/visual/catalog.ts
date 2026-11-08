@@ -1914,6 +1914,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-task-rows-context-fit',
+      title: 'Workflow · brief rows with a tight and an over-window context estimate',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'task-rows-context-fit',
+        title: 'The tight row names the window; the over-window row shows the estimate alone',
+        kind: 'implementation',
+        marker: '~31,012 context tokens',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-planner-commands-refused',
       title: 'Workflow · a test command not taken from the planner',
       surface: screenSurface('workflow'),

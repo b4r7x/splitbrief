@@ -1,5 +1,4 @@
 import type { Config } from '../../core/schemas/config.js';
-import { DEFAULT_UNKNOWN_CONTEXT_LENGTH } from '../../core/tokens/context-length.js';
 import type { ProviderDef } from './types.js';
 import { resolveRunnerContextWindow } from './model/context-window.js';
 import { type ModelCacheAccessor, resolveSeatImageFact } from './model/resolution.js';
@@ -10,7 +9,7 @@ import { OBSERVATION_HTTP_TIMEOUT_MS } from '../constants.js';
 import { providerError } from './errors.js';
 import { getProvider } from './registry.js';
 
-export type ContextLengthOrigin = 'env' | 'config' | 'detected' | 'catalog' | 'fallback';
+export type ContextLengthOrigin = 'config' | 'detected' | 'catalog';
 
 export interface DetectedCapabilities {
   contextLength: number;
@@ -27,7 +26,7 @@ function getImplementerProvider(config: Config): ProviderDef {
 }
 
 /**
- * The window a run budgets, on the same model cache. A CLI seat on `auto` takes the model its tool
+ * The window a run routes by, on the same model cache. A CLI seat on `auto` takes the model its tool
  * selects on this host, the model start names on the seat, so boot and run agree on the window.
  */
 async function lookupConfiguredCatalogContextLength(
@@ -61,14 +60,11 @@ async function lookupConfiguredCatalogContextLength(
   return undefined;
 }
 
+/** The build seat's context length and where it came from; undefined when no source names one. */
 export async function detectCapabilities(
   config: Config,
   modelCache?: ModelCacheAccessor | undefined,
-): Promise<DetectedCapabilities> {
-  const envCtx = process.env.SPLITBRIEF_CONTEXT_LENGTH;
-  const parsed = envCtx ? parseInt(envCtx, 10) : NaN;
-  if (!Number.isNaN(parsed)) return { contextLength: parsed, origin: 'env' };
-
+): Promise<DetectedCapabilities | undefined> {
   if (config.implementer.contextLength !== undefined) {
     return { contextLength: config.implementer.contextLength, origin: 'config' };
   }
@@ -93,11 +89,8 @@ export async function detectCapabilities(
   }
 
   const catalogContextLength = await lookupConfiguredCatalogContextLength(config, modelCache);
-  if (catalogContextLength !== undefined) {
-    return { contextLength: catalogContextLength, origin: 'catalog' };
-  }
-
-  return { contextLength: DEFAULT_UNKNOWN_CONTEXT_LENGTH, origin: 'fallback' };
+  if (catalogContextLength === undefined) return undefined;
+  return { contextLength: catalogContextLength, origin: 'catalog' };
 }
 
 /** Whether the planner reads images: its tool's image channel and its own model's fact. */

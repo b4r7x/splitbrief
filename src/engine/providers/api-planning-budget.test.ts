@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createApiPlanner, invokeApiTransport } from '../planners/api.js';
-import { apiBuildTargets, estimateBundleOutputReserve } from './api-budget.js';
+import { admitApiCall, apiBuildTargets, estimateBundleOutputReserve } from './api-budget.js';
 import { readApiContextDiagnostic } from './api-context-diagnostic.js';
 import { apiConnectionContextKey } from './selected-model.js';
 
@@ -23,7 +23,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe('API planning wire budgets', () => {
   it.each(['planner', 'reviewer'] as const)(
-    'keeps a late %s output-cap refusal typed and qualitative',
+    'keeps a late %s output-cap refusal under a Prompt budget typed and qualitative',
     async (seat) => {
       const provider = 'fixture-custom';
       const apiBase = 'http://127.0.0.1:1234/v1';
@@ -55,6 +55,7 @@ describe('API planning wire budgets', () => {
             contextKey: apiConnectionContextKey(provider, apiBase),
             selectionId: 'fixture-model',
             observedAt: Date.now(),
+            configuredContextTokens: 32_768,
             applicationContextTokens: 32_768,
             maximumOutputTokens: 1_024,
             budgetSource: 'observed-active',
@@ -75,6 +76,31 @@ describe('API planning wire budgets', () => {
       if (!(failure instanceof Error)) throw new Error('expected typed refusal');
       expect(failure.message).not.toMatch(/\d/);
       expect(create).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['planner', 'reviewer'] as const)(
+    'admits a %s call with no Prompt budget under a late output cap, capped at that cap',
+    async (seat) => {
+      const provider = 'fixture-custom';
+      const apiBase = 'http://127.0.0.1:1234/v1';
+      const admission = await admitApiCall({
+        prepared: { seat, provider, apiBase, overrides: { apiBase }, selectionId: 'fixture-model' },
+        dispatch: { provider, apiBase, model: 'fixture-model' },
+        messages: [{ role: 'user', content: 'Review.' }],
+        context: {
+          contextKey: apiConnectionContextKey(provider, apiBase),
+          selectionId: 'fixture-model',
+          observedAt: Date.now(),
+          applicationContextTokens: 32_768,
+          maximumOutputTokens: 1_024,
+          budgetSource: 'observed-active',
+          loadState: 'loaded',
+        },
+      });
+      expect(admission.kind).toBe('admitted');
+      if (admission.kind !== 'admitted') return;
+      expect(admission.measurement.maxTokens).toBe(1_024);
     },
   );
 

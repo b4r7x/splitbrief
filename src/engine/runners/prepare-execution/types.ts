@@ -20,6 +20,8 @@ type CommonPreparationPolicy = CustomRunnerAdmissionPolicy &
     allowHooks: boolean;
     /** The host's model catalog: the readiness report names each seat by its catalog label. */
     modelCache?: ModelCacheAccessor | undefined;
+    /** The window detected for the build seat; readiness shows it while the seat sets no Prompt budget. */
+    getDetectedContextLength?: (() => number | undefined) | undefined;
   }>;
 
 export type PreparationPolicy =

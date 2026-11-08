@@ -121,4 +121,21 @@ describe('estimatePlanContextFits', () => {
       blocked: expect.stringContaining('No capable implementer profile'),
     });
   });
+
+  it('does not block a task over an unknown window when no Prompt budget is set', async () => {
+    writeFileSync(
+      join(projectDir, 'src', 'hello.ts'),
+      'export const value = compute(input);\n'.repeat(Math.floor((120 * 1024) / 37)),
+    );
+    const auto = makeConfig({
+      implementerProfiles: {
+        default: 'script',
+        profiles: { script: { kind: 'shell', command: 'gen', model: 'gen' } },
+      },
+    });
+
+    const fits = await estimatePlanContextFits(makePlanProposal(), { config: auto, projectDir });
+
+    expect(fits.get('T001')).toEqual({ fit: 'overflow' });
+  });
 });

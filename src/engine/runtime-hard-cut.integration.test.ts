@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { simpleGit } from 'simple-git';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SPLITBRIEF_IDENTITY } from '../core/identity.js';
 import { SPLITBRIEF_DIR, TREES_DIR } from '../core/paths.js';
 import { taskId } from '../core/schemas/task.js';
@@ -18,10 +18,9 @@ import { runViewStore } from '../stores/workflow/run-view.js';
 import { addEvent } from '../stores/workflow/actions/event.js';
 import { resetWorkflow } from '../stores/workflow/actions/reset.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { makeConfig } from '#testing/helpers/factories/config.js';
 import type { DetectionCacheSnapshot } from './detection/cache.js';
 import { loadDetectionCacheSnapshot, saveDetectionCache } from './detection/cache.js';
-import { detectCapabilities } from './providers/capabilities.js';
+import { workflowOptsToCLIOverrides } from '../core/config/runtime/overrides/from-options.js';
 import { createWorktree } from './orchestrator/isolation/create-worktree.js';
 import { removeWorktree } from './orchestrator/isolation/remove-worktree.js';
 
@@ -56,21 +55,14 @@ const PRIOR_BRANCHES = [
 
 describe('runtime hard cut', () => {
   let root: string;
-  let originalEnv: Map<string, string | undefined>;
 
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), `${SPLITBRIEF_IDENTITY.slug}-runtime-hard-cut-`));
-    originalEnv = new Map(
-      [CANONICAL_CONTEXT_ENV, ...PRIOR_CONTEXT_ENV_KEYS].map((key) => [key, process.env[key]]),
-    );
   });
 
   afterEach(async () => {
     resetWorkflow();
-    for (const [key, value] of originalEnv) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
-    }
+    vi.unstubAllEnvs();
     await rm(root, { recursive: true, force: true });
   });
 
@@ -115,22 +107,18 @@ describe('runtime hard cut', () => {
     }
   });
 
-  it('env-read', async () => {
-    process.env[CANONICAL_CONTEXT_ENV] = '4096';
-    for (const key of PRIOR_CONTEXT_ENV_KEYS) delete process.env[key];
+  it('env-read', () => {
+    vi.stubEnv(CANONICAL_CONTEXT_ENV, '4096');
+    for (const key of PRIOR_CONTEXT_ENV_KEYS) vi.stubEnv(key, undefined);
 
-    const result = await detectCapabilities(makeConfig({ implementer: { contextLength: 16_384 } }));
-
-    expect(result).toEqual({ contextLength: 4096, origin: 'env' });
+    expect(workflowOptsToCLIOverrides({}).implementer?.contextLength).toBe(4096);
   });
 
-  it('prior-env-ignore', async () => {
-    delete process.env[CANONICAL_CONTEXT_ENV];
-    for (const key of PRIOR_CONTEXT_ENV_KEYS) process.env[key] = '4096';
+  it('prior-env-ignore', () => {
+    vi.stubEnv(CANONICAL_CONTEXT_ENV, undefined);
+    for (const key of PRIOR_CONTEXT_ENV_KEYS) vi.stubEnv(key, '4096');
 
-    const result = await detectCapabilities(makeConfig({ implementer: { contextLength: 16_384 } }));
-
-    expect(result).toEqual({ contextLength: 16_384, origin: 'config' });
+    expect(workflowOptsToCLIOverrides({}).implementer?.contextLength).toBeUndefined();
   });
 
   it('worktree-create', async () => {

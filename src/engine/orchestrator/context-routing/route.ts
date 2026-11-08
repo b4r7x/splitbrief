@@ -27,15 +27,28 @@ function toRejectedProfile(
 
 export function routeTaskToImplementerProfile(opts: RouteTaskOptions): RoutingDecision {
   const profileFits = opts.profiles.map((profile) => assessProfile(opts, profile));
-  const capable = profileFits
-    .filter(
-      (profileFit) =>
-        profileFit.fit !== 'overflow' &&
-        !profileFit.credentialFailure &&
-        !profileFit.capabilityFailure,
-    )
-    .toSorted(compareProfileRouteRank);
-  const selected = capable.at(0);
+  // Only a Prompt budget the user set stops a brief; a window SPLITBRIEF knows or guesses orders
+  // the choice. The fitting profiles go first by rank, then the default profile, then the profile
+  // with the largest window, which has the best chance to take the whole brief. A recovery pin
+  // routes over the pinned profile alone, so it is the one usable profile.
+  const usable = profileFits.filter(
+    (profileFit) =>
+      !profileFit.credentialFailure &&
+      !profileFit.capabilityFailure &&
+      !(profileFit.userBudget && profileFit.fit === 'overflow'),
+  );
+  const selected =
+    usable
+      .filter((profileFit) => profileFit.fit !== 'overflow')
+      .toSorted(compareProfileRouteRank)
+      .at(0) ??
+    usable.find((profileFit) => profileFit.profile.isDefault) ??
+    usable
+      .toSorted(
+        (left, right) =>
+          right.contextLength - left.contextLength || compareProfileRouteRank(left, right),
+      )
+      .at(0);
 
   if (!selected) {
     const rejected = profileFits

@@ -3,6 +3,7 @@ import { assertNever } from '../../../utils/type-guards.js';
 import { resolveRunnerContextWindow } from '../../providers/model/context-window.js';
 import { resolveApplicationContextTokens } from '../../providers/runtime-context.js';
 import { isApiProviderId } from '../../../core/providers/api-provider-catalog.js';
+import { DEFAULT_UNKNOWN_CONTEXT_LENGTH } from '../../../core/tokens/context-length.js';
 import { getEffectiveModelId, resolveExactRuntimeModel } from '../../providers/model/resolution.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import type { ResolvedProfileContextLength } from './types.js';
@@ -47,14 +48,14 @@ export function profileEffectiveModelId(profile: ResolvedImplementerProfile): st
 }
 
 /**
- * Routing budgets an API profile against the same resolution its dispatch does.
- * Where nothing is configured, observed or catalogued, that is the application
- * assumption — not the 32768-token routing fallback, which would admit a brief
- * on capacity nobody observed and then hand the overflow to the planner.
+ * The window a profile is ranked by. An API profile reads the same resolution its dispatch does:
+ * where nothing is configured, observed or catalogued, that is the application assumption. Any
+ * other profile with no known window takes `conservativeContextLength`, the ranking stand-in;
+ * `usedConservativeContextLength` marks both guesses.
  */
 export function resolveProfileContextLength(
   profile: ResolvedImplementerProfile,
-  conservativeContextLength: number,
+  conservativeContextLength = DEFAULT_UNKNOWN_CONTEXT_LENGTH,
   cache?: ModelCacheAccessor | undefined,
   detectedContextLength?: number | undefined,
 ): ResolvedProfileContextLength {
@@ -106,8 +107,7 @@ function resolveDeclaredContextLength(
 ): ResolvedProfileContextLength {
   const contextLength = profile.config.contextLength;
   if (contextLength !== undefined) {
-    const source = contextLength === detectedContextLength ? 'detected' : 'explicit';
-    return { contextLength, source, usedConservativeContextLength: false };
+    return { contextLength, source: 'explicit', usedConservativeContextLength: false };
   }
 
   if (profile.isDefault && detectedContextLength !== undefined) {

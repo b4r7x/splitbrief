@@ -336,7 +336,7 @@ Every run plans in one typed planning session. There are no workflow modes and n
 |---|---|---|
 | Questions | The planner may answer with questions instead of a plan: at most 3 per round, each with a `default`, for at most 2 rounds (`MAX_QUESTION_ROUNDS`). A third round halts the run with `plan-questions-exhausted`. After **Decide for me** the round answered is the last, and a later round takes its defaults without asking. | `plan-session.ts` |
 | Typed plan | The planner answers `{ result }` against `PlanAnswerSchema` (`src/core/schemas/plan.ts`): a summary, decisions, acceptance criteria, checks, validation commands, the project gate (`gate`, at most 6 commands, run as `V1`, `V2`, … before the final review) and tasks (`TaskSpec`). SPLITBRIEF validates the answer with Zod. The call goes through `requestTyped` with the tool's native schema flag where it has one. | `session.ts` |
-| Checks | `checkFullPlan` runs `checkPlan` (`src/engine/spec/plan-checks.ts`) plus the context fit of each task (`estimatePlanContextFits`). A failing plan goes back to the planner once with the errors; a second failure halts with `plan-checks-failed`. A transport repair inside `requestTyped` is counted apart from this one semantic repair. | `session.ts`, `plan-checks.ts` |
+| Checks | `checkFullPlan` runs `checkPlan` (`src/engine/spec/plan-checks.ts`) plus the context fit of each task (`estimatePlanContextFits`), which fails a task only when a Prompt budget is set. A failing plan goes back to the planner once with the errors; a second failure halts with `plan-checks-failed`. A transport repair inside `requestTyped` is counted apart from this one semantic repair. | `session.ts`, `plan-checks.ts` |
 | Compile | `compilePlan` maps each task with `taskFromSpec`, writes `plan.json`, renders `plan.md` and `tasks.md`, and dispatches `PLAN_COMPILED`, which stores `state.plan` and `state.tasks`. The plan's validation block becomes `state.discoveredValidation`. | `session.ts`, `src/engine/spec/plan-tasks.ts` |
 | Plan card | `runPlanApproval` opens the plan card when `workflow.approve` is `plan`, then dispatches `BEGIN_IMPLEMENTATION`. | `session.ts` |
 
@@ -360,7 +360,7 @@ The card shows `plan.md`: the summary, the protected operations the plan lists, 
 |---|---|---|
 | `y` Approve plan and start the build | `{ approved: true }` | Records each listed protected operation as confirmed in the evidence ledger (`planConfirmations`), publishes `plan_approved`, then `BEGIN_IMPLEMENTATION` |
 | `c` Request changes (type what to change) | `{ approved: false, action: 'revise', comment }` | Publishes `plan_regenerated`, sends `planRevisedTurn(plan.json, comment)` to the planning session, applies its checks with the one repair, and shows the card again |
-| `e` Edit plan.json | `{ approved: false, action: 'edit' }` | Re-reads `plan.json` and validates it: JSON, then `PlanProposalSchema`, then `checkPlan` plus the context fit. A valid edit compiles without a planner call and the card shows again. An invalid edit is not applied: the engine restores `plan.json`, publishes one warning that starts `The edited plan was not applied: `, and shows the card again |
+| `e` Edit plan.json | `{ approved: false, action: 'edit' }` | Re-reads `plan.json` and validates it: JSON, then `PlanProposalSchema`, then `checkPlan`, plus the context fit when a Prompt budget is set. A valid edit compiles without a planner call and the card shows again. An invalid edit is not applied: the engine restores `plan.json`, publishes one warning that starts `The edited plan was not applied: `, and shows the card again |
 | `q` End run (close this run) | `{ approved: false, action: 'end-run' }` | `CLOSE_RUN` and `plan_rejected`. The run is closed; its files stay on disk |
 
 A row is taken with `↑`/`↓` and `⏎`, or by typing its key and `⏎`; no letter settles the card on its own. Any other typed text is a correction (`c` above). While a correction is typed the legend reads `⏎ send · esc back`: `esc` clears the draft and returns the keys to the rows, and the next `esc` opens the stop menu. `e`, the `edit` command and `Ctrl+E` open `plan.json` in the in-app editor. A save checks the JSON, the schema and `checkPlan` without the context fit (`planSaveErrors`, `src/features/editor/plan-save.ts`); a refused save keeps the overlay open on one row, `Not saved: <first message> (+N more)`. `Ctrl+O` opens the external editor on the same file, and its save settles the card as an edit. Messages queued while the card waits become its correction.
@@ -583,8 +583,8 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
     The answers go back on the same planner session.
 
  8. Plan
-    checkPlan + context fit. A failing plan goes back once; a second failure
-    halts with plan-checks-failed.
+    checkPlan, plus the context fit when a Prompt budget is set. A failing
+    plan goes back once; a second failure halts with plan-checks-failed.
     PLAN_COMPILED stores state.plan and state.tasks.
     plan.json, plan.md and tasks.md are written.
 

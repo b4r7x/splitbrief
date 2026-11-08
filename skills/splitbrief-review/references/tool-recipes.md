@@ -124,7 +124,7 @@ Report the tool's login or plan page, and its model listing when available.
 <!-- generated: halt-signatures -->
 | Kind | Signatures |
 |---|---|
-| input-too-large | `input_too_large`, `input exceeds the maximum length`, `prompt is too long` |
+| input-too-large | `input_too_large`, `input exceeds the maximum length`, `prompt is too long`, `maximum context length`, `context_length_exceeded` |
 | auth | `access token could not be refreshed`, `log out and sign in again`, `401 unauthorized`, `please run /login`, `invalid api key`, `oauth token has expired`, `oauth token revoked`, `authentication_error`, `not logged in`, `not authenticated`, `http 401`, `status 401`, `"status":401`, `login required`, `authentication failed`, `authentication required. please run` |
 | usage | `rate limit exceeded`, `rate limit reached`, `usage limit`, `quota exceeded`, `too many requests`, `insufficient_quota`, `exceeded your current quota`, `credit balance is too low`, `http 429`, `status 429`, `"status":429`, `insufficient credits`, `quota reached`, `resource_exhausted`, `exhausted your` |
 | missing-model | `unknown model`, `model not found`, `invalid model`, `provider.no-route` |

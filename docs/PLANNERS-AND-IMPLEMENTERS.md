@@ -404,21 +404,19 @@ Per-task usage is recorded as `TaskTokenUsage`, which tracks: implementer tokens
 
 A runner completing a task without reporting usage is recorded as zero tokens and surfaced, not hidden: `recordTaskUsage` (`src/engine/orchestrator/tokens.ts`) publishes exactly one warning with `category: 'usage'` and `code: 'implementer_usage_not_reported'`, naming the runner and the task, when neither the implementer nor the escalation delta is non-zero. The warning lands in `session.jsonl` and in the review packet's warnings list. A consulted task that spent planner tokens does not warn. SPLITBRIEF never invents a price or synthesises token counts for a runner that reported none — a CLI runner staying structurally unpriced is by design, and this warning is what makes a run that did real work distinguishable from a run whose runner reported nothing.
 
-**Legacy prompt allocation** (`src/engine/spec/token-budget.ts`):
+**Legacy prompt allocation** (`src/engine/spec/token-budget.ts`), used only with a Prompt budget (`contextLength`):
 
 ```
 budget = contextLength - systemPromptTokens - taskBodyTokens - (contextLength * 0.25)
 ```
 
-The legacy fallback is `DEFAULT_UNKNOWN_CONTEXT_LENGTH = 32768` in `src/core/tokens/context-length.ts`. API bundle routing retains full supplied file contents and reserves bundle output instead of shrinking them through this allocation. API dispatch separately resolves configured context, observed active context or the 8192 application default, then applies the measured input margin and output reserve described in [CONFIGURATION.md](./CONFIGURATION.md).
+With no Prompt budget, the prompt is sent whole. `DEFAULT_UNKNOWN_CONTEXT_LENGTH = 32768` (`src/core/tokens/context-length.ts`) and the 8192 application default only rank a profile whose window is unknown; neither stops, refuses or cuts a brief. API bundle routing retains full supplied file contents and reserves bundle output instead of shrinking them through this allocation. An API seat with a Prompt budget applies the measured input margin and output reserve described in [CONFIGURATION.md](./CONFIGURATION.md) before dispatch.
 
 A boot-probed window applies only to the default implementer profile — the profile the probe ran for. A sibling profile uses its own model/configuration metadata; an API profile without known active or configured capacity uses the API application fallback.
 
 A CLI runner under `model: auto` — or with the model omitted — is resolved at preparation to the model the tool itself has selected on this host (`readHostModelSelection`, `src/engine/runners/host-model-selection.ts`), and the prepared config carries that id, so the window is that model's. When the tool exposes no readable selection, the seat stays on automatic selection, no `--model` flag is added, and the window is the smallest the bundled catalog guarantees for that tool (`resolveRunnerContextWindow`, `src/engine/providers/model/context-window.ts`).
 
-Routing between configured profiles is by capability, never by price: `compareProfileRouteRank` (`src/engine/orchestrator/context-routing/decision.ts`) ranks the capable profiles by context window, smallest sufficient window first, then by name. A routed selection names the profile and the fit it was chosen on: `Selected profile <name> (fits, estimated N/M tokens)`.
-
-The window the router decides is the one the prompt budget uses: `configForProfile()` (`src/engine/orchestrator/task/routing.ts`) copies the decided `contextLength` into the config handed to the selected implementer when the profile declares none — a window the profile declared for itself is never overridden — so the wire carries the routed window rather than an unbudgeted whole-file prompt.
+Routing between configured profiles is by capability, never by price: `compareProfileRouteRank` (`src/engine/orchestrator/context-routing/decision.ts`) ranks the capable profiles by context window, smallest sufficient window first, then by name. A routed selection names the profile and the fit it was chosen on: `Selected profile <name> (fits, estimated N/M tokens)`. Only a profile with a Prompt budget drops out on an overflow. When no profile fits and no Prompt budget stops the brief, a recovery pin keeps its profile, else the default profile takes the brief, else the usable profile with the largest window: `Selected profile <name> (overflow, estimated N/M tokens; no Prompt budget is set)`.
 
 Token estimation uses a per-model-family character-to-token ratio (`src/core/tokens/estimate.ts`): Claude models use 3.5, GPT uses 4.0, DeepSeek/Qwen/Llama/etc. use family-specific ratios. When a model ID is available (e.g., during implementer profile routing), the calibrated ratio produces more accurate estimates — reducing unnecessary escalations from overestimates and overflow failures from underestimates. Callers without model context (repomap budget, planner base) default to 4.0 chars/token.
 

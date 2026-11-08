@@ -9,6 +9,7 @@ import type { RunnerFactoryAuthority } from '../runners/factory-gates.js';
 import type { RunnerSlot } from '../runners/prepared-execution.js';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import { admitApiCall, type PreparedApiSeat } from './api-budget.js';
+import { apiConnectionContextKey } from './selected-model.js';
 import type { ProviderDef } from './types.js';
 import type { ApiDeadlineRun } from './api-deadlines.js';
 import { makeRunnerGate, testCliSeats } from '#testing/helpers/runner-gate.js';
@@ -301,7 +302,7 @@ describe('three-seat identity and budget', () => {
     expect(dispatches).toEqual([]);
   });
 
-  it('rebudgets against the active context of the moment, and refuses once it is too small', async () => {
+  it('reads the active context again on each call, and dispatches over it when no Prompt budget is set', async () => {
     const cfg = config();
     const planner = await createPlanner(cfg, {
       ...authority(cfg, { role: 'planner' }, cfg.planner),
@@ -311,8 +312,7 @@ describe('three-seat identity and budget', () => {
 
     catalogs.set('1234', [{ key: 'plan-model', activeContextTokens: 8_000 }]);
     await plan();
-    // A local catalog reports no output ceiling, so no cap rides along on either call;
-    // the refusal below is what proves the context was re-read rather than remembered.
+    // A local catalog reports no output ceiling, so no cap rides along on any call.
     expect(dispatches.at(-1)?.maxTokens).toBeUndefined();
 
     // The server reloaded the model with a smaller context between calls.
@@ -321,8 +321,103 @@ describe('three-seat identity and budget', () => {
     expect(dispatches.at(-1)?.maxTokens).toBeUndefined();
 
     catalogs.set('1234', [{ key: 'plan-model', activeContextTokens: 2_000 }]);
-    await expect(plan()).rejects.toMatchObject({ kind: 'api-insufficient-context' });
-    expect(dispatches).toHaveLength(2);
+    await expect(plan()).resolves.toMatchObject({ status: 'completed' });
+    expect(dispatches).toHaveLength(3);
+    expect(catalogRequests).toEqual([
+      '1234/api/v1/models',
+      '1234/api/v1/models',
+      '1234/api/v1/models',
+    ]);
+  });
+
+  it('dispatches a planner packet over the observed active context when no Prompt budget is set', async () => {
+    catalogs.set('1234', [{ key: 'plan-model', activeContextTokens: 2_000 }]);
+    const cfg = config();
+    const planner = await createPlanner(cfg, {
+      ...authority(cfg, { role: 'planner' }, cfg.planner),
+      initialSessionId: null,
+    });
+    const prompt = 'x'.repeat(12_000);
+
+    await expect(
+      callPlanner(planner, { projectDir, callbacks: { onOutput: () => {} }, prompt }),
+    ).resolves.toMatchObject({ status: 'completed' });
+    expect(dispatches).toHaveLength(1);
+    expect(dispatches[0]?.maxTokens).toBeUndefined();
+    expect(dispatches[0]?.messages.some((message) => message.content.includes(prompt))).toBe(true);
+  });
+
+  it('dispatches a custom endpoint planner packet over the 8192 assumption when no Prompt budget is set', async () => {
+    const cfg = config({
+      planner: {
+        kind: 'api',
+        provider: 'custom-endpoint',
+        service: 'custom-endpoint',
+        offering: 'payg',
+        apiBase: 'https://custom-endpoint.example/v1',
+        apiKey: 'custom-inline-key',
+        model: 'custom/test',
+      },
+    } as Partial<Config>);
+    const planner = await createPlanner(cfg, {
+      ...authority(cfg, { role: 'planner' }, cfg.planner),
+      initialSessionId: null,
+    });
+
+    await expect(
+      callPlanner(planner, {
+        projectDir,
+        callbacks: { onOutput: () => {} },
+        prompt: 'y'.repeat(40_000),
+      }),
+    ).resolves.toMatchObject({ status: 'completed' });
+    expect(dispatches).toEqual([
+      expect.objectContaining({
+        baseURL: 'https://custom-endpoint.example/v1',
+        model: 'custom/test',
+        maxTokens: undefined,
+      }),
+    ]);
+  });
+
+  it('admits a call over the observed active context with the output cap as maxTokens when no Prompt budget is set', async () => {
+    const admitted = await admitApiCall({
+      prepared: preparedSeat('planner', '1234', 'plan-model'),
+      dispatch: { provider: 'lm-studio', apiBase: 'http://127.0.0.1:1234/v1', model: 'plan-model' },
+      messages: [{ role: 'user', content: 'x'.repeat(12_000) }],
+      context: {
+        contextKey: apiConnectionContextKey('lm-studio', 'http://127.0.0.1:1234/v1'),
+        selectionId: 'plan-model',
+        observedAt: 0,
+        applicationContextTokens: 2_000,
+        activeContextTokens: 2_000,
+        maximumOutputTokens: 4_096,
+        budgetSource: 'observed-active',
+        loadState: 'unknown',
+      },
+    });
+
+    expect(admitted.kind).toBe('admitted');
+    if (admitted.kind !== 'admitted') return;
+    expect(admitted.measurement.maxTokens).toBe(4_096);
+  });
+
+  it('refuses a planner packet over a Prompt budget the user set', async () => {
+    catalogs.set('1234', [{ key: 'plan-model', activeContextTokens: 40_000 }]);
+    const cfg = config({ planner: lmStudioSeat('1234', 'plan-model', 2_000) } as Partial<Config>);
+    const planner = await createPlanner(cfg, {
+      ...authority(cfg, { role: 'planner' }, cfg.planner),
+      initialSessionId: null,
+    });
+
+    await expect(
+      callPlanner(planner, {
+        projectDir,
+        callbacks: { onOutput: () => {} },
+        prompt: 'x'.repeat(12_000),
+      }),
+    ).rejects.toMatchObject({ kind: 'api-insufficient-context' });
+    expect(dispatches).toEqual([]);
   });
 
   it('gives a seat with no timeout no deadline and the SDK client no limit', async () => {

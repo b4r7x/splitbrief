@@ -39,18 +39,24 @@ describe('displayValue', () => {
     expect(displayValue(def, null)).toBe('—');
   });
 
-  it('auto (256K) when value equals detectedContextLength', () => {
+  it('shows a set Prompt budget as its number, also when it equals the detected window', () => {
     expect(
       displayValue(getDef('implementer.contextLength'), 256_000, {
         detectedContextLength: 256_000,
       }),
-    ).toBe('auto (256K)');
+    ).toBe('256000');
   });
 
-  it('shows a floored context window for the auto-detected implementer limit', () => {
+  it('shows an unset Prompt budget as auto with the floored detected window', () => {
     const def = getDef('implementer.contextLength');
-    expect(displayValue(def, 1_048_576, { detectedContextLength: 1_048_576 })).toBe('auto (1M)');
-    expect(displayValue(def, 262_144, { detectedContextLength: 262_144 })).toBe('auto (262K)');
+    expect(displayValue(def, undefined, { detectedContextLength: 1_048_576 })).toBe('auto (1M)');
+    expect(displayValue(def, undefined, { detectedContextLength: 262_144 })).toBe('auto (262K)');
+  });
+
+  it('describes the Prompt budget as a stop the user sets', () => {
+    expect(getDef('implementer.contextLength').description).toBe(
+      'Stop a brief that does not fit this many tokens (auto = no stop; the tool handles its own context)',
+    );
   });
 
   it('unsetLabel fallbacks for timeout, contextLength and testCommand', () => {
