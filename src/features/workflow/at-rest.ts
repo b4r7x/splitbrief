@@ -9,6 +9,7 @@ import {
 } from '../../core/rail-stages.js';
 import type { RunRecord } from '../../core/sessions/run-record.js';
 import { awaitsApply, type StopReason } from '../../core/sessions/run-status.js';
+import type { RunHalt } from '../../core/run-view/halt.js';
 import type { RouteData } from '../../stores/navigation/router.js';
 import type { DepartureKind } from '../../stores/workflow/departure.js';
 import { AT_REST_PLACEHOLDER } from './closed/byline.js';
@@ -104,6 +105,38 @@ export function routeClosedAtRest(route: RouteData): boolean {
     route.execution.kind === 'at-rest' &&
     route.run.status.kind === 'closed'
   );
+}
+
+/**
+ * The record whose crew the run on screen names: a run read back from disk, or a local run the
+ * engine left at Apply. A local run builds again on today's seats once Apply sends it back.
+ */
+export function displayedCrewRecord(route: RouteData, phase: Phase): RunRecord | undefined {
+  if (route.screen !== 'workflow') return undefined;
+  if (route.execution.kind === 'at-rest') return route.run;
+  return route.execution.kind === 'local' && phase === 'complete' ? route.run : undefined;
+}
+
+/**
+ * The stages the header rail paints for the run on screen, for the screen and the click zones
+ * alike: the stages its record earned while it rests. A run continued into Apply keeps the rail
+ * it rested with until the engine re-enters it or a halt is on the view; the live rail cannot
+ * tell a run about to resume into Apply from a finished one. Undefined while the live rail stands.
+ */
+export function displayedRailStages(
+  route: RouteData,
+  live: Readonly<{ restored: boolean | undefined; halt: RunHalt | null }>,
+): RailStageState[] | undefined {
+  if (route.screen !== 'workflow') return undefined;
+  if (route.execution.kind === 'at-rest') return atRestRailStages(route.run);
+  const status = route.run.status;
+  return route.execution.kind === 'local' &&
+    live.restored === true &&
+    live.halt === null &&
+    status.kind === 'open' &&
+    status.resumeAt.kind === 'apply'
+    ? atRestRailStages(route.run)
+    : undefined;
 }
 
 /**

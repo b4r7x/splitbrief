@@ -18,7 +18,6 @@ import { checkFailureText } from '../../../../src/engine/orchestrator/validation
 import { formatTasks } from '../../../../src/engine/spec/formatter.js';
 import type { RecoveryIssue } from '../../../../src/core/schemas/recovery/schemas.js';
 import type { StepRef } from '../../../../src/core/schemas/run-step.js';
-import type { DriftFinding } from '../../../../src/core/schemas/drift.js';
 import type { RunRecord } from '../../../../src/core/sessions/run-record.js';
 import type { Summary } from '../../../../src/core/schemas/summary.js';
 import { retainedWorkspaceNotices, retainedWorkspaceProjection } from './retained-workspace.js';
@@ -1671,111 +1670,6 @@ const buildFixConsultProjection: WorkflowFixtureProjection = {
 
 const REVIEW_CHECK_TYPECHECK = { id: 'V1', command: 'npm run typecheck' } as const;
 const REVIEW_CHECK_TEST = { id: 'V2', command: 'npm test' } as const;
-
-const DRIFT_REVIEW_CHECKS = [
-  {
-    id: 'V1',
-    command: 'node --test test/loan.test.js',
-  },
-  {
-    id: 'V2',
-    command: 'node --test test/renewals.test.js',
-  },
-  {
-    id: 'V3',
-    command: 'node --test test/member.test.js',
-  },
-  {
-    id: 'V4',
-    command: 'node --test test/services.test.js',
-  },
-];
-
-const DRIFT_REVIEW_TASKS_PLANNED: TasksPlannedEvent = {
-  ...FIXTURE_TASKS_PLANNED,
-  total: 5,
-  tasks: [
-    {
-      id: taskId('T001'),
-      title: 'Update the loan service',
-      index: 0,
-      file: 'src/loan.js',
-      action: 'modify',
-    },
-    {
-      id: taskId('T002'),
-      title: 'Update the renewal service',
-      index: 1,
-      file: 'src/renew.js',
-      action: 'modify',
-    },
-    {
-      id: taskId('T003'),
-      title: 'Verify the loan service',
-      index: 2,
-      file: 'test/loan.test.js',
-      action: 'modify',
-    },
-    {
-      id: taskId('T004'),
-      title: 'Verify the renewal service',
-      index: 3,
-      file: 'test/renewals.test.js',
-      action: 'modify',
-    },
-    {
-      id: taskId('T005'),
-      title: 'Verify the member model',
-      index: 4,
-      file: 'test/member.test.js',
-      action: 'modify',
-    },
-  ],
-};
-
-const DRIFT_REVIEW_FINDINGS: DriftFinding[] = [
-  {
-    severity: 'warning',
-    code: 'missing_expected_file',
-    taskId: taskId('T004'),
-    file: 'test/renewals.test.js',
-    message: 'Task T004 reached done but test/renewals.test.js was not changed.',
-  },
-  {
-    severity: 'error',
-    code: 'failed_task_with_diff',
-    taskId: taskId('T002'),
-    file: 'src/renew.js',
-    message: 'Failed task T002 left changes in src/renew.js.',
-  },
-  {
-    severity: 'info',
-    code: 'out_of_scope_file',
-    file: 'README.md',
-    message: 'README.md touched, not suggested by any task.',
-  },
-  {
-    severity: 'warning',
-    code: 'missing_expected_file',
-    taskId: taskId('T003'),
-    file: 'test/loan.test.js',
-    message: 'Task T003 reached done but test/loan.test.js was not changed.',
-  },
-  {
-    severity: 'error',
-    code: 'failed_task_with_diff',
-    taskId: taskId('T001'),
-    file: 'src/loan.js',
-    message: 'Failed task T001 left changes in src/loan.js.',
-  },
-  {
-    severity: 'warning',
-    code: 'missing_expected_file',
-    taskId: taskId('T005'),
-    file: 'test/member.test.js',
-    message: 'Task T005 reached done but test/member.test.js was not changed.',
-  },
-];
 
 const CODEX_REVIEW_SEAT = { kind: 'cli', tool: 'codex', model: 'gpt-6-astra' } as const;
 
@@ -3810,6 +3704,8 @@ const unansweredQuestionRecoveryProjection: WorkflowFixtureProjection = {
 const LONG_QUESTION =
   'Projection has no stop field. The run record holds the stop, but three other screens read Projection, the tests pin its shape, and the brief names only activity.ts. Should activity.ts read the stop from the run record, or should Projection gain a stop field and all three screens move with it in this brief?';
 
+const LONG_PLANNER_REASON = `The type test needs a decision on what alpha exports. ${'word '.repeat(70)}alpha-reason-end`;
+
 const longQuestionRecoveryProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-recovery-long-question'),
   feature: WORKFLOW_FEATURE,
@@ -4184,7 +4080,7 @@ const taskReviewNoProgressRecoveryProjection: WorkflowFixtureProjection = {
         blocking: 1,
         noProgress: ['F1'],
         fixCycle: 2,
-        cannot: 'The cache key is built in the registry, and the plan keeps the registry closed.',
+        cannot: LONG_PLANNER_REASON,
         phase: 'implementing',
         scope: 'task',
         afterTaskId: WORKFLOW_FIXTURE_FIX_TASK_ID,
@@ -8862,57 +8758,6 @@ const projections = [
   reviewCorrectedProjection,
   reviewTaskCadenceProjection,
   reviewTaskOutOfScopeProjection,
-  ...['clean', 'found'].map(
-    (drift): WorkflowFixtureProjection => ({
-      scenarioId: scenarioId(`workflow-review-drift-${drift}`),
-      feature: WORKFLOW_FEATURE,
-      inputMode: 'normal',
-      sidebarVisible: false,
-      events: [
-        ...(drift === 'clean'
-          ? everyBriefPassed()
-          : ([
-              {
-                type: 'workflow_started',
-                ts: FIXED_TS,
-                phase: 'implementing',
-                feature: WORKFLOW_FEATURE,
-              },
-              DRIFT_REVIEW_TASKS_PLANNED,
-              ...DRIFT_REVIEW_TASKS_PLANNED.tasks.flatMap((brief, index): EngineEvent[] => [
-                {
-                  ...orphanBriefStarted(brief, FIXED_TS + 100 * (index + 1)),
-                  total: DRIFT_REVIEW_TASKS_PLANNED.total,
-                },
-                index < 2
-                  ? {
-                      type: 'task_full_fail',
-                      ts: FIXED_TS + 100 * (index + 1) + 10,
-                      phase: 'implementing',
-                      taskId: brief.id,
-                    }
-                  : fixtureBriefPassed(brief, FIXED_TS + 100 * (index + 1) + 10),
-              ]),
-            ] satisfies EngineEvent[])),
-        ...DRIFT_REVIEW_CHECKS.map((check, index) =>
-          reviewCheck(FIXED_TS + 1_100 + 100 * index, check, {
-            status: 'done',
-            passed: drift === 'clean' || check.id !== 'V2',
-            duration: index % 2 === 0 ? 100 : 200,
-          }),
-        ),
-        {
-          type: 'drift_report',
-          ts: FIXED_TS + 1_500,
-          phase: 'final-review',
-          passed: drift === 'clean',
-          errorCount: drift === 'clean' ? 0 : 2,
-          warningCount: drift === 'clean' ? 0 : 3,
-          findings: drift === 'clean' ? [] : DRIFT_REVIEW_FINDINGS,
-        },
-      ],
-    }),
-  ),
   ...(['passed', 'failed'] as const).map(
     (review): WorkflowFixtureProjection => ({
       scenarioId: scenarioId(`workflow-review-settled-${review}`),
@@ -9385,6 +9230,7 @@ export function assertProjectionBounds(projection: WorkflowFixtureProjection): v
       value !== NO_IMAGE_REVIEW_SEAT_NOTE &&
       value !== BASE_RERUN_LONG_COMMAND &&
       !value.includes(LONG_QUESTION) &&
+      !value.includes(LONG_PLANNER_REASON) &&
       !retainedWorkspaceNotices.includes(value) &&
       !engineHaltText.includes(value) &&
       !startReadinessWarningText.includes(value) &&

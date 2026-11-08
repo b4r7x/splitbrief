@@ -47,7 +47,8 @@ import { useStores } from '../../../../stores/use-stores.js';
 import {
   applyComposer,
   atRestComposer,
-  atRestRailStages,
+  displayedCrewRecord,
+  displayedRailStages,
   routeClosedAtRest,
 } from '../../at-rest.js';
 import { deriveSummaryView } from '../../closed/view-model.js';
@@ -199,22 +200,7 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
   const closedView =
     atRestRecord === undefined ? null : deriveSummaryView({ record: atRestRecord });
   const closed = routeClosedAtRest(route);
-  // A run continued into Apply keeps the rail it rested with until the engine re-enters it or a
-  // halt is on the view; the live rail cannot tell a run about to resume into Apply from a
-  // finished one.
-  const railRecord =
-    atRestRecord ??
-    (local !== undefined &&
-    restored === true &&
-    halt === null &&
-    record?.status.kind === 'open' &&
-    record.status.resumeAt.kind === 'apply'
-      ? record
-      : undefined);
-  // A local run's record is the snapshot it continued from. It names the crew while the live run is
-  // still at Apply; once Apply sends the run back to review it builds again on today's seats.
-  const crewRecord =
-    atRestRecord ?? (local !== undefined && phase === 'complete' ? record : undefined);
+  const crewRecord = displayedCrewRecord(route, phase);
 
   const resumeAtRest = useEffectEvent(continueAtRest);
   useEffect(() => {
@@ -255,7 +241,7 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
     closedView,
     /** The record whose crew the header and the sidebar name, when `recordedCrew` says it has one. */
     crewRecord,
-    railStages: railRecord === undefined ? undefined : atRestRailStages(railRecord),
+    railStages: displayedRailStages(route, { restored, halt }),
     continuable: composer?.continuable ?? false,
     handleInput,
     handleRuntimeCommand: onRuntimeCommand,

@@ -1636,38 +1636,6 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
-      id: 'workflow-review-drift-clean',
-      title: 'Workflow · reviewer checks then a clean drift',
-      surface: screenSurface('workflow'),
-      checkpoint: {
-        id: 'review-drift-clean',
-        title: 'Reviewer checks followed by clean drift',
-        kind: 'review',
-        marker: 'Drift · clean',
-      },
-      elements: [
-        { id: 'header', title: 'Workflow header' },
-        { id: 'transcript', title: 'Reviewer checks and drift transcript' },
-        { id: 'composer', title: 'Workflow composer' },
-      ],
-    }),
-    defineScenario({
-      id: 'workflow-review-drift-found',
-      title: 'Workflow · reviewer checks then drift with findings',
-      surface: screenSurface('workflow'),
-      checkpoint: {
-        id: 'review-drift-found',
-        title: 'Failed reviewer check followed by drift findings',
-        kind: 'review',
-        marker: 'Drift · failed',
-      },
-      elements: [
-        { id: 'header', title: 'Workflow header' },
-        { id: 'transcript', title: 'Reviewer checks and drift transcript' },
-        { id: 'composer', title: 'Workflow composer' },
-      ],
-    }),
-    defineScenario({
       id: 'workflow-continuous-transcript-ready',
       title: 'Workflow · ready run retains plan and reviewer check rows',
       surface: screenSurface('workflow'),

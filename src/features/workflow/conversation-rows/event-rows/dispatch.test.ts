@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { CREW_SEAT_LABELS, formatSeatCandidateIdentity } from '../../../../core/crew/identity.js';
 import { taskId } from '../../../../core/schemas/task.js';
 import { arrowSep } from '../../../../core/separators.js';
-import type { DriftFinding } from '../../../../core/schemas/drift.js';
 import type { ClarificationQuestion } from '../../../../core/schemas/question.js';
 import { parseEngineEvent } from '../../../../engine/events/schema.js';
 import type { EngineEvent, EngineEventOf } from '../../../../engine/events/types.js';
@@ -898,44 +897,79 @@ describe('event row dispatch', () => {
     ]);
   });
 
-  it.each([
-    [true, 0, 0, 'success'],
-    [false, 1, 0, 'error'],
-    [true, 0, 1, 'warning'],
-    [true, 1, 0, 'error'],
-  ] as const)(
-    'colors drift passed=%s errors=%i warnings=%i',
-    (passed, errorCount, warningCount, tone) => {
-      const rows = eventRows({
-        event: {
-          type: 'drift_report',
-          ts: 0,
-          phase: 'final-review',
-          passed,
-          errorCount,
-          warningCount,
-        },
-        globalIndex: 0,
-        expanded: false,
-        ctx: { width: 200, viewportRows: 50, streaming },
-      });
-      expect(
-        rows
-          .flatMap((row) => row.segments)
-          .find(
-            (span) =>
-              span.text ===
-              (passed && errorCount === 0 && warningCount === 0
-                ? 'clean'
-                : !passed
-                  ? 'failed'
-                  : errorCount > 0
-                    ? `${errorCount} error`
-                    : `${warningCount} warning`),
-          )?.tone,
-      ).toBe(tone);
-    },
-  );
+  const driftReports: [string, EngineEventOf<'drift_report'>][] = [
+    [
+      'clean',
+      {
+        type: 'drift_report',
+        ts: 0,
+        phase: 'final-review',
+        passed: true,
+        errorCount: 0,
+        warningCount: 0,
+        findings: [],
+      },
+    ],
+    [
+      'info',
+      {
+        type: 'drift_report',
+        ts: 0,
+        phase: 'final-review',
+        passed: true,
+        errorCount: 0,
+        warningCount: 0,
+        findings: [{ severity: 'info', code: 'out_of_scope_file', message: 'Extra file.' }],
+      },
+    ],
+    [
+      'warning',
+      {
+        type: 'drift_report',
+        ts: 0,
+        phase: 'final-review',
+        passed: true,
+        errorCount: 0,
+        warningCount: 1,
+        findings: [
+          {
+            severity: 'warning',
+            code: 'missing_expected_file',
+            message: 'No change in src/a.ts.',
+          },
+        ],
+      },
+    ],
+    [
+      'failed',
+      {
+        type: 'drift_report',
+        ts: 0,
+        phase: 'final-review',
+        passed: false,
+        errorCount: 1,
+        warningCount: 0,
+        findings: [
+          {
+            severity: 'error',
+            code: 'failed_task_with_diff',
+            message: 'Failed task left changes in src/b.ts.',
+          },
+        ],
+      },
+    ],
+  ];
+
+  it.each(driftReports)('gives a %s drift report no row', (_status, event) => {
+    const rows = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+
+    expect(rows).toEqual([]);
+  });
 
   it('colors a verified no-change result separately from its explanation', () => {
     const rows = eventRows({
@@ -1040,375 +1074,6 @@ describe('event row dispatch', () => {
     );
     expect(texts.every((text) => getTerminalCellWidth(text) <= 80)).toBe(true);
     expect(texts.some((text) => text.endsWith('…'))).toBe(false);
-  });
-
-  describe('drift_report rows', () => {
-    const base: EngineEventOf<'drift_report'> = {
-      type: 'drift_report',
-      ts: 0,
-      phase: 'final-review',
-      passed: true,
-      errorCount: 0,
-      warningCount: 0,
-    };
-
-    function driftRows(
-      event: EngineEventOf<'drift_report'>,
-      width = 80,
-      expanded = false,
-    ): ConversationRow[] {
-      return eventRows({
-        event,
-        globalIndex: 0,
-        expanded,
-        ctx: { width, viewportRows: 20, streaming },
-      });
-    }
-
-    it.each([60, 80, 120])('renders clean drift as one quiet message row at width %i', (width) => {
-      const rows = driftRows({ ...base, findings: [] }, width);
-
-      expect(rows.map(rowText)).toEqual(['Drift · clean']);
-      expect(rows.every((row) => row.kind === 'message')).toBe(true);
-      expect(
-        rows
-          .flatMap((row) => row.segments)
-          .every(
-            (segment) =>
-              segment.tone ===
-              (segment.text === 'Drift'
-                ? 'text'
-                : segment.text === 'clean'
-                  ? 'success'
-                  : 'textDim'),
-          ),
-      ).toBe(true);
-      expect(rows.flatMap((row) => row.segments).some((segment) => segment.bold)).toBe(false);
-    });
-
-    it.each([1, 2])('renders %i warnings with a warning headline and dim detail rows', (count) => {
-      const findings: DriftFinding[] = [
-        { severity: 'warning', code: 'missing_expected_file', message: 'No changes in src/a.ts.' },
-        { severity: 'warning', code: 'missing_evidence', message: 'No evidence for T002.' },
-      ];
-      const event: EngineEventOf<'drift_report'> = {
-        ...base,
-        warningCount: count,
-        findings: findings.slice(0, count),
-      };
-      const rows = driftRows(event);
-
-      expect(rows.map(rowText)).toEqual([
-        count === 1 ? 'Drift · 1 warning' : 'Drift · 2 warnings',
-        '  warning · No changes in src/a.ts.',
-        ...(count === 2 ? ['  warning · No evidence for T002.'] : []),
-      ]);
-      expect(rows[0]?.segments).toEqual([
-        { text: 'Drift', tone: 'text' },
-        { text: ' · ', tone: 'textDim' },
-        { text: `${count} ${count === 1 ? 'warning' : 'warnings'}`, tone: 'warning' },
-      ]);
-      expect(
-        rows
-          .slice(1)
-          .flatMap((row) => row.segments)
-          .every(
-            (segment) =>
-              segment.tone ===
-              (segment.text === 'error'
-                ? 'error'
-                : segment.text === 'warning'
-                  ? 'warning'
-                  : 'textDim'),
-          ),
-      ).toBe(true);
-    });
-
-    it('renders failed drift in error tone with errors before warnings', () => {
-      const rows = driftRows({
-        ...base,
-        passed: false,
-        errorCount: 1,
-        warningCount: 1,
-        findings: [
-          {
-            severity: 'warning',
-            code: 'missing_expected_file',
-            message: 'No changes in src/a.ts.',
-          },
-          {
-            severity: 'error',
-            code: 'failed_task_with_diff',
-            message: 'Failed task T002 left changes in src/b.ts.',
-          },
-        ],
-      });
-
-      expect(rows.map(rowText)).toEqual([
-        'Drift · failed · 1 error · 1 warning',
-        '  error · Failed task T002 left changes in src/b.ts.',
-        '  warning · No changes in src/a.ts.',
-      ]);
-      expect(rows[0]?.segments).toContainEqual({ text: 'failed', tone: 'error' });
-      expect(rows[0]?.segments).toContainEqual({ text: 'Drift', tone: 'text' });
-      expect(
-        rows[0]?.segments
-          .filter((segment) => segment.text === ' · ')
-          .every(
-            (segment) =>
-              segment.tone ===
-              (segment.text === 'error'
-                ? 'error'
-                : segment.text === 'warning'
-                  ? 'warning'
-                  : 'textDim'),
-          ),
-      ).toBe(true);
-      expect(
-        rows
-          .slice(1)
-          .flatMap((row) => row.segments)
-          .every(
-            (segment) =>
-              segment.tone ===
-              (segment.text === 'error'
-                ? 'error'
-                : segment.text === 'warning'
-                  ? 'warning'
-                  : 'textDim'),
-          ),
-      ).toBe(true);
-    });
-
-    it('keeps recorded counts when findings contain fewer errors', () => {
-      const rows = driftRows({
-        ...base,
-        passed: false,
-        errorCount: 4,
-        findings: [
-          { severity: 'error', code: 'failed_task_with_diff', message: 'First error.' },
-          { severity: 'info', code: 'out_of_scope_file', message: 'Hidden information.' },
-          { severity: 'error', code: 'orphan_diff', message: 'Second error.' },
-        ],
-      });
-
-      expect(rows.map(rowText)).toEqual([
-        'Drift · failed · 4 errors',
-        '  error · First error.',
-        '  error · Second error.',
-      ]);
-    });
-
-    const manyFindings: EngineEventOf<'drift_report'> = {
-      ...base,
-      passed: false,
-      errorCount: 3,
-      warningCount: 2,
-      findings: [
-        { severity: 'warning', code: 'missing_expected_file', message: 'First warning.' },
-        { severity: 'error', code: 'failed_task_with_diff', message: 'First error.' },
-        { severity: 'info', code: 'out_of_scope_file', message: 'Hidden information.' },
-        { severity: 'error', code: 'orphan_diff', message: 'Second error.' },
-        { severity: 'warning', code: 'missing_evidence', message: 'Second warning.' },
-        { severity: 'error', code: 'failed_task_with_diff', message: 'Third error.' },
-      ],
-    };
-
-    it('collapses to three findings and counts only hidden errors and warnings', () => {
-      const rows = driftRows(manyFindings);
-
-      expect(rows.map(rowText)).toEqual([
-        'Drift · failed · 3 errors · 2 warnings',
-        '  error · First error.',
-        '  error · Second error.',
-        '  error · Third error.',
-        '  +2 more findings · click',
-      ]);
-      expect(
-        rows
-          .slice(1)
-          .flatMap((row) => row.segments)
-          .every(
-            (segment) =>
-              segment.tone ===
-              (segment.text === 'error'
-                ? 'error'
-                : segment.text === 'warning'
-                  ? 'warning'
-                  : 'textDim'),
-          ),
-      ).toBe(true);
-    });
-
-    it('expands to all findings in severity order without information or a notice', () => {
-      expect(driftRows(manyFindings, 80, true).map(rowText)).toEqual([
-        'Drift · failed · 3 errors · 2 warnings',
-        '  error · First error.',
-        '  error · Second error.',
-        '  error · Third error.',
-        '  warning · First warning.',
-        '  warning · Second warning.',
-      ]);
-    });
-
-    it('uses a singular finding notice', () => {
-      const rows = driftRows({
-        ...manyFindings,
-        errorCount: 2,
-        findings: manyFindings.findings?.slice(0, 5),
-      });
-
-      expect(rows.map(rowText)).toEqual([
-        'Drift · failed · 2 errors · 2 warnings',
-        '  error · First error.',
-        '  error · Second error.',
-        '  warning · First warning.',
-        '  +1 more finding · click',
-      ]);
-    });
-
-    it('renders a legacy event with counts only and ignores its score', () => {
-      const legacy = { ...base, passed: false, errorCount: 1, warningCount: 2, score: 0.6 };
-
-      expect(driftRows(legacy).map(rowText)).toEqual(['Drift · failed · 1 error · 2 warnings']);
-      expect(driftRows(legacy, 80, true).map(rowText)).toEqual([
-        'Drift · failed · 1 error · 2 warnings',
-      ]);
-    });
-
-    it.each([
-      [0, 0, 'Drift · failed'],
-      [1, 0, 'Drift · failed · 1 error'],
-      [0, 1, 'Drift · failed · 1 warning'],
-    ])(
-      'omits zero counts from failed drift with %i errors and %i warnings',
-      (errorCount, warningCount, headline) => {
-        const rows = driftRows({ ...base, passed: false, errorCount, warningCount });
-
-        expect(rows.map(rowText)).toEqual([headline]);
-        expect(rows[0]?.segments).toContainEqual({ text: 'failed', tone: 'error' });
-        expect(rows[0]?.segments).toContainEqual({ text: 'Drift', tone: 'text' });
-        expect(
-          rows[0]?.segments
-            .filter((segment) => segment.text === ' · ')
-            .every(
-              (segment) =>
-                segment.tone ===
-                (segment.text === 'error'
-                  ? 'error'
-                  : segment.text === 'warning'
-                    ? 'warning'
-                    : 'textDim'),
-            ),
-        ).toBe(true);
-      },
-    );
-
-    it('keeps information findings out of a clean row', () => {
-      expect(
-        driftRows({
-          ...base,
-          findings: [
-            { severity: 'info', code: 'out_of_scope_file', message: 'Hidden information.' },
-          ],
-        }).map(rowText),
-      ).toEqual(['Drift · clean']);
-    });
-
-    it.each([60, 80, 120])('hangs a long finding within width %i under its first row', (width) => {
-      const message =
-        'Failed task T002 left changes in src/b.ts. The changes include 日本語 labels and several additional paths that need review before this run can finish.';
-      const rows = driftRows(
-        {
-          ...base,
-          passed: false,
-          errorCount: 1,
-          findings: [{ severity: 'error', code: 'failed_task_with_diff', message }],
-        },
-        width,
-      );
-      const details = rows.slice(1);
-
-      expect(textAt(rows, 0)).toBe('Drift · failed · 1 error');
-      expect(details.length).toBeGreaterThan(1);
-      expect(
-        details
-          .map((row, index) =>
-            rowText(row)
-              .slice(index === 0 ? 2 : 4)
-              .trimEnd(),
-          )
-          .join(' '),
-      ).toBe(`error · ${message}`);
-      for (const [index, row] of details.entries()) {
-        expect(rowText(row).search(/\S/)).toBe(index === 0 ? 2 : 4);
-        expect(
-          row.segments.every(
-            (segment) =>
-              segment.tone ===
-              (segment.text === 'error'
-                ? 'error'
-                : segment.text === 'warning'
-                  ? 'warning'
-                  : 'textDim'),
-          ),
-        ).toBe(true);
-      }
-      for (const row of rows) {
-        expect(getTerminalCellWidth(rowText(row)) + rowLeadingCells(row.kind)).toBeLessThanOrEqual(
-          width,
-        );
-      }
-    });
-
-    it('hangs a missing-file warning under its finding before the disclosure row', () => {
-      const rows = driftRows(
-        {
-          ...base,
-          warningCount: 5,
-          findings: [
-            { severity: 'warning', code: 'missing_evidence', message: 'First warning.' },
-            { severity: 'warning', code: 'missing_evidence', message: 'Second warning.' },
-            {
-              severity: 'warning',
-              code: 'missing_expected_file',
-              message: 'Task T004 reached done but test/renewals.test.js was not changed.',
-            },
-            { severity: 'warning', code: 'missing_evidence', message: 'Fourth warning.' },
-            { severity: 'warning', code: 'missing_evidence', message: 'Fifth warning.' },
-          ],
-        },
-        45,
-      );
-
-      expect(rows.map(rowText)).toEqual([
-        'Drift · 5 warnings',
-        '  warning · First warning.',
-        '  warning · Second warning.',
-        '  warning · Task T004 reached done but ',
-        '    test/renewals.test.js was not changed.',
-        '  +2 more findings · click',
-      ]);
-    });
-
-    it('hangs a wrapped headline and disclosure under their own first rows', () => {
-      const rows = driftRows(manyFindings, 28);
-
-      expect(rows.map(rowText)).toEqual([
-        'Drift · failed · 3 errors',
-        '  2 warnings',
-        '  error · First error.',
-        '  error · Second error.',
-        '  error · Third error.',
-        '  +2 more findings ',
-        '    click',
-      ]);
-      for (const row of rows) {
-        expect(getTerminalCellWidth(rowText(row)) + rowLeadingCells(row.kind)).toBeLessThanOrEqual(
-          28,
-        );
-      }
-    });
   });
 
   it('reads a retired approval toggle without a transcript row', () => {

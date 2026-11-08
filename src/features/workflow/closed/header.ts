@@ -1,6 +1,8 @@
 import { CREW_SEAT_IDS, seatLineText, type SeatLineSpan } from '../../../core/crew/identity.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { getHeaderLayout } from '../components/header.js';
+import { recordedCrewSeatLines } from '../display/header-seat-lines.js';
+import { selectRailFormAndLine, type RailForm } from '../layout/chrome-rows.js';
 import type { RunRecord } from '../../../core/sessions/run-record.js';
 import { crewLine } from './copy.js';
 import { recordedCrew, type RecordedCrew } from './view-model.js';
@@ -10,33 +12,43 @@ export interface RecordedCrewHeader {
   seats: RecordedCrew;
   /** That crew, fitted to the room the rail leaves. */
   seatLine: readonly SeatLineSpan[];
-  /** True when that line names all three seats, so the Run block does not name them again. */
+  /** True when the header chose the whole model line, so the Run block does not name the crew again. */
   crewNamed: boolean;
 }
 
 /**
  * The header of a run that names its recorded crew (`recordedCrew`) names that crew, not the crew
- * configured today; null for a run that names today's crew. The room does not depend on the line,
- * so the line is cut to what the painted rail (`railCells`) leaves, and the second pass asks
- * whether the whole crew survived the cut.
+ * configured today; null for a run that names today's crew. The screen owns the rail form, so this
+ * offers only the form the screen paints to the joint selector and takes the line that choice
+ * names: the model words, the tool words, or an elided line beside the same rail. A line that only
+ * names the crew by its tool words still leaves the Run block to state the names.
  */
 export function recordedCrewHeader(
-  input: Readonly<{ record: RunRecord; railCells: number; cols: number }>,
+  input: Readonly<{ record: RunRecord; form: RailForm; railCells: number; cols: number }>,
 ): RecordedCrewHeader | null {
-  const { record, railCells, cols } = input;
+  const { record, form, railCells, cols } = input;
   const seats = recordedCrew(record);
   if (seats === null) return null;
-  const seatLine = crewLine({ seats }, getHeaderLayout({ cols, railCells }).seatRoom);
-  const seatCells = getTerminalCellWidth(seatLineText(seatLine));
-  const crewNamed =
-    getHeaderLayout({ cols, railCells, seatCells }).showSeats && namesEverySeat(seatLine);
-  return { seats, seatLine, crewNamed };
+  const { model: modelLine, tool: toolLine } = recordedCrewSeatLines(seats);
+  const choice = selectRailFormAndLine({
+    cols,
+    railWidths: form === 'B' ? { B: railCells } : { C: railCells },
+    modelLineCells: getTerminalCellWidth(seatLineText(modelLine)),
+    toolLineCells: getTerminalCellWidth(seatLineText(toolLine)),
+  });
+  const { seatRoom } = getHeaderLayout({ cols, railCells });
+  const seatLine =
+    choice.line === 'model'
+      ? modelLine
+      : choice.line === 'tool'
+        ? toolLine
+        : crewLine({ seats }, seatRoom);
+  return { seats, seatLine, crewNamed: choice.line === 'model' && namesEverySeat(seatLine) };
 }
 
 /**
- * Whether a fitted seat line already names the whole crew. A seat the line could not afford leaves
- * it entirely, so this is what decides whether the Run block states the crew: one name, one home.
- * An inherited reviewer ends in `= PLAN`, but its span still belongs to the review seat.
+ * Whether a fitted seat line names the whole crew: a seat the line could not afford leaves it
+ * entirely. An inherited reviewer ends in `= PLAN`, but its span still belongs to the review seat.
  */
 export function namesEverySeat(seatLine: readonly SeatLineSpan[]): boolean {
   return CREW_SEAT_IDS.every((seat) => seatLine.some((span) => span.seat === seat));

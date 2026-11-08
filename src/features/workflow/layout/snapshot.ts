@@ -1,7 +1,11 @@
 import { getRailActiveIndex } from '../../../core/rail-stages.js';
+import { seatLineText } from '../../../core/crew/identity.js';
+import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { readStopMenuRows, stopMenuLayout } from '../stop/options.js';
-import { getProgressRows, selectRailForm } from './chrome-rows.js';
+import { getProgressRows, selectRailFormAndLine } from './chrome-rows.js';
+import { readHeaderSeatLines } from '../hooks/use-header-seat-lines.js';
+import { readRailCells, readRailStages } from '../hooks/use-rail-cells.js';
 import { getRailStageZones, resolveRailFraction, type RailStageZone } from './hit-test.js';
 import {
   getReviewContentLayout,
@@ -128,9 +132,20 @@ export function readRailSnapshot(): RailSnapshot {
   const phase = runViewStore.get().phase;
   const cancelled = lifecycleStore.get().cancelled;
   const fraction = readRailFraction();
-  const form = selectRailForm({ phase, cols });
+  const buildBlockShown = readProgressRows(readWorkflowPromptRows()) > 0;
+  const stages = readRailStages();
+  const lines = readHeaderSeatLines();
+  const { form } = selectRailFormAndLine({
+    cols,
+    railWidths: {
+      B: readRailCells({ form: 'B', buildBlockShown, stages }),
+      C: readRailCells({ form: 'C', buildBlockShown, stages }),
+    },
+    modelLineCells: getTerminalCellWidth(seatLineText(lines.model)),
+    toolLineCells: getTerminalCellWidth(seatLineText(lines.tool)),
+  });
   return {
-    zones: getRailStageZones({ form, phase, cols, fraction, cancelled }),
+    zones: getRailStageZones({ form, phase, cols, fraction, cancelled, stages }),
     activeIndex: getRailActiveIndex(phase),
   };
 }

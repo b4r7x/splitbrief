@@ -4,8 +4,10 @@ import { countNoun } from '../../../utils/pluralize.js';
 import { capitalize } from '../../../utils/capitalize.js';
 
 /** The words every row and halt panel use for the folder that holds the files a put-back replaced. */
+export const REPLACED_FILES_SAVED_LEAD = 'The replaced files are saved in';
+
 export function replacedFilesSavedIn(folder: string): string {
-  return `The replaced files are saved in ${folder}`;
+  return `${REPLACED_FILES_SAVED_LEAD} ${folder}`;
 }
 
 /**

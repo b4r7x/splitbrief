@@ -27,6 +27,8 @@ import {
   getWorkflowSidebarWidth,
 } from '../../features/workflow/layout/rect.js';
 import { MARK_SLOT_CELLS } from '../../components/row-leading.js';
+import { buildApplyConflictRecoveryIssue } from '../../engine/orchestrator/recovery/builders/apply.js';
+import { glyph } from '../../lib/glyphs.js';
 import { WorkflowScreen } from './workflow.js';
 
 const ESC = String.fromCharCode(27);
@@ -308,25 +310,38 @@ describe('the workflow screen showing a closed run', () => {
     ui.unmount();
   });
 
-  it('states the whole crew on exactly one surface, at 160 and at 80', () => {
-    for (const cols of [160, 80]) {
-      showClosedRun({
-        summary: makeSummary({
-          plannerTool: 'codex',
-          implementerTool: 'ollama',
-          implementerModel: 'qwen-small',
-        }),
-      });
+  it('names the crew by model at 160, and by tool over the model run block at 80', () => {
+    const summary = makeSummary({
+      plannerTool: 'codex',
+      implementerTool: 'ollama',
+      implementerModel: 'qwen-small',
+    });
+    const modelLine = `PLAN OpenAI Codex CLI · BUILD Qwen Small · REVIEW ${PLANNER_INHERITANCE.mark}`;
+    const widths = [
+      { cols: 160, header: modelLine, crewRow: null },
+      {
+        cols: 80,
+        header: `PLAN codex · BUILD ollama · REVIEW ${PLANNER_INHERITANCE.mark}`,
+        crewRow: `Crew      ${modelLine}`,
+      },
+    ];
+
+    for (const { cols, header, crewRow } of widths) {
+      showClosedRun({ summary });
 
       const ui = mount(cols, 40);
-      const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      const lines = frame.split('\n');
       const wholeCrew = lines.filter(
         (line) => line.includes('PLAN') && line.includes('BUILD') && line.includes('REVIEW'),
       );
+      const crewRows = withoutTextLead(frame)
+        .split('\n')
+        .filter((line) => line.startsWith('Crew'));
 
-      expect(wholeCrew.length, `at ${cols}`).toBe(1);
-      expect(wholeCrew[0], `at ${cols}`).toContain('Qwen Small');
-      expect(wholeCrew[0], `at ${cols}`).toContain(PLANNER_INHERITANCE.mark);
+      expect(lines[0], `at ${cols}`).toContain(header);
+      expect(wholeCrew.length, `at ${cols}`).toBe(crewRow === null ? 1 : 2);
+      expect(crewRows, `at ${cols}`).toEqual(crewRow === null ? [] : [crewRow]);
 
       ui.unmount();
       resetAllStores();
@@ -362,11 +377,17 @@ describe('the workflow screen showing a closed run', () => {
     });
 
     const ui = mount(60, 18);
-    const lines = withoutTextLead(stripAnsiStyles(ui.lastFrame() ?? '')).split('\n');
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    const header = frame.split('\n')[0] ?? '';
+    const lines = withoutTextLead(frame).split('\n');
     const crewRow = lines.find((line) => line.startsWith('Crew')) ?? '';
 
-    // A codex seat that named no model reads its tool, as the live rail reads it.
-    // The review mark gives way to the seats that name a runner.
+    // The header seats every seat by its tool at this width; the model identities are the run
+    // block's, which sheds the review mark the header already made.
+    expect(header, 'at 60').toContain(
+      `PLAN codex · BUILD ollama · REVIEW ${PLANNER_INHERITANCE.mark}`,
+    );
+    expect(header, 'at 60').not.toContain('Qwen Small');
     expect(crewRow.trim()).toBe('Crew      PLAN OpenAI Codex CLI · BUILD Qwen Small');
 
     ui.unmount();
@@ -578,6 +599,98 @@ describe('the workflow screen showing a closed run', () => {
     expect(frame).not.toContain('clip-planner');
     expect(frame).not.toContain('clip-impl');
     expect(frame).not.toContain('52;c');
+
+    ui.unmount();
+  });
+});
+
+describe('the workflow screen at an Apply halt', () => {
+  function resetScreen(): void {
+    resetAllStores();
+    configStore.__testReset({
+      config: makeConfig({
+        implementer: { kind: 'cli', tool: 'antigravity', model: 'gemini-3.8-flash-high' },
+      }),
+    });
+  }
+
+  beforeEach(resetScreen);
+
+  afterEach(() => {
+    resetAllStores();
+  });
+
+  function showApplyHaltRun(): void {
+    const issue = buildApplyConflictRecoveryIssue({
+      conflicts: [{ path: 'src/cli.js', kind: 'mode' }],
+      workspacePath: '/tmp/run-workspace',
+      createdAt: '2026-10-11T00:00:00.000Z',
+    });
+    routerStore.init({
+      screen: 'workflow',
+      run: makeRunRecord({
+        ref: {
+          projectDir: join(process.env.XDG_STATE_HOME ?? tmpdir(), 'workflow-apply-halt-test'),
+          sessionId: '2026-09-14-apply-halt',
+        },
+        status: {
+          kind: 'open',
+          stop: { kind: 'waiting-for-you', on: { kind: 'halt', issue } },
+          resumeAt: { kind: 'apply' },
+        },
+        hydration: {
+          kind: 'loaded',
+          state: makeWorkflowState({
+            phase: 'complete',
+            reviewStatus: 'passed',
+            workspace: {
+              kind: 'worktree',
+              path: '/tmp/run-workspace',
+              base: { snapshotId: 'workspace-base', head: null },
+            },
+            pendingRecovery: issue,
+          }),
+        },
+        summary: makeSummary({
+          plannerTool: 'claude-code',
+          plannerModel: 'opus',
+          implementerTool: 'claude-code',
+          implementerModel: 'haiku',
+        }),
+      }),
+      execution: { kind: 'at-rest' },
+    });
+  }
+
+  it("selects the Apply rail for the recorded crew rather than today's crew", () => {
+    for (const { cols, rows } of [
+      { cols: 80, rows: 24 },
+      { cols: 60, rows: 18 },
+    ]) {
+      showApplyHaltRun();
+      const ui = mount(cols, rows);
+      const header = stripAnsiStyles(ui.lastFrame() ?? '').split('\n')[0] ?? '';
+
+      expect(header, `at ${cols}`).toContain(`${glyph('statusFailed')} Apply`);
+      expect(header, `at ${cols}`).toContain('PLAN claude · BUILD claude · REVIEW = PLAN');
+      expect(header, `at ${cols}`).not.toContain('Plan');
+      expect(header, `at ${cols}`).not.toContain('Build');
+      expect(header, `at ${cols}`).not.toContain('Opus');
+      expect(header, `at ${cols}`).not.toContain('Haiku');
+
+      ui.unmount();
+      resetScreen();
+    }
+
+    showApplyHaltRun();
+    const ui = mount(120, 40);
+    const header = stripAnsiStyles(ui.lastFrame() ?? '').split('\n')[0] ?? '';
+
+    expect(header).toContain(`${glyph('stageDone')} Plan`);
+    expect(header).toContain(`${glyph('stageDone')} Build`);
+    expect(header).toContain(`${glyph('statusFailed')} Apply`);
+    expect(header).toContain('PLAN Opus 5.5 · BUILD Haiku 5.5 · REVIEW = PLAN');
+    expect(header).not.toContain('claude ·');
 
     ui.unmount();
   });

@@ -36,6 +36,7 @@ import {
 import { measureRailCells, Rail, RailFormB, railFormCText } from './rail.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { readRailSnapshot } from '../layout/snapshot.js';
+import { taskId } from '../../../core/schemas/task.js';
 
 const STAGES = ['Plan', 'Build', 'Review'];
 const originalColorLevel = chalk.level;
@@ -503,6 +504,45 @@ describe('Rail — completion with a halt open', () => {
         buildBlockShown: false,
       }),
     ).toBe(getTerminalCellWidth(frame.trim()));
+    ui.unmount();
+    setRunHalt(null);
+  });
+});
+
+describe('Rail — a pending recovery on a cancelled run', () => {
+  it.each(['B', 'C'] as const)('measures the failed stage it paints in form %s', async (form) => {
+    terminalSizeStore.__testReset({ cols: 44, rows: 24, isSmall: true });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({
+      status: 'cancelled',
+      cancelled: true,
+      startedAt: 0,
+      endedAt: 5_000,
+      durationMs: 5_000,
+      reason: 'user_cancelled',
+    });
+    seedBriefs({ currentTask: 3, totalTasks: 7 });
+    const recoveryAt = { kind: 'brief', taskId: taskId('T001'), attempt: 1 } as const;
+    setRunHalt({ issue: makeRecoveryIssue(), at: recoveryAt });
+    const ui = renderRail(form);
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '').trim();
+
+    expect(frame).toContain(`${glyph('statusFailed')} Build`);
+    expect(frame).not.toContain(RAIL_FORM_C_CANCELLED_SUFFIX.trim());
+    expect(
+      measureRailCells({
+        phase: 'implementing',
+        status: 'cancelled',
+        cancelled: true,
+        form,
+        cols: 44,
+        tasks: runViewStore.get().briefs,
+        events: eventsStore.get().events,
+        recoveryAt,
+        buildBlockShown: false,
+      }),
+    ).toBe(getTerminalCellWidth(frame));
     ui.unmount();
     setRunHalt(null);
   });

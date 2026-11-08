@@ -1,18 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
-import type { WorkflowMode } from '../../core/schemas/enums.js';
+import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import type { Phase, WorkflowMode } from '../../core/schemas/enums.js';
 import { taskId } from '../../core/schemas/task.js';
 import type { RunStatus, StopReason } from '../../core/sessions/run-status.js';
+import type { RunRecord } from '../../core/sessions/run-record.js';
+import type { RouteData } from '../../stores/navigation/router.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import type { ReviewPacketSummary } from '../../core/schemas/summary.js';
-import { getRailStages } from '../../core/rail-stages.js';
+import { getRailStages, type RailStageState } from '../../core/rail-stages.js';
 import {
   applyRunning,
   atRestBriefMark,
   atRestComposer,
   atRestRailStages,
+  displayedCrewRecord,
+  displayedRailStages,
   recordPhase,
 } from './at-rest.js';
 import { openRunBylineParts } from './closed/byline.js';
@@ -557,5 +563,88 @@ describe('recordPhase', () => {
     expect(recordPhase(makeRunRecord({ hydration: { kind: 'loaded', state: accepted } }))).toBe(
       'complete',
     );
+  });
+});
+
+function localRoute(run: RunRecord): RouteData {
+  return {
+    screen: 'workflow',
+    run,
+    execution: {
+      kind: 'local',
+      prepared: makePreparedExecution({
+        projectDir: '/tmp/splitbrief-crew-record',
+        sessionId: 'crew-record-session',
+        feature: 'crew record',
+        config: makeConfig(),
+        gates: () => [],
+      }),
+    },
+  };
+}
+
+describe('displayedCrewRecord', () => {
+  const run = makeRunRecord();
+  const local = localRoute(run);
+
+  it.each<[string, string, RouteData, Phase, RunRecord | undefined]>([
+    [
+      'a run at rest',
+      'its record',
+      { screen: 'workflow', run, execution: { kind: 'at-rest' } },
+      'implementing',
+      run,
+    ],
+    ['a local run still at Apply', 'its record', local, 'complete', run],
+    ['a local run that builds again', 'no record', local, 'implementing', undefined],
+    ['the home screen', 'no record', { screen: 'home' }, 'complete', undefined],
+  ])('gives %s %s to name the crew from', (_label, _gives, route, phase, record) => {
+    expect(displayedCrewRecord(route, phase)).toBe(record);
+  });
+});
+
+describe('displayedRailStages', () => {
+  const issue = makeRecoveryIssue();
+  const stop = { kind: 'waiting-for-you', on: { kind: 'halt', issue } } satisfies StopReason;
+  const ready = workspaceRecord({ kind: 'ready-to-apply', override: false });
+  const atApply = workspaceRecord({ kind: 'open', stop, resumeAt: { kind: 'apply' } });
+  const atBrief = workspaceRecord(openWith(stop));
+
+  it.each<
+    [string, RouteData, Parameters<typeof displayedRailStages>[1], RailStageState[] | undefined]
+  >([
+    [
+      'a run at rest',
+      { screen: 'workflow', run: ready, execution: { kind: 'at-rest' } },
+      { restored: true, halt: null },
+      atRestRailStages(ready),
+    ],
+    [
+      'a restored local run that waits to re-enter Apply',
+      localRoute(atApply),
+      { restored: true, halt: null },
+      atRestRailStages(atApply),
+    ],
+    [
+      'a restored local run with a halt on the view',
+      localRoute(atApply),
+      { restored: true, halt: { issue, at: { kind: 'apply' } } },
+      undefined,
+    ],
+    [
+      'a local run the engine runs',
+      localRoute(atApply),
+      { restored: undefined, halt: null },
+      undefined,
+    ],
+    [
+      'a restored local run that resumes at a brief',
+      localRoute(atBrief),
+      { restored: true, halt: null },
+      undefined,
+    ],
+    ['the home screen', { screen: 'home' }, { restored: true, halt: null }, undefined],
+  ])('gives %s the stages the header rail paints', (_label, route, live, expected) => {
+    expect(displayedRailStages(route, live)).toEqual(expected);
   });
 });

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import { replacedFilesSavedIn } from '../../core/runtime/commands/messages.js';
 import { stateTone } from '../../core/theme/state-tone.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { DEFAULT_REDACTION_MARKER } from '../../utils/redact.js';
@@ -40,6 +41,21 @@ const trailingControlSummary = recoveryPromptSummaryRows(
   }),
   20,
 );
+
+const SAVED_FOLD_WIDTH = 56;
+const SAVED_FOLD_WRAPPED_WIDTH = 74;
+const SAVED_FOLDER = '.splitbrief/sessions/s1/reverted/2020-01-01';
+const SAVED_FOLD_EVIDENCE =
+  'Repository changed under T901: the branch moved while the implementer ran';
+const SAVED_FOLD_PUT_BACK = `SPLITBRIEF put back what this attempt changed in your checkout. ${replacedFilesSavedIn(SAVED_FOLDER)}.`;
+const SAVED_FOLD_PROMPT = [
+  'Needs you · Repository changed under T901',
+  '',
+  'Task T901 · Project deterministic workflow activity',
+  'Files src/engine/task.ts',
+  SAVED_FOLD_EVIDENCE,
+  SAVED_FOLD_PUT_BACK,
+].join('\n');
 
 function frameRows(frame: string): string[] {
   return stripAnsiStyles(frame).split('\n');
@@ -461,6 +477,71 @@ describe('promptBodyRows', () => {
     const rendered = renderedPromptBodyRows(prompt, 4);
     expect(rendered.some((row) => row.includes('… 2 more lines'))).toBe(true);
     expect(rendered.some((row) => row.includes('first fact'))).toBe(true);
+  });
+
+  it.each<[number, string]>([
+    [1, '… saved folder and 4 more lines'],
+    [2, '  … saved folder and 4 more lines'],
+    [5, '  … saved folder and 2 more lines'],
+  ])('names the saved folder in the fold at height %i', (height, mark) => {
+    const clipped = clipPromptBodyRows(promptBodyRows(SAVED_FOLD_PROMPT, SAVED_FOLD_WIDTH), height);
+
+    if (height === 1) {
+      expect(clipped).toEqual([expect.objectContaining({ kind: 'headline', mark })]);
+      return;
+    }
+    expect(clipped.filter((row) => row.kind === 'facts-line').at(-1)).toEqual({
+      kind: 'facts-line',
+      text: mark,
+    });
+  });
+
+  it.each<[number, string]>([
+    [1, '… saved folder and 4 more lines'],
+    [2, '  … saved folder and 4 more lines'],
+  ])('names the saved folder when a wrap splits its lead at height %i', (height, mark) => {
+    const rows = promptBodyRows(SAVED_FOLD_PROMPT, SAVED_FOLD_WRAPPED_WIDTH);
+    const facts = rows.flatMap((row) => (row.kind === 'facts-line' ? [row.text] : []));
+    expect(
+      facts.findIndex(
+        (text, index) =>
+          text.trimEnd().endsWith('The') &&
+          (facts[index + 1] ?? '').trimStart().startsWith('replaced files are saved in'),
+      ),
+    ).toBeGreaterThan(-1);
+
+    const clipped = clipPromptBodyRows(rows, height);
+    if (height === 1) {
+      expect(clipped).toEqual([expect.objectContaining({ kind: 'headline', mark })]);
+      return;
+    }
+    expect(clipped.filter((row) => row.kind === 'facts-line').at(-1)).toEqual({
+      kind: 'facts-line',
+      text: mark,
+    });
+  });
+
+  it('names only the saved folder when it is all the fold hides', () => {
+    const rows = promptBodyRows(SAVED_FOLD_PROMPT, SAVED_FOLD_WIDTH);
+    expect(rows.filter((row) => row.kind === 'facts-line')).toHaveLength(7);
+
+    expect(clipPromptBodyRows(rows, 6).at(-1)).toEqual({
+      kind: 'facts-line',
+      text: '  … saved folder',
+    });
+  });
+
+  it('counts the hidden rows when the saved folder stays in view', () => {
+    const prompt = [
+      'Needs you · Repository changed under T901',
+      '',
+      SAVED_FOLD_PUT_BACK,
+      'Task T901 · Project deterministic workflow activity',
+      'Files src/engine/task.ts',
+    ].join('\n');
+    const clipped = clipPromptBodyRows(promptBodyRows(prompt, SAVED_FOLD_WIDTH), 5);
+
+    expect(clipped.at(-1)).toEqual({ kind: 'facts-line', text: '  … 2 more lines' });
   });
 
   it('marks the bottom rows a summary loses, and keeps its headline', () => {

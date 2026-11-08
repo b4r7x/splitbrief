@@ -45,8 +45,9 @@ function warmDiscovery(): void {
 async function renderBlock(
   rows: number,
   width = WIDTH,
+  cols = 120,
 ): Promise<{ lines: string[]; unmount: () => void }> {
-  const ui = renderFeature(<HomeSeatBlock rows={rows} width={width} />, { cols: 120, rows });
+  const ui = renderFeature(<HomeSeatBlock rows={rows} width={width} />, { cols, rows });
   await tick(20);
   const lines = stripAnsiStyles(ui.lastFrame() ?? '')
     .split('\n')
@@ -215,13 +216,32 @@ describe('HomeSeatBlock', () => {
       }),
     );
 
-    const { lines, unmount } = await renderBlock(18, 100);
+    // The whole model line takes 130 cells; the tool line answers every narrower width.
+    const { lines, unmount } = await renderBlock(18, 140, 140);
 
     expect(lines[0]?.trim()).toMatch(
       /^PLAN DeepSeek V4\.1 Flash via opencode-go · BUILD DeepSeek V4\.1 Flash via ollama-cloud\b/,
     );
-    expect(getTerminalCellWidth(lines[0] ?? '')).toBeLessThanOrEqual(100);
+    expect(getTerminalCellWidth(lines[0] ?? '')).toBeLessThanOrEqual(140);
     unmount();
+  });
+
+  it('names explicit-model seats by their tool when the model names do not fit', async () => {
+    seed(
+      makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code', model: 'opus' },
+        implementer: { kind: 'cli', tool: 'claude-code', model: 'haiku' },
+        reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' },
+      }),
+    );
+
+    const narrow = await renderBlock(18, 50);
+    expect(narrow.lines[0]?.trim()).toBe('PLAN claude · BUILD claude · REVIEW codex');
+    narrow.unmount();
+
+    const wide = await renderBlock(18, 60);
+    expect(wide.lines[0]?.trim()).toBe('PLAN Opus 5.5 · BUILD Haiku 5.5 · REVIEW GPT-5 Codex');
+    wide.unmount();
   });
 
   it('names the tool of each automatic seat on the collapsed line', async () => {

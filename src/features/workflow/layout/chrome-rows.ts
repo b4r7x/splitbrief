@@ -4,7 +4,7 @@ import type { Phase } from '../../../core/schemas/enums.js';
 import { glyph, type GlyphTier, resolveGlyphTier } from '../../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { ROW_LEADING } from '../../../components/row-leading.js';
-import { getRailStages, type RailStage, type RailStageState } from '../../../core/rail-stages.js';
+import type { RailStage, RailStageState } from '../../../core/rail-stages.js';
 
 // The workflow screen's one left line: the column the transcript's marks land on past its own
 // lead, where the rail marker, every box border and the rows flanking the composer start too. The
@@ -145,17 +145,63 @@ export function chooseFormBVariant(
   return { short: true };
 }
 
-// The thinnest three-stage line — short labels, fixed marker slots, semantic connectors. Below this
-// the rail drops to Form C, so the threshold is computed from the same primitives the rail renders.
-function getRailFormBMinWidth(phase: Phase, tier: GlyphTier = resolveGlyphTier()): number {
-  return measureFormB(getRailStages(phase), { short: true }, tier);
+/** The gap the header keeps between the rail and the seat line pinned right of it. */
+export const HEADER_RAIL_SEAT_GAP = 2;
+
+/** Which crew line the header paints beside the rail: the model names, the tool words, or neither. */
+export type HeaderLineKind = 'model' | 'tool' | 'elided';
+
+export interface RailFormChoice {
+  form: RailForm;
+  line: HeaderLineKind;
 }
 
-export interface RailFormInput {
-  phase: Phase;
+export interface RailFormChoiceInput {
   cols: number;
+  /**
+   * The cells each rail form the caller can paint takes; a form left out is not a candidate.
+   * The one-stage rail's painted width follows the stage and fraction it shows, so the caller
+   * measures the form it would paint instead of letting the selector guess it.
+   */
+  railWidths: Readonly<Partial<Record<RailForm, number>>>;
+  /** The cells the whole crew line takes when every seat is named by its model. */
+  modelLineCells: number;
+  /** The cells the whole crew line takes when every seat is named by its tool word. */
+  toolLineCells: number;
 }
 
-export function selectRailForm(input: RailFormInput): RailForm {
-  return getChromeContentWidth(input.cols) < getRailFormBMinWidth(input.phase) ? 'C' : 'B';
+/**
+ * The rail form and the crew line, chosen together. A narrow terminal names the tools first,
+ * because the tool words are the shorter line; a wide one keeps the model names while they fit.
+ * A candidate counts only when its whole line fits the room the rail leaves, and only when no
+ * form can seat a whole line does the header elide seats beside the form the width allows.
+ */
+export function selectRailFormAndLine(input: RailFormChoiceInput): RailFormChoice {
+  const contentWidth = getChromeContentWidth(input.cols);
+  const candidates: readonly Readonly<{ form: RailForm; line: 'model' | 'tool' }>[] =
+    input.cols <= 80
+      ? [
+          { form: 'B', line: 'tool' },
+          { form: 'C', line: 'tool' },
+        ]
+      : [
+          { form: 'B', line: 'model' },
+          { form: 'B', line: 'tool' },
+          { form: 'C', line: 'tool' },
+        ];
+  for (const candidate of candidates) {
+    const railWidth = input.railWidths[candidate.form];
+    if (railWidth === undefined) continue;
+    const lineCells = candidate.line === 'model' ? input.modelLineCells : input.toolLineCells;
+    if (lineCells === 0) continue;
+    const seatRoom = Math.max(0, contentWidth - railWidth - HEADER_RAIL_SEAT_GAP);
+    if (lineCells <= seatRoom) return { form: candidate.form, line: candidate.line };
+  }
+  const form: RailForm =
+    input.railWidths.B !== undefined && contentWidth >= input.railWidths.B
+      ? 'B'
+      : input.railWidths.C !== undefined
+        ? 'C'
+        : 'B';
+  return { form, line: 'elided' };
 }

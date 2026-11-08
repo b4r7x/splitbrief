@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { MAX_SUMMARY_LENGTH, summarizeText } from './issue.js';
+import { MAX_SUMMARY_LENGTH, createRecoveryIssue, summarizeText } from './issue.js';
 import { buildRetryExhaustedRecoveryIssue } from './task.js';
 
 describe('summarizeText', () => {
@@ -63,6 +63,26 @@ describe('summarizeText', () => {
       expect(summarizeText(input)).toBe(expected);
     },
   );
+});
+
+describe('createRecoveryIssue', () => {
+  it('cuts a long detail that the halt does not ask the user to read', () => {
+    const detail = `Last error: ${'x'.repeat(2000 - 'Last error: '.length)}`;
+    const issue = createRecoveryIssue({
+      reason: 'retry-exhausted',
+      phase: 'escalating',
+      files: [],
+      affectedTaskIds: [],
+      message: 'T012 failed',
+      details: [detail],
+      availableActions: ['skip-current-task', 'end-run'],
+      recommendedAction: 'skip-current-task',
+      createdAt: '2026-04-28T12:00:00.000Z',
+    });
+
+    expect(issue.details[0]).toHaveLength(MAX_SUMMARY_LENGTH);
+    expect(issue.details[0]?.endsWith('…')).toBe(true);
+  });
 });
 
 describe('a hand-back quote', () => {

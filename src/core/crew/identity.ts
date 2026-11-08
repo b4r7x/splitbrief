@@ -298,6 +298,25 @@ export function formatShortSeatIdentity(input: {
   return [...rest, ...(provider === undefined ? [] : [provider])].join(' ');
 }
 
+/**
+ * The tool a seat runs on, in the one word a narrow crew line has room for: a catalogued CLI
+ * names its own command, an uncatalogued one keeps the word it was configured under, an API
+ * seat names its provider, and a command runner names its kind.
+ */
+export function formatSeatToolWord(input: {
+  seat: RunnerConfig | SeatIds;
+  kind?: RunnerKind | undefined;
+}): string {
+  const ids = idsOf(input.seat);
+  const kind = input.kind ?? runnerKindOf(input.seat);
+  if (kind === 'shell') return 'shell';
+  if (kind === 'agent') return 'agent';
+  const tool = cliVocabularyTool(ids.tool, kind);
+  return sanitizeTerminalDisplayText(
+    tool === undefined ? ids.tool : CLI_TOOL_CATALOG[tool].command,
+  );
+}
+
 type SeatCandidateAxes = Readonly<{
   tool: string;
   model?: string | undefined;
@@ -429,18 +448,35 @@ function elideCollapsedSeats(
   return namesSomeone ? collapsedSeatLine(seats, elided) : [];
 }
 
+/** Every seat on one line, with whatever note each carries. */
+function wholeSeatLine(seats: readonly CollapsedSeat[]): SeatLineSpan[] {
+  return collapsedSeatLine(
+    seats.map((seat) => ({ ...seat, span: collapsedSeatText(seat) })),
+    new Set(),
+  );
+}
+
 /**
- * A note outranks the names of the seats it does not belong to: it says what is
- * happening right now, and the elision rule already spends those names to buy
- * room. What it never outranks is its own seat's name — a clock beside `BUILD …`
- * names no seat — so a budget that cannot seat the noted name drops every note
- * and lays the plain line out. The halted seat stays protected while the plain line names a seat.
+ * The line a budget can pay for. The crew's own names go first; when they do not fit, the tool
+ * line can still name every seat, and only when neither fits does the line give a seat up.
+ * A note rides its seat on the tool line as it does on the named one.
+ *
+ * On the elided line a note outranks the names of the seats it does not belong to: it says what
+ * is happening right now, and the elision rule already spends those names to buy room. What it
+ * never outranks is its own seat's name — a clock beside `BUILD …` names no seat — so a budget
+ * that cannot seat the noted name drops every note and lays the plain line out. The halted seat
+ * stays protected while the plain line names a seat.
  */
 function fitCollapsedSeats(
   seats: readonly CollapsedSeat[],
+  toolSeats: readonly CollapsedSeat[],
   budget: number,
   haltedSeat?: CrewSeatId,
 ): SeatLineSpan[] {
+  const modelled = wholeSeatLine(seats);
+  if (getTerminalCellWidth(seatLineText(modelled)) <= budget) return modelled;
+  const tools = wholeSeatLine(toolSeats);
+  if (getTerminalCellWidth(seatLineText(tools)) <= budget) return tools;
   const notedSeats = seats.map((seat) => ({ ...seat, span: collapsedSeatText(seat) }));
   const plainSeats = notedSeats.map((seat) => {
     if (seat.note === undefined) return seat;
@@ -466,6 +502,11 @@ export function formatCollapsedSeatSpans(
     haltedSeat?: CrewSeatId | undefined;
     /** What each seat is carrying right now, e.g. the reset clock of a quota-blocked seat. */
     notes?: Partial<Record<CrewSeatId, string>> | undefined;
+    /**
+     * The line to lay out: the model names, or every seat by the tool word a narrow header has
+     * room for. Left out, the line falls back to the tools before it elides a seat.
+     */
+    line?: 'model' | 'tool' | undefined;
     displayNames?:
       | Readonly<{
           planner?: string | undefined;
@@ -480,13 +521,45 @@ export function formatCollapsedSeatSpans(
   const plannerName = input.displayNames?.planner ?? input.displayNames?.plan;
   const buildName = input.displayNames?.build;
   const reviewerName = input.displayNames?.reviewer ?? input.displayNames?.review ?? plannerName;
+  const planWord = formatShortSeatIdentity({ seat: input.planner, displayName: plannerName });
+  const buildWord = formatShortSeatIdentity({ seat: input.build, displayName: buildName });
+  const reviewWord =
+    input.reviewer === undefined
+      ? null
+      : formatShortSeatIdentity({ seat: input.reviewer, displayName: reviewerName });
+  if (input.line === 'tool') {
+    return formatCollapsedSeatSpansFromIdentities({
+      plan: formatSeatToolWord({ seat: input.planner }),
+      build: formatSeatToolWord({ seat: input.build }),
+      review: input.reviewer === undefined ? null : formatSeatToolWord({ seat: input.reviewer }),
+      budget: input.budget,
+      haltedSeat: input.haltedSeat,
+      notes: input.notes,
+    });
+  }
+  if (input.line === 'model') {
+    return formatCollapsedSeatSpansFromIdentities({
+      plan: planWord,
+      build: buildWord,
+      review: reviewWord,
+      budget: input.budget,
+      haltedSeat: input.haltedSeat,
+      notes: input.notes,
+    });
+  }
+  const plannerTool = formatSeatToolWord({ seat: input.planner });
+  const buildTool = formatSeatToolWord({ seat: input.build });
+  const reviewerTool =
+    input.reviewer === undefined ? undefined : formatSeatToolWord({ seat: input.reviewer });
   return formatCollapsedSeatSpansFromIdentities({
-    plan: formatShortSeatIdentity({ seat: input.planner, displayName: plannerName }),
-    build: formatShortSeatIdentity({ seat: input.build, displayName: buildName }),
-    review:
-      input.reviewer === undefined
-        ? null
-        : formatShortSeatIdentity({ seat: input.reviewer, displayName: reviewerName }),
+    plan: planWord,
+    build: buildWord,
+    review: reviewWord,
+    tools: {
+      plan: plannerTool,
+      build: buildTool,
+      ...(reviewerTool !== undefined && { review: reviewerTool }),
+    },
     budget: input.budget,
     haltedSeat: input.haltedSeat,
     notes: input.notes,
@@ -496,13 +569,16 @@ export function formatCollapsedSeatSpans(
 /**
  * The layout half: three identities already resolved, laid out to a budget. A finished run has
  * names on record but no runner blocks, so this is the seam the summary header enters through.
- * A `null` review seat is the planner's, and says so with the inheritance mark.
+ * A `null` review seat is the planner's, and says so with the inheritance mark. `tools` carries
+ * the command each seat takes on the tool line, which the line falls back to when the names do
+ * not fit; a seat without one keeps its identity.
  */
 export function formatCollapsedSeatSpansFromIdentities(
   input: Readonly<{
     plan: string;
     build: string;
     review: string | null;
+    tools?: Partial<Record<CrewSeatId, string>> | undefined;
     budget?: number | undefined;
     haltedSeat?: CrewSeatId | undefined;
     notes?: Partial<Record<CrewSeatId, string>> | undefined;
@@ -530,7 +606,16 @@ export function formatCollapsedSeatSpansFromIdentities(
       ...(notes?.review !== undefined && { note: notes.review }),
     },
   ];
-  return fitCollapsedSeats(seats, input.budget ?? Number.POSITIVE_INFINITY, input.haltedSeat);
+  const toolSeats = seats.map((seat) => {
+    const tool = input.tools?.[seat.id];
+    return tool === undefined ? seat : { ...seat, identity: tool };
+  });
+  return fitCollapsedSeats(
+    seats,
+    toolSeats,
+    input.budget ?? Number.POSITIVE_INFINITY,
+    input.haltedSeat,
+  );
 }
 
 /**

@@ -39,8 +39,6 @@ import {
   resolveRailFraction,
 } from '../layout/hit-test.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
-import { controlsStore } from '../../../stores/ui/controls.js';
-import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { deriveWorkflowDisplay } from '../display/workflow-status.js';
 
 // Done and active share the filled mark, so the three marks a live rail paints are one family of
@@ -183,6 +181,32 @@ function completePhaseStages(
   return null;
 }
 
+export function resolveRailStages(input: {
+  phase: Phase;
+  status: LifecycleState['status'];
+  cancelled: boolean;
+  pendingRecovery: boolean;
+  events: readonly EngineEvent[];
+  recoveryAt: StepRef | null;
+  stages?: readonly RailStageState[] | undefined;
+}): readonly RailStageState[] {
+  const { halted } = deriveWorkflowDisplay({
+    status: input.status,
+    cancelled: input.cancelled,
+    pendingQuestion: false,
+    pendingApproval: false,
+    pendingRecovery: input.pendingRecovery,
+  });
+  return (
+    input.stages ??
+    completePhaseStages(input.phase, input.status, input.events, input.recoveryAt) ??
+    getRailStages(input.phase, {
+      cancelled: input.cancelled,
+      ...(halted === undefined ? {} : { halted }),
+    })
+  );
+}
+
 // The rail's actually-rendered width, so the header budgets the seat line against what the rail
 // paints — not the full three-stage pipeline. A narrow terminal collapses to Form C, far shorter
 // than the Form-B measure.
@@ -200,16 +224,16 @@ export function measureRailCells(input: {
   /** Stages the caller already knows; a run at rest wears the mark its own status earned. */
   stages?: readonly RailStageState[] | undefined;
 }): number {
-  const completeStages = completePhaseStages(
-    input.phase,
-    input.status,
-    input.events,
-    input.recoveryAt,
-  );
   const stages = [
-    ...(input.stages ??
-      completeStages ??
-      getRailStages(input.phase, { cancelled: input.cancelled })),
+    ...resolveRailStages({
+      phase: input.phase,
+      status: input.status,
+      cancelled: input.cancelled,
+      pendingRecovery: input.recoveryAt !== null,
+      events: input.events,
+      recoveryAt: input.recoveryAt,
+      ...(input.stages !== undefined && { stages: input.stages }),
+    }),
   ];
   if (input.form === 'C') {
     const fraction = resolveRailFraction({
@@ -234,37 +258,25 @@ export function Rail({
   /** A run at rest paints the stages its record names, not the ones a live phase implies. */
   stages?: readonly RailStageState[] | undefined;
 }) {
-  const [{ cols }, lifecycle, eventsState, controls, approval, { phase, briefs, halt }] = useStores(
+  const [{ cols }, lifecycle, eventsState, { phase, briefs, halt }] = useStores(
     terminalSizeStore,
     lifecycleStore,
     eventsStore,
-    controlsStore,
-    approvalPromptStore,
     runViewStore,
   );
   const cancelled = lifecycle.cancelled;
   const resolved: RailForm = form ?? 'B';
   const contentWidth = getChromeContentWidth(cols);
-  const display = deriveWorkflowDisplay({
-    status: lifecycle.status,
-    cancelled,
-    pendingQuestion: controls.inputMode !== 'normal',
-    pendingRecovery: halt !== null,
-    pendingApproval: approval.status === 'pending',
-  });
-  const completeStages = completePhaseStages(
-    phase,
-    lifecycle.status,
-    eventsState.events,
-    halt?.at ?? null,
-  );
   const stages = [
-    ...(givenStages ??
-      completeStages ??
-      getRailStages(phase, {
-        cancelled,
-        ...(display.halted === undefined ? {} : { halted: display.halted }),
-      })),
+    ...resolveRailStages({
+      phase,
+      status: lifecycle.status,
+      cancelled,
+      pendingRecovery: halt !== null,
+      events: eventsState.events,
+      recoveryAt: halt?.at ?? null,
+      ...(givenStages !== undefined && { stages: givenStages }),
+    }),
   ];
   const fraction = resolveRailFraction({
     phase,

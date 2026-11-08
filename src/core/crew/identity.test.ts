@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 import { ELLIPSIS, getTerminalCellWidth } from '../../utils/display-text.js';
+import { resolveImplementerProfiles } from '../config/accessors/implementer-profiles.js';
+import { configuredReviewerRunner } from '../config/accessors/reviewer-runner.js';
 import type { RunnerConfig } from '../config/accessors/runner-config.js';
 import { resolveTheme } from '../theme/resolve.js';
 import {
@@ -9,6 +12,7 @@ import {
   formatSeatCandidateIdentity,
   formatSeatChangeIdentities,
   formatSeatIdentity,
+  formatSeatToolWord,
   formatShortSeatIdentity,
   isSeatIdentity,
   PLANNER_INHERITANCE,
@@ -801,7 +805,7 @@ describe('formatShortSeatIdentity: a seat whose model is automatic', () => {
     expect(formatShortSeatIdentity({ seat: { tool: 'my-tool' } })).toBe('my-tool');
   });
 
-  it('lays three automatic seats out by tool, and drops a whole tool name that does not fit', () => {
+  it('lays three automatic seats out by tool, then by command when they do not fit', () => {
     const seats = {
       planner: { kind: 'cli', tool: 'claude-code' },
       build: { kind: 'shell', command: './build.sh' },
@@ -812,7 +816,50 @@ describe('formatShortSeatIdentity: a seat whose model is automatic', () => {
       'PLAN Claude Code CLI · BUILD Custom Shell · REVIEW OpenAI Codex CLI',
     );
     expect(seatLineText(formatCollapsedSeatSpans({ ...seats, budget: 50 }))).toBe(
-      'PLAN Claude Code CLI · BUILD Custom Shell',
+      'PLAN claude · BUILD shell · REVIEW codex',
+    );
+  });
+});
+
+describe('formatSeatToolWord', () => {
+  it.each([
+    { name: 'claude-code', seat: { kind: 'cli', tool: 'claude-code' }, word: 'claude' },
+    { name: 'codex', seat: { kind: 'cli', tool: 'codex' }, word: 'codex' },
+    { name: 'opencode', seat: { kind: 'cli', tool: 'opencode' }, word: 'opencode' },
+    { name: 'cursor', seat: { kind: 'cli', tool: 'cursor' }, word: 'cursor-agent' },
+    { name: 'antigravity', seat: { kind: 'cli', tool: 'antigravity' }, word: 'agy' },
+    { name: 'kilo-code', seat: { kind: 'cli', tool: 'kilo-code' }, word: 'kilo' },
+    { name: 'command-code', seat: { kind: 'cli', tool: 'command-code' }, word: 'cmd' },
+    { name: 'copilot', seat: { kind: 'cli', tool: 'copilot' }, word: 'copilot' },
+  ] satisfies ReadonlyArray<{ name: string; seat: RunnerConfig; word: string }>)(
+    'names the command a $name seat starts',
+    ({ seat, word }) => {
+      expect(formatSeatToolWord({ seat })).toBe(word);
+    },
+  );
+
+  it('keeps an uncatalogued tool word literal', () => {
+    expect(formatSeatToolWord({ seat: { kind: 'cli', tool: 'my-tool' } })).toBe('my-tool');
+    expect(formatSeatToolWord({ seat: { tool: 'retired-tool', kind: 'cli' } })).toBe(
+      'retired-tool',
+    );
+  });
+
+  it('names an API seat by its provider and a command runner by its kind', () => {
+    expect(formatSeatToolWord({ seat: build })).toBe('ollama');
+    expect(formatSeatToolWord({ seat: { tool: 'opencode', model: 'gpt-5' }, kind: 'api' })).toBe(
+      'opencode',
+    );
+    expect(formatSeatToolWord({ seat: { kind: 'shell', command: './build.sh' } })).toBe('shell');
+    expect(
+      formatSeatToolWord({ seat: { kind: 'agent', command: './agent.sh', model: 'auto' } }),
+    ).toBe('agent');
+  });
+
+  it('reads a recorded identity through the kind the caller recovered for it', () => {
+    expect(formatSeatToolWord({ seat: { tool: 'claude-code', model: 'opus' } })).toBe('claude');
+    expect(formatSeatToolWord({ seat: { tool: 'claude-code', model: 'opus' }, kind: 'api' })).toBe(
+      'claude-code',
     );
   });
 });
@@ -867,6 +914,20 @@ describe('formatCollapsedSeatSpans', () => {
     );
   });
 
+  it('names every seat by its tool when the models do not fit', () => {
+    const config = makeConfig();
+    const line = seatLineText(
+      formatCollapsedSeatSpans({
+        planner: config.planner,
+        build: resolveImplementerProfiles(config).defaultProfile.config,
+        reviewer: configuredReviewerRunner(config),
+        budget: 47,
+      }),
+    );
+
+    expect(line).toBe(`PLAN claude · BUILD ollama · REVIEW ${PLANNER_INHERITANCE.mark}`);
+  });
+
   it('names a reviewer that has its own setup', () => {
     const reviewer: RunnerConfig = { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' };
 
@@ -914,18 +975,20 @@ describe('formatCollapsedSeatSpans', () => {
 
   it('spends another seat name before the noted seat when the note crowds the line', () => {
     const notes = { build: 'resets 17:00' };
+    // One cell under the complete tool line with the note, the note still has to crowd the
+    // named line.
+    const budget =
+      getTerminalCellWidth(
+        seatLineText(
+          formatCollapsedSeatSpans({ planner, build, reviewer: undefined, notes, line: 'tool' }),
+        ),
+      ) - 1;
     const line = seatLineText(
-      formatCollapsedSeatSpans({
-        planner,
-        build,
-        reviewer: undefined,
-        notes,
-        budget: 60,
-      }),
+      formatCollapsedSeatSpans({ planner, build, reviewer: undefined, notes, budget }),
     );
 
     expect(line).toBe('PLAN Sonnet 4 · BUILD Qwen2.5 Coder 7B (resets 17:00)');
-    expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(60);
+    expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(budget);
     expect(line).not.toContain(ELLIPSIS);
   });
 
@@ -946,9 +1009,12 @@ describe('formatCollapsedSeatSpans', () => {
 
   it('gives up one whole seat rather than cutting a model name in half', () => {
     const reviewer: RunnerConfig = { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' };
+    // The complete tool line answers every wider budget; one cell under it the named line
+    // keeps two seats whole.
     const budget =
-      getTerminalCellWidth(seatLineText(formatCollapsedSeatSpans({ planner, build, reviewer }))) -
-      4;
+      getTerminalCellWidth(
+        seatLineText(formatCollapsedSeatSpans({ planner, build, reviewer, line: 'tool' })),
+      ) - 1;
     const line = seatLineText(formatCollapsedSeatSpans({ planner, build, reviewer, budget }));
 
     expect(line).toBe('PLAN Sonnet 4 · BUILD Qwen2.5 Coder 7B');
@@ -959,6 +1025,7 @@ describe('formatCollapsedSeatSpans', () => {
   it('names the same seats at every width one identity can pay for', () => {
     const reviewer: RunnerConfig = { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' };
     const paid = 'PLAN Sonnet 4 · BUILD Qwen2.5 Coder 7B';
+    const toolPaid = 'PLAN claude · BUILD ollama · REVIEW codex';
     const lines: string[] = [];
 
     for (
@@ -971,10 +1038,12 @@ describe('formatCollapsedSeatSpans', () => {
       lines.push(seatLineText(formatCollapsedSeatSpans({ planner, build, reviewer, budget })));
     }
 
-    expect([...new Set(lines)]).toEqual([paid]);
+    // Every width names all three seats: by tool while that line fits, then by the two model
+    // names it can pay for. No width states half a name.
+    expect([...new Set(lines)]).toEqual([toolPaid, paid]);
   });
 
-  it('spends the one long identity and keeps the seats beside it named', () => {
+  it('names every seat by its tool when one model name is long', () => {
     const longPlanner: RunnerConfig = {
       kind: 'api',
       provider: 'ollama',
@@ -992,9 +1061,7 @@ describe('formatCollapsedSeatSpans', () => {
       }),
     );
 
-    expect(line).toBe(
-      `PLAN Qwen3 Coder Plus Instruct Preview · REVIEW ${PLANNER_INHERITANCE.mark}`,
-    );
+    expect(line).toBe(`PLAN ollama · BUILD claude · REVIEW ${PLANNER_INHERITANCE.mark}`);
     expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(54);
   });
 

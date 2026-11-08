@@ -719,6 +719,17 @@ describe('HomeScreen', () => {
     ui.unmount();
   });
 
+  it('names every seat of the default crew by its tool at 60x18', async () => {
+    terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
+
+    const ui = renderHome();
+    await flushEffects();
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('PLAN claude · BUILD ollama · REVIEW = PLAN');
+    ui.unmount();
+  });
+
   it('caps recent sessions and reports a hidden count when capacity is tight', async () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 18, isSmall: true });
 

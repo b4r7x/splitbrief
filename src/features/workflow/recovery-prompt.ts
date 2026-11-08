@@ -9,6 +9,7 @@ import { formatResetAt, stripRecoveryResetClause } from '../../core/recovery/res
 import {
   formatRecoveryHeadline,
   formatRecoveryHeadlineSpans,
+  isAskedDetail,
 } from '../../core/recovery/headline.js';
 import {
   recoveryActionLabel,
@@ -426,11 +427,6 @@ function fitFileList(files: string[], room: number): string {
  * Apply conflicts and partial Apply keep every file detail and the workspace or backup path.
  */
 const MAX_DETAIL_LINES = 6;
-
-/** The line the halt asks the user to read: the planner's question, or why it cannot be done. */
-export function isAskedDetail(detail: string): boolean {
-  return detail.startsWith('Question: ') || detail.startsWith('Planner said: ');
-}
 
 function formatDetailLines(issue: RecoveryIssue): string[] {
   const dropQuotedReset = formatResetAt(issue.resetAt) !== undefined;

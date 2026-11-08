@@ -804,6 +804,72 @@ describe('workflow visual fixtures', () => {
     },
   );
 
+  it.each([
+    [60, 18],
+    [80, 24],
+  ])('names the running stage of the first brief after a plan at %ix%i', async (cols, rows) => {
+    const scenario = findVisualScenario('workflow-first-brief-after-plan');
+    const checkpoint = scenario?.checkpoints[0];
+    const renderViewport = scenario?.viewports.find(
+      (value) => value.cols === cols && value.rows === rows,
+    );
+    if (scenario === undefined || checkpoint === undefined || renderViewport === undefined) {
+      throw new Error('Missing first-brief checkpoint or viewport');
+    }
+    const handle = await mountGalleryScenario({ scenario, checkpoint, viewport: renderViewport });
+    try {
+      const frame = stripTerminalControls(await handle.waitForCheckpoint(), {
+        preserveLineBreaks: true,
+      });
+      const rail = frame.split('\n')[0] ?? '';
+      expect(frame).toContain('T001');
+      expect(frame).toContain('0/3 briefs passed');
+      expect(rail).toContain(`${glyph('stageDone')} Build`);
+      if (cols <= 60) {
+        expect(rail.split(glyph('stageDone'))).toHaveLength(2);
+        expect(rail).not.toContain('Plan');
+      } else {
+        expect(rail).toContain(`${glyph('stageDone')} Plan`);
+        expect(rail).toContain('Review');
+      }
+    } finally {
+      await handle.unmount();
+    }
+  });
+
+  it.each([
+    [60, 18],
+    [80, 24],
+    [160, 45],
+  ])('keeps the completed run on the rail the width paints at %ix%i', async (cols, rows) => {
+    const scenario = findVisualScenario('workflow-complete-after-fix-tasks');
+    const checkpoint = scenario?.checkpoints[0];
+    const renderViewport = scenario?.viewports.find(
+      (value) => value.cols === cols && value.rows === rows,
+    );
+    if (scenario === undefined || checkpoint === undefined || renderViewport === undefined) {
+      throw new Error('Missing complete-after-fix-tasks checkpoint or viewport');
+    }
+    const handle = await mountGalleryScenario({ scenario, checkpoint, viewport: renderViewport });
+    try {
+      const frame = stripTerminalControls(await handle.waitForCheckpoint(), {
+        preserveLineBreaks: true,
+      });
+      const rail = frame.split('\n')[0] ?? '';
+      expect(frame).toContain(`${glyph('stageDone')} 4/4`);
+      if (cols <= 60) {
+        expect(rail).toContain(`${glyph('stageDone')} Review`);
+        expect(rail.split(glyph('stageDone'))).toHaveLength(2);
+      } else {
+        expect(rail.split(glyph('stageDone'))).toHaveLength(4);
+        for (const stage of ['Plan', 'Build', 'Review']) expect(rail).toContain(stage);
+      }
+      if (cols >= 160) expect(frame).toContain('Tasks 4/4');
+    } finally {
+      await handle.unmount();
+    }
+  });
+
   it.each(WIDE_VIEWPORTS)(
     'shows T006 running and T007 held back after a fix insertion at %s',
     async (viewport) => {
@@ -1368,41 +1434,6 @@ describe('workflow visual fixtures', () => {
         ),
         projection.scenarioId,
       ).toHaveLength(0);
-    }
-  });
-
-  it('drift fixtures contain no synthetic reviewer prose', async () => {
-    for (const fixture of [
-      { id: 'workflow-review-drift-clean', headline: 'Drift · clean' },
-      {
-        id: 'workflow-review-drift-found',
-        headline: 'Drift · failed · 2 errors · 3 warnings',
-      },
-    ]) {
-      const projection = workflowFixtureProjections.get(scenarioId(fixture.id));
-      if (!projection) throw new Error(`Missing drift scenario ${fixture.id}`);
-      expect(
-        projection.events.filter(
-          (event) => event.type === 'planner_text' && event.phase === 'final-review',
-        ),
-      ).toHaveLength(0);
-      expect(
-        projection.events.filter((event) => event.type === 'full_suite' && event.status === 'done'),
-      ).toHaveLength(4);
-      expect(projection.events).toContainEqual(expect.objectContaining({ type: 'drift_report' }));
-
-      const scenario = findVisualScenario(fixture.id);
-      const checkpoint = scenario?.checkpoints[0];
-      if (!scenario || !checkpoint) throw new Error(`Missing drift checkpoint ${fixture.id}`);
-      for (const renderViewport of REQUIRED_VIEWPORTS) {
-        const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: renderViewport });
-        try {
-          const frame = stripTerminalControls(await ui.waitForCheckpoint());
-          expect(frame).toContain(fixture.headline);
-        } finally {
-          await ui.unmount();
-        }
-      }
     }
   });
 

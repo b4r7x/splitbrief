@@ -592,7 +592,17 @@ const checkpointPredicates = [
     includesAll('Warning', 'Examples: README.md', 'reverted/', 'Planning…'),
   ],
   [checkpointId('plan-compiled'), includesAll('plan.md', 'tasks.md')],
-  [checkpointId('first-brief-after-plan'), includesAll('Plan', 'T001', '0/3 briefs passed')],
+  [
+    checkpointId('first-brief-after-plan'),
+    (context) => {
+      const [rail = ''] = context.output.split('\n');
+      const stageLabels = ['Plan', 'Build', 'Review'].filter((label) => rail.includes(label));
+      return (
+        includesAll('T001', '0/3 briefs passed')(context) &&
+        (stageLabels.length === 3 || (stageLabels.length === 1 && stageLabels[0] === 'Build'))
+      );
+    },
+  ],
   [checkpointId('brief-check-slow-provider'), includesAll('Checking tools', 'T001')],
   [checkpointId('build-consult'), includesAll('Claude Code CLI', 'answering the consult on T901')],
   [
@@ -791,9 +801,10 @@ const checkpointPredicates = [
     checkpointId('complete-after-fix-tasks'),
     (context) => {
       const [rail = ''] = context.output.split('\n');
+      const stageMarks = rail.split(glyph('stageDone')).length - 1;
       return (
         includesAll()(context) &&
-        rail.split(glyph('stageDone')).length === 4 &&
+        (stageMarks === 3 || (stageMarks === 1 && rail.includes('Review'))) &&
         excludesAll('done ·', 'drift not run', 'briefs passed')(context) &&
         (context.viewport.cols < 160 || context.output.includes('Tasks 4/4')) &&
         (context.viewport.cols < 80 || context.output.includes('+1 file'))
@@ -869,11 +880,6 @@ const checkpointPredicates = [
     ),
   ],
   [checkpointId('review-task-out-of-scope'), includesAll('Review T001 passed', '3 notes')],
-  [checkpointId('review-drift-clean'), includesAll('Drift · clean')],
-  [
-    checkpointId('review-drift-found'),
-    includesAll('Drift · failed · 2 errors · 3 warnings', '3/5 briefs passed'),
-  ],
   [checkpointId('review-settled-passed'), includesTranscript('● Final review passed', '7.0s')],
   [
     checkpointId('review-settled-set-aside'),
@@ -935,7 +941,10 @@ const checkpointPredicates = [
   [checkpointId('plan-card-short'), includesAll('Approve plan')],
   [checkpointId('question-short'), includesAll('Reviewer/planner seat')],
   [checkpointId('planner-question-short'), includesAll('Reviewer/planner seat')],
-  [checkpointId('planner-question-free-short'), includesAll()],
+  [
+    checkpointId('planner-question-free-short'),
+    includesAll('Which file or module do you want refactored?'),
+  ],
   [checkpointId('recovery-short'), includesAll('Try again')],
   [checkpointId('plan-card'), planCardReady],
   [
@@ -1039,7 +1048,15 @@ const checkpointPredicates = [
   ],
   [
     checkpointId('recovery-apply-conflict-sentence'),
-    includesAll('This halt takes no typed correction', TYPED_WORDS),
+    (context) => {
+      if (!includesAll('This halt takes no typed correction', TYPED_WORDS)(context)) return false;
+      if (context.viewport.cols > 80) return true;
+      const headerRow = context.output.split('\n')[0] ?? '';
+      return (
+        headerRow.includes(`${glyph('statusFailed')} Apply`) &&
+        headerRow.includes('PLAN claude · BUILD claude · REVIEW = PLAN')
+      );
+    },
   ],
   [
     checkpointId('recovery-apply-conflict'),
@@ -1121,8 +1138,35 @@ const checkpointPredicates = [
   [checkpointId('at-rest-question'), includesAll('Unanswered · 2 questions', '(yes / no)')],
   [checkpointId('closed-complete'), includesAll()],
   [checkpointId('ready-to-apply'), includesAll()],
-  [checkpointId('ready-crew-saved'), includesAll('PLAN GPT-5.1')],
-  [checkpointId('ready-seat-moved-auto'), includesAll('PLAN GPT-5.1')],
+  [
+    checkpointId('ready-crew-saved'),
+    (context) => {
+      if (!context.output.includes(context.checkpoint.marker)) return false;
+      if (context.viewport.cols !== 80) return context.output.includes('PLAN GPT-5.1');
+      const headerRow = context.output.split('\n')[0] ?? '';
+      return headerRow.includes('PLAN custom-endpoint · BUILD custom-endpoint · REVIEW codex');
+    },
+  ],
+  [
+    checkpointId('ready-seat-moved-auto'),
+    (context) => {
+      if (!context.output.includes(context.checkpoint.marker)) return false;
+      const headerRow = context.output.split('\n')[0] ?? '';
+      if (context.viewport.cols === 120) {
+        return (
+          headerRow.includes('○ Apply') &&
+          headerRow.includes(
+            'PLAN custom-endpoint · BUILD Gemini 3.8 Flash → Google Antigravity CLI · REVIEW custom-endpoint',
+          )
+        );
+      }
+      return (
+        context.output.includes('PLAN GPT-5.1') &&
+        (context.viewport.cols !== 160 ||
+          headerRow.includes('BUILD Gemini 3.8 Flash → Google Antigravity CLI'))
+      );
+    },
+  ],
   [
     checkpointId('at-rest-applying'),
     (context) =>
@@ -1437,7 +1481,17 @@ const checkpointPredicates = [
     checkpointId('recovery-checks-unrunnable'),
     includesAll('validation.render is not set', 'Run the checks again'),
   ],
-  [checkpointId('left-isolation'), includesAll(WORKFLOW_FIXTURE_TEXT.leftIsolation)],
+  [
+    checkpointId('left-isolation'),
+    (context) =>
+      includesAll(WORKFLOW_FIXTURE_TEXT.leftIsolation)(context) &&
+      (context.viewport.cols !== 80 && context.viewport.cols !== 60
+        ? true
+        : context.output.includes('PLAN claude · BUILD agy · REVIEW = PLAN')) &&
+      (context.scenario.id !== 'workflow-recovery-left-isolation-in-place' ||
+        context.viewport.cols !== 60 ||
+        context.output.includes('saved folder')),
+  ],
   [checkpointId('checkout-changed'), includesAll(WORKFLOW_FIXTURE_TEXT.checkoutChanged)],
   [checkpointId('repeated-timeout'), includesAll()],
   [checkpointId('runner-check-failed'), includesAll()],

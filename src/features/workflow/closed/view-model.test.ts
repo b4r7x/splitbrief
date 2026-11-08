@@ -463,6 +463,7 @@ describe('seats', () => {
       kind: 'named',
       short: 'Sonnet 4',
       full: 'Claude Code CLI · Claude Sonnet 4',
+      tool: 'claude',
     });
   });
 
@@ -479,11 +480,13 @@ describe('seats', () => {
       kind: 'named',
       short: 'Opus 5.5',
       full: 'Claude Code CLI · Opus 5.5',
+      tool: 'claude',
     });
     expect(view.seats.build).toEqual({
       kind: 'named',
       short: 'Sonnet 5.5',
       full: 'Claude Code CLI · Sonnet 5.5',
+      tool: 'claude',
     });
     const spans = crewLine(view, 200);
     expect(spans.map((span) => span.text).join('')).toBe(
@@ -516,6 +519,7 @@ describe('seats', () => {
       kind: 'named',
       short: 'Opus 5.5',
       full: 'Claude Code CLI · Opus 5.5 · high',
+      tool: 'claude',
     });
     expect(view.seats.build).toMatchObject({ full: 'Claude Code CLI · Sonnet 5.5 · medium' });
     expect(view.seats.review).toMatchObject({ full: expect.stringMatching(/ · low$/) });
@@ -655,6 +659,7 @@ describe('seats', () => {
       kind: 'named',
       short: 'GPT-5',
       full: 'opencode · GPT-5',
+      tool: 'opencode',
     });
   });
 
@@ -682,6 +687,7 @@ describe('seats', () => {
       kind: 'named',
       short: 'Sonnet',
       full: 'claude-code · Sonnet',
+      tool: 'claude-code',
     });
   });
 
@@ -708,6 +714,7 @@ describe('seats', () => {
       kind: 'named',
       short: 'Sonnet 5.5',
       full: 'Claude Code CLI · Sonnet 5.5',
+      tool: 'claude',
     });
   });
 
@@ -742,6 +749,7 @@ describe('seats', () => {
       kind: 'named',
       short: 'Sonnet 5.5',
       full: 'Claude Code CLI · Sonnet 5.5',
+      tool: 'claude',
     });
   });
 

@@ -254,6 +254,86 @@ describe('WorkflowScreen chrome calibration', () => {
     ui.unmount();
   });
 
+  it('shows the one-stage rail and every seat by its tool at 60 columns', async () => {
+    configStore.__testReset({ config: makeConfig(), projectDir });
+    terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
+    routerStore.init({
+      screen: 'workflow',
+      execution: { kind: 'at-rest' },
+      run: makeRunRecord({
+        status: {
+          kind: 'open',
+          stop: { kind: 'waiting-for-you', on: { kind: 'halt', issue: makeRecoveryIssue() } },
+          resumeAt: { kind: 'brief', taskId: taskId('T001'), attempt: 1 },
+        },
+        hydration: { kind: 'loaded', state: makeWorkflowState({ phase: 'implementing' }) },
+      }),
+    });
+
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+      { cols: 60, rows: 18 },
+    );
+    await flushEffects();
+    const first = stripAnsiStyles(ui.lastFrame() ?? '').split('\n')[0] ?? '';
+    expect(first).toContain(`${glyph('statusFailed')} Build`);
+    expect(first).not.toContain('Review');
+    expect(first).toContain('PLAN claude · BUILD ollama · REVIEW = PLAN');
+    ui.unmount();
+  });
+
+  it('shows the one-stage rail and every seat by its tool on a halted run at 60 columns', async () => {
+    configStore.__testReset({ config: makeConfig(), projectDir });
+    terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
+    const issue = makeRecoveryIssue({ phase: 'implementing' });
+    const halted = makeWorkflowState({
+      phase: 'implementing',
+      tasks: [makeTask({ id: 'T001', title: 'Halted brief', status: 'in_progress' })],
+      pendingRecovery: issue,
+    });
+    const record = makeRunRecord({
+      ref: { projectDir, sessionId: 'halted-crew-strip' },
+      status: {
+        kind: 'open',
+        stop: { kind: 'waiting-for-you', on: { kind: 'halt', issue } },
+        resumeAt: { kind: 'brief', taskId: taskId('T001'), attempt: 1 },
+      },
+      hydration: { kind: 'loaded', state: halted },
+    });
+    saveState(record.ref, halted);
+    const base = preparedExecution(projectDir, 'halted crew strip');
+    routerStore.init({
+      screen: 'workflow',
+      run: record,
+      execution: {
+        kind: 'local',
+        prepared: {
+          ...base,
+          purpose: 'resume' as const,
+          session: { ...base.session, ref: record.ref },
+          runtime: { ...base.runtime, resumeState: halted },
+        },
+      },
+    });
+
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+      { cols: 60, rows: 18 },
+    );
+    try {
+      await vi.waitFor(() => {
+        expect(runViewStore.get().halt).not.toBeNull();
+      });
+      await flushEffects();
+      const first = stripAnsiStyles(ui.lastFrame() ?? '').split('\n')[0] ?? '';
+      expect(first).toContain(`${glyph('statusFailed')} Build`);
+      expect(first).not.toContain('Review');
+      expect(first).toContain('PLAN claude · BUILD ollama · REVIEW = PLAN');
+    } finally {
+      ui.unmount();
+    }
+  });
+
   it('keeps a keyboard review action through resize and resets it for the next review owner', async () => {
     const firstReviewPath = join(projectDir, 'first-review.md');
     const secondReviewPath = join(projectDir, 'second-review.md');

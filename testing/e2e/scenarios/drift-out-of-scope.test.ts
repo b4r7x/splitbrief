@@ -6,6 +6,7 @@ import { ReviewPacketSchema } from '../../../src/core/schemas/review-packet.js';
 import { evaluateTsArtifact } from '../helpers/artifact-assertions.js';
 import { makeE2eScenarioConfig } from '../helpers/config.js';
 import { runE2eWorkflow, setupE2eScenario } from '../helpers/harness.js';
+import { transcriptText } from '../helpers/transcript-text.js';
 
 const DRIFT_SCRIPT = '.splitbrief/hooks/write-drift.mjs';
 
@@ -68,6 +69,7 @@ describe('e2e: drift out-of-scope detection', () => {
     // part of the run and the final drift report stays free of errors.
     expect(driftReport?.passed).toBe(true);
     expect(driftReport?.errorCount).toBe(0);
+    expect(transcriptText(ctx.events)).not.toContain('Drift');
 
     // The write is not dropped: the review packet lists it among the workspace
     // files the run changed.

@@ -228,6 +228,18 @@ describe('Header — seat line', () => {
     expect(frame.slice(frame.indexOf('PLAN'))).not.toContain('›');
   });
 
+  it('names every seat by its tool at 80 columns', async () => {
+    const frame = await seatFrame(80);
+
+    expect(frame).toContain('PLAN claude · BUILD ollama · REVIEW = PLAN');
+  });
+
+  it('keeps the model line at 120 columns', async () => {
+    const frame = await seatFrame(120);
+
+    expect(frame).toContain('PLAN Claude Code CLI · BUILD Qwen2.5 Coder 7B · REVIEW = PLAN');
+  });
+
   it('gives up one seat name to the tight bar instead of hiding all three', async () => {
     const frame = await seatFrame(110);
 
@@ -318,7 +330,7 @@ describe('Header — seat line', () => {
     instance.unmount();
   });
 
-  it('keeps BUILD without a reset or swap offer until the halt clears on a constrained rail', async () => {
+  it('keeps BUILD without a reset or swap offer on a constrained rail', async () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: true });
     configStore.__testReset({ projectDir: '/tmp/p', config: HALTED_CREW_CONFIG });
     runViewStore.__testReset({ phase: 'implementing' });
@@ -332,14 +344,14 @@ describe('Header — seat line', () => {
       { cols: 80, rows: 24 },
     );
     await tick();
-    expect(stripAnsiStyles(ui.lastFrame())).toContain('BUILD DeepSeek V4.1 Flash via deepseek');
+    expect(stripAnsiStyles(ui.lastFrame())).toContain('BUILD opencode');
     expect(stripAnsiStyles(ui.lastFrame())).not.toContain('resets');
 
     setRunHalt(null);
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame());
-    expect(frame).toContain('PLAN Sonnet 4 · REVIEW = PLAN');
-    expect(frame).not.toContain('BUILD');
+    expect(frame).toContain('PLAN claude · BUILD opencode · REVIEW = PLAN');
+    expect(frame).not.toContain('resets');
     ui.unmount();
   });
 
@@ -373,7 +385,7 @@ describe('Header — seat line', () => {
       { cols: 80, rows: 24 },
     );
     await tick();
-    expect(stripAnsiStyles(ui.lastFrame())).toContain('BUILD DeepSeek V4.1 Flash via deepseek');
+    expect(stripAnsiStyles(ui.lastFrame())).toContain('BUILD opencode');
     expect(stripAnsiStyles(ui.lastFrame())).not.toContain('resets');
     ui.unmount();
   });
@@ -396,7 +408,7 @@ describe('Header — seat line', () => {
   it('drops the seat line when the rail crowds the bar', async () => {
     runViewStore.__testReset({ phase: 'planning' });
     lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
-    terminalSizeStore.__testReset({ cols: 52, rows: 24, isSmall: true });
+    terminalSizeStore.__testReset({ cols: 42, rows: 24, isSmall: true });
     configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
 
     const instance = render(<Header />);

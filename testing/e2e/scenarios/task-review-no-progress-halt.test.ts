@@ -5,10 +5,14 @@ import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import { formatRecoveryHeadline } from '../../../src/core/recovery/headline.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
+import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
+import { flushEffects } from '#testing/helpers/ink.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { passingVerdict } from '#testing/helpers/typed-planner.js';
+import { openHaltedRun, settleOpenedRuns } from '../helpers/halted-run-screen.js';
 import {
   cli,
   createStopContinueFixture,
@@ -54,7 +58,7 @@ const finding = {
   checkIds: null,
 };
 const DIAGNOSIS = 'The type test never reaches the alpha value.';
-const CANNOT = 'The type test needs a decision on what alpha exports.';
+const CANNOT = `The type test needs a decision on what alpha exports. ${'word '.repeat(70)}alpha-reason-end`;
 const testSource = (actual: string, expected: string): string =>
   `import { strict as assert } from 'node:assert';\nimport { alpha } from './alpha.mjs';\nassert.equal(${actual}, ${expected});\n`;
 const writes = {
@@ -205,6 +209,13 @@ console.log('Implemented ' + title);
     expect(formatRecoveryHeadline(state.pendingRecovery)).toBe(
       'Review T003 made no progress on F1 after fix cycle 2',
     );
+
+    const opened = await openHaltedRun(target, { heading: 'Needs you' });
+    terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: true });
+    await flushEffects();
+    expect(stripAnsiStyles(opened.screen.lastFrame())).toContain('alpha-reason-end');
+    opened.screen.unmount();
+    await settleOpenedRuns();
   });
 
   it('names the task review that reached no verdict, not the final review', async () => {

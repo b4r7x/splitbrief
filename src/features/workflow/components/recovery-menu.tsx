@@ -16,7 +16,6 @@ import { formatKeyHints, SELECT_HINT } from '../prompt-rows/approval.js';
 import { PromptBody } from './prompt-body.js';
 import {
   correctionActionFor,
-  isAskedDetail,
   recoveryPromptSummaryRows,
   getRecoveryPromptActions,
   recoveryActionKey,
@@ -24,6 +23,7 @@ import {
   recoveryMenuParts,
   recommendedRecoveryAction,
 } from '../recovery-prompt.js';
+import { isAskedDetail } from '../../../core/recovery/headline.js';
 import {
   clipPromptBodyRows,
   countPromptBodyRows,

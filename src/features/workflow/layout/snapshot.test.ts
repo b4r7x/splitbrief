@@ -12,7 +12,9 @@ import {
 import { getRailStageZones, hitTranscriptRow } from './hit-test.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { makeReviewFixInsertedEvents, makeTaskStart } from '#testing/helpers/events/task.js';
-import { getContentTopRow, getProgressRows } from './chrome-rows.js';
+import { getContentTopRow, getProgressRows, WORKFLOW_GUTTER_X } from './chrome-rows.js';
+import { glyph } from '../../../lib/glyphs.js';
+import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { inputHeightStore } from '../../../stores/ui/input-height.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
@@ -57,6 +59,7 @@ import { mountGalleryScenario } from '#testing/visual/gallery/mount.js';
 import { resultMenuHeight } from '../result/options.js';
 import { WorkflowScreen } from '../../../app/screens/workflow.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
+import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { configStore } from '../../../stores/project/config.js';
 
@@ -788,19 +791,163 @@ describe('readRailSnapshot', () => {
     terminalSizeStore.__testReset({ cols: 20, rows: 30, isSmall: true });
     runViewStore.__testReset({ phase: 'researching' });
     lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
-    routerStore.init({
-      screen: 'workflow',
-      run: makeRunRecord(),
-      execution: { kind: 'at-rest' },
-    });
+
+    const snap = readRailSnapshot();
+    expect(snap.activeIndex).toBe(0);
+    expect(snap.zones).toHaveLength(1);
+    expect(snap.zones[0]?.stage).toBe('plan');
+    expect(snap.zones[0]?.index).toBe(0);
+  });
+
+  it('puts the rail click zones on the one-stage rail when the crew strip needs the room', () => {
+    configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
     try {
+      terminalSizeStore.__testReset({ cols: 60, rows: 30, isSmall: true });
+      runViewStore.__testReset({ phase: 'implementing' });
+      lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
+
       const snap = readRailSnapshot();
-      expect(snap.activeIndex).toBe(0);
+
+      expect(snap.zones).toEqual(
+        getRailStageZones({
+          form: 'C',
+          phase: 'implementing',
+          cols: 60,
+          fraction: '',
+          cancelled: false,
+        }),
+      );
       expect(snap.zones).toHaveLength(1);
-      expect(snap.zones[0]?.stage).toBe('plan');
-      expect(snap.zones[0]?.index).toBe(0);
+    } finally {
+      configStore.reset();
+    }
+  });
+
+  it('puts the halt zones on the failed rail the header paints beside the crew', () => {
+    configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
+    try {
+      terminalSizeStore.__testReset({ cols: 60, rows: 30, isSmall: true });
+      runViewStore.__testReset({ phase: 'implementing' });
+      lifecycleStore.__testReset({ status: 'cancelled', cancelled: true, startedAt: 0 });
+      seedBriefs({ currentTask: 3, totalTasks: 7 });
+      setRunHalt({
+        issue: makeRecoveryIssue(),
+        at: { kind: 'brief', taskId: taskId('T001'), attempt: 1 },
+      });
+
+      const snap = readRailSnapshot();
+      const painted = getTerminalCellWidth(`${glyph('statusFailed')} Build`);
+
+      expect(snap.zones).toHaveLength(1);
+      expect(snap.zones[0]?.stage).toBe('build');
+      expect(snap.zones[0]?.index).toBe(1);
+      expect(snap.zones[0]?.right).toBe(WORKFLOW_GUTTER_X + painted - 1);
+    } finally {
+      setRunHalt(null);
+      configStore.reset();
+    }
+  });
+
+  it('puts the Apply zones on the rail the recorded crew fits, not the crew saved today', () => {
+    configStore.__testReset({
+      projectDir: '/tmp/p',
+      config: makeConfig({
+        implementer: { kind: 'cli', tool: 'antigravity', model: 'gemini-3.8-flash-high' },
+      }),
+    });
+    const issue = makeRecoveryIssue({ reason: 'apply-conflict' });
+    try {
+      terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: false });
+      runViewStore.__testReset({ phase: 'complete' });
+      lifecycleStore.__testReset({ status: 'complete', startedAt: 0 });
+      setRunHalt({ issue, at: { kind: 'apply' } });
+      routerStore.init({
+        screen: 'workflow',
+        run: makeRunRecord({
+          status: {
+            kind: 'open',
+            stop: { kind: 'waiting-for-you', on: { kind: 'halt', issue } },
+            resumeAt: { kind: 'apply' },
+          },
+          hydration: {
+            kind: 'loaded',
+            state: makeWorkflowState({
+              phase: 'complete',
+              reviewStatus: 'passed',
+              workspace: {
+                kind: 'worktree',
+                path: '/tmp/run-workspace',
+                base: { snapshotId: 'workspace-base', head: null },
+              },
+              pendingRecovery: issue,
+            }),
+          },
+          summary: makeSummary({
+            plannerTool: 'claude-code',
+            plannerModel: 'opus',
+            implementerTool: 'claude-code',
+            implementerModel: 'haiku',
+          }),
+        }),
+        execution: { kind: 'at-rest' },
+      });
+
+      const snap = readRailSnapshot();
+      const painted = getTerminalCellWidth(`${glyph('statusFailed')} Apply`);
+
+      expect(snap.zones).toHaveLength(1);
+      expect(snap.zones[0]?.stage).toBe('apply');
+      expect(snap.zones[0]?.index).toBe(3);
+      expect(snap.zones[0]?.right).toBe(WORKFLOW_GUTTER_X + painted - 1);
+    } finally {
+      setRunHalt(null);
+      routerStore.reset();
+      configStore.reset();
+    }
+  });
+
+  it.each([
+    [80, ['apply']],
+    [88, ['plan', 'build', 'review', 'apply']],
+  ] as const)('zones the stages a ready run at rest paints at %i columns', (cols, stages) => {
+    configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
+    try {
+      terminalSizeStore.__testReset({ cols, rows: 24, isSmall: true });
+      runViewStore.__testReset({ phase: 'complete' });
+      lifecycleStore.__testReset({ status: 'complete', startedAt: 0 });
+      routerStore.init({
+        screen: 'workflow',
+        execution: { kind: 'at-rest' },
+        run: makeRunRecord({
+          status: { kind: 'ready-to-apply', override: false },
+          hydration: {
+            kind: 'loaded',
+            state: makeWorkflowState({
+              phase: 'complete',
+              reviewStatus: 'passed',
+              workspace: {
+                kind: 'worktree',
+                path: '/tmp/run-workspace',
+                base: { snapshotId: 'workspace-base', head: null },
+              },
+            }),
+          },
+          summary: makeSummary({
+            plannerTool: 'claude-code',
+            plannerModel: 'opus',
+            implementerTool: 'claude-code',
+            implementerModel: 'haiku',
+          }),
+        }),
+      });
+
+      const zones = readRailSnapshot().zones;
+
+      expect(zones.map((zone) => zone.stage)).toEqual(stages);
+      expect(zones.at(-1)?.index).toBe(3);
     } finally {
       routerStore.reset();
+      configStore.reset();
     }
   });
 

@@ -7,8 +7,9 @@ import type {
 } from '../../../../core/schemas/recovery/schemas.js';
 import type { Task, TaskId } from '../../../../core/schemas/task.js';
 import { uniqueSortedIds, uniqueSorted } from '../../../../utils/collections.js';
-import { sanitizeTerminalDisplayText } from '../../../../utils/display-text.js';
+import { oneLineDisplayText, sanitizeTerminalDisplayText } from '../../../../utils/display-text.js';
 import { truncateByChars } from '../../../../utils/truncate.js';
+import { isAskedDetail } from '../../../../core/recovery/headline.js';
 
 export const MAX_SUMMARY_LENGTH = 320;
 
@@ -78,7 +79,9 @@ export function createRecoveryIssue(opts: {
     files: uniqueSorted(opts.files, { trim: true, nonEmpty: true }),
     affectedTaskIds: uniqueSortedIds(opts.affectedTaskIds),
     message: opts.message,
-    details: opts.details.map(summarizeText).filter((detail) => detail.length > 0),
+    details: opts.details
+      .map((detail) => (isAskedDetail(detail) ? oneLineDisplayText(detail) : summarizeText(detail)))
+      .filter((detail) => detail.length > 0),
     ...(opts.selectedImplementerProfile !== undefined
       ? { selectedImplementerProfile: opts.selectedImplementerProfile }
       : {}),

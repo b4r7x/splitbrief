@@ -8,7 +8,7 @@ import { routerStore } from '../../src/stores/navigation/router.js';
 import { composerLiveStore } from '../../src/stores/ui/composer-live.js';
 import { feedbackStore } from '../../src/stores/ui/feedback.js';
 import { stripTerminalControls } from '../../src/utils/display-text.js';
-import { selectRailForm } from '../../src/features/workflow/layout/chrome-rows.js';
+import { selectRailFormAndLine } from '../../src/features/workflow/layout/chrome-rows.js';
 import {
   listVisualScenarios,
   findVisualScenario,
@@ -775,7 +775,14 @@ describe('visual catalog', () => {
       'review-fix-narrow-rail',
       'review-fix-narrow-rail-stop',
     ]);
-    expect(selectRailForm({ phase: 'implementing', cols: 22 })).toBe('C');
+    expect(
+      selectRailFormAndLine({
+        cols: 22,
+        railWidths: { B: 21, C: 10 },
+        modelLineCells: 60,
+        toolLineCells: 42,
+      }).form,
+    ).toBe('C');
     const statuses = findVisualScenario('workflow-task-statuses');
     expect(statuses?.viewports.map(formatViewport)).toEqual(['160x45', '80x24']);
   });

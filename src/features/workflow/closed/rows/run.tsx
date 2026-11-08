@@ -44,10 +44,10 @@ export function runSectionRows(
   return rows;
 }
 
-/** The crew is named once. This row exists only for the widths where the header could not seat it. */
+/** The crew by model, unless the header chose the whole model line (`crewNamed`). */
 function crewRows(view: SummaryView, budget: number, crewNamed: boolean): RunRow[] {
   if (crewNamed) return [];
-  const line = crewLine(view, budget);
+  const line = crewLine(view, budget, { line: 'model' });
   const segments = line.flatMap((span) =>
     span.seat === undefined ? [] : [{ text: span.text, tone: CREW_SEAT_ROLES[span.seat] }],
   );

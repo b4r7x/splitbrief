@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
@@ -12,6 +13,7 @@ import { createInitialState } from '../../../core/state/machine.js';
 import { recordSeatIdentities } from '../../../core/state/seats.js';
 import { finalizeRunAtRest } from '../../../engine/orchestrator/session-lifecycle/finalize.js';
 import { recordedCrewHeader, namesEverySeat } from './header.js';
+import type { RailForm } from '../layout/chrome-rows.js';
 
 const crew = makeSummary({
   plannerTool: 'claude-code',
@@ -23,9 +25,15 @@ const crew = makeSummary({
 /** The cells a three-stage rail paints beside the seat line. */
 const RAIL_CELLS = 40;
 
-function header(record: Partial<RunRecord>, cols = 200, railCells = RAIL_CELLS) {
+function header(
+  record: Partial<RunRecord>,
+  cols = 200,
+  railCells = RAIL_CELLS,
+  form: RailForm = 'B',
+) {
   return recordedCrewHeader({
     record: makeRunRecord({ summary: crew, ...record }),
+    form,
     railCells,
     cols,
   });
@@ -62,10 +70,52 @@ describe('recordedCrewHeader', () => {
     expect(closed?.seatLine.filter((span) => span.seat !== undefined).length).toBeLessThan(3);
   });
 
+  it('keeps the crew in the Run block when the header names the seats by tool', () => {
+    const closed = header({ status: { kind: 'closed', as: 'ended' } }, 80, 27);
+    expect(closed?.crewNamed).toBe(false);
+    expect(closed?.seatLine.map((span) => span.text).join('')).toContain(
+      'PLAN claude · BUILD claude · REVIEW = PLAN',
+    );
+  });
+
   it('fits the crew to the room the painted rail leaves', () => {
     const status = { kind: 'closed', as: 'ended' } as const;
     expect(header({ status }, 120)?.crewNamed).toBe(true);
     expect(header({ status }, 120, 100)?.crewNamed).toBe(false);
+  });
+
+  it('names the crew by tool beside the one-stage Apply rail and by model beside a wide one', () => {
+    const issue = makeRecoveryIssue({ reason: 'apply-conflict' });
+    const halted = {
+      status: {
+        kind: 'open',
+        stop: { kind: 'waiting-for-you', on: { kind: 'halt', issue } },
+        resumeAt: { kind: 'apply' },
+      },
+      hydration: {
+        kind: 'loaded',
+        state: makeWorkflowState({
+          phase: 'complete',
+          reviewStatus: 'passed',
+          workspace: {
+            kind: 'worktree',
+            path: '/tmp/run-workspace',
+            base: { snapshotId: 'workspace-base', head: null },
+          },
+          pendingRecovery: issue,
+        }),
+      },
+    } as const;
+    const narrow = header(halted, 80, 7, 'C');
+    expect(narrow?.seatLine.map((span) => span.text).join('')).toBe(
+      'PLAN claude · BUILD claude · REVIEW = PLAN',
+    );
+    expect(narrow?.crewNamed).toBe(false);
+    const wide = header(halted, 120, 37, 'B');
+    expect(wide?.seatLine.map((span) => span.text).join('')).toBe(
+      'PLAN Opus 5.5 · BUILD Haiku 5.5 · REVIEW = PLAN',
+    );
+    expect(wide?.crewNamed).toBe(true);
   });
 
   it('names the recorded crew of a run that waits for Apply, also while Apply writes', () => {
@@ -76,6 +126,7 @@ describe('recordedCrewHeader', () => {
       kind: 'named',
       short: 'Haiku 5.5',
       full: 'Claude Code CLI · Haiku 5.5',
+      tool: 'claude',
     });
     expect(applying?.seatLine).toEqual(ready?.seatLine);
   });
@@ -111,6 +162,7 @@ describe('recordedCrewHeader of a run closed on its recorded crew', () => {
     if (!summary) throw new Error('the closed run saved no summary');
     const line = recordedCrewHeader({
       record: makeRunRecord({ ref, summary }),
+      form: 'B',
       railCells: RAIL_CELLS,
       cols: 200,
     })?.seatLine;

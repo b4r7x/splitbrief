@@ -648,6 +648,35 @@ it('shows the whole question at 80 columns, and the rows after it give way', asy
   ui.unmount();
 });
 
+const LONG_PLANNER_REASON = `The type test needs a decision on what alpha exports. ${'word '.repeat(70)}alpha-reason-end`;
+
+it('wraps the whole planner reason of a review stuck halt at 80x24', async () => {
+  const ui = renderFeature(
+    <RecoveryMenu
+      issue={buildReviewFailedRecoveryIssue({
+        createdAt: '2026-09-24T00:00:00.000Z',
+        phase: 'implementing',
+        blocking: 1,
+        noProgress: ['F1'],
+        fixCycle: 2,
+        cannot: LONG_PLANNER_REASON,
+        scope: 'task',
+        afterTaskId: taskId('T004'),
+      })}
+      width={getChromeContentWidth(80)}
+      clampedBoxRows={panelBoxRows(24)}
+      focused
+      onFocusChange={() => {}}
+      onResolve={() => {}}
+    />,
+  );
+  await flushEffects();
+  const rows = frameRows(ui);
+  expect(panelText(rows)).toContain(`Planner said: ${LONG_PLANNER_REASON}`);
+  expect(rows.some((row) => row.includes('…'))).toBe(false);
+  ui.unmount();
+});
+
 it('cuts a question taller than the panel with … and keeps the action rows and the mark', async () => {
   const asked = `Question: ${LONG_ASKED_TEXT}`;
   const issue = askedIssue(asked, FOUR_ACTIONS, 'retry-same-worker');

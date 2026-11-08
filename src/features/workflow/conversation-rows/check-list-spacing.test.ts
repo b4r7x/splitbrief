@@ -6,8 +6,6 @@ describe('joinsCheckList', () => {
   it.each([
     ['review_checks', 'full_suite'],
     ['full_suite', 'full_suite'],
-    ['review_checks', 'drift_report'],
-    ['full_suite', 'drift_report'],
   ] as const)('joins %s followed by %s', (previous, next) => {
     expect(joinsCheckList(previous, next)).toBe(true);
   });
@@ -23,16 +21,16 @@ describe('joinsCheckList', () => {
     undefined,
   ];
 
-  it.each(boundaries)('does not join checks or drift after %s', (previous) => {
+  it.each(boundaries)('does not join a check list after %s', (previous) => {
     expect(joinsCheckList(previous, 'full_suite')).toBe(false);
     expect(joinsCheckList(previous, 'drift_report')).toBe(false);
   });
 
-  it.each([...boundaries.filter((type) => type !== 'drift_report'), 'review_checks'] satisfies (
-    | EngineEvent['type']
-    | undefined
-  )[])('does not join a boundary %s after checks', (next) => {
-    expect(joinsCheckList('review_checks', next)).toBe(false);
-    expect(joinsCheckList('full_suite', next)).toBe(false);
-  });
+  it.each([...boundaries, 'review_checks'] satisfies (EngineEvent['type'] | undefined)[])(
+    'does not join a boundary %s after checks',
+    (next) => {
+      expect(joinsCheckList('review_checks', next)).toBe(false);
+      expect(joinsCheckList('full_suite', next)).toBe(false);
+    },
+  );
 });

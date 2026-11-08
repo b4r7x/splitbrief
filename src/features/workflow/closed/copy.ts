@@ -307,18 +307,39 @@ function sessionSegments(run: SummaryView['run']): CopySegment[] {
 
 /**
  * The crew line the header would paint, laid out to whatever the Run block can spare. The summary
- * has names on record rather than runner blocks, so it enters the layout half directly.
+ * has names on record rather than runner blocks, so it enters the layout half directly. A budget
+ * that cannot seat every name falls back to the tool words; `line` lays out that one line alone.
  */
 export function crewLine(
   view: Pick<SummaryView, 'seats'>,
   budget: number,
+  options: Readonly<{ line?: 'model' | 'tool' | undefined }> = {},
 ): readonly SeatLineSpan[] {
+  const review = view.seats.review;
+  const toolLine = options.line === 'tool';
+  const word = (seat: SeatView): string =>
+    toolLine ? (seatToolWord(seat) ?? seatWord(seat)) : seatWord(seat);
+  const planTool = seatToolWord(view.seats.plan);
+  const buildTool = seatToolWord(view.seats.build);
+  const reviewTool = seatToolWord(review);
   return formatCollapsedSeatSpansFromIdentities({
-    plan: seatWord(view.seats.plan),
-    build: seatWord(view.seats.build),
-    review: view.seats.review.kind === 'inherits' ? null : seatWord(view.seats.review),
+    plan: word(view.seats.plan),
+    build: word(view.seats.build),
+    review: review.kind === 'inherits' ? null : word(review),
+    ...(options.line === undefined && {
+      tools: {
+        ...(planTool !== undefined && { plan: planTool }),
+        ...(buildTool !== undefined && { build: buildTool }),
+        ...(reviewTool !== undefined && { review: reviewTool }),
+      },
+    }),
     budget,
   });
+}
+
+/** The command a named seat takes when the line is laid out by tool words. */
+function seatToolWord(seat: SeatView): string | undefined {
+  return seat.kind === 'named' ? seat.tool : undefined;
 }
 
 /**

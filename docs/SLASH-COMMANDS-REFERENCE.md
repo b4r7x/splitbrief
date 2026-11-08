@@ -268,7 +268,7 @@ Commands that change what the workflow screen shows without touching the run. `c
 - **Args**: none.
 - **Shortcut**: `Ctrl+D` (`src/core/keybindings/registry.ts`).
 - **Example**: `/diff`
-- **Behavior**: Prints `"Expanded latest diff"` or `"Collapsed latest diff"`. Targets include diffs, cut failure causes, drift findings, and automatic Recovery details. The keyboard, palette, and slash command select the same row across the whole transcript. With no expandable target, the feedback line says why.
+- **Behavior**: Prints `"Expanded latest diff"` or `"Collapsed latest diff"`. Targets include diffs, cut failure causes, and automatic Recovery details. The keyboard, palette, and slash command select the same row across the whole transcript. With no expandable target, the feedback line says why.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/view.ts`. The command context uses the same row-action selection as `/activity`, then calls `conversationScrollStore.toggleDiff()`.
 - **See also**: `/activity`, `/copy` (`/copy cost`).
 

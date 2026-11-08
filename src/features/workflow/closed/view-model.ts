@@ -31,6 +31,8 @@ export type SeatView =
       short: string;
       /** The seat with its tool, the way the live crew rows name it. */
       full: string;
+      /** The command the crew line falls back to when the seat's name does not fit. */
+      tool: string;
     }>
   | Readonly<{ kind: 'inherits' }>
   | Readonly<{ kind: 'mixed'; profiles: readonly string[] }>

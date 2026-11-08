@@ -13,7 +13,11 @@ import { z } from 'zod';
 import { sessionDir } from '../../../src/core/paths.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
 import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
+import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { flushEffects } from '#testing/helpers/ink.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { openHaltedRun, settleOpenedRuns } from '../helpers/halted-run-screen.js';
 import {
   cli,
   createStopContinueFixture,
@@ -103,6 +107,16 @@ describe('e2e: a checkout whose git state changes during an in-place implementer
     expect(statSync(untrackedFile, { bigint: true }).mtimeNs).toBe(untrackedStat.mtimeNs);
     expect(existsSync(join(reverted, stamp, 'init.txt'))).toBe(false);
     expect(existsSync(join(reverted, stamp, 'scratch.txt'))).toBe(false);
+
+    const opened = await openHaltedRun(fixture, { heading: 'Needs you' });
+    terminalSizeStore.__testReset({ cols: 80, rows: 18, isSmall: true });
+    await flushEffects();
+    expect(stripAnsiStyles(opened.screen.lastFrame())).toMatch(/… saved folder/);
+    terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
+    await flushEffects();
+    expect(stripAnsiStyles(opened.screen.lastFrame())).toMatch(/… saved folder/);
+    opened.screen.unmount();
+    await settleOpenedRuns();
 
     const continued = await cli(fixture, ['continue', sessionId, '--action', 'retry']);
 

@@ -114,6 +114,11 @@ export function cannotDetail(by: string, reason: string): string {
   return `${capitalize(by)} said: ${reason}`;
 }
 
+/** The line the halt asks the user to read: the planner's question, or why it cannot be done. */
+export function isAskedDetail(detail: string): boolean {
+  return detail.startsWith('Question: ') || detail.startsWith('Planner said: ');
+}
+
 /** A repository change under a brief, with the changes the audit saw, in the words every surface shares. */
 export function repositoryChangedCause(task: string, changes: string | undefined): string {
   const lead = `Repository changed under ${task}`;

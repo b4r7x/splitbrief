@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import chalk from 'chalk';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { resetAllStores, setRunHalt } from '#testing/helpers/stores.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
@@ -181,6 +181,22 @@ describe('running seat chrome', () => {
     const sidebar = await sidebarFrame();
     expect(sidebar).toContain('Claude Code');
     expect(sidebar).not.toContain('Codex');
+  });
+
+  it('names the saved seat on a Header already on screen once the call completes', async () => {
+    const review = { role: 'review', runnerName: 'codex', model: 'gpt-5-codex' } as const;
+    operationsStore.__testReset({ active: makeActiveOp(review) });
+    terminalSizeStore.__testReset({ cols: 160, rows: 24, isSmall: false });
+    const ui = renderFeature(<Header />);
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('REVIEW GPT-5 Codex');
+
+    operationsStore.__testReset({ active: makeActiveOp({ ...review, status: 'completed' }) });
+    await flushEffects();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    ui.unmount();
+    expect(frame).toContain('REVIEW 3.5 Sonnet');
+    expect(frame).not.toContain('Codex');
   });
 
   it('reads saved config on reopened run when no call is running', async () => {

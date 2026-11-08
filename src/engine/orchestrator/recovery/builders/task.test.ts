@@ -33,6 +33,8 @@ import {
 
 const createdAt = '2026-04-28T12:00:00.000Z';
 
+const LONG_PLANNER_REASON = `The type test needs a decision on what alpha exports. ${'word '.repeat(70)}alpha-reason-end`;
+
 it.each(['plan', 'build', 'review'] as const)(
   'names the %s fallback with its catalog label in halt details and facts',
   (seat) => {
@@ -286,6 +288,19 @@ describe('buildRetryExhaustedRecoveryIssue', () => {
       const issue = buildRetryExhaustedRecoveryIssue({ ...bothVoices, attempts });
       expect(issue).not.toHaveProperty('attempts');
     }
+  });
+
+  it('keeps the whole planner reason of a retry exhausted halt', () => {
+    const issue = buildRetryExhaustedRecoveryIssue({
+      task: makeTask({ id: 'T012' }),
+      createdAt,
+      validationSummary: 'tsc failed',
+      attempts: 3,
+      cannot: LONG_PLANNER_REASON,
+    });
+
+    expect(issue.details).toContain(`Planner said: ${LONG_PLANNER_REASON}`);
+    expectValidRecoveryIssue(issue);
   });
 
   it('defaults to task failed when neither verdict nor hook reason is set', () => {
@@ -1593,6 +1608,22 @@ describe('buildReviewFailedRecoveryIssue', () => {
       'Question: Is V1 the right gate command?',
       'V1.1: Reviewer check V1 failed',
     ]);
+    expectValidRecoveryIssue(issue);
+  });
+
+  it('keeps the whole planner reason of a review stuck halt', () => {
+    const issue = buildReviewFailedRecoveryIssue({
+      createdAt,
+      phase: 'implementing',
+      blocking: 1,
+      noProgress: ['F1'],
+      fixCycle: 2,
+      cannot: LONG_PLANNER_REASON,
+      scope: 'task',
+      afterTaskId: taskId('T004'),
+    });
+
+    expect(issue.details).toContain(`Planner said: ${LONG_PLANNER_REASON}`);
     expectValidRecoveryIssue(issue);
   });
 

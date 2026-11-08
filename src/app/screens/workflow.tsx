@@ -63,9 +63,12 @@ import { getChromeHeight } from '../../features/workflow/layout/chrome-rows.js';
 import {
   getChromeContentWidth,
   getProgressRows,
-  selectRailForm,
+  selectRailFormAndLine,
   WORKFLOW_GUTTER_X,
 } from '../../features/workflow/layout/chrome-rows.js';
+import { useHeaderSeatLines } from '../../features/workflow/hooks/use-header-seat-lines.js';
+import { seatLineText } from '../../core/crew/identity.js';
+import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { BuildProgressBlock } from '../../features/workflow/components/build-progress.js';
 import { useRailCells } from '../../features/workflow/hooks/use-rail-cells.js';
 import { plainAnswer } from '../../features/workflow/hooks/use-input-mode.js';
@@ -294,7 +297,6 @@ export function WorkflowScreen({
   const findings = accepted?.findings ?? [];
   const acceptNote = accepted === undefined ? undefined : acceptedNote(accepted);
   const changedFiles = ready === undefined ? null : changedFileCount(ready.summary);
-  const railForm = selectRailForm({ phase: model.phase, cols });
   const reviewBudgetRows = getReviewPanelBudget({ rows, inputRows });
   const requestedPromptRows = stopMenuOpen
     ? stopMenuLayout(readStopMenuRows(), cols).height
@@ -354,16 +356,32 @@ export function WorkflowScreen({
 
   // The closed run's ledger is the tail of its own transcript: one scroller, the verdict below the
   // last event the run wrote. The header names the crew that ran it, so the block names it only
-  // when the line could not afford all three seats.
-  const railCells = useRailCells({
-    form: railForm,
-    buildBlockShown: progressRows > 0,
-    stages: model.railStages,
+  // when the header did not choose the whole model line.
+  const railCellsByForm = {
+    B: useRailCells({
+      form: 'B',
+      buildBlockShown: progressRows > 0,
+      ...(model.railStages !== undefined && { stages: model.railStages }),
+    }),
+    C: useRailCells({
+      form: 'C',
+      buildBlockShown: progressRows > 0,
+      ...(model.railStages !== undefined && { stages: model.railStages }),
+    }),
+  };
+  const displayedSeatLines = useHeaderSeatLines();
+  const railChoice = selectRailFormAndLine({
+    cols,
+    railWidths: railCellsByForm,
+    modelLineCells: getTerminalCellWidth(seatLineText(displayedSeatLines.model)),
+    toolLineCells: getTerminalCellWidth(seatLineText(displayedSeatLines.tool)),
   });
+  const railForm = railChoice.form;
+  const railCells = railCellsByForm[railForm];
   const crewChrome =
     model.crewRecord === undefined
       ? null
-      : recordedCrewHeader({ record: model.crewRecord, railCells, cols });
+      : recordedCrewHeader({ record: model.crewRecord, form: railForm, railCells, cols });
   const closedBlock =
     model.closed && model.atRestRecord !== undefined
       ? closedTranscriptBlock({

@@ -139,7 +139,15 @@ export function PlannerQuestion({
         : innerWidth - getTerminalCellWidth(asked);
     return truncateTerminalDisplayText(row.text.trimEnd(), Math.max(1, cut));
   };
-  const answerWidth = Math.max(1, bodyHeight === 0 ? Math.ceil(innerWidth / 2) : innerWidth - 2);
+  const answerWidth = Math.max(
+    1,
+    bodyHeight === 0
+      ? Math.min(
+          Math.ceil(innerWidth / 2),
+          getTerminalCellWidth(state.drafts[state.index]?.text ?? '') + 1,
+        )
+      : innerWidth - 2,
+  );
   const besideQuestion =
     bodyHeight === 0
       ? truncateTerminalDisplayText(

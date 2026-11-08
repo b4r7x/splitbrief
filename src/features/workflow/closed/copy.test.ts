@@ -370,11 +370,23 @@ describe('crewLine', () => {
     ]);
   });
 
+  it('names every recorded seat by its tool before it drops one', () => {
+    const line = crewLine(makeView(), 45)
+      .map((span) => span.text)
+      .join('');
+    expect(line).toBe('PLAN claude · BUILD ollama · REVIEW = PLAN');
+  });
+
   it('names the reviewer when the run had its own review seat', () => {
     const view = makeView({
       seats: {
         ...makeView().seats,
-        review: { kind: 'named', short: 'gpt-5-codex', full: 'custom-endpoint · gpt-5-codex' },
+        review: {
+          kind: 'named',
+          short: 'gpt-5-codex',
+          full: 'custom-endpoint · gpt-5-codex',
+          tool: 'custom-endpoint',
+        },
       },
     });
     expect(

@@ -612,6 +612,11 @@
 - A subagent call in an activity batch reads `Agent` with the subagent name, for example `Agent  Explore`, in the dim colour. Before, it read `Plan` in the PLAN colour.
 - When a planner answer stops at the model's output token limit, the halt now says so: `Planning failed: output token limit reached`. It also says that a retry can stop at the same limit, and it recommends another tool when one is ready. **Try again** stays in the menu.
 - The row that asks the reviewer again now shows one full stop after a criterion that the reviewer wrote as a sentence in place of its id. Before, it showed two.
+- The transcript no longer shows a `Drift` row after the final review. The closed run still shows the scope result in its `Scope` row.
+- A halt panel now shows the planner's whole reason when a review is stuck or a brief runs out of attempts.
+- In a short terminal, a free-text question now starts right after the answer field, with no wide gap.
+- When a short halt panel folds lines away, the fold now says that it hides the folder with the replaced files.
+- At 80 columns or fewer, the header now names every seat by its tool when the tool names fit. Above 80 columns, it names every seat by its model when the model names fit beside all the stages. Else it names every seat by its tool when the tool names fit. To make room for the tool names, the rail can show only one stage.
 
 ## [0.1.0] - 2026-08-07
 

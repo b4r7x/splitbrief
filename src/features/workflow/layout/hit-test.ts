@@ -7,6 +7,7 @@ import {
   getRailStages,
   selectRailStage,
   type RailStage,
+  type RailStageState,
 } from '../../../core/rail-stages.js';
 import {
   chooseFormBVariant,
@@ -116,13 +117,17 @@ export function getRailStageZones(input: {
   cols: number;
   fraction: string;
   cancelled?: boolean;
+  stages?: readonly RailStageState[] | undefined;
   leftCol?: number;
   topRow?: number;
 }): RailStageZone[] {
   const leftCol = input.leftCol ?? RAIL_CONTENT_LEFT_COL;
   const topRow = input.topRow ?? RAIL_STAGE_FIRST_ROW;
   const tier = resolveGlyphTier();
-  const stages = getRailStages(input.phase, { cancelled: input.cancelled ?? false });
+  const stages =
+    input.stages === undefined
+      ? getRailStages(input.phase, { cancelled: input.cancelled ?? false })
+      : [...input.stages];
   const contentWidth = getChromeContentWidth(input.cols);
   const maxCol = leftCol + contentWidth - 1;
 

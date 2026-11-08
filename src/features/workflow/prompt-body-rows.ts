@@ -1,3 +1,4 @@
+import { REPLACED_FILES_SAVED_LEAD } from '../../core/runtime/commands/messages.js';
 import {
   ELLIPSIS,
   sanitizeTerminalDisplayText,
@@ -183,11 +184,42 @@ export function promptBodyRows(
   return rows.flatMap((row) => promptBodyLinesForRow(row, promptWidth));
 }
 
+const SAVED_FOLDER_WORDS = 'saved folder';
+
+function factGroups(rows: readonly PromptBodyLine[]): PromptBodyLine[][] {
+  const groups: PromptBodyLine[][] = [];
+  for (const row of rows) {
+    const group = groups.at(-1);
+    if (group !== undefined && row.kind === 'facts-line' && row.continuation === true) {
+      group.push(row);
+      continue;
+    }
+    groups.push([row]);
+  }
+  return groups;
+}
+
+function hiddenFoldWords(rows: readonly PromptBodyLine[]): string {
+  const saved = factGroups(rows).find((group) =>
+    group
+      .map((row) => (row.kind === 'facts-line' ? row.text : ''))
+      .join(' ')
+      .replace(/\s+/gu, ' ')
+      .includes(REPLACED_FILES_SAVED_LEAD),
+  );
+  if (saved === undefined) return countNoun(rows.length, 'more line');
+  const otherHidden = rows.length - saved.length;
+  return otherHidden === 0
+    ? SAVED_FOLDER_WORDS
+    : `${SAVED_FOLDER_WORDS} and ${countNoun(otherHidden, 'more line')}`;
+}
+
 /**
  * What a panel too short for its prompt keeps: the headline that says what
  * happened. Blank rows give way first, then facts from the bottom; the last kept
- * fact row says how many lines are cut, and with no room for a fact row the
- * headline carries that count, so no text leaves the panel unmarked.
+ * fact row says what is cut, naming a hidden put-back fact `saved folder` beside
+ * the rows it hides, and with no room for a fact row the headline carries that
+ * mark, so no text leaves the panel unmarked.
  */
 export function clipPromptBodyRows(
   rows: readonly PromptBodyLine[],
@@ -212,7 +244,7 @@ export function clipPromptBodyRows(
     }
   }
   const freed = initialKeptLength - kept.length;
-  const mark = `${ELLIPSIS} ${countNoun(facts.length - kept.length, 'more line')}`;
+  const mark = `${ELLIPSIS} ${hiddenFoldWords(facts.slice(kept.length))}`;
   if (room > 0) {
     const padding = Array.from({ length: freed }, () => BLANK_ROW);
     return [...head, ...kept, { kind: 'facts-line', text: `${FACT_INDENT}${mark}` }, ...padding];

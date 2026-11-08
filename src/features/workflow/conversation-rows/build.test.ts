@@ -2453,30 +2453,6 @@ describe('buildConversationRowsProjection section spacers', () => {
 });
 
 describe('buildConversationRowsProjection check lists', () => {
-  const commands = ['loan', 'renewals', 'member', 'services'].map((name, index) => ({
-    id: `V${index + 1}`,
-    command: `node --test test/${name}.test.js`,
-    reason: `Checks ${name}.`,
-  }));
-  const checks: EngineEventOf<'full_suite'>[] = commands.map((command, index) => ({
-    type: 'full_suite',
-    ts: index + 2,
-    phase: 'final-review',
-    status: 'done',
-    id: command.id,
-    command: command.command,
-    moment: 'pre-review',
-    passed: true,
-    duration: index === 1 || index === 3 ? 200 : 100,
-  }));
-  const drift: EngineEventOf<'drift_report'> = {
-    type: 'drift_report',
-    ts: 6,
-    phase: 'final-review',
-    passed: true,
-    errorCount: 0,
-    warningCount: 0,
-  };
   const firstCheck: EngineEventOf<'full_suite'> = {
     type: 'full_suite',
     ts: 2,
@@ -2513,33 +2489,6 @@ describe('buildConversationRowsProjection check lists', () => {
       windowEnd: projection.totalRows,
     });
   }
-
-  it('stacks reviewer checks and drift between surrounding messages', () => {
-    const projection = projectionFor([
-      { type: 'user_message', ts: 0, phase: 'idle', text: 'Check the changes.' },
-      ...checks,
-      drift,
-      { type: 'planner_text', ts: 7, phase: 'final-review', text: 'Review is ready.' },
-    ]);
-    const rows = materialize(projection);
-
-    expect(rows.map(rowText)).toEqual([
-      'Check the changes.',
-      '',
-      'Reviewer check V1 · node --test test/loan.test.js · passed · 0.1s',
-      'Reviewer check V2 · node --test test/renewals.test.js · passed · 0.2s',
-      'Reviewer check V3 · node --test test/member.test.js · passed · 0.1s',
-      'Reviewer check V4 · node --test test/services.test.js · passed · 0.2s',
-      'Drift · clean',
-      '',
-      'Review is ready.',
-    ]);
-    expect(rows.filter((row) => row.kind === 'spacer')).toHaveLength(2);
-    expect(rows.at(0)?.kind).not.toBe('spacer');
-    expect(rows.at(-1)?.kind).not.toBe('spacer');
-    expect(projection.renderableCount).toBe(7);
-    expect(projection.totalRows).toBe(rows.length);
-  });
 
   it('keeps adjacent checks without spacers and hangs the wrapped continuation by two columns', () => {
     const projection = projectionFor(
@@ -2592,20 +2541,12 @@ describe('buildConversationRowsProjection check lists', () => {
             ...(withHeader ? [header] : []),
             check,
             { ...check, id: 'V2' },
-            drift,
           ]);
           const rows = materialize(projection);
 
           expect(rows.filter((row) => row.kind === 'spacer')).toEqual([]);
-          expect(rows).toHaveLength(withHeader ? 4 : 3);
-          expect(rows.at(-1)).toMatchObject({
-            segments: [
-              { text: 'Drift', tone: 'text' },
-              { text: ' · ', tone: 'textDim' },
-              { text: 'clean', tone: 'success' },
-            ],
-          });
-          expect(projection.renderableCount).toBe(withHeader ? 4 : 3);
+          expect(rows).toHaveLength(withHeader ? 3 : 2);
+          expect(projection.renderableCount).toBe(withHeader ? 3 : 2);
         }
       },
     );
@@ -2620,12 +2561,11 @@ describe('buildConversationRowsProjection check lists', () => {
         id: undefined,
         stage: 'test',
       };
-      const rows = materialize(projectionFor([legacy, { ...legacy, command: 'npm test' }, drift]));
+      const rows = materialize(projectionFor([legacy, { ...legacy, command: 'npm test' }]));
 
       expect(rows.map(rowText)).toEqual([
         'Pre-review suite · node --test a.js · passed',
         'Pre-review suite · npm test · passed',
-        'Drift · clean',
       ]);
       expect(rows.filter((row) => row.kind === 'spacer')).toEqual([]);
     },
@@ -2641,38 +2581,14 @@ describe('buildConversationRowsProjection check lists', () => {
       { type: 'planner_text', ts: 3, phase: 'final-review', content: 'markdown', text: '' },
       secondCheck,
       makePlannerHeartbeat(),
-      drift,
     ]);
 
     expect(materialize(projection).map(rowText)).toEqual([
       'End-of-run checks · none · the plan names no project gate',
       'Reviewer check V1 · node --test a.js · passed',
       'Reviewer check V2 · node --test a.js · passed',
-      'Drift · clean',
     ]);
-    expect(projection.renderableCount).toBe(4);
-  });
-
-  it.each(['off', 'none'] as const)('joins drift after a header without commands: %s', (status) => {
-    const projection = projectionFor([{ ...header, status }, drift]);
-    const rows = materialize(projection);
-
-    expect(rows).toHaveLength(2);
-    expect(rows.filter((row) => row.kind === 'spacer')).toEqual([]);
-    expect(rows[0]?.segments).toContainEqual({ text: status, tone: 'warning' });
-    expect(
-      rows[0]?.segments
-        .filter((segment) => segment.text !== 'Reviewer' && segment.text !== status)
-        .every((segment) => segment.tone === 'textDim'),
-    ).toBe(true);
-    expect(rows.at(-1)).toMatchObject({
-      segments: [
-        { text: 'Drift', tone: 'text' },
-        { text: ' · ', tone: 'textDim' },
-        { text: 'clean', tone: 'success' },
-      ],
-    });
-    expect(projection.renderableCount).toBe(2);
+    expect(projection.renderableCount).toBe(3);
   });
 
   it.each([60, 80, 120])(
@@ -2693,13 +2609,12 @@ describe('buildConversationRowsProjection check lists', () => {
             detail:
               'This check needs a running server. Start the server, then run this command from the workspace to check the changed calculations.',
           },
-          drift,
         ],
         cols,
       );
       const rows = materialize(projection);
 
-      expect(rows.length).toBeGreaterThan(5);
+      expect(rows.length).toBeGreaterThan(4);
       expect(rows.filter((row) => row.kind === 'spacer')).toEqual([]);
       expect(projection.totalRows).toBe(rows.length);
       for (const windowSize of [1, 3, 7]) {
@@ -2751,7 +2666,7 @@ describe('buildConversationRowsProjection check lists', () => {
     { name: 'task header', event: makeTaskStart() },
   ])('keeps spacers around a $name between checks', ({ event }) => {
     const boundaryRows = materialize(projectionFor([event]));
-    const rows = materialize(projectionFor([header, firstCheck, event, secondCheck, drift]));
+    const rows = materialize(projectionFor([header, firstCheck, event, secondCheck]));
 
     expect(rows.map(rowText)).toEqual([
       'End-of-run checks · none · the plan names no project gate',
@@ -2760,13 +2675,12 @@ describe('buildConversationRowsProjection check lists', () => {
       ...boundaryRows.map(rowText),
       '',
       'Reviewer check V2 · node --test a.js · passed',
-      'Drift · clean',
     ]);
     expect(rows.filter((row) => row.kind === 'spacer')).toHaveLength(2);
   });
 
   it('keeps a spacer before a second review_checks header', () => {
-    const rows = materialize(projectionFor([header, firstCheck, header, secondCheck, drift]));
+    const rows = materialize(projectionFor([header, firstCheck, header, secondCheck]));
 
     expect(rows.map(rowText)).toEqual([
       'End-of-run checks · none · the plan names no project gate',
@@ -2774,20 +2688,6 @@ describe('buildConversationRowsProjection check lists', () => {
       '',
       'End-of-run checks · none · the plan names no project gate',
       'Reviewer check V2 · node --test a.js · passed',
-      'Drift · clean',
-    ]);
-    expect(rows.filter((row) => row.kind === 'spacer')).toHaveLength(1);
-  });
-
-  it('keeps a spacer before a check after drift ends the list', () => {
-    const rows = materialize(projectionFor([firstCheck, drift, secondCheck, drift]));
-
-    expect(rows.map(rowText)).toEqual([
-      'Reviewer check V1 · node --test a.js · passed',
-      'Drift · clean',
-      '',
-      'Reviewer check V2 · node --test a.js · passed',
-      'Drift · clean',
     ]);
     expect(rows.filter((row) => row.kind === 'spacer')).toHaveLength(1);
   });
@@ -2814,7 +2714,7 @@ describe('buildConversationRowsProjection check lists', () => {
             duration: 1000,
           },
         },
-        { type: 'events', startIndex: 4, items: [secondCheck, drift] },
+        { type: 'events', startIndex: 4, items: [secondCheck] },
       ],
       expandedDiffs: new Set(),
       expandedActivityBatches: new Set(),
@@ -2833,9 +2733,30 @@ describe('buildConversationRowsProjection check lists', () => {
       'summary',
       'spacer',
       'message',
-      'message',
     ]);
-    expect(projection.renderableCount).toBe(6);
+    expect(projection.renderableCount).toBe(5);
+  });
+
+  it('paints the same rows with and without a drift report after the reviewer checks', () => {
+    const message: EngineEvent = {
+      type: 'user_message',
+      ts: 4,
+      phase: 'final-review',
+      text: 'Check the changes.',
+    };
+    const driftReport: EngineEventOf<'drift_report'> = {
+      type: 'drift_report',
+      ts: 3,
+      phase: 'final-review',
+      passed: true,
+      errorCount: 0,
+      warningCount: 0,
+      findings: [],
+    };
+    const withoutDrift = materialize(projectionFor([header, firstCheck, message]));
+    const withDrift = materialize(projectionFor([header, firstCheck, driftReport, message]));
+
+    expect(withDrift.map(rowText)).toEqual(withoutDrift.map(rowText));
   });
 });
 

@@ -1130,3 +1130,49 @@ it.each([80, 60])(
     ui.unmount();
   },
 );
+
+it.each([80, 60])(
+  'keeps the question next to an empty answer in a one-row panel, %i columns wide',
+  async (width) => {
+    store.setQuestions([
+      { id: 'q1', type: 'input', text: 'Which file or module do you want refactored?' },
+    ]);
+    const ui = renderQuestion(width, 1);
+    await flushEffects();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    const row = frame.split('\n').find((line) => line.includes('›') && line.includes('· ↓ more'));
+    expect(row, frame).toBeDefined();
+    const asked = row ?? '';
+    const between = asked.slice(asked.indexOf('› ') + 2, asked.indexOf('· ↓ more'));
+    expect(between.length, frame).toBeLessThanOrEqual(2);
+    if (width === 80) expect(frame).toContain('Which file or module do you want refactored?');
+    ui.unmount();
+  },
+);
+
+it.each([
+  [80, '· ↓ more · Which file or module do'],
+  [60, '· ↓ more · Which file'],
+] as const)(
+  'keeps half of a one-row panel for the question beside a long draft, %i columns wide',
+  async (width, question) => {
+    let now = 1000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    store.setQuestions([
+      { id: 'q1', type: 'input', text: 'Which file or module do you want refactored?' },
+    ]);
+    const ui = renderQuestion(width, 1);
+    await flushEffects();
+    now += 200;
+    ui.stdin.write('src/features/workflow/conversation-rows/event-rows/visibility.ts');
+    await flushEffects();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    const row = frame.split('\n').find((line) => line.includes('›') && line.includes('· ↓ more'));
+    expect(row, frame).toBeDefined();
+    const asked = row ?? '';
+    const answer = asked.slice(asked.indexOf('› ') + 2, asked.indexOf('· ↓ more'));
+    expect(answer.length, frame).toBe(Math.ceil((width - 4) / 2) + 1);
+    expect(frame).toContain(question);
+    ui.unmount();
+  },
+);

@@ -23,6 +23,19 @@ describe('isTranscriptRowlessEvent', () => {
     expect(isTranscriptRowlessEvent(park)).toBe(false);
   });
 
+  it('hides a drift report', () => {
+    expect(
+      isTranscriptRowlessEvent({
+        type: 'drift_report',
+        ts: 0,
+        phase: 'final-review',
+        passed: false,
+        errorCount: 1,
+        warningCount: 0,
+      }),
+    ).toBe(true);
+  });
+
   it('keeps a seat retry as a transcript row', () => {
     expect(
       isTranscriptRowlessEvent({
