@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import type { z } from 'zod';
 import { SOFT_SEP } from '../../core/separators.js';
 import { countNoun } from '../../utils/pluralize.js';
@@ -367,7 +368,15 @@ function toolUseDetails(
     return { kind: 'write', label: `editing ${target}`, target };
   }
   if (pattern !== undefined && isGrepTool(normalized)) {
-    return { kind: 'search', label: `searching ${pattern}`, target: pattern };
+    const folder =
+      rawFilePath !== undefined && resolve(rootDir, rawFilePath) !== resolve(rootDir)
+        ? filePath
+        : undefined;
+    const glob = stringInput(input, 'glob') ?? stringInput(input, 'include');
+    const target = [pattern, folder, glob]
+      .filter((part): part is string => part !== undefined)
+      .join(SOFT_SEP);
+    return { kind: 'search', label: `searching ${target}`, target };
   }
   if (pattern !== undefined && isGlobTool(normalized)) {
     return { kind: 'glob', label: `matching ${pattern}`, target: pattern };

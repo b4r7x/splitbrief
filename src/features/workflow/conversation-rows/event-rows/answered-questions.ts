@@ -138,21 +138,23 @@ function roundHeader(
 }
 
 // The reply opens on the content column after `You → `; its wrapped and following lines stay there.
+// A blank line inside a wrapped answer line is the space the wrapper broke on, so it adds no row;
+// a blank line the user typed keeps its row.
 function replyRows(keyPrefix: string, reply: string, bodyWidth: number): ConversationRow[] {
   const rows: ConversationRow[] = [];
   reply
     .split('\n')
-    .flatMap((answerLine, answerIndex) =>
-      wrappedLines(answerLine, bodyWidth, answerIndex === 0 ? 'You → ' : '').map(
-        (line, lineOffset) => ({
-          line,
-          continuation: lineOffset > 0,
-        }),
-      ),
-    )
-    .forEach(({ line, continuation }, offset) => {
+    .flatMap((answerLine, answerIndex) => {
+      const wrapped = wrappedLines(answerLine, bodyWidth, answerIndex === 0 ? 'You → ' : '');
+      return wrapped.map((line, lineOffset) => ({
+        line,
+        continuation: lineOffset > 0,
+        wrapped: wrapped.length > 1,
+      }));
+    })
+    .forEach(({ line, continuation, wrapped }, offset) => {
       const text = continuation ? continuationHead(line) : line;
-      if (continuation && text === '') return;
+      if (wrapped && text.trim() === '') return;
       rows.push(row({ key: `${keyPrefix}-${offset}`, text, tone: 'text' }));
     });
   return rows;

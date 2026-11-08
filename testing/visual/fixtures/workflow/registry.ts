@@ -1462,6 +1462,10 @@ const checkpointPredicates = [
       'collapse · ctrl+a',
     ),
   ],
+  [
+    checkpointId('implementation-search-folders'),
+    includesAll('renewalWindow · src/loans · *.ts', 'renewalWindow · src/loans/rules'),
+  ],
   [checkpointId('implementation-silent-bare'), includesAll('Implementing…', 'No output for')],
   [
     checkpointId('live-seat-wait'),

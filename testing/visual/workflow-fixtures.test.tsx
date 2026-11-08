@@ -1647,6 +1647,19 @@ describe('workflow visual fixtures', () => {
     }
   });
 
+  it('names the folder of each search in the activity block', () => {
+    const projection = workflowFixtureProjections.get(
+      scenarioId('workflow-implementation-search-folders'),
+    );
+    if (projection === undefined) throw new Error('Missing search-folders scenario');
+    const activities = projection.events.filter((event) => event.type === 'runner_call_activity');
+    expect(activities.map((event) => event.target)).toEqual([
+      `renewalWindow${SOFT_SEP}src/loans${SOFT_SEP}*.ts`,
+      `renewalWindow${SOFT_SEP}src/loans/rules`,
+      'renewalWindow',
+    ]);
+  });
+
   beforeEach(() => {
     forceUnicodeGlyphs();
   });

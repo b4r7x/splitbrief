@@ -344,12 +344,23 @@ const SCROLL_KEY = 'shift+↑↓ scroll';
 /**
  * `canGoHome` is false while something else on the screen owns Escape — a tool check beside the
  * composer, say. The key leaves the legend rather than promising an exit it would not take.
+ * `canOpenCommands` is false while a tool check to continue the run holds the app shortcuts:
+ * ctrl+k leaves the legend rather than naming a key that does nothing.
  */
 export function legendText(
-  input: Readonly<{ overflow: boolean; width: number; canGoHome?: boolean | undefined }>,
+  input: Readonly<{
+    overflow: boolean;
+    width: number;
+    canGoHome?: boolean | undefined;
+    canOpenCommands?: boolean | undefined;
+  }>,
 ): string {
-  const [home, ...rest] = LEGEND_KEYS;
-  const lead = input.canGoHome === false ? [] : [home];
-  const keys = input.overflow ? [...lead, SCROLL_KEY, ...rest] : [...lead, ...rest];
+  const [home, commands, ...rest] = LEGEND_KEYS;
+  const keys = [
+    ...(input.canGoHome === false ? [] : [home]),
+    ...(input.overflow ? [SCROLL_KEY] : []),
+    ...(input.canOpenCommands === false ? [] : [commands]),
+    ...rest,
+  ];
   return fitKeyLegend(keys.join(SOFT_SEP), input.width);
 }

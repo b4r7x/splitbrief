@@ -125,6 +125,9 @@
 
 - When SPLITBRIEF asks you about a planner rewrite or split that changes a brief's criteria, the transcript no longer shows a `rewrote` or `split into` row for it. The brief did not change.
 - That question now names the criteria the rewrite adds or drops, and no longer says `Dropped criteria: none`.
+- An answer line that starts with a space no longer adds a blank row to the Answered block.
+- A Search row in the activity block names the folder or file and the glob of the search, such as `renewalWindow · src/loans · *.ts`. Before, two searches of one pattern in two folders showed two identical rows.
+- While SPLITBRIEF checks your tools to continue a run, the key legend no longer shows `ctrl+k commands`. The shortcut does nothing until the check ends.
 - A BUILD call that retries after a network or server failure no longer shows a `BUILD failed` row before each retry.
 - `--plain` now prints a `retrying:` line each time a seat retries after a network or server failure.
 - A message sent before a brief starts now says that BUILD reads it when its call starts.

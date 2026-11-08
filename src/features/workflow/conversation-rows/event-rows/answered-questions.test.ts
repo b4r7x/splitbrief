@@ -46,6 +46,50 @@ describe('answeredQuestionsRowBlock', () => {
       'ok',
     ]);
   });
+
+  it.each<[number, string, string[]]>([
+    [
+      19,
+      'Use T004\n configuration ok',
+      ['Answered · 1 question', '1. Which brief?', 'You → Use ', 'T004', 'configuration', 'ok'],
+    ],
+    [
+      70,
+      `Pin it\n ${'a'.repeat(64)} now`,
+      ['Answered · 1 question', '1. Which brief?', 'You → Pin it', 'a'.repeat(64), 'now'],
+    ],
+  ])(
+    'paints no blank row when a later answer line starts with a space and its first word fills the row at width %i',
+    (width, answer, expected) => {
+      const block = answeredQuestionsRowBlock({
+        keyPrefix: 'qa',
+        qa: [{ question: 'Which brief?', answer }],
+        width,
+      });
+      if (block === null) throw new Error('Missing answered questions block');
+      const rows = block.createRows(0, block.rowCount);
+
+      expect(rows.map(rowText)).toEqual(expected);
+    },
+  );
+
+  it('keeps a blank line that the user typed between two answer lines', () => {
+    const block = answeredQuestionsRowBlock({
+      keyPrefix: 'qa',
+      qa: [{ question: 'Which brief?', answer: 'first\n\nsecond' }],
+      width: 80,
+    });
+    if (block === null) throw new Error('Missing answered questions block');
+    const rows = block.createRows(0, block.rowCount);
+
+    expect(rows.map(rowText)).toEqual([
+      'Answered · 1 question',
+      '1. Which brief?',
+      'You → first',
+      '',
+      'second',
+    ]);
+  });
 });
 
 describe('repliedQuestionsRowBlock', () => {
@@ -77,6 +121,26 @@ describe('repliedQuestionsRowBlock', () => {
     expect(rows[0]?.segments.map((segment) => segment.tone)).toEqual(['textDim', 'planner']);
     expect(rows[1]?.segments[0]?.tone).toBe('planner');
     expect(rows[3]?.segments[0]?.tone).toBe('text');
+  });
+
+  it('paints no blank row when a later reply line starts with a space and its first word fills the row', () => {
+    const block = repliedQuestionsRowBlock({
+      keyPrefix: 'replied',
+      questions: [{ id: 'keep', type: 'confirm', text: 'Keep it?' }],
+      reply: 'Use T004\n configuration ok',
+      width: 18,
+    });
+    if (block === null) throw new Error('Missing replied questions block');
+    const rows = block.createRows(0, block.rowCount);
+
+    expect(rows.map(rowText)).toEqual([
+      'Answered · 1 question',
+      '· Keep it?',
+      'You → Use ',
+      'T004',
+      'configuration',
+      'ok',
+    ]);
   });
 });
 

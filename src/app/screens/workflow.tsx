@@ -515,6 +515,7 @@ export function WorkflowScreen({
           overflow: scrollAboveLabel !== '' || scrollBelowLabel !== '',
           width: getChromeContentWidth(cols),
           canGoHome: !checking && queuedDeparture !== 'quit',
+          canOpenCommands: !checking,
         });
 
   return (

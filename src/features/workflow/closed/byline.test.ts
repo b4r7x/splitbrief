@@ -772,6 +772,18 @@ describe('legendText', () => {
     expect(fitted).toBe('esc home · ctrl+k commands');
     expect(fitted).not.toContain('…');
   });
+
+  it('drops ctrl+k commands while the app shortcuts are off', () => {
+    expect(legendText({ overflow: false, width: WIDE, canOpenCommands: false })).toBe(
+      'esc home · /sessions · /help',
+    );
+    expect(
+      legendText({ overflow: false, width: WIDE, canGoHome: false, canOpenCommands: false }),
+    ).toBe('/sessions · /help');
+    expect(
+      legendText({ overflow: true, width: WIDE, canGoHome: false, canOpenCommands: false }),
+    ).toBe('shift+↑↓ scroll · /sessions · /help');
+  });
 });
 
 describe('fitted byline parts', () => {

@@ -343,13 +343,18 @@ describe('a resume checking its tools', () => {
 
     const checkingRows = frameRows(ui);
     expect(ui.lastFrame()).not.toContain(FULLSCREEN_PANEL_TITLE);
-    // The run is exactly where it was. Two rows move, and only because Escape changed hands: the
-    // byline it already had now names the check, and the legend stops offering esc for going home.
+    // The run is exactly where it was. Two rows move, and only because Escape and ctrl+k changed
+    // hands: the byline it already had now names the check, and the legend stops offering esc for
+    // going home or ctrl+k for the command palette. keys.test.tsx:973-975 pins that ctrl+k opens
+    // nothing while sessionPreparationActive is true, so the old assertion that the check keeps
+    // ctrl+k in the legend pinned the defect instead.
     const statusRow = checkingRows.findIndex((row) => row.includes(CHECKING));
     const legendRow = atRestRows.findIndex((row) => row.includes('esc home'));
+    expect(atRestRows[legendRow]).toContain('esc home · ctrl+k commands');
     expect(checkingRows[statusRow]).toContain('esc cancel');
     expect(checkingRows[legendRow]).not.toContain('esc');
-    expect(checkingRows[legendRow]).toContain('ctrl+k commands');
+    expect(checkingRows[legendRow]).not.toContain('ctrl+k');
+    expect(checkingRows[legendRow]).toContain('/sessions · /help');
     expect(
       checkingRows.flatMap((row, index) => (row === atRestRows[index] ? [] : [index])),
     ).toEqual([legendRow, statusRow].sort((left, right) => left - right));
@@ -366,6 +371,7 @@ describe('a resume checking its tools', () => {
     expect(routerStore.get()).toBe(exactRoute);
     expect(ui.lastFrame()).toContain('and keep the parser');
     expect(frameRows(ui).length).toBe(atRestRows.length);
+    expect(frameRows(ui)[legendRow]).toContain('esc home · ctrl+k commands');
 
     pending.resolve({ kind: 'aborted' });
     await selection;

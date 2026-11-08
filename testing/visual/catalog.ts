@@ -5392,6 +5392,24 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-implementation-search-folders',
+      title: 'Workflow · search rows that name their folder and glob',
+      surface: screenSurface('workflow'),
+      viewports: REQUIRED_VIEWPORTS,
+      checkpoint: {
+        id: 'implementation-search-folders',
+        title: 'Each Search row names its folder and glob',
+        kind: 'implementation',
+        marker: 'renewalWindow · src/loans/rules',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header and build progress' },
+        { id: 'transcript', title: 'Tool call transcript' },
+        { id: 'activity', title: 'Tool call activity block' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-implementation-silent-bare',
       title: 'Workflow · a silent seat with no open tool and no stream hint',
       surface: screenSurface('workflow'),

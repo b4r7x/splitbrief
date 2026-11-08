@@ -332,6 +332,58 @@ describe('projectRunnerCallActivity', () => {
     }
   });
 
+  it.each<[string, Record<string, unknown>, string]>([
+    [
+      'rowLeading\\(',
+      { pattern: 'rowLeading\\(', path: '/project/src/features/workflow', glob: '*.tsx' },
+      'rowLeading\\( · src/features/workflow · *.tsx',
+    ],
+    [
+      'rowLeading\\(',
+      { pattern: 'rowLeading\\(', path: '/project/src/features/workflow/components' },
+      'rowLeading\\( · src/features/workflow/components',
+    ],
+    [
+      'liveBar',
+      { pattern: 'liveBar', path: '/project/src/lib/glyphs.ts' },
+      'liveBar · src/lib/glyphs.ts',
+    ],
+    ['TODO', { pattern: 'TODO', glob: '**/*.ts' }, 'TODO · **/*.ts'],
+    ['TODO', { pattern: 'TODO', path: '/elsewhere/lib' }, 'TODO · /elsewhere/lib'],
+    [
+      'lint',
+      { pattern: 'lint', path: '/project/src/core', include: '*.ts' },
+      'lint · src/core · *.ts',
+    ],
+  ])('names the folder or file and the glob of a search: %s', (_, input, target) => {
+    expect(
+      projectRunnerCallActivity(
+        runnerToolUse({ name: 'grep', inputDelta: JSON.stringify(input) }),
+        1,
+        '/project',
+      ),
+    ).toMatchObject({ kind: 'search', label: `searching ${target}`, target });
+  });
+
+  it('names only the pattern of a search in the whole project', () => {
+    for (const input of [
+      { pattern: 'useWorkflowRunner' },
+      { pattern: 'useWorkflowRunner', path: '/project' },
+    ]) {
+      expect(
+        projectRunnerCallActivity(
+          runnerToolUse({ name: 'grep', inputDelta: JSON.stringify(input) }),
+          1,
+          '/project',
+        ),
+      ).toMatchObject({
+        kind: 'search',
+        label: 'searching useWorkflowRunner',
+        target: 'useWorkflowRunner',
+      });
+    }
+  });
+
   it('ignores prompt-like tool fields and does not invent exploring labels', () => {
     const activity = projectRunnerCallActivity(
       runnerToolUse({
