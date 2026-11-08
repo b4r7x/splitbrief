@@ -51,15 +51,7 @@ export async function loadDiscovery(projectDir: string): Promise<void> {
     watchCancelled = true;
   };
 
-  try {
-    const caps = await detectCapabilities(storeConfig);
-    if (caps.origin === 'env' || caps.origin === 'detected' || caps.origin === 'catalog') {
-      configStore.setContextLength(caps.contextLength, caps.origin !== 'env');
-    }
-  } catch (err) {
-    warnError('Could not detect provider capabilities', err);
-    feedbackStore.setMessage('Provider detection failed — using defaults');
-  }
+  await storeContextLength(storeConfig);
 
   const current = { config: storeConfig, projectDir };
   await hydrateRememberedDetection(current);
@@ -83,13 +75,32 @@ export async function loadDiscovery(projectDir: string): Promise<void> {
       .catch((err: unknown) => {
         warnError('Could not check your tools', err);
       })
-      .then(() => {
-        if (!watchCancelled) crewWatchTeardown = watchCrewForProjectListing(storeConfig);
+      .then(async () => {
+        if (watchCancelled) return;
+        crewWatchTeardown = watchCrewForProjectListing(storeConfig);
+        // A CLI build seat's window is in its tool's own listing, which the cache holds only
+        // now. Reading it again keeps the window boot stored equal to the one a run reads.
+        if (storeConfig.implementer.kind === 'cli' && configStore.buildsOnLoadedSeat(storeConfig)) {
+          await storeContextLength(storeConfig);
+        }
       }),
   );
 
   const skills = await discoverSkills(projectDir);
   skillsStore.setAvailable(skills);
+}
+
+/** Stores the build seat's context length, read through the model cache a run reads. */
+async function storeContextLength(config: Config): Promise<void> {
+  try {
+    const caps = await detectCapabilities(config, modelCacheStore);
+    if (caps.origin === 'env' || caps.origin === 'detected' || caps.origin === 'catalog') {
+      configStore.setContextLength(caps.contextLength, caps.origin !== 'env');
+    }
+  } catch (err) {
+    warnError('Could not detect provider capabilities', err);
+    feedbackStore.setMessage('Provider detection failed — using defaults');
+  }
 }
 
 export function teardownDiscovery(): void {
@@ -152,7 +163,7 @@ async function hydrateRememberedDetection(
 }
 
 /**
- * Loads presentation labels without tool probes.
+ * Loads the remembered model rows without tool probes.
  */
 export async function loadRememberedCatalog(projectDir: string): Promise<void> {
   let config: Config;

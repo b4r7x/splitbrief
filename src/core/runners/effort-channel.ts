@@ -1,12 +1,27 @@
-import { EFFORT_LEVELS, type EffortLevel } from '../schemas/enums.js';
+import type { EffortLevel } from '../schemas/enums.js';
 import { assertNever, includes } from '../../utils/type-guards.js';
 import { CLI_TOOL_CATALOG, type CliToolId } from './cli-tool-catalog.js';
-import type { RunnerConfig } from '../config/accessors/runner-config.js';
+import {
+  getRunnerCatalogDisplayName,
+  type RunnerConfig,
+} from '../config/accessors/runner-config.js';
 
 /** How a seat's effort intent actually reaches the tool it runs. */
 export type CliEffortChannel = 'effort-flag' | 'variant' | 'model-id' | 'none';
 
-export const EFFORT_AXIS_TOKENS = EFFORT_LEVELS;
+/**
+ * The rungs a model id spells. `off` and `ultra` are save words only: an id or a
+ * label that ends in `ultra` names the model (`Nemotron 3 Ultra`), not an effort.
+ */
+export const EFFORT_AXIS_TOKENS = [
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+] as const;
 
 /**
  * One word for an effort nobody set, on every surface that shows one: SPLITBRIEF
@@ -46,7 +61,7 @@ function trailingAxisRun(tokens: readonly string[]): AxisRun {
     if (token === 'high' && end > 1 && tokens[end - 2] === 'extra') {
       effort ??= 'xhigh';
       end -= 2;
-    } else if (includes(EFFORT_LEVELS, token)) {
+    } else if (includes(EFFORT_AXIS_TOKENS, token)) {
       effort ??= token;
       end -= 1;
     } else if (token === 'thinking') {
@@ -104,6 +119,23 @@ export function runnerEffortChannel(runner: RunnerConfig): CliEffortChannel {
       return 'none';
     default:
       return assertNever(runner);
+  }
+}
+
+/** Why a seat does not spend its effort setting: what sets its effort instead, or that nothing does. */
+export function unusedEffortReason(runner: RunnerConfig): string {
+  const tool = getRunnerCatalogDisplayName(runner);
+  const channel = runnerEffortChannel(runner);
+  switch (channel) {
+    case 'model-id':
+      return `the ${tool} model id sets the effort`;
+    case 'variant':
+      return `the ${tool} variant sets the effort`;
+    case 'effort-flag':
+    case 'none':
+      return `${tool} has no effort channel`;
+    default:
+      return assertNever(channel);
   }
 }
 

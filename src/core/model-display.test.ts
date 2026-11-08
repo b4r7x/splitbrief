@@ -63,6 +63,11 @@ describe('peelDisplayLabel', () => {
     expect(peelDisplayLabel(displayName)).toBe(family);
   });
 
+  // kilo 7.0.49 names: `Ultra` is part of the model's name, although `ultra` is a Codex level.
+  it.each(['NVIDIA: Nemotron 3 Ultra', 'Sakana: Fugu Ultra'])('keeps Ultra in %s', (name) => {
+    expect(peelDisplayLabel(name)).toBe(name);
+  });
+
   it('peels every name of the cursor-agent 2026.10.22 listing to a clean family name', () => {
     const catalog = parseCursorNativeModelCatalog(
       readFileSync(

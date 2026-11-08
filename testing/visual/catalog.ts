@@ -6312,6 +6312,21 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         title: 'Overlay · settings · build seat working in your checkout',
         marker: 'Settings',
       },
+      {
+        id: 'overlay-settings-prompt-budget-codex',
+        title: 'Overlay · settings · prompt budget of a Codex build seat from its listing',
+        marker: 'auto (500K)',
+      },
+      {
+        id: 'overlay-settings-prompt-budget-auto-seat',
+        title: 'Overlay · settings · prompt budget of an auto build seat from its host model',
+        marker: 'auto (1M)',
+      },
+      {
+        id: 'overlay-settings-seat-saved-effort-cleared',
+        title: 'Overlay · settings · PLAN seat saved on OpenCode while the plan card waits',
+        marker: 'cleared:',
+      },
     ],
   }),
   'planner-picker': overlayGroup({
@@ -6443,6 +6458,16 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'overlay-planner-picker-codex',
         title: 'Overlay · planner picker · OpenAI Codex models',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-planner-picker-codex-ultra',
+        title: 'Overlay · planner picker · Codex row expanded on ultra effort',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-planner-picker-command-code-cache',
+        title: 'Overlay · planner picker · Command Code DeepSeek row from the catalog cache',
         marker: PICKER_TITLE_MARKER,
       },
       {

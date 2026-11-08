@@ -1,4 +1,5 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import type { Dirent } from 'node:fs';
+import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import type {
@@ -35,6 +36,7 @@ import { spawnProbe, type ProbeOutputBudget } from '../runners/cli-tools/cli-pro
 import { providerOracleCommand } from '../runners/cli-tools/provider-oracle.js';
 import { isCanonicalCliDeclaredProbe } from '../runners/cli-tools/registry.js';
 import { throwIfAborted } from '../../utils/abort.js';
+import { isENOENT } from '../../lib/process/errors.js';
 import { trackProbe } from '../probe-activity.js';
 import { sanitizeTerminalDiagnosticText, stripTerminalControls } from '../../utils/display-text.js';
 import type {
@@ -346,7 +348,41 @@ async function runAdmittedCatalogProbe(
     maxOutputBytes: command.maxOutputBytes,
     budget: CATALOG_PROBE_OUTPUT,
   });
-  return catalogOutcomeFromProbe(operation.context.id, command, output, spawnFailure);
+  const homeFiles = await readProbeHomeFiles(command, env.HOME);
+  return catalogOutcomeFromProbe(
+    operation.context.id,
+    command,
+    { ...output, homeFiles },
+    spawnFailure,
+  );
+}
+
+/**
+ * The `.json` files the listing wrote under the HOME the probe staged for it. The
+ * staging is deleted after the probe, so they are read here. A missing folder is a
+ * listing that wrote none, and a file over the probe's byte limit is skipped.
+ */
+async function readProbeHomeFiles(
+  command: Exclude<CliCatalogProbe, { kind: 'not-run' }>,
+  home: string | undefined,
+): Promise<readonly string[]> {
+  if (command.homeFilesDirectory === undefined || home === undefined) return [];
+  const directory = join(home, ...command.homeFilesDirectory);
+  let entries: Dirent[];
+  try {
+    entries = await readdir(directory, { withFileTypes: true });
+  } catch (err) {
+    if (isENOENT(err)) return [];
+    throw err;
+  }
+  const texts: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
+    const path = join(directory, entry.name);
+    if ((await stat(path)).size > command.maxOutputBytes) continue;
+    texts.push(await readFile(path, 'utf8'));
+  }
+  return texts;
 }
 
 function catalogCommandFailureCause(
@@ -383,7 +419,7 @@ function catalogOutcomeFromProbe(
     // evidence that timeout output contains the entire catalog.
     const complete =
       tool === 'command-code' && output.stderr.trim() === ''
-        ? parseCompleteCommandCodeNativeModelCatalog(output.stdout)
+        ? parseCompleteCommandCodeNativeModelCatalog(output.stdout, output.homeFiles)
         : null;
     return complete === null
       ? { kind: 'timeout' }

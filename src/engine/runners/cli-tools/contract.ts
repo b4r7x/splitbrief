@@ -166,6 +166,8 @@ export type CliProbeOutput = Readonly<{
   exitCode: number | null;
   timedOut: boolean;
   outputExceeded: boolean;
+  /** The text of the files a catalog probe's `homeFilesDirectory` holds after the listing. */
+  homeFiles?: readonly string[] | undefined;
 }>;
 
 export type CliProbeParser<Value> = (input: CliProbeOutput) => ProbeOutcome<Value>;
@@ -218,6 +220,12 @@ export type CliCatalogProbe =
          * so the probe sends it only for a tool the crew uses.
          */
         directoryHeader?: 'x-opencode-directory' | undefined;
+        /**
+         * A folder under the probe's staged HOME whose `.json` files the listing writes
+         * as it runs. The probe reads them, up to `maxOutputBytes` each, before it
+         * deletes the staging, and hands their text to `parse` as `homeFiles`.
+         */
+        homeFilesDirectory?: readonly string[] | undefined;
         legacy?: CliCatalogProbeLegacy | undefined;
         parse: CliProbeParser<readonly DetectedModel[]>;
       }>);

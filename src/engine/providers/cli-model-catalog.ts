@@ -23,6 +23,7 @@ export interface NativeCliModelCatalogEntry {
   readonly nativeDefaultReasoningEffort?: string | undefined;
   readonly contextWindow?: number | undefined;
   readonly supportsToolCalls?: boolean | undefined;
+  readonly inputModalities?: readonly string[] | undefined;
   readonly outputModalities?: readonly string[] | undefined;
   readonly capabilities?: readonly string[] | undefined;
 }
@@ -89,6 +90,7 @@ const CodexNativeModelSchema = z
     supported_reasoning_efforts: z.array(CodexReasoningEffortSchema).optional(),
     supported_reasoning_levels: z.array(CodexReasoningEffortSchema).optional(),
     default_reasoning_level: z.string().trim().min(1).optional(),
+    input_modalities: z.array(z.string().trim().min(1)).optional(),
   })
   .passthrough();
 
@@ -115,6 +117,7 @@ const VerboseModelBlockSchema = z
     capabilities: z
       .object({
         toolcall: z.boolean().optional(),
+        input: z.record(z.string(), z.boolean()).optional(),
         output: z.record(z.string(), z.boolean()).optional(),
       })
       .passthrough()
@@ -132,6 +135,7 @@ const OpenCodeApiModelSchema = z
     capabilities: z
       .object({
         tools: z.boolean().optional(),
+        input: z.array(z.string().trim().min(1)).optional(),
         output: z.array(z.string().trim().min(1)).optional(),
       })
       .passthrough()
@@ -144,6 +148,29 @@ const OpenCodeApiModelSchema = z
   .passthrough();
 
 const OpenCodeApiCatalogSchema = z.object({ data: z.array(OpenCodeApiModelSchema) }).passthrough();
+
+// `cmd --list-models` (1.88.5) prints ids and blurbs only. The same run writes
+// `$HOME/.commandcode/cache/model-catalog/v1/catalog-<hash>.json`, which holds each
+// model's levels, label, input and window under the id the API spells (`Qwen/Qwen3.8-Max`)
+// and the aliases the listing may print (`claude-haiku-4-5`).
+const CommandCodeCatalogCacheSchema = z.object({
+  scope: z.object({ schemaVersion: z.literal(1) }),
+  body: z.object({
+    schemaVersion: z.literal(1),
+    data: z.array(
+      z.object({
+        id: z.string().trim().min(1),
+        aliases: z.array(z.string().trim().min(1)),
+        display: z.object({ label: z.string() }),
+        reasoningEfforts: z.array(z.string().trim().min(1)).nullable(),
+        inputModalities: z.array(z.string().trim().min(1)),
+        context_length: z.number().int().positive(),
+      }),
+    ),
+  }),
+});
+
+type CommandCodeCacheEntry = z.infer<typeof CommandCodeCatalogCacheSchema>['body']['data'][number];
 
 function distinct<T>(
   values: readonly (T | undefined)[],
@@ -193,6 +220,7 @@ function codexNativeEntry(
   ]);
   const contextWindow = distinct([input.model.context_window, input.model.contextWindow]);
   const nativeDefaultReasoningEffort = input.model.default_reasoning_level;
+  const inputModalities = input.model.input_modalities;
   const nativeReasoningEfforts = distinct(
     [
       input.model.reasoning_efforts,
@@ -223,6 +251,7 @@ function codexNativeEntry(
     ...(nativeReasoningEfforts === undefined
       ? {}
       : { nativeReasoningEfforts: [...nativeReasoningEfforts] }),
+    ...(inputModalities === undefined ? {} : { inputModalities }),
   };
 }
 
@@ -259,13 +288,18 @@ function verboseBlockFields(
   const context = block.data.limit?.context;
   const variants = block.data.variants;
   const toolcall = block.data.capabilities?.toolcall;
-  // kilo 7.0.49 declares every output as a flag: text, audio, image, video, pdf.
+  // kilo 7.0.49 declares every input and output as a flag: text, audio, image, video, pdf.
+  // SPLITBRIEF sends text and images, so the image flag is the input fact it reads.
+  const input = block.data.capabilities?.input;
   const output = block.data.capabilities?.output;
   return {
     ...(block.data.name === undefined ? {} : { displayName: block.data.name }),
     ...(context === undefined || context === 0 ? {} : { contextWindow: context }),
     ...(variants === undefined ? {} : { nativeReasoningEfforts: Object.keys(variants) }),
     ...(toolcall === undefined ? {} : { supportsToolCalls: toolcall }),
+    ...(input === undefined
+      ? {}
+      : { inputModalities: input.image === true ? ['text', 'image'] : ['text'] }),
     ...(output === undefined
       ? {}
       : {
@@ -371,6 +405,7 @@ export function parseOpenCodeNativeModelCatalog(stdout: string): NativeCliModelC
   const entries = parsed.data.data.map((model) => {
     const context = model.limit?.context;
     const toolcall = model.capabilities?.tools;
+    const input = model.capabilities?.input;
     const output = model.capabilities?.output;
     return {
       selectionId: `${model.providerID}/${model.id}`,
@@ -380,6 +415,7 @@ export function parseOpenCodeNativeModelCatalog(stdout: string): NativeCliModelC
         ? {}
         : { nativeReasoningEfforts: model.variants.map((variant) => variant.id) }),
       ...(toolcall === undefined ? {} : { supportsToolCalls: toolcall }),
+      ...(input === undefined ? {} : { inputModalities: input }),
       ...(output === undefined ? {} : { outputModalities: output }),
       ...(model.family === EMBEDDING_FAMILY ? { capabilities: EMBEDDING_CAPABILITIES } : {}),
     };
@@ -402,7 +438,46 @@ export function parseCursorNativeModelCatalog(stdout: string): NativeCliModelCat
   return parseDashSeparatedLines({ tool: 'cursor', stdout, pattern: CURSOR_MODEL_LINE });
 }
 
-export function parseCommandCodeNativeModelCatalog(stdout: string): NativeCliModelCatalog | null {
+/** A cache file that is not JSON or has another schema adds nothing. */
+function commandCodeCacheEntries(
+  cacheTexts: readonly string[],
+): ReadonlyMap<string, CommandCodeCacheEntry> {
+  const byName = new Map<string, CommandCodeCacheEntry>();
+  for (const text of cacheTexts) {
+    let json: unknown;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      continue;
+    }
+    const cache = CommandCodeCatalogCacheSchema.safeParse(json);
+    if (!cache.success) continue;
+    for (const entry of cache.data.body.data) {
+      for (const name of [entry.id, ...entry.aliases]) byName.set(name.toLowerCase(), entry);
+    }
+  }
+  return byName;
+}
+
+function commandCodeCacheFields(
+  entry: CommandCodeCacheEntry | undefined,
+): Omit<NativeCliModelCatalogEntry, 'nativeOrder' | 'selectionId'> {
+  if (entry === undefined) return {};
+  const displayName = normalizeDisplayLabel(entry.display.label);
+  return {
+    ...(displayName.length === 0 ? {} : { displayName }),
+    // A `null` ladder is a model with no effort axis.
+    nativeReasoningEfforts: entry.reasoningEfforts ?? [],
+    inputModalities: entry.inputModalities,
+    contextWindow: entry.context_length,
+  };
+}
+
+export function parseCommandCodeNativeModelCatalog(
+  stdout: string,
+  cacheTexts: readonly string[] = [],
+): NativeCliModelCatalog | null {
+  const cache = commandCodeCacheEntries(cacheTexts);
   const entries: Omit<NativeCliModelCatalogEntry, 'nativeOrder'>[] = [];
   for (const line of cleanCatalogLines(stdout)) {
     if (COMMAND_CODE_FOOTER.test(line)) break;
@@ -416,6 +491,7 @@ export function parseCommandCodeNativeModelCatalog(stdout: string): NativeCliMod
       selectionId,
       ...(detail.length === 0 ? {} : { detail }),
       ...(NATIVE_DEFAULT_SUFFIX.test(blurb) ? { nativeDefault: true } : {}),
+      ...commandCodeCacheFields(cache.get(selectionId.toLowerCase())),
     });
   }
   return entries.length === 0 ? null : catalogFromEntries({ tool: 'command-code', entries });
@@ -424,6 +500,7 @@ export function parseCommandCodeNativeModelCatalog(stdout: string): NativeCliMod
 /** The native count and the footer that closes the list prove it finished even if shutdown stalls. */
 export function parseCompleteCommandCodeNativeModelCatalog(
   stdout: string,
+  cacheTexts: readonly string[] = [],
 ): NativeCliModelCatalog | null {
   const lines = cleanCatalogLines(stdout);
   const counts = lines.flatMap((line) => {
@@ -431,7 +508,7 @@ export function parseCompleteCommandCodeNativeModelCatalog(
     return match === null ? [] : [Number(match[1])];
   });
   if (counts.length !== 1 || !lines.some((line) => COMMAND_CODE_FOOTER.test(line))) return null;
-  const catalog = parseCommandCodeNativeModelCatalog(stdout);
+  const catalog = parseCommandCodeNativeModelCatalog(stdout, cacheTexts);
   return catalog !== null && catalog.models.length === counts[0] ? catalog : null;
 }
 
@@ -487,6 +564,9 @@ export function nativeCliCatalogToDetectedModels(catalog: NativeCliModelCatalog)
     ...(model.supportsToolCalls === undefined
       ? {}
       : { supportsToolCalls: model.supportsToolCalls }),
+    ...(model.inputModalities === undefined
+      ? {}
+      : { supportsImages: model.inputModalities.includes('image') }),
     ...(model.outputModalities === undefined
       ? {}
       : { outputModalities: [...model.outputModalities] }),

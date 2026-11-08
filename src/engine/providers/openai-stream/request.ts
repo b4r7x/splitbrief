@@ -40,9 +40,12 @@ export type StreamRequestBody = {
   stream_options?: { include_usage: boolean } | undefined;
   max_tokens?: number | undefined;
   max_completion_tokens?: number | undefined;
-  reasoning_effort?: EffortLevel | undefined;
+  reasoning_effort?: ReasoningEffortWord | undefined;
   response_format?: OpenAIResponseFormat | undefined;
 };
+
+/** The `reasoning_effort` words the wire takes; `off` and `ultra` are words of CLI tools only. */
+type ReasoningEffortWord = Exclude<EffortLevel, 'off' | 'ultra'>;
 
 export interface StreamClient {
   chat: {
@@ -157,6 +160,7 @@ export function effortField(
   effort: EffortLevel | undefined,
 ): Pick<StreamRequestBody, 'reasoning_effort'> {
   if (effort === undefined || policy.effort === 'omit' || policy.reasoning === 'omit') return {};
+  if (effort === 'off' || effort === 'ultra') return {};
   if (policy.effort === 'clamp-xhigh') {
     // The policy names a ceiling, not one token: `max` sits above `xhigh`.
     return { reasoning_effort: effort === 'xhigh' || effort === 'max' ? 'high' : effort };

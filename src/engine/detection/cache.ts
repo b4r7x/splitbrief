@@ -95,15 +95,17 @@ const CachedModelIdSchema = z
   );
 
 /**
- * Presentation-only projection of a detected model. Remembered rows carry
- * identity, the tool's own display name and detail, sizing, ordering, the
- * effort ladder and its default and the modality flags, so a cold start can
- * paint the picker before the live refresh lands. The hidden flag is a public
- * catalog value from the tool's own listing, not credential or account
- * material. Capability facts ride along so a cold start drops the embedding
- * rows a live refresh would drop. An optional field needs no version bump: a
- * record without it still parses, and an older build's strict schema rejects a
- * record with it, which it reads as no record at all — what a bump would do.
+ * Sanitized projection of a detected model. Remembered rows carry identity,
+ * the tool's own display name and detail, sizing, ordering, the effort ladder
+ * and its default and the modality flags, so a cold start can paint the picker
+ * before the live refresh lands. The hidden flag is a public catalog value from
+ * the tool's own listing, not credential or account material. Capability facts
+ * ride along so a cold start drops the embedding rows a live refresh would
+ * drop, and the image fact so a command that reads no live listing does not
+ * count a text-only model as one that reads images. An optional field needs no
+ * version bump: a record without it still parses, and an older build's strict
+ * schema rejects a record with it, which it reads as no record at all — what a
+ * bump would do.
  */
 const CachedModelSchema = z
   .object({
@@ -118,6 +120,7 @@ const CachedModelSchema = z
     nativeReasoningEfforts: z.array(z.string().trim().min(1).max(64)).max(32).readonly().optional(),
     nativeDefaultReasoningEffort: z.string().trim().min(1).max(64).optional(),
     supportsToolCalls: z.boolean().optional(),
+    supportsImages: z.boolean().optional(),
     outputModalities: z.array(z.string().min(1).max(32)).max(8).readonly().optional(),
     capabilities: z.array(z.string().trim().min(1).max(64)).max(32).optional(),
     isFree: z.boolean().optional(),
@@ -189,7 +192,7 @@ type DetectionCache = z.infer<typeof DetectionCacheSchema>;
 type CachedCliToolDetection = z.infer<typeof CachedCliToolDetectionSchema>;
 type CachedModel = z.infer<typeof CachedModelSchema>;
 
-/** Presentation-only remembered model catalog for one configured CLI runner. */
+/** Remembered model catalog for one configured CLI runner. */
 export interface RememberedCliCatalog {
   readonly tool: CliToolId;
   readonly models: readonly DetectedModel[];
@@ -291,6 +294,7 @@ function cachedModels(models: readonly DetectedModel[], limit = models.length): 
       ...(model.supportsToolCalls === undefined
         ? {}
         : { supportsToolCalls: model.supportsToolCalls }),
+      ...(model.supportsImages === undefined ? {} : { supportsImages: model.supportsImages }),
       ...(model.outputModalities === undefined
         ? {}
         : { outputModalities: [...model.outputModalities] }),

@@ -324,7 +324,10 @@ function declaredAuthProbe(tool: CliToolId, command: string): CliAuthProbe {
   }
 }
 
-type NativeCatalogParser = (stdout: string) => NativeCliModelCatalog | null;
+type NativeCatalogParser = (
+  stdout: string,
+  homeFiles?: readonly string[],
+) => NativeCliModelCatalog | null;
 
 /**
  * Registry declarations are execution policy, not a convenient view of the
@@ -403,7 +406,7 @@ function frozenProbeContract(
 
 function catalogParse(parser: NativeCatalogParser): CliProbeParser<readonly DetectedModel[]> {
   return (output) => {
-    const catalog = parser(output.stdout);
+    const catalog = parser(output.stdout, output.homeFiles);
     return catalog === null
       ? { kind: 'malformed' }
       : { kind: 'success', value: nativeCliCatalogToDetectedModels(catalog) };
@@ -416,6 +419,7 @@ function structuralCatalogProbe(
     parser: NativeCatalogParser;
     manualCommand?: readonly [string, ...string[]] | undefined;
     directoryHeader?: 'x-opencode-directory' | undefined;
+    homeFilesDirectory?: readonly string[] | undefined;
     legacy?: Readonly<{
       belowVersion: string;
       command: readonly [string, ...string[]];
@@ -434,6 +438,9 @@ function structuralCatalogProbe(
     maxOutputBytes: CODEX_NATIVE_MODEL_CATALOG_PROBE.maxOutputBytes,
     ...(manualCommand === undefined ? {} : { manualCommand }),
     ...(input.directoryHeader === undefined ? {} : { directoryHeader: input.directoryHeader }),
+    ...(input.homeFilesDirectory === undefined
+      ? {}
+      : { homeFilesDirectory: Object.freeze([...input.homeFilesDirectory]) }),
     ...(input.legacy === undefined
       ? {}
       : {
@@ -490,6 +497,9 @@ function declaredCatalogProbe(tool: CliToolId): CliCatalogProbe {
     case 'command-code':
       return structuralCatalogProbe({
         command: ['cmd', '--list-models', '--no-auto-update'],
+        // cmd 1.88.5 writes each model's levels, label, input and window to this cache
+        // while the listing runs; the listing itself prints ids and blurbs only.
+        homeFilesDirectory: ['.commandcode', 'cache', 'model-catalog', 'v1'],
         parser: parseCommandCodeNativeModelCatalog,
       });
     case 'copilot':

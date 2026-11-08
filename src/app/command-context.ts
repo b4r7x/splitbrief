@@ -61,7 +61,7 @@ import type {
   ToggleLatestActivityBatchResult,
   ToggleLatestDiffResult,
 } from '../core/runtime/commands/types.js';
-import { plannerSupportsImages } from '../core/runners/capabilities.js';
+import { plannerSupportsImages } from '../engine/providers/capabilities.js';
 import { modelCacheStore } from '../stores/discovery/model-cache/state.js';
 import { createCommandContext } from '../core/runtime/commands/context-factory.js';
 import { copyToClipboard } from '../lib/clipboard/clipboard.js';
@@ -382,10 +382,7 @@ export function buildCommandContext({
     steerRun: (text) => {
       const submission = prepareDraftSubmission(createDraftDocument(text), {
         projectDir,
-        supportsImages: plannerSupportsImages(
-          configStore.get().config,
-          modelCacheStore.getDetection().providers,
-        ),
+        supportsImages: plannerSupportsImages(configStore.get().config, modelCacheStore),
       });
       if (!submission.ok) {
         throw appCommandContextError.submissionRefused(submission);
@@ -398,8 +395,7 @@ export function buildCommandContext({
     clearQueue: workflow.requestClearQueue,
     insertImage: insertImageIntoComposer,
     attachImage,
-    plannerSupportsImages: () =>
-      plannerSupportsImages(configStore.get().config, modelCacheStore.getDetection().providers),
+    plannerSupportsImages: () => plannerSupportsImages(configStore.get().config, modelCacheStore),
     detachImage,
     listAttachments,
     acceptRun,
@@ -475,10 +471,7 @@ export function useRuntimeCommands({
       const command = executeRuntimeCommand(commands, raw, {
         screen: from,
         phase,
-        plannerSupportsImages: plannerSupportsImages(
-          config,
-          modelCacheStore.getDetection().providers,
-        ),
+        plannerSupportsImages: plannerSupportsImages(config, modelCacheStore),
         openRunAtRest: isOpenRunAtRest(routerStore.get()),
         applyUnfinished: isApplyUnfinishedAtRest(routerStore.get()),
         applying: applyBefore !== undefined,

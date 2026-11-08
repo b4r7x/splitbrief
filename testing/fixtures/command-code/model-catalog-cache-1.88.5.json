@@ -1,0 +1,90 @@
+{
+  "cacheVersion": 3,
+  "scope": {
+    "endpointHash": "a813c4ec6551f9c37a4b1e483e01b4d5c28f8e53b041545acb2bbc3b63bba0ac",
+    "schemaVersion": 1
+  },
+  "fetchedAt": 1794151300817,
+  "renderedAt": 1793994099716,
+  "body": {
+    "catalogVersion": "d4517aa346db93ffbaa608be32fdf12c62d057a00cc48a5e251e034372776177",
+    "data": [
+      {
+        "aliases": [],
+        "context_length": 1000000,
+        "display": {
+          "description": "High throughput V4.1 Flash",
+          "group": "Open Source",
+          "label": "DeepSeek V4.1 Flash Fast (latest)"
+        },
+        "id": "deepseek/deepseek-v4.1-flash-fast",
+        "inputModalities": ["text", "image"],
+        "name": "DeepSeek V4.1 Flash Fast (latest)",
+        "object": "model",
+        "reasoningEfforts": ["off", "low", "high", "max"]
+      },
+      {
+        "aliases": [],
+        "context_length": 1000000,
+        "display": {
+          "description": "autonomous long-horizon coding & professional work",
+          "group": "Open Source",
+          "label": "Qwen 3.8 Max"
+        },
+        "id": "Qwen/Qwen3.8-Max",
+        "inputModalities": ["text", "image"],
+        "name": "Qwen 3.8 Max",
+        "object": "model",
+        "reasoningEfforts": ["low", "medium", "xhigh"]
+      },
+      {
+        "aliases": [],
+        "context_length": 256000,
+        "display": {
+          "description": "multimodal MoE reasoning",
+          "group": "Open Source",
+          "label": "Inkling"
+        },
+        "id": "thinkingmachines/inkling",
+        "inputModalities": ["text", "image"],
+        "name": "Inkling",
+        "object": "model",
+        "reasoningEfforts": null
+      },
+      {
+        "aliases": ["claude-haiku-4-5"],
+        "context_length": 200000,
+        "display": {
+          "description": "prev Haiku, still fast for quick tasks",
+          "group": "Anthropic",
+          "label": "Claude Haiku 4.5"
+        },
+        "id": "claude-haiku-4-5-20251001",
+        "inputModalities": ["text", "image"],
+        "name": "Claude Haiku 4.5",
+        "object": "model",
+        "reasoningEfforts": null
+      },
+      {
+        "aliases": [],
+        "context_length": 400000,
+        "display": {
+          "description": "fast, cost-effective model for everyday tasks",
+          "group": "OpenAI",
+          "label": "GPT-5.4 Mini"
+        },
+        "id": "gpt-5.4-mini",
+        "inputModalities": ["text", "image"],
+        "name": "GPT-5.4 Mini",
+        "object": "model",
+        "reasoningEfforts": ["low", "medium", "high"]
+      }
+    ],
+    "object": "list",
+    "refreshAfterSeconds": 900,
+    "roles": {
+      "default": "deepseek/deepseek-v4.1-flash"
+    },
+    "schemaVersion": 1
+  }
+}

@@ -9,7 +9,7 @@ import {
   rankClosedOptions,
   suggestRuntimeCommand,
 } from '../../../../core/runtime/commands/lookup.js';
-import { detectedModelFact, seatSupportsImages } from '../../../../core/runners/capabilities.js';
+import { plannerSupportsImages } from '../../../../engine/providers/capabilities.js';
 import { configStore } from '../../../../stores/project/config.js';
 import { modelCacheStore } from '../../../../stores/discovery/model-cache/state.js';
 import {
@@ -86,12 +86,7 @@ export function useCommandCompletion({
   const applyUnfinished = routerStore.use(isApplyUnfinishedAtRest);
   const guardContext: CommandGuardContext = {
     phase,
-    plannerSupportsImages:
-      config !== null &&
-      seatSupportsImages({
-        runner: config.planner,
-        detected: detectedModelFact(modelCacheStore.getDetection().providers, config.planner),
-      }),
+    plannerSupportsImages: plannerSupportsImages(config, modelCacheStore),
     openRunAtRest,
     applyUnfinished,
     applying: activeApply() !== undefined,

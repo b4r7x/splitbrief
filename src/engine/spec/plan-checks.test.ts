@@ -13,6 +13,7 @@ import {
   type PlanTaskFit,
 } from './plan-checks.js';
 import { NULL_CACHE } from '../providers/model/resolution.js';
+import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 
 const projectDir = '/repo';
 const k2 = [{ id: 'K2', kind: 'test' as const, value: 'src/b.test.ts' }];
@@ -692,6 +693,20 @@ describe('renderCheckNotes review seat', () => {
     expect(notes).toHaveLength(2);
     expect(notes[0]).toMatch(/^Render check K-render needs validation\.render/);
     expect(notes[1]).toMatch(/^The review seat, Google Antigravity CLI, cannot see images\./);
+  });
+
+  // opencode 2.0.14 lists `opencode-go/qwen3.7-max` with input ["text"].
+  it('names an OpenCode review seat whose model reads only text', () => {
+    const cache = makeModelCacheAccessor({
+      providerModels: { opencode: [{ id: 'opencode-go/qwen3.7-max', supportsImages: false }] },
+    });
+    const reviewer = { kind: 'cli', tool: 'opencode', model: 'opencode-go/qwen3.7-max' } as const;
+
+    expect(renderCheckNotes(plan, makeConfig({ reviewer, validation: { render } }), cache)).toEqual(
+      [
+        'The review seat, OpenCode CLI, cannot see images. The criteria of render check K-render cannot pass with this seat. Change the review seat to a tool that reads images, or request changes to drop it.',
+      ],
+    );
   });
 
   it('has no review seat note for a review seat that sees images', () => {

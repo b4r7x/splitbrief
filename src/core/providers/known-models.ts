@@ -66,13 +66,13 @@ export const TOOL_EFFORT_LADDERS: Readonly<Partial<Record<ProviderId, ToolEffort
       levels: ['low', 'medium', 'high', 'xhigh', 'max'],
       exhaustive: false,
       provenance:
-        'codex debug models 0.155.1 (2026-09-23): per-model supported_reasoning_levels, union minus the unrepresentable `ultra`',
+        "codex debug models 0.164.0 (2026-11-08): the rungs every listed model publishes; ultra comes only from the model's own ladder",
     },
     'command-code': {
       levels: ['low', 'medium', 'high'],
       exhaustive: false,
       provenance:
-        'cmd --help 1.50.0 (2026-09-07): "(e.g. low, medium, high) — depends on the model"; cmd --list-models publishes no per-model levels',
+        'cmd --help 1.50.0 (2026-09-07): "(e.g. low, medium, high) — depends on the model"; the per-model ladder comes from the catalog cache that cmd --list-models writes',
     },
   });
 

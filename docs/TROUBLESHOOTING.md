@@ -575,7 +575,7 @@ SPLITBRIEF tries to fix it before it tells you. The reviewer answers the blockin
 
 ### Symptom: Final review needs a REVIEW seat that reads images
 
-**Likely cause:** The plan has render checks, and the review seat sees no images. Cursor, Command Code, Antigravity, `shell` and `agent` seats see no images. An `api` seat sees them only when detection reports its model as vision-capable. The seat cannot verify a render criterion, so the criterion stays unverified. The review fails with 0 blocking findings, and no fix brief can change that. A task review reads `Review T004 needs a REVIEW seat that reads images`.
+**Likely cause:** The plan has render checks, and the review seat sees no images. Cursor, Command Code, Antigravity, `shell` and `agent` seats see no images. A Codex, OpenCode or Kilo Code seat sees none when the tool lists its model as text-only. An `api` seat sees them only when detection reports its model as vision-capable. The seat cannot verify a render criterion, so the criterion stays unverified. The review fails with 0 blocking findings, and no fix brief can change that. A task review reads `Review T004 needs a REVIEW seat that reads images`.
 
 **Fix:**
 1. Read the details on the recovery panel. `Unverified criteria:` names the render criteria that the seat could not see.
@@ -1120,7 +1120,7 @@ A killed process's `base-<pid>-*` tree under `$XDG_STATE_HOME/splitbrief/bases/`
 
 ### Symptom: every implementer profile is rejected with `context-overflow`
 
-**Likely cause:** Every candidate profile overflowed the task's estimated prompt tokens — the brief is larger than any available context window. A profile that declares no `contextLength` and whose provider exposes no detected window routes at the single documented default, `DEFAULT_UNKNOWN_CONTEXT_LENGTH = 32768` (`src/core/tokens/context-length.ts`); with the 15% safety margin, a task over roughly 28 000 estimated tokens overflows it. A CLI tool under `model: auto` escapes this floor — its window resolves from the smallest bundled window its catalog guarantees (`resolveRunnerContextWindow`, `src/engine/providers/model/context-window.ts`) — so check that the profile's tool actually carries a bundled catalog row before configuring a window by hand.
+**Likely cause:** Every candidate profile overflowed the task's estimated prompt tokens — the brief is larger than any available context window. A profile that declares no `contextLength` and whose provider exposes no detected window routes at the single documented default, `DEFAULT_UNKNOWN_CONTEXT_LENGTH = 32768` (`src/core/tokens/context-length.ts`); with the 15% safety margin, a task over roughly 28 000 estimated tokens overflows it. A CLI tool under `model: auto` escapes this floor when SPLITBRIEF knows a window for it: the seat budgets with the window of the model that its tool selects on this machine. When SPLITBRIEF cannot read that selection, the seat keeps the conservative window, the smallest bundled window of the tool (`resolveRunnerContextWindow`, `src/engine/providers/model/context-window.ts`). Before you configure a window by hand, check that the tool keeps a readable model selection or carries a bundled catalog row.
 
 **Fix:**
 1. Set `implementer.contextLength` (or the `SPLITBRIEF_CONTEXT_LENGTH` environment variable) to the runner's real window — see [docs/CONFIGURATION.md](./CONFIGURATION.md).

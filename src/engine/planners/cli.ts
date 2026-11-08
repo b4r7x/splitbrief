@@ -8,6 +8,7 @@ import { invokeCliAdapter, toCliEnvironment } from '../runners/invoke-cli-adapte
 import { lookupCliPlannerAdapter } from '../runners/cli-tools/registry.js';
 import { typedOutputCapability } from '../../core/runners/cli-tool-catalog.js';
 import { seatSupportsImages } from '../../core/runners/capabilities.js';
+import { resolveSeatImageFact } from '../providers/model/resolution.js';
 import type { CliSchemaInput } from '../runners/cli-tools/contract.js';
 import type { TypedSchemaInput } from '../runners/typed-output.js';
 import { withSchemaFile } from '../runners/schema-file.js';
@@ -44,7 +45,7 @@ function isRecoverableResumeNoise(event: RunnerCallEvent, resumeId: string): boo
 export function createCliPlanner(
   opts: PlannerFactoryOptions & { config: Config; initialSessionId?: string | null | undefined },
 ): Planner {
-  const { config, initialSessionId, cliSeat } = opts;
+  const { config, initialSessionId, cliSeat, modelCache } = opts;
   const plannerCfg = assertPlannerKind(config, 'cli');
   resolveCliRunnerAuth(plannerCfg);
   const resolvedModel = resolveCliModel(plannerCfg.model, plannerCfg.tool);
@@ -266,7 +267,14 @@ export function createCliPlanner(
       ...ONE_SHOT_API_CAPS,
       supportsSessionResume,
       supportsEffort,
-      supportsImages: seatSupportsImages({ runner: plannerCfg }),
+      supportsImages: seatSupportsImages({
+        runner: plannerCfg,
+        detected: resolveSeatImageFact({
+          runner: plannerCfg,
+          role: 'planner',
+          cache: modelCache,
+        }),
+      }),
     },
   });
 }

@@ -230,18 +230,32 @@ describe('IsolationStrategySchema', () => {
 });
 
 describe('EffortLevelSchema', () => {
-  it('spells the seven tokens weakest to strongest', () => {
-    expect(EFFORT_LEVELS).toEqual(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
+  // cmd 1.88.5 publishes `off` and rejects `none`; codex 0.164.0 publishes `ultra` on six models.
+  it('spells the nine tokens weakest to strongest', () => {
+    expect(EFFORT_LEVELS).toEqual([
+      'off',
+      'none',
+      'minimal',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+      'ultra',
+    ]);
   });
-  it.each(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])('accepts "%s"', (input) => {
-    expect(EffortLevelSchema.parse(input)).toBe(input);
-  });
-  it.each(['ultra', 'default', 'auto', ''])('rejects "%s"', (input) => {
+  it.each(['off', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])(
+    'accepts "%s"',
+    (input) => {
+      expect(EffortLevelSchema.parse(input)).toBe(input);
+    },
+  );
+  it.each(['turbo', 'default', 'auto', ''])('rejects "%s"', (input) => {
     expect(EffortLevelSchema.safeParse(input).success).toBe(false);
   });
-  // codex 0.154.0 lists `ultra` on five models, yet kilo 7.0.49, opencode 2.0.14 and cmd 1.62.1
-  // list ids whose family name ends in `-ultra`; an `ultra` level would split them into an effort.
-  it('keeps codex `ultra` out, so a family name ending in -ultra stays a name', () => {
+  // kilo 7.0.49, opencode 2.0.14 and cmd 1.62.1 list ids whose family name ends in `-ultra`;
+  // the model-id peel reads only the words an id spells as an axis, and `ultra` is not one.
+  it('keeps a family name ending in -ultra whole although ultra is a level', () => {
     expect(peelAxisTokensFromModelId('ollama-cloud/nemotron-3-ultra')).toBe(
       'ollama-cloud/nemotron-3-ultra',
     );

@@ -302,7 +302,7 @@ Commands that move data in or out: clipboard copies and image attachments. `cate
   | PLAN seat | Images |
   |---|---|
   | `cli` Claude Code | yes, as image content blocks on stdin |
-  | `cli` Codex, OpenCode, Kilo Code | yes, as a file flag |
+  | `cli` Codex, OpenCode, Kilo Code | yes, as a file flag, unless the tool lists the model as text-only |
   | `cli` Cursor, Command Code, Antigravity | no |
   | `api` | only when detection reports the model as vision-capable; a model that detection did not report cannot |
   | `shell`, `agent` | no |

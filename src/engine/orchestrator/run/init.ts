@@ -371,6 +371,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     injectedReviewer: opts._reviewer,
     skillRoots: skills.skillRoots,
     signal: opts.signal,
+    modelCache,
   });
   if (savedState && !hasPendingRecovery) {
     savedState = await autoCompactResumeContext({

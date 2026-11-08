@@ -81,7 +81,7 @@ Timeouts:
 
 ## cmd — Command Code
 
-- binary `cmd` · version `cmd --version` · auth `cmd status` · models `cmd --list-models` (`vendor/model`) · effort `low|medium|high`
+- binary `cmd` · version `cmd --version` · auth `cmd status` · models `cmd --list-models` (`vendor/model`) · effort: the model's own levels, the `reasoningEfforts` of its entry in the catalog that `cmd --list-models` writes to `~/.commandcode/cache/model-catalog/v1/` (`null`: no effort)
 <!-- generated: recipe:command-code -->
 - implementer: `nohup sh -c 'cmd -p --output-format json --trust --skip-onboarding --no-auto-update --max-turns 2147483647 --yolo -m $M --effort $E < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 - implementer (no model): `nohup sh -c 'cmd -p --output-format json --trust --skip-onboarding --no-auto-update --max-turns 2147483647 --yolo < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`

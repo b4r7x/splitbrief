@@ -90,7 +90,7 @@ import type { readClipboardImage } from '../../core/attachments/clipboard-image.
 import type { listProjectFiles } from '../../lib/file-listing.js';
 import { createDraftDocument } from '../../core/composer/document.js';
 import { prepareDraftSubmission, type DraftSubmission } from '../../core/composer/submission.js';
-import { plannerSupportsImages } from '../../core/runners/capabilities.js';
+import { plannerSupportsImages } from '../../engine/providers/capabilities.js';
 import { seatWaitMoved } from '../../core/sessions/held-seat.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { configStore } from '../../stores/project/config.js';
@@ -182,7 +182,7 @@ export function WorkflowScreen({
     const { config, projectDir } = configStore.get();
     const submission = prepareDraftSubmission(createDraftDocument(text), {
       projectDir,
-      supportsImages: plannerSupportsImages(config, modelCacheStore.getDetection().providers),
+      supportsImages: plannerSupportsImages(config, modelCacheStore),
     });
     if (!submission.ok && submission.reason === 'command') {
       questionPromptStore.setFocus('answer', '');

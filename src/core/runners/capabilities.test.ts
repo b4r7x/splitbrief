@@ -1,13 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  detectedModelFact,
-  plannerSupportsImages,
-  seatConfiguredEffort,
-  seatEffortChannel,
-  seatSupportsImages,
-} from './capabilities.js';
-import { makeConfig } from '#testing/helpers/factories/config.js';
-import type { ProviderDetection } from '../discovery/detection.js';
+import { seatConfiguredEffort, seatEffortChannel, seatSupportsImages } from './capabilities.js';
 import type { RunnerConfig } from '../config/accessors/runner-config.js';
 
 function apiRunner(input: { provider: string; model: string }): RunnerConfig {
@@ -78,80 +70,34 @@ describe('seatSupportsImages', () => {
     expect(seatSupportsImages({ runner: shell })).toBe(false);
   });
 
+  // opencode 2.0.14 lists `opencode-go/qwen3.7-max` with input ["text"]; the tool sends images,
+  // the model cannot read them.
+  it("takes the model's own image fact on a CLI tool with an image channel", () => {
+    const qwen = { ...opencode, model: 'opencode-go/qwen3.7-max' } satisfies RunnerConfig;
+    const kiloText = {
+      ...kiloCode,
+      model: 'kilo/cohere/north-mini-code:free',
+    } satisfies RunnerConfig;
+
+    expect(seatSupportsImages({ runner: qwen, detected: { supportsImages: false } })).toBe(false);
+    expect(seatSupportsImages({ runner: kiloText, detected: { supportsImages: false } })).toBe(
+      false,
+    );
+    expect(seatSupportsImages({ runner: qwen, detected: { supportsImages: true } })).toBe(true);
+    expect(seatSupportsImages({ runner: qwen, detected: {} })).toBe(true);
+    expect(seatSupportsImages({ runner: qwen })).toBe(true);
+  });
+
+  it('keeps a CLI tool with no image channel at false whatever the model reads', () => {
+    for (const runner of [commandCode, cursor, antigravity]) {
+      expect(seatSupportsImages({ runner, detected: { supportsImages: true } })).toBe(false);
+    }
+  });
+
   it('takes the detected image modality as the whole answer on an API seat', () => {
     const runner = apiRunner({ provider: 'lm-studio', model: 'llama-3.1-70b' });
     expect(seatSupportsImages({ runner })).toBe(false);
     expect(seatSupportsImages({ runner, detected: { supportsImages: true } })).toBe(true);
     expect(seatSupportsImages({ runner, detected: { supportsImages: false } })).toBe(false);
-  });
-});
-
-describe('detectedModelFact', () => {
-  const providers: readonly ProviderDetection[] = [
-    {
-      provider: 'lm-studio',
-      available: true,
-      isLocal: false,
-      models: [{ id: 'llama-3.1-70b', supportsImages: true }],
-    },
-  ];
-
-  it("reads the seat model's own fact out of the detection", () => {
-    expect(
-      detectedModelFact(providers, apiRunner({ provider: 'lm-studio', model: 'llama-3.1-70b' })),
-    ).toEqual({ supportsImages: true });
-  });
-
-  it('has no fact for an undetected model or a non-API seat', () => {
-    expect(
-      detectedModelFact(providers, apiRunner({ provider: 'lm-studio', model: 'llama-3.3-70b' })),
-    ).toBeUndefined();
-    expect(detectedModelFact(providers, claudeCode)).toBeUndefined();
-  });
-});
-
-describe('plannerSupportsImages', () => {
-  it('uses the planner tool channel even before detection', () => {
-    expect(plannerSupportsImages(null, [])).toBe(false);
-    for (const [planner, supportsImages] of [
-      [claudeCode, true],
-      [codex, true],
-      [opencode, true],
-      [kiloCode, true],
-      [copilot, true],
-      [cursor, false],
-      [commandCode, false],
-      [antigravity, false],
-      [shell, false],
-      [agent, false],
-    ] as const) {
-      expect(plannerSupportsImages(makeConfig({ planner }), [])).toBe(supportsImages);
-    }
-  });
-
-  it('uses the API planner model fact from its own provider', () => {
-    const config = makeConfig({
-      planner: {
-        kind: 'api',
-        provider: 'lm-studio',
-        apiBase: 'http://localhost:1234/v1',
-        model: 'vision',
-      },
-    });
-    const otherProvider: ProviderDetection = {
-      provider: 'ollama',
-      available: true,
-      isLocal: true,
-      models: [{ id: 'vision', supportsImages: true }],
-    };
-    expect(plannerSupportsImages(config, [otherProvider])).toBe(false);
-    const provider: ProviderDetection = { ...otherProvider, provider: 'lm-studio' };
-    expect(plannerSupportsImages(config, [provider])).toBe(true);
-    expect(plannerSupportsImages(config, [{ ...provider, models: [] }])).toBe(false);
-    expect(
-      plannerSupportsImages(config, [
-        { ...provider, models: [{ id: 'vision', supportsImages: false }] },
-      ]),
-    ).toBe(false);
   });
 });

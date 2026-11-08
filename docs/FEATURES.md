@@ -83,9 +83,9 @@ SPLITBRIEF reads and attaches text files when you put `@` before the path. An `a
 | `shell` | Arbitrary stdin → stdout subprocess; no shell/network sandbox | Custom scripts |
 | `agent` | Subprocess that writes files directly; no shell/network sandbox | File-writing tools (no stdout extraction) |
 
-**Auto-detection.** `splitbrief init` and `/refresh` probe installed CLI tools and reachable API endpoints; the seat pickers, reached from Settings ∋ Crew (`/crew plan`, `/crew build`), surface only what is available. A first setup with no remembered result opens the `Checking your tools…` panel and advances when discovery succeeds. With no config, the panel lists each CLI tool found on this machine, one row per tool in catalog order, with a spinner. A check that runs past 10 seconds shows its name and time on the row, for example `sign-in 12s`. A check mark replaces the spinner when the tool's checks finish. Before the first tool appears, the panel reads `Looking for coding tools…`. The note `Next: choose your crew.` and the hint `esc quit` close the panel. With a config, the panel shows the boot manifest: the configured seats with live marks. On later TUI setup loads, SPLITBRIEF publishes the sanitized remembered result for the project — including remembered model rows — before discovery refreshes in the background; a result remembered under a different configuration context still hydrates, as presentation-only rows that never outrank a live lane. A failed refresh leaves those rows visible with a refresh-failure indication. The home screen shows a spinner with "Checking your tools…" during a cold first discovery and "Refreshing your tools…" during warm background refreshes, and the runner pickers mirror the same cold/warm states.
+**Auto-detection.** `splitbrief init` and `/refresh` probe installed CLI tools and reachable API endpoints; the seat pickers, reached from Settings ∋ Crew (`/crew plan`, `/crew build`), surface only what is available. A first setup with no remembered result opens the `Checking your tools…` panel and advances when discovery succeeds. With no config, the panel lists each CLI tool found on this machine, one row per tool in catalog order, with a spinner. A check that runs past 10 seconds shows its name and time on the row, for example `sign-in 12s`. A check mark replaces the spinner when the tool's checks finish. Before the first tool appears, the panel reads `Looking for coding tools…`. The note `Next: choose your crew.` and the hint `esc quit` close the panel. With a config, the panel shows the boot manifest: the configured seats with live marks. On later TUI setup loads, SPLITBRIEF publishes the sanitized remembered result for the project — including remembered model rows — before discovery refreshes in the background; a result remembered under a different configuration context still hydrates, as stale rows that never outrank a live lane. A failed refresh leaves those rows visible with a refresh-failure indication. The home screen shows a spinner with "Checking your tools…" during a cold first discovery and "Refreshing your tools…" during warm background refreshes, and the runner pickers mirror the same cold/warm states.
 
-Remembered detection is presentation-only. It can populate a picker, but it cannot authorize a workflow, resume, or `spec` run, and it is not an offline execution mode. Every local run still performs fresh execution preparation against its exact effective configuration.
+Remembered detection cannot authorize a workflow, resume, or `spec` run, and it is not an offline execution mode. It can populate a picker, and a command that reads no live listing takes a model's image input from it. Every local run still performs fresh execution preparation against its exact effective configuration.
 
 The home wake card names PLAN, BUILD and REVIEW with the same collapsed line as the workflow header.
 An inherited review seat reads `REVIEW = PLAN` on home, in Setup and Settings, in the picker, and in the workflow.
@@ -472,7 +472,7 @@ An older event without findings shows only the headline. A closed run's `Run` bl
 | PLAN seat | Images |
 |---|---|
 | `cli` Claude Code | yes, on stdin |
-| `cli` Codex, OpenCode, Kilo Code | yes, by a file flag |
+| `cli` Codex, OpenCode, Kilo Code | yes, by a file flag, unless the tool lists the model as text-only |
 | `cli` Cursor, Command Code, Antigravity | no |
 | `api` | only when detection reports the model as vision-capable |
 | `shell`, `agent` | no |
@@ -817,7 +817,7 @@ Dragging a file onto the terminal also inserts it at the caret. The home compose
 
 Quoted drag paths and backslash-escaped paths such as `/Users/me/design\ notes/mock.png` resolve to the same image. A dropped non-image path stays text. Use `@` to attach that file's text.
 
-Offered only when the PLAN seat can receive images; on a seat without vision the command answers with the reason instead of dropping the attachment at call time. Claude Code takes images on stdin; Codex, OpenCode and Kilo Code take them by a file flag; Cursor, Command Code and Antigravity take none. An `api` seat takes them only when detection reports its model as vision-capable, and a `shell` or `agent` seat takes none. See the per-seat table under [Slash commands palette](#slash-commands-palette).
+Offered only when the PLAN seat can receive images; on a seat without vision the command answers with the reason instead of dropping the attachment at call time. Claude Code takes images on stdin; Codex, OpenCode and Kilo Code take them by a file flag, unless the tool lists the model as text-only; Cursor, Command Code and Antigravity take none. An `api` seat takes them only when detection reports its model as vision-capable, and a `shell` or `agent` seat takes none. See the per-seat table under [Slash commands palette](#slash-commands-palette).
 
 ### Skills
 

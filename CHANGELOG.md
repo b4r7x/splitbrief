@@ -123,6 +123,12 @@
 
 ### Fixed
 
+- The Command Code picker offers each model's own effort levels and shows each model's own name, such as `DeepSeek V4.1 Flash Fast (latest)` with `off`, `low`, `high` and `max`. When you choose a model, an effort level that it does not offer is cleared.
+- `off` and `ultra` are effort levels. Config, `--planner-effort` and `--reviewer-effort` accept them, and the Codex picker offers `ultra` on a model that has it.
+- A review seat on an OpenCode or Kilo Code model that reads only text holds render criteria as unverified, and the plan card says that the seat cannot see the renders. A PLAN seat on such a model takes no images.
+- The note for an effort level that a seat cannot use names the reason, for example `Effort high cleared: the OpenCode CLI variant sets the effort` or `the Google Antigravity CLI model id sets the effort`.
+- A CLI build seat budgets its prompt with the context window that its tool lists for the model. Settings > Tuning > Prompt budget reads `auto (500K)` for a Codex build seat on `gpt-6.1-sol`.
+- An `auto` build seat budgets with the window of the model that its tool selects on this machine. When SPLITBRIEF cannot read that selection, it keeps the conservative window.
 - When SPLITBRIEF asks you about a planner rewrite or split that changes a brief's criteria, the transcript no longer shows a `rewrote` or `split into` row for it. The brief did not change.
 - That question now names the criteria the rewrite adds or drops, and no longer says `Dropped criteria: none`.
 - An answer line that starts with a space no longer adds a blank row to the Answered block.

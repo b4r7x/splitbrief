@@ -76,6 +76,8 @@ export interface ResolvedModelCatalogEntry extends DetectedModel {
   readonly isStale?: boolean;
   readonly canConfigure: boolean;
   readonly pricingMode: PricingMode;
+  /** `nativeReasoningEfforts` is the tool's floor ladder, not one the model published. */
+  readonly effortFromFloor?: boolean;
 }
 
 function ownerFor(entry: DetectedModel, fallback: string): string {
@@ -701,7 +703,7 @@ function withToolEffortFloor(
   if (ladder === undefined) return entries;
   return entries.map((entry) =>
     entry.nativeReasoningEfforts === undefined
-      ? { ...entry, nativeReasoningEfforts: [...ladder.levels] }
+      ? { ...entry, nativeReasoningEfforts: [...ladder.levels], effortFromFloor: true }
       : entry,
   );
 }

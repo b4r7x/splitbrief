@@ -14,6 +14,7 @@ import {
   type SeatPickerRole,
 } from '../../core/runners/seat-roles.js';
 import { seatEffortChannel } from '../../core/runners/capabilities.js';
+import { unusedEffortReason } from '../../core/runners/effort-channel.js';
 import { TOOL_EFFORT_LADDERS } from '../../core/providers/known-models.js';
 import {
   getRunnerCatalogDisplayName,
@@ -44,7 +45,7 @@ export function inheritsPlannerSeat(config: Config, role: SeatPickerRole): boole
 export type SeatCommitResult = Readonly<{ config: Config; notice?: string; effort?: string }>;
 
 function effortClearedNotice(effort: string, runner: PlannerConfig | ImplementerConfig): string {
-  return `Effort ${effort} cleared: ${getRunnerCatalogDisplayName(runner)} has no effort channel`;
+  return `Effort ${effort} cleared: ${unusedEffortReason(runner)}`;
 }
 
 function variantClearedNotice(variant: string, runner: PlannerConfig | ImplementerConfig): string {
@@ -76,26 +77,13 @@ function draftedLevel(
     : { variant: level };
 }
 
-/** A tool that publishes its levels as an example rather than an accept-list may be handed its own floor back: that list orders the offer and must not reject what the seat carries. A real per-model ladder from the same tool is authoritative and does reject. */
-function ladderIsOpen(
-  runner: PlannerConfig | ImplementerConfig,
-  choices: readonly string[] | undefined,
-): boolean {
-  if (runner.kind !== 'cli' || choices === undefined) return false;
-  const toolLadder = TOOL_EFFORT_LADDERS[runner.tool];
-  if (toolLadder?.exhaustive !== false) return false;
-  return (
-    choices.length === toolLadder.levels.length &&
-    choices.every((choice) => includes(toolLadder.levels, choice))
-  );
-}
-
 function decideEffort<T extends PlannerConfig | ImplementerConfig>(
   input: Readonly<{
     next: T;
     requested: string | null | undefined;
     carried: EffortLevel | undefined;
     effortChoices: readonly string[] | undefined;
+    effortChoicesFromFloor: boolean | undefined;
     role: ActiveRunnerRole;
     parse: (value: unknown) => T;
   }>,
@@ -108,13 +96,16 @@ function decideEffort<T extends PlannerConfig | ImplementerConfig>(
   const effort = input.requested ?? next.effort ?? input.carried;
   if (effort === undefined) return { runner: next };
   if (seatEffortChannel({ runner: next, role }) === 'effort-flag') {
-    // Only the model's own ladder can reject a level; an unanswered one keeps it. A rung
-    // the schema cannot spell — a tool may publish one — is outside every ladder there is.
+    // The model's own ladder rejects a level it does not list; an unanswered one keeps it.
+    // The floor of an open tool (Command Code, Codex) only orders the offer, so it rejects
+    // nothing. A rung the schema cannot spell is outside every ladder there is.
+    const openFloor =
+      input.effortChoicesFromFloor === true &&
+      next.kind === 'cli' &&
+      TOOL_EFFORT_LADDERS[next.tool]?.exhaustive === false;
     if (
       !includes(EFFORT_LEVELS, effort) ||
-      (!ladderIsOpen(next, input.effortChoices) &&
-        input.effortChoices !== undefined &&
-        !input.effortChoices.includes(effort))
+      (!openFloor && input.effortChoices !== undefined && !input.effortChoices.includes(effort))
     ) {
       const { effort: _effort, ...rest } = next;
       return {
@@ -153,8 +144,8 @@ function decideVariant<T extends PlannerConfig | ImplementerConfig>(
   // A variant the picker never offered here rides in only by inheritance: a model
   // change re-checks it against the new model's vocabulary. An explicitly passed
   // name, and an unchanged model, keep whatever the seat already spelled.
-  // No open ladder reaches here: the open ones are command-code's and codex's, and both spend
-  // their effort on a flag, never on a variant.
+  // No floor of an open tool reaches here: the open ones are command-code's and codex's, and
+  // both spend their effort on a flag, never on a variant.
   // The ladder is the caller's; an unknown or empty one answers nothing and keeps the variant.
   const knownChoices = input.effortChoices ?? [];
   if (
@@ -186,6 +177,7 @@ function commitRunnerSelection<T extends RunnerConfig>(
     model: { id: string } | null;
     effort?: string | null | undefined;
     effortChoices?: readonly string[] | undefined;
+    effortChoicesFromFloor?: boolean | undefined;
     parse: (value: unknown) => T;
   }>,
 ): Readonly<{ runner: T; notice?: string; kept?: string }> {
@@ -205,6 +197,7 @@ function commitRunnerSelection<T extends RunnerConfig>(
     requested: drafted.effort,
     carried: existing?.effort,
     effortChoices: input.effortChoices,
+    effortChoicesFromFloor: input.effortChoicesFromFloor,
     role,
     parse,
   });
@@ -235,6 +228,8 @@ export interface PlannerTierSelectionInput {
   effort?: string | null | undefined;
   /** The chosen model's own effort ladder. Absent means unknown — never a reason to clear. */
   effortChoices?: readonly string[] | undefined;
+  /** The ladder is the tool's floor, not one the model published. */
+  effortChoicesFromFloor?: boolean | undefined;
 }
 
 export function commitPlannerTierSelection(input: PlannerTierSelectionInput): SeatCommitResult {
@@ -266,6 +261,8 @@ export interface ImplementerSelectionInput {
   effort?: string | null | undefined;
   /** The chosen model's own effort ladder. Absent means unknown — never a reason to clear. */
   effortChoices?: readonly string[] | undefined;
+  /** The ladder is the tool's floor, not one the model published. */
+  effortChoicesFromFloor?: boolean | undefined;
   /** The BUILD profile the save lands on; absent is the default profile. */
   profile?: string | undefined;
 }
@@ -305,6 +302,7 @@ export function commitFallbackSelection(
     model: { id: string } | null;
     effort?: string | null | undefined;
     effortChoices?: readonly string[] | undefined;
+    effortChoicesFromFloor?: boolean | undefined;
   }>,
 ): SeatCommitResult {
   const current = seatFallback(input.config, input.role);

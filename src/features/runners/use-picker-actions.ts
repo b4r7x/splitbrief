@@ -299,8 +299,13 @@ function needsSignInVariantNote(item: RunnerPickerOption, fullId: string): strin
   return undefined;
 }
 
+type RowEffortLadder = Readonly<{
+  effortChoices: readonly string[];
+  effortChoicesFromFloor?: boolean | undefined;
+}>;
+
 /** The ladder the row published for this id; an empty one is unknown, never a reason to clear. */
-function rowEffortLadder(rows: readonly RightRow[], fullId: string): readonly string[] | undefined {
+function rowEffortLadder(rows: readonly RightRow[], fullId: string): RowEffortLadder | undefined {
   for (const row of rows) {
     if (row.kind === 'action' || row.kind === 'auth') continue;
     const owns =
@@ -308,7 +313,9 @@ function rowEffortLadder(rows: readonly RightRow[], fullId: string): readonly st
       (row.model.variants ?? []).some((variant) => variant.fullId === fullId);
     if (!owns) continue;
     const choices = effortLadderFor(row.model, fullId);
-    if (choices.length > 0) return choices;
+    if (choices.length > 0) {
+      return { effortChoices: choices, effortChoicesFromFloor: row.model.effortChoicesFromFloor };
+    }
   }
   return undefined;
 }
@@ -361,7 +368,7 @@ export function usePickerActions(opts: {
     selection: RunnerPickerOption,
     model: { id: string } | null,
     effort?: string | null | undefined,
-    effortChoices?: readonly string[] | undefined,
+    ladder?: RowEffortLadder | undefined,
   ): SeatCommitResult => {
     if (slot === 'fallback') {
       return commitFallbackSelection({
@@ -370,7 +377,7 @@ export function usePickerActions(opts: {
         selection,
         model,
         effort,
-        effortChoices,
+        ...ladder,
       });
     }
     switch (seatRole) {
@@ -381,7 +388,7 @@ export function usePickerActions(opts: {
           selection,
           model,
           effort,
-          effortChoices,
+          ...ladder,
         });
       case 'reviewer':
         return commitPlannerTierSelection({
@@ -390,7 +397,7 @@ export function usePickerActions(opts: {
           selection,
           model,
           effort,
-          effortChoices,
+          ...ladder,
         });
       case 'implementer':
         return commitImplementerSelection({
@@ -399,7 +406,7 @@ export function usePickerActions(opts: {
           selection,
           model,
           effort,
-          effortChoices,
+          ...ladder,
         });
       default:
         return assertNever(seatRole);
@@ -417,7 +424,7 @@ export function usePickerActions(opts: {
     selection: RunnerPickerOption,
     modelId: string | null,
     effort?: string | null | undefined,
-    effortChoices?: readonly string[] | undefined,
+    ladder?: RowEffortLadder | undefined,
   ) => {
     if (slot === 'fallback') {
       const runner = readActiveRunner({ config, role: seatRole });
@@ -437,7 +444,7 @@ export function usePickerActions(opts: {
       selection,
       modelId === null ? null : { id: modelId },
       effort,
-      effortChoices,
+      ladder,
     );
     const note = modelId === null ? undefined : needsSignInVariantNote(selection, modelId);
     await commit(

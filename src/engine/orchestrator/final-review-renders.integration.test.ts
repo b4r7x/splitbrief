@@ -39,6 +39,7 @@ import { NO_VISION_REVIEW } from './review-renders.js';
 import { createCliPlanner } from '../planners/cli.js';
 import type { ConfiguredProviderRuntime } from '../detection/provider-outcomes.js';
 import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
+import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 
 const dirs: string[] = [];
 
@@ -269,6 +270,102 @@ describe('final review render delivery', () => {
     expect(prompts[0]).not.toContain(NO_VISION_REVIEW);
     expect(result.verdict?.outcome.unverifiedCriteria).toEqual([]);
     expect(result.verdict?.outcome.kind).toBe('pass');
+  });
+
+  // opencode 2.0.14 lists `opencode-go/qwen3.7-max` with input ["text"]: OpenCode sends images,
+  // this model cannot read them.
+  it('holds a render criterion unverified on an OpenCode reviewer whose model reads only text', async () => {
+    const { projectDir, sessionId } = setupGitSessionProject({
+      prefix: 'final-review-renders-text-only',
+      sessionId: 'sess-renders-text-only',
+    });
+    dirs.push(projectDir);
+    const ref = { projectDir, sessionId };
+    writeSpecFile(ref, PLAN_FILE, 'Render the dashboard.', null);
+    const png = join(sessionDir(projectDir, sessionId), 'dashboard.png');
+    const pngBytes = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a1X8AAAAASUVORK5CYII=',
+      'base64',
+    );
+    writeFileSync(png, pngBytes);
+    const task = makeTask({ id: 'T001', status: 'done' });
+    const baseline = await captureChangedFilesBaseline(projectDir);
+    const candidateId = await currentCandidateId(projectDir, baseline);
+    const state = makeImplState([task], {
+      changedFilesBaseline: serializeChangedFilesBaseline(baseline),
+      plan: {
+        summary: 'Render the dashboard.',
+        decisions: [],
+        criteria: [{ id: 'C1', text: 'The dashboard is readable', checkIds: ['K1'] }],
+        checks: [{ id: 'K1', kind: 'render', value: 'dashboard' }],
+        validation: null,
+      },
+    });
+    writeEvidenceLedger(
+      ref,
+      withUpdatedTask(
+        createEvidenceLedger({ sessionId, feature: state.feature, tasks: [task] }),
+        task.id,
+        (entry) => ({
+          ...entry,
+          checks: [
+            {
+              id: 'K1',
+              command: 'render dashboard',
+              exitCode: 0,
+              artifacts: [{ path: png, sha256: sha256Hex(pngBytes) }],
+              workspaceSnapshotId: candidateId,
+              ts: '2026-10-06T03:00:00.000Z',
+            },
+          ],
+        }),
+      ),
+    );
+    const contexts: TypedCallContext[] = [];
+    const prompts: string[] = [];
+    const call = typedCallPlanAndReview(
+      () => planFromTasks([]),
+      (prompt) => {
+        prompts.push(prompt);
+        const verdict = passingReviewVerdict(prompt);
+        return {
+          ...verdict,
+          criteria: verdict.criteria.map((criterion) => ({
+            ...criterion,
+            evidence: 'dashboard: labels are readable and columns align.',
+          })),
+        };
+      },
+    );
+    const reviewer = makePlanner({
+      typedCall: (ctx) => {
+        contexts.push(ctx);
+        return call(ctx);
+      },
+    });
+
+    const result = await runFinalReviewPhase({
+      ...ref,
+      workspaceDir: projectDir,
+      state,
+      config: makeNoValidationConfig({
+        reviewer: { kind: 'cli', tool: 'opencode', model: 'opencode-go/qwen3.7-max' },
+      }),
+      reviewer,
+      callbacks: makeCallbacks().callbacks,
+      bus: makeBusRecorder().bus,
+      modelCache: makeModelCacheAccessor({
+        providerModels: { opencode: [{ id: 'opencode-go/qwen3.7-max', supportsImages: false }] },
+      }),
+    });
+
+    expect(result.reviewStatus).toBe('written');
+    expect(contexts).toHaveLength(1);
+    expect(contexts[0]?.images).toBeUndefined();
+    expect(prompts[0]).toContain(NO_VISION_REVIEW);
+    expect(result.verdict?.outcome.kind).toBe('fail');
+    expect(result.verdict?.outcome.unverifiedCriteria).toEqual(['C1']);
+    expect(result.state.review?.verdict.criteria[0]?.status).toBe('unverified');
   });
 
   it('hands the attached render to the Codex reviewer process as --image', async () => {

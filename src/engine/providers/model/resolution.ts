@@ -1,5 +1,5 @@
 import type { DetectedModel } from '../../../core/discovery/detection.js';
-import { isAutomaticModel } from '../../../core/providers/automatic-model.js';
+import { isAutomaticModel, resolveCliModel } from '../../../core/providers/automatic-model.js';
 import {
   isApiProviderId,
   type ApiProviderId,
@@ -237,8 +237,9 @@ export function lookupModelsDevModel(input: {
 }
 
 /**
- * The image fact of an API seat's own model: the seat's runtime row first, then models.dev.
- * Absent for a seat of another kind and when no lookup knows the fact.
+ * The image fact of a seat's own model. A CLI seat reads its tool's own listing for the pinned
+ * model; an API seat reads its runtime row first, then models.dev. Absent for a seat of another
+ * kind, an automatic CLI model, and when no lookup knows the fact.
  */
 export function resolveSeatImageFact(
   input: Readonly<{
@@ -248,9 +249,21 @@ export function resolveSeatImageFact(
   }>,
 ): DetectedModelFact | undefined {
   const { runner, cache } = input;
-  if (runner.kind !== 'api' || cache === undefined || !isProviderId(runner.provider)) {
-    return undefined;
+  if (cache === undefined) return undefined;
+  if (runner.kind === 'cli') {
+    const model = resolveCliModel(runner.model, runner.tool);
+    if (model === undefined || !isCliToolId(runner.tool)) return undefined;
+    const runtime = resolveExactRuntimeModel({
+      providerId: runner.tool,
+      selectionId: model,
+      cache,
+      role: input.role,
+      kind: 'cli',
+    });
+    const supportsImages = runtime.kind === 'found' ? runtime.model.supportsImages : undefined;
+    return supportsImages === undefined ? undefined : { supportsImages };
   }
+  if (runner.kind !== 'api' || !isProviderId(runner.provider)) return undefined;
   const modelId = resolveAutoModel(runner.model, runner.provider);
   if (modelId === undefined) return undefined;
   const lookup = { providerId: runner.provider, modelId, cache, kind: runner.kind };

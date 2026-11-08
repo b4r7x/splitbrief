@@ -59,6 +59,8 @@ export interface ModelOption {
    * route's ladder through `effortLadderFor`: the route's first, this one second.
    */
   effortChoices?: readonly string[] | undefined;
+  /** `effortChoices` is the tool's floor ladder, not one the model published. */
+  effortChoicesFromFloor?: boolean | undefined;
   releaseDate?: string | undefined;
   /** Present on provider-merged rows and option-family rows (≥2 members). */
   variants?: readonly ModelVariant[] | undefined;

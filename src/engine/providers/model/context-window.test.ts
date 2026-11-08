@@ -188,3 +188,87 @@ describe('resolveRunnerContextWindow — kind-aware lanes', () => {
     ).toBeNull();
   });
 });
+
+describe('resolveRunnerContextWindow — a CLI seat with its tool listing', () => {
+  // codex 0.164.0 `debug models` lists gpt-6.1-sol at 500000; models.dev `openai` says 272000.
+  it("answers a pinned codex model from the tool's own listing, not models.dev", () => {
+    const cache = makeModelCacheAccessor({
+      catalog: {
+        openai: {
+          id: 'openai',
+          models: { 'gpt-6.1-sol': { id: 'gpt-6.1-sol', limit: { context: 272_000 } } },
+        },
+      },
+      providerModels: { codex: [{ id: 'gpt-6.1-sol', contextLength: 500_000 }] },
+    });
+
+    expect(
+      resolveRunnerContextWindow({ providerId: 'codex', kind: 'cli', model: 'gpt-6.1-sol', cache }),
+    ).toEqual({ contextLength: 500_000, source: 'runtime' });
+  });
+
+  it('keeps the smallest bundled window for an automatic OpenCode seat whatever its listing holds', () => {
+    const cache = makeModelCacheAccessor({
+      providerModels: {
+        opencode: [
+          { id: 'openai/gpt-5.6-luna', contextLength: 1_050_000 },
+          { id: 'opencode-go/qwen3.7-max', contextLength: 1_000_000 },
+          { id: 'opencode-go/glm-5.2', contextLength: 128_000 },
+        ],
+      },
+    });
+
+    expect(
+      resolveRunnerContextWindow({ providerId: 'opencode', kind: 'cli', model: 'auto', cache }),
+    ).toEqual({ contextLength: 272_000, source: 'automatic-catalog' });
+  });
+
+  // opencode `/api/model` lists three OpenAI embedding rows at 8191 and 8192.
+  it('an embedding row never sets the window of an automatic seat', () => {
+    const cache = makeModelCacheAccessor({
+      providerModels: {
+        opencode: [
+          {
+            id: 'openai/text-embedding-3-small',
+            contextLength: 8191,
+            capabilities: ['type:embedding'],
+            supportsToolCalls: false,
+          },
+          { id: 'opencode-go/glm-5.2', contextLength: 128_000 },
+          { id: 'openai/gpt-5.6-sol', contextLength: 1_050_000 },
+        ],
+      },
+    });
+
+    expect(
+      resolveRunnerContextWindow({ providerId: 'opencode', kind: 'cli', model: 'auto', cache }),
+    ).toEqual({ contextLength: 272_000, source: 'automatic-catalog' });
+  });
+
+  // `kilo models --verbose` lists kilo/openai/gpt-3.5-turbo-0613 at 4095 among 321 rows.
+  it('one small chat row never sets the window of an automatic seat', () => {
+    const cache = makeModelCacheAccessor({
+      providerModels: {
+        'kilo-code': [
+          { id: 'kilo/openai/gpt-3.5-turbo-0613', contextLength: 4095 },
+          { id: 'kilo/~anthropic/claude-fable-latest', contextLength: 1_000_000 },
+        ],
+      },
+    });
+
+    expect(
+      resolveRunnerContextWindow({ providerId: 'kilo-code', kind: 'cli', model: 'auto', cache }),
+    ).toBeNull();
+  });
+
+  it('keeps the smallest bundled window for an automatic seat whose tool lists nothing', () => {
+    expect(
+      resolveRunnerContextWindow({
+        providerId: 'opencode',
+        kind: 'cli',
+        model: 'auto',
+        cache: makeModelCacheAccessor(),
+      }),
+    ).toEqual({ contextLength: 272_000, source: 'automatic-catalog' });
+  });
+});

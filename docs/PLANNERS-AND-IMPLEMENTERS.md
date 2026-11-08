@@ -435,7 +435,7 @@ The 25% reserve is for output. The remaining budget goes to `currentCode`. If th
 
 models.dev serves `api` runners only. A CLI tool's picker rows come from its own listing (`confirmed` / `stale`), from claude-code's local option cache, and — until a list lands — from the bundled `KNOWN_MODELS` aliases (`bundled-suggestion`); `buildRightRows` (`src/features/runners/model-catalog/rows.ts`) hides bundled rows when a live lane is present, except the persisted model and custom rows. An `api` runner also renders models.dev rows (`catalog-suggestion`) beside its runtime list. `resolveModelCatalog` (`src/engine/providers/model/catalog.ts`) still classifies bundled membership — the hide is a picker filter, not an engine-catalog drop.
 
-Pricing lookup keeps its ladder — cached models.dev first, then runtime metadata, then the bundled catalog (`resolvePricing` in `src/engine/providers/pricing-resolver.ts`) — and applies to api-priced runners. A CLI tool's context window comes from its own listing or the bundled table (`resolveRunnerContextWindow` in `src/engine/providers/model/context-window.ts`); an `api` runner's window keeps models.dev ahead of runtime metadata and the bundled catalog.
+Pricing lookup keeps its ladder — cached models.dev first, then runtime metadata, then the bundled catalog (`resolvePricing` in `src/engine/providers/pricing-resolver.ts`) — and applies to api-priced runners. A CLI tool's context window comes from its own listing, then from models.dev by model id, then from the bundled table (`resolveRunnerContextWindow` in `src/engine/providers/model/context-window.ts`); an `api` runner's window keeps models.dev ahead of runtime metadata and the bundled catalog.
 
 ---
 

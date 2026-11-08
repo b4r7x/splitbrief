@@ -17,7 +17,12 @@ describe('warnDroppedRunnerFields', () => {
     [
       { kind: 'cli', tool: 'opencode', effort: 'high' },
       false,
-      'The planner effort setting is not used: OpenCode CLI has no effort channel',
+      'The planner effort setting is not used: the OpenCode CLI variant sets the effort',
+    ],
+    [
+      { kind: 'cli', tool: 'antigravity', effort: 'high' },
+      false,
+      'The planner effort setting is not used: the Google Antigravity CLI model id sets the effort',
     ],
     [
       { kind: 'cli', tool: 'claude-code', variant: 'max' },
@@ -39,7 +44,7 @@ describe('warnDroppedRunnerFields', () => {
     ],
   ];
   it.each(cases)(
-    'names the unused setting and the tool that takes none (%#)',
+    'names the unused setting and why the seat does not use it (%#)',
     (runner, supportsEffort, words) => {
       const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
 

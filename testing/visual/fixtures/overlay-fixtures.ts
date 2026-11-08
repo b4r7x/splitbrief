@@ -52,6 +52,7 @@ import {
 } from '../../../src/stores/ui/session-drafts.js';
 import { stateOpsError } from '../../../src/engine/orchestrator/state-ops.js';
 import { formatNeedsSignInSaveFeedback } from '../../../src/features/runners/picker-format.js';
+import { commitPlannerTierSelection } from '../../../src/features/runners/config-transforms.js';
 import type { CliToolDetection } from '../../../src/core/discovery/detection.js';
 import type { ScopedCliCatalogAttempt } from '../../../src/engine/detection/cli-catalog-outcomes.js';
 import type { PreparedExecution } from '../../../src/engine/runners/prepared-execution.js';
@@ -100,6 +101,7 @@ import { makeSession } from '../../helpers/factories/session.js';
 import { makeSummary } from '../../helpers/factories/summary.js';
 import { makeTask } from '../../helpers/factories/task.js';
 import { makeReviewFixInsertedEvents } from '../../helpers/events/task.js';
+import { realPickerOption } from '../../helpers/runner-picker.js';
 import { createEvidenceLedger } from '../../../src/core/evidence/ledger-state.js';
 import { hashTaskBrief } from '../../../src/core/evidence/brief-hash.js';
 import type { FixtureFactory, FixtureLifecycle, FixtureRegistry } from './common.js';
@@ -187,6 +189,32 @@ function commandCodeListModels(): readonly DetectedModel[] {
   );
   const catalog = parseCommandCodeNativeModelCatalog(stdout);
   if (catalog === null) throw new Error('command-code/list-models-1.62.1.txt did not parse');
+  return nativeCliCatalogToDetectedModels(catalog);
+}
+
+// `cmd --list-models` on cmd 1.88.5, cut to two of its rows, read with the catalog cache it writes.
+const COMMAND_CODE_CACHED_LISTING = [
+  'Available models  ·  2 models',
+  '',
+  'Open Source',
+  '',
+  'deepseek/deepseek-v4.1-flash-fast       High throughput V4.1 Flash',
+  '',
+  'Anthropic',
+  '',
+  'claude-haiku-4-5                        prev Haiku, still fast for quick tasks',
+  '',
+  'Docs:  https://commandcode.ai/docs/reference/cli/models',
+  '',
+].join('\n');
+
+function commandCodeCachedModels(): readonly DetectedModel[] {
+  const cache = readFileSync(
+    join(import.meta.dirname, '../../fixtures/command-code/model-catalog-cache-1.88.5.json'),
+    'utf8',
+  );
+  const catalog = parseCommandCodeNativeModelCatalog(COMMAND_CODE_CACHED_LISTING, [cache]);
+  if (catalog === null) throw new Error('the cmd 1.88.5 listing did not parse');
   return nativeCliCatalogToDetectedModels(catalog);
 }
 
@@ -1272,6 +1300,51 @@ const createSettingsIsolationCheckoutFixture: FixtureFactory = () =>
     seed: seedConfig({ workflow: { isolation: 'none' } }),
     focus: 'workflow.isolation',
   });
+// codex 0.164.0 `debug models` lists gpt-6.1-sol at 500000: the window boot stores for the seat.
+const createSettingsPromptBudgetCodexFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'settings',
+    seed: () => {
+      seedConfig({ implementer: { kind: 'cli', tool: 'codex', model: 'gpt-6.1-sol' } })();
+      configStore.setContextLength(500_000, true);
+    },
+    focus: 'implementer.contextLength',
+  });
+// OpenCode selects openai/gpt-5.6-sol on this host, and its listing serves that model at 1050000.
+const createSettingsPromptBudgetAutoSeatFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'settings',
+    seed: () => {
+      seedConfig({ implementer: { kind: 'cli', tool: 'opencode', model: 'auto' } })();
+      configStore.setContextLength(1_050_000, true);
+    },
+    focus: 'implementer.contextLength',
+  });
+// The PLAN seat moved from Claude Code at max effort to OpenCode while the plan card waits. The
+// plan card owns the run's footer, so the save line shows in Settings, where the picker returns.
+const createSettingsSeatSavedEffortClearedFixture: FixtureFactory = () => {
+  const saved = commitPlannerTierSelection({
+    config: visualConfig({
+      planner: { kind: 'cli', tool: 'claude-code', model: 'opus', effort: 'max' },
+    }),
+    role: 'planner',
+    selection: realPickerOption('planner', 'opencode'),
+    model: { id: 'opencode-go/deepseek-v4.1-flash' },
+  });
+  if (saved.notice === undefined) throw new Error('The OpenCode PLAN seat kept the effort');
+  const saveLine = [
+    seatChangeWords(`${CREW_SEAT_LABELS.plan} seat`, { after: 'next-brief' }),
+    saved.notice,
+  ].join(SOFT_SEP);
+  return {
+    ...createOverlayFixture({
+      overlay: 'settings',
+      seed: seedConfig({ planner: saved.config.planner }),
+      focus: 'seat:plan',
+    }),
+    afterMount: () => feedbackStore.setMessage(saveLine),
+  };
+};
 const createPlannerPickerFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'planner-picker' });
 const createPlannerPickerCatalogFixture: FixtureFactory = () =>
@@ -1701,6 +1774,37 @@ const createPlannerPickerCodexFixture: FixtureFactory = () =>
     overlay: 'planner-picker',
     seed: seedCodexNativeListing,
     focus: 'tool:codex',
+  });
+const createPlannerPickerCodexUltraFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      seedCodexNativeListing();
+      pickerViewStore.expand('gpt-6-sol', 'gpt-6-sol', 'ultra');
+    },
+    focus: 'tool:codex',
+  });
+const COMMAND_CODE_DEEPSEEK = 'deepseek/deepseek-v4.1-flash-fast';
+// The row's ladder comes from the catalog cache: `off` is a level only that ladder has.
+const createPlannerPickerCommandCodeCacheFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      seedConfig({
+        planner: { kind: 'cli', tool: 'command-code', model: COMMAND_CODE_DEEPSEEK },
+      })();
+      publishVisualDiscovery({
+        cliTools: [cliDetectionFor('ready', 'command-code', { installedVersion: '1.88.5' })],
+        cliModels: [
+          catalogAttempt({
+            tool: 'command-code',
+            outcome: { kind: 'success', value: commandCodeCachedModels() },
+          }),
+        ],
+      });
+      pickerViewStore.expand(COMMAND_CODE_DEEPSEEK, COMMAND_CODE_DEEPSEEK, 'off');
+    },
+    focus: 'tool:command-code',
   });
 const createPlannerPickerAntigravityFixture: FixtureFactory = () =>
   createOverlayFixture({
@@ -3043,6 +3147,15 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
     createSettingsSeatSavedFinalReviewFixture,
   ],
   [scenarioId('overlay-settings-isolation-checkout'), createSettingsIsolationCheckoutFixture],
+  [scenarioId('overlay-settings-prompt-budget-codex'), createSettingsPromptBudgetCodexFixture],
+  [
+    scenarioId('overlay-settings-prompt-budget-auto-seat'),
+    createSettingsPromptBudgetAutoSeatFixture,
+  ],
+  [
+    scenarioId('overlay-settings-seat-saved-effort-cleared'),
+    createSettingsSeatSavedEffortClearedFixture,
+  ],
   [scenarioId('overlay-planner-picker'), createPlannerPickerFixture],
   [scenarioId('overlay-planner-picker-catalog'), createPlannerPickerCatalogFixture],
   [scenarioId('overlay-picker-opencode-expanded'), createOpencodeExpandedFixture],
@@ -3079,6 +3192,11 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-planner-picker-unlisted-seat'), createPlannerPickerUnlistedSeatFixture],
   [scenarioId('overlay-planner-picker-command-code'), createPlannerPickerCommandCodeFixture],
   [scenarioId('overlay-planner-picker-codex'), createPlannerPickerCodexFixture],
+  [scenarioId('overlay-planner-picker-codex-ultra'), createPlannerPickerCodexUltraFixture],
+  [
+    scenarioId('overlay-planner-picker-command-code-cache'),
+    createPlannerPickerCommandCodeCacheFixture,
+  ],
   [scenarioId('overlay-planner-picker-antigravity'), createPlannerPickerAntigravityFixture],
   [scenarioId('overlay-planner-picker-antigravity-low'), createPlannerPickerAntigravityLowFixture],
   [

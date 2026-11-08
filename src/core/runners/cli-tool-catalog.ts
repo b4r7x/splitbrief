@@ -197,7 +197,7 @@ export type CliToolDeclarationBase<Id extends string = string> = Readonly<{
   category: 'cli';
   roles: readonly RunnerRole[];
   modelPolicy: RolePolicy<CliModelPolicy>;
-  /** Whether the tool accepts a per-call effort level on its own command line. */
+  /** Whether SPLITBRIEF sends a per-call effort flag. */
   supportsEffort: boolean;
   /** How the tool's effort intent reaches it, when it has a channel at all. */
   effortChannel: CliEffortChannel;

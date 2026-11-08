@@ -308,6 +308,12 @@ function getDetectedContextLength(): number | undefined {
   return store.get().detectedContextLength;
 }
 
+/** Whether `config` builds on the loaded build seat, so a window read for it fits that seat. */
+function buildsOnLoadedSeat(config: Config): boolean {
+  const loaded = store.get().config;
+  return loaded !== null && sameSeatIds(windowSeat(config), windowSeat(loaded));
+}
+
 // Test escape hatch — see docs/STORES-AND-UI.md#test-escape-hatches. Do not use outside tests.
 function __testReset(next?: Partial<ConfigState>): void {
   saveQueue = Promise.resolve();
@@ -336,5 +342,6 @@ export const configStore = {
   setInitialCrew,
   setContextLength,
   getDetectedContextLength,
+  buildsOnLoadedSeat,
   __testReset,
 };

@@ -14,7 +14,7 @@ import type { UserMessageInput } from '../../core/types/user-input.js';
 import { recoveryActionLabel } from '../../core/recovery/action-label.js';
 import { leavesWordsUnread } from '../../core/recovery/typed-words.js';
 import { prepareDraftSubmission } from '../../core/composer/submission.js';
-import { plannerSupportsImages } from '../../core/runners/capabilities.js';
+import { plannerSupportsImages } from '../../engine/providers/capabilities.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { attachmentsStore } from '../../stores/workflow/attachments.js';
 import { formatSubmissionFailure } from '../../components/composer/home-hint.js';
@@ -450,7 +450,7 @@ export function createRecoveryDriver(
       if (correction === undefined && action === correctionAction && !draft.empty) {
         const submission = prepareDraftSubmission(draft.document, {
           projectDir,
-          supportsImages: plannerSupportsImages(config, modelCacheStore.getDetection().providers),
+          supportsImages: plannerSupportsImages(config, modelCacheStore),
         });
         if (!submission.ok) {
           feedbackStore.setError(formatSubmissionFailure(submission));

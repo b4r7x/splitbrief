@@ -357,7 +357,7 @@ describe('an effort ladder offers only what the seat can save', () => {
     };
   }
 
-  it('drops codex ultra from an effort-flag ladder and keeps the levels beside it', () => {
+  it('offers codex ultra on the models whose own ladder lists it, and only there', () => {
     // `codex debug models` on codex-cli 0.155.1 lists `ultra` on four models.
     const cache = makeModelCacheAccessor({
       providerModels: {
@@ -383,11 +383,12 @@ describe('an effort ladder offers only what the seat can save', () => {
     for (const ladder of [
       shown.get('gpt-6-astra'),
       shown.get('gpt-6-sol'),
-      shown.get('gpt-6-luna'),
       shown.get('gpt-5.6-sol'),
       shown.get('gpt-5.6-terra'),
-      hidden.get('gpt-reserve'),
     ]) {
+      expect(ladder).toEqual(['low', 'medium', 'high', 'xhigh', 'max', 'ultra']);
+    }
+    for (const ladder of [shown.get('gpt-6-luna'), hidden.get('gpt-reserve')]) {
       expect(ladder).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
     }
     expect(shown.get('gpt-5.5')).toEqual(['low', 'medium', 'high', 'xhigh']);

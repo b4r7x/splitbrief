@@ -36,7 +36,7 @@ import { draftDocumentText, getInputHistoryDocuments } from '../../stores/ui/inp
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { formatSeatIdentity } from '../../core/crew/identity.js';
 import { resolveSeatDisplayName } from '../../engine/providers/model/display-names.js';
-import { plannerSupportsImages } from '../../core/runners/capabilities.js';
+import { plannerSupportsImages } from '../../engine/providers/capabilities.js';
 import { computeCompletionOverlayRows, computeCompletionCap } from './completion/layout.js';
 import { borderStyleFor, glyph } from '../../lib/glyphs.js';
 import {
@@ -349,8 +349,8 @@ function ComposerInput({
   const showCommandSuggestions = command.showSuggestions;
   const showReferenceSuggestions = reference.showSuggestions && !showCommandSuggestions;
 
-  const detectionProviders = modelCacheStore.use((cache) => cache.detection.providers);
-  const supportsImages = plannerSupportsImages(config, detectionProviders);
+  modelCacheStore.use((cache) => cache.refresh.generation);
+  const supportsImages = plannerSupportsImages(config, modelCacheStore);
 
   const canAttachImage = (): boolean => {
     if (!supportsImages) {

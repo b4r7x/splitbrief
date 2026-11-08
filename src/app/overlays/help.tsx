@@ -14,7 +14,7 @@ import {
   type OverlayDensity,
 } from '../../core/navigation/overlay-rect.js';
 import type { Screen } from '../../core/navigation/types.js';
-import { detectedModelFact, seatSupportsImages } from '../../core/runners/capabilities.js';
+import { plannerSupportsImages } from '../../engine/providers/capabilities.js';
 import { COMMAND_CATEGORIES, COMMAND_CATEGORY_LABELS } from '../../core/runtime/commands/types.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
@@ -96,12 +96,7 @@ export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
     onRuntimeCommand: () => {},
     guardContext: {
       phase,
-      plannerSupportsImages:
-        config !== null &&
-        seatSupportsImages({
-          runner: config.planner,
-          detected: detectedModelFact(modelCacheStore.getDetection().providers, config.planner),
-        }),
+      plannerSupportsImages: plannerSupportsImages(config, modelCacheStore),
       openRunAtRest,
       applyUnfinished,
       applying: activeApply() !== undefined,

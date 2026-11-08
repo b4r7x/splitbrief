@@ -26,6 +26,7 @@ import {
   type RunnerConfig,
 } from '../../core/config/accessors/runner-config.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
+import { unusedEffortReason } from '../../core/runners/effort-channel.js';
 
 export type RunnerFactoryAuthority = Readonly<{
   preparedConfig: PreparedConfig;
@@ -242,7 +243,7 @@ export function warnDroppedRunnerFields(
   const { runner, seat } = input;
   const tool = getRunnerCatalogDisplayName(runner);
   if (runner.effort && input.supportsEffort === false) {
-    warnStderr(`The ${seat} effort setting is not used: ${tool} has no effort channel`);
+    warnStderr(`The ${seat} effort setting is not used: ${unusedEffortReason(runner)}`);
   }
   if (runner.variant !== undefined && !deliversVariant(runner)) {
     warnStderr(`The ${seat} variant setting is not used: ${tool} has no variant channel`);

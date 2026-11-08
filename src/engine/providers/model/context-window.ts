@@ -52,29 +52,26 @@ export function resolveRunnerContextWindow(
 
   const modelId = getEffectiveModelId(providerId, input.model);
   if (modelId === undefined) {
-    // Automatic selection resolves to no model id; the smallest bundled window
-    // is the largest one every model the tool could pick is guaranteed to have.
+    // `auto` names no model here. The tool's listing also holds models it never picks, such as
+    // embedding rows, so only the smallest bundled window answers.
     return bundledMinimumWindow(providerId);
   }
 
   const cliLane = input.kind === undefined ? isCliToolId(providerId) : input.kind === 'cli';
   if (input.cache !== undefined) {
-    const modelsDev = lookupModelsDevModel({
-      providerId,
-      modelId,
-      cache: input.cache,
-      kind: input.kind,
-    });
+    const lookup = { providerId, modelId, cache: input.cache, kind: input.kind };
+    const runtime = lookupRuntimeModel(lookup);
+    // A CLI tool's own listing is the window it runs the model with, so it answers
+    // first; an API seat keeps models.dev first.
+    if (cliLane && runtime?.contextLength !== undefined) {
+      return { contextLength: runtime.contextLength, source: 'runtime' };
+    }
+
+    const modelsDev = lookupModelsDevModel(lookup);
     if (modelsDev?.contextLength !== undefined) {
       return { contextLength: modelsDev.contextLength, source: 'models-dev' };
     }
 
-    const runtime = lookupRuntimeModel({
-      providerId,
-      modelId,
-      cache: input.cache,
-      kind: input.kind,
-    });
     if (runtime?.contextLength !== undefined) {
       return { contextLength: runtime.contextLength, source: 'runtime' };
     }

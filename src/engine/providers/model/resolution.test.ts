@@ -8,6 +8,7 @@ import {
   lookupRuntimeModel,
   resolveExactModelsDevModel,
   resolveExactRuntimeModel,
+  resolveSeatImageFact,
   type ModelCacheAccessor,
 } from './resolution.js';
 import { findKnownModel } from '../../../core/providers/known-models.js';
@@ -580,5 +581,34 @@ describe('kind-aware lookup lanes', () => {
     ]);
     expect(getModelsDevEntries({ providerId: 'opencode', cache, kind: 'cli' })).toEqual([]);
     expect(getModelsDevEntries({ providerId: 'opencode', cache })).toEqual([]);
+  });
+});
+
+describe('resolveSeatImageFact on a CLI seat', () => {
+  // opencode 2.0.14 `/api/model`: qwen3.7-max takes ["text"], gpt-5.6-luna ["text","image","pdf"].
+  const cache = makeModelCacheAccessor({
+    providerModels: {
+      opencode: [
+        { id: 'opencode-go/qwen3.7-max', supportsImages: false },
+        { id: 'openai/gpt-5.6-luna', supportsImages: true },
+      ],
+    },
+  });
+  const seat = (model: string) => ({ kind: 'cli', tool: 'opencode', model }) as const;
+
+  it("answers from the tool's own listing for the pinned model", () => {
+    expect(
+      resolveSeatImageFact({ runner: seat('opencode-go/qwen3.7-max'), role: 'reviewer', cache }),
+    ).toEqual({ supportsImages: false });
+    expect(
+      resolveSeatImageFact({ runner: seat('openai/gpt-5.6-luna'), role: 'reviewer', cache }),
+    ).toEqual({ supportsImages: true });
+  });
+
+  it('has no fact for an automatic model or a model the listing does not hold', () => {
+    expect(resolveSeatImageFact({ runner: seat('auto'), role: 'reviewer', cache })).toBeUndefined();
+    expect(
+      resolveSeatImageFact({ runner: seat('opencode-go/glm-5.2'), role: 'reviewer', cache }),
+    ).toBeUndefined();
   });
 });

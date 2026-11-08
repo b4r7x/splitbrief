@@ -206,6 +206,7 @@ describe('native CLI model catalogs', () => {
         contextWindow: 1_050_000,
         nativeReasoningEfforts: lunaLadder,
         supportsToolCalls: true,
+        inputModalities: ['text', 'image', 'pdf'],
         outputModalities: ['text'],
       },
       // An alias keeps its own `id` and repeats the sibling's `modelID`; keying
@@ -217,6 +218,7 @@ describe('native CLI model catalogs', () => {
         contextWindow: 1_050_000,
         nativeReasoningEfforts: lunaLadder,
         supportsToolCalls: true,
+        inputModalities: ['text', 'image', 'pdf'],
         outputModalities: ['text'],
       },
       {
@@ -226,6 +228,7 @@ describe('native CLI model catalogs', () => {
         contextWindow: 1_050_000,
         nativeReasoningEfforts: lunaLadder,
         supportsToolCalls: true,
+        inputModalities: ['text', 'image', 'pdf'],
         outputModalities: ['text'],
       },
       {
@@ -235,6 +238,7 @@ describe('native CLI model catalogs', () => {
         contextWindow: 1_000_000,
         nativeReasoningEfforts: ['none', 'thinking'],
         supportsToolCalls: true,
+        inputModalities: ['text', 'image', 'video'],
         outputModalities: ['text'],
       },
       {
@@ -244,6 +248,7 @@ describe('native CLI model catalogs', () => {
         contextWindow: 1_000_000,
         nativeReasoningEfforts: [],
         supportsToolCalls: true,
+        inputModalities: ['text'],
         outputModalities: ['text'],
       },
     ]);
@@ -270,6 +275,7 @@ describe('native CLI model catalogs', () => {
         contextWindow: 500_000,
         nativeReasoningEfforts: lunaLadder,
         supportsToolCalls: true,
+        inputModalities: ['text', 'image'],
         outputModalities: ['text'],
       },
       {
@@ -279,6 +285,7 @@ describe('native CLI model catalogs', () => {
         contextWindow: 500_000,
         nativeReasoningEfforts: lunaLadder,
         supportsToolCalls: true,
+        inputModalities: ['text', 'image'],
         outputModalities: ['text'],
       },
       {
@@ -288,6 +295,7 @@ describe('native CLI model catalogs', () => {
         contextWindow: 1_050_000,
         nativeReasoningEfforts: lunaLadder,
         supportsToolCalls: true,
+        inputModalities: ['text', 'image'],
         outputModalities: ['text'],
       },
       {
@@ -297,6 +305,7 @@ describe('native CLI model catalogs', () => {
         contextWindow: 1_000_000,
         nativeReasoningEfforts: ['none', 'thinking'],
         supportsToolCalls: true,
+        inputModalities: ['text', 'image'],
         outputModalities: ['text'],
       },
       {
@@ -306,6 +315,7 @@ describe('native CLI model catalogs', () => {
         contextWindow: 1_000_000,
         nativeReasoningEfforts: [],
         supportsToolCalls: true,
+        inputModalities: ['text'],
         outputModalities: ['text'],
       },
     ]);
@@ -944,6 +954,163 @@ describe('native CLI model catalogs', () => {
     });
   });
 
+  const listedRow = (catalog: NativeCliModelCatalog | null, id: string) =>
+    catalog?.models.find((model) => model.selectionId === id);
+
+  // `cmd --list-models` on cmd 1.88.5 prints ids and blurbs only. The levels, the label, the
+  // input and the window of each model are in the catalog cache the same run writes.
+  describe('cmd 1.88.5 catalog cache', () => {
+    const listing = [
+      'Available models  ·  5 models',
+      '',
+      'Open Source',
+      '',
+      'deepseek/deepseek-v4.1-flash-fast       High throughput V4.1 Flash',
+      'qwen/qwen3.8-max                        autonomous long-horizon coding & professional work',
+      'thinkingmachines/inkling                multimodal MoE reasoning',
+      '',
+      'Anthropic',
+      '',
+      'claude-haiku-4-5                        prev Haiku, still fast for quick tasks',
+      '',
+      'xAI',
+      '',
+      'xai/grok-4.7                            coding and knowledge work, built for multi-hour tasks',
+      '',
+      'Pass the full id, or just the short name after the last "/":',
+      'cmd --model moonshotai/kimi-k2.5',
+      'cmd --model kimi-k2.5',
+      '',
+      'Docs:  https://commandcode.ai/docs/reference/cli/models',
+      '',
+    ].join('\n');
+    const cache = readFileSync(
+      join(
+        import.meta.dirname,
+        '../../../testing/fixtures/command-code/model-catalog-cache-1.88.5.json',
+      ),
+      'utf-8',
+    );
+    it('reads the ladder, label, input and window of a listed id from the cache', () => {
+      const catalog = parseCommandCodeNativeModelCatalog(listing, [cache]);
+      if (catalog === null) throw new Error('Expected the cmd 1.88.5 listing to parse');
+
+      expect(listedRow(catalog, 'deepseek/deepseek-v4.1-flash-fast')).toEqual({
+        selectionId: 'deepseek/deepseek-v4.1-flash-fast',
+        nativeOrder: 0,
+        detail: 'High throughput V4.1 Flash',
+        displayName: 'DeepSeek V4.1 Flash Fast (latest)',
+        nativeReasoningEfforts: ['off', 'low', 'high', 'max'],
+        inputModalities: ['text', 'image'],
+        contextWindow: 1_000_000,
+      });
+      expect(
+        nativeCliCatalogToDetectedModels(catalog).find(
+          (model) => model.id === 'deepseek/deepseek-v4.1-flash-fast',
+        ),
+      ).toMatchObject({
+        displayName: 'DeepSeek V4.1 Flash Fast (latest)',
+        nativeReasoningEfforts: ['off', 'low', 'high', 'max'],
+        supportsReasoning: true,
+        contextLength: 1_000_000,
+        supportsImages: true,
+      });
+    });
+
+    it('matches a cache entry by an alias or by its id in any case, and reads a null ladder as no levels', () => {
+      const catalog = parseCommandCodeNativeModelCatalog(listing, [cache]);
+
+      // The cache lists `claude-haiku-4-5-20251001` with the alias the listing prints.
+      expect(listedRow(catalog, 'claude-haiku-4-5')).toMatchObject({
+        displayName: 'Claude Haiku 4.5',
+        nativeReasoningEfforts: [],
+        contextWindow: 200_000,
+      });
+      // The cache spells `Qwen/Qwen3.8-Max`; the listing prints it in lowercase.
+      expect(listedRow(catalog, 'qwen/qwen3.8-max')).toMatchObject({
+        displayName: 'Qwen 3.8 Max',
+        nativeReasoningEfforts: ['low', 'medium', 'xhigh'],
+        contextWindow: 1_000_000,
+      });
+      expect(listedRow(catalog, 'thinkingmachines/inkling')).toMatchObject({
+        displayName: 'Inkling',
+        nativeReasoningEfforts: [],
+        contextWindow: 256_000,
+      });
+      // An id the cache does not hold keeps what the listing gives.
+      expect(listedRow(catalog, 'xai/grok-4.7')).toEqual({
+        selectionId: 'xai/grok-4.7',
+        nativeOrder: 4,
+        detail: 'coding and knowledge work, built for multi-hour tasks',
+      });
+    });
+
+    it('keeps the listing as it is when the cache has another schema or is not JSON', () => {
+      const plain = parseCommandCodeNativeModelCatalog(listing);
+      const otherSchema = cache.replace('"schemaVersion": 1', '"schemaVersion": 2');
+
+      expect(otherSchema).not.toBe(cache);
+      expect(parseCommandCodeNativeModelCatalog(listing, [otherSchema])).toEqual(plain);
+      expect(parseCommandCodeNativeModelCatalog(listing, ['{"cacheVersion": 3,'])).toEqual(plain);
+      expect(plain?.models).toHaveLength(5);
+      expect(
+        plain?.models.some(
+          (model) => model.nativeReasoningEfforts !== undefined || model.displayName !== undefined,
+        ),
+      ).toBe(false);
+    });
+
+    it('gives the complete listing of a timed-out run the same cache fields', () => {
+      const rescued = parseCompleteCommandCodeNativeModelCatalog(listing, [cache]);
+
+      expect(rescued).toEqual(parseCommandCodeNativeModelCatalog(listing, [cache]));
+      expect(listedRow(rescued, 'deepseek/deepseek-v4.1-flash-fast')).toMatchObject({
+        displayName: 'DeepSeek V4.1 Flash Fast (latest)',
+        nativeReasoningEfforts: ['off', 'low', 'high', 'max'],
+        contextWindow: 1_000_000,
+      });
+    });
+  });
+
+  describe('image input per model', () => {
+    it('reads the image flag of a kilo 7.0.49 verbose block into the input and the image fact', () => {
+      const catalog = parseKiloNativeModelCatalog(
+        readFileSync(
+          join(import.meta.dirname, '../../../testing/fixtures/kilo/models-verbose.txt'),
+          'utf-8',
+        ),
+      );
+      if (catalog === null) throw new Error('Expected the kilo 7.0.49 verbose listing to parse');
+      const textOnly = 'kilo/cohere/north-mini-code:free';
+      const reader = 'kilo/inclusionai/ling-3.0-flash-vl:free';
+      const detected = nativeCliCatalogToDetectedModels(catalog);
+
+      expect(listedRow(catalog, textOnly)?.inputModalities).toEqual(['text']);
+      expect(listedRow(catalog, reader)?.inputModalities).toEqual(['text', 'image']);
+      expect(detected.find((model) => model.id === textOnly)?.supportsImages).toBe(false);
+      expect(detected.find((model) => model.id === reader)?.supportsImages).toBe(true);
+    });
+
+    it('reads the input list of an opencode 2.0.14 api row into the image fact', () => {
+      const catalog = parseOpenCodeNativeModelCatalog(
+        readFileSync(
+          join(import.meta.dirname, '../../../testing/fixtures/opencode/api-model.json'),
+          'utf-8',
+        ),
+      );
+      if (catalog === null) throw new Error('Expected the OpenCode api listing to parse');
+      const detected = nativeCliCatalogToDetectedModels(catalog);
+
+      expect(listedRow(catalog, 'opencode-go/qwen3.7-max')?.inputModalities).toEqual(['text']);
+      expect(detected.find((model) => model.id === 'opencode-go/qwen3.7-max')?.supportsImages).toBe(
+        false,
+      );
+      expect(detected.find((model) => model.id === 'openai/gpt-5.6-luna')?.supportsImages).toBe(
+        true,
+      );
+    });
+  });
+
   describe('codex 0.154.0 visibility', () => {
     const stdout = readFileSync(
       join(import.meta.dirname, '../../../testing/fixtures/codex/debug-models-bundled.json'),
@@ -1090,8 +1257,7 @@ describe('native CLI model catalogs', () => {
       });
     });
 
-    it('keeps the ultra rung the configurable effort enum cannot represent', () => {
-      // SPEC-D5: the parser reports what the tool publishes; gating is a different sprint's job.
+    it('keeps the ultra rung the model publishes', () => {
       const catalog = parseCodexNativeModelCatalog(JSON.stringify(CODEX_BUNDLED_SLICE));
       if (catalog === null) throw new Error('Expected the bundled Codex slice to parse');
 

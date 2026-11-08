@@ -300,11 +300,11 @@ export function addWorkflowOptions(cmd: Command): Command {
     .option('--hover', 'Enable hover highlight (opt-in; requires mouse + fullscreen)', false)
     .option(
       '--planner-effort <level>',
-      "Planner effort hint: none, minimal, low, medium, high, xhigh, max. The seat's tool accepts a subset and reports what it rejects; dropped with a warning on seats that cannot send it.",
+      "Planner effort hint: off, none, minimal, low, medium, high, xhigh, max, ultra. The seat's tool accepts a subset and reports what it rejects; dropped with a warning on seats that cannot send it.",
     )
     .option(
       '--reviewer-effort <level>',
-      "Reviewer effort hint: none, minimal, low, medium, high, xhigh, max. The seat's tool accepts a subset and reports what it rejects; dropped with a warning on seats that cannot send it.",
+      "Reviewer effort hint: off, none, minimal, low, medium, high, xhigh, max, ultra. The seat's tool accepts a subset and reports what it rejects; dropped with a warning on seats that cannot send it.",
     )
     .option('--allow-hooks', 'Trust hook config without prompting (use in CI)', false)
     .option('--allow-repo-runners', ALLOW_REPO_RUNNERS_HELP, false)

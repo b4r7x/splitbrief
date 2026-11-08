@@ -11,6 +11,7 @@ and a `# version:` note — followed by verbatim stdout.
 | `list-models.txt` | `cmd --list-models` | 61 rows under provider headings. |
 | `status.txt` | `cmd status --json` | Exit 0 when authenticated. |
 | `json-result.txt` | the implementer adapter's own argv, prompt `Reply with exactly: ok` | The one paid call this capture was authorized to make, on the cheap default model `deepseek/deepseek-v4-flash`. |
+| `model-catalog-cache-1.88.5.json` | the catalog cache `cmd --list-models` writes to `~/.commandcode/cache/model-catalog/v1/` | Recorded 2026-11-08 against `cmd` 1.88.5. Five of its 96 entries, cut to the fields SPLITBRIEF reads; prices and plan fields are dropped. |
 | `conformance-record.json` | `cli-conformance` raw → production, role `implementer` | Recorded again on 2026-11-03 against `cmd` 1.88.2, in a temporary `HOME`, for the current implementer contract. Raw PASS, production OMIT — see below. |
 
 `../typed-output/command-code-1.88.0.jsonl` is not a recording. It is built by hand from

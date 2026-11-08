@@ -8,6 +8,7 @@ import type { TypedSeatCall } from '../runners/typed-output.js';
 import type { PlannerTierRole } from '../../core/runners/seat-roles.js';
 import type { CliSeat } from '../runners/start-gate.js';
 import type { ApiRuntimeContext } from '../providers/runtime-context.js';
+import type { ModelCacheAccessor } from '../providers/model/resolution.js';
 
 export interface PlannerFactoryOptions {
   /** The run seat whose admitted CLI gate every call of the adapter starts from. */
@@ -17,6 +18,8 @@ export interface PlannerFactoryOptions {
   skillRoots?: readonly string[] | undefined;
   /** The run's signal: a stop during the availability check is not a verdict on the seat. */
   signal?: AbortSignal | undefined;
+  /** The model cache whose listing tells whether the seat's own model reads images. */
+  modelCache?: ModelCacheAccessor | undefined;
 }
 
 export type PlannerCapabilities = {

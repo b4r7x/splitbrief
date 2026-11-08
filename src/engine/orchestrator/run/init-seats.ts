@@ -9,6 +9,7 @@ import type { PreparedExecution } from '../../runners/prepared-execution.js';
 import { createPlanner, createImplementer, createReviewer } from '../../runners/factory.js';
 import type { EventBus } from '../../events/types.js';
 import { createImplementerPublisher } from '../events.js';
+import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 
 type SeatBase = {
   config: Config;
@@ -23,6 +24,7 @@ export type PlannerSeatInput = SeatBase & {
   injectedPlanner: Planner | undefined;
   injectedReviewer: Reviewer | undefined;
   skillRoots: readonly string[] | undefined;
+  modelCache?: ModelCacheAccessor | undefined;
 };
 
 export type PlannerSeat = {
@@ -47,6 +49,7 @@ export async function createPlannerSeat(input: PlannerSeatInput): Promise<Planne
       customRuntime,
       skillRoots: input.skillRoots,
       signal: input.signal,
+      modelCache: input.modelCache,
     }));
   const reviewerSeat = configuredReviewerSeat(config);
   const reviewer: Reviewer =

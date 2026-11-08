@@ -210,7 +210,7 @@ export const modelCacheStore = {
       generation: input.generation,
       readiness,
     };
-    // Remembered catalogs are presentation-only stale rows; live data already
+    // Remembered catalogs are stale rows; live data already
     // in memory always wins over a disk snapshot.
     const rememberedCatalogs =
       current.cliCatalogsLoaded || input.cliCatalogs === undefined || input.cliCatalogs.length === 0

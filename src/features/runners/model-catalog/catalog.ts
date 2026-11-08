@@ -135,6 +135,7 @@ function toModelOption(entry: ReturnType<typeof resolveModelCatalog>[number]): M
     ...(entry.nativeReasoningEfforts === undefined
       ? {}
       : { effortChoices: [...entry.nativeReasoningEfforts] }),
+    ...(entry.effortFromFloor === true ? { effortChoicesFromFloor: true } : {}),
   };
 }
 
@@ -242,25 +243,33 @@ function withRouteEffortChoices(
  * the selection resolves to must accept the rung. Demanding identical ladders instead would
  * silence real rows: a Copilot family whose one sibling is enriched by models.dev (5 rungs) and
  * whose other is filled from copilot's tool floor (7 rungs) would lose its effort control
- * altogether, while its unmerged neighbour above keeps one.
+ * altogether, while its unmerged neighbour above keeps one. The shared ladder is a floor only
+ * when every member's is.
  */
 function withRowEffortChoices(
   row: ModelOption,
   laddersById: ReadonlyMap<string, readonly string[]>,
+  floorIds: ReadonlySet<string>,
 ): ModelOption {
   if (row.effortChoices !== undefined) return row;
-  const ladders = (row.variants ?? []).map((variant) => laddersById.get(variant.fullId) ?? []);
+  const variants = row.variants ?? [];
+  const ladders = variants.map((variant) => laddersById.get(variant.fullId) ?? []);
   const first = ladders[0] ?? [];
   if (first.length === 0 || ladders.some((ladder) => ladder.length === 0)) return row;
   const shared = first.filter((token) => ladders.every((ladder) => ladder.includes(token)));
   if (shared.length === 0) return row;
-  return { ...row, effortChoices: shared };
+  return {
+    ...row,
+    effortChoices: shared,
+    ...(variants.every((variant) => floorIds.has(variant.fullId))
+      ? { effortChoicesFromFloor: true }
+      : {}),
+  };
 }
 
 /**
- * An effort flag takes one of the effort levels and nothing else. codex 0.154.0 lists `ultra` on
- * five models, which the save path refuses, so the ladder does not offer it. A variant is the tool's
- * own string, not an effort level, so a variant seat's ladder stays as its listing spells it.
+ * An effort flag takes one of the effort levels and nothing else. A variant is the tool's own
+ * string, not an effort level, so a variant seat's ladder stays as its listing spells it.
  */
 function withEffortLevelsOnly(row: ModelOption): ModelOption {
   if (row.effortChoices === undefined) return row;
@@ -282,12 +291,15 @@ function withSpendableLadders(
   rows: readonly ModelOption[],
   channel: CliEffortChannel | undefined,
   laddersById: ReadonlyMap<string, readonly string[]>,
+  floorIds: ReadonlySet<string>,
 ): ModelOption[] {
   switch (channel) {
     case 'variant':
       return rows.map((row) => withRouteEffortChoices(row, laddersById));
     case 'effort-flag':
-      return rows.map((row) => withEffortLevelsOnly(withRowEffortChoices(row, laddersById)));
+      return rows.map((row) =>
+        withEffortLevelsOnly(withRowEffortChoices(row, laddersById, floorIds)),
+      );
     case 'model-id':
     case 'none':
     case undefined:
@@ -352,7 +364,15 @@ export function buildRightModels(params: {
         })
       : families;
   const laddersById = new Map(merged.map((row) => [row.id, row.effortChoices ?? []]));
-  const rows = withSpendableLadders(routed, params.currentItem.effortChannel, laddersById);
+  const floorIds = new Set(
+    merged.flatMap((row) => (row.effortChoicesFromFloor === true ? [row.id] : [])),
+  );
+  const rows = withSpendableLadders(
+    routed,
+    params.currentItem.effortChannel,
+    laddersById,
+    floorIds,
+  );
   // Automatic selection is structural, never a catalog row: cursor's native list
   // ships its own `auto` line, which would otherwise duplicate the synthesized
   // option — same id, same list key.

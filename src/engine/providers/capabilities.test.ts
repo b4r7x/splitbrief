@@ -1,13 +1,36 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
-import { detectCapabilities } from './capabilities.js';
+import { detectCapabilities, plannerSupportsImages } from './capabilities.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import type { Config } from '../../core/schemas/config.js';
+import type { RunnerConfig } from '../../core/config/accessors/runner-config.js';
+import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
+import { resolveProfileContextLength } from '../orchestrator/context-routing/context-length.js';
 import { OBSERVATION_HTTP_TIMEOUT_MS } from '../constants.js';
 
 describe('detectCapabilities', () => {
+  // An automatic CLI seat reads the model its tool selects from HOME, the XDG folders and CODEX_HOME.
+  let toolHome: string;
+
+  beforeEach(() => {
+    toolHome = createTempDir('detect-capabilities-home');
+    vi.stubEnv('HOME', toolHome);
+    vi.stubEnv('XDG_CONFIG_HOME', join(toolHome, 'config'));
+    vi.stubEnv('XDG_STATE_HOME', join(toolHome, 'state'));
+    vi.stubEnv('CODEX_HOME', join(toolHome, 'codex'));
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    cleanupTempDir(toolHome);
+  });
+
   it('returns config contextLength for non-api implementer without throwing', async () => {
     const config = {
       implementer: {
@@ -44,6 +67,89 @@ describe('detectCapabilities', () => {
     const result = await detectCapabilities(config);
     expect(result.contextLength).toBe(272_000);
     expect(result.origin).toBe('catalog');
+  });
+
+  // codex 0.164.0 `debug models` lists gpt-6.1-sol at 500000; the bundled row says 272000.
+  it('reads a CLI build seat window from the model cache a run reads, so both agree', async () => {
+    const config = makeConfig({
+      implementer: { kind: 'cli', tool: 'codex', model: 'gpt-6.1-sol' },
+    });
+    const cache = makeModelCacheAccessor({
+      catalog: {
+        openai: {
+          id: 'openai',
+          models: { 'gpt-6.1-sol': { id: 'gpt-6.1-sol', limit: { context: 272_000 } } },
+        },
+      },
+      providerModels: { codex: [{ id: 'gpt-6.1-sol', contextLength: 500_000 }] },
+    });
+
+    const boot = await detectCapabilities(config, cache);
+    const run = resolveProfileContextLength(
+      resolveImplementerProfiles(config).defaultProfile,
+      32_768,
+      cache,
+    );
+
+    expect(boot).toEqual({ contextLength: 500_000, origin: 'catalog' });
+    expect(run.contextLength).toBe(boot.contextLength);
+  });
+
+  // `kilo models --verbose` lists kilo/openai/gpt-3.5-turbo-0613 at 4095 among 321 rows.
+  it('keeps the fallback window for an automatic Kilo seat whose selection it cannot read', async () => {
+    const config = makeConfig({ implementer: { kind: 'cli', tool: 'kilo-code', model: 'auto' } });
+    const cache = makeModelCacheAccessor({
+      providerModels: {
+        'kilo-code': [
+          { id: 'kilo/openai/gpt-3.5-turbo-0613', contextLength: 4095 },
+          { id: 'kilo/~anthropic/claude-fable-latest', contextLength: 1_000_000 },
+        ],
+      },
+    });
+
+    expect(await detectCapabilities(config, cache)).toEqual({
+      contextLength: 32_768,
+      origin: 'fallback',
+    });
+  });
+
+  it('budgets an automatic OpenCode seat with the window of the model OpenCode selects, as the run does', async () => {
+    const opencodeState = join(toolHome, 'state', 'opencode');
+    mkdirSync(opencodeState, { recursive: true });
+    writeFileSync(
+      join(opencodeState, 'model.json'),
+      JSON.stringify({ recent: [{ providerID: 'openai', modelID: 'gpt-5.6-sol' }] }),
+    );
+    const cache = makeModelCacheAccessor({
+      providerModels: {
+        opencode: [
+          {
+            id: 'openai/text-embedding-3-small',
+            contextLength: 8191,
+            capabilities: ['type:embedding'],
+            supportsToolCalls: false,
+          },
+          { id: 'opencode-go/glm-5.2', contextLength: 128_000 },
+          { id: 'openai/gpt-5.6-sol', contextLength: 1_050_000 },
+        ],
+      },
+    });
+
+    const boot = await detectCapabilities(
+      makeConfig({ implementer: { kind: 'cli', tool: 'opencode', model: 'auto' } }),
+      cache,
+    );
+    // Start names the selected model on the seat, so the run budgets the prepared config.
+    const run = resolveProfileContextLength(
+      resolveImplementerProfiles(
+        makeConfig({ implementer: { kind: 'cli', tool: 'opencode', model: 'openai/gpt-5.6-sol' } }),
+      ).defaultProfile,
+      32_768,
+      cache,
+    );
+
+    expect(boot).toEqual({ contextLength: 1_050_000, origin: 'catalog' });
+    expect(run.contextLength).toBe(boot.contextLength);
   });
 
   describe('api-kind precedence', () => {
@@ -255,4 +361,65 @@ describe('detectCapabilities against a local server that accepts the read and ne
       }
     },
   );
+});
+
+describe('plannerSupportsImages', () => {
+  const noListing = makeModelCacheAccessor();
+
+  it('uses the planner tool channel even before detection', () => {
+    expect(plannerSupportsImages(null, noListing)).toBe(false);
+    const planners: readonly (readonly [RunnerConfig, boolean])[] = [
+      [{ kind: 'cli', tool: 'claude-code' }, true],
+      [{ kind: 'cli', tool: 'codex' }, true],
+      [{ kind: 'cli', tool: 'opencode' }, true],
+      [{ kind: 'cli', tool: 'kilo-code' }, true],
+      [{ kind: 'cli', tool: 'copilot' }, true],
+      [{ kind: 'cli', tool: 'cursor' }, false],
+      [{ kind: 'cli', tool: 'command-code' }, false],
+      [{ kind: 'cli', tool: 'antigravity' }, false],
+      [{ kind: 'shell', command: 'my-planner', model: 'whatever' }, false],
+      [{ kind: 'agent', command: 'my-agent', model: 'whatever' }, false],
+    ];
+    for (const [planner, supportsImages] of planners) {
+      expect(plannerSupportsImages(makeConfig({ planner }), noListing)).toBe(supportsImages);
+    }
+  });
+
+  it('uses the API planner model fact from its own provider', () => {
+    const config = makeConfig({
+      planner: {
+        kind: 'api',
+        provider: 'lm-studio',
+        apiBase: 'http://localhost:1234/v1',
+        model: 'vision',
+      },
+    });
+    const vision = { id: 'vision', supportsImages: true };
+    expect(
+      plannerSupportsImages(
+        config,
+        makeModelCacheAccessor({ providerModels: { ollama: [vision] } }),
+      ),
+    ).toBe(false);
+    expect(
+      plannerSupportsImages(
+        config,
+        makeModelCacheAccessor({ providerModels: { 'lm-studio': [vision] } }),
+      ),
+    ).toBe(true);
+    expect(
+      plannerSupportsImages(
+        config,
+        makeModelCacheAccessor({ providerModels: { 'lm-studio': [] } }),
+      ),
+    ).toBe(false);
+    expect(
+      plannerSupportsImages(
+        config,
+        makeModelCacheAccessor({
+          providerModels: { 'lm-studio': [{ ...vision, supportsImages: false }] },
+        }),
+      ),
+    ).toBe(false);
+  });
 });

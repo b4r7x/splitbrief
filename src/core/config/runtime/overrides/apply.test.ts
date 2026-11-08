@@ -16,8 +16,8 @@ describe('applyCLIOverrides — plannerEffort', () => {
     expect(result.planner.effort).toBe('max');
   });
   it('refuses a level outside the vocabulary and names every level it takes', () => {
-    expect(() => applyCLIOverrides(baseConfig, { plannerEffort: 'ultra' })).toThrow(
-      'Must be one of: none, minimal, low, medium, high, xhigh, max',
+    expect(() => applyCLIOverrides(baseConfig, { plannerEffort: 'turbo' })).toThrow(
+      'Must be one of: off, none, minimal, low, medium, high, xhigh, max, ultra',
     );
   });
   it('leaves config untouched when override absent', () => {

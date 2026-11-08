@@ -10,7 +10,7 @@ export type DetectionStoreHydrator = Pick<typeof detectionStore, 'hydrate'>;
 export type ModelsDevCatalogHydrator = Pick<typeof modelCacheStore, 'hydrateModelsDevCatalog'>;
 
 /**
- * A record read back from disk is presentation-only, whatever context wrote it.
+ * A record read back from disk authorizes no run, whatever context wrote it.
  * Its persisted generation belongs to the coordinator run that wrote it, and a
  * fresh process counts its own lanes from 1, so carrying that generation in
  * would let the hydrated rows outrank every lane the startup refresh lands —

@@ -1,0 +1,248 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
+import { fileURLToPath } from 'node:url';
+import XtermHeadless from '@xterm/headless';
+import { describe, expect, it, vi } from 'vitest';
+import { writeConfig } from '../../../src/core/config/load/io.js';
+import { CLI_TOOL_CATALOG, type CliToolId } from '../../../src/core/runners/cli-tool-catalog.js';
+import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
+import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
+import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { withTempDir } from '#testing/helpers/temp-dir.js';
+import { moveCursorTo } from '../helpers/move-cursor.js';
+import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
+import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
+import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
+
+const VIEWPORT = { cols: 120, rows: 40 };
+const CMD_CACHE = fileURLToPath(
+  new URL('../../fixtures/command-code/model-catalog-cache-1.88.5.json', import.meta.url),
+);
+const CODEX_MODELS = fileURLToPath(
+  new URL('../../fixtures/codex/debug-models-0.155.1.json', import.meta.url),
+);
+// `cmd --list-models` on cmd 1.88.5, cut to two of its rows.
+const CMD_LISTING = [
+  'Available models  ·  2 models',
+  '',
+  'Open Source',
+  '',
+  'deepseek/deepseek-v4.1-flash-fast       High throughput V4.1 Flash',
+  '',
+  'Anthropic',
+  '',
+  'claude-haiku-4-5                        prev Haiku, still fast for quick tasks',
+  '',
+  'Docs:  https://commandcode.ai/docs/reference/cli/models',
+  '',
+].join('\n');
+
+type Screen = Readonly<{
+  text: () => string;
+  write: (keys: string) => void;
+  shows: (expected: string | RegExp, timeout?: number) => Promise<unknown>;
+}>;
+
+/** Opens the BUILD seat picker from Settings, the way a user does, then hands the screen over. */
+async function inBuildSeatPicker(
+  input: Readonly<{
+    prefix: string;
+    tool: CliToolId;
+    model: string;
+    prepareHome: (home: string) => void;
+    fakeBody: string;
+    steps: (screen: Screen) => Promise<void>;
+  }>,
+): Promise<string | undefined> {
+  return withTempDir(input.prefix, async (dir) => {
+    const home = join(dir, 'home');
+    const projectDir = join(dir, 'project');
+    const binDir = join(dir, 'bin');
+    mkdirSync(binDir);
+    mkdirSync(home);
+    mkdirSync(join(projectDir, '.git', 'objects'), { recursive: true });
+    mkdirSync(join(projectDir, '.git', 'refs', 'heads'), { recursive: true });
+    writeFileSync(join(projectDir, '.git', 'HEAD'), 'ref: refs/heads/main\n');
+    input.prepareHome(home);
+    const runnerPath = join(dir, 'runner.mjs');
+    writeFileSync(
+      runnerPath,
+      "throw new Error('No workflow may start in the effort picker E2E');\n",
+    );
+    writeConfig(
+      projectDir,
+      makeConfig({
+        planner: { kind: 'shell', command: process.execPath, args: [runnerPath] },
+        implementer: { kind: 'cli', tool: input.tool, model: input.model },
+        workflow: { isolation: 'none' },
+      }),
+    );
+    for (const tool of Object.values(CLI_TOOL_CATALOG)) {
+      writeFakeNodeCli(binDir, tool.command, 'process.exit(1);');
+    }
+    writeFakeNodeCli(binDir, CLI_TOOL_CATALOG[input.tool].command, input.fakeBody);
+    const offlinePath = join(dir, 'offline.mjs');
+    writeFileSync(
+      offlinePath,
+      "globalThis.fetch = async () => { throw new Error('Offline effort picker E2E'); };\n",
+    );
+
+    const restorePath = activateSafeCliShimPath(binDir);
+    let environment: Readonly<Record<string, string>>;
+    try {
+      environment = safeChildEnvironment(home, [binDir]);
+    } finally {
+      restorePath();
+    }
+    const result = await runWithPtyChild(
+      {
+        requirement: process.env.SPLITBRIEF_REQUIRE_PTY === '1' ? 'required' : 'optional',
+        argv: ['--import', 'tsx', '--import', offlinePath, 'src/cli.ts', '--project', projectDir],
+        spawnOptions: {
+          name: 'xterm-256color',
+          ...VIEWPORT,
+          cwd: fileURLToPath(new URL('../../../', import.meta.url)),
+          env: { ...environment, XDG_STATE_HOME: join(dir, 'state') },
+        },
+      },
+      async (child) => {
+        const terminal = new XtermHeadless.Terminal({
+          ...VIEWPORT,
+          allowProposedApi: true,
+          logLevel: 'off',
+        });
+        const exited = Promise.withResolvers<PtyExitEvent>();
+        let didExit = false;
+        const text = () =>
+          Array.from(
+            { length: VIEWPORT.rows },
+            (_, row) =>
+              terminal.buffer.active
+                .getLine(terminal.buffer.active.viewportY + row)
+                ?.translateToString(true) ?? '',
+          ).join('\n');
+        const write = (keys: string) => child.write(keys);
+        const shows = (expected: string | RegExp, timeout = 10_000) =>
+          vi.waitFor(
+            () =>
+              typeof expected === 'string'
+                ? expect(text()).toContain(expected)
+                : expect(text()).toMatch(expected),
+            { timeout },
+          );
+        const dataListener = child.onData((data) => terminal.write(data));
+        const exitListener = child.onExit((event) => {
+          didExit = true;
+          exited.resolve(event);
+        });
+        try {
+          await shows('Describe your feature', 30_000);
+          await delay(PROMPT_TYPEAHEAD_GRACE_MS);
+          write('/crew');
+          await shows('▌ /crew  Who fills each seat');
+          write('\r');
+          await shows('Settings');
+          await moveCursorTo(text, write, '\x1b[B', /▌ BUILD/);
+          write('\r');
+          await shows('BUILD · tool, model, effort');
+          await input.steps({ text, write, shows });
+        } finally {
+          try {
+            if (!didExit) await terminatePtyProcessGroup(child, exited.promise);
+          } finally {
+            dataListener.dispose();
+            exitListener.dispose();
+            terminal.dispose();
+          }
+        }
+      },
+    );
+    return result?.reason;
+  });
+}
+
+/** Presses space on the effort row and waits for each level in turn. */
+async function cycleEffort(screen: Screen, levels: readonly string[]): Promise<void> {
+  await screen.shows(/─ effort +auto\b/);
+  await moveCursorTo(screen.text, screen.write, '\x1b[B', /▌.*─ effort/);
+  for (const level of levels) {
+    screen.write(' ');
+    await screen.shows(new RegExp(`─ effort +${level}\\b`));
+  }
+}
+
+describe('e2e: the seat picker offers the effort levels each model publishes', {
+  timeout: 120_000,
+}, () => {
+  it("names the Command Code DeepSeek row as cmd does and offers only that model's levels", async (context) => {
+    const skipped = await inBuildSeatPicker({
+      prefix: 'picker-command-code-effort',
+      tool: 'command-code',
+      model: 'deepseek/deepseek-v4.1-flash-fast',
+      prepareHome: (home) => {
+        mkdirSync(join(home, '.commandcode'));
+        writeFileSync(join(home, '.commandcode', 'auth.json'), '{"apiKey":"e2e-session"}\n');
+      },
+      // cmd 1.88.5 writes its catalog cache under HOME while `--list-models` runs.
+      fakeBody: `const fs = require('node:fs');
+const path = require('node:path');
+const args = process.argv.slice(2);
+if (args.includes('--version') || args.includes('-v')) {
+  console.log('1.88.5');
+  process.exit(0);
+}
+if (args[0] === 'status') {
+  console.log(JSON.stringify({ authenticated: true }));
+  process.exit(0);
+}
+if (args.includes('--list-models')) {
+  const folder = path.join(process.env.HOME, '.commandcode', 'cache', 'model-catalog', 'v1');
+  fs.mkdirSync(folder, { recursive: true });
+  fs.copyFileSync(${JSON.stringify(CMD_CACHE)}, path.join(folder, 'catalog-a813c4ec6551f9c3.json'));
+  process.stdout.write(${JSON.stringify(CMD_LISTING)});
+  process.exit(0);
+}
+process.exit(1);`,
+      steps: async (screen) => {
+        await screen.shows('DeepSeek V4.1 Flash Fast (latest)', 30_000);
+        // The ladder is cmd's own for this model: off, low, high, max, and no medium.
+        await cycleEffort(screen, ['off', 'low', 'high', 'max', 'auto']);
+      },
+    });
+    if (skipped !== undefined) context.skip(skipped);
+  });
+
+  it('offers ultra on a Codex model whose own ladder lists it', async (context) => {
+    const skipped = await inBuildSeatPicker({
+      prefix: 'picker-codex-ultra',
+      tool: 'codex',
+      model: 'gpt-6-sol',
+      prepareHome: (home) => {
+        mkdirSync(join(home, '.codex'));
+        writeFileSync(join(home, '.codex', 'auth.json'), '{"tokens":{"refresh_token":"e2e"}}\n');
+      },
+      fakeBody: `const args = process.argv.slice(2).join(' ');
+if (args === '--version') {
+  console.log('codex-cli 0.155.1');
+  process.exit(0);
+}
+if (args === 'login status') {
+  console.log('Logged in using ChatGPT');
+  process.exit(0);
+}
+if (args.startsWith('debug models')) {
+  process.stdout.write(require('node:fs').readFileSync(${JSON.stringify(CODEX_MODELS)}, 'utf8'));
+  process.exit(0);
+}
+process.exit(1);`,
+      steps: async (screen) => {
+        // GPT-6-Luna comes only from the listing, so its row says the listing has landed.
+        await screen.shows('GPT-6-Luna', 30_000);
+        await cycleEffort(screen, ['low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'auto']);
+      },
+    });
+    if (skipped !== undefined) context.skip(skipped);
+  });
+});

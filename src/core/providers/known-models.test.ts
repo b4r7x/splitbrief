@@ -455,10 +455,16 @@ describe('TOOL_EFFORT_LADDERS', () => {
       .map(([tool]) => tool);
 
     // Both are per model: command-code says so in its own help text, and codex publishes a
-    // different set per model — one of which names a rung (`ultra`) EFFORT_LEVELS cannot hold —
-    // so these ladders may order an offer but must never reject a carried value.
+    // different set per model, `ultra` on some — so these floors may order an offer but must
+    // never reject a carried value.
     expect(openLadders).toEqual(['codex', 'command-code']);
     expect(TOOL_EFFORT_LADDERS['command-code']?.provenance).toContain('depends on the model');
-    expect(TOOL_EFFORT_LADDERS.codex?.provenance).toContain('supported_reasoning_levels');
+    expect(TOOL_EFFORT_LADDERS['command-code']?.provenance).toContain(
+      'the per-model ladder comes from the catalog cache that cmd --list-models writes',
+    );
+    expect(TOOL_EFFORT_LADDERS.codex?.levels).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
+    expect(TOOL_EFFORT_LADDERS.codex?.provenance).toContain(
+      "ultra comes only from the model's own ladder",
+    );
   });
 });

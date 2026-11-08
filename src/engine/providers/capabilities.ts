@@ -2,6 +2,9 @@ import type { Config } from '../../core/schemas/config.js';
 import { DEFAULT_UNKNOWN_CONTEXT_LENGTH } from '../../core/tokens/context-length.js';
 import type { ProviderDef } from './types.js';
 import { resolveRunnerContextWindow } from './model/context-window.js';
+import { type ModelCacheAccessor, resolveSeatImageFact } from './model/resolution.js';
+import { resolveSeatModel } from '../runners/host-model-selection.js';
+import { seatSupportsImages } from '../../core/runners/capabilities.js';
 import { warnError } from '../../lib/warn.js';
 import { OBSERVATION_HTTP_TIMEOUT_MS } from '../constants.js';
 import { providerError } from './errors.js';
@@ -23,7 +26,14 @@ function getImplementerProvider(config: Config): ProviderDef {
   });
 }
 
-function lookupConfiguredCatalogContextLength(config: Config): number | undefined {
+/**
+ * The window a run budgets, on the same model cache. A CLI seat on `auto` takes the model its tool
+ * selects on this host, the model start names on the seat, so boot and run agree on the window.
+ */
+async function lookupConfiguredCatalogContextLength(
+  config: Config,
+  cache: ModelCacheAccessor | undefined,
+): Promise<number | undefined> {
   const implementer = config.implementer;
   if (implementer.kind === 'api') {
     // Kind first: an API implementer named `opencode` is a custom endpoint and
@@ -32,19 +42,29 @@ function lookupConfiguredCatalogContextLength(config: Config): number | undefine
       providerId: implementer.provider,
       kind: 'api',
       model: implementer.model,
+      cache,
     })?.contextLength;
   }
   if (implementer.kind === 'cli') {
+    const seatModel = await resolveSeatModel(
+      implementer,
+      process.env,
+      cache?.getProviderModels(implementer.tool, 'cli') ?? undefined,
+    );
     return resolveRunnerContextWindow({
       providerId: implementer.tool,
       kind: 'cli',
-      model: implementer.model,
+      model: seatModel.model,
+      cache,
     })?.contextLength;
   }
   return undefined;
 }
 
-export async function detectCapabilities(config: Config): Promise<DetectedCapabilities> {
+export async function detectCapabilities(
+  config: Config,
+  modelCache?: ModelCacheAccessor | undefined,
+): Promise<DetectedCapabilities> {
   const envCtx = process.env.SPLITBRIEF_CONTEXT_LENGTH;
   const parsed = envCtx ? parseInt(envCtx, 10) : NaN;
   if (!Number.isNaN(parsed)) return { contextLength: parsed, origin: 'env' };
@@ -72,10 +92,20 @@ export async function detectCapabilities(config: Config): Promise<DetectedCapabi
     }
   }
 
-  const catalogContextLength = lookupConfiguredCatalogContextLength(config);
+  const catalogContextLength = await lookupConfiguredCatalogContextLength(config, modelCache);
   if (catalogContextLength !== undefined) {
     return { contextLength: catalogContextLength, origin: 'catalog' };
   }
 
   return { contextLength: DEFAULT_UNKNOWN_CONTEXT_LENGTH, origin: 'fallback' };
+}
+
+/** Whether the planner reads images: its tool's image channel and its own model's fact. */
+export function plannerSupportsImages(config: Config | null, cache: ModelCacheAccessor): boolean {
+  if (config === null) return false;
+  const runner = config.planner;
+  return seatSupportsImages({
+    runner,
+    detected: resolveSeatImageFact({ runner, role: 'planner', cache }),
+  });
 }

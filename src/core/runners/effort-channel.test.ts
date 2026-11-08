@@ -27,8 +27,26 @@ const CURSOR_IDS = [
 ];
 
 describe('EFFORT_AXIS_TOKENS', () => {
-  it('is the effort vocabulary itself, not a second list', () => {
-    expect(EFFORT_AXIS_TOKENS).toBe(EFFORT_LEVELS);
+  // A tool publishes `off` and `ultra` in its own ladder; no listed id spells them as its axis.
+  it('is the seven words a model id spells, not the save vocabulary', () => {
+    expect(EFFORT_AXIS_TOKENS).toEqual([
+      'none',
+      'minimal',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ]);
+    expect(EFFORT_LEVELS).toContain('ultra');
+  });
+});
+
+describe('an id whose family name ends in a published level', () => {
+  // kilo 7.0.49 lists `kilo/sakana/fugu-ultra`, named `Sakana: Fugu Ultra`.
+  it('spells no axis and peels nothing off kilo/sakana/fugu-ultra', () => {
+    expect(optionTokensOfModelId('kilo/sakana/fugu-ultra')).toEqual([]);
+    expect(peelAxisTokensFromModelId('kilo/sakana/fugu-ultra')).toBe('kilo/sakana/fugu-ultra');
   });
 });
 

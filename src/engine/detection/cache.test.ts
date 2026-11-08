@@ -587,6 +587,28 @@ describe('detection cache', () => {
     expect(snapshot?.cliCatalogs?.[0]?.models).toEqual(models);
   });
 
+  it('round-trips the image fact of each row and leaves a row without a fact without one', async () => {
+    const models = [
+      { id: 'opencode-go/qwen3.7-max', supportsImages: false },
+      { id: 'opencode-go/gpt-5.6-luna', supportsImages: true },
+      { id: 'opencode-go/kimi-k3' },
+    ];
+    await saveDetectionCache({
+      projectDir: tempDir,
+      snapshot: cacheSnapshot({
+        providers: [{ provider: 'ollama', available: true, isLocal: true, models }],
+        cliCatalogs: [{ tool: 'opencode', models, probedAt: 1_786_000_000_500 }],
+      }),
+    });
+
+    const snapshot = await loadDetectionCacheSnapshot({
+      projectDir: tempDir,
+      contextKey: CACHE_CONTEXT,
+    });
+    expect(snapshot?.cliCatalogs?.[0]?.models).toStrictEqual(models);
+    expect(snapshot?.providers[0]?.models).toStrictEqual(models);
+  });
+
   it('drops a non-ISO release date but keeps the model row', async () => {
     await saveDetectionCache({
       projectDir: tempDir,
