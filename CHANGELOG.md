@@ -631,6 +631,7 @@
 - After you rename or move a project folder, End run saves the run's changes and no longer fails, and a start no longer warns about the old workspace each time. Continue says what to do.
 - A Codex review seat can now start sub-agents, as other tools can.
 - A Codex sub-agent call now shows its action, such as `spawn_agent`, in place of `collab_tool_call`. A spawn shows as an agent row.
+- Words that you type while a run stops stay in the composer. The stop no longer opens Session options over them, so the next `⏎` continues the run with your words or runs your command. With an empty composer, the stop opens Session options as before.
 
 ## [0.1.0] - 2026-08-07
 

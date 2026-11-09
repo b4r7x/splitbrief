@@ -53,6 +53,7 @@ import { markWorkflowPaused } from '../../../stores/workflow/actions/pause.js';
 import { parkStoppedRun } from '../../../engine/orchestrator/state-ops.js';
 import { endRun, endRunError } from '../../../engine/orchestrator/run/close.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
+import { composerLiveStore } from '../../../stores/ui/composer-live.js';
 import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 import { stopStore, takesSeatAtBoundary } from '../../../stores/workflow/stop.js';
 import {
@@ -644,7 +645,8 @@ export function useRunLoop({
       // A queued leave/quit is delivered by the stop observer before offering actions here. A run
       // whose final review passed before the stop reached it is complete, not stopped: the stop then
       // stands down, and the closed run's own byline speaks for it. A workspace run that passed
-      // review lands on the result menu the same way, with no stop sheet over it.
+      // review lands on the result menu the same way, with no stop sheet over it. A draft keeps the
+      // keys too: the ⏎ that ends it belongs to the composer, not to the row Resume.
       if (
         (record.status.kind === 'closed' && record.status.as === 'complete') ||
         record.status.kind === 'ready-to-apply'
@@ -654,7 +656,11 @@ export function useRunLoop({
         // mark; the record says the run completed, and the record wins.
         if (record.hydration.kind === 'loaded')
           hydrateFromState(record.hydration.state, configStore.reviewNone());
-      } else if (routerStore.get().screen === 'workflow' && overlayStore.get().active === 'none')
+      } else if (
+        routerStore.get().screen === 'workflow' &&
+        overlayStore.get().active === 'none' &&
+        composerLiveStore.get().empty
+      )
         overlayStore.open('stop-sheet');
     }
     return record;

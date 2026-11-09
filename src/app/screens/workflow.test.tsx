@@ -53,6 +53,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeCtx, runCommandInTest } from '#testing/helpers/runtime-commands.js';
 import { workflowCommands } from '../../core/runtime/commands/defs/workflow.js';
 import { hydrateResume } from '../../features/workflow/resume-hydration.js';
+import { requestStopNow } from '../../features/workflow/handlers.js';
 import { listRowLead } from '../../components/list-row.js';
 import { glyph } from '../../lib/glyphs.js';
 import { arrowSep } from '../../core/separators.js';
@@ -3834,6 +3835,39 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
 
     expect(stopStore.get().intent).toBe('none');
     expect(overlayStore.get().active).not.toBe('stop-sheet');
+    ui.unmount();
+  });
+
+  it('opens no stop sheet over a draft typed while the stop settles, and the composer stays enabled', async () => {
+    navigatePreparedWorkflow(projectDir, 'panel slash');
+    const toolEnded = Promise.withResolvers<void>();
+    runWorkflow.mockImplementation(async (opts) => {
+      startBrief(opts);
+      saveState(opts.prepared.session.ref, makeWorkflowState({ phase: 'implementing' }));
+      await toolEnded.promise;
+      return makeSummary();
+    });
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+    );
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Message BUILD on T001');
+    });
+
+    expect(requestStopNow()).toBe(true);
+    await flushEffects();
+    await pressKeys(ui, [...'also fix']);
+    expect(composerLiveStore.get().text).toBe('also fix');
+
+    toolEnded.resolve();
+    await vi.waitFor(() =>
+      expect(routerStore.get()).toMatchObject({ execution: { kind: 'at-rest' } }),
+    );
+    await flushEffects();
+    expect(overlayStore.get().active).toBe('none');
+
+    await pressKeys(ui, ['!']);
+    expect(composerLiveStore.get().text).toBe('also fix!');
     ui.unmount();
   });
 
