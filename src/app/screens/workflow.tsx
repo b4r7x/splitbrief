@@ -71,6 +71,7 @@ import { seatLineText } from '../../core/crew/identity.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { BuildProgressBlock } from '../../features/workflow/components/build-progress.js';
 import { useRailCells } from '../../features/workflow/hooks/use-rail-cells.js';
+import { usePanelFocus } from '../../features/workflow/hooks/use-panel-focus.js';
 import { plainAnswer } from '../../features/workflow/hooks/use-input-mode.js';
 import { getWorkflowPromptRows } from '../../features/workflow/prompt-rows/workflow.js';
 import {
@@ -260,36 +261,22 @@ export function WorkflowScreen({
   const questionHint = model.inputMode.mode === 'question' ? model.inputMode.hint : null;
   const recoveryPromptOpen = recoveryIssue !== null && recoveryAsking && questionHint !== null;
   const recoveryFocusKey = `${recoveryIssue?.id ?? ''}:${model.inputMode.questionEpoch}`;
-  const [recoveryFocus, setRecoveryFocus] = useState<{
-    key: string;
-    menu: boolean;
-  } | null>(null);
-  useLayoutEffect(() => {
-    setRecoveryFocus((previous) => {
-      if (!recoveryPromptOpen) return null;
-      return previous?.key === recoveryFocusKey ? previous : { key: recoveryFocusKey, menu: true };
-    });
-  }, [recoveryFocusKey, recoveryPromptOpen]);
-  const recoveryMenuFocused = recoveryPromptOpen
-    ? recoveryFocus?.key === recoveryFocusKey
-      ? recoveryFocus.menu
-      : true
-    : false;
+  const { focused: recoveryMenuFocused, setMenu: setRecoveryMenu } = usePanelFocus(
+    recoveryFocusKey,
+    recoveryPromptOpen,
+  );
   const ready =
     model.atRestRecord?.status.kind === 'ready-to-apply' ? model.atRestRecord : undefined;
   const resultMenuOpen = ready !== undefined && !stopMenuOpen;
   const resultFocusKey = ready?.ref.sessionId ?? '';
   const [confirming, setConfirming] = useState(false);
-  const [resultFocus, setResultFocus] = useState<{ key: string; menu: boolean } | null>(null);
   useLayoutEffect(() => {
     setConfirming(false);
-    setResultFocus((previous) => {
-      if (!resultMenuOpen) return null;
-      return previous?.key === resultFocusKey ? previous : { key: resultFocusKey, menu: true };
-    });
   }, [resultFocusKey, resultMenuOpen]);
-  const resultMenuFocused =
-    resultMenuOpen && (resultFocus?.key !== resultFocusKey || resultFocus.menu);
+  const { focused: resultMenuFocused, setMenu: setResultMenu } = usePanelFocus(
+    resultFocusKey,
+    resultMenuOpen,
+  );
   const override =
     ready !== undefined && ready.status.kind === 'ready-to-apply' ? ready.status.override : false;
   const accepted =
@@ -501,12 +488,12 @@ export function WorkflowScreen({
   const below = recoveryPromptOpen
     ? {
         focused: recoveryMenuFocused,
-        release: () => setRecoveryFocus({ key: recoveryFocusKey, menu: false }),
+        release: () => setRecoveryMenu(false),
       }
     : ready !== undefined
       ? {
           focused: resultMenuFocused,
-          release: () => setResultFocus({ key: resultFocusKey, menu: false }),
+          release: () => setResultMenu(false),
         }
       : structuredQuestion && questionState.focus === 'menu'
         ? { focused: true, release: () => questionPromptStore.setFocus('composer') }
@@ -569,7 +556,7 @@ export function WorkflowScreen({
                   confirming={confirming}
                   onConfirmingChange={setConfirming}
                   focused={resultMenuFocused && !keysHeldAbove}
-                  onFocusChange={(menu) => setResultFocus({ key: resultFocusKey, menu })}
+                  onFocusChange={setResultMenu}
                   onCommand={model.handleRuntimeCommand}
                   onShowDiff={() => {
                     if (ready !== undefined) void showRunDiff(ready);
@@ -580,11 +567,7 @@ export function WorkflowScreen({
             handleInput={handleFooterInput}
             readClipboardImage={readClipboardImage}
             listProjectFiles={listProjectFiles}
-            onEmptySubmit={
-              resultMenuOpen
-                ? () => setResultFocus({ key: resultFocusKey, menu: true })
-                : model.onEmptySubmit
-            }
+            onEmptySubmit={resultMenuOpen ? () => setResultMenu(true) : model.onEmptySubmit}
             emptyAnswerNotice={recoveryPromptOpen ? RECOVERY_EMPTY_ENTER_NOTICE : undefined}
             onRuntimeCommand={model.handleRuntimeCommand}
             commands={commands}
@@ -618,14 +601,14 @@ export function WorkflowScreen({
               ? {
                   menuFocused: recoveryMenuFocused,
                   onToggleMenu: () => {
-                    setRecoveryFocus({ key: recoveryFocusKey, menu: !recoveryMenuFocused });
+                    setRecoveryMenu(!recoveryMenuFocused);
                   },
                 }
               : resultMenuOpen
                 ? {
                     menuFocused: resultMenuFocused,
                     onToggleMenu: () => {
-                      setResultFocus({ key: resultFocusKey, menu: !resultMenuFocused });
+                      setResultMenu(!resultMenuFocused);
                     },
                   }
                 : {})}
@@ -688,9 +671,7 @@ export function WorkflowScreen({
             clampedBoxRows={promptBoxRows}
             recoveryIssue={recoveryPromptOpen ? recoveryIssue : null}
             recoveryMenuFocused={recoveryMenuFocused && !keysHeldAbove}
-            onRecoveryFocusChange={(menuFocused) => {
-              setRecoveryFocus({ key: recoveryFocusKey, menu: menuFocused });
-            }}
+            onRecoveryFocusChange={setRecoveryMenu}
             onRecoveryResolve={(answer) =>
               model.inputMode.resolve({ ...plainAnswer(answer), row: true })
             }

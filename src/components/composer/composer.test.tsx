@@ -2072,7 +2072,7 @@ describe('Composer commands-only input', () => {
     ui.stdin.write('z');
     await flushEffects();
 
-    expect(feedbackStore.get().message).toBe('Only /commands here · ⏎ on an empty line goes home');
+    expect(feedbackStore.get().message).toBe('Only /commands here');
     expect(feedbackStore.get().isError).toBe(false);
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('z');
     ui.unmount();

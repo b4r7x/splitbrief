@@ -1376,6 +1376,9 @@ it('e2e: a config file that does not load refuses words on the failed-review pan
         expect(readState(target, sessionId).pendingRecovery).toEqual(halt);
         expect(run.calls()).toEqual(calls);
 
+        await expect.poll(screen).toContain('tab back to the actions');
+        write('\t');
+        await expect.poll(screen).toContain('▌');
         await moveCursorTo(screen, write, '\x1b[B', /▌.*End run/);
         write('\r');
         await expect

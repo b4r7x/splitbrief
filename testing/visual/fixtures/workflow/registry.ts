@@ -1170,7 +1170,7 @@ const checkpointPredicates = [
   ],
   [
     checkpointId('recovery-apply-partial-words'),
-    includesAll('Cannot send words with', TYPED_WORDS, 'tab edit the words'),
+    includesAll('Cannot send words with', TYPED_WORDS, 'tab back to the actions'),
   ],
   [
     checkpointId('recovery-review-contract'),

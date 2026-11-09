@@ -396,7 +396,7 @@ src/
 │       │                          use-mouse-pointer, use-mouse-scroll,
 │       │                          use-review-content, use-run-loop,
 │       │                          use-run-continue, use-rail-cells,
-│       │                          use-halt-ran-on,
+│       │                          use-halt-ran-on, use-panel-focus,
 │       │                          workflow-screen/{use-model,
 │       │                          use-inline-edit}
 │       ├── keyboard.ts            Workflow keymap

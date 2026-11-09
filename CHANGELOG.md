@@ -632,6 +632,7 @@
 - A Codex review seat can now start sub-agents, as other tools can.
 - A Codex sub-agent call now shows its action, such as `spawn_agent`, in place of `collab_tool_call`. A spawn shows as an agent row.
 - Words that you type while a run stops stay in the composer. The stop no longer opens Session options over them, so the next `⏎` continues the run with your words or runs your command. With an empty composer, the stop opens Session options as before.
+- The result menu or a `Needs you` or `Seat down` panel that opens while you type no longer takes your keys. Your words stay in the composer, and Tab gives the keys to the menu. With an empty composer, the menu takes the keys as before.
 
 ## [0.1.0] - 2026-08-07
 

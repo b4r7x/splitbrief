@@ -1,5 +1,5 @@
 import { ThemeText as Text, useTheme } from '../theme.js';
-import { useEffect, useEffectEvent, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from 'react';
 import { Box, type Key } from 'ink';
 import { MultilineInput, type InputEdit } from '../input/multiline-input.js';
 import { CommandCompletionMenu } from './completion/command/menu.js';
@@ -15,7 +15,6 @@ import { completionStore } from '../../stores/ui/completion.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { configStore } from '../../stores/project/config.js';
 import { useStores } from '../../stores/use-stores.js';
-import { SOFT_SEP } from '../../core/separators.js';
 import { isTextEntryInput } from '../../lib/terminal/text-entry.js';
 import type { Screen } from '../../core/navigation/types.js';
 import type { InputMode } from '../../core/navigation/types.js';
@@ -76,7 +75,7 @@ import type { listProjectFiles } from '../../lib/file-listing.js';
 
 const MAX_REFERENCE_SUGGESTIONS = 8;
 
-export const COMMANDS_ONLY_NOTICE = `Only /commands here${SOFT_SEP}⏎ on an empty line goes home`;
+export const COMMANDS_ONLY_NOTICE = 'Only /commands here';
 
 interface ImagePaste {
   controller: AbortController;
@@ -659,8 +658,9 @@ function ComposerInput({
   }, [dockRows]);
 
   // The app-level esc ladder decides between the stop sheet and a protected draft, and it reads
-  // keys outside this component, so what is typed here has to be published.
-  useEffect(() => {
+  // keys outside this component, so what is typed here has to be published. It is a layout
+  // effect so that a panel opening in the same commit reads this draft and not the last screen's.
+  useLayoutEffect(() => {
     composerLiveStore.setDraft(document);
   }, [document]);
 

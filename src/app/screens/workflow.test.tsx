@@ -8,11 +8,16 @@ import { buildApplyConflictRecoveryIssue } from '../../engine/orchestrator/recov
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { taskId } from '../../core/schemas/task.js';
-import { saveState } from '../../core/state/persistence.js';
+import { createDraftDocument } from '../../core/composer/document.js';
+import { loadState, saveState } from '../../core/state/persistence.js';
 import { questionsText } from '../../core/state/planning-conversation.js';
 import { addEvent } from '../../stores/workflow/actions/event.js';
 import { loadEvents } from '../../stores/workflow/actions/load.js';
-import { reportDraftNotSaved } from '../../stores/ui/session-drafts.js';
+import {
+  flushSessionDrafts,
+  reportDraftNotSaved,
+  saveSessionDraft,
+} from '../../stores/ui/session-drafts.js';
 import { departureStore } from '../../stores/workflow/departure.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { join } from 'node:path';
@@ -2780,6 +2785,59 @@ describe('WorkflowScreen showing a run at rest', () => {
     ui.unmount();
   });
 
+  it('leaves the keys in the composer when a ready run opens over its saved draft', async () => {
+    const record = readyRun();
+    saveSessionDraft(record.ref, createDraftDocument('also fix the typo'));
+    flushSessionDrafts();
+    const onRuntimeCommand = vi.fn();
+
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={onRuntimeCommand} />);
+    await flushEffects();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('also fix the typo');
+    expect(frame).toContain('tab back to the actions');
+    expect(frame).not.toContain(`${listRowLead('active')}Apply`);
+
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(feedbackStore.get().message).toBe(COMMANDS_ONLY_NOTICE);
+    });
+    expect(onRuntimeCommand).not.toHaveBeenCalled();
+    ui.unmount();
+  });
+
+  // The store still holds the words of the screen before this one when the run opens.
+  it('gives the result menu the keys over an empty composer, whatever draft the last screen left', async () => {
+    readyRun();
+    composerLiveStore.setDraft(createDraftDocument('words typed at home'));
+    const onRuntimeCommand = vi.fn();
+
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={onRuntimeCommand} />);
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(`${listRowLead('active')}Apply`);
+
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(onRuntimeCommand).toHaveBeenCalledWith('/run accept');
+    });
+    ui.unmount();
+  });
+
+  it('claims nothing about an empty line when it refuses a letter over the result menu', async () => {
+    readyRun();
+
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
+    await flushEffects();
+    ui.stdin.write('\t');
+    await flushEffects();
+    ui.stdin.write('z');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Only /commands here');
+    });
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('goes home');
+    ui.unmount();
+  });
+
   it('moves focus to the composer with Tab, and an empty Enter there hands it back to the menu', async () => {
     readyRun();
     const onRuntimeCommand = vi.fn();
@@ -3281,6 +3339,143 @@ describe('WorkflowScreen when the final review passes', () => {
     await vi.waitFor(() => {
       expect(stripAnsiStyles(ui.lastFrame())).not.toContain('Applying to your checkout');
     });
+    ui.unmount();
+  });
+});
+
+describe('WorkflowScreen when a menu opens over a draft', () => {
+  const DRAFT = 'also fix the typo';
+  let projectDir = '';
+
+  beforeEach(() => {
+    resetAllStores();
+    projectDir = createTempDir('workflow-menu-over-draft');
+    configStore.__testReset({ config: makeConfig(), projectDir });
+    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
+    runWorkflow.mockReset();
+    navigatePreparedWorkflow(projectDir, 'ready run');
+  });
+
+  afterEach(() => {
+    resetAllStores();
+    if (projectDir) cleanupTempDir(projectDir);
+  });
+
+  // The run holds while the test types, then saves the state whose menu opens.
+  async function typeDraftDuringRun(end: Parameters<typeof saveState>[1]) {
+    const hold = Promise.withResolvers<void>();
+    runWorkflow.mockImplementation(async (opts) => {
+      publishEvent(opts, {
+        type: 'workflow_started',
+        ts: FIXED_TS,
+        phase: 'implementing',
+        feature: 'ready run',
+      });
+      await hold.promise;
+      saveState(opts.prepared.session.ref, end);
+      return makeSummary({ feature: 'ready run', totalTasks: 1, completedByLocal: 1 });
+    });
+    const onRuntimeCommand = vi.fn();
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={onRuntimeCommand} deps={workflowDeps} />,
+      { cols: 120, rows: 40 },
+    );
+    await vi.waitFor(() => {
+      expect(runViewStore.get().phase).toBe('implementing');
+    });
+    await flushEffects();
+    ui.stdin.write(DRAFT);
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().text).toBe(DRAFT);
+    });
+    await flushEffects();
+    const framesBefore = ui.frames.length;
+    const firstFrameWith = (words: string) =>
+      ui.frames
+        .slice(framesBefore)
+        .map((frame) => stripAnsiStyles(frame))
+        .find((frame) => frame.includes(words));
+    return { ui, onRuntimeCommand, release: hold.resolve, firstFrameWith };
+  }
+
+  async function typeLetters(ui: ReturnType<typeof renderFeature>, letters: string) {
+    const before = composerLiveStore.get().text;
+    for (const letter of letters) {
+      ui.stdin.write(letter);
+      await flushEffects();
+    }
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().text).toBe(`${before}${letters}`);
+    });
+  }
+
+  it('paints the result menu without the keys and keeps every key in the draft', async () => {
+    const { ui, onRuntimeCommand, release, firstFrameWith } = await typeDraftDuringRun(
+      makeWorkflowState({
+        phase: 'complete',
+        reviewStatus: 'passed',
+        tasks: [makeTask({ id: 'T001', title: 'Ready brief', status: 'done' })],
+        workspace: {
+          kind: 'worktree',
+          path: join(projectDir, 'run-workspace'),
+          base: { snapshotId: 'workspace-base', head: null },
+        },
+      }),
+    );
+
+    release();
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame())).toContain('Ready to apply');
+    });
+    const first = firstFrameWith('Ready to apply');
+    expect(first).toContain('tab back to the actions');
+    expect(first).not.toContain(`${listRowLead('active')}Apply`);
+
+    await typeLetters(ui, ' in the second helper');
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(feedbackStore.get().message).toBe(COMMANDS_ONLY_NOTICE);
+    });
+    expect(onRuntimeCommand).not.toHaveBeenCalled();
+    expect(composerLiveStore.get().text).toBe(`${DRAFT} in the second helper`);
+
+    ui.stdin.write('\t');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame())).toContain(`${listRowLead('active')}Apply`);
+    });
+    ui.unmount();
+  });
+
+  it('paints a recovery menu without the keys and keeps its row letters in the draft', async () => {
+    const issue = makeRecoveryIssue({
+      reason: 'runner-usage-limit',
+      phase: 'implementing',
+      facts: { tool: 'OpenCode CLI', cause: 'balance' },
+      availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
+      recommendedAction: 'retry-same-worker',
+    });
+    const { ui, release, firstFrameWith } = await typeDraftDuringRun(
+      makeWorkflowState({
+        phase: 'implementing',
+        tasks: [makeTask({ id: 'T001', title: 'Ready brief', status: 'pending' })],
+        pendingRecovery: issue,
+      }),
+    );
+    const route = routerStore.get();
+    if (route.screen !== 'workflow') throw new Error('The run left the workflow screen.');
+
+    release();
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame())).toContain('Try again');
+    });
+    const first = firstFrameWith('Try again');
+    expect(first).toContain('tab back to the actions');
+    expect(first).not.toContain(`${listRowLead('active')}r`);
+
+    await typeLetters(ui, ' second and more');
+    expect(runWorkflow).toHaveBeenCalledTimes(1);
+    expect(loadState(route.run.ref)?.pendingRecovery?.id).toBe(issue.id);
+    expect(stripAnsiStyles(ui.lastFrame())).toContain('Try again');
     ui.unmount();
   });
 });

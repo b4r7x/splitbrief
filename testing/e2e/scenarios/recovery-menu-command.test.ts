@@ -68,13 +68,17 @@ it('runs /scroll top typed under a recovery menu and never takes it as the corre
   expect(events.filter((event) => event.type === 'recovery_action_selected')).toEqual([]);
 });
 
-it('paints no command list from a saved slash draft while the recovery menu holds focus', async () => {
+// A menu that opens over a draft leaves the keys in the composer, so a saved slash draft is a live
+// command line. An open list owns esc, and the next esc reaches the stop options.
+it('leaves the keys and the command list with a saved slash draft when the recovery menu opens', async () => {
   const { screen } = await openCheckoutChangedRun('/scr');
   const frame = stripAnsiStyles(screen.lastFrame());
-  expect(frame).not.toContain('Scroll conversation');
-  expect(frame).toContain('tab type a correction');
-  expect(completionStore.get().open).toBe(false);
+  expect(frame).toContain('/scroll  Scroll conversation');
+  expect(frame).not.toContain('tab type a correction');
+  expect(completionStore.get().open).toBe(true);
 
+  screen.stdin.write('\x1b');
+  await vi.waitFor(() => expect(completionStore.get().open).toBe(false));
   screen.stdin.write('\x1b');
   await vi.waitFor(() => expect(stripAnsiStyles(screen.lastFrame())).toContain('Stop options'));
 });
