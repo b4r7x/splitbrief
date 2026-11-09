@@ -1,7 +1,8 @@
 import { existsSync } from 'node:fs';
-import { relative } from 'node:path';
+import { basename, dirname, join, relative } from 'node:path';
 import { applyUnfinished, deriveRunStatus } from '../../../core/sessions/run-status.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { StagedWorkspaceLeafSchema } from '../../../core/schemas/retained-workspace.js';
 import { transition } from '../../../core/state/machine.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
@@ -14,6 +15,7 @@ import { persistStoppedBriefEvidence } from '../evidence/persistence.js';
 import { recordRejectEvidence } from '../evidence/task.js';
 import { mutateEvidenceLedger, readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import {
+  publishInfo,
   publishRecoveryActionSelected,
   publishRecoveryResolved,
   publishRunRejected,
@@ -34,8 +36,12 @@ import { rejectRunSnapshot } from '../../snapshots/run/lifecycle.js';
 import type { RejectRunSnapshotResult } from '../../../core/runtime/commands/types.js';
 import { APPLY_UNFINISHED_REFUSAL } from '../../../core/runtime/commands/messages.js';
 import { listSessionIds, sessionsRootLabel } from '../../../core/sessions/orphans.js';
-import { readWorkspaceRecord } from '../isolation/retention.js';
-import { warnError } from '../../../lib/warn.js';
+import {
+  foreignWorkspaceNotice,
+  readWorkspaceRecordFile,
+  stagedWorkspaceRoot,
+} from '../isolation/retention.js';
+import { warnError, warnStderr } from '../../../lib/warn.js';
 
 /**
  * Whether files the run wrote are still in the checkout. A checkout run's ledger books what each
@@ -72,7 +78,10 @@ export async function removeClosedRunWorkspace(
   phase: WorkflowState['phase'],
 ): Promise<void> {
   try {
-    await removeRunWorkspace(scope.projectDir, scope.sessionId, workspace);
+    const foreign = await removeRunWorkspace(scope.projectDir, scope.sessionId, workspace);
+    if (foreign !== null && scope.bus !== undefined) {
+      publishInfo({ bus: scope.bus, phase, message: foreignWorkspaceNotice(foreign) });
+    }
   } catch (err) {
     if (scope.bus !== undefined) {
       publishWarning({
@@ -113,9 +122,9 @@ export async function removeClosedRunWorkspaces(projectDir: string): Promise<voi
         continue;
       }
       workspacePath = workspace.path;
-      const record = await readWorkspaceRecord(ref);
-      if (record === null) continue;
-      await removeRunWorkspace(projectDir, sessionId, workspace);
+      if ((await readWorkspaceRecordFile(ref)) === null) continue;
+      const foreign = await removeRunWorkspace(projectDir, sessionId, workspace);
+      if (foreign !== null) warnStderr(foreignWorkspaceNotice(foreign), 'at-exit');
     } catch (err) {
       if (workspacePath !== undefined) {
         warnError(`Could not remove the run workspace at ${workspacePath}`, err);
@@ -132,6 +141,7 @@ export async function closeRunIfOpen(
   const warn = (message: string, phase: WorkflowState['phase']): void => {
     if (scope.bus !== undefined) publishWarning({ bus: scope.bus, phase, message });
   };
+  let workspaceForClosure: WorkflowState['workspace'];
   let workspaceToRemove: NonNullable<WorkflowState['workspace']> | undefined;
   let patchHandled = false;
   let patch: string | undefined;
@@ -153,10 +163,22 @@ export async function closeRunIfOpen(
     if (!patchHandled) {
       patchHandled = true;
       const workspace = latest.workspace;
+      workspaceForClosure = workspace;
       if (workspace !== undefined && workspace.kind !== 'checkout') {
-        workspaceToRemove = workspace;
-        if (existsSync(workspace.path)) {
-          const patchPath = await writeRunPatch(scope, workspace);
+        let resolvedWorkspace = workspace;
+        if (!existsSync(workspace.path) && workspace.kind === 'staged-copy') {
+          const leaf = basename(dirname(workspace.path));
+          if (StagedWorkspaceLeafSchema.safeParse(leaf).success) {
+            const permittedPath = join(stagedWorkspaceRoot(scope, leaf), 'workspace');
+            if (existsSync(permittedPath)) {
+              resolvedWorkspace = { ...workspace, path: permittedPath };
+            }
+          }
+        }
+        workspaceForClosure = resolvedWorkspace;
+        workspaceToRemove = resolvedWorkspace;
+        if (existsSync(resolvedWorkspace.path)) {
+          const patchPath = await writeRunPatch(scope, resolvedWorkspace);
           if (patchPath !== null) patch = relative(scope.projectDir, patchPath);
         } else {
           warning = `The run workspace at ${workspace.path} is gone; no run patch was written.`;
@@ -175,7 +197,7 @@ export async function closeRunIfOpen(
       }),
     });
     if (result.kind === 'committed') {
-      await persistStoppedBriefEvidence(scope, latest);
+      await persistStoppedBriefEvidence(scope, latest, workspaceForClosure);
       // A checkout run closes as discarded only after a reject put its changes back.
       if (
         latest.workspace?.kind === 'checkout' &&

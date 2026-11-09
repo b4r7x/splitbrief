@@ -21,7 +21,7 @@ import type { PlannerCall, StepRef } from '../../core/schemas/run-step.js';
 import type { CrewSeatId } from '../../core/crew/identity.js';
 import type { PlannerTierRole } from '../../core/runners/seat-roles.js';
 import type { SeatIdentity } from '../../core/providers/seat-identity.js';
-import type { EngineEvent, EngineEventOf, EventBus } from '../events/types.js';
+import type { EngineEvent, EngineEventOf, EventBus, TextChunkMarks } from '../events/types.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { Implementer, ImplementerPublisher } from '../implementers/types.js';
 import { formatRecoveryHeadlineSpans } from '../../core/recovery/headline.js';
@@ -77,9 +77,9 @@ export function publishRunnerCallEvent(
 export function createBusTextHandler(
   ctx: BusContext,
   options: PlannerTextOptions = {},
-): (text: string, opts?: { messageStart?: boolean | undefined }) => void {
+): (text: string, marks?: TextChunkMarks) => void {
   const { role, content } = options;
-  return (text, opts) =>
+  return (text, marks) =>
     ctx.bus.publish({
       type: 'planner_text',
       ts: Date.now(),
@@ -87,7 +87,9 @@ export function createBusTextHandler(
       text,
       ...(role !== undefined && { role }),
       ...(content !== undefined && { content }),
-      ...(opts?.messageStart === true && { messageStart: true }),
+      ...(marks?.messageStart === true && { messageStart: true }),
+      ...(marks?.continues === true && { continues: true }),
+      ...(marks?.subagent === true && { subagent: true }),
     });
 }
 
@@ -97,8 +99,8 @@ export function createImplementerTextHandler(ctx: BusContext, implementer: Imple
     role: 'implementer',
     content: writesDirectly ? 'markdown' : 'plain',
   });
-  return (text: string, opts?: { messageStart?: boolean | undefined }) =>
-    handler(text, { messageStart: writesDirectly && opts?.messageStart === true });
+  return (text: string, marks?: TextChunkMarks) =>
+    handler(text, { ...marks, messageStart: writesDirectly && marks?.messageStart === true });
 }
 
 export function publishPlannerStatus(

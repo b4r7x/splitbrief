@@ -491,7 +491,11 @@ function isGlobTool(name: string): boolean {
 
 function isTaskTool(name: string, agentType: string | undefined): boolean {
   return (
-    name === 'task' || name === 'agent' || name.includes('subagent') || agentType !== undefined
+    name === 'task' ||
+    name === 'agent' ||
+    name === 'spawn_agent' ||
+    name.includes('subagent') ||
+    agentType !== undefined
   );
 }
 

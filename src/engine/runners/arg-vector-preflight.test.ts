@@ -145,6 +145,7 @@ describe('checkRunnerArgVector', () => {
     expect(outcome).toEqual({ ok: true });
   });
 
+  // Every fresh Codex planner call sends this vector; it keeps its rollout for sub-agents.
   it('accepts the schema-bearing codex planner fresh vector against its installed help', () => {
     const outcome = checkRunnerArgVector({
       argv: codexPlannerAdapter.baseArgs({
@@ -152,7 +153,6 @@ describe('checkRunnerArgVector', () => {
         projectDir: '/project',
         configuredArgs: [],
         sessionId: null,
-        oneShot: true,
         effort: undefined,
         schema: { json: {}, path: '/tmp/s/schema.json' },
       }),
@@ -696,6 +696,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
     });
   });
 
+  // No vector holds --ephemeral: Codex cannot start a sub-agent on a thread with no rollout.
   it('carries the codex planner effort into every emitted vector as a config override', async () => {
     const { checks, vectors } = await preflightWithVectors({
       config: makeConfig({
@@ -712,12 +713,12 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
     });
     expect(vectors.map((argv) => argv.join(' '))).toEqual([
       '--model gpt-5 -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --json --cd /project -',
-      '--model gpt-5 -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd /project -',
       '-c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec resume --model gpt-5 --ignore-user-config --ignore-rules --json 00000000-0000-4000-8000-000000000000 -',
     ]);
   });
 
-  it('preflights the one-shot vector a codex review seat emits', async () => {
+  // A review starts sub-agents only on a thread with a rollout, so its exec has no --ephemeral.
+  it('preflights the fresh vector a codex review seat emits', async () => {
     const { vectors } = await preflightWithVectors({
       config: makeConfig({ reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-5' } }),
       projectDir: '/project',
@@ -726,7 +727,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
     });
 
     expect(vectors.map((argv) => argv.join(' '))).toEqual([
-      '--model gpt-5 --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd /project -',
+      '--model gpt-5 --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --json --cd /project -',
     ]);
   });
 
@@ -768,7 +769,8 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
       .filter((line) => !line.includes('-c, --config'))
       .join('\n');
 
-    expect(vectors).toHaveLength(3);
+    // Fresh and resume are the only vectors: no call sends an --ephemeral one.
+    expect(vectors).toHaveLength(2);
     for (const argv of vectors) {
       expect(checkRunnerArgVector({ argv, helpText: withoutConfigEntry }), argv.join(' ')).toEqual({
         ok: false,

@@ -334,8 +334,6 @@ export type CliPlannerBuildArgsInput = Readonly<{
   projectDir: string;
   configuredArgs: readonly string[];
   sessionId: string | null;
-  /** A fresh call nothing will resume, so a tool that keeps a session for every call keeps none. */
-  oneShot?: boolean | undefined;
   effort: EffortLevel | undefined;
   variant?: string | undefined;
   /** The release the start gate admitted; absent when no gate ran (preflight, harness). */

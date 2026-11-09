@@ -300,7 +300,7 @@ function seatProbeArgs(
   };
   const args =
     adapter.role === 'planner'
-      ? adapter.buildArgs({ ...seatArgs, sessionId: null, oneShot: true })
+      ? adapter.buildArgs({ ...seatArgs, sessionId: null })
       : adapter.buildArgs(seatArgs);
   return [...args];
 }

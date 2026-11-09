@@ -391,7 +391,8 @@ describe('createCliPlanner', () => {
     }
   });
 
-  it('runs review calls one-shot and ephemeral, and keeps the planner thread for planning', async () => {
+  // A fresh call needs a persisted rollout for sub-agent startup.
+  it('runs review calls fresh, and keeps the planner thread for planning', async () => {
     const spawnLog = join(shimDir, 'codex-spawns.txt');
     const shimPath = join(shimDir, 'codex');
     writeFileSync(
@@ -433,8 +434,8 @@ describe('createCliPlanner', () => {
     await callPlanner(threadless, { projectDir, callbacks: { onOutput: vi.fn() } });
 
     expect(readFileSync(spawnLog, 'utf8').trim().split('\n')).toEqual([
-      'fresh ephemeral',
-      'fresh ephemeral',
+      'fresh',
+      'fresh',
       'resume sess-planning',
       'resume sess-planning',
       'fresh',

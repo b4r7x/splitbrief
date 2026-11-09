@@ -1,6 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { existsSync, mkdirSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { dirname, join, relative } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import {
@@ -273,6 +283,168 @@ describe('setupWorkflow', () => {
         record: (await readWorkspaceRecord({ projectDir, sessionId: runId })) !== null,
         stderr: stderrSpy.mock.calls.map((call) => String(call[0])).join(''),
       }).toEqual(expected);
+    } finally {
+      stderrSpy.mockRestore();
+      for (const dir of dirs) cleanupTempDir(dir);
+    }
+  });
+
+  const editedKeep = 'export const one = 1;\nexport const two = 22;\n';
+  const foreignNotice = (path: string) =>
+    `The run workspace at ${path} belongs to another project folder and stays on disk. Delete that run workspace when you no longer need it.\n`;
+
+  function moveProject(dirs: string[], projectDir: string): string {
+    const movedDir = `${projectDir}-moved`;
+    renameSync(projectDir, movedDir);
+    dirs.push(movedDir);
+    return movedDir;
+  }
+
+  async function copiedSessionRun(dirs: string[], strategy: 'worktree' | 'staged-copy') {
+    const run = await workspaceRun(dirs, strategy, close);
+    const projectDir = realpathSync(createTempDir('setup-copied-session'));
+    dirs.push(projectDir);
+    createTestGitRepo(projectDir);
+    ensureSessionDir(projectDir, runId);
+    cpSync(sessionDir(run.projectDir, runId), sessionDir(projectDir, runId), { recursive: true });
+    return {
+      projectDir,
+      workspaceDir: run.workspaceDir,
+      gitDir: run.projectDir,
+      keptAt: run.workspaceDir,
+      visible: true,
+    };
+  }
+
+  it.each([
+    {
+      label: 'a moved project keeps its worktree on disk and names it on the first start only',
+      arrange: async (dirs: string[]) => {
+        const run = await workspaceRun(dirs, 'worktree', close);
+        const projectDir = moveProject(dirs, run.projectDir);
+        const workspaceDir = run.workspaceDir;
+        return {
+          projectDir,
+          workspaceDir,
+          gitDir: projectDir,
+          keptAt: workspaceDir,
+          visible: true,
+        };
+      },
+    },
+    {
+      label: 'a moved project whose worktree is gone clears its record silently',
+      arrange: async (dirs: string[]) => {
+        const run = await workspaceRun(dirs, 'worktree', close);
+        const projectDir = moveProject(dirs, run.projectDir);
+        rmSync(run.workspaceDir, { recursive: true, force: true });
+        const workspaceDir = run.workspaceDir;
+        return { projectDir, workspaceDir, gitDir: projectDir, keptAt: null, visible: false };
+      },
+    },
+    {
+      label: 'a moved project keeps the staged copy it carried and clears its record silently',
+      arrange: async (dirs: string[]) => {
+        const run = await workspaceRun(dirs, 'staged-copy', close);
+        const projectDir = moveProject(dirs, run.projectDir);
+        const keptAt = join(projectDir, relative(run.projectDir, run.workspaceDir));
+        const workspaceDir = run.workspaceDir;
+        return { projectDir, workspaceDir, gitDir: projectDir, keptAt, visible: false };
+      },
+    },
+    {
+      label:
+        'a moved project keeps the .trees worktree and the splitbrief branch of an older version run',
+      arrange: async (dirs: string[]) => {
+        const run = await startWorkspaceRun({ strategy: 'worktree', sessionId: runId, dirs });
+        const treesPath = join(run.ref.projectDir, '.trees', runId);
+        execFileSync('git', ['worktree', 'add', '-b', `splitbrief/${runId}`, treesPath], {
+          cwd: run.ref.projectDir,
+        });
+        writeFileSync(join(treesPath, 'src/keep.ts'), editedKeep);
+        saveState(
+          run.ref,
+          close({
+            ...run.state,
+            ...(run.state.workspace && { workspace: { ...run.state.workspace, path: treesPath } }),
+          }),
+        );
+        const projectDir = moveProject(dirs, run.ref.projectDir);
+        const keptAt = join(projectDir, '.trees', runId);
+        return { projectDir, workspaceDir: treesPath, gitDir: projectDir, keptAt, visible: false };
+      },
+    },
+    {
+      label: 'a session folder copied into another project keeps the worktree of its first project',
+      arrange: (dirs: string[]) => copiedSessionRun(dirs, 'worktree'),
+    },
+    {
+      label:
+        'a session folder copied into another project whose first worktree is gone clears its record silently',
+      arrange: async (dirs: string[]) => {
+        const run = await copiedSessionRun(dirs, 'worktree');
+        rmSync(run.workspaceDir, { recursive: true, force: true });
+        return { ...run, keptAt: null, visible: false };
+      },
+    },
+    {
+      label:
+        'a moved project keeps the staged copy that an older End run left with no patch and clears its record silently',
+      arrange: async (dirs: string[]) => {
+        const run = await startWorkspaceRun({ strategy: 'staged-copy', sessionId: runId, dirs });
+        const projectDir = moveProject(dirs, run.ref.projectDir);
+        saveState({ projectDir, sessionId: runId }, close(run.state));
+        const keptAt = join(projectDir, relative(run.ref.projectDir, run.workspaceDir));
+        return {
+          projectDir,
+          workspaceDir: run.workspaceDir,
+          gitDir: projectDir,
+          keptAt,
+          visible: false,
+        };
+      },
+    },
+    {
+      label:
+        'a session folder copied into another project keeps the staged copy of its first project',
+      arrange: (dirs: string[]) => copiedSessionRun(dirs, 'staged-copy'),
+    },
+  ])('$label', { timeout: 60_000 }, async ({ arrange }) => {
+    const dirs: string[] = [];
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const { projectDir, workspaceDir, gitDir, keptAt, visible } = await arrange(dirs);
+      const git = (args: string[]) => execFileSync('git', args, { cwd: gitDir, encoding: 'utf8' });
+      const gitLists = () => ({
+        worktrees: git(['worktree', 'list', '--porcelain']),
+        branches: git(['branch', '--list']),
+      });
+      const before = gitLists();
+      const stderr = () => {
+        const text = stderrSpy.mock.calls.map((call) => String(call[0])).join('');
+        stderrSpy.mockClear();
+        return text;
+      };
+      stderr();
+
+      await setupWorkflow({ project: projectDir, fullscreen: false });
+      const first = {
+        record: await readWorkspaceRecord({ projectDir, sessionId: runId }),
+        stderr: stderr(),
+      };
+      await setupWorkflow({ project: projectDir, fullscreen: false });
+
+      expect({
+        first,
+        second: stderr(),
+        edits: keptAt === null ? null : readFileSync(join(keptAt, 'src/keep.ts'), 'utf8'),
+        git: gitLists(),
+      }).toEqual({
+        first: { record: null, stderr: visible ? foreignNotice(workspaceDir) : '' },
+        second: '',
+        edits: keptAt === null ? null : editedKeep,
+        git: before,
+      });
     } finally {
       stderrSpy.mockRestore();
       for (const dir of dirs) cleanupTempDir(dir);

@@ -220,6 +220,29 @@ describe('redactSecrets', () => {
     expect(redactSecrets('password=p@$$w0rd!,;}]')).toBe('password=***REDACTED***');
   });
 
+  it('leaves an unclosed quote in prose and the JSON report after it unmasked', () => {
+    const message =
+      'The test pins that first password: "abc stays masked.\n{"status":"done","filesChanged":["src/a.ts"]}';
+
+    expect(redactSecrets(message)).toBe(message);
+  });
+
+  it('masks a quoted value with a space in prose before a JSON report', () => {
+    expect(
+      redactSecrets('Set password: "hunter two" now.\n{"status":"done","filesChanged":[]}'),
+    ).toBe('Set password: "***REDACTED***" now.\n{"status":"done","filesChanged":[]}');
+  });
+
+  it('masks a multiline quoted value', () => {
+    expect(redactSecrets('password: "CANARYa\nCANARYb"')).toBe('password: "***REDACTED***"');
+  });
+
+  it('masks a JSON password beside another key', () => {
+    expect(redactSecrets('{"password":"hunter2-value","user":"x"}')).toBe(
+      '{"password":"***REDACTED***","user":"x"}',
+    );
+  });
+
   it.each([
     ['AWS_SECRET_ACCESS_KEY="abc"', 'AWS_SECRET_ACCESS_KEY="***REDACTED***"'],
     ['SECRET_STORE_KEY="abc"', 'SECRET_STORE_KEY="***REDACTED***"'],

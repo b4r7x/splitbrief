@@ -935,6 +935,36 @@ describe('projectRunnerCallActivity', () => {
     });
   });
 
+  it('shows a Codex spawn_agent call as a task', () => {
+    const activity = projectRunnerCallActivity(
+      runnerToolUse({
+        name: 'spawn_agent',
+        inputDelta: JSON.stringify({
+          prompt: 'inspect token sk-abcdefghijklmnopqrstuvwxyz',
+          description: 'explore the codebase',
+        }),
+      }),
+      1,
+      '/project',
+    );
+
+    expect(activity).toMatchObject({
+      kind: 'task',
+      label: 'task spawn_agent',
+    });
+    expect(activity).not.toHaveProperty('description');
+    expect(activity?.target).toBeUndefined();
+    expect(activity?.label).not.toContain('prompt');
+    expect(activity?.label).not.toContain('abcdefghijklmnopqrstuvwxyz');
+
+    const wait = projectRunnerCallActivity(
+      runnerToolUse({ name: 'wait', inputDelta: '{}' }),
+      2,
+      '/project',
+    );
+    expect(wait).toMatchObject({ kind: 'unknown', label: 'tool wait' });
+  });
+
   it('keeps the sanitized command when a later fragment has no target', () => {
     const callId = 'redact-call';
     const toolUseId = 'tool-bash';

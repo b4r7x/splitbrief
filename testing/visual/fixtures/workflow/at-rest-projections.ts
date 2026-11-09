@@ -38,7 +38,10 @@ import {
   WORKSPACE_NOTICE_CATEGORY,
 } from '../../../../src/core/sessions/workspace-notice.js';
 import { checkFailureText } from '../../../../src/engine/orchestrator/validation/failure-text.js';
-import { retainedWorkspaceNotice } from '../../../../src/engine/orchestrator/isolation/retention.js';
+import {
+  foreignWorkspaceNotice,
+  retainedWorkspaceNotice,
+} from '../../../../src/engine/orchestrator/isolation/retention.js';
 import { scenarioId } from '../../contracts/identifiers.js';
 import { VISUAL_FIXTURE_EPOCH } from '../common.js';
 import { VISUAL_FIXTURE_PROJECT_DIR, visualConfig } from '../screen-fixtures.js';
@@ -2149,6 +2152,54 @@ const ENDED_WORKSPACE_LOG: readonly EngineEvent[] = [
   },
 ];
 
+const ENDED_MOVED_WORKSPACE_SESSION = 'visual-closed-ended-moved-workspace';
+const ENDED_MOVED_WORKSPACE_AT = Date.parse(STARTED_AT_ISO) + INTERRUPTED_BUILD_SUMMARY.totalTime;
+const ENDED_MOVED_WORKSPACE_PATCH = `.splitbrief/sessions/${ENDED_MOVED_WORKSPACE_SESSION}/run.patch`;
+const CLOSED_ENDED_MOVED_WORKSPACE = record({
+  sessionId: ENDED_MOVED_WORKSPACE_SESSION,
+  status: { kind: 'closed', as: 'ended' },
+  state: {
+    ...CLOSED_ENDED.hydration.state,
+    workspace: RUN_WORKSPACE,
+    closed: {
+      at: new Date(ENDED_MOVED_WORKSPACE_AT).toISOString(),
+      as: 'ended',
+      patch: ENDED_MOVED_WORKSPACE_PATCH,
+    },
+  },
+  summary: INTERRUPTED_BUILD_SUMMARY,
+  ledger: { ...INTERRUPTED_BUILD_LEDGER, sessionId: ENDED_MOVED_WORKSPACE_SESSION },
+});
+const ENDED_MOVED_WORKSPACE_LOG: readonly EngineEvent[] = [
+  {
+    type: 'workflow_started',
+    ts: Date.parse(STARTED_AT_ISO),
+    phase: 'planning',
+    feature: AT_REST_FIXTURE_FEATURE,
+  },
+  {
+    type: 'turn_interrupted',
+    ts: ENDED_MOVED_WORKSPACE_AT - 3_000,
+    phase: 'implementing',
+    source: 'user',
+    at: 'mid-step',
+    step: { kind: 'brief', taskId: BRIEFS.routeTests.id, attempt: 0 },
+  },
+  {
+    type: 'info',
+    ts: ENDED_MOVED_WORKSPACE_AT - 2_000,
+    phase: 'implementing',
+    message: foreignWorkspaceNotice(RUN_WORKSPACE.path),
+  },
+  { type: 'workspace_closed', ts: ENDED_MOVED_WORKSPACE_AT - 1_000, phase: 'implementing' },
+  {
+    type: 'workflow_cancelled',
+    ts: ENDED_MOVED_WORKSPACE_AT,
+    phase: 'implementing',
+    reason: WORKFLOW_CANCEL_REASON_USER,
+  },
+];
+
 const ENDED_REVIEW_SESSION = 'visual-ended-review';
 const ENDED_REVIEW_AT = new Date(
   Date.parse(STARTED_AT_ISO) + READY_SUMMARY.totalTime,
@@ -3180,6 +3231,10 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   atRestProjection({
     id: 'workflow-closed-ended-workspace',
     route: { record: CLOSED_ENDED_WORKSPACE, log: ENDED_WORKSPACE_LOG },
+  }),
+  atRestProjection({
+    id: 'workflow-closed-ended-moved-workspace',
+    route: { record: CLOSED_ENDED_MOVED_WORKSPACE, log: ENDED_MOVED_WORKSPACE_LOG },
   }),
   atRestProjection({ id: 'workflow-closed-ended-review', route: { record: CLOSED_ENDED_REVIEW } }),
   atRestProjection({

@@ -5,11 +5,12 @@ import {
   mkdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SPLITBRIEF_DIR, sessionDir } from '../../../core/paths.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
@@ -39,7 +40,11 @@ import { finalizeRunAtRest } from '../session-lifecycle/finalize.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
 import { buildReviewFailedRecoveryIssue } from '../recovery/builders/task.js';
 import { runPlanApproval } from '../planning/session.js';
-import { readWorkspaceRecord } from '../isolation/retention.js';
+import {
+  foreignWorkspaceNotice,
+  readWorkspaceRecord,
+  stagedWorkspaceRoot,
+} from '../isolation/retention.js';
 import {
   closeRunIfOpen,
   filesStillOnDiskSuffix,
@@ -513,6 +518,55 @@ describe('closeRunIfOpen on a workspace run before Apply', () => {
     expect(events.some((event) => event.type === 'warning')).toBe(true);
   });
 
+  it('writes the run patch from the moved staged copy, then removes the copy', {
+    timeout: 60_000,
+  }, async () => {
+    const { ref, state, workspaceDir } = await openWorkspaceRun('staged-copy');
+    const movedProjectDir = createTempDir('close-run-moved-staged-copy-');
+    dirs.push(movedProjectDir);
+    renameSync(ref.projectDir, movedProjectDir);
+    const movedRef = { projectDir: movedProjectDir, sessionId: ref.sessionId };
+    const { bus, events } = makeBusRecorder();
+
+    const closure = await closeRunIfOpen({ ...movedRef, bus }, state);
+
+    expect(closure.closedNow).toBe(true);
+    expect(removal.patchExisted).toEqual([true]);
+    const patchPath = join(sessionDir(movedRef.projectDir, movedRef.sessionId), 'run.patch');
+    expect(existsSync(patchPath)).toBe(true);
+    expect(readFileSync(patchPath, 'utf8')).toContain('export const two = 22;');
+    const movedWorkspaceDir = join(
+      stagedWorkspaceRoot(movedRef, basename(dirname(workspaceDir))),
+      'workspace',
+    );
+    expect(existsSync(movedWorkspaceDir)).toBe(false);
+    expect(existsSync(dirname(movedWorkspaceDir))).toBe(false);
+    expect(await readWorkspaceRecord(movedRef)).toBeNull();
+    expect(events.filter((e) => e.type === 'warning')).toEqual([]);
+  });
+
+  it('ends a moved worktree run without reading the moved worktree', {
+    timeout: 60_000,
+  }, async () => {
+    const { ref, state, workspaceDir } = await openWorkspaceRun('worktree');
+    const movedProjectDir = createTempDir('close-run-moved-worktree-');
+    dirs.push(movedProjectDir);
+    renameSync(ref.projectDir, movedProjectDir);
+    const movedRef = { projectDir: movedProjectDir, sessionId: ref.sessionId };
+    const { bus, events } = makeBusRecorder();
+
+    const closure = await closeRunIfOpen({ ...movedRef, bus }, state);
+
+    expect(closure.closedNow).toBe(true);
+    expect(closure.state.closed?.as).toBe('ended');
+    const infoEvents = events.filter((e) => e.type === 'info');
+    expect(infoEvents).toHaveLength(1);
+    expect(infoEvents[0]?.message).toBe(foreignWorkspaceNotice(workspaceDir));
+    expect(await readWorkspaceRecord(movedRef)).toBeNull();
+    expect(existsSync(workspaceDir)).toBe(true);
+    expect(existsSync(join(workspaceDir, 'src/keep.ts'))).toBe(true);
+  });
+
   describe('a worktree run whose folder is gone and whose git entry was pruned', () => {
     const git = (cwd: string, ...args: string[]): string =>
       execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
@@ -841,7 +895,8 @@ describe('removeClosedRunWorkspaces', () => {
     expect(await readWorkspaceRecord(readyRun.ref)).not.toBeNull();
   });
 
-  it('a closed run whose state.workspace.path does not match its confined path warns and leaves the record set', {
+  // A kept record warns again at each start; a gone path this checkout does not own clears it.
+  it('a closed run whose state.workspace.path does not match its confined path clears its record silently for a missing foreign workspace', {
     timeout: 60_000,
   }, async () => {
     const { ref, state, workspaceDir } = await openWorkspaceRun('worktree');
@@ -858,20 +913,14 @@ describe('removeClosedRunWorkspaces', () => {
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {
       await expect(removeClosedRunWorkspaces(ref.projectDir)).resolves.toBeUndefined();
-      expect(stderrSpy).toHaveBeenCalled();
-      const firstOutput = stderrSpy.mock.calls.map((call) => String(call[0])).join('');
-      expect(firstOutput).toContain('Could not remove the run workspace at');
-      expect(firstOutput).toContain('mismatched-path');
-      expect(await readWorkspaceRecord(ref)).not.toBeNull();
+      expect(stderrSpy).not.toHaveBeenCalled();
+      expect(await readWorkspaceRecord(ref)).toBeNull();
       expect(existsSync(workspaceDir)).toBe(true);
 
       stderrSpy.mockClear();
       await expect(removeClosedRunWorkspaces(ref.projectDir)).resolves.toBeUndefined();
-      expect(stderrSpy).toHaveBeenCalled();
-      const secondOutput = stderrSpy.mock.calls.map((call) => String(call[0])).join('');
-      expect(secondOutput).toContain('Could not remove the run workspace at');
-      expect(secondOutput).toContain('mismatched-path');
-      expect(await readWorkspaceRecord(ref)).not.toBeNull();
+      expect(stderrSpy).not.toHaveBeenCalled();
+      expect(await readWorkspaceRecord(ref)).toBeNull();
       expect(existsSync(workspaceDir)).toBe(true);
     } finally {
       stderrSpy.mockRestore();

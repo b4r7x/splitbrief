@@ -19,6 +19,7 @@ import {
 } from '../../../../src/features/workflow/conversation-rows/projection-cache.js';
 import { rowText } from '../../../../src/features/workflow/conversation-rows/row-format/rows.js';
 import type { ConversationRow } from '../../../../src/features/workflow/conversation-rows/types.js';
+import { displayActivityLabel } from '../../../../src/features/workflow/display/activity-label-display.js';
 import { getSections } from '../../../../src/stores/workflow/actions/sections.js';
 import { conversationScrollStore } from '../../../../src/stores/workflow/conversation-scroll.js';
 import { streamingOutputStore } from '../../../../src/stores/workflow/streaming-output.js';
@@ -50,6 +51,7 @@ import {
 import { overlayStore } from '../../../../src/stores/ui/overlay.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../../src/lib/terminal/typeahead-grace.js';
 import {
+  MOVED_PROJECT_MESSAGE,
   WORKFLOW_FIXTURE_TEXT,
   workflowFixtureProjections,
   type FixtureStopState,
@@ -685,9 +687,33 @@ const checkpointPredicates = [
     },
   ],
   [checkpointId('implementation-narration'), implementerMarkdown('src/registry.ts')],
+  // `Checking tests` scrolls out of a 60x18 transcript, so the frame pins the activity block,
+  // and the transcript text proves that the main word ends whole above that block.
+  [
+    checkpointId('implementation-subagent-text'),
+    (context) => {
+      const text = workflowTranscriptText();
+      return (
+        includesAll('Found 3.', 'Done.')(context) &&
+        excludesAll('testFound', 'sDone', 'sFound')(context) &&
+        /BUILD activity[\s\S]*Found 3\.[\s\S]*Done\./.test(stripAnsiStyles(context.output)) &&
+        /Checking tests[\s\S]*BUILD activity[\s\S]*Found 3\.[\s\S]*Done\./.test(text) &&
+        !text.includes('testFound') &&
+        !text.includes('sDone') &&
+        !text.includes('sFound')
+      );
+    },
+  ],
   [checkpointId('implementation-command-code'), includesTranscript('src/app.ts', 'npm test')],
   [checkpointId('implementation-adjacent-narration'), implementerMarkdown('src/fixture.ts')],
   [checkpointId('implementation-fenced-handback'), implementerMarkdown('src/row.ts')],
+  [
+    checkpointId('implementation-handback-unclosed-quote'),
+    (context) =>
+      implementerMarkdown('src/row.ts')(context) &&
+      includesAll('Report  done · 1 decision')(context) &&
+      excludesAll('"status":"done"', 'REDACTED')(context),
+  ],
   [
     checkpointId('continuous-transcript'),
     includesTranscript('● Plan', '● T001', 'lowStockItems', 'T003 Test the receiving flow'),
@@ -935,6 +961,20 @@ const checkpointPredicates = [
   // The tiered gate owns this checkpoint: it takes the prompt zone from the document panel, so the
   // panel's own words are never on this frame.
   [checkpointId('review'), includesAll('Confirm with a reason', WORKFLOW_FIXTURE_TEXT.review)],
+  // The activity row renders the user-facing activity label via displayActivityLabel('AGENT') rather than the internal label,
+  // showing the spawn_agent marker while keeping internal tool names and check findings hidden.
+  [
+    checkpointId('review-subagent-row'),
+    (context) => {
+      const text = workflowTranscriptText();
+      return (
+        includesAll(displayActivityLabel('AGENT'), 'spawn_agent')(context) &&
+        excludesAll('collab_tool_call', 'F1')(context) &&
+        !text.includes('collab_tool_call') &&
+        !text.includes('F1')
+      );
+    },
+  ],
   // The document loads from disk after the panel paints, so each gate waits on the first row of
   // its own document too — otherwise the frame captures a gate over an empty box.
   [checkpointId('selection-copy'), includesAll('End run', 'Edit plan.json')],
@@ -1126,6 +1166,20 @@ const checkpointPredicates = [
       context.output.includes('Needs you'),
   ],
   [
+    checkpointId('moved-project-run'),
+    // The run's error row is the one row that names the moved folder: no kept-workspace warning.
+    (context) => {
+      const text = workflowTranscriptText().replace(/\s+/g, ' ');
+      return (
+        includesTranscript()(context) &&
+        text.split(MOVED_PROJECT_MESSAGE).length === 2 &&
+        !['Warning', 'Workspace kept', 'could not be verified'].some((marker) =>
+          text.includes(marker),
+        )
+      );
+    },
+  ],
+  [
     checkpointId('cli-stop-continued'),
     (context) => {
       const text = workflowTranscriptText();
@@ -1276,6 +1330,17 @@ const checkpointPredicates = [
   [checkpointId('closed-ended'), includesAll()],
   [checkpointId('closed-ended-empty'), includesAll()],
   [checkpointId('closed-ended-workspace'), includesAll('run.patch')],
+  // The closed-run ledger renders run.patch in the visible frame outside event rows, while the
+  // transcript retains the foreign-workspace notice.
+  [
+    checkpointId('closed-ended-moved-workspace'),
+    (context) => {
+      const text = workflowTranscriptText().replace(/\s+/g, ' ');
+      return (
+        context.output.includes('run.patch') && text.includes('belongs to another project folder')
+      );
+    },
+  ],
   [checkpointId('closed-ended-review'), includesAll()],
   [checkpointId('closed-review-no-verdict'), includesAll('final review no verdict')],
   [checkpointId('closed-ended-review-workspace'), includesAll('run.patch')],

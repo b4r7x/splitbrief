@@ -7,7 +7,6 @@ describe('Codex review image argv', () => {
     (imagePaths) => {
       const args = codexPlannerAdapter.buildArgs({
         sessionId: null,
-        oneShot: true,
         projectDir: '/project',
         model: undefined,
         effort: undefined,
@@ -26,7 +25,8 @@ describe('Codex review image argv', () => {
           '/tmp/settings panel.png',
         ]);
       }
-      expect(args).toContain('--ephemeral');
+      // Fresh calls omit --ephemeral so review calls retain the rollout needed for sub-agents.
+      expect(args).not.toContain('--ephemeral');
       expect(args.at(-1)).toBe('-');
     },
   );

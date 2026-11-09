@@ -3,6 +3,8 @@ import { realpath, rm, rmdir } from 'node:fs/promises';
 import { basename, dirname, join, relative } from 'node:path';
 import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
 import { isolationTreesRoot } from '../../../core/paths.js';
+import { StagedWorkspaceLeafSchema } from '../../../core/schemas/retained-workspace.js';
+import type { SessionRef } from '../../../core/types/session-ref.js';
 import { createGitClient, type GitClient } from '../../../lib/git/client.js';
 import { getGitCommonDir } from '../../../lib/git/repository.js';
 import { isENOENT, isNodeError } from '../../../lib/process/errors.js';
@@ -41,43 +43,57 @@ function publishWorktreeWarning(
   process.stderr.write(message.endsWith('\n') ? message : `${message}\n`);
 }
 
+export async function isOwnRunWorkspace(
+  ref: SessionRef,
+  workspace: { kind: 'worktree' | 'staged-copy'; path: string },
+): Promise<boolean> {
+  if (workspace.kind === 'staged-copy') {
+    const root = dirname(workspace.path);
+    return (
+      workspace.path === join(root, 'workspace') &&
+      StagedWorkspaceLeafSchema.safeParse(basename(root)).success &&
+      root === stagedWorkspaceRoot(ref, basename(root))
+    );
+  }
+  const worktreeDir = resolveConfinedIsolationWorktreePath({
+    projectDir: ref.projectDir,
+    gitCommonDir: await getGitCommonDir(ref.projectDir),
+    slug: ref.sessionId.slice(0, 64),
+  });
+  if (workspace.path !== worktreeDir) return false;
+  if (existsSync(worktreeDir)) {
+    const treesRoot = isolationTreesRoot();
+    const canonicalPath = join(await realpath(treesRoot), relative(treesRoot, worktreeDir));
+    if ((await realpath(worktreeDir)) !== canonicalPath) throw retentionError.unavailable();
+  }
+  return true;
+}
+
 export async function removeRunWorkspace(
   projectDir: string,
   sessionId: string,
   workspace: { kind: 'worktree' | 'staged-copy' | 'checkout'; path: string },
-): Promise<void> {
-  if (workspace.kind === 'checkout') return;
+): Promise<string | null> {
+  if (workspace.kind === 'checkout') return null;
+  const ref = { projectDir, sessionId };
+  if (!(await isOwnRunWorkspace(ref, { kind: workspace.kind, path: workspace.path }))) {
+    clearWorkspaceRecord(ref);
+    return existsSync(workspace.path) ? workspace.path : null;
+  }
   if (workspace.kind === 'worktree') {
-    const slug = sessionId.slice(0, 64);
-    const worktreeDir = resolveConfinedIsolationWorktreePath({
-      projectDir,
-      gitCommonDir: await getGitCommonDir(projectDir),
-      slug,
-    });
-    if (workspace.path !== worktreeDir) throw retentionError.unavailable();
-    if (existsSync(worktreeDir)) {
-      const treesRoot = isolationTreesRoot();
-      const canonicalPath = join(await realpath(treesRoot), relative(treesRoot, worktreeDir));
-      if ((await realpath(worktreeDir)) !== canonicalPath) throw retentionError.unavailable();
-    }
     await removeWorktree({
       projectDir,
-      slug,
+      slug: sessionId.slice(0, 64),
       git: createGitClient(projectDir),
-      worktreeDir,
+      worktreeDir: workspace.path,
       suppressUncommittedWarning: true,
     });
-    await removeEmptyRepositoryRoot(worktreeDir);
+    await removeEmptyRepositoryRoot(workspace.path);
   } else {
-    const root = dirname(workspace.path);
-    if (
-      root !== stagedWorkspaceRoot({ projectDir, sessionId }, basename(root)) ||
-      workspace.path !== join(root, 'workspace')
-    )
-      throw retentionError.unavailable();
-    await rm(root, { recursive: true, force: true });
+    await rm(dirname(workspace.path), { recursive: true, force: true });
   }
-  clearWorkspaceRecord({ projectDir, sessionId });
+  clearWorkspaceRecord(ref);
+  return null;
 }
 
 async function removeEmptyRepositoryRoot(worktreeDir: string): Promise<void> {

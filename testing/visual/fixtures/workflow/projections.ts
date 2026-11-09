@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { replacedFilesSavedIn } from '../../../../src/core/runtime/commands/messages.js';
+import { redactSecrets } from '../../../../src/utils/redact.js';
 import { projectRunnerCallActivity } from '../../../../src/engine/calls/activity.js';
+import { retentionError } from '../../../../src/engine/orchestrator/isolation/retention.js';
 import { reviewResumeProjection, reviewCheckCrashProjection } from './review-resume-projection.js';
 import {
   buildPromptTooLargeProjection,
@@ -302,12 +304,18 @@ const WORKFLOW_IMPLEMENTATION_RETRY_ID = scenarioId('workflow-implementation-ret
 const WORKFLOW_VALIDATION_ID = scenarioId('workflow-validation');
 const WORKFLOW_IMPLEMENTATION_ESCALATED_ID = scenarioId('workflow-implementation-escalated');
 const WORKFLOW_IMPLEMENTATION_NARRATION_ID = scenarioId('workflow-implementation-narration');
+const WORKFLOW_IMPLEMENTATION_SUBAGENT_TEXT_ID = scenarioId(
+  'workflow-implementation-subagent-text',
+);
 const WORKFLOW_IMPLEMENTATION_COMMAND_CODE_ID = scenarioId('workflow-implementation-command-code');
 const WORKFLOW_IMPLEMENTATION_ADJACENT_NARRATION_ID = scenarioId(
   'workflow-implementation-adjacent-narration',
 );
 const WORKFLOW_IMPLEMENTATION_FENCED_HANDBACK_ID = scenarioId(
   'workflow-implementation-fenced-handback',
+);
+const WORKFLOW_IMPLEMENTATION_HANDBACK_UNCLOSED_QUOTE_ID = scenarioId(
+  'workflow-implementation-handback-unclosed-quote',
 );
 const WORKFLOW_REVIEW_ID = scenarioId('workflow-review');
 const WORKFLOW_REVIEW_FIX_ID = scenarioId('workflow-review-fix');
@@ -2629,6 +2637,34 @@ const reviewProjection: WorkflowFixtureProjection = {
   },
 };
 
+const reviewSubagentRowProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-review-subagent-row'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: false,
+  config: { reviewer: CODEX_REVIEW_SEAT },
+  events: [
+    ...reviewProjection.events,
+    {
+      type: 'runner_call_activity',
+      ts: FIXED_TS + 200,
+      phase: 'reviewing-plan',
+      callId: 'visual-review-call-001',
+      role: 'review',
+      backendKind: 'cli',
+      runnerName: 'codex',
+      model: CODEX_REVIEW_SEAT.model,
+      axes: seatAxisWords(CODEX_REVIEW_SEAT),
+      sequence: 1,
+      activityId: 'visual-review-call-001:tool:collab-1',
+      stage: 'completed',
+      kind: 'task',
+      label: 'task spawn_agent',
+      redacted: false,
+    },
+  ],
+};
+
 const approvalConfirmProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_APPROVAL_CONFIRM_ID,
   feature: WORKFLOW_FEATURE,
@@ -3336,6 +3372,43 @@ const failureProjection: WorkflowFixtureProjection = {
       type: 'workflow_cancelled',
       ts: FIXED_TS + 900,
       phase: 'implementing',
+    },
+  ],
+};
+
+export const MOVED_PROJECT_MESSAGE = retentionError.moved('old-shop').message;
+
+/** The run stopped in one folder and was continued after the project moved to another. */
+const movedProjectRunProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-moved-project-run'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: false,
+  events: [
+    {
+      type: 'workflow_started',
+      ts: FIXED_TS,
+      phase: 'implementing',
+      feature: WORKFLOW_FEATURE,
+    },
+    {
+      type: 'task_started',
+      ts: FIXED_TS + 100,
+      phase: 'implementing',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      title: WORKFLOW_FIXTURE_TEXT.implementationTask,
+      index: 0,
+      total: 1,
+      file: WORKFLOW_FIXTURE_REVIEW_FILE,
+      action: 'modify',
+      tool: 'ollama',
+      model: FIXED_RUNNER_MODEL,
+    },
+    {
+      type: 'error',
+      ts: FIXED_TS + 300,
+      phase: 'implementing',
+      message: MOVED_PROJECT_MESSAGE,
     },
   ],
 };
@@ -6022,6 +6095,91 @@ const implementationNarrationProjection: WorkflowFixtureProjection = {
   ],
 };
 
+const implementationSubagentTextProjection: WorkflowFixtureProjection = {
+  ...implementationNarrationProjection,
+  scenarioId: WORKFLOW_IMPLEMENTATION_SUBAGENT_TEXT_ID,
+  events: [
+    { type: 'workflow_started', ts: FIXED_TS, phase: 'implementing', feature: WORKFLOW_FEATURE },
+    { ...FIXTURE_TASKS_PLANNED, total: 1, tasks: FIXTURE_TASKS_PLANNED.tasks.slice(0, 1) },
+    {
+      type: 'task_started',
+      ts: FIXED_TS + 100,
+      phase: 'implementing',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      title: WORKFLOW_FIXTURE_TEXT.implementationTask,
+      index: 0,
+      total: 1,
+      file: WORKFLOW_FIXTURE_REVIEW_FILE,
+      files: [WORKFLOW_FIXTURE_REVIEW_FILE, WORKFLOW_FIXTURE_SECOND_FILE],
+      action: 'modify',
+      tool: 'claude-code',
+      model: CLAUDE_PLAN_SEAT.model,
+      axes: seatAxisWords(CLAUDE_PLAN_SEAT),
+    },
+    {
+      type: 'implementer_generate_running',
+      ts: FIXED_TS + 150,
+      phase: 'implementing',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      file: WORKFLOW_FIXTURE_REVIEW_FILE,
+    },
+    { type: 'runner_call_started', ts: FIXED_TS + 160, ...CLAUDE_BUILD_CALL, sequence: 0 },
+    {
+      type: 'planner_text',
+      ts: FIXED_TS + 200,
+      phase: 'implementing',
+      role: 'implementer',
+      content: 'markdown',
+      text: 'Checking ',
+    },
+    {
+      type: 'planner_text',
+      ts: FIXED_TS + 210,
+      phase: 'implementing',
+      role: 'implementer',
+      content: 'markdown',
+      text: 'test',
+    },
+    {
+      type: 'runner_call_activity',
+      ts: FIXED_TS + 220,
+      ...CLAUDE_BUILD_CALL,
+      sequence: 1,
+      activityId: 'visual-claude-build:1',
+      stage: 'completed',
+      kind: 'task',
+      label: 'task Task',
+      redacted: false,
+    },
+    {
+      type: 'planner_text',
+      ts: FIXED_TS + 300,
+      phase: 'implementing',
+      role: 'implementer',
+      content: 'markdown',
+      continues: true,
+      text: 's',
+    },
+    {
+      type: 'planner_text',
+      ts: FIXED_TS + 310,
+      phase: 'implementing',
+      role: 'implementer',
+      content: 'markdown',
+      subagent: true,
+      text: 'Found 3.',
+    },
+    {
+      type: 'planner_text',
+      ts: FIXED_TS + 400,
+      phase: 'implementing',
+      role: 'implementer',
+      content: 'markdown',
+      text: 'Done.',
+    },
+  ],
+};
+
 const COMMAND_CODE_BUILD_SEAT = {
   kind: 'cli',
   tool: 'command-code',
@@ -6179,6 +6337,45 @@ const implementationFencedHandBackProjection: WorkflowFixtureProjection = {
         '{"status":"done","filesChanged":["src/row.ts"],"touchedNotSuggested":[],"notes":null}',
         '```',
       ].join('\n'),
+    },
+  ],
+};
+
+const UNCLOSED_QUOTE_HAND_BACK = redactSecrets(
+  [
+    'The test pins that first password: "abc stays masked.',
+    JSON.stringify({
+      status: 'done',
+      filesChanged: ['src/row.ts'],
+      touchedNotSuggested: [],
+      notes: null,
+      decisions: [{ what: 'Kept the row label', why: 'The brief names it' }],
+    }),
+  ].join('\n'),
+);
+const UNCLOSED_QUOTE_HAND_BACK_TEXT = `\n\n${UNCLOSED_QUOTE_HAND_BACK}`;
+
+/** The build seat's hand-back prose leaves a quote open after a password key, then reports. */
+const implementationHandBackUnclosedQuoteProjection: WorkflowFixtureProjection = {
+  ...implementationFencedHandBackProjection,
+  scenarioId: WORKFLOW_IMPLEMENTATION_HANDBACK_UNCLOSED_QUOTE_ID,
+  events: [
+    ...implementationFencedHandBackProjection.events.slice(0, -1),
+    {
+      type: 'planner_text',
+      ts: FIXED_TS + 410,
+      phase: 'implementing',
+      role: 'implementer',
+      content: 'markdown',
+      text: UNCLOSED_QUOTE_HAND_BACK_TEXT.slice(0, WORKFLOW_FIXTURE_BOUNDS.maxStringLength),
+    },
+    {
+      type: 'planner_text',
+      ts: FIXED_TS + 410,
+      phase: 'implementing',
+      role: 'implementer',
+      content: 'markdown',
+      text: UNCLOSED_QUOTE_HAND_BACK_TEXT.slice(WORKFLOW_FIXTURE_BOUNDS.maxStringLength),
     },
   ],
 };
@@ -8902,12 +9099,15 @@ const projections = [
   implementationEscalatedProjection,
   implementationExtractedCodeProjection,
   implementationNarrationProjection,
+  implementationSubagentTextProjection,
   implementationCommandCodeProjection,
   implementationAdjacentNarrationProjection,
   implementationFencedHandBackProjection,
+  implementationHandBackUnclosedQuoteProjection,
   continuousTranscriptProjection,
   validationProjection,
   reviewProjection,
+  reviewSubagentRowProjection,
   approvalConfirmProjection,
   approvalConfirmSecretProjection,
   { ...approvalConfirmProjection, scenarioId: scenarioId('workflow-approval-confirm-short') },
@@ -8978,6 +9178,7 @@ const projections = [
   pausedBoundaryProjection,
   stoppingProjection,
   failureProjection,
+  movedProjectRunProjection,
   plannerCommandsRefusedProjection,
   touchedNotSuggestedProjection,
   betweenBriefsProjection,

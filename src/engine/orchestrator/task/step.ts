@@ -196,6 +196,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   } catch (err) {
     if (
       retentionError.isFailed(err) ||
+      retentionError.isMoved(err) ||
       retentionError.isUnavailable(err) ||
       sessionError.isLocalSaveFailure(err)
     )

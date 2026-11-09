@@ -105,7 +105,6 @@ export function createCliPlanner(
           projectDir,
           configuredArgs: extraArgs,
           sessionId: supportsSessionResume ? resumeId : null,
-          oneShot: !threaded,
           effort: supportsEffort ? effort : undefined,
           variant,
           installedVersion: gate.installedVersion,
@@ -195,8 +194,8 @@ export function createCliPlanner(
       return result;
     };
 
-    // Only a planning call is a turn on the planner's thread. A review and a summary
-    // are one stateless call each, as Claude Code's are, and leave no session behind.
+    // Only a planning call is a turn on the planner's thread. Review and summary
+    // each use one fresh call and never resume a session.
     const threaded = supportsSessionResume && accessMode === 'planning';
     const resumeId = threaded ? nativeSession.getResumeId() : null;
     const run = (o: Parameters<typeof runOnce>[0]): Promise<RunnerCallResult> =>

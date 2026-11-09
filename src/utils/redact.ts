@@ -30,7 +30,7 @@ export function isCredentialEnvironmentName(name: string): boolean {
 }
 
 const ASSIGNED_SECRET_PATTERN = new RegExp(
-  String.raw`((?<![A-Z0-9])(?:"${SENSITIVE_KEY_NAME}"|'${SENSITIVE_KEY_NAME}'|${SENSITIVE_KEY_NAME})(?![A-Z0-9])\s*[:=]\s*)("(?:\\.|[^"\\])+"|'(?:\\.|[^'\\])+'|Bearer\s+[A-Z0-9._~+/*=-]+|\S+)`,
+  String.raw`((?<![A-Z0-9])(?:"${SENSITIVE_KEY_NAME}"|'${SENSITIVE_KEY_NAME}'|${SENSITIVE_KEY_NAME})(?![A-Z0-9])\s*[:=]\s*)("(?:\\.|[^"\\])+"(?![\w$-]*"\s*:)|'(?:\\.|[^'\\])+'|Bearer\s+[A-Z0-9._~+/*=-]+|\S+)`,
   'gi',
 );
 

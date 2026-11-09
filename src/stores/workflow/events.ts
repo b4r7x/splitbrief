@@ -111,30 +111,45 @@ export function projectEventForTuiEventLog(event: EngineEvent): EngineEvent | nu
   }
 }
 
-type TailMerge =
+type LogMerge =
   | { readonly kind: 'drop' }
-  | { readonly kind: 'replace'; readonly event: EngineEvent }
+  | { readonly kind: 'replace'; readonly index: number; readonly event: EngineEvent }
   | { readonly kind: 'append' };
 
-const DROP_TAIL_MERGE: TailMerge = { kind: 'drop' };
-const APPEND_TAIL_MERGE: TailMerge = { kind: 'append' };
+const DROP_LOG_MERGE: LogMerge = { kind: 'drop' };
+const APPEND_LOG_MERGE: LogMerge = { kind: 'append' };
 
-// Text deltas merge only at the tail. Both live and replay logs use the same rule.
-function mergeIntoTail(last: EngineEvent | undefined, event: EngineEvent): TailMerge {
-  if (event.type === 'runner_call_text_delta') return DROP_TAIL_MERGE;
-  if (
-    event.type === 'planner_text' &&
-    last?.type === 'planner_text' &&
-    !(event.role === 'implementer' && event.messageStart === true) &&
-    (last.role ?? 'planner') === (event.role ?? 'planner') &&
-    (last.content ?? 'plain') === (event.content ?? 'plain')
-  ) {
-    const joined = last.text + event.text;
+// Text joins the text row it continues. Both live and replay logs use the same rule.
+function mergeIntoLog(
+  events: readonly EngineEvent[],
+  event: EngineEvent,
+  dropped?: readonly boolean[],
+): LogMerge {
+  if (event.type === 'runner_call_text_delta') return DROP_LOG_MERGE;
+  if (event.type !== 'planner_text') return APPEND_LOG_MERGE;
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    if (dropped?.[index] === true) continue;
+    const row = events[index];
+    if (event.continues === true && row?.type === 'runner_call_activity') continue;
+    if (row?.type !== 'planner_text' || !joinsTextRow(row, event)) return APPEND_LOG_MERGE;
+    const joined = row.text + event.text;
     const text =
       joined.length > MAX_MERGED_TEXT_LENGTH ? joined.slice(-MAX_MERGED_TEXT_LENGTH) : joined;
-    return { kind: 'replace', event: { ...last, text } };
+    return { kind: 'replace', index, event: { ...row, text } };
   }
-  return APPEND_TAIL_MERGE;
+  return APPEND_LOG_MERGE;
+}
+
+function joinsTextRow(
+  row: EngineEventOf<'planner_text'>,
+  event: EngineEventOf<'planner_text'>,
+): boolean {
+  return (
+    !(event.role === 'implementer' && event.messageStart === true) &&
+    (row.role ?? 'planner') === (event.role ?? 'planner') &&
+    (row.content ?? 'plain') === (event.content ?? 'plain') &&
+    (row.subagent === true) === (event.subagent === true)
+  );
 }
 
 function commandKey(event: EngineEventOf<'full_suite' | 'validate'>): string {
@@ -189,11 +204,11 @@ export function mergeEvent(events: EngineEvent[], event: EngineEvent): EngineEve
     next[commandIndex] = event;
     return next;
   }
-  const merge = mergeIntoTail(events[events.length - 1], event);
+  const merge = mergeIntoLog(events, event);
   if (merge.kind === 'drop') return events;
   if (merge.kind === 'replace') {
     const next = events.slice();
-    next[next.length - 1] = merge.event;
+    next[merge.index] = merge.event;
     return next;
   }
   if (events.length >= MAX_EVENTS) {
@@ -207,7 +222,7 @@ export function mergeEvent(events: EngineEvent[], event: EngineEvent): EngineEve
   return [...events, event];
 }
 
-// The batch form of mergeEvent uses the same projection, command and tail merges, and eviction
+// The batch form of mergeEvent uses the same projection, command and text merges, and eviction
 // order. It marks survivors in place and materializes once, so a 50k-event log costs one pass
 // rather than one whole-array copy per event past the cap.
 export function mergeEventLog(events: EngineEvent[]): EngineEvent[] {
@@ -229,10 +244,10 @@ export function mergeEventLog(events: EngineEvent[]): EngineEvent[] {
       updateRunningCommandIndex(runningCommands, projected, commandIndex);
       continue;
     }
-    const merge = mergeIntoTail(log[log.length - 1], projected);
+    const merge = mergeIntoLog(log, projected, dropped);
     if (merge.kind === 'drop') continue;
     if (merge.kind === 'replace') {
-      log[log.length - 1] = merge.event;
+      log[merge.index] = merge.event;
       continue;
     }
     if (live >= MAX_EVENTS) {

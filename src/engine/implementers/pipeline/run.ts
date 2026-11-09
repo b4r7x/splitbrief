@@ -8,6 +8,7 @@ import type {
 } from '../types.js';
 import { composeContinuation } from '../../spec/prompts/continuation.js';
 import type { RunnerCallContext, RunnerCallResult, RunnerCallStatus } from '../../calls/types.js';
+import type { TextChunkMarks } from '../../events/types.js';
 import { toTokenDelta } from '../../calls/projection.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
@@ -547,7 +548,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
           phase: 'implementing',
         })
       : null;
-    const wrappedOnOutput = (text: string, opts?: { messageStart?: boolean | undefined }) => {
+    const wrappedOnOutput = (text: string, opts?: TextChunkMarks) => {
       onOutput(text, opts);
       implBuffer?.append(text);
     };

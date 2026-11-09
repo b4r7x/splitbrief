@@ -622,6 +622,12 @@
 - When a short halt panel folds lines away, the fold now says that it hides the folder with the replaced files.
 - At 80 columns or fewer, the header now names every seat by its tool when the tool names fit. Above 80 columns, it names every seat by its model when the model names fit beside all the stages. Else it names every seat by its tool when the tool names fit. To make room for the tool names, the rail can show only one stage.
 - A run that stopped with a brief in flight and continues after a `/crew` change of the PLAN seat no longer shows a warning that the planner session expired.
+- Text from a sub-agent no longer splits a word of the main reply on a shell or agent seat that gets a secret.
+- A sub-agent's tool row no longer splits a word of that sub-agent's text on a shell or agent seat that gets a secret.
+- A hand-back with an unclosed quote after a word such as `password:` now shows its report, and SPLITBRIEF reads the report.
+- After you rename or move a project folder, End run saves the run's changes and no longer fails, and a start no longer warns about the old workspace each time. Continue says what to do.
+- A Codex review seat can now start sub-agents, as other tools can.
+- A Codex sub-agent call now shows its action, such as `spawn_agent`, in place of `collab_tool_call`. A spawn shows as an agent row.
 
 ## [0.1.0] - 2026-08-07
 

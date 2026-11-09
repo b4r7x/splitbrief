@@ -82,12 +82,8 @@ function schemaArgs(schema: CliSchemaInput | undefined): string[] {
 /**
  * REQ-017 read-only planner vector for Codex 0.147.0. Sandbox and approval are
  * GLOBAL flags in v0.147 and must precede `exec`; `exec resume` does not accept
- * local `--sandbox`/`--ask-for-approval`. Ambient user config and AGENTS.md
- * rules are adapter-owned inputs the planner ignores. A fresh exec is
- * `--ephemeral` only when it is one-shot, so a review or a summary
- * leaves no rollout in the codex home: a planning call is not, because the
- * planner resumes the thread it reports and `exec resume` finds no rollout for
- * an ephemeral one.
+ * local `--sandbox`/`--ask-for-approval`. --ignore-user-config drops user config;
+ * --ignore-rules drops execpolicy .rules files; Codex still reads project AGENTS.md.
  */
 function plannerBaseArgs(input: CodexPlannerBuildInput): string[] {
   if (input.sessionId !== null) {
@@ -120,7 +116,6 @@ function plannerBaseArgs(input: CodexPlannerBuildInput): string[] {
     ...(input.imagePaths ?? []).flatMap((path) => ['--image', path]),
     '--ignore-user-config',
     '--ignore-rules',
-    ...(input.oneShot === true ? ['--ephemeral'] : []),
     '--json',
     ...schemaArgs(input.schema),
     '--cd',
@@ -279,6 +274,10 @@ function codexToolEvent(
 ): CliProtocolEvent | null {
   const itemType = optionalString(item.type, { trim: true, nonEmpty: true });
   if (!itemType || itemType === 'agent_message') return null;
+  const name =
+    itemType === 'collab_tool_call'
+      ? (optionalString(item.tool, { trim: true, nonEmpty: true }) ?? itemType)
+      : itemType;
   // A command or a file change carries its input on the item itself, not under `input`.
   const input = isRecord(item.input)
     ? { ...item.input }
@@ -294,13 +293,13 @@ function codexToolEvent(
     nonEmpty: true,
   });
   if (terminal === 'started') {
-    return { type: 'tool-use', stage: 'started', id: id ?? null, name: itemType, input };
+    return { type: 'tool-use', stage: 'started', id: id ?? null, name, input };
   }
   const output = item.output ?? item.result ?? item.text ?? item.content ?? item.status;
   return {
     type: 'tool-use',
     id: id ?? null,
-    name: itemType,
+    name,
     input,
     ...(output !== undefined ? { output } : {}),
   };

@@ -1175,6 +1175,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-implementation-subagent-text',
+      title: 'Workflow · a build sub-agent speaking after a held key prefix',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'implementation-subagent-text',
+        title: 'Sub-agent text after the main word it interrupted',
+        kind: 'implementation',
+        marker: 'BUILD activity',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'activity', title: 'Implementation activity block' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-implementation-command-code',
       title: 'Workflow · a Command Code build call reading, editing and running a command',
       surface: screenSurface('workflow'),
@@ -1232,6 +1248,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Fenced hand-back report',
         kind: 'implementation',
         marker: 'Report  done',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'activity', title: 'Implementation activity block' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-implementation-handback-unclosed-quote',
+      title: 'Workflow · a build hand-back whose prose leaves a quote open',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'implementation-handback-unclosed-quote',
+        title: 'Hand-back report after an unclosed quote',
+        kind: 'implementation',
+        marker: 'Report  done · 1 decision',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -2017,6 +2049,23 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Review transcript' },
         { id: 'approval-panel', title: 'Approval panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-review-subagent-row',
+      title: 'Workflow · review subagent row',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-subagent-row',
+        title: 'Review subagent row',
+        kind: 'review',
+        marker: 'spawn_agent',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Review transcript' },
+        { id: 'activity', title: 'Review activity block' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
@@ -3686,6 +3735,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-closed-ended-moved-workspace',
+      title: 'Workflow · a worktree run ended after the project folder moved',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'closed-ended-moved-workspace',
+        title: 'Ended with its foreign workspace kept and its changes in run.patch',
+        kind: 'failure',
+        marker: 'visual-closed-ended-moved-workspace',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Stop notices and closed run ledger' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-closed-queued',
       title: 'Workflow · ended with a pending BUILD message',
       surface: screenSurface('workflow'),
@@ -3842,6 +3907,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Workspace notice' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-moved-project-run',
+      title: 'Workflow · a run continued after its project folder moved',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'moved-project-run',
+        title: 'The folder the run started in, and what to do',
+        kind: 'failure',
+        marker: 'This run started in',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Moved project error' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),

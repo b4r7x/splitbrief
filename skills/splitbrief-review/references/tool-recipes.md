@@ -40,8 +40,8 @@ Timeouts:
 <!-- generated: recipe:codex -->
 - implementer: `nohup sh -c 'codex --model $M -c model_reasoning_effort=$E --sandbox workspace-write --ask-for-approval never exec --ignore-user-config --json --skip-git-repo-check --cd $D - < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 - implementer (no model): `nohup sh -c 'codex --sandbox workspace-write --ask-for-approval never exec --ignore-user-config --json --skip-git-repo-check --cd $D - < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- reviewer: `nohup sh -c 'codex --model $M -c model_reasoning_effort=$E --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd $D - < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- reviewer (no model): `nohup sh -c 'codex --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd $D - < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- reviewer: `nohup sh -c 'codex --model $M -c model_reasoning_effort=$E --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --json --cd $D - < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- reviewer (no model): `nohup sh -c 'codex --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --json --cd $D - < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 <!-- /generated -->
 - `--sandbox` and `--ask-for-approval` are global flags and must precede `exec`.
 - terminal record: `"type":"turn.completed"`; `turn.failed` or `"type":"error"` = failure. Final text: the last `item.completed` whose item type is `agent_message`.

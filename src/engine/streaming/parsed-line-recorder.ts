@@ -1,6 +1,7 @@
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { RunnerCallRecorder } from '../calls/recorder.js';
 import type { ParsedLine, ParsedTextChannel } from '../runners/types.js';
+import type { TextChunkMarks } from '../events/types.js';
 import {
   createRunnerCallDeltaLimiter,
   type RunnerCallDeltaLimitResult,
@@ -11,12 +12,12 @@ import { accumulateTokenUsage } from '../calls/usage.js';
 export interface ParsedLineRecorder {
   readonly usage: TokenDelta | null;
   readonly sessionId: string | null;
-  apply: (parsed: ParsedLine) => void;
+  apply: (parsed: ParsedLine, marks?: Pick<TextChunkMarks, 'continues'>) => void;
 }
 
 export function createParsedLineRecorder(opts: {
   recorder: RunnerCallRecorder;
-  onText?: ((text: string) => void) | undefined;
+  onText?: ((text: string, marks?: TextChunkMarks) => void) | undefined;
   onSessionId?: ((id: string) => void) | undefined;
 }): ParsedLineRecorder {
   let usage: TokenDelta | null = null;
@@ -66,10 +67,11 @@ export function createParsedLineRecorder(opts: {
     channel: ParsedTextChannel,
     textDelta: string,
     subagentId: string | undefined,
+    marks: Pick<TextChunkMarks, 'continues'> | undefined,
   ): void {
     const accepted = acceptTextDelta(textDelta);
     if (accepted.text.length > 0 && contributesToRunnerResult(channel)) {
-      opts.onText?.(accepted.text);
+      opts.onText?.(accepted.text, subagentId === undefined ? marks : { ...marks, subagent: true });
     }
     opts.recorder.text({
       channel,
@@ -86,13 +88,13 @@ export function createParsedLineRecorder(opts: {
     get sessionId() {
       return sessionId;
     },
-    apply(parsed) {
+    apply(parsed, marks) {
       if (parsed.text) {
         const channel = parsed.channel ?? inferredTextChannel(parsed);
         if (channel === 'result') {
           applyResultText(parsed.text);
         } else {
-          applyDeltaText(channel, parsed.text, parsed.subagentId);
+          applyDeltaText(channel, parsed.text, parsed.subagentId, marks);
         }
       }
 

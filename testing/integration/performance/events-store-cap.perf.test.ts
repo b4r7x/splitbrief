@@ -12,12 +12,12 @@ function forceGc(): void {
   globalThis.gc?.();
 }
 
-function warningEvent(index: number): EngineEventOf<'warning'> {
+function infoEvent(index: number): EngineEventOf<'info'> {
   return {
-    type: 'warning',
+    type: 'info',
     ts: index,
     phase: 'planning',
-    message: `visible warning ${index}`,
+    message: `visible info ${index}`,
   };
 }
 
@@ -58,8 +58,9 @@ describe.skipIf(process.env.SPLITBRIEF_PERF !== '1')('events store cap perf', ()
     forceGc();
     const count = MAX_EVENTS + 2_000;
     const startedAt = performance.now();
+    // The cap keeps every warning as a structural row, so the flood is info rows it can evict.
     for (let index = 0; index < count; index += 1) {
-      addEvent(warningEvent(index));
+      addEvent(infoEvent(index));
     }
     const elapsedMs = performance.now() - startedAt;
     forceGc();
@@ -68,8 +69,8 @@ describe.skipIf(process.env.SPLITBRIEF_PERF !== '1')('events store cap perf', ()
     expect(events).toHaveLength(MAX_EVENTS);
     expect(events[0]).toMatchObject({ type: 'workflow_started' });
     expect(events.at(-1)).toMatchObject({
-      type: 'warning',
-      message: `visible warning ${count - 1}`,
+      type: 'info',
+      message: `visible info ${count - 1}`,
     });
     expect(elapsedMs).toBeLessThan(5_000);
   });

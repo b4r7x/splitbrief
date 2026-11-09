@@ -206,12 +206,12 @@ describe('skill-blocks', () => {
     }
   });
 
-  it('spawns the codex reviewer ephemeral, since nothing resumes a detached review', () => {
+  it('spawns the codex reviewer without --ephemeral, so it can start sub-agents', () => {
     const reviewers = (renderBlock('recipe:codex') ?? '')
       .split('\n')
       .filter((line) => line.startsWith('- reviewer'));
     expect(reviewers).toHaveLength(2);
-    for (const line of reviewers) expect(line).toContain('--ignore-rules --ephemeral --json');
+    for (const line of reviewers) expect(line).toContain('--ignore-rules --json');
   });
 
   it('returns null for an unknown block id', () => {

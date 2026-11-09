@@ -12,6 +12,11 @@ export type EngineEvent = z.infer<typeof EngineEventSchema>;
 
 export type EngineEventOf<T extends EngineEvent['type']> = Extract<EngineEvent, { type: T }>;
 
+export type TextChunkMarks = Pick<
+  EngineEventOf<'planner_text'>,
+  'messageStart' | 'continues' | 'subagent'
+>;
+
 export type EventSink = (event: EngineEvent) => void;
 
 export interface EventBus {

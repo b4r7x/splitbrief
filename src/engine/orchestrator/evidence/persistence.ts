@@ -8,6 +8,7 @@ import { createRecoveryIssue } from '../recovery/builders/issue.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
 import { mutateEvidenceLedger, readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import { isOwnRunWorkspace } from '../isolation/remove-worktree.js';
 import {
   recordApiApplyEvidence,
   recordLocalTaskEvidence,
@@ -164,9 +165,15 @@ export async function persistSkippedBriefFiles(opts: {
 export async function persistStoppedBriefEvidence(
   ref: SessionRef,
   state: WorkflowState,
+  workspace: WorkflowState['workspace'],
 ): Promise<void> {
-  const workspace = state.workspace;
   if (workspace === undefined || !existsSync(workspace.path)) return;
+  if (
+    workspace.kind !== 'checkout' &&
+    !(await isOwnRunWorkspace(ref, { kind: workspace.kind, path: workspace.path }))
+  ) {
+    return;
+  }
   const atRest =
     workspace.kind === 'checkout' &&
     checkSessionLockStatus({ sessionDir: sessionDir(ref.projectDir, ref.sessionId) }).kind ===

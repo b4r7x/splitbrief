@@ -42,6 +42,12 @@ export const retentionError = {
       'isolation-retention-unavailable',
       'The stopped workspace could not be verified. Its files were left in place; automatic continuation is blocked.',
     ),
+  moved: (dir: string) =>
+    error(
+      'isolation-project-moved',
+      `This run started in ${dir}. Move the project back to that folder to continue the run, or end the run.`,
+      { dir },
+    ),
   failed: (dir: string, cause: unknown) =>
     error(
       'isolation-retention-failed',
@@ -50,6 +56,7 @@ export const retentionError = {
       cause,
     ),
   isFailed: matches('isolation-retention-failed'),
+  isMoved: matches('isolation-project-moved'),
   isUnavailable: matches('isolation-retention-unavailable'),
 };
 
@@ -117,7 +124,7 @@ export async function workspaceDirectoryIdentity(
   }
 }
 
-export async function readWorkspaceRecord(ref: SessionRef): Promise<RetainedWorkspace | null> {
+export async function readWorkspaceRecordFile(ref: SessionRef): Promise<RetainedWorkspace | null> {
   const path = join(ref.projectDir, recordPath(ref));
   let handle: FileHandle;
   try {
@@ -145,9 +152,15 @@ export async function readWorkspaceRecord(ref: SessionRef): Promise<RetainedWork
   if (value === null) return null;
   const parsed = RetainedWorkspaceSchema.safeParse(value);
   if (!parsed.success) throw retentionError.unavailable();
-  const record = parsed.data;
-  if (record.projectDir !== (await realpath(ref.projectDir)) || record.sessionId !== ref.sessionId)
-    throw retentionError.unavailable();
+  return parsed.data;
+}
+
+export async function readWorkspaceRecord(ref: SessionRef): Promise<RetainedWorkspace | null> {
+  const record = await readWorkspaceRecordFile(ref);
+  if (record === null) return null;
+  if (record.sessionId !== ref.sessionId) throw retentionError.unavailable();
+  if (record.projectDir !== (await realpath(ref.projectDir)))
+    throw retentionError.moved(record.projectDir);
   for (const file of new Set([
     ...record.snapshot.files,
     ...Object.keys(record.snapshot.dirtyFileContents),
@@ -241,6 +254,10 @@ export function retainedWorkspaceNotice(dir: string): string {
   return `Workspace kept at ${dir} for Continue, with its private CLI state and caches.`;
 }
 
+export function foreignWorkspaceNotice(path: string): string {
+  return `The run workspace at ${path} belongs to another project folder and stays on disk. Delete that run workspace when you no longer need it.`;
+}
+
 export async function publishRetainedWorkspaceNotice(
   input: SessionRef & { state: WorkflowState; bus: EventBus },
 ): Promise<boolean> {
@@ -254,6 +271,7 @@ export async function publishRetainedWorkspaceNotice(
     if (record?.retained !== true || !(await retainedDirectoryMatches(record, workspace.path)))
       return false;
   } catch (err) {
+    if (retentionError.isMoved(err)) return false;
     const message = retentionError.isUnavailable(err)
       ? toErrorMessage(err)
       : sessionFileFailure('Could not read the kept workspace record', recordPath(input), err);

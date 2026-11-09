@@ -357,6 +357,71 @@ describe('eventsStore — append via addEvent', () => {
     expect(mergeEventLog(chunks)).toEqual(live);
   });
 
+  it('joins the held end of a word to the text row it ends, past the tool rows of its hold', () => {
+    const chunks = [
+      makePlannerText({ role: 'implementer', text: 'Checking test' }),
+      makeRunnerActivity({ stage: 'started' }),
+      makeRunnerActivity({ stage: 'completed' }),
+      makePlannerText({ role: 'implementer', text: 's', continues: true }),
+      makePlannerText({ role: 'implementer', text: 'Found 3.', subagent: true }),
+      makePlannerText({ role: 'implementer', text: 'Done.' }),
+    ];
+    for (const chunk of chunks) addEvent(chunk);
+
+    const live = eventsStore.get().events;
+    expect(live.map((event) => (event.type === 'planner_text' ? event.text : event.type))).toEqual([
+      'Checking tests',
+      'runner_call_activity',
+      'runner_call_activity',
+      'Found 3.',
+      'Done.',
+    ]);
+    expect(mergeEventLog(chunks)).toEqual(live);
+  });
+
+  it('starts a new row for the held end of a word when a call end comes before it', () => {
+    const chunks = [
+      makePlannerText({ role: 'implementer', text: 'Earlier call.' }),
+      makeRunnerCallCompleted(),
+      makeRunnerActivity({ stage: 'completed' }),
+      makePlannerText({ role: 'implementer', text: 's', continues: true }),
+    ];
+    for (const chunk of chunks) addEvent(chunk);
+
+    const live = eventsStore.get().events;
+    expect(live).toHaveLength(4);
+    expect(live[3]).toMatchObject({ type: 'planner_text', text: 's' });
+    expect(mergeEventLog(chunks)).toEqual(live);
+  });
+
+  it('joins the held end of a sub-agent word to its sub-agent row and never to a main row', () => {
+    const chunks = [
+      makePlannerText({ role: 'implementer', text: 'Checking.' }),
+      makeRunnerActivity({ stage: 'started' }),
+      makePlannerText({ role: 'implementer', text: 'Reading the test', subagent: true }),
+      makeRunnerActivity({ activityId: 'call-1:tool:2', stage: 'completed' }),
+      makePlannerText({ role: 'implementer', text: 's', continues: true, subagent: true }),
+      makePlannerText({ role: 'implementer', text: 'Found 3.', subagent: true }),
+      makePlannerText({ role: 'implementer', text: 'Done.' }),
+      makeRunnerActivity({ activityId: 'call-1:tool:3', stage: 'completed' }),
+      makePlannerText({ role: 'implementer', text: 'x', continues: true, subagent: true }),
+    ];
+    for (const chunk of chunks) addEvent(chunk);
+
+    const live = eventsStore.get().events;
+    expect(live.map((event) => (event.type === 'planner_text' ? event.text : event.type))).toEqual([
+      'Checking.',
+      'runner_call_activity',
+      'Reading the tests',
+      'runner_call_activity',
+      'Found 3.',
+      'Done.',
+      'runner_call_activity',
+      'x',
+    ]);
+    expect(mergeEventLog(chunks)).toEqual(live);
+  });
+
   it('keeps legacy and extracted-code chunks joined without a boundary marker', () => {
     const old = makePlannerText({ role: 'implementer', text: 'export const ' });
     const next = makePlannerText({ role: 'implementer', text: 'value = 1;' });

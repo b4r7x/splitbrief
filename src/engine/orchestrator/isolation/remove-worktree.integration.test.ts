@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile, mkdir, symlink } from 'node:fs/promises';
+import { mkdtemp, readFile, rename, rm, writeFile, mkdir, symlink } from 'node:fs/promises';
 import { existsSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -45,9 +45,78 @@ afterEach(async () => {
   await rm(repoDir, { recursive: true, force: true });
 });
 
+describe('removeRunWorkspace', () => {
+  async function gitLists(): Promise<{ worktrees: string; branches: string }> {
+    return {
+      worktrees: await git.raw(['worktree', 'list', '--porcelain']),
+      branches: await git.raw(['branch', '--list']),
+    };
+  }
+
+  it.each([
+    { label: 'an existing worktree of the moved project', kind: 'worktree', present: true },
+    { label: 'a missing worktree of the moved project', kind: 'worktree', present: false },
+    { label: 'a staged copy of another project', kind: 'staged-copy', present: true },
+  ] as const)('keeps $label and clears its record', async ({ kind, present }) => {
+    const sessionId = 'moved-run';
+    let workspacePath: string;
+    let workspaceRoot: string;
+    if (kind === 'worktree') {
+      workspacePath = resolveConfinedIsolationWorktreePath({
+        projectDir: repoDir,
+        gitCommonDir: await getGitCommonDir(repoDir),
+        slug: sessionId,
+      });
+      await createWorktree({
+        projectDir: repoDir,
+        slug: sessionId,
+        git,
+        worktreeDir: workspacePath,
+      });
+      await checkOutBranch(workspacePath, `splitbrief/${sessionId}`);
+      workspaceRoot = dirname(workspacePath);
+    } else {
+      workspaceRoot = await mkdtemp(join(tmpdir(), 'worktree-remove-other-'));
+      workspacePath = join(
+        sessionDir(workspaceRoot, sessionId),
+        `stage-${'a'.repeat(32)}`,
+        'workspace',
+      );
+      await mkdir(workspacePath, { recursive: true });
+    }
+    await writeFile(join(workspacePath, 'edit.txt'), 'kept edit\n');
+    ensureSessionDir(repoDir, sessionId);
+    const record = () => join(sessionDir(repoDir, sessionId), 'retained-workspace.json');
+    await writeFile(record(), 'kept\n');
+    if (kind === 'worktree') {
+      const movedDir = `${repoDir}-moved`;
+      await rename(repoDir, movedDir);
+      repoDir = movedDir;
+      git = simpleGit(repoDir);
+    }
+    if (!present) await rm(workspacePath, { recursive: true, force: true });
+    const before = await gitLists();
+    try {
+      await expect(
+        removeRunWorkspace(repoDir, sessionId, { kind, path: workspacePath }),
+      ).resolves.toBe(present ? workspacePath : null);
+      const edit = join(workspacePath, 'edit.txt');
+      expect(existsSync(edit) ? await readFile(edit, 'utf8') : null).toBe(
+        present ? 'kept edit\n' : null,
+      );
+      expect(await gitLists()).toEqual(before);
+      expect(await readFile(record(), 'utf8')).toBe('null\n');
+    } finally {
+      await rm(workspaceRoot, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('removeWorktree', () => {
   it.each(['project', 'isolation'] as const)(
-    'refuses a run record that names an unrelated %s worktree',
+    // Rejecting a record whose workspace this checkout does not own left the record in place, so
+    // every start tried the cleanup again and warned again.
+    'keeps an unrelated %s worktree a run record names and clears the record',
     async (placement) => {
       const sessionId = 'record-owner';
       const slug = 'unrelated';
@@ -63,13 +132,15 @@ describe('removeWorktree', () => {
       ensureSessionDir(repoDir, sessionId);
       const record = join(sessionDir(repoDir, sessionId), 'retained-workspace.json');
       await writeFile(record, 'kept\n');
+      const branches = await git.raw(['branch', '--list']);
       try {
         await expect(
           removeRunWorkspace(repoDir, sessionId, { kind: 'worktree', path: worktreeDir }),
-        ).rejects.toMatchObject({ kind: 'isolation-retention-unavailable' });
+        ).resolves.toBe(worktreeDir);
         expect(existsSync(worktreeDir)).toBe(true);
         expect(await git.raw(['worktree', 'list', '--porcelain'])).toContain(worktreeDir);
-        expect(await readFile(record, 'utf8')).toBe('kept\n');
+        expect(await git.raw(['branch', '--list'])).toBe(branches);
+        expect(await readFile(record, 'utf8')).toBe('null\n');
       } finally {
         if (existsSync(worktreeDir)) {
           await removeWorktree({ projectDir: repoDir, slug, git, worktreeDir });

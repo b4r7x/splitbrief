@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeLegacyV3State, RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -27,9 +27,19 @@ import {
 } from './close.js';
 
 vi.mock('../apply/patch.js', () => ({ writeRunPatch: vi.fn() }));
-vi.mock('../isolation/remove-worktree.js', () => ({ removeRunWorkspace: vi.fn() }));
+vi.mock('../isolation/remove-worktree.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../isolation/remove-worktree.js')>();
+  return {
+    ...actual,
+    removeRunWorkspace: vi.fn().mockResolvedValue(null),
+  };
+});
 
 let projectDir: string | undefined;
+
+beforeEach(() => {
+  vi.mocked(removeRunWorkspace).mockResolvedValue(null);
+});
 
 afterEach(() => {
   vi.resetAllMocks();

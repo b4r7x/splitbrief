@@ -1,5 +1,6 @@
 import type { OutputFormat } from '../../core/schemas/enums.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
+import type { TextChunkMarks } from '../events/types.js';
 import { spawnAndCollect } from '../streaming/spawn-collect.js';
 import { createCustomRunnerRedactor, resolveCustomRunnerEnvironment } from './redaction.js';
 import {
@@ -46,7 +47,7 @@ export type CommandRunnerOptions = Readonly<{
   /** The seat's opt-in total (`timeout`); unset, the call has no deadline. */
   timeoutMs?: number | undefined;
   signal?: AbortSignal | undefined;
-  onOutput?: ((chunk: string) => void) | undefined;
+  onOutput?: ((chunk: string, marks?: TextChunkMarks) => void) | undefined;
   onStderr?: ((chunk: string) => void) | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
 }>;

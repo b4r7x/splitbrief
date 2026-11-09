@@ -373,6 +373,10 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     content: z.enum(['plain', 'markdown']).optional(),
     /** First chunk of a new implementer message; absent in older logs and continuous streams. */
     messageStart: z.boolean().optional(),
+    /** The held end of a word: it joins the text row it ends, past the tool rows of its hold. */
+    continues: z.literal(true).optional(),
+    /** Text of a sub-agent: it never shares a row with the main text. */
+    subagent: z.literal(true).optional(),
   }),
   phaseEvent('planner_heartbeat').extend({
     elapsedMs: z.number(),

@@ -261,10 +261,10 @@ describe('Codex role adapters', () => {
     ]);
   });
 
-  it('adds --output-schema after --json on the fresh one-shot read-only vector', () => {
+  // A thread with no rollout cannot start a sub-agent, so a fresh call does not send --ephemeral.
+  it('adds --output-schema after --json on the fresh read-only vector', () => {
     const args = codexPlannerAdapter.buildArgs({
       sessionId: null,
-      oneShot: true,
       model: undefined,
       effort: undefined,
       configuredArgs: [],
@@ -279,7 +279,6 @@ describe('Codex role adapters', () => {
       'exec',
       '--ignore-user-config',
       '--ignore-rules',
-      '--ephemeral',
       '--json',
       '--output-schema',
       '/tmp/s/schema.json',
@@ -430,6 +429,86 @@ describe('Codex stdin prompt transport', () => {
 });
 
 describe('Codex JSONL protocol adapter', () => {
+  it('names a collab item by its tool', () => {
+    expect(
+      codexProtocolEvents(
+        JSON.stringify({
+          type: 'item.started',
+          item: { id: 'collab_spawn', type: 'collab_tool_call', tool: 'spawn_agent' },
+        }),
+      ),
+    ).toEqual([
+      {
+        type: 'tool-use',
+        stage: 'started',
+        id: 'collab_spawn',
+        name: 'spawn_agent',
+        input: {},
+      },
+    ]);
+    expect(
+      codexProtocolEvents(
+        JSON.stringify({
+          type: 'item.completed',
+          item: {
+            id: 'collab_spawn',
+            type: 'collab_tool_call',
+            tool: 'spawn_agent',
+            status: 'completed',
+          },
+        }),
+      ),
+    ).toEqual([
+      {
+        type: 'tool-use',
+        id: 'collab_spawn',
+        name: 'spawn_agent',
+        input: {},
+        output: 'completed',
+      },
+    ]);
+
+    for (const tool of ['wait', 'send_input', 'close_agent']) {
+      expect(
+        codexProtocolEvents(
+          JSON.stringify({
+            type: 'item.started',
+            item: { id: `collab_${tool}`, type: 'collab_tool_call', tool },
+          }),
+        ),
+      ).toEqual([
+        {
+          type: 'tool-use',
+          stage: 'started',
+          id: `collab_${tool}`,
+          name: tool,
+          input: {},
+        },
+      ]);
+      expect(
+        codexProtocolEvents(
+          JSON.stringify({
+            type: 'item.completed',
+            item: {
+              id: `collab_${tool}`,
+              type: 'collab_tool_call',
+              tool,
+              status: 'completed',
+            },
+          }),
+        ),
+      ).toEqual([
+        {
+          type: 'tool-use',
+          id: `collab_${tool}`,
+          name: tool,
+          input: {},
+          output: 'completed',
+        },
+      ]);
+    }
+  });
+
   it('marks item.started tool items as started and item.completed ones as done', () => {
     expect(
       codexProtocolEvents(

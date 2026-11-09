@@ -460,12 +460,10 @@ async function buildPreflightCheck(
 
 /**
  * One arg vector per branch the adapter can take for this role, so a flag that
- * only appears on resume or on a one-shot planner call is compared too. The
+ * only appears on resume or on a fresh planner call is compared too. The
  * planner's `effort` is configuration rather than a branch, so it rides on every
- * variant whenever the adapter supports it. A planner's review, consult and
- * summary calls are one-shot, which is a branch of their own. The review seat
- * takes exactly one branch — a one-shot read-only call — so resume argv is not
- * its to compare.
+ * variant whenever the adapter supports it. The review seat takes exactly one
+ * branch — a fresh read-only call — so resume argv is not its to compare.
  */
 type PreflightVector = Readonly<{ argv: readonly string[]; validation: CliArgumentValidation }>;
 
@@ -509,17 +507,13 @@ function emittedArgVectors(
         checkedVector(adapter, {
           ...plannerCommonArgs(runner, adapter, projectDir),
           sessionId: null,
-          oneShot: true,
         }),
       ];
     }
     case 'planner': {
       const adapter = lookupCliPlannerAdapter(runner.tool);
       const common = plannerCommonArgs(runner, adapter, projectDir);
-      const variants = [
-        checkedVector(adapter, { ...common, sessionId: null }),
-        checkedVector(adapter, { ...common, sessionId: null, oneShot: true }),
-      ];
+      const variants = [checkedVector(adapter, { ...common, sessionId: null })];
       if (adapter.supportsSessionResume) {
         variants.push(checkedVector(adapter, { ...common, sessionId: PREFLIGHT_SESSION_ID }));
       }

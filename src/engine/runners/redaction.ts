@@ -49,6 +49,8 @@ export type CustomRunnerRedactor = (value: string) => string;
 
 export type CustomRunnerStreamingRedactor = Readonly<{
   push: (value: string) => string;
+  pushSplit: (value: string) => Readonly<{ held: string; value: string }>;
+  hasHeld: () => boolean;
   flush: () => string;
   flushBeforeTerminal: (value: string) => Readonly<{ before: string; value: string }>;
 }>;
@@ -149,13 +151,31 @@ export function createCustomRunnerStreamingRedactor(
     return output;
   };
 
+  const pushSplit = (value: string): Readonly<{ held: string; value: string }> => {
+    if (value.length === 0) return { held: '', value: '' };
+    const held = retained;
+    const buffered = held + value;
+    retained = safePrefix(buffered);
+    const released = buffered.slice(0, buffered.length - retained.length);
+    if (released.length === 0) return { held: '', value: '' };
+    const whole = redact(released);
+    if (held.length === 0 || released.length < held.length) {
+      return { held: '', value: whole };
+    }
+    const releasedHeld = redact(held);
+    const releasedValue = redact(released.slice(held.length));
+    return releasedHeld + releasedValue === whole
+      ? { held: releasedHeld, value: releasedValue }
+      : { held: '', value: whole };
+  };
+
   return {
     push: (value) => {
-      if (value.length === 0) return '';
-      const buffered = retained + value;
-      retained = safePrefix(buffered);
-      return redact(buffered.slice(0, buffered.length - retained.length));
+      const released = pushSplit(value);
+      return released.held + released.value;
     },
+    pushSplit,
+    hasHeld: () => retained.length > 0,
     flush: flushRetained,
     flushBeforeTerminal: (value) => {
       if (retained.length === 0) return { before: '', value: redact(value) };

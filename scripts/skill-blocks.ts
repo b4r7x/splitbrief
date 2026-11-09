@@ -148,7 +148,6 @@ function toolRecipe(toolId: string): string | null {
   const plannerInput = {
     ...implementerInput,
     sessionId: null,
-    oneShot: true,
   };
   return [
     ...seatLines(

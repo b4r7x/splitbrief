@@ -9,6 +9,7 @@ import {
   runnerCallIdleTimeoutError,
 } from '../calls/status.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
+import type { TextChunkMarks } from '../events/types.js';
 import type { ParsedLine, ParsedTextChannel } from '../runners/types.js';
 import {
   createCustomRunnerStreamingRedactor,
@@ -39,7 +40,7 @@ interface SpawnAndCollectOptions {
   format?: OutputFormat | undefined;
   parseLine?: ((line: string) => ParsedLine) | undefined;
   notFoundMessage?: string | undefined;
-  onText?: ((text: string) => void) | undefined;
+  onText?: ((text: string, marks?: TextChunkMarks) => void) | undefined;
   onStderr?: ((chunk: string) => void) | undefined;
   onSessionId?: ((id: string) => void) | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
@@ -177,18 +178,43 @@ export async function spawnAndCollect(
   let stdoutRedactor = createStdoutRedactor();
   let stdoutChannel: ParsedTextChannel = 'stdout';
   const subagentRedactors = new Map<string, ReturnType<typeof createStdoutRedactor>>();
+  const pendingSubagentLines: {
+    line: ParsedLine;
+    marks: Pick<TextChunkMarks, 'continues'> | undefined;
+  }[] = [];
+  const emitSubagentParsed = (
+    line: ParsedLine,
+    marks?: Pick<TextChunkMarks, 'continues'>,
+  ): void => {
+    if (stdoutRedactor.hasHeld()) {
+      pendingSubagentLines.push({ line, marks });
+      return;
+    }
+    parsedRecorder.apply(line, marks);
+  };
+  const drainSubagentText = (force = false): void => {
+    if (!force && stdoutRedactor.hasHeld()) return;
+    while (pendingSubagentLines.length > 0) {
+      const next = pendingSubagentLines.shift();
+      if (next !== undefined) parsedRecorder.apply(next.line, next.marks);
+    }
+  };
   const flushSubagentText = (
     subagentIds: readonly string[] = [...subagentRedactors.keys()],
   ): void => {
     for (const subagentId of subagentIds) {
       const text = subagentRedactors.get(subagentId)?.flush() ?? '';
       subagentRedactors.delete(subagentId);
-      if (text.length > 0) parsedRecorder.apply({ text, channel: 'assistant', subagentId });
+      if (text.length > 0) {
+        emitSubagentParsed({ text, channel: 'assistant', subagentId }, { continues: true });
+      }
     }
   };
   const flushText = (): void => {
     const text = stdoutRedactor.flush();
-    if (text.length > 0) parsedRecorder.apply({ text, channel: stdoutChannel });
+    if (text.length > 0)
+      parsedRecorder.apply({ text, channel: stdoutChannel }, { continues: true });
+    drainSubagentText();
   };
   const applyRedactedParsed = (parsed: ParsedLine): void => {
     const parsedText = parsed.text;
@@ -199,7 +225,14 @@ export async function spawnAndCollect(
       const existing = subagentRedactors.get(subagentId);
       const redactor = existing ?? createStdoutRedactor();
       if (existing === undefined) subagentRedactors.set(subagentId, redactor);
-      parsedRecorder.apply({ ...redacted, text: redactor.push(parsedText) });
+      const released = redactor.pushSplit(parsedText);
+      if (released.held.length > 0) {
+        emitSubagentParsed(
+          { text: released.held, channel: 'assistant', subagentId },
+          { continues: true },
+        );
+      }
+      emitSubagentParsed({ ...redacted, text: released.value });
       return;
     }
     const channel = redacted.channel ?? (redacted.isResult ? 'result' : 'stdout');
@@ -217,9 +250,13 @@ export async function spawnAndCollect(
     if (isFinalBoundary && parsedText !== undefined) {
       const terminal = stdoutRedactor.flushBeforeTerminal(parsedText);
       if (terminal.before.length > 0) {
-        parsedRecorder.apply({ text: terminal.before, channel: stdoutChannel });
+        parsedRecorder.apply(
+          { text: terminal.before, channel: stdoutChannel },
+          { continues: true },
+        );
       }
       stdoutRedactor = createStdoutRedactor();
+      drainSubagentText();
       parsedRecorder.apply({ ...redacted, text: terminal.value });
       return;
     } else if (redacted.isError === true || !isStreamingText) {
@@ -231,11 +268,13 @@ export async function spawnAndCollect(
     }
 
     stdoutChannel = channel;
-    const text =
-      isFinalBoundary || !isStreamingText
-        ? stdoutRedactor.push(parsedText) + stdoutRedactor.flush()
-        : stdoutRedactor.push(parsedText);
-    parsedRecorder.apply({ ...redacted, text });
+    const released = stdoutRedactor.pushSplit(parsedText);
+    if (released.held.length > 0) {
+      parsedRecorder.apply({ text: released.held, channel: stdoutChannel }, { continues: true });
+    }
+    const tail = isFinalBoundary || !isStreamingText ? stdoutRedactor.flush() : '';
+    drainSubagentText(released.held.length > 0 || released.value.length > 0);
+    parsedRecorder.apply({ ...redacted, text: released.value + tail });
   };
   const flushToolInput = (): void => {
     for (const parsed of toolInputRedactor?.flush() ?? []) {
@@ -246,6 +285,7 @@ export async function spawnAndCollect(
     flushToolInput();
     flushSubagentText();
     flushText();
+    drainSubagentText();
   };
   const applyParsed = (parsed: ParsedLine): void => {
     const redactedLines = toolInputRedactor?.apply(parsed);

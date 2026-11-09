@@ -8,6 +8,7 @@ import type { LanguageContext } from '../spec/prompts/language-context.js';
 import type { CustomRunnerRuntimePort, RunnerRuntime } from '../runners/types.js';
 import type { RunnerFailureOutcomeState } from '../runners/errors.js';
 import type { RunnerCallContext, RunnerCallEvent } from '../calls/types.js';
+import type { TextChunkMarks } from '../events/types.js';
 import type { CliSeat } from '../runners/start-gate.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import type * as ImplementerConfig from '../../core/schemas/implementer-config.js';
@@ -99,7 +100,7 @@ export interface ImplementerOptions extends UndeclaredWritesPolicy, Pick<InvokeO
   projectDir: string;
   config: Config;
   context: ProjectContext;
-  onOutput: (text: string, opts?: { messageStart?: boolean | undefined }) => void;
+  onOutput: (text: string, opts?: TextChunkMarks) => void;
   sessionId?: string | undefined;
   signal?: AbortSignal | undefined;
   sandboxEnv?: NodeJS.ProcessEnv | undefined;
@@ -159,7 +160,7 @@ export interface InvokeOpts extends UndeclaredWritesPolicy {
   task: Task;
   projectDir: string;
   config: Config;
-  onOutput: (text: string, opts?: { messageStart?: boolean | undefined }) => void;
+  onOutput: (text: string, opts?: TextChunkMarks) => void;
   systemPreamble: string;
   temperature?: number;
   signal?: AbortSignal | undefined;

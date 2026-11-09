@@ -1,6 +1,7 @@
 import type { SteeringPort } from '../calls/steering.js';
 import { RUNNER_IDLE_WARN_MS } from '../../core/schemas/runner-fields.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
+import type { TextChunkMarks } from '../events/types.js';
 import type {
   CliImplementerAdapter,
   CliInvocation,
@@ -22,7 +23,7 @@ type InvokeCliOptions = {
   steering?: SteeringPort | undefined;
   installedVersion?: string | undefined;
   callContext: RunnerCallContext;
-  onOutput?: ((text: string, opts?: { messageStart?: boolean | undefined }) => void) | undefined;
+  onOutput?: ((text: string, opts?: TextChunkMarks) => void) | undefined;
   onSessionId?: ((id: string) => void) | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   idle?: { warnMs?: number | undefined; killMs?: number | undefined } | undefined;
