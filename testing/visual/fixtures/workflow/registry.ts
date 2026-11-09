@@ -1494,7 +1494,7 @@ const checkpointPredicates = [
         : context.output.includes('PLAN claude · BUILD agy · REVIEW = PLAN')) &&
       (context.scenario.id !== 'workflow-recovery-left-isolation-in-place' ||
         context.viewport.cols !== 60 ||
-        context.output.includes('saved folder')),
+        context.output.includes('… 7 more lines')),
   ],
   [checkpointId('checkout-changed'), includesAll(WORKFLOW_FIXTURE_TEXT.checkoutChanged)],
   [checkpointId('repeated-timeout'), includesAll()],
@@ -1666,11 +1666,18 @@ const checkpointPredicates = [
   [
     checkpointId('attempt-reverted-checkout'),
     // The saved path wraps, and the 60x40 frame shows it break inside itself. In a frame under
-    // 40 rows, the halt panel leaves no room for the row.
+    // 40 rows, the halt panel leaves no room for the row. The 60x18 panel folds its facts, and
+    // the fold names the saved folder it hides.
     (context) => {
       const row =
         'SPLITBRIEFT901attemptreverted:2files.Thereplacedfilesaresavedin.splitbrief/sessions/visual-workflow/reverted/';
       if (context.viewport.rows >= 40 && !context.output.replace(/\s/g, '').includes(row)) {
+        return false;
+      }
+      if (
+        context.viewport.rows === 18 &&
+        !context.output.includes('… saved folder and 2 more lines')
+      ) {
         return false;
       }
       const text = workflowTranscriptText().replace(/\s/g, '');
