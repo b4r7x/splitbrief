@@ -503,6 +503,7 @@ describe('a user message over the session log limit', () => {
         message: plainUserMessage(big),
         phase: 'planning',
         bus: liveBus(ref),
+        reviewNone: false,
       }),
     );
     const id = queued.message?.id ?? '';

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
+import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import { type Config, ConfigSchema } from '../../../core/schemas/config.js';
 import { seatRunnerValue } from './actions.js';
 import { routeTaskToImplementerProfile } from '../context-routing/route.js';
@@ -335,7 +336,7 @@ describe('configWithSwitchedSeat', () => {
 
     const switched = configWithSwitchedSeat(config, 'review', { tool: 'opencode' });
 
-    expect(switched?.reviewer?.fallback).toEqual({ tool: 'codex' });
+    expect(configuredReviewerRunner(switched)?.fallback).toEqual({ tool: 'codex' });
     expect(switched?.planner).toEqual(config.planner);
   });
 

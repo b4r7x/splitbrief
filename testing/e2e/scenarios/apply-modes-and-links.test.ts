@@ -129,7 +129,9 @@ writeFileSync('note.txt', 'after\\n');
   const sessionId = readActive(projectDir);
   if (sessionId === null) throw new Error('the run has no active session');
   const state = readState(target, sessionId);
-  expect(deriveRunStatus({ state, liveness: 'not-alive' }).kind).toBe('ready-to-apply');
+  expect(deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' }).kind).toBe(
+    'ready-to-apply',
+  );
   expect(state.workspace?.kind).toBe('worktree');
   if (state.workspace === undefined) throw new Error('the run has no workspace');
   const result = checkoutEntries(state.workspace.path);
@@ -203,7 +205,9 @@ syncBuiltinESMExports();
     expect(checkoutEntries(target.projectDir)).toEqual(before);
     const ready = readState(target, sessionId);
     expect(ready.applying).toBeUndefined();
-    expect(deriveRunStatus({ state: ready, liveness: 'not-alive' }).kind).toBe('ready-to-apply');
+    expect(deriveRunStatus({ reviewNone: false, state: ready, liveness: 'not-alive' }).kind).toBe(
+      'ready-to-apply',
+    );
   }, 180_000);
 
   it('reports a link and a mode that both sides changed differently, writing nothing', async () => {

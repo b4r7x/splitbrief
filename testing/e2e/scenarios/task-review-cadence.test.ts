@@ -452,7 +452,7 @@ describe('e2e: task review cadence', () => {
       `- Task review after T001, fix cycle 0: fail\n  - F2: ${findings[1]?.text}\n`,
     );
     const closed = deriveSummaryView({
-      record: readRunRecord({ projectDir: target.projectDir, sessionId }),
+      record: readRunRecord({ projectDir: target.projectDir, sessionId }, false),
     });
     expect(closed?.failedReviews).toEqual([
       { label: 'Review T001', blocking: [{ id: 'F2', text: findings[1]?.text }], setAside: [] },

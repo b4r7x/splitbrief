@@ -21,6 +21,8 @@ export interface SeatIdentity {
   reviewerModel?: string | undefined;
   reviewerKind?: RunnerKind | undefined;
   reviewerAxes?: readonly string[] | undefined;
+  /** REVIEW was None for this run, so no seat reviewed it. */
+  reviewerSeat?: 'none' | undefined;
 }
 
 export function runSeatIdentity(config: Config): SeatIdentity {
@@ -43,5 +45,6 @@ export function runSeatIdentity(config: Config): SeatIdentity {
       reviewerKind: reviewer.kind,
       reviewerAxes: reviewer.axes,
     }),
+    ...(config.reviewer === 'none' && { reviewerSeat: 'none' }),
   };
 }

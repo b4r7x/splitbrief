@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { resolveApproveLevel, resolveEffortLevel, resolveEndChecks } from './resolve.js';
+import {
+  resolveApproveLevel,
+  resolveEffortLevel,
+  resolveEndChecks,
+  resolveReviewCadence,
+} from './resolve.js';
 import type { Config } from '../../schemas/config.js';
 import type { EffortLevel } from '../../schemas/enums.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -22,7 +27,23 @@ describe('resolveApproveLevel', () => {
   });
 });
 
+describe('resolveReviewCadence', () => {
+  it('cadence is none', () => {
+    expect(
+      resolveReviewCadence(makeConfig({ reviewer: 'none', workflow: { review: 'task' } })),
+    ).toBe('none');
+  });
+});
+
 describe('resolveEndChecks', () => {
+  it('end checks off under None, stored value kept', () => {
+    const stored = makeConfig({ validation: { endChecks: true } });
+    const config: Config = { ...stored, reviewer: 'none' };
+
+    expect(resolveEndChecks(config)).toBe(false);
+    expect(config.validation.endChecks).toBe(true);
+  });
+
   it('runs the End-of-run checks when the config names no value', () => {
     expect(resolveEndChecks(makeConfig())).toBe(true);
   });

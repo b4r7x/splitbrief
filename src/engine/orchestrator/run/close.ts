@@ -112,7 +112,7 @@ export async function removeClosedRunWorkspaces(projectDir: string): Promise<voi
       const head = readWorkflowStateHead(ref);
       if (head === null) continue;
       const { state } = head;
-      const status = deriveRunStatus({ state, liveness: 'not-alive' });
+      const status = deriveRunStatus({ state, liveness: 'not-alive', reviewNone: false });
       if (status.kind !== 'closed') continue;
       const workspace = state.workspace;
       if (
@@ -154,7 +154,7 @@ export async function closeRunIfOpen(
     // creates the head instead of failing the CAS against a file that is not there.
     const head = readWorkflowStateHead(scope);
     const latest = head === null ? state : rebaseOnPersistedWorkflowState(scope, state);
-    const status = deriveRunStatus({ state: latest, liveness: 'not-alive' });
+    const status = deriveRunStatus({ state: latest, liveness: 'not-alive', reviewNone: false });
     if (status.kind === 'closed') {
       return { state: latest, closedNow: false };
     }
@@ -280,7 +280,7 @@ export function assertCanCloseRun(state: WorkflowState): void {
  * ready run is its Discard, and a complete run had nothing left to stop.
  */
 export function userStopStoppedWork(state: WorkflowState): boolean {
-  const status = deriveRunStatus({ state, liveness: 'not-alive' });
+  const status = deriveRunStatus({ state, liveness: 'not-alive', reviewNone: false });
   return status.kind === 'open' || (status.kind === 'closed' && status.as === 'ended');
 }
 

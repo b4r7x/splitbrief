@@ -50,8 +50,8 @@ A typical run, step by step:
 6. For each task, the implementer writes in the run workspace. SPLITBRIEF checks the changed files there and runs the task's own fast checks, such as its test file or the typecheck. Before the final review SPLITBRIEF runs the project gate that the plan names. With `workflow.review: task`, a task review runs no gate.
 7. If validation fails, the planner is consulted for one typed answer, also for a fix task the reviewer wrote — guidance, a rewritten or split brief, a re-run of the checks, or one question for the user
 8. If the ladder cannot go on (a question nobody answers, a seat that says the brief cannot be done, a failed consult call, a runner halt): enter recovery — the user can try again with an answer, switch the seat, skip the task or end the run. Each halt shows as *Needs you* (a decision only you can make) or *Seat down* (the seat cannot run)
-9. The review seat reviews the final result against the briefs and the request — the planner, unless a `reviewer` is configured
-10. The summary is written to disk. A passing workspace review makes the result [ready to apply](./WORKFLOW.md#apply).
+9. The review seat reviews the final result against the briefs and the request — the planner, unless a `reviewer` is configured. With REVIEW None no seat reviews and this step does not run
+10. The summary is written to disk. A passing workspace review, or the end of a REVIEW None run, makes the result [ready to apply](./WORKFLOW.md#apply).
 
 The user can stop a run at any time. `esc` opens the stop options. `ctrl+c` stops now. The stop options keep file changes.
 
@@ -97,7 +97,7 @@ Every run is a durable record, kept in a folder on disk under `.splitbrief/sessi
 
 One active session at a time per project directory. `.splitbrief/active` contains the current session ID when the active pointer is present, while the per-session lockfile/heartbeat proves whether a process is still alive. Isolated parallel sessions require git worktrees, which give each worktree its own `.splitbrief/`.
 
-**An open run is continuable.** A park, gate, halt, error or killed process keeps its place. A passing workspace review makes it ready to apply; a ready run awaits Apply or Discard. Apply, Discard or End run closes it. Older runs keep their status rules. See [Run status](./WORKFLOW.md#run-status).
+**An open run is continuable.** A park, gate, halt, error or killed process keeps its place. A passing workspace review, or the end of a REVIEW None run, makes it ready to apply; a ready run awaits Apply or Discard. Apply, Discard or End run closes it. Older runs keep their status rules. See [Run status](./WORKFLOW.md#run-status).
 
 `splitbrief resume` continues the most recent run; `splitbrief continue <session-id>` names one. If the backend supports session persistence (Claude Code, Codex), it reconnects to the thread the tool itself reported. Otherwise it rebuilds context from the JSONL log.
 
@@ -136,7 +136,7 @@ A worktree isolates files, not runtime and not trust. It shares the ports, the d
 
 ## Validation and consult
 
-SPLITBRIEF owns correctness through validation and the final review. No check runs before the first task. The planner reads the project and names the project gate in the plan; SPLITBRIEF runs it under the reviewer command policy (`validation.end_checks`, on by default), which runs any installed program and refuses only the dangerous ones. `workflow.review` sets when: `end` runs the gate at the final review, and each task's own checks, except renders, after the task; `task` runs each task's own checks and due checks after it, and the gate only at the final review. During the build the gate also runs once, with the same command text, on a disposable copy of the run base, and a red reviewer check is compared with that result. Matching failures are pre-existing and start no fix. A failure it cannot compare, such as a timeout, is never pre-existing: the reviewer decides. The review reports them before Apply. The implementer's own checks can improve its work, but do not decide acceptance.
+SPLITBRIEF owns correctness through validation and the final review. With REVIEW None, only each brief's own checks run, except renders. No check runs before the first task. The planner reads the project and names the project gate in the plan; SPLITBRIEF runs it under the reviewer command policy (`validation.end_checks`, on by default), which runs any installed program and refuses only the dangerous ones. `workflow.review` sets when: `end` runs the gate at the final review, and each task's own checks, except renders, after the task; `task` runs each task's own checks and due checks after it, and the gate only at the final review. During the build the gate also runs once, with the same command text, on a disposable copy of the run base, and a red reviewer check is compared with that result. Matching failures are pre-existing and start no fix. A failure it cannot compare, such as a timeout, is never pre-existing: the reviewer decides. The review reports them before Apply. The implementer's own checks can improve its work, but do not decide acceptance.
 
 If validation fails, SPLITBRIEF asks the planner, read-only, for one typed answer. The planner sees the error message:
 

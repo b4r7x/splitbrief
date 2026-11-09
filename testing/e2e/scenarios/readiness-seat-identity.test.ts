@@ -122,3 +122,23 @@ it('names the PLAN seat as REVIEW in human and JSON readiness without a reviewer
     modelSelection: 'explicit',
   });
 });
+
+it('states under REVIEW None that only the brief checks run', async () => {
+  const runner = { kind: 'cli', tool: 'claude-code', model: 'sonnet' } as const;
+  writeFileSync(
+    join(projectDir, SPLITBRIEF_DIR, CONFIG_FILE),
+    YAML.stringify(makeConfig({ planner: runner, implementer: runner, reviewer: 'none' })),
+  );
+
+  const human = await cli(false);
+  const lines = stripVTControlCharacters(human.stdout).split('\n');
+  const summary = lines.findIndex((line) =>
+    line.includes('End-of-run checks: off (REVIEW is None).'),
+  );
+
+  expect(summary, human.stderr).toBeGreaterThan(-1);
+  expect(lines[summary + 1]?.trim()).toBe(
+    'Each brief runs its own checks, except a render check. No other check runs.',
+  );
+  expect(human.stdout).not.toContain('Plan and task checks still run.');
+});

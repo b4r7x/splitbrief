@@ -42,7 +42,7 @@ it('counts planning and the whole brief in the closed Phases row after a stop an
   expect(continued.exitCode, continued.stderr).toBe(0);
 
   const ref = { projectDir: target.projectDir, sessionId: stopped.sessionId };
-  const record = readRunRecord(ref);
+  const record = readRunRecord(ref, false);
   const view = deriveSummaryView({ record });
   if (view === null) throw new Error(`The run did not close: ${record.status.kind}`);
   const phases = runRows(view).find((row) => row.label === 'Phases');

@@ -22,6 +22,7 @@ import {
   getRailStages,
   railStageSeat,
   selectRailStage,
+  skipReviewStage,
   type RailStageState,
   type RailStageStatus,
 } from '../../../core/rail-stages.js';
@@ -58,6 +59,7 @@ function stageMarkerTone(state: RailStageState): ConversationRowTone {
     case 'active':
       return stageLabelTone(state);
     case 'pending':
+    case 'skipped':
       return stateTone('pending');
     case 'cancelled':
       return stateTone('attention');
@@ -69,7 +71,7 @@ function stageMarkerTone(state: RailStageState): ConversationRowTone {
 }
 
 function stageLabelTone(state: RailStageState): ConversationRowTone {
-  if (state.status === 'pending') return stateTone('pending');
+  if (state.status === 'pending' || state.status === 'skipped') return stateTone('pending');
   const seat = railStageSeat(state.stage);
   return seat === null ? 'text' : CREW_SEAT_ROLES[seat];
 }
@@ -169,16 +171,14 @@ function completePhaseStages(
   recoveryAt: StepRef | null,
 ): readonly RailStageState[] | null {
   if (phase !== 'complete') return null;
-  if (recoveryAt?.kind === 'apply') return APPLY_HALT_STAGES;
+  const review = events.findLast((event) => event.type === 'workflow_complete')?.review;
+  const shown = (stages: readonly RailStageState[]): readonly RailStageState[] =>
+    review === 'none' ? skipReviewStage(stages) : stages;
+  if (recoveryAt?.kind === 'apply') return shown(APPLY_HALT_STAGES);
   if (recoveryAt !== null) return FAILED_REVIEW_STAGES;
-  if (status === 'running') return APPLY_RUNNING_STAGES;
-  for (let index = events.length - 1; index >= 0; index--) {
-    const event = events[index];
-    if (event?.type === 'workflow_complete') {
-      return event.review === 'failed' ? FAILED_REVIEW_STAGES : null;
-    }
-  }
-  return null;
+  if (status === 'running') return shown(APPLY_RUNNING_STAGES);
+  if (review === 'failed') return FAILED_REVIEW_STAGES;
+  return review === 'none' ? skipReviewStage(getRailStages('complete')) : null;
 }
 
 export function resolveRailStages(input: {
@@ -188,6 +188,8 @@ export function resolveRailStages(input: {
   pendingRecovery: boolean;
   events: readonly EngineEvent[];
   recoveryAt: StepRef | null;
+  /** The step after the last brief, as the run view settled it. */
+  afterLastBrief: StepRef;
   stages?: readonly RailStageState[] | undefined;
 }): readonly RailStageState[] {
   const { halted } = deriveWorkflowDisplay({
@@ -197,13 +199,18 @@ export function resolveRailStages(input: {
     pendingApproval: false,
     pendingRecovery: input.pendingRecovery,
   });
+  // With REVIEW None the final-review phase of a workspace run only rechecks the merged result
+  // Apply sent back, so the run stands at Apply, and a stop marks Apply; no review stage opens.
+  const noneRecheck = input.phase === 'final-review' && input.afterLastBrief.kind === 'apply';
   return (
     input.stages ??
     completePhaseStages(input.phase, input.status, input.events, input.recoveryAt) ??
-    getRailStages(input.phase, {
-      cancelled: input.cancelled,
-      ...(halted === undefined ? {} : { halted }),
-    })
+    (noneRecheck
+      ? skipReviewStage(halted === undefined ? APPLY_RUNNING_STAGES : applyStopRailStages(halted))
+      : getRailStages(input.phase, {
+          cancelled: input.cancelled,
+          ...(halted === undefined ? {} : { halted }),
+        }))
   );
 }
 
@@ -220,6 +227,7 @@ export function measureRailCells(input: {
   events: readonly EngineEvent[];
   /** The step an open halt resumes at; null while no halt waits. */
   recoveryAt: StepRef | null;
+  afterLastBrief: StepRef;
   buildBlockShown: boolean;
   /** Stages the caller already knows; a run at rest wears the mark its own status earned. */
   stages?: readonly RailStageState[] | undefined;
@@ -232,6 +240,7 @@ export function measureRailCells(input: {
       pendingRecovery: input.recoveryAt !== null,
       events: input.events,
       recoveryAt: input.recoveryAt,
+      afterLastBrief: input.afterLastBrief,
       ...(input.stages !== undefined && { stages: input.stages }),
     }),
   ];
@@ -258,7 +267,7 @@ export function Rail({
   /** A run at rest paints the stages its record names, not the ones a live phase implies. */
   stages?: readonly RailStageState[] | undefined;
 }) {
-  const [{ cols }, lifecycle, eventsState, { phase, briefs, halt }] = useStores(
+  const [{ cols }, lifecycle, eventsState, { phase, briefs, halt, afterLastBrief }] = useStores(
     terminalSizeStore,
     lifecycleStore,
     eventsStore,
@@ -275,6 +284,7 @@ export function Rail({
       pendingRecovery: halt !== null,
       events: eventsState.events,
       recoveryAt: halt?.at ?? null,
+      afterLastBrief,
       ...(givenStages !== undefined && { stages: givenStages }),
     }),
   ];

@@ -808,6 +808,7 @@ describe('runImplementation correction at a stop', () => {
               bus,
               phase: 'implementing',
               message: plainUserMessage(`correction ${calls.length}`),
+              reviewNone: false,
             });
             return {
               success: true,
@@ -1582,6 +1583,7 @@ describe.each(['implementation', 'retry-invoker'] as const)(
             bus,
             phase: 'implementing',
             message: plainUserMessage('also create B and C'),
+            reviewNone: false,
           });
         return makeRunnerCallResult({
           status: 'completed',
@@ -1735,6 +1737,7 @@ describe.each(['implementation', 'retry-invoker'] as const)(
               message: plainUserMessage(
                 count === 1 ? 'keep the ownership proof' : 'check it once more',
               ),
+              reviewNone: false,
             });
           }
           if (
@@ -1893,6 +1896,7 @@ describe('runImplementation corrections against the persisted head', () => {
             bus,
             phase: 'implementing',
             message,
+            reviewNone: false,
           });
           return { success: true, output: 'first', usage: { inputTokens: 10, outputTokens: 4 } };
         }
@@ -2040,6 +2044,7 @@ describe('runImplementation corrections against the persisted head', () => {
       message: plainUserMessage('name the helper parseAmount'),
       phase: 'implementing',
       bus,
+      reviewNone: false,
     }).state;
     const implementer = makeImplementer();
 
@@ -2074,6 +2079,7 @@ describe('runImplementation corrections against the persisted head', () => {
       message: plainUserMessage('wait for me'),
       phase: 'implementing',
       bus,
+      reviewNone: false,
     }).state;
     const run = new AbortController();
     run.abort();
@@ -2112,6 +2118,7 @@ describe('runImplementation corrections against the persisted head', () => {
       message: plainUserMessage('never mind'),
       phase: 'implementing',
       bus,
+      reviewNone: false,
     }).state;
     const isolation = makeCopyingIsolation({ projectDir, sessionId });
     const acquire = isolation.acquire;
@@ -2179,6 +2186,7 @@ describe('BUILD steering wiring', () => {
           bus,
           message: plainUserMessage('keep the API'),
           phase: state.phase,
+          reviewNone: false,
         });
       return { success: true, output: '' };
     };

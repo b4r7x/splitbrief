@@ -41,14 +41,14 @@ afterEach(() => {
 
 describe('a run the old step chain made', () => {
   it('reads and reports the end it was given', () => {
-    const record = readRunRecord({ projectDir, sessionId: SESSION_ID });
+    const record = readRunRecord({ projectDir, sessionId: SESSION_ID }, false);
 
     expect(record.hydration.kind).toBe('loaded');
     expect(record.status).toEqual({ kind: 'closed', as: 'ended' });
   });
 
   it('opens at rest: the replay and the saved state reach the stores', async () => {
-    const record = readRunRecord({ projectDir, sessionId: SESSION_ID });
+    const record = readRunRecord({ projectDir, sessionId: SESSION_ID }, false);
 
     await hydrateRun(record);
 
@@ -68,7 +68,7 @@ describe('a run the old step chain made', () => {
     const { closed: _closed, ...open } = savedRaw();
     const state = WorkflowStateSchema.parse(open);
 
-    expect(deriveRunStatus({ state, liveness: 'not-alive' })).toEqual({
+    expect(deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' })).toEqual({
       kind: 'open',
       stop: { kind: 'stopped', on: { kind: 'interrupted' } },
       resumeAt: { kind: 'brief', taskId: 'T008', attempt: 1 },
@@ -120,6 +120,6 @@ describe('a run the old step chain made', () => {
     const { closed: _closed, ...open } = savedRaw();
     const state = WorkflowStateSchema.parse({ ...open, phase, tasks: [], currentTaskIndex: 0 });
 
-    expect(deriveRunStatus({ state, liveness: 'not-alive' })).toEqual(status);
+    expect(deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' })).toEqual(status);
   });
 });

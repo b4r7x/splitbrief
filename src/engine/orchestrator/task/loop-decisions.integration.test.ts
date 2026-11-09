@@ -364,6 +364,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
           message: plainUserMessage(note),
           phase: state.phase,
           bus,
+          reviewNone: false,
         });
       }
       return {

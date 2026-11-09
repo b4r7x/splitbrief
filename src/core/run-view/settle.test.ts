@@ -16,18 +16,45 @@ const LOGGED: RunView = {
 
 describe('settleRunView', () => {
   it('takes the saved phase over a log one step behind and keeps the logged times', () => {
-    expect(settleRunView(LOGGED, makeWorkflowState({ phase: 'final-review' }))).toEqual({
+    expect(settleRunView(LOGGED, makeWorkflowState({ phase: 'final-review' }), false)).toEqual({
       ...LOGGED,
       phase: 'final-review',
     });
   });
 
+  it.each([
+    ['a seat after a None pass', true, false],
+    ['None after a seat pass', false, true],
+  ])('names the REVIEW of the next pass, %s, over the logged one', (_, logged, next) => {
+    const view: RunView = { ...LOGGED, phase: 'final-review', reviewNone: logged };
+    expect(settleRunView(view, makeWorkflowState({ phase: 'final-review' }), next).reviewNone).toBe(
+      next,
+    );
+  });
+
+  it.each([
+    ['worktree', true, { kind: 'apply' }],
+    ['staged-copy', true, { kind: 'apply' }],
+    ['checkout', true, { kind: 'review', cycle: 0 }],
+    ['worktree', false, { kind: 'review', cycle: 0 }],
+  ] as const)('reads the step after the last brief on a %s, REVIEW None %s', (kind, none, step) => {
+    const state = makeWorkflowState({
+      phase: 'final-review',
+      workspace: { kind, path: '/tmp/run', base: { snapshotId: 'base', head: null } },
+    });
+    expect(settleRunView(LOGGED, state, none).afterLastBrief).toEqual(step);
+  });
+
   it('reads a closed run as complete when its log stopped before the end', () => {
-    expect(settleRunView(LOGGED, makeWorkflowState({ phase: 'complete' })).phase).toBe('complete');
+    expect(settleRunView(LOGGED, makeWorkflowState({ phase: 'complete' }), false).phase).toBe(
+      'complete',
+    );
   });
 
   it('keeps the view when the log and the state agree', () => {
-    expect(settleRunView(LOGGED, makeWorkflowState({ phase: 'implementing' }))).toEqual(LOGGED);
+    expect(settleRunView(LOGGED, makeWorkflowState({ phase: 'implementing' }), false)).toEqual(
+      LOGGED,
+    );
   });
 
   it('takes the saved halt and the step it resumes at over a log that never prompted it', () => {
@@ -38,7 +65,7 @@ describe('settleRunView', () => {
       attempt: 1,
       pendingRecovery: issue,
     });
-    expect(settleRunView(LOGGED, state).halt).toEqual({
+    expect(settleRunView(LOGGED, state, false).halt).toEqual({
       issue,
       at: { kind: 'brief', taskId: 'T002', attempt: 1 },
     });
@@ -49,7 +76,9 @@ describe('settleRunView', () => {
       ...LOGGED,
       halt: { issue: makeRecoveryIssue(), at: { kind: 'review', cycle: 0 } },
     };
-    expect(settleRunView(halted, makeWorkflowState({ phase: 'implementing' })).halt).toBeNull();
+    expect(
+      settleRunView(halted, makeWorkflowState({ phase: 'implementing' }), false).halt,
+    ).toBeNull();
   });
 
   it('lays the saved brief list over the logged one and keeps the logged checks', () => {
@@ -72,6 +101,7 @@ describe('settleRunView', () => {
           makeTask({ id: 'T002', suggestedFiles: ['src/b.ts'], action: 'modify' }),
         ],
       }),
+      false,
     );
     expect(settled.briefs.tasks).toEqual([
       { id: 'T001', title: 'Saved', status: 'done', file: 'src/hello.ts', action: 'create' },
@@ -89,7 +119,9 @@ describe('settleRunView', () => {
   });
 
   it('reads no brief position from a state with no briefs', () => {
-    expect(settleRunView(LOGGED, makeWorkflowState({ phase: 'planning' })).briefs).toMatchObject({
+    expect(
+      settleRunView(LOGGED, makeWorkflowState({ phase: 'planning' }), false).briefs,
+    ).toMatchObject({
       tasks: [],
       currentTask: 0,
       totalTasks: 0,
@@ -111,12 +143,12 @@ describe('settleRunView ask and stop', () => {
       phase: 'planning',
       pendingPlannerConversation: { ...conversation, answered: false },
     });
-    expect(settleRunView(LOGGED, waiting).questions).toEqual(round);
+    expect(settleRunView(LOGGED, waiting, false).questions).toEqual(round);
     const answered = makeWorkflowState({
       phase: 'planning',
       pendingPlannerConversation: { ...conversation, answered: true },
     });
-    expect(settleRunView(LOGGED, answered).questions).toBeNull();
+    expect(settleRunView(LOGGED, answered, false).questions).toBeNull();
   });
 
   it('reopens the card of a typed plan the state is parked at', () => {
@@ -128,11 +160,11 @@ describe('settleRunView ask and stop', () => {
       validation: null,
     };
     expect(
-      settleRunView(LOGGED, makeWorkflowState({ phase: 'reviewing-plan', plan })).planCard,
+      settleRunView(LOGGED, makeWorkflowState({ phase: 'reviewing-plan', plan }), false).planCard,
     ).toBe(true);
-    expect(settleRunView(LOGGED, makeWorkflowState({ phase: 'reviewing-spec' })).planCard).toBe(
-      false,
-    );
+    expect(
+      settleRunView(LOGGED, makeWorkflowState({ phase: 'reviewing-spec' }), false).planCard,
+    ).toBe(false);
   });
 
   it('takes the files the saved stop kept and the error the saved failure names', () => {
@@ -153,6 +185,7 @@ describe('settleRunView ask and stop', () => {
           at: '2026-09-01T00:00:00.000Z',
         },
       }),
+      false,
     );
     expect(settled).toMatchObject({ stopKept: ['src/a.ts'], failure: 'Disk full' });
   });

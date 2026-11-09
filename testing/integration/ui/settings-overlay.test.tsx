@@ -66,10 +66,10 @@ describe('settings overlay integration', () => {
   });
 
   it('applies queued Down before Space and toggles the new logical selection', async () => {
-    const isolation = loadConfig(dir).config.workflow.isolation;
+    const review = loadConfig(dir).config.workflow.review;
     expect(configStore.get().config?.validation.endChecks).toBe(true);
 
-    overlayStore.open('settings', 'workflow.isolation');
+    overlayStore.open('settings', 'workflow.review');
     const ui = renderFeature(<SettingsOverlay />);
     await flushEffects();
 
@@ -77,7 +77,7 @@ describe('settings overlay integration', () => {
     ui.stdin.write(' ');
     await vi.waitFor(() => {
       const config = loadConfig(dir).config;
-      expect(config.workflow.isolation).toBe(isolation);
+      expect(config.workflow.review).toBe(review);
       expect(config.validation.endChecks).toBe(false);
     });
 
@@ -96,14 +96,14 @@ describe('settings overlay integration', () => {
       expect(loadConfig(dir).config.validation.endChecks).toBe(false);
     });
 
-    // Back on, then up to Isolation, which moves to the staged copy.
+    // Back on, then up to Review cadence, which moves to task.
     ui.stdin.write(' ');
     ui.stdin.write(ARROW_UP);
     ui.stdin.write(' ');
     await vi.waitFor(() => {
       const config = loadConfig(dir).config;
       expect(config.validation.endChecks).toBe(true);
-      expect(config.workflow.isolation).toBe('staged-copy');
+      expect(config.workflow.review).toBe('task');
     });
     ui.unmount();
   });
@@ -294,7 +294,7 @@ describe('settings overlay integration', () => {
     ui.stdin.write(PAGE_DOWN);
     await vi.waitFor(() => {
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(lineContaining(frame, CURSOR_GLYPH)).toContain('Test command');
+      expect(lineContaining(frame, CURSOR_GLYPH)).toContain('End-of-run checks');
       // The page steps over the Workflow section and lands with the whole of it on screen — its
       // first row included — so no row was stepped over unseen.
       expect(frame).toContain('Plan approval');

@@ -16,6 +16,7 @@ import {
   prepareStartOutcome,
 } from './readiness.js';
 import type { InteractiveDispatchArgs } from './types.js';
+import { configStore } from '../../../stores/project/config.js';
 
 export async function runInteractiveStart(args: InteractiveDispatchArgs): Promise<void> {
   const { deps, projectDir, feature, enrichedFeature, plannerContext, attachedInputs, opts } = args;
@@ -89,7 +90,7 @@ export async function runInteractiveStart(args: InteractiveDispatchArgs): Promis
         releasePreparedExecutionOwnership(execution);
         routerStore.navigate({
           to: 'workflow',
-          run: readRunRecord(execution.session.ref),
+          run: readRunRecord(execution.session.ref, configStore.reviewNone()),
           execution: { kind: 'local', prepared: execution },
         });
       },

@@ -12,6 +12,7 @@ import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import {
   disposeWctxIsolations,
+  makeCheckoutIsolation,
   makeCopyingIsolation,
   makeWorktreeIsolation,
   makeBusRecorder,
@@ -32,6 +33,7 @@ import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import type { Config } from '../../../core/schemas/config.js';
+import type { StepRef } from '../../../core/schemas/run-step.js';
 import type { ConsultAnswer } from '../../../core/schemas/consult.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Plan } from '../../../core/schemas/plan.js';
@@ -393,6 +395,39 @@ describe('runTasksAndReview boundary pause', { timeout: 120_000 }, () => {
     expect(result.completed).toBe(true);
     // The park was cleared when the operator continued.
     expect(result.state.interruptedStep).toBeUndefined();
+  });
+
+  it.each<[string, 'worktree' | 'none', StepRef]>([
+    ['hands a worktree to Apply', 'worktree', { kind: 'apply' }],
+    ['keeps the skipped review on the project checkout', 'none', { kind: 'review', cycle: 0 }],
+  ])('a REVIEW None pass parked after its last brief %s', async (_, isolation, step) => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'] })];
+    const { events, options } = runOptions({
+      projectDir,
+      sessionId,
+      state: reviewedState(tasks, head, 0),
+      review: (prompt) => passingReviewVerdict(prompt),
+      onComplete: vi.fn(),
+      sinks: pauseOnceSinks(),
+      config: makeNoValidationConfig({ reviewer: 'none', workflow: { isolation } }),
+    });
+    options.wctx.isolation = (
+      isolation === 'worktree' ? makeWorktreeIsolation : makeCheckoutIsolation
+    )({ projectDir, sessionId });
+
+    try {
+      const result = await runTasksAndReview(options);
+
+      expect(result.completed).toBe(false);
+      expect(events.find((e) => e.type === 'turn_interrupted')).toMatchObject({
+        at: 'boundary',
+        step,
+      });
+      expect(result.state.interruptedStep).toMatchObject({ step, cut: 'boundary' });
+    } finally {
+      await options.wctx.isolation.dispose();
+    }
   });
 
   it('marks a boundary park that only changes a seat with its cause', async () => {
@@ -1078,7 +1113,9 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
       expect(result.state.pendingRecovery).toBeUndefined();
       expect(result.state.reviewStatus).toBe('failed');
       expect(result.state.acceptedAsIs).toMatchObject({ note, by: 'planner' });
-      expect(deriveRunStatus({ state: result.state, liveness: 'not-alive' })).toEqual(status);
+      expect(
+        deriveRunStatus({ reviewNone: false, state: result.state, liveness: 'not-alive' }),
+      ).toEqual(status);
       expect(events.filter((e) => e.type === 'workflow_complete')).toMatchObject([
         { review: 'failed', blocking: 1 },
       ]);
@@ -1174,7 +1211,9 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
     if (!accepted.ok) throw new Error(accepted.message);
     expect(accepted.state.reviewStatus).toBe('failed');
     expect(accepted.state.acceptedAsIs).toBeDefined();
-    expect(deriveRunStatus({ state: accepted.state, liveness: 'not-alive' })).toEqual({
+    expect(
+      deriveRunStatus({ reviewNone: false, state: accepted.state, liveness: 'not-alive' }),
+    ).toEqual({
       kind: 'closed',
       as: 'complete',
     });
@@ -1217,7 +1256,9 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
     expect(ended.ok).toBe(true);
     if (!ended.ok) throw new Error(ended.message);
     expect(ended.status).toBe('closed');
-    expect(deriveRunStatus({ state: ended.state, liveness: 'not-alive' })).toEqual({
+    expect(
+      deriveRunStatus({ reviewNone: false, state: ended.state, liveness: 'not-alive' }),
+    ).toEqual({
       kind: 'closed',
       as: 'ended',
     });
@@ -2402,7 +2443,9 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
       expect(result.state.reviewStatus).toBe('passed');
       expect(result.state.applyReview).toBeUndefined();
       expect(result.state.reviewedCandidate).toBeDefined();
-      expect(deriveRunStatus({ state: result.state, liveness: 'not-alive' })).toEqual({
+      expect(
+        deriveRunStatus({ reviewNone: false, state: result.state, liveness: 'not-alive' }),
+      ).toEqual({
         kind: 'ready-to-apply',
         override: false,
       });
@@ -2631,6 +2674,266 @@ describe('runTasksAndReview required-checks halt retry', { timeout: 120_000 }, (
       expect(renders.map((check) => check.exitCode)).toEqual([undefined, 0]);
     } finally {
       await resumed.options.wctx.isolation.dispose();
+    }
+  });
+});
+
+describe('runTasksAndReview with REVIEW None', { timeout: 120_000 }, () => {
+  function noneConfig(validation: { render?: string } = {}): Config {
+    return makeNoValidationConfig({ reviewer: 'none', workflow: {}, validation });
+  }
+
+  function recheckState(head: string, checks: Check[], planChecks: Check[] = []): WorkflowState {
+    const tasks = [
+      makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done', checks }),
+    ];
+    return {
+      ...integrationReviewState(tasks, head, 0),
+      plan: { summary: 'Plan', decisions: [], criteria: [], validation: null, checks: planChecks },
+    };
+  }
+
+  function failNodeCommands(): void {
+    vi.spyOn(commandRunner, 'runCommand').mockImplementation(async (cmd, args) => {
+      if (cmd !== 'node') return { stdout: 'ok', stderr: '', code: 0 };
+      throw processError.exitCode({
+        command: [cmd, ...args].join(' '),
+        code: 1,
+        stderr: ' FAIL  src/a.test.ts > a > new',
+      });
+    });
+  }
+
+  const NODE_CHECK: Check = { id: 'K1', kind: 'cmd', value: 'node --version' };
+
+  it('None ends after the briefs', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'] })];
+    const { events, implementer, reviewPrompts, options } = runOptions({
+      projectDir,
+      sessionId,
+      state: reviewedState(tasks, head, 0),
+      config: noneConfig(),
+      review: (prompt) => passingReviewVerdict(prompt),
+      onComplete: vi.fn(),
+    });
+
+    const result = await runTasksAndReview(options);
+
+    expect(result.completed).toBe(true);
+    expect(implementer.implement).toHaveBeenCalledTimes(1);
+    expect(reviewPrompts).toEqual([]);
+    expect(result.state.reviewStatus).toBe('none');
+    expect(result.state.phase).toBe('complete');
+    expect(events.find((event) => event.type === 'workflow_complete')).toMatchObject({
+      review: 'none',
+    });
+    expect(readEvidenceLedger({ projectDir, sessionId })?.finalReview?.status).toBe('skipped');
+    expect(events.some((event) => event.type === 'all_tasks_done')).toBe(false);
+  });
+
+  it('None retries a red brief', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [
+      makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], checks: BRIEF_CHECKS }),
+    ];
+    const write = (call: ImplementerOptions): void => {
+      const file = call.task.suggestedFiles[0];
+      mkdirSync(join(call.projectDir, dirname(file)), { recursive: true });
+      writeFileSync(join(call.projectDir, file), `export const value = ${Date.now()};\n`);
+    };
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async (call: ImplementerOptions) => {
+        write(call);
+        return { success: true, output: 'code' };
+      }),
+      retry: vi.fn().mockImplementation(async (call: RetryOptions) => {
+        write(call);
+        return { success: true, output: 'fixed' };
+      }),
+    });
+    failCheckOnce('TS2322 in src/alpha.ts');
+    const { reviewPrompts, options } = runOptions({
+      projectDir,
+      sessionId,
+      state: reviewedState(tasks, head, 0),
+      config: noneConfig(),
+      review: (prompt) => passingReviewVerdict(prompt),
+      consult: () => guidanceConsult(),
+      onComplete: vi.fn(),
+      implementer,
+    });
+
+    const result = await runTasksAndReview(options);
+
+    expect(implementer.implement).toHaveBeenCalledTimes(1);
+    expect(implementer.retry).toHaveBeenCalledTimes(1);
+    expect(reviewPrompts).toEqual([]);
+    expect(result.state.reviewStatus).toBe('none');
+  });
+
+  it('None recheck runs only the non-render brief checks', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const commands: string[] = [];
+    vi.spyOn(commandRunner, 'runCommand').mockImplementation(async (cmd, args) => {
+      commands.push([cmd, ...args].join(' '));
+      return { stdout: 'ok', stderr: '', code: 0 };
+    });
+    const { options } = runOptions({
+      projectDir,
+      sessionId,
+      state: recheckState(
+        head,
+        [NODE_CHECK, { id: 'K2', kind: 'render', value: 'overlay-picker' }],
+        [{ id: 'K-plan', kind: 'cmd', value: 'node --version' }],
+      ),
+      config: noneConfig({ render: 'node render.mjs {id} {out}' }),
+      review: (prompt) => passingReviewVerdict(prompt),
+      onComplete: vi.fn(),
+    });
+    options.wctx.isolation = makeWorktreeIsolation({ projectDir, sessionId });
+
+    try {
+      const result = await runTasksAndReview(options);
+
+      expect(commands.filter((command) => command.startsWith('node '))).toEqual(['node --version']);
+      expect(result.state.reviewStatus).toBe('none');
+    } finally {
+      await options.wctx.isolation.dispose();
+    }
+  });
+
+  it('None recheck shows a red check on its row and ends ready to apply', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    failNodeCommands();
+    const { events, reviewPrompts, options } = runOptions({
+      projectDir,
+      sessionId,
+      state: recheckState(head, [NODE_CHECK]),
+      config: noneConfig(),
+      review: (prompt) => passingReviewVerdict(prompt),
+      onComplete: vi.fn(),
+    });
+    options.wctx.isolation = makeWorktreeIsolation({ projectDir, sessionId });
+
+    try {
+      const result = await runTasksAndReview(options);
+
+      expect(events.filter((event) => event.type === 'full_suite')).toEqual([
+        expect.objectContaining({
+          status: 'done',
+          passed: false,
+          moment: 'plan',
+          taskId: 'T001',
+        }),
+      ]);
+      expect(result.state.reviewStatus).toBe('none');
+      expect(result.state.applyReview).toBeUndefined();
+      expect(events.find((event) => event.type === 'workflow_complete')).toMatchObject({
+        review: 'none',
+      });
+      expect(reviewPrompts).toEqual([]);
+      expect(result.state.fixCycles?.used).toBe(0);
+      expect(events.some((event) => event.type === 'review_fix_started')).toBe(false);
+      expect(
+        deriveRunStatus({ reviewNone: false, state: result.state, liveness: 'not-alive' }),
+      ).toMatchObject({
+        kind: 'ready-to-apply',
+        override: false,
+      });
+    } finally {
+      await options.wctx.isolation.dispose();
+    }
+  });
+
+  it('None recheck does not halt on a check that cannot run', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const { events, options } = runOptions({
+      projectDir,
+      sessionId,
+      state: recheckState(head, [{ id: 'K1', kind: 'cmd', value: 'npm run deploy' }]),
+      config: noneConfig(),
+      review: (prompt) => passingReviewVerdict(prompt),
+      onComplete: vi.fn(),
+    });
+    options.wctx.isolation = makeWorktreeIsolation({ projectDir, sessionId });
+
+    try {
+      const result = await runTasksAndReview(options);
+
+      expect(result.state.pendingRecovery).toBeUndefined();
+      expect(events.filter((event) => event.type === 'full_suite')).toEqual([
+        expect.objectContaining({ status: 'refused', taskId: 'T001' }),
+      ]);
+      expect(result.state.reviewStatus).toBe('none');
+    } finally {
+      await options.wctx.isolation.dispose();
+    }
+  });
+
+  it('None stops when the signal aborts during the recheck', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const controller = new AbortController();
+    vi.spyOn(commandRunner, 'runCommand').mockImplementation(async () => {
+      controller.abort();
+      return { stdout: 'ok', stderr: '', code: 0 };
+    });
+    const { events, options } = runOptions({
+      projectDir,
+      sessionId,
+      state: recheckState(head, [NODE_CHECK]),
+      config: noneConfig(),
+      review: (prompt) => passingReviewVerdict(prompt),
+      onComplete: vi.fn(),
+      signal: controller.signal,
+    });
+    options.wctx.isolation = makeWorktreeIsolation({ projectDir, sessionId });
+
+    try {
+      const result = await runTasksAndReview(options);
+
+      expect(controller.signal.aborted).toBe(true);
+      expect(result.completed).toBe(false);
+      expect(result.state.phase).not.toBe('complete');
+      expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
+    } finally {
+      await options.wctx.isolation.dispose();
+    }
+  });
+
+  it("A seat's recheck publishes no new row", async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    failNodeCommands();
+    const controller = new AbortController();
+    const { events, reviewPrompts, options } = runOptions({
+      projectDir,
+      sessionId,
+      state: recheckState(head, [NODE_CHECK]),
+      config: makeNoValidationConfig({
+        reviewer: { kind: 'cli', tool: 'codex' },
+        workflow: {},
+      }),
+      review: (prompt) => {
+        controller.abort();
+        return passingReviewVerdict(prompt);
+      },
+      onComplete: vi.fn(),
+      signal: controller.signal,
+    });
+    options.wctx.isolation = makeWorktreeIsolation({ projectDir, sessionId });
+
+    try {
+      await runTasksAndReview(options);
+
+      expect(reviewPrompts).toHaveLength(1);
+      // The one row is the pre-review's: the recheck adds none.
+      expect(
+        events.filter(
+          (event) => event.type === 'full_suite' && event.id === 'K1' && event.status === 'done',
+        ),
+      ).toHaveLength(1);
+    } finally {
+      await options.wctx.isolation.dispose();
     }
   });
 });

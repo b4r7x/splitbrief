@@ -25,7 +25,7 @@ import { readActiveRunner } from '../../../core/config/accessors/active-runner.j
 import { readConfigDocument } from '../../../core/config/load/document.js';
 import { sameSeatCandidate } from '../../../core/crew/identity.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
-import { resolveApproveLevel } from '../../../core/config/runtime/resolve.js';
+import { resolveReviewCadence, resolveApproveLevel } from '../../../core/config/runtime/resolve.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { reconcileSeatIdentities, recordSeatIdentities } from '../../../core/state/seats.js';
 import { recordUserMessage } from '../transcript/user-message.js';
@@ -355,6 +355,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     ref: { projectDir, sessionId },
     state: savedState,
     steer: opts.steer,
+    reviewNone: resolveReviewCadence(config) === 'none',
   });
 
   // Every seat carries the run's skills, so the block is built before the first seat is.
@@ -478,6 +479,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
       ...(summaryBase.reviewerTool !== undefined && { reviewerTool: summaryBase.reviewerTool }),
       ...(summaryBase.reviewerModel !== undefined && { reviewerModel: summaryBase.reviewerModel }),
       ...(summaryBase.reviewerKind !== undefined && { reviewerKind: summaryBase.reviewerKind }),
+      ...(summaryBase.reviewerSeat !== undefined && { reviewerSeat: summaryBase.reviewerSeat }),
       ...(opts.selectedSkills && opts.selectedSkills.length > 0
         ? { selectedSkills: opts.selectedSkills.map((s) => s.id) }
         : {}),
@@ -524,6 +526,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
       reviewerModel: reviewerSeat?.model,
       reviewerKind: reviewerSeat?.kind,
       reviewerAxes: reviewerSeat?.axes,
+      reviewerSeat: summaryBase.reviewerSeat,
       skills: skillIds,
     },
   );
@@ -594,12 +597,14 @@ function publishResumedSteer(input: {
 /**
  * What this run was continued with. The step the stop recorded owns it, so the
  * partial a cut attempt left reaches that step and no other; a run continued
- * without a recorded park seeds the steer at the step it picks up.
+ * without a recorded park, or parked at Apply, which takes no words, seeds the
+ * steer at the step it picks up under the REVIEW of this pass.
  */
 export async function resumeContinuation(input: {
   ref: SessionRef;
   state: WorkflowState | undefined;
   steer: UserMessageInput | undefined;
+  reviewNone: boolean;
 }): Promise<ContinuationHolder> {
   const { ref, state, steer } = input;
   if (state === undefined) return createContinuationHolder();
@@ -632,7 +637,10 @@ export async function resumeContinuation(input: {
   if (partial === undefined && steer === undefined && !keepWorkspace && consult === undefined)
     return createContinuationHolder();
   return createContinuationHolder({
-    step: interrupted?.step ?? resumeStep(state),
+    step:
+      interrupted === undefined || interrupted.step.kind === 'apply'
+        ? resumeStep(state, input.reviewNone)
+        : interrupted.step,
     ...(partial !== undefined && { partial }),
     ...(steer !== undefined && { steer }),
     ...(keepWorkspace && { keepWorkspace: true, briefFingerprint: hashTaskBrief([task]) }),

@@ -282,6 +282,7 @@ export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSin
           );
         return;
       case 'workflow_complete': {
+        if (bounded.review === 'none') write('review: none (REVIEW is None)');
         // The run's count from its state: a continue completes only the briefs it had left.
         write(`done: ${view.briefs.completedTasks ?? 0} tasks`);
         return;

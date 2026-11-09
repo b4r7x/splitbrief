@@ -55,6 +55,7 @@ function applyAtRest(run: ApplyRun) {
     runApplyAtRest({
       wctx: { projectDir: run.dir, sessionId: run.sessionId, bus: makeBusRecorder().bus },
       state,
+      reviewNone: false,
     });
 }
 
@@ -94,11 +95,11 @@ describe('runApplyAtRest', { timeout: 60_000 }, () => {
 
         const applying = start();
         await backupStep.entered;
-        expect(readRunRecord(ref).status).toEqual({ kind: 'running' });
+        expect(readRunRecord(ref, false).status).toEqual({ kind: 'running' });
 
         backupStep.release();
         await promoteStep.entered;
-        expect(readRunRecord(ref).status).toEqual({ kind: 'running' });
+        expect(readRunRecord(ref, false).status).toEqual({ kind: 'running' });
 
         let shutDown = false;
         const shutdown = awaitActiveWorkflowShutdown().then(() => {
@@ -116,7 +117,7 @@ describe('runApplyAtRest', { timeout: 60_000 }, () => {
         expect((await applying).outcome).toBe('applied');
         await shutdown;
         expect(activeApply()).toBeUndefined();
-        expect(readRunRecord(ref).status).toEqual({ kind: 'closed', as: 'applied' });
+        expect(readRunRecord(ref, false).status).toEqual({ kind: 'closed', as: 'applied' });
       },
     );
   });
@@ -138,7 +139,7 @@ describe('runApplyAtRest', { timeout: 60_000 }, () => {
 
         expect((await start()).outcome).toBe('applied');
 
-        const record = readRunRecord({ projectDir: run.dir, sessionId: run.sessionId });
+        const record = readRunRecord({ projectDir: run.dir, sessionId: run.sessionId }, false);
         expect(record.status).toEqual({ kind: 'closed', as: 'applied' });
         expect(record.summary).toMatchObject({
           activeTime: 210_000,
@@ -174,7 +175,9 @@ describe('runApplyAtRest', { timeout: 60_000 }, () => {
         expect(writes).toEqual([
           `Could not release the run lock: permission denied · .splitbrief/sessions/${SESSION_ID}/lockfile.json · other SPLITBRIEF processes can see the run as running for a few more seconds\n`,
         ]);
-        expect(readRunRecord({ projectDir: run.dir, sessionId: run.sessionId }).status).toEqual({
+        expect(
+          readRunRecord({ projectDir: run.dir, sessionId: run.sessionId }, false).status,
+        ).toEqual({
           kind: 'closed',
           as: 'applied',
         });

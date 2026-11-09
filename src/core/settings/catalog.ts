@@ -3,7 +3,7 @@ import { APPROVE_LEVELS, ISOLATION_STRATEGIES } from '../schemas/enums.js';
 import { CompactionFormatSchema } from '../schemas/compaction.js';
 import { resolveImplementerProfiles } from '../config/accessors/implementer-profiles.js';
 import { getIsolationStrategy } from '../config/accessors/values.js';
-import { resolveEndChecks } from '../config/runtime/resolve.js';
+import { resolveEndChecks, resolveReviewCadence } from '../config/runtime/resolve.js';
 
 const isApiImplementer = (config: Config): boolean =>
   resolveImplementerProfiles(config).defaultProfile.config.kind === 'api';
@@ -35,7 +35,14 @@ export interface SettingDef {
    * but the picker needs the canonical tool name across all variants).
    */
   readValue?: (config: Config) => unknown;
+  /** The reason the row is read-only, or undefined when the row can be edited. */
+  lockedBy?: (config: Config) => string | undefined;
 }
+
+const lockedWhileReviewNone = (config: Config): string | undefined =>
+  resolveReviewCadence(config) === 'none'
+    ? 'Read-only while REVIEW is None: no review runs.'
+    : undefined;
 
 export const SETTINGS_DEFS: SettingDef[] = [
   {
@@ -101,6 +108,16 @@ export const SETTINGS_DEFS: SettingDef[] = [
     readValue: getIsolationStrategy,
   },
   {
+    id: 'workflow.review',
+    label: 'Review cadence',
+    section: 'Workflow',
+    description: 'When the review seat reads the diff: once at the end, or after every brief',
+    kind: 'enum',
+    options: ['end', 'task'],
+    readValue: resolveReviewCadence,
+    lockedBy: lockedWhileReviewNone,
+  },
+  {
     id: 'validation.endChecks',
     label: 'End-of-run checks',
     section: 'Validation',
@@ -108,6 +125,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
       'SPLITBRIEF runs the project gate the plan names before the final review. When off, a fix brief does not run the reviewer check it answers.',
     kind: 'boolean',
     readValue: resolveEndChecks,
+    lockedBy: lockedWhileReviewNone,
   },
   {
     id: 'validation.testCommand',

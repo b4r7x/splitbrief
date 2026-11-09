@@ -59,7 +59,9 @@ describe('e2e: headless End run on a run worktree with uncommitted changes', () 
     const sessionId = readActive(target.projectDir);
     if (sessionId === null) throw new Error(`the run left no active session: ${run.stderr}`);
     const ready = readState(target, sessionId);
-    expect(deriveRunStatus({ state: ready, liveness: 'not-alive' }).kind).toBe('ready-to-apply');
+    expect(deriveRunStatus({ reviewNone: false, state: ready, liveness: 'not-alive' }).kind).toBe(
+      'ready-to-apply',
+    );
     const workspace = ready.workspace;
     if (workspace === undefined) throw new Error('the run has no workspace');
     expect(workspace.kind).toBe('worktree');

@@ -1,11 +1,7 @@
-import {
-  CREW_LABEL_WIDTH,
-  PLANNER_INHERITANCE,
-  cutSeatIdentity,
-} from '../../core/crew/identity.js';
+import { CREW_LABEL_WIDTH, cutSeatIdentity } from '../../core/crew/identity.js';
 import type { CrewLabVerdict } from '../../core/crew/labs.js';
 import type { CrewRow } from '../../core/crew/rows.js';
-import type { CrewSeat } from '../../core/crew/seats.js';
+import { crewSeatWord } from '../../core/crew/seats.js';
 import { billingWord } from '../../core/runners/runner-billing.js';
 
 export const CREW_COLUMN_GAP = '  ';
@@ -49,13 +45,9 @@ export function planSeatBlock(
   return { identityWidth, posture, verdict, rows: rowCount() };
 }
 
-function seatContent(seat: CrewSeat): string {
-  return seat.id === 'review' && seat.source === 'planner' ? PLANNER_INHERITANCE.mark : seat.model;
-}
-
 /** What a crew row shows beside its label, before the row's own width cuts it. */
 function rowContent(row: CrewRow): string {
-  return seatContent(row.seat);
+  return crewSeatWord(row.seat);
 }
 
 function rowLabel(row: CrewRow): string {

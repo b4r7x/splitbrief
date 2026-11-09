@@ -22,6 +22,8 @@ export function useStopByline(): StopByline | null {
   const view = selectTaskListView(tasks);
   const phase = runViewStore.use((s) => s.phase);
   const stopKept = runViewStore.use((s) => s.stopKept);
+  const stopStep = runViewStore.use((s) => s.stopStep);
+  const afterLastBrief = runViewStore.use((s) => s.afterLastBrief);
   const brief = selectRunningBrief(tasks, phase);
   // A pause armed on a brief outlives it: once the brief finishes, the run's own position still
   // names it until the boundary suite hands it on, so a finished slot is what it is finishing.
@@ -43,6 +45,7 @@ export function useStopByline(): StopByline | null {
     phase: stop.phase,
     seatChange: stop.seatChange ? selectSeatChangePoint(tasks, phase) : null,
     workflowPhase: phase,
+    afterLastBrief,
     parked: stop.parked,
     currentTaskId: brief.current?.id ?? null,
     nextTaskId: next?.id ?? null,
@@ -65,5 +68,6 @@ export function useStopByline(): StopByline | null {
     error: stop.error,
     record,
     stopKept,
+    stopStep,
   });
 }

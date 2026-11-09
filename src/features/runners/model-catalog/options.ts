@@ -1,5 +1,5 @@
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
-import { PLANNER_INHERITANCE } from '../../../core/crew/identity.js';
+import { PLANNER_INHERITANCE, REVIEW_NONE } from '../../../core/crew/identity.js';
 import {
   API_PROVIDER_CATALOG,
   KNOWN_API_PROVIDER_IDS,
@@ -91,11 +91,17 @@ export interface NoFallbackOption extends PickerOptionBase {
   kind: 'no-fallback';
 }
 
+/** The review seat's None row: confirming it writes `reviewer: none`. */
+export interface ReviewNoneOption extends PickerOptionBase {
+  kind: 'review-none';
+}
+
 export type PickerOption =
   | RunnerPickerOption
   | CustomCommandLauncherOption
   | InheritPlannerOption
-  | NoFallbackOption;
+  | NoFallbackOption
+  | ReviewNoneOption;
 
 export const INHERIT_PLANNER_OPTION_ID = 'inherit-planner';
 
@@ -112,6 +118,22 @@ export function noFallbackOption(input: Readonly<{ isCurrent: boolean }>): NoFal
     status: { state: 'ready', remediation: null },
     available: true,
     isCurrent: input.isCurrent,
+  };
+}
+
+export function reviewNoneOption(input: Readonly<{ isCurrent: boolean }>): ReviewNoneOption {
+  return {
+    id: 'review-none',
+    displayName: REVIEW_NONE.mark,
+    kind: 'review-none',
+    roles: ['planner'],
+    modelPolicy: 'none',
+    modelCapability: deriveModelCatalogCapability('none'),
+    billing: 'unknown',
+    permissions: trustPermissions('shell', 'planner'),
+    status: { state: 'ready', remediation: null },
+    available: true,
+    ...(input.isCurrent ? { isCurrent: true } : {}),
   };
 }
 

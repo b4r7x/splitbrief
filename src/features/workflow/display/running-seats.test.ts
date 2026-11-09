@@ -203,6 +203,25 @@ describe('deriveRunningSeats', () => {
     expect(derived).toEqual({});
   });
 
+  it('returns no REVIEW override from a pass that ran under REVIEW None', () => {
+    const config = makeTestConfig({ reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-5' } });
+
+    const derived = derive({
+      config,
+      passSeats: {
+        plannerTool: 'claude-code',
+        plannerModel: 'claude-3-5-sonnet',
+        plannerKind: 'cli',
+        plannerAxes: [],
+        implementerTool: 'codex',
+        implementerModel: 'gpt-5',
+        reviewerSeat: 'none',
+      },
+    });
+
+    expect(derived).toEqual({});
+  });
+
   it('feeds the derived seat into formatCollapsedSeatSpans and reflects the running model', () => {
     const config = makeTestConfig();
     const active = makeOperation({

@@ -208,6 +208,40 @@ describe('crew preset application', () => {
     });
   });
 
+  async function applyOverReviewNone(projectDir: string, preset: CrewPreset): Promise<void> {
+    configStore.load(projectDir);
+    const none = await configStore.save({ ...currentConfig(), reviewer: 'none' });
+    expect(none.ok).toBe(true);
+    const applied = crewActivate({ target: { kind: 'preset', preset }, config: currentConfig() });
+    expect(applied).toMatchObject({ kind: 'applied' });
+  }
+
+  it('gives REVIEW the reviewer of a preset that names one while REVIEW is None', async () => {
+    await withTempDir('crew-preset-review-none', async (projectDir) => {
+      await applyOverReviewNone(projectDir, PRESET);
+
+      await vi.waitFor(() => {
+        expect(loadConfig(projectDir).config.reviewer).toMatchObject({
+          kind: 'cli',
+          tool: 'codex',
+        });
+      });
+    });
+  });
+
+  it('makes REVIEW inherit PLAN for a preset that names no reviewer while REVIEW is None', async () => {
+    await withTempDir('crew-preset-review-none', async (projectDir) => {
+      await applyOverReviewNone(projectDir, {
+        ...PRESET,
+        seats: { planner: PRESET.seats.planner, implementer: PRESET.seats.implementer },
+      });
+
+      await vi.waitFor(() => {
+        expect(loadConfig(projectDir).config.reviewer).toBeUndefined();
+      });
+    });
+  });
+
   it('surfaces a save failure and leaves the configuration untouched', async () => {
     await withTempDir('crew-preset-blocked', async (projectDir) => {
       configStore.load(projectDir);

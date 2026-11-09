@@ -222,3 +222,45 @@ it('prints REVIEW as the switched PLAN seat when PLAN holds REVIEW, live and aft
   reconcileSeatIdentities(ref, resumed);
   expect(await seatLines()).toEqual(expected);
 });
+
+it.each([
+  {
+    change: 'a seat that reviewed moves to None',
+    start: { reviewerTool: 'codex', reviewerModel: 'gpt-5.5', reviewerKind: 'cli' },
+    from: makeConfig({ reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-5.5' } }),
+    to: makeConfig({ reviewer: 'none' }),
+    expected: 'REVIEW:    None',
+  },
+  {
+    change: 'a run that started on None gets a seat',
+    start: { reviewerSeat: 'none' },
+    from: makeConfig({ reviewer: 'none' }),
+    to: makeConfig({ reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-5.5' } }),
+    expected: 'REVIEW:    OpenAI Codex CLI · GPT-5.5',
+  },
+] as const)(
+  'prints the REVIEW seat of the crew after $change',
+  async ({ start, from, to, expected }) => {
+    const ref = { projectDir, sessionId };
+    writeState({
+      plannerTool: 'claude-code',
+      plannerModel: 'sonnet',
+      plannerKind: 'cli',
+      implementerTool: 'codex',
+      implementerModel: 'gpt-6.1-sol',
+      implementerKind: 'cli',
+      ...start,
+    });
+    recordSeatIdentities(ref, from);
+    reconcileSeatIdentities(ref, to);
+
+    const run = await status();
+
+    expect(run.exitCode, run.stderr).toBe(0);
+    expect(
+      stripVTControlCharacters(run.stdout)
+        .split('\n')
+        .filter((line) => line.startsWith('REVIEW:')),
+    ).toEqual([expected]);
+  },
+);

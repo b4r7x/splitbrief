@@ -147,7 +147,10 @@ export function SettingsOverlay() {
     canActOnIndex,
   });
 
-  const actionable = selectedItem !== undefined && canActOnIndex(filtered, effectiveIndex);
+  const actionable =
+    selectedItem !== undefined &&
+    canActOnIndex(filtered, effectiveIndex) &&
+    (selectedItem.kind !== 'setting' || selectedItem.def.lockedBy?.(config) === undefined);
   const actionHint = actionable ? hintFor(selectedItem) : '';
   const hintText = editingId
     ? `⏎ confirm${SOFT_SEP}esc cancel`

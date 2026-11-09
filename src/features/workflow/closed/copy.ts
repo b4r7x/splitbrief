@@ -10,6 +10,7 @@ import type {
 } from './view-model.js';
 import {
   PLANNER_INHERITANCE,
+  REVIEW_NONE,
   formatCollapsedSeatSpansFromIdentities,
   type SeatLineSpan,
   type CrewSeatId,
@@ -137,6 +138,7 @@ export function runRows(view: SummaryView): RunRow[] {
  * its final review, so the absence names that review; a final review that ran without a verdict says so.
  */
 export function unwrittenReviewText(review: Exclude<ReviewView, { kind: 'written' }>): string {
+  if (review.kind === 'none') return 'no review';
   return review.kind === 'failed' ? 'final review no verdict' : 'final review not run';
 }
 
@@ -325,7 +327,7 @@ export function crewLine(
   return formatCollapsedSeatSpansFromIdentities({
     plan: word(view.seats.plan),
     build: word(view.seats.build),
-    review: review.kind === 'inherits' ? null : word(review),
+    review: review.kind === 'inherits' ? null : review.kind === 'none' ? REVIEW_NONE : word(review),
     ...(options.line === undefined && {
       tools: {
         ...(planTool !== undefined && { plan: planTool }),
@@ -388,6 +390,8 @@ function seatWord(seat: SeatView): string {
       return movedPieces(seat).join(' ');
     case 'inherits':
       return PLANNER_INHERITANCE.mark;
+    case 'none':
+      return REVIEW_NONE.mark;
     default:
       return 'not recorded';
   }

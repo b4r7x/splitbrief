@@ -63,7 +63,9 @@ describe('live paths: crash mid-BUILD', { timeout: 3 * LIVE_PATHS_TIMEOUT_MS }, 
       'the continuation left a killed run tool alive',
     ).toEqual([]);
     const ready = readRunState(ref);
-    expect(deriveRunStatus({ state: ready, liveness: 'not-alive' }).kind).toBe('ready-to-apply');
+    expect(deriveRunStatus({ reviewNone: false, state: ready, liveness: 'not-alive' }).kind).toBe(
+      'ready-to-apply',
+    );
 
     const applied = await livePathsCli(project, [
       'continue',

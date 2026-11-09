@@ -56,7 +56,7 @@ type ReviewStartedEvent = Pick<ReviewCompletedEvent, 'scope' | 'afterTaskId'> & 
 };
 type WorkflowCompleteEvent = {
   type: 'workflow_complete';
-  review?: 'passed' | 'failed' | undefined;
+  review?: 'passed' | 'failed' | 'none' | undefined;
 };
 type WorkflowCancelledEvent = { type: 'workflow_cancelled'; atRestFrom?: number | undefined };
 
@@ -119,6 +119,13 @@ function isWorkflowCompleteEvent<TEvent extends SectionableEvent>(
   event: TEvent,
 ): event is TEvent & WorkflowCompleteEvent {
   return event.type === 'workflow_complete';
+}
+
+/** A run's end that carries a review outcome: REVIEW None ends with no review to show a stage for. */
+function isReviewedCompleteEvent<TEvent extends SectionableEvent>(
+  event: TEvent,
+): event is TEvent & WorkflowCompleteEvent & { review: 'passed' | 'failed' } {
+  return isWorkflowCompleteEvent(event) && event.review !== undefined && event.review !== 'none';
 }
 
 function isWorkflowCancelledEvent<TEvent extends SectionableEvent>(
@@ -332,8 +339,7 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
       }
       if (isReviewStartedEvent(event)) reviewStarted = true;
       if (isReviewCompletedEvent(event)) reviewStarted = true;
-      else if (reviewStarted || !(isWorkflowCompleteEvent(event) && event.review !== undefined))
-        continue;
+      else if (reviewStarted || !isReviewedCompleteEvent(event)) continue;
       // The review owns the fix cycle it starts; a cycle after the run completed is Apply's.
       let reviewEnd = index;
       for (let next = index + 1; next < endIndex; next++) {
@@ -510,7 +516,7 @@ function settledStageSummary<TEvent extends SectionableEvent>(
   const verdict =
     reviewStarted || completed !== undefined
       ? undefined
-      : items.findLast(isWorkflowCompleteEvent)?.review;
+      : items.findLast(isReviewedCompleteEvent)?.review;
   const stage =
     completed !== undefined || reviewStarted || verdict !== undefined || stages.includes('review')
       ? 'review'

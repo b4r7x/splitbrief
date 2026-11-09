@@ -38,6 +38,7 @@ function finalRunStatus(opts: Pick<SaveFinalSessionOpts, 'projectDir' | 'session
   return deriveRunStatus({
     state: opts.state,
     liveness: 'not-alive',
+    reviewNone: false,
   });
 }
 
@@ -83,6 +84,7 @@ export function finalizeEndedRun(
     ...(ident.reviewerModel !== undefined && { reviewerModel: ident.reviewerModel }),
     ...(ident.reviewerKind !== undefined && { reviewerKind: ident.reviewerKind }),
     ...(ident.reviewerAxes !== undefined && { reviewerAxes: ident.reviewerAxes }),
+    ...(ident.reviewerSeat !== undefined && { reviewerSeat: ident.reviewerSeat }),
     projectDir: ref.projectDir,
     sessionId: ref.sessionId,
     ...(input.modelCache !== undefined && { pricingCache: input.modelCache }),
@@ -132,7 +134,7 @@ export function refreshSessionRow(ref: SessionRef, state: WorkflowState): void {
   const session = readSession(ref);
   if (session === null) return;
   const { id, feature, startedAt, completedAt, stateVersion, phase } = session;
-  const status = deriveRunStatus({ state, liveness: 'not-alive' });
+  const status = deriveRunStatus({ state, liveness: 'not-alive', reviewNone: false });
   saveSummary(
     ref,
     rowFor({ id, feature, startedAt, completedAt, stateVersion, phase }, status, session.summary),

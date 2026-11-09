@@ -78,7 +78,9 @@ describe('e2e: a checkout-mode run stopped by SIGINT and continued in place', ()
     expect(finalState.tasks[0]?.status).toBe('done');
     expect(finalState.pendingRecovery).toBeUndefined();
     expect(finalState.applied).toBeUndefined();
-    expect(deriveRunStatus({ state: finalState, liveness: 'not-alive' })).toEqual({
+    expect(
+      deriveRunStatus({ reviewNone: false, state: finalState, liveness: 'not-alive' }),
+    ).toEqual({
       kind: 'closed',
       as: 'complete',
     });

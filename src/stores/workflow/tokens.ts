@@ -159,6 +159,7 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
           reviewerModel: event.reviewerModel,
           reviewerKind: event.reviewerKind,
           reviewerAxes: event.reviewerAxes,
+          reviewerSeat: event.reviewerSeat,
         },
       };
 

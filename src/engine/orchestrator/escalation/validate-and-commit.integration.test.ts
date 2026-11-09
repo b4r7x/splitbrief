@@ -101,6 +101,7 @@ describe('validateAndCommit', () => {
         message: plainUserMessage('cleared correction'),
         phase: state.phase,
         bus,
+        reviewNone: false,
       });
       return { stdout: 'ok', stderr: '', code: 0 };
     });
@@ -146,6 +147,7 @@ describe('validateAndCommit', () => {
         message: plainUserMessage('keep the public name'),
         phase: state.phase,
         bus,
+        reviewNone: false,
       });
       return { stdout: 'ok', stderr: '', code: 0 };
     });

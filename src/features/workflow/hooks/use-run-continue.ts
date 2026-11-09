@@ -10,6 +10,7 @@ import { hydrateResume, resumeFailureMessage } from '../resume-hydration.js';
 import { clearSessionScopedStores } from '../session-stores.js';
 import type { UseInputModeResult } from './use-input-mode.js';
 import type { UserMessageInput } from '../../../core/types/user-input.js';
+import { configStore } from '../../../stores/project/config.js';
 
 /** The state the next entry into the engine starts from, and what the operator typed to continue it. */
 export interface InlineResume {
@@ -56,6 +57,7 @@ export function useRunContinue({
     const outcome = continueRun({
       ref: prepared.session.ref,
       ...(message !== undefined && { steer: message }),
+      reviewNone: configStore.reviewNone(),
       deps: {
         resumeParked: resumeParkedRun,
         loadState: hydrateResume,

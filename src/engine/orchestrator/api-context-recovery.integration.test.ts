@@ -371,7 +371,9 @@ describe('a REVIEW that reached no verdict', () => {
     const failed = events.find((event) => event.type === 'error' && event.code === 'review_failed');
     expect(failed).toBeDefined();
     expect(JSON.stringify(failed)).not.toContain('0 blocking');
-    expect(deriveRunStatus({ state: result.state, liveness: 'not-alive' }).kind).toBe('open');
+    expect(
+      deriveRunStatus({ reviewNone: false, state: result.state, liveness: 'not-alive' }).kind,
+    ).toBe('open');
   });
 
   it('refuses a packet missing its recorded evidence rather than reviewing what is left', async () => {

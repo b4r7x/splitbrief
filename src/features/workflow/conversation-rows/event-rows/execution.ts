@@ -14,6 +14,7 @@ import {
   fullSuiteNameRows,
   fullSuiteSegments,
   reviewChecksSegments,
+  reviewNoneSegments,
   validationStageNotes,
   validationSummarySegments,
 } from '../event-format.js';
@@ -189,6 +190,15 @@ export function reviewChecksRowBlock(
   return wrappedSegmentsBlock({
     keyPrefix,
     segments: reviewChecksSegments(event),
+    width,
+    continuationIndent: 2,
+  });
+}
+
+export function reviewNoneRowBlock(keyPrefix: string, width: number): ConversationRowBlock | null {
+  return wrappedSegmentsBlock({
+    keyPrefix,
+    segments: reviewNoneSegments(),
     width,
     continuationIndent: 2,
   });

@@ -60,6 +60,7 @@ function derivationLoopMs({
     waitedMs: state.waitedMs ?? {},
     resumedAt: state.resumedAt ?? null,
     reviewerLabel: null,
+    reviewNone: view.reviewNone,
     plannerCall: state.plannerCall ?? null,
     plannerCallStartedTs: state.plannerCallStartedTs ?? null,
     suiteStage: null,

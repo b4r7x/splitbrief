@@ -45,8 +45,15 @@ function unreadableState(): RunStatus {
   };
 }
 
-/** Everything one run is, read once: its state, whether it is live, and what it left on disk. */
-export function loadRunRecord(ref: SessionRef, deps: RunRecordDeps): RunRecord {
+/**
+ * Everything one run is, read once: its state, whether it is live, and what it left on disk.
+ * `reviewNone` is REVIEW None in the config the next pass runs on.
+ */
+export function loadRunRecord(
+  ref: SessionRef,
+  deps: RunRecordDeps,
+  reviewNone: boolean,
+): RunRecord {
   const hydration = deps.loadResumeState(ref);
   const state = hydration.kind === 'loaded' ? hydration.state : null;
   const summary = deps.readSummary(ref);
@@ -61,6 +68,7 @@ export function loadRunRecord(ref: SessionRef, deps: RunRecordDeps): RunRecord {
         : deriveRunStatus({
             state,
             liveness: deps.liveness(ref),
+            reviewNone,
           }),
     summary,
     ledger: deps.readLedger(ref),

@@ -60,6 +60,7 @@ function resolveActiveRunnerSource(input: ReadActiveRunnerInput): ActiveRunnerSo
 
   if (input.role === 'reviewer') {
     const reviewer = resolveReviewerRunner(input.config);
+    if (reviewer.source === 'none') return { runner: input.config.planner, sourcePath: 'planner' };
     return {
       runner: reviewer.runner,
       sourcePath: reviewer.source === 'planner' ? 'planner' : 'reviewer',
@@ -100,6 +101,10 @@ export function readActiveRunnerLens(input: ReadActiveRunnerInput): ActiveRunner
   };
 }
 
+export function readActiveRunner(
+  input: Readonly<{ config: Config; role: 'reviewer' }>,
+): ReviewerConfig;
+export function readActiveRunner(input: ReadActiveRunnerInput): ActiveRunnerConfig;
 export function readActiveRunner(input: ReadActiveRunnerInput): ActiveRunnerConfig {
   return resolveActiveRunnerSource(input).runner;
 }
@@ -112,7 +117,7 @@ export function updateActiveRunner(input: UpdateActiveRunnerInput): Config {
   if (input.role === 'reviewer') {
     return {
       ...input.config,
-      reviewer: input.updater(resolveReviewerRunner(input.config).runner),
+      reviewer: input.updater(readActiveRunner({ config: input.config, role: 'reviewer' })),
     };
   }
 
@@ -127,4 +132,8 @@ export function updateActiveRunner(input: UpdateActiveRunnerInput): Config {
 export function clearReviewerSeat(config: Config): Config {
   const { reviewer: _reviewer, ...rest } = config;
   return rest;
+}
+
+export function setReviewNone(config: Config): Config {
+  return { ...config, reviewer: 'none' };
 }

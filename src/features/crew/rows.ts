@@ -9,7 +9,7 @@ import { fallbackRowKey, seatFallback, type FallbackRow } from '../../core/crew/
 import { crossLabVerdict, resolveLab, type CrewLabVerdict } from '../../core/crew/labs.js';
 import type { CrewPreset } from '../../core/crew/presets.js';
 import { crewRowKey, type CrewRow } from '../../core/crew/rows.js';
-import { CREW_SEAT_ROLES } from '../../core/crew/seats.js';
+import { CREW_SEAT_ROLES, seatHasRunner } from '../../core/crew/seats.js';
 import {
   fallbackPickerOverlayFor,
   seatAxisFocus,
@@ -38,7 +38,9 @@ export type CrewActivation =
 
 export function crewVerdict(rows: readonly CrewRow[]): CrewLabVerdict | undefined {
   const seatRunner = (id: CrewSeatId) => {
-    for (const row of rows) if (row.id === id) return row.seat.runner;
+    for (const row of rows) {
+      if (row.id === id && seatHasRunner(row.seat)) return row.seat.runner;
+    }
     return undefined;
   };
   const build = seatRunner('build');

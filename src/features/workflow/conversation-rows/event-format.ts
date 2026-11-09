@@ -320,6 +320,16 @@ export function reviewChecksSegments(
   ];
 }
 
+export function reviewNoneSegments(): ConversationRowSegment[] {
+  return [
+    { text: 'Review', tone: 'textDim' },
+    ...separatedSegments([
+      { text: 'none', tone: 'textDim' },
+      { text: 'REVIEW is None, so no seat reviewed this run', tone: 'textDim' },
+    ]),
+  ];
+}
+
 function firstLine(text: string): string {
   return text.trim().split('\n')[0]?.trim() ?? '';
 }

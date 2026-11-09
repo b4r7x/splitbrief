@@ -274,7 +274,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     cause: z.literal('seat-change').optional(),
   }),
   phaseEvent('workflow_complete').extend({
-    review: z.enum(['passed', 'failed']).optional(),
+    review: z.enum(['passed', 'failed', 'none']).optional(),
     blocking: z.number().int().optional(),
     /** The run's completed briefs, those an earlier process completed included; absent on older logs. */
     completedTasks: z.number().int().nonnegative().optional(),
@@ -320,6 +320,8 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     reviewerModel: z.string().optional(),
     reviewerKind: RunnerKindSchema.optional(),
     reviewerAxes: z.array(z.string()).optional(),
+    /** Present when REVIEW is None for this pass, so no seat reviews it. */
+    reviewerSeat: z.literal('none').optional(),
     /** The ids of the skills every seat call of this run carries. */
     skills: z.array(z.string()).optional(),
   }),

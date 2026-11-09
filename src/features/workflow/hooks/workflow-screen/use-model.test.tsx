@@ -158,7 +158,7 @@ describe('useWorkflowScreen continuing a run stopped at Apply', () => {
     saveState(ref, state);
     // The replay of the run's history, as a continue lays it on the stores before the screen turns local.
     addEvent({ type: 'workflow_complete', ts: 1, phase: 'complete', review: 'passed' });
-    hydrateFromState(state);
+    hydrateFromState(state, false);
     routerStore.navigate({
       to: 'workflow',
       run: makeRunRecord({

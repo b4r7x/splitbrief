@@ -77,7 +77,7 @@ function saveAnotherBuildModel(target: StopContinueFixture): void {
 /** The closed record names the BUILD model the run used, not the one saved after it. */
 function expectRecordedBuildSeat(ref: SessionRef): void {
   expect(readSession(ref)?.summary?.implementerModel).toBe('fixture');
-  const view = deriveSummaryView({ record: readRunRecord(ref) });
+  const view = deriveSummaryView({ record: readRunRecord(ref, false) });
   if (view === null) throw new Error('the closed run has no closed view');
   const crew = crewLine(view, 200)
     .map((span) => span.text)
@@ -94,7 +94,7 @@ function saveReviewerAsPlanner(target: StopContinueFixture): void {
 
 /** The REVIEW span of the closed run's crew line. */
 function closedReviewSpan(ref: SessionRef): string | undefined {
-  const view = deriveSummaryView({ record: readRunRecord(ref) });
+  const view = deriveSummaryView({ record: readRunRecord(ref, false) });
   if (view === null) throw new Error('the closed run has no closed view');
   return crewLine(view, 200).find((span) => span.seat === 'review')?.text;
 }
@@ -130,7 +130,7 @@ describe('headless End run', { timeout: 240_000 }, () => {
     const cutIndex = events.indexOf(cut[0] as (typeof events)[number]);
     expect(cutIndex).toBeLessThan(events.findIndex((event) => event.type === 'workflow_cancelled'));
 
-    await hydrateRun(readRunRecord(ref));
+    await hydrateRun(readRunRecord(ref, false));
     const rows = buildConversationRows({
       sections: groupEventsIntoSections(eventsStore.get().events),
       expandedDiffs: new Set(),
@@ -185,7 +185,7 @@ describe('headless End run', { timeout: 240_000 }, () => {
     const parked = await startAndSignal(target, 'SIGINT', target.isolationTreesDir);
     expect(parked.exitCode).toBe(130);
     const ref = { projectDir: target.projectDir, sessionId: parked.sessionId };
-    const record = readRunRecord(ref);
+    const record = readRunRecord(ref, false);
     await hydrateRun(record);
     routerStore.init({ screen: 'workflow', run: record, execution: { kind: 'at-rest' } });
 
@@ -194,7 +194,7 @@ describe('headless End run', { timeout: 240_000 }, () => {
     expect(ended.exitCode, ended.stderr).toBe(0);
     await rereadRunAtRest(ref);
     const refreshedEvents = eventsStore.get().events;
-    await hydrateRun(readRunRecord(ref));
+    await hydrateRun(readRunRecord(ref, false));
     expect(refreshedEvents).toEqual(eventsStore.get().events);
     const patch = readFileSync(
       join(sessionDir(ref.projectDir, ref.sessionId), 'run.patch'),
@@ -202,7 +202,7 @@ describe('headless End run', { timeout: 240_000 }, () => {
     );
     expect(patch).toContain(`diff --git a/${MARKER_FILE} b/${MARKER_FILE}`);
     const patchFiles = [...patch.matchAll(/^diff --git a\/(\S+) b\//gm)].map((match) => match[1]);
-    const view = deriveSummaryView({ record: readRunRecord(ref) });
+    const view = deriveSummaryView({ record: readRunRecord(ref, false) });
     if (view === null) throw new Error('the ended run has no closed view');
     expect(filesRows(view).map((row) => row.path)).toEqual(patchFiles);
     expect(view.briefs.rows.map((row) => briefRowParts({ row }))).toMatchObject([
@@ -223,7 +223,7 @@ describe('headless End run', { timeout: 240_000 }, () => {
       const parked = await startAndSignal(target, 'SIGINT', target.isolationTreesDir);
       expect(parked.exitCode).toBe(130);
       const ref = { projectDir: target.projectDir, sessionId: parked.sessionId };
-      const record = readRunRecord(ref);
+      const record = readRunRecord(ref, false);
       const workspace = readState(target, parked.sessionId).workspace;
       if (workspace === undefined) throw new Error('the parked run has no workspace');
       if (!hasChanges) {
@@ -274,7 +274,7 @@ describe('headless End run', { timeout: 240_000 }, () => {
         );
         const refreshedEvents = eventsStore.get().events;
         const refreshedRoute = routerStore.get();
-        await hydrateRun(readRunRecord(ref));
+        await hydrateRun(readRunRecord(ref, false));
         expect(refreshedEvents).toEqual(eventsStore.get().events);
         expect(refreshedRoute.screen === 'workflow' && refreshedRoute.run.status).toEqual({
           kind: 'closed',
@@ -307,7 +307,11 @@ describe('headless End run', { timeout: 240_000 }, () => {
       'REVIEW = PLAN',
     );
     expect(
-      deriveRunStatus({ state: readState(target, parked.sessionId), liveness: 'not-alive' }),
+      deriveRunStatus({
+        reviewNone: false,
+        state: readState(target, parked.sessionId),
+        liveness: 'not-alive',
+      }),
     ).toEqual({ kind: 'closed', as: 'applied' });
     expect(existsSync(workspace.path)).toBe(false);
     const notices = await workspaceNotices({
@@ -347,7 +351,9 @@ describe('headless End run', { timeout: 240_000 }, () => {
     const resumed = await continueRun(target);
     expect(resumed.exitCode, resumed.stderr).toBe(0);
     const ready = readState(target, parked.sessionId);
-    expect(deriveRunStatus({ state: ready, liveness: 'not-alive' }).kind).toBe('ready-to-apply');
+    expect(deriveRunStatus({ reviewNone: false, state: ready, liveness: 'not-alive' }).kind).toBe(
+      'ready-to-apply',
+    );
     saveAnotherBuildModel(target);
 
     const ended = await cli(target, ['continue', parked.sessionId, '--action', 'end-run']);
@@ -376,7 +382,7 @@ describe('headless End run', { timeout: 240_000 }, () => {
     expect(events.slice(completedAt).map((event) => event.type)).not.toContain(
       'workflow_cancelled',
     );
-    await hydrateRun(readRunRecord(ref));
+    await hydrateRun(readRunRecord(ref, false));
     const rows = buildConversationRows({
       sections: groupEventsIntoSections(eventsStore.get().events),
       expandedDiffs: new Set(),

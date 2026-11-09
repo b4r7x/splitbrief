@@ -67,7 +67,7 @@ function haltOnManyFiles(ref: SessionRef, first: RecoveryIssue): void {
     { bus: createRecoveryBus({ ...ref, sink: addTuiEvent }), phase: state.phase },
     ref.sessionId,
     issue,
-    resumeStep(state),
+    resumeStep(state, false),
   );
 }
 

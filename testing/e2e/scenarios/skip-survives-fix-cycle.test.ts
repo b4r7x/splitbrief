@@ -182,7 +182,7 @@ describe('e2e: a skipped brief through a review fix cycle', { timeout: 240_000 }
     ]);
     const applied = await cli(target, ['continue', sessionId, '--action', 'apply']);
     expect(applied.exitCode, `${applied.stdout}\n${applied.stderr}`).toBe(0);
-    const view = deriveSummaryView({ record: readRunRecord(ref) });
+    const view = deriveSummaryView({ record: readRunRecord(ref, false) });
     if (view === null) throw new Error('the finished run has no closed view');
     expect(view.briefs.rows.map((row) => briefRowParts({ row }))).toMatchObject([
       { id: 'T001', state: { kind: 'settled', method: 'skipped' } },

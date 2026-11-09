@@ -518,6 +518,44 @@ describe('SettingsOverlay', () => {
     ui.unmount();
   });
 
+  describe('a row that REVIEW None makes read-only', () => {
+    const REASON = 'Read-only while REVIEW is None: no review runs.';
+
+    it('advertises no action key on the row', async () => {
+      seed({ reviewer: 'none' });
+      overlayStore.open('settings', 'validation.endChecks');
+      const ui = renderAt(120, 40);
+      await flushEffects();
+
+      const frame = stripAnsiStyles(ui.lastFrame());
+      expect(frame).toContain('↑↓ select · esc close');
+      expect(frame).not.toContain('space toggle');
+
+      ui.unmount();
+    });
+
+    it.each([
+      ['Enter', ENTER],
+      ['Space', ' '],
+    ])('names the reason at 60x18 when the user presses %s on it', async (_key, input) => {
+      seed({ reviewer: 'none', validation: { endChecks: true } });
+      overlayStore.open('settings', 'validation.endChecks');
+      const ui = renderAt(60, 18);
+      await flushEffects();
+      expect(stripAnsiStyles(ui.lastFrame())).not.toContain(REASON);
+
+      ui.stdin.write(input);
+
+      await vi.waitFor(() => {
+        expect(stripAnsiStyles(ui.lastFrame())).toContain(REASON);
+      });
+      expect(feedbackStore.get()).toEqual({ message: REASON, isError: true });
+      expect(configStore.get().config?.validation.endChecks).toBe(true);
+
+      ui.unmount();
+    });
+  });
+
   it('does not toggle a setting with Space when no setting row is visible', async () => {
     seed({ validation: { endChecks: true } });
     overlayStore.open('settings', 'validation.endChecks');

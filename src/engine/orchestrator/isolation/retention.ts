@@ -262,7 +262,7 @@ export async function publishRetainedWorkspaceNotice(
   input: SessionRef & { state: WorkflowState; bus: EventBus },
 ): Promise<boolean> {
   const { state, bus } = input;
-  const status = deriveRunStatus({ state, liveness: 'not-alive' });
+  const status = deriveRunStatus({ state, liveness: 'not-alive', reviewNone: false });
   if (status.kind !== 'open') return false;
   const workspace = state.workspace;
   if (workspace === undefined || workspace.kind === 'checkout') return false;

@@ -177,7 +177,7 @@ describe('runHeadless — liveness record (F-261)', () => {
       expect(outcome).toBe(settled);
       const session = readSession({ projectDir, sessionId });
       expect(session === null ? null : sessionStatusWord(session)).toBe(status);
-      expect(readRunRecord({ projectDir, sessionId }).status.kind).toBe('running');
+      expect(readRunRecord({ projectDir, sessionId }, false).status.kind).toBe('running');
       const lines = stderrSpy.mock.calls
         .map(([chunk]: [unknown]) => String(chunk))
         .filter((line: string) => line.includes('lockfile.json'));

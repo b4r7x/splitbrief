@@ -223,15 +223,40 @@ describe('reconcileSeatIdentities', () => {
     });
   });
 
+  it('None records `reviewSeat: none`', () => {
+    const ref = session('seats-review-none');
+
+    recordSeatIdentities(ref, makeConfig({ reviewer: 'none' }));
+
+    expect(readSeatIdentities(ref)?.reviewSeat).toBe('none');
+  });
+
+  it.each([
+    { reviewFollowsPlan: true, reviewSeat: 'plan' },
+    { reviewFollowsPlan: false, reviewSeat: 'own' },
+  ])(
+    'an old `reviewFollowsPlan: $reviewFollowsPlan` reads as `$reviewSeat`',
+    ({ reviewFollowsPlan, reviewSeat }) => {
+      const ref = session(`seats-old-follow-${String(reviewFollowsPlan)}`);
+      const { plan, build, review } = seatIdentitiesFromConfig(makeConfig());
+      writeFileSync(
+        join(sessionDir(ref.projectDir, ref.sessionId), SEATS_FILE),
+        JSON.stringify({ plan, build, review, reviewFollowsPlan }),
+      );
+
+      expect(readSeatIdentities(ref)?.reviewSeat).toBe(reviewSeat);
+    },
+  );
+
   it('re-records a review seat that stopped following the planner for the same tool and model', () => {
     const ref = session('seats-review-follow');
     recordSeatIdentities(ref, makeConfig());
-    expect(readSeatIdentities(ref)?.reviewFollowsPlan).toBe(true);
+    expect(readSeatIdentities(ref)?.reviewSeat).toBe('plan');
     const ownReviewer = makeConfig({ reviewer: { kind: 'cli', tool: 'claude-code' } });
 
     expect(reconcileSeatIdentities(ref, ownReviewer)).toEqual([]);
 
-    expect(readSeatIdentities(ref)?.reviewFollowsPlan).toBe(false);
+    expect(readSeatIdentities(ref)?.reviewSeat).toBe('own');
     expect(readSeatIdentities(ref)).toEqual(seatIdentitiesFromConfig(ownReviewer));
   });
 

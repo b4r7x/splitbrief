@@ -137,7 +137,7 @@ describe('CLI integration: resume interrupted session', { timeout: 90_000 }, () 
     // An old run stopped inside the retired chain picks up at its planning session.
     const saved = loadState({ projectDir: tmp, sessionId });
     if (saved === null) throw new Error('expected the resumed state to load');
-    expect(resumeStep(saved)).toEqual({
+    expect(resumeStep(saved, false)).toEqual({
       kind: 'planner',
       call: 'plan',
     });

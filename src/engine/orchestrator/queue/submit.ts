@@ -14,6 +14,9 @@ import { nowIso } from '../../../utils/format-time.js';
 import type { WriteSequencer } from '../serial-executor.js';
 import { formatQueuedMessagePreview } from '../../../core/queue-preview.js';
 import { isQueuedMessagePendingFirstDelivery, messageSeat } from '../../../core/queue-state.js';
+import { noWordsRefusal } from '../../../core/recovery/typed-words.js';
+import { resumeStep } from '../../../core/sessions/run-status.js';
+import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
 import type { QueueSubmissionResult, WorkflowContext } from '../types.js';
 import { deliverToRunningCall } from '../../calls/steering.js';
 import { absorbBuildCorrectionsById } from './build-corrections.js';
@@ -38,6 +41,7 @@ export function enqueueUserMessage({
   message: input,
   phase,
   bus,
+  reviewNone,
   enforcePhasePolicy = true,
   steerable,
 }: EnqueueUserMessageOptions): {
@@ -50,6 +54,21 @@ export function enqueueUserMessage({
   });
   if (enforcePhasePolicy && !isLivePhase(phase) && !isImplementerPhase(phase)) {
     const message = `Queue is only available while a run is live; current phase is ${phase}.`;
+    publishWarning({
+      bus,
+      phase,
+      message,
+      safety: {
+        category: 'queue',
+        code: 'phase_unavailable',
+      },
+    });
+    return { state: base, result: { status: 'rejected', reason: 'phase-unavailable', message } };
+  }
+
+  const seat = messageSeat(phase, base.pendingScheduledReview !== undefined, reviewNone);
+  if (enforcePhasePolicy && seat === null && isLivePhase(phase)) {
+    const message = noWordsRefusal(resumeStep(base, reviewNone));
     publishWarning({
       bus,
       phase,
@@ -93,7 +112,6 @@ export function enqueueUserMessage({
   });
   recordUserMessage({ projectDir, sessionId, bus, phase }, input, { queuedMessage: message });
   const preview = formatQueuedMessagePreview(message);
-  const seat = messageSeat(phase, next.pendingScheduledReview !== undefined);
   const brief = seat === 'build' ? next.tasks[next.currentTaskIndex] : undefined;
   const taskId = brief?.id;
   const starting = seat === 'build' && brief?.status === 'pending' ? true : undefined;
@@ -126,9 +144,10 @@ export function createQueueHandler(
   const { projectDir, sessionId, getState, setState, bus, planner, serialize, signal, steering } =
     opts;
   const ref = { projectDir, sessionId };
+  const reviewNone = resolveReviewCadence(opts.config) === 'none';
   return async (message: UserMessageInput, phase: Phase) => {
     const attached = steering?.current() ?? null;
-    const seat = messageSeat(phase, getState()?.pendingScheduledReview !== undefined);
+    const seat = messageSeat(phase, getState()?.pendingScheduledReview !== undefined, reviewNone);
     const call =
       attached !== null && seat !== null && seatForRunningCall(attached) === seat ? attached : null;
     const pendingDelivery = call === null ? undefined : Promise.withResolvers<void>();
@@ -157,6 +176,7 @@ export function createQueueHandler(
             message,
             phase,
             bus,
+            reviewNone,
             ...(call !== null && { steerable: true }),
           });
           if (pendingDelivery !== undefined && result.message !== undefined) {

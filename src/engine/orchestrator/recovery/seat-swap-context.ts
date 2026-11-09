@@ -3,6 +3,7 @@ import type { CrewSeatId } from '../../../core/crew/identity.js';
 import { loadConfig } from '../../../core/config/load/io.js';
 import { readImplementerProfileConfig } from '../../../core/config/accessors/implementer-profiles.js';
 import { readActiveRunner } from '../../../core/config/accessors/active-runner.js';
+import type { ReviewerConfig } from '../../../core/schemas/reviewer-config.js';
 import type { RunnerConfig } from '../../../core/config/accessors/runner-config.js';
 import {
   fallbackBlockedReason,
@@ -34,7 +35,7 @@ import type { DetectedSeatTool, SeatSwapContext } from './builders/task.js';
 import { seatCandidateOfRunner } from './switch-seat.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 
-type SeatRunner = Config['planner'] | Config['implementer'] | NonNullable<Config['reviewer']>;
+type SeatRunner = Config['planner'] | Config['implementer'] | ReviewerConfig;
 
 /** A CLI-hosted seat can name the tool it is leaving; an API or shell seat cannot. */
 function currentSeatTool(runner: SeatRunner): string {

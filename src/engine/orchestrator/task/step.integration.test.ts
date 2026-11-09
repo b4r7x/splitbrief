@@ -562,6 +562,7 @@ describe('runSingleTask — a brief keeps its corrections on every attempt', {
       message: plainUserMessage('name the helper parseAmount'),
       phase: 'implementing',
       bus,
+      reviewNone: false,
     }).state;
     const implement = vi.fn().mockResolvedValue({
       success: false,

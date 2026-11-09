@@ -3,12 +3,8 @@ import { Box } from 'ink';
 import type { ReactNode } from 'react';
 import { glyph } from '../../lib/glyphs.js';
 import { FIRST_RUN_NOTE } from '../../core/discovery/copy.js';
-import {
-  CREW_LABEL_WIDTH,
-  PLANNER_INHERITANCE,
-  type CrewSeatId,
-} from '../../core/crew/identity.js';
-import { deriveCrewSeats } from '../../core/crew/seats.js';
+import { CREW_LABEL_WIDTH, type CrewSeatId } from '../../core/crew/identity.js';
+import { crewSeatWord, deriveCrewSeats } from '../../core/crew/seats.js';
 import { detectedSeatReady } from '../../core/crew/default.js';
 import { useCrewDisplayNames } from '../../hooks/use-crew-display-names.js';
 import { useSpinnerFrame } from '../../hooks/use-spinner-frame.js';
@@ -95,10 +91,10 @@ export function BootManifest({ footer }: { footer?: ReactNode }) {
   return (
     <Box flexDirection="column">
       {seats.map((seat) => {
-        const inheritRow = seat.id === 'review' && seat.source === 'planner';
-        const runner = seat.runner;
+        const runner =
+          seat.id !== 'review' || seat.source === 'configured' ? seat.runner : undefined;
         const detection =
-          runner.kind === 'cli'
+          runner?.kind === 'cli'
             ? cliTools.find((candidate) => candidate.tool === runner.tool)
             : undefined;
         return (
@@ -108,11 +104,11 @@ export function BootManifest({ footer }: { footer?: ReactNode }) {
               <Text color={seatColor[seat.id]}>{seat.label}</Text>
             </Box>
             <Box flexGrow={1} flexShrink={1}>
-              <Text color={inheritRow ? t.textDim : t.text} wrap="truncate-end">
-                {inheritRow ? PLANNER_INHERITANCE.mark : seat.model}
+              <Text color={runner === undefined ? t.textDim : t.text} wrap="truncate-end">
+                {crewSeatWord(seat)}
               </Text>
             </Box>
-            {!inheritRow && (
+            {runner !== undefined && (
               <Box width={2} paddingLeft={1} flexShrink={0}>
                 <SeatMark
                   refreshing={refresh.readiness.refreshing}

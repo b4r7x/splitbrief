@@ -183,7 +183,7 @@ describe('e2e: the crew strip at a narrow width', () => {
       state,
     });
 
-    const record = readRunRecord(ref);
+    const record = readRunRecord(ref, false);
     expect(record.status.kind).toBe('ready-to-apply');
     configStore.load(projectDir);
     terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: true });

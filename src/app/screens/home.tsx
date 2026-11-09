@@ -10,10 +10,9 @@ import {
   TOOLS_NOT_CHECKED_TITLE,
 } from '../../core/discovery/copy.js';
 import { formatCollapsedSeatSpans, seatLineText } from '../../core/crew/identity.js';
-import { CREW_SEAT_ROLES } from '../../core/crew/seats.js';
+import { CREW_SEAT_ROLES, collapsedReviewSeat } from '../../core/crew/seats.js';
 import { useCrewDisplayNames } from '../../hooks/use-crew-display-names.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
-import { configuredReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { prepareExecution } from '../../engine/runners/prepare-execution/prepare-execution.js';
 import { LOCKFILE_PING_INTERVAL_MS } from '../../engine/orchestrator/run/heartbeat.js';
@@ -116,7 +115,7 @@ function DiscoveryPanel({ width }: { width: number }) {
   const seatInput = {
     planner: config.planner,
     build: resolveImplementerProfiles(config).defaultProfile.config,
-    reviewer: configuredReviewerRunner(config),
+    reviewer: collapsedReviewSeat(config),
     displayNames,
   };
   const budget = width - DISCOVERY_PANEL_CHROME_COLS;
@@ -220,7 +219,7 @@ export function HomeScreen({
       saveHomeDraft(configStore.get().projectDir, createDraftDocument(''));
       routerStore.navigate({
         to: 'workflow',
-        run: readRunRecord(execution.session.ref),
+        run: readRunRecord(execution.session.ref, configStore.reviewNone()),
         execution: { kind: 'local', prepared: execution },
       });
     },

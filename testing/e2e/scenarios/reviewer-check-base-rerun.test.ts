@@ -151,7 +151,7 @@ afterEach(() => {
 
 /** The transcript rows a run's replayed log paints, one string per row. */
 async function transcriptRows(ref: { projectDir: string; sessionId: string }): Promise<string[]> {
-  await hydrateRun(readRunRecord(ref));
+  await hydrateRun(readRunRecord(ref, false));
   return buildConversationRows({
     sections: groupEventsIntoSections(eventsStore.get().events),
     expandedDiffs: new Set(),
@@ -368,7 +368,7 @@ describe('e2e: reviewer check base re-run', { timeout: 240_000 }, () => {
           `  - ${red.key}`,
         ].join('\n'),
       );
-      expect(deriveRunStatus({ state, liveness: 'not-alive' })).toEqual({
+      expect(deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' })).toEqual({
         kind: 'ready-to-apply',
         override: false,
       });
@@ -414,7 +414,7 @@ describe('e2e: reviewer check base re-run', { timeout: 240_000 }, () => {
       const transcript = await transcriptRows(ref);
       expect(transcript.some((row) => row.includes(`pre-existing · ${red.key}`))).toBe(true);
 
-      const view = deriveSummaryView({ record: readRunRecord(ref) });
+      const view = deriveSummaryView({ record: readRunRecord(ref, false) });
       expect(view?.review).toMatchObject({
         kind: 'written',
         preExisting: [{ id: 'V1', command: red.command, tests: [red.key] }],
@@ -485,7 +485,7 @@ describe('e2e: reviewer check base re-run', { timeout: 240_000 }, () => {
     const state = readState(target, sessionId);
     expect(state.pendingTriage?.inputs.map((input) => input.id)).toEqual(['V1.1']);
     expect(state.pendingRecovery).toMatchObject({ reason: 'review-failed' });
-    expect(deriveRunStatus({ state, liveness: 'not-alive' }).kind).toBe('open');
+    expect(deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' }).kind).toBe('open');
   });
 
   it.each(['minor', 'blocking'] as const)(
@@ -524,7 +524,7 @@ describe('e2e: reviewer check base re-run', { timeout: 240_000 }, () => {
       );
       expect(review).toContain(`**Critical**\n\nNone.\n\n**Note**\n\n- ${finding.text}\n`);
       expect(review).toContain(`### Pre-existing failures`);
-      expect(deriveRunStatus({ state, liveness: 'not-alive' })).toEqual({
+      expect(deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' })).toEqual({
         kind: 'ready-to-apply',
         override: false,
       });

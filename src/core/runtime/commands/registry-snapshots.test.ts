@@ -181,7 +181,7 @@ describe('run snapshot runtime commands', () => {
     let refreshed = false;
     const commands = createRuntimeCommands(
       makeCtx({
-        acceptRun: async () => ({ status: 'review' }),
+        acceptRun: async () => ({ status: 'review', reviewNone: false }),
         refreshRun: () => {
           refreshed = true;
         },
@@ -193,6 +193,22 @@ describe('run snapshot runtime commands', () => {
     await runCommandInTest({ commands, raw: '/run accept', screen: 'workflow', onError: noop });
     expect(message).toMatch(/checks and review again/);
     expect(refreshed).toBe(true);
+  });
+
+  it('sends a changed candidate back to its checks only when REVIEW is None', async () => {
+    let message: string | undefined;
+    const commands = createRuntimeCommands(
+      makeCtx({
+        acceptRun: async () => ({ status: 'review', reviewNone: true }),
+        setFeedbackMessage: (m) => {
+          message = m;
+        },
+      }),
+    );
+    await runCommandInTest({ commands, raw: '/run accept', screen: 'workflow', onError: noop });
+    expect(message).toBe(
+      'Your checkout changed files this run changed too; the merged result needs its checks again. Continue the run to start them.',
+    );
   });
 
   it('surfaces why a run cannot be accepted', async () => {

@@ -80,7 +80,14 @@ it.each(['queue', 'seed', 'parked'] as const)(
       }
       requests.push(JSON.parse(await request.text()));
       if (requests.length === 1 && route === 'queue') {
-        enqueueUserMessage({ ...ref, state, message, bus, phase: 'implementing' });
+        enqueueUserMessage({
+          ...ref,
+          state,
+          message,
+          bus,
+          phase: 'implementing',
+          reviewNone: false,
+        });
       }
       return makeOpenAiSseResponse([
         {

@@ -367,6 +367,64 @@ describe('status command', () => {
     expect(out).toContain('REVIEW:    Claude Code CLI · Opus 5.5');
   });
 
+  describe('a REVIEW seat changed to or from None during the run', () => {
+    const codexReviewer = { kind: 'cli', tool: 'codex', model: 'gpt-5.5' } as const;
+    const crew = {
+      plannerTool: 'claude-code',
+      plannerModel: 'sonnet',
+      plannerKind: 'cli',
+      implementerTool: 'codex',
+      implementerModel: 'gpt-6.1-sol',
+      implementerKind: 'cli',
+    } as const;
+
+    function reviewLine(): string | undefined {
+      return stripVTControlCharacters(captureOutput())
+        .split('\n')
+        .find((line) => line.startsWith('REVIEW:'));
+    }
+
+    it('names None after a seat that reviewed moves to None', async () => {
+      const sessionId = '2026-10-15-seat-then-none';
+      const ref = { projectDir: tmp, sessionId };
+      writeActiveSession(tmp, sessionId, 'seat then none', {
+        ...crew,
+        reviewerTool: 'codex',
+        reviewerModel: 'gpt-5.5',
+        reviewerKind: 'cli',
+      });
+      recordSeatIdentities(ref, makeConfig({ reviewer: codexReviewer }));
+      reconcileSeatIdentities(ref, makeConfig({ reviewer: 'none' }));
+
+      await runStatus([]);
+
+      expect(reviewLine()).toBe('REVIEW:    None');
+    });
+
+    it('names the new seat after a run that started on None gets a seat', async () => {
+      const sessionId = '2026-10-15-none-then-seat';
+      const ref = { projectDir: tmp, sessionId };
+      writeActiveSession(tmp, sessionId, 'none then seat', { ...crew, reviewerSeat: 'none' });
+      recordSeatIdentities(ref, makeConfig({ reviewer: 'none' }));
+      reconcileSeatIdentities(ref, makeConfig({ reviewer: codexReviewer }));
+
+      await runStatus([]);
+
+      expect(reviewLine()).toBe('REVIEW:    OpenAI Codex CLI · GPT-5.5');
+    });
+
+    it('names None from the run state when the run has no seat record', async () => {
+      writeActiveSession(tmp, '2026-10-15-none-no-record', 'none no record', {
+        ...crew,
+        reviewerSeat: 'none',
+      });
+
+      await runStatus([]);
+
+      expect(reviewLine()).toBe('REVIEW:    None');
+    });
+  });
+
   it('uses the current recorded seat kind when earlier calls used the same name for a CLI', async () => {
     const sessionId = '2026-10-13-current-api-seat';
     writeActiveSession(tmp, sessionId, 'current API seat', {

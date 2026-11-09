@@ -14,14 +14,15 @@ import {
   writeRunStopped,
 } from '../../headless.js';
 
-export async function settleReadyRun(input: {
-  projectDir: string;
-  sessionId: string;
-  state: WorkflowState;
-  action: 'apply' | 'discard';
-  json: boolean;
-}): Promise<WorkflowState | undefined> {
-  const { projectDir, sessionId, state, action, json } = input;
+export async function settleReadyRun(
+  input: {
+    projectDir: string;
+    sessionId: string;
+    state: WorkflowState;
+    json: boolean;
+  } & ({ action: 'discard' } | { action: 'apply'; reviewNone: boolean }),
+): Promise<WorkflowState | undefined> {
+  const { projectDir, sessionId, state, json } = input;
   const ref = { projectDir, sessionId };
   const bus = createRecoveryBus({
     projectDir,
@@ -34,7 +35,7 @@ export async function settleReadyRun(input: {
     finalizeRunAtRest({ ref, state });
   };
 
-  if (action === 'discard') {
+  if (input.action === 'discard') {
     const closure = await closeRunIfOpen({ projectDir, sessionId, bus }, state, 'discarded');
     if (closure.closedNow) finalize(closure.state);
     process.stderr.write(`Run ${sessionId} discarded.${closedChangesSuffix(ref, closure.state)}\n`);
@@ -43,7 +44,7 @@ export async function settleReadyRun(input: {
 
   // Apply has no stop: a signal lets it finish and write its exit record, then the process exits.
   const { stopped, value: result } = await withHeadlessStop(() =>
-    runApplyAtRest({ wctx: { projectDir, sessionId, bus }, state }),
+    runApplyAtRest({ wctx: { projectDir, sessionId, bus }, state, reviewNone: input.reviewNone }),
   );
   switch (result.outcome) {
     case 'applied':
@@ -57,7 +58,7 @@ export async function settleReadyRun(input: {
       return undefined;
     case 'review':
       process.stderr.write(
-        `Your checkout changed files run ${sessionId} changed too; the merged result goes through its checks and review again.\n`,
+        `Your checkout changed files run ${sessionId} changed too; the merged result goes through its checks${input.reviewNone ? '' : ' and review'} again.\n`,
       );
       if (stopped) {
         writeRunStopped(sessionId);

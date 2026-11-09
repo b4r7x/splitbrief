@@ -297,6 +297,15 @@ describe('HomeSeatBlock', () => {
     unmount();
   });
 
+  it('names REVIEW None instead of the inheritance sentence', async () => {
+    seed(makeConfig({ reviewer: 'none' }));
+
+    const { lines, unmount } = await renderBlock(40);
+
+    expect(lines[2]).toMatch(/^\s*REVIEW\s+None\s*$/);
+    unmount();
+  });
+
   it('says it is still detecting tools without changing the row count', async () => {
     for (const rows of [24, 18]) {
       const warm = await renderBlock(rows);

@@ -262,7 +262,9 @@ describe('hidden retry acceptance in a run', { timeout: 90_000 }, () => {
     expect(hidden.feedback[0]).toContain('Add the test case the hidden check names.');
     const state = loadState({ projectDir, sessionId });
     if (state === null) throw new Error('the run saved no state');
-    expect(deriveRunStatus({ state, liveness: 'not-alive' }).kind).toBe('ready-to-apply');
+    expect(deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' }).kind).toBe(
+      'ready-to-apply',
+    );
   });
 });
 

@@ -128,6 +128,7 @@ function setupBuild() {
       message: plainUserMessage(text),
       phase: 'implementing',
       bus,
+      reviewNone: false,
     }).state;
   };
   const absorb = () => {
@@ -338,6 +339,7 @@ describe('absorbBuildCorrections', () => {
         message: { ...plainUserMessage('Use the reference'), images: [image] },
         phase: 'implementing',
         bus: build.bus,
+        reviewNone: false,
       }).state;
       state = absorbBuildCorrections({
         ...build.ref,
@@ -414,6 +416,7 @@ describe('absorbBuildCorrections', () => {
         message: { ...plainUserMessage('CORRECTION'), images: [image] },
         phase: 'implementing',
         bus: build.bus,
+        reviewNone: false,
       }).state;
       const opts = {
         ...build.ref,
@@ -457,6 +460,7 @@ describe('absorbBuildCorrections', () => {
         message,
         phase: 'implementing',
         bus: build.bus,
+        reviewNone: false,
       }).state;
     }
     const id = state.messageQueue[0]?.id;

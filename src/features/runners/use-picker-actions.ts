@@ -25,6 +25,7 @@ import {
   formatSeatIdentity,
   isSeatIdentity,
   PLANNER_INHERITANCE,
+  REVIEW_NONE,
 } from '../../core/crew/identity.js';
 import { seatFallback } from '../../core/crew/fallback.js';
 import { seatChangeWords, type SeatChangePoint } from '../../core/crew/seats.js';
@@ -37,9 +38,11 @@ import { getKnownProviderBaseURL } from '../../core/providers/catalog.js';
 import { buildRunnerConfig } from '../../core/config/runtime/build-runner.js';
 import {
   clearReviewerSeat,
+  setReviewNone,
   readActiveRunner,
   updateActiveRunner,
 } from '../../core/config/accessors/active-runner.js';
+import { configuredReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import { detectProviderCatalog } from '../../engine/providers/catalog-detection.js';
 import type { PlannerConfig } from '../../core/schemas/planner-config.js';
 import type { ImplementerConfig } from '../../core/schemas/implementer-config.js';
@@ -76,7 +79,6 @@ import {
   commitCustomModel,
   commitFallbackSelection,
   clearSeatFallback,
-  inheritsPlannerSeat,
   removeCustomModel,
   type SeatCommitResult,
 } from './config-transforms.js';
@@ -151,7 +153,7 @@ function seatOwnRunner(
   profile: string | undefined,
 ): PlannerConfig | ImplementerConfig | undefined {
   if (role === 'planner') return config.planner;
-  if (role === 'reviewer') return config.reviewer;
+  if (role === 'reviewer') return configuredReviewerRunner(config);
   return readActiveRunner({ config, role: 'implementer', profile });
 }
 
@@ -272,7 +274,8 @@ function runnerItemOf(item: PickerOption | undefined): RunnerPickerOption | unde
   if (
     item.kind === 'custom-command' ||
     item.kind === 'inherit-planner' ||
-    item.kind === 'no-fallback'
+    item.kind === 'no-fallback' ||
+    item.kind === 'review-none'
   ) {
     return undefined;
   }
@@ -489,6 +492,10 @@ export function usePickerActions(opts: {
           );
           return;
         }
+        if (selection.kind === 'review-none') {
+          await commit(setReviewNone(config), `${catalog.roleLabel} ${REVIEW_NONE.mark}`);
+          return;
+        }
         await saveModelSelection(
           selection,
           model?.id ?? null,
@@ -539,7 +546,7 @@ export function usePickerActions(opts: {
     deleteRight(item: ModelOption) {
       return reportFailure(async () => {
         if (slot === 'fallback') return;
-        if (inheritsPlannerSeat(config, seatRole)) {
+        if (seatRole === 'reviewer' && configuredReviewerRunner(config) === undefined) {
           feedbackStore.setError(`${item.id} belongs to the planner. Remove it from the planner.`);
           return;
         }

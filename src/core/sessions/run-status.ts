@@ -26,7 +26,13 @@ export type StopReason =
 
 export type RunStatus =
   | { kind: 'running' }
-  | { kind: 'open'; stop: StopReason; resumeAt: StepRef }
+  | {
+      kind: 'open';
+      stop: StopReason;
+      resumeAt: StepRef;
+      /** REVIEW None holds this run at its review step: the pass there runs no seat. */
+      skipsReview?: true;
+    }
   | { kind: 'ready-to-apply'; override: boolean }
   | { kind: 'closed'; as: 'complete' | 'ended' | 'applied' | 'undone' | 'discarded' };
 
@@ -76,10 +82,11 @@ const PLANNING_STEP: StepRef = { kind: 'planner', call: 'plan' };
 
 /**
  * Where a run picks up. First match wins: its planning session's questions, a
- * reviewed workspace waiting for Apply, the gate it is parked at, the brief it
- * was building, the review it reached, else its planning session.
+ * finished workspace waiting for Apply, the gate it is parked at, the brief it
+ * was building, the step after its last brief, else its planning session.
+ * `reviewNone` is REVIEW None in the config the next pass runs on.
  */
-export function resumeStep(state: WorkflowState): StepRef {
+export function resumeStep(state: WorkflowState, reviewNone: boolean): StepRef {
   if (state.pendingPlannerConversation !== undefined) return PLANNING_STEP;
   if (awaitsApply(state)) return { kind: 'apply' };
   const gate = parkedGate(state);
@@ -91,10 +98,11 @@ export function resumeStep(state: WorkflowState): StepRef {
     case 'escalating': {
       const task = state.tasks[state.currentTaskIndex];
       return task === undefined
-        ? { kind: 'review', cycle: 0 }
+        ? afterLastBrief(state, reviewNone, 0)
         : { kind: 'brief', taskId: task.id, attempt: state.attempt };
     }
     case 'final-review':
+      return afterLastBrief(state, reviewNone, fixCyclesOf(state).used);
     case 'complete':
       return { kind: 'review', cycle: fixCyclesOf(state).used };
     default:
@@ -102,12 +110,32 @@ export function resumeStep(state: WorkflowState): StepRef {
   }
 }
 
-/** A run whose workspace holds a reviewed result the checkout has not received yet. */
+/**
+ * After its last brief a run is reviewed; under REVIEW None the pass only rechecks a workspace
+ * and hands it to Apply, so the step is Apply's.
+ */
+export function afterLastBrief(state: WorkflowState, reviewNone: boolean, cycle: number): StepRef {
+  return reviewNone &&
+    (state.workspace?.kind === 'worktree' || state.workspace?.kind === 'staged-copy')
+    ? { kind: 'apply' }
+    : { kind: 'review', cycle };
+}
+
+/** The review of a finished run needs no more answers: it passed, was accepted as is, or REVIEW is None. */
+function reviewSettled(state: WorkflowState): boolean {
+  return (
+    state.reviewStatus === 'passed' ||
+    state.reviewStatus === 'none' ||
+    state.acceptedAsIs !== undefined
+  );
+}
+
+/** A run whose workspace holds a finished result the checkout has not received yet. */
 export function awaitsApply(state: WorkflowState): boolean {
   return (
     (state.workspace?.kind === 'worktree' || state.workspace?.kind === 'staged-copy') &&
     state.phase === 'complete' &&
-    (state.reviewStatus === 'passed' || state.acceptedAsIs !== undefined) &&
+    reviewSettled(state) &&
     state.applied === undefined &&
     state.closed === undefined
   );
@@ -141,8 +169,8 @@ export function isAnsweredApplyRecovery(issue: RecoveryIssue): issue is Recovery
 
 /**
  * How a run stands, from the state it saved and whether a process still holds it.
- * A passing review, or a failed one accepted as is, closes a run without a workspace or on the
- * checkout; a run with a worktree or staged copy becomes ready to apply once no process holds it
+ * A passing review, a failed one accepted as is, or a run under REVIEW None closes a run without a
+ * workspace or on the checkout; a run with a worktree or staged copy becomes ready to apply once no process holds it
  * (a process that holds it is applying it), and Apply, Discard or End close it. An Apply undone later leaves the run closed as undone. A halt still waiting for an
  * answer keeps either open.
  */
@@ -150,6 +178,8 @@ export function deriveRunStatus(
   input: Readonly<{
     state: WorkflowState;
     liveness: 'alive' | 'not-alive';
+    /** REVIEW None in the config the next pass runs on: it decides where an open run picks up. */
+    reviewNone: boolean;
   }>,
 ): RunStatus {
   const { state } = input;
@@ -159,7 +189,7 @@ export function deriveRunStatus(
   }
   if (
     state.phase === 'complete' &&
-    (state.reviewStatus === 'passed' || state.acceptedAsIs !== undefined) &&
+    reviewSettled(state) &&
     state.pendingRecovery === undefined &&
     (state.workspace === undefined || state.workspace.kind === 'checkout')
   ) {
@@ -172,19 +202,20 @@ export function deriveRunStatus(
     state.interruptedStep === undefined &&
     !applyUnfinished(state)
   ) {
-    return { kind: 'ready-to-apply', override: state.reviewStatus !== 'passed' };
+    return { kind: 'ready-to-apply', override: state.reviewStatus === 'failed' };
   }
 
-  const waiting = (on: WaitingOn): RunStatus => ({
-    kind: 'open',
-    stop: { kind: 'waiting-for-you', on },
-    resumeAt: resumeStep(state),
-  });
-  const stopped = (on: StoppedOn): RunStatus => ({
-    kind: 'open',
-    stop: { kind: 'stopped', on },
-    resumeAt: resumeStep(state),
-  });
+  const open = (stop: StopReason): RunStatus => {
+    const resumeAt = resumeStep(state, input.reviewNone);
+    return {
+      kind: 'open',
+      stop,
+      resumeAt,
+      ...(input.reviewNone && resumeAt.kind === 'review' && { skipsReview: true as const }),
+    };
+  };
+  const waiting = (on: WaitingOn): RunStatus => open({ kind: 'waiting-for-you', on });
+  const stopped = (on: StoppedOn): RunStatus => open({ kind: 'stopped', on });
 
   if (state.pendingRecovery !== undefined) {
     return waiting({ kind: 'halt', issue: state.pendingRecovery });

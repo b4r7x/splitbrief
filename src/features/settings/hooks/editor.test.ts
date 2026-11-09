@@ -151,6 +151,45 @@ describe('useSettingsEditor', () => {
     ui.unmount();
   });
 
+  it.each(['validation.endChecks', 'workflow.review'])(
+    'a locked row does not toggle: %s',
+    async (lockedKey) => {
+      const config = makeConfig({
+        reviewer: 'none',
+        validation: { endChecks: false },
+        workflow: { review: 'task' },
+      });
+      seed(config);
+      const defs = SETTINGS_DEFS.filter(
+        (def) => def.id === lockedKey || def.id === 'workflow.isolation',
+      );
+      expect(defs.map((def) => def.id)).toContain(lockedKey);
+      const items = buildSettingsItems({ config, defs, cliTools: [] });
+      const lockedAt = items.findIndex((item) => item.key === lockedKey);
+      const isolationAt = items.findIndex((item) => item.key === 'workflow.isolation');
+
+      const ui = renderFeature(
+        createElement(Harness, { config, items, initialKey: lockedKey, activated: [] }),
+      );
+      await flushEffects();
+      ui.stdin.write(' ');
+      ui.stdin.write(isolationAt > lockedAt ? '\u001b[B' : '\u001b[A');
+      await vi.waitFor(() => {
+        expect(ui.lastFrame()).toContain('cursor=workflow.isolation');
+      });
+      // Saves run in key order, so a save of the locked row lands before this one.
+      ui.stdin.write(' ');
+      await vi.waitFor(() => {
+        expect(configStore.get().config?.workflow.isolation).toBe('staged-copy');
+      });
+
+      expect(configStore.get().config?.validation.endChecks).toBe(false);
+      expect(configStore.get().config?.workflow.review).toBe('task');
+      expect(configStore.get().config?.reviewer).toBe('none');
+      ui.unmount();
+    },
+  );
+
   it('says nothing when space lands on an api seat', async () => {
     const config = makeConfig({
       implementer: {

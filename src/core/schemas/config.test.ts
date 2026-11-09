@@ -25,6 +25,10 @@ function hasIssueAtPath(issues: ReturnType<typeof issuesFor>, path: string): boo
 }
 
 describe('ConfigSchema user config contracts', () => {
+  it('parses `reviewer: none`', () => {
+    expect(ConfigSchema.parse({ ...validConfig, reviewer: 'none' }).reviewer).toBe('none');
+  });
+
   it('round-trips strict custom command definitions without introducing an active command reference', () => {
     const config = ConfigSchema.parse({
       ...validConfig,

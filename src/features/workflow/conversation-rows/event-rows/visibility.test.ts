@@ -23,6 +23,19 @@ describe('isTranscriptRowlessEvent', () => {
     expect(isTranscriptRowlessEvent(park)).toBe(false);
   });
 
+  it('`workflow_complete` none has a row', () => {
+    const complete = (review?: 'none' | 'passed'): EngineEvent => ({
+      type: 'workflow_complete',
+      ts: 0,
+      phase: 'complete',
+      ...(review !== undefined && { review }),
+    });
+
+    expect(isTranscriptRowlessEvent(complete('none'))).toBe(false);
+    expect(isTranscriptRowlessEvent(complete('passed'))).toBe(true);
+    expect(isTranscriptRowlessEvent(complete())).toBe(true);
+  });
+
   it('hides a drift report', () => {
     expect(
       isTranscriptRowlessEvent({

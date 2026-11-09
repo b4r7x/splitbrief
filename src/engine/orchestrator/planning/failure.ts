@@ -21,6 +21,7 @@ import { labelError, toErrorMessage } from '../../../utils/format-errors.js';
 import { isAbortError } from '../../../utils/abort.js';
 import { recoveryActionLabel } from '../../../core/recovery/action-label.js';
 import { sessionError } from '../../../core/sessions/errors.js';
+import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
 
 export async function handlePlanningFailure(opts: {
   err: unknown;
@@ -43,7 +44,13 @@ export async function handlePlanningFailure(opts: {
     const ending = workflowCancelledReasonFromSignal(wctx.signal) !== undefined;
     return {
       disposition: 'terminal',
-      state: ending ? latest : await parkStoppedRun({ ...ref, bus: wctx.bus }, latest),
+      state: ending
+        ? latest
+        : await parkStoppedRun(
+            { ...ref, bus: wctx.bus },
+            latest,
+            resolveReviewCadence(wctx.config) === 'none',
+          ),
       outcome: ending ? 'cancelled' : 'interrupted',
     };
   }

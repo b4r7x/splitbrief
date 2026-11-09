@@ -9,6 +9,7 @@ import type { StepRef } from '../../../core/schemas/run-step.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
+import { hydrateFromState } from '../../../stores/workflow/actions/hydrate.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
@@ -76,6 +77,22 @@ describe('useStopByline', () => {
     expect(leadAfterStopAt({ kind: 'brief', taskId: taskId('T004'), attempt: 1 })).toBe(
       'Stopped at T004',
     );
+  });
+
+  it('names the step a boundary park after the last brief landed on', () => {
+    runViewStore.__testReset({ phase: 'implementing', stopStep: { kind: 'apply' } });
+    lifecycleStore.__testReset({ status: 'running' });
+    seedBriefs({
+      tasks: [{ id: 'T001', title: 'first', status: 'done' }],
+      currentTask: 1,
+      totalTasks: 1,
+    });
+    stopStore.request('pause-after-brief');
+    stopStore.park('boundary', 'T001', null);
+    const ui = renderFeature(<Lead />);
+
+    expect(ui.lastFrame().trim()).toBe('Stopped at Apply · 1 of 1 briefs complete');
+    ui.unmount();
   });
 
   it('says nothing once End run closed the run: the closed run speaks for itself', () => {
@@ -182,6 +199,29 @@ describe('useStopByline', () => {
     const ui = renderFeature(<LeadAndHint />);
 
     expect(ui.lastFrame().trim()).toBe('|Seat changes after a fix brief or at the next run');
+    ui.unmount();
+  });
+
+  it.each([
+    ['checkout', 'Stopping the review · Waiting for processes to exit'],
+    ['worktree', 'Stopping Apply · Waiting for processes to exit'],
+    ['staged-copy', 'Stopping Apply · Waiting for processes to exit'],
+  ] as const)('a stop in the final review of a REVIEW None run on a %s says %s', (kind, lead) => {
+    hydrateFromState(
+      makeWorkflowState({
+        phase: 'final-review',
+        workspace: { kind, path: '/tmp/run', base: { snapshotId: 'base', head: null } },
+      }),
+      true,
+    );
+    stopStore.__testReset({
+      intent: 'stop-now',
+      phase: 'terminating',
+      requestedAt: Date.now(),
+    });
+    const ui = renderFeature(<Lead />);
+
+    expect(ui.lastFrame().trim()).toBe(lead);
     ui.unmount();
   });
 

@@ -30,7 +30,7 @@ it.each(['live', 'transcript'] as const)(
       { text: ' · ', tone: 'textDim' },
       { text: 'npm test', tone: 'textDim' },
     ]);
-    expect(reviewActivityParts(null, null)).toEqual({
+    expect(reviewActivityParts(null, null, false)).toEqual({
       prefix: [
         { text: 'Review', tone: 'reviewer' },
         { text: ' · ', tone: 'textDim' },
@@ -54,7 +54,7 @@ it.each([['verdict', 'reviewing changes']] as const)(
     });
     addEvent({ type: 'review_step', ts: 1_000, phase: 'final-review', step });
     const operation = operationsStore.get().active;
-    expect(reviewActivityParts(operation, 'codex · gpt-5')).toEqual({
+    expect(reviewActivityParts(operation, 'codex · gpt-5', false)).toEqual({
       prefix: [
         { text: 'Review', tone: 'reviewer' },
         { text: ' · ', tone: 'textDim' },
@@ -80,7 +80,7 @@ it('says the reviewer answers again on the call after a refused answer', () => {
     reasons: ['Task T001 is missing from the verdict.'],
   });
   addEvent(makeRunnerCallStarted({ ts: 2_100, phase: 'final-review', role: 'review' }));
-  const text = reviewActivitySpans(reviewActivityParts(operationsStore.get().active, null))
+  const text = reviewActivitySpans(reviewActivityParts(operationsStore.get().active, null, false))
     .map((part) => part.text)
     .join('');
   expect(text).toBe('Review · answering again');
@@ -148,14 +148,14 @@ describe('activeVerb', () => {
       addEvent(makeRunnerCallStarted({ phase: 'final-review', role: 'review' }));
       for (const reviewerLabel of ['codex · gpt-5', 'Claude Code CLI · Sonnet 4.5']) {
         const spans = reviewActivitySpans(
-          reviewActivityParts(operationsStore.get().active, reviewerLabel),
+          reviewActivityParts(operationsStore.get().active, reviewerLabel, false),
         );
         expect(activeVerb('final-review', reviewerLabel, null)).toBe(
           spans.map((span) => span.text).join(''),
         );
       }
       expect(activeVerb('final-review', null, null)).toBe(
-        reviewActivitySpans(reviewActivityParts(null, null))
+        reviewActivitySpans(reviewActivityParts(null, null, false))
           .map((span) => span.text)
           .join(''),
       );
@@ -268,10 +268,18 @@ describe('suiteStageText', () => {
 describe('review waiting spans', () => {
   it('is the status text while reviewing changes in final review', () => {
     expect(
-      reviewActivitySpans(reviewActivityParts(null, null))
+      reviewActivitySpans(reviewActivityParts(null, null, false))
         .map((part) => part.text)
         .join(''),
     ).toBe('Review · reviewing changes');
+  });
+
+  it('names the recheck of the merged result, not a review, when REVIEW is None', () => {
+    expect(reviewActivityParts(null, 'None', true)).toEqual({
+      prefix: [],
+      identity: null,
+      suffix: [{ text: 'Checking the merged result', tone: 'textDim' }],
+    });
   });
 });
 

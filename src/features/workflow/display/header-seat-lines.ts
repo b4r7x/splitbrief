@@ -1,12 +1,14 @@
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
-import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
+import { collapsedReviewSeat } from '../../../core/crew/seats.js';
 import type { RunnerConfig } from '../../../core/config/accessors/runner-config.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { RunRecord } from '../../../core/sessions/run-record.js';
 import {
   formatCollapsedSeatSpans,
   idsOf,
+  isReviewNone,
   isSeatIdentity,
+  type REVIEW_NONE,
   type CrewSeatId,
   type SeatIds,
   type SeatLineSpan,
@@ -20,7 +22,7 @@ import { recordedCrew, type RecordedCrew } from '../closed/view-model.js';
 export interface HeaderSeats {
   planner: RunnerConfig | SeatIds;
   build: RunnerConfig | SeatIds;
-  reviewer: RunnerConfig | SeatIds | undefined;
+  reviewer: RunnerConfig | SeatIds | typeof REVIEW_NONE | undefined;
   displayNames: Readonly<{
     planner?: string | undefined;
     plan?: string | undefined;
@@ -89,13 +91,15 @@ export function headerSeats(
   const seats = {
     planner: running.plan?.seat ?? config.planner,
     build: running.build?.seat ?? resolveImplementerProfiles(config).defaultProfile.config,
-    reviewer: running.review?.seat ?? configuredReviewerRunner(config),
+    reviewer: running.review?.seat ?? collapsedReviewSeat(config),
   };
   const haltedSeat = halt?.issue.seat;
   const notes = seatResetNotes(halt, ranOn, {
     plan: idsOf(seats.planner),
     build: idsOf(seats.build),
-    review: idsOf(seats.reviewer ?? seats.planner),
+    review: idsOf(
+      seats.reviewer === undefined || isReviewNone(seats.reviewer) ? seats.planner : seats.reviewer,
+    ),
   });
   return {
     ...seats,

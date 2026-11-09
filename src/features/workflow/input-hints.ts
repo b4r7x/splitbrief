@@ -1,6 +1,8 @@
 import type { InputMode } from '../../core/navigation/types.js';
 import type { CrewSeatId } from '../../core/crew/identity.js';
 import { messageSeat } from '../../core/queue-state.js';
+import { isLivePhase } from '../../core/phases.js';
+import { AT_REST_PLACEHOLDER } from './closed/byline.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import { queueCopy } from './queue-copy.js';
 
@@ -15,21 +17,22 @@ export function queuePlaceholder(input: {
   running: boolean;
   stopping: boolean;
   reviewing: boolean;
+  reviewNone: boolean;
   taskId?: string | null | undefined;
   steerableSeat?: CrewSeatId | null | undefined;
   starting?: boolean | undefined;
 }): string | undefined {
   if (input.inputMode !== 'normal' || !input.running || input.stopping) return undefined;
-  const seat = messageSeat(input.phase, input.reviewing);
-  return seat === null
-    ? undefined
-    : queueCopy({
-        seat,
-        taskId: input.taskId,
-        steerable: input.steerableSeat === seat,
-        checking: input.phase === 'validating-task',
-        starting: input.starting,
-      }).placeholder;
+  const seat = messageSeat(input.phase, input.reviewing, input.reviewNone);
+  // The queue refuses words no seat reads while the run is live (`enqueueUserMessage`).
+  if (seat === null) return isLivePhase(input.phase) ? AT_REST_PLACEHOLDER.noWords : undefined;
+  return queueCopy({
+    seat,
+    taskId: input.taskId,
+    steerable: input.steerableSeat === seat,
+    checking: input.phase === 'validating-task',
+    starting: input.starting,
+  }).placeholder;
 }
 
 // A review panel spells out its own keys, and a question's hint is the composer's placeholder,

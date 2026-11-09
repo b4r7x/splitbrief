@@ -674,6 +674,7 @@ export function publishWorkflowConfig(
     ...(opts.reviewerModel !== undefined && { reviewerModel: opts.reviewerModel }),
     ...(opts.reviewerKind !== undefined && { reviewerKind: opts.reviewerKind }),
     ...(opts.reviewerAxes !== undefined && { reviewerAxes: [...opts.reviewerAxes] }),
+    ...(opts.reviewerSeat !== undefined && { reviewerSeat: opts.reviewerSeat }),
     ...(opts.skills !== undefined && { skills: opts.skills }),
   });
 }

@@ -754,6 +754,18 @@ describe('deriveBuildProgress', () => {
     }
   });
 
+  it('names the recheck of the merged result, not a review, while a REVIEW None run checks it', () => {
+    const progress = deriveBuildProgress(
+      input({
+        lifecycle: lifecycleState({ lastRunnerEventTs: null }),
+        runView: { ...phaseView('final-review'), reviewNone: true },
+        operations: operationsState({ active: null }),
+      }),
+    );
+    expect(progress.activity).toBe('Checking the merged result');
+    expect(progress.activityIdentity).toBeNull();
+  });
+
   it('shows the work when an operation has no runnerName', () => {
     const unnamed = runningOperation();
     delete unnamed.runnerName;

@@ -156,7 +156,7 @@ describe('e2e: the planner tool refuses a consult as too long', { timeout: 240_0
       expect(consult.length).toBeLessThan(REFUSED_CHARS);
     }
     expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
-    expect(deriveRunStatus({ state, liveness: 'not-alive' })).toEqual({
+    expect(deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' })).toEqual({
       kind: 'ready-to-apply',
       override: false,
     });
@@ -172,7 +172,7 @@ describe('e2e: the planner tool refuses a consult as too long', { timeout: 240_0
     expect(calls[refusedAt + 1]).toMatchObject({ kind: 'consult', resumed: null });
     expect(calls.slice(refusedAt + 1).map((call) => call.resumed)).not.toContain('planner-session');
     expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
-    expect(deriveRunStatus({ state, liveness: 'not-alive' })).toEqual({
+    expect(deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' })).toEqual({
       kind: 'ready-to-apply',
       override: false,
     });

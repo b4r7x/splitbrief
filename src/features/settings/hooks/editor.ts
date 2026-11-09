@@ -58,6 +58,13 @@ function getCurrentConfig(): Config {
   return current;
 }
 
+/** A read-only row refuses its key and names why, so the reason shows where the help does not. */
+function refuseLocked(def: SettingDef, config: Config): boolean {
+  const reason = def.lockedBy?.(config);
+  if (reason !== undefined) feedbackStore.setTransientError(reason);
+  return reason !== undefined;
+}
+
 function cyclesInPlace(item: SettingsItem): boolean {
   if (item.kind !== 'setting') return false;
   return item.def.kind === 'boolean' || item.def.kind === 'enum';
@@ -109,6 +116,7 @@ export function useSettingsEditor({
   const toggleSetting = (def: SettingDef) => {
     enqueueSave(async () => {
       const currentConfig = getCurrentConfig();
+      if (refuseLocked(def, currentConfig)) return;
       if (def.kind === 'boolean') {
         await saveSetting(def, !getValue(def, currentConfig));
       } else if (def.kind === 'enum' && def.options) {
@@ -135,6 +143,7 @@ export function useSettingsEditor({
       return;
     }
     const def = item.def;
+    if (refuseLocked(def, config)) return;
     if (def.kind === 'string' || def.kind === 'number') {
       const current = getValue(def);
       editor.startEditing(def.id, current != null ? String(current) : '');

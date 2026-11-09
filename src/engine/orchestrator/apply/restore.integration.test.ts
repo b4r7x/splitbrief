@@ -64,7 +64,11 @@ async function partialApply(run: ApplyRun): Promise<string> {
     makeWorkflowState({ phase: 'complete', reviewStatus: 'passed', workspace: run.workspace }),
   );
   const { bus } = makeBusRecorder();
-  const merged = await runApply({ wctx: { ...ref, bus }, state: loadSaved(run) });
+  const merged = await runApply({
+    wctx: { ...ref, bus },
+    state: loadSaved(run),
+    reviewNone: false,
+  });
   expect(merged.outcome).toBe('review');
   const state = transition(loadSaved(run), {
     type: 'REVIEW_DONE',
@@ -82,6 +86,7 @@ async function partialApply(run: ApplyRun): Promise<string> {
   const result = await runApply({
     wctx: { projectDir: run.dir, sessionId: run.sessionId, bus },
     state,
+    reviewNone: false,
   });
   vi.mocked(entry.writeConfinedEntryOrLink).mockImplementation(
     actualEntry.writeConfinedEntryOrLink,
@@ -174,7 +179,11 @@ describe('undoApply', { timeout: 60_000 }, () => {
         makeWorkflowState({ phase: 'complete', reviewStatus: 'passed', workspace: run.workspace }),
       );
       const { bus } = makeBusRecorder();
-      const applied = await runApply({ wctx: { ...ref, bus }, state: loadSaved(run) });
+      const applied = await runApply({
+        wctx: { ...ref, bus },
+        state: loadSaved(run),
+        reviewNone: false,
+      });
       expect(applied.outcome).toBe('applied');
       expect(read(run.dir, 'a.txt')).toBe(USER_A);
 
@@ -198,7 +207,11 @@ describe('undoApply', { timeout: 60_000 }, () => {
         makeWorkflowState({ phase: 'complete', reviewStatus: 'passed', workspace: run.workspace }),
       );
       const { bus } = makeBusRecorder();
-      const applied = await runApply({ wctx: { ...ref, bus }, state: loadSaved(run) });
+      const applied = await runApply({
+        wctx: { ...ref, bus },
+        state: loadSaved(run),
+        reviewNone: false,
+      });
       expect(applied.outcome).toBe('applied');
       expect(read(run.dir, 'docs/new.txt')).toBe('created\n');
       rmSync(join(run.dir, 'docs'), { recursive: true });
@@ -246,7 +259,11 @@ describe('undoApply', { timeout: 60_000 }, () => {
         return actualEntry.writeConfinedEntryOrLink(root, path, ...rest);
       });
       const { bus } = makeBusRecorder();
-      const result = await runApply({ wctx: { ...ref, bus }, state: loadSaved(run) });
+      const result = await runApply({
+        wctx: { ...ref, bus },
+        state: loadSaved(run),
+        reviewNone: false,
+      });
       vi.mocked(entry.writeConfinedEntryOrLink).mockImplementation(
         actualEntry.writeConfinedEntryOrLink,
       );

@@ -18,7 +18,7 @@ import type { ContinueDeps } from './command.js';
 import { writeConfig } from '../../../core/config/load/io.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { skillsStore } from '../../../stores/project/skills.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { fixCyclesOf, type WorkflowState } from '../../../core/schemas/workflow.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR, sessionDir } from '../../../core/paths.js';
 import type { PrepareExecutionInput } from '../../../engine/runners/prepare-execution/prepare-execution.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
@@ -1283,6 +1283,26 @@ describe('continueCommand --action apply|discard|end-run', () => {
     });
   });
 
+  it('refuses Apply on a project config that does not load: the checkout and the run stay as they were', async () => {
+    await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
+      writeFileSync(join(run.ws, 'a.txt'), 'ONE\ntwo\nthree\nfour\nfive\n');
+      saveReady(run);
+      mkdirSync(join(run.dir, SPLITBRIEF_DIR), { recursive: true });
+      writeFileSync(join(run.dir, SPLITBRIEF_DIR, CONFIG_FILE), 'version: 99\n');
+      const output = captureOutput();
+
+      try {
+        await expect(settle(run, 'apply')).rejects.toThrow('Unsupported config version: 99');
+      } finally {
+        output.restore();
+      }
+
+      expect(read(run.dir, 'a.txt')).toBe(FIVE);
+      expect(loadState({ projectDir: run.dir, sessionId: SESSION_ID })?.closed).toBeUndefined();
+      expect(readSession({ projectDir: run.dir, sessionId: SESSION_ID })?.apply).toBeUndefined();
+    });
+  });
+
   it('finishes an Apply a SIGTERM reaches, records the exit and exits 143', async () => {
     await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
       writeFileSync(join(run.ws, 'b.txt'), 'created by the run\n');
@@ -1426,9 +1446,9 @@ describe('continueCommand --action apply|discard|end-run', () => {
           expect(read(run.dir, 'a.txt')).toBe(a);
           expect(read(run.dir, 'b.txt')).toBe('base b\n');
           const state = loadState({ projectDir: run.dir, sessionId: SESSION_ID });
-          expect(state && deriveRunStatus({ state, liveness: 'not-alive' }).kind).toBe(
-            'ready-to-apply',
-          );
+          expect(
+            state && deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' }).kind,
+          ).toBe('ready-to-apply');
           expect(headlessRuns).toHaveLength(0);
           expect(renderRuns).toHaveLength(0);
         },
@@ -1479,6 +1499,33 @@ describe('continueCommand --action apply|discard|end-run', () => {
       expect(headlessRuns[0]?.state?.applyReview).toBeDefined();
     });
   });
+
+  it.each(['none', 'passed'] as const)(
+    'carries a run that ended with review status %s into its checks only when REVIEW is None at Apply',
+    async (reviewStatus) => {
+      await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
+        writeConfig(run.dir, makeConfig({ reviewer: 'none' }));
+        writeFileSync(join(run.ws, 'a.txt'), 'ONE\ntwo\nthree\nfour\nfive\n');
+        writeFileSync(join(run.dir, 'a.txt'), 'one\ntwo\nthree\nfour\nFIVE\n');
+        saveReady(run, { reviewStatus });
+        const output = captureOutput();
+
+        try {
+          await settle(run, 'apply');
+        } finally {
+          output.restore();
+        }
+
+        expect(output.stderr()).toContain(
+          `Your checkout changed files run ${SESSION_ID} changed too; the merged result goes through its checks again.\n`,
+        );
+        expect(headlessRuns).toHaveLength(1);
+        const rechecking = headlessRuns[0]?.state;
+        expect(rechecking?.applyReview).toBeDefined();
+        expect(rechecking && fixCyclesOf(rechecking).used).toBe(0);
+      });
+    },
+  );
 
   it('halts with the conflict and its resume line when both sides changed a binary file', async () => {
     await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {

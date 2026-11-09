@@ -187,6 +187,7 @@ function eachRunsOneStretch(keys: readonly string[]): boolean {
 }
 
 export function reviewSeatView(summary: Summary): SeatView {
+  if (summary.reviewerSeat === 'none') return { kind: 'none' };
   if (summary.reviewerTool !== undefined) {
     return seatView({
       tool: summary.reviewerTool,
@@ -410,6 +411,7 @@ export function reviewView(
   preExistingChecks: NonNullable<ReviewRecord['preExistingChecks']>,
   ledger: EvidenceLedger | null,
 ): ReviewView {
+  if (summary.reviewerSeat === 'none') return { kind: 'none' };
   const setAside = setAsideView(ledgerReviews(ledger).record);
   const preExisting = preExistingChecks.map((check) => ({
     id: sanitizeTerminalDisplayText(check.id),

@@ -132,7 +132,7 @@ describe('user commits during a run', { timeout: 120_000 }, () => {
     ]);
     expect(new Set(callDirs)).toEqual(new Set([workspace.path]));
     expect(reviewCalls).toBe(1);
-    expect(deriveRunStatus({ state: final, liveness: 'not-alive' })).toEqual({
+    expect(deriveRunStatus({ reviewNone: false, state: final, liveness: 'not-alive' })).toEqual({
       kind: 'ready-to-apply',
       override: false,
     });

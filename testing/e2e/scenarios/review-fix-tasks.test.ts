@@ -278,7 +278,9 @@ describe('e2e: a failed final review creates fix tasks', { timeout: 300_000 }, (
     if (sessionId === null) throw new Error(`the run left no active session: ${run.stderr}`);
 
     const ready = readState(target, sessionId);
-    expect(deriveRunStatus({ state: ready, liveness: 'not-alive' }).kind).toBe('ready-to-apply');
+    expect(deriveRunStatus({ reviewNone: false, state: ready, liveness: 'not-alive' }).kind).toBe(
+      'ready-to-apply',
+    );
     expect(ready.workspace?.kind).toBe('worktree');
     expect(existsSync(join(target.projectDir, 'src/alpha.mjs'))).toBe(false);
 
@@ -410,7 +412,9 @@ describe('e2e: a failed final review creates fix tasks', { timeout: 300_000 }, (
     expect(applied.exitCode, `${applied.stdout}\n${applied.stderr}`).toBe(0);
     const closed = readState(target, sessionId);
     expect(closed.closed?.as).toBe('applied');
-    expect(deriveRunStatus({ state: closed, liveness: 'not-alive' }).kind).toBe('closed');
+    expect(deriveRunStatus({ reviewNone: false, state: closed, liveness: 'not-alive' }).kind).toBe(
+      'closed',
+    );
     if (ready.workspace !== undefined) expect(existsSync(ready.workspace.path)).toBe(false);
     expect(readFileSync(join(target.projectDir, 'src/alpha.mjs'), 'utf8')).toBe(ALPHA_FIXED);
     expect(readFileSync(join(target.projectDir, SPEC_FILE), 'utf8')).toBe(ALPHA_SPEC);

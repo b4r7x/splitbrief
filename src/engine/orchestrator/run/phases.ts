@@ -2,7 +2,8 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
 import type { EngineEvent } from '../../events/types.js';
 import type { PlanningPhaseResult } from '../planning/types.js';
-import { resumeStep } from '../../../core/sessions/run-status.js';
+import { awaitsApply, resumeStep } from '../../../core/sessions/run-status.js';
+import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
 import { runApply } from '../apply/run.js';
 import { publishWarning } from '../events.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
@@ -45,10 +46,15 @@ export async function runPlanningPhases(
   // and anything else runs the planning session. An older run parked inside the old
   // planning chain has no gate to re-open (`resumeParkedApproval`), so the session
   // picks it up instead.
-  const resume = resumeStep(state);
+  const resume = resumeStep(state, resolveReviewCadence(config) === 'none');
   if (rewindPending === undefined) {
-    if (resume.kind === 'apply') {
-      const applied = await runApply({ wctx, state, setTrackedState });
+    if (resume.kind === 'apply' && awaitsApply(state)) {
+      const applied = await runApply({
+        wctx,
+        state,
+        reviewNone: resolveReviewCadence(config) === 'none',
+        setTrackedState,
+      });
       switch (applied.outcome) {
         case 'applied':
           return { disposition: 'terminal', state: applied.state, outcome: 'closed' };
@@ -65,7 +71,7 @@ export async function runPlanningPhases(
           return { disposition: 'terminal', state: applied.state, outcome: 'halted' };
       }
     }
-    if (resume.kind === 'brief' || resume.kind === 'review') {
+    if (resume.kind === 'brief' || resume.kind === 'review' || resume.kind === 'apply') {
       return { disposition: 'ready-for-tasks', state, tasks: state.tasks };
     }
     if (resume.kind === 'gate') {

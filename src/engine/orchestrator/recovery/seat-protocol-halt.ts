@@ -1,4 +1,4 @@
-import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
+import { requireReviewSeat } from '../../../core/config/accessors/reviewer-runner.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
@@ -27,14 +27,13 @@ export async function seatProtocolHaltIssue(
     task?: Task | undefined;
   }>,
 ): Promise<RecoveryIssue> {
-  const reviewer = resolveReviewerRunner(input.config);
   const reviewed = input.error.data.seat === 'reviewer';
   const seatSwap = await loadSeatSwapContext({
     projectDir: input.projectDir,
     modelCache: input.modelCache,
     signal: input.signal,
     seat: reviewed ? 'review' : 'plan',
-    runner: reviewed ? reviewer.runner : input.config.planner,
+    runner: reviewed ? requireReviewSeat(input.config).runner : input.config.planner,
     config: input.config,
   });
   return buildSeatProtocolErrorRecoveryIssue({

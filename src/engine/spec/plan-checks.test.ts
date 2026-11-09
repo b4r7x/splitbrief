@@ -659,6 +659,39 @@ describe('checkPlan on the files of the checkout', () => {
     ).toEqual([]);
   });
 
+  it.each([undefined, 'render {id} {out}'])(
+    'one None note lists render and plan checks, with validation.render %s',
+    (render) => {
+      const plan = makePlanProposal({
+        checks: [
+          { id: 'K-gate', kind: 'cmd', value: 'npm test' },
+          { id: 'K-shot', kind: 'render', value: 'home' },
+        ],
+        criteria: [{ id: 'C1', text: 'Greets', checkIds: ['K1', 'K-gate', 'K-shot', 'K-brief'] }],
+        tasks: [
+          makeTaskSpec({
+            checks: [
+              { id: 'K1', kind: 'cmd', value: 'npm run lint' },
+              { id: 'K-brief', kind: 'render', value: 'overlay-picker' },
+            ],
+          }),
+        ],
+      });
+      const config = makeConfig({
+        reviewer: 'none',
+        validation: render === undefined ? {} : { render },
+      });
+
+      const notes = renderCheckNotes(plan, config, NULL_CACHE);
+
+      expect(notes).toHaveLength(1);
+      const listed = notes[0]?.match(
+        /^Checks (.+) do not run: REVIEW is None, so only the checks of a brief run, and no render check runs\. Request changes to move or drop them\.$/u,
+      );
+      expect(listed?.[1]?.split(', ').sort()).toEqual(['K-brief', 'K-gate', 'K-shot']);
+    },
+  );
+
   it('words the planner reason and the card note in the number of render checks', () => {
     const one = makePlanProposal({
       checks: [{ id: 'K-render', kind: 'render', value: 'overlay-picker' }],

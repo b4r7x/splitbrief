@@ -49,6 +49,7 @@ describe('hydrateFromState', () => {
     expect(lifecycleStore.get().queueDepth).toBe(1);
     hydrateFromState(
       makeWorkflowState({ phase: 'implementing', messageQueue: [reviewed, pending] }),
+      false,
     );
     expect(lifecycleStore.get().queueDepth).toBe(1);
     addEvent({
@@ -66,7 +67,7 @@ describe('hydrateFromState', () => {
 
   it('counts a native injection until it is acknowledged after hydration', () => {
     const injecting = { ...makeMessage(), nativeDeliveryState: 'injecting' as const };
-    hydrateFromState(makeWorkflowState({ messageQueue: [injecting] }));
+    hydrateFromState(makeWorkflowState({ messageQueue: [injecting] }), false);
     expect(lifecycleStore.get().queueDepth).toBe(1);
     addEvent({ type: 'message_injected_native', ts: 1, phase: 'planning', id: injecting.id });
     expect(lifecycleStore.get().queueDepth).toBe(0);
@@ -79,47 +80,50 @@ describe('hydrateFromState', () => {
         { type: 'steerable_call', ts: 1, phase: 'implementing', seat: 'build', taskId: 'T003' },
       ]);
       expect(lifecycleStore.get().steerableCall).toEqual({ seat: 'build', taskId: 'T003' });
-      hydrateFromState(makeWorkflowState({ phase }));
+      hydrateFromState(makeWorkflowState({ phase }), false);
       expect(lifecycleStore.get().steerableCall).toBeNull();
     },
   );
 
   it('restores observable workflow state from a persisted snapshot', () => {
-    hydrateFromState({
-      stateVersion: 1,
-      phase: 'implementing',
-      feature: 'f',
-      currentTaskIndex: 2,
-      attempt: 0,
-      tasks: [
-        makeTask({ id: 'T001', status: 'done' }),
-        makeTask({
-          id: 'T002',
-          status: 'done',
-          suggestedFiles: ['src/resumed.ts'],
-          action: 'modify',
-        }),
-        makeTask({ id: 'T003', status: 'pending' }),
-      ],
-      plannerSessionId: null,
-      startedAt: new Date().toISOString(),
-      tokenUsage: makeUsage(),
-      plannerTool: 'claude-code',
-      plannerModel: 'claude-sonnet-4-6',
-      implementerTool: 'ollama',
-      implementerModel: 'qwen2.5-coder:7b',
-      awaitingContinue: false,
-      messageQueue: [
-        {
-          id: 'q1',
-          ...plainUserMessage('queued'),
-          queuedAt: new Date().toISOString(),
-          phase: 'implementing',
-          deliveredViaNative: false,
-          nativeDeliveryState: 'pending',
-        },
-      ],
-    });
+    hydrateFromState(
+      {
+        stateVersion: 1,
+        phase: 'implementing',
+        feature: 'f',
+        currentTaskIndex: 2,
+        attempt: 0,
+        tasks: [
+          makeTask({ id: 'T001', status: 'done' }),
+          makeTask({
+            id: 'T002',
+            status: 'done',
+            suggestedFiles: ['src/resumed.ts'],
+            action: 'modify',
+          }),
+          makeTask({ id: 'T003', status: 'pending' }),
+        ],
+        plannerSessionId: null,
+        startedAt: new Date().toISOString(),
+        tokenUsage: makeUsage(),
+        plannerTool: 'claude-code',
+        plannerModel: 'claude-sonnet-4-6',
+        implementerTool: 'ollama',
+        implementerModel: 'qwen2.5-coder:7b',
+        awaitingContinue: false,
+        messageQueue: [
+          {
+            id: 'q1',
+            ...plainUserMessage('queued'),
+            queuedAt: new Date().toISOString(),
+            phase: 'implementing',
+            deliveredViaNative: false,
+            nativeDeliveryState: 'pending',
+          },
+        ],
+      },
+      false,
+    );
     expect(runViewStore.get().phase).toBe('implementing');
     expect(lifecycleStore.get().queueDepth).toBe(1);
     expect(runViewStore.get().briefs.currentTask).toBe(3);
@@ -143,38 +147,44 @@ describe('hydrateFromState', () => {
   });
 
   it('never claims a run read back from disk is still running', () => {
-    hydrateFromState({
-      stateVersion: 1,
-      phase: 'implementing',
-      feature: 'f',
-      currentTaskIndex: 0,
-      attempt: 0,
-      tasks: [makeTask({ id: 'T001', status: 'pending' })],
-      plannerSessionId: null,
-      startedAt: new Date(1_000_000).toISOString(),
-      tokenUsage: makeUsage(),
-      awaitingContinue: false,
-      messageQueue: [],
-    });
+    hydrateFromState(
+      {
+        stateVersion: 1,
+        phase: 'implementing',
+        feature: 'f',
+        currentTaskIndex: 0,
+        attempt: 0,
+        tasks: [makeTask({ id: 'T001', status: 'pending' })],
+        plannerSessionId: null,
+        startedAt: new Date(1_000_000).toISOString(),
+        tokenUsage: makeUsage(),
+        awaitingContinue: false,
+        messageQueue: [],
+      },
+      false,
+    );
 
     expect(lifecycleStore.get().status).toBe('paused');
   });
 
   it('reads a finished run back as complete at the moment it completed', () => {
-    hydrateFromState({
-      stateVersion: 1,
-      phase: 'complete',
-      feature: 'f',
-      currentTaskIndex: 0,
-      attempt: 0,
-      tasks: [makeTask({ id: 'T001', status: 'done' })],
-      plannerSessionId: null,
-      startedAt: new Date(1_000_000).toISOString(),
-      completedAt: new Date(1_120_000).toISOString(),
-      tokenUsage: makeUsage(),
-      awaitingContinue: false,
-      messageQueue: [],
-    });
+    hydrateFromState(
+      {
+        stateVersion: 1,
+        phase: 'complete',
+        feature: 'f',
+        currentTaskIndex: 0,
+        attempt: 0,
+        tasks: [makeTask({ id: 'T001', status: 'done' })],
+        plannerSessionId: null,
+        startedAt: new Date(1_000_000).toISOString(),
+        completedAt: new Date(1_120_000).toISOString(),
+        tokenUsage: makeUsage(),
+        awaitingContinue: false,
+        messageQueue: [],
+      },
+      false,
+    );
 
     expect(lifecycleStore.get().status).toBe('complete');
     expect(runViewStore.get().phase).toBe('complete');
@@ -184,19 +194,22 @@ describe('hydrateFromState', () => {
   it('takes the saved phase and keeps the phase timestamps the replayed log recorded', () => {
     addEvent({ type: 'workflow_started', ts: 5_000, phase: 'planning', feature: 'f' });
 
-    hydrateFromState({
-      stateVersion: 1,
-      phase: 'implementing',
-      feature: 'f',
-      currentTaskIndex: 0,
-      attempt: 0,
-      tasks: [],
-      plannerSessionId: null,
-      startedAt: new Date(5_000).toISOString(),
-      tokenUsage: makeUsage(),
-      awaitingContinue: false,
-      messageQueue: [],
-    });
+    hydrateFromState(
+      {
+        stateVersion: 1,
+        phase: 'implementing',
+        feature: 'f',
+        currentTaskIndex: 0,
+        attempt: 0,
+        tasks: [],
+        plannerSessionId: null,
+        startedAt: new Date(5_000).toISOString(),
+        tokenUsage: makeUsage(),
+        awaitingContinue: false,
+        messageQueue: [],
+      },
+      false,
+    );
 
     expect(runViewStore.get().phaseFirstSeen.planning).toBe(5_000);
     expect(runViewStore.get().phase).toBe('implementing');
@@ -216,24 +229,27 @@ describe('hydrateFromState', () => {
       }),
     });
 
-    hydrateFromState({
-      stateVersion: 1,
-      phase: 'implementing',
-      feature: 'f',
-      currentTaskIndex: 0,
-      attempt: 0,
-      tasks: [makeTask({ id: 'T001', status: 'done' })],
-      plannerSessionId: null,
-      startedAt: new Date().toISOString(),
-      tokenUsage: makeUsage({ reviewerInput: 20_000, reviewerOutput: 5_000 }),
-      plannerTool: 'claude-code',
-      plannerModel: 'claude-sonnet-4-6',
-      implementerTool: 'ollama',
-      reviewerTool: 'custom-endpoint',
-      reviewerModel: 'custom-v4-flash',
-      awaitingContinue: false,
-      messageQueue: [],
-    });
+    hydrateFromState(
+      {
+        stateVersion: 1,
+        phase: 'implementing',
+        feature: 'f',
+        currentTaskIndex: 0,
+        attempt: 0,
+        tasks: [makeTask({ id: 'T001', status: 'done' })],
+        plannerSessionId: null,
+        startedAt: new Date().toISOString(),
+        tokenUsage: makeUsage({ reviewerInput: 20_000, reviewerOutput: 5_000 }),
+        plannerTool: 'claude-code',
+        plannerModel: 'claude-sonnet-4-6',
+        implementerTool: 'ollama',
+        reviewerTool: 'custom-endpoint',
+        reviewerModel: 'custom-v4-flash',
+        awaitingContinue: false,
+        messageQueue: [],
+      },
+      false,
+    );
 
     expect(tokensStore.get().passSeats).toMatchObject({
       reviewerTool: 'custom-endpoint',
@@ -255,22 +271,25 @@ describe('hydrateFromState', () => {
       }),
     });
 
-    hydrateFromState({
-      stateVersion: 1,
-      phase: 'implementing',
-      feature: 'f',
-      currentTaskIndex: 0,
-      attempt: 0,
-      tasks: [makeTask({ id: 'T001', status: 'done' })],
-      plannerSessionId: null,
-      startedAt: new Date().toISOString(),
-      tokenUsage: makeUsage(),
-      plannerTool: 'claude-code',
-      plannerModel: 'claude-sonnet-4-6',
-      implementerTool: 'ollama',
-      awaitingContinue: false,
-      messageQueue: [],
-    });
+    hydrateFromState(
+      {
+        stateVersion: 1,
+        phase: 'implementing',
+        feature: 'f',
+        currentTaskIndex: 0,
+        attempt: 0,
+        tasks: [makeTask({ id: 'T001', status: 'done' })],
+        plannerSessionId: null,
+        startedAt: new Date().toISOString(),
+        tokenUsage: makeUsage(),
+        plannerTool: 'claude-code',
+        plannerModel: 'claude-sonnet-4-6',
+        implementerTool: 'ollama',
+        awaitingContinue: false,
+        messageQueue: [],
+      },
+      false,
+    );
 
     expect(tokensStore.get().passSeats).toEqual({
       plannerTool: 'claude-code',
@@ -281,45 +300,48 @@ describe('hydrateFromState', () => {
   });
 
   it('reconstructs task attempts with cache, context, and routing metadata', () => {
-    hydrateFromState({
-      stateVersion: 1,
-      phase: 'implementing',
-      feature: 'f',
-      currentTaskIndex: 1,
-      attempt: 0,
-      tasks: [makeTask({ id: 'T001', status: 'done' })],
-      plannerSessionId: null,
-      startedAt: new Date().toISOString(),
-      tokenUsage: makeUsage({ implementerCacheRead: 1_000_000 }),
-      plannerTool: 'claude-code',
-      plannerModel: 'claude-sonnet-4-6',
-      implementerTool: 'custom-endpoint',
-      implementerModel: 'runtime-priced-model',
-      awaitingContinue: false,
-      messageQueue: [],
-      taskBreakdowns: [
-        {
-          taskId: taskId('T001'),
-          taskTitle: 'Use cached context',
-          method: 'local',
-          implementerTokens: 0,
-          escalationTokens: 0,
-          implementerCacheReadTokens: 1_000_000,
-          implementerCacheCreateTokens: 0,
-          retryCount: 0,
-          tool: 'custom-endpoint',
-          model: 'runtime-priced-model',
-          implementerProfile: 'cheap-cloud',
-          contextFit: 'tight',
-          estimatedTokens: 95_000,
-          untruncatedEstimatedTokens: 120_000,
-          contextLength: 100_000,
-          currentCodeTruncated: true,
-          currentCodeContextMode: 'function-level',
-          routingReason: 'selected cheapest capable profile',
-        },
-      ],
-    });
+    hydrateFromState(
+      {
+        stateVersion: 1,
+        phase: 'implementing',
+        feature: 'f',
+        currentTaskIndex: 1,
+        attempt: 0,
+        tasks: [makeTask({ id: 'T001', status: 'done' })],
+        plannerSessionId: null,
+        startedAt: new Date().toISOString(),
+        tokenUsage: makeUsage({ implementerCacheRead: 1_000_000 }),
+        plannerTool: 'claude-code',
+        plannerModel: 'claude-sonnet-4-6',
+        implementerTool: 'custom-endpoint',
+        implementerModel: 'runtime-priced-model',
+        awaitingContinue: false,
+        messageQueue: [],
+        taskBreakdowns: [
+          {
+            taskId: taskId('T001'),
+            taskTitle: 'Use cached context',
+            method: 'local',
+            implementerTokens: 0,
+            escalationTokens: 0,
+            implementerCacheReadTokens: 1_000_000,
+            implementerCacheCreateTokens: 0,
+            retryCount: 0,
+            tool: 'custom-endpoint',
+            model: 'runtime-priced-model',
+            implementerProfile: 'cheap-cloud',
+            contextFit: 'tight',
+            estimatedTokens: 95_000,
+            untruncatedEstimatedTokens: 120_000,
+            contextLength: 100_000,
+            currentCodeTruncated: true,
+            currentCodeContextMode: 'function-level',
+            routingReason: 'selected cheapest capable profile',
+          },
+        ],
+      },
+      false,
+    );
 
     const record = tokensStore.get().perTask['T001'];
     expect(record?.totalTokens).toBe(1_000_000);
@@ -342,73 +364,79 @@ describe('hydrateFromState', () => {
   it('counts pending queue depth from undrained non-native messages', () => {
     const queuedAt = new Date().toISOString();
 
-    hydrateFromState({
-      stateVersion: 1,
-      phase: 'planning',
-      feature: 'f',
-      currentTaskIndex: 0,
-      attempt: 0,
-      tasks: [],
-      plannerSessionId: null,
-      startedAt: queuedAt,
-      tokenUsage: makeUsage(),
-      awaitingContinue: false,
-      messageQueue: [
-        {
-          id: 'pending',
-          ...plainUserMessage('token sk-proj-abcdefghijklmnopqrstuvwxyz'),
-          queuedAt,
-          phase: 'planning',
-          deliveredViaNative: false,
-          nativeDeliveryState: 'pending',
-        },
-        {
-          id: 'native',
-          ...plainUserMessage('already delivered'),
-          queuedAt,
-          phase: 'planning',
-          deliveredViaNative: true,
-          nativeDeliveryState: 'delivered',
-        },
-        {
-          id: 'drained',
-          ...plainUserMessage('already drained'),
-          queuedAt,
-          phase: 'planning',
-          deliveredViaNative: false,
-          nativeDeliveryState: 'pending',
-          drainedAt: queuedAt,
-        },
-        {
-          id: 'clarification',
-          ...plainUserMessage('Use GraphQL'),
-          queuedAt,
-          phase: 'specifying',
-          deliveredViaNative: false,
-          nativeDeliveryState: 'pending',
-          origin: 'clarification',
-          question: 'Which API style?',
-        },
-      ],
-    });
+    hydrateFromState(
+      {
+        stateVersion: 1,
+        phase: 'planning',
+        feature: 'f',
+        currentTaskIndex: 0,
+        attempt: 0,
+        tasks: [],
+        plannerSessionId: null,
+        startedAt: queuedAt,
+        tokenUsage: makeUsage(),
+        awaitingContinue: false,
+        messageQueue: [
+          {
+            id: 'pending',
+            ...plainUserMessage('token sk-proj-abcdefghijklmnopqrstuvwxyz'),
+            queuedAt,
+            phase: 'planning',
+            deliveredViaNative: false,
+            nativeDeliveryState: 'pending',
+          },
+          {
+            id: 'native',
+            ...plainUserMessage('already delivered'),
+            queuedAt,
+            phase: 'planning',
+            deliveredViaNative: true,
+            nativeDeliveryState: 'delivered',
+          },
+          {
+            id: 'drained',
+            ...plainUserMessage('already drained'),
+            queuedAt,
+            phase: 'planning',
+            deliveredViaNative: false,
+            nativeDeliveryState: 'pending',
+            drainedAt: queuedAt,
+          },
+          {
+            id: 'clarification',
+            ...plainUserMessage('Use GraphQL'),
+            queuedAt,
+            phase: 'specifying',
+            deliveredViaNative: false,
+            nativeDeliveryState: 'pending',
+            origin: 'clarification',
+            question: 'Which API style?',
+          },
+        ],
+      },
+      false,
+    );
 
     expect(lifecycleStore.get().queueDepth).toBe(2);
   });
 
   it('uses the hydrated token usage as the baseline for the next cumulative cost update', () => {
-    hydrateFromState({
-      stateVersion: 1,
-      phase: 'planning',
-      feature: 'f',
-      currentTaskIndex: 0,
-      attempt: 0,
-      tasks: [makeTask({ id: 'T001', status: 'pending' })],
-      plannerSessionId: null,
-      startedAt: new Date().toISOString(),
-      tokenUsage: makeUsage({ plannerInput: 100, plannerOutput: 50 }),
-      awaitingContinue: false,
-      messageQueue: [],
-    });
+    hydrateFromState(
+      {
+        stateVersion: 1,
+        phase: 'planning',
+        feature: 'f',
+        currentTaskIndex: 0,
+        attempt: 0,
+        tasks: [makeTask({ id: 'T001', status: 'pending' })],
+        plannerSessionId: null,
+        startedAt: new Date().toISOString(),
+        tokenUsage: makeUsage({ plannerInput: 100, plannerOutput: 50 }),
+        awaitingContinue: false,
+        messageQueue: [],
+      },
+      false,
+    );
 
     addEvent(
       makeCostUpdate({

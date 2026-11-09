@@ -243,6 +243,7 @@ describe('brief gate', () => {
           message: plainUserMessage('keep the public name'),
           phase: state.phase,
           bus,
+          reviewNone: false,
         });
       }
       if (!green) {
@@ -297,6 +298,7 @@ describe('brief gate', () => {
           message: plainUserMessage('also update the alias'),
           phase: state.phase,
           bus,
+          reviewNone: false,
         });
       }
     });
@@ -353,6 +355,7 @@ describe('brief gate', () => {
           message: plainUserMessage('cleared correction'),
           phase: state.phase,
           bus,
+          reviewNone: false,
         });
         return { stdout: 'ok', stderr: '', code: 0 };
       },

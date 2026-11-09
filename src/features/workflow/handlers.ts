@@ -32,6 +32,9 @@ import type {
 } from '../../engine/orchestrator/types.js';
 import type { UserMessageInput } from '../../core/types/user-input.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
+import { configStore } from '../../stores/project/config.js';
+import { parkLeavesWordsUnread } from '../../core/recovery/typed-words.js';
+import { runViewStore } from '../../stores/workflow/run-view.js';
 
 type AbortHandler = () => void;
 
@@ -199,8 +202,18 @@ export function requestResume(message: UserMessageInput): boolean {
   return true;
 }
 
-/** Settles a park this process is holding. False when the run is at rest. */
+/**
+ * Settles a park this process is holding. False when the run is at rest, or when words wait at a
+ * park no step reads them from: the continue path that follows refuses them and the park stays.
+ */
 export function resumeParkedRun(steer: UserMessageInput): boolean {
+  if (
+    steer.text !== '' &&
+    stopStore.get().parked?.kind === 'boundary' &&
+    parkLeavesWordsUnread(runViewStore.get().stopStep, configStore.reviewNone())
+  ) {
+    return false;
+  }
   if (!stopStore.resume(steer)) return false;
   markWorkflowResumed();
   return true;
@@ -250,7 +263,7 @@ export async function rereadRunAtRest(ref: SessionRef, signal?: AbortSignal): Pr
     return;
   const attempt = ++rereadAttempt;
   try {
-    const run = readRunRecord(ref);
+    const run = readRunRecord(ref, configStore.reviewNone());
     const publish = await readRunHistory(run);
     if (signal?.aborted || attempt !== rereadAttempt || routerStore.get() !== route) return;
     publish();
@@ -270,7 +283,7 @@ export function requestEndRun(): boolean {
   const route = routerStore.get();
   if (route.screen === 'workflow' && route.execution.kind === 'at-rest') {
     try {
-      const record = readRunRecord(route.run.ref);
+      const record = readRunRecord(route.run.ref, configStore.reviewNone());
       if (record.status.kind === 'running') return false;
       if (record.status.kind === 'closed') {
         void rereadRunAtRest(record.ref);
@@ -282,7 +295,10 @@ export function requestEndRun(): boolean {
       const finish = async (): Promise<void> => {
         const bus = createRecoveryBus({ ...record.ref, sink: addTuiEvent });
         await endRunAtRest({ ...record.ref, bus }, hydrated.state);
-        routerStore.updateRun({ run: readRunRecord(record.ref), execution: { kind: 'at-rest' } });
+        routerStore.updateRun({
+          run: readRunRecord(record.ref, configStore.reviewNone()),
+          execution: { kind: 'at-rest' },
+        });
         stopStore.end();
         sessionsStore.refresh();
       };
@@ -341,7 +357,7 @@ function leave(departure: Departure | null): void {
     const route = routerStore.get();
     if (route.screen === 'workflow') {
       try {
-        const record = readRunRecord(route.run.ref);
+        const record = readRunRecord(route.run.ref, configStore.reviewNone());
         if (record.status.kind !== 'closed') {
           warnStderr(
             `Continue this run with: ${continueRunCommand(route.run.ref.sessionId)}`,
@@ -376,7 +392,7 @@ function departAfterApply(apply: Promise<void>, origin: RouteData): void {
     if (departure === null || leftOrigin(origin)) return;
     if (departure.kind === 'home' && origin.screen === 'workflow') {
       try {
-        const status = readRunRecord(origin.run.ref).status;
+        const status = readRunRecord(origin.run.ref, configStore.reviewNone()).status;
         if (status.kind !== 'closed' || status.as !== 'applied') return;
       } catch (err) {
         feedbackStore.setError(toErrorMessage(err));

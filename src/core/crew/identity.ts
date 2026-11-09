@@ -64,6 +64,14 @@ export const PLANNER_INHERITANCE = Object.freeze({
   mark: '= PLAN',
 });
 
+export const REVIEW_NONE = Object.freeze({
+  mark: 'None',
+});
+
+export function isReviewNone(seat: object | undefined): seat is typeof REVIEW_NONE {
+  return seat === REVIEW_NONE;
+}
+
 /** The one middle dot that joins the parts of every crew identity, on the row and in the fold marker. */
 export const CREW_IDENTITY_SEPARATOR = SOFT_SEP;
 const CLAUDE_BRAND = 'Claude';
@@ -497,7 +505,8 @@ export function formatCollapsedSeatSpans(
   input: Readonly<{
     planner: RunnerConfig | SeatIds;
     build: RunnerConfig | SeatIds;
-    reviewer: RunnerConfig | SeatIds | undefined;
+    /** `undefined` is the planner's seat. */
+    reviewer: RunnerConfig | SeatIds | typeof REVIEW_NONE | undefined;
     budget?: number | undefined;
     haltedSeat?: CrewSeatId | undefined;
     /** What each seat is carrying right now, e.g. the reset clock of a quota-blocked seat. */
@@ -523,15 +532,17 @@ export function formatCollapsedSeatSpans(
   const reviewerName = input.displayNames?.reviewer ?? input.displayNames?.review ?? plannerName;
   const planWord = formatShortSeatIdentity({ seat: input.planner, displayName: plannerName });
   const buildWord = formatShortSeatIdentity({ seat: input.build, displayName: buildName });
+  const reviewer = isReviewNone(input.reviewer) ? undefined : input.reviewer;
+  const absentReview = isReviewNone(input.reviewer) ? REVIEW_NONE : null;
   const reviewWord =
-    input.reviewer === undefined
-      ? null
-      : formatShortSeatIdentity({ seat: input.reviewer, displayName: reviewerName });
+    reviewer === undefined
+      ? absentReview
+      : formatShortSeatIdentity({ seat: reviewer, displayName: reviewerName });
   if (input.line === 'tool') {
     return formatCollapsedSeatSpansFromIdentities({
       plan: formatSeatToolWord({ seat: input.planner }),
       build: formatSeatToolWord({ seat: input.build }),
-      review: input.reviewer === undefined ? null : formatSeatToolWord({ seat: input.reviewer }),
+      review: reviewer === undefined ? absentReview : formatSeatToolWord({ seat: reviewer }),
       budget: input.budget,
       haltedSeat: input.haltedSeat,
       notes: input.notes,
@@ -549,8 +560,7 @@ export function formatCollapsedSeatSpans(
   }
   const plannerTool = formatSeatToolWord({ seat: input.planner });
   const buildTool = formatSeatToolWord({ seat: input.build });
-  const reviewerTool =
-    input.reviewer === undefined ? undefined : formatSeatToolWord({ seat: input.reviewer });
+  const reviewerTool = reviewer === undefined ? undefined : formatSeatToolWord({ seat: reviewer });
   return formatCollapsedSeatSpansFromIdentities({
     plan: planWord,
     build: buildWord,
@@ -569,7 +579,8 @@ export function formatCollapsedSeatSpans(
 /**
  * The layout half: three identities already resolved, laid out to a budget. A finished run has
  * names on record but no runner blocks, so this is the seam the summary header enters through.
- * A `null` review seat is the planner's, and says so with the inheritance mark. `tools` carries
+ * A `null` review seat is the planner's, and says so with the inheritance mark. `REVIEW_NONE` is a
+ * run with no review seat. `tools` carries
  * the command each seat takes on the tool line, which the line falls back to when the names do
  * not fit; a seat without one keeps its identity.
  */
@@ -577,7 +588,7 @@ export function formatCollapsedSeatSpansFromIdentities(
   input: Readonly<{
     plan: string;
     build: string;
-    review: string | null;
+    review: string | null | typeof REVIEW_NONE;
     tools?: Partial<Record<CrewSeatId, string>> | undefined;
     budget?: number | undefined;
     haltedSeat?: CrewSeatId | undefined;
@@ -601,8 +612,13 @@ export function formatCollapsedSeatSpansFromIdentities(
     // The inheritance mark points at the planner's name; it is not one itself.
     {
       id: 'review',
-      identity: input.review ?? PLANNER_INHERITANCE.mark,
-      named: input.review !== null,
+      identity:
+        input.review === null
+          ? PLANNER_INHERITANCE.mark
+          : typeof input.review === 'string'
+            ? input.review
+            : input.review.mark,
+      named: typeof input.review === 'string',
       ...(notes?.review !== undefined && { note: notes.review }),
     },
   ];

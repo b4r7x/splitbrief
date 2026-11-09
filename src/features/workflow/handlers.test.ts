@@ -5,7 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 import { STATE_FILE, sessionDir } from '../../core/paths.js';
+import type { Config } from '../../core/schemas/config.js';
+import type { StepRef } from '../../core/schemas/run-step.js';
+import { taskId } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import {
   activeApply,
@@ -36,6 +40,7 @@ import {
   spendSeatChange,
 } from './handlers.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { configStore } from '../../stores/project/config.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
 import { eventsStore } from '../../stores/workflow/events.js';
 import { routerStore } from '../../stores/navigation/router.js';
@@ -315,6 +320,77 @@ describe('resumeParkedRun', () => {
 
     expect(resumeParkedRun(plainUserMessage('keep the greeting API'))).toBe(false);
     expect(stopStore.get().phase).toBe('parked');
+  });
+});
+
+describe('a boundary park of a REVIEW None pass after the last brief', () => {
+  const dirs: string[] = [];
+  const WORDS = plainUserMessage('also fix the typo');
+  const REVIEW_STEP: StepRef = { kind: 'review', cycle: 0 };
+  const BRIEF_STEP: StepRef = { kind: 'brief', taskId: taskId('T002'), attempt: 0 };
+
+  const NONE = makeConfig({ reviewer: 'none' });
+  const SEAT = makeConfig();
+
+  function parkedAt(step: StepRef, config: Config): ReturnType<typeof vi.fn> {
+    const projectDir = createTempDir('handlers-boundary-park-');
+    dirs.push(projectDir);
+    configStore.__testReset({ projectDir, config });
+    runViewStore.__testReset({ stopStep: step });
+    const settle = vi.fn();
+    stopStore.park('boundary', 'T001', settle);
+    return settle;
+  }
+
+  beforeEach(() => {
+    clearAllHandlers();
+    stopStore.__testReset();
+  });
+
+  afterEach(() => {
+    clearAllHandlers();
+    stopStore.__testReset();
+    runViewStore.__testReset();
+    configStore.__testReset();
+    for (const dir of dirs.splice(0)) cleanupTempDir(dir);
+  });
+
+  it.each<[string, StepRef]>([
+    ['Apply', { kind: 'apply' }],
+    ['the review', REVIEW_STEP],
+  ])('keeps the park for words typed at %s: no step reads them', (_, step) => {
+    const settle = parkedAt(step, NONE);
+
+    expect(resumeParkedRun(WORDS)).toBe(false);
+    expect(settle).not.toHaveBeenCalled();
+    expect(stopStore.get().phase).toBe('parked');
+  });
+
+  it('sends a steer to the resume handler, which refuses the words', () => {
+    const settle = parkedAt(REVIEW_STEP, NONE);
+    const resume = vi.fn();
+    setResumeHandler(resume);
+
+    expect(requestSteer(WORDS)).toBe(true);
+    expect(settle).not.toHaveBeenCalled();
+    expect(resume).toHaveBeenCalledExactlyOnceWith(WORDS);
+  });
+
+  it('settles on a bare Enter', () => {
+    const settle = parkedAt(REVIEW_STEP, NONE);
+
+    expect(resumeParkedRun(plainUserMessage(''))).toBe(true);
+    expect(settle).toHaveBeenCalledExactlyOnceWith(plainUserMessage(''));
+  });
+
+  it.each<[string, StepRef, Config]>([
+    ['a brief that is next under REVIEW None', BRIEF_STEP, NONE],
+    ['a review a seat runs', REVIEW_STEP, SEAT],
+  ])('settles with the words at %s: the step reads them', (_, step, config) => {
+    const settle = parkedAt(step, config);
+
+    expect(resumeParkedRun(WORDS)).toBe(true);
+    expect(settle).toHaveBeenCalledExactlyOnceWith(WORDS);
   });
 });
 

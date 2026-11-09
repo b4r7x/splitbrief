@@ -145,7 +145,7 @@ async function runToReady(target: StopContinueFixture) {
   if (sessionId === undefined) throw new Error('the run left no session');
   const ref = { projectDir: target.projectDir, sessionId };
   expect(readState(target, sessionId).phase).toBe('complete');
-  const files = changedFileCount(readRunRecord(ref).summary);
+  const files = changedFileCount(readRunRecord(ref, false).summary);
   return { ref, files };
 }
 
@@ -273,7 +273,7 @@ describe('e2e: the booking of a brief the planner rewrote or split', { timeout: 
     });
 
     expect(ended.exitCode, ended.stderr).toBe(0);
-    const view = deriveSummaryView({ record: readRunRecord(ref) });
+    const view = deriveSummaryView({ record: readRunRecord(ref, false) });
     if (view === null) throw new Error('the ended run has no closed view');
     const expected = ['gen/x.txt', 'src/a.mjs', 'src/alpha.test.mjs', 'src/b.mjs'];
     expect(files).toBe(expected.length);
@@ -380,7 +380,7 @@ describe('e2e: the booking of a brief the planner rewrote or split', { timeout: 
     });
 
     expect(ended.exitCode, ended.stderr).toBe(0);
-    const view = deriveSummaryView({ record: readRunRecord(ref) });
+    const view = deriveSummaryView({ record: readRunRecord(ref, false) });
     if (view === null) throw new Error('the ended run has no closed view');
     const expected = ['gen/x.txt', 'src/a.mjs', 'src/alpha.test.mjs', 'src/b.mjs'];
     expect(filesRows(view).map((row) => row.path)).toEqual(expected);

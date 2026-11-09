@@ -140,7 +140,7 @@ describe('a run stopped while a consult question waits', { timeout: 120_000 }, (
     if (parked === null) throw new Error('the stopped run saved no state');
     expect(parked.closed).toBeUndefined();
     expect(planCalls).toBe(1);
-    const status = deriveRunStatus({ state: parked, liveness: 'not-alive' });
+    const status = deriveRunStatus({ reviewNone: false, state: parked, liveness: 'not-alive' });
     if (status.kind !== 'open') throw new Error(`expected an open run, got ${status.kind}`);
     expect(status.resumeAt).toMatchObject({ kind: 'brief', taskId: 'T001' });
 

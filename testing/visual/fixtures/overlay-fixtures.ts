@@ -1246,6 +1246,22 @@ const createSettingsEndChecksOffFixture: FixtureFactory = () =>
     seed: seedConfig({ validation: { endChecks: false } }),
     focus: 'validation.endChecks',
   });
+const createSettingsReviewNoneFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'settings',
+    seed: seedConfig({ reviewer: 'none' }),
+    focus: 'validation.endChecks',
+  });
+const createSettingsReviewNoneLockedEnterFixture: FixtureFactory = () => ({
+  ...createSettingsReviewNoneFixture(),
+  afterMount: (write) => write.press('\r'),
+});
+const createSettingsFallbackReviewNoneFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'settings',
+    seed: seedConfig({ reviewer: 'none' }),
+    focus: 'fallback:build',
+  });
 const createSettingsSavedFixture: FixtureFactory = () => ({
   ...createSettingsEndChecksOffFixture(),
   afterMount: () => {
@@ -2220,6 +2236,8 @@ const createReviewerPickerFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'reviewer-picker' });
 const createReviewerPickerToolFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'reviewer-picker', focus: 'tool:codex' });
+const createReviewerPickerNoneFixture: FixtureFactory = () =>
+  createOverlayFixture({ overlay: 'reviewer-picker', seed: seedConfig({ reviewer: 'none' }) });
 const createFallbackPickerFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'implementer-fallback-picker',
@@ -2699,7 +2717,7 @@ function applyPartialRoute(): RouteData {
       ref: { projectDir: VISUAL_FIXTURE_PROJECT_DIR, sessionId: '2026-10-17-apply-partial' },
       feature: 'Add the stop sheet',
       hydration: { kind: 'loaded', state },
-      status: deriveRunStatus({ state, liveness: 'not-alive' }),
+      status: deriveRunStatus({ state, liveness: 'not-alive', reviewNone: false }),
     }),
     execution: { kind: 'at-rest' },
   };
@@ -3138,6 +3156,12 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-settings-filter-workflow'), createSettingsFilterWorkflowFixture],
   [scenarioId('overlay-settings-end-checks'), createSettingsEndChecksFixture],
   [scenarioId('overlay-settings-end-checks-off'), createSettingsEndChecksOffFixture],
+  [scenarioId('overlay-settings-review-none'), createSettingsReviewNoneFixture],
+  [
+    scenarioId('overlay-settings-review-none-locked-enter'),
+    createSettingsReviewNoneLockedEnterFixture,
+  ],
+  [scenarioId('overlay-settings-fallback-review-none'), createSettingsFallbackReviewNoneFixture],
   [scenarioId('overlay-settings-saved'), createSettingsSavedFixture],
   [scenarioId('overlay-settings-saved-during-run'), createSettingsSavedDuringRunFixture],
   [scenarioId('overlay-settings-error-path'), createSettingsErrorPathFixture],
@@ -3326,6 +3350,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-picker-browse-escape'), createPickerBrowseEscapeFixture],
   [scenarioId('overlay-reviewer-picker-inherited'), createReviewerPickerFixture],
   [scenarioId('overlay-reviewer-picker-tool'), createReviewerPickerToolFixture],
+  [scenarioId('overlay-reviewer-picker-none'), createReviewerPickerNoneFixture],
   [scenarioId('overlay-fallback-picker'), createFallbackPickerFixture],
   [scenarioId('overlay-fallback-picker-current'), createFallbackPickerCurrentFixture],
   [scenarioId('overlay-fallback-picker-catalog'), createFallbackPickerCatalogFixture],

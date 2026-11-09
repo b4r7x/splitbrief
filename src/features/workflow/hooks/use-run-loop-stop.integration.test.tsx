@@ -104,7 +104,7 @@ function saveInterrupted(options: EngineOptions) {
   if (state === null) throw new Error('missing fixture state');
   const saved = transitionAndSave(ref, state, {
     type: 'INTERRUPT_STEP',
-    step: resumeStep(state),
+    step: resumeStep(state, false),
     source: 'user',
     cut: 'mid-step',
   });
@@ -325,7 +325,7 @@ describe('run-loop stop completion', () => {
       expect(loadState(prepared.session.ref)?.applying?.backupId).toBe('apply-backup');
       expect(loadState(prepared.session.ref)?.pendingRecovery?.reason).toBe('apply-partial');
       expect(loadState(prepared.session.ref)?.closed).toBeUndefined();
-      expect(readRunRecord(prepared.session.ref)?.status.kind).toBe('open');
+      expect(readRunRecord(prepared.session.ref, false)?.status.kind).toBe('open');
       expect(
         (await readRunEvents(prepared.session.ref)).events.filter(
           (event) => event.type === 'workflow_cancelled',
@@ -534,7 +534,7 @@ describe('run-loop stop completion', () => {
     if (stopped === null) throw new Error('missing stopped state');
     const second = prepare(stopped);
     routerStore.updateRun({
-      run: readRunRecord(first.session.ref),
+      run: readRunRecord(first.session.ref, false),
       execution: { kind: 'local', prepared: second },
     });
     mounted.rerender(
@@ -602,7 +602,7 @@ describe('run-loop stop completion', () => {
         }),
       );
       const ended = action === 'End run';
-      expect(readRunRecord(prepared.session.ref)?.status).toMatchObject(
+      expect(readRunRecord(prepared.session.ref, false)?.status).toMatchObject(
         ended
           ? { kind: 'closed', as: 'ended' }
           : { kind: 'open', stop: { kind: 'waiting-for-you', on: { kind: 'halt' } } },
@@ -623,6 +623,7 @@ describe('run-loop stop completion', () => {
       const restart = vi.fn();
       expect(
         continueRun({
+          reviewNone: false,
           ref: prepared.session.ref,
           deps: { resumeParked: () => false, loadState: hydrateResume, restart },
         }).kind,
@@ -836,7 +837,7 @@ describe('run-loop stop completion', () => {
       if (destination === 'home')
         await vi.waitFor(() => expect(routerStore.get().screen).toBe('home'));
       else await vi.waitFor(() => expect(exit).toHaveBeenCalledTimes(1));
-      expect(readRunRecord(prepared.session.ref).status).toEqual({
+      expect(readRunRecord(prepared.session.ref, false).status).toEqual({
         kind: 'closed',
         as: 'complete',
       });

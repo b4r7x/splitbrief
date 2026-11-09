@@ -194,11 +194,11 @@ describe('the halt picker of a named BUILD profile', () => {
       run: makeRunRecord({
         ref,
         hydration: { kind: 'loaded', state },
-        status: deriveRunStatus({ state, liveness: 'not-alive' }),
+        status: deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' }),
       }),
       execution: { kind: 'at-rest' },
     });
-    hydrateFromState(state);
+    hydrateFromState(state, false);
     overlayStore.open('implementer-picker', 'tool:claude-code');
     pickerViewStore.open({ kind: 'custom-model' });
     const ui = renderFeature(<ToolModelPicker slot="seat" role="implementer" />);

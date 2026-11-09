@@ -5,9 +5,15 @@ import { phaseStage } from './rail-stages.js';
 /**
  * The seat that reads a message typed now: REVIEW while a task review runs inside the build
  * phase, as it reads every unread message at its verdict call, else the seat of the phase's stage.
+ * None while REVIEW None checks the merged result again, as no seat runs then.
  */
-export function messageSeat(phase: Phase, reviewing: boolean): ReturnType<typeof phaseStage> {
-  return reviewing ? 'review' : phaseStage(phase);
+export function messageSeat(
+  phase: Phase,
+  reviewing: boolean,
+  reviewNone: boolean,
+): ReturnType<typeof phaseStage> {
+  if (reviewing && !reviewNone) return 'review';
+  return phase === 'final-review' && reviewNone ? null : phaseStage(phase);
 }
 
 export function isQueuedMessagePendingDelivery(message: QueuedMessage): boolean {

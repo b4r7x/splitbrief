@@ -116,6 +116,21 @@ describe('outcome kind', () => {
     expect(derive(summary).outcome.kind).toBe('needs-attention');
   });
 
+  it('None outcome is complete', () => {
+    const view = derive(
+      makeSummary({
+        totalTasks: 3,
+        completedByLocal: 3,
+        failed: 0,
+        reviewerSeat: 'none',
+        driftSummary: { passed: true, errorCount: 0, warningCount: 0 },
+      }),
+    );
+
+    expect(view.outcome.kind).toBe('complete');
+    expect(view.review.kind).toBe('none');
+  });
+
   it('needs attention when a brief failed even though the review passed', () => {
     expect(derive(readySummary({ failed: 1 })).outcome.kind).toBe('needs-attention');
   });
@@ -281,7 +296,7 @@ describe('a run with a workspace', () => {
       },
     });
     return {
-      status: deriveRunStatus({ state, liveness: 'not-alive' }),
+      status: deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' }),
       hydration: { kind: 'loaded', state },
     };
   }

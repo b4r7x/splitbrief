@@ -561,7 +561,7 @@ describe('e2e: a consult rewrite of a brief that created its files', { timeout: 
       action: 'create',
     });
 
-    const view = deriveSummaryView({ record: readRunRecord(ref) });
+    const view = deriveSummaryView({ record: readRunRecord(ref, false) });
     if (view === null) throw new Error('the finished run has no closed view');
     expect(view.briefs.rows.map((row) => briefRowParts({ row }))).toMatchObject([
       { id: 'T001', title: rewritten.title, file: 'src/alpha.mjs', fileNote: '(create)' },
@@ -597,7 +597,7 @@ describe('e2e: a consult split of a brief that created its files', { timeout: 36
     ]);
 
     const view = deriveSummaryView({
-      record: readRunRecord({ projectDir: target.projectDir, sessionId }),
+      record: readRunRecord({ projectDir: target.projectDir, sessionId }, false),
     });
     if (view === null) throw new Error('the finished run has no closed view');
     expect(view.briefs.rows.map((row) => briefRowParts({ row }))).toMatchObject([

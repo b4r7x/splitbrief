@@ -2102,6 +2102,15 @@ describe('doctor --probe-seat', () => {
     expect(help).toContain('one paid call through one seat: plan, build, review');
   });
 
+  it('probe with None', async () => {
+    initGitRepo(tmp);
+    writeConfig(tmp, `${validConfigYaml()}\nreviewer: none\n`);
+
+    await expect(runDoctor(['--project', tmp, '--probe-seat', 'review'])).rejects.toThrow(
+      'REVIEW is set to None; no seat to probe.',
+    );
+  });
+
   it('rejects a seat outside plan, build and review', async () => {
     await expect(runDoctor(['--project', tmp, '--probe-seat', 'deploy'])).rejects.toThrow(
       'plan, build, review',

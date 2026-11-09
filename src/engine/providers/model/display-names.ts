@@ -135,9 +135,11 @@ export function resolveCrewDisplayNames(
   const planName = resolveSeatDisplayName(config.planner, 'planner', cache);
   const buildName = resolveSeatDisplayName(implementer, 'implementer', cache);
   const reviewName =
-    reviewer.source === 'planner'
-      ? planName
-      : resolveSeatDisplayName(reviewer.runner, 'reviewer', cache);
+    reviewer.source === 'none'
+      ? undefined
+      : reviewer.source === 'planner'
+        ? planName
+        : resolveSeatDisplayName(reviewer.runner, 'reviewer', cache);
 
   return {
     ...(planName !== undefined && { plan: planName }),

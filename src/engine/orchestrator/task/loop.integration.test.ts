@@ -234,6 +234,7 @@ describe('runTaskLoop', { timeout: 120_000 }, () => {
         message: plainUserMessage('also export the helper'),
         phase: 'implementing',
         bus: makeBusRecorder().bus,
+        reviewNone: false,
       });
     }
 

@@ -65,6 +65,22 @@ afterAll(() => {
 
 describe('config roundtrip', () => {
   describe('loadConfig', () => {
+    it('`reviewer: none` round-trips', () => {
+      const dir = join(TMP, 'review-none-roundtrip');
+      mkdirSync(dir, { recursive: true });
+      writeConfigYamlText(
+        dir,
+        `${legacyClaudeConfigYaml('The review seat is None.')}reviewer: none\n`,
+      );
+
+      const { config } = loadConfig(dir);
+      expect(config.reviewer).toBe('none');
+
+      writeConfig(dir, config);
+      expect(readFileSync(configPath(dir), 'utf-8')).toMatch(/^reviewer: none$/m);
+      expect(loadConfig(dir).config).toEqual(config);
+    });
+
     it('writes a default config that loadConfig reads back to the same shape', () => {
       const dir = join(TMP, 'default-roundtrip');
       mkdirSync(dir, { recursive: true });

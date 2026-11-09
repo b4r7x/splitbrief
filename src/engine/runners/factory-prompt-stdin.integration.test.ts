@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { Config } from '../../core/schemas/config.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
-import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
+import { requireReviewSeat } from '../../core/config/accessors/reviewer-runner.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import { createConfiguredCustomPlanner } from '../planners/command-invoke.js';
 import { createImplementer, createPlanner, createReviewer } from './factory.js';
@@ -103,7 +103,7 @@ async function callSeat(
   if (seat === 'reviewer') {
     const reviewer = await createReviewer(
       config,
-      authorityFor(config, { role: 'reviewer' }, resolveReviewerRunner(config).runner),
+      authorityFor(config, { role: 'reviewer' }, requireReviewSeat(config).runner),
     );
     return reviewer.review(prompt, projectDir, callbacks);
   }

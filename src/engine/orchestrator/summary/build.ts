@@ -50,6 +50,7 @@ export type SummaryBase = {
   reviewerModel?: string;
   reviewerKind?: RunnerKind;
   reviewerAxes?: readonly string[];
+  reviewerSeat?: 'none';
   projectDir?: string;
   sessionId?: string;
   pricingCache?: ModelCacheAccessor | undefined;
@@ -132,6 +133,7 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     reviewerModel,
     reviewerKind,
     reviewerAxes,
+    reviewerSeat,
     projectDir,
     sessionId,
     pricingCache,
@@ -241,6 +243,7 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     ...(reviewerModel !== undefined && { reviewerModel }),
     ...(reviewerKind !== undefined && { reviewerKind }),
     ...(reviewerAxes !== undefined && { reviewerAxes }),
+    ...(reviewerSeat !== undefined && { reviewerSeat }),
     ...(evidenceSummary && { evidenceSummary }),
     ...(briefQuality && { briefQuality }),
     ...(driftSummary && { driftSummary }),

@@ -332,6 +332,32 @@ describe('CLI integration: splitbrief review', () => {
     expect(readRunLog()).toHaveLength(0);
   });
 
+  it('refuses under REVIEW None when no --reviewer names a seat', async () => {
+    writeConfig(tmp, { reviewer: 'none' });
+    writeFileSync(join(tmp, 'init.txt'), `init\n${CHANGED_LINE}\n`, 'utf-8');
+    installFakeClaude();
+
+    const { stdout, exitCode } = await runReview(['--project', tmp]);
+
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain(
+      'REVIEW is set to None; pass --reviewer to name a seat for this review.',
+    );
+    expect(readRunLog()).toHaveLength(0);
+  });
+
+  it('reviews under REVIEW None through the seat that --reviewer names', async () => {
+    writeConfig(tmp, { reviewer: 'none' });
+    writeFileSync(join(tmp, 'init.txt'), `init\n${CHANGED_LINE}\n`, 'utf-8');
+    installFakeClaude();
+
+    const { stdout, exitCode } = await runReview(['--project', tmp, '--reviewer', 'claude-code']);
+
+    expect(exitCode).toBe(0);
+    expect(readRunLog()).toHaveLength(1);
+    expect(stdout).toContain('pass_with_notes');
+  });
+
   it('reviews the working tree in one read-only call, without a session', async () => {
     writeConfig(tmp);
     writeFileSync(join(tmp, 'init.txt'), `init\n${CHANGED_LINE}\n`, 'utf-8');

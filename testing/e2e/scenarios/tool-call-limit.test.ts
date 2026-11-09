@@ -124,9 +124,13 @@ describe('e2e: implementer tool-call limit', () => {
     expect(events.filter((event) => event.type === 'runner_call_error')).toEqual([]);
     expect(events.filter((event) => event.type === 'runner_call_completed')).toHaveLength(1);
     expect(readFileSync(target.greetPath, 'utf8')).toBe(GREET_SOURCE);
-    expect(deriveRunStatus({ state: readState(target, sessionId), liveness: 'not-alive' })).toEqual(
-      { kind: 'closed', as: 'complete' },
-    );
+    expect(
+      deriveRunStatus({
+        reviewNone: false,
+        state: readState(target, sessionId),
+        liveness: 'not-alive',
+      }),
+    ).toEqual({ kind: 'closed', as: 'complete' });
   });
 
   it('stops the call at the tool call after maxToolCalls and consults without a retry', async () => {

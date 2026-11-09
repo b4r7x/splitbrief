@@ -559,7 +559,7 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
     onPrepared: (execution) => {
       routerStore.navigate({
         to: 'workflow',
-        run: effects.readRunRecord(execution.session.ref),
+        run: effects.readRunRecord(execution.session.ref, configStore.reviewNone()),
         execution: { kind: 'local', prepared: execution },
       });
     },

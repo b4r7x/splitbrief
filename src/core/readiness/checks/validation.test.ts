@@ -30,6 +30,37 @@ describe('buildValidationChecks End-of-run checks', () => {
     expect(checks.some((c) => c.id === 'validation.end-checks-off')).toBe(false);
   });
 
+  it.each([true, false])(
+    'no end-checks warning under None, with end_checks stored as %s',
+    (endChecks) => {
+      const checks = buildValidationChecks(
+        makeConfig({ reviewer: 'none', validation: { endChecks } }),
+        packageScripts,
+        tempDir,
+      );
+
+      expect(checks.some((c) => c.id === 'validation.end-checks-off')).toBe(false);
+      const configured = checks.find((c) => c.id === 'validation.configured');
+      expect(configured?.summary).toBe('End-of-run checks: off (REVIEW is None).');
+      expect(configured?.metadata?.['endChecks']).toBe(false);
+    },
+  );
+
+  it.each([true, false])(
+    'states under None, with end_checks stored as %s, that only the brief checks run',
+    (endChecks) => {
+      const checks = buildValidationChecks(
+        makeConfig({ reviewer: 'none', validation: { endChecks } }),
+        packageScripts,
+        tempDir,
+      );
+
+      expect(checks.find((c) => c.id === 'validation.configured')?.details?.[0]).toBe(
+        'Each brief runs its own checks, except a render check. No other check runs.',
+      );
+    },
+  );
+
   it('states that the plan gate runs before the final review only', () => {
     const checks = buildValidationChecks(makeConfig(), packageScripts, tempDir);
 

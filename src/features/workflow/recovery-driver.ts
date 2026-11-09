@@ -49,6 +49,7 @@ import {
   formatRecoveryPrompt,
   parseRecoveryActionAnswer,
 } from './recovery-prompt.js';
+import { resolveReviewCadence } from '../../core/config/runtime/resolve.js';
 
 const NO_CORRECTION_MESSAGE = 'This halt takes no typed correction. Choose an action.';
 
@@ -201,7 +202,7 @@ export function createRecoveryDriver(
   }: PromptPendingRecoveryArgs): Promise<PendingRecoveryResult> {
     const issue = state.pendingRecovery;
     if (issue === undefined) return { shouldRun: true, state };
-    const at = resumeStep(state);
+    const at = resumeStep(state, resolveReviewCadence(config) === 'none');
 
     // The halt's declaration is its automatic intent: the declared fallback is taken
     // at once, with no panel question and no picker, and the run loop applies it
@@ -256,7 +257,11 @@ export function createRecoveryDriver(
 
       feedbackStore.reset();
 
-      const status = deriveRunStatus({ state: result.state, liveness: 'not-alive' });
+      const status = deriveRunStatus({
+        state: result.state,
+        liveness: 'not-alive',
+        reviewNone: false,
+      });
       if (status.kind === 'closed') {
         // The close is on the state; the run loop finalizes the session from it —
         // one summary, one receipt release, through the same path every other

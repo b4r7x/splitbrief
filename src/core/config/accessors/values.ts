@@ -21,7 +21,7 @@ export function getConfigValue(config: Config | Record<string, unknown>, dotPath
 
 export function applyEdits(config: Config, edits: Record<string, unknown>): Config {
   const reviewerPath = Object.keys(edits).find((dotPath) => dotPath.startsWith('reviewer.'));
-  if (reviewerPath !== undefined && resolveReviewerRunner(config).source === 'planner') {
+  if (reviewerPath !== undefined && resolveReviewerRunner(config).source !== 'configured') {
     throw configError.reviewerInherited(reviewerPath);
   }
   const clone = structuredClone(config);

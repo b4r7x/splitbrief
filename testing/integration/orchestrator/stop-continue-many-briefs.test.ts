@@ -179,7 +179,7 @@ describe('a thirteen-brief run stopped between briefs and continued', { timeout:
     const session = readSession(ref);
     if (session === null || session.summary === null) throw new Error('Missing run summary');
     expect(session.status).toBe('open');
-    expect(deriveRunStatus({ state: final, liveness: 'not-alive' })).toEqual({
+    expect(deriveRunStatus({ reviewNone: false, state: final, liveness: 'not-alive' })).toEqual({
       kind: 'ready-to-apply',
       override: false,
     });

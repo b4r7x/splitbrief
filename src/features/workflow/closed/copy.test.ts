@@ -26,6 +26,14 @@ describe('runRows', () => {
     },
   );
 
+  it('fact words: a None run reads no review', () => {
+    const texts = segmentsFor(makeView({ review: { kind: 'none' } }), 'Review')?.map((segment) =>
+      'text' in segment ? segment.text : '',
+    );
+
+    expect(texts).toEqual(['no review']);
+  });
+
   it('states a passing review, its packet and its scope once each', () => {
     const view = makeView();
     expect(segmentsFor(view, 'Review')).toEqual([

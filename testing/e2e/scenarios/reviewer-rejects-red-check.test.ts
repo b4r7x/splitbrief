@@ -256,7 +256,7 @@ describe('e2e: the reviewer decides a red reviewer check', { timeout: 300_000 },
     expect(state.review).toMatchObject({ outcome: 'pass-with-notes' });
     expect(state.review?.redInputs).toBeUndefined();
     expect(state.triage?.at(-1)?.result.rejected.map((entry) => entry.findingId)).toEqual(['V1.1']);
-    expect(deriveRunStatus({ state, liveness: 'not-alive' })).toEqual({
+    expect(deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' })).toEqual({
       kind: 'ready-to-apply',
       override: false,
     });
@@ -301,6 +301,6 @@ describe('e2e: the reviewer decides a red reviewer check', { timeout: 300_000 },
     expect(state.pendingRecovery?.details?.[0]).toBe(
       'The review asked a question this run has no way to answer.',
     );
-    expect(deriveRunStatus({ state, liveness: 'not-alive' }).kind).toBe('open');
+    expect(deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' }).kind).toBe('open');
   });
 });

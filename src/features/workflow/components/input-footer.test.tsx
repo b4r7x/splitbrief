@@ -363,6 +363,7 @@ describe('InputFooter', () => {
     ]);
     hydrateFromState(
       makeWorkflowState({ phase: 'planning', startedAt: new Date(hours(9)).toISOString() }),
+      false,
     );
     addEvent({ type: 'workflow_resumed', ts: now - 35 * 60_000, phase: 'planning' });
     addEvent(makePlannerStatus({ phase: 'planning', call: 'tasks', ts: now - 30 * 60_000 }));
@@ -497,6 +498,7 @@ describe('InputFooter', () => {
           phase: 'implementing',
           startedAt: new Date(ago(60)).toISOString(),
         }),
+        false,
       );
       addEvent({ type: 'workflow_resumed', ts: ago(2), phase: 'implementing' });
       addEvent(makeTaskStart({ taskId: taskId('T001'), ts: ago(2) }));
@@ -1015,12 +1017,12 @@ describe('InputFooter', () => {
       routerStore.init({
         screen: 'workflow',
         run: makeRunRecord({
-          status: deriveRunStatus({ state, liveness: 'not-alive' }),
+          status: deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' }),
           hydration: { kind: 'loaded', state },
         }),
         execution: { kind: 'at-rest' },
       });
-      hydrateFromState(state);
+      hydrateFromState(state, false);
       seedBriefs({
         currentTask: 1,
         totalTasks: 1,
@@ -1058,12 +1060,12 @@ describe('InputFooter', () => {
       routerStore.init({
         screen: 'workflow',
         run: makeRunRecord({
-          status: deriveRunStatus({ state, liveness: 'not-alive' }),
+          status: deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' }),
           hydration: { kind: 'loaded', state },
         }),
         execution: { kind: 'at-rest' },
       });
-      hydrateFromState(state);
+      hydrateFromState(state, false);
 
       const ui = renderFeature(
         <InputFooter
@@ -1098,12 +1100,12 @@ describe('InputFooter', () => {
     routerStore.init({
       screen: 'workflow',
       run: makeRunRecord({
-        status: deriveRunStatus({ state, liveness: 'not-alive' }),
+        status: deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' }),
         hydration: { kind: 'loaded', state },
       }),
       execution: { kind: 'at-rest' },
     });
-    hydrateFromState(state);
+    hydrateFromState(state, false);
 
     const ui = renderFeature(<InputFooter byline={[{ text: 'Ready to apply', tone: 'accent' }]} />);
     expect(stripAnsiStyles(ui.lastFrame() ?? '').trim()).toBe('Ready to apply');
@@ -1433,6 +1435,25 @@ describe('InputFooter', () => {
     ui.unmount();
   });
 
+  it('names the recheck of the merged result, not a review, while a REVIEW None run checks it', () => {
+    configStore.__testReset({
+      config: makeConfig({ reviewer: 'none' }),
+      projectDir: '/tmp/splitbrief-test',
+    });
+    runViewStore.__testReset({
+      phase: 'final-review',
+      phaseFirstSeen: { 'final-review': Date.now() - 42_000 },
+      reviewNone: true,
+    });
+    lifecycleStore.__testReset({ status: 'running', startedAt: Date.now() - 42_000 });
+    const ui = renderFeature(<InputFooter width={120} />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain(`${spinnerFrames()[0]} Checking the merged result 0:42`);
+    expect(frame).not.toContain('Review ·');
+    expect(frame).not.toContain('reviewing');
+    ui.unmount();
+  });
+
   it.each([
     ['paused', 'warning', 'Stopped at the plan', 'type a correction or ⏎ to continue'],
     ['failed', 'error', 'Stopped by an error · Disk full', '⏎ to retry the step'],
@@ -1582,6 +1603,77 @@ describe('InputFooter', () => {
     expect(frame).not.toContain('/resume');
     ui.unmount();
     terminalSizeStore.reset();
+  });
+
+  // REVIEW None rechecks the merged result for Apply with no seat: every word names Apply, as the
+  // rail does.
+  describe('while a REVIEW None run checks its merged result again', () => {
+    beforeEach(() => {
+      terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+      runViewStore.__testReset({
+        phase: 'final-review',
+        reviewNone: true,
+        afterLastBrief: { kind: 'apply' },
+      });
+    });
+
+    afterEach(() => {
+      terminalSizeStore.reset();
+    });
+
+    function footerText(): string {
+      const ui = renderFeature(<InputFooter width={120} />);
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      ui.unmount();
+      return frame;
+    }
+
+    it('says Resuming Apply while a continued run starts again', () => {
+      lifecycleStore.__testReset({ status: 'paused' });
+      expect(footerText()).toContain(`${spinnerFrames()[0]} Resuming Apply`);
+    });
+
+    it('says Stopping Apply while a stop waits for its processes', () => {
+      lifecycleStore.__testReset({ status: 'running' });
+      stopStore.__testReset({
+        intent: 'stop-now',
+        phase: 'terminating',
+        requestedAt: Date.now() - 42_000,
+      });
+      expect(footerText()).toContain('Stopping Apply · Waiting for processes to exit 0:42');
+    });
+
+    it('names the Apply stage on a run the user stopped', () => {
+      lifecycleStore.__testReset({ status: 'cancelled', reason: 'user_cancelled' });
+      const frame = footerText();
+      expect(frame).toContain(`${glyph('statusCancelled')} Stopped by you · Apply`);
+      expect(frame).not.toContain('Review');
+    });
+
+    it('names no seat for a queued message', () => {
+      lifecycleStore.__testReset({ status: 'running', queueDepth: 1 });
+      const frame = footerText();
+      expect(frame).toContain('1 queued');
+      expect(frame).not.toContain('queued for REVIEW');
+    });
+
+    it('says Resuming the review and names no Apply on the project checkout', () => {
+      hydrateFromState(
+        makeWorkflowState({
+          phase: 'final-review',
+          workspace: {
+            kind: 'checkout',
+            path: '/tmp/run',
+            base: { snapshotId: 'base', head: null },
+          },
+        }),
+        true,
+      );
+      lifecycleStore.__testReset({ status: 'paused' });
+      const frame = footerText();
+      expect(frame).toContain(`${spinnerFrames()[0]} Resuming the review`);
+      expect(frame).not.toContain('Apply');
+    });
   });
 
   it('paints a running reviewer check mark accent and only its seat words reviewer', () => {

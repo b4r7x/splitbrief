@@ -42,6 +42,8 @@ Crew
   Continue
 ```
 
+`= PLAN` means that the planner reviews the run. Choose **None** in the REVIEW picker to run with no review.
+
 When Continue is your first save, home shows:
 
 ```

@@ -461,5 +461,5 @@ it('finishes a headless Apply a SIGTERM reaches, exits 143 and leaves the run no
     'utf8',
   );
   expect(JSON.parse(lock).exitedAt).toBeTypeOf('number');
-  expect(readRunRecord(ready.ref).status.kind).toBe('closed');
+  expect(readRunRecord(ready.ref, false).status.kind).toBe('closed');
 });

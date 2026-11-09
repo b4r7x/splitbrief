@@ -46,7 +46,9 @@ describe('live paths: happy path', { timeout: 2 * LIVE_PATHS_TIMEOUT_MS }, () =>
     const sessionId = basename(resolveSessionDir(projectDir));
     const ref = { projectDir, sessionId };
     const ready = readRunState(ref);
-    expect(deriveRunStatus({ state: ready, liveness: 'not-alive' }).kind).toBe('ready-to-apply');
+    expect(deriveRunStatus({ reviewNone: false, state: ready, liveness: 'not-alive' }).kind).toBe(
+      'ready-to-apply',
+    );
     expect(ready.tasks.length).toBeGreaterThanOrEqual(1);
     expect(ready.tasks.every((task) => task.status === 'done')).toBe(true);
 

@@ -118,7 +118,7 @@ console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 100,
   expect(events.some((event) => event.type === 'seat_switched')).toBe(true);
 
   // The run ran until the halt, then from the seat switch's resume to its end.
-  expect(readRunRecord(ref).summary?.activeTime).toBe(
+  expect(readRunRecord(ref, false).summary?.activeTime).toBe(
     halted.ts - started.ts + finished.ts - (resumed.resumedAt ?? resumed.ts),
   );
 });

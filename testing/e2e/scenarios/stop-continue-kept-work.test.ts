@@ -152,7 +152,7 @@ async function transcriptRows(
   sessionId: string,
   cols: number,
 ): Promise<string[]> {
-  await hydrateRun(readRunRecord({ projectDir: target.projectDir, sessionId }));
+  await hydrateRun(readRunRecord({ projectDir: target.projectDir, sessionId }, false));
   return buildConversationRows({
     sections: groupEventsIntoSections(eventsStore.get().events),
     expandedDiffs: new Set(),
@@ -175,11 +175,12 @@ async function resumedRows(target: StopContinueFixture, sessionId: string): Prom
 
 /** What the stopped byline says once the stop settled the run at rest on its re-read record. */
 function settledStopLead(target: StopContinueFixture, sessionId: string): string {
-  const record = readRunRecord({ projectDir: target.projectDir, sessionId });
+  const record = readRunRecord({ projectDir: target.projectDir, sessionId }, false);
   const byline = stopByline({
     intent: 'stop-now',
     phase: 'parked',
     workflowPhase: 'implementing',
+    afterLastBrief: { kind: 'review', cycle: 0 },
     parked: { kind: 'mid-brief', taskId: null, kept: [] },
     currentTaskId: null,
     nextTaskId: null,
@@ -191,8 +192,9 @@ function settledStopLead(target: StopContinueFixture, sessionId: string): string
     record,
     stopKept:
       record.hydration.kind === 'loaded'
-        ? settleRunView(EMPTY_RUN_VIEW, record.hydration.state).stopKept
+        ? settleRunView(EMPTY_RUN_VIEW, record.hydration.state, false).stopKept
         : [],
+    stopStep: null,
   });
   return byline?.parts.map((part) => part.text).join('') ?? '';
 }
@@ -264,7 +266,9 @@ describe('stop after the brief wrote its files → continue', { timeout: 240_000
     const firstStretch = stop.ts - firstStart;
     expect(done.duration).toBeGreaterThanOrEqual(firstStretch + (beforeDone.ts - secondStart));
     expect(done.duration).toBeLessThanOrEqual(firstStretch + (done.ts - secondStart));
-    await hydrateRun(readRunRecord({ projectDir: target.projectDir, sessionId: parked.sessionId }));
+    await hydrateRun(
+      readRunRecord({ projectDir: target.projectDir, sessionId: parked.sessionId }, false),
+    );
     const brief = groupEventsIntoSections(eventsStore.get().events).find(
       (section) => section.type === 'completed-task',
     );
@@ -274,7 +278,7 @@ describe('stop after the brief wrote its files → continue', { timeout: 240_000
     expect(patch).toContain(KEPT_GREET);
     expect(patch).toContain(KEPT_MARKER);
     const closed = deriveSummaryView({
-      record: readRunRecord({ projectDir: target.projectDir, sessionId: parked.sessionId }),
+      record: readRunRecord({ projectDir: target.projectDir, sessionId: parked.sessionId }, false),
     });
     expect(closed?.briefs.rows.map((row) => [row.id, row.durationMs])).toEqual([
       ['T001', done.duration],

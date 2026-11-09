@@ -9,6 +9,7 @@ import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { loadConfig, writeConfig } from '../../../core/config/load/io.js';
+import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import { configPath, readConfigDocument } from '../../../core/config/load/document.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import type { Config } from '../../../core/schemas/config.js';
@@ -291,8 +292,8 @@ describe('switchSeatAndPrepareResume', () => {
     });
     expect(result.kind).toBe('switched');
     if (result.kind !== 'switched') throw new Error('expected a manual switch');
-    expect(result.config.reviewer?.fallback).toBeUndefined();
-    expect(loadConfig(projectDir).config.reviewer?.fallback).toBeUndefined();
+    expect(configuredReviewerRunner(result.config)?.fallback).toBeUndefined();
+    expect(configuredReviewerRunner(loadConfig(projectDir).config)?.fallback).toBeUndefined();
   });
 
   it('honours a fallback cleared after preparation on a manual switch', async () => {

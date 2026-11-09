@@ -298,7 +298,9 @@ describe('e2e: Review again after a failed final review', { timeout: 300_000 }, 
       status: 'done',
       fix: { findings: [{ id: inputId, text: NOTE }] },
     });
-    expect(deriveRunStatus({ state: ready, liveness: 'not-alive' }).kind).toBe('ready-to-apply');
+    expect(deriveRunStatus({ reviewNone: false, state: ready, liveness: 'not-alive' }).kind).toBe(
+      'ready-to-apply',
+    );
 
     const replay = await readRunEvents(ref);
     expect(replay.diagnostics.skipped).toBe(0);

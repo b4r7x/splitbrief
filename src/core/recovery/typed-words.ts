@@ -1,5 +1,6 @@
 import type { RecoveryAction, RecoveryReason } from '../schemas/enums.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
+import type { StepRef } from '../schemas/run-step.js';
 import type { RunStatus } from '../sessions/run-status.js';
 
 /**
@@ -33,10 +34,22 @@ function haltLeavesWordsUnread(issue: RecoveryIssue): boolean {
   return onward.length > 0 && onward.every((action) => leavesWordsUnread(issue.reason, action));
 }
 
-/** Whether words typed to continue this run reach no step: at its halt, or at Apply with no halt. */
+/** The refusal of words that would go to a step that reads none: Apply, or a review with no seat. */
+export function noWordsRefusal(step: StepRef): string {
+  return `Cannot send words to ${step.kind === 'apply' ? 'Apply' : 'the review'}. Clear them.`;
+}
+
+/**
+ * Whether words typed to continue this run reach no step: at its halt, at Apply, or at a review
+ * REVIEW None runs no seat for.
+ */
 export function statusLeavesWordsUnread(status: RunStatus): boolean {
   if (status.kind !== 'open') return false;
-  return status.stop.on.kind === 'halt'
-    ? haltLeavesWordsUnread(status.stop.on.issue)
-    : status.resumeAt.kind === 'apply';
+  if (status.stop.on.kind === 'halt') return haltLeavesWordsUnread(status.stop.on.issue);
+  return status.resumeAt.kind === 'apply' || status.skipsReview === true;
+}
+
+/** Whether words typed at a park past the last brief reach no step: REVIEW None runs no seat there. */
+export function parkLeavesWordsUnread(step: StepRef | null, reviewNone: boolean): boolean {
+  return reviewNone && step !== null && step.kind !== 'brief';
 }

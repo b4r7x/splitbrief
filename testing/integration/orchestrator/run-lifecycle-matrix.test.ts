@@ -84,7 +84,7 @@ function seen(ref: Ref): Seen {
   }
   const row = listSessions(ref.projectDir).find((session) => session.id === ref.sessionId);
   return {
-    engine: readRunRecord(ref).status,
+    engine: readRunRecord(ref, false).status,
     cli,
     home: row === undefined ? undefined : { status: row.status, apply: row.apply, stop: row.stop },
   };
@@ -92,7 +92,9 @@ function seen(ref: Ref): Seen {
 
 function expectSameStatus(ref: Ref): void {
   const state = restart(ref);
-  expect(readRunRecord(ref).status).toEqual(deriveRunStatus({ state, liveness: 'not-alive' }));
+  expect(readRunRecord(ref, false).status).toEqual(
+    deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' }),
+  );
 }
 
 async function runUntil(stopBeforeReview: boolean): Promise<Ref> {
@@ -172,6 +174,7 @@ describe('run lifecycle matrix', { timeout: 120_000 }, () => {
     const result = await runApply({
       wctx: { ...ref, bus: createEventBus() },
       state: restart(ref),
+      reviewNone: false,
     });
 
     expect(result.outcome).toBe('applied');

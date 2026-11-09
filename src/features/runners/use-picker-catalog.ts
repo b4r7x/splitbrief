@@ -5,6 +5,7 @@ import { detectionStore } from '../../stores/project/detection.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { useStores } from '../../stores/use-stores.js';
 import { readActiveRunner } from '../../core/config/accessors/active-runner.js';
+import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import { CREW_SEAT_IDS, CREW_SEAT_LABELS, formatSeatIdentity } from '../../core/crew/identity.js';
 import { CREW_SEAT_ROLES } from '../../core/crew/seats.js';
 import { getRunnerCommand, type RunnerConfig } from '../../core/config/accessors/runner-config.js';
@@ -37,6 +38,7 @@ import {
   assemblePickerDescriptors,
   buildPickerOptions,
   inheritPlannerOption,
+  reviewNoneOption,
   noFallbackOption,
   type PickerOption,
 } from './model-catalog/options.js';
@@ -46,7 +48,6 @@ import {
   type CatalogLane,
   type RightRow,
 } from './model-catalog/rows.js';
-import { inheritsPlannerSeat } from './config-transforms.js';
 import { usePickerProfile } from './picker-profile.js';
 import type { Config } from '../../core/schemas/config.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
@@ -167,19 +168,24 @@ function buildLeftItems(input: {
         .map((item) => ({ ...item, isCurrent: isCurrentRunner(item, runner) })),
     ];
   }
-  // An inherited review seat has no tool of its own: flagging the planner's row
+  // A review seat that inherits or is None has no tool of its own: flagging the planner's row
   // as current would make Enter on the pre-selected row fork the seat silently.
-  // The inherit row stands in for it, and stays offered once the seat is forked
+  // The inherit and None rows stand in for it, and stay offered once the seat is forked
   // so the fork is reversible.
-  const inherited = inheritsPlannerSeat(config, lane);
+  const source = lane === 'reviewer' ? resolveReviewerRunner(config).source : 'configured';
   const configuredItems: PickerOption[] = rawItems.map((item) => ({
     ...item,
-    isCurrent: !inherited && isCurrentRunner(item, runner),
+    isCurrent: source === 'configured' && isCurrentRunner(item, runner),
   }));
   if (role !== 'reviewer') return configuredItems;
+  const none = reviewNoneOption({ isCurrent: source === 'none' });
   const plannerItem = rawItems.find((item) => isCurrentRunner(item, config.planner));
-  if (plannerItem === undefined) return configuredItems;
-  return [inheritPlannerOption({ planner: plannerItem, isCurrent: inherited }), ...configuredItems];
+  if (plannerItem === undefined) return [none, ...configuredItems];
+  return [
+    inheritPlannerOption({ planner: plannerItem, isCurrent: source === 'planner' }),
+    none,
+    ...configuredItems,
+  ];
 }
 
 export function usePickerCatalog(

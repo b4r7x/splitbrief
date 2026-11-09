@@ -113,7 +113,9 @@ writeFileSync('note.txt', 'after\\n');
       const state = WorkflowStateSchema.parse(
         JSON.parse(readFileSync(join(sessionDir(projectDir, sessionId), 'state.json'), 'utf8')),
       );
-      expect(deriveRunStatus({ state, liveness: 'not-alive' }).kind).toBe('ready-to-apply');
+      expect(deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' }).kind).toBe(
+        'ready-to-apply',
+      );
       const workspace = state.workspace;
       if (workspace === undefined) throw new Error('the run has no workspace');
       // The worktree's .gitignore holds isolation bookkeeping, which the patch leaves out.

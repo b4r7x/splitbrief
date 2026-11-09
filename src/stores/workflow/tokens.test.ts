@@ -101,6 +101,23 @@ describe('tokensStore — cost-update', () => {
   });
 });
 
+describe('tokensStore — run pass seats', () => {
+  beforeEach(() => resetWorkflow());
+
+  it('keeps the None of a pass that no seat reviews', () => {
+    addEvent({
+      type: 'workflow_config',
+      ts: 1,
+      phase: 'planning',
+      plannerTool: 'claude-code',
+      implementerTool: 'codex',
+      reviewerSeat: 'none',
+    });
+
+    expect(tokensStore.get().passSeats).toMatchObject({ reviewerSeat: 'none' });
+  });
+});
+
 describe('tokensStore — final-review phase attribution', () => {
   beforeEach(() => resetWorkflow());
 

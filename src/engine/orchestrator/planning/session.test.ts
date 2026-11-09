@@ -1057,6 +1057,7 @@ describe('the planning session on the live path', () => {
     };
     saveState({ projectDir, sessionId }, state);
     const holder = await resumeContinuation({
+      reviewNone: false,
       ref: { projectDir, sessionId },
       state,
       steer: plainUserMessage('ANSWER-ABC postgres'),
@@ -1214,7 +1215,7 @@ describe('the plan card', () => {
   ) {
     const saved = loadState(first);
     if (saved === null) throw new Error('state not saved');
-    const holder = await resumeContinuation({ ref: first, state: saved, steer });
+    const holder = await resumeContinuation({ reviewNone: false, ref: first, state: saved, steer });
     let state = saved.pendingRecovery
       ? transition(saved, { type: 'RESOLVE_PENDING_RECOVERY' })
       : saved;
@@ -1463,6 +1464,7 @@ describe('the plan card', () => {
           // Queued during the last planner call, after that call drained the queue.
           phase: 'planning',
           bus: makeBusRecorder().bus,
+          reviewNone: false,
         });
         return { approved: false };
       })
@@ -1710,6 +1712,7 @@ describe('a question round the user answers in their own words', () => {
     const saved = loadState(first);
     if (saved === null) throw new Error('state not saved');
     const holder = await resumeContinuation({
+      reviewNone: false,
       ref: first,
       state: saved,
       steer: plainUserMessage('STEER-ANSWER use src/b.ts'),

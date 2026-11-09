@@ -256,7 +256,7 @@ describe('a state write that fails', () => {
       expect(() =>
         transitionAndSave(ref, saved, {
           type: 'INTERRUPT_STEP',
-          step: resumeStep(saved),
+          step: resumeStep(saved, false),
           source: 'user',
           cut: 'mid-step',
         }),
@@ -278,7 +278,7 @@ describe('a state write that fails', () => {
       expect(() =>
         transitionAndSave(ref, saved, {
           type: 'INTERRUPT_STEP',
-          step: resumeStep(saved),
+          step: resumeStep(saved, false),
           source: 'user',
           cut: 'mid-step',
         }),
@@ -436,6 +436,7 @@ describe('queue callers after a persisted clear', () => {
           message: plainUserMessage('cleared correction'),
           phase: saved.phase,
           bus,
+          reviewNone: false,
         }).state;
         clearPendingQueue({ ...ref, state: stale, bus });
 
@@ -446,6 +447,7 @@ describe('queue callers after a persisted clear', () => {
             message: plainUserMessage('new correction'),
             phase: stale.phase,
             bus,
+            reviewNone: false,
           });
           expect(submitted.result.status).toBe('accepted');
           expect(submitted.state.messageQueue.map((message) => message.text)).toEqual([
@@ -504,7 +506,9 @@ describe('a state saved as v3', () => {
       expect(head?.digest).toBe(createHash('sha256').update(readFileSync(file)).digest('hex'));
       // An open run, never ready to apply: a v3 run has no workspace.
       const state = head?.state ?? createInitialState('none');
-      expect(deriveRunStatus({ state, liveness: 'not-alive' }).kind).toBe('open');
+      expect(deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' }).kind).toBe(
+        'open',
+      );
     } finally {
       cleanupTempDir(ref.projectDir);
     }
@@ -593,7 +597,7 @@ describe('parkStoppedRun', () => {
       bus.subscribe((event) => events.push(event));
       const state = { ...createInitialState('feature'), phase: 'reviewing-spec' as const };
 
-      const next = await parkStoppedRun({ projectDir, sessionId, bus }, state);
+      const next = await parkStoppedRun({ projectDir, sessionId, bus }, state, false);
 
       const gate = { kind: 'gate', gate: 'spec' } as const;
       expect(next.interruptedStep).toMatchObject({ step: gate, source: 'user', cut: 'boundary' });
@@ -633,7 +637,7 @@ describe('parkStoppedRun', () => {
       );
       saveState({ projectDir, sessionId }, parked);
 
-      const next = await parkStoppedRun({ projectDir, sessionId, bus }, parked);
+      const next = await parkStoppedRun({ projectDir, sessionId, bus }, parked, false);
 
       expect(next).toBe(parked);
       expect(loadState({ projectDir, sessionId })?.interruptedStep).toEqual(parked.interruptedStep);

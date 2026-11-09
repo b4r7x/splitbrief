@@ -96,6 +96,17 @@ describe('stopSheetRows', () => {
     );
   });
 
+  it('promises checks and no review in the pause row of a REVIEW None run', () => {
+    const rows = stopSheetRows({
+      currentTaskId: 'T002',
+      nextTaskId: 'T003',
+      boundaryPauseRequested: false,
+      reviewNone: true,
+    });
+
+    expect(rows[1]?.consequence).toBe('finish T002 including checks; do not start T003');
+  });
+
   it('promises no revert and names confirm as the shared key', () => {
     expect(STOP_SHEET_LEGEND).toBe('↑↓ select · ⏎ confirm · esc stop · tab close');
     expect(STOP_SHEET_PARKED_LEGEND).toBe('↑↓ select · ⏎ confirm · esc back · tab close');
@@ -342,6 +353,23 @@ describe('readStopMenuRows right after a continue', () => {
     addEvent(makeTaskStart({ taskId: taskId('T007'), index: 0, total: 7 }));
     expect(readStopMenuRows().find((row) => row.id === 'pause-after-brief')?.consequence).toBe(
       'finish T007 including checks and review; do not start T005',
+    );
+  });
+
+  it('reads REVIEW None for the pause row from the run pass, with no config loaded', () => {
+    resetAllStores();
+    for (const event of makeReviewFixInsertedEvents()) addEvent(event);
+    addEvent({
+      type: 'workflow_config',
+      ts: 1,
+      phase: 'implementing',
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+      reviewerSeat: 'none',
+    });
+
+    expect(readStopMenuRows().find((row) => row.id === 'pause-after-brief')?.consequence).toBe(
+      'finish T006 including checks; do not start T007',
     );
   });
 

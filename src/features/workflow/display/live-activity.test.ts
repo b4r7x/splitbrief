@@ -21,6 +21,7 @@ const base = {
   waitedMs: {},
   resumedAt: null,
   reviewerLabel: null,
+  reviewNone: false,
   plannerCall: null,
   plannerCallStartedTs: null,
   suiteStage: null,
@@ -559,6 +560,16 @@ describe('deriveLiveStatus', () => {
       activeOperation: running,
     });
     expect(unconfigured?.parts.map((part) => part.text).join('')).toBe('Review · reviewing');
+  });
+
+  it('names the recheck of the merged result, not a review, while a REVIEW None run checks it', () => {
+    const recheck = deriveLiveStatus({
+      ...base,
+      phase: 'final-review',
+      reviewerLabel: 'None',
+      reviewNone: true,
+    });
+    expect(recheck?.parts.map((part) => part.text).join('')).toBe('Checking the merged result');
   });
 
   it('live verbs are Title Case', () => {

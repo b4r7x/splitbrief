@@ -320,6 +320,7 @@ describe('the stop byline through the footer', () => {
     intent: 'stop-now',
     phase: 'terminating',
     workflowPhase: 'implementing',
+    afterLastBrief: { kind: 'review', cycle: 0 },
     parked: null,
     currentTaskId: 'T002',
     nextTaskId: 'T003',
@@ -329,6 +330,7 @@ describe('the stop byline through the footer', () => {
     questionPending: false,
     suite: null,
     stopKept: [],
+    stopStep: null,
   };
 
   it('names the wait while processes are asked to exit', () => {

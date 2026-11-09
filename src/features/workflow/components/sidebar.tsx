@@ -17,10 +17,14 @@ import {
   CREW_LABEL_WIDTH,
   cutSeatIdentity,
   formatSeatIdentity,
-  PLANNER_INHERITANCE,
   wrapSeatIdentity,
 } from '../../../core/crew/identity.js';
-import { CREW_SEAT_ROLES, deriveCrewSeats, type CrewSeat } from '../../../core/crew/seats.js';
+import {
+  CREW_SEAT_ROLES,
+  crewSeatWord,
+  deriveCrewSeats,
+  type CrewSeat,
+} from '../../../core/crew/seats.js';
 import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
 import type { RailHalt } from '../../../core/rail-stages.js';
 import { routerStore } from '../../../stores/navigation/router.js';
@@ -269,8 +273,8 @@ export function Sidebar({ width, height, recordedCrew }: SidebarProps) {
                   [formatSeatIdentity(runningSeat)],
                   resolvedSeatModel(runningSeat.seat, resolvedModels[seat.id]),
                 )
-              : seat.id === 'review' && seat.source === 'planner'
-                ? [PLANNER_INHERITANCE.mark]
+              : seat.id === 'review' && seat.source !== 'configured'
+                ? [crewSeatWord(seat)]
                 : toRows(
                     [
                       formatSeatIdentity({

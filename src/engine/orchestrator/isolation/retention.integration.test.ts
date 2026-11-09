@@ -119,7 +119,7 @@ describe('retained workspace notice after a stop', () => {
         at: '2026-10-10T00:00:00.000Z',
       },
     });
-    expect(deriveRunStatus({ state, liveness: 'not-alive' })).toMatchObject({
+    expect(deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' })).toMatchObject({
       kind: 'open',
       stop: { kind: 'stopped', on: { kind: 'paused' } },
     });
@@ -139,7 +139,7 @@ describe('retained workspace notice after a stop', () => {
     const { ref, state, workspaceDir } = await retainedState('retention-halt', {
       pendingRecovery: makeRecoveryIssue(),
     });
-    expect(deriveRunStatus({ state, liveness: 'not-alive' })).toMatchObject({
+    expect(deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' })).toMatchObject({
       kind: 'open',
       stop: { kind: 'waiting-for-you', on: { kind: 'halt' } },
     });

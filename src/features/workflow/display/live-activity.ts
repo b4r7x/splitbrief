@@ -68,6 +68,8 @@ export function deriveLiveStatus(input: {
   waitedMs: Readonly<Partial<Record<Phase, number>>>;
   resumedAt: number | null;
   reviewerLabel: string | null;
+  /** The run pass has REVIEW None: its final-review phase is the recheck of the merged result. */
+  reviewNone: boolean;
   plannerCall: PlannerCall | null;
   plannerCallStartedTs: number | null;
   suiteStage: RunningSuiteStage | null;
@@ -96,6 +98,7 @@ export function deriveLiveStatus(input: {
         input.activeOperation,
         formatRecordedSeatIdentity({ ...input.activeOperation, role: 'reviewer' }) ??
           input.reviewerLabel,
+        input.reviewNone,
       ),
     );
     return {
@@ -110,7 +113,9 @@ export function deriveLiveStatus(input: {
   const tone = input.phase === 'escalating' ? CREW_SEAT_ROLES.plan : stageTone;
   const parts =
     input.phase === 'final-review'
-      ? reviewActivitySpans(reviewActivityParts(input.activeOperation, input.reviewerLabel))
+      ? reviewActivitySpans(
+          reviewActivityParts(input.activeOperation, input.reviewerLabel, input.reviewNone),
+        )
       : [{ text: activeVerb(input.phase, null, input.plannerCall), tone }];
   if (activeStage.stage === 'build' && input.briefClock !== null) {
     return {

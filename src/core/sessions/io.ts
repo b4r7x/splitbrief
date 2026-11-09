@@ -128,7 +128,7 @@ function sessionRow(ref: SessionRef): ListedRow {
     join(sessionDir(ref.projectDir, ref.sessionId), SUMMARY_FILE),
     ref.sessionId,
   );
-  const record = loadRunRecord(ref, LISTING_DEPS);
+  const record = loadRunRecord(ref, LISTING_DEPS, false);
   const state = record.hydration.kind === 'loaded' ? record.hydration.state : null;
   // Without a readable state there is nothing to derive from: the summary the run
   // wrote when it ended is the whole record.

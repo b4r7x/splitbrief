@@ -51,6 +51,7 @@ export async function resumeCommand(
   const record = loadRunRecord(
     { projectDir, sessionId },
     { ...defaultRunRecordDeps(), liveness: () => 'not-alive' },
+    false,
   );
   const hydrated = record.hydration;
 

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { configuredReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import YAML from 'yaml';
 import { fromYaml } from '../../core/config/load/transform.js';
 import { getProviderDisplayName } from '../../core/providers/catalog.js';
@@ -1144,7 +1145,7 @@ describe('removeCustomModel', () => {
       reviewer: { kind: 'cli', tool: 'codex', customModels: ['my-custom-reviewer'] },
     };
     const updated = removeCustomModel(config, 'reviewer', 'my-custom-reviewer');
-    expect(updated.reviewer?.customModels).toEqual([]);
+    expect(configuredReviewerRunner(updated)?.customModels).toEqual([]);
     expect(updated.planner.customModels).toEqual(['my-custom-planner', 'other-planner-model']);
   });
 

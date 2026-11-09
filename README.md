@@ -242,7 +242,7 @@ Planner backends vary in supported features. See [docs/ARCHITECTURE.md](docs/ARC
 
 ### Reviewer
 
-The planner reads the run diff unless an optional top-level `reviewer:` block names its own runner. It is the same discriminated union as `planner:` — the four kinds, the same generation fields, an optional `model` — and it draws from the planner roster above, so a backend the planner may not use is rejected here too.
+The planner reads the run diff unless an optional top-level `reviewer:` block names its own runner. It is the same discriminated union as `planner:` — the four kinds, the same generation fields, an optional `model` — and it draws from the planner roster above, so a backend the planner may not use is rejected here too. `reviewer: none` turns the review off; see [REVIEW None](./docs/CONFIGURATION.md#review-none).
 
 ```yaml
 reviewer:

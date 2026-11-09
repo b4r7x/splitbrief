@@ -5,7 +5,10 @@ import {
   type RunnerConfigSlot,
 } from '../../../core/config/accessors/runner-config.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
-import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
+import {
+  requireReviewSeat,
+  resolveReviewerRunner,
+} from '../../../core/config/accessors/reviewer-runner.js';
 import { formatSlotLabel } from '../../../core/crew/identity.js';
 import type { ReadinessCheck } from '../../../core/readiness/types.js';
 import type { Config } from '../../../core/schemas/config.js';
@@ -79,7 +82,7 @@ export function runnerCandidates(
   // implementer cannot gate it. The seat itself is whatever `resolveReviewerRunner`
   // decides — the configured block, or the planner holding the seat.
   if (purpose === 'review') {
-    const runner = resolveReviewerRunner(config).runner;
+    const runner = requireReviewSeat(config).runner;
     const context = resolveRunnerConfigContext({ role: 'reviewer', runner });
     return {
       candidates: [{ slot: context.slot, runner, trustLabel: 'reviewer' }],

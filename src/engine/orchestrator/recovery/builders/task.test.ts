@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { configuredReviewerRunner } from '../../../../core/config/accessors/reviewer-runner.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
@@ -974,9 +975,9 @@ describe('a seat whose account the provider refuses', () => {
 });
 
 describe('a seat whose plan does not include the model', () => {
-  const cursorRunner = makeConfig({
-    reviewer: { kind: 'cli', tool: 'cursor', model: 'claude-haiku-5.5' },
-  }).reviewer;
+  const cursorRunner = configuredReviewerRunner(
+    makeConfig({ reviewer: { kind: 'cli', tool: 'cursor', model: 'claude-haiku-5.5' } }),
+  );
   const copilotRunner = makeConfig({ implementer: { kind: 'cli', tool: 'copilot' } }).implementer;
 
   it.each([

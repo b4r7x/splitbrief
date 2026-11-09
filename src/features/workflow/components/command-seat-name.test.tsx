@@ -181,6 +181,7 @@ describe.each(SEATS)('a $kind seat reads one name on every surface', (seat) => {
       waitedMs: {},
       resumedAt: null,
       reviewerLabel: null,
+      reviewNone: false,
       plannerCall: null,
       plannerCallStartedTs: null,
       suiteStage: null,

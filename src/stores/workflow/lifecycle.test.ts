@@ -210,18 +210,21 @@ describe('lifecycleStore', () => {
 
   it('records phaseFirstSeen for the resumed phase on workflow_resumed', () => {
     resetWorkflow();
-    hydrateFromState({
-      stateVersion: 1,
-      phase: 'specifying',
-      feature: 'f',
-      currentTaskIndex: 0,
-      attempt: 0,
-      tasks: [],
-      startedAt: new Date().toISOString(),
-      tokenUsage: makeUsage(),
-      awaitingContinue: false,
-      messageQueue: [],
-    });
+    hydrateFromState(
+      {
+        stateVersion: 1,
+        phase: 'specifying',
+        feature: 'f',
+        currentTaskIndex: 0,
+        attempt: 0,
+        tasks: [],
+        startedAt: new Date().toISOString(),
+        tokenUsage: makeUsage(),
+        awaitingContinue: false,
+        messageQueue: [],
+      },
+      false,
+    );
     expect(runViewStore.get().phaseFirstSeen).toEqual({});
 
     addEvent({ type: 'workflow_resumed', ts: 9_000, phase: 'specifying' });
@@ -835,6 +838,7 @@ describe('brief clock', () => {
 
     hydrateFromState(
       makeWorkflowState({ phase: 'implementing', tasks: [makeTask({ id: 'T001' })] }),
+      false,
     );
 
     expect(lifecycleStore.get().briefClock).toEqual({

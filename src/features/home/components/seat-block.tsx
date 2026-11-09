@@ -7,15 +7,15 @@ import { skillsStore } from '../../../stores/project/skills.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
-import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import { DETECTING_TOOLS_STATUS } from '../../../core/discovery/copy.js';
-import {
-  CREW_LABEL_WIDTH,
-  PLANNER_INHERITANCE,
-  formatCollapsedSeatSpans,
-} from '../../../core/crew/identity.js';
+import { CREW_LABEL_WIDTH, formatCollapsedSeatSpans } from '../../../core/crew/identity.js';
 import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
-import { CREW_SEAT_ROLES, deriveCrewSeats, type CrewSeat } from '../../../core/crew/seats.js';
+import {
+  CREW_SEAT_ROLES,
+  collapsedReviewSeat,
+  crewSeatWord,
+  deriveCrewSeats,
+} from '../../../core/crew/seats.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { homeConfigBlockRows } from '../layout.js';
 import { deriveHomeToolCheck } from '../tool-check.js';
@@ -51,10 +51,6 @@ function selectedSkillsText(skills: {
     .filter((skill) => skills.selected.has(skill.id))
     .map((skill) => skill.name);
   return names.length === 0 ? 'skills: none' : `skills: ${names.join(', ')}`;
-}
-
-function seatIdentity(seat: CrewSeat): string {
-  return seat.id === 'review' && seat.source === 'planner' ? PLANNER_INHERITANCE.mark : seat.model;
 }
 
 export function HomeSeatBlock({ rows, width }: { rows: number; width: number }) {
@@ -98,7 +94,7 @@ export function HomeSeatBlock({ rows, width }: { rows: number; width: number }) 
             parts={formatCollapsedSeatSpans({
               planner: config.planner,
               build: resolveImplementerProfiles(config).defaultProfile.config,
-              reviewer: configuredReviewerRunner(config),
+              reviewer: collapsedReviewSeat(config),
               budget: textWidth,
               displayNames,
             }).map((span) => ({
@@ -116,7 +112,7 @@ export function HomeSeatBlock({ rows, width }: { rows: number; width: number }) 
             </Text>
             <Text color={theme.textDim}>{LABEL_GAP}</Text>
             <Text color={coldDiscovery ? theme.textDim : theme[CREW_SEAT_ROLES[seat.id]]}>
-              {seatIdentity(seat)}
+              {crewSeatWord(seat)}
             </Text>
           </Text>
         ))

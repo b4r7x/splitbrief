@@ -104,6 +104,7 @@ export async function haltCutApply(
 type ApplyInput = {
   wctx: Pick<WorkflowContext, 'projectDir' | 'sessionId' | 'bus'>;
   state: WorkflowState;
+  reviewNone: boolean;
   setTrackedState?: ((state: WorkflowState) => void) | undefined;
   overrideConfirmed?: boolean | undefined;
 };
@@ -167,7 +168,7 @@ function askOverrideConfirmation(input: ApplyInput): ApplyResult | undefined {
 }
 
 async function applyRun(input: ApplyInput): Promise<ApplyResult> {
-  const { wctx, setTrackedState } = input;
+  const { wctx, reviewNone, setTrackedState } = input;
   let { state } = input;
   let retrying = false;
   if (state.pendingRecovery !== undefined) {
@@ -323,7 +324,7 @@ async function applyRun(input: ApplyInput): Promise<ApplyResult> {
         conflict.ours.kind === 'file' &&
         conflict.theirs.kind === 'file',
     );
-    if (textConflicts.length === merged.conflicts.length) {
+    if (textConflicts.length === merged.conflicts.length && !reviewNone) {
       const triage: TriageInput[] = [];
       for (const [index, conflict] of textConflicts.entries()) {
         await writeConfinedEntry(workspace.path, conflict.path, {
@@ -381,13 +382,13 @@ async function applyRun(input: ApplyInput): Promise<ApplyResult> {
     .sort();
   if (changed.length > 0) {
     state = transitionAndSave(wctx, state, {
-      type: 'APPLY_REVIEW_START',
+      type: reviewNone ? 'APPLY_RECHECK_START' : 'APPLY_REVIEW_START',
       merged: await buildMergedEntries(changed),
     });
     setTrackedState?.(state);
-    publishFixCycleStarted(wctx.bus, state, []);
+    if (!reviewNone) publishFixCycleStarted(wctx.bus, state, []);
     createBusTextHandler({ bus: wctx.bus, phase: state.phase })(
-      `Your checkout changed ${countNoun(changed.length, 'file')} this run also changed (${changed.join(', ')}); the merged result goes through its checks and the review again before Apply.`,
+      `Your checkout changed ${countNoun(changed.length, 'file')} this run also changed (${changed.join(', ')}); the merged result goes through its checks${reviewNone ? '' : ' and the review'} again before Apply.`,
     );
     return { outcome: 'review', state };
   }

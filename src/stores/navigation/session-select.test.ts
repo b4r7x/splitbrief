@@ -125,12 +125,15 @@ function heldHistory() {
 function publishRun(feature: string) {
   return vi.fn(() => {
     loadEvents([{ type: 'workflow_started', ts: 1_000, phase: 'planning', feature }]);
-    hydrateFromState({
-      ...createInitialState(feature),
-      phase: 'implementing',
-      tasks: [makeTask({ id: 'T001', title: feature })],
-      tokenUsage: makeUsage({ plannerInput: feature.length }),
-    });
+    hydrateFromState(
+      {
+        ...createInitialState(feature),
+        phase: 'implementing',
+        tasks: [makeTask({ id: 'T001', title: feature })],
+        tokenUsage: makeUsage({ plannerInput: feature.length }),
+      },
+      false,
+    );
   });
 }
 

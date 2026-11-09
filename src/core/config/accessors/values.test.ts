@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { configuredReviewerRunner } from './reviewer-runner.js';
 import { getConfigValue, applyEdits, getIsolationStrategy } from './values.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 
@@ -62,11 +63,21 @@ describe('applyEdits', () => {
     expect(mockConfig.reviewer).toBeUndefined();
   });
 
+  it('refuses to edit a reviewer field while REVIEW is None', () => {
+    const config = makeConfig({ reviewer: 'none' });
+    expect(() => applyEdits(config, { 'reviewer.effort': 'high' })).toThrow(
+      expect.objectContaining({ kind: 'config-reviewer-inherited' }),
+    );
+    expect(config.reviewer).toBe('none');
+  });
+
   it('edits a reviewer field once the seat has its own runner', () => {
     const config = makeConfig({
       reviewer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-6' },
     });
-    expect(applyEdits(config, { 'reviewer.effort': 'high' }).reviewer?.effort).toBe('high');
+    expect(
+      configuredReviewerRunner(applyEdits(config, { 'reviewer.effort': 'high' }))?.effort,
+    ).toBe('high');
   });
 
   it('creates intermediate objects for new paths', () => {

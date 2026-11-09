@@ -239,6 +239,14 @@ describe('reduceRunView stop', () => {
     expect(fold([cut, event('turn_interrupted', 2_000)]).stopKept).toEqual([]);
   });
 
+  it('holds the step a stop landed on until the run goes on', () => {
+    const landed = event('turn_interrupted', 1_000, { step: { kind: 'apply' } });
+    expect(fold([landed]).stopStep).toEqual({ kind: 'apply' });
+    expect(fold([landed, event('workflow_resumed', 2_000)]).stopStep).toBeNull();
+    expect(fold([landed, event('workflow_started', 2_000)]).stopStep).toBeNull();
+    expect(fold([event('turn_interrupted', 1_000)]).stopStep).toBeNull();
+  });
+
   it('drops a kept file a reject put back', () => {
     const rejected = event('run_rejected', 2_000, { restored: ['a.ts', 'c.ts'] });
     expect(fold([cut, rejected]).stopKept).toEqual(['b.ts']);
@@ -273,6 +281,28 @@ describe('reduceRunView apply', () => {
   it('forgets the Apply of an earlier run start', () => {
     const view = fold([event('apply_started', 1_000), event('workflow_started', 2_000)]);
     expect(view.apply).toBeNull();
+  });
+});
+
+describe('reduceRunView review none', () => {
+  const pass = (ts: number, fields: Record<string, unknown> = {}) =>
+    event('workflow_config', ts, {
+      phase: 'final-review',
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+      ...fields,
+    });
+
+  it('reads REVIEW None from the seats the latest run pass holds', () => {
+    const none = fold([pass(1_000, { reviewerSeat: 'none' })]);
+    expect(none.reviewNone).toBe(true);
+    expect(reduceRunView(none, event('full_suite', 2_000, { phase: 'final-review' }))).toBe(none);
+    expect(reduceRunView(none, pass(3_000, { reviewerTool: 'codex' })).reviewNone).toBe(false);
+  });
+
+  it('reads no REVIEW None before a run pass or for a pass that a seat reviews', () => {
+    expect(EMPTY_RUN_VIEW.reviewNone).toBe(false);
+    expect(fold([pass(1_000, { reviewerTool: 'codex' })]).reviewNone).toBe(false);
   });
 });
 

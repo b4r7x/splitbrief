@@ -100,7 +100,7 @@ function configuredProviderProbes(
   const planner = seatProbe('planner');
   const implementer = seatProbe('implementer');
   const reviewer = seatProbe('reviewer');
-  const reviewerSharesPlanner = resolveReviewerRunner(input.config).source === 'planner';
+  const reviewerSharesPlanner = resolveReviewerRunner(input.config).source !== 'configured';
 
   const probes: ConfiguredProviderProbe[] = [];
   if (planner !== null) {

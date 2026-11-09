@@ -13,12 +13,19 @@ import { open } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type ApplyRun, withApplyRun } from '#testing/helpers/apply-run.js';
+import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
-import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeBusRecorder,
+  makeWctx,
+  makeWorktreeIsolation,
+} from '#testing/helpers/orchestrator-factories.js';
 import { fixCyclesOf, type WorkflowState } from '../../../core/schemas/workflow.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { groupEventsIntoSections } from '../../../core/sections/event-sections.js';
-import type { EngineEvent } from '../../events/types.js';
+import type { Config } from '../../../core/schemas/config.js';
+import type { EngineEvent, EventBus } from '../../events/types.js';
 import { makeTaskComplete, makeTaskStart } from '#testing/helpers/events/task.js';
 import { plainUserMessage } from '../../../core/types/user-input.js';
 import { deriveRunStatus } from '../../../core/sessions/run-status.js';
@@ -38,6 +45,7 @@ import { restoreApplyBackup } from './restore.js';
 import { runApply } from './run.js';
 import { bindApplyHandOffs } from './hand-off.js';
 import { acquireLiveness } from '../run/liveness.js';
+import { runTasksAndReview } from '../run/task-execution.js';
 import { activeApply } from '../session-lifecycle/shutdown.js';
 import { readWorkspaceRecord } from '../isolation/retention.js';
 import { captureReviewedCandidate, readApplyEntry } from './states.js';
@@ -98,6 +106,7 @@ async function apply(run: ApplyRun, state: WorkflowState = readyState(run)) {
   return runApply({
     wctx: { projectDir: run.dir, sessionId: run.sessionId, bus },
     state,
+    reviewNone: false,
   });
 }
 
@@ -208,7 +217,7 @@ describe('runApply', { timeout: 60_000 }, () => {
           const state = savedState(run);
           expect(state.applying).toBeUndefined();
           expect(state.applied?.files.sort()).toEqual(['a.txt', 'gone.txt', 'new.txt']);
-          expect(deriveRunStatus({ state, liveness: 'not-alive' })).toEqual({
+          expect(deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' })).toEqual({
             kind: 'closed',
             as: 'applied',
           });
@@ -253,6 +262,7 @@ describe('runApply', { timeout: 60_000 }, () => {
         const result = await runApply({
           wctx: { projectDir: run.dir, sessionId: run.sessionId, bus },
           state,
+          reviewNone: false,
         });
 
         expect(result.outcome).toBe('applied');
@@ -267,7 +277,9 @@ describe('runApply', { timeout: 60_000 }, () => {
         expect(
           await readWorkspaceRecord({ projectDir: run.dir, sessionId: run.sessionId }),
         ).toBeNull();
-        expect(deriveRunStatus({ state: savedState(run), liveness: 'not-alive' })).toEqual({
+        expect(
+          deriveRunStatus({ reviewNone: false, state: savedState(run), liveness: 'not-alive' }),
+        ).toEqual({
           kind: 'closed',
           as: 'applied',
         });
@@ -318,6 +330,7 @@ describe('runApply', { timeout: 60_000 }, () => {
       const result = await runApply({
         wctx: { projectDir: run.dir, sessionId: run.sessionId, bus },
         state,
+        reviewNone: false,
       });
 
       expect(result.outcome).toBe('applied');
@@ -334,7 +347,9 @@ describe('runApply', { timeout: 60_000 }, () => {
         'workspace_closed',
         'apply_finished',
       ]);
-      expect(deriveRunStatus({ state: savedState(run), liveness: 'not-alive' })).toEqual({
+      expect(
+        deriveRunStatus({ reviewNone: false, state: savedState(run), liveness: 'not-alive' }),
+      ).toEqual({
         kind: 'closed',
         as: 'applied',
       });
@@ -376,7 +391,7 @@ describe('runApply', { timeout: 60_000 }, () => {
         expect(issue?.details.some((line) => line.includes(run.ws))).toBe(true);
         expect(issue?.availableActions).toEqual(['retry-same-worker', 'end-run']);
         expect(issue?.recommendedAction).toBe('retry-same-worker');
-        const status = deriveRunStatus({ state, liveness: 'not-alive' });
+        const status = deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' });
         expect(status).toMatchObject({
           kind: 'open',
           stop: { kind: 'waiting-for-you', on: { kind: 'halt' } },
@@ -445,7 +460,7 @@ describe('runApply', { timeout: 60_000 }, () => {
         expect(state.closed).toBeUndefined();
         expect(state.pendingRecovery?.reason).toBe('apply-partial');
         expect(state.pendingRecovery?.details.join('\n')).toContain('disk full');
-        const status = deriveRunStatus({ state, liveness: 'not-alive' });
+        const status = deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' });
         expect(status).toMatchObject({
           kind: 'open',
           stop: { kind: 'waiting-for-you', on: { kind: 'halt' } },
@@ -808,6 +823,7 @@ describe('runApply', { timeout: 60_000 }, () => {
           const result = await runApply({
             wctx: { projectDir: run.dir, sessionId: run.sessionId, bus },
             state: restart,
+            reviewNone: false,
           });
 
           expect(result.outcome).not.toBe('applied');
@@ -819,7 +835,9 @@ describe('runApply', { timeout: 60_000 }, () => {
           expect(state.applying).toBeUndefined();
           expect(state.pendingRecovery).toBeUndefined();
           expect(state.applied).toBeUndefined();
-          expect(deriveRunStatus({ state, liveness: 'not-alive' })).toMatchObject({
+          expect(
+            deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' }),
+          ).toMatchObject({
             kind: 'ready-to-apply',
           });
         },
@@ -899,7 +917,9 @@ describe('runApply', { timeout: 60_000 }, () => {
             const state = savedState(run);
             expect(state.applying).toBeUndefined();
             expect(state.pendingRecovery).toBeUndefined();
-            expect(deriveRunStatus({ state, liveness: 'not-alive' })).toMatchObject({
+            expect(
+              deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' }),
+            ).toMatchObject({
               kind: 'ready-to-apply',
             });
           },
@@ -931,7 +951,9 @@ describe('runApply', { timeout: 60_000 }, () => {
           const state = savedState(run);
           expect(state.applying).toBeUndefined();
           expect(state.pendingRecovery).toBeUndefined();
-          expect(deriveRunStatus({ state, liveness: 'not-alive' })).toMatchObject({
+          expect(
+            deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' }),
+          ).toMatchObject({
             kind: 'ready-to-apply',
           });
         },
@@ -1031,6 +1053,7 @@ describe('runApply', { timeout: 60_000 }, () => {
           await runApply({
             wctx: { projectDir: run.dir, sessionId: run.sessionId, bus },
             state: await choose(run, 'restore-backup'),
+            reviewNone: false,
           });
 
           expect(read(run.dir, 'a.txt')).toBe('base a\n');
@@ -1135,7 +1158,9 @@ describe('runApply integration review', { timeout: 60_000 }, () => {
         { path: 'a.txt', checkoutHunks: expect.stringContaining('+FIVE') },
       ]);
       expect(saved.fixCycles?.used).toBe(1);
-      expect(deriveRunStatus({ state: saved, liveness: 'not-alive' }).kind).toBe('open');
+      expect(deriveRunStatus({ reviewNone: false, state: saved, liveness: 'not-alive' }).kind).toBe(
+        'open',
+      );
     });
   });
 
@@ -1155,6 +1180,7 @@ describe('runApply integration review', { timeout: 60_000 }, () => {
       const result = await runApply({
         wctx: { projectDir: run.dir, sessionId: run.sessionId, bus },
         state,
+        reviewNone: false,
       });
 
       expect(result.outcome).toBe('review');
@@ -1367,12 +1393,14 @@ describe('runApply integration review', { timeout: 60_000 }, () => {
       if (!accepted.ok) throw new Error(accepted.message);
       expect(accepted.state.acceptedAsIs?.findings).toEqual(['a.txt drops the error']);
       expect(accepted.state.pendingRecovery).toBeUndefined();
-      expect(deriveRunStatus({ state: accepted.state, liveness: 'not-alive' })).toEqual({
+      expect(
+        deriveRunStatus({ reviewNone: false, state: accepted.state, liveness: 'not-alive' }),
+      ).toEqual({
         kind: 'ready-to-apply',
         override: true,
       });
 
-      const asking = runApply({ wctx: { ...ref, bus }, state: accepted.state });
+      const asking = runApply({ wctx: { ...ref, bus }, state: accepted.state, reviewNone: false });
       expect(activeApply()).toBeUndefined();
       const asked = await asking;
 
@@ -1387,6 +1415,7 @@ describe('runApply integration review', { timeout: 60_000 }, () => {
         wctx: { ...ref, bus },
         state: savedState(run),
         overrideConfirmed: true,
+        reviewNone: false,
       });
 
       expect(confirmed.outcome).toBe('applied');
@@ -1446,7 +1475,7 @@ describe('runApply integration review', { timeout: 60_000 }, () => {
         saveState(ref, accepted);
         const { bus, events } = makeBusRecorder();
 
-        const asked = await runApply({ wctx: { ...ref, bus }, state: accepted });
+        const asked = await runApply({ wctx: { ...ref, bus }, state: accepted, reviewNone: false });
 
         expect(asked.outcome).toBe('needs-confirmation');
         const messages = events.flatMap((event) =>
@@ -1498,15 +1527,243 @@ describe('runApply integration review', { timeout: 60_000 }, () => {
         candidate: await captureReviewedCandidate({ ...ref, workspace: run.workspace }),
       });
       saveState(ref, passed);
-      expect(deriveRunStatus({ state: passed, liveness: 'not-alive' })).toEqual({
+      expect(deriveRunStatus({ reviewNone: false, state: passed, liveness: 'not-alive' })).toEqual({
         kind: 'ready-to-apply',
         override: false,
       });
 
-      const result = await runApply({ wctx: { ...ref, bus }, state: passed });
+      const result = await runApply({ wctx: { ...ref, bus }, state: passed, reviewNone: false });
 
       expect(result.outcome).toBe('applied');
       expect(JSON.stringify(events)).not.toContain('Run accepted as is');
+    });
+  });
+});
+
+describe('runApply with REVIEW None', { timeout: 60_000 }, () => {
+  const noneConfig = makeNoValidationConfig({ reviewer: 'none', workflow: {} });
+
+  async function readyAt(run: ApplyRun, reviewStatus: 'passed' | 'none'): Promise<WorkflowState> {
+    const state = makeWorkflowState({
+      phase: 'complete',
+      reviewStatus,
+      workspace: run.workspace,
+      plan: { summary: 'Plan', decisions: [], criteria: [], checks: [], validation: null },
+      tasks: [
+        makeTask({
+          id: 'T001',
+          status: 'done',
+          suggestedFiles: ['a.txt'],
+          checks: [{ id: 'K1', kind: 'cmd', value: 'node --version' }],
+        }),
+      ],
+      currentTaskIndex: 1,
+      reviewedCandidate: await captureReviewedCandidate({
+        projectDir: run.dir,
+        sessionId: run.sessionId,
+        workspace: run.workspace,
+      }),
+    });
+    saveState({ projectDir: run.dir, sessionId: run.sessionId }, state);
+    return state;
+  }
+
+  /** The re-entry after Apply sent the run back: the run loop under the config of that moment. */
+  async function reenter(run: ApplyRun, config: Config, bus: EventBus) {
+    const state = savedState(run);
+    const isolation = makeWorktreeIsolation({ projectDir: run.dir, sessionId: run.sessionId });
+    try {
+      return await runTasksAndReview({
+        wctx: makeWctx({
+          projectDir: run.dir,
+          sessionId: run.sessionId,
+          config,
+          isolation,
+          bus,
+        }),
+        state,
+        planning: { disposition: 'ready-for-tasks' as const, state, tasks: state.tasks },
+        summaryBase: {
+          feature: 'apply',
+          startTime: 0,
+          plannerTool: 'claude-code',
+          implementerTool: 'ollama',
+          projectDir: run.dir,
+          sessionId: run.sessionId,
+        },
+        setTrackedState: vi.fn(),
+        setCurrentTask: vi.fn(),
+      });
+    } finally {
+      await isolation.dispose();
+    }
+  }
+
+  const applyTexts = (events: EngineEvent[]): string[] =>
+    events.flatMap((event) => (event.type === 'planner_text' ? [event.text] : []));
+
+  it('None text conflict halts', async () => {
+    await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
+      const ours = lines('one', 'two', 'OURS', 'four', 'five');
+      const theirs = lines('one', 'two', 'THEIRS', 'four', 'five');
+      writeFileSync(join(run.ws, 'a.txt'), ours);
+      const state = await readyAt(run, 'none');
+      writeFileSync(join(run.dir, 'a.txt'), theirs);
+      const { bus } = makeBusRecorder();
+      const wctx = { projectDir: run.dir, sessionId: run.sessionId, bus };
+
+      const result = await runApply({ wctx, state, reviewNone: true });
+
+      expect(result.outcome).toBe('halted');
+      expect(read(run.ws, 'a.txt')).toBe(ours);
+      expect(read(run.dir, 'a.txt')).toBe(theirs);
+      const saved = savedState(run);
+      expect(saved.pendingRecovery?.reason).toBe('apply-conflict');
+      expect(saved.pendingTriage).toBeUndefined();
+      expect(saved.fixCycles).toEqual(state.fixCycles);
+    });
+  });
+
+  it('None changed merge rechecks', async () => {
+    await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
+      writeFileSync(join(run.ws, 'a.txt'), lines('ONE', 'two', 'three', 'four', 'five'));
+      const ready = await readyAt(run, 'none');
+      writeFileSync(join(run.dir, 'a.txt'), lines('one', 'two', 'three', 'four', 'FIVE'));
+      const { bus, events } = makeBusRecorder();
+      const applyWctx = { projectDir: run.dir, sessionId: run.sessionId, bus };
+
+      const applied = await runApply({ wctx: applyWctx, state: ready, reviewNone: true });
+
+      expect(applied.outcome).toBe('review');
+      expect(read(run.dir, 'a.txt')).toBe(lines('one', 'two', 'three', 'four', 'FIVE'));
+      expect(read(run.ws, 'a.txt')).toBe(lines('ONE', 'two', 'three', 'four', 'FIVE'));
+      expect(savedState(run).fixCycles).toEqual(ready.fixCycles);
+
+      const ended = await reenter(run, noneConfig, bus);
+
+      expect(ended.completed).toBe(true);
+      expect(ended.state.reviewStatus).toBe('none');
+      expect(ended.state.fixCycles).toEqual(ready.fixCycles);
+      expect(events.some((event) => event.type === 'review_fix_started')).toBe(false);
+      expect(
+        deriveRunStatus({ reviewNone: false, state: ended.state, liveness: 'not-alive' }),
+      ).toEqual({
+        kind: 'ready-to-apply',
+        override: false,
+      });
+    });
+  });
+
+  it('a run a seat reviewed halts on a text conflict and writes no markers when REVIEW is None at Apply', async () => {
+    await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
+      const ours = lines('one', 'two', 'OURS', 'four', 'five');
+      const theirs = lines('one', 'two', 'THEIRS', 'four', 'five');
+      writeFileSync(join(run.ws, 'a.txt'), ours);
+      const state = await readyAt(run, 'passed');
+      writeFileSync(join(run.dir, 'a.txt'), theirs);
+      const { bus } = makeBusRecorder();
+
+      const result = await runApply({
+        wctx: { projectDir: run.dir, sessionId: run.sessionId, bus },
+        state,
+        reviewNone: true,
+      });
+
+      expect(result.outcome).toBe('halted');
+      expect(read(run.ws, 'a.txt')).toBe(ours);
+      expect(read(run.dir, 'a.txt')).toBe(theirs);
+      const saved = savedState(run);
+      expect(saved.pendingRecovery?.reason).toBe('apply-conflict');
+      expect(saved.pendingTriage).toBeUndefined();
+    });
+  });
+
+  it('a run a seat reviewed rechecks a changed merge with no review and no fix cycle when REVIEW is None at Apply', async () => {
+    await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
+      writeFileSync(join(run.ws, 'a.txt'), lines('ONE', 'two', 'three', 'four', 'five'));
+      const ready = await readyAt(run, 'passed');
+      writeFileSync(join(run.dir, 'a.txt'), lines('one', 'two', 'three', 'four', 'FIVE'));
+      const { bus, events } = makeBusRecorder();
+
+      const result = await runApply({
+        wctx: { projectDir: run.dir, sessionId: run.sessionId, bus },
+        state: ready,
+        reviewNone: true,
+      });
+
+      expect(result.outcome).toBe('review');
+      expect(applyTexts(events)).toEqual([
+        'Your checkout changed 1 file this run also changed (a.txt); the merged result goes through its checks again before Apply.',
+      ]);
+      expect(fixCyclesOf(savedState(run)).used).toBe(fixCyclesOf(ready).used);
+      expect(events.some((event) => event.type === 'review_fix_started')).toBe(false);
+    });
+  });
+
+  it('a run that ended with REVIEW None reviews a changed merge again when a seat holds REVIEW at Apply', async () => {
+    await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
+      writeFileSync(join(run.ws, 'a.txt'), lines('ONE', 'two', 'three', 'four', 'five'));
+      const ready = await readyAt(run, 'none');
+      writeFileSync(join(run.dir, 'a.txt'), lines('one', 'two', 'three', 'four', 'FIVE'));
+      const { bus, events } = makeBusRecorder();
+
+      const result = await runApply({
+        wctx: { projectDir: run.dir, sessionId: run.sessionId, bus },
+        state: ready,
+        reviewNone: false,
+      });
+
+      expect(result.outcome).toBe('review');
+      expect(applyTexts(events)).toEqual([
+        'Your checkout changed 1 file this run also changed (a.txt); the merged result goes through its checks and the review again before Apply.',
+      ]);
+      expect(fixCyclesOf(savedState(run)).used).toBe(fixCyclesOf(ready).used + 1);
+      expect(events.some((event) => event.type === 'review_fix_started')).toBe(true);
+    });
+  });
+
+  it('a move to None after Apply wrote conflict markers halts Apply until the markers are resolved', async () => {
+    await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
+      const theirs = lines('one', 'two', 'THEIRS', 'four', 'five');
+      const resolved = lines('one', 'two', 'RESOLVED', 'four', 'five');
+      writeFileSync(join(run.ws, 'a.txt'), lines('one', 'two', 'OURS', 'four', 'five'));
+      const ready = await readyAt(run, 'passed');
+      writeFileSync(join(run.dir, 'a.txt'), theirs);
+      const { bus } = makeBusRecorder();
+      const wctx = { projectDir: run.dir, sessionId: run.sessionId, bus };
+
+      expect((await runApply({ wctx, state: ready, reviewNone: false })).outcome).toBe('review');
+      expect(read(run.ws, 'a.txt')).toContain('<<<<<<< ours');
+      const marked = await reenter(run, noneConfig, bus);
+      expect(marked.state.reviewStatus).toBe('none');
+
+      const first = await runApply({ wctx, state: marked.state, reviewNone: true });
+
+      expect(first.outcome).toBe('halted');
+      expect(savedState(run).pendingRecovery?.reason).toBe('apply-conflict');
+      expect(read(run.dir, 'a.txt')).toBe(theirs);
+
+      const unedited = await runApply({
+        wctx,
+        state: await choose(run, 'retry-same-worker'),
+        reviewNone: true,
+      });
+
+      expect(unedited.outcome).toBe('halted');
+      expect(read(run.dir, 'a.txt')).toBe(theirs);
+
+      writeFileSync(join(run.ws, 'a.txt'), resolved);
+      const rerun = await runApply({
+        wctx,
+        state: await choose(run, 'retry-same-worker'),
+        reviewNone: true,
+      });
+      expect(rerun.outcome).toBe('review');
+      const rechecked = await reenter(run, noneConfig, bus);
+      const applied = await runApply({ wctx, state: rechecked.state, reviewNone: true });
+
+      expect(applied.outcome).toBe('applied');
+      expect(read(run.dir, 'a.txt')).toBe(resolved);
     });
   });
 });

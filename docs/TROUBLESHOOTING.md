@@ -775,7 +775,7 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 **Likely cause:** Older builds spent `esc esc` on an interrupt ladder with a 2-second armed window, and quitting was a ladder of its own. The interrupt ladder is gone: `esc` opens the **Stop options** sheet, and `ctrl+c` stops a live run in one press. Quitting still asks once: every first `ctrl+c` shows `Press ctrl+c again to quit`, and a second press within two seconds quits after cleanup and saving. On a live run, that first press is also Stop now.
 
 **Fix:**
-1. `esc` opens the **Stop options** sheet, with or without a draft (on the plan card, the first `esc` clears a comment draft and returns the keys to the card rows): `Stop now` (stop execution; keep partial changes — they stay in the run workspace), `Pause after this brief` (finish `T<id>` including checks and review; start no next brief), `End run` (stop execution; close this run; keep changes — a worktree or staged-copy run saves them in `run.patch` before its workspace goes). `↑↓ · ⏎ · esc`, no letter keys. `esc` from the sheet is Stop now — it goes back to sessions once the run is parked or at rest — and `Tab` dismisses the sheet without stopping. No option writes the run's changes into your checkout; only Apply does.
+1. `esc` opens the **Stop options** sheet, with or without a draft (on the plan card, the first `esc` clears a comment draft and returns the keys to the card rows): `Stop now` (stop execution; keep partial changes — they stay in the run workspace), `Pause after this brief` (finish `T<id>` including checks and review, or including checks with REVIEW None; start no next brief), `End run` (stop execution; close this run; keep changes — a worktree or staged-copy run saves them in `run.patch` before its workspace goes). `↑↓ · ⏎ · esc`, no letter keys. `esc` from the sheet is Stop now — it goes back to sessions once the run is parked or at rest — and `Tab` dismisses the sheet without stopping. No option writes the run's changes into your checkout; only Apply does.
 2. `ctrl+c` is Stop now, immediately, one press. It aborts the in-flight call along with any retry, consult or per-task review call, and parks the run as `Stopped at T<id>`, followed by `· Partial changes kept` when the brief had already changed files. The same press arms a two-second quit confirmation (`Press ctrl+c again to quit`). A second press within two seconds, or while the stop is still running, quits after cleanup and saving. Once the run is stopping or parked, the next `esc` goes home instead.
 3. `ctrl+q` or `/quit` stops safely, saves the session, then exits.
 4. With text in the composer, `esc` opens the same sheet and leaves the draft in place — the composer swallows no part of the key.
@@ -1264,9 +1264,9 @@ A killed process's `base-<pid>-*` tree under `$XDG_STATE_HOME/splitbrief/bases/`
 
 ### Symptom: the run halted with "Apply found <n> conflicting files"
 
-**Likely cause:** Your checkout and the run workspace both changed a file, and Apply cannot merge the two versions safely. The `apply-conflict` halt names every file and the workspace path.
+**Likely cause:** Your checkout and the run workspace both changed a file, and Apply cannot merge the two versions safely. A conflicted file from an earlier Apply that still holds a `<<<<<<< ours` line and a `>>>>>>> theirs` line also stops Apply. The `apply-conflict` halt names every file and the workspace path.
 
-**Fix:** Follow [Apply conflicts](./APPROVAL-AND-RECOVERY.md#apply-conflicts) to choose each file's result in the workspace. Then choose **Re-run Apply**. Checks and whole-run review assess a changed candidate before the checkout write.
+**Fix:** Follow [Apply conflicts](./APPROVAL-AND-RECOVERY.md#apply-conflicts) to choose each file's result in the workspace, without conflict marker lines. Then choose **Re-run Apply**. Checks and whole-run review assess a changed candidate before the checkout write. With REVIEW None, only the checks run.
 
 ### Symptom: the run halted with "Apply stopped part way"
 
@@ -1485,7 +1485,7 @@ Copied images remain in `~/.splitbrief/clipboard/` so history and runs retain re
 **Likely cause:** Per-task validation is mandatory by design — it is the contract that makes briefs trustworthy. Skipping it weakens the entire workflow.
 
 **Fix:**
-1. The nearest option is `validation.end_checks: false` in `.splitbrief/config.yaml` (Settings: End-of-run checks). It turns off the reviewer checks; plan and task checks still run. There is no `--no-validate` CLI flag.
+1. The nearest option is `validation.end_checks: false` in `.splitbrief/config.yaml` (Settings: End-of-run checks). It turns off the reviewer checks; plan and task checks still run. With REVIEW None the review, the plan checks, the end-of-run checks and the render checks do not run, and each brief still runs its own checks, except a `render` check. There is no `--no-validate` CLI flag.
 2. Better: fix the underlying validation failure rather than bypassing it.
 3. Better still: relax `validation.test_command` (e.g. drop slow tests from the planner's `test` checks, leave them for CI).
 

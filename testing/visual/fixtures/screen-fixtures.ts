@@ -1700,6 +1700,7 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
         config: { reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' } },
       }),
   ],
+  [scenarioId('home-review-none'), () => createHomeFixture({ config: { reviewer: 'none' } })],
   [
     scenarioId('home-floor-collapsed'),
     () => createHomeFixture({ config: { reviewer: HOME_REVIEWER_API_SEAT } }),

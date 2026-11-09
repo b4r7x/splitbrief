@@ -170,7 +170,7 @@ const previewPicker: PickerEffectDeps = {
 
 const previewSetup: SetupScreenDeps = {
   prepareExecution: previewPrepareExecution,
-  readRunRecord: (ref) => readRunRecord(inFixtureRoot(ref)),
+  readRunRecord: (ref) => readRunRecord(inFixtureRoot(ref), false),
   refreshPickerDetection: async () => sayUnavailable(),
 };
 
@@ -266,7 +266,7 @@ function createPreviewCommandContext(): RuntimeCommandContext {
     refreshRun: () => {
       const route = routerStore.get();
       if (route.screen !== 'workflow') return;
-      routerStore.updateRun({ run: readRunRecord(inFixtureRoot(route.run.ref)) });
+      routerStore.updateRun({ run: readRunRecord(inFixtureRoot(route.run.ref), false) });
     },
     // The transcript scrolls and expands under the keys and the mouse the preview passes
     // straight through; the commands that name the same moves would only duplicate the

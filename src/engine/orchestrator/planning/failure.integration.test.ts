@@ -606,7 +606,7 @@ async function runFirstPlannerCall(
   const result = await running;
   const saved = loadState({ projectDir, sessionId });
   if (saved === null) throw new Error('Missing state');
-  const status = deriveRunStatus({ state: saved, liveness: 'not-alive' });
+  const status = deriveRunStatus({ reviewNone: false, state: saved, liveness: 'not-alive' });
   return { result, saved, status, events };
 }
 

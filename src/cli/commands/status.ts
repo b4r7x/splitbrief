@@ -20,6 +20,7 @@ import { sessionDir } from '../../core/paths.js';
 import {
   CREW_SEAT_IDS,
   CREW_SEAT_LABELS,
+  REVIEW_NONE,
   candidateIdsOf,
   formatSeatIdentity,
   type CrewSeatId,
@@ -127,6 +128,7 @@ export function registerStatusCommand(program: Command): void {
           liveness: checkSessionLiveness(sessionDir(projectDir, sessionId)).alive
             ? 'alive'
             : 'not-alive',
+          reviewNone: false,
         });
         const session = rowFor(
           {
@@ -182,11 +184,21 @@ export function registerStatusCommand(program: Command): void {
               }
             : plan,
         };
-        // A run records a reviewer only when one is configured; without it PLAN holds REVIEW,
-        // switches included, until a REVIEW switch gives the review seat its own runner.
+        // REVIEW's seat comes from the seat record, which a crew change rewrites during the run; a
+        // record that keeps none leaves the seat the run state saved at the start. PLAN holds
+        // REVIEW, switches included, until a REVIEW switch gives the review seat its own runner.
+        const reviewSeat =
+          seats?.reviewSeat ??
+          (state.reviewerSeat === 'none' ? 'none' : state.reviewerTool ? 'own' : 'plan');
         const reviewHeldByPlan =
-          !state.reviewerTool && !state.seatSwitches?.some((change) => change.seat === 'review');
+          reviewSeat === 'plan' && !state.seatSwitches?.some((change) => change.seat === 'review');
         for (const seatId of CREW_SEAT_IDS) {
+          if (seatId === 'review' && reviewSeat === 'none') {
+            console.log(
+              `${paint(theme.textDim, `${CREW_SEAT_LABELS.review}:`.padEnd(STATUS_LABEL_WIDTH))}${REVIEW_NONE.mark}`,
+            );
+            continue;
+          }
           const recorded = crew[seatId];
           if (recorded === undefined) continue;
           const holder = seatId === 'review' && reviewHeldByPlan ? 'plan' : seatId;

@@ -18,6 +18,7 @@ import {
 } from '../orchestrator/planning/sanitize-discovered-validation.js';
 import type { Config } from '../../core/schemas/config.js';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
+import { resolveReviewCadence } from '../../core/config/runtime/resolve.js';
 import {
   REVIEW_SEAT_IMAGE_FIX,
   reviewSeatRenderNote,
@@ -212,6 +213,16 @@ export function renderCheckNotes(
   modelCache: ModelCacheAccessor | undefined,
 ): string[] {
   const checks = [...plan.checks, ...plan.tasks.flatMap((task) => task.checks)];
+  if (resolveReviewCadence(config) === 'none') {
+    const ids = [
+      ...plan.checks.map((check) => check.id),
+      ...renderCheckIds(plan.tasks.flatMap((task) => task.checks)),
+    ];
+    if (ids.length === 0) return [];
+    return [
+      `${pluralize(ids.length, 'Check')} ${ids.join(', ')} ${pluralize(ids.length, 'does', 'do')} not run: REVIEW is None, so only the checks of a brief run, and no render check runs. Request changes to move or drop ${pluralize(ids.length, 'it', 'them')}.`,
+    ];
+  }
   const notes: string[] = [];
   const unconfigured = unconfiguredRenderCheckIds(checks, config.validation.render);
   if (unconfigured.length > 0) {
@@ -237,7 +248,9 @@ function reviewSeatRenderCheckNote(
 ): string | undefined {
   const ids = renderCheckIds(checks);
   if (ids.length === 0) return undefined;
-  const runner = resolveReviewerRunner(config).runner;
+  const reviewer = resolveReviewerRunner(config);
+  if (reviewer.source === 'none') return undefined;
+  const { runner } = reviewer;
   const detected = resolveSeatImageFact({ runner, role: 'reviewer', cache: modelCache });
   return seatSupportsImages({ runner, detected })
     ? undefined

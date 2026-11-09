@@ -22,6 +22,8 @@ export interface EnqueueUserMessageOptions {
   message: UserMessageInput;
   phase: Phase;
   bus: EventBus;
+  /** The run pass has REVIEW None: its final-review phase only rechecks the merged result. */
+  reviewNone: boolean;
   enforcePhasePolicy?: boolean | undefined;
   steerable?: boolean | undefined;
 }

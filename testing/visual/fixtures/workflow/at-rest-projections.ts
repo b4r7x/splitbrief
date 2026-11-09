@@ -1,3 +1,4 @@
+import { REVIEW_FILE } from '../../../../src/core/paths.js';
 import type { Phase } from '../../../../src/core/schemas/enums.js';
 import type { ClarificationQuestion } from '../../../../src/core/schemas/question.js';
 import type { EvidenceLedger, EvidenceTask } from '../../../../src/core/schemas/evidence.js';
@@ -826,14 +827,14 @@ function seatWaitLog(wait: SeatWait, kept: boolean): readonly EngineEvent[] {
 }
 const AT_REST_SEAT_WAIT = record({
   sessionId: 'visual-at-rest-seat-wait',
-  status: deriveRunStatus({ state: SEAT_WAIT_STATE, liveness: 'not-alive' }),
+  status: deriveRunStatus({ state: SEAT_WAIT_STATE, liveness: 'not-alive', reviewNone: false }),
   state: SEAT_WAIT_STATE,
 });
 
 /** The same wait while another process holds the run: the byline names the wait it shows live. */
 const AT_REST_SEAT_WAIT_ELSEWHERE = record({
   sessionId: 'visual-at-rest-seat-wait-elsewhere',
-  status: deriveRunStatus({ state: SEAT_WAIT_STATE, liveness: 'alive' }),
+  status: deriveRunStatus({ state: SEAT_WAIT_STATE, liveness: 'alive', reviewNone: false }),
   state: SEAT_WAIT_STATE,
 });
 
@@ -849,7 +850,7 @@ const SEAT_MOVED_STATE: WorkflowState = {
 };
 const AT_REST_SEAT_MOVED = record({
   sessionId: 'visual-at-rest-seat-moved',
-  status: deriveRunStatus({ state: SEAT_MOVED_STATE, liveness: 'not-alive' }),
+  status: deriveRunStatus({ state: SEAT_MOVED_STATE, liveness: 'not-alive', reviewNone: false }),
   state: SEAT_MOVED_STATE,
 });
 
@@ -1060,6 +1061,46 @@ function workspaceSummary(sessionId: string): Readonly<Summary> {
   };
 }
 
+/** The record a run with REVIEW None writes: no review seat, verdict, scope report, packet or review time. */
+function reviewNoneSummary(recorded: Readonly<Summary>): Readonly<Summary> {
+  const {
+    review: _noVerdict,
+    reviewerTool: _noTool,
+    reviewerModel: _noModel,
+    driftSummary: _noScopeReport,
+    reviewPacket: _noPacket,
+    costBreakdown: _noReviewCost,
+    ...summary
+  } = recorded;
+  return {
+    ...summary,
+    reviewerSeat: 'none',
+    tokenUsage: makeUsage({
+      plannerInput: 25_200,
+      plannerOutput: 6_000,
+      implementerInput: 168_500,
+      implementerOutput: 36_000,
+    }),
+    phaseTimings: { planning: 170_000, implementing: 492_000 },
+  };
+}
+
+function reviewNoneLedger(sessionId: string): EvidenceLedger {
+  return {
+    ...READY_LEDGER,
+    sessionId,
+    finalReview: { path: REVIEW_FILE, status: 'skipped' },
+  };
+}
+
+const CLOSED_REVIEW_NONE = record({
+  sessionId: 'visual-closed-none',
+  status: CLOSED_COMPLETE.status,
+  state: { ...CLOSED_COMPLETE.hydration.state, reviewStatus: 'none', reviewerSeat: 'none' },
+  summary: reviewNoneSummary(READY_SUMMARY),
+  ledger: reviewNoneLedger('visual-closed-none'),
+});
+
 const READY_TO_APPLY = record({
   sessionId: 'visual-ready-to-apply',
   status: { kind: 'ready-to-apply', override: false },
@@ -1071,6 +1112,14 @@ const READY_TO_APPLY = record({
   }),
   summary: workspaceSummary('visual-ready-to-apply'),
   ledger: READY_LEDGER,
+});
+
+const READY_REVIEW_NONE = record({
+  sessionId: 'visual-ready-none',
+  status: READY_TO_APPLY.status,
+  state: { ...READY_TO_APPLY.hydration.state, reviewStatus: 'none', reviewerSeat: 'none' },
+  summary: reviewNoneSummary(workspaceSummary('visual-ready-none')),
+  ledger: reviewNoneLedger('visual-ready-none'),
 });
 
 /** The ready run whose reviewer ran Codex at a set effort, so its recorded crew names the effort. */
@@ -1414,6 +1463,11 @@ const READY_LOG: readonly EngineEvent[] = [
     completedTasks: READY_LEDGER.tasks.length,
   },
 ];
+
+const READY_REVIEW_NONE_LOG: readonly EngineEvent[] = READY_LOG.flatMap((event): EngineEvent[] => {
+  if (event.type === 'review_started' || event.type === 'review_completed') return [];
+  return event.type === 'workflow_complete' ? [{ ...event, review: 'none' }] : [event];
+});
 
 const READY_OVERRIDE_LOG: readonly EngineEvent[] = READY_LOG.map((event) =>
   event.type === 'review_completed'
@@ -3069,6 +3123,14 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
     route: { record: AT_REST_WAITING_GATE },
   }),
   atRestProjection({ id: 'workflow-closed-complete', route: { record: CLOSED_COMPLETE } }),
+  atRestProjection({
+    id: 'workflow-closed-complete-review-none',
+    route: { record: CLOSED_REVIEW_NONE },
+  }),
+  atRestProjection({
+    id: 'workflow-ready-to-apply-review-none',
+    route: { record: READY_REVIEW_NONE, log: READY_REVIEW_NONE_LOG },
+  }),
   atRestProjection({
     id: 'workflow-ready-to-apply',
     route: { record: READY_TO_APPLY, log: READY_LOG },

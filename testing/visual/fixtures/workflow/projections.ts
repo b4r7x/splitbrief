@@ -62,6 +62,8 @@ import {
 import { taskFromSpec } from '../../../../src/engine/spec/plan-tasks.js';
 import { planConfirmations } from '../../../../src/engine/orchestrator/approval/confirm.js';
 import { makeImplState, makeWorkflowState } from '../../../helpers/factories/workflow-state.js';
+import { transition } from '../../../../src/core/state/machine.js';
+import { deriveRunStatus } from '../../../../src/core/sessions/run-status.js';
 import type { EngineEvent, EngineEventOf, EventBus } from '../../../../src/engine/events/types.js';
 import type { ClarificationQuestion } from '../../../../src/core/schemas/question.js';
 import type { ReviewArtifact } from '../../../../src/features/workflow/prompt-rows/approval.js';
@@ -266,6 +268,10 @@ export interface WorkflowFixtureProjection {
   readonly scenarioId: ScenarioId;
   readonly feature: string;
   readonly events: readonly EngineEvent[];
+  /** The events are the log of the pass before this one: the fixture run does not publish them. */
+  readonly eventsAreLastPass?: boolean;
+  /** What the continued pass publishes once it starts, on top of a last-pass log. */
+  readonly nextPassEvents?: readonly EngineEvent[];
   readonly inputMode: 'normal' | 'review' | 'question';
   readonly sidebarVisible: boolean;
   readonly question?: FixtureQuestion;
@@ -2525,6 +2531,58 @@ const reviewChecksOffProjection: WorkflowFixtureProjection = {
   },
 };
 
+// With REVIEW None the run ends after the last brief on one row, and no review stage opens.
+const reviewNoneEndProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-review-none-end'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  config: { reviewer: 'none' },
+  get events(): EngineEvent[] {
+    return [
+      ...everyBriefPassed(),
+      { type: 'workflow_complete', ts: FIXED_TS + 450, phase: 'complete', review: 'none' },
+    ];
+  },
+};
+
+// With REVIEW None, Apply found the checkout changed a file the run changed, and the run continued
+// into the checks of the merged result: no seat reviews it, so no review stage opens.
+const applyRecheckReviewNoneProjection: WorkflowFixtureProjection = {
+  ...reviewNoneEndProjection,
+  scenarioId: scenarioId('workflow-apply-recheck-review-none'),
+  get resumeState(): WorkflowState {
+    return {
+      ...resumingApplyState,
+      reviewStatus: 'none',
+      tasks: FIXTURE_TASKS_PLANNED.tasks.map((brief) => ({
+        ...HALTED_TASK,
+        id: brief.id,
+        title: brief.title,
+        status: 'done',
+      })),
+    };
+  },
+  eventsAreLastPass: true,
+  get nextPassEvents(): EngineEvent[] {
+    return [
+      { type: 'workflow_resumed', ts: FIXED_TS + 8_000, phase: 'final-review', inProcess: true },
+      { ...baseRunPass('final-review'), ts: FIXED_TS + 8_000, reviewerSeat: 'none' },
+    ];
+  },
+  get events(): EngineEvent[] {
+    return [
+      ...reviewNoneEndProjection.events,
+      {
+        type: 'planner_text',
+        ts: FIXED_TS + 7_000,
+        phase: 'final-review',
+        text: 'Your checkout changed 1 file this run also changed (registry.ts); the merged result goes through its checks again before Apply.',
+      },
+    ];
+  },
+};
+
 const reviewFixNarrowRailProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-review-fix-narrow-rail'),
   feature: 'Add overdue book reporting',
@@ -2815,6 +2873,42 @@ const planCardRenderNoteProjection: WorkflowFixtureProjection = {
       renderCheckNotes(RENDER_NOTE_PLAN, visualConfig(), NULL_CACHE),
     ),
     planJson: `${JSON.stringify(RENDER_NOTE_PLAN, null, 2)}\n`,
+    confirms: planCardProjection.review?.confirms ?? [],
+  },
+};
+
+// A plan-level check and a brief's render check: with REVIEW None the card names both, as neither runs.
+const REVIEW_NONE_PLAN = makePlanProposal({
+  ...PLAN_CARD_PLAN,
+  checks: [{ id: 'K-suite', kind: 'test', value: 'src/hello.test.ts' }],
+  criteria: [
+    { id: 'C1', text: 'A name gets a greeting', checkIds: ['K1', 'K-suite'] },
+    { id: 'C2', text: 'The CLI prints the greeting', checkIds: ['K2', 'K-render'] },
+  ],
+  tasks: PLAN_CARD_PLAN.tasks.map((task) =>
+    task.id === 'T002'
+      ? {
+          ...task,
+          checks: [
+            ...task.checks,
+            { id: 'K-render', kind: 'render' as const, value: 'overlay-settings' },
+          ],
+        }
+      : task,
+  ),
+});
+
+const planCardReviewNoneProjection: WorkflowFixtureProjection = {
+  ...planCardRenderNoteProjection,
+  scenarioId: scenarioId('workflow-plan-card-review-none'),
+  config: { reviewer: 'none' },
+  review: {
+    filePath: 'testing/visual/fixtures/workflow/plan-card/plan.md',
+    source: formatPlanMarkdown(
+      REVIEW_NONE_PLAN,
+      renderCheckNotes(REVIEW_NONE_PLAN, visualConfig({ reviewer: 'none' }), NULL_CACHE),
+    ),
+    planJson: `${JSON.stringify(REVIEW_NONE_PLAN, null, 2)}\n`,
     confirms: planCardProjection.review?.confirms ?? [],
   },
 };
@@ -4229,6 +4323,13 @@ const checksUnrunnableRecoveryProjection: WorkflowFixtureProjection = {
   resumeState: finalReviewHaltState([{ checkId: 'K2', output: 'validation.render is not set' }]),
 };
 
+/** The same halt after REVIEW moved to None: a run in place has no Apply stage. */
+const reviewNoneInPlaceRecoveryProjection: WorkflowFixtureProjection = {
+  ...checksUnrunnableRecoveryProjection,
+  scenarioId: scenarioId('workflow-recovery-review-none-in-place'),
+  config: { reviewer: 'none' },
+};
+
 const applyConflictIssue = buildApplyConflictRecoveryIssue({
   conflicts: [
     { path: 'src/cli.js', kind: 'mode' },
@@ -4277,6 +4378,56 @@ const applyConflictRecoveryProjection: WorkflowFixtureProjection = {
       implementerTool: 'claude-code',
       implementerModel: 'haiku',
     }),
+  }),
+};
+
+// A seat reviewed this run, Apply sent it back to its checks, and REVIEW moved to None at rest: the
+// next pass runs no review, so the window before its first event names Apply.
+const resumingApplyState = transition(
+  makeImplState([{ ...HALTED_TASK, status: 'done' }], {
+    feature: WORKFLOW_FEATURE,
+    startedAt: RESUMED_RUN_STARTED_AT,
+    phase: 'complete',
+    reviewStatus: 'passed',
+    workspace: {
+      kind: 'worktree',
+      path: '.splitbrief/worktrees/visual/workspace',
+      base: { snapshotId: 'visual-base', head: null },
+    },
+  }),
+  {
+    type: 'APPLY_RECHECK_START',
+    merged: [{ path: WORKFLOW_FIXTURE_REVIEW_FILE, checkoutHunks: '@@ -5 +5 @@\n-five\n+FIVE\n' }],
+  },
+);
+
+const resumingApplyReviewNoneProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-resuming-apply-review-none'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  config: { reviewer: 'none' },
+  get events(): EngineEvent[] {
+    return [
+      ...everyBriefPassed(FIXTURE_TASKS_PLANNED.tasks.slice(0, 1), [baseRunPass('implementing')]),
+      finalReviewStarted(FIXED_TS + 390, BASE_PLANNER),
+      finalReviewCompleted({
+        ts: FIXED_TS + 400,
+        duration: 12_000,
+        verdict: 'pass',
+        seat: BASE_PLANNER,
+      }),
+      { type: 'workflow_complete', ts: FIXED_TS + 450, phase: 'complete', review: 'passed' },
+    ];
+  },
+  eventsAreLastPass: true,
+  resumeState: resumingApplyState,
+  continuedFrom: makeRunRecord({
+    ref: { projectDir: VISUAL_FIXTURE_PROJECT_DIR, sessionId: VISUAL_WORKFLOW_SESSION_ID },
+    feature: WORKFLOW_FEATURE,
+    startedAt: RESUMED_RUN_STARTED_AT,
+    hydration: { kind: 'loaded', state: resumingApplyState },
+    status: deriveRunStatus({ state: resumingApplyState, liveness: 'not-alive', reviewNone: true }),
   }),
 };
 
@@ -7733,7 +7884,9 @@ const reviewPauseRequestedProjection: WorkflowFixtureProjection = {
 const SEAT_CHANGE_STOP: FixtureStopState = { intent: 'none', phase: 'idle', seatChange: true };
 
 /** The seats the base crew's run pass started on, as the run announces them when the pass starts. */
-function baseRunPass(phase: EngineEventOf<'workflow_config'>['phase']): EngineEvent {
+function baseRunPass(
+  phase: EngineEventOf<'workflow_config'>['phase'],
+): EngineEventOf<'workflow_config'> {
   return {
     type: 'workflow_config',
     ts: FIXED_TS,
@@ -8759,6 +8912,34 @@ const refusedReviewAnswer: EngineEventOf<'seat_answer_refused'> = {
   reasons: ['Fix task T903 names an unknown criterion: The greeting names the user.'],
 };
 
+const crewWideProjection: WorkflowFixtureProjection = {
+  ...implementationProjection,
+  scenarioId: scenarioId('workflow-crew-wide'),
+  config: VISUAL_WIDE_CREW,
+  events: implementationProjection.events.map((event): EngineEvent => {
+    switch (event.type) {
+      case 'task_started':
+        return {
+          ...event,
+          tool: 'antigravity',
+          model: AGY_BUILD_SEAT.model,
+          axes: seatAxisWords(AGY_BUILD_SEAT),
+        };
+      case 'runner_call_started':
+      case 'runner_call_activity':
+        return {
+          ...event,
+          backendKind: 'cli',
+          runnerName: 'antigravity',
+          model: AGY_BUILD_SEAT.model,
+          axes: seatAxisWords(AGY_BUILD_SEAT),
+        };
+      default:
+        return event;
+    }
+  }),
+};
+
 const projections = [
   reviewResumeProjection,
   reviewCheckCrashProjection,
@@ -8790,35 +8971,15 @@ const projections = [
       (event) => event.type !== 'runner_call_started' && event.type !== 'runner_call_activity',
     ),
   },
+  resumingApplyReviewNoneProjection,
   implementationQueuedProjection,
   implementationDeliveredProjection,
   implementationSteerableProjection,
+  crewWideProjection,
   {
-    ...implementationProjection,
-    scenarioId: scenarioId('workflow-crew-wide'),
-    config: VISUAL_WIDE_CREW,
-    events: implementationProjection.events.map((event): EngineEvent => {
-      switch (event.type) {
-        case 'task_started':
-          return {
-            ...event,
-            tool: 'antigravity',
-            model: AGY_BUILD_SEAT.model,
-            axes: seatAxisWords(AGY_BUILD_SEAT),
-          };
-        case 'runner_call_started':
-        case 'runner_call_activity':
-          return {
-            ...event,
-            backendKind: 'cli',
-            runnerName: 'antigravity',
-            model: AGY_BUILD_SEAT.model,
-            axes: seatAxisWords(AGY_BUILD_SEAT),
-          };
-        default:
-          return event;
-      }
-    }),
+    ...crewWideProjection,
+    scenarioId: scenarioId('workflow-crew-wide-review-none'),
+    config: { ...VISUAL_WIDE_CREW, reviewer: 'none' },
   },
   {
     ...implementationProjection,
@@ -9094,6 +9255,8 @@ const projections = [
     }),
   ),
   reviewChecksOffProjection,
+  reviewNoneEndProjection,
+  applyRecheckReviewNoneProjection,
   reviewFixNarrowRailProjection,
   taskStatusesProjection,
   implementationEscalatedProjection,
@@ -9131,6 +9294,7 @@ const projections = [
     ],
   },
   planCardRenderNoteProjection,
+  planCardReviewNoneProjection,
   planCardNoImageReviewerProjection,
   planCardSharedCommandProjection,
   planCardSessionPathProjection,
@@ -9231,6 +9395,7 @@ const projections = [
   taskReviewNoProgressRecoveryProjection,
   checksMissingProgramRecoveryProjection,
   checksUnrunnableRecoveryProjection,
+  reviewNoneInPlaceRecoveryProjection,
   applyConflictRecoveryProjection,
   applyConflictSentenceProjection,
   resumedApplyPartialRecoveryProjection,
@@ -9454,6 +9619,8 @@ export function assertProjectionBounds(projection: WorkflowFixtureProjection): v
       value !== planCardProjection.review?.planJson &&
       value !== planCardRenderNoteProjection.review?.source &&
       value !== planCardRenderNoteProjection.review?.planJson &&
+      value !== planCardReviewNoneProjection.review?.source &&
+      value !== planCardReviewNoneProjection.review?.planJson &&
       value !== planCardNoImageReviewerProjection.review?.source &&
       value !== planCardSharedCommandProjection.review?.source &&
       value !== planCardSharedCommandProjection.review?.planJson &&

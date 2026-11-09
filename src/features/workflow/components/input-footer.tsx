@@ -6,11 +6,16 @@ import { configStore } from '../../../stores/project/config.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { CHECKING_TOOLS_STAGE, preparationStore } from '../../../stores/navigation/preparation.js';
-import { getActiveRailStage, phaseStage, railStageSeat } from '../../../core/rail-stages.js';
+import {
+  getActiveRailStage,
+  railStageSeat,
+  type RailStageState,
+} from '../../../core/rail-stages.js';
+import { stepWord } from '../stop/copy.js';
 import { deriveLiveStatus } from '../display/live-activity.js';
 import { seatWaitSentence } from '../../../core/sessions/seat-wait-line.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
-import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
+import { CREW_SEAT_ROLES, collapsedReviewSeat } from '../../../core/crew/seats.js';
 import { TextSpans } from '../../../components/text-spans.js';
 import { runnerSilenceMs, silenceTail, silenceText } from '../display/build-progress.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
@@ -44,8 +49,7 @@ import {
   fitCheckingRow,
   stageFractionText,
 } from '../input-footer-byline.js';
-import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
-import { formatSeatIdentity } from '../../../core/crew/identity.js';
+import { formatSeatIdentity, isReviewNone } from '../../../core/crew/identity.js';
 import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { queueCopy } from '../queue-copy.js';
@@ -93,11 +97,20 @@ export function InputFooter({
   const stopped = stopByline !== null && stopByline.parts.length > 0 ? stopByline : null;
   const config = configStore.useConfig();
   const displayNames = useCrewDisplayNames(config);
-  const reviewer = configuredReviewerRunner(config);
-  const reviewerSeat = reviewer
-    ? formatSeatIdentity({ seat: reviewer, displayName: displayNames.review ?? displayNames.plan })
-    : '';
-  const activeStage = getActiveRailStage(runView.phase);
+  const reviewer = collapsedReviewSeat(config);
+  const reviewerSeat = isReviewNone(reviewer)
+    ? reviewer.mark
+    : reviewer
+      ? formatSeatIdentity({
+          seat: reviewer,
+          displayName: displayNames.review ?? displayNames.plan,
+        })
+      : '';
+  // With REVIEW None the final-review phase of a workspace run only rechecks the merged result for Apply.
+  const activeStage: RailStageState | null =
+    runView.phase === 'final-review' && runView.afterLastBrief.kind === 'apply'
+      ? { stage: 'apply', status: 'active' }
+      : getActiveRailStage(runView.phase);
   const stageText = activeStage ? formatStageLabel(activeStage.stage) : '';
   const fractionText = stageFractionText(taskListView);
 
@@ -129,6 +142,7 @@ export function InputFooter({
           waitedMs: lifecycle.waitedMs ?? {},
           resumedAt: lifecycle.resumedAt ?? null,
           reviewerLabel: reviewerSeat === '' ? null : reviewerSeat,
+          reviewNone: runView.reviewNone,
           plannerCall: lifecycle.plannerCall ?? null,
           plannerCallStartedTs: lifecycle.plannerCallStartedTs ?? null,
           suiteStage: selectRunningSuite(operations),
@@ -192,13 +206,18 @@ export function InputFooter({
     { text: ' — finishing current step…', tone: 'textDim' },
   ];
   const runningBriefId = selectRunningBrief(runView.briefs, runView.phase).current?.id ?? null;
-  const seat = phaseStage(runView.phase);
   const resumingLead: ConversationRowSegment[] = [
     { text: `${frame} `, tone: stateTone('running') },
     { text: 'Resuming ', tone: 'text' },
     {
-      text: runningBriefId ?? (seat === null ? 'the run' : `the ${seat}`),
-      tone: seat === null ? 'text' : CREW_SEAT_ROLES[seat],
+      text:
+        runningBriefId ??
+        (activeStage === null
+          ? 'the run'
+          : activeStage.stage === 'apply'
+            ? stepWord({ kind: 'apply' })
+            : `the ${activeStage.stage}`),
+      tone: stageSeat === null ? 'text' : CREW_SEAT_ROLES[stageSeat],
     },
   ];
   // A run that ended without finishing must not reach the stageLead fallback: the pip there is
@@ -315,7 +334,7 @@ export function InputFooter({
   const queuedCopy =
     lifecycle.queueDepth > 0 && (atRestStatus === null || atRestStatus === 'open')
       ? queueCopy({
-          seat: messageSeat(runView.phase, selectScheduledReview(operations)),
+          seat: messageSeat(runView.phase, selectScheduledReview(operations), runView.reviewNone),
           taskId: selectBuildMessageBrief(runView.briefs)?.id,
           count: lifecycle.queueDepth,
         })

@@ -10,7 +10,7 @@ import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { providerOracleCommand } from '../../engine/runners/cli-tools/provider-oracle.js';
 import { configStore } from '../../stores/project/config.js';
 
-import { CREW_SEAT_LABELS, PLANNER_INHERITANCE } from '../../core/crew/identity.js';
+import { CREW_SEAT_LABELS, PLANNER_INHERITANCE, REVIEW_NONE } from '../../core/crew/identity.js';
 import { CLI_TOOL_CATALOG, CLI_TOOL_IDS } from '../../core/runners/cli-tool-catalog.js';
 import {
   PICKER_ROLE_SEAT_IDS,
@@ -205,6 +205,19 @@ export function PickerView({
         lines: ['A Seat down halt pauses the run and asks which tool takes the seat.'],
       };
     }
+    if (item.kind === 'review-none') {
+      return {
+        label: REVIEW_NONE.mark,
+        verb: 'confirm',
+        lines: [
+          'No seat reviews the run.',
+          'Each brief runs its own',
+          'checks. No end-of-run',
+          'check and no render',
+          'check run.',
+        ],
+      };
+    }
     if (item.kind === 'inherit-planner') {
       return {
         label: PLANNER_INHERITANCE.mark,
@@ -274,7 +287,7 @@ export function PickerView({
   const resolvePreview = (ctx: PreviewContext<PickerOption, KeyedRightRow>): string | undefined => {
     const tool = ctx.leftItem ?? catalog.currentItem;
     if (!tool) return undefined;
-    if (tool.kind === 'no-fallback') return undefined;
+    if (tool.kind === 'no-fallback' || tool.kind === 'review-none') return undefined;
     // A signed-in route needs no remedy, so the byline is what the row falls
     // back to rather than an empty preview line.
     const remedyFor = (auth: RouteAuthState, variant: ModelVariant): string | undefined => {

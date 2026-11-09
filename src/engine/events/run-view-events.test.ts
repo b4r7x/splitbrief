@@ -18,6 +18,7 @@ import type {
   TasksPlannedEvent,
   TurnInterruptedEvent,
   WorkflowCompleteEvent,
+  WorkflowConfigEvent,
   WorkflowResumedEvent,
 } from '../../core/run-view/events.js';
 import type { EngineEventOf } from './types.js';
@@ -47,6 +48,10 @@ it('gives the run view every field it folds from the ask and stop events', () =>
   expectTypeOf<EngineEventOf<'turn_interrupted'>>().toExtend<TurnInterruptedEvent>();
   expectTypeOf<EngineEventOf<'run_failed'>>().toExtend<RunFailedEvent>();
   expectTypeOf<EngineEventOf<'run_rejected'>>().toExtend<RunRejectedEvent>();
+});
+
+it('gives the run view the REVIEW None mark of a run pass', () => {
+  expectTypeOf<EngineEventOf<'workflow_config'>>().toExtend<WorkflowConfigEvent>();
 });
 
 it('gives the run view the brief files a revert, a restore or a denial row left', () => {

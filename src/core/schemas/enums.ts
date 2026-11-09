@@ -107,7 +107,7 @@ export type ValidationStage = z.infer<typeof ValidationStageSchema>;
 
 export const REVIEW_VERDICTS = ['pass', 'pass_with_notes', 'fail'] as const;
 
-export const REVIEW_STATUSES = ['passed', 'failed'] as const;
+export const REVIEW_STATUSES = ['passed', 'failed', 'none'] as const;
 export type ReviewStatus = (typeof REVIEW_STATUSES)[number];
 
 /** The halt causes a live producer raises. `scripts/invariants` checks each one has a producer. */

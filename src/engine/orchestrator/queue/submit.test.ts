@@ -976,6 +976,60 @@ describe('enqueue', () => {
     });
   });
 
+  it.each<[string, WorkflowState['workspace'], string]>([
+    [
+      'on a worktree',
+      { kind: 'worktree', path: '/tmp/wt', base: { snapshotId: 'b', head: null } },
+      'Cannot send words to Apply. Clear them.',
+    ],
+    [
+      'on the project checkout',
+      { kind: 'checkout', path: '/tmp/project', base: { snapshotId: 'b', head: null } },
+      'Cannot send words to the review. Clear them.',
+    ],
+    ['with no workspace recorded', undefined, 'Cannot send words to the review. Clear them.'],
+  ])(
+    'refuses a message during a REVIEW None pass %s, as no seat reads it',
+    async (_, workspace, refusal) => {
+      const { projectDir, sessionId } = setupProject(dirs);
+      let state: WorkflowState | undefined = {
+        ...makeResearchingState(),
+        phase: 'final-review',
+        workspace,
+      };
+      const { bus, events } = makeBusRecorder();
+
+      const handler = createQueueHandler({
+        config: makeConfig({ reviewer: 'none' }),
+        projectDir,
+        sessionId,
+        getState: () => state,
+        setState: (s) => {
+          state = s;
+        },
+        bus,
+        planner: makePlanner(),
+        serialize: createWriteSequencer(),
+      });
+
+      const result = await handler(plainUserMessage('also fix the typo'), 'final-review');
+
+      expect(result).toEqual({
+        status: 'rejected',
+        reason: 'phase-unavailable',
+        message: refusal,
+      });
+      expect(state?.messageQueue).toHaveLength(0);
+      expect(loadState({ projectDir, sessionId })?.messageQueue ?? []).toHaveLength(0);
+      expect(events.find((event) => event.type === 'message_queued')).toBeUndefined();
+      expect(events.find((event) => event.type === 'warning')).toMatchObject({
+        category: 'queue',
+        code: 'phase_unavailable',
+        message: refusal,
+      });
+    },
+  );
+
   it('persists later messages before a slow native injection resolves', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
     let state: WorkflowState | undefined = makeResearchingState();

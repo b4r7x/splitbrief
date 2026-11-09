@@ -7,7 +7,7 @@ import { createApiImplementer } from '../implementers/api.js';
 import { createPlanner, createReviewer } from '../runners/factory.js';
 import type { RunnerFactoryAuthority } from '../runners/factory-gates.js';
 import type { RunnerSlot } from '../runners/prepared-execution.js';
-import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
+import { requireReviewSeat } from '../../core/config/accessors/reviewer-runner.js';
 import { admitApiCall, type PreparedApiSeat } from './api-budget.js';
 import { apiConnectionContextKey } from './selected-model.js';
 import type { ProviderDef } from './types.js';
@@ -260,7 +260,7 @@ describe('three-seat identity and budget', () => {
 
     const reviewer = await createReviewer(
       cfg,
-      authority(cfg, { role: 'reviewer' }, resolveReviewerRunner(cfg).runner),
+      authority(cfg, { role: 'reviewer' }, requireReviewSeat(cfg).runner),
     );
     await reviewer.review('review this change', projectDir, { onOutput: () => {} });
 

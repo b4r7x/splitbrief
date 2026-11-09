@@ -3,6 +3,7 @@ import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import {
   applyStopRailStages,
   getRailStages,
+  skipReviewStage,
   type RailHalt,
   type RailStageState,
   type RailStageStatus,
@@ -62,9 +63,22 @@ export function openRoundQuestions(
 
 /**
  * The header rail of a run nothing is running: a finished run shows every stage done, and every
- * other run marks the stage it stopped on with the mark its own stop earned.
+ * other run marks the stage it stopped on with the mark its own stop earned. A run that finished
+ * under REVIEW None, or picks up at Apply before it finished, reviews nothing.
  */
 export function atRestRailStages(record: RunRecord): RailStageState[] {
+  const stages = stagesAtRest(record);
+  const state = record.hydration.kind === 'loaded' ? record.hydration.state : null;
+  const reviewsNothing =
+    state !== null &&
+    (state.reviewStatus === 'none' ||
+      (record.status.kind === 'open' &&
+        record.status.resumeAt.kind === 'apply' &&
+        state.phase !== 'complete'));
+  return reviewsNothing ? skipReviewStage(stages) : stages;
+}
+
+function stagesAtRest(record: RunRecord): RailStageState[] {
   const status = record.status;
   const apply = applyStage(record);
   const applyOption = apply === undefined ? {} : { apply };

@@ -35,6 +35,7 @@ export type SeatView =
       tool: string;
     }>
   | Readonly<{ kind: 'inherits' }>
+  | Readonly<{ kind: 'none' }>
   | Readonly<{ kind: 'mixed'; profiles: readonly string[] }>
   | Readonly<{
       kind: 'moved';
@@ -63,7 +64,7 @@ export interface BriefRow {
 }
 
 export type ReviewView =
-  | Readonly<{ kind: 'not-run' }>
+  | Readonly<{ kind: 'not-run' | 'none' }>
   | Readonly<{ kind: 'failed' | 'missing' | 'skipped' }>
   | Readonly<{
       kind: 'written';
@@ -220,6 +221,7 @@ function seatsOf(summary: Summary): RecordedCrew {
 /**
  * Complete is the whole run agreeing: it finished, the packet was written, the verdict allows it, the
  * scope check passed and no brief failed. Anything short of that on a finished run needs attention.
+ * With REVIEW None no packet or scope check is written, so the briefs and a recorded scope answer.
  */
 function outcomeKindFor(
   summary: Summary,
@@ -229,6 +231,11 @@ function outcomeKindFor(
   // An undone Apply reads as the Apply it took back; the view's `applyUndo` names the undo.
   if (closedAs === 'applied' || closedAs === 'undone') return 'applied';
   if (closedAs === 'discarded') return 'discarded';
+  if (summary.reviewerSeat === 'none') {
+    return summary.failed === 0 && summary.driftSummary?.passed !== false
+      ? 'complete'
+      : 'needs-attention';
+  }
   const packet = summary.reviewPacket;
   const verdict = packet?.finalReviewVerdict ?? null;
   const agreed =

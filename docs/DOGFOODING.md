@@ -32,7 +32,7 @@ validation: { end_checks: true }
 workflow: { approve: plan }
 ```
 
-Model ids come from the tool (`agy models`, `claude --model` aliases `opus`, `sonnet`, `fable`). No `reviewer:` block means the planner holds the review seat.
+Model ids come from the tool (`agy models`, `claude --model` aliases `opus`, `sonnet`, `fable`). No `reviewer:` block means the planner holds the review seat. `reviewer: none` turns the review off.
 
 The task is a file attached with `@`, for example `.splitbrief/inbox/<date>-<slug>/tasks.md` (gitignored). If the task file's first line gives the exact launch command, use it without its seat flags; seats come from `.splitbrief/config.yaml`. Write the task for the planner: the goal, the invariants, what is out of scope, and the sizing rule that keeps briefs inside the implementer's limits:
 

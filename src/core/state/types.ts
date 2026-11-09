@@ -71,6 +71,7 @@ export type StateAction =
       merged: { path: string; checkoutHunks: string }[];
       triage?: TriageInput[];
     }
+  | { type: 'APPLY_RECHECK_START'; merged: { path: string; checkoutHunks: string }[] }
   | { type: 'RECORD_APPLY_INTEGRATED'; integrated: NonNullable<WorkflowState['applyIntegrated']> }
   | { type: 'BIND_APPLY_INTEGRATED'; candidate: Record<string, string> }
   | { type: 'RECORD_APPLY_RECHECK'; failures: string[]; notRun: string[] }

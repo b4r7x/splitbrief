@@ -10,6 +10,7 @@ import {
   CREW_IDENTITY_SEPARATOR,
   CREW_SEAT_LABELS,
   PLANNER_INHERITANCE,
+  REVIEW_NONE,
   formatSeatIdentity,
   formatSlotLabel,
   type SeatDisplayName,
@@ -21,7 +22,11 @@ import {
 } from '../../runners/cli-tool-catalog.js';
 import { getIsolationStrategy } from '../../config/accessors/values.js';
 import type { Config } from '../../schemas/config.js';
-import { resolveReviewerRunner } from '../../config/accessors/reviewer-runner.js';
+import {
+  requireReviewSeat,
+  resolveReviewerRunner,
+} from '../../config/accessors/reviewer-runner.js';
+import type { ReviewerConfig } from '../../schemas/reviewer-config.js';
 import {
   reviewSeatRenderNote,
   seatSupportsImages,
@@ -125,13 +130,17 @@ export function buildRunnerChecks({
   }
 
   const reviewer = resolveReviewerRunner(config);
-  const renderDetails = reviewSeatRenderCheckDetail(config, reviewer.runner, seatImageFact);
-  if (reviewer.source === 'configured') {
-    addCliSeat({ role: 'reviewer' }, reviewer.runner);
-    checks.push(seatConfiguredCheck('reviewer', reviewer.runner, nameSeat, renderDetails));
-    checks.push(...typedOutputFallbackCheck('reviewer', reviewer.runner));
+  if (reviewer.source === 'none') {
+    checks.push(noReviewerCheck());
   } else {
-    checks.push(inheritedReviewerCheck(reviewer.runner, nameSeat, renderDetails));
+    const renderDetails = reviewSeatRenderCheckDetail(config, reviewer.runner, seatImageFact);
+    if (reviewer.source === 'configured') {
+      addCliSeat({ role: 'reviewer' }, reviewer.runner);
+      checks.push(seatConfiguredCheck('reviewer', reviewer.runner, nameSeat, renderDetails));
+      checks.push(...typedOutputFallbackCheck('reviewer', reviewer.runner));
+    } else {
+      checks.push(inheritedReviewerCheck(reviewer.runner, nameSeat, renderDetails));
+    }
   }
 
   if (resolved !== null) {
@@ -157,7 +166,7 @@ export function buildRunnerChecks({
 
 function typedOutputFallbackCheck(
   seat: 'planner' | 'reviewer',
-  runner: Config['planner'] | NonNullable<Config['reviewer']>,
+  runner: Config['planner'] | ReviewerConfig,
 ): ReadinessCheck[] {
   if (runner.kind !== 'cli') return [];
 
@@ -209,7 +218,7 @@ function buildAvailabilityChecks({
       case 'reviewer':
         return runnerAvailabilityCheck({
           fact,
-          label: `${formatSlotLabel(fact.slot)} ${nameSeat(resolveReviewerRunner(config).runner, 'reviewer')}`,
+          label: `${formatSlotLabel(fact.slot)} ${nameSeat(requireReviewSeat(config).runner, 'reviewer')}`,
           isDefaultImplementer: false,
         });
       case 'implementer': {
@@ -333,7 +342,7 @@ function reviewSeatRenderCheckDetail(
 
 function seatConfiguredCheck(
   role: 'planner' | 'reviewer',
-  runner: Config['planner'] | NonNullable<Config['reviewer']>,
+  runner: Config['planner'] | ReviewerConfig,
   nameSeat: SeatNamer,
   details: readonly string[],
 ): ReadinessCheck {
@@ -350,6 +359,15 @@ function seatConfiguredCheck(
       modelSelection: modelSelection(runner),
       contextLength: runner.contextLength ?? null,
     },
+  };
+}
+
+function noReviewerCheck(): ReadinessCheck {
+  return {
+    id: 'runners.reviewer.none',
+    severity: 'ok',
+    summary: `${formatSlotLabel({ role: 'reviewer' })} ${REVIEW_NONE.mark}. No review, no end-of-run checks and no render check run.`,
+    metadata: { role: 'reviewer' },
   };
 }
 

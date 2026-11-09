@@ -109,6 +109,7 @@ describe('runHeldCorrection — corrections during checks', () => {
           message: plainUserMessage('keep the export too'),
           phase: current.phase,
           bus,
+          reviewNone: false,
         });
         return { success: true, output: 'fixed' };
       } finally {
@@ -177,6 +178,7 @@ describe('runHeldCorrection — corrections during checks', () => {
         message: plainUserMessage('cleared correction'),
         phase: current.phase,
         bus,
+        reviewNone: false,
       });
       return { stdout: 'ok', stderr: '', code: 0 };
     });
@@ -233,6 +235,7 @@ describe('runHeldCorrection — corrections during checks', () => {
           message: plainUserMessage('keep the alias'),
           phase: current.phase,
           bus,
+          reviewNone: false,
         });
       }
       return { stdout: 'ok', stderr: '', code: 0 };

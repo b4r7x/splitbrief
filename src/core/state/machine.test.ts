@@ -417,9 +417,11 @@ describe('transition', () => {
     const all = transition(partly, { type: 'RECORD_REJECT', removed: ['b.ts'], booked: [] });
     expect(all.interruptedStep).toMatchObject({ step, cut: 'mid-step' });
     expect(all.interruptedStep).not.toHaveProperty('kept');
-    expect(deriveRunStatus({ state: all, liveness: 'not-alive' })).toMatchObject({
-      stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } },
-    });
+    expect(deriveRunStatus({ reviewNone: false, state: all, liveness: 'not-alive' })).toMatchObject(
+      {
+        stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } },
+      },
+    );
 
     const unstopped = createInitialState('feat');
     expect(transition(unstopped, { type: 'RECORD_REJECT', removed: ['a.ts'], booked: [] })).toBe(
@@ -471,7 +473,9 @@ describe('transition', () => {
       cut: 'boundary',
       at: stopped.interruptedStep?.at,
     });
-    expect(deriveRunStatus({ state: next, liveness: 'not-alive' })).toMatchObject({
+    expect(
+      deriveRunStatus({ reviewNone: false, state: next, liveness: 'not-alive' }),
+    ).toMatchObject({
       stop: { kind: 'stopped', on: { kind: 'paused', at: 'boundary' } },
       resumeAt: { kind: 'brief', taskId: 'T002', attempt: 0 },
     });
@@ -547,7 +551,9 @@ describe('transition', () => {
         source: 'user',
         cut: 'boundary',
       });
-      expect(deriveRunStatus({ state: next, liveness: 'not-alive' })).toMatchObject({
+      expect(
+        deriveRunStatus({ reviewNone: false, state: next, liveness: 'not-alive' }),
+      ).toMatchObject({
         stop: { kind: 'stopped', on: { kind: 'paused', at: 'boundary' } },
         resumeAt: { kind: 'brief', taskId: 'T001', attempt: 0 },
       });
@@ -2048,6 +2054,43 @@ describe('the run workspace and Apply', () => {
     },
   );
 
+  it('`REVIEW_DONE` none clears the Apply review', () => {
+    const rechecking: WorkflowState = {
+      ...ready(),
+      phase: 'final-review',
+      reviewStatus: undefined,
+      applyReview: { merged: [{ path: 'src/a.ts', checkoutHunks: 'hunks' }], failures: [] },
+      pendingTriage: { inputs: [] },
+    };
+
+    const next = transition(rechecking, { type: 'REVIEW_DONE', reviewStatus: 'none' });
+
+    expect(next.phase).toBe('complete');
+    expect(next.reviewStatus).toBe('none');
+    expect(next.applyReview).toBeUndefined();
+    expect(next.pendingTriage).toBeUndefined();
+  });
+
+  it('`APPLY_RECHECK_START` counts no fix cycle', () => {
+    const merged = [{ path: 'src/a.ts', checkoutHunks: '@@ -1 +1 @@\n-a\n+b\n' }];
+    const noneRun = {
+      ...ready(),
+      reviewStatus: 'none' as const,
+      fixCycles: { used: 2, briefed: 2, notes: [] },
+    };
+
+    const next = transition(noneRun, { type: 'APPLY_RECHECK_START', merged });
+
+    expect(next.phase).toBe('final-review');
+    expect(next.reviewStatus).toBeUndefined();
+    expect(next.applyReview).toEqual({ merged, failures: [] });
+    expect(next.pendingTriage).toBeUndefined();
+    expect(next.fixCycles).toEqual(noneRun.fixCycles);
+    expect(() =>
+      transition({ ...noneRun, workspace: undefined }, { type: 'APPLY_RECHECK_START', merged }),
+    ).toThrow('Cannot apply APPLY_RECHECK_START');
+  });
+
   it('APPLY_REVIEW_START only from ready', () => {
     const merged = [{ path: 'src/a.ts', checkoutHunks: '@@ -1 +1 @@\n-a\n+b\n' }];
     const accepted = transition(
@@ -2254,7 +2297,9 @@ describe('the run workspace and Apply', () => {
     expect(restored.applying).toBeUndefined();
     expect(restored.applied).toBeUndefined();
     expect(restored.closed).toBeUndefined();
-    expect(deriveRunStatus({ state: restored, liveness: 'not-alive' }).kind).toBe('ready-to-apply');
+    expect(
+      deriveRunStatus({ reviewNone: false, state: restored, liveness: 'not-alive' }).kind,
+    ).toBe('ready-to-apply');
   });
 
   it('APPLY_RESTORED refuses a run that never started Apply', () => {

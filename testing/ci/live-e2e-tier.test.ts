@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { configuredReviewerRunner } from '../../src/core/config/accessors/reviewer-runner.js';
 import { basename, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -635,7 +636,7 @@ describe('release matrix manifest and config', () => {
       resolveReleaseMatrixRun(row),
       MATRIX_TIERS['question-round'],
     );
-    const reviewer = config.reviewer;
+    const reviewer = configuredReviewerRunner(config);
     if (reviewer === undefined || reviewer.kind !== 'cli') throw new Error('unreachable');
 
     expect(reviewer.tool).toBe('codex');

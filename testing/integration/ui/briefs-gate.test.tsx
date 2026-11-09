@@ -123,7 +123,7 @@ describe('an old run parked at the briefs gate on the workflow screen', () => {
 
     const { prepared } = mountRun(sessionId, parked);
     // What `splitbrief continue` does before it mounts the screen.
-    const record = readRunRecord(ref);
+    const record = readRunRecord(ref, false);
     await hydrateRun(record);
     routerStore.init({ screen: 'workflow', run: record, execution: { kind: 'local', prepared } });
     ui = renderFeature(

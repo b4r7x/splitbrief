@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
-import { resolveReviewerRunner } from '../../src/core/config/accessors/reviewer-runner.js';
+import { requireReviewSeat } from '../../src/core/config/accessors/reviewer-runner.js';
 import {
   inlineRunnerCommand,
   isCustomCommandRunner,
@@ -31,7 +31,7 @@ it.each([
     };
     const config = makeConfig(source === 'configured' ? { reviewer: runner } : { planner: runner });
     await trustDeclaredRunners({ projectDir, config, pathEnv: process.env.PATH ?? '', stateDir });
-    const reviewer = resolveReviewerRunner(config);
+    const reviewer = requireReviewSeat(config);
     expect(reviewer.source).toBe(source);
     if (!isCustomCommandRunner(reviewer.runner)) throw new Error('Expected a custom reviewer');
     const command = inlineRunnerCommand({ runner: reviewer.runner, role: 'planner' });

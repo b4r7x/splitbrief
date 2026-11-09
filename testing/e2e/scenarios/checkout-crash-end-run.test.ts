@@ -47,7 +47,7 @@ describe('e2e: End run after a checkout run process died inside a brief', {
       status: 'in_progress',
       changedFiles: [MARKER_FILE],
     });
-    const view = deriveSummaryView({ record: readRunRecord(ref) });
+    const view = deriveSummaryView({ record: readRunRecord(ref, false) });
     if (view === null) throw new Error('the ended run left no closed view');
     expect(view.files.changed).toEqual([MARKER_FILE]);
   });

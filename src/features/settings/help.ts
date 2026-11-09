@@ -1,4 +1,5 @@
 import type { CrewSeatId } from '../../core/crew/identity.js';
+import { resolveReviewCadence } from '../../core/config/runtime/resolve.js';
 import type { Config } from '../../core/schemas/config.js';
 import { wrapPathAware } from '../../utils/wrap.js';
 import type { SettingsItem } from './items.js';
@@ -13,10 +14,13 @@ function seatDescription(seat: CrewSeatId, config: Config): string {
       return 'Plans the work and writes every Task Brief; the review seat inherits this setup when it has none of its own.';
     case 'build':
       return 'Executes the briefs the planner writes; this is the seat that changes the code.';
-    case 'review':
-      return config.workflow.review === 'task'
+    case 'review': {
+      const cadence = resolveReviewCadence(config);
+      if (cadence === 'none') return 'REVIEW is None: no seat reviews this run.';
+      return cadence === 'task'
         ? "Reads the diff after every task; with no tool of its own it runs the planner's setup."
         : "Reads the whole diff once after the last task; with no tool of its own it runs the planner's setup.";
+    }
   }
 }
 
@@ -31,6 +35,8 @@ export function settingsHelpLines(item: SettingsItem, config: Config): HelpLine[
   }
 
   const def = item.def;
+  const locked = def.lockedBy?.(config);
+  if (locked !== undefined) return [{ text: locked }, { text: def.description }];
   if (def.kind === 'number' && def.min !== undefined && def.max !== undefined) {
     return [{ text: `${def.description} · ${def.min}–${def.max}` }];
   }

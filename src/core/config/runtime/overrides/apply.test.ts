@@ -1,4 +1,5 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
+import { configuredReviewerRunner } from '../../accessors/reviewer-runner.js';
 import { applyCLIOverrides } from './apply.js';
 import { workflowOptsToCLIOverrides } from './from-options.js';
 import type { Config } from '../../../schemas/config.js';
@@ -78,7 +79,7 @@ describe('applyCLIOverrides — the reviewer seat', () => {
       workflowOptsToCLIOverrides({ reviewer: 'codex', reviewerEffort: 'high' }),
     );
 
-    expect(result.reviewer?.effort).toBe('high');
+    expect(configuredReviewerRunner(result)?.effort).toBe('high');
     expect(result.planner.effort).toBeUndefined();
   });
 
@@ -86,5 +87,14 @@ describe('applyCLIOverrides — the reviewer seat', () => {
     expect(() =>
       applyCLIOverrides(baseConfig, workflowOptsToCLIOverrides({ reviewerEffort: 'high' })),
     ).toThrow(/inherits the planner; pass --reviewer/);
+  });
+
+  it('refuses --reviewer-effort alone while REVIEW is None', () => {
+    expect(() =>
+      applyCLIOverrides(
+        makeConfig({ reviewer: 'none' }),
+        workflowOptsToCLIOverrides({ reviewerEffort: 'high' }),
+      ),
+    ).toThrow('REVIEW is set to None; pass --reviewer to give it a runner first.');
   });
 });

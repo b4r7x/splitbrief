@@ -240,7 +240,8 @@ export function createWorkflowFixtureAppDeps(
 ): WorkflowScreenDeps {
   const runWorkflow: RunWorkflowFn = async (options) => {
     if (projection !== undefined) {
-      applyProjection(projection);
+      if (!projection.eventsAreLastPass) applyProjection(projection);
+      for (const event of projection.nextPassEvents ?? []) addEvent(event);
       await activateFixtureInputMode(projection, options);
       const resumed = projection.resumedRun;
       if (resumed !== undefined && options.savedState !== undefined) {

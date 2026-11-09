@@ -249,6 +249,8 @@ export const SummarySchema = z.object({
   reviewerModel: z.string().optional(),
   reviewerKind: RunnerKindSchema.optional(),
   reviewerAxes: z.array(z.string()).readonly().optional(),
+  /** REVIEW was None for this run, so no seat reviewed it. */
+  reviewerSeat: z.literal('none').optional(),
   phaseTimings: z.record(z.string(), z.number()).optional(),
   mode: WorkflowModeSchema.optional(),
   evidenceSummary: z

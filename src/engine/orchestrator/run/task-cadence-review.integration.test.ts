@@ -711,6 +711,30 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
     );
   });
 
+  it('None skips the task review', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const config = makeNoValidationConfig({ reviewer: 'none', workflow: { review: 'task' } });
+    const tasks = [
+      makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], criteria: ['C1'] }),
+      makeTask({ id: 'T002', suggestedFiles: ['src/beta.ts'], criteria: ['C2'] }),
+    ];
+    const { events, reviewPrompts, options } = runOptions({
+      projectDir,
+      sessionId,
+      state: cadenceState(tasks, head),
+      config,
+      review: (prompt) => passingReviewVerdict(prompt),
+      onComplete: vi.fn(),
+    });
+
+    const result = await runTasksAndReview(options);
+
+    expect(result.completed).toBe(true);
+    expect(reviewPrompts).toEqual([]);
+    expect(events.some((event) => event.type === 'review_started')).toBe(false);
+    expect(result.state.reviewStatus).toBe('none');
+  });
+
   it("keeps the unchanged 'end' cadence to one final review", async () => {
     const { projectDir, sessionId, head } = setupProject();
     const tasks = [
@@ -838,5 +862,182 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
       expect.objectContaining({ review: 'passed' }),
     ]);
     expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a task review left pending, on a continue after a move to REVIEW None', {
+  timeout: 120_000,
+}, () => {
+  const noneConfig = () =>
+    makeNoValidationConfig({ reviewer: 'none', workflow: { review: 'task' } });
+  const pendingReview = { pendingScheduledReview: { afterTaskId: taskId('T001') } };
+
+  function continueOnNone(project: ReturnType<typeof setupProject>, state: WorkflowState) {
+    return runOptions({
+      projectDir: project.projectDir,
+      sessionId: project.sessionId,
+      state,
+      config: noneConfig(),
+      review: (prompt) => passingReviewVerdict(prompt),
+      onComplete: vi.fn(),
+    });
+  }
+
+  function expectNoReviewRan(run: ReturnType<typeof continueOnNone>, state: WorkflowState) {
+    expect(run.reviewPrompts).toEqual([]);
+    expect(run.events.some((event) => event.type === 'review_started')).toBe(false);
+    expect(state.reviewStatus).toBe('none');
+    expect(state.pendingScheduledReview).toBeUndefined();
+    expect(state.pendingTriage).toBeUndefined();
+    expect(state.pendingRecovery).toBeUndefined();
+    expect(loadState(run.ref)?.pendingScheduledReview).toBeUndefined();
+  }
+
+  // One real task review with a seat that fails and whose fix cycle moved nothing: the run halts
+  // on the planner's refusal, and the saved state keeps the review, its triage and the anchor.
+  async function haltedTaskReview(project: ReturnType<typeof setupProject>) {
+    const tasks = [
+      makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], criteria: ['C1'] }),
+      makeTask({ id: 'T002', suggestedFiles: ['src/beta.ts'], criteria: ['C2'] }),
+    ];
+    const seat = runOptions({
+      projectDir: project.projectDir,
+      sessionId: project.sessionId,
+      state: cadenceState(tasks, project.head, {
+        fixCycles: { used: 2, notes: [], open: { cycle: 2, lastFixTaskId: taskId('T001') } },
+        triage: [stuckRecord(['finding:F1'], 'task')],
+      }),
+      review: (prompt) =>
+        failedReviewVerdict(prompt, 'src/alpha.ts drops the error', { taskId: 'T001' }),
+      onComplete: vi.fn(),
+    });
+    const halted = await runTasksAndReview(seat.options);
+    expect(halted.state.pendingRecovery?.reason).toBe('review-failed');
+    expect(halted.state.pendingScheduledReview).toEqual({ afterTaskId: 'T001' });
+    return { state: halted.state, bus: seat.options.wctx.bus };
+  }
+
+  it('drops the task review when no brief is left, and the run ends', async () => {
+    const project = setupProject();
+    const tasks = [
+      makeTask({ id: 'T001', status: 'done', suggestedFiles: ['src/alpha.ts'], criteria: ['C1'] }),
+    ];
+    const run = continueOnNone(
+      project,
+      cadenceState(tasks, project.head, { currentTaskIndex: 1, ...pendingReview }),
+    );
+
+    const pass = runTasksAndReview(run.options);
+
+    await expect(pass).resolves.toMatchObject({ completed: true });
+    expectNoReviewRan(run, (await pass).state);
+  });
+
+  it('drops the task review and runs the next brief', async () => {
+    const project = setupProject();
+    const tasks = [
+      makeTask({ id: 'T001', status: 'done', suggestedFiles: ['src/alpha.ts'], criteria: ['C1'] }),
+      makeTask({ id: 'T002', suggestedFiles: ['src/beta.ts'], criteria: ['C2'] }),
+    ];
+    const run = continueOnNone(
+      project,
+      cadenceState(tasks, project.head, { currentTaskIndex: 1, ...pendingReview }),
+    );
+
+    const pass = runTasksAndReview(run.options);
+
+    await expect(pass).resolves.toMatchObject({ completed: true });
+    const { state } = await pass;
+    expectNoReviewRan(run, state);
+    expect(state.tasks.map((task) => task.status)).toEqual(['done', 'done']);
+  });
+
+  it('does not run the checks of the dropped review', async () => {
+    const missing = 'splitbrief-missing-runner';
+    const project = setupProject({
+      'package.json': `${JSON.stringify({ name: 'cadence', private: true, scripts: { test: missing } })}\n`,
+    });
+    const tasks = [
+      makeTask({ id: 'T001', status: 'done', suggestedFiles: ['src/alpha.ts'], criteria: ['C1'] }),
+    ];
+    const run = continueOnNone(
+      project,
+      cadenceState(tasks, project.head, {
+        currentTaskIndex: 1,
+        ...pendingReview,
+        plan: {
+          summary: 'One brief, checked by the test script',
+          decisions: [],
+          criteria: [{ id: 'C1', text: 'The brief works', checkIds: ['K1'] }],
+          checks: [{ id: 'K1', kind: 'cmd', value: 'npm test' }],
+          validation: null,
+        },
+      }),
+    );
+
+    const pass = runTasksAndReview(run.options);
+
+    await expect(pass).resolves.toMatchObject({ completed: true });
+    expectNoReviewRan(run, (await pass).state);
+    expect(run.events.some((event) => event.type === 'error')).toBe(false);
+  });
+
+  it('does not ask the question of the dropped review', async () => {
+    const project = setupProject();
+    const { state } = await haltedTaskReview(project);
+    const run = continueOnNone(project, {
+      ...state,
+      pendingRecovery: undefined,
+      pendingTriage: {
+        inputs: [],
+        question: { question: 'Which error?', whyOnlyUserCanAnswer: 'Only the user knows' },
+      },
+    });
+    const onPlannerReply = vi.fn().mockResolvedValue(plainUserMessage('The first one'));
+    run.options.wctx.callbacks.onPlannerReply = onPlannerReply;
+
+    const pass = runTasksAndReview(run.options);
+
+    await expect(pass).resolves.toMatchObject({ completed: true });
+    expectNoReviewRan(run, (await pass).state);
+    expect(onPlannerReply).not.toHaveBeenCalled();
+  });
+
+  it('does not ask the planner on the dropped review', async () => {
+    const project = setupProject();
+    const { state } = await haltedTaskReview(project);
+    const run = continueOnNone(project, {
+      ...state,
+      pendingRecovery: undefined,
+      pendingTriage: { inputs: [], plannerConsult: true },
+    });
+
+    const pass = runTasksAndReview(run.options);
+
+    await expect(pass).resolves.toMatchObject({ completed: true });
+    expectNoReviewRan(run, (await pass).state);
+  });
+
+  it('continues a halt of the task review that the user answered', async () => {
+    const project = setupProject();
+    const { state, bus } = await haltedTaskReview(project);
+    const corrected = await applyRecoveryAction({
+      projectDir: project.projectDir,
+      sessionId: project.sessionId,
+      state,
+      action: 'revise',
+      bus,
+      comment: plainUserMessage('Keep running with the reviewed correction'),
+    });
+    if (!corrected.ok) throw new Error(corrected.message);
+    expect(corrected.state.pendingScheduledReview).toEqual({ afterTaskId: 'T001' });
+    const run = continueOnNone(project, corrected.state);
+
+    const pass = runTasksAndReview(run.options);
+
+    await expect(pass).resolves.toMatchObject({ completed: true });
+    const { state: ended } = await pass;
+    expectNoReviewRan(run, ended);
+    expect(ended.tasks.map((task) => task.status)).toEqual(['done', 'done']);
   });
 });

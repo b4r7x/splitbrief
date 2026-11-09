@@ -36,6 +36,22 @@ describe('settingsHelpLines', () => {
     ]);
   });
 
+  describe('under REVIEW None', () => {
+    const noneConfig = makeConfig({ reviewer: 'none' });
+
+    it('says that no seat reviews the run', () => {
+      expect(settingsHelpLines(itemAt(items, 'seat:review'), noneConfig)).toEqual([
+        { text: 'REVIEW is None: no seat reviews this run.' },
+      ]);
+    });
+
+    it('leads a read-only row with the reason it is read-only', () => {
+      expect(settingsHelpLines(itemAt(items, 'validation.endChecks'), noneConfig)[0]).toEqual({
+        text: 'Read-only while REVIEW is None: no review runs.',
+      });
+    });
+  });
+
   it.each(['plan', 'build', 'review'])(
     'explains the %s fallback within two 60-column rows',
     (seat) => {

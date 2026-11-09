@@ -472,6 +472,7 @@ describe('runFinalReviewPhase', () => {
           bus,
           phase: 'final-review',
           message: plainUserMessage('Check the missing authentication guard'),
+          reviewNone: false,
         });
       return { ...passingReviewVerdict(prompt), tasks: [] };
     });
@@ -523,6 +524,7 @@ describe('runFinalReviewPhase', () => {
       bus,
       phase: 'final-review',
       message: plainUserMessage('Check the missing authentication guard'),
+      reviewNone: false,
     }).state;
     const { reviewer, prompts } = makeReviewer((prompt, call) =>
       call === 1 ? { ...passingReviewVerdict(prompt), tasks: [] } : passingReviewVerdict(prompt),

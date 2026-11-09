@@ -131,6 +131,7 @@ const phaseActions = {
     'QUEUE_TRIAGE',
     'ACCEPT_AS_IS',
     'APPLY_REVIEW_START',
+    'APPLY_RECHECK_START',
     'RECORD_APPLY_INTEGRATED',
     'BIND_APPLY_INTEGRATED',
     'APPLY_START',
@@ -446,7 +447,7 @@ export function transition(
         reviewStatus: action.reviewStatus,
         acceptedAsIs: undefined,
         ...(action.candidate !== undefined && { reviewedCandidate: action.candidate }),
-        ...(action.reviewStatus === 'passed' && {
+        ...(action.reviewStatus !== 'failed' && {
           applyReview: undefined,
           pendingTriage: undefined,
         }),
@@ -578,8 +579,12 @@ export function transition(
         pendingTriage: undefined,
       };
 
-    case 'APPLY_REVIEW_START': {
-      if (deriveRunStatus({ state, liveness: 'not-alive' }).kind !== 'ready-to-apply') {
+    case 'APPLY_REVIEW_START':
+    case 'APPLY_RECHECK_START': {
+      if (
+        deriveRunStatus({ state, liveness: 'not-alive', reviewNone: false }).kind !==
+        'ready-to-apply'
+      ) {
         throw transitionError.invalidActionForPhase(state.phase, action.type);
       }
       const fixCycles = fixCyclesOf(state);
@@ -590,9 +595,10 @@ export function transition(
         completedAt: undefined,
         acceptedAsIs: undefined,
         applyReview: { merged: action.merged, failures: [] },
-        ...(action.triage !== undefined
-          ? { pendingTriage: { inputs: action.triage } }
-          : { fixCycles: { ...fixCycles, used: fixCycles.used + 1 } }),
+        ...(action.type === 'APPLY_REVIEW_START' &&
+          (action.triage !== undefined
+            ? { pendingTriage: { inputs: action.triage } }
+            : { fixCycles: { ...fixCycles, used: fixCycles.used + 1 } })),
       };
     }
 
@@ -668,7 +674,7 @@ export function transition(
       };
 
     case 'CLOSE_RUN':
-      if (deriveRunStatus({ state, liveness: 'not-alive' }).kind === 'closed') {
+      if (deriveRunStatus({ state, liveness: 'not-alive', reviewNone: false }).kind === 'closed') {
         return state;
       }
       return {

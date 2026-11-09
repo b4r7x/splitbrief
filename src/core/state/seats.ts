@@ -17,6 +17,7 @@ import {
   formatSeatIdentity,
   sameSeatIds,
   seatIdsOf,
+  REVIEW_NONE,
 } from '../crew/identity.js';
 import { resolveImplementerProfiles } from '../config/accessors/implementer-profiles.js';
 import type { CrewSeatId, SeatIds } from '../crew/identity.js';
@@ -53,10 +54,10 @@ export const SeatIdentitiesSchema = z.object({
    */
   ids: z.object({ plan: SeatIdsSchema, build: SeatIdsSchema, review: SeatIdsSchema }).optional(),
   /**
-   * Whether the review seat followed PLAN (no reviewer of its own), which the ids cannot say: a
-   * reviewer set to the planner's tool and model has the same ids. Records written before it have none.
+   * Whose seat REVIEW was: its `own`, PLAN's (`plan`), or `none`. The ids cannot say it: a reviewer
+   * set to the planner's tool and model has the same ids. Records written before it have none.
    */
-  reviewFollowsPlan: z.boolean().optional(),
+  reviewSeat: z.enum(['own', 'plan', 'none']).optional(),
   /**
    * The BUILD profiles other than the default, by name: a brief routed to one runs on its seat, so
    * a move there is a move of the BUILD seat too. Absent when the config names no other profile.
@@ -70,7 +71,11 @@ export type SeatIdentities = z.infer<typeof SeatIdentitiesSchema>;
 
 const SeatIdentityRecordSchema = SeatIdentitiesSchema.extend({
   switchCount: z.number().int().nonnegative().optional(),
+  /** The older spelling of `reviewSeat`, read from records written before it. */
+  reviewFollowsPlan: z.boolean().optional(),
 });
+
+const REVIEW_SEAT_OF_SOURCE = { configured: 'own', planner: 'plan', none: 'none' } as const;
 
 export type SeatChange = Readonly<{
   seat: CrewSeatId;
@@ -98,9 +103,10 @@ export function seatIdentitiesFromConfig(
     ids: {
       plan: seatIdsOf(plan.runner),
       build: seatIdsOf(build.runner),
-      review: seatIdsOf(review.runner),
+      review:
+        review.source === 'none' ? { tool: REVIEW_NONE.mark, axes: [] } : seatIdsOf(review.runner),
     },
-    reviewFollowsPlan: review.source === 'planner',
+    reviewSeat: REVIEW_SEAT_OF_SOURCE[review.source],
     ...(otherProfiles.length > 0 && {
       buildProfiles: Object.fromEntries(
         otherProfiles.map((profile) => [
@@ -121,12 +127,16 @@ function seatsRelativePath(sessionId: string): string {
 
 export function readSeatIdentityRecord(
   ref: SessionRef,
-): z.infer<typeof SeatIdentityRecordSchema> | null {
+): Omit<z.infer<typeof SeatIdentityRecordSchema>, 'reviewFollowsPlan'> | null {
   const raw = confinedReadFile(ref.projectDir, seatsRelativePath(ref.sessionId));
   if (raw === null) return null;
   try {
     const parsed = SeatIdentityRecordSchema.safeParse(JSON.parse(raw));
-    return parsed.success ? parsed.data : null;
+    if (!parsed.success) return null;
+    const { reviewFollowsPlan, ...record } = parsed.data;
+    return reviewFollowsPlan === undefined
+      ? record
+      : { ...record, reviewSeat: reviewFollowsPlan ? 'plan' : 'own' };
   } catch {
     return null;
   }
@@ -230,8 +240,7 @@ export function reconcileSeatIdentities(
   const missingKinds = recorded?.ids !== undefined && idsLackKind(recorded.ids);
   const switchCount = loadState(ref)?.seatSwitches?.length ?? 0;
   const orderChanged = recorded !== null && recorded.switchCount !== switchCount;
-  const followChanged =
-    recorded !== null && recorded.reviewFollowsPlan !== current.reviewFollowsPlan;
+  const followChanged = recorded !== null && recorded.reviewSeat !== current.reviewSeat;
   const profilesChanged =
     recorded !== null &&
     JSON.stringify(recorded.buildProfiles) !== JSON.stringify(current.buildProfiles);
@@ -276,7 +285,8 @@ function recordedModel(seat: SeatIds): string | undefined {
 
 /**
  * The crew a run ran with, for its closed record: the seats of its latest pass, never the config
- * saved since. The planner holds the review seat when the record says it followed PLAN. A record
+ * saved since. The planner holds the review seat when the record says it followed PLAN, and no seat
+ * holds it when the record says None. A record
  * written before that was kept reads it as following PLAN only when both seats are the same and
  * the run started without a reviewer. A record written before seat ids were kept reads the seats
  * the state saved at the run's start.
@@ -300,9 +310,9 @@ export function recordedSeatIdentity(ref: SessionRef, state: WorkflowState): Sea
     };
   }
   const ids = record.ids;
-  const reviewFollowsPlan =
-    record.reviewFollowsPlan ??
-    (state.reviewerTool === undefined && sameSeatIds(ids.review, ids.plan));
+  const reviewSeat =
+    record.reviewSeat ??
+    (state.reviewerTool === undefined && sameSeatIds(ids.review, ids.plan) ? 'plan' : 'own');
   return {
     plannerTool: ids.plan.tool,
     plannerModel: recordedModel(ids.plan),
@@ -312,11 +322,12 @@ export function recordedSeatIdentity(ref: SessionRef, state: WorkflowState): Sea
     implementerModel: recordedModel(ids.build),
     implementerKind: ids.build.kind,
     implementerAxes: ids.build.axes,
-    ...(!reviewFollowsPlan && {
+    ...(reviewSeat === 'own' && {
       reviewerTool: ids.review.tool,
       reviewerModel: recordedModel(ids.review),
       reviewerKind: ids.review.kind,
       reviewerAxes: ids.review.axes,
     }),
+    ...(reviewSeat === 'none' && { reviewerSeat: 'none' }),
   };
 }

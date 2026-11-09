@@ -2,6 +2,8 @@ import { useRef, useEffect, useEffectEvent } from 'react';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import type { RunRecord } from '../../../core/sessions/run-record.js';
 import { readRunRecord } from '../../../core/sessions/run-record-io.js';
+import { readActiveRunner } from '../../../core/config/accessors/active-runner.js';
+import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
 import { seatIdentitiesFromConfig, seatIdentityChanges } from '../../../core/state/seats.js';
 import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { hydrateFromState } from '../../../stores/workflow/actions/hydrate.js';
@@ -90,7 +92,7 @@ function swapBaseConfig(saved: Config, run: Config, seat: CrewSeatId): Config {
     case 'plan':
       return { ...saved, planner: run.planner };
     case 'review':
-      return { ...saved, reviewer: run.reviewer ?? run.planner };
+      return { ...saved, reviewer: readActiveRunner({ config: run, role: 'reviewer' }) };
     case 'build': {
       const { implementerProfiles: _savedProfiles, ...seats } = saved;
       return {
@@ -206,7 +208,7 @@ export function useRunLoop({
     if (stateForRun === undefined) resetWorkflow();
     if (stateForRun !== undefined) {
       stopStore.reset();
-      hydrateFromState(stateForRun);
+      hydrateFromState(stateForRun, configStore.reviewNone());
     }
     resetMarkdownConversationRowsCache();
     resetConversationRowsProjectionCache();
@@ -243,10 +245,8 @@ export function useRunLoop({
       const bus = createRecoveryBus({ ...session.ref, sink: addTuiEvent });
       const closure =
         intent === 'end-run' ? await endRun({ ...session.ref, bus }, current) : undefined;
-      const status = deriveRunStatus({
-        state: current,
-        liveness: 'not-alive',
-      });
+      const reviewNone = resolveReviewCadence(preparedForRun.config) === 'none';
+      const status = deriveRunStatus({ state: current, liveness: 'not-alive', reviewNone });
       const next =
         closure !== undefined
           ? closure.state
@@ -258,6 +258,7 @@ export function useRunLoop({
               : await parkStoppedRun(
                   { ...session.ref, bus: createRecoveryBus({ ...session.ref, sink: addTuiEvent }) },
                   current,
+                  reviewNone,
                 );
       finalizeEndedRun({
         ref: session.ref,
@@ -355,7 +356,8 @@ export function useRunLoop({
             const closedState = recovery.state;
             if (
               closedState !== undefined &&
-              deriveRunStatus({ state: closedState, liveness: 'not-alive' }).kind === 'closed'
+              deriveRunStatus({ state: closedState, liveness: 'not-alive', reviewNone: false })
+                .kind === 'closed'
             ) {
               finalizeEndedRun({
                 ref: preparedForRun.session.ref,
@@ -535,7 +537,7 @@ export function useRunLoop({
         setInlineResume({ prepared, state: saved });
         recoveryPromptAlreadyPublished = true;
         // The event bound swaps an oversized prompt event for a warning: the view has no halt yet.
-        if (runViewStore.get().halt === null) hydrateFromState(saved);
+        if (runViewStore.get().halt === null) hydrateFromState(saved, configStore.reviewNone());
       }
     } catch (err) {
       if (abortedRef.current) return;
@@ -617,7 +619,7 @@ export function useRunLoop({
     ref: PreparedExecution['session']['ref'],
     handoff: boolean,
   ): Promise<RunRecord> => {
-    const record = readRunRecord(ref);
+    const record = readRunRecord(ref, configStore.reviewNone());
     if (handoff && !retentionNoticeHandled.current && record.hydration.kind === 'loaded') {
       await publishRetainedWorkspaceNotice({
         ...ref,
@@ -650,7 +652,8 @@ export function useRunLoop({
         stopStore.reset();
         // End run marks the lifecycle cancelled at the keypress, and no later event lifts that
         // mark; the record says the run completed, and the record wins.
-        if (record.hydration.kind === 'loaded') hydrateFromState(record.hydration.state);
+        if (record.hydration.kind === 'loaded')
+          hydrateFromState(record.hydration.state, configStore.reviewNone());
       } else if (routerStore.get().screen === 'workflow' && overlayStore.get().active === 'none')
         overlayStore.open('stop-sheet');
     }

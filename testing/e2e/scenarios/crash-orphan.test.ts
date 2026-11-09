@@ -100,7 +100,7 @@ describe('a crashed CLI leaves no tool running', { timeout: 240_000 }, () => {
     const orphan = plantOrphanRunner(ref);
     planted.push(orphan);
 
-    await readRunHistory(readRunRecord(ref));
+    await readRunHistory(readRunRecord(ref, false));
 
     expect(canSignalProcess(orphan), `orphan ${orphan} outlived opening the run`).toBe(false);
     expect(readRunnerPids(ref)).toEqual([]);

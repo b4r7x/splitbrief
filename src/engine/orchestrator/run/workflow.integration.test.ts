@@ -697,7 +697,10 @@ describe('runWorkflow — smoke', () => {
         stderr: stderr.join(''),
         thrown,
         state,
-        status: state === null ? undefined : deriveRunStatus({ state, liveness: 'not-alive' }),
+        status:
+          state === null
+            ? undefined
+            : deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' }),
       };
     }
 
@@ -1011,7 +1014,7 @@ describe('runWorkflow — smoke', () => {
           ...run,
           ref,
           dir,
-          record: readRunRecord(ref),
+          record: readRunRecord(ref, false),
           row: listSessions(projectDir).find((session) => session.id === sessionId),
         };
       }
@@ -1037,7 +1040,7 @@ describe('runWorkflow — smoke', () => {
           expect(run.row).toMatchObject({ status: 'open', stop: 'stopped' });
           // Reopened in this process, after the lock went stale, it still reads failed.
           vi.useFakeTimers({ now: Date.now() + 60_000, toFake: ['Date'] });
-          expect(readRunRecord(run.ref)).toMatchObject(recordFailedWith(cause));
+          expect(readRunRecord(run.ref, false)).toMatchObject(recordFailedWith(cause));
           vi.useRealTimers();
           // The stderr line says the failure did not reach the disk.
           expect(run.stderr).toContain(
@@ -1079,7 +1082,7 @@ describe('runWorkflow — smoke', () => {
 
           expect(run.thrown).toBeUndefined();
           expect(run.errors.at(-1)).toBe(line);
-          expect(readRunRecord(ref)).toMatchObject(recordFailedWith(line));
+          expect(readRunRecord(ref, false)).toMatchObject(recordFailedWith(line));
           expect(run.status).toMatchObject({
             kind: 'open',
             stop: { kind: 'stopped' },
@@ -1103,7 +1106,7 @@ describe('runWorkflow — smoke', () => {
 
         expect(again.thrown).toBeUndefined();
         expect(again.state?.lastFailure).toBeUndefined();
-        expect(readRunRecord(run.ref).status.kind).toBe('ready-to-apply');
+        expect(readRunRecord(run.ref, false).status.kind).toBe('ready-to-apply');
         const reread = loadOwnerWorkflowState(run.ref);
         expect(reread.kind === 'loaded' && reread.state.lastFailure).toBeUndefined();
       });
@@ -1125,7 +1128,7 @@ describe('runWorkflow — smoke', () => {
         const cause = notSaved(sessionId, 'i/o error');
         expect(again.errors.at(-1)).toBe(cause);
         expect(again.state?.lastFailure?.message).toBe(cause);
-        expect(readRunRecord(run.ref)).toMatchObject(recordFailedWith(cause));
+        expect(readRunRecord(run.ref, false)).toMatchObject(recordFailedWith(cause));
       });
 
       it('a continue after planning failed on a save plans again and builds once', async () => {
@@ -1178,7 +1181,7 @@ describe('runWorkflow — smoke', () => {
         expect(again.state?.lastFailure).toBeUndefined();
         const reread = loadOwnerWorkflowState(ref);
         expect(reread.kind === 'loaded' && reread.state.lastFailure).toBeUndefined();
-        expect(readRunRecord(ref).status.kind).toBe('ready-to-apply');
+        expect(readRunRecord(ref, false).status.kind).toBe('ready-to-apply');
         expect(implement).toHaveBeenCalledTimes(1);
       });
 
@@ -1226,7 +1229,7 @@ describe('runWorkflow — smoke', () => {
         const reread = loadOwnerWorkflowState(ref);
         expect(reread.kind === 'loaded' && reread.state.lastFailure).toBeUndefined();
         expect(again.state?.pendingRecovery).toBeUndefined();
-        expect(readRunRecord(ref).status.kind).toBe('ready-to-apply');
+        expect(readRunRecord(ref, false).status.kind).toBe('ready-to-apply');
       });
 
       describe('the files a failed attempt wrote are back at their task-start bytes when the brief runs again', () => {
@@ -1455,7 +1458,9 @@ describe('runWorkflow — smoke', () => {
           expect(run.thrown).toBeUndefined();
           expect(run.errors).toEqual([cause]);
           expect(run.state?.pendingRecovery).toBeUndefined();
-          expect(readRunRecord({ projectDir, sessionId })).toMatchObject(recordFailedWith(cause));
+          expect(readRunRecord({ projectDir, sessionId }, false)).toMatchObject(
+            recordFailedWith(cause),
+          );
         },
       );
 
@@ -1465,7 +1470,7 @@ describe('runWorkflow — smoke', () => {
         const statePath = join(run.dir, STATE_FILE);
         chmodSync(statePath, 0o000);
         try {
-          expect(readRunRecord(run.ref).status).toMatchObject({
+          expect(readRunRecord(run.ref, false).status).toMatchObject({
             kind: 'open',
             stop: { kind: 'stopped', on: { kind: 'failed' } },
           });

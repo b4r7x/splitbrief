@@ -290,6 +290,16 @@ describe('createStdoutTextSink', () => {
     ]);
   });
 
+  it('plain None line', () => {
+    const lines = collect([
+      { type: 'workflow_started', ts, phase: 'implementing', feature: 'add a widget' },
+      { type: 'workflow_complete', ts, phase: 'complete', review: 'none', completedTasks: 0 },
+    ]);
+
+    expect(lines.slice(-2)).toEqual(['review: none (REVIEW is None)', 'done: 0 tasks']);
+    expect(lines.join('\n')).not.toMatch(/review: passed/u);
+  });
+
   it('writes no phase line for the replay markers, which carry the phase of the reading', () => {
     const lines = collect([
       { type: 'workflow_started', ts, phase: 'implementing', feature: 'add a widget' },

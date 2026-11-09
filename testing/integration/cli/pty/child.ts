@@ -175,7 +175,7 @@ export async function runPtyChild(
         const current = rebaseOnPersistedWorkflowState(ref, reviewingPlanState());
         const parked = transitionAndSave(ref, current, {
           type: 'INTERRUPT_STEP',
-          step: resumeStep(current),
+          step: resumeStep(current, false),
           source: 'user',
           cut,
         });

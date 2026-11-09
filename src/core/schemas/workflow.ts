@@ -367,6 +367,8 @@ const WorkflowStateFields = {
   reviewerTool: z.string().optional(),
   reviewerModel: z.string().optional(),
   reviewerKind: RunnerKindSchema.optional(),
+  /** REVIEW was None when the run started, so no seat reviews it. */
+  reviewerSeat: z.literal('none').optional(),
   mode: WorkflowModeSchema.optional(),
   approve: ApproveLevelSchema.optional(),
   selectedSkills: z.array(z.string()).optional(),

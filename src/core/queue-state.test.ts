@@ -5,7 +5,22 @@ import {
   isQueuedMessagePendingDelivery,
   isQueuedMessagePendingFirstDelivery,
   isQueuedMessagePendingReviewer,
+  messageSeat,
 } from './queue-state.js';
+
+describe('messageSeat', () => {
+  it('names no seat while REVIEW None checks the merged result again: no seat reads a message', () => {
+    expect(messageSeat('final-review', false, true)).toBeNull();
+    expect(messageSeat('final-review', false, false)).toBe('review');
+    expect(messageSeat('implementing', false, true)).toBe('build');
+  });
+
+  it('names no review seat for a task review that a move to REVIEW None left pending', () => {
+    expect(messageSeat('implementing', true, true)).toBe('build');
+    expect(messageSeat('final-review', true, true)).toBeNull();
+    expect(messageSeat('implementing', true, false)).toBe('review');
+  });
+});
 
 describe('mid-call queue state', () => {
   it('keeps reviewer-read messages for BUILD without counting or clearing their history', () => {

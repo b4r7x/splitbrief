@@ -15,7 +15,7 @@ import {
   type CrewSeatId,
   type SeatDisplayName,
 } from './identity.js';
-import { CREW_SEAT_ROLES, deriveCrewSeats } from './seats.js';
+import { CREW_SEAT_ROLES, deriveCrewSeats, seatHasRunner } from './seats.js';
 
 export type SeatFallback = NonNullable<RunnerConfig['fallback']>;
 
@@ -105,35 +105,37 @@ export function deriveFallbackRows(
     seatDisplayName?: SeatDisplayName | undefined;
   }>,
 ): readonly FallbackRow[] {
-  return deriveCrewSeats({ config: input.config }).map((seat) => {
-    const fallback = seatFallback(input.config, CREW_SEAT_ROLES[seat.id]);
-    const inherited = seat.id === 'review' && seat.source === 'planner';
-    if (fallback === undefined) return { id: seat.id, inherited };
-    const runner = fallbackRunner(fallback);
-    const identity =
-      runner === undefined
-        ? undefined
-        : formatSeatIdentity({
-            seat: runner,
-            displayName: input.seatDisplayName?.(runner, CREW_SEAT_ROLES[seat.id]),
-          });
-    const detection = input.cliTools.find((candidate) => candidate.tool === fallback.tool);
-    const note = isSeatIdentity(
-      { tool: seat.runner.kind === 'cli' ? seat.runner.tool : '', model: seat.runner.model },
-      fallback,
-    )
-      ? 'same as the seat'
-      : fallbackBlockedReason(
-          fallback,
-          detection,
-          detection === undefined ? undefined : input.cliCatalog?.(detection.tool),
-        );
-    return {
-      id: seat.id,
-      fallback,
-      inherited,
-      ...(identity !== undefined && { identity }),
-      ...(note !== undefined && { note }),
-    };
-  });
+  return deriveCrewSeats({ config: input.config })
+    .filter(seatHasRunner)
+    .map((seat) => {
+      const fallback = seatFallback(input.config, CREW_SEAT_ROLES[seat.id]);
+      const inherited = seat.id === 'review' && seat.source === 'planner';
+      if (fallback === undefined) return { id: seat.id, inherited };
+      const runner = fallbackRunner(fallback);
+      const identity =
+        runner === undefined
+          ? undefined
+          : formatSeatIdentity({
+              seat: runner,
+              displayName: input.seatDisplayName?.(runner, CREW_SEAT_ROLES[seat.id]),
+            });
+      const detection = input.cliTools.find((candidate) => candidate.tool === fallback.tool);
+      const note = isSeatIdentity(
+        { tool: seat.runner.kind === 'cli' ? seat.runner.tool : '', model: seat.runner.model },
+        fallback,
+      )
+        ? 'same as the seat'
+        : fallbackBlockedReason(
+            fallback,
+            detection,
+            detection === undefined ? undefined : input.cliCatalog?.(detection.tool),
+          );
+      return {
+        id: seat.id,
+        fallback,
+        inherited,
+        ...(identity !== undefined && { identity }),
+        ...(note !== undefined && { note }),
+      };
+    });
 }

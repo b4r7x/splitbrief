@@ -33,7 +33,10 @@ import {
   hitRailStage,
   RAIL_FORM_C_CANCELLED_SUFFIX,
 } from '../layout/hit-test.js';
-import { measureRailCells, Rail, RailFormB, railFormCText } from './rail.js';
+import { hydrateFromState } from '../../../stores/workflow/actions/hydrate.js';
+import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
+import { readRailStages } from '../hooks/use-rail-cells.js';
+import { measureRailCells, Rail, RailFormB, railFormCText, resolveRailStages } from './rail.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { readRailSnapshot } from '../layout/snapshot.js';
 import { taskId } from '../../../core/schemas/task.js';
@@ -389,6 +392,7 @@ describe('Rail — a passed review', () => {
         tasks: runViewStore.get().briefs,
         events: eventsStore.get().events,
         recoveryAt: null,
+        afterLastBrief: { kind: 'review', cycle: 0 },
         buildBlockShown: false,
       }),
     ).toBe(getTerminalCellWidth(frame));
@@ -412,6 +416,158 @@ describe('Rail — a passed review', () => {
       expect(frame).not.toContain('done');
     });
   });
+});
+
+describe('Rail — a run with REVIEW None', () => {
+  it('None rail', async () => {
+    chalk.level = 3;
+    terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
+    runViewStore.__testReset({ phase: 'complete' });
+    lifecycleStore.__testReset({ status: 'complete', startedAt: 0 });
+    seedBriefs({ currentTask: 2, totalTasks: 2, tasks: briefs(2) });
+    eventsStore.__testReset({
+      events: [{ type: 'workflow_complete', ts: 1, phase: 'complete', review: 'none' }],
+    });
+
+    const ui = renderRail('B');
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '').trim();
+
+    expect(frame).toContain(`${DONE} Plan`);
+    expect(frame).toContain(`${DONE} Build`);
+    expect(frame).toContain(`${PENDING} Review`);
+    expect(frame).not.toContain(`${DONE} Review`);
+    ui.unmount();
+  });
+
+  // Apply sent the merged result back to its checks, and the run pass that rechecks it has no seat.
+  async function renderNoneRecheck(form: 'B' | 'C') {
+    chalk.level = 3;
+    runViewStore.__testReset();
+    addEvent({ type: 'workflow_complete', ts: 1, phase: 'complete', review: 'none' });
+    addEvent({ type: 'workflow_resumed', ts: 2, phase: 'final-review', inProcess: true });
+    addEvent({
+      type: 'workflow_config',
+      ts: 3,
+      phase: 'final-review',
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+      reviewerSeat: 'none',
+    });
+    runViewStore.__testReset({ ...runViewStore.get(), afterLastBrief: { kind: 'apply' } });
+    terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
+    const ui = renderRail(form);
+    await tick();
+    const raw = ui.lastFrame() ?? '';
+    const frame = stripAnsiStyles(raw).trim();
+    const measured = measureRailCells({
+      phase: runViewStore.get().phase,
+      status: lifecycleStore.get().status,
+      cancelled: false,
+      form,
+      cols: 100,
+      tasks: runViewStore.get().briefs,
+      events: eventsStore.get().events,
+      recoveryAt: null,
+      buildBlockShown: false,
+      afterLastBrief: runViewStore.get().afterLastBrief,
+    });
+    ui.unmount();
+    return { raw, frame, measured };
+  }
+
+  it('marks the review skipped and Apply current while the merged result is checked', async () => {
+    const { raw, frame, measured } = await renderNoneRecheck('B');
+
+    expect(frame).toContain(`${DONE} Plan`);
+    expect(frame).toContain(`${DONE} Build`);
+    expect(frame).toContain(`${PENDING} Review`);
+    expect(frame).not.toContain(`${DONE} Review`);
+    expect(raw).toContain(`\u001b[1m${paint(defaultTheme.text, `${DONE} Apply`)}`);
+    expect(measured).toBe(getTerminalCellWidth(frame));
+  });
+
+  it('shows Apply as the one stage of the narrow rail while the merged result is checked', async () => {
+    const { frame, measured } = await renderNoneRecheck('C');
+
+    expect(frame).toBe(`${DONE} Apply`);
+    expect(measured).toBe(getTerminalCellWidth(frame));
+  });
+
+  it.each([
+    { status: 'paused', cancelled: false, apply: 'active' },
+    { status: 'running', cancelled: true, apply: 'cancelled' },
+    { status: 'paused', cancelled: true, apply: 'cancelled' },
+  ] as const)(
+    'keeps the review skipped and marks Apply $apply on a $status run (cancelled $cancelled) while the merged result is checked',
+    ({ status, cancelled, apply }) => {
+      expect(
+        resolveRailStages({
+          phase: 'final-review',
+          status,
+          cancelled,
+          pendingRecovery: false,
+          events: [],
+          recoveryAt: null,
+          afterLastBrief: { kind: 'apply' },
+        }),
+      ).toEqual([
+        { stage: 'plan', status: 'done' },
+        { stage: 'build', status: 'done' },
+        { stage: 'review', status: 'skipped' },
+        { stage: 'apply', status: apply },
+      ]);
+    },
+  );
+});
+
+describe('Rail — a halt in the final-review phase of a REVIEW None run', () => {
+  function hydrateHalt(kind: 'worktree' | 'staged-copy' | 'checkout') {
+    terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
+    hydrateFromState(
+      makeWorkflowState({
+        phase: 'final-review',
+        workspace: { kind, path: '/tmp/run', base: { snapshotId: 'base', head: null } },
+        pendingRecovery: makeRecoveryIssue({
+          reason: 'seat-protocol-error',
+          phase: 'final-review',
+          availableActions: ['retry-same-worker', 'end-run'],
+          recommendedAction: 'retry-same-worker',
+        }),
+      }),
+      true,
+    );
+  }
+
+  afterEach(() => {
+    runViewStore.__testReset();
+  });
+
+  it('keeps the failed review and shows no Apply on the project checkout', async () => {
+    hydrateHalt('checkout');
+    const ui = renderRail('B');
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain(`${glyph('statusFailed')} Review`);
+    expect(frame).not.toContain('Apply');
+    expect(readRailStages().map(({ stage }) => stage)).toEqual(['plan', 'build', 'review']);
+    ui.unmount();
+  });
+
+  it.each(['worktree', 'staged-copy'] as const)(
+    'marks Apply failed and the review skipped on a %s',
+    async (kind) => {
+      hydrateHalt(kind);
+      const ui = renderRail('B');
+      await tick();
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+      expect(frame).toContain(`${glyph('statusFailed')} Apply`);
+      expect(readRailStages().find(({ stage }) => stage === 'review')?.status).toBe('skipped');
+      ui.unmount();
+    },
+  );
 });
 
 describe('Rail — completion after a failed review', () => {
@@ -501,6 +657,7 @@ describe('Rail — completion with a halt open', () => {
         tasks: runViewStore.get().briefs,
         events: eventsStore.get().events,
         recoveryAt: { kind: 'apply' },
+        afterLastBrief: { kind: 'review', cycle: 0 },
         buildBlockShown: false,
       }),
     ).toBe(getTerminalCellWidth(frame.trim()));
@@ -540,6 +697,7 @@ describe('Rail — a pending recovery on a cancelled run', () => {
         tasks: runViewStore.get().briefs,
         events: eventsStore.get().events,
         recoveryAt,
+        afterLastBrief: { kind: 'review', cycle: 0 },
         buildBlockShown: false,
       }),
     ).toBe(getTerminalCellWidth(frame));
@@ -584,6 +742,7 @@ describe('Rail — a live run resumed into its Apply step', () => {
         tasks: runViewStore.get().briefs,
         events: eventsStore.get().events,
         recoveryAt: null,
+        afterLastBrief: { kind: 'review', cycle: 0 },
         buildBlockShown: false,
       }),
     ).toBe(getTerminalCellWidth(frame.trim()));
@@ -634,6 +793,7 @@ describe('Rail — Form C (narrow floor)', () => {
           tasks: runViewStore.get().briefs,
           events: eventsStore.get().events,
           recoveryAt: null,
+          afterLastBrief: { kind: 'review', cycle: 0 },
           buildBlockShown,
         }),
       ).toBe(getTerminalCellWidth(frame));

@@ -1,11 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import type { Phase, WorkflowMode } from '../../core/schemas/enums.js';
 import { taskId } from '../../core/schemas/task.js';
-import type { RunStatus, StopReason } from '../../core/sessions/run-status.js';
+import {
+  deriveRunStatus,
+  resumeStep,
+  type RunStatus,
+  type StopReason,
+} from '../../core/sessions/run-status.js';
+import { transition } from '../../core/state/machine.js';
+import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { RunRecord } from '../../core/sessions/run-record.js';
 import type { RouteData } from '../../stores/navigation/router.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
@@ -61,6 +69,24 @@ describe('atRestRailStages', () => {
       { stage: 'plan', status: 'done' },
       { stage: 'build', status: 'done' },
       { stage: 'review', status: 'done' },
+    ]);
+  });
+
+  it('marks Review skipped on a run that finished under REVIEW None', () => {
+    const stages = atRestRailStages(
+      makeRunRecord({
+        status: { kind: 'closed', as: 'complete' },
+        hydration: {
+          kind: 'loaded',
+          state: makeWorkflowState({ phase: 'complete', reviewStatus: 'none' }),
+        },
+      }),
+    );
+
+    expect(stages).toEqual([
+      { stage: 'plan', status: 'done' },
+      { stage: 'build', status: 'done' },
+      { stage: 'review', status: 'skipped' },
     ]);
   });
 
@@ -321,6 +347,104 @@ describe('a run whose Apply is running', () => {
     expect(atRestRailStages(applyingRecord())).toEqual(
       getRailStages('complete', { apply: 'active' }),
     );
+  });
+});
+
+function reviewNoneAtRest(state: WorkflowState, reviewNone = true): RunRecord {
+  return makeRunRecord({
+    status: deriveRunStatus({ reviewNone, state, liveness: 'not-alive' }),
+    hydration: { kind: 'loaded', state },
+  });
+}
+
+function openBylineOf(record: RunRecord): string {
+  return openRunBylineParts({
+    status: record.status,
+    wait: null,
+    planCard: false,
+    failure: null,
+    continuable: true,
+    width: 120,
+    now: Date.now(),
+  })
+    .map((part) => part.text)
+    .join('');
+}
+
+// The project checkout keeps its review step under REVIEW None: the pass closes a skipped Review, and
+// no step after the last brief reads words.
+describe('a run on the project checkout that stops after its last brief', () => {
+  const CHECKOUT = {
+    kind: 'checkout' as const,
+    path: '/tmp/project',
+    base: { snapshotId: 'b', head: null },
+  };
+  const stopped = (phase: Phase, cut: 'boundary' | 'mid-step'): WorkflowState =>
+    makeWorkflowState({
+      phase,
+      tasks: [makeTask()],
+      currentTaskIndex: 1,
+      workspace: CHECKOUT,
+      interruptedStep: {
+        step: { kind: 'review', cycle: 0 },
+        source: 'user',
+        at: '2026-11-09T00:00:00.000Z',
+        cut,
+      },
+    });
+
+  const STOPS: [string, Phase, 'boundary' | 'mid-step', string][] = [
+    ['before the review', 'implementing', 'boundary', 'Stopped before the review'],
+    ['at the review', 'final-review', 'mid-step', 'Stopped at the review'],
+  ];
+
+  it.each(STOPS)('under REVIEW None stops %s and invites no words', (_, phase, cut, lead) => {
+    const record = reviewNoneAtRest(stopped(phase, cut));
+    expect(openBylineOf(record)).toBe(`${lead} · ⏎ to continue`);
+    expect(atRestComposer(record).placeholder).toBe('/ for a command…');
+  });
+
+  it.each(STOPS)('with a seat stops %s and invites a correction', (_, phase, cut, lead) => {
+    const record = reviewNoneAtRest(stopped(phase, cut), false);
+    expect(openBylineOf(record)).toBe(`${lead} · type a correction or ⏎ to continue`);
+    expect(atRestComposer(record).placeholder).toBe('Type a correction…');
+  });
+});
+
+// `/run accept` found that the checkout changed files the run changed too. REVIEW None runs no review,
+// so the merged result goes back to its checks only, and the run rests there at Apply's step.
+describe('a REVIEW None run that rests while its merged result is checked again', () => {
+  function rechecking(): WorkflowState {
+    return transition(
+      makeWorkflowState({ phase: 'complete', reviewStatus: 'none', workspace: WORKSPACE }),
+      { type: 'APPLY_RECHECK_START', merged: [{ path: 'a.txt', checkoutHunks: '' }] },
+    );
+  }
+
+  it.each([
+    ['as Apply left it', () => rechecking()],
+    [
+      'after a stop parked it',
+      () => {
+        const state = rechecking();
+        return transition(state, {
+          type: 'INTERRUPT_STEP',
+          step: resumeStep(state, true),
+          source: 'user',
+          cut: 'mid-step',
+        });
+      },
+    ],
+  ])('skips Review, stops at Apply and invites no words %s', (_, state) => {
+    const record = reviewNoneAtRest(state());
+    expect(atRestRailStages(record)).toEqual([
+      { stage: 'plan', status: 'done' },
+      { stage: 'build', status: 'done' },
+      { stage: 'review', status: 'skipped' },
+      { stage: 'apply', status: 'cancelled' },
+    ]);
+    expect(openBylineOf(record)).toBe('Stopped at Apply · ⏎ to continue');
+    expect(atRestComposer(record).placeholder).toBe('/ for a command…');
   });
 });
 

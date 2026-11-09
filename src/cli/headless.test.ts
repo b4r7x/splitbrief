@@ -3,7 +3,12 @@ import { createInitialState } from '../core/state/machine.js';
 import type { WorkflowState } from '../core/schemas/workflow.js';
 import type { RecoveryIssue } from '../core/schemas/recovery/schemas.js';
 import { buildReviewFailedRecoveryIssue } from '../engine/orchestrator/recovery/builders/task.js';
-import { emitRecoveryAndFailIfPending, failIfSessionFailed } from './headless.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import {
+  configDeclaresFallback,
+  emitRecoveryAndFailIfPending,
+  failIfSessionFailed,
+} from './headless.js';
 
 const POINTER = 'Workflow failed — see the error output above.';
 const CAUSE = 'The run baseline snapshot could not be initialized; workspace acquisition stopped.';
@@ -20,6 +25,12 @@ const failedState: WorkflowState = {
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+describe('configDeclaresFallback', () => {
+  it('a None config counts no review fallback', () => {
+    expect(configDeclaresFallback(makeConfig({ reviewer: 'none' }))).toBe(false);
+  });
 });
 
 describe('failIfSessionFailed', () => {

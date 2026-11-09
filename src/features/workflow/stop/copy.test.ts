@@ -18,6 +18,7 @@ function input(overrides: Partial<StopBylineInput> = {}): StopBylineInput {
     intent: 'none',
     phase: 'idle',
     workflowPhase: 'implementing',
+    afterLastBrief: { kind: 'review', cycle: 0 },
     parked: null,
     currentTaskId: 'T002',
     nextTaskId: 'T003',
@@ -27,6 +28,7 @@ function input(overrides: Partial<StopBylineInput> = {}): StopBylineInput {
     questionPending: false,
     suite: null,
     stopKept: [],
+    stopStep: null,
     ...overrides,
   };
 }
@@ -183,6 +185,28 @@ describe('stopByline', () => {
       );
       expect(byline?.parts.map((part) => part.text).join('')).toBe(lead);
       expect(byline?.clock).toBe(phase === 'forcing' ? undefined : '0:03');
+    },
+  );
+
+  // REVIEW None runs no review: its final-review phase rechecks the merged result for Apply.
+  it.each([
+    ['terminating', 'Stopping Apply · Waiting for processes to exit'],
+    ['settling', 'Stopping Apply · Finishing cleanup and saving'],
+    ['forcing', 'Stopping Apply · Forcing remaining processes to exit'],
+  ] as const)(
+    'names Apply, not the review, in a %s stop of a REVIEW None recheck',
+    (phase, lead) => {
+      const byline = stopByline(
+        input({
+          intent: 'stop-now',
+          phase,
+          workflowPhase: 'final-review',
+          afterLastBrief: { kind: 'apply' },
+          currentTaskId: null,
+          finishedTaskId: 'T003',
+        }),
+      );
+      expect(byline?.parts.map((part) => part.text).join('')).toBe(lead);
     },
   );
 
@@ -385,7 +409,10 @@ describe('stopByline', () => {
     });
   });
 
-  it('parks at a boundary with no next brief before the review', () => {
+  it.each<[string, StepRef, string]>([
+    ['before the review', { kind: 'review', cycle: 0 }, ' before the review'],
+    ['at Apply', { kind: 'apply' }, ' at Apply'],
+  ])('parks at a boundary with no next brief %s', (_, stopStep, point) => {
     expect(
       stopByline(
         input({
@@ -393,6 +420,7 @@ describe('stopByline', () => {
           phase: 'parked',
           parked: { kind: 'boundary', taskId: 'T005', kept: [] },
           nextTaskId: null,
+          stopStep,
           passed: 5,
         }),
       ),
@@ -401,7 +429,7 @@ describe('stopByline', () => {
       hint: '⏎ resume · /stop options · esc back to sessions · ctrl+c quit',
       parts: [
         { text: 'Stopped', tone: 'warning' },
-        { text: ' before the review', tone: 'text' },
+        { text: point, tone: 'text' },
         { text: ' · ', tone: 'textDim' },
         { text: '5 of 5 briefs complete', tone: 'textDim' },
       ],

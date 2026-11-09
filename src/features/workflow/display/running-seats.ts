@@ -12,7 +12,10 @@ import {
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import { seatForRunningCall } from '../../../core/runners/seat-roles.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
-import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
+import {
+  configuredReviewerRunner,
+  resolveReviewerRunner,
+} from '../../../core/config/accessors/reviewer-runner.js';
 import type { SeatIdentity } from '../../../core/providers/seat-identity.js';
 import { recordedSeatIdentityInput } from './recorded-seat-identity.js';
 import type { RunnerConfig } from '../../../core/config/accessors/runner-config.js';
@@ -51,6 +54,7 @@ function passSeatRecord(seatId: CrewSeatId, pass: SeatIdentity): SeatRecord | nu
             kind: pass.implementerKind,
           };
     case 'review':
+      if (pass.reviewerSeat === 'none') return null;
       // A pass without a review seat of its own gives the reviews to its planner.
       if (pass.reviewerTool === undefined) return passSeatRecord('plan', pass);
       return pass.reviewerAxes === undefined
@@ -144,14 +148,17 @@ export function deriveRunningSeats(input: {
   );
   const savedReviewer = configuredReviewerRunner(config);
   // A saved REVIEW that follows PLAN follows the PLAN seat shown, so it keeps reading = PLAN.
-  const review = overrideOf(
-    'review',
-    savedReviewer !== undefined
-      ? seatIdsOf(savedReviewer)
-      : plan !== undefined
-        ? idsOf(plan.seat)
-        : seatIdsOf(config.planner),
-  );
+  const review =
+    resolveReviewerRunner(config).source === 'none'
+      ? undefined
+      : overrideOf(
+          'review',
+          savedReviewer !== undefined
+            ? seatIdsOf(savedReviewer)
+            : plan !== undefined
+              ? idsOf(plan.seat)
+              : seatIdsOf(config.planner),
+        );
   return {
     ...(plan !== undefined && { plan }),
     ...(build !== undefined && { build }),

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { updateNamedImplementerConfig } from '../../../core/config/accessors/implementer-profiles.js';
+import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import { applyRunnerPreparationChecks, collectReadiness } from '../../../core/readiness/collect.js';
 import { exemptLiveSessionBlocker } from '../../../core/readiness/checks/repo.js';
 import {
@@ -246,10 +247,11 @@ function withEffectiveModels(config: PreparedConfig, gates: readonly RunnerGate[
     } else if (gate.slot.role === 'reviewer') {
       // With no reviewer block the planner holds the seat, and writing one here
       // would hand the run a second seat it was never configured with.
+      const reviewer = configuredReviewerRunner(next);
       next =
-        next.reviewer === undefined
+        reviewer === undefined
           ? { ...next, planner: { ...next.planner, model } }
-          : { ...next, reviewer: { ...next.reviewer, model } };
+          : { ...next, reviewer: { ...reviewer, model } };
     }
   }
   return next === config ? config : parsePreparedConfig(next);

@@ -67,7 +67,7 @@ describe('e2e: a run that halted in planning, opened at rest', () => {
     expect(state?.tasks).toEqual([]);
     expect(state?.pendingRecovery?.reason).toBe('plan-checks-failed');
 
-    const record = readRunRecord(ref);
+    const record = readRunRecord(ref, false);
     configStore.load(projectDir);
     terminalSizeStore.__testReset({ ...VIEWPORT, isSmall: false });
     await hydrateRun(record);

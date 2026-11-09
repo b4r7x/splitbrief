@@ -68,7 +68,7 @@ describe('e2e: the checkout mode edits the checkout and closes on its passing re
     const state = loadState({ projectDir: ctx.projectDir, sessionId });
     expect(state?.workspace?.kind).toBe('checkout');
     expect(state?.applied).toBeUndefined();
-    expect(state && deriveRunStatus({ state, liveness: 'not-alive' })).toEqual({
+    expect(state && deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' })).toEqual({
       kind: 'closed',
       as: 'complete',
     });

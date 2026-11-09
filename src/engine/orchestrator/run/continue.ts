@@ -4,7 +4,7 @@ import { plainUserMessage, type UserMessageInput } from '../../../core/types/use
 import type { OwnedResumeState } from '../../../core/state/resume-hydration.js';
 import { deriveRunStatus, type RunStatus } from '../../../core/sessions/run-status.js';
 import { recoveryActionLabel } from '../../../core/recovery/action-label.js';
-import { statusLeavesWordsUnread } from '../../../core/recovery/typed-words.js';
+import { noWordsRefusal, statusLeavesWordsUnread } from '../../../core/recovery/typed-words.js';
 import { sanitizePasteBody } from '../../../lib/terminal/filtered-stdin/paste.js';
 
 export type ContinueRunOutcome =
@@ -49,7 +49,13 @@ export type ContinueRunDeps = Readonly<{
  * recorded as the user message they are, in the transcript and session log.
  */
 export function continueRun(
-  input: Readonly<{ ref: SessionRef; steer?: UserMessageInput | undefined; deps: ContinueRunDeps }>,
+  input: Readonly<{
+    ref: SessionRef;
+    steer?: UserMessageInput | undefined;
+    /** REVIEW None in the config the next pass runs on. */
+    reviewNone: boolean;
+    deps: ContinueRunDeps;
+  }>,
 ): ContinueRunOutcome {
   const { ref, deps } = input;
   const displayText = sanitizePasteBody(input.steer?.displayText ?? '').trim();
@@ -75,6 +81,7 @@ export function continueRun(
   const status = deriveRunStatus({
     state: hydrated.state,
     liveness: 'not-alive',
+    reviewNone: input.reviewNone,
   });
   if (status.kind === 'closed') {
     return { kind: 'refused', reason: 'closed', message: CLOSED_MESSAGE[status.as] };
@@ -89,7 +96,7 @@ export function continueRun(
   }
 
   // Typed words no step would read wait for a bare ⏎.
-  if (steer.text !== '' && statusLeavesWordsUnread(status)) {
+  if (status.kind === 'open' && steer.text !== '' && statusLeavesWordsUnread(status)) {
     return { kind: 'refused', reason: 'takes-no-words', message: noWordsMessage(status) };
   }
 
@@ -97,10 +104,8 @@ export function continueRun(
   return { kind: 'restarted', state: hydrated.state };
 }
 
-function noWordsMessage(status: RunStatus): string {
-  if (status.kind !== 'open' || status.stop.on.kind !== 'halt') {
-    return 'Cannot send words to Apply. Clear them.';
-  }
+function noWordsMessage(status: Extract<RunStatus, { kind: 'open' }>): string {
+  if (status.stop.on.kind !== 'halt') return noWordsRefusal(status.resumeAt);
   const issue = status.stop.on.issue;
   const chosen = issue.status === 'applying' ? issue.selectedAction : undefined;
   return chosen === undefined

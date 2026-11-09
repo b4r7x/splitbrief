@@ -15,7 +15,7 @@ function statusOf(
   overrides: Partial<WorkflowState>,
   liveness: 'alive' | 'not-alive' = 'not-alive',
 ) {
-  return deriveRunStatus({ state: state(overrides), liveness });
+  return deriveRunStatus({ reviewNone: false, state: state(overrides), liveness });
 }
 
 function stopOf(overrides: Partial<WorkflowState>): RunStatus {
@@ -174,7 +174,9 @@ describe('deriveRunStatus', () => {
     });
     const resumed = transition(failed, { type: 'RESUME_STEP' });
 
-    expect(deriveRunStatus({ state: resumed, liveness: 'not-alive' })).toMatchObject({
+    expect(
+      deriveRunStatus({ reviewNone: false, state: resumed, liveness: 'not-alive' }),
+    ).toMatchObject({
       stop: { kind: 'stopped', on: { kind: 'interrupted' } },
     });
   });
@@ -203,10 +205,7 @@ describe('deriveRunStatus', () => {
         ...(mode !== undefined && { mode }),
         ...(approve !== undefined && { approve }),
       });
-      const status = deriveRunStatus({
-        state: saved,
-        liveness: 'not-alive',
-      });
+      const status = deriveRunStatus({ reviewNone: false, state: saved, liveness: 'not-alive' });
       expect(status).toMatchObject(
         at === 'at the plan gate'
           ? {
@@ -225,6 +224,7 @@ describe('deriveRunStatus', () => {
   // there whatever level the run records.
   it('reads a planning session parked in reviewing-plan as waiting at the plan gate', () => {
     const status = deriveRunStatus({
+      reviewNone: false,
       state: state({
         phase: 'reviewing-plan',
         mode: 'standard',
@@ -247,6 +247,7 @@ describe('deriveRunStatus', () => {
 
   it('carries the step the run picks up at on every open status', () => {
     const status = deriveRunStatus({
+      reviewNone: false,
       state: state({ phase: 'reviewing-plan' }),
       liveness: 'not-alive',
     });
@@ -260,7 +261,7 @@ describe('resumeStep', () => {
     ['reviewing-plan', 'plan'],
     ['reviewing-briefs', 'briefs'],
   ] as const)('resumes %s at its gate', (phase, gate) => {
-    expect(resumeStep(state({ phase }))).toEqual({ kind: 'gate', gate });
+    expect(resumeStep(state({ phase }), false)).toEqual({ kind: 'gate', gate });
   });
 
   it.each(['implementing', 'validating-task', 'escalating'] as const)(
@@ -272,7 +273,7 @@ describe('resumeStep', () => {
         currentTaskIndex: 1,
         attempt: 2,
       });
-      expect(resumeStep(implementing)).toEqual({
+      expect(resumeStep(implementing, false)).toEqual({
         kind: 'brief',
         taskId: taskId('T002'),
         attempt: 2,
@@ -285,7 +286,7 @@ describe('resumeStep', () => {
       phase: 'implementing',
       currentTaskIndex: 1,
     });
-    expect(resumeStep(past)).toEqual({ kind: 'review', cycle: 0 });
+    expect(resumeStep(past, false)).toEqual({ kind: 'review', cycle: 0 });
   });
 
   it('resumes final review at the fix cycle it reached', () => {
@@ -293,11 +294,11 @@ describe('resumeStep', () => {
       phase: 'final-review',
       reviewFixes: { cycle: 2, findings: {} },
     });
-    expect(resumeStep(reviewing)).toEqual({ kind: 'review', cycle: 2 });
+    expect(resumeStep(reviewing, false)).toEqual({ kind: 'review', cycle: 2 });
   });
 
   it('resumes a run parked at complete on a failed review at the review', () => {
-    expect(resumeStep(state({ phase: 'complete', reviewStatus: 'failed' }))).toEqual({
+    expect(resumeStep(state({ phase: 'complete', reviewStatus: 'failed' }), false)).toEqual({
       kind: 'review',
       cycle: 0,
     });
@@ -312,7 +313,7 @@ describe('resumeStep', () => {
     ['planning', 'standard'],
     ['analyzing', 'speckit'],
   ] as const)('resumes a run in %s (mode %s) at its planning session', (phase, mode) => {
-    expect(resumeStep(state({ phase, mode }))).toEqual({ kind: 'planner', call: 'plan' });
+    expect(resumeStep(state({ phase, mode }), false)).toEqual({ kind: 'planner', call: 'plan' });
   });
 
   it('resumes a run with planner questions at its planning session, whatever call asked them', () => {
@@ -326,7 +327,7 @@ describe('resumeStep', () => {
         answered: false,
       },
     });
-    expect(resumeStep(asked)).toEqual({ kind: 'planner', call: 'plan' });
+    expect(resumeStep(asked, false)).toEqual({ kind: 'planner', call: 'plan' });
   });
 });
 
@@ -342,6 +343,22 @@ describe('a run with a workspace', () => {
     reviewStatus: 'passed',
     workspace: WORKTREE,
     ...overrides,
+  });
+
+  it('None worktree is ready to apply, no override', () => {
+    expect(statusOf(passed({ reviewStatus: 'none' }))).toEqual({
+      kind: 'ready-to-apply',
+      override: false,
+    });
+  });
+
+  it('None checkout closes as complete', () => {
+    expect(
+      statusOf(passed({ reviewStatus: 'none', workspace: { ...WORKTREE, kind: 'checkout' } })),
+    ).toEqual({
+      kind: 'closed',
+      as: 'complete',
+    });
   });
 
   it('ready-to-apply for a passed worktree run', () => {
@@ -377,8 +394,68 @@ describe('a run with a workspace', () => {
       stop: { kind: 'stopped', on: { kind: 'interrupted' } },
       resumeAt: { kind: 'apply' },
     });
-    expect(resumeStep(state(applying))).toEqual({ kind: 'apply' });
+    expect(resumeStep(state(applying), false)).toEqual({ kind: 'apply' });
   });
+
+  it('a None run whose Apply sent a changed merge back to its checks rests at Apply', () => {
+    const rechecking = transition(state(passed({ reviewStatus: 'none' })), {
+      type: 'APPLY_RECHECK_START',
+      merged: [{ path: 'src/a.ts', checkoutHunks: '@@ -5 +5 @@\n-five\n+FIVE\n' }],
+    });
+
+    expect(deriveRunStatus({ reviewNone: true, state: rechecking, liveness: 'not-alive' })).toEqual(
+      {
+        kind: 'open',
+        stop: { kind: 'stopped', on: { kind: 'interrupted' } },
+        resumeAt: { kind: 'apply' },
+      },
+    );
+  });
+
+  // The pass reads REVIEW from the config it runs on, so the run picks up at that REVIEW's step.
+  const MERGED = [{ path: 'src/a.ts', checkoutHunks: '@@ -5 +5 @@\n-five\n+FIVE\n' }];
+  it.each([
+    ['a seat review, then a move to None', 'APPLY_REVIEW_START', 'passed', true, { kind: 'apply' }],
+    [
+      'a None recheck, then a move to a seat',
+      'APPLY_RECHECK_START',
+      'none',
+      false,
+      { kind: 'review', cycle: 0 },
+    ],
+    ['a seat review, no move', 'APPLY_REVIEW_START', 'passed', false, { kind: 'review', cycle: 1 }],
+    ['a None recheck, no move', 'APPLY_RECHECK_START', 'none', true, { kind: 'apply' }],
+  ] as const)(
+    'a run Apply sent to %s picks up at the step of the next pass',
+    (_, type, reviewStatus, reviewNone, resumeAt) => {
+      const sent = transition(state(passed({ reviewStatus })), { type, merged: MERGED });
+      expect(deriveRunStatus({ reviewNone, state: sent, liveness: 'not-alive' })).toEqual({
+        kind: 'open',
+        stop: { kind: 'stopped', on: { kind: 'interrupted' } },
+        resumeAt,
+      });
+    },
+  );
+
+  it.each([
+    ['in its final review', 'final-review'],
+    ['before its final review', 'implementing'],
+  ] as const)(
+    'a workspace run after its last brief %s picks up at Apply under REVIEW None',
+    (_, phase) => {
+      const run = makeImplState([makeTask({ id: 'T001' })], {
+        phase,
+        currentTaskIndex: 1,
+        workspace: WORKTREE,
+      });
+      expect(resumeStep(run, true)).toEqual({ kind: 'apply' });
+      expect(resumeStep(run, false)).toEqual({ kind: 'review', cycle: 0 });
+      expect(resumeStep({ ...run, workspace: { ...WORKTREE, kind: 'checkout' } }, true)).toEqual({
+        kind: 'review',
+        cycle: 0,
+      });
+    },
+  );
 
   it('ready-to-apply with override for accepted-as-is', () => {
     expect(
@@ -394,7 +471,7 @@ describe('a run with a workspace', () => {
     const ready = state(passed());
     const applying = transition(ready, { type: 'APPLY_START', backupId: 'apply-1' });
     const applied = transition(applying, { type: 'APPLY_DONE', files: ['src/a.ts'] });
-    expect(deriveRunStatus({ state: applied, liveness: 'not-alive' })).toEqual({
+    expect(deriveRunStatus({ reviewNone: false, state: applied, liveness: 'not-alive' })).toEqual({
       kind: 'closed',
       as: 'applied',
     });
@@ -404,7 +481,7 @@ describe('a run with a workspace', () => {
     const applying = transition(state(passed()), { type: 'APPLY_START', backupId: 'apply-1' });
     const applied = transition(applying, { type: 'APPLY_DONE', files: ['src/a.ts'] });
     const undone = transition(applied, { type: 'APPLY_UNDONE', conflicts: [] });
-    expect(deriveRunStatus({ state: undone, liveness: 'not-alive' })).toEqual({
+    expect(deriveRunStatus({ reviewNone: false, state: undone, liveness: 'not-alive' })).toEqual({
       kind: 'closed',
       as: 'undone',
     });
@@ -412,10 +489,12 @@ describe('a run with a workspace', () => {
 
   it('closed discarded', () => {
     const discarded = transition(state(passed()), { type: 'CLOSE_RUN', as: 'discarded' });
-    expect(deriveRunStatus({ state: discarded, liveness: 'not-alive' })).toEqual({
-      kind: 'closed',
-      as: 'discarded',
-    });
+    expect(deriveRunStatus({ reviewNone: false, state: discarded, liveness: 'not-alive' })).toEqual(
+      {
+        kind: 'closed',
+        as: 'discarded',
+      },
+    );
   });
 
   it('old passed run without workspace stays closed complete', () => {

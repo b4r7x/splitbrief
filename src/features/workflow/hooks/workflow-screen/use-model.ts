@@ -27,6 +27,7 @@ import {
   activeApply,
   onActiveApplyChange,
 } from '../../../../engine/orchestrator/session-lifecycle/shutdown.js';
+import { configStore } from '../../../../stores/project/config.js';
 import { skillsStore } from '../../../../stores/project/skills.js';
 import { overlayStore } from '../../../../stores/ui/overlay.js';
 import { routerStore } from '../../../../stores/navigation/router.js';
@@ -116,6 +117,8 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
       watchFile(file, { persistent: false, interval: 100 }, changed);
     }
     if (existsSync(join(directory, STATE_FILE))) refresh();
+    // A Crew move changes the step an open run picks up at, so the record is derived again.
+    const offConfig = configStore.subscribe(refresh);
     // An owner killed without its exit handler changes no file, so the screen asks for it itself.
     const ownerCheck = setInterval(() => {
       const current = routerStore.get();
@@ -125,6 +128,7 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
     return () => {
       controller.abort();
       clearInterval(ownerCheck);
+      offConfig();
       for (const file of files) unwatchFile(file, changed);
     };
   }, [atRestProjectDir, atRestSessionId]);
@@ -141,6 +145,7 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
     const outcome = continueRun({
       ref: run.ref,
       ...(message.text.trim() === '' ? {} : { steer: message }),
+      reviewNone: configStore.reviewNone(),
       deps: {
         resumeParked: () => false,
         loadState: hydrateResume,

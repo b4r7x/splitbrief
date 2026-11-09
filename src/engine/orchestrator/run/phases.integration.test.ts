@@ -839,6 +839,111 @@ describe('runPlanningPhases', () => {
     },
   );
 
+  it.each([
+    ['a seat reviewed', 'passed', 'none', true],
+    ['ended with REVIEW None', 'none', undefined, false],
+  ] as const)(
+    'an Apply resume of a run that %s reads REVIEW from the config it runs on',
+    async (_, reviewStatus, reviewer, reviewNone) => {
+      const { projectDir, sessionId } = setupProject();
+      const planner = makePlanner();
+      const { callbacks } = makeCallbacks();
+      const { bus } = makeBusRecorder();
+      const savedState: WorkflowState = {
+        ...makeImplState([makePassingTask('T001')]),
+        phase: 'complete',
+        reviewStatus,
+        workspace: {
+          kind: 'worktree',
+          path: join(projectDir, 'ws'),
+          base: { snapshotId: 'workspace-base', head: null },
+        },
+      };
+      saveState({ projectDir, sessionId }, savedState);
+      vi.mocked(runApply).mockClear();
+      vi.mocked(runApply).mockResolvedValueOnce({ outcome: 'halted', state: savedState });
+
+      await runPlanningPhases({
+        wctx: {
+          projectDir,
+          workspaceDir: join(projectDir, 'ws'),
+          sessionId,
+          isolation: makeCopyingIsolation({ projectDir, sessionId }),
+          config: makeNoValidationConfig({
+            workflow: {},
+            ...(reviewer !== undefined && { reviewer }),
+          }),
+          callbacks,
+          bus,
+          planner,
+          reviewer: planner,
+          context: defaultContext,
+          implementer: makeImplementer(),
+          metadata: TEST_METADATA,
+          sinks: TEST_SINKS,
+          validator: createValidator(),
+        },
+        state: savedState,
+        savedState,
+        setTrackedState: vi.fn(),
+      });
+
+      expect(vi.mocked(runApply).mock.calls[0]?.[0].reviewNone).toBe(reviewNone);
+    },
+  );
+
+  it('a None recheck at rest goes back to the recheck, not to Apply', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const planner = makePlanner();
+    const ready: WorkflowState = {
+      ...makeImplState([makePassingTask('T001')]),
+      phase: 'complete',
+      reviewStatus: 'none',
+      workspace: {
+        kind: 'worktree',
+        path: join(projectDir, 'ws'),
+        base: { snapshotId: 'workspace-base', head: null },
+      },
+    };
+    const savedState = transition(ready, {
+      type: 'APPLY_RECHECK_START',
+      merged: [{ path: 'a.txt', checkoutHunks: '@@ -5 +5 @@\n-five\n+FIVE\n' }],
+    });
+    saveState({ projectDir, sessionId }, savedState);
+    vi.mocked(runApply).mockReset().mockResolvedValue({ outcome: 'halted', state: savedState });
+
+    const result = await runPlanningPhases({
+      wctx: {
+        projectDir,
+        workspaceDir: join(projectDir, 'ws'),
+        sessionId,
+        isolation: makeCopyingIsolation({ projectDir, sessionId }),
+        config: makeNoValidationConfig({ workflow: {}, reviewer: 'none' }),
+        callbacks: makeCallbacks().callbacks,
+        bus: makeBusRecorder().bus,
+        planner,
+        reviewer: planner,
+        context: defaultContext,
+        implementer: makeImplementer(),
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+        validator: createValidator(),
+      },
+      state: savedState,
+      savedState,
+      setTrackedState: vi.fn(),
+    });
+
+    expect(vi.mocked(runApply)).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      disposition: 'ready-for-tasks',
+      state: savedState,
+      tasks: savedState.tasks,
+    });
+    expect(planner.typedCall).not.toHaveBeenCalled();
+    vi.mocked(runApply).mockReset();
+  });
+
   it('re-entering a failed run forgets the failure it recorded', async () => {
     const { projectDir, sessionId } = setupProject();
     const ref = { projectDir, sessionId };

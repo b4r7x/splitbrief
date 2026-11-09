@@ -306,6 +306,50 @@ function KeyboardCatalogProbe({ role }: { role: 'planner' | 'implementer' }) {
   );
 }
 
+describe('usePickerCatalog the REVIEW None row', () => {
+  let catalog: ReturnType<typeof usePickerCatalog> | undefined;
+
+  function ReviewSeatProbe() {
+    catalog = usePickerCatalog('reviewer', 'seat', 0);
+    return <Text>review seat</Text>;
+  }
+
+  function seedSeat(config: ReturnType<typeof makeConfig>) {
+    catalog = undefined;
+    configStore.__testReset({ projectDir: '/tmp/project', config });
+    detectionStore.reset();
+    modelCacheStore.reset();
+    overlayStore.reset();
+    pickerViewStore.reset();
+    seedDetections();
+  }
+
+  it('None row and current mark', () => {
+    seedSeat(makeConfig({ planner: { kind: 'cli', tool: 'claude-code' }, reviewer: 'none' }));
+
+    const ui = renderFeature(<ReviewSeatProbe />);
+    const items = catalog?.items ?? [];
+
+    expect(items.slice(0, 2).map((item) => item.kind)).toEqual(['inherit-planner', 'review-none']);
+    expect(items[1]?.displayName).toBe('None');
+    expect(items.filter((item) => item.isCurrent === true).map((item) => item.kind)).toEqual([
+      'review-none',
+    ]);
+    ui.unmount();
+  });
+
+  it('None row shows with a custom planner', () => {
+    seedSeat(makeConfig({ planner: { kind: 'shell', command: './plan.sh' } }));
+
+    const ui = renderFeature(<ReviewSeatProbe />);
+    const none = catalog?.items.find((item) => item.kind === 'review-none');
+
+    expect(none?.displayName).toBe('None');
+    expect(none?.isCurrent).not.toBe(true);
+    ui.unmount();
+  });
+});
+
 describe('usePickerCatalog', () => {
   beforeEach(() => {
     capturedRightRows = [];

@@ -55,7 +55,7 @@ describe('End run at rest', () => {
       phase: state.phase,
       feature: state.feature,
     });
-    const record = readRunRecord(ref);
+    const record = readRunRecord(ref, false);
     if (record === null) throw new Error('missing run record');
     routerStore.init({ screen: 'workflow', run: record, execution: { kind: 'at-rest' } });
     configStore.__testReset({ config: makeConfig() });
@@ -74,9 +74,9 @@ describe('End run at rest', () => {
     });
     expect(cancellation[0]?.ts).toBeGreaterThanOrEqual(beforeEnd);
     expect(cancellation[0]?.ts).toBeLessThanOrEqual(afterEnd);
-    expect(readRunRecord(ref)?.status).toEqual({ kind: 'closed', as: 'ended' });
+    expect(readRunRecord(ref, false)?.status).toEqual({ kind: 'closed', as: 'ended' });
 
-    expect(readRunRecord(ref)?.summary?.activeTime).toBe(0);
+    expect(readRunRecord(ref, false)?.summary?.activeTime).toBe(0);
     expect(requestEndRun()).toBe(true);
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(loadState(ref)?.closed).toEqual(firstClosed);
@@ -96,7 +96,7 @@ describe('End run at rest', () => {
       ref,
       transition({ ...createInitialState('End before Resume'), ...RUN_CREW }, { type: 'START' }),
     );
-    const record = readRunRecord(ref);
+    const record = readRunRecord(ref, false);
     if (record === null) throw new Error('missing run record');
     routerStore.init({ screen: 'workflow', run: record, execution: { kind: 'at-rest' } });
     configStore.__testReset({ config: makeConfig() });
@@ -108,7 +108,7 @@ describe('End run at rest', () => {
     expect(resume).not.toHaveBeenCalled();
 
     await vi.waitFor(() => {
-      expect(readRunRecord(ref)?.status).toEqual({ kind: 'closed', as: 'ended' });
+      expect(readRunRecord(ref, false)?.status).toEqual({ kind: 'closed', as: 'ended' });
       expect(stopStore.get().phase).toBe('ended');
     });
   });
@@ -126,7 +126,7 @@ describe('End run at rest', () => {
         availableActions: ['retry-same-worker', 'skip-current-task'],
       }),
     });
-    const record = readRunRecord(ref);
+    const record = readRunRecord(ref, false);
     if (record === null) throw new Error('missing run record');
     routerStore.init({ screen: 'workflow', run: record, execution: { kind: 'at-rest' } });
     configStore.__testReset({ config: makeConfig() });
@@ -177,7 +177,7 @@ describe('/resume and /end on a run at rest at a gate', () => {
     );
     const atGate = { ...started, phase: 'reviewing-spec' as const };
     saveState(ref, atGate);
-    const record = readRunRecord(ref);
+    const record = readRunRecord(ref, false);
     if (record === null) throw new Error('missing run record');
     routerStore.init({ screen: 'workflow', run: record, execution: { kind: 'at-rest' } });
     configStore.__testReset({ config: makeConfig() });
@@ -204,7 +204,7 @@ describe('/resume and /end on a run at rest at a gate', () => {
 
     expect(errors).toEqual([]);
     await vi.waitFor(() =>
-      expect(readRunRecord(ref)?.status).toEqual({ kind: 'closed', as: 'ended' }),
+      expect(readRunRecord(ref, false)?.status).toEqual({ kind: 'closed', as: 'ended' }),
     );
   });
 

@@ -260,6 +260,52 @@ describe("reviewer checks with workflow.review 'end'", { timeout: 120_000 }, () 
   });
 });
 
+describe('reviewer checks with REVIEW None', { timeout: 120_000 }, () => {
+  it('None runs the brief checks, not the due criteria', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const config = makeConfig({
+      reviewer: 'none',
+      workflow: { review: 'task' },
+      validation: { endChecks: false, testCommand: 'true', render: 'node render.mjs {id} {out}' },
+    });
+    const tasks = [
+      makeTask({
+        id: 'T001',
+        suggestedFiles: ['src/beta.ts'],
+        criteria: ['C1'],
+        checks: [
+          { id: 'K1', kind: 'cmd', value: 'node --version' },
+          { id: 'K2', kind: 'render', value: 'overlay-picker' },
+        ],
+      }),
+    ];
+    const state: WorkflowState = {
+      ...gateState(tasks, head),
+      plan: {
+        summary: 'Gate cadence',
+        decisions: [],
+        criteria: [{ id: 'C1', text: 'T001 works', checkIds: ['K-plan'] }],
+        checks: [{ id: 'K-plan', kind: 'cmd', value: 'node --version' }],
+        validation: null,
+      },
+    };
+    const harness = runHarness({ projectDir, sessionId, state, config, runCommand: () => {} });
+
+    const result = await runTasksAndReview(harness.options);
+
+    expect(harness.log.filter((entry) => entry.startsWith('cmd:node'))).toEqual([
+      'cmd:node --version',
+    ]);
+    expect(
+      harness.events.flatMap((event) =>
+        event.type === 'task_validating' && event.check !== undefined ? [event.check.id] : [],
+      ),
+    ).toEqual(['K1']);
+    expect(harness.log).not.toContain('review');
+    expect(result.state.reviewStatus).toBe('none');
+  });
+});
+
 describe("reviewer checks with workflow.review 'task'", { timeout: 120_000 }, () => {
   const TS_PROJECT = {
     'package.json': JSON.stringify({

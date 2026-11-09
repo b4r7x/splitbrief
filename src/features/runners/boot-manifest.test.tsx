@@ -45,6 +45,20 @@ describe('BootManifest', () => {
     ui.unmount();
   });
 
+  it('names REVIEW None instead of the inheritance sentence', () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({ reviewer: 'none' }),
+    });
+    detectionStore.beginRefresh({ contexts: CONTEXTS });
+    const ui = renderFeature(<BootManifest />);
+    const frame = stripAnsiStyles(ui.lastFrame());
+
+    expect(frame.split('\n').find((line) => line.includes('REVIEW'))).toContain('None');
+    expect(frame).not.toContain(PLANNER_INHERITANCE.mark);
+    ui.unmount();
+  });
+
   it('ticks a found seat to a check once detection lands', () => {
     detectionStore.setDetection({
       cliTools: [cliDetectionFor('ready', 'claude-code')],

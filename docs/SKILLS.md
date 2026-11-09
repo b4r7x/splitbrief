@@ -68,6 +68,7 @@ Choose one of the four entry names for `<skill>`. `--status` applies to `splitbr
 - `impl=opencode:opencode-go/kimi-k3@high` selects tool `opencode`, model `opencode-go/kimi-k3` and effort `high`.
 - `review=` selects a seat. `cadence=` selects timing. Keep the keys separate.
 - Resolve a reviewer from the request, saved run, or CLI seats; otherwise the session holds the review seat.
+- With REVIEW None, run the brief checks after each brief, except a render check.
 - Resolve an absent implementer from `.splitbrief/config.yaml` CLI seats; otherwise ask once from the detected tools.
 - Accept natural phrasing. Print the normalized crew, cadence, and selected stages before dispatch.
 

@@ -97,7 +97,13 @@ export function fallbackInheritanceNotice(
 }
 
 export function isPickerItemDisabled(item: PickerOption): boolean {
-  if (item.kind === 'custom-command' || item.kind === 'no-fallback') return false;
+  if (
+    item.kind === 'custom-command' ||
+    item.kind === 'no-fallback' ||
+    item.kind === 'review-none'
+  ) {
+    return false;
+  }
   return !item.available;
 }
 

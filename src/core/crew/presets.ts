@@ -1,5 +1,5 @@
 import { resolveImplementerProfiles } from '../config/accessors/implementer-profiles.js';
-import { resolveReviewerRunner } from '../config/accessors/reviewer-runner.js';
+import { readActiveRunner } from '../config/accessors/active-runner.js';
 import type { CliToolId } from '../runners/cli-tool-catalog.js';
 import { detectedSeatReady, type CrewDetection } from './default.js';
 import type { Config } from '../schemas/config.js';
@@ -71,7 +71,8 @@ function presetSeats(
   kept: Readonly<Record<'plan' | 'build' | 'review', boolean>>;
 }> {
   const implementer = resolveImplementerProfiles(config).defaultProfile.config;
-  const reviewer = preset.review === preset.plan ? undefined : resolveReviewerRunner(config).runner;
+  const reviewer =
+    preset.review === preset.plan ? undefined : readActiveRunner({ config, role: 'reviewer' });
   const keepsPlan = config.planner.kind === 'cli' && config.planner.tool === preset.plan;
   const keepsBuild = implementer.kind === 'cli' && implementer.tool === preset.build;
   const keepsReview = reviewer?.kind === 'cli' && reviewer.tool === preset.review;

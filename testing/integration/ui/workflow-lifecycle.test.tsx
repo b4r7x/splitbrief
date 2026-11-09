@@ -70,7 +70,7 @@ describe('WorkflowScreen lifecycle', () => {
       terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
       routerStore.navigate({
         to: 'workflow',
-        run: readRunRecord(prepared.session.ref),
+        run: readRunRecord(prepared.session.ref, false),
         execution: { kind: 'local', prepared },
       });
 
@@ -120,7 +120,7 @@ describe('WorkflowScreen lifecycle', () => {
       terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
       routerStore.navigate({
         to: 'workflow',
-        run: readRunRecord(prepared.session.ref),
+        run: readRunRecord(prepared.session.ref, false),
         execution: { kind: 'local', prepared },
       });
 
@@ -162,7 +162,7 @@ describe('WorkflowScreen lifecycle', () => {
       terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
       routerStore.navigate({
         to: 'workflow',
-        run: readRunRecord(prepared.session.ref),
+        run: readRunRecord(prepared.session.ref, false),
         execution: { kind: 'local', prepared },
       });
 
@@ -250,7 +250,7 @@ describe('WorkflowScreen lifecycle', () => {
       terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
       routerStore.navigate({
         to: 'workflow',
-        run: readRunRecord(prepared.session.ref),
+        run: readRunRecord(prepared.session.ref, false),
         execution: { kind: 'local', prepared },
       });
       const ui = renderFeature(
@@ -305,7 +305,7 @@ describe('WorkflowScreen lifecycle', () => {
       terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
       routerStore.navigate({
         to: 'workflow',
-        run: readRunRecord(prepared.session.ref),
+        run: readRunRecord(prepared.session.ref, false),
         execution: { kind: 'local', prepared },
       });
 

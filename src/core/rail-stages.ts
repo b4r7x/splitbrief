@@ -5,7 +5,7 @@ import type { CrewSeatId } from './crew/identity.js';
 export const RAIL_STAGES = ['plan', 'build', 'review'] as const;
 export type RailStage = (typeof RAIL_STAGES)[number] | 'apply';
 
-export type RailStageStatus = 'done' | 'active' | 'cancelled' | 'failed' | 'pending';
+export type RailStageStatus = 'done' | 'active' | 'cancelled' | 'failed' | 'pending' | 'skipped';
 
 /** How a run stopped on the stage it stopped in: the user pulled it, or it broke. */
 export type RailHalt = 'cancelled' | 'failed';
@@ -100,6 +100,13 @@ export function getRailStages(
 /** A run stopped at Apply passed its review: every stage is done, and Apply wears the stop's mark. */
 export function applyStopRailStages(mark: RailHalt): RailStageState[] {
   return getRailStages('complete', { apply: mark });
+}
+
+/** With REVIEW None no seat reviewed the run, so its stage never wears the done mark. */
+export function skipReviewStage(stages: readonly RailStageState[]): RailStageState[] {
+  return stages.map((state) =>
+    state.stage === 'review' && state.status === 'done' ? { ...state, status: 'skipped' } : state,
+  );
 }
 
 export function getActiveRailStage(phase: Phase): RailStageState | null {

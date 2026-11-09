@@ -36,8 +36,11 @@ export type PlannerQuestionsAskedEvent = {
 export type TurnInterruptedEvent = {
   type: 'turn_interrupted';
   kept?: readonly string[] | undefined;
+  step?: StepRef | undefined;
 };
 export type RunFailedEvent = { type: 'run_failed'; message: string };
+/** The seats a run pass holds: `reviewerSeat` is present when REVIEW is None for that pass. */
+export type WorkflowConfigEvent = { type: 'workflow_config'; reviewerSeat?: 'none' | undefined };
 /** The row of an attempt revert, a brief restore or a denied write, with the brief files it left. */
 export type BriefKeptEvent = { type: 'info' | 'warning' | 'error'; briefKept?: number | undefined };
 export type RunRejectedEvent = { type: 'run_rejected'; restored: readonly string[] };

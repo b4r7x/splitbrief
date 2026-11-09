@@ -63,7 +63,7 @@ export const ConfigSchema = z.object({
   planner: PlannerConfigSchema,
   implementer: ImplementerConfigSchema,
   implementerProfiles: ImplementerProfilesConfigSchema.optional(),
-  reviewer: ReviewerConfigSchema.optional(),
+  reviewer: z.union([z.literal('none'), ReviewerConfigSchema]).optional(),
   validation: z.object({
     /** SPLITBRIEF runs the project gate the plan names before the final review; on when unset. */
     endChecks: z.boolean().optional(),

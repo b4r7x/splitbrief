@@ -17,9 +17,10 @@ import { settleRunView } from '../../../core/run-view/settle.js';
  * and the state is the record of where the run stands, so four facts come from the state and win:
  * the phase, the halt, the brief list, and what the run has spent. A run read back from disk is at
  * rest — it never claims to be running, whatever the last event on the log happened to be.
+ * `reviewNone` is REVIEW None in the config the next pass runs on.
  */
-export function hydrateFromState(state: WorkflowState): void {
-  _runViewInternal.set((view) => settleRunView(view, state));
+export function hydrateFromState(state: WorkflowState, reviewNone: boolean): void {
+  _runViewInternal.set((view) => settleRunView(view, state, reviewNone));
   _lifecycleInternal.set((current) => lifecycleFromState(current, state));
   _tokensInternal.set((current) => ({ ...current, ...tokensStateFromState(state) }));
 }
@@ -95,6 +96,7 @@ function passSeats(state: WorkflowState): TokensState['passSeats'] {
       reviewerTool: state.reviewerTool,
       ...(state.reviewerModel !== undefined && { reviewerModel: state.reviewerModel }),
     }),
+    ...(state.reviewerSeat !== undefined && { reviewerSeat: state.reviewerSeat }),
   };
 }
 

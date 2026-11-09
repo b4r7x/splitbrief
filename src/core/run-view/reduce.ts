@@ -1,6 +1,7 @@
 import { eventPhase, isInfrastructurePhaseEvent, type EventTypeCarrier } from '../event-phase.js';
 import type { Phase } from '../schemas/enums.js';
 import type { ClarificationQuestion } from '../schemas/question.js';
+import type { StepRef } from '../schemas/run-step.js';
 import type { SeatWait } from '../schemas/workflow.js';
 import { EMPTY_BRIEFS, reduceBriefs, type RunBriefs } from './briefs.js';
 import type {
@@ -11,6 +12,7 @@ import type {
   SeatWaitEndedEvent,
   SeatWaitStartedEvent,
   TurnInterruptedEvent,
+  WorkflowConfigEvent,
 } from './events.js';
 import { reduceHalt, type RunHalt } from './halt.js';
 
@@ -46,6 +48,8 @@ export interface RunView {
   readonly planCard: boolean;
   /** What the last stop kept of the brief it cut mid-step: the files it wrote that are still changed, its declared files first. */
   readonly stopKept: readonly string[];
+  /** The step the last stop landed on, until the run goes on. */
+  readonly stopStep: StepRef | null;
   /** The error that stopped the run, until the run takes its step again. */
   readonly failure: string | null;
   /**
@@ -54,6 +58,13 @@ export interface RunView {
    */
   readonly briefKept: number | null;
   readonly apply: ViewApply | null;
+  /** The latest run pass has REVIEW None, so no seat reviews what it runs. */
+  readonly reviewNone: boolean;
+  /**
+   * The step after the last brief, as the saved state names it: only the state knows the
+   * workspace, so a run the state has not settled yet reads the review.
+   */
+  readonly afterLastBrief: StepRef;
 }
 
 const NO_FILES: readonly string[] = [];
@@ -67,9 +78,12 @@ export const EMPTY_RUN_VIEW: RunView = {
   questions: null,
   planCard: false,
   stopKept: NO_FILES,
+  stopStep: null,
   failure: null,
   briefKept: null,
   apply: null,
+  reviewNone: false,
+  afterLastBrief: { kind: 'review', cycle: 0 },
 };
 
 type RunViewEvent = EventTypeCarrier & { readonly ts: number };
@@ -108,6 +122,10 @@ function isBriefKeptRow<T extends EventTypeCarrier>(event: T): event is T & Brie
   return event.type === 'info' || event.type === 'warning' || event.type === 'error';
 }
 
+function isWorkflowConfig<T extends EventTypeCarrier>(event: T): event is T & WorkflowConfigEvent {
+  return event.type === 'workflow_config';
+}
+
 /**
  * One event folded into the view. An event that changes nothing returns the same view, so a store
  * that holds it does not notify.
@@ -120,8 +138,15 @@ export function reduceRunView(view: RunView, event: RunViewEvent): RunView {
   const halt = reduceHalt(next.halt, event);
   const briefs = reduceBriefs(next.briefs, event);
   const apply = reduceApply(next.apply, event);
-  if (halt === next.halt && briefs === next.briefs && apply === next.apply) return next;
-  return { ...next, halt, briefs, apply };
+  const reviewNone = isWorkflowConfig(event) ? event.reviewerSeat === 'none' : next.reviewNone;
+  if (
+    halt === next.halt &&
+    briefs === next.briefs &&
+    apply === next.apply &&
+    reviewNone === next.reviewNone
+  )
+    return next;
+  return { ...next, halt, briefs, apply, reviewNone };
 }
 
 /**
@@ -193,9 +218,11 @@ function reduceAsk(view: RunView, event: RunViewEvent): RunView {
   return { ...view, questions, planCard };
 }
 
-/** Why the run stopped: the files a stop kept, the error that stopped it. Taking the step again clears both. */
+/** Why the run stopped: the files a stop kept, the step it landed on, the error that stopped it. Taking the step again clears them. */
 function reduceStop(view: RunView, event: RunViewEvent): RunView {
-  if (isTurnInterrupted(event)) return { ...view, stopKept: event.kept ?? NO_FILES };
+  if (isTurnInterrupted(event)) {
+    return { ...view, stopKept: event.kept ?? NO_FILES, stopStep: event.step ?? null };
+  }
   if (isRunFailed(event)) return { ...view, failure: event.message };
   // A reject that put a kept file back leaves it unchanged in the checkout.
   if (isRunRejected(event)) {
@@ -203,8 +230,8 @@ function reduceStop(view: RunView, event: RunViewEvent): RunView {
     return stopKept.length === view.stopKept.length ? view : { ...view, stopKept };
   }
   if (event.type !== 'workflow_resumed' && event.type !== 'workflow_started') return view;
-  if (view.stopKept === NO_FILES && view.failure === null) return view;
-  return { ...view, stopKept: NO_FILES, failure: null };
+  if (view.stopKept === NO_FILES && view.failure === null && view.stopStep === null) return view;
+  return { ...view, stopKept: NO_FILES, stopStep: null, failure: null };
 }
 
 const ATTEMPT_STARTS = new Set([

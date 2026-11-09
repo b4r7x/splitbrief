@@ -287,12 +287,12 @@ export function createReviewInputHandler(
         }
         return;
       }
-      const { phase, briefs } = runViewStore.get();
+      const { phase, briefs, reviewNone } = runViewStore.get();
       if (isLivePhase(phase) || isImplementerPhase(phase)) {
         const trimmed = text.trim();
         if (trimmed) {
           const document = composerLiveStore.get().document;
-          const seat = messageSeat(phase, selectScheduledReview(operationsStore.get()));
+          const seat = messageSeat(phase, selectScheduledReview(operationsStore.get()), reviewNone);
           const taskId = selectBuildMessageBrief(briefs)?.id;
           const steerable = lifecycle.steerableCall?.seat === seat;
           const result = await effects.enqueue(message, phase);

@@ -305,7 +305,8 @@ describe('openRunByline', () => {
     ).toBe(`Stopped ${phrase} · type a correction or ⏎ to continue`);
   });
 
-  it('names Apply, not the review, for a run stopped while it applied', () => {
+  // Apply reads no typed words, and continue refuses them there.
+  it('names Apply, not the review, for a run stopped while it applied, and asks for no correction', () => {
     expect(
       openRunByline({
         ...OPEN,
@@ -315,7 +316,7 @@ describe('openRunByline', () => {
           resumeAt: { kind: 'apply' },
         },
       }),
-    ).toBe('Stopped at Apply · type a correction or ⏎ to continue');
+    ).toBe('Stopped at Apply · ⏎ to continue');
   });
 
   it('reopens the plan card a run with a typed plan is parked at', () => {

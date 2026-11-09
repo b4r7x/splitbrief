@@ -16,6 +16,7 @@ import {
   stripProfileMetadata,
 } from '../../accessors/implementer-profiles.js';
 import type { ReviewerConfig } from '../../../schemas/reviewer-config.js';
+import { readActiveRunner } from '../../accessors/active-runner.js';
 import { resolveReviewerRunner } from '../../accessors/reviewer-runner.js';
 import { configError } from '../../errors.js';
 
@@ -83,8 +84,11 @@ export function applyRunnerOverrides(
       return updated === undefined ? config : { ...config, planner: updated };
     }
     case 'reviewer': {
-      const seat = resolveReviewerRunner(config);
-      const updated = buildRunnerFromOverrides('reviewer', overrides, seat.runner);
+      const updated = buildRunnerFromOverrides(
+        'reviewer',
+        overrides,
+        readActiveRunner({ config, role: 'reviewer' }),
+      );
       return updated === undefined ? config : { ...config, reviewer: updated };
     }
     case 'implementer': {
@@ -216,6 +220,13 @@ export function applyPlannerEffort(config: Config, effort: EffortLevel): Config 
 
 export function applyReviewerEffort(config: Config, effort: EffortLevel): Config {
   const seat = resolveReviewerRunner(config);
+  if (seat.source === 'none') {
+    throw configError.invalidOverride(
+      '--reviewer-effort',
+      effort,
+      'REVIEW is set to None; pass --reviewer to give it a runner first.',
+    );
+  }
   if (seat.source === 'planner') {
     throw configError.invalidOverride(
       '--reviewer-effort',

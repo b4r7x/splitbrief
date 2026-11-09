@@ -277,7 +277,7 @@ describe.each([
 
     resetWorkflow();
     loadEvents([started, { ...wait, ts: now - 30_000 }]);
-    hydrateFromState(makeWorkflowState({ phase }));
+    hydrateFromState(makeWorkflowState({ phase }), false);
     addEvent(wait);
     const reopened = waitLine();
 

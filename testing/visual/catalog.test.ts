@@ -186,6 +186,8 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['home-preparation-runner-trust', ['120x40', '80x24', '60x18', '42x30', '39x40']],
   ['home-cold-crew', ['120x40', '80x24', '60x18', '200x50']],
   ['workflow-crew-wide', ['120x40', '80x24', '60x18', '160x45', '200x50']],
+  ['workflow-crew-wide-review-none', ['120x40', '80x24', '60x18', '160x45']],
+  ['overlay-reviewer-picker-none', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-crew-kilo', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-crew-claude-resolved', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-seat-switched-balance', ['120x40', '80x24', '60x18', '160x45']],

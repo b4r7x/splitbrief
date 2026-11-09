@@ -145,12 +145,14 @@ export function WorkflowFooter({
   );
   const stopping = stopStore.use((state) => state.intent !== 'none');
   const reviewing = operationsStore.use(selectScheduledReview);
+  const reviewNone = runViewStore.use((view) => view.reviewNone);
   const placeholder = queuePlaceholder({
     phase,
     inputMode: mode,
     running,
     stopping,
     reviewing,
+    reviewNone,
     taskId,
     steerableSeat,
     starting,

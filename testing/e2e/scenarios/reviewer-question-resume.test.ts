@@ -276,7 +276,9 @@ describe('e2e: a reviewer question survives a stop and a crash', { timeout: 240_
         expect(stopped.triage?.at(-1)?.result.ask?.question).toBe(QUESTION);
         expect(stopped.pendingRecovery).toBeUndefined();
         expect(stopped.closed).toBeUndefined();
-        expect(deriveRunStatus({ state: stopped, liveness: 'not-alive' }).kind).toBe('open');
+        expect(
+          deriveRunStatus({ reviewNone: false, state: stopped, liveness: 'not-alive' }).kind,
+        ).toBe('open');
         const [asked] = readReviewPrompts(callsPath);
         expect(readReviewPrompts(callsPath)).toHaveLength(1);
         expect(asked).not.toContain(ANSWER);
@@ -298,7 +300,9 @@ describe('e2e: a reviewer question survives a stop and a crash', { timeout: 240_
           await expect
             .poll(() => {
               const state = loadState(ref);
-              return state === null ? null : deriveRunStatus({ state, liveness: 'not-alive' });
+              return state === null
+                ? null
+                : deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' });
             }, STEERING_WAIT)
             .toEqual(
               isolation === 'none'

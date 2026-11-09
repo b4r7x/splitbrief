@@ -43,6 +43,20 @@ function availabilityDetails(config: ReturnType<typeof makeConfig>): string[] {
   return check?.details ?? [];
 }
 
+describe('buildRunnerChecks REVIEW None', () => {
+  it('None row', () => {
+    const checks = buildRunnerChecks({
+      seatImageFact: NO_IMAGE_FACT,
+      config: makeConfig({ reviewer: 'none' }),
+    });
+
+    expect(checks.find((c) => c.id === 'runners.reviewer.none')?.summary).toBe(
+      'REVIEW None. No review, no end-of-run checks and no render check run.',
+    );
+    expect(checks.some((c) => c.id === 'runners.reviewer.inherited')).toBe(false);
+  });
+});
+
 describe('buildRunnerChecks seat identities', () => {
   it.each([
     {

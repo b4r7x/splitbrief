@@ -3,8 +3,20 @@ import { configuredReviewerRunner, resolveReviewerRunner } from './reviewer-runn
 import { createDefaultConfig } from '../load/defaults.js';
 import type { Config } from '../../schemas/config.js';
 import type { ReviewerConfig } from '../../schemas/reviewer-config.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 
 describe('resolveReviewerRunner', () => {
+  it('None has no runner', () => {
+    expect(resolveReviewerRunner(makeConfig({ reviewer: 'none' }))).toEqual({ source: 'none' });
+  });
+
+  it('no block is the planner', () => {
+    const config = makeConfig();
+
+    expect(resolveReviewerRunner(config)).toEqual({ runner: config.planner, source: 'planner' });
+    expect(configuredReviewerRunner(config)).toBeUndefined();
+  });
+
   it('falls back to the planner runner when no reviewer is configured', () => {
     const config = createDefaultConfig();
 
@@ -26,6 +38,10 @@ describe('resolveReviewerRunner', () => {
 });
 
 describe('configuredReviewerRunner', () => {
+  it('`configuredReviewerRunner` is undefined for None', () => {
+    expect(configuredReviewerRunner(makeConfig({ reviewer: 'none' }))).toBeUndefined();
+  });
+
   it('returns undefined when the config is absent', () => {
     expect(configuredReviewerRunner(null)).toBeUndefined();
     expect(configuredReviewerRunner(undefined)).toBeUndefined();

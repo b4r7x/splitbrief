@@ -67,6 +67,8 @@ import { createCommandContext } from '../core/runtime/commands/context-factory.j
 import { copyToClipboard } from '../lib/clipboard/clipboard.js';
 import { acceptRunSnapshot } from '../engine/snapshots/run/lifecycle.js';
 import { runApplyAtRest } from '../engine/orchestrator/apply/at-rest.js';
+import { resolveReviewCadence } from '../core/config/runtime/resolve.js';
+import { appPreparationError } from './prepare-resume.js';
 import { activeApply } from '../engine/orchestrator/session-lifecycle/shutdown.js';
 import { undoApply } from '../engine/orchestrator/apply/restore.js';
 import { canUndoApply, type RunStatus } from '../core/sessions/run-status.js';
@@ -148,7 +150,7 @@ async function acceptRun(
   sessionId: string,
   confirm: boolean,
 ): Promise<AcceptRunResult> {
-  const record = readRunRecord({ projectDir, sessionId });
+  const record = readRunRecord({ projectDir, sessionId }, configStore.reviewNone());
   const run = runCommandState(record);
   if (run.kind === 'unavailable') return { status: 'unavailable', message: run.message };
   if (run.kind === 'snapshot') {
@@ -179,23 +181,28 @@ async function acceptRun(
     }
     return { status: 'ended' };
   }
+  configStore.reloadIfChanged();
+  const config = configStore.get().config;
+  if (config === null) throw appPreparationError.configNotLoaded();
+  const reviewNone = resolveReviewCadence(config) === 'none';
   const result = await runApplyAtRest({
     wctx: { projectDir, sessionId, bus },
     state,
+    reviewNone,
     overrideConfirmed: confirm,
   });
   if (result.outcome === 'halted' || result.outcome === 'restored') {
     sessionsStore.refresh();
     return { status: 'halted' };
   }
-  if (result.outcome === 'review') return { status: 'review' };
+  if (result.outcome === 'review') return { status: 'review', reviewNone };
   if (result.outcome === 'needs-confirmation') return { status: 'confirm-override' };
   sessionsStore.refresh();
   return { status: 'applied', files: result.files };
 }
 
 async function rejectRun(projectDir: string, sessionId: string): Promise<RejectRunResult> {
-  const record = readRunRecord({ projectDir, sessionId });
+  const record = readRunRecord({ projectDir, sessionId }, configStore.reviewNone());
   const run = runCommandState(record);
   if (run.kind === 'unavailable') return { status: 'unavailable', message: run.message };
   if (record.status.kind === 'closed' && !(run.kind === 'workspace' && canUndoApply(run.state))) {
@@ -403,7 +410,7 @@ export function buildCommandContext({
     refreshRun: () => {
       const route = routerStore.get();
       if (route.screen !== 'workflow') return;
-      routerStore.updateRun({ run: readRunRecord(route.run.ref) });
+      routerStore.updateRun({ run: readRunRecord(route.run.ref, configStore.reviewNone()) });
     },
     scrollConversation: (target) => scrollConversation(target, workflow.readScrollMetrics),
     toggleLatestActivityBatch: () => toggleLatestActivityBatch(workflow.getRowActions),

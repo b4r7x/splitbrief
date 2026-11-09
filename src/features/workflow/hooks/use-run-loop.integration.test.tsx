@@ -1355,7 +1355,7 @@ describe('useRunLoop', () => {
           { bus: createRecoveryBus({ ...ref, sink: addTuiEvent }), phase: state.phase },
           sessionId,
           issue,
-          resumeStep(state),
+          resumeStep(state, false),
         );
         return makeSummary();
       },

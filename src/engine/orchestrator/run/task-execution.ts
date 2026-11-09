@@ -14,9 +14,10 @@ import { recordSteer } from '../continuation.js';
 
 import { buildSummary, type SummaryBase } from '../summary/build.js';
 import { runTaskLoop } from '../task/loop.js';
-import { runFinalReviewPhase } from '../final-review.js';
+import { recordFinalReviewStatus, runFinalReviewPhase } from '../final-review.js';
 import {
   type CheckRunResult,
+  checkRegistry,
   planApprovesNpmScripts,
   runChecks,
 } from '../validation/run-checks.js';
@@ -40,7 +41,10 @@ import { runBaseOf } from '../isolation/base-tree.js';
 import { error } from '../../../utils/error.js';
 import { hasBaseline } from '../../snapshots/manifest.js';
 import { runCodeDir } from '../kept-work.js';
-import { splitCommandAtBase, startBaseGate } from '../base-gate.js';
+import { type BaseSplit, splitCommandAtBase, startBaseGate } from '../base-gate.js';
+import { planCheckRow, publishReviewCheck, unranCheckRow } from '../events.js';
+import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
+import { afterLastBrief } from '../../../core/sessions/run-status.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 
 export type RunTasksAndReviewOptions = {
@@ -69,7 +73,11 @@ async function parkAtBoundary(args: {
   const nextTask = args.state.tasks[args.state.currentTaskIndex];
   const step: StepRef =
     nextTask === undefined
-      ? { kind: 'review', cycle: fixCyclesOf(args.state).used }
+      ? afterLastBrief(
+          args.state,
+          resolveReviewCadence(wctx.config) === 'none',
+          fixCyclesOf(args.state).used,
+        )
       : { kind: 'brief', taskId: nextTask.id, attempt: 0 };
 
   let state = transitionAndSave(ref, args.state, {
@@ -191,6 +199,7 @@ async function recheckMergedCandidate(
   };
   const splitRuns = async (runs: CheckRunResult[]) => {
     const settled = new Set<string>();
+    const counts = new Map<string, BaseSplit['counts']>();
     for (const [index, run] of runs.entries()) {
       if (run.status !== 'fail' || run.command === undefined) continue;
       const split = await splitCommandAtBase({
@@ -199,19 +208,53 @@ async function recheckMergedCandidate(
         failure: run.failure,
         base,
       });
-      if (split === undefined || split.preExisting.length === 0) continue;
+      if (split === undefined) continue;
+      counts.set(run.checkId, split.counts);
+      if (split.preExisting.length === 0) continue;
       const splitRun: CheckRunResult = { ...run, preExisting: split.preExisting };
       runs[index] = splitRun;
       if (newFailureKeys(splitRun).length === 0) settled.add(run.checkId);
     }
-    return settled;
+    return { settled, counts };
+  };
+  // With no review seat nobody reads the recheck's result, so each red shows on its own row.
+  const noSeat = resolveReviewCadence(wctx.config) === 'none';
+  const publishRechecked = (
+    task: Task,
+    runs: readonly CheckRunResult[],
+    { settled, counts }: Awaited<ReturnType<typeof splitRuns>>,
+  ) => {
+    const registry = checkRegistry({ ...checkOptions, task });
+    for (const run of runs) {
+      if (run.status === 'pass' || settled.has(run.checkId)) continue;
+      const row = {
+        ...planCheckRow(run.checkId, run.command ?? '', registry.get(run.checkId)),
+        taskId: task.id,
+      };
+      publishReviewCheck(
+        { bus: wctx.bus, phase: checkOptions.phase },
+        run.status === 'fail'
+          ? {
+              ...row,
+              status: 'done',
+              passed: false,
+              ...(run.timedOut !== undefined && { timedOut: run.timedOut }),
+              ...(run.reusedAt !== undefined && { reusedAt: run.reusedAt }),
+              ...counts.get(run.checkId),
+            }
+          : { ...row, ...unranCheckRow(run) },
+      );
+    }
   };
   for (const task of state.tasks) {
+    const checks = (task.checks ?? []).filter((check) => !noSeat || check.kind !== 'render');
     const runs = await runChecks(
-      (task.checks ?? []).map((check) => check.id),
+      checks.map((check) => check.id),
       { ...checkOptions, task },
     );
-    const settled = await splitRuns(runs);
+    const split = await splitRuns(runs);
+    const { settled } = split;
+    if (noSeat) publishRechecked(task, runs, split);
     await recordCheckRuns({
       projectDir: wctx.projectDir,
       sessionId: wctx.sessionId,
@@ -220,7 +263,7 @@ async function recheckMergedCandidate(
       task,
       runs,
     });
-    if ((task.checks ?? []).length > 0) {
+    if (checks.length > 0) {
       state = transitionAndSave(ref, state, {
         type: 'RECORD_CHECK_RESULTS',
         taskId: task.id,
@@ -235,12 +278,12 @@ async function recheckMergedCandidate(
   }
   const lastTask = state.tasks.at(-1);
   const plan = state.plan;
-  if (lastTask !== undefined && plan !== undefined && plan.checks.length > 0) {
+  if (!noSeat && lastTask !== undefined && plan !== undefined && plan.checks.length > 0) {
     const runs = await runChecks(
       plan.checks.map((check) => check.id),
       { ...checkOptions, task: lastTask },
     );
-    const settled = await splitRuns(runs);
+    const { settled } = await splitRuns(runs);
     await recordCheckRuns({
       projectDir: wctx.projectDir,
       sessionId: wctx.sessionId,
@@ -473,6 +516,33 @@ async function buildAndReview(args: {
     callbacks.onComplete(summary);
     return { summary, completed: true, state };
   };
+
+  // REVIEW None ends here: the briefs ran their own checks and nothing else judges the result.
+  if (resolveReviewCadence(wctx.config) === 'none') {
+    if (wctx.signal?.aborted) return stopHere();
+    const candidate = await captureCandidate();
+    state = (await recheckMergedCandidate({ wctx, state, setTrackedState })).state;
+    if (wctx.signal?.aborted) return stopHere();
+    if (candidate !== undefined) {
+      state = bindApplyHandOffs(ref, state, candidate);
+      setTrackedState(state);
+    }
+    recordFinalReviewStatus(wctx, 'skipped');
+    state = transitionAndSave(ref, state, {
+      type: 'REVIEW_DONE',
+      reviewStatus: 'none',
+      ...(candidate !== undefined && { candidate }),
+    });
+    setTrackedState(state);
+    wctx.bus.publish({
+      type: 'workflow_complete',
+      ts: Date.now(),
+      phase: state.phase,
+      review: 'none',
+      completedTasks: state.tasks.filter((task) => isTaskCompleted(task.status)).length,
+    });
+    return completeRun();
+  }
 
   // Each pass reviews the candidate and follows the answer. Fix tasks run before
   // the next gates; corrections and answers to that cycle's final review re-review

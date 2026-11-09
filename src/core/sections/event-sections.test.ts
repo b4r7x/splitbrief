@@ -708,6 +708,20 @@ describe('groupEventsIntoSections', () => {
     expect(groupEventsIntoSections(events)[0]?.items).toEqual(events);
   });
 
+  it('none opens no review stage', () => {
+    const events = [
+      makeTaskStart({ ts: 1_000 }),
+      makeTaskComplete({ ts: 2_000 }),
+      { type: 'workflow_complete', ts: 8_000, phase: 'complete', review: 'none' },
+    ] satisfies import('../../engine/events/types.js').EngineEvent[];
+
+    const reviewStages = groupEventsIntoSections(events).filter(
+      (section) => section.type === 'settled-stage' && section.summary.stage === 'review',
+    );
+
+    expect(reviewStages).toEqual([]);
+  });
+
   it.each(['passed', 'failed'] as const)(
     'settles a terminal %s Review from its explicit verdict',
     (review) => {

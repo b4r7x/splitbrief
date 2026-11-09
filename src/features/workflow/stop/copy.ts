@@ -21,6 +21,8 @@ export interface StopBylineInput {
   /** Where a seat saved under the run takes over; the run goes on to it without a pause. */
   readonly seatChange?: SeatChangePoint | null;
   readonly workflowPhase: Phase;
+  /** The step after the last brief: Apply when the final-review phase only rechecks the merged result. */
+  readonly afterLastBrief: StepRef;
   readonly parked: {
     readonly kind: StopParkKind;
     readonly taskId: string | null;
@@ -50,6 +52,8 @@ export interface StopBylineInput {
   readonly record?: RunRecord | null | undefined;
   /** The run view's `stopKept`: the files the stop of a run at rest kept from the brief it cut. */
   readonly stopKept: readonly string[];
+  /** The run view's `stopStep`: the step a boundary park with no next brief landed on. */
+  readonly stopStep: StepRef | null;
 }
 
 export interface StopByline {
@@ -94,13 +98,13 @@ export function stopPoint(step: StepRef, at: StepCut | undefined): string {
 }
 
 /**
- * The run names its own brief where it has one, the review when the final review runs, and says
- * "the run" rather than nothing.
+ * The run names its own brief where it has one, the review when the final review runs, Apply when
+ * that phase only rechecks the merged result, and says "the run" rather than nothing.
  */
 function subject(input: StopBylineInput): string {
   const brief = input.parked?.taskId ?? input.currentTaskId;
   if (brief === null && input.workflowPhase === 'final-review') {
-    return stepWord({ kind: 'review', cycle: 0 });
+    return stepWord(input.afterLastBrief);
   }
   return brief ?? input.finishedTaskId ?? 'the run';
 }
@@ -207,19 +211,21 @@ export function stopByline(input: StopBylineInput): StopByline | null {
 
   if (input.phase === 'parked') {
     if (input.parked?.kind === 'boundary') {
-      const next: StepRef =
+      const next: StepRef | null =
         input.nextTaskId === null
-          ? { kind: 'review', cycle: 0 }
+          ? input.stopStep
           : { kind: 'brief', taskId: taskId(input.nextTaskId), attempt: 0 };
-      return byline(
-        stopLeadParts(
-          'Stopped',
-          tone,
-          ` ${stopPoint(next, 'boundary')}`,
-          `${input.passed} of ${input.total} briefs complete`,
-        ),
-        PARKED_HINT,
-      );
+      if (next !== null) {
+        return byline(
+          stopLeadParts(
+            'Stopped',
+            tone,
+            ` ${stopPoint(next, 'boundary')}`,
+            `${input.passed} of ${input.total} briefs complete`,
+          ),
+          PARKED_HINT,
+        );
+      }
     }
     return byline(stoppedLead(input, tone), PARKED_HINT);
   }

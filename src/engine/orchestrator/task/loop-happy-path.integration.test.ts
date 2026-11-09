@@ -213,7 +213,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       implement: vi.fn().mockImplementation(async () => {
         const persisted = loadState(ref);
         if (persisted !== null) {
-          const step = resumeStep(persisted);
+          const step = resumeStep(persisted, false);
           const stopped = transition(persisted, {
             type: 'INTERRUPT_STEP',
             step,

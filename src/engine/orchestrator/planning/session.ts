@@ -1,7 +1,7 @@
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
-import { resolveApproveLevel } from '../../../core/config/runtime/resolve.js';
+import { resolveReviewCadence, resolveApproveLevel } from '../../../core/config/runtime/resolve.js';
 import {
   PLAN_FILE,
   PLAN_JSON_FILE,
@@ -282,7 +282,9 @@ export async function runPlanningSession(
   const { projectDir, sessionId, bus } = wctx;
   const ref = { projectDir, sessionId };
   let state = opts.state;
-  const steer = wctx.continuation?.take(resumeStep(state))?.steer;
+  const steer = wctx.continuation?.take(
+    resumeStep(state, resolveReviewCadence(wctx.config) === 'none'),
+  )?.steer;
   // A run continued with a steer while its planner question waited: the steer is the answer.
   const conversation = state.pendingPlannerConversation;
   const steerAnswer =

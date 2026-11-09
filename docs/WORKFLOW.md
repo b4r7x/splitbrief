@@ -28,7 +28,7 @@ Primary state is the `phase` field — one of 15 values from the `Phase` enum. `
 
 These overlays sit on top of any phase. They do not change `phase`:
 
-- **`closed`** records `{ at, as }`. `as` is `applied`, `discarded` or `ended`. Apply, Discard and `CLOSE_RUN` close worktree and staged-copy runs. A passing review or Accept as is override makes them ready to apply. Checkout runs and older runs without a recorded workspace close as `complete` on either result. An override preserves the failed verdict.
+- **`closed`** records `{ at, as }`. `as` is `applied`, `discarded` or `ended`. Apply, Discard and `CLOSE_RUN` close worktree and staged-copy runs. A passing review, an Accept as is override or the end of a REVIEW None run makes them ready to apply. Checkout runs and older runs without a recorded workspace close as `complete` on any of these results. An override preserves the failed verdict.
 - **`workspace`** records the run's directory, kind and base snapshot. **`applying`** records an Apply in progress and its backup. **`applied`** records the completed write. **`acceptedAsIs`** records an Accept as is override, its open findings and the note you typed (`note`, optional; the Apply warning shows it after the findings). A final review verdict clears it, also when a task-cadence Skip review set it.
 - **`interruptedStep`** — the step a stop cut: `{ step, source, cut, partialRef?, kept?, consult?, at }`. `cut` says whether the stop landed `mid-step` inside a call or on a `boundary` where it cut nothing: between two briefs, or at a gate. `source` says what cut it: `user`, `watchdog`, or `seat` for a seat halt. `kept` lists the files the cut brief wrote that are still changed when the stop parked it, its declared files first; it is absent when the brief kept none, and on a state written before the field. `consult` is present when a *Seat down* halt cut the brief's consult: the brief picks up at that consult, on the files its attempts left. It holds the question that consult was asked (`failingOutput`, `report?`, `unfinishedCalls`), and the consult that runs again asks the same question. The run stays open and picks that step up again.
 - **`decideForMe`** — `true` after the user chose **Decide for me** (`DECIDE_FOR_ME`, any phase). Nothing clears it. Planner questions then take their defaults, and a halt with a decided step takes it with no panel ([Decide for me](./APPROVAL-AND-RECOVERY.md#decide-for-me)).
@@ -57,6 +57,7 @@ stateDiagram-v2
 
     implementing --> validating_task : TASK_SENT
     implementing --> final_review : ALL_DONE
+    implementing --> complete : REVIEW_DONE (REVIEW None)
 
     validating_task --> implementing : VALIDATION_PASS
     validating_task --> escalating : VALIDATION_FAIL
@@ -104,7 +105,8 @@ Verified against the `transition()` reducer in `src/core/state/machine.ts` and t
 | `implementing` / `validating-task` / `escalating` | `RESET_TASK` | `implementing` | Sets task to `pending`, rewinds `currentTaskIndex` to that task's index, resets `attempt`. Tasks after it keep their status. |
 | `implementing` | `ALL_DONE` | `final-review` | — |
 | `final-review` | `START_FIX_CYCLE` | `implementing` | Records the fix cycle (`fixCycles.used` + 1) and opens it for its judging review (`fixCycles.open`), clears `reviewStatus`, `completedAt` and `pendingTriage`, and sets `currentTaskIndex` to the first open task. Runs the fix tasks from the review answer |
-| `final-review` | `REVIEW_DONE` | `complete` | Records `reviewStatus: 'passed' \| 'failed'` |
+| `implementing` | `REVIEW_DONE` | `complete` | With REVIEW None, records `reviewStatus: 'none'` after the last brief. No `ALL_DONE` and no final review |
+| `final-review` | `REVIEW_DONE` | `complete` | Records `reviewStatus: 'passed' \| 'failed' \| 'none'` |
 | `complete` (review `failed`) or `final-review` (`review-failed` halt) | `REVIEW_CORRECTION` | `final-review` | The `revise` recovery action: queues the correction as a user triage input of kind `defect` with source `user`, and appends the note to `fixCycles.notes`. Refused after a passed review |
 
 There is no local retry; `workflow.max_retries` is retired and loads with one notice. The old `HINT_SUCCESS`, `HINT_FAIL` and `FULL_SUCCESS` transitions are gone from the reducer; old `escalated-hint`, `escalated-intermediate` and `escalated-full` completion values and the old `escalate`, `hint_failed` and `task_scope_widened` events stay parseable so a saved `state.json` and `session.jsonl` still load.
@@ -162,6 +164,7 @@ The contract refuses `guidance` when the reviewer wrote no fix brief, a `verify`
 
 `workflow.review` selects the review cadence. The default, `end`, reviews after the final brief. Each brief runs its own checks after its hand-back, except a `render` check, which runs before the review.
 `task` also reviews after every brief that passed its validation.
+`review` has no effect while REVIEW is None.
 A task review judges completed tasks and due criteria. A criterion is due when all tasks that serve it are done.
 
 The prompt states the reviewed tasks, due criteria, and pending tasks. Pending tasks provide context and do not represent missing implementation.
@@ -181,7 +184,7 @@ The final review judges every task and every acceptance criterion. It still acce
 
 Two sources raise `review-failed`. A round without progress raises it when the planner answers `cannot`. A question raises it in a run that cannot reach the user, such as a headless run: a question from the reviewer, or the planner's `ask-user` on a round without progress. Its details read `The review asked a question this run has no way to answer.` and `Question: <text>`. A planner call that fails halts on the plan seat as *Seat down*. The `cannot` title names the blockers: `Final review found no fix for F1`, or `Final review made no progress on F1, P2 after fix cycle 2`, and its first detail is `Planner said: <reason>`. A failed review with no blocker, on criteria no check verified, raises it the same way: its message counts the unverified criteria, and a detail names them (`Unverified criteria: C1`). When each of them is a render criterion that the review seat could not see because it takes no images, the title is `Final review needs a REVIEW seat that reads images`. That halt offers Try again in place of Review again; see [review-failed](./APPROVAL-AND-RECOVERY.md#recovery). With a red check or Apply input that still blocks, it keeps the phase open and offers no Accept as is. Every red check or Apply input blocks, except a red check input that the reviewer rejects with a reason. The review record, `review.md` and the review result row count every red input that blocks as a blocking finding. Other failed reviews record `REVIEW_DONE` with a failed status. The run stays open with these actions: Review again with a note, which sends the operator's correction to the reviewer as a triage input, so the reviewer judges the change again and fix work in its answer runs another fix cycle; [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is), at final review when no red check or Apply input blocks it; [Decide for me](./APPROVAL-AND-RECOVERY.md#decide-for-me), after the planner's `cannot` or on a question nobody answered; and end the run. A `complete`/failed state takes that correction through `REVIEW_CORRECTION`, which moves it back to `final-review` with the input queued, so the reviewer answers the pending inputs in a new call without running the reviewer checks.
 
-An Apply whose merge writes text conflict markers for a file both sides changed does not halt: it queues one triage input per conflicted file (`source: 'apply'`), re-enters `final-review` through `APPLY_REVIEW_START`, and the review turns them into fix tasks before Apply runs again. Any other conflict still raises the [`apply-conflict` halt](./APPROVAL-AND-RECOVERY.md#apply-conflicts).
+An Apply whose merge writes text conflict markers for a file both sides changed does not halt: it queues one triage input per conflicted file (`source: 'apply'`), re-enters `final-review` through `APPLY_REVIEW_START`, and the review turns them into fix tasks before Apply runs again. Any other conflict still raises the [`apply-conflict` halt](./APPROVAL-AND-RECOVERY.md#apply-conflicts). With REVIEW None every conflict raises that halt, because no review can answer conflict markers. When Apply runs again and a conflicted file still holds a `<<<<<<< ours` line and a `>>>>>>> theirs` line, that file raises the `apply-conflict` halt, and Apply keeps it in the workspace as it is.
 
 `runFinalReviewPhase` announces both review scopes with `review_started`, then publishes one `review_completed` per start. Each event names the review seat's tool, optional model, and nonempty effort axes. Task scope carries `afterTaskId`, the brief that scheduled it; final scope omits this anchor. The completion records the verdict, `blocking`, `minor`, and `outOfScope` counts when a verdict exists, and the duration. It also records `unverifiedCriteria` when a criterion remains unverified: the count of criteria no check verified, each of which fails the review. The count is positive and optional, and a review with none unverified omits it, so older event logs keep their display. A failed call records `no-verdict`; a stop records `stopped`; neither carries findings. A `preReview` halt publishes neither event.
 
@@ -263,8 +266,8 @@ How a run stands is not a phase. It is derived once, by `deriveRunStatus` (`src/
 |---|---|
 | `running` | A live process holds the run. An Apply that writes the run's result to the checkout holds it too, so the run reads `running` until that Apply finishes or halts. |
 | `open` | The run stopped. It carries `stop` and `resumeAt`. |
-| `ready-to-apply` | A worktree or staged-copy result has a passing review or an Accept as is override. It awaits Apply or Discard, and no process holds it. `override` names the override. |
-| `closed` | The run is over. Workspace outcomes are `applied`, `undone`, `discarded` and `ended`. An applied run reads `undone` after `/run reject confirm` undid its Apply; its state keeps `closed.as: 'applied'`. A passed checkout-mode run and an older passed run close as `complete`. |
+| `ready-to-apply` | A worktree or staged-copy result has a passing review, an Accept as is override or the end of a REVIEW None run. It awaits Apply or Discard, and no process holds it. `override` names the override. |
+| `closed` | The run is over. Workspace outcomes are `applied`, `undone`, `discarded` and `ended`. An applied run reads `undone` after `/run reject confirm` undid its Apply; its state keeps `closed.as: 'applied'`. A passed checkout-mode run and an older passed run close as `complete`. A checkout-mode run with REVIEW None closes as `complete` too. |
 
 Continuation takes an open run. A ready run takes Apply or Discard, and a closed run takes nothing. A ready run has no pending recovery, interrupted step or Apply in progress. An `apply-conflict` or `apply-partial` halt leaves the run `open` and waiting for you on that halt. An unfinished Apply resumes at its Apply step.
 
@@ -272,7 +275,7 @@ Older runs without `state.workspace` keep their status rules. A passed run stays
 
 The "Workspace kept at … for Continue" notice appears only when an open run returns control to you after successful retention, for example after a halt or a failed turn. The notice carries the code `workspace_kept`. After a stop you asked for, the screen shows no notice: SPLITBRIEF writes it to the debug log only ([Debug environment variables](./TROUBLESHOOTING.md#debug-environment-variables)). End run, Discard and Apply let a workspace run's workspace go through one function, which publishes the row-less `workspace_closed` event. Once a run's log holds that event, the transcript drops the kept notice. A continue (`workflow_resumed`) drops it too, so a continued run never offers its own running workspace for Continue; a later halt that keeps the workspace again shows its own notice. Recovery publishes it immediately before opening its panel, after automatic switches, replayed actions and supplied corrections have had their turn. Headless continuation of an answered partial Apply publishes no notice before execution. If the retention record cannot be verified, the row names the record it could not read and SPLITBRIEF returns control to you without a successful-retention notice. Automatic seat switches and automatic continuation after a settings boundary publish no retention notice. After a successful seat switch, the workflow refreshes its displayed crew from the admitted execution and its saved config metadata, without saving the config again; a memory-only switch stays visible when no config file exists.
 
-**Closing a checkout run.** With `workflow.isolation: none` the implementer edits your checkout itself. Readiness warns about uncommitted changes and names the `reverted/` backup folder. An attempt revert restores only paths that attempt changed and leaves your other uncommitted files untouched. The run records `workspace.kind: 'checkout'` once, so a later config change does not move it. There is no Apply step: a passing review or an Accept as is override closes the run as `closed complete`. An override preserves the failed or unverified verdict; the closed block shows needs attention. End run, Discard and `CLOSE_RUN` write no `run.patch`, because nothing is unapplied. When files the run wrote are still in the checkout, the close notice reads: "This run edited your checkout directly: its changes are already there, so nothing is unapplied and no run patch was written." A run that left no files in the checkout, for example because a halt put its brief's files back, closes without that notice.
+**Closing a checkout run.** With `workflow.isolation: none` the implementer edits your checkout itself. Readiness warns about uncommitted changes and names the `reverted/` backup folder. An attempt revert restores only paths that attempt changed and leaves your other uncommitted files untouched. The run records `workspace.kind: 'checkout'` once, so a later config change does not move it. There is no Apply step: a passing review, an Accept as is override or the end of a REVIEW None run closes the run as `closed complete`. A REVIEW None run keeps its review step, and no seat runs at that step. A stop there reads `Stopped at the review · ⏎ to continue`, or `Stopped before the review · ⏎ to continue` after a pause. Typed words get `Cannot send words to the review. Clear them.`, and a bare ⏎ closes the run. An override preserves the failed or unverified verdict; the closed block shows needs attention. End run, Discard and `CLOSE_RUN` write no `run.patch`, because nothing is unapplied. When files the run wrote are still in the checkout, the close notice reads: "This run edited your checkout directly: its changes are already there, so nothing is unapplied and no run patch was written." A run that left no files in the checkout, for example because a halt put its brief's files back, closes without that notice.
 
 On a checkout run, `/run accept` closes an open run as `ended`, with its current files. `/run reject confirm` compares the baseline, the latest recorded run snapshot and the current checkout. The run records a run snapshot after each brief settles and when the run comes to rest, so a run that stopped or halted before its review can also be rejected. It restores or deletes only recorded run changes that still match the run snapshot. Later user edits and files outside that recorded change stay untouched. The message names paths left as you changed them. Rejection saves replaced files with their modes under `.splitbrief/sessions/<id>/reverted/<stamp>/`.
 
@@ -280,9 +283,9 @@ A rejection with no conflicts or missing snapshot files closes the checkout run 
 
 **`stop`** — why it is not running. It has two kinds. `waiting-for-you` means that the run cannot go on without you, `on`: `halt` (a `pendingRecovery` waits on an answer), `question` (the planner waits for a reply) or `gate` (parked at the plan card, or at an older run's spec or briefs gate). `stopped` means that the run can go on as it stands, `on`: `paused` (a park, `at: 'mid-step'` or `'boundary'`), `failed` (`lastFailure` names the error a turn died on) or `interrupted` (the process went away without recording anything). The first match wins, in this order: `halt`, `question`, `paused`, `gate`, `failed`, `interrupted`. Together with `running`, `ready-to-apply` and `closed`, a user sees five states: running, waiting for you, stopped, ready to apply and closed. A *Seat down* halt can move its seat to the seat's `fallback` at once, once per run and seat, and each switch is recorded in `seatSwitches` ([Seat down](./APPROVAL-AND-RECOVERY.md#seat-down)).
 
-**`resumeAt`** — the step it picks up at, from `resumeStep(state)`: the gate it is parked at, the brief it was building, the review it reached, or the planner call its saved phase names (`plan` for a run in `planning`). The engine reads it to decide what runs, not how: every planner call continues as the one planning session. `resumeStep` reads the saved state only; first match wins: an open planner conversation, a ready Apply, a parked gate, the brief, the review, else the planning session.
+**`resumeAt`** — the step it picks up at, from `resumeStep(state, reviewNone)`: the gate it is parked at, the brief it was building, the review it reached, or the planner call its saved phase names (`plan` for a run in `planning`). The engine reads it to decide what runs, not how: every planner call continues as the one planning session. `resumeStep` reads the saved state and REVIEW None of the config the next pass runs on, which is the crew in the window; first match wins: an open planner conversation, a ready Apply, a parked gate, the brief, the review (Apply for a worktree or staged-copy run under REVIEW None), else the planning session.
 
-**Who runs `final-review`** — the review seat, which is the `reviewer` runner from `.splitbrief/config.yaml` when one is configured and the planner's own runner when none is (`resolveReviewerRunner`, `src/core/config/accessors/reviewer-runner.ts`). The review seat makes one kind of call: the verdict call. Before each final review SPLITBRIEF runs the project gate that the plan names, under the reviewer command policy (`validation.end_checks`, default on; `runReviewChecks`, `src/engine/orchestrator/review-checks.ts`); no reviewer call chooses checks. Every other model call in this state machine, every consult included, stays on the planner. The phase's `phaseRole()` is still `planner` and `phaseTokenRole()` is still `implementer` — those classifications did not move, so per-phase token attribution is unchanged. During the phase the transcript and the composer live status name the seat actually running — the reviewer's tool and model when one is configured, today's wording when none is — and the sidebar carries a reviewer row whenever one is configured. A reviewer that fails does not hand the review back to the planner — the phase records a failed review, stays in `final-review` instead of transitioning `REVIEW_DONE`, and still builds the run summary.
+**Who runs `final-review`** — the review seat, which is the `reviewer` runner from `.splitbrief/config.yaml` when one is configured and the planner's own runner when none is (`resolveReviewerRunner`, `src/core/config/accessors/reviewer-runner.ts`). With `reviewer: none` no seat runs it: after the last brief the run records `REVIEW_DONE` with `reviewStatus: 'none'`, shows one row, `Review · none · REVIEW is None, so no seat reviewed this run`, and moves to `complete`. No review, plan check, end-of-run check or render check runs, and the consult and the summaries stay on the planner. A run parked in `final-review` that continues after you choose None ends the same way, and its failed review stays in the evidence. Under None the phase also holds the recheck of a merged result that Apply sent back ([Apply](#apply)); its live status reads `Checking the merged result`, not the review wording. The review seat makes one kind of call: the verdict call. Before each final review SPLITBRIEF runs the project gate that the plan names, under the reviewer command policy (`validation.end_checks`, default on; `runReviewChecks`, `src/engine/orchestrator/review-checks.ts`); no reviewer call chooses checks. Every other model call in this state machine, every consult included, stays on the planner. The phase's `phaseRole()` is still `planner` and `phaseTokenRole()` is still `implementer` — those classifications did not move, so per-phase token attribution is unchanged. During the phase the transcript and the composer live status name the seat actually running — the reviewer's tool and model when one is configured, today's wording when none is — and the sidebar carries a reviewer row whenever one is configured. A reviewer that fails does not hand the review back to the planner — the phase records a failed review, stays in `final-review` instead of transitioning `REVIEW_DONE`, and still builds the run summary.
 
 **Planner markdown headers** — only `escalating` planner markdown gets a header (`Escalation`, `plannerPhaseHeader`). No other phase, live or replayed, gets a phase label. The planning session streams no narration of its own, because its answer is typed JSON; its question rounds and warnings show as plain rows.
 
@@ -308,6 +311,8 @@ A conflict raises the `apply-conflict` halt. You choose the result for each file
 
 If the merge or a repair changes the reviewed candidate, SPLITBRIEF runs validation and every check again. A red check that runs the same command text as a gate command is compared with that command's result at the run base. The review reads only its new failures, listed apart from the pre-existing ones. A check with only pre-existing failures counts as passed. The review seat then reviews the whole run diff, from the workspace base to the candidate, with checkout hunks marked. This re-review counts as a final-review fix cycle.
 
+With REVIEW None there is no review to repeat. Apply reads REVIEW from `.splitbrief/config.yaml`, or from `--reviewer` when the command passes it, each time it runs. After a move to None in Crew, a run that a seat reviewed follows these rules, and after a move from None to a seat, a changed candidate goes through its checks and the review. When Apply finds that your checkout changed the same files, the merged result runs the brief checks again; a red check shows on its row and Apply stays your choice. While they run, the live status reads `Checking the merged result`, and the rail shows Review skipped and Apply active. These checks are part of Apply, so every line names Apply. The composer shows `/ for a command…`, and a message you send gets `Cannot send words to Apply. Clear them.` A stop reads `Stopping Apply`, then `Stopped at Apply`, and a continue reads `Resuming Apply`. At rest, the rail shows Review skipped and the stop mark on Apply, and the byline reads `Stopped at Apply · ⏎ to continue`. Typed words get the same refusal there, and a bare ⏎ runs the checks. A move in Crew while the run rests changes the step that the screen names to the pass that ⏎ starts: Apply under None, the review under a seat. A render check and a plan-level check do not run. A check that cannot run shows on its row and does not stop the run. The run ends on its `Review · none` row again and returns to Ready to apply, with no fix cycle. A text conflict raises the `apply-conflict` halt.
+
 Before the first checkout write, Apply saves a backup under `.splitbrief/sessions/<id>/apply/<backup-id>/`. It records replaced files and symlinks, created paths and expected results, and freezes the assessed candidate. `APPLY_START` persists the backup id. The writer uses one hash-guarded call for the result. Its guard compares the checkout with the bytes Apply read for the merge. A later checkout edit cannot silently replace that baseline.
 
 Apply is not atomic. A failed write or a killed process can leave a partial result. The run keeps `applying` and offers restore or retry. See [Partial Apply recovery](./APPROVAL-AND-RECOVERY.md#partial-apply-recovery). `APPLY_DONE` records the applied files and closes the run as `applied`.
@@ -322,6 +327,7 @@ These state actions describe Apply:
 |---|---|
 | `ACCEPT_AS_IS` | Records the Accept as is override and open findings. |
 | `APPLY_REVIEW_START` | Re-enters `final-review` for a changed candidate and marks the checkout hunks. |
+| `APPLY_RECHECK_START` | With REVIEW None, re-enters `final-review` for a changed candidate with no triage input and no fix cycle. It clears `reviewStatus`, as `APPLY_REVIEW_START` does. REVIEW None of the config that the next pass runs on makes Apply the run's step. |
 | `APPLY_START` | Records the backup before checkout writes. |
 | `APPLY_DONE` | Records the applied files, clears `applying`, and closes as `applied`. |
 | `APPLY_RESTORED` | Clears `applying` after restore. The run can become ready to apply again. |
@@ -455,14 +461,14 @@ A run is a durable record. An open run stays continuable, so there is one verb f
 
 ### Where it picks up
 
-At the first thing it has not finished, not at the top. `resumeStep(state)` (`src/core/sessions/run-status.ts`) names it, reading the same step table the run walked:
+At the first thing it has not finished, not at the top. `resumeStep(state, reviewNone)` (`src/core/sessions/run-status.ts`) names it, reading the same step table the run walked:
 
 | Saved at | Picks up at |
 |---|---|
 | The plan card (`reviewing-plan` with `state.plan`) | the card, re-opened without re-spending the planner call behind it |
 | An older gate (`reviewing-spec`, `reviewing-briefs`, or `reviewing-plan` without `state.plan`) | the planning session, which reads the run's earlier research, spec, plan and `tasks.md` as "Earlier Planning" and takes the correction typed at the gate; then the plan card opens |
 | A brief (`implementing` / `validating-task` / `escalating`) | that brief |
-| `final-review` or `complete` with a failed review | the review, at its recorded cycle |
+| `final-review` or `complete` with a failed review | the review, at its recorded cycle; a worktree or staged-copy run in `final-review` or past its last brief under REVIEW None picks up at Apply |
 | Ready to apply, or Apply interrupted with `applying` recorded | the Apply step, through its result or recovery menu |
 | Anything else (`planning` or a retired planning phase) | the planning session |
 
@@ -486,7 +492,7 @@ Pending queue entries remain in `state.json`. A continuation excludes still-pend
 | Stop reason | What it was | Continuing it |
 |---|---|---|
 | `stopped` · `paused` · `mid-step` | Stop now, inside a call | Re-issues that step with the partial it left behind and the operator's steer |
-| `stopped` · `paused` · `boundary` | Pause after this brief, or Stop now at a gate | Starts the brief it stopped before; a typed steer is held for that brief. A stop at the plan card re-opens the card |
+| `stopped` · `paused` · `boundary` | Pause after this brief, or Stop now at a gate | Starts the brief it stopped before; a typed steer is held for that brief. After the last brief of a REVIEW None run no step reads a steer, so typed words are refused. A stop at the plan card re-opens the card |
 | `waiting-for-you` · `gate` | Parked at the plan card, or at an older run's spec or briefs gate | Re-opens the plan card without re-spending the call behind it; an older gate continues as the planning session. At rest the byline reads `⏎ to reopen it` at the plan card and `⏎ to continue` at an older spec or briefs gate |
 | `waiting-for-you` · `halt` | A `pendingRecovery` nobody answered | Shows the recovery panel before any work |
 | `waiting-for-you` · `halt` · seat cut | A *Seat down* halt cut the brief it was running, in a BUILD call or in its consult (`interruptedStep.source: seat`, `cut: mid-step`, `consult` with the consult's question for a consult) | Shows the recovery panel. The brief keeps its files. `switch-seat` runs the cut attempt again on the new seat, or the consult after a consult halt. `retry-later` sets the seat wait to the reset |
@@ -604,13 +610,15 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
     review: task also runs due checks after each task, then a task review,
     which runs no gate.
     validation.end_checks: false runs no reviewer check; one row says so.
+    REVIEW None runs each brief's own checks, except render checks, and no
+    reviewer check.
     The project gate runs once at the run base, beside the build: when the run
     loop starts, SPLITBRIEF runs each gate command (V1, V2, …) there with the
     same text, one command at a time, and stores each result (startBaseGate,
     src/engine/orchestrator/base-gate.ts). A command with a stored run base
     result does not run again; with every command stored, no base tree is made.
-    No base run starts when validation.end_checks is false, when the plan names
-    no gate, or when the run recorded no workspace. The base run goes on
+    No base run starts when validation.end_checks is false, when REVIEW is None,
+    when the plan names no gate, or when the run recorded no workspace. The base run goes on
     through a steer and a pause after a brief. It ends with the run loop: a
     stop, a halt, End run or the end of the review cuts the running command,
     its row reads stopped, and nothing is stored, so a continue runs it again.
@@ -666,6 +674,9 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
         a question nobody answers → recovery (Needs you)
 
 12. implementing (last task) → ALL_DONE → final-review
+    With REVIEW None, steps 12 and 13 do not run: implementing (last task) →
+    REVIEW_DONE (reviewStatus: none) → complete, on one row. The run is then
+    ready to apply, or a checkout run closes as complete.
     Drift report computed. The review seat reads the diff against the briefs
     and the plan. With workflow.review: task, one scoped review also runs after
     each task after its due checks pass.
@@ -795,7 +806,7 @@ type WorkflowState = {
   fixCycles?: { used: number; briefed?: number; notes: string[]; open?: { cycle: number; lastFixTaskId?: string } }  // fix cycles spent, operator notes, the cycle no review has judged yet and its last fix task
   triage?: TriageRecord[]                  // RECORD_TRIAGE; fix part of each review answer
   pendingTriage?: { inputs: TriageInput[] }  // pending inputs waiting for the reviewer
-  reviewStatus?: 'passed' | 'failed'
+  reviewStatus?: 'passed' | 'failed' | 'none'
   discoveredValidation?: DiscoveredValidation
 
   // Runner identity (set once at workflow start)

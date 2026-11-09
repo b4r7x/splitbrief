@@ -19,6 +19,15 @@ import { factSpans, runRows } from './copy.js';
 import type { ScopeView } from './view-model.js';
 
 describe('outcomeLineSpans', () => {
+  it('fact words: a None run reads no review, never review passed', () => {
+    const line = outcomeLineSpans(makeView({ review: { kind: 'none' } }), WIDE)
+      .map((span) => span.text)
+      .join('');
+
+    expect(line).toContain('no review');
+    expect(line).not.toMatch(/review passed/iu);
+  });
+
   it('paints clean scope as passed on both rows when the check failed without findings', () => {
     const view = makeView({
       scope: { kind: 'checked', passed: false, errors: 0, warnings: 0 },

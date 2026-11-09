@@ -156,7 +156,7 @@ describe('e2e: the review tool refuses its input as too long', { timeout: 240_00
     expect(skipped.ok, skipped.ok ? '' : skipped.message).toBe(true);
 
     const ready = readState(target, sessionId);
-    expect(deriveRunStatus({ state: ready, liveness: 'not-alive' })).toEqual({
+    expect(deriveRunStatus({ reviewNone: false, state: ready, liveness: 'not-alive' })).toEqual({
       kind: 'ready-to-apply',
       override: true,
     });
@@ -166,7 +166,7 @@ describe('e2e: the review tool refuses its input as too long', { timeout: 240_00
 
     const ended = await cli(target, ['continue', sessionId, '--action', 'end-run']);
     expect(ended.exitCode, ended.stderr).toBe(0);
-    const view = deriveSummaryView({ record: readRunRecord({ projectDir, sessionId }) });
+    const view = deriveSummaryView({ record: readRunRecord({ projectDir, sessionId }, false) });
     if (view === null) throw new Error('the ended run has no closed view');
     const review = runRows(view).find((row) => row.label === 'Review');
     expect(review?.segments.flatMap(factSpans).map((span) => span.text)).toEqual([

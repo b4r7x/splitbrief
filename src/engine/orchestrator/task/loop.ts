@@ -16,6 +16,7 @@ import {
   getRunnerModelName,
 } from '../../../core/config/accessors/runner-config.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
+import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
 import {
   captureChangedFilesBaseline,
   deserializeChangedFilesBaseline,
@@ -266,7 +267,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     // The configured cadence: with workflow.review 'task' every brief that passed its
     // validation is reviewed before the loop moves on; a failing review's fix tasks are
     // appended and the re-read bound runs them.
-    if ((config.workflow.review ?? 'end') === 'task') {
+    if (resolveReviewCadence(config) === 'task') {
       const scheduled = await runScheduledReview({
         wctx,
         state,

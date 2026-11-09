@@ -59,6 +59,7 @@ describe('a correction during first-attempt checks', { timeout: 60_000 }, () => 
         message: plainUserMessage('cleared correction'),
         phase: current.phase,
         bus,
+        reviewNone: false,
       });
       return { stdout: 'ok', stderr: '', code: 0 };
     });
@@ -135,6 +136,7 @@ describe('a correction during first-attempt checks', { timeout: 60_000 }, () => 
             message: plainUserMessage(changesFiles ? 'use two' : 'keep the public API unchanged'),
             phase: state.phase,
             bus,
+            reviewNone: false,
           });
         }
         return { stdout: 'ok', stderr: '', code: 0 };

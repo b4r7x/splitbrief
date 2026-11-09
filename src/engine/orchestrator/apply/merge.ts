@@ -82,6 +82,14 @@ export async function mergeApplyStates(
       handOff.checkout === entryKey(theirs) &&
       handOff.workspace === entryKey(ours);
     if (sameSideEntry(ours, theirs)) continue;
+    if (handOff !== undefined && ours.kind === 'file') {
+      const entry = await readSideEntry({ states, path, side: 'ours', expected: ours });
+      const text = entry.bytes.toString('utf8');
+      if (/^<<<<<<< ours\r?$/m.test(text) && /^>>>>>>> theirs\r?$/m.test(text)) {
+        result.conflicts.push({ ...conflict, kind: 'text' });
+        continue;
+      }
+    }
     // A base without a mode, or without the file, cannot tell which side
     // changed a mode-only difference.
     if (

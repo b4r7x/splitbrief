@@ -13,7 +13,7 @@ import { displayedRailStages } from '../at-rest.js';
 export function readRailStages(): readonly RailStageState[] {
   const lifecycle = lifecycleStore.get();
   const eventsState = eventsStore.get();
-  const { phase, halt } = runViewStore.get();
+  const { phase, halt, afterLastBrief } = runViewStore.get();
   return resolveRailStages({
     phase,
     status: lifecycle.status,
@@ -21,6 +21,7 @@ export function readRailStages(): readonly RailStageState[] {
     pendingRecovery: halt !== null,
     events: eventsState.events,
     recoveryAt: halt?.at ?? null,
+    afterLastBrief,
     stages: displayedRailStages(routerStore.get(), { restored: lifecycle.restored, halt }),
   });
 }
@@ -33,7 +34,7 @@ export function readRailCells(input: {
 }): number {
   const lifecycle = lifecycleStore.get();
   const eventsState = eventsStore.get();
-  const { phase, briefs, halt } = runViewStore.get();
+  const { phase, briefs, halt, afterLastBrief } = runViewStore.get();
   return measureRailCells({
     phase,
     status: lifecycle.status,
@@ -43,6 +44,7 @@ export function readRailCells(input: {
     tasks: briefs,
     events: eventsState.events,
     recoveryAt: halt?.at ?? null,
+    afterLastBrief,
     buildBlockShown: input.buildBlockShown,
     ...(input.stages !== undefined && { stages: input.stages }),
   });
@@ -54,7 +56,7 @@ export function useRailCells(input: {
   buildBlockShown: boolean;
   stages?: readonly RailStageState[] | undefined;
 }): number {
-  const [{ cols }, lifecycle, eventsState, { phase, briefs, halt }] = useStores(
+  const [{ cols }, lifecycle, eventsState, { phase, briefs, halt, afterLastBrief }] = useStores(
     terminalSizeStore,
     lifecycleStore,
     eventsStore,
@@ -69,6 +71,7 @@ export function useRailCells(input: {
     tasks: briefs,
     events: eventsState.events,
     recoveryAt: halt?.at ?? null,
+    afterLastBrief,
     buildBlockShown: input.buildBlockShown,
     ...(input.stages !== undefined && { stages: input.stages }),
   });

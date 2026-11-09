@@ -57,7 +57,7 @@ describe('continueRun', () => {
       });
       const expected = { ...message, displayText: 'Use @notes.md', text: `Use @notes.md${suffix}` };
 
-      expect(continueRun({ ref: REF, steer: message, deps }).kind).toBe(
+      expect(continueRun({ reviewNone: false, ref: REF, steer: message, deps }).kind).toBe(
         isParked ? 'continued-in-place' : 'restarted',
       );
       expect(parked).toEqual([expected]);
@@ -77,7 +77,7 @@ describe('continueRun', () => {
     };
     const state = openState();
     const { deps, parked, restarted } = makeDeps({ loaded: { kind: 'loaded', state } });
-    continueRun({ ref: REF, steer: message, deps });
+    continueRun({ reviewNone: false, ref: REF, steer: message, deps });
     expect(parked).toEqual([message]);
     expect(restarted).toEqual([{ state, steer: message }]);
   });
@@ -96,7 +96,12 @@ describe('continueRun', () => {
     });
 
     expect(
-      continueRun({ ref: REF, steer: plainUserMessage('try the other helper'), deps }),
+      continueRun({
+        reviewNone: false,
+        ref: REF,
+        steer: plainUserMessage('try the other helper'),
+        deps,
+      }),
     ).toEqual({
       kind: 'continued-in-place',
     });
@@ -113,7 +118,7 @@ describe('continueRun', () => {
       },
     });
 
-    expect(continueRun({ ref: REF, deps }).kind).toBe('continued-in-place');
+    expect(continueRun({ reviewNone: false, ref: REF, deps }).kind).toBe('continued-in-place');
     expect(settled).toEqual([plainUserMessage('')]);
   });
 
@@ -122,7 +127,12 @@ describe('continueRun', () => {
     const { deps, restarted } = makeDeps({ loaded: { kind: 'loaded', state } });
 
     expect(
-      continueRun({ ref: REF, steer: plainUserMessage('  keep the old API  '), deps }),
+      continueRun({
+        reviewNone: false,
+        ref: REF,
+        steer: plainUserMessage('  keep the old API  '),
+        deps,
+      }),
     ).toEqual({
       kind: 'restarted',
       state,
@@ -134,7 +144,7 @@ describe('continueRun', () => {
     const state = openState();
     const { deps, restarted } = makeDeps({ loaded: { kind: 'loaded', state } });
 
-    continueRun({ ref: REF, steer: plainUserMessage('   '), deps });
+    continueRun({ reviewNone: false, ref: REF, steer: plainUserMessage('   '), deps });
 
     expect(restarted).toEqual([{ state, steer: undefined }]);
   });
@@ -144,6 +154,7 @@ describe('continueRun', () => {
     const { deps, parked, restarted } = makeDeps({ loaded: { kind: 'loaded', state } });
 
     continueRun({
+      reviewNone: false,
       ref: REF,
       steer: plainUserMessage('\x03\x03fix\x00 the\ttest\r\nnext\x1a'),
       deps,
@@ -166,7 +177,7 @@ describe('continueRun', () => {
     ];
     expect(() => spawnSync(process.execPath, promptArgv(typed))).toThrow(/null bytes/);
 
-    continueRun({ ref: REF, steer: plainUserMessage(typed), deps });
+    continueRun({ reviewNone: false, ref: REF, steer: plainUserMessage(typed), deps });
 
     const spawned = spawnSync(process.execPath, promptArgv(restarted[0]?.steer?.text));
     expect(spawned.error).toBeUndefined();
@@ -180,7 +191,7 @@ describe('continueRun', () => {
     };
     const { deps, restarted } = makeDeps({ loaded: { kind: 'loaded', state } });
 
-    const outcome = continueRun({ ref: REF, deps });
+    const outcome = continueRun({ reviewNone: false, ref: REF, deps });
 
     expect(outcome).toMatchObject({ kind: 'refused', reason: 'closed' });
     expect(restarted).toEqual([]);
@@ -194,7 +205,7 @@ describe('continueRun', () => {
     };
     const { deps } = makeDeps({ loaded: { kind: 'loaded', state } });
 
-    const outcome = continueRun({ ref: REF, deps });
+    const outcome = continueRun({ reviewNone: false, ref: REF, deps });
 
     expect(outcome).toMatchObject({ kind: 'refused', reason: 'closed' });
     expect(outcome.kind === 'refused' && outcome.message).toContain('complete');
@@ -203,7 +214,10 @@ describe('continueRun', () => {
   it('refuses when there is no saved state', () => {
     const { deps } = makeDeps({ loaded: { kind: 'missing' } });
 
-    expect(continueRun({ ref: REF, deps })).toMatchObject({ kind: 'refused', reason: 'missing' });
+    expect(continueRun({ reviewNone: false, ref: REF, deps })).toMatchObject({
+      kind: 'refused',
+      reason: 'missing',
+    });
   });
 
   it('refuses with the loader reason when the state cannot be read', () => {
@@ -211,7 +225,7 @@ describe('continueRun', () => {
       loaded: { kind: 'invalid', code: 'future-version', message: 'written by a newer version' },
     });
 
-    expect(continueRun({ ref: REF, deps })).toEqual({
+    expect(continueRun({ reviewNone: false, ref: REF, deps })).toEqual({
       kind: 'refused',
       reason: 'invalid',
       message: 'written by a newer version',
@@ -229,7 +243,7 @@ describe('continueRun on a run ready to apply', () => {
     };
     const { deps, restarted } = makeDeps({ loaded: { kind: 'loaded', state } });
 
-    const outcome = continueRun({ ref: REF, deps });
+    const outcome = continueRun({ reviewNone: false, ref: REF, deps });
 
     expect(outcome).toMatchObject({ kind: 'refused', reason: 'ready-to-apply' });
     expect(outcome.kind === 'refused' && outcome.message).toMatch(/Apply.*Discard/);
@@ -292,7 +306,7 @@ describe('continueRun on a halt whose action reads no typed words', () => {
         loaded: { kind: 'loaded', state: halted(OLDER_ACCEPT, workspace) },
       });
 
-      expect(continueRun({ ref: REF, steer: WORDS, deps })).toEqual({
+      expect(continueRun({ reviewNone: false, ref: REF, steer: WORDS, deps })).toEqual({
         kind: 'refused',
         reason: 'takes-no-words',
         message: 'Cannot send words with Accept as is. Clear them.',
@@ -305,7 +319,9 @@ describe('continueRun on a halt whose action reads no typed words', () => {
     const state = halted(OLDER_ACCEPT, CHECKOUT);
     const { deps, restarted } = makeDeps({ loaded: { kind: 'loaded', state } });
 
-    expect(continueRun({ ref: REF, steer: plainUserMessage('  '), deps }).kind).toBe('restarted');
+    expect(
+      continueRun({ reviewNone: false, ref: REF, steer: plainUserMessage('  '), deps }).kind,
+    ).toBe('restarted');
     expect(restarted).toEqual([{ state, steer: undefined }]);
   });
 
@@ -323,7 +339,7 @@ describe('continueRun on a halt whose action reads no typed words', () => {
         },
       });
 
-      expect(continueRun({ ref: REF, steer: WORDS, deps })).toEqual({
+      expect(continueRun({ reviewNone: false, ref: REF, steer: WORDS, deps })).toEqual({
         kind: 'refused',
         reason: 'takes-no-words',
         message: `Cannot send words with ${label}. Clear them.`,
@@ -337,7 +353,7 @@ describe('continueRun on a halt whose action reads no typed words', () => {
     (issue) => {
       const { deps, restarted } = makeDeps({ loaded: { kind: 'loaded', state: halted(issue) } });
 
-      expect(continueRun({ ref: REF, steer: WORDS, deps })).toEqual({
+      expect(continueRun({ reviewNone: false, ref: REF, steer: WORDS, deps })).toEqual({
         kind: 'refused',
         reason: 'takes-no-words',
         message: 'Cannot send words to this halt. Clear them first.',
@@ -368,7 +384,7 @@ describe('continueRun on a halt whose action reads no typed words', () => {
     };
     const { deps, restarted } = makeDeps({ loaded: { kind: 'loaded', state } });
 
-    expect(continueRun({ ref: REF, steer: WORDS, deps })).toEqual({
+    expect(continueRun({ reviewNone: false, ref: REF, steer: WORDS, deps })).toEqual({
       kind: 'refused',
       reason: 'takes-no-words',
       message: 'Cannot send words to Apply. Clear them.',
@@ -376,15 +392,69 @@ describe('continueRun on a halt whose action reads no typed words', () => {
     expect(restarted).toEqual([]);
 
     const bare = makeDeps({ loaded: { kind: 'loaded', state } });
-    expect(continueRun({ ref: REF, deps: bare.deps }).kind).toBe('restarted');
+    expect(continueRun({ reviewNone: false, ref: REF, deps: bare.deps }).kind).toBe('restarted');
     expect(bare.restarted).toEqual([{ state, steer: undefined }]);
+  });
+
+  const REVIEW_STEP = { kind: 'review' as const, cycle: 0 };
+  const AT = '2026-11-09T00:00:00.000Z';
+  const KEEPS_THE_REVIEW_STEP: [string, Partial<WorkflowState>][] = [
+    [
+      'before the review on the checkout',
+      {
+        workspace: CHECKOUT,
+        interruptedStep: { step: REVIEW_STEP, source: 'user', at: AT, cut: 'boundary' },
+      },
+    ],
+    [
+      'at the review on the checkout',
+      {
+        phase: 'final-review',
+        workspace: CHECKOUT,
+        interruptedStep: { step: REVIEW_STEP, source: 'user', at: AT, cut: 'mid-step' },
+      },
+    ],
+    [
+      'at the review with no workspace recorded',
+      {
+        phase: 'final-review',
+        interruptedStep: { step: REVIEW_STEP, source: 'user', at: AT, cut: 'mid-step' },
+      },
+    ],
+  ];
+
+  it.each(KEEPS_THE_REVIEW_STEP)(
+    'refuses words under REVIEW None %s, and bare Enter goes on',
+    (_label, stop) => {
+      const state: WorkflowState = { ...openState(), ...stop };
+      const { deps, restarted } = makeDeps({ loaded: { kind: 'loaded', state } });
+
+      expect(continueRun({ reviewNone: true, ref: REF, steer: WORDS, deps })).toEqual({
+        kind: 'refused',
+        reason: 'takes-no-words',
+        message: 'Cannot send words to the review. Clear them.',
+      });
+      expect(restarted).toEqual([]);
+
+      const bare = makeDeps({ loaded: { kind: 'loaded', state } });
+      expect(continueRun({ reviewNone: true, ref: REF, deps: bare.deps }).kind).toBe('restarted');
+      expect(bare.restarted).toEqual([{ state, steer: undefined }]);
+    },
+  );
+
+  it.each(KEEPS_THE_REVIEW_STEP)('carries the words of a seat run %s', (_label, stop) => {
+    const state: WorkflowState = { ...openState(), ...stop };
+    const { deps, restarted } = makeDeps({ loaded: { kind: 'loaded', state } });
+
+    expect(continueRun({ reviewNone: false, ref: REF, steer: WORDS, deps }).kind).toBe('restarted');
+    expect(restarted).toEqual([{ state, steer: WORDS }]);
   });
 
   it('opens a pending Apply halt when nothing is typed', () => {
     const state = halted(APPLY_PARTIAL);
     const { deps, restarted } = makeDeps({ loaded: { kind: 'loaded', state } });
 
-    expect(continueRun({ ref: REF, deps }).kind).toBe('restarted');
+    expect(continueRun({ reviewNone: false, ref: REF, deps }).kind).toBe('restarted');
     expect(restarted).toEqual([{ state, steer: undefined }]);
   });
 
@@ -450,7 +520,7 @@ describe('continueRun on a halt whose action reads no typed words', () => {
     const state = halted(issue);
     const { deps, restarted } = makeDeps({ loaded: { kind: 'loaded', state } });
 
-    expect(continueRun({ ref: REF, steer: WORDS, deps }).kind).toBe('restarted');
+    expect(continueRun({ reviewNone: false, ref: REF, steer: WORDS, deps }).kind).toBe('restarted');
     expect(restarted).toEqual([{ state, steer: WORDS }]);
   });
 });

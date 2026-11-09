@@ -7,6 +7,7 @@ describe('queuePlaceholder', () => {
     running: true,
     stopping: false,
     reviewing: false,
+    reviewNone: false,
   };
 
   it.each([
@@ -23,6 +24,14 @@ describe('queuePlaceholder', () => {
   it('invites a message for the reviewer during the final review, where no brief runs', () => {
     expect(queuePlaceholder({ ...working, phase: 'final-review' })).toBe(
       'Message REVIEW · read at its verdict call…',
+    );
+  });
+
+  // REVIEW None rechecks the merged result for Apply with its checks only: no seat reads a message,
+  // and the queue refuses one, so the composer offers a command.
+  it('offers a command while a REVIEW None run checks its merged result again', () => {
+    expect(queuePlaceholder({ ...working, phase: 'final-review', reviewNone: true })).toBe(
+      '/ for a command…',
     );
   });
 

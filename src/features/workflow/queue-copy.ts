@@ -70,9 +70,9 @@ export function queueCopy(input: {
 
 /** The queue copy of the run on screen: the seat that reads a message typed now, and its brief. */
 export function currentQueueCopy(count?: number) {
-  const { phase, briefs } = runViewStore.get();
+  const { phase, briefs, reviewNone } = runViewStore.get();
   return queueCopy({
-    seat: messageSeat(phase, selectScheduledReview(operationsStore.get())),
+    seat: messageSeat(phase, selectScheduledReview(operationsStore.get()), reviewNone),
     taskId: selectBuildMessageBrief(briefs)?.id,
     count: count ?? lifecycleStore.get().queueDepth,
   });

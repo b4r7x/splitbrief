@@ -30,7 +30,7 @@ type CrewDiscovery = CrewDetection &
   }>;
 
 function connectionRole(config: Config, role: ActiveRunnerRole): ActiveRunnerRole {
-  return role === 'reviewer' && resolveReviewerRunner(config).source === 'planner'
+  return role === 'reviewer' && resolveReviewerRunner(config).source !== 'configured'
     ? 'planner'
     : role;
 }

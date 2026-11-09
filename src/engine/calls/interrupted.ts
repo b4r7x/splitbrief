@@ -79,7 +79,8 @@ export async function recordInterruptedCalls(
   scope: SessionRef & { bus: EventBus },
   state: WorkflowState,
 ): Promise<void> {
-  if (!processWentAway(deriveRunStatus({ state, liveness: 'not-alive' }))) return;
+  if (!processWentAway(deriveRunStatus({ state, liveness: 'not-alive', reviewNone: false })))
+    return;
   const { events } = await readRunEvents(scope);
   for (const event of interruptedCallEvents(events, scope.projectDir)) scope.bus.publish(event);
 }

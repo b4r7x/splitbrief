@@ -362,7 +362,10 @@ describe('Sidebar — passed count', () => {
       }),
       execution: { kind: 'at-rest' },
     });
-    hydrateFromState(makeWorkflowState({ phase: 'planning', tasks: [], pendingRecovery: halt }));
+    hydrateFromState(
+      makeWorkflowState({ phase: 'planning', tasks: [], pendingRecovery: halt }),
+      false,
+    );
 
     const ui = renderFeature(<Sidebar width={40} />);
     await tick();
@@ -932,6 +935,21 @@ describe('Sidebar — reviewer seat', () => {
 
     expect(frame).toContain('REVIEW');
     expect(frame).toContain('GPT-5 Codex');
+    expect(frame).not.toContain(PLANNER_INHERITANCE.mark);
+    ui.unmount();
+  });
+
+  it('names REVIEW None instead of the inheritance sentence', async () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({ reviewer: 'none' }),
+    });
+
+    const ui = renderFeature(<Sidebar width={50} />);
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toMatch(/REVIEW\s+None/);
     expect(frame).not.toContain(PLANNER_INHERITANCE.mark);
     ui.unmount();
   });

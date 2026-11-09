@@ -15,7 +15,7 @@ import {
   warnDroppedRunnerFields,
   type RunnerFactoryAuthority,
 } from './factory-gates.js';
-import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
+import { requireReviewSeat } from '../../core/config/accessors/reviewer-runner.js';
 import { readActiveRunner } from '../../core/config/accessors/active-runner.js';
 
 export type PlannerCreationOptions = PlannerFactoryOptions &
@@ -129,7 +129,7 @@ export async function createReviewer(
   options: ReviewerCreationOptions,
 ): Promise<Reviewer> {
   const authority = requireFactoryAuthority(config, options, 'reviewer');
-  const runner = resolveReviewerRunner(config).runner;
+  const runner = requireReviewSeat(config).runner;
   const configured = resolveConfiguredCustomRunner(config, 'reviewer');
   let reviewer: Planner;
 

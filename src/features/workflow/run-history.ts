@@ -9,6 +9,7 @@ import { extractLastJsonObject } from '../../engine/runners/typed-output.js';
 import { readImplementerReport } from '../../core/schemas/consult.js';
 import { processWentAway } from '../../core/sessions/run-status.js';
 import { interruptedCallEvents } from '../../engine/calls/interrupted.js';
+import { configStore } from '../../stores/project/config.js';
 
 /**
  * A past run, put back on the workflow screen: its session log replayed into the stores, then the
@@ -42,7 +43,7 @@ export async function readRunHistory(record: RunRecord): Promise<() => void> {
     loadEvents(restoreCompletionFiles(history));
     if (record.hydration.kind !== 'loaded') return;
     const { state } = record.hydration;
-    hydrateFromState(state);
+    hydrateFromState(state, configStore.reviewNone());
   };
 }
 

@@ -22,7 +22,7 @@ import { reviewName } from '../../core/recovery/headline.js';
 import { isQueuedMessagePendingReviewer } from '../../core/queue-state.js';
 import { phaseStage } from '../../core/rail-stages.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
-import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
+import { requireReviewSeat } from '../../core/config/accessors/reviewer-runner.js';
 import { seatAxisWords } from '../../core/runners/effort-channel.js';
 import { seatReadsChangeFile } from '../../core/runners/capabilities.js';
 import {
@@ -48,7 +48,8 @@ import { readPacketEvents } from './evidence/review-packet/artifacts.js';
 import { renderChecksLogForPrompt, renderWholeChecksLog } from './evidence/review-packet/render.js';
 import { buildChecks } from './evidence/review-packet/sections.js';
 import { readEvidenceLedger, writeEvidenceLedger } from '../../core/evidence/ledger-storage.js';
-import type { EvidenceLedger } from '../../core/schemas/evidence.js';
+import type { EvidenceFinalReviewStatus, EvidenceLedger } from '../../core/schemas/evidence.js';
+import type { SessionRef } from '../../core/types/session-ref.js';
 import { analyzeBriefDrift } from './drift/analyze.js';
 import { writeDriftReport } from './drift/io.js';
 import { formatDriftReportForPrompt, publishDriftReport } from './drift/format.js';
@@ -332,6 +333,16 @@ async function verifyReviewClaims(args: {
   return { entries, map };
 }
 
+/** A failed ledger write warns and never stops the run: the review outcome is in the state. */
+export function recordFinalReviewStatus(ref: SessionRef, status: EvidenceFinalReviewStatus): void {
+  try {
+    const ledger = readEvidenceLedger(ref);
+    if (ledger) writeEvidenceLedger(ref, recordFinalReviewEvidence({ ledger, status }));
+  } catch (err) {
+    warnError('Failed to record final review evidence', err);
+  }
+}
+
 export async function runFinalReviewPhase(opts: {
   projectDir: string;
   workspaceDir: string;
@@ -415,7 +426,7 @@ export async function runFinalReviewPhase(opts: {
     }
   }
 
-  const reviewRunner = resolveReviewerRunner(config).runner;
+  const reviewRunner = requireReviewSeat(config).runner;
   const limit =
     reviewRunner.kind === 'cli' ? cliPromptLimit('planner', reviewRunner.tool) : undefined;
   // `.splitbrief/` in the run workspace is never a run change.
@@ -1015,7 +1026,7 @@ export async function runFinalReviewPhase(opts: {
   } catch (err) {
     if (opts.signal?.aborted || isAbortError(err)) return interrupted();
     if (sessionError.isLocalSaveFailure(err)) throw err;
-    const seat = resolveReviewerRunner(config);
+    const seat = requireReviewSeat(config);
     const failed = `${reviewName(reviewEvent)} failed`;
     const label =
       seat.source === 'configured'
@@ -1073,17 +1084,7 @@ export async function runFinalReviewPhase(opts: {
   }
   if (opts.signal?.aborted) return interrupted();
 
-  try {
-    const ledger = readEvidenceLedger({ projectDir, sessionId });
-    if (ledger) {
-      writeEvidenceLedger(
-        { projectDir, sessionId },
-        recordFinalReviewEvidence({ ledger, status: writeStatus }),
-      );
-    }
-  } catch (err) {
-    warnError('Failed to record final review evidence', err);
-  }
+  recordFinalReviewStatus({ projectDir, sessionId }, writeStatus);
 
   const blockingFindings = verdict === null ? [] : blockingEntries(verdict.outcome);
   publishReviewEvent(

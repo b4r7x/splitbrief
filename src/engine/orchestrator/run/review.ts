@@ -10,7 +10,8 @@ import {
 } from '../../../core/review/verdict.js';
 import { renderReviewMarkdown } from '../../../core/review/render.js';
 import { writeSpecFile } from '../../../core/paths-io.js';
-import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
+import { requireReviewSeat } from '../../../core/config/accessors/reviewer-runner.js';
+import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
 import { getRunnerCatalogDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { REVIEW_FILE } from '../../../core/paths.js';
 import { nowIso } from '../../../utils/format-time.js';
@@ -165,7 +166,7 @@ export async function haltVerdictlessReview(args: {
   const failure = noVerdictFailure(args.review, reviewName(judged));
   const state = failure === undefined ? args.state : queueScheduledTriage(ref, args.state);
   if (failure?.kind === 'input-too-large') {
-    const { runner } = resolveReviewerRunner(wctx.config);
+    const { runner } = requireReviewSeat(wctx.config);
     const issue = buildReviewInputTooLargeRecoveryIssue({
       phase: state.phase,
       failure,
@@ -186,7 +187,7 @@ export async function haltVerdictlessReview(args: {
   if (failure?.kind === 'seat-protocol-error')
     return haltSeatProtocolError({ wctx, state, setTrackedState, error: failure.error });
   if (failure?.kind === 'seat-blocked') {
-    const reviewer = resolveReviewerRunner(wctx.config);
+    const reviewer = requireReviewSeat(wctx.config);
     const followsPlan = reviewer.source === 'planner';
     const issue = await plannerCallHaltIssue({
       projectDir: wctx.projectDir,
@@ -525,6 +526,12 @@ export async function runScheduledReview(args: {
   const { wctx, setTrackedState, callbacks } = args;
   const ref = { projectDir: wctx.projectDir, sessionId: wctx.sessionId };
   let state = args.state;
+  // A review a stop left pending, with REVIEW moved to None since: no seat reads it, so it ends here.
+  if (resolveReviewCadence(wctx.config) === 'none') {
+    state = transitionAndSave(ref, state, { type: 'CLEAR_SCHEDULED_REVIEW' });
+    setTrackedState(state);
+    return { state, status: 'continue' };
+  }
   const anchor = args.afterTaskId ?? state.pendingScheduledReview?.afterTaskId;
   if (anchor !== undefined) {
     state = transitionAndSave(ref, state, {

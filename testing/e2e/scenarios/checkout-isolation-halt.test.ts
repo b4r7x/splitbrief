@@ -125,7 +125,9 @@ describe('e2e: a checkout whose git state changes during an in-place implementer
 
     const finalState = readState(fixture, sessionId);
     expect(finalState.applied).toBeUndefined();
-    expect(deriveRunStatus({ state: finalState, liveness: 'not-alive' })).toEqual({
+    expect(
+      deriveRunStatus({ reviewNone: false, state: finalState, liveness: 'not-alive' }),
+    ).toEqual({
       kind: 'closed',
       as: 'complete',
     });

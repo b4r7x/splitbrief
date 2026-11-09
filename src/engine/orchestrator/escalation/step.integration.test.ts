@@ -208,6 +208,7 @@ describe('runRetryStep', () => {
         message: plainUserMessage('keep the alias'),
         phase: current.phase,
         bus,
+        reviewNone: false,
       });
       return { success: true, output: 'fixed' };
     });
@@ -433,6 +434,7 @@ describe('runRetryStep', () => {
           message: plainUserMessage('keep the alias'),
           phase: current.phase,
           bus,
+          reviewNone: false,
         });
         return { success: true, output: 'fixed', usage: { inputTokens: 7, outputTokens: 3 } };
       });
@@ -1255,6 +1257,7 @@ describe('runRetryStep — what a retry hears about the earlier attempts', () =>
       message: plainUserMessage(userSays),
       phase: state.phase,
       bus,
+      reviewNone: false,
     });
     const captured = await getChangedFilesSnapshot(ref.projectDir);
     const taskStartSnapshot =

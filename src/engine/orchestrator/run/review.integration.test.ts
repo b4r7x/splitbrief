@@ -1,4 +1,5 @@
 import { plainUserMessage } from '../../../core/types/user-input.js';
+import { readActiveRunner } from '../../../core/config/accessors/active-runner.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -1157,9 +1158,9 @@ describe('the review that judges a fix cycle', () => {
         note: 'The old error type is part of the public API',
         by: 'planner',
       });
-      expect(deriveRunStatus({ state: result.state, liveness: 'not-alive' }).kind).toBe(
-        'ready-to-apply',
-      );
+      expect(
+        deriveRunStatus({ reviewNone: false, state: result.state, liveness: 'not-alive' }).kind,
+      ).toBe('ready-to-apply');
       expect(readSpecFile(ref, REVIEW_FILE)).toContain(
         '**Accepted by the planner**\n\nThe old error type is part of the public API',
       );
@@ -1665,7 +1666,7 @@ describe('runScheduledReview saved recovery', () => {
         error: { code: 'missing-model', message: words },
       }),
       label: 'Review failed',
-      runner: config.reviewer ?? config.planner,
+      runner: readActiveRunner({ config, role: 'reviewer' }),
       seat: 'review',
     });
     const halted = await haltVerdictlessReview({
@@ -2223,7 +2224,9 @@ describe('runScheduledReview saved recovery', () => {
     expect(skipped.state.review?.scope).toBe('task');
     expect(skipped.state.acceptedAsIs?.note).toBe('Reviewed the diff by hand.');
     // Skipping one task's review never makes the whole run ready to apply or closes it.
-    expect(deriveRunStatus({ state: skipped.state, liveness: 'not-alive' }).kind).toBe('open');
+    expect(
+      deriveRunStatus({ reviewNone: false, state: skipped.state, liveness: 'not-alive' }).kind,
+    ).toBe('open');
     expect(events.filter((event) => event.type === 'workflow_complete')).toEqual([]);
   });
 
@@ -2319,9 +2322,9 @@ describe('runScheduledReview saved recovery', () => {
       });
       expect(accepted.ok).toBe(true);
       expect(accepted.state.reviewStatus).toBe('failed');
-      expect(deriveRunStatus({ state: accepted.state, liveness: 'not-alive' }).kind).toBe(
-        kind === 'worktree' ? 'ready-to-apply' : 'closed',
-      );
+      expect(
+        deriveRunStatus({ reviewNone: false, state: accepted.state, liveness: 'not-alive' }).kind,
+      ).toBe(kind === 'worktree' ? 'ready-to-apply' : 'closed');
     },
   );
 

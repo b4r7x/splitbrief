@@ -7,6 +7,7 @@ import {
 } from './active-runner.js';
 import { createDefaultConfig } from '../load/defaults.js';
 import type { Config } from '../../schemas/config.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 
 function configWithProfiles(): Config {
   return {
@@ -91,6 +92,28 @@ describe('active runner accessors', () => {
     const config = createDefaultConfig();
 
     expect(readActiveRunner({ config, role: 'reviewer' })).toEqual(config.planner);
+  });
+
+  it('reviewer reads the planner under None', () => {
+    const config = makeConfig({ reviewer: 'none' });
+
+    expect(readActiveRunner({ config, role: 'reviewer' })).toEqual(config.planner);
+    expect(readActiveRunnerLens({ config, role: 'reviewer' }).sourceNodeId).toBe(
+      readActiveRunnerLens({ config, role: 'planner' }).sourceNodeId,
+    );
+  });
+
+  it('a fork from None starts from the planner', () => {
+    const config = makeConfig({ reviewer: 'none' });
+
+    const updated = updateActiveRunner({
+      config,
+      role: 'reviewer',
+      updater: (existing) => ({ ...existing, model: 'sonnet' }),
+    });
+
+    expect(updated.reviewer).toEqual({ ...config.planner, model: 'sonnet' });
+    expect(updated.planner).toEqual(config.planner);
   });
 
   it('writes the reviewer seat into its own config block', () => {

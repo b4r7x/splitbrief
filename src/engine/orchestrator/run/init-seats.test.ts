@@ -37,4 +37,30 @@ describe('createPlannerSeat', () => {
     expect(createPlanner).toHaveBeenCalledWith(config, expect.objectContaining({ skillRoots }));
     expect(createReviewer).toHaveBeenCalledWith(config, expect.objectContaining({ skillRoots }));
   });
+
+  it('None keeps the planner for the summaries', async () => {
+    const config = makeConfig({ reviewer: 'none' });
+    vi.mocked(createReviewer).mockClear();
+
+    const seat = await createPlannerSeat({
+      config,
+      prepared: makePreparedExecution({
+        projectDir: '/project',
+        sessionId: 's',
+        feature: 'f',
+        config,
+      }),
+      customRuntime: {} as CustomRunnerRuntimePort,
+      projectDir: '/project',
+      initialSessionId: null,
+      injectedPlanner: undefined,
+      injectedReviewer: undefined,
+      skillRoots: [],
+      signal: undefined,
+    });
+
+    expect(seat.reviewer).toBe(seat.planner);
+    expect(seat.reviewerSeat).toBeUndefined();
+    expect(createReviewer).not.toHaveBeenCalled();
+  });
 });

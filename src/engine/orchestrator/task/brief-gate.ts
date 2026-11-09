@@ -1,7 +1,7 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import { dueCriterionIds } from '../../../core/review/verdict.js';
-import { resolveEndChecks } from '../../../core/config/runtime/resolve.js';
+import { resolveEndChecks, resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
 import { fixCheckKeys, splitFixCheckIds } from '../../../core/review/fix-task.js';
 import { isQueuedMessagePendingDelivery } from '../../../core/queue-state.js';
 import { rebaseOnPersistedWorkflowState } from '../state-ops.js';
@@ -59,7 +59,7 @@ export async function runBriefGate(opts: {
   // no reviewer check while End-of-run checks are off.
   const fixChecks = splitFixCheckIds(task, resolveEndChecks(wctx.config));
   const fixCheckIds = new Set(fixChecks.run);
-  const cadence = wctx.config.workflow.review ?? 'end';
+  const cadence = resolveReviewCadence(wctx.config);
   const due = new Set(dueCriterionIds(state, task.id));
   // At `end` a brief runs its own checks but no render: renders run before the review. A consult
   // `verify` runs only the checks it names, for a red that may predate the brief. A fix brief

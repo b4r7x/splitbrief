@@ -6,9 +6,14 @@ export function resolveApproveLevel(config: Config): ApproveLevel {
   return config.workflow.approve ?? 'plan';
 }
 
-/** The end-of-run checks run unless the config turns them off. */
+export function resolveReviewCadence(config: Config): 'end' | 'task' | 'none' {
+  if (config.reviewer === 'none') return 'none';
+  return config.workflow.review ?? 'end';
+}
+
+/** The end-of-run checks run unless the config turns them off or REVIEW is None. */
 export function resolveEndChecks(config: Config): boolean {
-  return config.validation.endChecks ?? true;
+  return config.reviewer !== 'none' && (config.validation.endChecks ?? true);
 }
 
 export function resolveEffortLevel(opts: {

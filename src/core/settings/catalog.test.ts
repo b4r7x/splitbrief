@@ -25,6 +25,31 @@ describe('SETTINGS_DEFS id resolution', () => {
   }
 });
 
+describe('SETTINGS_DEFS read-only rows under REVIEW None', () => {
+  const REASON = 'Read-only while REVIEW is None: no review runs.';
+
+  it('both rows lock under None', () => {
+    const cadence = SETTINGS_DEFS.find((def) => def.id === 'workflow.review');
+    const endChecks = SETTINGS_DEFS.find((def) => def.id === 'validation.endChecks');
+    expect(cadence).toMatchObject({
+      label: 'Review cadence',
+      section: 'Workflow',
+      kind: 'enum',
+      options: ['end', 'task'],
+    });
+    expect(endChecks?.lockedBy).toBeTypeOf('function');
+
+    const none = makeConfig({ reviewer: 'none' });
+    expect(cadence?.lockedBy?.(none)).toBe(REASON);
+    expect(endChecks?.lockedBy?.(none)).toBe(REASON);
+
+    for (const config of [makeConfig(), makeConfig({ reviewer: { kind: 'cli', tool: 'codex' } })]) {
+      expect(cadence?.lockedBy?.(config)).toBeUndefined();
+      expect(endChecks?.lockedBy?.(config)).toBeUndefined();
+    }
+  });
+});
+
 describe('SETTINGS_DEFS numeric bounds', () => {
   it('keeps implementer timeout aligned with the positive runner schema', () => {
     const timeout = SETTINGS_DEFS.find((def) => def.id === 'implementer.timeout');
@@ -87,6 +112,7 @@ describe('SETTINGS_DEFS dead settings', () => {
       'workflow.approve',
       'workflow.compactionFormat',
       'workflow.isolation',
+      'workflow.review',
     ]);
   });
 });

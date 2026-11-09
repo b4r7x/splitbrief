@@ -16,6 +16,7 @@ import {
   formatShortSeatIdentity,
   isSeatIdentity,
   PLANNER_INHERITANCE,
+  REVIEW_NONE,
   type SeatLineSpan,
   seatIdsOf,
   seatLineText,
@@ -1112,6 +1113,17 @@ describe('formatCollapsedSeatSpansFromIdentities', () => {
         buildSpan,
         separator,
         { text: `REVIEW ${PLANNER_INHERITANCE.mark}`, seat: 'review' },
+      ],
+    },
+    {
+      name: 'a review seat set to None',
+      input: { ...identities, review: REVIEW_NONE },
+      expected: [
+        planSpan,
+        separator,
+        buildSpan,
+        separator,
+        { text: 'REVIEW None', seat: 'review' },
       ],
     },
     {

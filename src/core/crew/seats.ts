@@ -1,12 +1,21 @@
 import { resolveImplementerProfiles } from '../config/accessors/implementer-profiles.js';
-import { resolveReviewerRunner } from '../config/accessors/reviewer-runner.js';
+import {
+  configuredReviewerRunner,
+  resolveReviewerRunner,
+} from '../config/accessors/reviewer-runner.js';
 import type { RunnerConfig } from '../config/accessors/runner-config.js';
 import { CLI_TOOL_IDS, isListedCliTool, type CliToolId } from '../runners/cli-tool-catalog.js';
 import type { ActiveRunnerRole } from '../runners/seat-roles.js';
 import { runnerBillingPosture, type RunnerBillingPosture } from '../runners/runner-billing.js';
 import type { Config } from '../schemas/config.js';
 import { assertNever } from '../../utils/type-guards.js';
-import { CREW_SEAT_LABELS, formatSeatIdentity, type CrewSeatId } from './identity.js';
+import {
+  CREW_SEAT_LABELS,
+  PLANNER_INHERITANCE,
+  REVIEW_NONE,
+  formatSeatIdentity,
+  type CrewSeatId,
+} from './identity.js';
 
 export const CREW_SEAT_ROLES: Readonly<Record<CrewSeatId, ActiveRunnerRole>> = {
   plan: 'planner',
@@ -24,7 +33,9 @@ export type CrewSeatRunner = Readonly<{
 export type CrewSeat =
   | (CrewSeatRunner & Readonly<{ id: 'plan'; label: string }>)
   | (CrewSeatRunner & Readonly<{ id: 'build'; label: string }>)
-  | (CrewSeatRunner & Readonly<{ id: 'review'; label: string; source: 'configured' | 'planner' }>);
+  | (CrewSeatRunner & Readonly<{ id: 'review'; label: string; source: 'configured' | 'planner' }>)
+  | (Omit<CrewSeatRunner, 'runner'> &
+      Readonly<{ id: 'review'; label: string; source: 'none'; runner?: never }>);
 
 /** One seat per `CrewSeatId`, in seat order, so a lookup by id is total. */
 export type CrewSeats = readonly [
@@ -63,16 +74,40 @@ export function deriveCrewSeats(
       label: CREW_SEAT_LABELS.build,
       ...seatRunner(implementer, displayNames?.build),
     },
-    {
-      id: 'review',
-      label: CREW_SEAT_LABELS.review,
-      source: reviewer.source,
-      ...seatRunner(
-        reviewer.runner,
-        displayNames?.review ?? (reviewer.source === 'planner' ? displayNames?.plan : undefined),
-      ),
-    },
+    reviewer.source === 'none'
+      ? {
+          id: 'review',
+          label: CREW_SEAT_LABELS.review,
+          source: reviewer.source,
+          model: REVIEW_NONE.mark,
+          posture: 'unknown',
+        }
+      : {
+          id: 'review',
+          label: CREW_SEAT_LABELS.review,
+          source: reviewer.source,
+          ...seatRunner(
+            reviewer.runner,
+            displayNames?.review ??
+              (reviewer.source === 'planner' ? displayNames?.plan : undefined),
+          ),
+        },
   ];
+}
+
+/** What a crew row shows for a seat: its identity, or the mark of a review seat that follows PLAN. */
+export function crewSeatWord(seat: CrewSeat): string {
+  return seat.id === 'review' && seat.source === 'planner' ? PLANNER_INHERITANCE.mark : seat.model;
+}
+
+/** A seat that can run: every seat but a review seat set to None. */
+export function seatHasRunner(seat: CrewSeat): seat is Extract<CrewSeat, CrewSeatRunner> {
+  return 'runner' in seat;
+}
+
+/** The review seat of a collapsed crew line: its own runner, None, or `undefined` for the planner's. */
+export function collapsedReviewSeat(config: Config): RunnerConfig | typeof REVIEW_NONE | undefined {
+  return config.reviewer === 'none' ? REVIEW_NONE : configuredReviewerRunner(config);
 }
 
 /**
@@ -80,10 +115,11 @@ export function deriveCrewSeats(
  * on REVIEW, or as one of their fallbacks.
  */
 export function crewCliTools(config: Config): ReadonlySet<string> {
+  const reviewer = resolveReviewerRunner(config);
   const runners = [
     config.planner,
     ...resolveImplementerProfiles(config).profiles.map((profile) => profile.config),
-    resolveReviewerRunner(config).runner,
+    ...(reviewer.source === 'none' ? [] : [reviewer.runner]),
   ];
   return new Set(
     runners.flatMap((runner) => [

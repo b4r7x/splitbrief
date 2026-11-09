@@ -127,7 +127,7 @@ async function codexFixture(): Promise<StopContinueFixture> {
 }
 
 async function transcriptRows(ref: { projectDir: string; sessionId: string }): Promise<string[]> {
-  await hydrateRun(readRunRecord(ref));
+  await hydrateRun(readRunRecord(ref, false));
   return buildConversationRows({
     sections: groupEventsIntoSections(eventsStore.get().events),
     expandedDiffs: new Set(),

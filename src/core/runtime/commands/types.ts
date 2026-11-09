@@ -34,7 +34,7 @@ export type AcceptRunResult =
   | { status: 'applied'; files: string[] }
   | { status: 'ended' }
   | { status: 'halted' }
-  | { status: 'review' }
+  | { status: 'review'; reviewNone: boolean }
   | { status: 'confirm-override' }
   | { status: 'unavailable'; message: string };
 

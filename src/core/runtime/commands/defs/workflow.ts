@@ -152,7 +152,7 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
               case 'review':
                 ctx.refreshRun();
                 ctx.setFeedbackMessage(
-                  'Your checkout changed files this run changed too; the merged result needs its checks and review again. Continue the run to start them.',
+                  `Your checkout changed files this run changed too; the merged result needs its checks${result.reviewNone ? '' : ' and review'} again. Continue the run to start them.`,
                 );
                 break;
               case 'confirm-override':

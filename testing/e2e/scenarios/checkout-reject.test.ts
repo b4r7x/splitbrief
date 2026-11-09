@@ -254,6 +254,7 @@ function parkedBylineText(record: RunRecord, kept: readonly string[]): string {
       intent: 'stop-now',
       phase: 'parked',
       workflowPhase: 'implementing',
+      afterLastBrief: { kind: 'review', cycle: 0 },
       parked: { kind: 'mid-brief', taskId: 'T002', kept },
       currentTaskId: 'T002',
       nextTaskId: null,
@@ -265,8 +266,9 @@ function parkedBylineText(record: RunRecord, kept: readonly string[]): string {
       record,
       stopKept:
         record.hydration.kind === 'loaded'
-          ? settleRunView(EMPTY_RUN_VIEW, record.hydration.state).stopKept
+          ? settleRunView(EMPTY_RUN_VIEW, record.hydration.state, false).stopKept
           : [],
+      stopStep: null,
     })
       ?.parts.map((part) => part.text)
       .join('') ?? ''
@@ -334,7 +336,7 @@ function openRun(target: StopContinueFixture) {
   const sessionId = ids[0];
   if (sessionId === undefined) throw new Error('CLI left no session');
   const ref = { projectDir: target.projectDir, sessionId };
-  const record = readRunRecord(ref);
+  const record = readRunRecord(ref, false);
   const config = makeConfig({ workflow: { isolation: 'none' } });
   configStore.__testReset({ projectDir: target.projectDir, config, diskConfig: config });
   routerStore.init({ screen: 'workflow', run: record, execution: { kind: 'at-rest' } });
@@ -697,7 +699,7 @@ else {
       throw new Error('the partial reject saved no replaced files');
     }
     expect(existsSync(join(target.projectDir, SECOND_FILE))).toBe(false);
-    const open = readRunRecord(ref);
+    const open = readRunRecord(ref, false);
     expect(open.status.kind).toBe('open');
     expect(loadState(ref)?.interruptedStep).not.toHaveProperty('kept');
     expect(loadState(ref)?.tasks.map((task) => [task.id, task.status])).toEqual([
@@ -719,7 +721,7 @@ else {
     ]);
 
     resetWorkflow();
-    const reopened = readRunRecord(ref);
+    const reopened = readRunRecord(ref, false);
     await hydrateRun(reopened);
     expect(transcriptText().replace(/\s+/g, ' ')).toContain(whole);
     if (reopened.status.kind !== 'open') throw new Error('the partial reject closed the run');
@@ -751,7 +753,7 @@ else {
     expect(
       events.filter((e) => e.type === 'warning' && e.message.includes('already there')),
     ).toEqual([]);
-    const view = deriveSummaryView({ record: readRunRecord(ref) });
+    const view = deriveSummaryView({ record: readRunRecord(ref, false) });
     if (view === null) throw new Error('the discarded run left no closed view');
     expect(
       outcomeLineSpans(view, 120)
@@ -803,7 +805,7 @@ else {
       ['T001', 'pending'],
       ['T002', 'in_progress'],
     ]);
-    const open = readRunRecord(ref);
+    const open = readRunRecord(ref, false);
     expect(open.status).toMatchObject({
       kind: 'open',
       resumeAt: { kind: 'brief', taskId: 'T001', attempt: 0 },
@@ -819,7 +821,7 @@ else {
       'T001',
       'T002',
     ]);
-    const closed = readRunRecord(ref);
+    const closed = readRunRecord(ref, false);
     expect(closed.status).toMatchObject({ kind: 'closed', as: 'complete' });
     const view = deriveSummaryView({ record: closed });
     if (view === null) throw new Error('the completed run left no closed view');
@@ -861,7 +863,7 @@ else {
     const state = loadState(ref);
     expect(state?.pendingRecovery).toBeUndefined();
     expect(state?.tasks[0]?.status).toBe('pending');
-    const open = readRunRecord(ref);
+    const open = readRunRecord(ref, false);
     expect(open.status).toMatchObject({
       kind: 'open',
       stop: { kind: 'stopped', on: { kind: 'paused', at: 'boundary' } },
@@ -881,7 +883,7 @@ else {
       'T001',
       'T002',
     ]);
-    const closed = readRunRecord(ref);
+    const closed = readRunRecord(ref, false);
     expect(closed.status).toMatchObject({ kind: 'closed', as: 'complete' });
     const view = deriveSummaryView({ record: closed });
     if (view === null) throw new Error('the completed run left no closed view');

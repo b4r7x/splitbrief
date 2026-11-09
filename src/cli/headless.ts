@@ -7,6 +7,7 @@ import { loadOwnerWorkflowState } from '../core/state/resume-hydration.js';
 import type { SessionRef } from '../core/types/session-ref.js';
 import type { SeatDownPolicy } from '../core/types/config-options.js';
 import type { Config } from '../core/schemas/config.js';
+import { configuredReviewerRunner } from '../core/config/accessors/reviewer-runner.js';
 import type { WorkflowState } from '../core/schemas/workflow.js';
 import { recoveryFactString } from '../core/schemas/recovery/facts.js';
 import { readSession } from '../core/sessions/io.js';
@@ -154,7 +155,8 @@ export function emitReadyToApply(
   sessionId: string,
   writeRecord: RecordWriter,
 ): boolean {
-  const status = state === null ? null : deriveRunStatus({ state, liveness: 'not-alive' });
+  const status =
+    state === null ? null : deriveRunStatus({ state, liveness: 'not-alive', reviewNone: false });
   if (status?.kind !== 'ready-to-apply') return false;
   writeRecord(
     {
@@ -217,7 +219,7 @@ export function failIfSessionFailed(
   cause: string | undefined,
 ): void {
   if (state === null) return;
-  const status = deriveRunStatus({ state, liveness: 'not-alive' });
+  const status = deriveRunStatus({ state, liveness: 'not-alive', reviewNone: false });
   if (status.kind !== 'open' || status.stop.on.kind !== 'failed') return;
   writeRecord({
     type: 'error',
@@ -289,11 +291,12 @@ export interface RunHeadlessOptions {
 }
 
 /** Whether any seat — the three live ones and every build profile — declares a fallback. */
-function configDeclaresFallback(config: Config): boolean {
+export function configDeclaresFallback(config: Config): boolean {
+  const reviewer = configuredReviewerRunner(config);
   const runners = [
     config.planner,
     config.implementer,
-    ...(config.reviewer !== undefined ? [config.reviewer] : []),
+    ...(reviewer !== undefined ? [reviewer] : []),
     ...Object.values(config.implementerProfiles?.profiles ?? {}),
   ];
   return runners.some((runner) => runner.fallback !== undefined);
@@ -509,7 +512,10 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
   if (stopped) {
     const state = loadOwnedState({ projectDir, sessionId });
     await publishHandoffNotice(state);
-    if (state !== null && deriveRunStatus({ state, liveness: 'not-alive' }).kind === 'open')
+    if (
+      state !== null &&
+      deriveRunStatus({ state, liveness: 'not-alive', reviewNone: false }).kind === 'open'
+    )
       writeRunStopped(sessionId);
     return;
   }
@@ -523,7 +529,9 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
   failIfFinalReviewFailed(finalState, projectDir, sessionId, writeRecord);
   if (ready) return;
   const status =
-    finalState === null ? null : deriveRunStatus({ state: finalState, liveness: 'not-alive' });
+    finalState === null
+      ? null
+      : deriveRunStatus({ state: finalState, liveness: 'not-alive', reviewNone: false });
   if (status?.kind === 'closed' && status.as === 'complete') return;
   failIfSessionFailed(finalState, sessionId, writeRecord, lastError);
   failIfFinalReviewIncomplete(finalState, sessionId, writeRecord);

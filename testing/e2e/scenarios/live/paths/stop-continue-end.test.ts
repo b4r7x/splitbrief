@@ -60,7 +60,9 @@ describe('live paths: stop, continue, end', { timeout: 3 * LIVE_PATHS_TIMEOUT_MS
     expect(stopped.exitCode, stopped.stderr).toBe(130);
     const ref = { projectDir, sessionId: stopped.sessionId };
     const parked = readRunState(ref);
-    expect(deriveRunStatus({ state: parked, liveness: 'not-alive' }).kind).toBe('open');
+    expect(deriveRunStatus({ reviewNone: false, state: parked, liveness: 'not-alive' }).kind).toBe(
+      'open',
+    );
     expect(parked.phase).toBe('implementing');
     expect(parked.interruptedStep?.cut).toBe('mid-step');
     expect(parked.pendingRecovery).toBeUndefined();
@@ -76,7 +78,9 @@ describe('live paths: stop, continue, end', { timeout: 3 * LIVE_PATHS_TIMEOUT_MS
     expect(readFileSync(planPath, 'utf-8'), 'the continuation planned again').toBe(plan);
     expect(countRunnerCalls(readEventEntries(runSessionDir(ref))).planner).toBe(planCalls);
     const ready = readRunState(ref);
-    expect(deriveRunStatus({ state: ready, liveness: 'not-alive' }).kind).toBe('ready-to-apply');
+    expect(deriveRunStatus({ reviewNone: false, state: ready, liveness: 'not-alive' }).kind).toBe(
+      'ready-to-apply',
+    );
     expect(ready.tasks.find((task) => task.id === parkedTask?.id)?.status).toBe('done');
 
     const applied = await livePathsCli(project, [
@@ -118,7 +122,9 @@ describe('live paths: stop, continue, end', { timeout: 3 * LIVE_PATHS_TIMEOUT_MS
       expect(stopped.exitCode, stopped.stderr).toBe(130);
       const ref = { projectDir, sessionId: stopped.sessionId };
       const parked = readRunState(ref);
-      expect(deriveRunStatus({ state: parked, liveness: 'not-alive' }).kind).toBe('open');
+      expect(
+        deriveRunStatus({ reviewNone: false, state: parked, liveness: 'not-alive' }).kind,
+      ).toBe('open');
       const workspace = parked.workspace;
       if (workspace === undefined) throw new Error('the stopped run has no workspace');
 

@@ -33,7 +33,7 @@ function ref() {
 }
 
 function record() {
-  return loadRunRecord(ref(), defaultRunRecordDeps());
+  return loadRunRecord(ref(), defaultRunRecordDeps(), false);
 }
 
 function withState(overrides: Partial<WorkflowState>): void {
@@ -133,6 +133,6 @@ describe('loadRunRecord', () => {
     withState({});
     writeConfigYamlText(tmp, 'version: 99\n');
 
-    expect(readRunRecord(ref()).status.kind).toBe('open');
+    expect(readRunRecord(ref(), false).status.kind).toBe('open');
   });
 });

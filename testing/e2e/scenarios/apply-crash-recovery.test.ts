@@ -190,7 +190,9 @@ async function crashMidApply(
   const sessionId = readActive(target.projectDir);
   if (sessionId === null) throw new Error(`the run left no active session: ${started.stderr}`);
   const ready = readState(target, sessionId);
-  expect(deriveRunStatus({ state: ready, liveness: 'not-alive' }).kind).toBe('ready-to-apply');
+  expect(deriveRunStatus({ reviewNone: false, state: ready, liveness: 'not-alive' }).kind).toBe(
+    'ready-to-apply',
+  );
   const workspace = ready.workspace;
   if (workspace === undefined) throw new Error('the run has no workspace');
   expect(workspace.kind).toBe('worktree');
@@ -206,7 +208,7 @@ async function crashMidApply(
   if (backupId === undefined) throw new Error('the killed Apply left no applying record');
   expect(cut.pendingRecovery).toBeUndefined();
   expect(cut.closed).toBeUndefined();
-  expect(deriveRunStatus({ state: cut, liveness: 'not-alive' })).toMatchObject({
+  expect(deriveRunStatus({ reviewNone: false, state: cut, liveness: 'not-alive' })).toMatchObject({
     kind: 'open',
     stop: { kind: 'stopped', on: { kind: 'interrupted' } },
   });
@@ -250,7 +252,9 @@ describe('Apply killed mid-write', { timeout: 240_000 }, () => {
     expect(ready.applying).toBeUndefined();
     expect(ready.pendingRecovery).toBeUndefined();
     expect(ready.closed).toBeUndefined();
-    expect(deriveRunStatus({ state: ready, liveness: 'not-alive' }).kind).toBe('ready-to-apply');
+    expect(deriveRunStatus({ reviewNone: false, state: ready, liveness: 'not-alive' }).kind).toBe(
+      'ready-to-apply',
+    );
     expect(existsSync(workspacePath)).toBe(true);
     expect(await plannerTexts(target, sessionId)).toContain(
       'Restored Apply backup: put back 1 replaced file',
@@ -329,7 +333,11 @@ describe('Apply killed mid-write', { timeout: 240_000 }, () => {
     expect(said).toContain('Restored Apply backup: removed 1 created file');
     expect(said.some((text) => text.includes('put back'))).toBe(false);
     expect(
-      deriveRunStatus({ state: readState(target, sessionId), liveness: 'not-alive' }).kind,
+      deriveRunStatus({
+        reviewNone: false,
+        state: readState(target, sessionId),
+        liveness: 'not-alive',
+      }).kind,
     ).toBe('ready-to-apply');
   });
 
@@ -355,7 +363,9 @@ describe('Apply killed mid-write', { timeout: 240_000 }, () => {
     expect(details).toContain(`${GREET_FILE} · written`);
     expect(details).toContain(`${MARKER_FILE} · not written`);
     expect(halted.applying?.backupId).toBe(backupId);
-    expect(deriveRunStatus({ state: halted, liveness: 'not-alive' })).toMatchObject({
+    expect(
+      deriveRunStatus({ reviewNone: false, state: halted, liveness: 'not-alive' }),
+    ).toMatchObject({
       kind: 'open',
       stop: { kind: 'waiting-for-you', on: { kind: 'halt' } },
     });

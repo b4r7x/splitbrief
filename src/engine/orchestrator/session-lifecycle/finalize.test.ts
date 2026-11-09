@@ -350,7 +350,7 @@ describe('finalizeEndedRun seat identity', () => {
         build: { tool: 'claude-code', model: 'sonnet', axes: ['medium'], kind: 'cli' },
         review: { tool: 'codex', model: 'gpt-5', axes: ['low'], kind: 'cli' },
       },
-      reviewFollowsPlan: false,
+      reviewSeat: 'own',
     });
 
     finalizeEndedRun({ ref, state: { ...createInitialState('feat'), phase: 'implementing' } });

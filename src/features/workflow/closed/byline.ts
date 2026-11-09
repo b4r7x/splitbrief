@@ -18,6 +18,7 @@ import { countNoun } from '../../../utils/pluralize.js';
 import { formatElapsedClock } from '../../../utils/format-time.js';
 import type { DepartureKind } from '../../../stores/workflow/departure.js';
 import { stepWord, stopPoint } from '../stop/copy.js';
+import { statusLeavesWordsUnread } from '../../../core/recovery/typed-words.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
 import { separatedSpans } from '../conversation-rows/row-format/text.js';
 
@@ -247,13 +248,23 @@ export function openRunBylineParts(
   if (!input.continuable) return fitByline(UNREADABLE_BYLINE, width);
   // A halt, a question and a gate wait for you and keep their own line.
   if (status.stop.kind === 'stopped' && wait !== null) return fitByline(waitByline(wait), width);
-  return fitByline(openByline(status.stop, status.resumeAt, input), width);
+  return fitByline(
+    openByline(status.stop, status.resumeAt, {
+      ...input,
+      wordsUnread: statusLeavesWordsUnread(status),
+    }),
+    width,
+  );
 }
 
 function openByline(
   stop: StopReason,
   resumeAt: StepRef,
-  { planCard, failure }: Readonly<{ planCard: boolean; failure: string | null }>,
+  {
+    planCard,
+    failure,
+    wordsUnread,
+  }: Readonly<{ planCard: boolean; failure: string | null; wordsUnread: boolean }>,
 ): Byline {
   switch (stop.on.kind) {
     case 'paused':
@@ -261,7 +272,7 @@ function openByline(
         reason: [
           { text: `Stopped ${stopPoint(resumeAt, stop.on.at)}`, tone: stateTone('attention') },
         ],
-        action: 'Type a correction or ⏎ to continue',
+        action: wordsUnread ? '⏎ to continue' : 'Type a correction or ⏎ to continue',
       };
     // Only a typed plan's card reopens. An old run parked at a gate of the old chain continues as one
     // planning session, which takes a typed correction as its lead.

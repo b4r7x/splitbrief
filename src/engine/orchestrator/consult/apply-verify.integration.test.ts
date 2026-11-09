@@ -211,6 +211,7 @@ describe('applyConsultAnswer verify', () => {
           message: plainUserMessage('keep the alias'),
           phase: state.phase,
           bus: ctx.bus,
+          reviewNone: false,
         });
         return { stdout: 'ok', stderr: '', code: 0 };
       },

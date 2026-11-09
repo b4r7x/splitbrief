@@ -1,6 +1,6 @@
 import { parseShellCommand } from '../../../utils/parse-shell-command.js';
 import { shellQuoteArg } from '../../../utils/shell-quote.js';
-import { resolveEndChecks } from '../../config/runtime/resolve.js';
+import { resolveEndChecks, resolveReviewCadence } from '../../config/runtime/resolve.js';
 import { readManifestCommands } from '../../validation/manifest-commands.js';
 import { detectStack } from '../../validation/stacks/registry.js';
 import { resolveTestCommand, type ResolvedCommand } from '../../validation/stage-command.js';
@@ -33,16 +33,21 @@ export function buildValidationChecks(
   });
   const testCommand = test === null ? null : commandText(test);
   const endChecks = resolveEndChecks(config);
+  const reviewNone = resolveReviewCadence(config) === 'none';
 
   const checks: ReadinessCheck[] = [
     {
       id: 'validation.configured',
       severity: 'info',
-      summary: `End-of-run checks: ${endChecks ? 'on' : 'off'}.`,
+      summary: reviewNone
+        ? 'End-of-run checks: off (REVIEW is None).'
+        : `End-of-run checks: ${endChecks ? 'on' : 'off'}.`,
       details: [
-        endChecks
-          ? 'Before the final review, SPLITBRIEF runs the project gate that the plan names. A task review runs no gate.'
-          : 'No reviewer check runs. Plan and task checks still run.',
+        reviewNone
+          ? 'Each brief runs its own checks, except a render check. No other check runs.'
+          : endChecks
+            ? 'Before the final review, SPLITBRIEF runs the project gate that the plan names. A task review runs no gate.'
+            : 'No reviewer check runs. Plan and task checks still run.',
         ...(testCommand === null
           ? [
               'No test command found.',
@@ -54,7 +59,7 @@ export function buildValidationChecks(
     },
   ];
 
-  if (!endChecks) {
+  if (!endChecks && !reviewNone) {
     checks.push({
       id: 'validation.end-checks-off',
       severity: 'warning',

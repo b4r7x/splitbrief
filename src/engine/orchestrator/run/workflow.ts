@@ -64,6 +64,7 @@ import { SANDBOX_DIR, sessionDir } from '../../../core/paths.js';
 import { resumeStep } from '../../../core/sessions/run-status.js';
 import { createSteeringPort } from '../../calls/steering.js';
 import { seatForRunningCall } from '../../../core/runners/seat-roles.js';
+import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
 
 function resolveSessionStart(savedState: WorkflowState | undefined): number {
   if (!savedState) return Date.now();
@@ -150,6 +151,7 @@ async function runScopedWorkflow(
       ...(ident.reviewerModel !== undefined && { reviewerModel: ident.reviewerModel }),
       ...(ident.reviewerKind !== undefined && { reviewerKind: ident.reviewerKind }),
       ...(ident.reviewerAxes !== undefined && { reviewerAxes: ident.reviewerAxes }),
+      ...(ident.reviewerSeat !== undefined && { reviewerSeat: ident.reviewerSeat }),
       projectDir,
       sessionId,
       ...(opts.modelCache !== undefined && { pricingCache: opts.modelCache }),
@@ -175,7 +177,7 @@ async function runScopedWorkflow(
   // the session record and every resume decision derive from it afterwards. The log names it too,
   // so every surface that shows the run reads it from one fold.
   const recordFailure = (state: WorkflowState, message: string): WorkflowState => {
-    const step = resumeStep(state);
+    const step = resumeStep(state, resolveReviewCadence(config) === 'none');
     const next = recordLastFailure({ projectDir, sessionId }, state, {
       step,
       message,
@@ -204,7 +206,11 @@ async function runScopedWorkflow(
     ) {
       return latest;
     }
-    return parkStoppedRun({ projectDir, sessionId, bus: wctx?.bus ?? workflowBus }, latest);
+    return parkStoppedRun(
+      { projectDir, sessionId, bus: wctx?.bus ?? workflowBus },
+      latest,
+      resolveReviewCadence(config) === 'none',
+    );
   };
 
   const publishWorkflowCancellation = (reason: typeof WORKFLOW_CANCEL_REASON_USER): void => {

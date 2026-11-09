@@ -245,7 +245,7 @@ describe.runIf(process.platform === 'darwin')(
         { kind: 'implement', before: WRONG_ALPHA, guided: true },
       ]);
       expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
-      expect(deriveRunStatus({ state, liveness: 'not-alive' })).toEqual({
+      expect(deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' })).toEqual({
         kind: 'ready-to-apply',
         override: false,
       });

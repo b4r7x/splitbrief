@@ -27,7 +27,7 @@ export function readyToApplyMessage(sessionId: string): string {
 }
 
 export function assertResumableState(state: WorkflowState, sessionId: string): void {
-  const status = deriveRunStatus({ state, liveness: 'not-alive' });
+  const status = deriveRunStatus({ state, liveness: 'not-alive', reviewNone: false });
   if (status.kind === 'closed') {
     throw cliError(`Run ${sessionId} is closed (${status.as}); nothing to resume.`, 1);
   }

@@ -5,6 +5,7 @@ import {
   updateDefaultImplementerConfig,
   updateNamedImplementerConfig,
 } from '../../../core/config/accessors/implementer-profiles.js';
+import { readActiveRunner } from '../../../core/config/accessors/active-runner.js';
 import { PlannerConfigSchema } from '../../../core/schemas/planner-config.js';
 import { ReviewerConfigSchema } from '../../../core/schemas/reviewer-config.js';
 import type { SeatSwapCandidate } from '../../../core/schemas/recovery/schemas.js';
@@ -112,7 +113,7 @@ export function configWithSwitchedSeat(
     }
     case 'review': {
       const parsed = ReviewerConfigSchema.safeParse(
-        switchedRunner(config.reviewer ?? config.planner, candidate, auto, record),
+        switchedRunner(readActiveRunner({ config, role: 'reviewer' }), candidate, auto, record),
       );
       return parsed.success ? { ...config, reviewer: parsed.data } : null;
     }

@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import type { RecoveryAction, RecoveryReason } from '../schemas/enums.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
-import type { RunStatus } from '../sessions/run-status.js';
+import { deriveRunStatus, type RunStatus } from '../sessions/run-status.js';
 import type { StepRef } from '../schemas/run-step.js';
 import { taskId } from '../schemas/task.js';
+import type { WorkflowState } from '../schemas/workflow.js';
 import { leavesWordsUnread, statusLeavesWordsUnread } from './typed-words.js';
 
 describe('leavesWordsUnread', () => {
@@ -107,5 +110,73 @@ describe('statusLeavesWordsUnread with no halt', () => {
     ['a run ready to apply', false, { kind: 'ready-to-apply', override: false }],
   ])('for %s is %s', (_, unread, status) => {
     expect(statusLeavesWordsUnread(status)).toBe(unread);
+  });
+});
+
+describe('statusLeavesWordsUnread on a run that keeps the review step', () => {
+  const AT = '2026-11-09T00:00:00.000Z';
+  const LAST_BRIEF_DONE = { tasks: [makeTask()], currentTaskIndex: 1 };
+  const CHECKOUT = {
+    kind: 'checkout' as const,
+    path: '/tmp/project',
+    base: { snapshotId: 'b', head: null },
+  };
+
+  const statusOf = (stop: Partial<WorkflowState>, reviewNone: boolean): RunStatus =>
+    deriveRunStatus({
+      reviewNone,
+      liveness: 'not-alive',
+      state: makeWorkflowState({ ...LAST_BRIEF_DONE, ...stop }),
+    });
+
+  const REVIEW_STEP = { kind: 'review' as const, cycle: 0 };
+  const STOPS: [string, Partial<WorkflowState>][] = [
+    [
+      'a stop before the review on the checkout',
+      {
+        phase: 'implementing',
+        workspace: CHECKOUT,
+        interruptedStep: { step: REVIEW_STEP, source: 'user', at: AT, cut: 'boundary' },
+      },
+    ],
+    [
+      'a stop inside the review on the checkout',
+      {
+        phase: 'final-review',
+        workspace: CHECKOUT,
+        interruptedStep: { step: REVIEW_STEP, source: 'user', at: AT, cut: 'mid-step' },
+      },
+    ],
+    [
+      'a stop inside the review with no workspace recorded',
+      {
+        phase: 'final-review',
+        interruptedStep: { step: REVIEW_STEP, source: 'user', at: AT, cut: 'mid-step' },
+      },
+    ],
+    ['a process that went away in the review', { phase: 'final-review', workspace: CHECKOUT }],
+  ];
+
+  it.each(STOPS)('is true for %s under REVIEW None: no step reads the words', (_, stop) => {
+    expect(statusLeavesWordsUnread(statusOf(stop, true))).toBe(true);
+  });
+
+  it.each(STOPS)('is false for %s with a seat: the review reads the words', (_, stop) => {
+    expect(statusLeavesWordsUnread(statusOf(stop, false))).toBe(false);
+  });
+
+  it('is false for a stop at a brief under REVIEW None: the brief reads the words', () => {
+    const stop: Partial<WorkflowState> = {
+      phase: 'implementing',
+      currentTaskIndex: 0,
+      workspace: CHECKOUT,
+      interruptedStep: {
+        step: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
+        source: 'user',
+        at: AT,
+        cut: 'boundary',
+      },
+    };
+    expect(statusLeavesWordsUnread(statusOf(stop, true))).toBe(false);
   });
 });

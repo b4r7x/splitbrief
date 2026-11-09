@@ -124,6 +124,8 @@ export interface StopSheetInput {
    * denied write; at 0 it has no partial changes to keep. Null or absent while no such row was read.
    */
   readonly briefKept?: number | null | undefined;
+  /** The run pass has REVIEW None, so no brief ends in a review. */
+  readonly reviewNone?: boolean | undefined;
 }
 
 export function stopSheetRows(input: StopSheetInput): StopRow[] {
@@ -148,7 +150,7 @@ export function stopSheetRows(input: StopSheetInput): StopRow[] {
     rows.push({
       id: 'pause-after-brief',
       label: 'Pause after this brief',
-      consequence: `finish ${input.currentTaskId} including checks and review; do not start ${input.nextTaskId ?? 'another brief'}`,
+      consequence: `finish ${input.currentTaskId} including ${input.reviewNone === true ? 'checks' : 'checks and review'}; do not start ${input.nextTaskId ?? 'another brief'}`,
     });
   }
   rows.push({
@@ -242,7 +244,7 @@ export function readStopMenuRows(): StopRow[] {
         consequence: 'return to sessions once cleanup and saving finish',
       },
     ];
-  const { briefs, phase, briefKept } = runViewStore.get();
+  const { briefs, phase, briefKept, reviewNone } = runViewStore.get();
   const brief = selectRunningBrief(briefs, phase);
   const rows = stopSheetRows({
     currentTaskId: brief.current?.id ?? null,
@@ -250,6 +252,7 @@ export function readStopMenuRows(): StopRow[] {
     hasChanges: runHasChanges(),
     boundaryPauseRequested: stop.intent === 'pause-after-brief',
     briefKept,
+    reviewNone,
   });
   const issue = runViewStore.get().halt?.issue ?? null;
   // A halt offers only the actions it accepts: an unfinished Apply's halt refuses End run.

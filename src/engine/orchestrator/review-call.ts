@@ -1,5 +1,5 @@
 import type { z } from 'zod';
-import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
+import { requireReviewSeat } from '../../core/config/accessors/reviewer-runner.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
@@ -68,7 +68,7 @@ export async function runReviewerCall<T>(
       ref,
       state: current,
       seat: 'review',
-      runner: resolveReviewerRunner(config).runner,
+      runner: requireReviewSeat(config).runner,
       config,
       ...(opts.signal !== undefined && { signal: opts.signal }),
       onStateChange: (next) => {

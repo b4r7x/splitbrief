@@ -91,6 +91,7 @@ function setupReview(kind: 'cli' | 'api') {
       message: plainUserMessage(text),
       phase: 'final-review',
       bus,
+      reviewNone: false,
     });
   return {
     ...ref,
@@ -139,6 +140,7 @@ describe('final review queue delivery', () => {
               state: loadState(opts) ?? opts.state,
               message,
               phase: 'final-review',
+              reviewNone: false,
             });
             return 'invalid verdict';
           }
@@ -190,7 +192,7 @@ describe('final review queue delivery', () => {
         ],
         attachedInputs: [{ kind: 'image' as const, path: '/outside/shot.png' }],
       };
-      enqueueUserMessage({ ...opts, message, phase: 'final-review' });
+      enqueueUserMessage({ ...opts, message, phase: 'final-review', reviewNone: false });
       const contexts: TypedCallContext[] = [];
       const prompts: string[] = [];
       const typedCall = typedCallPlanAndReview(
@@ -234,6 +236,7 @@ describe('final review queue delivery', () => {
               state: loadState(opts) ?? { ...opts.state, phase: 'implementing' },
               message: plainUserMessage('correct the running brief'),
               phase: 'implementing',
+              reviewNone: false,
             });
           return passingReviewVerdict(prompt);
         },

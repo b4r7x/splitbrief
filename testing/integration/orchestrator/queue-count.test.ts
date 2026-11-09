@@ -42,6 +42,7 @@ describe('queue count across delivery and reopening', () => {
       message: plainUserMessage('keep this for the fix'),
       phase: 'final-review',
       bus,
+      reviewNone: false,
     });
     let current = (await drainQueueForReview({ ...ref, state: reviewed.state, bus })).state;
     expect(lifecycleStore.get().queueDepth).toBe(0);
@@ -51,6 +52,7 @@ describe('queue count across delivery and reopening', () => {
       message: plainUserMessage('another message'),
       phase: 'implementing',
       bus,
+      reviewNone: false,
     });
     current = pending.state;
     const message = current.messageQueue.find((queued) => queued.text === 'keep this for the fix');
@@ -70,7 +72,7 @@ describe('queue count across delivery and reopening', () => {
     expect(lifecycleStore.get().queueDepth).toBe(1);
     const saved = loadState(ref);
     if (saved === null) throw new Error('Missing saved queue');
-    hydrateFromState(saved);
+    hydrateFromState(saved, false);
     expect(lifecycleStore.get().queueDepth).toBe(1);
     const reopened = execFileSync(
       process.execPath,

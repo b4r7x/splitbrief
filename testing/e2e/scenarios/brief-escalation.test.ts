@@ -306,7 +306,7 @@ describe('e2e: brief escalation', { timeout: 240_000 }, () => {
     if (state.workspace === undefined) throw new Error('The halted run recorded no workspace');
     expect(existsSync(join(state.workspace.path, 'src/beta.mjs'))).toBe(false);
 
-    expect(readRunRecord(ref).status).toMatchObject({
+    expect(readRunRecord(ref, false).status).toMatchObject({
       kind: 'open',
       stop: {
         kind: 'waiting-for-you',
@@ -369,7 +369,7 @@ describe('e2e: brief escalation', { timeout: 240_000 }, () => {
     expect(readFileSync(join(state.workspace.path, 'src/alpha.mjs'), 'utf8')).toBe(
       ALPHA_FILES['src/alpha.mjs'],
     );
-    expect(readRunRecord(ref).status).toEqual({ kind: 'ready-to-apply', override: false });
+    expect(readRunRecord(ref, false).status).toEqual({ kind: 'ready-to-apply', override: false });
 
     const { events } = await readRunEvents(ref);
     expect(events.filter((event) => event.type === 'recovery_resolved')).toMatchObject([

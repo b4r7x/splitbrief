@@ -219,8 +219,11 @@ function seatProbeRunner(config: Config, seat: SeatProbeSeat): RunnerConfig {
       return config.planner;
     case 'build':
       return resolveImplementerProfiles(config).defaultProfile.config;
-    case 'review':
-      return resolveReviewerRunner(config).runner;
+    case 'review': {
+      const reviewer = resolveReviewerRunner(config);
+      if (reviewer.source === 'none') throw cliError('REVIEW is set to None; no seat to probe.', 1);
+      return reviewer.runner;
+    }
   }
 }
 

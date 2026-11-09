@@ -405,6 +405,75 @@ describe('runHeadless — with a reviewer configured', () => {
     expect(lines).toContainEqual(expect.objectContaining({ type: 'recovery_required' }));
   });
 
+  async function runWithReviewNone(name: string, plain: boolean): Promise<string> {
+    const projectDir = createHeadlessGitProject(name);
+    dirs.push(projectDir);
+    writeHeadlessConfigYaml(projectDir, [
+      'version: 3',
+      'planner:',
+      '  kind: cli',
+      '  tool: claude-code',
+      'reviewer: none',
+      'implementer:',
+      '  kind: api',
+      '  provider: ollama',
+      '  service: ollama',
+      '  offering: local',
+      '  api_base: http://localhost:11434/v1',
+      '  model: qwen2.5-coder:7b',
+      '  context_length: 32768',
+      'validation:',
+      '  test_command: "true"',
+      'workflow:',
+      '  approve: none',
+    ]);
+    const sessionId = `sess-${name}`;
+    ensureSessionDir(projectDir, sessionId);
+    writeActive({ projectDir, sessionId });
+
+    await runHeadless({
+      prepared: preparedHeadlessExecution({ projectDir, sessionId, feature: 'no review' }),
+      ...(plain && { plain: true }),
+      _planner: makePlanner({
+        typedCall: typedCallFromTasks(
+          [
+            makeTask({
+              scope: { inBounds: ['src/hello.ts'], outOfBounds: ['everything else'] },
+              evidence: ['src/hello.test.ts passes'],
+              typeDefs: 'export type Hello = string;',
+            }),
+          ],
+          { inputTokens: 50, outputTokens: 25 },
+        ),
+      }),
+      _implementer: makeImplementer(),
+    });
+
+    return stdoutChunks.join('');
+  }
+
+  it('--json None', async () => {
+    const stdout = await runWithReviewNone('headless-none-json', false);
+
+    const records = stdout
+      .trim()
+      .split('\n')
+      .filter((line) => line.trim().startsWith('{'))
+      .map((line) => HeadlessJsonRecordSchema.parse(JSON.parse(line)));
+    expect(
+      records.flatMap((record) => (record.type === 'event' ? [record.data] : [])),
+    ).toContainEqual(expect.objectContaining({ type: 'workflow_complete', review: 'none' }));
+    expect(records).toContainEqual(
+      expect.objectContaining({ type: 'ready_to_apply', override: false }),
+    );
+  }, 30_000);
+
+  it('--plain None', async () => {
+    const stdout = await runWithReviewNone('headless-none-plain', true);
+
+    expect(stdout.split('\n')).toContain('review: none (REVIEW is None)');
+  }, 30_000);
+
   it('runs the workflow through to the configured reviewer seat', async () => {
     const projectDir = createHeadlessGitProject('headless-reviewer-run');
     dirs.push(projectDir);

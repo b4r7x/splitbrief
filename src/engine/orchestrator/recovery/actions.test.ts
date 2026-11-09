@@ -1204,7 +1204,7 @@ describe('applyRecoveryAction: retry-later', () => {
         build: 'b',
         review: 'r',
         ids: { plan: CLAUDE_IDS, build: CLAUDE_IDS, review: CLAUDE_IDS, ...ids },
-        reviewFollowsPlan: false,
+        reviewSeat: 'own',
         ...(buildProfiles !== undefined && {
           buildProfiles: Object.fromEntries(
             Object.entries(buildProfiles).map(([name, profileIds]) => [

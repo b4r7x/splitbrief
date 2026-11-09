@@ -33,11 +33,11 @@ describe('live run Apply', () => {
         }),
       );
       expect(existsSync(join(projectDir, 'src/live-easy.ts'))).toBe(false);
-      await applyLiveRun(ref);
+      await applyLiveRun({ ...ref, reviewNone: false });
       expect(readFileSync(join(projectDir, 'src/live-easy.ts'), 'utf-8')).toBe(artifact);
       const state = loadState(ref);
       if (state === null) throw new Error('missing applied state');
-      expect(deriveRunStatus({ state, liveness: 'not-alive' })).toEqual({
+      expect(deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' })).toEqual({
         kind: 'closed',
         as: 'applied',
       });
@@ -59,9 +59,11 @@ describe('live run Apply', () => {
   it('rejects a missing or unfinished run before evaluating an artifact', async () => {
     await withTempDir('live-not-ready', async (projectDir) => {
       const ref = { projectDir, sessionId: 'test-not-ready' };
-      await expect(applyLiveRun(ref)).rejects.toThrow(/no saved state/);
+      await expect(applyLiveRun({ ...ref, reviewNone: false })).rejects.toThrow(/no saved state/);
       saveState(ref, makeWorkflowState({ ...RUN_CREW, phase: 'planning' }));
-      await expect(applyLiveRun(ref)).rejects.toThrow(/ready-to-apply.*open/);
+      await expect(applyLiveRun({ ...ref, reviewNone: false })).rejects.toThrow(
+        /ready-to-apply.*open/,
+      );
       expect(existsSync(join(projectDir, 'src/live-easy.ts'))).toBe(false);
     });
   });
@@ -86,7 +88,9 @@ describe('live run Apply', () => {
           },
         }),
       );
-      await expect(applyLiveRun(ref)).rejects.toThrow(/outcome is needs-confirmation/);
+      await expect(applyLiveRun({ ...ref, reviewNone: false })).rejects.toThrow(
+        /outcome is needs-confirmation/,
+      );
       expect(loadState(ref)?.applied).toBeUndefined();
       expect(existsSync(workspace)).toBe(true);
     });

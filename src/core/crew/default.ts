@@ -8,7 +8,7 @@ import { cliToolSupportsRole, LISTED_CLI_TOOL_IDS } from '../runners/cli-tool-ca
 import type { Config } from '../schemas/config.js';
 import { resolveEffectiveConfig } from '../config/runtime/effective-config.js';
 import type { CLIOverrides } from '../config/runtime/overrides/schema.js';
-import { resolveReviewerRunner } from '../config/accessors/reviewer-runner.js';
+import { readActiveRunner } from '../config/accessors/active-runner.js';
 
 export type CrewDetection = Readonly<{
   cliTools: readonly CliToolDetection[];
@@ -50,7 +50,7 @@ export function resolveInitialCrew(input: { persisted: Config; overrides: CLIOve
     planner: hasSeatOverride('planner') ? invocation.planner : persisted.planner,
     implementer: hasSeatOverride('implementer') ? invocation.implementer : persisted.implementer,
     ...(hasSeatOverride('reviewer')
-      ? { reviewer: resolveReviewerRunner(invocation).runner }
+      ? { reviewer: readActiveRunner({ config: invocation, role: 'reviewer' }) }
       : persisted.reviewer === undefined
         ? {}
         : { reviewer: persisted.reviewer }),

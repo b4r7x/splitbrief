@@ -251,7 +251,9 @@ describe('e2e: continue after a stop in the stuck-review planner call', {
     const ready = readState(target, sessionId);
     expect(ready.reviewStatus).toBe('passed');
     expect(ready.tasks.find((task) => task.title === REWRITTEN)).toMatchObject({ status: 'done' });
-    expect(deriveRunStatus({ state: ready, liveness: 'not-alive' }).kind).toBe('ready-to-apply');
+    expect(deriveRunStatus({ reviewNone: false, state: ready, liveness: 'not-alive' }).kind).toBe(
+      'ready-to-apply',
+    );
     const lines = continued.stdout.split('\n');
     const stuck = lines.indexOf(
       `review: stuck after T002 · planner: new fix brief T003 · ${DIAGNOSIS}`,

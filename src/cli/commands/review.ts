@@ -4,7 +4,11 @@ import chalk from 'chalk';
 import { plainTheme } from '../../core/theme/resolve.js';
 import type { Theme } from '../../core/theme/palette.js';
 import { paint } from '../../core/theme/paint.js';
-import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
+import { readActiveRunner } from '../../core/config/accessors/active-runner.js';
+import {
+  requireReviewSeat,
+  resolveReviewerRunner,
+} from '../../core/config/accessors/reviewer-runner.js';
 import { getRunnerCatalogDisplayName } from '../../core/config/accessors/runner-config.js';
 import {
   emitEffectiveConfigWarnings,
@@ -47,7 +51,7 @@ import {
   promptCustomRunnerArtifactApproval,
   promptCustomRunnerDisclosure,
 } from '../custom-runner-prompts.js';
-import { withCliErrors } from '../errors.js';
+import { cliError, withCliErrors } from '../errors.js';
 import {
   ALLOW_REPO_RUNNERS_HELP,
   parseGitRefOption,
@@ -154,14 +158,17 @@ export function registerReviewCommand(program: Command, deps: ReviewCommandDeps 
       }
 
       const loaded = loadConfigOrExit(projectDir);
-      // The review seat is named explicitly for this call: `resolveReviewerRunner`
+      // The review seat is named explicitly for this call: `readActiveRunner`
       // decides it once — the configured block, or the planner holding the seat —
       // and preparation then admits it as the reviewer slot, so the factory has
       // one path to take and no second reading of `config.reviewer` exists.
       const base = initialInvocation ?? loaded.config;
+      if (resolveReviewerRunner(base).source === 'none' && opts.reviewer === undefined) {
+        throw cliError('REVIEW is set to None; pass --reviewer to name a seat for this review.', 1);
+      }
       const declared = {
         ...base,
-        reviewer: resolveReviewerRunner(base).runner,
+        reviewer: readActiveRunner({ config: base, role: 'reviewer' }),
       };
       const { config, warnings } = resolveEffectiveConfig({
         base: declared,
@@ -215,7 +222,7 @@ export function registerReviewCommand(program: Command, deps: ReviewCommandDeps 
         }),
       });
 
-      const seat = resolveReviewerRunner(execution.config);
+      const seat = requireReviewSeat(execution.config);
       const subject =
         baseRef === undefined
           ? 'the working tree'

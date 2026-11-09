@@ -757,7 +757,8 @@ export function raisePendingRecovery(
     { bus: scope.bus, phase: next.phase },
     scope.sessionId,
     issue,
-    resumeStep(next),
+    // Only a brief, the planning session or a seat review raises a halt: never a pass under REVIEW None.
+    resumeStep(next, false),
   );
   setTrackedState?.(next);
   return next;
@@ -798,9 +799,10 @@ export function raiseBriefHalt(
 export async function parkStoppedRun(
   scope: SessionRef & { bus?: EventBus | undefined },
   state: WorkflowState,
+  reviewNone: boolean,
 ): Promise<WorkflowState> {
   if (state.interruptedStep !== undefined) return state;
-  const step = resumeStep(state);
+  const step = resumeStep(state, reviewNone);
   const cut = step.kind === 'gate' ? 'boundary' : 'mid-step';
   const kept = await keptBriefFiles(runCodeDir(scope.projectDir, state.workspace), state, step);
   const next = transitionAndSave(scope, state, {

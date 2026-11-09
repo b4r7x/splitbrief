@@ -37,7 +37,7 @@ export const closedQueueProjection: WorkflowFixtureProjection = {
       ...record,
       ref: { ...record.ref, sessionId: 'visual-closed-queued' },
       hydration: { kind: 'loaded', state },
-      status: deriveRunStatus({ state, liveness: 'not-alive' }),
+      status: deriveRunStatus({ state, liveness: 'not-alive', reviewNone: false }),
     },
     log: [
       {

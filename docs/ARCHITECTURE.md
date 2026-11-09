@@ -59,7 +59,7 @@ SPLITBRIEF is an orchestrator of two coding tools: one plans and reviews, the ot
 1. **Planner** — an expensive, capable model (Claude / GPT / Codex / Claude-Code CLI / etc.) that ingests the feature request, explores the repo, and compiles a Task Brief: a structured list of `Task` objects, one per slice, each naming the files it writes plus scope, validation, and evidence.
 2. **Implementer** — the weaker model of the pair, carried either by a tool CLI configured with a cheap model or by a model behind an OpenAI-compatible API. Both transports are first-class. It executes one task at a time against its self-contained brief; the checks that judge the result are SPLITBRIEF's: the plan's checks, and the reviewer checks: the project gate that the plan names, which SPLITBRIEF runs under the reviewer command policy.
 
-The review seat (`Reviewer`, `src/engine/reviewers/types.ts`) is the optional `reviewer:` runner; with none configured the planner holds it (`resolveReviewerRunner`). It reviews the run diff in stateless calls. It answers no consult: the planner answers every consult, the consult of a fix task included (`src/engine/orchestrator/consult/request.ts`).
+The review seat (`Reviewer`, `src/engine/reviewers/types.ts`) is the optional `reviewer:` runner; with none configured the planner holds it, and with `reviewer: none` no seat holds it (`resolveReviewerRunner`). It reviews the run diff in stateless calls. It answers no consult: the planner answers every consult, the consult of a fix task included (`src/engine/orchestrator/consult/request.ts`).
 
 The repository layers many supporting subsystems on top of that core loop:
 
@@ -529,7 +529,7 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 
 `recovery/builders/apply.ts` builds the `apply-conflict` and `apply-partial` halts. Their actions are `accept-as-is` and `restore-backup`. [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#recovery) owns their policy and behavior.
 
-The state actions are `RECORD_WORKSPACE`, `ACCEPT_AS_IS`, `APPLY_REVIEW_START`, `APPLY_START`, `APPLY_DONE` and `APPLY_RESTORED`. `CLOSE_RUN` also accepts `as: 'discarded'`. `RECORD_REJECT` drops the paths a reject that left files behind put back from the stop's `interruptedStep.kept`. It sets each passed task that booked one of those paths back to `pending`. When the first such task comes before the current one, the run moves back before it and clears its `pendingRecovery`. Their effects are in [WORKFLOW.md](./WORKFLOW.md#apply).
+The state actions are `RECORD_WORKSPACE`, `ACCEPT_AS_IS`, `APPLY_REVIEW_START`, `APPLY_RECHECK_START`, `APPLY_START`, `APPLY_DONE` and `APPLY_RESTORED`. `CLOSE_RUN` also accepts `as: 'discarded'`. `RECORD_REJECT` drops the paths a reject that left files behind put back from the stop's `interruptedStep.kept`. It sets each passed task that booked one of those paths back to `pending`. When the first such task comes before the current one, the run moves back before it and clears its `pendingRecovery`. Their effects are in [WORKFLOW.md](./WORKFLOW.md#apply).
 
 The old file-halt enums and event schemas remain readers for saved sessions. [Retired file halts](./APPROVAL-AND-RECOVERY.md#retired-file-halts) describes continuation.
 
@@ -674,7 +674,7 @@ Path encoding: a snapshot blob name is the SHA-256 hex of the file's relative pa
 
 ## 7. Runner abstraction (4 kinds)
 
-The `kind` discriminant is required in every planner / reviewer / implementer config. Factory: `src/engine/runners/factory.ts` — `createPlanner(config, options)` / `createReviewer(config, options)` / `createImplementer(config, options)` are async and dispatch on `kind` through memoized dynamic imports. The `reviewer:` block is optional; with none configured the planner holds the review seat. Pairs of files match by role:
+The `kind` discriminant is required in every planner / reviewer / implementer config. Factory: `src/engine/runners/factory.ts` — `createPlanner(config, options)` / `createReviewer(config, options)` / `createImplementer(config, options)` are async and dispatch on `kind` through memoized dynamic imports. The `reviewer:` block is optional; with none configured the planner holds the review seat, and the string `reviewer: none` means that no seat reviews. Pairs of files match by role:
 
 | `kind` | Planner file | Implementer file | Implementer write mode | Examples |
 |---|---|---|---|---|

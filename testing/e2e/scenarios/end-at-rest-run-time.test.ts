@@ -58,7 +58,7 @@ it('records how long a killed run ran when it is ended at rest days later', {
     ...events.filter((event) => event.ts < atRestFrom).map((event) => event.ts),
   );
 
-  const activeTime = readRunRecord(ref).summary?.activeTime;
+  const activeTime = readRunRecord(ref, false).summary?.activeTime;
   expect(activeTime).toBe(lastOfKilled - started.ts);
   expect(activeTime).toBeLessThan(DAY);
 });

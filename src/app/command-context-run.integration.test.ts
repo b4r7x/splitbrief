@@ -18,18 +18,26 @@ import { makeWorkflowState, RUN_CREW } from '#testing/helpers/factories/workflow
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { STATE_FILE, sessionDir } from '../core/paths.js';
-import type { WorkflowState } from '../core/schemas/workflow.js';
+import { fixCyclesOf, type WorkflowState } from '../core/schemas/workflow.js';
 import { readRunRecord } from '../core/sessions/run-record-io.js';
+import type { RunStatus } from '../core/sessions/run-status.js';
 import { transition } from '../core/state/machine.js';
 import { loadState, saveState } from '../core/state/persistence.js';
 import { captureReviewedCandidate } from '../engine/orchestrator/apply/states.js';
+import { plainUserMessage } from '../core/types/user-input.js';
 import { createEventBus } from '../engine/events/bus.js';
+import type { EngineEventOf } from '../engine/events/types.js';
 import {
   recordCheckoutRunSnapshot,
   recordRunSnapshotForRun,
 } from '../engine/orchestrator/run/snapshots.js';
+import { continueRun } from '../engine/orchestrator/run/continue.js';
+import { parkStoppedRun } from '../engine/orchestrator/state-ops.js';
 import { createSnapshot } from '../engine/snapshots/create.js';
 import * as lifecycle from '../engine/snapshots/run/lifecycle.js';
+import { atRestComposer, atRestRailStages } from '../features/workflow/at-rest.js';
+import { openRunBylineParts } from '../features/workflow/closed/byline.js';
+import { stopPoint } from '../features/workflow/stop/copy.js';
 import { configStore } from '../stores/project/config.js';
 import { routerStore } from '../stores/navigation/router.js';
 import { buildCommandContext } from './command-context.js';
@@ -65,12 +73,15 @@ function build() {
   });
 }
 
-function openAtRest(projectDir: string, state: WorkflowState): void {
+function openAtRest(projectDir: string, state: WorkflowState, config = makeConfig()): void {
   const ref = { projectDir, sessionId: SESSION_ID };
   saveState(ref, state);
-  const config = makeConfig();
   configStore.__testReset({ projectDir, config, diskConfig: config });
-  routerStore.init({ screen: 'workflow', run: readRunRecord(ref), execution: { kind: 'at-rest' } });
+  routerStore.init({
+    screen: 'workflow',
+    run: readRunRecord(ref, configStore.reviewNone()),
+    execution: { kind: 'at-rest' },
+  });
 }
 
 function readyRun(run: ApplyRun): void {
@@ -112,7 +123,7 @@ describe('/run on a run with a workspace', () => {
           readyRun(run);
           const ctx = build();
 
-          expect(await ctx.acceptRun(false)).toEqual({ status: 'review' });
+          expect(await ctx.acceptRun(false)).toEqual({ status: 'review', reviewNone: false });
           expect(read(run.dir, 'a.txt')).toBe(lines('one', 'two', 'three', 'four', 'FIVE'));
           openAtRest(
             run.dir,
@@ -242,6 +253,203 @@ describe('/run on a run with a workspace', () => {
         expect(accepted.status).toBe('unavailable');
         expect(read(run.dir, 'a.txt')).toBe(FIVE);
         expect(savedState(run.dir).closed).toBeUndefined();
+      },
+    );
+  });
+
+  it('/run accept sends a changed merge back to its checks only when REVIEW is None at Apply', async () => {
+    await withApplyRun(
+      { 'a.txt': FIVE },
+      { sessionId: SESSION_ID, strategy: 'staged-copy' },
+      async (run) => {
+        writeFileSync(join(run.ws, 'a.txt'), lines('ONE', 'two', 'three', 'four', 'five'));
+        writeFileSync(join(run.dir, 'a.txt'), lines('one', 'two', 'three', 'four', 'FIVE'));
+        openAtRest(
+          run.dir,
+          makeWorkflowState({
+            ...RUN_CREW,
+            phase: 'complete',
+            reviewStatus: 'passed',
+            workspace: run.workspace,
+          }),
+          makeConfig({ reviewer: 'none' }),
+        );
+
+        expect(await build().acceptRun(false)).toEqual({ status: 'review', reviewNone: true });
+        expect(fixCyclesOf(savedState(run.dir)).used).toBe(0);
+      },
+    );
+  });
+
+  it('a None run that /run accept sent back to its checks rests at Apply, and a stop there names Apply', async () => {
+    await withApplyRun(
+      { 'a.txt': FIVE },
+      { sessionId: SESSION_ID, strategy: 'staged-copy' },
+      async (run) => {
+        writeFileSync(join(run.ws, 'a.txt'), lines('ONE', 'two', 'three', 'four', 'five'));
+        writeFileSync(join(run.dir, 'a.txt'), lines('one', 'two', 'three', 'four', 'FIVE'));
+        openAtRest(
+          run.dir,
+          makeWorkflowState({
+            ...RUN_CREW,
+            reviewerSeat: 'none',
+            phase: 'complete',
+            reviewStatus: 'none',
+            workspace: run.workspace,
+          }),
+          makeConfig({ reviewer: 'none' }),
+        );
+        const ref = { projectDir: run.dir, sessionId: SESSION_ID };
+        expect(await build().acceptRun(false)).toEqual({ status: 'review', reviewNone: true });
+        const atApply: RunStatus = {
+          kind: 'open',
+          stop: { kind: 'stopped', on: { kind: 'interrupted' } },
+          resumeAt: { kind: 'apply' },
+        };
+        const railAtApply = [
+          { stage: 'plan', status: 'done' },
+          { stage: 'build', status: 'done' },
+          { stage: 'review', status: 'skipped' },
+          { stage: 'apply', status: 'cancelled' },
+        ];
+        const byline = (record: ReturnType<typeof readRunRecord>) =>
+          openRunBylineParts({
+            status: record.status,
+            wait: null,
+            planCard: false,
+            failure: null,
+            continuable: true,
+            width: 120,
+            now: Date.now(),
+          })
+            .map((part) => part.text)
+            .join('');
+
+        const rested = readRunRecord(ref, configStore.reviewNone());
+        expect(rested.status).toEqual(atApply);
+        expect(atRestRailStages(rested)).toEqual(railAtApply);
+        expect(byline(rested)).toBe('Stopped at Apply · ⏎ to continue');
+        expect(atRestComposer(rested).placeholder).toBe('/ for a command…');
+        const restart = vi.fn();
+        expect(
+          continueRun({
+            reviewNone: configStore.reviewNone(),
+            ref,
+            steer: plainUserMessage('also fix the typo'),
+            deps: {
+              resumeParked: () => false,
+              loadState: () => ({ kind: 'loaded', state: savedState(run.dir) }),
+              restart,
+            },
+          }),
+        ).toEqual({
+          kind: 'refused',
+          reason: 'takes-no-words',
+          message: 'Cannot send words to Apply. Clear them.',
+        });
+        expect(restart).not.toHaveBeenCalled();
+
+        const bus = createEventBus();
+        const stops: EngineEventOf<'turn_interrupted'>[] = [];
+        bus.subscribe((event) => {
+          if (event.type === 'turn_interrupted') stops.push(event);
+        });
+        await parkStoppedRun({ ...ref, bus }, savedState(run.dir), configStore.reviewNone());
+        const parked = readRunRecord(ref, configStore.reviewNone());
+
+        expect(stops.map((stop) => stop.step)).toEqual([{ kind: 'apply' }]);
+        expect(
+          stops.map((stop) =>
+            stop.step === undefined ? '' : `Stopped ${stopPoint(stop.step, stop.at)}`,
+          ),
+        ).toEqual(['Stopped at Apply']);
+        expect(parked.status).toEqual({
+          ...atApply,
+          stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } },
+        });
+        expect(atRestRailStages(parked)).toEqual(railAtApply);
+        expect(byline(parked)).toBe('Stopped at Apply · ⏎ to continue');
+        expect(atRestComposer(parked).placeholder).toBe('/ for a command…');
+        expect(read(run.dir, 'a.txt')).toBe(lines('one', 'two', 'three', 'four', 'FIVE'));
+      },
+    );
+  });
+
+  it.each([
+    [
+      'a seat run that /run accept sent to its review, then a move to None',
+      false,
+      {
+        resumeAt: { kind: 'apply' },
+        byline: 'Stopped at Apply · ⏎ to continue',
+        placeholder: '/ for a command…',
+        review: 'skipped',
+        words: 'refused',
+      },
+    ],
+    [
+      'a None run that /run accept sent to its checks, then a move to a seat',
+      true,
+      {
+        resumeAt: { kind: 'review', cycle: 0 },
+        byline: 'Stopped at the review · ⏎ to continue',
+        placeholder: 'Type a correction…',
+        review: 'cancelled',
+        words: 'restarted',
+      },
+    ],
+  ] as const)('%s names the step of the next pass', async (_, fromNone, expected) => {
+    const crewOf = (none: boolean) => (none ? makeConfig({ reviewer: 'none' }) : makeConfig());
+    await withApplyRun(
+      { 'a.txt': FIVE },
+      { sessionId: SESSION_ID, strategy: 'staged-copy' },
+      async (run) => {
+        writeFileSync(join(run.ws, 'a.txt'), lines('ONE', 'two', 'three', 'four', 'five'));
+        writeFileSync(join(run.dir, 'a.txt'), lines('one', 'two', 'three', 'four', 'FIVE'));
+        openAtRest(
+          run.dir,
+          makeWorkflowState({
+            ...RUN_CREW,
+            ...(fromNone && { reviewerSeat: 'none' as const }),
+            phase: 'complete',
+            reviewStatus: fromNone ? 'none' : 'passed',
+            workspace: run.workspace,
+          }),
+          crewOf(fromNone),
+        );
+        expect(await build().acceptRun(false)).toEqual({ status: 'review', reviewNone: fromNone });
+
+        const moved = crewOf(!fromNone);
+        configStore.__testReset({ projectDir: run.dir, config: moved, diskConfig: moved });
+        const ref = { projectDir: run.dir, sessionId: SESSION_ID };
+        const record = readRunRecord(ref, configStore.reviewNone());
+        const words = continueRun({
+          reviewNone: configStore.reviewNone(),
+          ref,
+          steer: plainUserMessage('also fix the typo'),
+          deps: {
+            resumeParked: () => false,
+            loadState: () => ({ kind: 'loaded', state: savedState(run.dir) }),
+            restart: () => {},
+          },
+        });
+        expect({
+          resumeAt: record.status.kind === 'open' ? record.status.resumeAt : record.status.kind,
+          byline: openRunBylineParts({
+            status: record.status,
+            wait: null,
+            planCard: false,
+            failure: null,
+            continuable: true,
+            width: 120,
+            now: Date.now(),
+          })
+            .map((part) => part.text)
+            .join(''),
+          placeholder: atRestComposer(record).placeholder,
+          review: atRestRailStages(record).find((stage) => stage.stage === 'review')?.status,
+          words: words.kind,
+        }).toEqual(expected);
       },
     );
   });

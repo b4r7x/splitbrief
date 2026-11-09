@@ -58,6 +58,6 @@ export function defaultRunRecordDeps(): RunRecordDeps {
 }
 
 /** One run, read from disk through the real readers. The composition root for `loadRunRecord`. */
-export function readRunRecord(ref: SessionRef): RunRecord {
-  return loadRunRecord(ref, defaultRunRecordDeps());
+export function readRunRecord(ref: SessionRef, reviewNone: boolean): RunRecord {
+  return loadRunRecord(ref, defaultRunRecordDeps(), reviewNone);
 }

@@ -26,6 +26,7 @@ import type { ContinueDeps } from './command.js';
 import { cliPreparationPolicy, preparedExecutionOrThrow } from '../start/readiness.js';
 import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
 import { briefPosition } from '../../../core/state/selectors.js';
+import { configStore } from '../../../stores/project/config.js';
 
 export type ResumeTailDeps = Pick<
   ContinueDeps,
@@ -134,7 +135,7 @@ export async function resumeSavedSession(args: {
     skillsStore.setSelected(new Set(resumeSkillIds));
   }
   const execution = await prepareResume(interaction);
-  const record = readRunRecord(ref);
+  const record = readRunRecord(ref, configStore.reviewNone());
   // The run keeps the history it already wrote: replayed before the screen mounts, appended to by
   // the live bus from there.
   await hydrateRun(record);

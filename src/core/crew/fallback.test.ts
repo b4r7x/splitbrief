@@ -37,6 +37,12 @@ describe('deriveFallbackRows', () => {
     ]);
   });
 
+  it('gives REVIEW no row while REVIEW is None', () => {
+    const rows = deriveFallbackRows({ config: makeConfig({ reviewer: 'none' }), cliTools: READY });
+
+    expect(rows.map(fallbackRowKey)).toEqual(['fallback:plan', 'fallback:build']);
+  });
+
   it('leaves the fallback, its identity and its note off a seat that sets none', () => {
     for (const row of deriveFallbackRows({ config: makeConfig(), cliTools: READY })) {
       expect(row.fallback).toBeUndefined();

@@ -32,7 +32,7 @@ Top-level shape:
 version: 3
 planner:        { kind: cli|api|shell|agent, ... }
 implementer:    { kind: cli|api|shell|agent, ... }
-reviewer:       { kind: cli|api|shell|agent, ... }   # optional; planner reviews when absent
+reviewer:       { kind: cli|api|shell|agent, ... }   # optional; planner reviews when absent; none turns the review off
 implementerProfiles:
   default: local-qwen
   profiles: { local-qwen: { kind: api, ... }, cheap-cloud: { kind: api, ... } }
@@ -97,6 +97,7 @@ Set it in Settings › Fallback, or write `fallback` under `planner`, `implement
 The Fallback section is directly below Crew. It has one row per seat: PLAN, BUILD, REVIEW.
 Each row shows the fallback as a seat identity, or `none · pause and ask`.
 A REVIEW that follows PLAN shows `= PLAN · …` and uses PLAN's fallback.
+With `reviewer: none` the section has no REVIEW row.
 A note names why the halt cannot offer it: ` · not installed`, a readiness state, ` · needs sign-in`, or ` · same as the seat`.
 A tool signed in to other providers shows ` · needs sign-in` when the fallback route needs a sign-in: the tool has no credential for the route's provider, and its model list serves no model of it, or the route is the tool's own gateway (`opencode/…`, `kilo/…`).
 The BUILD row edits the default implementer profile's fallback.
@@ -114,11 +115,12 @@ A typed custom model saves `fallback.model` only. It does not add to the seat's 
 The entry screen is titled `Custom fallback model · <SEAT>`.
 
 When REVIEW follows PLAN, the picker and custom-model entry screen show `REVIEW = PLAN · saving here gives REVIEW its own seat`.
+With `reviewer: none` no fallback picker opens for REVIEW.
 Saving copies PLAN's runner into a new `reviewer` block with the new fallback.
 Clearing it from REVIEW when PLAN has a fallback does the same, with no fallback in the new block. PLAN stays unchanged.
 Choosing None when PLAN has no fallback keeps REVIEW inherited.
 An explicit `reviewer` block uses only its own fallback, even when that block has none.
-Presets keep each seat's fallback. A preset with no reviewer makes REVIEW follow PLAN, fallback and all.
+Presets keep each seat's fallback. A preset with no reviewer makes REVIEW follow PLAN, fallback and all. A preset replaces None.
 
 Merge this fragment into your existing `version: 3` config:
 
@@ -369,7 +371,7 @@ Custom OpenAI-compatible API providers are allowed when `service`, `offering`, a
 
 ## 2a. `reviewer`
 
-Optional. `reviewer` names the runner that performs the final review of the run diff. Leave it out and the planner holds that seat, exactly as it did before the seat became assignable (`resolveReviewerRunner`, `src/core/config/accessors/reviewer-runner.ts`). Set it when you want the diff read by a model other than the one that planned it.
+Optional. `reviewer` names the runner that performs the final review of the run diff. Leave it out and the planner holds that seat, exactly as it did before the seat became assignable (`resolveReviewerRunner`, `src/core/config/accessors/reviewer-runner.ts`). Set it when you want the diff read by a model other than the one that planned it. Write `reviewer: none` and no seat reviews the run; see [REVIEW None](#review-none).
 
 The reviewer only reviews. Planning, Task Brief compilation, the consult and summarization stay on the planner whatever this block says.
 
@@ -390,8 +392,31 @@ The reviewer is a planner-tier seat and shares the planner's admission set, so a
 
 - **No `reviewer` block:** the planner runner performs the review. Review tokens are priced at the planner's rates and folded into the planner line in the run summary.
 - **A `reviewer` block:** the reviewer performs the review and gets its own priced line in both.
+- **`reviewer: none`:** no seat performs the review. See [REVIEW None](#review-none).
 - **The review seat's fallback:** `reviewer.fallback` when a `reviewer` block exists, else `planner.fallback`. See [`fallback`](#fallback).
 - **A configured reviewer that fails admission** blocks the run before it starts, with a readiness blocker naming the reviewer seat. A mid-call account refusal, or a usage limit that the run does not wait for, raises a Seat down halt and can apply the review seat's configured fallback under the [switch conditions](./APPROVAL-AND-RECOVERY.md#seat-down). A review that ends as failed records `finalReviewStatus: "failed"` in the run summary and `finalReview.status` in the review packet, with the reviewer's identity in the error and the final-review evidence. SPLITBRIEF never silently hands the review back to the planner.
+
+### REVIEW None
+
+With `reviewer: none` no seat reviews the run. Plan checks, end-of-run checks and render checks do not run. A brief whose only check is a render check has no verification. A check that cannot run in its brief shows on its row and does not stop the run. When Apply finds that your checkout changed the same files, the merged result runs the brief checks again; a red check shows on its row and Apply stays your choice.
+
+Choose **None** in the REVIEW picker (Settings › Crew, or `/crew review`), or write the value at the top level of `.splitbrief/config.yaml`:
+
+```yaml
+reviewer: none
+```
+
+`none` is a string, not a block, so it has no `kind`. A config with no `reviewer` key still means that the planner reviews. A preset replaces None.
+
+Each brief still runs its own checks, except a render check, and a red brief goes through the same retries and consult. The consult and the summaries stay on the planner.
+
+The plan card names the checks that do not run: `Checks K1, K2 do not run: REVIEW is None, so only the checks of a brief run, and no render check runs. Request changes to move or drop them.`
+
+The run ends on one row, `Review · none · REVIEW is None, so no seat reviewed this run`, and `--plain` prints `review: none (REVIEW is None)`. A worktree or staged-copy run is then ready to apply, with no override. A checkout run closes as `complete`. The closed run's `Review` row reads `no review`. A run that ends this way exits `0`.
+
+An Apply text conflict raises the [`apply-conflict` halt](./APPROVAL-AND-RECOVERY.md#apply-conflicts), because no review can answer conflict markers. Apply reads REVIEW from `.splitbrief/config.yaml`, or from `--reviewer` when the command passes it, each time it runs. These rules follow the REVIEW that Apply reads, not the REVIEW that the run ended with.
+
+`--reviewer` gives a None REVIEW a runner for that run. `splitbrief review` refuses while REVIEW is None. Pass `--reviewer`.
 
 ### Render checks and the review seat
 
@@ -564,7 +589,7 @@ Task-start rows name the tool and model of the selected profile (`Ollama · Qwen
 
 ## 4. `validation`
 
-What SPLITBRIEF runs to verify the change. One switch, `end_checks` (Settings label **End-of-run checks**), turns the reviewer checks on or off. It defaults to `true`. The planner names the project gate in the plan: the commands that the project's own scripts or CI run to verify a change. With `end_checks` on, SPLITBRIEF runs these commands as the reviewer checks before the final review, in the run workspace under the reviewer command policy (see [Reviewer checks](#reviewer-checks)). With `end_checks` off, a fix brief does not run the reviewer check of the finding it answers. Every check runs the project's own code with your permissions; [What a check can reach](#what-a-check-can-reach) says what SPLITBRIEF isolates and what it does not. The other fields are optional and feed the planner's `test` and `render` checks; `timeout_ms`, when set, bounds every command; without it, a command has no time limit. After each hand-back, SPLITBRIEF formats the brief's own changed files with the project's own formatter. It uses `npx biome format --write` when a Biome config file is present, `npx prettier --write` when a Prettier config is present, and nothing when neither is present. A formatter that exits non-zero gives one warning (`validation_format_failed`), and the checks run regardless. The brief's changed files are every file it changed since its task-start snapshot, across its attempts; a pass that rewrote files shows no row and writes the names of the files to the [debug log](./TROUBLESHOOTING.md#debug-environment-variables).
+What SPLITBRIEF runs to verify the change. One switch, `end_checks` (Settings label **End-of-run checks**), turns the reviewer checks on or off. It defaults to `true`. `end_checks` has no effect while REVIEW is None. The planner names the project gate in the plan: the commands that the project's own scripts or CI run to verify a change. With `end_checks` on, SPLITBRIEF runs these commands as the reviewer checks before the final review, in the run workspace under the reviewer command policy (see [Reviewer checks](#reviewer-checks)). With `end_checks` off, a fix brief does not run the reviewer check of the finding it answers. Every check runs the project's own code with your permissions; [What a check can reach](#what-a-check-can-reach) says what SPLITBRIEF isolates and what it does not. The other fields are optional and feed the planner's `test` and `render` checks; `timeout_ms`, when set, bounds every command; without it, a command has no time limit. After each hand-back, SPLITBRIEF formats the brief's own changed files with the project's own formatter. It uses `npx biome format --write` when a Biome config file is present, `npx prettier --write` when a Prettier config is present, and nothing when neither is present. A formatter that exits non-zero gives one warning (`validation_format_failed`), and the checks run regardless. The brief's changed files are every file it changed since its task-start snapshot, across its attempts; a pass that rewrote files shows no row and writes the names of the files to the [debug log](./TROUBLESHOOTING.md#debug-environment-variables).
 
 ### Schema
 
@@ -591,7 +616,7 @@ validation: {
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `endChecks` (`end_checks`) | boolean | `true` | **End-of-run checks.** `true`: before the final review, SPLITBRIEF runs the project gate that the plan names. A task review runs no gate. When the plan names no gate, one row reads `End-of-run checks · none · the plan names no project gate`. `false`: no reviewer check runs, and one row reads `End-of-run checks · off · no reviewer check ran`. A fix brief does not run the reviewer check of the finding it answers, and one row reads `Fix check V1 · off`. Plan and task checks still run in both cases. `resolveEndChecks()` (`src/core/config/runtime/resolve.ts`) reads it. |
+| `endChecks` (`end_checks`) | boolean | `true` | **End-of-run checks.** `true`: before the final review, SPLITBRIEF runs the project gate that the plan names. A task review runs no gate. When the plan names no gate, one row reads `End-of-run checks · none · the plan names no project gate`. `false`: no reviewer check runs, and one row reads `End-of-run checks · off · no reviewer check ran`. A fix brief does not run the reviewer check of the finding it answers, and one row reads `Fix check V1 · off`. Plan and task checks still run in both cases. `end_checks` has no effect while REVIEW is None. `resolveEndChecks()` (`src/core/config/runtime/resolve.ts`) reads it. |
 | `testCommand` (`test_command`) | string | — | The command a planner `test` check runs: an argv-style command that runs **as-is** — shell operators and environment expansion are not interpreted, and no test-file argument is appended. When omitted, the check resolves its command through the ladder below and narrows it to the tests its file affects. |
 | `testPattern` (`test_pattern`) | string | — | Optional file name pattern with one `*`, such as `*_test.go` or `test_*.py`. No directory part (`/` or `\`) and no `..`. SPLITBRIEF searches beside the changed file and in the stack's test folders. Overrides the stack's patterns when a `test` check narrows to its affected tests. SPLITBRIEF emits `discovered_validation_refused` when it refuses a discovered pattern. It uses the configured pattern, if present. Otherwise, it uses the stack's patterns. |
 | `timeoutMs` (`timeout_ms`) | number | none | Milliseconds allowed per command (minimum `1000`): every plan check, every reviewer check and every base re-run. Without it, a command has no time limit. A timeout is never pre-existing: when the same command is red at the run base too, the timeout is *not verified at the run base*, and the reviewer decides. |
@@ -766,7 +791,7 @@ workflow: {
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `approve` | enum | `plan` | `plan`: the plan card waits for your approval before the build starts. `none`: the plan goes straight to the build. The retired values `all`, `spec` and `default` load as `plan` with one notice (§16). Approving the plan never overrides a failed plan check, and a write to a protected path still asks during the build under either value. |
-| `review` | `end` \| `task` | `end` | `end`: each brief runs its own checks, except a `render` check. A consult `verify` runs only the checks it names, and on a fix brief the failed checks that brief answers. With `validation.end_checks: false`, a fix brief does not run the reviewer checks it answers. The final review runs the project gate that the plan names (`validation.end_checks`). The first reviewer check with new failures stops the list, and the reviewer turns its failures into fix work. `task`: each task runs its own checks and its due checks, then its review. A task review runs no project gate. The final review then runs the project gate that the plan names. |
+| `review` | `end` \| `task` | `end` | `end`: each brief runs its own checks, except a `render` check. A consult `verify` runs only the checks it names, and on a fix brief the failed checks that brief answers. With `validation.end_checks: false`, a fix brief does not run the reviewer checks it answers. The final review runs the project gate that the plan names (`validation.end_checks`). The first reviewer check with new failures stops the list, and the reviewer turns its failures into fix work. `task`: each task runs its own checks and its due checks, then its review. A task review runs no project gate. The final review then runs the project gate that the plan names. Settings label **Review cadence**. `review` has no effect while REVIEW is None. |
 | `maxRetries` (`max_retries`) | retired | absent | Loads with one notice and changes nothing: `workflow.max_retries was retired and is ignored: the planner decides every retry. Delete workflow.max_retries.` A failed attempt goes straight to the planner's consult, and no count stops the consults. |
 | `git.commitStrategy` | retired | absent | Legacy `none` loads with no notice and is removed from the loaded config; `checkpoint` and `per-task` are rejected. Omit the field. |
 | `git.createBranch` (`create_branch`) | retired | absent | SPLITBRIEF creates no branch. `false` loads with no notice and is removed from the loaded config. `true` fails the load: `workflow.git.createBranch: createBranch was removed — SPLITBRIEF no longer creates a branch; delete workflow.git.create_branch and create your branch yourself.` Omit the field. |
@@ -787,7 +812,7 @@ Every writer uses one run workspace. `cli` and `agent` write there directly; SPL
 |---|---|---|
 | `worktree` (default) | One linked git worktree, detached at your project's current commit, with no branch of its own. Its files take the file modes of your project. Installed Node dependencies are linked. Python virtualenvs, Go caches and Rust target directories are not linked. | One worktree creation per run. |
 | `staged-copy` | One project copy per run, reused by tasks, retries and continuation. It excludes `.git`, `node_modules`, `.splitbrief/`, `.trees/` and credential files. It has no git history or installed dependencies. | One full project copy per run. |
-| `none` (shown as "your checkout") | The implementer of every transport works in your checkout itself. SPLITBRIEF writes an extracted-code implementer's code there. Validation, checks and review run there. There is no worktree, no workspace record and no Apply: a passing review closes the run. | No setup. Your checkout holds the run's edits as they happen. |
+| `none` (shown as "your checkout") | The implementer of every transport works in your checkout itself. SPLITBRIEF writes an extracted-code implementer's code there. Validation, checks and review run there. There is no worktree, no workspace record and no Apply: a passing review, or the end of a REVIEW None run, closes the run. | No setup. Your checkout holds the run's edits as they happen. |
 
 The fallback also creates one staged copy per run. SPLITBRIEF uses it when the project has no git repository or commit, or when worktree creation fails. The worktree never switches to the checkout automatically. In a git project, the copy uses git's tracked and untracked file list with its ignore rules. A fixture excluded by those rules is absent from the copy. The no-git fallback copies ordinary project files with the same internal exclusions.
 

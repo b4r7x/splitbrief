@@ -13,6 +13,7 @@ import {
   resolveEffectiveConfig,
 } from '../../core/config/runtime/effective-config.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
+import { resolveReviewCadence } from '../../core/config/runtime/resolve.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { ImplementerConfig } from '../../core/schemas/implementer-config.js';
 import { configError } from '../../core/config/errors.js';
@@ -310,9 +311,19 @@ function __testReset(next?: Partial<ConfigState>): void {
   });
 }
 
+/**
+ * REVIEW None in the config the next pass of a run starts on: the window's crew, which an open
+ * run continues with. A store with no project config loaded names no REVIEW None.
+ */
+function reviewNone(): boolean {
+  const { config } = store.get();
+  return config !== null && resolveReviewCadence(config) === 'none';
+}
+
 export const configStore = {
   ...storeBase(store),
   load,
+  reviewNone,
   reloadIfChanged,
   reloadShownConfig,
   refreshFromExecution,

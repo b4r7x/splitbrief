@@ -29,6 +29,19 @@ describe('deriveCrewSeats', () => {
     expect(review.runner).toEqual(config.planner);
   });
 
+  it('None seat has no runner', () => {
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'claude-code' },
+      implementer: { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' },
+      reviewer: 'none',
+    });
+    const review = seatOf(deriveCrewSeats({ config }), 'review');
+
+    expect(review.source).toBe('none');
+    expect('runner' in review).toBe(false);
+    expect([...crewCliTools(config)].sort()).toEqual(['claude-code', 'codex']);
+  });
+
   it('reports a configured reviewer with its own resolved identity', () => {
     const config = makeConfig({ reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' } });
     const review = seatOf(deriveCrewSeats({ config }), 'review');

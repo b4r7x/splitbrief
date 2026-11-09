@@ -123,7 +123,7 @@ describe('workflow closure', () => {
     expect(closure.state.stateRevision).toBe(2);
     expect(closure.state.pendingRecovery).toBeUndefined();
     expect(closure.state.reviewStatus).toBe('failed');
-    expect(readRunRecord(ref)?.status).toEqual({ kind: 'closed', as: 'ended' });
+    expect(readRunRecord(ref, false)?.status).toEqual({ kind: 'closed', as: 'ended' });
   });
 
   it('End run overtaken by a passing review closes the ready run without a patch', async () => {
@@ -160,7 +160,7 @@ describe('workflow closure', () => {
       _eventSink: (event) => events.push(event),
     });
     expect(race.writePassedAfterRead).toBe(false);
-    expect(readRunRecord(ref)?.status).toEqual({ kind: 'closed', as: 'discarded' });
+    expect(readRunRecord(ref, false)?.status).toEqual({ kind: 'closed', as: 'discarded' });
     expect(readSession(ref)?.status).toBe('ended');
     expect(loadState(ref)?.reviewStatus).toBe('passed');
     expect(loadState(ref)?.closed?.patch).toBeUndefined();
@@ -253,7 +253,7 @@ describe('workflow closure', () => {
       expect(saved?.closed?.as).toBe(closedAs);
       expect(saved?.reviewStatus).toBe(review);
       expect(saved?.pendingRecovery).toBeUndefined();
-      expect(readRunRecord(ref)?.status).toEqual({ kind: 'closed', as: closedAs });
+      expect(readRunRecord(ref, false)?.status).toEqual({ kind: 'closed', as: closedAs });
       expect(saved?.closed?.patch).toBeUndefined();
       expect(existsSync(join(sessionDir(projectDir, ref.sessionId), 'run.patch'))).toBe(false);
       // End run on the ready run is its Discard: only the failed review had a run left to stop.
@@ -298,7 +298,9 @@ describe('workflow closure', () => {
     });
     const saved = loadState(ref);
     if (saved === null) throw new Error('the run saved no state');
-    expect(deriveRunStatus({ state: saved, liveness: 'not-alive' }).kind).toBe('ready-to-apply');
+    expect(deriveRunStatus({ reviewNone: false, state: saved, liveness: 'not-alive' }).kind).toBe(
+      'ready-to-apply',
+    );
     expect(events.filter((event) => event.type === 'workflow_cancelled')).toEqual([]);
     expect(
       (await readRunEvents(ref)).events.filter((event) => event.type === 'workflow_cancelled'),

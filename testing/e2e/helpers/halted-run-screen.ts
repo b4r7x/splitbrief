@@ -77,7 +77,7 @@ export async function openHaltedRun(
     saveSessionDraft(ref, createDraftDocument(options.draft));
     flushSessionDrafts();
   }
-  const record = readRunRecord(ref);
+  const record = readRunRecord(ref, false);
   const { config } = loadConfig(projectDir);
   configStore.load(projectDir);
   terminalSizeStore.__testReset({ ...VIEWPORT, isSmall: false });

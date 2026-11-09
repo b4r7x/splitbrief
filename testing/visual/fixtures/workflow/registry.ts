@@ -441,7 +441,10 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
       };
     };
   }
-  if (projection.scenarioId === 'workflow-resuming') {
+  if (
+    projection.scenarioId === 'workflow-resuming' ||
+    projection.scenarioId === 'workflow-resuming-apply-review-none'
+  ) {
     return () => {
       const lifecycle = base();
       let off: (() => void) | null = null;
@@ -571,6 +574,22 @@ const planCardReady = includesAll(
   'Add a greeting module and expose it from the CLI.',
 );
 
+const REVIEW_NONE_ROW = 'Review · none · REVIEW is None, so no seat reviewed this run';
+
+function reviewNoneRowOnce(): boolean {
+  return workflowTranscriptText().replace(/\s+/g, ' ').split(REVIEW_NONE_ROW).length === 2;
+}
+
+// Every REVIEW None surface at each width: the stage wears no done mark, and no text reads as a
+// review that ran or as the plan seat standing in.
+const noReviewClaimed: CheckpointPredicate = (context) => {
+  const [rail = ''] = context.output.split('\n');
+  return (
+    !rail.includes(`${glyph('stageDone')} Review`) &&
+    !/= PLAN|final review|review passed/i.test(`${context.output}\n${workflowTranscriptText()}`)
+  );
+};
+
 const checkpointPredicates = [
   [
     checkpointId('stop-sheet-recovery'),
@@ -676,6 +695,12 @@ const checkpointPredicates = [
   [
     checkpointId('implementation'),
     includesAll(WORKFLOW_FIXTURE_TEXT.implementation, 'briefs passed'),
+  ],
+  [
+    checkpointId('crew-wide-review-none'),
+    (context) =>
+      includesAll(WORKFLOW_FIXTURE_TEXT.implementation, 'briefs passed', 'REVIEW None')(context) &&
+      noReviewClaimed(context),
   ],
   [
     checkpointId('implementation-extracted-code'),
@@ -926,6 +951,19 @@ const checkpointPredicates = [
     checkpointId('review-checks-off'),
     includesAll('End-of-run checks', 'off', 'Review · OpenAI Codex CLI'),
   ],
+  [
+    checkpointId('review-none-end'),
+    (context) =>
+      includesAll('REVIEW None')(context) && reviewNoneRowOnce() && noReviewClaimed(context),
+  ],
+  [
+    checkpointId('apply-recheck-review-none'),
+    (context) =>
+      includesAll('3/3 briefs passed', '/ for a command…')(context) &&
+      reviewNoneRowOnce() &&
+      noReviewClaimed(context) &&
+      excludesAll('reviewing changes')(context),
+  ],
   [checkpointId('implementation-escalated'), includesAll('briefs passed')],
   [checkpointId('review-fix-narrow-rail'), includesAll('T006')],
   [checkpointId('review-fix-narrow-rail-stop'), includesAll()],
@@ -1006,6 +1044,16 @@ const checkpointPredicates = [
     (context) => includesAll()(context) && excludesAll('Warning', 'The plan failed')(context),
   ],
   [checkpointId('plan-card-render-note'), planCardReady],
+  // Below 24 rows the plan panel holds one row of the document, so the note sits under the fold.
+  [
+    checkpointId('plan-card-review-none'),
+    (context) =>
+      planCardReady(context) &&
+      includesAll('REVIEW None')(context) &&
+      noReviewClaimed(context) &&
+      (context.viewport.rows < 24 ||
+        context.output.includes('K-suite, K-render do not run: REVIEW is None')),
+  ],
   [checkpointId('plan-card-no-image-reviewer'), planCardReady],
   [checkpointId('plan-card-shared-command'), planCardReady],
   [checkpointId('plan-card-session-path'), planCardReady],
@@ -1136,6 +1184,16 @@ const checkpointPredicates = [
   ],
   [checkpointId('resuming'), includesAll('Resuming T')],
   [
+    checkpointId('resuming-apply-review-none'),
+    (context) => {
+      const [rail = ''] = context.output.split('\n');
+      return (
+        includesAll()(context) &&
+        (!rail.includes('Review') || rail.includes(`${glyph('stagePending')} Review`))
+      );
+    },
+  ],
+  [
     checkpointId('at-rest-closed-elsewhere'),
     (context) => {
       const snapshot = readConversationScrollSnapshot();
@@ -1195,7 +1253,25 @@ const checkpointPredicates = [
   [checkpointId('at-rest-waiting'), includesAll()],
   [checkpointId('at-rest-question'), includesAll('Unanswered · 2 questions', '(yes / no)')],
   [checkpointId('closed-complete'), includesAll()],
+  // The ledger pins its tail: below 40 rows the outcome row scrolls above the Run block.
+  [
+    checkpointId('closed-complete-review-none'),
+    (context) =>
+      includesAll('REVIEW None', 'no review')(context) &&
+      (context.viewport.rows < 40 || context.output.includes('Complete')) &&
+      noReviewClaimed(context),
+  ],
   [checkpointId('ready-to-apply'), includesAll()],
+  // The four-stage rail leaves one seat room in the header at 60 columns.
+  [
+    checkpointId('ready-to-apply-review-none'),
+    (context) =>
+      includesAll()(context) &&
+      (context.viewport.cols < 80 || context.output.includes('REVIEW None')) &&
+      reviewNoneRowOnce() &&
+      noReviewClaimed(context) &&
+      excludesAll('as is')(context),
+  ],
   [
     checkpointId('ready-crew-saved'),
     (context) => {
@@ -1549,6 +1625,12 @@ const checkpointPredicates = [
   [
     checkpointId('recovery-checks-unrunnable'),
     includesAll('validation.render is not set', 'Run the checks again'),
+  ],
+  [
+    checkpointId('recovery-review-none-in-place'),
+    (context) =>
+      includesAll('validation.render is not set', 'Run the checks again')(context) &&
+      excludesAll('✗ Apply', '● Apply', '○ Apply')(context),
   ],
   [
     checkpointId('left-isolation'),

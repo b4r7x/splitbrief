@@ -117,7 +117,7 @@ describe('e2e: End run after a Seat down halt in a checkout run', { timeout: 240
       status: 'in_progress',
       changedFiles: [UNDECLARED_FILE, GREET_FILE],
     });
-    const view = deriveSummaryView({ record: readRunRecord(ref) });
+    const view = deriveSummaryView({ record: readRunRecord(ref, false) });
     if (view === null) throw new Error('the ended run left no closed view');
     expect([...(view.files.changed ?? [])].sort()).toEqual([UNDECLARED_FILE, GREET_FILE]);
   });

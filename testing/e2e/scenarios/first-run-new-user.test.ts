@@ -387,7 +387,7 @@ describe('e2e: first run of a new user', { timeout: 240_000 }, () => {
     if (finished === null) throw new Error(`the run left no state: ${output}`);
     expect(finished.tasks).toMatchObject([{ id: 'T001', status: 'done' }]);
     expect(finished.pendingRecovery).toBeUndefined();
-    expect(deriveRunStatus({ state: finished, liveness: 'not-alive' })).toEqual({
+    expect(deriveRunStatus({ reviewNone: false, state: finished, liveness: 'not-alive' })).toEqual({
       kind: 'ready-to-apply',
       override: false,
     });

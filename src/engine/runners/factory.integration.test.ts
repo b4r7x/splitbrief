@@ -26,7 +26,7 @@ import {
   createReviewer as createPreparedReviewer,
 } from './factory.js';
 import { customRunnerFactoryError, type RunnerFactoryAuthority } from './factory-gates.js';
-import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
+import { requireReviewSeat } from '../../core/config/accessors/reviewer-runner.js';
 import {
   createCliSeatGates,
   type CliStartGate,
@@ -154,7 +154,7 @@ function createPlanner(
 function reviewerAuthority(config: Config): RunnerFactoryAuthority {
   const preparationId = 'factory-reviewer';
   const slot: RunnerSlot = { role: 'reviewer' };
-  const gates = [makeRunnerGate(resolveReviewerRunner(config).runner, slot, preparationId)];
+  const gates = [makeRunnerGate(requireReviewSeat(config).runner, slot, preparationId)];
   return { preparedConfig: config, preparationId, slot, gates, cliSeats: testCliSeats(gates) };
 }
 

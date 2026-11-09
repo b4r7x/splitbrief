@@ -74,7 +74,7 @@ describe('Apply halt activity', () => {
         configStore.__testReset({ projectDir, config, diskConfig: config });
         routerStore.init({
           screen: 'workflow',
-          run: readRunRecord(ref),
+          run: readRunRecord(ref, false),
           execution: { kind: 'at-rest' },
         });
         const context = buildCommandContext({
@@ -95,7 +95,7 @@ describe('Apply halt activity', () => {
         expect(sessionsStore.get().sessions[0]?.completedAt).toBe(haltedAt);
       } else {
         await expect(
-          settleReadyRun({ ...ref, state, action: 'apply', json: false }),
+          settleReadyRun({ ...ref, state, action: 'apply', json: false, reviewNone: false }),
         ).rejects.toMatchObject({ exitCode: 1 });
       }
 
@@ -113,7 +113,7 @@ describe('Apply halt activity', () => {
       if (saved === null) throw new Error('Missing halted state');
       clock.mockReturnValue(haltedAt + 60_000);
       await expect(
-        settleReadyRun({ ...ref, state: saved, action: 'apply', json: false }),
+        settleReadyRun({ ...ref, state: saved, action: 'apply', json: false, reviewNone: false }),
       ).rejects.toMatchObject({ exitCode: 1 });
       expect(readSession(ref)?.completedAt).toBe(haltedAt);
     },

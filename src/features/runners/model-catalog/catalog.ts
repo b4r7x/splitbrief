@@ -398,7 +398,7 @@ export function isCurrentRunner(item: PickerOption, runner: RunnerConfig | undef
   if (item.kind === 'custom-command') {
     return runner.kind === 'shell' || runner.kind === 'agent';
   }
-  if (item.kind === 'inherit-planner') return false;
+  if (item.kind === 'inherit-planner' || item.kind === 'review-none') return false;
   // The kind is part of the identity: a CLI row must never stand in for an API
   // seat that merely reuses its id, or Enter would silently change the kind.
   return item.kind === runner.kind && item.id === getRunnerDisplayName(runner);

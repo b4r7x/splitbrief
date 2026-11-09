@@ -61,7 +61,11 @@ writeFileSync(${JSON.stringify(GREET_FILE)}, ${JSON.stringify(GREET_SOURCE)});
     const [sessionId] = sessions;
     if (sessionId === undefined) throw new Error(`the run left no session: ${result.stderr}`);
     expect(
-      deriveRunStatus({ state: readState(fixture, sessionId), liveness: 'not-alive' }),
+      deriveRunStatus({
+        reviewNone: false,
+        state: readState(fixture, sessionId),
+        liveness: 'not-alive',
+      }),
     ).toEqual({
       kind: 'closed',
       as: 'complete',

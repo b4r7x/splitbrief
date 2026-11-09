@@ -30,6 +30,13 @@ const REVIEW_WAITING_ACTIVITY: ReviewActivityParts = {
   suffix: [{ text: 'reviewing changes', tone: 'textDim' }],
 };
 
+// With REVIEW None the final-review phase only rechecks the merged result Apply sent back.
+const NONE_RECHECK_ACTIVITY: ReviewActivityParts = {
+  prefix: [],
+  identity: null,
+  suffix: [{ text: 'Checking the merged result', tone: 'textDim' }],
+};
+
 // The plan stage is one planning session. Only an older run's briefs call has its own verb.
 // A gate that rewrites its document after a change request uses that call's verb outside the gate.
 export function activeVerb(
@@ -89,7 +96,9 @@ export function activeVerb(
 export function reviewActivityParts(
   operation: ActiveOperation | null | undefined,
   reviewerLabel: string | null,
+  reviewNone: boolean,
 ): ReviewActivityParts {
+  if (reviewNone) return NONE_RECHECK_ACTIVITY;
   if (operation?.status !== 'running') return REVIEW_WAITING_ACTIVITY;
   switch (operation.role) {
     case 'review': {

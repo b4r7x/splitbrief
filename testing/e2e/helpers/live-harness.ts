@@ -9,6 +9,7 @@ import { runApply } from '../../../src/engine/orchestrator/apply/run.js';
 import { createRecoveryBus } from '../../../src/engine/orchestrator/recovery/bus.js';
 import { finalizeRunAtRest } from '../../../src/engine/orchestrator/session-lifecycle/finalize.js';
 import { formatRecoveryHeadline } from '../../../src/core/recovery/headline.js';
+import { resolveReviewCadence } from '../../../src/core/config/runtime/resolve.js';
 import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
 import { loadState } from '../../../src/core/state/persistence.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
@@ -230,14 +231,14 @@ async function liveSessionFailureReason(ref: SessionRef): Promise<string | null>
   return liveRunFailureReason({ state: loadState(ref), events });
 }
 
-export async function applyLiveRun(opts: SessionRef): Promise<Summary> {
-  const { projectDir, sessionId } = opts;
+export async function applyLiveRun(opts: SessionRef & { reviewNone: boolean }): Promise<Summary> {
+  const { projectDir, sessionId, reviewNone } = opts;
   const ref = { projectDir, sessionId };
   const state = loadState(ref);
   if (state === null) {
     throw new Error((await liveSessionFailureReason(ref)) ?? 'Live run has no saved state.');
   }
-  const status = deriveRunStatus({ state, liveness: 'not-alive' });
+  const status = deriveRunStatus({ state, liveness: 'not-alive', reviewNone });
   if (status.kind !== 'ready-to-apply') {
     throw new Error(
       (await liveSessionFailureReason(ref)) ??
@@ -245,7 +246,7 @@ export async function applyLiveRun(opts: SessionRef): Promise<Summary> {
     );
   }
   const bus = createRecoveryBus(ref);
-  const result = await runApply({ wctx: { ...ref, bus }, state });
+  const result = await runApply({ wctx: { ...ref, bus }, state, reviewNone });
   if (result.outcome !== 'applied') {
     throw new Error(
       `Live Apply must finish applied; outcome is ${result.outcome}.\n` +
@@ -305,7 +306,11 @@ export async function executeLiveWorkflow(opts: {
     sinks: opts.sinks ?? TEST_WORKFLOW_SINKS,
   });
   opts.signal.throwIfAborted();
-  const summary = await applyLiveRun({ projectDir: opts.projectDir, sessionId });
+  const summary = await applyLiveRun({
+    projectDir: opts.projectDir,
+    sessionId,
+    reviewNone: resolveReviewCadence(opts.effectiveConfig) === 'none',
+  });
   return { summary, sessionId };
 }
 

@@ -3,7 +3,6 @@ import { isProtocolActivity } from '../../display/runner-activity-display.js';
 
 const TRANSCRIPT_ROWLESS_EVENT_TYPES = [
   'workflow_started',
-  'workflow_complete',
   'workflow_config',
   'spec_approved',
   'spec_rejected',
@@ -73,7 +72,8 @@ type TranscriptRowlessEvent =
   | (Extract<EngineEvent, { type: 'review_completed' }> & {
       blockingFindings?: undefined;
       setAside?: undefined;
-    });
+    })
+  | (Extract<EngineEvent, { type: 'workflow_complete' }> & { review?: 'passed' | 'failed' });
 
 const transcriptRowlessEventTypes: ReadonlySet<string> = new Set(TRANSCRIPT_ROWLESS_EVENT_TYPES);
 
@@ -86,6 +86,8 @@ export function isTranscriptRowlessEvent(event: EngineEvent): event is Transcrip
     // the stage's own summary row.
     (event.type === 'review_completed' &&
       (event.blockingFindings ?? []).length === 0 &&
-      (event.setAside ?? []).length === 0)
+      (event.setAside ?? []).length === 0) ||
+    // A run ends with no row of its own, unless no seat reviewed it: that is said once.
+    (event.type === 'workflow_complete' && event.review !== 'none')
   );
 }

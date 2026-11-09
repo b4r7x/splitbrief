@@ -227,7 +227,8 @@ async function renderProjection(projection: WorkflowFixtureProjection): Promise<
       const drivenEvents =
         (projection.resumeState?.pendingRecovery === undefined ? 0 : 1) +
         (consultAnswer ? 1 : 0) +
-        (projection.resumedRun?.events.length ?? 0);
+        (projection.resumedRun?.events.length ?? 0) +
+        (projection.nextPassEvents?.length ?? 0);
       expect(eventsStore.get().events).toHaveLength(
         mergeEventLog([...projection.events]).length + drivenEvents,
       );
@@ -465,7 +466,7 @@ describe('workflow visual fixtures', () => {
     const record = projection.atRest?.record;
     if (record?.hydration.kind !== 'loaded') throw new Error('Missing spent-b2 saved state');
     expect(record.status).toEqual(
-      deriveRunStatus({ state: record.hydration.state, liveness: 'not-alive' }),
+      deriveRunStatus({ reviewNone: false, state: record.hydration.state, liveness: 'not-alive' }),
     );
     expect(record.status).toMatchObject({
       kind: 'open',

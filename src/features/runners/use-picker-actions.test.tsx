@@ -37,6 +37,7 @@ import type { RunBriefs } from '../../core/run-view/briefs.js';
 import {
   INHERIT_PLANNER_OPTION_ID,
   noFallbackOption,
+  reviewNoneOption,
   type RunnerPickerOption,
 } from './model-catalog/options.js';
 import type { LocalConnectionSave } from './local-connection-form.js';
@@ -756,6 +757,22 @@ describe('usePickerActions', () => {
     ui.unmount();
   });
 
+  it('commit writes None', async () => {
+    seed(makeConfig({ reviewer: { kind: 'cli', tool: 'codex' } }));
+
+    const ui = renderFeature(
+      <ConfirmRowProbe role="reviewer" itemId={reviewNoneOption({ isCurrent: false }).id} />,
+    );
+    await flushEffects();
+    ui.stdin.write('\r');
+
+    await vi.waitFor(() => {
+      expect(configStore.get().config?.reviewer).toBe('none');
+    });
+    expect(loadConfig(projectDir).config.reviewer).toBe('none');
+    ui.unmount();
+  });
+
   it('clears a configured reviewer block when the inherit row is confirmed', async () => {
     seed(
       makeConfig({
@@ -808,6 +825,30 @@ describe('usePickerActions', () => {
     expect(configStore.get().config?.planner).toMatchObject({
       customModels: ['inherited-custom'],
     });
+    ui.unmount();
+  });
+
+  it('refuses a delete of a planner custom model under REVIEW None and keeps REVIEW None', async () => {
+    seed(
+      makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code', customModels: ['my-model'] },
+        reviewer: 'none',
+      }),
+    );
+
+    const ui = renderFeature(<DeleteOnKeyProbe role="reviewer" modelId="my-model" />);
+    await flushEffects();
+    ui.stdin.write('\r');
+
+    await vi.waitFor(() => {
+      expect(feedbackStore.get().message).not.toBeNull();
+    });
+    expect(feedbackStore.get()).toEqual({
+      message: 'my-model belongs to the planner. Remove it from the planner.',
+      isError: true,
+    });
+    expect(configStore.get().config?.reviewer).toBe('none');
+    expect(configStore.get().config?.planner).toMatchObject({ customModels: ['my-model'] });
     ui.unmount();
   });
 

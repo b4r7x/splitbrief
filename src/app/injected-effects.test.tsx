@@ -454,7 +454,9 @@ describe('App screens route to the supplied interaction ports', () => {
     expect(production.refreshPickerDetection).not.toHaveBeenCalled();
     // The one production read left on this path is the store's own admission read of the record
     // it was asked to open: `handleSessionSelect` owns it, not one of this card's files.
-    expect(production.readRunRecord.mock.calls).toEqual([[{ projectDir, sessionId: session.id }]]);
+    expect(production.readRunRecord.mock.calls).toEqual([
+      [{ projectDir, sessionId: session.id }, false],
+    ]);
   });
 });
 

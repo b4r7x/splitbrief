@@ -98,7 +98,7 @@ function activityLine(
       ? null
       : formatRecordedSeatIdentity({ ...operation, role: runnerActivityModelRole(operation.role) });
   if (input.runView.phase === 'final-review' || operation?.role === 'review') {
-    const parts = reviewActivityParts(operation, identity);
+    const parts = reviewActivityParts(operation, identity, input.runView.reviewNone);
     return activityResult(
       reviewActivitySpans(parts),
       parts.identity === null ? null : { ...parts, identity: parts.identity },

@@ -37,6 +37,7 @@ import { gateAttemptChanges } from './attempt-gate.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
 import { handleFailedImplementation } from './implementation-failure.js';
 import { runBriefGate } from './brief-gate.js';
+import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
 
 function recordApprovalDenial(opts: {
   wctx: WorkflowContext;
@@ -267,7 +268,11 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   });
   if (gate.outcome === 'aborted') return state;
   if (gate.outcome === 'cancelled') {
-    state = await parkStoppedRun({ projectDir, sessionId, bus: wctx.bus }, state);
+    state = await parkStoppedRun(
+      { projectDir, sessionId, bus: wctx.bus },
+      state,
+      resolveReviewCadence(wctx.config) === 'none',
+    );
     setTrackedState(state);
     return state;
   }

@@ -16,6 +16,7 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { ContinueActionOption, RecoveryActionOption } from '../../options.js';
 import { resolveRunConfig } from '../../build-overrides.js';
+import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
 import { CONFIG_RELATIVE_PATH, readConfigDocument } from '../../../core/config/load/document.js';
 import { CREW_SEAT_LABELS, type CrewSeatId } from '../../../core/crew/identity.js';
 import { recordSeatOfRecord } from '../../../core/config/load/record-seat.js';
@@ -85,9 +86,10 @@ async function applyPendingRecoveryAction(args: {
   state: WorkflowState;
   action: RecoveryActionOption;
   opts: ContinueOpts;
-}): Promise<{ state: WorkflowState; config?: Config; seatSwitch?: SwitchedSeat }> {
+}): Promise<{ state: WorkflowState; config: Config; seatSwitch?: SwitchedSeat }> {
   const projectDir = args.opts.projectDir;
   if (args.action.action === 'switch-seat') await loadRememberedCatalog(projectDir);
+  const config = resolveRunConfig({ projectDir, opts: args.opts });
   const result = await applyRecoveryAction({
     projectDir,
     sessionId: args.sessionId,
@@ -100,14 +102,14 @@ async function applyPendingRecoveryAction(args: {
         if (event.type === 'warning') process.stderr.write(`${event.message}\n`);
       },
     }),
-    config: resolveRunConfig({ projectDir, opts: args.opts }),
+    config,
     modelCache: modelCacheStore,
     ...(args.action.candidate !== undefined && { candidate: args.action.candidate }),
   });
   if (!result.ok) throw cliError(result.message, 1);
   return {
     state: result.state,
-    ...(result.switchedConfig !== undefined && { config: result.switchedConfig }),
+    config: result.switchedConfig ?? config,
     ...(result.switchedSeat !== undefined &&
       result.switchedConfig !== undefined && {
         seatSwitch: {
@@ -149,7 +151,11 @@ export async function continueCommand(
 ): Promise<void> {
   const sessionId = await resolveTargetSession(sessionInput, opts.projectDir);
 
-  const record = loadRunRecord({ projectDir: opts.projectDir, sessionId }, defaultRunRecordDeps());
+  const record = loadRunRecord(
+    { projectDir: opts.projectDir, sessionId },
+    defaultRunRecordDeps(),
+    false,
+  );
   const hydrated = record.hydration;
 
   if (hydrated.kind === 'invalid') {
@@ -208,15 +214,24 @@ export async function continueCommand(
         1,
       );
     }
-    const next = await settleReadyRun({
+    const settled = {
       projectDir: opts.projectDir,
       sessionId,
       state: hydrated.state,
-      action: action.action,
       json: opts.json === true,
+    };
+    if (action.action === 'discard') {
+      await settleReadyRun({ ...settled, action: 'discard' });
+      return;
+    }
+    const config = resolveRunConfig({ projectDir: opts.projectDir, opts });
+    const next = await settleReadyRun({
+      ...settled,
+      action: 'apply',
+      reviewNone: resolveReviewCadence(config) === 'none',
     });
     if (next === undefined) return;
-    resumed = { state: next };
+    resumed = { state: next, config };
   } else if (action?.action === 'restore-backup') {
     // The answered restore is finished by Apply at rest, so it reports what it put back the way
     // Apply reports what it wrote, and the run is then ready to apply.
@@ -231,10 +246,11 @@ export async function continueCommand(
       sessionId,
       state: answered.state,
       action: 'apply',
+      reviewNone: resolveReviewCadence(answered.config) === 'none',
       json: opts.json === true,
     });
     if (next === undefined) return;
-    resumed = { state: next };
+    resumed = { state: next, config: answered.config };
   } else {
     assertResumeTerminal(opts);
     resumed =

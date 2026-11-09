@@ -91,7 +91,7 @@ The port carries no identity fields on purpose. No runner backend knows its own 
 
 BUILD repair cycles after final review use the selected implementer.
 
-The review seat has one call type. Before the final review SPLITBRIEF runs the project gate that the plan names (`runReviewChecks`, `src/engine/orchestrator/review-checks.ts`); no reviewer call chooses checks. The call is the review of the run diff at the configured cadence. `runFinalReviewPhase()` dispatches it through `runReviewerCall()` (`src/engine/orchestrator/review-call.ts`). The answer returns the verdict, fix tasks, rejections and question. The final review makes no planner call. The review seat answers no consult: when a fix task stays red or is `blocked`, the planner answers its consult, and its usage goes to the planner bucket. With no `reviewer:` block the planner holds the review seat. Planning, every consult, summarization and injected user turns stay on the planner.
+The review seat has one call type. Before the final review SPLITBRIEF runs the project gate that the plan names (`runReviewChecks`, `src/engine/orchestrator/review-checks.ts`); no reviewer call chooses checks. The call is the review of the run diff at the configured cadence. `runFinalReviewPhase()` dispatches it through `runReviewerCall()` (`src/engine/orchestrator/review-call.ts`). The answer returns the verdict, fix tasks, rejections and question. The final review makes no planner call. The review seat answers no consult: when a fix task stays red or is `blocked`, the planner answers its consult, and its usage goes to the planner bucket. With no `reviewer:` block the planner holds the review seat. With `reviewer: none` no seat reviews and the run makes no review call. Planning, every consult, summarization and injected user turns stay on the planner.
 
 The verdict call carries the run's request as the planner read it, the plan criteria, task briefs, decisions and later operator instructions. A task review receives the request and only its tasks, their criteria, applicable decisions and their operator instructions. The final review receives every brief and decision.
 
@@ -101,7 +101,7 @@ When the plan has render checks and the review seat accepts images, the review c
 
 A REVIEW account refusal raises a Seat down halt. A REVIEW usage limit raises one when the run does not wait for its reset: the halt can take the fallback, or the tool named no reset ([Seat trouble](./APPROVAL-AND-RECOVERY.md#escalation)). The halt reads the fallback of record, including a fallback saved during the run. Set it in Settings › Fallback, or write it in `.splitbrief/config.yaml`. The [automatic-switch conditions](./APPROVAL-AND-RECOVERY.md#seat-down) apply once per run and seat.
 
-With no `reviewer` block, REVIEW uses PLAN's runner and fallback. A REVIEW switch writes its own `reviewer` block and leaves `planner` unchanged. An explicit reviewer uses only its own fallback, including none. A manual switch keeps that fallback. An automatic switch makes the old CLI runner the fallback; an old non-CLI runner leaves none.
+With no `reviewer` block, REVIEW uses PLAN's runner and fallback. With `reviewer: none`, REVIEW has no runner and no fallback. A REVIEW switch writes its own `reviewer` block and leaves `planner` unchanged. An explicit reviewer uses only its own fallback, including none. A manual switch keeps that fallback. An automatic switch makes the old CLI runner the fallback; an old non-CLI runner leaves none.
 
 A review that ends as failed records `reviewStatus: 'failed'`, the reviewer's display name in the error and the final-review evidence. The summary still runs. SPLITBRIEF does not silently hand the review to PLAN.
 
@@ -306,7 +306,7 @@ When an attempt ends, its changed set is computed against the snapshot that atte
 
 The run-scoped handle (`createRunIsolation`, `src/engine/orchestrator/isolation/create.ts`) opens the workspace once per run and reuses it across tasks, retries, stops and process restarts, identified by its record and directory. Each acquisition takes its own snapshot, so a later attempt reports only its own edits, and an attempt's cleanup reverts only that attempt. Disposing the handle never removes the workspace: an open or ready run keeps it, and Discard or End run write `run.patch` before they remove it.
 
-In checkout mode the handle creates no worktree and keeps no workspace record; the run records `workspace.kind: 'checkout'` once. Each attempt still takes its own snapshot, and an attempt's cleanup reverts only that attempt in the checkout. Each revert first saves the bytes it replaces under `.splitbrief/sessions/<id>/reverted/<stamp>/`. Nothing is promoted and there is no Apply: validation and the final review assess the checkout, and a passing review closes the run.
+In checkout mode the handle creates no worktree and keeps no workspace record; the run records `workspace.kind: 'checkout'` once. Each attempt still takes its own snapshot, and an attempt's cleanup reverts only that attempt in the checkout. Each revert first saves the bytes it replaces under `.splitbrief/sessions/<id>/reverted/<stamp>/`. Nothing is promoted and there is no Apply: validation and the final review assess the checkout, and a passing review, or the end of a REVIEW None run, closes the run.
 
 A worktree isolates files, not the machine. It shares refs, git config, and hooks with the real repository, and it shares ports, databases, and environment with everything else running. It is not a security boundary.
 
@@ -439,7 +439,7 @@ Pricing lookup keeps its ladder — cached models.dev first, then runtime metada
 
 ## Four runner kinds in practice
 
-Planner, reviewer and implementer all accept four runner kinds. The `kind` field is the discriminant and is always required. The reviewer is optional: with no `reviewer:` block the planner holds the review seat (`resolveReviewerRunner`, the only module that branches on `config.reviewer`). Configs declare `version: 3`, the only accepted version; any other value fails the load.
+Planner, reviewer and implementer all accept four runner kinds. The `kind` field is the discriminant and is always required. The reviewer has three states: a `reviewer:` block names its runner, no block means that the planner holds the review seat, and the string `reviewer: none` means that no seat reviews (`resolveReviewerRunner`, which every review path reads). Configs declare `version: 3`, the only accepted version; any other value fails the load.
 
 | `kind` | What it is | Example |
 |---|---|---|

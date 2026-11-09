@@ -88,7 +88,7 @@ The callbacks are how the engine asks for human decisions without importing Reac
 
 **Creates the implementer** via `createImplementerSeat()`, which calls `createImplementer()` from the same factory.
 
-**Resolves the reviewer.** `resolveReviewerRunner()` (`src/core/config/accessors/reviewer-runner.ts`) decides who holds the review seat. With no `reviewer` block the planner instance is reused as the reviewer and nothing else happens. With one, `createPlannerSeat()` calls `createReviewer()`, which builds a separate runner from the same factory and the same lazy planner backends (`src/engine/orchestrator/run/init-seats.ts`). A configured reviewer is a candidate in `prepareExecution()` under slot `{ role: 'reviewer' }` and goes through the same fresh admission as the other seats — one that fails admission blocks the run start with a readiness blocker naming the Reviewer.
+**Resolves the reviewer.** `resolveReviewerRunner()` (`src/core/config/accessors/reviewer-runner.ts`) decides who holds the review seat. With no `reviewer` block the planner instance is reused as the reviewer and nothing else happens. With `reviewer: none` the planner instance stays in that field, no review call runs, and the consult and the summaries stay on the planner. With one, `createPlannerSeat()` calls `createReviewer()`, which builds a separate runner from the same factory and the same lazy planner backends (`src/engine/orchestrator/run/init-seats.ts`). A configured reviewer is a candidate in `prepareExecution()` under slot `{ role: 'reviewer' }` and goes through the same fresh admission as the other seats — one that fails admission blocks the run start with a readiness blocker naming the Reviewer.
 
 **Handles resume** — if `savedState` exists and there's no pending recovery, it auto-compacts the JSONL log and rebuilds context for stateless backends (those that don't support session persistence natively).
 
@@ -195,7 +195,7 @@ The worktree path is `$XDG_STATE_HOME/splitbrief/trees/<repo-key>/<session-id>/`
 
 An open run retains its workspace across stops and restarts. After Apply commits its record, it removes the worktree, or the staged-copy directory. A worktree that an older version created on a `splitbrief/<slug>` branch loses that branch too. It also clears the retained-workspace record. A removal failure publishes a warning; the run stays applied. Discard and End run preserve its work before removal. See [Apply](./WORKFLOW.md#apply).
 
-In checkout mode (`workflow.isolation: none`) `openWorkspace()` (`src/engine/orchestrator/isolation/create.ts`) creates no worktree and keeps no workspace record. Readiness warns about uncommitted changes and names `.splitbrief/sessions/<id>/reverted/` as the backup folder. An attempt revert restores only paths that attempt changed and leaves your other uncommitted files untouched. The run records `workspace.kind: 'checkout'` in `state.json` once, so a later config change does not move it. Every task, check and review reads the checkout. There is no Apply: a passing review closes the run, and the close writes no `run.patch`.
+In checkout mode (`workflow.isolation: none`) `openWorkspace()` (`src/engine/orchestrator/isolation/create.ts`) creates no worktree and keeps no workspace record. Readiness warns about uncommitted changes and names `.splitbrief/sessions/<id>/reverted/` as the backup folder. An attempt revert restores only paths that attempt changed and leaves your other uncommitted files untouched. The run records `workspace.kind: 'checkout'` in `state.json` once, so a later config change does not move it. Every task, check and review reads the checkout. There is no Apply: a passing review, or the end of a REVIEW None run, closes the run, and the close writes no `run.patch`.
 
 A worktree shares repository hooks and config, and the host's ports, sockets and databases. It is a file boundary, not a sandbox. The [tripwire and git audit](./APPROVAL-AND-RECOVERY.md#isolation-checks) check implementer calls. `createRunnerSandboxEnv()` (`src/engine/runners/sandbox-env.ts`) provides credential and path hygiene. Keychain-backed session channels keep host `HOME` and `USER`; see [API-KEYS.md](./API-KEYS.md#what-a-host-account-child-can-and-cannot-reach).
 
@@ -260,7 +260,7 @@ Every workflow run produces files on disk under `.splitbrief/sessions/<id>/`:
 
 ## Final review and shutdown
 
-When all tasks complete, `runTasksAndReview()` calls `runFinalReviewPhase()` (`src/engine/orchestrator/final-review.ts`).
+When all tasks complete, `runTasksAndReview()` calls `runFinalReviewPhase()` (`src/engine/orchestrator/final-review.ts`). With `reviewer: none` it does not: the run records `REVIEW_DONE` with `reviewStatus: 'none'` and ends.
 
 The reviewer reads the queue at each verdict call. See [Message queue](./ENGINE.md#message-queue) for messages received during a verdict call and REVIEW messages retained for BUILD.
 
@@ -272,7 +272,7 @@ When the reviewer call fails, the review is reported as failed (`reviewStatus: '
 
 Evidence recording happens throughout: the evidence ledger tracks approvals, rejections, validation outcomes, and the final review status. After the review, a review packet is written — a structured summary of all evidence for the session, carrying the parsed review verdict, criteria counts and finding counts in its final-review section.
 
-The function transitions to `REVIEW_DONE`, publishes `workflow_complete`, builds the summary, and calls `callbacks.onComplete(summary)`. `saveFinalSession()` writes `summary.json`. A workspace result with a passing review remains ready to apply; it keeps the active pointer until closure. Older runs without a workspace close on pass. See [Run status](./WORKFLOW.md#run-status).
+The function transitions to `REVIEW_DONE`, publishes `workflow_complete`, builds the summary, and calls `callbacks.onComplete(summary)`. `saveFinalSession()` writes `summary.json`. A workspace result with a passing review, or from a REVIEW None run, remains ready to apply; it keeps the active pointer until closure. Older runs without a workspace close on pass. See [Run status](./WORKFLOW.md#run-status).
 
 In the TUI, the run loop settles at rest on the same screen and re-reads its `RunRecord`. A ready run shows [the result menu](./FEATURES.md#run-result-menu). A closed run shows its ledger at the transcript's tail. `/usage` owns the cost details. A configured reviewer has its own recorded cost line; otherwise review usage stays with the planner.
 

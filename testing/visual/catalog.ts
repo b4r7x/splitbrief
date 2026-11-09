@@ -177,6 +177,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         ],
       }),
     ),
+    // Only the REVIEW seat word says `None` on home, at every width of the seat block.
+    defineScenario({
+      id: 'home-review-none',
+      title: 'Home · REVIEW set to None',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Ready for a feature with no review seat',
+        kind: 'ready',
+        marker: 'None',
+      },
+      elements: [
+        { id: 'header', title: 'Home header' },
+        { id: 'composer', title: 'Feature composer' },
+      ],
+    }),
     // The draft replaces the shared home placeholder, so this scenario waits on the open menu's
     // own footer instead of reusing the `Describe your feature…` marker.
     defineScenario({
@@ -882,6 +898,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-resuming-apply-review-none',
+      title: 'Workflow · a continued run after REVIEW moved to None at rest',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'resuming-apply-review-none',
+        title: 'The byline names Apply and the rail skips the review',
+        kind: 'implementation',
+        marker: 'Resuming Apply',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-implementation-queued',
       title: 'Workflow · a message queued for the running brief',
       surface: screenSurface('workflow'),
@@ -940,6 +971,24 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       checkpoint: {
         id: 'implementation',
         title: 'Implementation with wrapped seats',
+        kind: 'implementation',
+        marker: 'Inspecting deterministic fixture contract',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'activity', title: 'Implementation activity block' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-crew-wide-review-none',
+      title: 'Workflow · a wide crew with REVIEW set to None',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'crew-wide-review-none',
+        title: 'Implementation with REVIEW None',
         kind: 'implementation',
         marker: 'Inspecting deterministic fixture contract',
       },
@@ -1770,6 +1819,38 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-review-none-end',
+      title: 'Workflow · a run with REVIEW None ends on one row',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-none-end',
+        title: 'The None row after the last brief',
+        kind: 'success',
+        marker: 'Review · none',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Build transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-apply-recheck-review-none',
+      title: 'Workflow · the merged result checked again with REVIEW None',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'apply-recheck-review-none',
+        title: 'The checks of the merged result, with no review stage',
+        kind: 'implementation',
+        marker: 'Checking the merged result',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Recheck transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-implementation-retry',
       title: 'Workflow · retried brief',
       surface: screenSurface('workflow'),
@@ -2270,6 +2351,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Revised plan passes',
         kind: 'planning',
         marker: 'The revised plan passes its checks.',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Plan transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-plan-card-review-none',
+      title: 'Workflow · plan card naming the checks REVIEW None does not run',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'plan-card-review-none',
+        title: 'Plan card with the REVIEW None note',
+        kind: 'review',
+        marker: 'Approve plan and start the build',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -3171,6 +3268,38 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Closed run ledger' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-closed-complete-review-none',
+      title: 'Workflow · closed after a run with REVIEW None',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'closed-complete-review-none',
+        title: 'Closed run with no review',
+        kind: 'success',
+        marker: 'visual-closed-none',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Closed run ledger' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-ready-to-apply-review-none',
+      title: 'Workflow · a workspace with REVIEW None waiting to apply',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'ready-to-apply-review-none',
+        title: 'Ready to apply with no review',
+        kind: 'ready',
+        marker: 'Ready to apply',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
@@ -4898,6 +5027,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-recovery-review-none-in-place',
+      title: 'Workflow · a final-review halt in place that moved to REVIEW None',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery-review-none-in-place',
+        title: 'The rail of a run in place with REVIEW None, with no Apply stage',
+        kind: 'question',
+        marker: 'Fix the cause below',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-recovery-left-isolation',
       title: 'Workflow · an implementer that left its isolation directory',
       surface: screenSurface('workflow'),
@@ -6304,6 +6449,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: 'Fallback',
       },
       {
+        id: 'overlay-settings-fallback-review-none',
+        title: 'Overlay · settings · no REVIEW fallback while REVIEW is None',
+        marker: 'Fallback',
+      },
+      {
         id: 'overlay-settings-fallback-set',
         title: 'Overlay · settings · configured fallbacks',
         marker: 'Fallback',
@@ -6382,6 +6532,16 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         id: 'overlay-settings-end-checks',
         title: 'Overlay · settings · the End-of-run checks toggle',
         marker: 'End-of-run checks',
+      },
+      {
+        id: 'overlay-settings-review-none',
+        title: 'Overlay · settings · read-only rows while REVIEW is None',
+        marker: 'Review cadence',
+      },
+      {
+        id: 'overlay-settings-review-none-locked-enter',
+        title: 'Overlay · settings · Enter on a read-only row while REVIEW is None',
+        marker: 'Read-only while REVIEW is None',
       },
       {
         id: 'overlay-settings-end-checks-off',
@@ -6861,6 +7021,12 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         id: 'overlay-reviewer-picker-inherited',
         title: 'Overlay · reviewer picker · inherited from the planner',
         marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-reviewer-picker-none',
+        title: 'Overlay · reviewer picker · None chosen',
+        marker: 'No seat reviews',
+        viewports: WIDE_VIEWPORTS,
       },
       {
         id: 'overlay-reviewer-picker-tool',

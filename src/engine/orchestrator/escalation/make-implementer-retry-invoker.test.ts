@@ -358,6 +358,7 @@ describe('makeImplementerRetryInvoker', () => {
           bus,
           message: plainUserMessage('keep the API'),
           phase: state.phase,
+          reviewNone: false,
         });
         return { success: true, output: '' };
       },
@@ -419,6 +420,7 @@ describe('makeImplementerRetryInvoker', () => {
               bus,
               phase: 'implementing',
               message: plainUserMessage('correct the retry'),
+              reviewNone: false,
             });
           }
           return {
@@ -515,6 +517,7 @@ describe('makeImplementerRetryInvoker', () => {
           bus,
           phase: 'implementing',
           message: plainUserMessage('keep the creation'),
+          reviewNone: false,
         });
         return {
           success: true,
@@ -710,6 +713,7 @@ describe('makeImplementerRetryInvoker', () => {
           bus,
           phase: 'implementing',
           message,
+          reviewNone: false,
         });
         return { success: true, output: 'retried', usage: { inputTokens: 10, outputTokens: 4 } };
       });
@@ -798,6 +802,7 @@ describe('makeImplementerRetryInvoker', () => {
       bus,
       phase: 'implementing',
       message: plainUserMessage('preserve the public signature'),
+      reviewNone: false,
     });
     const { implementer, getReceived } = makeRecordingImplementer();
     const invoker = makeImplementerRetryInvoker({
@@ -842,6 +847,7 @@ describe('makeImplementerRetryInvoker', () => {
           bus,
           phase: 'implementing',
           message: plainUserMessage('keep this pending'),
+          reviewNone: false,
         });
         return {
           success: false,

@@ -18,6 +18,7 @@ import { overlayStore } from '../ui/overlay.js';
 import { resetWorkflowControls } from '../workflow/actions/reset.js';
 import { CHECKING_TOOLS_STAGE, preparationStore, type PreparationState } from './preparation.js';
 import { routerStore } from './router.js';
+import { configStore } from '../project/config.js';
 
 type SessionResumePreparationState =
   | Readonly<{ kind: 'idle' }>
@@ -235,7 +236,7 @@ export async function handleSessionSelect(
     return;
   }
 
-  const record = readRunRecord({ projectDir, sessionId: session.id });
+  const record = readRunRecord({ projectDir, sessionId: session.id }, configStore.reviewNone());
   cancelSessionPreparation({ restoreOrigin: false });
   preparationStore.reset();
   const generation = routerStore.supersede();

@@ -54,6 +54,7 @@ describe('a guided retry that carries a queued correction', { timeout: 90_000 },
             message: plainUserMessage('Keep the exported name.'),
             phase: current.phase,
             bus,
+            reviewNone: false,
           });
           green = true;
           return guidanceConsult();
@@ -122,6 +123,7 @@ describe('a guided retry that carries a queued correction', { timeout: 90_000 },
               message: plainUserMessage('Keep the exported name.'),
               phase: current.phase,
               bus,
+              reviewNone: false,
             });
           }
           return guidanceConsult();
@@ -184,6 +186,7 @@ describe('a guided retry that carries a queued correction', { timeout: 90_000 },
             message: plainUserMessage('Keep the exported name.'),
             phase: current.phase,
             bus,
+            reviewNone: false,
           });
           return guidanceConsult();
         }),
@@ -252,6 +255,7 @@ describe('a guided retry that carries a queued correction', { timeout: 90_000 },
             message: plainUserMessage('Keep the exported name.'),
             phase: current.phase,
             bus,
+            reviewNone: false,
           });
           return guidanceConsult();
         }),

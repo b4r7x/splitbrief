@@ -314,7 +314,7 @@ describe('e2e: a run started on a dirty checkout', { timeout: 300_000 }, () => {
     ).toMatchObject([{ verdict: 'pass' }]);
     const state = readState(target, sessionId);
     expect(state.tasks.map((task) => task.id)).toEqual(['T001']);
-    expect(deriveRunStatus({ state, liveness: 'not-alive' })).toEqual({
+    expect(deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' })).toEqual({
       kind: 'ready-to-apply',
       override: false,
     });

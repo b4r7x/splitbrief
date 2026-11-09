@@ -14,6 +14,7 @@ import { configWithSwitchedSeat, seatCandidateOfRunner } from './switch-seat.js'
 import { readSeatOfRecord } from './seat-swap-context.js';
 import { haltedSeatIds } from '../../../core/state/seats.js';
 import { getProviderDisplayName } from '../../../core/providers/catalog.js';
+import { readActiveRunner } from '../../../core/config/accessors/active-runner.js';
 import type { SeatRunnerValue } from '../../../core/config/load/record-seat.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { isTaskCompleted } from '../../../core/schemas/task.js';
@@ -1021,7 +1022,7 @@ export function seatRunnerValue(
     case 'plan':
       return config.planner;
     case 'review':
-      return config.reviewer ?? config.planner;
+      return readActiveRunner({ config, role: 'reviewer' });
     case 'build': {
       const runner = readImplementerProfileConfig(config, profile);
       if (runner === undefined) {
