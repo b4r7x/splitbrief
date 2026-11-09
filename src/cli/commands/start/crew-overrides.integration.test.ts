@@ -249,8 +249,10 @@ describe('first-run seat override parity', () => {
               expect(existsSync(configPath(projectDir)), label).toBe(false);
             }
             if (mask !== 0) {
+              // A context length alone is the Prompt budget of the run: the detected seat stays.
+              const budgetOnly = flags.length === 2 && flags[0] === `--${role}-context-length`;
               const intended = resolveEffectiveConfig({
-                base: createDefaultConfig(),
+                base: budgetOnly ? persisted : createDefaultConfig(),
                 overrides,
               }).config;
               expect(readActiveRunner({ config: setupConfig, role }), label).toEqual(

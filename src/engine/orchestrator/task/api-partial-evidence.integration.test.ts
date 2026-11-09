@@ -462,7 +462,7 @@ describe('a partial apply in the checkout mode', () => {
     expect(recordedApiCreatedPaths(wctx, task, projectDir)).toEqual([]);
   });
 
-  it('a left-isolation halt puts the attempt back in the checkout through the real halt path', async () => {
+  it('a left-isolation halt keeps the attempt in the checkout through the real halt path', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = bundleTask();
     const isolation = createRunIsolation({
@@ -518,13 +518,11 @@ describe('a partial apply in the checkout mode', () => {
     await isolation.dispose();
 
     expect(halted.pendingRecovery?.reason).toBe('implementer-left-isolation');
-    expect(existsSync(join(projectDir, ANCHOR))).toBe(false);
-    const reverted = join(sessionDir(projectDir, sessionId), 'reverted');
-    expect(
-      readdirSync(reverted).some(
-        (stamp) => readFileSync(join(reverted, stamp, ANCHOR), 'utf-8') === LANDED,
-      ),
-    ).toBe(true);
-    expect(halted.pendingRecovery?.details?.join('\n')).toContain(relative(projectDir, reverted));
+    expect(existsSync(join(projectDir, ANCHOR))).toBe(true);
+    expect(readFileSync(join(projectDir, ANCHOR), 'utf-8')).toBe(LANDED);
+    expect(existsSync(join(sessionDir(projectDir, sessionId), 'reverted'))).toBe(false);
+    expect(halted.pendingRecovery?.details).toContain(
+      'The files this attempt changed stay in your checkout.',
+    );
   });
 });

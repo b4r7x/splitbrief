@@ -347,6 +347,7 @@ describe('spec command', () => {
       contextKey: 'ollama@local',
       selectionId: 'qwen2.5',
       observedAt: 0,
+      configuredContextTokens: applicationContextTokens,
       applicationContextTokens,
       budgetSource: 'configured' as const,
       loadState: 'unknown' as const,
@@ -382,7 +383,7 @@ describe('spec command', () => {
       expect(typed.prompts[0]).toContain('src/hello.ts — whole file, sha256');
     });
 
-    it('fails before any call when the named source does not fit the model', async () => {
+    it('fails before any call when the named source does not fit the Prompt budget', async () => {
       const typed = scriptedTypedCall([planFromTasks([makeTask()])]);
       createPlannerMock.mockResolvedValue(
         makePlanner({ typedCall: typed.typedCall, resolvePlanningContext: context(2_200) }),
