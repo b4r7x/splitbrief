@@ -1925,6 +1925,43 @@ describe('initializeWorkflow — seat record', () => {
       expect(tracked.current?.plannerSessionId).toBeNull();
     });
   });
+
+  it("clears the moved plan seat's session when the resume restarts the brief in flight", async () => {
+    await withTempDir('splitbrief-init-seat-change-in-flight', async (projectDir) => {
+      const feature = 'resume a brief in flight on another crew';
+      const ref = { projectDir, sessionId: 'session-init-seat-change-in-flight' };
+      const retired = 'Retired Tool · retired-model';
+      ensureSessionDir(projectDir, ref.sessionId);
+      writeSeatIdentities(ref, { plan: retired, build: retired, review: retired });
+      const state: WorkflowState = {
+        ...createInitialState(feature),
+        phase: 'escalating',
+        tasks: [makeTask({ id: 'T001', status: 'in_progress' })],
+        currentTaskIndex: 0,
+        plannerSessionId: 'session-minted-by-the-retired-tool',
+      };
+      // The restart of the brief saves on the head on disk, so the run must have one.
+      saveState(ref, state);
+      expect(loadState(ref)?.plannerSessionId).toBe('session-minted-by-the-retired-tool');
+
+      const { init, tracked } = await initializeTestWorkflow({
+        ...ref,
+        feature,
+        savedState: state,
+      });
+
+      expect(init.ok).toBe(true);
+      expect(createPlannerSeat).toHaveBeenLastCalledWith(
+        expect.objectContaining({ initialSessionId: null }),
+      );
+      expect(tracked.current).toMatchObject({
+        phase: 'implementing',
+        tasks: [{ id: 'T001', status: 'pending' }],
+        plannerSessionId: null,
+      });
+      expect(loadState(ref)?.plannerSessionId).toBeNull();
+    });
+  });
 });
 
 describe('initializeWorkflow — a review seat change and the render checks', () => {

@@ -621,6 +621,7 @@
 - In a short terminal, a free-text question now starts right after the answer field, with no wide gap.
 - When a short halt panel folds lines away, the fold now says that it hides the folder with the replaced files.
 - At 80 columns or fewer, the header now names every seat by its tool when the tool names fit. Above 80 columns, it names every seat by its model when the model names fit beside all the stages. Else it names every seat by its tool when the tool names fit. To make room for the tool names, the rail can show only one stage.
+- A run that stopped with a brief in flight and continues after a `/crew` change of the PLAN seat no longer shows a warning that the planner session expired.
 
 ## [0.1.0] - 2026-08-07
 

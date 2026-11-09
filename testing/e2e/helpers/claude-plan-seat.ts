@@ -3,7 +3,12 @@ import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 /** The consult prompt size the fake planner tool refuses as too long. */
 export const REFUSED_CHARS = 500_000;
 
-export type PlanSeatRefusal = 'none' | 'oversized' | 'planner-session' | 'every-consult';
+export type PlanSeatRefusal =
+  | 'none'
+  | 'oversized'
+  | 'planner-session'
+  | 'every-consult'
+  | 'unknown-session';
 
 /** One line of the call log. */
 export type PlanSeatCall = {
@@ -18,8 +23,10 @@ export type PlanSeatCall = {
  * Claude Code as the PLAN seat, at a version that takes typed answers natively. The plan call
  * opens the session `planner-session`; every other call that resumes nothing opens
  * `fresh-session`. A refused call ends the way Claude Code refused an oversized prompt live: an
- * `is_error` result that says only "Prompt is too long", and exit 1. Each call is logged to
- * `calls`, one JSON line each (`PlanSeatCall`).
+ * `is_error` result that says only "Prompt is too long", and exit 1. With `unknown-session`, a
+ * call that resumes a session the shim never opened fails the way Claude Code failed live: an
+ * error result that names the missing conversation, the same line on stderr, and exit 1. Each
+ * call is logged to `calls`, one JSON line each (`PlanSeatCall`).
  */
 export function installPlannerClaude(
   binDir: string,
@@ -60,6 +67,13 @@ const answer = (prompt) => {
     length: prompt.length,
     prompt,
   }) + '\\n');
+  if (refusal === 'unknown-session' && resumed !== null && resumed !== 'planner-session' && resumed !== 'fresh-session') {
+    const missing = 'No conversation found with session ID: ' + resumed;
+    emit({ type: 'result', subtype: 'error_during_execution', is_error: true, num_turns: 0, session_id: resumed, usage: { input_tokens: 0, output_tokens: 0 }, errors: [missing] });
+    console.error(missing);
+    process.exitCode = 1;
+    return;
+  }
   emit({ type: 'system', subtype: 'init', session_id: session });
   if (args.includes('--input-format')) {
     emit({ type: 'user', parent_tool_use_id: null, message: { role: 'user', content: prompt } });

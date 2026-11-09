@@ -257,7 +257,8 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
   }
   // Every resume passes here, from the app and from the CLI alike, so this is
   // the one place the record is compared and rewritten. A moved plan seat also drops the
-  // saved planner session: it belongs to the tool that left, so the context is
+  // saved planner session on disk, so a later save in this init does not bring it back:
+  // it belongs to the tool that left, so the context is
   // rebuilt below rather than handed to a tool that cannot resume it. A change no
   // seat switch of this run recorded is recorded here as one.
   let planSeatChanged = false;
@@ -313,8 +314,13 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
         });
       }
     }
-    if (planSeatChanged) {
-      savedState = { ...savedState, plannerSessionId: null };
+    if (planSeatChanged && savedState.plannerSessionId) {
+      savedState = transitionAndSave(
+        { projectDir, sessionId },
+        savedState,
+        { type: 'SET_PLANNER_SESSION_ID', sessionId: null },
+        { expectedRevision: savedState.stateRevision },
+      );
       setTrackedState(savedState);
     }
   }
