@@ -12,7 +12,7 @@ import type { SeatSwapCandidate } from '../../core/schemas/recovery/schemas.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { UserMessageInput } from '../../core/types/user-input.js';
 import { recoveryActionLabel } from '../../core/recovery/action-label.js';
-import { leavesWordsUnread } from '../../core/recovery/typed-words.js';
+import { leavesWordsUnread, stepReadsNoWords } from '../../core/recovery/typed-words.js';
 import { prepareDraftSubmission } from '../../core/composer/submission.js';
 import { plannerSupportsImages } from '../../engine/providers/capabilities.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
@@ -40,16 +40,17 @@ import { composerLiveStore } from '../../stores/ui/composer-live.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
-import type { UseInputModeResult } from './hooks/use-input-mode.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
+import type { QuestionAnswer, UseInputModeResult } from './hooks/use-input-mode.js';
+import { updateWaitingHalt } from '../../stores/workflow/actions/hydrate.js';
 import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
 import { runResumePolicy } from './resume-policy.js';
-import { nextEntryConfig } from './entry-config.js';
+import { nextEntryConfig, nextEntryReviewNone } from './entry-config.js';
 import {
   correctionActionFor,
   formatRecoveryPrompt,
   parseRecoveryActionAnswer,
 } from './recovery-prompt.js';
-import { resolveReviewCadence } from '../../core/config/runtime/resolve.js';
 
 const NO_CORRECTION_MESSAGE = 'This halt takes no typed correction. Choose an action.';
 
@@ -202,7 +203,21 @@ export function createRecoveryDriver(
   }: PromptPendingRecoveryArgs): Promise<PendingRecoveryResult> {
     const issue = state.pendingRecovery;
     if (issue === undefined) return { shouldRun: true, state };
-    const at = resumeStep(state, resolveReviewCadence(config) === 'none');
+    const entry = { configOfRun, prepared: config, state };
+    // REVIEW None at the halt is the value the next pass runs on, so a move of REVIEW while the
+    // panel waits changes what the answer does.
+    const readNextPass = () => {
+      const reviewNone = nextEntryReviewNone(entry);
+      const at = resumeStep(state, reviewNone);
+      const stepReadsNone = stepReadsNoWords(at, reviewNone);
+      return {
+        reviewNone,
+        at,
+        stepReadsNone,
+        correctionAction: correctionActionFor(issue, stepReadsNone),
+      };
+    };
+    let nextPass = readNextPass();
 
     // The halt's declaration is its automatic intent: the declared fallback is taken
     // at once, with no panel question and no picker, and the run loop applies it
@@ -228,17 +243,11 @@ export function createRecoveryDriver(
         return 'Why skip the review? (enter records none)';
       }
       if (action !== 'revise') return undefined;
-      return issue.reason === 'review-failed'
-        ? "What should the fix change? (enter sends the review's findings alone)"
-        : 'What should the planner change? (enter sends no note)';
-    };
-    const promptRecoveryComment = async (
-      action: RecoveryAction,
-    ): Promise<UserMessageInput | undefined> => {
-      const question = noteQuestion(action);
-      return question === undefined
+      if (issue.reason !== 'review-failed')
+        return 'What should the planner change? (enter sends no note)';
+      return nextPass.reviewNone
         ? undefined
-        : (await inputMode.setQuestionMode(question)).message;
+        : "What should the fix change? (enter sends the review's findings alone)";
     };
 
     const settle = (
@@ -353,21 +362,20 @@ export function createRecoveryDriver(
         action,
         bus,
         config,
-        ...(action === 'retry-later' && {
-          entryConfig: nextEntryConfig({ configOfRun, prepared: config, state }).config,
-        }),
+        // End run reads no config, so a file that does not load cannot keep the run open.
+        ...(action === 'end-run' ? {} : { entryConfig: nextEntryConfig(entry).config }),
         ...(comment === undefined || comment.text.trim() === '' ? {} : { comment }),
       });
       return settle(result, comment, steer);
     };
 
-    const correctionAction = correctionActionFor(issue);
     if (issue.status === 'applying') {
       const selected = issue.selectedAction;
       if (selected !== undefined) {
         // A replay asks nothing: the words typed to continue are the note of an action that takes
         // one, as the panel would take them, and steer the step it runs.
-        const takesNote = selected === correctionAction || noteQuestion(selected) !== undefined;
+        const takesNote =
+          selected === nextPass.correctionAction || noteQuestion(selected) !== undefined;
         const applied = await applyAction(
           selected,
           takesNote ? reentryCorrection : undefined,
@@ -383,7 +391,7 @@ export function createRecoveryDriver(
     // typed words to continue: those answer the halt as they do without the choice.
     const decided = applyDecidedRecovery(
       { projectDir, sessionId, state, bus, config },
-      () => nextEntryConfig({ configOfRun, prepared: config, state }).config,
+      () => nextEntryConfig(entry).config,
       reentryCorrection,
     );
     if (decided !== undefined) {
@@ -395,8 +403,8 @@ export function createRecoveryDriver(
     // retry halt keeps them as the steer of whichever retry the operator picks on the panel. Only
     // a halt End run alone answers has no step to take them.
     if (reentryCorrection !== undefined && reentryCorrection.text.trim() !== '') {
-      if (correctionAction === 'revise') {
-        const applied = await applyAction(correctionAction, reentryCorrection);
+      if (nextPass.correctionAction === 'revise') {
+        const applied = await applyAction(nextPass.correctionAction, reentryCorrection);
         if (applied !== null) return applied;
       } else if (issue.availableActions.every((action) => action === 'end-run')) {
         feedbackStore.setError(NO_CORRECTION_MESSAGE);
@@ -413,19 +421,69 @@ export function createRecoveryDriver(
     }
     if (controller.signal.aborted || abortedRef.current) return { shouldRun: false, state };
 
-    if (republishPrompt) publishRecoveryPrompted({ bus, phase: state.phase }, sessionId, issue, at);
+    if (republishPrompt) {
+      publishRecoveryPrompted(
+        { bus, phase: state.phase },
+        sessionId,
+        issue,
+        nextPass.at,
+        nextPass.reviewNone,
+      );
+    }
+
+    // One wait serves the panel and its note question. While a question waits, the next pass and
+    // the view follow a move of REVIEW: once answered, this state is stale. A move that changes the
+    // question ends it with no answer. The file is read when the answer comes, so a hand edit
+    // counts too; End run reads none. An answer that the file or a move leaves with no question is
+    // not taken, and its words go back to the composer.
+    const waitForAnswer = async (
+      question: string,
+      stillAsked: () => boolean,
+    ): Promise<QuestionAnswer | undefined> => {
+      const moved = Promise.withResolvers<undefined>();
+      const follow = (): void => {
+        nextPass = readNextPass();
+        updateWaitingHalt(state, nextPass.reviewNone);
+        if (!stillAsked()) moved.resolve(undefined);
+      };
+      follow();
+      const stopFollowing = configStore.subscribe(follow);
+      try {
+        const answer = await Promise.race([inputMode.setQuestionMode(question), moved.promise]);
+        if (answer === undefined) return undefined;
+        const refuse = (): undefined => {
+          if (answer.row !== true && answer.message.text.trim() !== '') {
+            composerDraftStore.requestPrepend(answer.document);
+          }
+          return undefined;
+        };
+        const endsRun =
+          answer.row === true &&
+          parseRecoveryActionAnswer(answer.message.displayText, issue) === 'end-run';
+        if (!endsRun) {
+          try {
+            configStore.reloadIfChanged();
+          } catch (err) {
+            feedbackStore.setError(toErrorMessage(err));
+            return refuse();
+          }
+        }
+        return stillAsked() ? answer : refuse();
+      } finally {
+        stopFollowing();
+      }
+    };
 
     while (true) {
       recoveryNoticeStore.ask(true);
-      const {
-        message: answer,
-        document,
-        row,
-      } = await inputMode.setQuestionMode(formatRecoveryPrompt(issue));
+      const waited = await waitForAnswer(formatRecoveryPrompt(issue), () => true);
       recoveryNoticeStore.ask(false);
       if (controller.signal.aborted || abortedRef.current) {
         return { shouldRun: false, state };
       }
+      if (waited === undefined) continue;
+      const { message: answer, document, row } = waited;
+      const { reviewNone, stepReadsNone, correctionAction } = nextPass;
       let action = parseRecoveryActionAnswer(answer.displayText, issue);
       // Only a row picks an action. Words from the composer are the correction, or the halt
       // refuses them. The correction action's own word runs it with no steer.
@@ -446,9 +504,9 @@ export function createRecoveryDriver(
       }
       // Words typed beside the panel are the note of the action that takes one.
       const draft = composerLiveStore.get();
-      if (!draft.empty && leavesWordsUnread(issue.reason, action)) {
+      if (!draft.empty && leavesWordsUnread(issue.reason, action, stepReadsNone)) {
         feedbackStore.setError(
-          `Cannot send words with ${recoveryActionLabel(action, { reason: issue.reason })}. Clear them.`,
+          `Cannot send words with ${recoveryActionLabel(action, { reason: issue.reason, reviewNone })}. Clear them.`,
         );
         continue;
       }
@@ -467,9 +525,15 @@ export function createRecoveryDriver(
         composerDraftStore.request('');
       }
       if (correction === undefined && action === correctionAction) correction = reentryCorrection;
-      const comment = correction ?? (await promptRecoveryComment(action));
-      if (controller.signal.aborted || abortedRef.current) {
-        return { shouldRun: false, state };
+      let comment = correction;
+      const question = comment === undefined ? noteQuestion(action) : undefined;
+      if (question !== undefined) {
+        const note = await waitForAnswer(question, () => noteQuestion(action) === question);
+        if (controller.signal.aborted || abortedRef.current) {
+          return { shouldRun: false, state };
+        }
+        if (note === undefined) continue;
+        comment = note.message;
       }
       const applied = await applyAction(action, comment, correction ?? reentryCorrection);
       if (applied !== null) return applied;

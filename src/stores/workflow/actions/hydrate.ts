@@ -10,7 +10,7 @@ import {
 } from '../tokens.js';
 import { _lifecycleInternal, type LifecycleState } from '../lifecycle.js';
 import { _runViewInternal } from '../run-view.js';
-import { settleRunView } from '../../../core/run-view/settle.js';
+import { settleReviewNone, settleRunView } from '../../../core/run-view/settle.js';
 
 /**
  * The saved state, laid over the stores the replayed log already rebuilt. The log is the narrative
@@ -23,6 +23,11 @@ export function hydrateFromState(state: WorkflowState, reviewNone: boolean): voi
   _runViewInternal.set((view) => settleRunView(view, state, reviewNone));
   _lifecycleInternal.set((current) => lifecycleFromState(current, state));
   _tokensInternal.set((current) => ({ ...current, ...tokensStateFromState(state) }));
+}
+
+/** REVIEW moved while a halt waits on a live run: the run stays as it is and only the halt reads anew. */
+export function updateWaitingHalt(state: WorkflowState, reviewNone: boolean): void {
+  _runViewInternal.set((view) => settleReviewNone(view, state, reviewNone));
 }
 
 function lifecycleFromState(current: LifecycleState, state: WorkflowState): LifecycleState {

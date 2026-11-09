@@ -81,6 +81,7 @@ import { reviewDraftTarget } from '../../features/workflow/review-commands.js';
 import { reviewKeysStore } from '../../stores/ui/review-keys.js';
 import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
+import { haltReadsNoWords } from '../../core/run-view/halt.js';
 import { questionOptions, questionPromptStore } from '../../stores/question-prompt/prompt.js';
 import {
   recoveryComposerHint,
@@ -140,6 +141,7 @@ export function WorkflowScreen({
   const reviewOwnerToken = reviewStore.use((state) => state.ownerToken);
   const reviewConfirms = reviewStore.use((state) => state.confirms);
   const recoveryIssue = runViewStore.use((view) => view.halt?.issue ?? null);
+  const recoveryStepReadsNone = runViewStore.use(haltReadsNoWords);
   const recoveryAsking = recoveryNoticeStore.use((state) => state.asking);
   const questionState = questionPromptStore.use((state) => state);
   const plannerQuestions = questionState.questions;
@@ -591,7 +593,7 @@ export function WorkflowScreen({
               stopMenuOpen
                 ? STOP_SHEET_COMPOSER_HINT
                 : recoveryPromptOpen && recoveryIssue !== null
-                  ? recoveryComposerHint(recoveryIssue, recoveryMenuFocused)
+                  ? recoveryComposerHint(recoveryIssue, recoveryMenuFocused, recoveryStepReadsNone)
                   : resultMenuFocused
                     ? RESULT_MENU_COMPOSER_HINT
                     : questionPanelFocused

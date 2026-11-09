@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import XtermHeadless from '@xterm/headless';
@@ -678,8 +678,18 @@ const twoBriefPlan = makePlanProposal({
   tasks: [brief, secondBrief],
 });
 
+const repairBrief = makeTaskSpec({
+  id: 'T003',
+  title: 'Repair total',
+  intent: 'Make total add its operands.',
+  criteria: ['C1'],
+  suggestedFiles: [TOTAL_FILE],
+  checks: [{ id: 'T003-K1', kind: 'test', value: TOTAL_TEST_FILE }],
+});
+
 /** Every brief's title with the files it writes. */
 const BRIEF_FILES = {
+  [repairBrief.title]: { [TOTAL_FILE]: `${TOTAL_SOURCE}// repaired\n` },
   [brief.title]: { [TOTAL_FILE]: TOTAL_SOURCE, [TOTAL_TEST_FILE]: TOTAL_TEST_SOURCE },
   [secondBrief.title]: { [DOUBLE_FILE]: DOUBLE_SOURCE, [DOUBLE_TEST_FILE]: DOUBLE_TEST_SOURCE },
 };
@@ -705,12 +715,60 @@ process.stdout.write(JSON.stringify(${JSON.stringify({ result: proposal })}));
 `;
 }
 
+/** Every task review fails on F1 with the same fix brief, and the planner says it cannot help, so the run halts on the failed review. */
+function rejectingTaskReviewPlanner(callsPath: string, proposal: typeof plan): string {
+  const finding = {
+    id: 'F1',
+    kind: 'defect',
+    severity: 'blocking',
+    taskId: brief.id,
+    criterionId: 'C1',
+    file: TOTAL_FILE,
+    line: null,
+    text: 'total returns the wrong sum.',
+    acceptance: null,
+    checkIds: null,
+  };
+  return `import { appendFileSync } from 'node:fs';
+const chunks = [];
+for await (const chunk of process.stdin) chunks.push(chunk);
+const prompt = Buffer.concat(chunks).toString('utf8');
+const ids = (label) => {
+  const value = prompt.match(new RegExp('^' + label + ' (.+)$', 'm'))?.[1].trim();
+  return value === undefined || value === 'none' ? [] : value.split(',').map((id) => id.trim());
+};
+let kind;
+let answer;
+if (/^# (Task|Final) Implementation Review/m.test(prompt)) {
+  kind = /^# Final Implementation Review/m.test(prompt) ? 'final-review' : 'task-review';
+  answer = {
+    tasks: ids('Task ids:').map((id) => ({ id, plan: 'met', note: '' })),
+    criteria: ids('Criterion ids:').map((id) => ({ id, status: id === 'C1' ? 'fail' : 'pass', evidence: '' })),
+    findings: [${JSON.stringify(finding)}],
+    fixTasks: [{ ...${JSON.stringify(repairBrief)}, findingIds: ['F1'] }],
+    rejected: [],
+    ask: null,
+  };
+} else if (/^# Consult on a failing task$/m.test(prompt)) {
+  kind = 'consult';
+  answer = { answer: { diagnosis: 'No progress.', action: 'cannot', reason: 'It needs a decision.', next: null } };
+} else {
+  kind = 'plan';
+  answer = ${JSON.stringify({ result: proposal })};
+}
+appendFileSync(${JSON.stringify(callsPath)}, kind + '\\n');
+process.stdout.write(JSON.stringify(answer));
+`;
+}
+
 function perBriefImplementer(callsPath: string): string {
   return `import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 const chunks = [];
 for await (const chunk of process.stdin) chunks.push(chunk);
-const title = Buffer.concat(chunks).toString('utf8').match(/^## Task: (.+)$/m)?.[1];
+const prompt = Buffer.concat(chunks).toString('utf8');
+const title = prompt.match(/^## Task: (.+)$/m)?.[1];
 appendFileSync(${JSON.stringify(callsPath)}, 'implement ' + title + '\\n');
+appendFileSync(${JSON.stringify(`${callsPath}.prompts`)}, prompt);
 mkdirSync('src', { recursive: true });
 for (const [file, source] of Object.entries(${JSON.stringify(BRIEF_FILES)}[title])) writeFileSync(file, source);
 console.log('Implemented ' + title);
@@ -734,15 +792,18 @@ function prepareHeldTaskReview(target: StopContinueFixture, proposal: typeof pla
   return {
     offlinePath,
     reviewHold,
+    callsPath,
     calls: () => readFileSync(callsPath, 'utf8').split('\n').filter(Boolean),
+    prompts: () => readFileSync(`${callsPath}.prompts`, 'utf8'),
   };
 }
 
-/** Starts the run, stops it during its first task review, and returns the session. */
+/** Starts the run, stops it during its first task review, and returns the session. `queued` is sent while that review runs. */
 async function stopInTaskReview(
   { screen, write }: Tui,
   target: StopContinueFixture,
   run: ReturnType<typeof prepareHeldTaskReview>,
+  queued?: string,
 ): Promise<string> {
   await expect.poll(screen, { timeout: 60_000 }).toContain('Describe your feature');
   writeFileSync(run.reviewHold, '');
@@ -750,12 +811,20 @@ async function stopInTaskReview(
   await expect.poll(screen).toContain('› add a total helper');
   write(PTY_SUBMIT_INPUT);
   await vi.waitFor(() => expect(run.calls()).toContain('task-review'), { timeout: 120_000 });
+  const sessionId = readActive(target.projectDir);
+  if (sessionId === null) throw new Error('no active session');
+  if (queued !== undefined) {
+    write(queued);
+    await expect.poll(screen).toContain(`› ${queued}`);
+    write(PTY_SUBMIT_INPUT);
+    await vi.waitFor(() => expect(readState(target, sessionId).messageQueue).toHaveLength(1), {
+      timeout: 30_000,
+    });
+  }
   write('\x1b');
   await expect.poll(screen, { timeout: 30_000 }).toContain('Stop now');
   await moveCursorTo(screen, write, '\x1b[B', /▌ Stop now/);
   write('\r');
-  const sessionId = readActive(target.projectDir);
-  if (sessionId === null) throw new Error('no active session');
   await vi.waitFor(
     () => {
       const state = readState(target, sessionId);
@@ -869,6 +938,504 @@ it('e2e: a task review stopped before the next brief ends on a move to REVIEW No
     ]);
     expect(noSeatShown).toBe(false);
     expect(reviewNamed).toBe(false);
+  } finally {
+    rmSync(run.reviewHold, { force: true });
+    trustHome.restore();
+    cleanupTempDir(target.tmpDir);
+  }
+});
+
+it('e2e: a correction typed at rest after a cut task review and a move to REVIEW None reaches the next brief', {
+  timeout: 300_000,
+}, async () => {
+  const target = createStopContinueFixture(() => '');
+  const trustHome = useTrustHome('review-none-task-review-words');
+  const run = prepareHeldTaskReview(target, twoBriefPlan);
+  const config = loadConfig(target.projectDir).config;
+  if (config.planner.kind !== 'shell') throw new Error('the fixture plans with a shell seat');
+  writeConfig(target.projectDir, {
+    ...config,
+    planner: { ...config.planner, idleWarnMs: 500, idleKillMs: 5_000 },
+  });
+  const words = 'also handle negative numbers';
+  try {
+    await inTui(
+      target,
+      trustHome.home,
+      run.offlinePath,
+      () => {},
+      async ({ screen, write }) => {
+        await expect.poll(screen, { timeout: 60_000 }).toContain('Describe your feature');
+        writeFileSync(run.reviewHold, '');
+        write('add a total helper');
+        await expect.poll(screen).toContain('› add a total helper');
+        write(PTY_SUBMIT_INPUT);
+        await vi.waitFor(() => expect(run.calls()).toContain('task-review'), { timeout: 120_000 });
+        const sessionId = readActive(target.projectDir);
+        if (sessionId === null) throw new Error('no active session');
+        await vi.waitFor(
+          () => expect(readState(target, sessionId).interruptedStep?.step.kind).toBe('review'),
+          { timeout: 60_000 },
+        );
+        await expect.poll(screen, { timeout: 30_000 }).toContain('Stopped at the review');
+
+        write('\x1b');
+        await expect.poll(screen, { timeout: 60_000 }).toContain('Describe your feature');
+        await moveReview({ screen, write }, target, 'none');
+        await expect.poll(screen).toContain('Describe your feature');
+        write('/sessions');
+        await expect.poll(screen).toContain('▌ /sessions');
+        write('\r');
+        await expect.poll(screen, { timeout: 30_000 }).toMatch(/Sessions · 1/);
+        await expect.poll(screen).toMatch(/▌/);
+        write('\r');
+        await expect
+          .poll(screen, { timeout: 30_000 })
+          .toContain('Stopped at T002 · type a correction');
+
+        write(words);
+        await expect.poll(screen).toContain(`› ${words}`);
+        write(PTY_SUBMIT_INPUT);
+        await expect
+          .poll(() => readState(target, sessionId).phase, { timeout: 60_000 })
+          .toBe('complete');
+        await expect.poll(screen, { timeout: 30_000 }).toContain('Ready to apply');
+      },
+    );
+    expect(run.calls()).toEqual([
+      'plan',
+      `implement ${brief.title}`,
+      'task-review',
+      `implement ${secondBrief.title}`,
+    ]);
+    expect(run.prompts()).toContain(words);
+  } finally {
+    rmSync(run.reviewHold, { force: true });
+    trustHome.restore();
+    cleanupTempDir(target.tmpDir);
+  }
+});
+
+it('e2e: a message queued in a task review names no seat after a move to REVIEW None with no brief left', {
+  timeout: 300_000,
+}, async () => {
+  const target = createStopContinueFixture(() => '');
+  const trustHome = useTrustHome('review-none-task-review-queued');
+  const run = prepareHeldTaskReview(target, plan);
+  const words = 'also handle negative numbers';
+  try {
+    await inTui(
+      target,
+      trustHome.home,
+      run.offlinePath,
+      () => {},
+      async ({ screen, write }) => {
+        const sessionId = await stopInTaskReview({ screen, write }, target, run, words);
+
+        await moveReview({ screen, write }, target, 'none');
+        await expect.poll(screen).toContain('○ Stopped at Apply');
+        await expect.poll(screen).toContain('1 queued');
+        expect(screen()).not.toContain('queued for BUILD');
+
+        write('\r');
+        await expect
+          .poll(() => readState(target, sessionId).phase, { timeout: 60_000 })
+          .toBe('complete');
+        await expect.poll(screen, { timeout: 30_000 }).toContain('Ready to apply');
+        expect(readState(target, sessionId).messageQueue.map((message) => message.text)).toEqual([
+          words,
+        ]);
+      },
+    );
+    expect(run.calls()).toEqual(['plan', `implement ${brief.title}`, 'task-review']);
+  } finally {
+    rmSync(run.reviewHold, { force: true });
+    trustHome.restore();
+    cleanupTempDir(target.tmpDir);
+  }
+});
+
+it('e2e: a correction typed on a failed task review after a move to REVIEW None reaches the next brief', {
+  timeout: 300_000,
+}, async () => {
+  const target = createStopContinueFixture(() => '');
+  const trustHome = useTrustHome('review-none-failed-task-review');
+  const run = prepareHeldTaskReview(target, twoBriefPlan);
+  writeFileSync(
+    join(target.tmpDir, 'planner.mjs'),
+    rejectingTaskReviewPlanner(run.callsPath, twoBriefPlan),
+  );
+  const words = 'also handle negative numbers';
+  try {
+    await inTui(
+      target,
+      trustHome.home,
+      run.offlinePath,
+      () => {},
+      async ({ screen, write }) => {
+        await expect.poll(screen, { timeout: 60_000 }).toContain('Describe your feature');
+        write('add a total helper');
+        await expect.poll(screen).toContain('› add a total helper');
+        write(PTY_SUBMIT_INPUT);
+        await expect.poll(screen, { timeout: 120_000 }).toContain('Review again');
+        const sessionId = readActive(target.projectDir);
+        if (sessionId === null) throw new Error('no active session');
+
+        write('\x1b');
+        await expect.poll(screen).toContain('Stop options');
+        write('\x1b');
+        await expect.poll(screen).toContain('Back to sessions');
+        await moveCursorTo(screen, write, '\x1b[B', /▌ Back to sessions/);
+        write('\r');
+        await expect.poll(screen, { timeout: 60_000 }).toContain('Describe your feature');
+        await moveReview({ screen, write }, target, 'none');
+        await expect.poll(screen).toContain('Describe your feature');
+        write('/sessions');
+        await expect.poll(screen).toContain('▌ /sessions');
+        write('\r');
+        await expect.poll(screen, { timeout: 30_000 }).toMatch(/Sessions · 1/);
+        await expect.poll(screen).toMatch(/▌/);
+        write('\r');
+        await expect.poll(screen, { timeout: 30_000 }).toContain('Type a correction');
+
+        write(words);
+        await expect.poll(screen).toContain(`› ${words}`);
+        write(PTY_SUBMIT_INPUT);
+        await expect.poll(screen, { timeout: 30_000 }).toContain('Recovery  Continue');
+        expect(screen()).not.toContain('Review again');
+        await expect
+          .poll(() => readState(target, sessionId).phase, { timeout: 60_000 })
+          .toBe('complete');
+        await expect.poll(screen, { timeout: 30_000 }).toContain('Ready to apply');
+      },
+    );
+    expect(run.calls()).toEqual([
+      'plan',
+      `implement ${brief.title}`,
+      'task-review',
+      `implement ${repairBrief.title}`,
+      'task-review',
+      'consult',
+      `implement ${secondBrief.title}`,
+    ]);
+    expect(run.prompts()).toContain(words);
+  } finally {
+    rmSync(run.reviewHold, { force: true });
+    trustHome.restore();
+    cleanupTempDir(target.tmpDir);
+  }
+});
+
+const NO_CORRECTION = 'This halt takes no typed correction. Choose an action.';
+const CONTINUE_ROW = 'Continue recommended';
+const NOTE_WORDS = 'mind the lockfile';
+
+/** A run whose review fails with no progress, so it halts on the failed-review panel. */
+function prepareFailedReview(
+  target: StopContinueFixture,
+  proposal: typeof plan,
+  review: 'task' | 'end',
+) {
+  const run = prepareHeldTaskReview(target, proposal);
+  writeFileSync(
+    join(target.tmpDir, 'planner.mjs'),
+    rejectingTaskReviewPlanner(run.callsPath, proposal),
+  );
+  const config = loadConfig(target.projectDir).config;
+  writeConfig(target.projectDir, { ...config, workflow: { ...config.workflow, review } });
+  return run;
+}
+
+/** Starts the run and waits for the failed-review panel. */
+async function reachFailedReview(tui: Tui, target: StopContinueFixture): Promise<string> {
+  const { screen, write } = tui;
+  await expect.poll(screen, { timeout: 60_000 }).toContain('Describe your feature');
+  write('add a total helper');
+  await expect.poll(screen).toContain('› add a total helper');
+  write(PTY_SUBMIT_INPUT);
+  await expect.poll(screen, { timeout: 120_000 }).toContain('Review again');
+  const sessionId = readActive(target.projectDir);
+  if (sessionId === null) throw new Error('no active session');
+  return sessionId;
+}
+
+/** Starts the run, waits for the failed-review panel, and moves REVIEW to None over it. */
+async function moveToNoneOverFailedReview(tui: Tui, target: StopContinueFixture): Promise<string> {
+  const sessionId = await reachFailedReview(tui, target);
+  await moveReview(tui, target, 'none');
+  await expect.poll(tui.screen).not.toContain('Settings');
+  return sessionId;
+}
+
+const NOTE_QUESTION = 'What should the fix change';
+
+/**
+ * Starts the run, picks Review again on the failed-review panel, and moves REVIEW to None while
+ * the note question waits. The panel then asks again with the row that None gives. A new question
+ * focuses its actions, so Tab hands the keys to the composer.
+ */
+async function moveToNoneAtNoteQuestion(tui: Tui, target: StopContinueFixture): Promise<string> {
+  const { screen, write } = tui;
+  const sessionId = await reachFailedReview(tui, target);
+  write('\r');
+  await expect.poll(screen, { timeout: 30_000 }).toContain(NOTE_QUESTION);
+  await moveReview(tui, target, 'none');
+  await expect.poll(screen).not.toContain('Settings');
+  await expect.poll(screen, { timeout: 10_000 }).toContain(CONTINUE_ROW);
+  expect(screen()).not.toContain(NOTE_QUESTION);
+  write('\t');
+  await expect.poll(screen).toContain('tab back to the actions');
+  return sessionId;
+}
+
+/** Sends words on the waiting panel: the halt refuses them, keeps them, and the run stays on it. */
+async function expectWordsRefused(
+  { screen, write }: Tui,
+  target: StopContinueFixture,
+  sessionId: string,
+  run: ReturnType<typeof prepareFailedReview>,
+): Promise<void> {
+  const calls = run.calls();
+  const halt = readState(target, sessionId).pendingRecovery;
+  write(NOTE_WORDS);
+  await expect.poll(screen).toContain(`› ${NOTE_WORDS}`);
+  write(PTY_SUBMIT_INPUT);
+  await expect.poll(screen, { timeout: 30_000 }).toContain(NO_CORRECTION);
+  await expect.poll(screen).toContain(`› ${NOTE_WORDS}`);
+  expect(readState(target, sessionId).pendingRecovery).toEqual(halt);
+  expect(run.calls()).toEqual(calls);
+}
+
+it.each(['task', 'end'] as const)(
+  'e2e: a move to REVIEW None over a failed %s review with no brief left turns the row to Continue and refuses words',
+  { timeout: 300_000 },
+  async (review) => {
+    const target = createStopContinueFixture(() => '');
+    const trustHome = useTrustHome(`review-none-panel-${review}`);
+    const run = prepareFailedReview(target, plan, review);
+    try {
+      await inTui(
+        target,
+        trustHome.home,
+        run.offlinePath,
+        () => {},
+        async (tui) => {
+          const sessionId = await moveToNoneOverFailedReview(tui, target);
+          await expect.poll(tui.screen, { timeout: 10_000 }).toContain(CONTINUE_ROW);
+          expect(tui.screen()).not.toContain('Review again');
+          await expectWordsRefused(tui, target, sessionId, run);
+        },
+      );
+    } finally {
+      rmSync(run.reviewHold, { force: true });
+      trustHome.restore();
+      cleanupTempDir(target.tmpDir);
+    }
+  },
+);
+
+it('e2e: a move to REVIEW None over a failed task review with a brief left sends the words to the next brief', {
+  timeout: 300_000,
+}, async () => {
+  const target = createStopContinueFixture(() => '');
+  const trustHome = useTrustHome('review-none-panel-brief-left');
+  const run = prepareFailedReview(target, twoBriefPlan, 'task');
+  try {
+    await inTui(
+      target,
+      trustHome.home,
+      run.offlinePath,
+      () => {},
+      async (tui) => {
+        const { screen, write } = tui;
+        const sessionId = await moveToNoneOverFailedReview(tui, target);
+        await expect.poll(screen, { timeout: 10_000 }).toContain(CONTINUE_ROW);
+        expect(screen()).not.toContain('Review again');
+
+        write(NOTE_WORDS);
+        await expect.poll(screen).toContain(`› ${NOTE_WORDS}`);
+        write(PTY_SUBMIT_INPUT);
+        await expect
+          .poll(() => readState(target, sessionId).phase, { timeout: 60_000 })
+          .toBe('complete');
+        await expect.poll(screen, { timeout: 30_000 }).toContain('Ready to apply');
+      },
+    );
+    expect(run.calls()).toEqual([
+      'plan',
+      `implement ${brief.title}`,
+      'task-review',
+      `implement ${repairBrief.title}`,
+      'task-review',
+      'consult',
+      `implement ${secondBrief.title}`,
+    ]);
+    expect(run.prompts()).toContain(NOTE_WORDS);
+  } finally {
+    rmSync(run.reviewHold, { force: true });
+    trustHome.restore();
+    cleanupTempDir(target.tmpDir);
+  }
+});
+
+it('e2e: a move to REVIEW None at the note question with no brief left shows the panel again and refuses words', {
+  timeout: 300_000,
+}, async () => {
+  const target = createStopContinueFixture(() => '');
+  const trustHome = useTrustHome('review-none-note-question');
+  const run = prepareFailedReview(target, plan, 'task');
+  try {
+    await inTui(
+      target,
+      trustHome.home,
+      run.offlinePath,
+      () => {},
+      async (tui) => {
+        const sessionId = await moveToNoneAtNoteQuestion(tui, target);
+        expect(readState(target, sessionId).pendingRecovery?.status).toBe('awaiting-user');
+        await expectWordsRefused(tui, target, sessionId, run);
+      },
+    );
+  } finally {
+    rmSync(run.reviewHold, { force: true });
+    trustHome.restore();
+    cleanupTempDir(target.tmpDir);
+  }
+});
+
+it('e2e: a move to REVIEW None at the note question with a brief left sends the words to the next brief', {
+  timeout: 300_000,
+}, async () => {
+  const target = createStopContinueFixture(() => '');
+  const trustHome = useTrustHome('review-none-note-question-brief-left');
+  const run = prepareFailedReview(target, twoBriefPlan, 'task');
+  try {
+    await inTui(
+      target,
+      trustHome.home,
+      run.offlinePath,
+      () => {},
+      async (tui) => {
+        const { screen, write } = tui;
+        const sessionId = await moveToNoneAtNoteQuestion(tui, target);
+
+        write(NOTE_WORDS);
+        await expect.poll(screen).toContain(`› ${NOTE_WORDS}`);
+        write(PTY_SUBMIT_INPUT);
+        await expect
+          .poll(() => readState(target, sessionId).phase, { timeout: 60_000 })
+          .toBe('complete');
+        await expect.poll(screen, { timeout: 30_000 }).toContain('Ready to apply');
+      },
+    );
+    expect(run.calls()).toEqual([
+      'plan',
+      `implement ${brief.title}`,
+      'task-review',
+      `implement ${repairBrief.title}`,
+      'task-review',
+      'consult',
+      `implement ${secondBrief.title}`,
+    ]);
+    expect(run.prompts()).toContain(NOTE_WORDS);
+  } finally {
+    rmSync(run.reviewHold, { force: true });
+    trustHome.restore();
+    cleanupTempDir(target.tmpDir);
+  }
+});
+
+it('e2e: a config file that does not load refuses words on the failed-review panel and keeps them, and End run still ends the run', {
+  timeout: 300_000,
+}, async () => {
+  const target = createStopContinueFixture(() => '');
+  const trustHome = useTrustHome('review-none-bad-config');
+  const run = prepareFailedReview(target, plan, 'task');
+  try {
+    await inTui(
+      target,
+      trustHome.home,
+      run.offlinePath,
+      () => {},
+      async (tui) => {
+        const { screen, write } = tui;
+        const sessionId = await reachFailedReview(tui, target);
+        const calls = run.calls();
+        const halt = readState(target, sessionId).pendingRecovery;
+        writeFileSync(join(target.projectDir, SPLITBRIEF_DIR, 'config.yaml'), 'reviewer: [\n');
+
+        write('\t');
+        await expect.poll(screen).toContain('Type a correction');
+        write(NOTE_WORDS);
+        await expect.poll(screen).toContain(`› ${NOTE_WORDS}`);
+        write(PTY_SUBMIT_INPUT);
+        await expect
+          .poll(screen, { timeout: 30_000 })
+          .toContain('Malformed YAML in .splitbrief/config.yaml');
+        await expect.poll(screen).toContain(`› ${NOTE_WORDS}`);
+        expect(readState(target, sessionId).pendingRecovery).toEqual(halt);
+        expect(run.calls()).toEqual(calls);
+
+        await moveCursorTo(screen, write, '\x1b[B', /▌.*End run/);
+        write('\r');
+        await expect
+          .poll(() => readState(target, sessionId).closed?.as, { timeout: 60_000 })
+          .toBe('ended');
+        await expect.poll(screen).toContain('Run ended.');
+        expect(run.calls()).toEqual(calls);
+      },
+    );
+  } finally {
+    rmSync(run.reviewHold, { force: true });
+    trustHome.restore();
+    cleanupTempDir(target.tmpDir);
+  }
+});
+
+it('e2e: continue --plain after a move to REVIEW None over a failed review names Continue', {
+  timeout: 300_000,
+}, async () => {
+  const target = createStopContinueFixture(() => '');
+  const trustHome = useTrustHome('review-none-continue-line');
+  const run = prepareFailedReview(target, plan, 'task');
+  try {
+    let sessionId = '';
+    await inTui(
+      target,
+      trustHome.home,
+      run.offlinePath,
+      () => {},
+      async (tui) => {
+        sessionId = await moveToNoneOverFailedReview(tui, target);
+      },
+    );
+    const result = spawnSync(
+      process.execPath,
+      [
+        '--import',
+        'tsx',
+        '--import',
+        run.offlinePath,
+        'src/cli.ts',
+        'continue',
+        sessionId,
+        '--plain',
+        '--allow-repo-runners',
+        '--project',
+        target.projectDir,
+      ],
+      {
+        cwd: resolve(import.meta.dirname, '../../..'),
+        env: { ...safeChildEnvironment(trustHome.home), XDG_STATE_HOME: target.stateHome },
+        encoding: 'utf8',
+        timeout: 60_000,
+      },
+    );
+    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(1);
+    expect(result.stderr).toContain(
+      `Continue with: splitbrief continue ${sessionId}, then choose Continue in the recovery panel`,
+    );
+    expect(`${result.stdout}${result.stderr}`).not.toContain('Review again');
   } finally {
     rmSync(run.reviewHold, { force: true });
     trustHome.restore();

@@ -19,7 +19,7 @@ describe('leavesWordsUnread', () => {
   ] as const satisfies readonly (readonly [RecoveryReason, RecoveryAction])[])(
     'says %s with %s carries the words to no step',
     (reason, action) => {
-      expect(leavesWordsUnread(reason, action)).toBe(true);
+      expect(leavesWordsUnread(reason, action, false)).toBe(true);
     },
   );
 
@@ -37,16 +37,35 @@ describe('leavesWordsUnread', () => {
   ] as const satisfies readonly (readonly [RecoveryReason, RecoveryAction])[])(
     'leaves %s with %s alone: its step reads the words, or it ends the run',
     (reason, action) => {
-      expect(leavesWordsUnread(reason, action)).toBe(false);
+      expect(leavesWordsUnread(reason, action, false)).toBe(false);
     },
   );
+
+  it.each([
+    ['review-failed', 'revise'],
+    ['review-failed', 'decide-for-me'],
+    ['retry-exhausted', 'retry-same-worker'],
+    ['planner-call-failed', 'retry-same-worker'],
+    ['runner-usage-limit', 'retry-later'],
+    ['runner-usage-limit', 'switch-seat'],
+  ] as const satisfies readonly (readonly [RecoveryReason, RecoveryAction])[])(
+    'says %s with %s carries the words to no step when the step it resumes reads none',
+    (reason, action) => {
+      expect(leavesWordsUnread(reason, action, true)).toBe(true);
+    },
+  );
+
+  it('keeps End run and the note of a skipped review when the step reads none', () => {
+    expect(leavesWordsUnread('apply-conflict', 'end-run', true)).toBe(false);
+    expect(leavesWordsUnread('review-input-too-large', 'accept-as-is', true)).toBe(false);
+  });
 });
 
 describe('statusLeavesWordsUnread at a halt', () => {
-  const haltStatus = (issue: RecoveryIssue): RunStatus => ({
+  const haltStatus = (issue: RecoveryIssue, resumeAt: StepRef = { kind: 'apply' }): RunStatus => ({
     kind: 'open',
     stop: { kind: 'waiting-for-you', on: { kind: 'halt', issue } },
-    resumeAt: { kind: 'apply' },
+    resumeAt,
   });
 
   const APPLY_PARTIAL = makeRecoveryIssue({
@@ -92,7 +111,7 @@ describe('statusLeavesWordsUnread at a halt', () => {
     ],
     ['a brief halt', makeRecoveryIssue()],
   ])('is false for %s', (_, issue) => {
-    expect(statusLeavesWordsUnread(haltStatus(issue))).toBe(false);
+    expect(statusLeavesWordsUnread(haltStatus(issue, { kind: 'review', cycle: 0 }))).toBe(false);
   });
 });
 
@@ -163,6 +182,40 @@ describe('statusLeavesWordsUnread on a run that keeps the review step', () => {
 
   it.each(STOPS)('is false for %s with a seat: the review reads the words', (_, stop) => {
     expect(statusLeavesWordsUnread(statusOf(stop, false))).toBe(false);
+  });
+
+  const WORKTREE = {
+    kind: 'worktree' as const,
+    path: '/tmp/wt',
+    base: { snapshotId: 'b', head: null },
+  };
+  const failedTaskReview = (workspace: WorkflowState['workspace']): Partial<WorkflowState> => ({
+    phase: 'implementing',
+    workspace,
+    pendingRecovery: makeRecoveryIssue({
+      reason: 'review-failed',
+      seat: 'review',
+      taskId: undefined,
+      phase: 'implementing',
+      availableActions: ['revise', 'decide-for-me', 'end-run'],
+      recommendedAction: 'revise',
+    }),
+  });
+
+  it.each([
+    ['a worktree', WORKTREE],
+    ['the project checkout', CHECKOUT],
+  ])('is true for a failed task review past the last brief under REVIEW None on %s', (_, place) => {
+    expect(statusLeavesWordsUnread(statusOf(failedTaskReview(place), true))).toBe(true);
+  });
+
+  it('is false for that failed task review with a seat: the review reads the words', () => {
+    expect(statusLeavesWordsUnread(statusOf(failedTaskReview(CHECKOUT), false))).toBe(false);
+  });
+
+  it('is false for that failed task review under REVIEW None with a brief left', () => {
+    const halt = { ...failedTaskReview(WORKTREE), tasks: [makeTask(), makeTask({ id: 'T002' })] };
+    expect(statusLeavesWordsUnread(statusOf(halt, true))).toBe(false);
   });
 
   it('is false for a stop at a brief under REVIEW None: the brief reads the words', () => {

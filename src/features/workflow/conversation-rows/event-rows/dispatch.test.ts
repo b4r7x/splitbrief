@@ -897,6 +897,42 @@ describe('event row dispatch', () => {
     ]);
   });
 
+  it('names Continue on the row of a failed review answered on REVIEW None', () => {
+    const block = recoveryRowBlock(
+      'recovery',
+      {
+        firstIndex: 0,
+        issueId: 'issue',
+        prompted: {
+          type: 'recovery_prompted',
+          ts: 0,
+          phase: 'implementing',
+          issueId: 'issue',
+          reason: 'review-failed',
+          headline: 'Review failed',
+          availableActions: ['revise'],
+          files: [],
+          affectedTaskIds: [],
+          recommendedAction: 'revise',
+          resumeCommand: 'splitbrief resume',
+        },
+        selected: {
+          type: 'recovery_action_selected',
+          ts: 0,
+          phase: 'implementing',
+          issueId: 'issue',
+          reason: 'review-failed',
+          action: 'revise',
+          reviewNone: true,
+        },
+      },
+      60,
+    );
+    const rows = block?.createRows(0, block.rowCount).map(rowText).join('\n');
+    expect(rows).toContain('Continue');
+    expect(rows).not.toContain('Review again');
+  });
+
   const driftReports: [string, EngineEventOf<'drift_report'>][] = [
     [
       'clean',

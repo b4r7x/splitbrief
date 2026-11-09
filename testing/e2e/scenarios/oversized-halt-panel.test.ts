@@ -68,6 +68,7 @@ function haltOnManyFiles(ref: SessionRef, first: RecoveryIssue): void {
     ref.sessionId,
     issue,
     resumeStep(state, false),
+    false,
   );
 }
 

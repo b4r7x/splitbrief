@@ -35,6 +35,24 @@ describe('queuePlaceholder', () => {
     );
   });
 
+  it('offers a command when a REVIEW None run has no brief left after its due task review', () => {
+    expect(
+      queuePlaceholder({ ...working, phase: 'implementing', reviewing: true, reviewNone: true }),
+    ).toBe('/ for a command…');
+  });
+
+  it('names the next brief when a REVIEW None run has one left after its due task review', () => {
+    expect(
+      queuePlaceholder({
+        ...working,
+        phase: 'implementing',
+        reviewing: true,
+        reviewNone: true,
+        taskId: 'T002',
+      }),
+    ).toContain('BUILD on T002');
+  });
+
   it.each([
     ['implementing', 'build', 'BUILD on T003'],
     ['planning', 'plan', 'PLAN'],

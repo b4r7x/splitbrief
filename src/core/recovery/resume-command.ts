@@ -11,12 +11,17 @@ export function continueRunCommand(sessionId: string): string {
  * The one line an operator can paste to carry on from a halt. Only the actions
  * `splitbrief continue` can take name themselves; every other recommendation is
  * a row of the recovery panel, which the same command opens, so the line names
- * that row.
+ * that row: the row it shows under `reviewNone`, REVIEW None in the config the
+ * next pass runs on.
  */
-export function formatResumeCommand(sessionId: string, issue: RecoveryIssue): string {
+export function formatResumeCommand(
+  sessionId: string,
+  issue: RecoveryIssue,
+  reviewNone: boolean,
+): string {
   const flag = continueAction(issue);
   if (flag === undefined) {
-    const label = recoveryActionLabel(issue.recommendedAction, issue);
+    const label = recoveryActionLabel(issue.recommendedAction, { ...issue, reviewNone });
     return `${continueRunCommand(sessionId)}, then choose ${label} in the recovery panel`;
   }
   const seat = flag === 'retry' && needsReviewSeatChange(issue) ? ' --reviewer <tool>' : '';

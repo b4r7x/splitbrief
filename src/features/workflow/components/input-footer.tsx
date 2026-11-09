@@ -331,11 +331,17 @@ export function InputFooter({
                           }
                         : { lead: stageLead, hintText: null };
 
+  const buildBrief = selectBuildMessageBrief(runView.briefs);
   const queuedCopy =
     lifecycle.queueDepth > 0 && (atRestStatus === null || atRestStatus === 'open')
       ? queueCopy({
-          seat: messageSeat(runView.phase, selectScheduledReview(operations), runView.reviewNone),
-          taskId: selectBuildMessageBrief(runView.briefs)?.id,
+          seat: messageSeat(
+            runView.phase,
+            selectScheduledReview(operations),
+            runView.reviewNone,
+            buildBrief !== null,
+          ),
+          taskId: buildBrief?.id,
           count: lifecycle.queueDepth,
         })
       : null;

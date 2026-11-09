@@ -62,6 +62,7 @@ export const reviewContractProjection: WorkflowFixtureProjection = {
         VISUAL_WORKFLOW_SESSION_ID,
         reviewContractRecoveryIssue,
         { kind: 'review', cycle: 0 },
+        false,
       );
     });
   },

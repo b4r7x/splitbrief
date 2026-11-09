@@ -10,6 +10,7 @@ import { plainUserMessage, type UserMessageInput } from '../../core/types/user-i
 import { attachmentsStore } from '../../stores/workflow/attachments.js';
 import type { ApprovalReviewResult } from '../../core/approval/types.js';
 import { writeConfig } from '../../core/config/load/io.js';
+import { configPath } from '../../core/config/load/document.js';
 import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
 import { taskId } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
@@ -28,6 +29,9 @@ import {
   type RecoveryNoticeState,
 } from '../../stores/workflow/recovery-notice.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
+import { hydrateFromState } from '../../stores/workflow/actions/hydrate.js';
+import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { afterLastBrief, resumeStep } from '../../core/sessions/run-status.js';
 import {
   plainAnswer,
   type QuestionAnswer,
@@ -97,10 +101,11 @@ function setupSession(
     resumeState: saved,
     active: reactivateExistingSession({ projectDir, sessionId }),
   });
+  configStore.__testReset({ projectDir, config: prepared.sourceConfig });
   return { prepared, state: saved };
 }
 
-function makeInputMode(answers: Array<string | QuestionAnswer>): {
+function makeInputMode(answers: Array<string | QuestionAnswer | Promise<QuestionAnswer>>): {
   inputMode: UseInputModeResult;
   feedbackAtPrompt: Array<{ message: string | null; isError: boolean }>;
   noticeAtPrompt: RecoveryNoticeState[];
@@ -205,6 +210,53 @@ function setupFailedReview(): { prepared: PreparedExecution; state: WorkflowStat
   const saved = loadState(ref);
   if (saved === null) throw new Error('expected the failed review to persist');
   return { prepared, state: saved };
+}
+
+/** A task review that failed before a move to REVIEW None, with the run past that brief. */
+function setupNoneTaskReview(briefLeft: boolean): {
+  prepared: PreparedExecution;
+  state: WorkflowState;
+} {
+  const { prepared } = setupSession();
+  const ref = prepared.session.ref;
+  const halted: WorkflowState = {
+    ...makeImplState([
+      makeTask({ id: 'T001', status: 'done' }),
+      ...(briefLeft ? [makeTask({ id: 'T002' })] : []),
+    ]),
+    currentTaskIndex: 1,
+    pendingScheduledReview: { afterTaskId: taskId('T001') },
+    review: {
+      scope: 'task',
+      afterTaskId: taskId('T001'),
+      cycle: 0,
+      verdict: { tasks: [], criteria: [], findings: [] },
+      outcome: 'fail',
+      verification: [],
+      at: '2026-11-09T00:00:00.000Z',
+    },
+    pendingRecovery: buildReviewFailedRecoveryIssue({
+      blocking: 1,
+      phase: 'implementing',
+      createdAt: '2026-11-09T00:00:00.000Z',
+    }),
+  };
+  saveState(ref, halted);
+  const saved = loadState(ref);
+  if (saved?.pendingRecovery?.reason !== 'review-failed') {
+    throw new Error('expected the failed task review to persist');
+  }
+  return {
+    prepared: {
+      ...prepared,
+      config: makeConfig({
+        planner: { kind: 'agent', command: 'test-planner' },
+        implementer: { kind: 'agent', command: 'test-implementer', model: 'test-model' },
+        reviewer: 'none',
+      }),
+    },
+    state: saved,
+  };
 }
 
 function sessionLog(prepared: PreparedExecution): string {
@@ -1708,6 +1760,410 @@ describe('prepared recovery corrections', () => {
     expect(composerLiveStore.get().document).toBe(document);
     expect(composerDraftStore.get().request).toMatchObject({ kind: 'document', document });
     expect(attachmentsStore.peek()).toEqual([pendingImage]);
+  });
+
+  describe('a failed task review after a move to REVIEW None', () => {
+    const WORDS = 'mind the lockfile';
+    const NO_CORRECTION = 'This halt takes no typed correction. Choose an action.';
+
+    it('asks for no note on Review again, as no seat reads one', async () => {
+      const { prepared, state } = setupNoneTaskReview(true);
+      const { inputMode, feedbackAtPrompt } = makeInputMode([rowPick('v'), 'a note nobody reads']);
+
+      const result = await runDriver(prepared, state, inputMode);
+
+      expect(feedbackAtPrompt).toHaveLength(1);
+      expect(result.shouldRun).toBe(true);
+    });
+
+    it('carries words typed on the halt to the next brief', async () => {
+      const { prepared, state } = setupNoneTaskReview(true);
+      const { inputMode } = makeInputMode([WORDS]);
+
+      const result = await runDriver(prepared, state, inputMode);
+
+      if (!result.shouldRun) throw new Error('expected the run to continue');
+      expect(result.steer?.text).toBe(WORDS);
+      expect(result.correctionTaken).toBeUndefined();
+      expect(result.state.pendingTriage?.inputs ?? []).toEqual([]);
+    });
+
+    it('refuses words typed on the halt when no brief is left', async () => {
+      const { prepared, state } = setupNoneTaskReview(false);
+      const { inputMode, feedbackAtPrompt } = makeInputMode([WORDS, rowPick('a')]);
+
+      await runDriver(prepared, state, inputMode);
+
+      expect(feedbackAtPrompt[1]).toMatchObject({ message: NO_CORRECTION, isError: true });
+    });
+
+    it('refuses Continue with words in the composer when no brief is left', async () => {
+      const { prepared, state } = setupNoneTaskReview(false);
+      composerLiveStore.setDraft(createDraftDocument(WORDS));
+      const { inputMode, feedbackAtPrompt } = makeInputMode([rowPick('v'), rowPick('a')]);
+
+      await runDriver(prepared, state, inputMode);
+
+      expect(feedbackAtPrompt[1]).toMatchObject({
+        message: 'Cannot send words with Continue. Clear them.',
+        isError: true,
+      });
+    });
+
+    describe('while the panel waits', () => {
+      /** The halt on a run that still has its seat. */
+      function setupSeatedTaskReview(briefLeft: boolean): {
+        prepared: PreparedExecution;
+        state: WorkflowState;
+      } {
+        const { prepared, state } = setupNoneTaskReview(briefLeft);
+        return { prepared: { ...prepared, config: prepared.sourceConfig }, state };
+      }
+
+      function moveReviewToNone(prepared: PreparedExecution): void {
+        configStore.__testReset({
+          projectDir: prepared.session.ref.projectDir,
+          config: { ...prepared.sourceConfig, reviewer: 'none' },
+        });
+      }
+
+      /** The panel waits, `during` runs, and only then the first scripted answer arrives. */
+      function answerAfter(
+        answers: Array<string | QuestionAnswer>,
+        during: () => void,
+      ): ReturnType<typeof makeInputMode> {
+        const made = makeInputMode(answers);
+        let waited = false;
+        return {
+          ...made,
+          inputMode: {
+            ...made.inputMode,
+            setQuestionMode: (...args) => {
+              if (!waited) {
+                waited = true;
+                during();
+              }
+              return made.inputMode.setQuestionMode(...args);
+            },
+          },
+        };
+      }
+
+      it('refuses words sent after the move when no brief is left, and keeps them', async () => {
+        const { prepared, state } = setupSeatedTaskReview(false);
+        const { inputMode, feedbackAtPrompt } = answerAfter([WORDS, rowPick('a')], () =>
+          moveReviewToNone(prepared),
+        );
+
+        await runDriver(prepared, state, inputMode);
+
+        expect(feedbackAtPrompt[1]).toMatchObject({ message: NO_CORRECTION, isError: true });
+        expect(composerDraftStore.get().request).toMatchObject({ kind: 'prepend' });
+      });
+
+      it('carries words sent after the move to the next brief', async () => {
+        const { prepared, state } = setupSeatedTaskReview(true);
+        const { inputMode } = answerAfter([WORDS], () => moveReviewToNone(prepared));
+
+        const result = await runDriver(prepared, state, inputMode);
+
+        if (!result.shouldRun) throw new Error('expected the run to continue');
+        expect(result.steer?.text).toBe(WORDS);
+        expect(result.correctionTaken).toBeUndefined();
+        expect(result.state.pendingTriage?.inputs ?? []).toEqual([]);
+      });
+
+      it('asks for no note on the row after the move', async () => {
+        const { prepared, state } = setupSeatedTaskReview(true);
+        const { inputMode, feedbackAtPrompt } = answerAfter(
+          [rowPick('v'), 'a note nobody reads'],
+          () => moveReviewToNone(prepared),
+        );
+
+        const result = await runDriver(prepared, state, inputMode);
+
+        expect(feedbackAtPrompt).toHaveLength(1);
+        expect(result.shouldRun).toBe(true);
+      });
+
+      it('reads a hand edit of the file when the answer comes', async () => {
+        const { prepared, state } = setupSeatedTaskReview(false);
+        const { projectDir } = prepared.session.ref;
+        writeConfig(projectDir, prepared.sourceConfig);
+        configStore.load(projectDir);
+        const { inputMode, feedbackAtPrompt } = answerAfter([WORDS, rowPick('a')], () =>
+          writeConfig(projectDir, { ...prepared.sourceConfig, reviewer: 'none' }),
+        );
+
+        await runDriver(prepared, state, inputMode);
+
+        expect(feedbackAtPrompt[1]).toMatchObject({ message: NO_CORRECTION, isError: true });
+      });
+
+      it('changes the halt on the view in the same tick, and leaves the run as it is', async () => {
+        const { prepared, state } = setupSeatedTaskReview(false);
+        hydrateFromState(state, false);
+        const view = runViewStore.get();
+        const lifecycle = lifecycleStore.get();
+        let moved = view;
+        let lifecycleAtMove = lifecycle;
+        const { inputMode } = answerAfter([rowPick('a')], () => {
+          moveReviewToNone(prepared);
+          moved = runViewStore.get();
+          lifecycleAtMove = lifecycleStore.get();
+        });
+
+        await runDriver(prepared, state, inputMode);
+
+        expect(view.reviewNone).toBe(false);
+        expect(moved.reviewNone).toBe(true);
+        expect(moved.afterLastBrief).toEqual(afterLastBrief(state, true, 0));
+        expect(moved.halt).toEqual({ issue: state.pendingRecovery, at: resumeStep(state, true) });
+        expect(moved.phase).toBe(view.phase);
+        expect(moved.briefs).toBe(view.briefs);
+        expect(lifecycleAtMove).toBe(lifecycle);
+      });
+
+      it('leaves the view alone once the panel has its answer', async () => {
+        const { prepared, state } = setupSeatedTaskReview(false);
+        hydrateFromState(state, false);
+        const { inputMode } = makeInputMode([rowPick('a')]);
+        await runDriver(prepared, state, inputMode);
+        const view = runViewStore.get();
+
+        moveReviewToNone(prepared);
+
+        expect(runViewStore.get()).toBe(view);
+      });
+
+      it('leaves the view alone once the wait was cancelled', async () => {
+        const { prepared, state } = setupSeatedTaskReview(false);
+        hydrateFromState(state, false);
+        const { inputMode } = makeInputMode([]);
+        await expect(
+          runDriver(prepared, state, {
+            ...inputMode,
+            setQuestionMode: () => Promise.reject(WORKFLOW_USER_CANCELLED_ABORT_REASON),
+          }),
+        ).rejects.toBe(WORKFLOW_USER_CANCELLED_ABORT_REASON);
+        const view = runViewStore.get();
+
+        moveReviewToNone(prepared);
+
+        expect(runViewStore.get()).toBe(view);
+      });
+
+      const PANEL = 'Needs you · Final review failed with 1 blocking finding';
+      const NOTE = "What should the fix change? (enter sends the review's findings alone)";
+      const MALFORMED =
+        'Malformed YAML in .splitbrief/config.yaml — fix the syntax or delete the file to use defaults.';
+
+      /**
+       * Records the first line of each question and REVIEW None on the view when it is asked. Then
+       * `onAsk` runs with the number of that question, and the next scripted answer comes.
+       */
+      function recordQuestions(
+        answers: Array<string | QuestionAnswer | Promise<QuestionAnswer>>,
+        onAsk: (asked: number) => void = () => {},
+      ): ReturnType<typeof makeInputMode> & {
+        asked: Array<{ question: string; reviewNone: boolean }>;
+      } {
+        const made = makeInputMode(answers);
+        const asked: Array<{ question: string; reviewNone: boolean }> = [];
+        return {
+          ...made,
+          asked,
+          inputMode: {
+            ...made.inputMode,
+            setQuestionMode: (question) => {
+              asked.push({
+                question: question.split('\n')[0] ?? '',
+                reviewNone: runViewStore.get().reviewNone,
+              });
+              onAsk(asked.length);
+              return made.inputMode.setQuestionMode(question);
+            },
+          },
+        };
+      }
+
+      /** The halt on a run that still has its seat, with its config in the file. */
+      function setupOnDisk(): { prepared: PreparedExecution; state: WorkflowState } {
+        const setup = setupSeatedTaskReview(false);
+        const { projectDir } = setup.prepared.session.ref;
+        writeConfig(projectDir, setup.prepared.sourceConfig);
+        configStore.load(projectDir);
+        hydrateFromState(setup.state, false);
+        return setup;
+      }
+
+      function breakConfigFile(prepared: PreparedExecution): void {
+        writeFileSync(configPath(prepared.session.ref.projectDir), 'reviewer: [\n');
+      }
+
+      it('ends the note question on a move, keeps the note, and asks the panel again', async () => {
+        const { prepared, state } = setupSeatedTaskReview(false);
+        hydrateFromState(state, false);
+        const { inputMode, asked } = recordQuestions([rowPick('v'), WORDS, rowPick('a')], (at) => {
+          if (at === 2) moveReviewToNone(prepared);
+        });
+
+        const result = await runDriver(prepared, state, inputMode);
+
+        expect(asked.map(({ question }) => question)).toEqual([PANEL, NOTE, PANEL]);
+        expect(asked[2]?.reviewNone).toBe(true);
+        expect(result).toMatchObject({ shouldRun: false, state: { closed: { as: 'ended' } } });
+        expect(composerDraftStore.get().request).toMatchObject({ kind: 'prepend', value: WORDS });
+      });
+
+      it('sends the kept note to the next brief from the panel asked again', async () => {
+        const { prepared, state } = setupSeatedTaskReview(true);
+        hydrateFromState(state, false);
+        const { inputMode, asked } = recordQuestions([rowPick('v'), WORDS, WORDS], (at) => {
+          if (at === 2) moveReviewToNone(prepared);
+        });
+
+        const result = await runDriver(prepared, state, inputMode);
+
+        expect(asked.map(({ question }) => question)).toEqual([PANEL, NOTE, PANEL]);
+        expect(composerDraftStore.get().request).toMatchObject({ kind: 'prepend', value: WORDS });
+        if (!result.shouldRun) throw new Error('expected the run to continue');
+        expect(result.steer?.text).toBe(WORDS);
+        expect(result.correctionTaken).toBeUndefined();
+        expect(result.state.pendingTriage?.inputs ?? []).toEqual([]);
+      });
+
+      it('ends the note question at once when the move comes before its answer', async () => {
+        const { prepared, state } = setupSeatedTaskReview(false);
+        hydrateFromState(state, false);
+        const note = Promise.withResolvers<QuestionAnswer>();
+        const { inputMode, asked } = recordQuestions([rowPick('v'), note.promise, rowPick('a')]);
+
+        const running = runDriver(prepared, state, inputMode);
+        await vi.waitFor(() => {
+          expect(asked.map(({ question }) => question)).toEqual([PANEL, NOTE]);
+        });
+        moveReviewToNone(prepared);
+        await vi.waitFor(() => {
+          expect(asked).toHaveLength(3);
+        });
+        note.resolve(plainAnswer(WORDS));
+
+        await expect(running).resolves.toMatchObject({
+          shouldRun: false,
+          state: { closed: { as: 'ended' } },
+        });
+        expect(asked[2]).toEqual({ question: PANEL, reviewNone: true });
+        expect(composerDraftStore.get().request).toBeNull();
+      });
+
+      it('ends the note question on a hand edit that loads, read when the note comes', async () => {
+        const { prepared, state } = setupOnDisk();
+        const { projectDir } = prepared.session.ref;
+        const { inputMode, asked } = recordQuestions([rowPick('v'), WORDS, rowPick('a')], (at) => {
+          if (at === 2) writeConfig(projectDir, { ...prepared.sourceConfig, reviewer: 'none' });
+        });
+
+        const result = await runDriver(prepared, state, inputMode);
+
+        expect(asked.map(({ question }) => question)).toEqual([PANEL, NOTE, PANEL]);
+        expect(asked[2]?.reviewNone).toBe(true);
+        expect(result).toMatchObject({ shouldRun: false, state: { closed: { as: 'ended' } } });
+        expect(composerDraftStore.get().request).toMatchObject({ kind: 'prepend', value: WORDS });
+      });
+
+      it('ends the run on End run when the file does not load', async () => {
+        const { prepared, state } = setupOnDisk();
+        const { inputMode } = recordQuestions([rowPick('a')], (at) => {
+          if (at === 1) breakConfigFile(prepared);
+        });
+
+        await expect(runDriver(prepared, state, inputMode)).resolves.toMatchObject({
+          shouldRun: false,
+          state: { closed: { as: 'ended' } },
+        });
+        expect(loadState(prepared.session.ref)?.closed?.as).toBe('ended');
+        expect(feedbackStore.get().message).toContain('Run ended');
+      });
+
+      it('refuses typed words when the file does not load, keeps them, and leaves the halt open', async () => {
+        const { prepared, state } = setupOnDisk();
+        let halt: RecoveryIssue | undefined;
+        const { inputMode, asked, feedbackAtPrompt } = recordQuestions(
+          [WORDS, rowPick('a')],
+          (at) => {
+            if (at === 1) breakConfigFile(prepared);
+            if (at === 2) halt = loadState(prepared.session.ref)?.pendingRecovery;
+          },
+        );
+
+        await expect(runDriver(prepared, state, inputMode)).resolves.toMatchObject({
+          shouldRun: false,
+        });
+
+        expect(asked.map(({ question }) => question)).toEqual([PANEL, PANEL]);
+        expect(feedbackAtPrompt[1]).toMatchObject({ message: MALFORMED, isError: true });
+        expect(composerDraftStore.get().request).toMatchObject({ kind: 'prepend', value: WORDS });
+        expect(halt).toMatchObject({ reason: 'review-failed', status: 'awaiting-user' });
+      });
+
+      it('refuses a row that starts a pass when the file does not load, and asks no note', async () => {
+        const { prepared, state } = setupOnDisk();
+        let halt: RecoveryIssue | undefined;
+        const { inputMode, asked, feedbackAtPrompt } = recordQuestions(
+          [rowPick('v'), rowPick('a')],
+          (at) => {
+            if (at === 1) breakConfigFile(prepared);
+            if (at === 2) halt = loadState(prepared.session.ref)?.pendingRecovery;
+          },
+        );
+
+        await expect(runDriver(prepared, state, inputMode)).resolves.toMatchObject({
+          shouldRun: false,
+        });
+
+        expect(asked.map(({ question }) => question)).toEqual([PANEL, PANEL]);
+        expect(feedbackAtPrompt[1]).toMatchObject({ message: MALFORMED, isError: true });
+        expect(composerDraftStore.get().request).toBeNull();
+        expect(halt).toMatchObject({ reason: 'review-failed', status: 'awaiting-user' });
+        expect(halt?.selectedAction).toBeUndefined();
+      });
+
+      it('takes the next answer once the file loads again', async () => {
+        const { prepared, state } = setupOnDisk();
+        const { projectDir } = prepared.session.ref;
+        const { inputMode, asked, feedbackAtPrompt } = recordQuestions(
+          [WORDS, rowPick('v'), ''],
+          (at) => {
+            if (at === 1) breakConfigFile(prepared);
+            if (at === 2) writeConfig(projectDir, prepared.sourceConfig);
+          },
+        );
+
+        await expect(runDriver(prepared, state, inputMode)).resolves.toMatchObject({
+          shouldRun: true,
+        });
+
+        expect(asked.map(({ question }) => question)).toEqual([PANEL, PANEL, NOTE]);
+        expect(feedbackAtPrompt[1]).toMatchObject({ message: MALFORMED, isError: true });
+        expect(loadState(prepared.session.ref)?.pendingRecovery).toBeUndefined();
+      });
+
+      it.each([false, true])(
+        'shows a move made before the panel waits when it asks, brief left %s',
+        async (briefLeft) => {
+          const { prepared, state } = setupSeatedTaskReview(briefLeft);
+          hydrateFromState(state, false);
+          moveReviewToNone(prepared);
+          const { inputMode, asked } = recordQuestions([rowPick('v')]);
+
+          const result = await runDriver(prepared, state, inputMode);
+
+          expect(asked).toEqual([{ question: PANEL, reviewNone: true }]);
+          expect(result.shouldRun).toBe(true);
+        },
+      );
+    });
   });
 
   it.each(['retry', 'revise'] as const)(

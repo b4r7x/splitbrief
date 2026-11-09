@@ -8,7 +8,9 @@ import { sessionError } from '../../core/sessions/errors.js';
 import { readActive } from '../../core/sessions/active-pointer.js';
 import { checkSessionLiveness } from '../../core/sessions/lockfile.js';
 import { sessionDir } from '../../core/paths.js';
+import { resolveRunConfig } from '../build-overrides.js';
 import { emitRecoveryAndFailIfPending, recordWriterFor } from '../headless.js';
+import { resolveReviewCadence } from '../../core/config/runtime/resolve.js';
 import { resumeSavedSession } from './continue/resume.js';
 import { withHeldDiagnostics } from '../../lib/warn.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
@@ -71,6 +73,7 @@ export async function resumeCommand(
     emitRecoveryAndFailIfPending({
       state: hydrated.state,
       sessionId,
+      reviewNone: resolveReviewCadence(resolveRunConfig({ projectDir, opts })) === 'none',
       writeRecord: recordWriterFor(opts.plain === true),
     });
   }

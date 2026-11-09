@@ -3528,11 +3528,17 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
             createdAt: new Date(STOP_SHEET_TS + 5_010).toISOString(),
           });
           publishError({ bus, phase: 'implementing', message: issue.message });
-          publishRecoveryPrompted({ bus, phase: 'implementing' }, OVERLAY_SESSION_ID, issue, {
-            kind: 'brief',
-            taskId: taskId('T001'),
-            attempt: 0,
-          });
+          publishRecoveryPrompted(
+            { bus, phase: 'implementing' },
+            OVERLAY_SESSION_ID,
+            issue,
+            {
+              kind: 'brief',
+              taskId: taskId('T001'),
+              attempt: 0,
+            },
+            false,
+          );
           publishInfo({
             bus,
             phase: 'implementing',
@@ -3581,6 +3587,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
               createdAt: new Date(STOP_SHEET_TS + 5_020).toISOString(),
             }),
             { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
+            false,
           );
           // The halt's panel asks the operator, as the recovery driver leaves it.
           recoveryNoticeStore.ask(true);

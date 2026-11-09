@@ -1,12 +1,18 @@
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
 import type { StepRef } from '../schemas/run-step.js';
 import type { EventTypeCarrier } from '../event-phase.js';
+import { stepReadsNoWords } from '../recovery/typed-words.js';
 import type { RecoveryPromptedEvent, RecoveryResolvedEvent } from './events.js';
 
 /** The halt the run waits on, and the step it resumes at once the halt is answered. */
 export interface RunHalt {
   readonly issue: RecoveryIssue;
   readonly at: StepRef;
+}
+
+/** Whether the step a halted run picks up at reads no words typed for it. */
+export function haltReadsNoWords(view: { halt: RunHalt | null; reviewNone: boolean }): boolean {
+  return view.halt !== null && stepReadsNoWords(view.halt.at, view.reviewNone);
 }
 
 function isRecoveryPrompted<T extends EventTypeCarrier>(

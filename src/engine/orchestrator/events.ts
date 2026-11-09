@@ -563,6 +563,7 @@ export function publishRecoveryPrompted(
   sessionId: string,
   issue: RecoveryIssue,
   at: StepRef,
+  reviewNone: boolean,
 ): void {
   const ts = Date.now();
   const headlineSpans = [...formatRecoveryHeadlineSpans(issue, ts)];
@@ -574,7 +575,7 @@ export function publishRecoveryPrompted(
     reason: issue.reason,
     headline: headlineSpans.map((part) => part.text).join(''),
     headlineSpans,
-    resumeCommand: formatResumeCommand(sessionId, issue),
+    resumeCommand: formatResumeCommand(sessionId, issue, reviewNone),
     ...(issue.taskId !== undefined && { taskId: issue.taskId }),
     files: issue.files,
     affectedTaskIds: issue.affectedTaskIds,
@@ -588,7 +589,7 @@ export function publishRecoveryPrompted(
 type RecoveryOutcome = EngineEventOf<'recovery_resolved'>['outcome'];
 
 type RecoveryEventSpec =
-  | { kind: 'selected' }
+  | { kind: 'selected'; reviewNone: boolean }
   | { kind: 'failed'; message: string }
   | {
       kind: 'resolved';
@@ -617,7 +618,11 @@ function publishRecoveryEvent(
     ...(seat !== undefined && { seat }),
   } as const;
   if (spec.kind === 'selected') {
-    bus.publish({ type: 'recovery_action_selected', ...base });
+    bus.publish({
+      type: 'recovery_action_selected',
+      ...base,
+      ...(spec.reviewNone && { reviewNone: true as const }),
+    });
     return;
   }
   if (spec.kind === 'failed') {
@@ -632,8 +637,10 @@ function publishRecoveryEvent(
   });
 }
 
-export function publishRecoveryActionSelected(opts: RecoveryEventOpts): void {
-  publishRecoveryEvent(opts, { kind: 'selected' });
+export function publishRecoveryActionSelected(
+  opts: RecoveryEventOpts & { reviewNone?: boolean | undefined },
+): void {
+  publishRecoveryEvent(opts, { kind: 'selected', reviewNone: opts.reviewNone === true });
 }
 
 export function publishRecoveryActionFailed(opts: RecoveryEventOpts & { message: string }): void {

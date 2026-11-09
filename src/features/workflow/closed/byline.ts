@@ -250,6 +250,7 @@ export function openRunBylineParts(
   if (status.stop.kind === 'stopped' && wait !== null) return fitByline(waitByline(wait), width);
   return fitByline(
     openByline(status.stop, status.resumeAt, {
+      reviewNone: status.reviewNone === true,
       ...input,
       wordsUnread: statusLeavesWordsUnread(status),
     }),
@@ -264,7 +265,13 @@ function openByline(
     planCard,
     failure,
     wordsUnread,
-  }: Readonly<{ planCard: boolean; failure: string | null; wordsUnread: boolean }>,
+    reviewNone,
+  }: Readonly<{
+    planCard: boolean;
+    failure: string | null;
+    wordsUnread: boolean;
+    reviewNone: boolean;
+  }>,
 ): Byline {
   switch (stop.on.kind) {
     case 'paused':
@@ -293,7 +300,7 @@ function openByline(
           { text: SOFT_SEP, tone: 'textDim' },
           ...recoveryHeadlineParts(stop.on.issue),
         ],
-        action: haltAction(stop.on.issue),
+        action: haltAction(stop.on.issue, reviewNone),
       };
     case 'failed':
       return {
@@ -326,9 +333,9 @@ function waitByline([waiting, resets]: readonly [string, string]): Byline {
  * A halt whose action was chosen and saved before the process died replays that action on ⏎
  * (`createRecoveryDriver`), so the byline names it instead of offering a choice.
  */
-function haltAction(issue: RecoveryIssue): string {
+function haltAction(issue: RecoveryIssue, reviewNone: boolean): string {
   if (issue.status !== 'applying' || issue.selectedAction === undefined) return '⏎ to decide';
-  return `⏎ to ${lowercaseLead(recoveryMenuActionLabel(issue.selectedAction, issue))}`;
+  return `⏎ to ${lowercaseLead(recoveryMenuActionLabel(issue.selectedAction, issue, reviewNone))}`;
 }
 
 function attentionByline(view: SummaryView): string {

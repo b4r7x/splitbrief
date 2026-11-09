@@ -60,6 +60,18 @@ describe('recoveryActionLabel for a correction', () => {
   ] as const)('names revise on a %s halt as %s', (reason, label) => {
     expect(recoveryActionLabel('revise', { reason })).toBe(label);
   });
+
+  it('names a failed review Continue under REVIEW None, where no seat reviews again', () => {
+    expect(recoveryActionLabel('revise', { reason: 'review-failed', reviewNone: true })).toBe(
+      'Continue',
+    );
+  });
+
+  it('keeps Send a correction under REVIEW None on a halt that is no failed review', () => {
+    expect(recoveryActionLabel('revise', { reason: 'retry-exhausted', reviewNone: true })).toBe(
+      'Send a correction',
+    );
+  });
 });
 
 describe('recoveryActionLabel for an Apply halt', () => {

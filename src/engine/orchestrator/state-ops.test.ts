@@ -559,7 +559,7 @@ describe('raisePendingRecovery', () => {
         issueId: issue.id,
         reason: issue.reason,
         headline: formatRecoveryHeadline(issue),
-        resumeCommand: formatResumeCommand(sessionId, issue),
+        resumeCommand: formatResumeCommand(sessionId, issue, false),
         issue,
         at: { kind: 'brief', taskId: 'T001', attempt: 0 },
       });

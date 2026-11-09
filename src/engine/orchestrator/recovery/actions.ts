@@ -18,10 +18,11 @@ import { readActiveRunner } from '../../../core/config/accessors/active-runner.j
 import type { SeatRunnerValue } from '../../../core/config/load/record-seat.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { isTaskCompleted } from '../../../core/schemas/task.js';
-import type { QueuedMessage, WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { queuedUserMessage } from '../../../core/queue-state.js';
+import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
-import { nowIso } from '../../../utils/format-time.js';
 import type { EventBus } from '../../events/types.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { loadConfig } from '../../../core/config/load/io.js';
@@ -135,7 +136,10 @@ export interface ApplyRecoveryActionOptions {
   candidate?: SeatSwapCandidate | undefined;
   /** `revise`, `continue` and a seat-level retry: what the operator wants changed. */
   comment?: UserMessageInput | undefined;
-  /** `retry-later` only: the config the run's next entry runs on, whose seat the wait holds. */
+  /**
+   * The config the run's next entry runs on: `retry-later` holds its seat, and an answer reads
+   * REVIEW None from it. Left out, `config` is the next entry's.
+   */
   entryConfig?: Config | undefined;
 }
 
@@ -296,15 +300,7 @@ function applyReviseRecoveryAction(
   let correctionRecorded = false;
   const comment = opts.comment;
   if (comment !== undefined && comment.text.trim() !== '') {
-    const queuedMessage: QueuedMessage = {
-      id: randomUUID(),
-      ...comment,
-      queuedAt: nowIso(),
-      phase: issue.phase,
-      deliveredViaNative: false,
-      nativeDeliveryState: 'pending',
-      origin: 'user-input',
-    };
+    const queuedMessage = queuedUserMessage(comment, issue.phase);
     state = saveRecoveryAnswer(opts, issue, [{ type: 'ENQUEUE_USER_MSG', message: queuedMessage }]);
     recordUserMessage({ ...opts, phase: issue.phase }, comment, { queuedMessage });
     correctionRecorded = true;
@@ -384,7 +380,8 @@ function applyReviewCorrectionAction(
   issue: RecoveryIssue,
 ): ApplyRecoveryActionResult {
   const ref = { projectDir: opts.projectDir, sessionId: opts.sessionId };
-  const comment = opts.comment;
+  // REVIEW None runs no review that reads a note, so the words stay the steer of the next brief.
+  const comment = reviewIsNone(opts) ? undefined : opts.comment;
   const correction = comment?.text ?? '';
   let state = saveRecoveryAnswer(opts, issue, [{ type: 'REVIEW_CORRECTION', text: correction }]);
   let correctionRecorded = false;
@@ -439,8 +436,7 @@ async function applyDecideForMeRecoveryAction(
 /**
  * After Decide for me, a halt with a decided step takes it with no one asked: the TUI and a
  * headless continue both take it here. Words the user typed to continue answer the halt instead,
- * as they do without the choice. Undefined, in the same tick, when the halt waits on the user. The
- * config of the next entry is read only for a wait on a seat's reset.
+ * as they do without the choice. Undefined, in the same tick, when the halt waits on the user.
  */
 export function applyDecidedRecovery(
   opts: Omit<ApplyRecoveryActionOptions, 'action' | 'candidate' | 'comment' | 'entryConfig'>,
@@ -454,7 +450,7 @@ export function applyDecidedRecovery(
   return applyRecoveryAction({
     ...opts,
     action: 'decide-for-me',
-    ...(decided.action === 'retry-later' && { entryConfig: entryConfig() }),
+    entryConfig: entryConfig(),
   });
 }
 
@@ -868,15 +864,7 @@ function resolveSeatIssueWithoutTask(
   let state: WorkflowState;
   let correctionRecorded = false;
   if (opts.comment !== undefined && opts.comment.text.trim() !== '') {
-    const queuedMessage: QueuedMessage = {
-      id: randomUUID(),
-      ...opts.comment,
-      queuedAt: nowIso(),
-      phase: opts.state.phase,
-      deliveredViaNative: false,
-      nativeDeliveryState: 'pending',
-      origin: 'user-input',
-    };
+    const queuedMessage = queuedUserMessage(opts.comment, opts.state.phase);
     state = saveRecoveryAnswer(
       opts,
       issue,
@@ -1037,6 +1025,11 @@ export function seatRunnerValue(
   }
 }
 
+function reviewIsNone(opts: ApplyRecoveryActionOptions): boolean {
+  const nextPass = opts.entryConfig ?? opts.config;
+  return nextPass !== undefined && resolveReviewCadence(nextPass) === 'none';
+}
+
 function markRecoveryApplying(
   opts: ApplyRecoveryActionOptions,
   issue: RecoveryIssue,
@@ -1074,6 +1067,7 @@ function saveRecoveryAnswer(
     phase: opts.state.phase,
     issue,
     action: opts.action,
+    reviewNone: reviewIsNone(opts),
   });
   return transitionsAndSave(
     opts,

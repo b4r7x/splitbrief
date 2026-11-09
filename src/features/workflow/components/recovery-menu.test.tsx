@@ -906,7 +906,7 @@ function compact(text: string): string {
 }
 
 function actionShown(rows: readonly string[], issue: RecoveryIssue, action: RecoveryAction) {
-  const label = recoveryMenuParts(action, issue, false)
+  const label = recoveryMenuParts(action, issue, false, false)
     .map((part) => part.text)
     .join('')
     .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -965,6 +965,71 @@ function mountBox(
     />,
   );
 }
+
+const FAILED_REVIEW_HALT = makeRecoveryIssue({
+  reason: 'review-failed',
+  taskId: undefined,
+  availableActions: ['revise', 'end-run'],
+  recommendedAction: 'revise',
+});
+
+it('offers no typed correction on a failed review whose step reads no words', async () => {
+  runViewStore.__testReset({
+    halt: { issue: FAILED_REVIEW_HALT, at: { kind: 'apply' } },
+    reviewNone: true,
+  });
+  const ui = mountBox(FAILED_REVIEW_HALT, 12);
+  await flushEffects();
+  const panel = frameRows(ui).join('\n');
+  ui.unmount();
+  expect(panel).toContain('Continue');
+  expect(panel).not.toContain('Review again');
+  expect(panel).not.toContain('type a correction');
+  expect(panel).not.toContain('sends your note to the reviewer');
+});
+
+it('keeps the typed correction under REVIEW None when the next brief reads it', async () => {
+  runViewStore.__testReset({
+    halt: {
+      issue: FAILED_REVIEW_HALT,
+      at: { kind: 'brief', taskId: taskId('T002'), attempt: 0 },
+    },
+    reviewNone: true,
+  });
+  const ui = mountBox(FAILED_REVIEW_HALT, 12);
+  await flushEffects();
+  const panel = frameRows(ui).join('\n');
+  ui.unmount();
+  expect(panel).toContain('type a correction');
+  expect(panel).toContain('Continue');
+  expect(panel).not.toContain('Review again');
+  expect(panel).not.toContain('sends your note to the reviewer');
+});
+
+it('names Continue in the typed-correction legend under REVIEW None', async () => {
+  runViewStore.__testReset({
+    halt: {
+      issue: FAILED_REVIEW_HALT,
+      at: { kind: 'brief', taskId: taskId('T002'), attempt: 0 },
+    },
+    reviewNone: true,
+  });
+  const ui = renderFeature(
+    <RecoveryMenu
+      issue={FAILED_REVIEW_HALT}
+      width={80}
+      clampedBoxRows={14}
+      focused={false}
+      onFocusChange={() => {}}
+      onResolve={() => {}}
+    />,
+  );
+  await flushEffects();
+  const frame = stripAnsiStyles(ui.lastFrame());
+  ui.unmount();
+  expect(frame).toContain('⏎ Continue with the typed correction');
+  expect(frame).not.toContain('Review again');
+});
 
 it.each([
   ['Question: ', 9, FOUR_ACTIONS],

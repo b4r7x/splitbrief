@@ -15,16 +15,27 @@ import { EMPTY_RUN_VIEW, type RunView } from './reduce.js';
 export function settleRunView(view: RunView, state: WorkflowState, reviewNone: boolean): RunView {
   const asked = state.pendingPlannerConversation;
   return {
-    ...view,
+    ...settleReviewNone(view, state, reviewNone),
     phase: state.phase,
-    halt: settleHalt(state, reviewNone),
-    reviewNone,
-    afterLastBrief: afterLastBrief(state, reviewNone, 0),
     briefs: settleBriefs(view.briefs, state),
     questions: asked === undefined || asked.answered ? null : asked.questions,
     planCard: reopensPlanCard(state),
     stopKept: state.interruptedStep?.kept ?? EMPTY_RUN_VIEW.stopKept,
     failure: state.lastFailure?.message ?? null,
+  };
+}
+
+/** What REVIEW None decides on the view: a move of REVIEW at a waiting halt changes this alone. */
+export function settleReviewNone(
+  view: RunView,
+  state: WorkflowState,
+  reviewNone: boolean,
+): RunView {
+  return {
+    ...view,
+    halt: settleHalt(state, reviewNone),
+    reviewNone,
+    afterLastBrief: afterLastBrief(state, reviewNone, 0),
   };
 }
 

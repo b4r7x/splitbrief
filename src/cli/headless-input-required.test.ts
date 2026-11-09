@@ -27,7 +27,12 @@ describe('headless planner input required', () => {
     };
     const writeRecord = vi.fn();
     expect(() =>
-      emitRecoveryAndFailIfPending({ state, sessionId: 'needs-scope', writeRecord }),
+      emitRecoveryAndFailIfPending({
+        reviewNone: false,
+        state,
+        sessionId: 'needs-scope',
+        writeRecord,
+      }),
     ).toThrow('Which module should change? (auth / CLI)');
     const record = HeadlessJsonRecordSchema.parse(writeRecord.mock.calls[0]?.[0]);
     expect(record).toMatchObject({
@@ -60,7 +65,12 @@ describe('headless review input too large', () => {
     const writeRecord = vi.fn();
     let thrown: unknown;
     try {
-      emitRecoveryAndFailIfPending({ state, sessionId: 'review-cap', writeRecord });
+      emitRecoveryAndFailIfPending({
+        reviewNone: false,
+        state,
+        sessionId: 'review-cap',
+        writeRecord,
+      });
     } catch (err) {
       thrown = err;
     }

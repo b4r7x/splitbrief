@@ -4800,6 +4800,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-recovery-review-failed-review-none',
+      title: 'Workflow · a failed final review after a move to REVIEW None',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-failed-review-none',
+        title: 'Review-failed recovery menu with REVIEW None',
+        kind: 'question',
+        marker: 'Continue',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-recovery-review-fix-again',
       title: 'Workflow · a failed final review answered with Review again and a note',
       surface: screenSurface('workflow'),

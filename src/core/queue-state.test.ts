@@ -10,15 +10,28 @@ import {
 
 describe('messageSeat', () => {
   it('names no seat while REVIEW None checks the merged result again: no seat reads a message', () => {
-    expect(messageSeat('final-review', false, true)).toBeNull();
-    expect(messageSeat('final-review', false, false)).toBe('review');
-    expect(messageSeat('implementing', false, true)).toBe('build');
+    expect(messageSeat('final-review', false, true, false)).toBeNull();
+    expect(messageSeat('final-review', false, false, false)).toBe('review');
+    expect(messageSeat('implementing', false, true, true)).toBe('build');
   });
 
   it('names no review seat for a task review that a move to REVIEW None left pending', () => {
-    expect(messageSeat('implementing', true, true)).toBe('build');
-    expect(messageSeat('final-review', true, true)).toBeNull();
-    expect(messageSeat('implementing', true, false)).toBe('review');
+    expect(messageSeat('implementing', true, true, true)).toBe('build');
+    expect(messageSeat('final-review', true, true, false)).toBeNull();
+    expect(messageSeat('implementing', true, false, true)).toBe('review');
+  });
+
+  it.each([true, false])(
+    'names no seat under REVIEW None when no brief is left (task review due: %s)',
+    (reviewing) => {
+      expect(messageSeat('implementing', reviewing, true, false)).toBeNull();
+    },
+  );
+
+  it('needs no brief left for PLAN, or for a run with a review seat', () => {
+    expect(messageSeat('planning', false, true, false)).toBe('plan');
+    expect(messageSeat('implementing', false, false, false)).toBe('build');
+    expect(messageSeat('implementing', true, false, false)).toBe('review');
   });
 });
 

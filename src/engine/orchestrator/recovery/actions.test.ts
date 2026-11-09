@@ -368,6 +368,96 @@ describe('applyRecoveryAction: the run-level answers', () => {
     );
   });
 
+  it('marks the chosen action of a run on REVIEW None', async () => {
+    const { projectDir, sessionId } = setupSession('recovery-revise-none');
+    const state = plannerHaltState(projectDir, sessionId, reviseIssue('brief-review-no-progress'));
+    const { bus, events } = makeBusRecorder();
+
+    await applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state,
+      action: 'revise',
+      bus,
+      config: makeConfig({ reviewer: 'none' }),
+    });
+
+    expect(events.find((event) => event.type === 'recovery_action_selected')).toMatchObject({
+      reviewNone: true,
+    });
+  });
+
+  it('leaves that mark off a run with a review seat', async () => {
+    const { projectDir, sessionId } = setupSession('recovery-revise-seat');
+    const state = plannerHaltState(projectDir, sessionId, reviseIssue('brief-review-no-progress'));
+    const { bus, events } = makeBusRecorder();
+
+    await applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state,
+      action: 'revise',
+      bus,
+      config: makeConfig(),
+    });
+
+    expect(events.find((event) => event.type === 'recovery_action_selected')).not.toHaveProperty(
+      'reviewNone',
+    );
+  });
+
+  it('reads the mark from the config the next pass runs on', async () => {
+    const { projectDir, sessionId } = setupSession('recovery-revise-entry-none');
+    const state = plannerHaltState(projectDir, sessionId, reviseIssue('brief-review-no-progress'));
+    const { bus, events } = makeBusRecorder();
+
+    await applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state,
+      action: 'revise',
+      bus,
+      config: makeConfig(),
+      entryConfig: makeConfig({ reviewer: 'none' }),
+    });
+
+    expect(events.find((event) => event.type === 'recovery_action_selected')).toMatchObject({
+      reviewNone: true,
+    });
+  });
+
+  it('keeps a note on a failed review out of the review when the next pass runs on REVIEW None', async () => {
+    const { projectDir, sessionId } = setupSession('recovery-review-entry-none');
+    const halted: WorkflowState = {
+      ...makeImplState([makeTask({ id: 'T001', status: 'done' })]),
+      phase: 'complete',
+      reviewStatus: 'failed',
+      pendingRecovery: buildReviewFailedRecoveryIssue({
+        blocking: 1,
+        phase: 'complete',
+        createdAt,
+      }),
+    };
+    saveState({ projectDir, sessionId }, halted);
+    const state = loadState({ projectDir, sessionId });
+    if (state === null) throw new Error('expected the failed review to persist');
+    const { bus } = makeBusRecorder();
+
+    const result = await applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state,
+      action: 'revise',
+      bus,
+      config: makeConfig(),
+      entryConfig: makeConfig({ reviewer: 'none' }),
+      comment: plainUserMessage('a note no review reads'),
+    });
+
+    expect(result).toMatchObject({ ok: true, status: 'continued', correctionRecorded: false });
+    expect(result.state.pendingTriage?.inputs ?? []).toEqual([]);
+  });
+
   it('revise with no comment still resolves the halt and queues nothing', async () => {
     const { projectDir, sessionId } = setupSession('recovery-revise-empty');
     const state = plannerHaltState(projectDir, sessionId, reviseIssue('brief-review-no-progress'));

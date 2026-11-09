@@ -1716,6 +1716,62 @@ describe('InputFooter', () => {
     ui.unmount();
   });
 
+  it.each([
+    ['no brief left', 1, '1 queued', 'queued for'],
+    ['a brief left', 2, '1 queued for BUILD on T002', null],
+  ] as const)(
+    'counts a message queued before a move to REVIEW None, at rest with %s',
+    (_, briefs, shown, hidden) => {
+      terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+      const state = makeWorkflowState({
+        phase: 'implementing',
+        currentTaskIndex: 1,
+        tasks: [
+          makeTask({ id: 'T001', status: 'done' }),
+          ...(briefs === 2 ? [makeTask({ id: 'T002', status: 'pending' })] : []),
+        ],
+        pendingScheduledReview: { afterTaskId: taskId('T001') },
+        interruptedStep: {
+          step: { kind: 'review', cycle: 0 },
+          source: 'user',
+          at: '2026-11-09T00:00:00.000Z',
+          cut: 'mid-step',
+        },
+        messageQueue: [{ ...makeMessage('Check the empty list too'), id: 'pending' }],
+      });
+      routerStore.init({
+        screen: 'workflow',
+        run: makeRunRecord({
+          status: deriveRunStatus({ reviewNone: true, state, liveness: 'not-alive' }),
+          hydration: { kind: 'loaded', state },
+        }),
+        execution: { kind: 'at-rest' },
+      });
+      hydrateFromState(state, true);
+      addEvent({
+        type: 'review_started',
+        ts: 1,
+        phase: 'implementing',
+        scope: 'task',
+        afterTaskId: 'T001',
+        tool: 'codex',
+      });
+      const ui = renderFeature(
+        <InputFooter
+          byline={[
+            { text: 'Stopped at the stop point', tone: 'warning' },
+            { text: ' · ⏎ to continue', tone: 'textDim' },
+          ]}
+        />,
+      );
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      ui.unmount();
+      terminalSizeStore.reset();
+      expect(frame).toContain(shown);
+      if (hidden !== null) expect(frame).not.toContain(hidden);
+    },
+  );
+
   it('reads a halt the panel has not opened on yet as a run still going to it', () => {
     lifecycleStore.__testReset({ status: 'running' });
     setRunHalt({

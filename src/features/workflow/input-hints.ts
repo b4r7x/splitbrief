@@ -23,7 +23,7 @@ export function queuePlaceholder(input: {
   starting?: boolean | undefined;
 }): string | undefined {
   if (input.inputMode !== 'normal' || !input.running || input.stopping) return undefined;
-  const seat = messageSeat(input.phase, input.reviewing, input.reviewNone);
+  const seat = messageSeat(input.phase, input.reviewing, input.reviewNone, input.taskId != null);
   // The queue refuses words no seat reads while the run is live (`enqueueUserMessage`).
   if (seat === null) return isLivePhase(input.phase) ? AT_REST_PLACEHOLDER.noWords : undefined;
   return queueCopy({

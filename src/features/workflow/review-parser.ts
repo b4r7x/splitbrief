@@ -292,8 +292,14 @@ export function createReviewInputHandler(
         const trimmed = text.trim();
         if (trimmed) {
           const document = composerLiveStore.get().document;
-          const seat = messageSeat(phase, selectScheduledReview(operationsStore.get()), reviewNone);
-          const taskId = selectBuildMessageBrief(briefs)?.id;
+          const buildBrief = selectBuildMessageBrief(briefs);
+          const seat = messageSeat(
+            phase,
+            selectScheduledReview(operationsStore.get()),
+            reviewNone,
+            buildBrief !== null,
+          );
+          const taskId = buildBrief?.id;
           const steerable = lifecycle.steerableCall?.seat === seat;
           const result = await effects.enqueue(message, phase);
           if (!result) {

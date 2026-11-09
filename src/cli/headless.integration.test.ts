@@ -170,7 +170,7 @@ describe('runHeadless — every pending recovery status fails the run', () => {
           halt: 'seat-down',
           reason: 'context-overflow',
           status,
-          resumeCommand: formatResumeCommand(sessionId, issue),
+          resumeCommand: formatResumeCommand(sessionId, issue, false),
         }),
       );
     },
@@ -283,7 +283,12 @@ describe('emitRecoveryAndFailIfPending — a usage-limit halt', () => {
     vi.useFakeTimers({ toFake: ['Date'], now });
     try {
       expect(() =>
-        emitRecoveryAndFailIfPending({ state, sessionId: 'sess-limit', writeRecord: vi.fn() }),
+        emitRecoveryAndFailIfPending({
+          reviewNone: false,
+          state,
+          sessionId: 'sess-limit',
+          writeRecord: vi.fn(),
+        }),
       ).toThrow(`Seat down (runner-usage-limit): ${message} (${note})\n`);
     } finally {
       vi.useRealTimers();
@@ -308,7 +313,12 @@ describe('emitRecoveryAndFailIfPending — an answered partial Apply', () => {
         pendingRecovery: { ...partial, status: 'applying' as const, selectedAction },
       };
       expect(() =>
-        emitRecoveryAndFailIfPending({ state, sessionId: 'sess-apply', writeRecord: vi.fn() }),
+        emitRecoveryAndFailIfPending({
+          reviewNone: false,
+          state,
+          sessionId: 'sess-apply',
+          writeRecord: vi.fn(),
+        }),
       ).not.toThrow();
     },
   );
@@ -317,7 +327,12 @@ describe('emitRecoveryAndFailIfPending — an answered partial Apply', () => {
     const state = { ...createInitialState('apply me'), pendingRecovery: partial };
     const writeRecord = vi.fn();
     expect(() =>
-      emitRecoveryAndFailIfPending({ state, sessionId: 'sess-apply', writeRecord }),
+      emitRecoveryAndFailIfPending({
+        reviewNone: false,
+        state,
+        sessionId: 'sess-apply',
+        writeRecord,
+      }),
     ).toThrow('Needs you (apply-partial): Apply stopped part way\nRecommended: retry-same-worker');
     expect(writeRecord).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1311,7 +1326,12 @@ describe('runHeadless — the seat-down policy and the record', () => {
     const writeRecord = vi.fn();
 
     expect(() =>
-      emitRecoveryAndFailIfPending({ state, sessionId: 'sess-record', writeRecord }),
+      emitRecoveryAndFailIfPending({
+        reviewNone: false,
+        state,
+        sessionId: 'sess-record',
+        writeRecord,
+      }),
     ).toThrow(/Seat down/);
 
     expect(writeRecord).toHaveBeenCalledWith(
@@ -1347,7 +1367,12 @@ describe('runHeadless — the seat-down policy and the record', () => {
     const writeRecord = vi.fn();
 
     expect(() =>
-      emitRecoveryAndFailIfPending({ state, sessionId: 'sess-question', writeRecord }),
+      emitRecoveryAndFailIfPending({
+        reviewNone: false,
+        state,
+        sessionId: 'sess-question',
+        writeRecord,
+      }),
     ).toThrow(
       `Needs you (retry-exhausted): T002 needs your answer\nQuestion: ${question}\nRecommended: retry-same-worker`,
     );
@@ -1389,7 +1414,12 @@ describe('runHeadless — the seat-down policy and the record', () => {
       const writeRecord = vi.fn();
 
       expect(() =>
-        emitRecoveryAndFailIfPending({ state, sessionId: 'sess-cannot', writeRecord }),
+        emitRecoveryAndFailIfPending({
+          reviewNone: false,
+          state,
+          sessionId: 'sess-cannot',
+          writeRecord,
+        }),
       ).toThrow(
         `Needs you (retry-exhausted): T002: the ${by} says it cannot be done\n${said}: ${reason}\nRecommended: skip-current-task`,
       );

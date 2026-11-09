@@ -1627,6 +1627,11 @@ const checkpointPredicates = [
     includesAll('validation.render is not set', 'Run the checks again'),
   ],
   [
+    checkpointId('review-failed-review-none'),
+    (context) =>
+      includesAll('Continue')(context) && excludesAll(WORKFLOW_FIXTURE_TEXT.reviewFailed)(context),
+  ],
+  [
     checkpointId('recovery-review-none-in-place'),
     (context) =>
       includesAll('validation.render is not set', 'Run the checks again')(context) &&

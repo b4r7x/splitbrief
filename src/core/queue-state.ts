@@ -1,19 +1,38 @@
+import { randomUUID } from 'node:crypto';
 import type { Phase } from './schemas/enums.js';
 import type { QueuedMessage, WorkflowState } from './schemas/workflow.js';
+import type { UserMessageInput } from './types/user-input.js';
+import { nowIso } from '../utils/format-time.js';
 import { phaseStage } from './rail-stages.js';
 
 /**
  * The seat that reads a message typed now: REVIEW while a task review runs inside the build
  * phase, as it reads every unread message at its verdict call, else the seat of the phase's stage.
- * None while REVIEW None checks the merged result again, as no seat runs then.
+ * Under REVIEW None no review reads it, so a due task review names BUILD while a brief is left,
+ * and no seat reads a message after the last brief.
  */
 export function messageSeat(
   phase: Phase,
   reviewing: boolean,
   reviewNone: boolean,
+  briefLeft: boolean,
 ): ReturnType<typeof phaseStage> {
-  if (reviewing && !reviewNone) return 'review';
-  return phase === 'final-review' && reviewNone ? null : phaseStage(phase);
+  if (!reviewNone) return reviewing ? 'review' : phaseStage(phase);
+  const stage = phaseStage(phase);
+  return stage === 'review' || (stage === 'build' && !briefLeft) ? null : stage;
+}
+
+/** A message the user sent, as the queue holds it until a seat reads it. */
+export function queuedUserMessage(input: UserMessageInput, phase: Phase): QueuedMessage {
+  return {
+    id: randomUUID(),
+    ...input,
+    queuedAt: nowIso(),
+    phase,
+    deliveredViaNative: false,
+    nativeDeliveryState: 'pending',
+    origin: 'user-input',
+  };
 }
 
 export function isQueuedMessagePendingDelivery(message: QueuedMessage): boolean {

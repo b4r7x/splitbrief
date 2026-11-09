@@ -73,8 +73,8 @@ function openRun(ref: SessionRef): void {
   });
 }
 
-function save(config: Config): void {
-  configStore.__testReset({ projectDir: '/tmp/project', config });
+function save(projectDir: string, config: Config): void {
+  configStore.__testReset({ projectDir, config });
 }
 
 async function seatLine(): Promise<string> {
@@ -130,7 +130,7 @@ async function haltFrames(input: {
   const state = loadState(ref);
   if (state === null) throw new Error('expected the halted state to persist');
   openRun(ref);
-  save(input.savedAtOpen ?? input.ran);
+  save(projectDir, input.savedAtOpen ?? input.ran);
   const prepared = makePreparedExecution({
     projectDir,
     sessionId,
@@ -148,7 +148,7 @@ async function haltFrames(input: {
     setQuestionMode: async () => {
       frames.push(await seatLine());
       for (const config of input.whileOpen ?? []) {
-        save(config);
+        save(projectDir, config);
         frames.push(await seatLine());
       }
       return { ...plainAnswer('a'), row: true };
@@ -326,7 +326,7 @@ describe('the reset note where a seat is not its own', () => {
     saveState(ref, makeImplState([makeTask({ id: 'T001' })], { pendingRecovery: issue }));
     const state = loadState(ref);
     if (state === null) throw new Error('expected the halted state to persist');
-    save(ran);
+    save(projectDir, ran);
     const prepared = makePreparedExecution({
       ...ref,
       feature: 'reset note',
@@ -378,7 +378,7 @@ describe('the reset note where a seat is not its own', () => {
     const state = loadState(ref);
     if (state === null) throw new Error('expected the halted state to persist');
     openRun(ref);
-    save(ran);
+    save(projectDir, ran);
     const prepared = makePreparedExecution({
       ...ref,
       feature: 'reset note',
@@ -407,7 +407,7 @@ describe('the reset note where a seat is not its own', () => {
       expect(overlayStore.get().active).toBe('implementer-picker');
     });
     const beforeSave = await seatLine();
-    save(crewWith('build', CLAUDE));
+    save(projectDir, crewWith('build', CLAUDE));
     const inWindow = await seatLine();
     pickerViewStore.setCommitted(true);
     overlayStore.close();

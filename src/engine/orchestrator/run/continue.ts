@@ -110,5 +110,5 @@ function noWordsMessage(status: Extract<RunStatus, { kind: 'open' }>): string {
   const chosen = issue.status === 'applying' ? issue.selectedAction : undefined;
   return chosen === undefined
     ? 'Cannot send words to this halt. Clear them first.'
-    : `Cannot send words with ${recoveryActionLabel(chosen, { reason: issue.reason })}. Clear them.`;
+    : `Cannot send words with ${recoveryActionLabel(chosen, { reason: issue.reason, reviewNone: status.reviewNone })}. Clear them.`;
 }

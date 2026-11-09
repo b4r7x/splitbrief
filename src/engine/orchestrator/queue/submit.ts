@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { QueuedMessage, WorkflowState } from '../../../core/schemas/workflow.js';
 import { isImplementerPhase, isLivePhase } from '../../../core/phases.js';
@@ -10,10 +9,13 @@ import type { UserMessageInput } from '../../../core/types/user-input.js';
 import { recordUserMessage } from '../transcript/user-message.js';
 import { dispatchNativeInjection } from './native-injection.js';
 import { warnError } from '../../../lib/warn.js';
-import { nowIso } from '../../../utils/format-time.js';
 import type { WriteSequencer } from '../serial-executor.js';
 import { formatQueuedMessagePreview } from '../../../core/queue-preview.js';
-import { isQueuedMessagePendingFirstDelivery, messageSeat } from '../../../core/queue-state.js';
+import {
+  isQueuedMessagePendingFirstDelivery,
+  messageSeat,
+  queuedUserMessage,
+} from '../../../core/queue-state.js';
 import { noWordsRefusal } from '../../../core/recovery/typed-words.js';
 import { resumeStep } from '../../../core/sessions/run-status.js';
 import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
@@ -66,7 +68,12 @@ export function enqueueUserMessage({
     return { state: base, result: { status: 'rejected', reason: 'phase-unavailable', message } };
   }
 
-  const seat = messageSeat(phase, base.pendingScheduledReview !== undefined, reviewNone);
+  const seat = messageSeat(
+    phase,
+    base.pendingScheduledReview !== undefined,
+    reviewNone,
+    base.tasks[base.currentTaskIndex] !== undefined,
+  );
   if (enforcePhasePolicy && seat === null && isLivePhase(phase)) {
     const message = noWordsRefusal(resumeStep(base, reviewNone));
     publishWarning({
@@ -96,15 +103,7 @@ export function enqueueUserMessage({
     return { state: base, result: { status: 'rejected', reason: 'queue-full', message } };
   }
 
-  const message: QueuedMessage = {
-    id: randomUUID(),
-    ...input,
-    queuedAt: nowIso(),
-    phase,
-    deliveredViaNative: false,
-    nativeDeliveryState: 'pending',
-    origin: 'user-input',
-  };
+  const message = queuedUserMessage(input, phase);
 
   const next = transitionAndSave({ projectDir, sessionId }, base, {
     type: 'ENQUEUE_USER_MSG',
@@ -147,7 +146,13 @@ export function createQueueHandler(
   const reviewNone = resolveReviewCadence(opts.config) === 'none';
   return async (message: UserMessageInput, phase: Phase) => {
     const attached = steering?.current() ?? null;
-    const seat = messageSeat(phase, getState()?.pendingScheduledReview !== undefined, reviewNone);
+    const current = getState();
+    const seat = messageSeat(
+      phase,
+      current?.pendingScheduledReview !== undefined,
+      reviewNone,
+      current?.tasks[current.currentTaskIndex] !== undefined,
+    );
     const call =
       attached !== null && seat !== null && seatForRunningCall(attached) === seat ? attached : null;
     const pendingDelivery = call === null ? undefined : Promise.withResolvers<void>();

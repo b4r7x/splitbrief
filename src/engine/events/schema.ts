@@ -345,6 +345,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     reason: RecoveryReasonSchema,
     action: RecoveryActionSchema,
     seat: recoverySeat,
+    reviewNone: z.literal(true).optional(),
   }),
   phaseEvent('recovery_action_failed').extend({
     issueId: z.string(),

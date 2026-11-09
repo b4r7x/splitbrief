@@ -757,7 +757,10 @@ function recoveryCardBlock(
 }
 
 function recoveryActionSegments(
-  event: Pick<EngineEventOf<'recovery_action_selected'>, 'action' | 'reason' | 'seat'>,
+  event: Pick<
+    EngineEventOf<'recovery_action_selected'>,
+    'action' | 'reason' | 'seat' | 'reviewNone'
+  >,
   switched?: EngineEventOf<'seat_switched'>,
 ): ConversationRowSegment[] {
   const modelChanged =
@@ -767,12 +770,14 @@ function recoveryActionSegments(
     typeof switched.to !== 'string' &&
     switched.from.tool === switched.to.tool &&
     switched.from.model !== switched.to.model;
-  return recoveryActionParts(event.action, { reason: event.reason, seat: event.seat }).map(
-    (part) => ({
-      text: modelChanged ? part.text.replace('tool', 'model') : part.text,
-      tone: part.seat === undefined ? 'textDim' : CREW_SEAT_ROLES[part.seat],
-    }),
-  );
+  return recoveryActionParts(event.action, {
+    reason: event.reason,
+    seat: event.seat,
+    reviewNone: event.reviewNone,
+  }).map((part) => ({
+    text: modelChanged ? part.text.replace('tool', 'model') : part.text,
+    tone: part.seat === undefined ? 'textDim' : CREW_SEAT_ROLES[part.seat],
+  }));
 }
 
 function recoveryHeadlineSegments(

@@ -74,7 +74,7 @@ describe('emitRecoveryAndFailIfPending — a review halt that needs another revi
     const writeRecord = vi.fn();
     let thrown: unknown;
     try {
-      emitRecoveryAndFailIfPending({ state, sessionId: 's-1', writeRecord });
+      emitRecoveryAndFailIfPending({ reviewNone: false, state, sessionId: 's-1', writeRecord });
     } catch (err) {
       thrown = err;
     }

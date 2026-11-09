@@ -22,6 +22,28 @@ function stopOf(overrides: Partial<WorkflowState>): RunStatus {
   return statusOf(overrides);
 }
 
+describe('REVIEW None on an open status', () => {
+  const halted = state({
+    phase: 'implementing',
+    pendingRecovery: makeRecoveryIssue({ reason: 'review-failed' }),
+  });
+
+  it('says so on every open status of a run on REVIEW None', () => {
+    expect(
+      deriveRunStatus({ reviewNone: true, state: halted, liveness: 'not-alive' }),
+    ).toMatchObject({
+      kind: 'open',
+      reviewNone: true,
+    });
+  });
+
+  it('leaves it off a run with a review seat', () => {
+    expect(
+      deriveRunStatus({ reviewNone: false, state: halted, liveness: 'not-alive' }),
+    ).not.toHaveProperty('reviewNone');
+  });
+});
+
 describe('deriveRunStatus', () => {
   it('closes an explicitly ended run before anything else', () => {
     expect(
@@ -408,6 +430,7 @@ describe('a run with a workspace', () => {
         kind: 'open',
         stop: { kind: 'stopped', on: { kind: 'interrupted' } },
         resumeAt: { kind: 'apply' },
+        reviewNone: true,
       },
     );
   });
@@ -433,6 +456,7 @@ describe('a run with a workspace', () => {
         kind: 'open',
         stop: { kind: 'stopped', on: { kind: 'interrupted' } },
         resumeAt,
+        ...(reviewNone && { reviewNone: true }),
       });
     },
   );

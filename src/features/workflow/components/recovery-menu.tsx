@@ -34,6 +34,7 @@ import { isCommandDraft } from '../../../core/composer/submission.js';
 import { composerLiveStore } from '../../../stores/ui/composer-live.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { selectTaskListView } from '../../../core/run-view/briefs.js';
+import { haltReadsNoWords } from '../../../core/run-view/halt.js';
 
 interface ActionItem {
   action: RecoveryAction;
@@ -50,11 +51,15 @@ interface RecoveryMenuProps {
   onResolve: (answer: string) => void;
 }
 
-function actionItems(issue: RecoveryIssue, briefFinished: boolean): ActionItem[] {
+function actionItems(
+  issue: RecoveryIssue,
+  briefFinished: boolean,
+  reviewNone: boolean,
+): ActionItem[] {
   return getRecoveryPromptActions(issue).map((action) => ({
     action,
     key: recoveryActionKey(action),
-    parts: recoveryMenuParts(action, issue, briefFinished),
+    parts: recoveryMenuParts(action, issue, briefFinished, reviewNone),
   }));
 }
 
@@ -102,7 +107,9 @@ export function RecoveryMenu({
 }: RecoveryMenuProps) {
   const t = useTheme();
   const briefFinished = runViewStore.use((view) => selectTaskListView(view.briefs).finished > 0);
-  const actions = actionItems(issue, briefFinished);
+  const reviewNone = runViewStore.use((view) => view.reviewNone);
+  const stepReadsNone = runViewStore.use(haltReadsNoWords);
+  const actions = actionItems(issue, briefFinished, reviewNone);
   const recommended = recommendedRecoveryAction(issue);
   const keyWidth = actions.reduce((width, item) => Math.max(width, item.key.length), 0);
   const initialAction = Math.max(
@@ -190,14 +197,14 @@ export function RecoveryMenu({
 
   // Tab hands the keys to the composer, where a letter is a typed letter, so the panel stops
   // advertising its keys until focus comes back and says what ⏎ there does instead.
-  const correctionAction = correctionActionFor(issue);
+  const correctionAction = correctionActionFor(issue, stepReadsNone);
   const commandDraft = composerLiveStore.use((draft) => isCommandDraft(draft.document));
   const composerEmpty = composerLiveStore.use((draft) => draft.empty);
   const composerLegend = commandDraft
     ? '⏎ runs the command'
     : correctionAction === undefined
       ? 'typing goes to the composer'
-      : `⏎ ${recoveryMenuActionLabel(correctionAction, issue)} with the typed correction`;
+      : `⏎ ${recoveryMenuActionLabel(correctionAction, issue, reviewNone)} with the typed correction`;
   const legend = fitKeyLegend(
     focused
       ? formatKeyHints([

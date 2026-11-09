@@ -36,6 +36,10 @@ import type { TriageRecord, WorkflowState } from '../../../core/schemas/workflow
 import type { ImplementerOptions } from '../../implementers/types.js';
 import { formatRecoveryHeadline } from '../../../core/recovery/headline.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
+import { appendMessage } from '../../../core/sessions/log-writer.js';
+import { makeMessage } from '#testing/helpers/queue.js';
+import type { ContinuationHolder } from '../continuation.js';
+import { resumeContinuation } from './init.js';
 import { runTasksAndReview } from './task-execution.js';
 
 let dirs: string[] = [];
@@ -116,6 +120,7 @@ function runOptions(opts: {
   config?: Config | undefined;
   phases?: string[] | undefined;
   artifacts?: Array<{ json: string | undefined; markdown: boolean }> | undefined;
+  continuation?: ContinuationHolder | undefined;
 }) {
   const ref = { projectDir: opts.projectDir, sessionId: opts.sessionId };
   const { bus, events } = makeBusRecorder();
@@ -163,6 +168,7 @@ function runOptions(opts: {
     planner: reviewer,
     reviewer,
     implementer,
+    ...(opts.continuation !== undefined && { continuation: opts.continuation }),
   });
   return {
     ref,
@@ -872,7 +878,11 @@ describe('a task review left pending, on a continue after a move to REVIEW None'
     makeNoValidationConfig({ reviewer: 'none', workflow: { review: 'task' } });
   const pendingReview = { pendingScheduledReview: { afterTaskId: taskId('T001') } };
 
-  function continueOnNone(project: ReturnType<typeof setupProject>, state: WorkflowState) {
+  function continueOnNone(
+    project: ReturnType<typeof setupProject>,
+    state: WorkflowState,
+    continuation?: ContinuationHolder,
+  ) {
     return runOptions({
       projectDir: project.projectDir,
       sessionId: project.sessionId,
@@ -880,8 +890,60 @@ describe('a task review left pending, on a continue after a move to REVIEW None'
       config: noneConfig(),
       review: (prompt) => passingReviewVerdict(prompt),
       onComplete: vi.fn(),
+      continuation,
     });
   }
+
+  const WORDS = 'mind the lockfile';
+  const T001 = () =>
+    makeTask({ id: 'T001', status: 'done', suggestedFiles: ['src/alpha.ts'], criteria: ['C1'] });
+  const T002 = () => makeTask({ id: 'T002', suggestedFiles: ['src/beta.ts'], criteria: ['C2'] });
+
+  /** Who read the words: each implementer call, its steer, and whether its call holds them. */
+  function briefCalls(run: ReturnType<typeof continueOnNone>) {
+    return vi.mocked(run.options.wctx.implementer.implement).mock.calls.map(([call]) => ({
+      task: call.task.id,
+      steer: call.continuation?.steer,
+      wordsRead: JSON.stringify(call).includes(WORDS),
+    }));
+  }
+
+  function stoppedInReview(
+    project: ReturnType<typeof setupProject>,
+    tasks: Task[],
+    cut: 'mid-step' | 'boundary',
+  ) {
+    appendMessage(
+      { projectDir: project.projectDir, sessionId: project.sessionId },
+      { role: 'assistant', phase: 'implementing', text: 'half a review', interrupted: true },
+    );
+    return cadenceState(tasks, project.head, {
+      currentTaskIndex: 1,
+      ...pendingReview,
+      interruptedStep: {
+        step: { kind: 'review', cycle: 0 },
+        source: 'user',
+        at: '2026-11-09T00:00:00.000Z',
+        cut,
+      },
+    });
+  }
+
+  async function seedSteer(
+    project: ReturnType<typeof setupProject>,
+    state: WorkflowState,
+    reviewNone: boolean,
+  ) {
+    return resumeContinuation({
+      ref: { projectDir: project.projectDir, sessionId: project.sessionId },
+      state,
+      steer: plainUserMessage(WORDS),
+      reviewNone,
+    });
+  }
+
+  const savedNote = (state: WorkflowState) =>
+    (state.pendingTriage?.inputs ?? []).filter((input) => input.source === 'user');
 
   function expectNoReviewRan(run: ReturnType<typeof continueOnNone>, state: WorkflowState) {
     expect(run.reviewPrompts).toEqual([]);
@@ -1039,5 +1101,141 @@ describe('a task review left pending, on a continue after a move to REVIEW None'
     const { state: ended } = await pass;
     expectNoReviewRan(run, ended);
     expect(ended.tasks.map((task) => task.status)).toEqual(['done', 'done']);
+  });
+
+  it.each(['mid-step', 'boundary'] as const)(
+    'hands a correction typed at rest after a %s stop to the next brief',
+    async (cut) => {
+      const project = setupProject();
+      const state = stoppedInReview(project, [T001(), T002()], cut);
+      const run = continueOnNone(project, state, await seedSteer(project, state, true));
+
+      const pass = runTasksAndReview(run.options);
+
+      await expect(pass).resolves.toMatchObject({ completed: true });
+      expectNoReviewRan(run, (await pass).state);
+      expect(briefCalls(run)).toEqual([{ task: 'T002', steer: WORDS, wordsRead: true }]);
+    },
+  );
+
+  it('keeps a correction typed at rest for the review on a run with a seat', async () => {
+    const project = setupProject();
+    const holder = await seedSteer(
+      project,
+      stoppedInReview(project, [T001(), T002()], 'mid-step'),
+      false,
+    );
+
+    expect(holder.take({ kind: 'review', cycle: 0 })?.steer?.text).toBe(WORDS);
+  });
+
+  it('hands a note typed on the failed review after the move to the next brief', async () => {
+    const project = setupProject();
+    const { state, bus } = await haltedTaskReview(project);
+    const note = plainUserMessage(WORDS);
+    const corrected = await applyRecoveryAction({
+      projectDir: project.projectDir,
+      sessionId: project.sessionId,
+      state,
+      action: 'revise',
+      bus,
+      config: noneConfig(),
+      comment: note,
+    });
+    if (!corrected.ok) throw new Error(corrected.message);
+    expect(corrected).toMatchObject({ correctionRecorded: false });
+    expect(savedNote(corrected.state)).toEqual([]);
+    const seeded = await resumeContinuation({
+      ref: { projectDir: project.projectDir, sessionId: project.sessionId },
+      state: corrected.state,
+      steer: note,
+      reviewNone: true,
+    });
+    const run = continueOnNone(project, corrected.state, seeded);
+
+    const pass = runTasksAndReview(run.options);
+
+    await expect(pass).resolves.toMatchObject({ completed: true });
+    expectNoReviewRan(run, (await pass).state);
+    expect(briefCalls(run).at(-1)).toEqual({ task: 'T002', steer: WORDS, wordsRead: true });
+  });
+
+  it('keeps the note of Review again for the review on a run with a seat', async () => {
+    const project = setupProject();
+    const { state, bus } = await haltedTaskReview(project);
+    const corrected = await applyRecoveryAction({
+      projectDir: project.projectDir,
+      sessionId: project.sessionId,
+      state,
+      action: 'revise',
+      bus,
+      config: makeNoValidationConfig({ workflow: { review: 'task' } }),
+      comment: plainUserMessage(WORDS),
+    });
+    if (!corrected.ok) throw new Error(corrected.message);
+
+    expect(corrected).toMatchObject({ correctionRecorded: true });
+    expect(savedNote(corrected.state).map((input) => input.text)).toEqual([WORDS]);
+  });
+
+  it('hands a note saved for the review before the move to the next brief', async () => {
+    const project = setupProject();
+    const { state, bus } = await haltedTaskReview(project);
+    const corrected = await applyRecoveryAction({
+      projectDir: project.projectDir,
+      sessionId: project.sessionId,
+      state,
+      action: 'revise',
+      bus,
+      comment: plainUserMessage(WORDS),
+    });
+    if (!corrected.ok) throw new Error(corrected.message);
+    expect(savedNote(corrected.state)).toHaveLength(1);
+    const run = continueOnNone(project, corrected.state);
+
+    const pass = runTasksAndReview(run.options);
+
+    await expect(pass).resolves.toMatchObject({ completed: true });
+    expectNoReviewRan(run, (await pass).state);
+    expect(briefCalls(run).at(-1)?.wordsRead).toBe(true);
+  });
+
+  it('queues no message for a note saved for the review when no brief is left', async () => {
+    const project = setupProject();
+    const run = continueOnNone(
+      project,
+      cadenceState([T001()], project.head, {
+        currentTaskIndex: 1,
+        ...pendingReview,
+        pendingTriage: {
+          inputs: [{ id: 'U1', kind: 'defect', source: 'user', text: WORDS, file: null }],
+        },
+      }),
+    );
+
+    const pass = runTasksAndReview(run.options);
+
+    await expect(pass).resolves.toMatchObject({ completed: true });
+    const { state } = await pass;
+    expectNoReviewRan(run, state);
+    expect(state.messageQueue).toEqual([]);
+  });
+
+  it('gives a message queued for the review before the move to the next brief', async () => {
+    const project = setupProject();
+    const run = continueOnNone(
+      project,
+      cadenceState([T001(), T002()], project.head, {
+        currentTaskIndex: 1,
+        ...pendingReview,
+        messageQueue: [{ ...makeMessage(WORDS), id: 'pending' }],
+      }),
+    );
+
+    const pass = runTasksAndReview(run.options);
+
+    await expect(pass).resolves.toMatchObject({ completed: true });
+    expectNoReviewRan(run, (await pass).state);
+    expect(briefCalls(run)[0]).toMatchObject({ task: 'T002', wordsRead: true });
   });
 });

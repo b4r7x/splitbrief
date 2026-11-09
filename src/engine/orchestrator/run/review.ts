@@ -18,6 +18,8 @@ import { nowIso } from '../../../utils/format-time.js';
 import { error } from '../../../utils/error.js';
 import { publishError } from '../events.js';
 import { recordUserMessage } from '../transcript/user-message.js';
+import { queuedUserMessage } from '../../../core/queue-state.js';
+import { plainUserMessage } from '../../../core/types/user-input.js';
 import { consultReplyAnswer } from '../consult/apply.js';
 import {
   REVIEW_UNAVAILABLE,
@@ -41,6 +43,7 @@ import {
   raisePendingRecovery,
   rebaseOnPersistedWorkflowState,
   transitionAndSave,
+  transitionsAndSave,
 } from '../state-ops.js';
 import { askOperator } from '../planning/call-loop.js';
 import type { TriageInput, TriageResult } from '../../../core/schemas/review.js';
@@ -526,9 +529,25 @@ export async function runScheduledReview(args: {
   const { wctx, setTrackedState, callbacks } = args;
   const ref = { projectDir: wctx.projectDir, sessionId: wctx.sessionId };
   let state = args.state;
-  // A review a stop left pending, with REVIEW moved to None since: no seat reads it, so it ends here.
+  // A task review that a stop or a halt left due, with REVIEW moved to None since: no seat runs it,
+  // so it ends here. BUILD on the next brief reads a note saved for it; after the last brief no step does.
   if (resolveReviewCadence(wctx.config) === 'none') {
-    state = transitionAndSave(ref, state, { type: 'CLEAR_SCHEDULED_REVIEW' });
+    const notes =
+      state.tasks[state.currentTaskIndex] === undefined
+        ? []
+        : (state.pendingTriage?.inputs ?? []).filter((input) => input.source === 'user');
+    state = transitionsAndSave(
+      ref,
+      state,
+      [
+        ...notes.map((note) => ({
+          type: 'ENQUEUE_USER_MSG' as const,
+          message: queuedUserMessage(plainUserMessage(note.text), state.phase),
+        })),
+        { type: 'CLEAR_SCHEDULED_REVIEW' },
+      ],
+      { retryWhile: (head) => head.pendingScheduledReview !== undefined },
+    );
     setTrackedState(state);
     return { state, status: 'continue' };
   }

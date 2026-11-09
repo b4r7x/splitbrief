@@ -9,6 +9,7 @@ import { plainUserMessage, type UserMessageInput } from '../../../core/types/use
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 
 const REF = { projectDir: '/tmp/project', sessionId: 'sess-1' };
 
@@ -450,6 +451,15 @@ describe('continueRun on a halt whose action reads no typed words', () => {
     expect(restarted).toEqual([{ state, steer: WORDS }]);
   });
 
+  it('names Continue when words meet a chosen failed review under REVIEW None', () => {
+    const state = halted({ ...OLDER_ACCEPT, selectedAction: 'revise' });
+    const { deps } = makeDeps({ loaded: { kind: 'loaded', state } });
+
+    expect(continueRun({ reviewNone: true, ref: REF, steer: WORDS, deps })).toMatchObject({
+      message: 'Cannot send words with Continue. Clear them.',
+    });
+  });
+
   it('opens a pending Apply halt when nothing is typed', () => {
     const state = halted(APPLY_PARTIAL);
     const { deps, restarted } = makeDeps({ loaded: { kind: 'loaded', state } });
@@ -522,5 +532,79 @@ describe('continueRun on a halt whose action reads no typed words', () => {
 
     expect(continueRun({ reviewNone: false, ref: REF, steer: WORDS, deps }).kind).toBe('restarted');
     expect(restarted).toEqual([{ state, steer: WORDS }]);
+  });
+
+  describe('a task review of the last brief or an earlier brief under REVIEW None', () => {
+    const T001 = makeTask({ id: 'T001', status: 'done' });
+    const T002 = makeTask({ id: 'T002' });
+    const failedTaskReview = (
+      tasks: WorkflowState['tasks'],
+      workspace: WorkflowState['workspace'],
+    ): WorkflowState => ({
+      ...openState(),
+      tasks,
+      currentTaskIndex: 1,
+      workspace,
+      pendingRecovery: makeRecoveryIssue({
+        reason: 'review-failed',
+        seat: 'review',
+        taskId: undefined,
+        phase: 'implementing',
+        availableActions: ['revise', 'decide-for-me', 'end-run'],
+        recommendedAction: 'revise',
+      }),
+    });
+
+    it.each([
+      ['a worktree', WORKTREE],
+      ['the project checkout', CHECKOUT],
+    ])('refuses words on the halt past the last brief on %s', (_label, workspace) => {
+      const state = failedTaskReview([T001], workspace);
+      const { deps, restarted } = makeDeps({ loaded: { kind: 'loaded', state } });
+
+      expect(continueRun({ reviewNone: true, ref: REF, steer: WORDS, deps })).toEqual({
+        kind: 'refused',
+        reason: 'takes-no-words',
+        message: 'Cannot send words to this halt. Clear them first.',
+      });
+      expect(restarted).toEqual([]);
+    });
+
+    it('carries words on the halt to the next brief', () => {
+      const state = failedTaskReview([T001, T002], WORKTREE);
+      const { deps, restarted } = makeDeps({ loaded: { kind: 'loaded', state } });
+
+      expect(continueRun({ reviewNone: true, ref: REF, steer: WORDS, deps }).kind).toBe(
+        'restarted',
+      );
+      expect(restarted).toEqual([{ state, steer: WORDS }]);
+    });
+
+    it.each([
+      ['Apply on a worktree', WORKTREE, 'Cannot send words to Apply. Clear them.'],
+      ['the review on the checkout', CHECKOUT, 'Cannot send words to the review. Clear them.'],
+    ])('refuses words at a stop in the last task review, at %s', (_label, workspace, message) => {
+      const state: WorkflowState = {
+        ...openState(),
+        tasks: [T001],
+        currentTaskIndex: 1,
+        workspace,
+        pendingScheduledReview: { afterTaskId: T001.id },
+        interruptedStep: {
+          step: { kind: 'review', cycle: 0 },
+          source: 'user',
+          at: '2026-11-09T00:00:00.000Z',
+          cut: 'mid-step',
+        },
+      };
+      const { deps, restarted } = makeDeps({ loaded: { kind: 'loaded', state } });
+
+      expect(continueRun({ reviewNone: true, ref: REF, steer: WORDS, deps })).toEqual({
+        kind: 'refused',
+        reason: 'takes-no-words',
+        message,
+      });
+      expect(restarted).toEqual([]);
+    });
   });
 });

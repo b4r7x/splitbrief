@@ -110,18 +110,27 @@ export function getRecoveryPromptActions(issue: RecoveryIssue): RecoveryAction[]
 /**
  * The action typed words take on this halt: a retry carries them as the steer, and a halt that
  * offers no retry sends them with its revise. A halt that offers neither takes no words, and so
- * does an Apply halt: Re-run Apply reads none.
+ * does a halt that picks up at a step that reads no words (`stepReadsNone`).
  */
-export function correctionActionFor(issue: RecoveryIssue): RecoveryAction | undefined {
+export function correctionActionFor(
+  issue: RecoveryIssue,
+  stepReadsNone: boolean,
+): RecoveryAction | undefined {
   const offered: readonly RecoveryAction[] = ['retry-same-worker', 'revise'];
   return offered.find(
-    (action) => issue.availableActions.includes(action) && !leavesWordsUnread(issue.reason, action),
+    (action) =>
+      issue.availableActions.includes(action) &&
+      !leavesWordsUnread(issue.reason, action, stepReadsNone),
   );
 }
 
 /** The composer placeholder on an open halt names what the focused side takes. */
-export function recoveryComposerHint(issue: RecoveryIssue, menuFocused: boolean): string {
-  const correction = correctionActionFor(issue) !== undefined;
+export function recoveryComposerHint(
+  issue: RecoveryIssue,
+  menuFocused: boolean,
+  stepReadsNone: boolean,
+): string {
+  const correction = correctionActionFor(issue, stepReadsNone) !== undefined;
   if (menuFocused)
     return correction
       ? 'Choose an action above, or tab to type a correction…'
@@ -147,8 +156,12 @@ function applyRecoveryConsequence(
     : 'writes the files still missing';
 }
 
-function recoveryMenuContext(issue: RecoveryIssue): RecoveryActionChoiceContext {
+function recoveryMenuContext(
+  issue: RecoveryIssue,
+  reviewNone: boolean,
+): RecoveryActionChoiceContext {
   return {
+    reviewNone,
     reason: issue.reason,
     switchSeat: issue.switchSeat,
     seat: issue.seat,
@@ -158,8 +171,12 @@ function recoveryMenuContext(issue: RecoveryIssue): RecoveryActionChoiceContext 
 }
 
 /** The words of an action's menu row without its consequence, as a byline names the choice. */
-export function recoveryMenuActionLabel(action: RecoveryAction, issue: RecoveryIssue): string {
-  return recoveryActionLabel(action, recoveryMenuContext(issue));
+export function recoveryMenuActionLabel(
+  action: RecoveryAction,
+  issue: RecoveryIssue,
+  reviewNone: boolean,
+): string {
+  return recoveryActionLabel(action, recoveryMenuContext(issue, reviewNone));
 }
 
 /**
@@ -175,8 +192,9 @@ export function recoveryMenuParts(
   action: RecoveryAction,
   issue: RecoveryIssue,
   briefFinished: boolean,
+  reviewNone: boolean,
 ): ConversationRowSegment[] {
-  const label = recoveryActionParts(action, recoveryMenuContext(issue)).map(
+  const label = recoveryActionParts(action, recoveryMenuContext(issue, reviewNone)).map(
     (part): ConversationRowSegment => ({
       text: part.text,
       tone: part.seat === undefined ? 'text' : CREW_SEAT_ROLES[part.seat],
@@ -185,19 +203,25 @@ export function recoveryMenuParts(
   const consequence =
     action === 'end-run' && briefFinished
       ? 'closes this run, keeps its changes'
-      : recoveryMenuConsequence(action, issue);
+      : recoveryMenuConsequence(action, issue, reviewNone);
   return consequence === undefined
     ? label
     : [...label, { text: SOFT_SEP, tone: 'textDim' }, { text: consequence, tone: 'textDim' }];
 }
 
-function recoveryMenuConsequence(action: RecoveryAction, issue: RecoveryIssue): string | undefined {
+function recoveryMenuConsequence(
+  action: RecoveryAction,
+  issue: RecoveryIssue,
+  reviewNone: boolean,
+): string | undefined {
   if (action === 'retry-same-worker' || action === 'restore-backup') {
     const apply = applyRecoveryConsequence(action, issue.reason);
     if (apply !== undefined) return apply;
   }
   if (action === 'revise')
-    return issue.reason === 'review-failed' ? REVIEW_FAILED_REVISE_CONSEQUENCE : undefined;
+    return issue.reason === 'review-failed' && !reviewNone
+      ? REVIEW_FAILED_REVISE_CONSEQUENCE
+      : undefined;
   const seatLevel = isSeatLevelRetry(issue);
   const says =
     action === 'switch-seat' ||

@@ -9,6 +9,7 @@ import type { SeatDownPolicy } from '../core/types/config-options.js';
 import type { Config } from '../core/schemas/config.js';
 import { configuredReviewerRunner } from '../core/config/accessors/reviewer-runner.js';
 import type { WorkflowState } from '../core/schemas/workflow.js';
+import { resolveReviewCadence } from '../core/config/runtime/resolve.js';
 import { recoveryFactString } from '../core/schemas/recovery/facts.js';
 import { readSession } from '../core/sessions/io.js';
 import { sessionStatusWord } from '../core/sessions/display.js';
@@ -75,10 +76,13 @@ export function recordWriterFor(plain: boolean): RecordWriter {
 export function emitRecoveryAndFailIfPending({
   state,
   sessionId,
+  reviewNone,
   writeRecord,
 }: {
   state: WorkflowState | null;
   sessionId: string;
+  /** REVIEW None in the config the next pass runs on: the line names the row the panel shows. */
+  reviewNone: boolean;
   writeRecord: RecordWriter;
 }): void {
   const conversation = state?.pendingPlannerConversation;
@@ -104,7 +108,7 @@ export function emitRecoveryAndFailIfPending({
   }
   const issue = state?.pendingRecovery;
   if (!issue || isAnsweredApplyRecovery(issue)) return;
-  const resumeCommand = formatResumeCommand(sessionId, issue);
+  const resumeCommand = formatResumeCommand(sessionId, issue, reviewNone);
   // A seat-down halt is self-contained for a machine consumer: the finer cause,
   // the tool's own words, the request id, the reset and the declared fallback.
   const cause = recoveryFactString(issue.facts, 'cause');
@@ -446,7 +450,12 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
         const after = loadOwnedState({ projectDir, sessionId });
         if (after !== null && after.pendingRecovery?.switchSeat?.auto !== undefined) {
           await publishHandoffNotice(after);
-          emitRecoveryAndFailIfPending({ state: after, sessionId, writeRecord });
+          emitRecoveryAndFailIfPending({
+            state: after,
+            sessionId,
+            reviewNone: resolveReviewCadence(prepared.config) === 'none',
+            writeRecord,
+          });
         }
       }
 
@@ -466,7 +475,12 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
             !isAnsweredApplyRecovery(preflight.pendingRecovery)
           )
             await publishHandoffNotice(preflight);
-          emitRecoveryAndFailIfPending({ state: preflight, sessionId, writeRecord });
+          emitRecoveryAndFailIfPending({
+            state: preflight,
+            sessionId,
+            reviewNone: resolveReviewCadence(prepared.config) === 'none',
+            writeRecord,
+          });
         }
       }
 
@@ -522,7 +536,12 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
 
   const finalState = loadOwnedState({ projectDir, sessionId });
   await publishHandoffNotice(finalState);
-  emitRecoveryAndFailIfPending({ state: finalState, sessionId, writeRecord });
+  emitRecoveryAndFailIfPending({
+    state: finalState,
+    sessionId,
+    reviewNone: resolveReviewCadence(options.prepared.config) === 'none',
+    writeRecord,
+  });
   // A review accepted as is keeps its failed verdict: the run is ready to apply or closed, and the
   // exit still says the review failed.
   const ready = emitReadyToApply(finalState, sessionId, writeRecord);

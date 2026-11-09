@@ -330,7 +330,7 @@ The placeholder, byline, transcript, and `/queue` output use `queueCopy` for the
 
 The UI sets `queueCopy`'s `steerable` input when the seat of the attached call (`steerableCall`, see [Workflow actions module](#workflow-actions-module)) matches the receiving seat.
 
-The byline reads `1 queued for BUILD on T003`, or `1 queued` when space is narrow. It keeps the message in the queued count until the first delivery event removes its id. A repeated delivery id changes nothing. A reopened stopped run keeps the count beside its saved byline.
+The byline reads `1 queued for BUILD on T003`, or `1 queued` when space is narrow or no seat reads the message. It keeps the message in the queued count until the first delivery event removes its id. A repeated delivery id changes nothing. A reopened stopped run keeps the count beside its saved byline.
 
 Transcript rows read the optional `seat`, `taskId`, and `steerable` fields from `message_queued`. They read the optional `seat`, `taskId`, and `via` fields from `queue_drained`. The queued row uses the saved `steerable` value for delivery timing.
 

@@ -74,6 +74,7 @@ export async function settleReadyRun(
       emitRecoveryAndFailIfPending({
         state: result.state,
         sessionId,
+        reviewNone: input.reviewNone,
         writeRecord: recordWriterFor(!json),
       });
       throw cliError(`Apply of run ${sessionId} stopped.`, 1);

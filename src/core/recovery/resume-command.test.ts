@@ -5,20 +5,44 @@ import { continuesHeadless, formatResumeCommand } from './resume-command.js';
 const skipIssue = makeRecoveryIssue({ recommendedAction: 'skip-current-task' });
 
 describe('formatResumeCommand', () => {
+  it.each([
+    [false, 'Review again'],
+    [true, 'Continue'],
+  ])(
+    'names the row of a failed review the panel shows when REVIEW None is %s',
+    (reviewNone, row) => {
+      const issue = makeRecoveryIssue({
+        reason: 'review-failed',
+        availableActions: ['revise', 'end-run'],
+        recommendedAction: 'revise',
+      });
+
+      expect(formatResumeCommand('s1', issue, reviewNone)).toBe(
+        `splitbrief continue s1, then choose ${row} in the recovery panel`,
+      );
+    },
+  );
+
   it('names the skip action the CLI accepts', () => {
-    expect(formatResumeCommand('s1', skipIssue)).toBe('splitbrief continue s1 --action skip');
+    expect(formatResumeCommand('s1', skipIssue, false)).toBe(
+      'splitbrief continue s1 --action skip',
+    );
   });
 
   it('names the retry action', () => {
     expect(
-      formatResumeCommand('s1', makeRecoveryIssue({ recommendedAction: 'retry-same-worker' })),
+      formatResumeCommand(
+        's1',
+        makeRecoveryIssue({ recommendedAction: 'retry-same-worker' }),
+        false,
+      ),
     ).toBe('splitbrief continue s1 --action retry');
   });
 
   it('names the end-run action', () => {
-    expect(formatResumeCommand('s1', makeRecoveryIssue({ recommendedAction: 'end-run' }))).toBe(
-      'splitbrief continue s1 --action end-run',
-    );
+    expect(
+      formatResumeCommand('s1', makeRecoveryIssue({ recommendedAction: 'end-run' }), false),
+    ).toBe('splitbrief continue s1 --action end-run');
   });
 
   it('carries the first swap candidate for a seat switch', () => {
@@ -28,7 +52,7 @@ describe('formatResumeCommand', () => {
       recommendedAction: 'switch-seat',
       switchSeat: { seat: 'build', candidates: [{ tool: 'codex' }, { tool: 'cursor' }] },
     });
-    expect(formatResumeCommand('s1', issue)).toBe(
+    expect(formatResumeCommand('s1', issue, false)).toBe(
       'splitbrief continue s1 --action switch-seat:codex',
     );
   });
@@ -43,7 +67,7 @@ describe('formatResumeCommand', () => {
         candidates: [{ tool: 'opencode', model: 'opencode-go/kimi-k3', effort: 'high' }],
       },
     });
-    expect(formatResumeCommand('s1', issue)).toBe(
+    expect(formatResumeCommand('s1', issue, false)).toBe(
       'splitbrief continue s1 --action switch-seat:opencode:opencode-go/kimi-k3@high',
     );
   });
@@ -58,7 +82,7 @@ describe('formatResumeCommand', () => {
         candidates: [{ tool: 'opencode', model: 'opencode-go/kimi-k3', variant: 'high' }],
       },
     });
-    expect(formatResumeCommand('s1', issue)).toBe(
+    expect(formatResumeCommand('s1', issue, false)).toBe(
       'splitbrief continue s1 --action switch-seat:opencode:opencode-go/kimi-k3@high',
     );
   });
@@ -76,7 +100,9 @@ describe('formatResumeCommand', () => {
         recommendedAction,
       });
 
-      expect(formatResumeCommand('s1', issue)).toBe(`splitbrief continue s1 --action ${flag}`);
+      expect(formatResumeCommand('s1', issue, false)).toBe(
+        `splitbrief continue s1 --action ${flag}`,
+      );
       expect(continuesHeadless(issue)).toBe(true);
     },
   );
@@ -97,7 +123,7 @@ describe('formatResumeCommand', () => {
         recommendedAction: action,
       });
 
-      expect(formatResumeCommand('s1', issue)).toBe(
+      expect(formatResumeCommand('s1', issue, false)).toBe(
         `splitbrief continue s1, then choose ${label} in the recovery panel`,
       );
     },
@@ -126,7 +152,7 @@ describe('continuesHeadless', () => {
       facts: { question: 'Which locale table does greet.ts read?' },
     });
     expect(continuesHeadless(question)).toBe(false);
-    expect(formatResumeCommand('s1', question)).toBe(
+    expect(formatResumeCommand('s1', question, false)).toBe(
       'splitbrief continue s1, then choose Try again in the recovery panel',
     );
   });

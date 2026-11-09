@@ -30,8 +30,8 @@ export type RunStatus =
       kind: 'open';
       stop: StopReason;
       resumeAt: StepRef;
-      /** REVIEW None holds this run at its review step: the pass there runs no seat. */
-      skipsReview?: true;
+      /** REVIEW None is on: no seat reviews this run, and a pass at its review step runs none. */
+      reviewNone?: true;
     }
   | { kind: 'ready-to-apply'; override: boolean }
   | { kind: 'closed'; as: 'complete' | 'ended' | 'applied' | 'undone' | 'discarded' };
@@ -211,7 +211,7 @@ export function deriveRunStatus(
       kind: 'open',
       stop,
       resumeAt,
-      ...(input.reviewNone && resumeAt.kind === 'review' && { skipsReview: true as const }),
+      ...(input.reviewNone && { reviewNone: true as const }),
     };
   };
   const waiting = (on: WaitingOn): RunStatus => open({ kind: 'waiting-for-you', on });

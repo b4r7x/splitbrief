@@ -1356,6 +1356,7 @@ describe('useRunLoop', () => {
           sessionId,
           issue,
           resumeStep(state, false),
+          false,
         );
         return makeSummary();
       },
@@ -2232,7 +2233,7 @@ describe('useRunLoop', () => {
       const inst = renderHarness({ prepared, captureRunner, runWorkflow: run.engine });
       await answerRecoveryPanel(captureRunner, 'retry');
       await vi.waitFor(() => {
-        expect(errorMessages().some((message) => message.includes('config'))).toBe(true);
+        expect(feedbackStore.get().message).toContain('config');
       });
 
       expect(run.entered).toHaveLength(1);
@@ -4175,7 +4176,7 @@ describe('useRunLoop — a seat wait after the seat changed', () => {
       'version: 3\nplanner: [unclosed\n',
     );
     await answerRecoveryPanel(captureRunner, 'l');
-    await vi.waitFor(() => expect(errorMessages().join('\n')).toContain('Malformed YAML'), {
+    await vi.waitFor(() => expect(feedbackStore.get().message).toContain('Malformed YAML'), {
       timeout: 5000,
     });
     expect(run.entered).toHaveLength(0);

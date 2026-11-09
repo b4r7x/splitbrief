@@ -18,6 +18,8 @@ export interface RecoveryActionChoiceContext {
   /** The seat the halt stopped, where no offer names it — a recovery event carries only this. */
   seat?: CrewSeatId | undefined;
   resetAt?: string | undefined;
+  /** REVIEW None is on, so no seat reviews the run again. */
+  reviewNone?: boolean | undefined;
 }
 
 /**
@@ -64,7 +66,8 @@ export function recoveryActionParts(
         : [{ text: 'Change ' }, { text: CREW_SEAT_LABELS[seat], seat }, { text: ' tool' }];
     }
     case 'revise':
-      return [{ text: context.reason === 'review-failed' ? 'Review again' : 'Send a correction' }];
+      if (context.reason !== 'review-failed') return [{ text: 'Send a correction' }];
+      return [{ text: context.reviewNone === true ? 'Continue' : 'Review again' }];
     case 'accept-as-is':
       return [
         {

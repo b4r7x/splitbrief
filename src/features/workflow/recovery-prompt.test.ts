@@ -35,6 +35,7 @@ import {
   recommendedRecoveryAction,
   recoveryComposerHint,
   RECOVERY_EMPTY_ENTER_NOTICE,
+  recoveryMenuActionLabel,
   recoveryMenuParts,
   recoveryPromptSummaryRows,
 } from './recovery-prompt.js';
@@ -73,7 +74,7 @@ const baseIssue: RecoveryIssue = {
 };
 
 function recoveryMenuText(action: RecoveryAction, issue: RecoveryIssue): string {
-  return recoveryMenuParts(action, issue, false)
+  return recoveryMenuParts(action, issue, false, false)
     .map((part) => part.text)
     .join('');
 }
@@ -129,8 +130,8 @@ it('sends a typed correction on a review its seat could not see to Try again', (
     acceptAsIs: true,
     scope: 'final',
   });
-  expect(correctionActionFor(issue)).toBe('retry-same-worker');
-  expect(recoveryComposerHint(issue, true)).toBe(
+  expect(correctionActionFor(issue, false)).toBe('retry-same-worker');
+  expect(recoveryComposerHint(issue, true, false)).toBe(
     'Choose an action above, or tab to type a correction…',
   );
 });
@@ -252,7 +253,9 @@ it('fits the Files row of an Apply cut off with 2000 files left in well under a 
 });
 
 it('carries the action seat and consequence before formatting the label', () => {
-  expect(recoveryMenuParts('switch-seat', makeRecoveryIssue({ seat: 'build' }), false)).toEqual([
+  expect(
+    recoveryMenuParts('switch-seat', makeRecoveryIssue({ seat: 'build' }), false, false),
+  ).toEqual([
     { text: 'Change ', tone: 'text' },
     { text: 'BUILD', tone: 'implementer' },
     { text: ' tool', tone: 'text' },
@@ -347,9 +350,17 @@ describe('the words of a row that runs a brief again', () => {
   });
 });
 
+it('names Continue on a failed review under REVIEW None: no seat reviews again', () => {
+  const issue = makeRecoveryIssue({ reason: 'review-failed' });
+  expect(recoveryMenuParts('revise', issue, false, true)).toEqual([
+    { text: 'Continue', tone: 'text' },
+  ]);
+  expect(recoveryMenuActionLabel('revise', issue, true)).toBe('Continue');
+});
+
 it('keeps the Review again hint dim', () => {
   expect(
-    recoveryMenuParts('revise', makeRecoveryIssue({ reason: 'review-failed' }), false),
+    recoveryMenuParts('revise', makeRecoveryIssue({ reason: 'review-failed' }), false, false),
   ).toEqual([
     { text: 'Review again', tone: 'text' },
     { text: ' · ', tone: 'textDim' },
@@ -372,7 +383,7 @@ it.each([
     'puts back the files Apply replaced and removes the ones it created',
   ],
 ] as const)('keeps the %s %s action consequence dim', (reason, action, label, consequence) => {
-  expect(recoveryMenuParts(action, makeRecoveryIssue({ reason }), false)).toEqual([
+  expect(recoveryMenuParts(action, makeRecoveryIssue({ reason }), false, false)).toEqual([
     { text: label, tone: 'text' },
     { text: ' · ', tone: 'textDim' },
     { text: consequence, tone: 'textDim' },
@@ -442,12 +453,14 @@ it.each<[number, number, string, string]>([
 
 it('End run names its kept changes only after a brief finished', () => {
   const issue = makeRecoveryIssue({ reason: 'apply-conflict' });
-  expect(recoveryMenuParts('end-run', issue, true)).toEqual([
+  expect(recoveryMenuParts('end-run', issue, true, false)).toEqual([
     { text: 'End run', tone: 'text' },
     { text: ' · ', tone: 'textDim' },
     { text: 'closes this run, keeps its changes', tone: 'textDim' },
   ]);
-  expect(recoveryMenuParts('end-run', issue, false)).toEqual([{ text: 'End run', tone: 'text' }]);
+  expect(recoveryMenuParts('end-run', issue, false, false)).toEqual([
+    { text: 'End run', tone: 'text' },
+  ]);
 });
 
 it('preserves the canonical retry cause when an old message starts with its seat', () => {
@@ -716,7 +729,7 @@ describe('recovery prompt', () => {
 
   it('tells the user that an empty Enter sent nothing', () => {
     expect(RECOVERY_EMPTY_ENTER_NOTICE).toBe('Nothing to send. Tab to choose an action.');
-    expect(recoveryComposerHint(baseIssue, false)).toBe(
+    expect(recoveryComposerHint(baseIssue, false, false)).toBe(
       'Type a correction, or tab to choose an action…',
     );
     expect(
@@ -726,6 +739,7 @@ describe('recovery prompt', () => {
           availableActions: ['skip-current-task', 'end-run'],
           recommendedAction: 'skip-current-task',
         },
+        false,
         false,
       ),
     ).toBe('Tab to choose an action…');
@@ -1211,7 +1225,7 @@ describe('recovery prompt', () => {
           : ['skip-current-task', 'end-run'],
       };
 
-      expect(recoveryComposerHint(issue, menuFocused)).toBe(hint);
+      expect(recoveryComposerHint(issue, menuFocused, false)).toBe(hint);
     },
   );
 
@@ -1230,13 +1244,28 @@ describe('recovery prompt', () => {
         recommendedAction: 'retry-same-worker',
       };
 
-      expect(correctionActionFor(issue)).toBeUndefined();
-      expect(recoveryComposerHint(issue, false)).toBe('Tab to choose an action…');
-      expect(recoveryComposerHint(issue, true)).toBe('Choose an action above…');
+      expect(correctionActionFor(issue, true)).toBeUndefined();
+      expect(recoveryComposerHint(issue, false, true)).toBe('Tab to choose an action…');
+      expect(recoveryComposerHint(issue, true, true)).toBe('Choose an action above…');
     },
   );
 
+  it('invites no correction on a failed review when the step it resumes reads no words', () => {
+    const issue: RecoveryIssue = {
+      ...baseIssue,
+      reason: 'review-failed',
+      taskId: undefined,
+      availableActions: ['revise', 'end-run'],
+      recommendedAction: 'revise',
+    };
+
+    expect(correctionActionFor(issue, true)).toBeUndefined();
+    expect(recoveryComposerHint(issue, false, true)).toBe('Tab to choose an action…');
+    expect(recoveryComposerHint(issue, true, true)).toBe('Choose an action above…');
+    expect(correctionActionFor(issue, false)).toBe('revise');
+  });
+
   it('keeps Try again as the correction of a brief halt', () => {
-    expect(correctionActionFor(baseIssue)).toBe('retry-same-worker');
+    expect(correctionActionFor(baseIssue, false)).toBe('retry-same-worker');
   });
 });

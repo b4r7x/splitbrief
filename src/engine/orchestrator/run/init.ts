@@ -1,5 +1,6 @@
 import type { Config } from '../../../core/schemas/config.js';
 import { isRetiredRecoveryReason } from '../../../core/recovery/halt.js';
+import { stepReadsNoWords } from '../../../core/recovery/typed-words.js';
 import { isImplementerPhase, isLivePhase } from '../../../core/phases.js';
 import {
   createStartReadinessRecord,
@@ -597,7 +598,7 @@ function publishResumedSteer(input: {
 /**
  * What this run was continued with. The step the stop recorded owns it, so the
  * partial a cut attempt left reaches that step and no other; a run continued
- * without a recorded park, or parked at Apply, which takes no words, seeds the
+ * without a recorded park, or parked at a step that reads no words, seeds the
  * steer at the step it picks up under the REVIEW of this pass.
  */
 export async function resumeContinuation(input: {
@@ -627,20 +628,21 @@ export async function resumeContinuation(input: {
     consult === undefined &&
     task.status === 'in_progress' &&
     state.attempt === cutBrief.attempt;
+  const owner =
+    interrupted !== undefined && !stepReadsNoWords(interrupted.step, input.reviewNone)
+      ? interrupted
+      : undefined;
   // A boundary park cut nothing, and a cold crash flushed nothing it can name.
   const partial =
-    interrupted !== undefined &&
-    interrupted.cut !== 'boundary' &&
-    (interrupted.step.kind !== 'brief' || keepWorkspace)
+    owner !== undefined &&
+    owner.cut !== 'boundary' &&
+    (owner.step.kind !== 'brief' || keepWorkspace)
       ? await readInterruptedPartial(ref)
       : undefined;
   if (partial === undefined && steer === undefined && !keepWorkspace && consult === undefined)
     return createContinuationHolder();
   return createContinuationHolder({
-    step:
-      interrupted === undefined || interrupted.step.kind === 'apply'
-        ? resumeStep(state, input.reviewNone)
-        : interrupted.step,
+    step: owner === undefined ? resumeStep(state, input.reviewNone) : owner.step,
     ...(partial !== undefined && { partial }),
     ...(steer !== undefined && { steer }),
     ...(keepWorkspace && { keepWorkspace: true, briefFingerprint: hashTaskBrief([task]) }),

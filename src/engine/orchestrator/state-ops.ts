@@ -759,6 +759,7 @@ export function raisePendingRecovery(
     issue,
     // Only a brief, the planning session or a seat review raises a halt: never a pass under REVIEW None.
     resumeStep(next, false),
+    false,
   );
   setTrackedState?.(next);
   return next;

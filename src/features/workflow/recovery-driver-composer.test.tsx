@@ -18,7 +18,16 @@ import { feedbackStore } from '../../stores/ui/feedback.js';
 import { inputHistoryStore } from '../../stores/ui/input-history.js';
 import { attachmentsStore } from '../../stores/workflow/attachments.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../engine/events/workflow-cancel.js';
-import { plainAnswer, useInputMode, type UseInputModeResult } from './hooks/use-input-mode.js';
+import { taskId } from '../../core/schemas/task.js';
+import { buildReviewFailedRecoveryIssue } from '../../engine/orchestrator/recovery/builders/task.js';
+import { hydrateFromState } from '../../stores/workflow/actions/hydrate.js';
+import { RecoveryMenu } from './components/recovery-menu.js';
+import {
+  plainAnswer,
+  type QuestionAnswer,
+  useInputMode,
+  type UseInputModeResult,
+} from './hooks/use-input-mode.js';
 import { createRecoveryDriver } from './recovery-driver.js';
 
 function RecoveryComposerHarness({ capture }: { capture: { current: UseInputModeResult | null } }) {
@@ -43,6 +52,80 @@ function RecoveryComposerHarness({ capture }: { capture: { current: UseInputMode
 }
 
 afterEach(resetAllStores);
+
+it('turns the row of a failed review to Continue while the panel waits and REVIEW moves to None', async () => {
+  const projectDir = createTempDir('recovery-panel-none');
+  onTestFinished(() => cleanupTempDir(projectDir));
+  const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
+  configStore.__testReset({ projectDir, config });
+  const issue = buildReviewFailedRecoveryIssue({
+    blocking: 1,
+    phase: 'implementing',
+    createdAt: '2026-11-09T00:00:00.000Z',
+  });
+  const state = makeImplState([makeTask({ id: 'T001', status: 'done' })], {
+    currentTaskIndex: 1,
+    pendingScheduledReview: { afterTaskId: taskId('T001') },
+    pendingRecovery: issue,
+  });
+  hydrateFromState(state, false);
+  const ui = renderFeature(
+    <RecoveryMenu
+      issue={issue}
+      width={80}
+      clampedBoxRows={14}
+      focused={false}
+      onFocusChange={() => {}}
+      onResolve={() => {}}
+    />,
+  );
+  onTestFinished(ui.unmount);
+  await flushEffects();
+  expect(ui.lastFrame()).toContain('Review again');
+  const prepared = makePreparedExecution({
+    projectDir,
+    sessionId: 'recovery-panel-none',
+    feature: 'recovery panel none',
+    config,
+    resumeState: state,
+  });
+  const wait = Promise.withResolvers<QuestionAnswer>();
+  const asked = Promise.withResolvers<void>();
+  const answered = createRecoveryDriver({
+    prepared,
+    configOfRun: prepared.sourceConfig,
+    inputMode: {
+      mode: 'question',
+      hint: '',
+      questionEpoch: 0,
+      setReviewMode: async () => ({ approved: false }),
+      setQuestionMode: () => {
+        asked.resolve();
+        return wait.promise;
+      },
+      resolve: () => {},
+      resetMode: () => {},
+    },
+    abortedRef: { current: false },
+    retentionNoticeHandled: { current: true },
+    sink: () => {},
+    setInlineResume: () => {},
+  })({ state, controller: new AbortController(), republishPrompt: false }).catch(
+    (err: unknown) => err,
+  );
+  onTestFinished(() => wait.reject(WORKFLOW_USER_CANCELLED_ABORT_REASON));
+  await asked.promise;
+
+  configStore.__testReset({ projectDir, config: { ...config, reviewer: 'none' } });
+  await flushEffects();
+
+  const frame = ui.lastFrame();
+  expect(frame).toContain('Continue');
+  expect(frame).not.toContain('Review again');
+
+  wait.reject(WORKFLOW_USER_CANCELLED_ABORT_REASON);
+  expect(await answered).toBe(WORKFLOW_USER_CANCELLED_ABORT_REASON);
+});
 
 it('restores the whole refused recovery draft when the question prompt is re-armed', async () => {
   const projectDir = createTempDir('recovery-composer');

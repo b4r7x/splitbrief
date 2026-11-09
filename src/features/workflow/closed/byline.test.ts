@@ -1031,3 +1031,62 @@ it('keeps the review seat in an at-rest halt title', () => {
     { text: '⏎ to decide', tone: 'textDim' },
   ]);
 });
+
+it('names the chosen Continue of a failed review under REVIEW None', () => {
+  const status: RunStatus = {
+    kind: 'open',
+    stop: {
+      kind: 'waiting-for-you',
+      on: {
+        kind: 'halt',
+        issue: makeRecoveryIssue({
+          reason: 'review-failed',
+          status: 'applying',
+          selectedAction: 'revise',
+        }),
+      },
+    },
+    resumeAt: { kind: 'apply' },
+    reviewNone: true,
+  };
+  const line = openRunByline({
+    wait: null,
+    planCard: false,
+    failure: null,
+    status,
+    continuable: true,
+    width: 80,
+    now: NOW,
+  });
+  expect(line).toContain('⏎ to continue');
+  expect(line).not.toContain('review again');
+});
+
+it('keeps the chosen Review again of a failed review with a review seat', () => {
+  const status: RunStatus = {
+    kind: 'open',
+    stop: {
+      kind: 'waiting-for-you',
+      on: {
+        kind: 'halt',
+        issue: makeRecoveryIssue({
+          reason: 'review-failed',
+          status: 'applying',
+          selectedAction: 'revise',
+        }),
+      },
+    },
+    resumeAt: { kind: 'apply' },
+  };
+  expect(
+    openRunByline({
+      wait: null,
+      planCard: false,
+      failure: null,
+      status,
+      continuable: true,
+      width: 80,
+      now: NOW,
+    }),
+  ).toContain('⏎ to review again');
+});
