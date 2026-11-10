@@ -1,11 +1,15 @@
 import { useEffect } from 'react';
 import { Text } from 'ink';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
+import { stopStore } from '../../../stores/workflow/stop.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../../engine/events/workflow-cancel.js';
+import { plainUserMessage } from '../../../core/types/user-input.js';
+import { createDraftDocument } from '../../../core/composer/document.js';
+import { clearAllHandlers, requestSteer, setStopHandler } from '../handlers.js';
 import {
   plainAnswer,
   useInputMode,
@@ -316,5 +320,55 @@ describe('useInputMode — mode transitions', () => {
 
     expect(answer).toEqual(plainAnswer(''));
     expect(questionPromptStore.get().hint).toBeNull();
+  });
+});
+
+describe('useInputMode, a steer while a question waits', () => {
+  const WORDS = 'also fix the typo';
+
+  afterEach(() => {
+    clearAllHandlers();
+    stopStore.__testReset();
+    controlsStore.reset();
+    questionPromptStore.reset();
+  });
+
+  it('a steer answers any question that waits and stops nothing', async () => {
+    const stop = vi.fn();
+    setStopHandler(stop);
+    const { ref, ui } = mount();
+    await tick();
+    const question = requireRef(ref).setQuestionMode('Choose an action above');
+    await waitForMode(ref, 'question');
+
+    expect(requestSteer(plainUserMessage(WORDS))).toBeUndefined();
+
+    expect(stop).not.toHaveBeenCalled();
+    await expect(question).resolves.toEqual({
+      message: plainUserMessage(WORDS),
+      document: createDraftDocument(WORDS),
+    });
+    ui.unmount();
+  });
+
+  it('gives the steer to the newer question when one replaces another', async () => {
+    const stop = vi.fn();
+    setStopHandler(stop);
+    const { ref, ui } = mount();
+    await tick();
+    const older = requireRef(ref).setQuestionMode('first question');
+    await waitForMode(ref, 'question', 'first question');
+    const newer = requireRef(ref).setQuestionMode('second question');
+    await expect(older).resolves.toEqual(plainAnswer(''));
+    await waitForMode(ref, 'question', 'second question');
+
+    expect(requestSteer(plainUserMessage(WORDS))).toBeUndefined();
+
+    expect(stop).not.toHaveBeenCalled();
+    await expect(newer).resolves.toEqual({
+      message: plainUserMessage(WORDS),
+      document: createDraftDocument(WORDS),
+    });
+    ui.unmount();
   });
 });

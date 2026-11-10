@@ -151,11 +151,13 @@ async function openRunFromSessions<T>(
 
 /**
  * Opens the ready run from home, picks Apply, and types `keys` one by one while Apply is held. The
- * screen is read while held, then the hold is released and `settle` reads the end.
+ * screen is read while held, after it shows each text of `shown`, then the hold is released and
+ * `settle` reads the end.
  */
 async function applyWhileHeld(
   keys: readonly string[],
   settle: (screen: () => string, exited: Promise<PtyExitEvent>) => Promise<void>,
+  shown: readonly string[] = [],
 ) {
   const target = createStopContinueFixture(() => '', { isolation: 'staged-copy' });
   fixture = target;
@@ -185,6 +187,7 @@ async function applyWhileHeld(
           write(key);
           await delay(PROMPT_TYPEAHEAD_GRACE_MS);
         }
+        for (const text of shown) await waitForText(text);
         await delay(1_000);
         const held = screen();
         const heldStatus = readState(target, ready.ref.sessionId);
@@ -269,6 +272,22 @@ it('keeps the run screen on a typed /home while Apply writes, then goes home onc
   expect(held).toContain('Returns home when Apply finishes');
   expect(exitedEarly).toBe(false);
   expectApplied(target, ready.ref.sessionId);
+});
+
+it('gives a refused /steer back to the composer while Apply writes', async () => {
+  const { held } = await applyWhileHeld(['/steer also fix the typo', '\r'], async () => {});
+  expectApplyingScreen(held);
+  expect(held).toContain('Apply is still writing to your checkout.');
+  expect(held).toContain('› /steer also fix the typo');
+});
+
+it('gives a /skills line that names no known skill back to the composer while Apply writes', async () => {
+  const line = '/skills zzz-typo';
+  const reason = 'Unknown skill: zzz-typo';
+  const { held } = await applyWhileHeld([line, '\r'], async () => {}, [reason, `› ${line}`]);
+  expectApplyingScreen(held);
+  expect(held).toContain(reason);
+  expect(held).toContain(`› ${line}`);
 });
 
 it('names the whole reason first when the sessions list refuses a pick while Apply writes', async () => {

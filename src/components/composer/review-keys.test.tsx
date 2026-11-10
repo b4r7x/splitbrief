@@ -45,6 +45,7 @@ function ReviewPanel() {
         budgetRows: 40,
         selectedIndex: 1,
         draft: commenting ? reviewDraftTarget(text, requested) : null,
+        focused: true,
       }}
     />
   );

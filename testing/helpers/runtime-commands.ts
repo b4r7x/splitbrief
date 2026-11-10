@@ -29,8 +29,8 @@ export function makeCtx(overrides: Partial<RuntimeCommandContext> = {}): Runtime
     listSkills: () => [],
     toggleSkill: () => ({ status: 'unknown' as const }),
     refreshSkills: async () => {},
-    resumeRun: noopTrue,
-    steerRun: noopTrue,
+    resumeRun: () => undefined,
+    steerRun: () => undefined,
     endRun: noopTrue,
     getQueueCopy: (count = 0) => queueCopy({ seat: null, count }),
     clearQueue: () => ({ status: 'cleared', count: 0 }),
@@ -68,7 +68,7 @@ export function runCommandInTest(args: {
   phase?: Phase;
   openRunAtRest?: boolean;
   applyUnfinished?: boolean;
-  onError: (msg: string) => void;
+  onError: (msg: string, raw: string) => void;
 }): Promise<void> {
   return executeRuntimeCommand(args.commands, args.raw, {
     screen: args.screen,

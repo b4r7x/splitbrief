@@ -69,7 +69,7 @@ export interface WorkflowScreenDeps {
 }
 
 interface UseWorkflowScreenOptions {
-  onRuntimeCommand: (command: string) => void;
+  onRuntimeCommand: (command: string, sentBy?: 'row' | 'answer') => void;
   deps?: WorkflowScreenDeps | undefined;
 }
 
@@ -134,14 +134,15 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
   }, [atRestProjectDir, atRestSessionId]);
 
   // One continuation path for a run at rest: the engine decides whether the run can be picked up,
-  // the preparation attempt re-enters it in place, and the screen never moves.
+  // the preparation attempt re-enters it in place, and the screen never moves. A refusal comes back
+  // as its reason, and the caller shows it.
   const continueAtRest = (
     message: UserMessageInput,
     run = atRestRecord,
     resumeCause?: 'seat-change',
-  ): void => {
+  ): string | undefined => {
     const sessionSelect = deps?.sessionSelect;
-    if (run === undefined || sessionSelect === undefined) return;
+    if (run === undefined || sessionSelect === undefined) return undefined;
     const outcome = continueRun({
       ref: run.ref,
       ...(message.text.trim() === '' ? {} : { steer: message }),
@@ -160,13 +161,24 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
         },
       },
     });
-    if (outcome.kind !== 'refused') return;
+    if (outcome.kind !== 'refused') return undefined;
     if (outcome.reason === 'closed' || outcome.reason === 'ready-to-apply')
       void rereadRunAtRest(run.ref);
-    if (outcome.reason === 'takes-no-words')
-      composerDraftStore.requestPrepend(composerLiveStore.get().document);
-    feedbackStore.setError(outcome.message);
+    return outcome.message;
   };
+
+  // The composer's own send, typed words or a bare ⏎. A refusal shows its reason, and the typed
+  // words go back into the composer.
+  const sendFromComposer =
+    (send: (message: UserMessageInput) => string | undefined) =>
+    (message: UserMessageInput): void => {
+      const refusal = send(message);
+      if (refusal === undefined) return;
+      if (message.text.trim() !== '') {
+        composerDraftStore.requestPrepend(composerLiveStore.get().document);
+      }
+      feedbackStore.setError(refusal);
+    };
 
   const continuation = useRunContinue({ prepared, inputMode });
   useRunLoop({
@@ -177,7 +189,7 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
     inputMode,
     continuation,
     runWorkflow: deps?.runWorkflow,
-    continueAtRest: (run, steer) => continueAtRest(steer, run, 'seat-change'),
+    continueAtRest: (run, steer, resumeCause) => continueAtRest(steer, run, resumeCause),
   });
 
   const approvalPromptState = approvalPromptStore.use((s) => s);
@@ -220,9 +232,9 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
   // re-enters the run and says so when it cannot.
   const handleInput =
     atRestRecord !== undefined
-      ? continueAtRest
+      ? sendFromComposer(continueAtRest)
       : parked || cancelled
-        ? continuation.handleResume
+        ? sendFromComposer(continuation.handleResume)
         : review.handleInput;
 
   const inputHint =
@@ -255,12 +267,12 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
     onEmptySubmit:
       atRestRecord !== undefined
         ? composer?.continuable === true
-          ? () => continueAtRest(plainUserMessage(''))
+          ? () => sendFromComposer(continueAtRest)(plainUserMessage(''))
           : requestLeaveSession
         : applying
           ? requestLeaveSession
           : parked
-            ? () => requestResume(plainUserMessage(''))
+            ? () => sendFromComposer(requestResume)(plainUserMessage(''))
             : undefined,
     inputHint,
     commandsOnly: composer?.commandsOnly ?? false,

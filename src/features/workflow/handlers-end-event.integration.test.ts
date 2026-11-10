@@ -104,7 +104,7 @@ describe('End run at rest', () => {
     setResumeHandler(resume);
 
     expect(requestEndRun()).toBe(true);
-    expect(requestResume(plainUserMessage(''))).toBe(false);
+    expect(requestResume(plainUserMessage(''))).toBe('Finish stopping before resuming.');
     expect(resume).not.toHaveBeenCalled();
 
     await vi.waitFor(() => {

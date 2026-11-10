@@ -186,7 +186,7 @@ describe('/crew command', () => {
     ]);
   });
 
-  it('refuses a seat the crew does not have', () => {
+  it('refuses a seat the crew does not have', async () => {
     let error: string | undefined;
     const opened: string[] = [];
     const commands = createRuntimeCommands(
@@ -194,15 +194,19 @@ describe('/crew command', () => {
         openOverlay: (type) => {
           opened.push(type);
         },
-        setFeedbackError: (message) => {
-          error = message;
-        },
       }),
     );
 
-    runCommandInTest({ commands: commands, raw: '/crew captain', screen: 'home', onError: noop });
+    await runCommandInTest({
+      commands: commands,
+      raw: '/crew captain',
+      screen: 'home',
+      onError: (message) => {
+        error = message;
+      },
+    });
 
     expect(opened).toEqual([]);
-    expect(error).toMatch(/captain/i);
+    expect(error).toEqual(expect.stringMatching(/captain/i));
   });
 });

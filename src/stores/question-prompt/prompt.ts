@@ -3,6 +3,7 @@ import type { ClarificationQuestion, PlannerReplyAnswer } from '../../core/schem
 import { plainUserMessage, type UserMessageInput } from '../../core/types/user-input.js';
 import { DECIDE_YOURSELF_ANSWER } from '../../core/recovery/decide.js';
 import { error } from '../../utils/error.js';
+import { composerLiveStore } from '../ui/composer-live.js';
 
 const questionPromptError = {
   missingAnswer: (index: number) =>
@@ -82,7 +83,12 @@ function setQuestions(questions: readonly ClarificationQuestion[]): void {
     questions,
     drafts: questions.map(() => ({ text: '', selected: 0 })),
     openedAt: Date.now(),
-    focus: questions[0] && questionOptions(questions[0]).length > 0 ? 'menu' : 'answer',
+    // The panel opens by itself, so a draft the user is typing keeps the keys.
+    focus: !composerLiveStore.get().empty
+      ? 'composer'
+      : questions[0] && questionOptions(questions[0]).length > 0
+        ? 'menu'
+        : 'answer',
   }));
 }
 

@@ -11,6 +11,8 @@ export function queueCopy(input: {
   taskId?: string | null | undefined;
   count?: number | undefined;
   steerable?: boolean | undefined;
+  /** A stop is in progress: the send-now key is refused until the run parks. */
+  stopping?: boolean | undefined;
   /** The brief's checks run: no BUILD call is open, and BUILD reads the message after them. */
   checking?: boolean | undefined;
   /** The brief has not started: BUILD reads the message when its first call starts. */
@@ -51,8 +53,8 @@ export function queueCopy(input: {
       target === null
         ? ''
         : input.steerable
-          ? `Sent to ${target} · ${timing} · ctrl+⏎ interrupts`
-          : `Queued for ${target} · ctrl+⏎ sends now`,
+          ? `Sent to ${target} · ${timing}${input.stopping ? '' : ' · ctrl+⏎ interrupts'}`
+          : `Queued for ${target}${input.stopping ? '' : ' · ctrl+⏎ sends now'}`,
     queued: { label: 'Queued', value: target === null ? undefined : `for ${target} · ${timing}` },
     delivered: {
       label: 'Delivered',

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createRuntimeCommands } from './registry.js';
 import { ALL_SCREENS } from '../../navigation/types.js';
 import {
@@ -253,13 +253,39 @@ describe('/skills command', () => {
       setFeedbackError: (msg) => errors.push(msg),
     });
 
-    await command.handler('alpha charlie');
+    const refusal = await command.handler('alpha charlie');
 
     expect(messages).toEqual(['Attached: Alpha']);
     expect(errors).toEqual(['Unknown skill: charlie']);
+    // The line ran: it attached one skill, so it does not come back as a refused line.
+    expect(refusal).toBeUndefined();
   });
 
-  it('reports unavailability once instead of calling every skill unknown', async () => {
+  it('refuses a line whose ids it does not know, with the reason and the line as typed', async () => {
+    const onError = vi.fn();
+    const feedback: string[] = [];
+
+    await runCommandInTest({
+      commands: createRuntimeCommands(
+        makeCtx({
+          listSkills: () => SKILL_OPTIONS,
+          setFeedbackMessage: (msg) => feedback.push(msg),
+          setFeedbackError: (msg) => feedback.push(msg),
+        }),
+      ),
+      raw: '/skills zzz-typo yyy-typo',
+      screen: 'workflow',
+      onError,
+    });
+
+    expect(onError).toHaveBeenCalledExactlyOnceWith(
+      'Unknown skills: zzz-typo, yyy-typo',
+      '/skills zzz-typo yyy-typo',
+    );
+    expect(feedback).toEqual([]);
+  });
+
+  it('refuses with the unavailability once instead of calling every skill unknown', async () => {
     const errors: string[] = [];
     const { command } = skillsCommand({
       listSkills: () => SKILL_OPTIONS,
@@ -267,9 +293,8 @@ describe('/skills command', () => {
       setFeedbackError: (msg) => errors.push(msg),
     });
 
-    await command.handler('alpha bravo');
-
-    expect(errors).toEqual(['Skills are unavailable here.']);
+    expect(await command.handler('alpha bravo')).toBe('Skills are unavailable here.');
+    expect(errors).toEqual([]);
   });
 
   it('is available on every screen', async () => {

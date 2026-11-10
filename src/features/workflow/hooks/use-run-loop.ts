@@ -8,6 +8,7 @@ import { seatIdentitiesFromConfig, seatIdentityChanges } from '../../../core/sta
 import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { hydrateFromState } from '../../../stores/workflow/actions/hydrate.js';
 import { routerStore } from '../../../stores/navigation/router.js';
+import { preparationStore } from '../../../stores/navigation/preparation.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { resetMarkdownConversationRowsCache } from '../conversation-rows/markdown-rows.js';
@@ -126,11 +127,17 @@ interface UseRunLoopOptions {
   runWorkflow?: RunWorkflowFn | undefined;
   prepareExecution?: PrepareExecutionFn | undefined;
   /**
-   * How a run that stopped itself at a brief boundary to pick up a changed seat continues: it is
-   * re-prepared from the saved config and re-entered in place, with the words its park was
-   * continued with.
+   * How a run at rest continues: it is re-prepared from the saved config and re-entered in place,
+   * with the words it was continued with. A run that stopped itself at a brief boundary to pick up
+   * a changed seat names that cause. A refusal comes back as its reason, and the caller shows it.
    */
-  continueAtRest?: ((record: RunRecord, steer: UserMessageInput) => void) | undefined;
+  continueAtRest?:
+    | ((
+        record: RunRecord,
+        steer: UserMessageInput,
+        resumeCause?: 'seat-change',
+      ) => string | undefined)
+    | undefined;
 }
 
 /**
@@ -506,7 +513,12 @@ export function useRunLoop({
           if (stopStore.get().intent === 'end-run') await finishStoppedRun();
           else if (seatChangedAtBoundary === 'continue') {
             stopStore.reset();
-            continueAtRest?.(await settleRun(session.ref, false), steerAtBoundary);
+            const refusal = continueAtRest?.(
+              await settleRun(session.ref, false),
+              steerAtBoundary,
+              'seat-change',
+            );
+            if (refusal !== undefined) feedbackStore.setError(refusal);
           } else await settleRun(session.ref, true);
           return;
         }
@@ -632,6 +644,9 @@ export function useRunLoop({
     const wasStopping = stopStore.get().intent !== 'none';
     setStopHandler(null);
     setCancelHandler(null);
+    // The run is at rest from here. A steer that waits for this stop to land continues it there,
+    // not on the execution that just returned.
+    setResumeHandler((steer) => continueAtRest?.(record, steer));
     inputMode.resetMode();
     routerStore.updateRun({ run: record, execution: { kind: 'at-rest' } });
     sessionsStore.refresh();
@@ -646,7 +661,8 @@ export function useRunLoop({
       // whose final review passed before the stop reached it is complete, not stopped: the stop then
       // stands down, and the closed run's own byline speaks for it. A workspace run that passed
       // review lands on the result menu the same way, with no stop sheet over it. A draft keeps the
-      // keys too: the ⏎ that ends it belongs to the composer, not to the row Resume.
+      // keys too: the ⏎ that ends it belongs to the composer, not to the row Resume. A run that the
+      // steer behind this stop continues already has its tools in preparation, and gets no sheet.
       if (
         (record.status.kind === 'closed' && record.status.as === 'complete') ||
         record.status.kind === 'ready-to-apply'
@@ -659,7 +675,8 @@ export function useRunLoop({
       } else if (
         routerStore.get().screen === 'workflow' &&
         overlayStore.get().active === 'none' &&
-        composerLiveStore.get().empty
+        composerLiveStore.get().empty &&
+        preparationStore.get().kind === 'idle'
       )
         overlayStore.open('stop-sheet');
     }

@@ -26,7 +26,7 @@ describe('run snapshot runtime commands', () => {
     expect(message).toContain('snap-1');
   });
 
-  it('requires explicit confirmation before rejecting a run', () => {
+  it('requires explicit confirmation before rejecting a run', async () => {
     let called = false;
     let error: string | undefined;
     const commands = createRuntimeCommands(
@@ -35,14 +35,18 @@ describe('run snapshot runtime commands', () => {
           called = true;
           return { status: 'empty' };
         },
-        setFeedbackError: (m) => {
-          error = m;
-        },
       }),
     );
-    runCommandInTest({ commands: commands, raw: '/run reject', screen: 'workflow', onError: noop });
+    await runCommandInTest({
+      commands: commands,
+      raw: '/run reject',
+      screen: 'workflow',
+      onError: (m) => {
+        error = m;
+      },
+    });
     expect(called).toBe(false);
-    expect(error).toMatch(/confirm/i);
+    expect(error).toEqual(expect.stringMatching(/confirm/i));
   });
 
   it('rejects the current run and points at the transcript row that holds the result', async () => {
@@ -216,12 +220,16 @@ describe('run snapshot runtime commands', () => {
     const commands = createRuntimeCommands(
       makeCtx({
         acceptRun: async () => ({ status: 'unavailable', message: 'Run already applied.' }),
-        setFeedbackError: (m) => {
-          error = m;
-        },
       }),
     );
-    await runCommandInTest({ commands, raw: '/run accept', screen: 'workflow', onError: noop });
+    await runCommandInTest({
+      commands,
+      raw: '/run accept',
+      screen: 'workflow',
+      onError: (m) => {
+        error = m;
+      },
+    });
     expect(error).toBe('Run already applied.');
   });
 

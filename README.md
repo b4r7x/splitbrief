@@ -138,7 +138,7 @@ export SPLITBRIEF_CONTEXT_LENGTH=32768
 | Action | Key | Effect |
 |--------|-----|--------|
 | Queue a message | Type + Enter | Queues text for the active stage's seat (PLAN, BUILD, REVIEW) |
-| Send now | Text + `ctrl+⏎`, or `/steer <text>` | Stops now and continues with the text, like `/steer` |
+| Send now | Text + `ctrl+⏎`, or `/steer <text>` | Stops now and continues with the text, also while a brief's checks run. Over a waiting plan card, both request changes with the text, as Enter does, and stop nothing. Over a waiting planner question, both answer the round with the text and stop nothing. Over a waiting `Needs you` or `Seat down` panel, both send the text as the typed correction, as Enter does, and stop nothing |
 | Stop options | `esc` (with or without a draft; on the plan card the first `esc` clears a comment) | Opens the stop sheet — stop now, pause after this brief, or end the run. No option reverts files, and your draft is kept |
 | Stop now | `ctrl+c` (one press) | Aborts the in-flight call, starts no new brief, and parks the run with its partial changes kept |
 | Quit | `ctrl+q` or `/quit` | Stops the run safely, saves the session, then exits; continue later with `splitbrief continue <session-id>` if the saved state is resumable |

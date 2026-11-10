@@ -1,3 +1,4 @@
+import { Box } from 'ink';
 import { createElement } from 'react';
 import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -56,6 +57,7 @@ import { runViewStore } from '../stores/workflow/run-view.js';
 import { queueCopy } from '../features/workflow/queue-copy.js';
 import { controlsStore } from '../stores/ui/controls.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
+import { questionPromptStore } from '../stores/question-prompt/prompt.js';
 import { terminalSizeStore } from '../stores/ui/terminal-size.js';
 import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
 import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';
@@ -121,7 +123,7 @@ describe('buildCommandContext', () => {
     const resume = vi.fn();
     setResumeHandler(resume);
 
-    expect(build().steerRun(`use @${path}`)).toBe(true);
+    expect(build().steerRun(`use @${path}`)).toBeUndefined();
     expect(resume).toHaveBeenCalledExactlyOnceWith({
       text: `use @${path}\n\n--- @${path} ---\ncontext body`,
       displayText: `use @${path}`,
@@ -546,17 +548,23 @@ function RuntimeCommandsHarness({
   });
 }
 
+// The command list draws over the rows above the footer, so the frame keeps rows there for it.
 function CommandComposerHarness() {
   const model = useRuntimeCommands({ exit: () => {}, phase: 'implementing' });
-  return createElement(WorkflowFooter, {
-    commands: model.commands,
-    mode: 'normal',
-    inputHint: '',
-    handleInput: () => {},
-    disabled: false,
-    onRuntimeCommand: (raw) => model.handleRuntimeCommand(raw, 'workflow'),
-    listProjectFiles: async () => [],
-  });
+  return createElement(
+    Box,
+    { flexDirection: 'column' },
+    createElement(Box, { height: 14 }),
+    createElement(WorkflowFooter, {
+      commands: model.commands,
+      mode: 'normal',
+      inputHint: '',
+      handleInput: () => {},
+      disabled: false,
+      onRuntimeCommand: (raw) => model.handleRuntimeCommand(raw, 'workflow'),
+      listProjectFiles: async () => [],
+    }),
+  );
 }
 
 describe('useRuntimeCommands', () => {
@@ -718,7 +726,7 @@ describe('useRuntimeCommands', () => {
     await expect.poll(() => stripAnsiStyles(ui.lastFrame())).not.toContain('a.ts');
   });
 
-  it('recalls a refused steer command from history before a successful retry', async () => {
+  it('keeps a refused steer command in the composer for a successful retry', async () => {
     terminalSizeStore.__testReset({ cols: 160, rows: 24, isSmall: false });
     projectDir = createTempDir('command-composer-steer');
     configStore.__testReset({ projectDir, config: makeConfig() });
@@ -734,7 +742,10 @@ describe('useRuntimeCommands', () => {
     attachmentsStore.replacePendingImages([pending]);
     inputHistoryStore.hydrate(['Earlier']);
     const resumed: string[] = [];
-    setResumeHandler((message) => resumed.push(message.text));
+    setResumeHandler((message) => {
+      resumed.push(message.text);
+      return undefined;
+    });
     const ui = renderFeature(createElement(CommandComposerHarness), { cols: 160, rows: 24 });
     onTestFinished(ui.unmount);
     await flushEffects();
@@ -747,19 +758,16 @@ describe('useRuntimeCommands', () => {
         'Cannot send: file not found. Check the path and try again. File: context.txt.',
       );
     });
-    await flushEffects();
-    expect(composerLiveStore.get().document).toEqual(createDraftDocument(''));
-    expect(inputHistoryStore.get().workflowEntries).toEqual([document]);
-    expect(attachmentsStore.peek()).toEqual([pending]);
-    expect(resumed).toEqual([]);
-    expect(ui.lastFrame()).not.toContain(`/steer use @${path}`);
-
-    writeFileSync(path, 'context body');
-    ui.stdin.write('\u001b[A');
     await vi.waitFor(() => {
       expect(composerLiveStore.get().document).toEqual(document);
     });
     await flushEffects();
+    expect(inputHistoryStore.get().workflowEntries).toEqual([document]);
+    expect(attachmentsStore.peek()).toEqual([pending]);
+    expect(resumed).toEqual([]);
+    expect(ui.lastFrame()).toContain(`/steer use @${path}`);
+
+    writeFileSync(path, 'context body');
     ui.stdin.write('\r');
     await vi.waitFor(() => {
       expect(resumed).toEqual([`use @${path}\n\n--- @${path} ---\ncontext body`]);
@@ -768,7 +776,7 @@ describe('useRuntimeCommands', () => {
     expect(inputHistoryStore.get().workflowEntries).toEqual([document]);
   });
 
-  it('clears /steer use @/missing/x.md with one refusal line and recalls it with Up', async () => {
+  it('keeps /steer use @/missing/x.md in the composer with one refusal line', async () => {
     projectDir = createTempDir('command-composer-missing');
     configStore.__testReset({ projectDir, config: makeConfig() });
     terminalSizeStore.__testReset({ cols: 160, rows: 24, isSmall: false });
@@ -795,21 +803,15 @@ describe('useRuntimeCommands', () => {
         isError: true,
       });
     });
-    await flushEffects();
-    expect(composerLiveStore.get().document).toEqual(createDraftDocument(''));
-    const frame = stripAnsiStyles(ui.lastFrame());
-    expect(frame).not.toContain('/steer use @/missing/x.md');
-    expect(frame).toContain(refusal);
-    expect(frame.split(refusal)).toHaveLength(2);
-    expect(inputHistoryStore.get().workflowEntries).toEqual([document, earlier]);
-    expect(resumed).not.toHaveBeenCalled();
-
-    ui.stdin.write('\u001b[A');
     await vi.waitFor(() => {
       expect(composerLiveStore.get().document).toEqual(document);
     });
     await flushEffects();
-    expect(stripAnsiStyles(ui.lastFrame())).toContain('/steer use @/missing/x.md');
+    const frame = stripAnsiStyles(ui.lastFrame());
+    expect(frame).toContain('/steer use @/missing/x.md');
+    expect(frame.split(refusal)).toHaveLength(2);
+    expect(inputHistoryStore.get().workflowEntries).toEqual([document, earlier]);
+    expect(resumed).not.toHaveBeenCalled();
   });
 
   it('keeps a newer draft when a steer refusal waits behind an asynchronous copy', async () => {
@@ -909,6 +911,177 @@ describe('useRuntimeCommands', () => {
     expect(feedback.message).toContain('Unknown command');
     expect(feedback.message).toContain('/totally-unknown-xyz');
     ui.unmount();
+  });
+
+  // `afterSend` runs when the line left its field, before SPLITBRIEF refuses it.
+  async function refuseSteer(sentBy?: 'row' | 'answer', afterSend?: () => void) {
+    let model: ReturnType<typeof useRuntimeCommands> | undefined;
+    const ui = renderFeature(
+      createElement(RuntimeCommandsHarness, {
+        onModel: (m) => {
+          model = m;
+        },
+      }),
+    );
+    onTestFinished(ui.unmount);
+    await tick();
+
+    model?.handleRuntimeCommand('/steer words', 'workflow', sentBy);
+    afterSend?.();
+    await vi.waitFor(() => {
+      expect(feedbackStore.get()).toEqual({
+        message: 'No run to steer in this phase',
+        isError: true,
+      });
+    });
+  }
+
+  it('gives a refused command line back to the composer', async () => {
+    await refuseSteer();
+
+    expect(composerDraftStore.get().request).toMatchObject({
+      kind: 'prepend',
+      value: '/steer words',
+    });
+  });
+
+  async function typeRefusedLine(line: string) {
+    projectDir = createTempDir('command-composer-refused');
+    configStore.__testReset({ projectDir, config: makeConfig() });
+    terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
+    const ui = renderFeature(createElement(CommandComposerHarness), { cols: 120, rows: 30 });
+    onTestFinished(ui.unmount);
+    await flushEffects();
+    ui.stdin.write(line);
+    await flushEffects();
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(feedbackStore.get().isError).toBe(true);
+      expect(composerLiveStore.get().text).toBe(line);
+    });
+    return ui;
+  }
+
+  it.each([
+    ['/zzzz', 'Unknown command: /zzzz. Type /help for available commands.'],
+    ['/steer', 'Usage: /steer <correction>'],
+    ['/run reject', 'Usage: /run reject confirm'],
+  ])(
+    'shows the reason of a refused %s and keeps the line, with the menu closed',
+    async (line, reason) => {
+      const ui = await typeRefusedLine(line);
+
+      await vi.waitFor(() => {
+        expect(stripAnsiStyles(ui.lastFrame())).toContain(reason);
+      });
+      const frame = stripAnsiStyles(ui.lastFrame());
+      expect(frame).toContain(`> ${line}`);
+      expect(frame).not.toContain('↑↓ select');
+    },
+  );
+
+  it('opens the menu again after the first edit of a given-back line', async () => {
+    const ui = await typeRefusedLine('/zzzz');
+
+    ui.stdin.write('x');
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().text).toBe('/zzzzx');
+      expect(stripAnsiStyles(ui.lastFrame())).toContain('↑↓ select');
+    });
+  });
+
+  it('keeps the menu closed over a line that ↑ recalls, and opens it after the first edit', async () => {
+    projectDir = createTempDir('command-composer-recall');
+    configStore.__testReset({ projectDir, config: makeConfig() });
+    terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
+    inputHistoryStore.hydrate(['/zzzz']);
+    const ui = renderFeature(createElement(CommandComposerHarness), { cols: 120, rows: 30 });
+    onTestFinished(ui.unmount);
+    await flushEffects();
+
+    ui.stdin.write('\x1b[A');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame())).toContain('> /zzzz');
+    });
+    expect(stripAnsiStyles(ui.lastFrame())).not.toContain('↑↓ select');
+
+    ui.stdin.write('x');
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().text).toBe('/zzzzx');
+      expect(stripAnsiStyles(ui.lastFrame())).toContain('↑↓ select');
+    });
+  });
+
+  it('opens the menu for a command that the palette fills in over a given-back line', async () => {
+    const ui = await typeRefusedLine('/zzzz');
+
+    composerDraftStore.requestCommand('/run ');
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().text).toBe('/run ');
+      expect(stripAnsiStyles(ui.lastFrame())).toContain('↑↓ select');
+    });
+  });
+
+  it('gives nothing back when a menu row sent the refused command', async () => {
+    await refuseSteer('row');
+
+    expect(composerDraftStore.get().request).toBeNull();
+  });
+
+  const QUESTION = { id: 'numbers', type: 'input' as const, text: 'Which numbers?' };
+
+  it.each([
+    ['an empty composer', ''],
+    ['a composer draft', 'also fix the typo'],
+  ])(
+    'gives a command refused from the answer field back to that field, over %s',
+    async (_, draft) => {
+      composerLiveStore.setDraft(createDraftDocument(draft));
+      questionPromptStore.setQuestions([QUESTION]);
+      questionPromptStore.setFocus('answer', '');
+
+      await refuseSteer('answer');
+
+      expect(questionPromptStore.get()).toMatchObject({
+        focus: 'answer',
+        drafts: [{ text: '/steer words', selected: 0 }],
+      });
+      expect(composerDraftStore.get().request).toBeNull();
+      expect(composerLiveStore.get().text).toBe(draft);
+    },
+  );
+
+  it('keeps the words typed in the answer field after the refused command left it', async () => {
+    questionPromptStore.setQuestions([QUESTION]);
+    questionPromptStore.setFocus('answer', '');
+
+    await refuseSteer('answer', () => questionPromptStore.setFocus('answer', 'integers only'));
+
+    expect(composerDraftStore.get().request).toBeNull();
+    expect(questionPromptStore.get().drafts).toEqual([{ text: 'integers only', selected: 0 }]);
+  });
+
+  it('leaves the answer field empty when its command runs', async () => {
+    let model: ReturnType<typeof useRuntimeCommands> | undefined;
+    const ui = renderFeature(
+      createElement(RuntimeCommandsHarness, {
+        onModel: (m) => {
+          model = m;
+        },
+      }),
+    );
+    onTestFinished(ui.unmount);
+    await tick();
+    questionPromptStore.setQuestions([QUESTION]);
+    questionPromptStore.setFocus('answer', '');
+
+    model?.handleRuntimeCommand('/queue', 'workflow', 'answer');
+    await vi.waitFor(() => {
+      expect(feedbackStore.get()).toEqual({ message: 'Queue is empty', isError: false });
+    });
+
+    expect(questionPromptStore.get().drafts).toEqual([{ text: '', selected: 0 }]);
+    expect(composerDraftStore.get().request).toBeNull();
   });
 });
 

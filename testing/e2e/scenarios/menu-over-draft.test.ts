@@ -287,6 +287,33 @@ it(
 );
 
 it(
+  'sends the words of /steer to the retry when ⏎ runs it over Seat down, and stops nothing',
+  SCENARIO_TIMEOUT,
+  async () => {
+    await scenario('seat-down', async (run, { screen, write }) => {
+      await vi.waitFor(() => expect(implementerCalls(run)).toBe(1), PATIENCE);
+      unlinkSync(run.hold);
+      await expect.poll(screen, PATIENCE).toContain('Try again');
+      await expect.poll(screen, PATIENCE).toContain('⏎ confirm');
+      writeFileSync(run.hold, '');
+
+      write(`/steer ${DRAFT}`);
+      await expect.poll(screen, PATIENCE).toContain(`› /steer ${DRAFT}`);
+      write(PTY_SUBMIT_INPUT);
+
+      await vi.waitFor(() => expect(implementerCalls(run)).toBe(2), PATIENCE);
+      expect(readFileSync(join(run.target.tmpDir, 'prompt-2.txt'), 'utf8')).toContain(
+        `The user says: ${DRAFT}`,
+      );
+      expect(savedRun(run).pendingRecovery).toBeUndefined();
+      await expect.poll(screen, PATIENCE).not.toContain('tab back to the actions');
+      expect(screen()).not.toContain('⏎ confirm');
+      expect(screen()).not.toContain('Choose an action above');
+    });
+  },
+);
+
+it(
   'gives the result menu the keys when it opens over an empty composer',
   SCENARIO_TIMEOUT,
   async () => {

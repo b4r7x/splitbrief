@@ -19,7 +19,6 @@ import { loadOwnerWorkflowState } from '../../../src/core/state/resume-hydration
 import { hydrateRun, readRunHistory } from '../../../src/features/workflow/run-history.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { loadState, saveState } from '../../../src/core/state/persistence.js';
-import { createDraftDocument } from '../../../src/core/composer/document.js';
 import { plainUserMessage } from '../../../src/core/types/user-input.js';
 import type { RecoveryIssue } from '../../../src/core/schemas/recovery/schemas.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
@@ -27,7 +26,6 @@ import { createRecoveryBus } from '../../../src/engine/orchestrator/recovery/bus
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { configStore } from '../../../src/stores/project/config.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
-import { composerDraftStore } from '../../../src/stores/ui/composer-draft.js';
 import { composerLiveStore } from '../../../src/stores/ui/composer-live.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
 import { eventsStore } from '../../../src/stores/workflow/events.js';
@@ -188,16 +186,12 @@ describe('words typed on a run at rest for a chosen action that reads none', () 
       return <Text>harness</Text>;
     }
     ui = renderFeature(<Harness prepared={prepared} />, VIEWPORT);
-    const document = createDraftDocument(WORDS);
-    composerLiveStore.setDraft(document);
 
-    continuation?.handleResume(plainUserMessage(WORDS));
-
-    expect(feedbackStore.get()).toEqual({
-      message: 'Cannot send words to this halt. Clear them first.',
-      isError: true,
-    });
-    expect(composerDraftStore.get().request).toMatchObject({ kind: 'prepend', value: WORDS });
+    // The caller that sent the words shows the reason and gives the words back.
+    expect(continuation?.handleResume(plainUserMessage(WORDS))).toBe(
+      'Cannot send words to this halt. Clear them first.',
+    );
+    expect(feedbackStore.get().message).toBeNull();
     expect(eventsStore.get().events.map((event) => event.type)).toContain('workflow_started');
     expect(continuation?.runId).toBe(0);
     expect(loadState(ref)).toEqual(saved);

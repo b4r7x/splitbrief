@@ -11,7 +11,8 @@ interface CommandExecutionOptions {
   openRunAtRest: boolean;
   applyUnfinished: boolean;
   applying: boolean;
-  onError: (msg: string) => void;
+  /** Called once for a command that SPLITBRIEF refuses, with the reason and the line as typed. */
+  onError: (msg: string, raw: string) => void;
 }
 
 export async function executeRuntimeCommand(
@@ -26,7 +27,7 @@ export async function executeRuntimeCommand(
   if (!cmd) {
     const pointer = removedCommandPointer(name);
     if (pointer) {
-      options.onError(`${name} was removed: ${pointer}`);
+      options.onError(`${name} was removed: ${pointer}`, raw);
       return;
     }
     const colonSkill = name.startsWith('/skill:') ? name.slice('/skill:'.length) : '';
@@ -36,11 +37,14 @@ export async function executeRuntimeCommand(
       : suggestion
         ? `Did you mean ${suggestion.name}?`
         : 'Type /help for available commands.';
-    options.onError(`Unknown command: ${name}. ${hint}`);
+    options.onError(`Unknown command: ${name}. ${hint}`, raw);
     return;
   }
   if (!cmd.validScreens.includes(options.screen)) {
-    options.onError(`${cmd.name} is only available on the ${cmd.validScreens.join(', ')} screen.`);
+    options.onError(
+      `${cmd.name} is only available on the ${cmd.validScreens.join(', ')} screen.`,
+      raw,
+    );
     return;
   }
   const blocked = cmd.guard?.({
@@ -51,12 +55,14 @@ export async function executeRuntimeCommand(
     applying: options.applying,
   });
   if (blocked !== undefined) {
-    options.onError(blocked);
+    options.onError(blocked, raw);
     return;
   }
+  let refusal: unknown;
   try {
-    await (cmd.kind === 'arg' ? cmd.handler(typed || undefined) : cmd.handler());
+    refusal = await (cmd.kind === 'arg' ? cmd.handler(typed || undefined) : cmd.handler());
   } catch (err) {
-    options.onError(toErrorMessage(err));
+    refusal = toErrorMessage(err);
   }
+  if (typeof refusal === 'string') options.onError(refusal, raw);
 }

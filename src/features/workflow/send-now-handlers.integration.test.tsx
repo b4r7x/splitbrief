@@ -158,7 +158,7 @@ it.each([false, true])(
       attachedInputs: [{ path: '/tmp/send-now-note.md', kind: 'text' }],
     };
 
-    expect(requestSteer(message)).toBe(true);
+    expect(requestSteer(message)).toBeUndefined();
     expect(calls[0]?.signal.aborted).toBe(true);
     expect(workflowSignals[0]?.aborted).toBe(false);
     expect(calls).toHaveLength(1);

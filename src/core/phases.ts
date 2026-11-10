@@ -50,6 +50,14 @@ export function isLivePhase(phase: Phase): boolean {
   return LIVE_PHASES.has(phase);
 }
 
+/**
+ * The phases where a run is live: a tool call can run, the plan card waits, or a brief check runs.
+ * `isLivePhase` names only the first group.
+ */
+export function isRunLivePhase(phase: Phase): boolean {
+  return isLivePhase(phase) || phase === 'reviewing-plan' || phase === 'validating-task';
+}
+
 export function isImplementerPhase(phase: Phase): boolean {
   return IMPLEMENTER_PHASES.has(phase);
 }

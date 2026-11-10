@@ -512,9 +512,7 @@ describe('run rejection after a source CLI run', () => {
         screen: 'workflow',
         phase,
         openRunAtRest: true,
-        onError: (message) => {
-          throw new Error(message);
-        },
+        onError: (message) => feedbackStore.setError(message),
       });
 
     routerStore.updateRun({

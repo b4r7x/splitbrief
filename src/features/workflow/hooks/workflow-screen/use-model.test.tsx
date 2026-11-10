@@ -20,6 +20,9 @@ import { LOCKFILE_PING_INTERVAL_MS } from '../../../../engine/orchestrator/run/h
 import { glyph } from '../../../../lib/glyphs.js';
 import { routerStore } from '../../../../stores/navigation/router.js';
 import { feedbackStore } from '../../../../stores/ui/feedback.js';
+import { composerDraftStore } from '../../../../stores/ui/composer-draft.js';
+import { composerLiveStore } from '../../../../stores/ui/composer-live.js';
+import { createDraftDocument } from '../../../../core/composer/document.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import { addEvent } from '../../../../stores/workflow/actions/event.js';
 import { hydrateFromState } from '../../../../stores/workflow/actions/hydrate.js';
@@ -118,6 +121,46 @@ describe('useWorkflowScreen while a brief is parked', () => {
     expect(steer).toHaveBeenCalledWith(plainUserMessage('use the other adapter'));
     expect(stopStore.get().phase).toBe('idle');
     ui.unmount();
+  });
+
+  // No state is saved for this run and no call holds the park, so the run cannot continue.
+  const NO_STATE = {
+    message: 'No saved state to continue. Press esc to return home.',
+    isError: true,
+  };
+
+  it('blank enter at a park names the reason when the run cannot continue', async () => {
+    const capture: { current: Model | null } = { current: null };
+    const ui = renderFeature(<Harness capture={capture} />);
+    onTestFinished(ui.unmount);
+    await tick();
+    stopStore.request('stop-now');
+    stopStore.park('mid-brief', 'T004', null);
+    await tick();
+
+    requireModel(capture).onEmptySubmit?.();
+
+    expect(feedbackStore.get()).toEqual(NO_STATE);
+    expect(composerDraftStore.get().request).toBeNull();
+  });
+
+  it('typed instructions come back with the reason when the parked run cannot continue with them', async () => {
+    const capture: { current: Model | null } = { current: null };
+    const ui = renderFeature(<Harness capture={capture} />);
+    onTestFinished(ui.unmount);
+    await tick();
+    stopStore.request('stop-now');
+    stopStore.park('mid-brief', 'T004', null);
+    await tick();
+    composerLiveStore.setDraft(createDraftDocument('use the other adapter'));
+
+    requireModel(capture).handleInput(plainUserMessage('use the other adapter'));
+
+    expect(feedbackStore.get()).toEqual(NO_STATE);
+    expect(composerDraftStore.get().request).toMatchObject({
+      kind: 'prepend',
+      value: 'use the other adapter',
+    });
   });
 });
 

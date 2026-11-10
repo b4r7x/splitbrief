@@ -390,7 +390,7 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 
 A refused plain send keeps the whole draft, history, and pending images unchanged. Feedback ends with ` File: <base name>.`. The base name uses at most 24 terminal cells. Read the reason before you send again.
 
-`/steer` accepts the same `@` references. A refused `/steer` clears the draft and records the command in history; ↑ recalls it. The refusal sends no correction and leaves pending images unchanged.
+`/steer` accepts the same `@` references. A refused `/steer` stays in the composer, so you can correct the line and press Enter again. The feedback line names the one reason: `Finish stopping before steering.` means that a stop is in progress, so press Enter again when the run shows as stopped. The refusal sends no correction and leaves pending images unchanged.
 
 | Reason | Fix |
 |---|---|

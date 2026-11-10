@@ -1,12 +1,11 @@
 import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
-import { markInterruptResumed } from '../../stores/workflow/actions/resume.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
-import { requestEnqueue } from './handlers.js';
+import { requestEnqueue, stopInProgress } from './handlers.js';
 import { openReviewEditor, reviewEditPath } from './review-editor.js';
 import {
   editorDisplayLabel,
@@ -28,7 +27,7 @@ import {
 import { cursorUpSequence, terminalSequences } from '../../lib/terminal/control.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { withUserNodeEnv } from '../../lib/process/spawn/child-env.js';
-import type { UseInputModeResult } from './hooks/use-input-mode.js';
+import { answerWaitingQuestion, type UseInputModeResult } from './hooks/use-input-mode.js';
 import { composerDraftStore } from '../../stores/ui/composer-draft.js';
 import { composerLiveStore } from '../../stores/ui/composer-live.js';
 import { reviewKeysStore } from '../../stores/ui/review-keys.js';
@@ -311,7 +310,9 @@ export function createReviewInputHandler(
             composerDraftStore.requestPrepend(document);
             feedbackStore.setError(result.message);
           } else if (seat !== null) {
-            feedbackStore.setMessage(queueCopy({ seat, taskId, steerable }).feedback);
+            feedbackStore.setMessage(
+              queueCopy({ seat, taskId, steerable, stopping: stopInProgress() }).feedback,
+            );
           }
         }
       } else if (
@@ -363,10 +364,7 @@ export function createReviewInputHandler(
     }
 
     if (inputMode.mode === 'question') {
-      // Contract: must call markInterruptResumed() before resolve() — a resolve
-      // reaching a still-'interrupted' loop is treated as superseded and re-asked.
-      if (lifecycleStore.get().status === 'interrupted') markInterruptResumed();
-      inputMode.resolve({ message, document: composerLiveStore.get().document });
+      answerWaitingQuestion(inputMode, { message, document: composerLiveStore.get().document });
     }
   };
 

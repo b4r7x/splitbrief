@@ -7,11 +7,12 @@ function readDoc(name: string): string {
 
 describe('input context contracts', () => {
   it.each(['FEATURES', 'TROUBLESHOOTING'])(
-    '%s distinguishes plain-send and /steer refusals',
+    '%s states what a refused plain send and a refused /steer leave in the composer',
     (name) => {
       const doc = readDoc(name);
       expect(doc).toMatch(/plain send[^\n]*keeps[^\n]*draft/i);
-      expect(doc).toMatch(/\/steer[^\n]*clears[^\n]*draft[^\n]*history[^\n]*↑/);
+      expect(doc).toMatch(/refused `\/steer` stays in the composer/);
+      expect(doc).not.toMatch(/\/steer[^\n]*clears[^\n]*draft/);
     },
   );
 

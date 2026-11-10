@@ -23,13 +23,13 @@ export function crewCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
         const seat = args?.trim().toLowerCase();
         if (!seat) {
           ctx.openOverlay('settings', 'seat:plan');
-          return;
+          return undefined;
         }
         if (!includes(CREW_COMMAND_SEATS, seat)) {
-          ctx.setFeedbackError(`Unknown seat: ${seat}. Valid: ${CREW_COMMAND_SEATS.join(', ')}`);
-          return;
+          return `Unknown seat: ${seat}. Valid: ${CREW_COMMAND_SEATS.join(', ')}`;
         }
         ctx.openOverlay(seatPickerOverlayFor(CREW_SEAT_ROLES[seat]));
+        return undefined;
       },
     },
     {

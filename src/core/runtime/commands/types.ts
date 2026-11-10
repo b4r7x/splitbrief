@@ -6,7 +6,8 @@ import type { OverlayType, Screen } from '../../navigation/types.js';
 import type { CopyOutcome } from '../../../lib/clipboard/clipboard.js';
 import type { AttachmentFailureReason } from '../../attachments/failure.js';
 
-type CommandHandlerResult = void | Promise<void>;
+/** A returned string is a refusal: the command did nothing, and the string is the reason. */
+type CommandHandlerResult = void | string | Promise<void> | Promise<string | undefined>;
 
 export const COPY_TARGETS = ['message', 'brief', 'path', 'command', 'cost'] as const;
 
@@ -266,9 +267,13 @@ export interface RuntimeCommandContext {
   listSkills: () => readonly SkillCommandOption[];
   toggleSkill: (id: string) => SkillToggleResult;
   refreshSkills: () => Promise<void>;
-  resumeRun: () => boolean;
-  /** Stop now and continue the run with this correction. False when there is no run to steer. */
-  steerRun: (text: string) => boolean;
+  /** Continue the run. Returns the reason when the run refuses, and nothing when it continues. */
+  resumeRun: () => string | undefined;
+  /**
+   * Continue the run with this correction; a call in progress stops first. Returns the reason when
+   * the run refuses, and nothing when it takes the correction.
+   */
+  steerRun: (text: string) => string | undefined;
   endRun: () => boolean;
   getQueueCopy: (count?: number) => { summary: string; clearFeedback: string };
   clearQueue: () => QueueClearCommandResult | Promise<QueueClearCommandResult>;

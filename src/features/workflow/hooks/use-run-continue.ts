@@ -1,8 +1,5 @@
 import { useState } from 'react';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { feedbackStore } from '../../../stores/ui/feedback.js';
-import { composerDraftStore } from '../../../stores/ui/composer-draft.js';
-import { composerLiveStore } from '../../../stores/ui/composer-live.js';
 import { continueRun } from '../../../engine/orchestrator/run/continue.js';
 import type { PreparedExecution } from '../../../engine/runners/prepared-execution.js';
 import { rereadRunAtRest, resumeParkedRun } from '../handlers.js';
@@ -31,7 +28,8 @@ export interface UseRunContinueResult {
   inlineResume: InlineResume | undefined;
   /** Record the state this run carries without re-entering the engine. */
   setInlineResume: (next: InlineResume) => void;
-  handleResume: (message?: UserMessageInput) => void;
+  /** Continues the run. A refusal comes back as its reason, and the caller shows it. */
+  handleResume: (message?: UserMessageInput) => string | undefined;
 }
 
 /**
@@ -52,8 +50,8 @@ export function useRunContinue({
     setRunId((id) => id + 1);
   };
 
-  const handleResume = (message?: UserMessageInput) => {
-    if (prepared === undefined) return;
+  const handleResume = (message?: UserMessageInput): string | undefined => {
+    if (prepared === undefined) return undefined;
     const outcome = continueRun({
       ref: prepared.session.ref,
       ...(message !== undefined && { steer: message }),
@@ -66,26 +64,19 @@ export function useRunContinue({
         },
       },
     });
-    if (outcome.kind !== 'refused') return;
-    // Words no step reads go back into the composer; the run stays as it stands.
-    if (outcome.reason === 'takes-no-words') {
-      composerDraftStore.requestPrepend(composerLiveStore.get().document);
-      feedbackStore.setError(outcome.message);
-      return;
-    }
+    if (outcome.kind !== 'refused') return undefined;
+    // Words no step reads: the run stays as it stands.
+    if (outcome.reason === 'takes-no-words') return outcome.message;
     inputMode.resetMode();
     // A run closed or finished elsewhere keeps its transcript and shows as it stands now.
     if (outcome.reason === 'closed' || outcome.reason === 'ready-to-apply') {
       void rereadRunAtRest(prepared.session.ref);
-      feedbackStore.setError(outcome.message);
-      return;
+      return outcome.message;
     }
     clearSessionScopedStores();
-    feedbackStore.setError(
-      outcome.reason === 'invalid'
-        ? resumeFailureMessage({ kind: 'invalid', code: 'malformed', message: outcome.message })
-        : `${outcome.message} Press esc to return home.`,
-    );
+    return outcome.reason === 'invalid'
+      ? resumeFailureMessage({ kind: 'invalid', code: 'malformed', message: outcome.message })
+      : `${outcome.message} Press esc to return home.`;
   };
 
   return { runId, inlineResume, setInlineResume, handleResume };

@@ -54,15 +54,12 @@ export function viewCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
         if (target === null) {
           const value = args?.trim();
           const prefix = value ? `Invalid scroll target: ${value}. ` : '';
-          ctx.setFeedbackError(`${prefix}Usage: ${SCROLL_COMMAND_USAGE}`);
-          return;
+          return `${prefix}Usage: ${SCROLL_COMMAND_USAGE}`;
         }
         const result = ctx.scrollConversation(target);
-        if (result.status === 'unavailable') {
-          ctx.setFeedbackError(result.message);
-          return;
-        }
+        if (result.status === 'unavailable') return result.message;
         ctx.setFeedbackMessage(`Scrolled conversation ${SCROLL_FEEDBACK[target]}`);
+        return undefined;
       },
     },
     {
@@ -75,13 +72,11 @@ export function viewCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
       validScreens: ['workflow'],
       handler: () => {
         const result = ctx.toggleLatestActivityBatch();
-        if (result.status === 'unavailable') {
-          ctx.setFeedbackError(result.message);
-          return;
-        }
+        if (result.status === 'unavailable') return result.message;
         ctx.setFeedbackMessage(
           result.expanded ? 'Expanded latest activity batch' : 'Collapsed latest activity batch',
         );
+        return undefined;
       },
     },
     {
@@ -93,11 +88,9 @@ export function viewCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
       validScreens: ['workflow'],
       handler: () => {
         const result = ctx.toggleSidebar();
-        if (result.status === 'unavailable') {
-          ctx.setFeedbackError(result.message);
-          return;
-        }
+        if (result.status === 'unavailable') return result.message;
         ctx.setFeedbackMessage(result.visible ? 'Sidebar shown' : 'Sidebar hidden');
+        return undefined;
       },
     },
     {
@@ -131,11 +124,9 @@ export function viewCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
       validScreens: ['workflow'],
       handler: () => {
         const result = ctx.toggleLatestDiff();
-        if (result.status === 'unavailable') {
-          ctx.setFeedbackError(result.message);
-          return;
-        }
+        if (result.status === 'unavailable') return result.message;
         ctx.setFeedbackMessage(result.expanded ? 'Expanded latest diff' : 'Collapsed latest diff');
+        return undefined;
       },
     },
     {

@@ -4,6 +4,7 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { listRowLead } from '../../../components/list-row.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
+import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import {
@@ -11,6 +12,7 @@ import {
   consumeBoundaryPause,
   createAbortHandlerScope,
   setCancelHandler,
+  setResumeHandler,
 } from '../handlers.js';
 import { StopSheet } from './sheet.js';
 import { stopSheetRows } from './options.js';
@@ -227,6 +229,22 @@ describe('StopSheet', () => {
 
     expect(cancel).toHaveBeenCalledTimes(1);
     expect(stopStore.get().intent).toBe('end-run');
+    ui.unmount();
+  });
+
+  it('shows the reason when the run refuses to resume from the Resume row', async () => {
+    const reason = 'No saved state to continue.';
+    setResumeHandler(() => reason);
+    const ui = renderSheet([
+      { id: 'resume', label: 'Resume', consequence: 'continue this run; keep the unsent draft' },
+    ]);
+    await flushEffects();
+
+    ui.stdin.write('\r');
+
+    await vi.waitFor(() => {
+      expect(feedbackStore.get()).toEqual({ message: reason, isError: true });
+    });
     ui.unmount();
   });
 

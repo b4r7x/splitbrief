@@ -321,7 +321,10 @@ describe('WorkflowFooter', () => {
         kept: [],
       },
     });
-    setResumeHandler((message) => resumed.push(message.text));
+    setResumeHandler((message) => {
+      resumed.push(message.text);
+      return undefined;
+    });
     const ui = renderFooter({ handleInput: (submission) => queued.push(submission.message.text) });
     await flushEffects();
     ui.stdin.write('smaller diffs');

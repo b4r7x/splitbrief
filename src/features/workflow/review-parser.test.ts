@@ -13,6 +13,7 @@ import { editorStore } from '../../stores/ui/editor.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
+import { stopStore } from '../../stores/workflow/stop.js';
 import { addEvent } from '../../stores/workflow/actions/event.js';
 import { seedBriefs } from '#testing/helpers/stores.js';
 import { makeBriefBoundaryEvents } from '#testing/helpers/events/task.js';
@@ -320,6 +321,7 @@ describe('review input effects', () => {
     reviewStore.reset();
     lifecycleStore.reset();
     composerLiveStore.reset();
+    stopStore.__testReset();
     vi.unstubAllEnvs();
     rmSync(tempDir, { recursive: true, force: true });
   });
@@ -560,6 +562,24 @@ describe('review input effects', () => {
       message: 'Queued for BUILD on T003 · ctrl+⏎ sends now',
       isError: false,
     });
+  });
+
+  it('names no key in the queue notice while a stop is in progress', async () => {
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
+    seedBriefs({
+      currentTask: 1,
+      totalTasks: 1,
+      tasks: [{ id: 'T001', title: 'Running brief', status: 'in_progress' }],
+    });
+    stopStore.request('stop-now');
+    const effects = makeEffects(async () => ({ status: 'accepted' as const, messageId: 'm-1' }));
+
+    await createReviewInputHandler(makeInputMode('normal'), effects).handleInput(
+      plainUserMessage('also fix the typo'),
+    );
+
+    expect(feedbackStore.get()).toEqual({ message: 'Queued for BUILD on T001', isError: false });
   });
 
   it.each([

@@ -4,10 +4,13 @@ import type { ApprovalReviewResult } from '../../../core/approval/types.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
 import { markWaitEnded, markWaitStarted } from '../../../stores/workflow/actions/wait.js';
+import { markInterruptResumed } from '../../../stores/workflow/actions/resume.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../../engine/events/workflow-cancel.js';
 import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';
 import { createDraftDocument } from '../../../core/composer/document.js';
 import type { DraftDocument } from '../../../core/schemas/draft-document.js';
+import { setWaitingPromptHandler } from '../handlers.js';
 
 /** A question's answer: the message the run takes, and the draft the composer sent it from. */
 export interface QuestionAnswer {
@@ -30,6 +33,18 @@ export interface UseInputModeResult {
   setQuestionMode: (h: string) => Promise<QuestionAnswer>;
   resolve: (value: ApprovalReviewResult | QuestionAnswer) => void;
   resetMode: () => void;
+}
+
+/**
+ * Answers the question that waits now. Contract: markInterruptResumed() runs before resolve(). A
+ * resolve that reaches a loop still 'interrupted' is treated as superseded, and the loop asks again.
+ */
+export function answerWaitingQuestion(
+  inputMode: Pick<UseInputModeResult, 'resolve'>,
+  answer: QuestionAnswer,
+): void {
+  if (lifecycleStore.get().status === 'interrupted') markInterruptResumed();
+  inputMode.resolve(answer);
 }
 
 export function useInputMode(): UseInputModeResult {
@@ -74,7 +89,7 @@ export function useInputMode(): UseInputModeResult {
 
   const setQuestionMode = (h: string): Promise<QuestionAnswer> => {
     supersedePending();
-    return new Promise((resolve, reject) => {
+    const asked = new Promise<QuestionAnswer>((resolve, reject) => {
       questionResolverRef.current = resolve;
       questionRejectorRef.current = reject;
       questionPromptStore.setHint(h);
@@ -86,6 +101,15 @@ export function useInputMode(): UseInputModeResult {
       controlsStore.setInputMode('question');
       markWaitStarted();
     });
+    // A steer answers the question as ⏎ on a composer draft over it does, and stops nothing.
+    const closeSteer = setWaitingPromptHandler((message) =>
+      answerWaitingQuestion(
+        { resolve },
+        { message, document: createDraftDocument(message.displayText) },
+      ),
+    );
+    asked.then(closeSteer, closeSteer);
+    return asked;
   };
 
   const resolve = (value: ApprovalReviewResult | QuestionAnswer): void => {

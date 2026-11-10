@@ -32,7 +32,7 @@ describe('/scroll command', () => {
     expect(feedback).toMatch(feedbackPattern);
   });
 
-  it('surfaces usage when no target is provided', () => {
+  it('surfaces usage when no target is provided', async () => {
     const targets: ScrollCommandTarget[] = [];
     let error: string | undefined;
     const commands = createRuntimeCommands(
@@ -41,45 +41,50 @@ describe('/scroll command', () => {
           targets.push(target);
           return { status: 'scrolled' };
         },
-        setFeedbackError: (message) => {
-          error = message;
-        },
       }),
     );
 
-    runCommandInTest({ commands: commands, raw: '/scroll', screen: 'workflow', onError: noop });
-
-    expect(targets).toEqual([]);
-    expect(error).toMatch(/usage: \/scroll <top\|bottom\|page-up\|page-down>/i);
-  });
-
-  it('rejects unknown targets before calling the command context', () => {
-    const targets: ScrollCommandTarget[] = [];
-    let error: string | undefined;
-    const commands = createRuntimeCommands(
-      makeCtx({
-        scrollConversation: (target) => {
-          targets.push(target);
-          return { status: 'scrolled' };
-        },
-        setFeedbackError: (message) => {
-          error = message;
-        },
-      }),
-    );
-
-    runCommandInTest({
+    await runCommandInTest({
       commands: commands,
-      raw: '/scroll sideways',
+      raw: '/scroll',
       screen: 'workflow',
-      onError: noop,
+      onError: (message) => {
+        error = message;
+      },
     });
 
     expect(targets).toEqual([]);
-    expect(error).toMatch(/invalid scroll target: sideways/i);
+    expect(error).toEqual(
+      expect.stringMatching(/usage: \/scroll <top\|bottom\|page-up\|page-down>/i),
+    );
   });
 
-  it('surfaces unavailable feedback from non-UI contexts', () => {
+  it('rejects unknown targets before calling the command context', async () => {
+    const targets: ScrollCommandTarget[] = [];
+    let error: string | undefined;
+    const commands = createRuntimeCommands(
+      makeCtx({
+        scrollConversation: (target) => {
+          targets.push(target);
+          return { status: 'scrolled' };
+        },
+      }),
+    );
+
+    await runCommandInTest({
+      commands: commands,
+      raw: '/scroll sideways',
+      screen: 'workflow',
+      onError: (message) => {
+        error = message;
+      },
+    });
+
+    expect(targets).toEqual([]);
+    expect(error).toEqual(expect.stringMatching(/invalid scroll target: sideways/i));
+  });
+
+  it('surfaces unavailable feedback from non-UI contexts', async () => {
     let error: string | undefined;
     const commands = createRuntimeCommands(
       makeCtx({
@@ -87,13 +92,17 @@ describe('/scroll command', () => {
           status: 'unavailable',
           message: 'Conversation scrolling is not available here.',
         }),
-        setFeedbackError: (message) => {
-          error = message;
-        },
       }),
     );
 
-    runCommandInTest({ commands: commands, raw: '/scroll top', screen: 'workflow', onError: noop });
+    await runCommandInTest({
+      commands: commands,
+      raw: '/scroll top',
+      screen: 'workflow',
+      onError: (message) => {
+        error = message;
+      },
+    });
 
     expect(error).toBe('Conversation scrolling is not available here.');
   });
@@ -121,7 +130,7 @@ describe('/activity command', () => {
     expect(feedback).toMatch(/expanded latest activity batch/i);
   });
 
-  it('reports when no expandable activity batch exists', () => {
+  it('reports when no expandable activity batch exists', async () => {
     let error: string | undefined;
     const commands = createRuntimeCommands(
       makeCtx({
@@ -129,13 +138,17 @@ describe('/activity command', () => {
           status: 'unavailable',
           message: 'No expandable activity batch is available.',
         }),
-        setFeedbackError: (message) => {
-          error = message;
-        },
       }),
     );
 
-    runCommandInTest({ commands: commands, raw: '/activity', screen: 'workflow', onError: noop });
+    await runCommandInTest({
+      commands: commands,
+      raw: '/activity',
+      screen: 'workflow',
+      onError: (message) => {
+        error = message;
+      },
+    });
 
     expect(error).toBe('No expandable activity batch is available.');
   });
@@ -196,7 +209,7 @@ describe('/queue command', () => {
     expect(formattedCounts).toEqual([3]);
   });
 
-  it('surfaces unknown queue subcommands before clearing', () => {
+  it('surfaces unknown queue subcommands before clearing', async () => {
     let error: string | undefined;
     let cleared = false;
     const commands = createRuntimeCommands(
@@ -205,17 +218,16 @@ describe('/queue command', () => {
           cleared = true;
           return { status: 'cleared', count: 1 };
         },
-        setFeedbackError: (message) => {
-          error = message;
-        },
       }),
     );
 
-    runCommandInTest({
+    await runCommandInTest({
       commands: commands,
       raw: '/queue purge',
       screen: 'workflow',
-      onError: noop,
+      onError: (message) => {
+        error = message;
+      },
     });
 
     expect(cleared).toBe(false);
@@ -248,7 +260,7 @@ describe('/sidebar command', () => {
     expect(feedback).toBe('Sidebar hidden');
   });
 
-  it('surfaces unavailable sidebar feedback from non-UI contexts', () => {
+  it('surfaces unavailable sidebar feedback from non-UI contexts', async () => {
     let error: string | undefined;
     const commands = createRuntimeCommands(
       makeCtx({
@@ -256,13 +268,17 @@ describe('/sidebar command', () => {
           status: 'unavailable',
           message: 'Sidebar is not available here.',
         }),
-        setFeedbackError: (message) => {
-          error = message;
-        },
       }),
     );
 
-    runCommandInTest({ commands: commands, raw: '/sidebar', screen: 'workflow', onError: noop });
+    await runCommandInTest({
+      commands: commands,
+      raw: '/sidebar',
+      screen: 'workflow',
+      onError: (message) => {
+        error = message;
+      },
+    });
 
     expect(error).toBe('Sidebar is not available here.');
   });

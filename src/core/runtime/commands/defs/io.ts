@@ -28,12 +28,10 @@ export function ioCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
       handler: async (args) => {
         const target = parseCopyTarget(args);
         if (target === null) {
-          ctx.setFeedbackError(
-            `Invalid copy target: ${args?.trim()}. Valid: ${COPY_TARGETS.join(', ')}`,
-          );
-          return;
+          return `Invalid copy target: ${args?.trim()}. Valid: ${COPY_TARGETS.join(', ')}`;
         }
         ctx.setFeedbackMessage(formatCopyResult(await ctx.copyTarget(target)));
+        return undefined;
       },
     },
     {
@@ -56,39 +54,27 @@ export function ioCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
           const pending = ctx.listAttachments();
           if (pending.length === 0) {
             ctx.setFeedbackMessage('No image attachments pending. Usage: /image <path>');
-            return;
+            return undefined;
           }
           const summary = pending.map((a, i) => `${i + 1}: ${a.path}`).join(', ');
           ctx.setFeedbackMessage(`Pending attachments: ${summary}`);
-          return;
+          return undefined;
         }
         if (action === 'remove') {
           const target = rest.join(' ');
-          if (!target) {
-            ctx.setFeedbackError('Usage: /image remove <index|id>');
-            return;
-          }
-          if (ctx.detachImage(target)) {
-            ctx.setFeedbackMessage(`Removed: ${target}`);
-          } else {
-            ctx.setFeedbackError(`No attachment matched: ${target}`);
-          }
-          return;
+          if (!target) return 'Usage: /image remove <index|id>';
+          if (!ctx.detachImage(target)) return `No attachment matched: ${target}`;
+          ctx.setFeedbackMessage(`Removed: ${target}`);
+          return undefined;
         }
         const result = (ctx.insertImage ?? ctx.attachImage)(value);
         if (!result.ok) {
-          if (result.reason === 'no-vision') {
-            ctx.setFeedbackError(
-              'Cannot attach image: the planner cannot see images. Choose a vision model with /crew plan.',
-            );
-          } else {
-            ctx.setFeedbackError(
-              formatAttachmentFailure({ action: 'attach-image', reason: result.reason }),
-            );
-          }
-          return;
+          return result.reason === 'no-vision'
+            ? 'Cannot attach image: the planner cannot see images. Choose a vision model with /crew plan.'
+            : formatAttachmentFailure({ action: 'attach-image', reason: result.reason });
         }
         ctx.setFeedbackMessage(`Attached: ${result.path}`);
+        return undefined;
       },
     },
   ];

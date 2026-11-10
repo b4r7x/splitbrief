@@ -274,13 +274,20 @@ function ComposerInput({
   );
   const document = draft.document;
   const view = draft.view;
-  const { inputEpoch, bumpEpoch, handleBoundaryNavigate, resetHistory, noteEdit, historyActive } =
-    useHistory({
-      disabled,
-      document,
-      setDocument: draft.replaceDocument,
-      currentScreen,
-    });
+  const {
+    inputEpoch,
+    bumpEpoch,
+    handleBoundaryNavigate,
+    resetHistory,
+    noteEdit,
+    holdMenus,
+    menusHeld,
+  } = useHistory({
+    disabled,
+    document,
+    setDocument: draft.replaceDocument,
+    currentScreen,
+  });
 
   const insertDraftImage = (attachment: Attachment, at = caretRef.current) => {
     const index = draft.insertImage(attachment, at);
@@ -321,6 +328,7 @@ function ComposerInput({
       prependDocument: draft.prependDocument,
       insertImage: insertDraftImage,
       resetHistory,
+      holdMenus,
       bumpEpoch,
     },
   });
@@ -334,7 +342,7 @@ function ComposerInput({
     setValue: setText,
     onRuntimeCommand,
     disabled,
-    suppressed: historyActive,
+    suppressed: menusHeld,
   });
 
   const reference = useReferenceCompletion({
@@ -342,7 +350,7 @@ function ComposerInput({
     value: mode === 'normal' ? view.text : '',
     setValue: setText,
     disabled,
-    suppressed: historyActive,
+    suppressed: menusHeld,
   });
 
   const showCommandSuggestions = command.showSuggestions;

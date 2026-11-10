@@ -79,9 +79,6 @@ describe('/copy command', () => {
           copied = true;
           return 'native';
         },
-        setFeedbackError: (m) => {
-          error = m;
-        },
       }),
     );
 
@@ -89,10 +86,12 @@ describe('/copy command', () => {
       commands: commands,
       raw: '/copy bogus',
       screen: 'workflow',
-      onError: noop,
+      onError: (m) => {
+        error = m;
+      },
     });
     expect(copied).toBe(false);
-    expect(error).toMatch(/Invalid copy target/);
+    expect(error).toEqual(expect.stringMatching(/Invalid copy target/));
   });
 
   it.each(['home'] as const)(

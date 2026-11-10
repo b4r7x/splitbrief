@@ -2343,6 +2343,23 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-plan-card-over-draft',
+      title: 'Workflow · plan card that opened over a draft',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'plan-card-over-draft',
+        title: 'Plan card while the draft keeps the keys',
+        kind: 'review',
+        marker: '⏎ request changes with the typed correction',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Plan transcript' },
+        { id: 'approval-panel', title: 'Plan card panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-plan-repaired',
       title: 'Workflow · revised plan passes its checks',
       surface: screenSurface('workflow'),

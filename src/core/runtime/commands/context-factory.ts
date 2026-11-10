@@ -19,8 +19,8 @@ interface CommandContextFactoryOptions {
   listSkills: RuntimeCommandContext['listSkills'];
   toggleSkill: RuntimeCommandContext['toggleSkill'];
   refreshSkills: RuntimeCommandContext['refreshSkills'];
-  resumeRun: () => boolean;
-  steerRun: (text: string) => boolean;
+  resumeRun: RuntimeCommandContext['resumeRun'];
+  steerRun: RuntimeCommandContext['steerRun'];
   endRun: () => boolean;
   getQueueCopy: RuntimeCommandContext['getQueueCopy'];
   clearQueue: () => QueueClearCommandResult | Promise<QueueClearCommandResult>;

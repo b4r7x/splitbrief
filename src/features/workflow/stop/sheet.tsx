@@ -6,6 +6,7 @@ import { fitKeyLegend } from '../../../core/key-legend.js';
 import { useStaticSelector } from '../../../hooks/use-static-selector.js';
 import { slashHandoffPending } from '../slash-handoff.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
+import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { MenuRows } from './menu-rows.js';
@@ -29,9 +30,11 @@ import {
 
 function performStop(id: StopRowId): void {
   switch (id) {
-    case 'resume':
-      requestResume(plainUserMessage(''));
+    case 'resume': {
+      const refusal = requestResume(plainUserMessage(''));
+      if (refusal !== undefined) feedbackStore.setError(refusal);
       return;
+    }
     case 'leave':
       requestLeaveSession();
       return;

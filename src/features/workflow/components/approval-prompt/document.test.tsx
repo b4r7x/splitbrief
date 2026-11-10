@@ -4,6 +4,8 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { listRowLead } from '../../../../components/list-row.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
+import { composerLiveStore } from '../../../../stores/ui/composer-live.js';
+import { createDraftDocument } from '../../../../core/composer/document.js';
 import {
   REVIEW_COMMENT_HINTS,
   REVIEW_DOCUMENT_HINTS,
@@ -16,6 +18,7 @@ import type { ReviewDraftTarget } from '../../review-commands.js';
 
 afterEach(() => {
   terminalSizeStore.reset();
+  composerLiveStore.reset();
 });
 
 function frameOf(node: React.ReactElement): string {
@@ -38,6 +41,7 @@ describe('DocumentReviewPrompt', () => {
         budgetRows={40}
         selectedIndex={0}
         draft={null}
+        focused
       />,
     );
 
@@ -54,6 +58,7 @@ describe('DocumentReviewPrompt', () => {
         budgetRows={40}
         selectedIndex={0}
         draft={null}
+        focused
       />,
     );
 
@@ -69,12 +74,44 @@ describe('DocumentReviewPrompt', () => {
         budgetRows={40}
         selectedIndex={0}
         draft={null}
+        focused
       />,
     );
 
     expect(frame).toContain(REVIEW_DOCUMENT_HINTS);
     expect(frame).toContain(`${listRowLead('active')}Approve plan and start the build`);
   });
+
+  it.each([
+    ['also fix the typo', '⏎ request changes with the typed correction · tab back to the actions'],
+    ['/settings', '⏎ runs the command · tab back to the actions'],
+    ['', 'tab back to the actions'],
+  ])(
+    'marks no row and says what ⏎ does in the composer that holds the keys over "%s"',
+    (draft, legend) => {
+      composerLiveStore.setDraft(createDraftDocument(draft));
+      const frame = frameOf(
+        <DocumentReviewPrompt
+          artifact="plan"
+          confirms={[]}
+          budgetRows={40}
+          selectedIndex={0}
+          draft={null}
+          focused={false}
+        />,
+      );
+
+      expect(frame).not.toContain(listRowLead('active'));
+      expect(frame).not.toContain(REVIEW_DOCUMENT_HINTS);
+      expect(
+        frame
+          .split('\n')
+          .find((line) => line.includes('tab back'))
+          ?.replace(/[│┃]/g, '')
+          .trim(),
+      ).toBe(legend);
+    },
+  );
 
   // The composer holds the keyboard at the plan card, so a letter types into the draft: a row that
   // advertised one would teach a key that does not exist.
@@ -86,6 +123,7 @@ describe('DocumentReviewPrompt', () => {
         budgetRows={40}
         selectedIndex={0}
         draft={null}
+        focused
       />,
     );
 
@@ -104,6 +142,7 @@ describe('DocumentReviewPrompt', () => {
           budgetRows={40}
           selectedIndex={selectedIndex}
           draft="send"
+          focused
         />,
       );
 
@@ -122,6 +161,7 @@ describe('DocumentReviewPrompt', () => {
         budgetRows={40}
         selectedIndex={1}
         draft="send"
+        focused
       />,
     );
 
@@ -142,6 +182,7 @@ describe('DocumentReviewPrompt', () => {
         budgetRows={40}
         selectedIndex={draft === 'approve' ? 2 : 0}
         draft={draft}
+        focused
       />,
     );
 
@@ -160,6 +201,7 @@ describe('DocumentReviewPrompt', () => {
         budgetRows={40}
         selectedIndex={0}
         draft={null}
+        focused
       />,
     );
 
@@ -182,6 +224,7 @@ describe('DocumentReviewPrompt', () => {
           budgetRows={budgetRows}
           selectedIndex={selectedIndex}
           draft={draft}
+          focused
         />,
       );
     }
@@ -240,6 +283,7 @@ describe('DocumentReviewPrompt', () => {
           budgetRows={40}
           selectedIndex={0}
           draft={null}
+          focused
         />,
       );
 

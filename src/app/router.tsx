@@ -22,7 +22,7 @@ interface RouterProps {
   screen: Screen;
   overlayActive: OverlayType;
   commands: RuntimeCommandDef[];
-  onRuntime: (raw: string, from: Screen) => void;
+  onRuntime: (raw: string, from: Screen, sentBy?: 'row' | 'answer') => void;
   workflowDeps?: WorkflowScreenDeps | undefined;
   interactionDeps?: AppInteractionDeps | undefined;
 }
@@ -52,7 +52,7 @@ export function Router({
         active: overlayActive,
         screen,
         commands,
-        onRuntime: (raw) => onRuntime(raw, screen),
+        onRuntime: (raw) => onRuntime(raw, screen, 'row'),
         interactionDeps,
       })}
     />
@@ -68,7 +68,7 @@ function renderScreen({
 }: {
   screen: Screen;
   commands: RuntimeCommandDef[];
-  onRuntime: (raw: string, from: Screen) => void;
+  onRuntime: (raw: string, from: Screen, sentBy?: 'row' | 'answer') => void;
   workflowDeps?: WorkflowScreenDeps | undefined;
   interactionDeps?: AppInteractionDeps | undefined;
 }): ReactNode {
@@ -87,7 +87,7 @@ function renderScreen({
       return (
         <WorkflowScreen
           commands={commands}
-          onRuntimeCommand={(raw) => onRuntime(raw, 'workflow')}
+          onRuntimeCommand={(raw, sentBy) => onRuntime(raw, 'workflow', sentBy)}
           deps={workflowDeps}
           readClipboardImage={interactionDeps?.readClipboardImage}
           listProjectFiles={interactionDeps?.listProjectFiles}

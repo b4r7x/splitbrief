@@ -5,6 +5,7 @@ import { runViewStore } from '../../stores/workflow/run-view.js';
 import { selectRunningBrief } from '../../core/run-view/briefs.js';
 import { isTaskCompleted } from '../../core/schemas/task.js';
 import { reviewStore } from '../../stores/workflow/review.js';
+import { setWaitingPromptHandler } from './handlers.js';
 import type { OrchestratorCallbacks } from '../../engine/orchestrator/types.js';
 import type { PlannerConversation } from '../../core/schemas/workflow.js';
 import { questionPromptStore } from '../../stores/question-prompt/prompt.js';
@@ -35,18 +36,25 @@ interface BuildCallbacksOptions {
 export function buildPromptCallbacks(opts: BuildCallbacksOptions): OrchestratorCallbacks {
   const { inputMode, abortedRef, controller } = opts;
   return {
-    // `type` stays in the positional signature because `OrchestratorCallbacks` defines it and the
-    // engine passes it; the review legend no longer varies by approval type, so nothing reads it.
-    onApprovalNeeded: async (_type, input, confirms) => {
+    onApprovalNeeded: async (type, input, confirms) => {
       const reviewOwner =
         typeof input === 'string'
           ? reviewStore.setReviewFile(input)
           : reviewStore.setReviewArtifact(input.text);
       reviewStore.setConfirms(confirms);
+      // Of the reviews, only the plan card takes a steer, as its change request: the planner reads
+      // the words and plans again. Every other review rejects its artifact on a change request.
+      const closePlanReview =
+        type === 'plan'
+          ? setWaitingPromptHandler((message) =>
+              inputMode.resolve({ approved: false, action: 'revise', message }),
+            )
+          : undefined;
       try {
         // The review panel is the legend now, so the mode carries no hint text of its own.
         return await inputMode.setReviewMode('');
       } finally {
+        closePlanReview?.();
         reviewStore.clearReviewIfOwner(reviewOwner);
       }
     },

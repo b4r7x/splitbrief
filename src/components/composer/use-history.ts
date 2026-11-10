@@ -19,7 +19,9 @@ interface ComposerHistory {
   resetHistory: () => void;
   /** An edit means the draft is the operator's again, not the entry they walked back to. */
   noteEdit: () => void;
-  historyActive: boolean;
+  /** A line given back keeps the command and `@` lists closed until an edit, as ↑ recall does. */
+  holdMenus: () => void;
+  menusHeld: boolean;
 }
 
 export function useHistory({
@@ -31,9 +33,11 @@ export function useHistory({
   const [history] = useStores(inputHistoryStore);
   const [historyState, setHistoryState] = useState(INITIAL_DOCUMENT_HISTORY_NAVIGATION_STATE);
   const [inputEpoch, setInputEpoch] = useState(0);
+  const [lineGivenBack, setLineGivenBack] = useState(false);
   const entries = getInputHistoryDocuments(history, { currentScreen });
 
   const noteEdit = () => {
+    setLineGivenBack(false);
     if (historyState.historyIndex !== null) {
       setHistoryState(INITIAL_DOCUMENT_HISTORY_NAVIGATION_STATE);
     }
@@ -58,7 +62,10 @@ export function useHistory({
     return true;
   };
 
-  const resetHistory = () => setHistoryState(INITIAL_DOCUMENT_HISTORY_NAVIGATION_STATE);
+  const resetHistory = () => {
+    setHistoryState(INITIAL_DOCUMENT_HISTORY_NAVIGATION_STATE);
+    setLineGivenBack(false);
+  };
   const bumpEpoch = () => setInputEpoch((epoch) => epoch + 1);
 
   return {
@@ -67,6 +74,7 @@ export function useHistory({
     handleBoundaryNavigate,
     resetHistory,
     noteEdit,
-    historyActive: historyState.historyIndex !== null,
+    holdMenus: () => setLineGivenBack(true),
+    menusHeld: historyState.historyIndex !== null || lineGivenBack,
   };
 }

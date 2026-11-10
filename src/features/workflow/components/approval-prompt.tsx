@@ -27,6 +27,8 @@ export interface ReviewPanelProps {
   budgetRows: number;
   selectedIndex: number;
   draft: ReviewDraftTarget | null;
+  /** False while a draft typed before the card opened keeps the keys in the composer. */
+  focused: boolean;
 }
 
 interface ApprovalPromptProps {

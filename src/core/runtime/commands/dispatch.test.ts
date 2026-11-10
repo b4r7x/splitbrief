@@ -3,7 +3,72 @@ import type { RuntimeCommandDef } from './types.js';
 import { executeRuntimeCommand as dispatchRuntimeCommand } from './dispatch.js';
 import { noop, runCommandInTest } from '#testing/helpers/runtime-commands.js';
 
+const steer: RuntimeCommandDef = {
+  kind: 'arg',
+  name: '/steer',
+  description: 'steer',
+  category: 'workflow',
+  args: { kind: 'free', hint: 'correction' },
+  validScreens: ['workflow'],
+  guard: (c) => (c.phase === 'planning' ? undefined : 'No run to steer in this phase'),
+  handler: (args) => (args === undefined ? 'Usage: /steer <correction>' : undefined),
+};
+
 describe('executeRuntimeCommand', () => {
+  it.each([
+    {
+      refuser: 'a guard',
+      raw: '/steer use the old name',
+      screen: 'workflow',
+      phase: 'validating-task',
+      refusal: 'No run to steer in this phase',
+    },
+    {
+      refuser: 'an unknown name',
+      raw: '/ster use the old name',
+      screen: 'workflow',
+      phase: 'planning',
+      refusal: 'Unknown command: /ster. Did you mean /steer?',
+    },
+    {
+      refuser: 'a wrong screen',
+      raw: '/steer use the old name',
+      screen: 'home',
+      phase: 'planning',
+      refusal: '/steer is only available on the workflow screen.',
+    },
+    {
+      refuser: 'the handler',
+      raw: '/steer',
+      screen: 'workflow',
+      phase: 'planning',
+      refusal: 'Usage: /steer <correction>',
+    },
+  ] as const)(
+    'gives the typed line back with the refusal of $refuser',
+    async ({ raw, screen, phase, refusal }) => {
+      const onError = vi.fn();
+
+      await runCommandInTest({ commands: [steer], raw, screen, phase, onError });
+
+      expect(onError).toHaveBeenCalledExactlyOnceWith(refusal, raw);
+    },
+  );
+
+  it('gives nothing back when the command runs', async () => {
+    const onError = vi.fn();
+
+    await runCommandInTest({
+      commands: [steer],
+      raw: '/steer use the old name',
+      screen: 'workflow',
+      phase: 'planning',
+      onError,
+    });
+
+    expect(onError).not.toHaveBeenCalled();
+  });
+
   it.each(['sync', 'async'] as const)(
     'settles a %s handler error through onError exactly once',
     async (kind) => {
@@ -29,7 +94,7 @@ describe('executeRuntimeCommand', () => {
       await expect(
         runCommandInTest({ commands, raw: '/test', screen: 'home', onError }),
       ).resolves.toBeUndefined();
-      expect(onError).toHaveBeenCalledExactlyOnceWith(failure.message);
+      expect(onError).toHaveBeenCalledExactlyOnceWith(failure.message, '/test');
     },
   );
 

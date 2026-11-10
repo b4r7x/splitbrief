@@ -230,7 +230,7 @@ describe('a run at rest that another process closes', () => {
       { projectDir, sessionId, bus: createRecoveryBus({ projectDir, sessionId, sink: () => {} }) },
       savedState,
     );
-    continuation?.handleResume();
+    const refusal = continuation?.handleResume();
 
     await vi.waitFor(() => {
       const route = routerStore.get();
@@ -243,10 +243,9 @@ describe('a run at rest that another process closes', () => {
       kind: 'closed',
       as: 'ended',
     });
-    expect(feedbackStore.get()).toEqual({
-      message: 'Cannot continue: this run was ended; start a new one.',
-      isError: true,
-    });
+    // The caller that asked for the continuation shows the reason.
+    expect(refusal).toBe('Cannot continue: this run was ended; start a new one.');
+    expect(feedbackStore.get().message).toBeNull();
     expect(eventsStore.get().events.map((event) => event.type)).toContain('workflow_started');
   });
 });

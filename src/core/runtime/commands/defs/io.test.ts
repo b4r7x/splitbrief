@@ -55,39 +55,31 @@ describe('/image command', () => {
   });
 
   it('turns an attachment refusal into repair guidance', async () => {
-    const errors: string[] = [];
     const command = imageCommand(
-      makeCtx({
-        insertImage: () => ({ ok: false, reason: 'not-found' }),
-        setFeedbackError: (message) => errors.push(message),
-      }),
+      makeCtx({ insertImage: () => ({ ok: false, reason: 'not-found' }) }),
     );
 
-    await command.handler('/tmp/outside.png');
-
-    expect(errors).toEqual(['Cannot attach image: file not found. Check the path and try again.']);
+    expect(await command.handler('/tmp/outside.png')).toBe(
+      'Cannot attach image: file not found. Check the path and try again.',
+    );
   });
 
   it('names a folder refusal as not a regular file', async () => {
     const projectDir = createTempDir('image-command-folder');
     try {
       mkdirSync(join(projectDir, 'folder'));
-      const errors: string[] = [];
       const command = imageCommand(
         makeCtx({
           insertImage: (input) => {
             const result = resolveAttachment({ input, projectDir });
             return result.ok ? { ok: true, path: result.attachment.path } : result;
           },
-          setFeedbackError: (message) => errors.push(message),
         }),
       );
 
-      await command.handler('folder');
-
-      expect(errors).toEqual([
+      expect(await command.handler('folder')).toBe(
         'Cannot attach image: not a regular file. Name a file, not a directory.',
-      ]);
+      );
     } finally {
       cleanupTempDir(projectDir);
     }

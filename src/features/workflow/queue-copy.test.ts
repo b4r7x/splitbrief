@@ -146,6 +146,15 @@ describe('queueCopy', () => {
     expect(copy.delivered).toEqual({ label: 'Delivered', value: `to ${label}` });
   });
 
+  it.each([
+    [false, 'Queued for BUILD on T001'],
+    [true, 'Sent to BUILD on T001 · read after this tool'],
+  ])('names no key while a stop is in progress, steerable %s', (steerable, feedback) => {
+    expect(queueCopy({ seat: 'build', taskId: 'T001', steerable, stopping: true }).feedback).toBe(
+      feedback,
+    );
+  });
+
   it('names the count only when more than one message is delivered', () => {
     const copy = queueCopy({ seat: 'build', taskId: 'T003', count: 2 });
     expect(copy.byline).toBe('2 queued for BUILD on T003');

@@ -39,6 +39,10 @@ import { lifecycleStore } from '../../../../src/stores/workflow/lifecycle.js';
 import { glyph } from '../../../../src/lib/glyphs.js';
 import { feedbackStore } from '../../../../src/stores/ui/feedback.js';
 import { composerDraftStore } from '../../../../src/stores/ui/composer-draft.js';
+import { saveSessionDraft } from '../../../../src/stores/ui/session-drafts.js';
+import { routerStore } from '../../../../src/stores/navigation/router.js';
+import { createDraftDocument } from '../../../../src/core/composer/document.js';
+import { listRowLead } from '../../../../src/components/list-row.js';
 import { reviewKeysStore } from '../../../../src/stores/ui/review-keys.js';
 import { REVIEW_COMMENT_HINTS } from '../../../../src/features/workflow/prompt-rows/approval.js';
 import { formatCopyResult } from '../../../../src/core/runtime/commands/types.js';
@@ -82,6 +86,7 @@ function applyStop(stop: FixtureStopState): void {
 // session-scoped stores from a mount effect (`use-runner.ts`) and replays the projection after it.
 // Stamping on every run start is what survives that replay.
 const PLAN_CARD_COMMENT_DRAFT = 'Split the CLI change into a separate task.';
+const PLAN_CARD_OVER_DRAFT = 'also print the greeting in uppercase';
 const TYPED_WORDS = 'keep the old lockfile';
 
 function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureFactory {
@@ -106,6 +111,22 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
   }
   if (projection.scenarioId === 'workflow-plan-card-request-empty') {
     return () => ({ ...base(), afterMount: () => reviewKeysStore.requestComment() });
+  }
+  // The draft was typed before the plan arrived, so the composer restores it when the screen mounts
+  // and the card opens over it.
+  if (projection.scenarioId === 'workflow-plan-card-over-draft') {
+    return () => {
+      const lifecycle = base();
+      return {
+        ...lifecycle,
+        setup: async (context) => {
+          await lifecycle.setup(context);
+          const route = routerStore.get();
+          if (route.screen !== 'workflow') throw new Error('The plan card fixture needs a run');
+          saveSessionDraft(route.run.ref, createDraftDocument(PLAN_CARD_OVER_DRAFT));
+        },
+      };
+    };
   }
   if (
     projection.scenarioId === 'workflow-seat-switched' ||
@@ -1038,6 +1059,13 @@ const checkpointPredicates = [
   [
     checkpointId('plan-card-request-empty'),
     (context) => planCardReady(context) && includesAll(REVIEW_COMMENT_HINTS)(context),
+  ],
+  [
+    checkpointId('plan-card-over-draft'),
+    (context) =>
+      planCardReady(context) &&
+      includesAll(PLAN_CARD_OVER_DRAFT)(context) &&
+      excludesAll(`${listRowLead('active')}Approve plan`)(context),
   ],
   [
     checkpointId('plan-repaired'),

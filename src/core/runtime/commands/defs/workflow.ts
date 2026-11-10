@@ -5,7 +5,7 @@ import {
   type RuntimeCommandContext,
 } from '../types.js';
 import { assertNever, includes } from '../../../../utils/type-guards.js';
-import { isLivePhase } from '../../../phases.js';
+import { isLivePhase, isRunLivePhase } from '../../../phases.js';
 import { toErrorMessage } from '../../../../utils/format-errors.js';
 import { countNoun } from '../../../../utils/pluralize.js';
 import {
@@ -41,9 +41,7 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
           ? undefined
           : 'No run to resume in this phase';
       },
-      handler: () => {
-        if (!ctx.resumeRun()) ctx.setFeedbackError('Nothing to resume.');
-      },
+      handler: () => ctx.resumeRun(),
     },
     {
       kind: 'arg',
@@ -55,17 +53,16 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
       validScreens: ['workflow'],
       guard: (c) => {
         if (c.applying) return APPLY_RUNNING_REFUSAL;
-        return c.openRunAtRest || isLivePhase(c.phase)
+        // The waiting plan card takes a steer as its change request, and a brief check takes it as
+        // a stop that the run continues from.
+        return c.openRunAtRest || isRunLivePhase(c.phase)
           ? undefined
           : 'No run to steer in this phase';
       },
       handler: (args) => {
         const text = args?.trim() ?? '';
-        if (text === '') {
-          ctx.setFeedbackError('Usage: /steer <correction>');
-          return;
-        }
-        if (!ctx.steerRun(text)) ctx.setFeedbackError('Nothing to steer.');
+        if (text === '') return 'Usage: /steer <correction>';
+        return ctx.steerRun(text);
       },
     },
     {
@@ -78,11 +75,11 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
       guard: (c) => {
         if (c.applying) return APPLY_RUNNING_REFUSAL;
         if (c.applyUnfinished) return APPLY_UNFINISHED_REFUSAL;
-        return c.openRunAtRest || isLivePhase(c.phase) ? undefined : 'No run to end in this phase';
+        return c.openRunAtRest || isRunLivePhase(c.phase)
+          ? undefined
+          : 'No run to end in this phase';
       },
-      handler: () => {
-        if (!ctx.endRun()) ctx.setFeedbackError('No active run to end.');
-      },
+      handler: () => (ctx.endRun() ? undefined : 'No active run to end.'),
     },
     {
       kind: 'arg',
@@ -96,18 +93,15 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
         const sub = args?.trim().toLowerCase();
         if (!sub || sub === 'show') {
           ctx.setFeedbackMessage(ctx.getQueueCopy().summary);
-          return;
+          return undefined;
         }
         if (sub === 'clear') {
           const result = await ctx.clearQueue();
-          if (result.status === 'unavailable') {
-            ctx.setFeedbackError(result.message);
-            return;
-          }
+          if (result.status === 'unavailable') return result.message;
           ctx.setFeedbackMessage(ctx.getQueueCopy(result.count).clearFeedback);
-          return;
+          return undefined;
         }
-        ctx.setFeedbackError(`Unknown queue command: ${sub}. Use: /queue show or /queue clear`);
+        return `Unknown queue command: ${sub}. Use: /queue show or /queue clear`;
       },
     },
     {
@@ -125,10 +119,7 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
           .toLowerCase()
           .split(/\s+/)
           .filter(Boolean);
-        if (!includes(RUN_ACTIONS, action)) {
-          ctx.setFeedbackError(`Usage: /run <${RUN_ACTIONS.join('|')}>`);
-          return;
-        }
+        if (!includes(RUN_ACTIONS, action)) return `Usage: /run <${RUN_ACTIONS.join('|')}>`;
         if (action === 'accept') {
           try {
             const result = await ctx.acceptRun(confirmation === 'confirm');
@@ -162,29 +153,23 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
                 ctx.setFeedbackError('Apply stopped; resolve it in the recovery menu.');
                 break;
               case 'unavailable':
-                ctx.setFeedbackError(result.message);
-                break;
+                return result.message;
               default:
                 assertNever(result);
             }
           } catch (err) {
             ctx.setFeedbackError(toErrorMessage(err));
           }
-          return;
+          return undefined;
         }
-        if (confirmation !== 'confirm') {
-          ctx.setFeedbackError('Usage: /run reject confirm');
-          return;
-        }
+        if (confirmation !== 'confirm') return 'Usage: /run reject confirm';
         try {
           const result = await ctx.rejectRun();
           switch (result.status) {
             case 'empty':
-              ctx.setFeedbackError('No run snapshot to reject.');
-              break;
+              return 'No run snapshot to reject.';
             case 'accepted':
-              ctx.setFeedbackError(`Run already accepted at snapshot ${result.snapshotId}.`);
-              break;
+              return `Run already accepted at snapshot ${result.snapshotId}.`;
             case 'rejected': {
               ctx.refreshRun();
               const feedback = rejectRunFeedback(runRejectFacts(result));
@@ -211,14 +196,14 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
               break;
             }
             case 'unavailable':
-              ctx.setFeedbackError(result.message);
-              break;
+              return result.message;
             default:
               assertNever(result);
           }
         } catch (err) {
           ctx.setFeedbackError(toErrorMessage(err));
         }
+        return undefined;
       },
     },
   ];

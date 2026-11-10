@@ -13,6 +13,7 @@ interface ComposerDraftActions {
   prependDocument: (front: DraftDocument) => void;
   insertImage: (attachment: Attachment) => void;
   resetHistory: () => void;
+  holdMenus: () => void;
   bumpEpoch: () => void;
 }
 
@@ -29,6 +30,7 @@ function applyComposerDocument(document: DraftDocument, actions: ComposerDraftAc
 }
 
 function applyComposerDraft(request: ComposerDraftRequest, actions: ComposerDraftActions): void {
+  actions.resetHistory();
   switch (request.kind) {
     case 'document':
       actions.setDocument(request.document);
@@ -38,6 +40,7 @@ function applyComposerDraft(request: ComposerDraftRequest, actions: ComposerDraf
       break;
     case 'prepend':
       actions.prependDocument(request.document);
+      actions.holdMenus();
       break;
     case 'image':
       actions.insertImage(request.attachment);
@@ -45,7 +48,6 @@ function applyComposerDraft(request: ComposerDraftRequest, actions: ComposerDraf
     default:
       assertNever(request);
   }
-  actions.resetHistory();
   actions.bumpEpoch();
 }
 

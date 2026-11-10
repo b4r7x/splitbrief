@@ -1,8 +1,9 @@
 import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { plainUserMessage } from '../../core/types/user-input.js';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { renderInputMode } from '#testing/helpers/input-mode.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -58,6 +59,11 @@ import { loadEvents } from '../../stores/workflow/actions/load.js';
 import { createDraftDocument } from '../../core/composer/document.js';
 import { writeSessionDraft } from '../../core/sessions/draft.js';
 import { installDiagnosticSink } from '../../lib/warn.js';
+import { buildPromptCallbacks } from './prompt-callbacks.js';
+import { plainAnswer } from './hooks/use-input-mode.js';
+import type { ApprovalReviewResult } from '../../core/approval/types.js';
+import { reviewStore } from '../../stores/workflow/review.js';
+import { questionPromptStore } from '../../stores/question-prompt/prompt.js';
 
 describe('createAbortHandlerScope', () => {
   afterEach(() => {
@@ -258,27 +264,70 @@ describe('requestResume', () => {
   beforeEach(() => {
     clearAllHandlers();
     stopStore.__testReset();
+    feedbackStore.reset();
   });
 
   afterEach(() => {
     clearAllHandlers();
     stopStore.__testReset();
+    feedbackStore.reset();
   });
 
   it('hands every continuation to the run, park or no park', () => {
-    const resume = vi.fn();
+    const resume = vi.fn(() => undefined);
     const steer = vi.fn();
     setResumeHandler(resume);
     stopStore.park('mid-brief', 'T002', steer);
 
-    expect(requestResume(plainUserMessage('use the other adapter'))).toBe(true);
+    expect(requestResume(plainUserMessage('use the other adapter'))).toBeUndefined();
     expect(resume).toHaveBeenCalledWith(plainUserMessage('use the other adapter'));
     // The run decides what continuing means; nothing settles behind its back.
     expect(steer).not.toHaveBeenCalled();
   });
 
   it('reports nothing to resume when no run is on screen', () => {
-    expect(requestResume(plainUserMessage(''))).toBe(false);
+    expect(requestResume(plainUserMessage(''))).toBe('Nothing to resume.');
+  });
+
+  it('returns the reason when the run refuses to continue', () => {
+    setResumeHandler(() => 'No saved state to continue.');
+
+    expect(requestResume(plainUserMessage(''))).toBe('No saved state to continue.');
+    expect(feedbackStore.get().message).toBeNull();
+  });
+
+  it('returns the stop as the reason while the run stops, and shows no text itself', () => {
+    const resume = vi.fn(() => undefined);
+    setResumeHandler(resume);
+    stopStore.request('stop-now');
+
+    expect(requestResume(plainUserMessage(''))).toBe('Finish stopping before resuming.');
+    expect(resume).not.toHaveBeenCalled();
+    expect(feedbackStore.get().message).toBeNull();
+  });
+
+  it('requestResume refuses while a call runs and no park waits, and calls no resume handler', () => {
+    const resume = vi.fn(() => undefined);
+    const stop = vi.fn();
+    setResumeHandler(resume);
+    setStopHandler(stop);
+
+    expect(requestResume(plainUserMessage(''))).toBe('Nothing to resume: the run has not stopped.');
+    expect(resume).not.toHaveBeenCalled();
+    expect(stop).not.toHaveBeenCalled();
+    expect(stopStore.get()).toMatchObject({ intent: 'none', phase: 'idle' });
+    expect(feedbackStore.get().message).toBeNull();
+  });
+
+  it('requestResume settles a park while the pass still holds its handlers', () => {
+    const resume = vi.fn(() => undefined);
+    setResumeHandler(resume);
+    setStopHandler(vi.fn());
+    stopStore.request('stop-now');
+    stopStore.park('mid-brief', 'T001', vi.fn());
+
+    expect(requestResume(plainUserMessage(''))).toBeUndefined();
+    expect(resume).toHaveBeenCalledExactlyOnceWith(plainUserMessage(''));
   });
 });
 
@@ -366,12 +415,13 @@ describe('a boundary park of a REVIEW None pass after the last brief', () => {
     expect(stopStore.get().phase).toBe('parked');
   });
 
-  it('sends a steer to the resume handler, which refuses the words', () => {
+  it('sends a steer to the resume handler, and returns its refusal of the words', () => {
     const settle = parkedAt(REVIEW_STEP, NONE);
-    const resume = vi.fn();
+    const refusal = 'Cannot send words to the review. Clear them.';
+    const resume = vi.fn(() => refusal);
     setResumeHandler(resume);
 
-    expect(requestSteer(WORDS)).toBe(true);
+    expect(requestSteer(WORDS)).toBe(refusal);
     expect(settle).not.toHaveBeenCalled();
     expect(resume).toHaveBeenCalledExactlyOnceWith(WORDS);
   });
@@ -398,18 +448,190 @@ describe('requestSteer', () => {
   beforeEach(() => {
     clearAllHandlers();
     stopStore.__testReset();
+    feedbackStore.reset();
   });
 
   afterEach(() => {
     clearAllHandlers();
     stopStore.__testReset();
+    reviewStore.reset();
+    questionPromptStore.reset();
+    feedbackStore.reset();
+  });
+
+  // The review that the run opens, held until the test settles it.
+  function openReview(type: 'plan' | 'artifact') {
+    const held = Promise.withResolvers<ApprovalReviewResult>();
+    const resolve = vi.fn<(value: unknown) => void>();
+    const review = buildPromptCallbacks({
+      inputMode: {
+        mode: 'review',
+        hint: '',
+        questionEpoch: 0,
+        setReviewMode: () => held.promise,
+        setQuestionMode: async () => plainAnswer(''),
+        resolve,
+        resetMode: () => {},
+      },
+      abortedRef: { current: false },
+      controller: new AbortController(),
+    }).onApprovalNeeded(type, type === 'plan' ? '/tmp/plan.md' : { label: 'a', text: 'b' }, []);
+    return {
+      resolve,
+      settle: async () => {
+        held.resolve({ approved: false });
+        await review;
+      },
+    };
+  }
+
+  // The planner question that the run asks, through the input mode that the screen renders.
+  async function openQuestion() {
+    const { inputMode, mode, unmount } = await renderInputMode();
+    onTestFinished(unmount);
+    const answered = buildPromptCallbacks({
+      inputMode,
+      abortedRef: { current: false },
+      controller: new AbortController(),
+    }).onPlannerReply?.({
+      call: 'plan',
+      text: '',
+      questions: [{ id: 'numbers', type: 'input', text: 'Which numbers?' }],
+      answers: [],
+      answered: false,
+    });
+    await vi.waitFor(() => expect(mode()).toBe('question'));
+    return { inputMode, answered };
+  }
+
+  it('sends the words to the waiting planner question as its answer and stops nothing', async () => {
+    const stop = vi.fn();
+    const abort = vi.fn();
+    setStopHandler(stop);
+    createAbortHandlerScope()(abort);
+    const question = await openQuestion();
+    const message = plainUserMessage('also fix the typo');
+
+    const refusal = requestSteer(message);
+
+    expect(abort).not.toHaveBeenCalled();
+    expect(stop).not.toHaveBeenCalled();
+    expect(stopStore.get().intent).toBe('none');
+    expect(refusal).toBeUndefined();
+    await expect(question.answered).resolves.toEqual(message);
+  });
+
+  it('stops the run with a steer once the planner question is answered', async () => {
+    const stop = vi.fn();
+    setStopHandler(stop);
+    const question = await openQuestion();
+    question.inputMode.resolve(plainAnswer('Integers only'));
+    await expect(question.answered).resolves.toEqual(plainUserMessage('Integers only'));
+
+    expect(requestSteer(plainUserMessage('smaller diffs'))).toBeUndefined();
+
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns the reason when the run refuses to continue with the words', () => {
+    const refusal =
+      'Cannot continue: this run is ready to apply; choose Apply or Discard (/run accept, /run reject confirm).';
+    setResumeHandler(() => refusal);
+
+    expect(requestSteer(plainUserMessage('also fix the typo'))).toBe(refusal);
+    expect(feedbackStore.get().message).toBeNull();
+  });
+
+  it('returns the stop as the one reason while the run stops, and shows no text itself', () => {
+    const stop = vi.fn();
+    setStopHandler(stop);
+    expect(requestStopNow()).toBe(true);
+
+    expect(requestSteer(plainUserMessage('also fix the typo'))).toBe(
+      'Finish stopping before steering.',
+    );
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(feedbackStore.get().message).toBeNull();
+  });
+
+  it('shows the reason when the run refuses the words after the stop parked', () => {
+    const refusal = 'No saved state to continue.';
+    setStopHandler(vi.fn());
+    setResumeHandler(() => refusal);
+
+    expect(requestSteer(plainUserMessage('also fix the typo'))).toBeUndefined();
+    stopStore.park('mid-brief', 'T001', null);
+
+    expect(feedbackStore.get()).toEqual({ message: refusal, isError: true });
+  });
+
+  it('sends the words to the waiting plan card as its change request and stops nothing', async () => {
+    const stop = vi.fn();
+    setStopHandler(stop);
+    const card = openReview('plan');
+    const message = plainUserMessage('also fix the typo');
+
+    expect(requestSteer(message)).toBeUndefined();
+
+    expect(card.resolve).toHaveBeenCalledExactlyOnceWith({
+      approved: false,
+      action: 'revise',
+      message,
+    });
+    expect(stop).not.toHaveBeenCalled();
+    expect(stopStore.get().intent).toBe('none');
+    await card.settle();
+  });
+
+  it('keeps a newer plan card open to a steer when the older one settles after it opened', async () => {
+    const stop = vi.fn();
+    setStopHandler(stop);
+    const older = openReview('plan');
+    const newer = openReview('plan');
+    await older.settle();
+    const message = plainUserMessage('also fix the typo');
+
+    expect(requestSteer(message)).toBeUndefined();
+
+    expect(newer.resolve).toHaveBeenCalledExactlyOnceWith({
+      approved: false,
+      action: 'revise',
+      message,
+    });
+    expect(older.resolve).not.toHaveBeenCalled();
+    expect(stop).not.toHaveBeenCalled();
+    await newer.settle();
+  });
+
+  it('stops the run with a steer once the plan card is answered', async () => {
+    const stop = vi.fn();
+    setStopHandler(stop);
+    const card = openReview('plan');
+    await card.settle();
+
+    expect(requestSteer(plainUserMessage('smaller diffs'))).toBeUndefined();
+
+    expect(card.resolve).not.toHaveBeenCalled();
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops the run with a steer over a review that is not the plan card', async () => {
+    const stop = vi.fn();
+    setStopHandler(stop);
+    const review = openReview('artifact');
+
+    expect(requestSteer(plainUserMessage('smaller diffs'))).toBeUndefined();
+
+    expect(review.resolve).not.toHaveBeenCalled();
+    expect(stop).toHaveBeenCalledTimes(1);
+    await review.settle();
   });
 
   it('stops now and holds the text until the park lands', () => {
     const stop = vi.fn();
     setStopHandler(stop);
 
-    expect(requestSteer(plainUserMessage('smaller diffs'))).toBe(true);
+    expect(requestSteer(plainUserMessage('smaller diffs'))).toBeUndefined();
     expect(stop).toHaveBeenCalledTimes(1);
 
     // The text survives the stop race: the park that follows resumes with it.
@@ -422,16 +644,23 @@ describe('requestSteer', () => {
     const steer = vi.fn();
     stopStore.park('mid-brief', 'T002', steer);
 
-    expect(requestSteer(plainUserMessage('use the other adapter'))).toBe(true);
+    expect(requestSteer(plainUserMessage('use the other adapter'))).toBeUndefined();
     expect(steer).toHaveBeenCalledWith(plainUserMessage('use the other adapter'));
   });
 
   it('reports nothing to steer when no run is on screen', () => {
-    expect(requestSteer(plainUserMessage('nope'))).toBe(false);
+    expect(requestSteer(plainUserMessage('nope'))).toBe('Nothing to steer.');
+    expect(feedbackStore.get().message).toBeNull();
+  });
+
+  it('reports nothing to steer for a steer with no words', () => {
+    setResumeHandler(vi.fn(() => undefined));
+
+    expect(requestSteer(plainUserMessage('  '))).toBe('Nothing to steer.');
   });
 
   it('hands a resolverless park to the run continuation with its attachments', () => {
-    const resume = vi.fn();
+    const resume = vi.fn(() => undefined);
     setResumeHandler(resume);
     stopStore.park('mid-brief', 'T001', null);
     const message = {
@@ -439,7 +668,7 @@ describe('requestSteer', () => {
       attachedInputs: [{ path: '/tmp/send-now-note.md', kind: 'text' as const }],
     };
 
-    expect(requestSteer(message)).toBe(true);
+    expect(requestSteer(message)).toBeUndefined();
     expect(resume).toHaveBeenCalledExactlyOnceWith(message);
   });
 
@@ -452,7 +681,7 @@ describe('requestSteer', () => {
     setStopHandler(vi.fn());
     setCancelHandler(vi.fn());
     createAbortHandlerScope()(vi.fn());
-    expect(requestSteer(plainUserMessage('keep the greeting API'))).toBe(true);
+    expect(requestSteer(plainUserMessage('keep the greeting API'))).toBeUndefined();
 
     expect(stop()).toBe(true);
     const resolve = vi.fn();
@@ -467,7 +696,7 @@ describe('requestSteer', () => {
     setStopHandler(() => stopStore.park('mid-brief', 'T001', resolve));
     const message = plainUserMessage('keep the greeting API');
 
-    expect(requestSteer(message)).toBe(true);
+    expect(requestSteer(message)).toBeUndefined();
     expect(resolve).toHaveBeenCalledExactlyOnceWith(message);
     expect(stopStore.get().phase).toBe('idle');
   });

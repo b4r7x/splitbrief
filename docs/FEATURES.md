@@ -55,7 +55,7 @@ Home sends attached text as planner context, like `start`. A mid-run message car
 
 A BUILD seat that takes images gets them as images. A vision API model receives `image_url` parts. Codex uses `--image`. Opencode and kilo use `--file`. Claude-code receives image content blocks through stream-json input. Any other seat gets `[image:<id>] = <path>` lines and an Images transcript row stating that the seat takes no images.
 
-A refused plain send keeps the whole draft, history, and pending images unchanged. Feedback names the reason and fix. `/steer` accepts the same `@` references. A refused `/steer` clears the draft and records the command in history; ↑ recalls it. The refusal sends no correction and leaves pending images unchanged.
+A refused plain send keeps the whole draft, history, and pending images unchanged. Feedback names the reason and fix. `/steer` accepts the same `@` references. A refused `/steer` stays in the composer, as every refused command does, and the feedback line names the one reason. The refusal sends no correction and leaves pending images unchanged.
 
 **How to use.**
 
@@ -441,7 +441,7 @@ A closed run's `Run` block shows a `Scope` row with `clean`, `1 error · 1 warni
 | `/queue [show\|clear]` | Show or clear the message queue |
 | `/run <accept\|reject>` | Accept or reject what this run wrote (rejection needs `/run reject confirm`) |
 | `/resume` | Continue a paused or stopped run |
-| `/steer <correction>` | Stop now and continue with your correction, including `@file` references. Refusal clears the draft and records history; ↑ recalls it. |
+| `/steer <correction>` | Stop now and continue with your correction, including `@file` references. Over a waiting plan card, request changes with it. Over a waiting planner question, answer the round with it. Over a waiting recovery panel, send it as the typed correction. |
 | `/end` | Close the run, saving unapplied changes |
 | `/stop` | Open the inline session-options menu (Stop now, Pause after this brief, End run) |
 
@@ -596,7 +596,7 @@ The `queueCopy` function supplies the placeholder, byline, transcript labels, an
 | Surface | Text |
 |---|---|
 | Byline and `/queue show` | `1 queued for BUILD on T003` |
-| Feedback | `Queued for BUILD on T003 · ctrl+⏎ sends now` |
+| Feedback | `Queued for BUILD on T003 · ctrl+⏎ sends now`. While a stop is in progress: `Queued for BUILD on T003`, because `ctrl+⏎` then shows `Finish stopping before steering.` |
 | Transcript, pending | `Queued for BUILD on T003 · read when its call ends`, or `· read after its checks` while the brief's checks run, or `· read when its call starts` before the brief starts |
 | Transcript, delivered | `Delivered to BUILD on T003` |
 
@@ -609,18 +609,18 @@ When a steerable call of the receiving seat is attached, SPLITBRIEF offers the m
 | Transcript, pending | `Queued for BUILD on T003 · read after this tool` | `Queued for PLAN · read after this tool` | `Queued for REVIEW · read after this tool` |
 | Transcript, delivered mid-call | `Delivered mid-call to BUILD on T003` | `Delivered mid-call to PLAN` | `Delivered mid-call to REVIEW` |
 
-The byline stays `1 queued for BUILD on T003` until the first delivery event removes that message from the queued count. PLAN and REVIEW use the same byline pattern. Without a matching steerable call, the copy in the first table stays unchanged.
+The byline stays `1 queued for BUILD on T003` until the first delivery event removes that message from the queued count. PLAN and REVIEW use the same byline pattern. Without a matching steerable call, the copy in the first table stays unchanged. While a stop is in progress, the feedback after Enter leaves out `· ctrl+⏎ interrupts`, as in the first table.
 
 `message_queued` has optional `steerable: boolean`. It records whether the queue captured a matching call for this submission. The transcript uses this saved value to select the pending row's delivery timing. It also carries optional `starting: true` when BUILD has not started the brief. The pending row then reads `read when its call starts`.
 
 `message_queued` and `queue_drained` supply the transcript's optional `seat` and `taskId`. A mid-call delivery adds `via: 'mid-call'` to `queue_drained`. Older events without these fields still render. `/queue show` reports the queued count. `/queue clear` removes only messages awaiting first delivery. See [Queued count](./ENGINE.md#queued-count) and [Delivery to a running call](./ENGINE.md#delivery-to-a-running-call) for state fields and delivery outcomes.
 
-`ctrl+⏎` with text stops now and continues with the text and attachments, like `/steer <text>`. Suggestions and runtime commands keep their own Enter behavior. A terminal without extended keys reports this key as Enter, which queues the message. `/steer` works in every terminal.
+`ctrl+⏎` with text stops now and continues with the text and attachments, like `/steer <text>`, also while a brief's checks run. While the plan card waits, `ctrl+⏎` with text and `/steer <text>` send the text as the change request, as Enter on a draft does, and stop nothing. While a planner question waits, both send the text as the answer to the round, as Enter on a composer draft does, and stop nothing. While a recovery panel (`Needs you`, `Seat down`) waits, both send the text as the typed correction, as Enter on a composer draft does, and stop nothing. Suggestions and runtime commands keep their own Enter behavior. A terminal without extended keys reports this key as Enter, which queues the message. `/steer` works in every terminal.
 
 **Steer, queue, interrupt.** The composer means a different thing in each state, and its placeholder says which:
 
 - **Queue** — Enter with text queues a message for the active stage's seat. The tables above show its delivery copy. `/queue show` reports the queued count. `/queue clear` removes only messages awaiting first delivery.
-- **Steer** — while the run is parked (`Stop now`, or an interrupted call), a blank Enter resumes a run parked in this process exactly as `/resume` does, and typed text steers it. A continuable run at rest resumes on a blank Enter. `/steer <correction>` is the explicit form: it stops the run now and continues it with the correction, holding the text through the stop race. It accepts `@file` references. A refused `/steer` clears the draft and records the command in history. ↑ recalls it.
+- **Steer** — while the run is parked (`Stop now`, or an interrupted call), a blank Enter resumes a run parked in this process exactly as `/resume` does, and typed text steers it. A continuable run at rest resumes on a blank Enter. `/steer <correction>` is the explicit form: it stops the run now and continues it with the correction, holding the text through the stop race. It accepts `@file` references. Over a waiting plan card or planner question it stops nothing: the correction is the change request or the answer to the round. A refused `/steer` stays in the composer, and the feedback line names the one reason, such as `Finish stopping before steering.` while a stop is in progress.
 - **Interrupt** — `ctrl+c` stops the run at once, `esc` opens the stop menu. Neither is reachable by typing.
 
 **Mid-call steering.** Claude Code and opencode seats take your message mid-call, right after the current tool, when the call carries a steering port. The current tool continues without interruption. Other seats take your message after the call, in the correction pass. Codex never uses mid-call steering. See [Mid-call steering](./PLANNERS-AND-IMPLEMENTERS.md#mid-call-steering) for supported versions and transports.

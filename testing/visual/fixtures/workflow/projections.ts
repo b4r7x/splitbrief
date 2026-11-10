@@ -9330,6 +9330,7 @@ const projections = [
   { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-commenting') },
   { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-typed-command') },
   { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-request-empty') },
+  { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-over-draft') },
   {
     ...planCompiledProjection,
     scenarioId: scenarioId('workflow-plan-repaired'),

@@ -88,6 +88,7 @@ const { useAppKeys } = await import('../keys.js');
 
 const FIXED_TS = 1_783_958_400_000;
 const SHIFT_ENTER = '\x1b[13;2u';
+const CTRL_ENTER = '\x1b[13;5u';
 
 function pendingWorkflow(): Promise<never> {
   return new Promise<never>(() => {});
@@ -178,7 +179,7 @@ function WithPalette({ children }: { children: ReactNode }) {
       {active === 'command-palette' && (
         <CommandPaletteOverlay
           commands={commands}
-          onRuntimeCommand={(raw) => handleRuntimeCommand(raw, 'workflow')}
+          onRuntimeCommand={(raw) => handleRuntimeCommand(raw, 'workflow', 'row')}
         />
       )}
     </>
@@ -1237,6 +1238,79 @@ describe('WorkflowScreen showing a run at rest', () => {
     ui.unmount();
   });
 
+  it('gives a typed correction back when the run cannot continue with it', async () => {
+    // No state is saved for this run, so the continuation finds nothing to continue.
+    openRun();
+    const prepareResume = vi.fn();
+    const ui = renderFeature(
+      <WorkflowScreen
+        commands={[]}
+        onRuntimeCommand={vi.fn()}
+        deps={{
+          runWorkflow,
+          sessionSelect: {
+            applying: () => false,
+            loadResumeState: hydrateResume,
+            prepareResume,
+            hydrateRun: async () => {},
+          },
+        }}
+      />,
+    );
+    await flushEffects();
+
+    ui.stdin.write('use the cached parser');
+    await flushEffects();
+    ui.stdin.write('\r');
+
+    await vi.waitFor(() => {
+      expect(feedbackStore.get()).toEqual({
+        message: 'No saved state to continue.',
+        isError: true,
+      });
+    });
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().text).toBe('use the cached parser');
+    });
+    expect(prepareResume).not.toHaveBeenCalled();
+    ui.unmount();
+  });
+
+  it('names the reason when a bare ⏎ cannot continue the run, and leaves the spaces in the composer as they are', async () => {
+    // No state is saved for this run, so the continuation finds nothing to continue.
+    openRun();
+    const ui = renderFeature(
+      <WorkflowScreen
+        commands={[]}
+        onRuntimeCommand={vi.fn()}
+        deps={{
+          runWorkflow,
+          sessionSelect: {
+            applying: () => false,
+            loadResumeState: hydrateResume,
+            prepareResume: vi.fn(),
+            hydrateRun: async () => {},
+          },
+        }}
+      />,
+    );
+    await flushEffects();
+
+    ui.stdin.write('  ');
+    await flushEffects();
+    ui.stdin.write('\r');
+
+    await vi.waitFor(() => {
+      expect(feedbackStore.get()).toEqual({
+        message: 'No saved state to continue.',
+        isError: true,
+      });
+    });
+    await flushEffects();
+    expect(composerLiveStore.get().text).toBe('  ');
+    ui.unmount();
+  });
+
   /** A run at rest on a final review that failed after two fix cycles. */
   function renderFailedReviewRun() {
     const issue = buildReviewFailedRecoveryIssue({
@@ -2000,7 +2074,7 @@ describe('WorkflowScreen showing a run at rest', () => {
 
     ui.stdin.write('\r');
     await vi.waitFor(() => {
-      expect(onRuntimeCommand).toHaveBeenCalledWith('/run accept');
+      expect(onRuntimeCommand).toHaveBeenCalledWith('/run accept', 'row');
     });
     ui.unmount();
   });
@@ -2395,7 +2469,7 @@ describe('WorkflowScreen showing a run at rest', () => {
       return (
         <WorkflowScreen
           commands={model.commands}
-          onRuntimeCommand={(raw) => model.handleRuntimeCommand(raw, 'workflow')}
+          onRuntimeCommand={(raw, sentBy) => model.handleRuntimeCommand(raw, 'workflow', sentBy)}
         />
       );
     }
@@ -2663,7 +2737,7 @@ describe('WorkflowScreen showing a run at rest', () => {
       expect(frame()).toMatch(/\| Discard · /);
       ui.stdin.write('\r');
       await flushEffects();
-      expect(onRuntimeCommand).toHaveBeenCalledWith('/run reject confirm');
+      expect(onRuntimeCommand).toHaveBeenCalledWith('/run reject confirm', 'row');
       ui.unmount();
     },
   );
@@ -2818,7 +2892,7 @@ describe('WorkflowScreen showing a run at rest', () => {
 
     ui.stdin.write('\r');
     await vi.waitFor(() => {
-      expect(onRuntimeCommand).toHaveBeenCalledWith('/run accept');
+      expect(onRuntimeCommand).toHaveBeenCalledWith('/run accept', 'row');
     });
     ui.unmount();
   });
@@ -2857,7 +2931,7 @@ describe('WorkflowScreen showing a run at rest', () => {
 
     ui.stdin.write('\r');
     await vi.waitFor(() => {
-      expect(onRuntimeCommand).toHaveBeenCalledWith('/run accept');
+      expect(onRuntimeCommand).toHaveBeenCalledWith('/run accept', 'row');
     });
     ui.unmount();
   });
@@ -2887,7 +2961,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('missing null check');
     ui.stdin.write('\r');
     await vi.waitFor(() => {
-      expect(onRuntimeCommand).toHaveBeenCalledWith('/run accept confirm');
+      expect(onRuntimeCommand).toHaveBeenCalledWith('/run accept confirm', 'row');
       expect(feedbackStore.get()).toEqual({
         message: 'Applied 1 file to your checkout.',
         isError: false,
@@ -2908,7 +2982,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     await vi.waitFor(() => {
       expect(onRuntimeCommand).toHaveBeenCalledWith('/settings');
     });
-    expect(onRuntimeCommand).not.toHaveBeenCalledWith('/run accept');
+    expect(onRuntimeCommand).not.toHaveBeenCalledWith('/run accept', 'row');
     ui.unmount();
   });
 
@@ -2927,7 +3001,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     await vi.waitFor(() => {
       expect(onRuntimeCommand).toHaveBeenCalledWith('/settings');
     });
-    expect(onRuntimeCommand).not.toHaveBeenCalledWith('/run accept');
+    expect(onRuntimeCommand).not.toHaveBeenCalledWith('/run accept', 'row');
     ui.unmount();
   });
 
@@ -2962,7 +3036,7 @@ describe('WorkflowScreen showing a run at rest', () => {
       expect(onRuntimeCommand).toHaveBeenCalledWith('/settings');
     });
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('Apply with 1 open finding?');
-    expect(onRuntimeCommand).not.toHaveBeenCalledWith('/run accept confirm');
+    expect(onRuntimeCommand).not.toHaveBeenCalledWith('/run accept confirm', 'row');
     ui.unmount();
   });
 
@@ -3476,6 +3550,225 @@ describe('WorkflowScreen when a menu opens over a draft', () => {
     expect(runWorkflow).toHaveBeenCalledTimes(1);
     expect(loadState(route.run.ref)?.pendingRecovery?.id).toBe(issue.id);
     expect(stripAnsiStyles(ui.lastFrame())).toContain('Try again');
+    ui.unmount();
+  });
+
+  const APPROVE_ROW = 'Approve plan and start the build';
+
+  // The planner holds while the test types, then the plan card opens over what the composer holds.
+  async function openPlanCardAfter(draft: string) {
+    const reviewPath = join(projectDir, 'plan.md');
+    writeFileSync(reviewPath, 'Greet people by name.', 'utf8');
+    const hold = Promise.withResolvers<void>();
+    const outcomes: ApprovalReviewResult[] = [];
+    runWorkflow.mockImplementation(async (opts) => {
+      publishEvent(opts, {
+        type: 'workflow_started',
+        ts: FIXED_TS,
+        phase: 'planning',
+        feature: 'ready run',
+      });
+      await hold.promise;
+      publishEvent(opts, { type: 'plan_card_opened', ts: FIXED_TS + 1, phase: 'reviewing-plan' });
+      outcomes.push(await opts.callbacks.onApprovalNeeded('plan', reviewPath, []));
+      return pendingWorkflow();
+    });
+    const onRuntimeCommand = vi.fn();
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={onRuntimeCommand} deps={workflowDeps} />,
+      { cols: 120, rows: 40 },
+    );
+    await vi.waitFor(() => {
+      expect(runViewStore.get().phase).toBe('planning');
+    });
+    await flushEffects();
+    for (const letter of draft) {
+      ui.stdin.write(letter);
+      await flushEffects();
+    }
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().text).toBe(draft);
+    });
+    const framesBefore = ui.frames.length;
+    hold.resolve();
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame())).toContain(APPROVE_ROW);
+    });
+    const first = ui.frames
+      .slice(framesBefore)
+      .map((frame) => stripAnsiStyles(frame))
+      .find((frame) => frame.includes(APPROVE_ROW));
+    return { ui, onRuntimeCommand, outcomes, first: first ?? '' };
+  }
+
+  const changeRequest = (text: string) => ({
+    approved: false,
+    action: 'revise',
+    message: { text, displayText: text, images: [], attachedInputs: [] },
+  });
+
+  it('paints the plan card without the keys and sends the whole draft as a change request', async () => {
+    const { ui, outcomes, first } = await openPlanCardAfter(DRAFT);
+    expect(first).toContain(`${glyph('prompt')} ${DRAFT}`);
+    expect(first).not.toContain(`${listRowLead('active')}Approve plan`);
+    expect(first).toContain(
+      '⏎ request changes with the typed correction · tab back to the actions',
+    );
+
+    await typeLetters(ui, ' in the second helper');
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(outcomes).toEqual([changeRequest(`${DRAFT} in the second helper`)]);
+    });
+    ui.unmount();
+  });
+
+  it.each(['ok', 'end', 'no'])(
+    'sends a draft "%s" over the plan card as a change request, not as a command',
+    async (word) => {
+      const { ui, outcomes } = await openPlanCardAfter(word);
+      ui.stdin.write('\r');
+      await vi.waitFor(() => {
+        expect(outcomes).toEqual([changeRequest(word)]);
+      });
+      ui.unmount();
+    },
+  );
+
+  it('gives the plan card the keys on tab, and the rows answer ⏎', async () => {
+    const { ui, outcomes } = await openPlanCardAfter(DRAFT);
+    expect(stripAnsiStyles(ui.lastFrame())).not.toContain(`${listRowLead('active')}Approve plan`);
+    ui.stdin.write('\t');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame())).toContain(`${listRowLead('active')}Approve plan`);
+    });
+    expect(outcomes).toEqual([]);
+    await flushEffects();
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(outcomes).toEqual([{ approved: true }]);
+    });
+    ui.unmount();
+  });
+
+  it('gives the plan card the keys on ⏎ once the draft is deleted', async () => {
+    const { ui, outcomes } = await openPlanCardAfter(DRAFT);
+    expect(stripAnsiStyles(ui.lastFrame())).not.toContain(`${listRowLead('active')}Approve plan`);
+    for (const _ of DRAFT) {
+      ui.stdin.write('\b');
+      await flushEffects();
+    }
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().empty).toBe(true);
+    });
+    expect(stripAnsiStyles(ui.lastFrame())).toContain('tab back to the actions');
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame())).toContain(`${listRowLead('active')}Approve plan`);
+    });
+    expect(outcomes).toEqual([]);
+    ui.unmount();
+  });
+
+  it('runs a slash command typed before the plan card opened', async () => {
+    const { ui, outcomes, onRuntimeCommand, first } = await openPlanCardAfter('/settings');
+    // The command list of the composer takes the rows of the card legend here.
+    expect(first).not.toContain(`${listRowLead('active')}Approve plan`);
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(onRuntimeCommand).toHaveBeenCalledWith('/settings');
+    });
+    expect(outcomes).toEqual([]);
+    ui.unmount();
+  });
+
+  it('gives the plan card the keys when it opens over an empty composer', async () => {
+    const { ui, outcomes, first } = await openPlanCardAfter('');
+    expect(first).toContain(`${listRowLead('active')}Approve plan`);
+    expect(first).toContain(REVIEW_DOCUMENT_HINTS);
+    await flushEffects();
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(outcomes).toEqual([{ approved: true }]);
+    });
+    ui.unmount();
+  });
+
+  // An overlay covers the plan card, then closes, and the card is painted again.
+  async function openAndCloseOverlay(
+    ui: ReturnType<typeof renderFeature>,
+    overlay: Parameters<typeof overlayStore.open>[0],
+  ) {
+    overlayStore.open(overlay);
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame())).not.toContain(APPROVE_ROW);
+    });
+    await flushEffects();
+    overlayStore.close();
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame())).toContain(APPROVE_ROW);
+    });
+    await flushEffects();
+  }
+
+  it.each(['help', 'command-palette', 'settings', 'stop-sheet'] as const)(
+    'leaves the keys in the draft when %s closes over the waiting plan card',
+    async (overlay) => {
+      const { ui, outcomes } = await openPlanCardAfter(DRAFT);
+      await openAndCloseOverlay(ui, overlay);
+      const frame = stripAnsiStyles(ui.lastFrame());
+      expect(frame).toContain(`${glyph('prompt')} ${DRAFT}`);
+      // No row of the card is marked, so ⏎ takes none.
+      for (const row of ['Approve plan', 'Request changes', 'Edit plan', 'End run']) {
+        expect(frame).toContain(`${listRowLead('default')}${row}`);
+      }
+
+      ui.stdin.write('\r');
+      await vi.waitFor(() => {
+        expect(outcomes).toEqual([changeRequest(DRAFT)]);
+      });
+      ui.unmount();
+    },
+  );
+
+  it.each(['help', 'command-palette', 'settings'] as const)(
+    'keeps a comment typed in the plan card when %s closes over it',
+    async (overlay) => {
+      const { ui, outcomes } = await openPlanCardAfter('');
+      await flushEffects();
+      await typeLetters(ui, 'rename the helper');
+      await openAndCloseOverlay(ui, overlay);
+      expect(composerLiveStore.get().text).toBe('rename the helper');
+      expect(stripAnsiStyles(ui.lastFrame())).toContain(`${glyph('prompt')} rename the helper`);
+
+      ui.stdin.write('\r');
+      await vi.waitFor(() => {
+        expect(outcomes).toEqual([changeRequest('rename the helper')]);
+      });
+      ui.unmount();
+    },
+  );
+
+  it('gives the keys back to a plan card that held them when an overlay closes', async () => {
+    const { ui, outcomes } = await openPlanCardAfter('');
+    await flushEffects();
+    await openAndCloseOverlay(ui, 'help');
+    expect(stripAnsiStyles(ui.lastFrame())).toContain(`${listRowLead('active')}Approve plan`);
+
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(outcomes).toEqual([{ approved: true }]);
+    });
+    ui.unmount();
+  });
+
+  it('sends the whole draft as a change request on ctrl+⏎ over the waiting plan card, and stops nothing', async () => {
+    const { ui, outcomes } = await openPlanCardAfter(DRAFT);
+    ui.stdin.write(CTRL_ENTER);
+    await vi.waitFor(() => {
+      expect(outcomes).toEqual([changeRequest(DRAFT)]);
+    });
+    expect(stopStore.get().intent).toBe('none');
     ui.unmount();
   });
 });
@@ -4066,6 +4359,62 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
     ui.unmount();
   });
 
+  it('continues the run with the words of a ctrl+⏎ sent while no call is live, and opens no stop sheet', async () => {
+    navigatePreparedWorkflow(projectDir, 'panel slash');
+    const stopped = makeWorkflowState({
+      phase: 'implementing',
+      tasks: [makeTask({ id: 'T001', status: 'in_progress' })],
+      interruptedStep: {
+        step: { kind: 'brief', taskId: brief, attempt: 0 },
+        source: 'user',
+        at: '2026-10-13T08:00:00.000Z',
+        cut: 'mid-step',
+      },
+    });
+    // No call takes the steer, so the whole run stops and saves where it stopped.
+    runWorkflow.mockImplementationOnce(async (opts) => {
+      startBrief(opts);
+      const aborted = Promise.withResolvers<void>();
+      opts.signal?.addEventListener('abort', () => aborted.resolve(), { once: true });
+      await aborted.promise;
+      saveState(opts.prepared.session.ref, stopped);
+      return makeSummary();
+    });
+    runWorkflow.mockImplementation(pendingWorkflow);
+    const ui = renderFeature(
+      <WorkflowScreen
+        commands={[]}
+        onRuntimeCommand={vi.fn()}
+        deps={{
+          runWorkflow,
+          sessionSelect: {
+            applying: () => false,
+            loadResumeState: () => ({ kind: 'loaded', state: stopped }),
+            prepareResume: async () => ({
+              kind: 'prepared' as const,
+              execution: preparedExecution(projectDir, 'panel slash'),
+            }),
+            hydrateRun: async () => {},
+          },
+        }}
+      />,
+    );
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Message BUILD on T001');
+    });
+
+    await pressKeys(ui, [...'also fix']);
+    ui.stdin.write(CTRL_ENTER);
+    await vi.waitFor(() => {
+      expect(runWorkflow).toHaveBeenCalledTimes(2);
+    });
+    const continued = runWorkflow.mock.calls[1]?.[0];
+    expect(continued?.steer).toMatchObject({ text: 'also fix' });
+    expect(continued?.resumeCause).toBeUndefined();
+    expect(overlayStore.get().active).toBe('none');
+    ui.unmount();
+  });
+
   describe('a planner question in a short terminal', () => {
     const openQuestion = async (rows: number, replies: unknown[]) => {
       terminalSizeStore.__testReset({ cols: 80, rows });
@@ -4158,10 +4507,10 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('› /usage');
     ui.stdin.write('\r');
     await vi.waitFor(() => {
-      expect(onRuntimeCommand).toHaveBeenCalledWith('/usage');
+      expect(onRuntimeCommand).toHaveBeenCalledWith('/usage', 'answer');
     });
     await flushEffects();
-    expect(onRuntimeCommand.mock.calls).toEqual([['/usage']]);
+    expect(onRuntimeCommand.mock.calls).toEqual([['/usage', 'answer']]);
     expect(replies).toEqual([]);
     expect(feedbackStore.get().isError).toBe(false);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
@@ -4269,10 +4618,10 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
         await press(ui, command);
         ui.stdin.write('\r');
         await vi.waitFor(() => {
-          expect(onRuntimeCommand).toHaveBeenCalledWith(command);
+          expect(onRuntimeCommand).toHaveBeenCalledWith(command, 'answer');
         });
         await flushEffects();
-        expect(onRuntimeCommand.mock.calls).toEqual([[command]]);
+        expect(onRuntimeCommand.mock.calls).toEqual([[command, 'answer']]);
         expect(replies).toEqual([]);
         const frame = frameOf(ui);
         expect(frame).toContain('Question 1 of 1');

@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { renderInputMode } from '#testing/helpers/input-mode.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
@@ -38,6 +39,7 @@ import {
   type UseInputModeResult,
 } from './hooks/use-input-mode.js';
 import { createRecoveryDriver } from './recovery-driver.js';
+import { clearAllHandlers, requestSteer, setStopHandler } from './handlers.js';
 import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { readEvidenceLedger } from '../../core/evidence/ledger-storage.js';
 import { join } from 'node:path';
@@ -1203,6 +1205,45 @@ describe('createRecoveryDriver', () => {
     expect(result.shouldRun).toBe(true);
     if (result.shouldRun) {
       expect(result.steer).toEqual(plainUserMessage('the prop is optional — add a default'));
+      expect(result.state.pendingRecovery).toBeUndefined();
+      expect(result.state.tasks[0]?.status).toBe('pending');
+    }
+  });
+
+  it('a steer at a waiting recovery panel runs the correction action with the words', async () => {
+    const { prepared, state } = setupSession({
+      reason: 'runner-usage-limit',
+      seat: 'build',
+      resetAt: '2026-10-10T17:00:00.000Z',
+    });
+    const stop = vi.fn();
+    setStopHandler(stop);
+    const { inputMode, mode, unmount } = await renderInputMode();
+    const controller = new AbortController();
+    const outcome = createRecoveryDriver({
+      prepared,
+      configOfRun: prepared.sourceConfig,
+      inputMode,
+      abortedRef: { current: false },
+      retentionNoticeHandled: { current: true },
+      sink: addTuiEvent,
+      setInlineResume: () => {},
+    })({ state, controller, republishPrompt: false });
+    onTestFinished(async () => {
+      controller.abort();
+      await outcome.catch(() => undefined);
+      unmount();
+      clearAllHandlers();
+    });
+    await vi.waitFor(() => expect(mode()).toBe('question'));
+
+    expect(requestSteer(plainUserMessage('also fix the typo'))).toBeUndefined();
+
+    expect(stop).not.toHaveBeenCalled();
+    const result = await outcome;
+    expect(result.shouldRun).toBe(true);
+    if (result.shouldRun) {
+      expect(result.steer).toEqual(plainUserMessage('also fix the typo'));
       expect(result.state.pendingRecovery).toBeUndefined();
       expect(result.state.tasks[0]?.status).toBe('pending');
     }

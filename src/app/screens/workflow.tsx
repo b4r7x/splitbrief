@@ -108,7 +108,7 @@ import { draftRefusalStore } from '../../stores/ui/session-drafts.js';
 
 interface WorkflowScreenProps {
   commands: RuntimeCommandDef[];
-  onRuntimeCommand: (command: string) => void;
+  onRuntimeCommand: (command: string, sentBy?: 'row' | 'answer') => void;
   deps?: WorkflowScreenDeps | undefined;
   readClipboardImage?: typeof readClipboardImage | undefined;
   listProjectFiles?: typeof listProjectFiles | undefined;
@@ -153,10 +153,13 @@ export function WorkflowScreen({
     // which is where every other seat preparation in the TUI already goes.
     deps: { ...deps, sessionSelect: deps?.sessionSelect ?? sessionSelectDeps },
   });
-  const reviewArtifact =
-    model.inputMode.mode === 'review' && !model.promptPending && !model.hasOverlay
+  const planCardArtifact =
+    model.inputMode.mode === 'review' && !model.promptPending
       ? reviewArtifactForPhase(model.phase)
       : null;
+  // An overlay takes the paint of the plan card. The card stays open below it, with its focus.
+  const planCardOpen = planCardArtifact !== null;
+  const reviewArtifact = model.hasOverlay ? null : planCardArtifact;
   // A draft in the composer is what turns the letters back into text, so the flag the composer
   // publishes decides whether the panel follows the draft or the row ↓ moved to.
   const reviewDraft =
@@ -168,6 +171,11 @@ export function WorkflowScreen({
     reviewSelectedRef.current = 0;
     setReviewSelected(0);
   }, [reviewArtifact, reviewOwnerToken]);
+  const { focused: planCardFocused, setMenu: setPlanCardFocused } = usePanelFocus(
+    String(reviewOwnerToken),
+    planCardOpen,
+  );
+  const planCardWaits = planCardOpen && !planCardFocused;
 
   const handleReviewBoundaryNavigate = (direction: 'up' | 'down'): boolean => {
     if (reviewArtifact === null) return false;
@@ -192,7 +200,7 @@ export function WorkflowScreen({
     });
     if (!submission.ok && submission.reason === 'command') {
       questionPromptStore.setFocus('answer', '');
-      model.handleRuntimeCommand(text.trim());
+      model.handleRuntimeCommand(text.trim(), 'answer');
       return;
     }
     if (!submission.ok) {
@@ -230,6 +238,12 @@ export function WorkflowScreen({
     composerLiveStore.setDraft(submission.document);
     if (structuredQuestion) {
       if (message.text.trim() !== '') void model.handleInput(message);
+      return;
+    }
+    // The card opened over the draft, so the whole draft is the change request, whatever word it
+    // opens with.
+    if (planCardWaits) {
+      model.inputMode.resolve({ approved: false, action: 'revise', message });
       return;
     }
     if (reviewArtifact !== null && message.displayText.trim() === '') {
@@ -557,7 +571,7 @@ export function WorkflowScreen({
                   onConfirmingChange={setConfirming}
                   focused={resultMenuFocused && !keysHeldAbove}
                   onFocusChange={setResultMenu}
-                  onCommand={model.handleRuntimeCommand}
+                  onCommand={(raw) => model.handleRuntimeCommand(raw, 'row')}
                   onShowDiff={() => {
                     if (ready !== undefined) void showRunDiff(ready);
                   }}
@@ -567,11 +581,17 @@ export function WorkflowScreen({
             handleInput={handleFooterInput}
             readClipboardImage={readClipboardImage}
             listProjectFiles={listProjectFiles}
-            onEmptySubmit={resultMenuOpen ? () => setResultMenu(true) : model.onEmptySubmit}
+            onEmptySubmit={
+              resultMenuOpen
+                ? () => setResultMenu(true)
+                : planCardWaits
+                  ? () => setPlanCardFocused(true)
+                  : model.onEmptySubmit
+            }
             emptyAnswerNotice={recoveryPromptOpen ? RECOVERY_EMPTY_ENTER_NOTICE : undefined}
             onRuntimeCommand={model.handleRuntimeCommand}
             commands={commands}
-            mode={model.inputMode.mode}
+            mode={planCardWaits ? 'normal' : model.inputMode.mode}
             inputHint={
               stopMenuOpen
                 ? STOP_SHEET_COMPOSER_HINT
@@ -611,7 +631,9 @@ export function WorkflowScreen({
                       setResultMenu(!resultMenuFocused);
                     },
                   }
-                : {})}
+                : planCardWaits
+                  ? { onToggleMenu: () => setPlanCardFocused(true) }
+                  : {})}
             panelHoldsKeys={takeKeys !== undefined}
             onReviewBoundaryNavigate={handleReviewBoundaryNavigate}
             {...(byline !== undefined && { byline })}
@@ -659,6 +681,7 @@ export function WorkflowScreen({
                     budgetRows: reviewBudgetRows,
                     selectedIndex: reviewSelected,
                     draft: reviewDraft,
+                    focused: planCardFocused,
                   },
                 })}
           />

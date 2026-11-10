@@ -781,7 +781,7 @@ describe('a stop inside a call', () => {
   it.each([
     { exit: 'a bare Resume', go: () => resumeParkedRun(plainUserMessage('')) },
     { exit: 'a Resume with a steer', go: () => resumeParkedRun(plainUserMessage('use zod')) },
-    { exit: '/steer', go: () => requestSteer(plainUserMessage('use zod')) },
+    { exit: '/steer', go: () => requestSteer(plainUserMessage('use zod')) === undefined },
   ])(
     'names the cut seat after $exit, then the run pass seat, then the saved one',
     async ({ go }) => {

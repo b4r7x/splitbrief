@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { plainUserMessage, type UserMessageInput } from '../../core/types/user-input.js';
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
+import { createDraftDocument } from '../../core/composer/document.js';
+import { composerLiveStore } from '../ui/composer-live.js';
 import { questionOptions, questionPromptStore as store } from './prompt.js';
 
 const questions: ClarificationQuestion[] = [
@@ -15,7 +17,10 @@ const questions: ClarificationQuestion[] = [
   { id: 'ready', type: 'confirm', text: 'Proceed?', default: false },
 ];
 
-afterEach(() => store.reset());
+afterEach(() => {
+  store.reset();
+  composerLiveStore.reset();
+});
 
 describe('planner question batch', () => {
   it('reports an incomplete answer batch as a typed error without completing the prompt', () => {
@@ -150,6 +155,22 @@ describe('planner question batch', () => {
       { id: 'empty', type: 'choice', text: 'Pick', options: ['A', 'B'], default: 'Missing' },
     ]);
     expect(store.get().drafts[0]).toEqual({ text: '', selected: 0 });
+  });
+
+  it('opens at the composer over a draft, so the rest of the sentence reaches the draft', () => {
+    composerLiveStore.setDraft(createDraftDocument('also fix the typo'));
+    for (const batch of [
+      questions,
+      [{ id: 'free', type: 'input', text: 'Pick' }],
+    ] satisfies ClarificationQuestion[][]) {
+      store.setQuestions(batch);
+      expect(store.get().focus).toBe('composer');
+    }
+  });
+
+  it('opens at the menu over an empty composer', () => {
+    store.setQuestions(questions);
+    expect(store.get().focus).toBe('menu');
   });
 });
 

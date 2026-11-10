@@ -633,6 +633,19 @@
 - A Codex sub-agent call now shows its action, such as `spawn_agent`, in place of `collab_tool_call`. A spawn shows as an agent row.
 - Words that you type while a run stops stay in the composer. The stop no longer opens Session options over them, so the next `⏎` continues the run with your words or runs your command. With an empty composer, the stop opens Session options as before.
 - The result menu or a `Needs you` or `Seat down` panel that opens while you type no longer takes your keys. Your words stay in the composer, and Tab gives the keys to the menu. With an empty composer, the menu takes the keys as before.
+- The plan card and a planner question that open while you type no longer take your keys. Your words stay in the composer. Over the plan card, `⏎` sends them to the planner as the change request. Tab gives the keys to the card or the question. With an empty composer, the card and the question take the keys as before.
+- When help, the command palette, Settings or the stop sheet opens and closes over the plan card, your draft, a typed comment and the keys stay where they were, so the next `⏎` does not approve the plan.
+- Over a waiting plan card, `ctrl+⏎` with text requests changes with the text, as `⏎` does, and no longer stops the run.
+- `ctrl+⏎` with text while a brief's checks run continues the run with the text. Before, the run stopped and the text was lost.
+- `/steer <text>` over a waiting plan card now requests changes with the text, as `⏎` does, and `/steer <text>` while a brief's checks run continues the run with the text. Before, `/steer` in these two states said `No run to steer in this phase`, and the typed line was gone.
+- A typed command that SPLITBRIEF refuses now stays in the composer with its reason, so you can correct it and send it again. The command list stays closed over that line until you edit it. A command that you type in the answer field of a planner question goes back to that field.
+- `/steer <text>` over a waiting planner question now answers the question with the text and stops nothing. Before, the run stopped and the planner did not get the text.
+- `/steer <text>` over a `Needs you` or `Seat down` panel now sends the text as the typed correction and continues the run at once, as `ctrl+⏎` does. Before, the run stopped and the same panel opened again over an empty composer.
+- `/steer <text>` at the result menu of a run that is ready to apply now shows the one reason why the run cannot continue. While a stop is in progress, `/steer <text>` shows only `Finish stopping before steering.`
+- `/skills` with only unknown or unavailable ids now shows the reason and keeps the line in the composer.
+- `/end` now closes the run over a waiting plan card and while a brief's checks run.
+- `/resume` while a planner, build or review call runs no longer stops that call. It now says `Nothing to resume: the run has not stopped.`, and the call goes on.
+- While a stop is in progress, the notice after `⏎` no longer offers `ctrl+⏎`. That key waits until the run has stopped.
 
 ## [0.1.0] - 2026-08-07
 

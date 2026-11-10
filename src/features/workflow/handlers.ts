@@ -41,9 +41,12 @@ type AbortHandler = () => void;
 interface Handlers {
   stop: () => void;
   cancel: () => void;
-  resume: (message: UserMessageInput) => void;
+  /** Continues the run. A refusal comes back as its reason, and the caller shows it. */
+  resume: (message: UserMessageInput) => string | undefined;
   queue: QueueHandler;
   clearQueue: () => QueueClearResult | Promise<QueueClearResult>;
+  /** Answers the prompt that waits now with the text: the plan card or a question that waits. */
+  waitingPrompt: (message: UserMessageInput) => void;
 }
 
 const handlers: Partial<Handlers> = {};
@@ -97,6 +100,18 @@ export const setResumeHandler = (h: Handlers['resume'] | null) => setHandler('re
 export const setQueueHandler = (h: Handlers['queue'] | null) => setHandler('queue', h);
 export const setClearQueueHandler = (h: Handlers['clearQueue'] | null) =>
   setHandler('clearQueue', h);
+
+/**
+ * The prompt that waits now: the plan card or a question that waits. The returned function takes it
+ * away again, unless a newer prompt replaced it: an older prompt can settle after the newer one
+ * opened.
+ */
+export function setWaitingPromptHandler(h: Handlers['waitingPrompt']): () => void {
+  handlers.waitingPrompt = h;
+  return () => {
+    if (handlers.waitingPrompt === h) delete handlers.waitingPrompt;
+  };
+}
 
 export function abortTurn(): boolean {
   const top = abortHandlers.at(-1);
@@ -172,15 +187,27 @@ export function landBoundaryPause(): 'park' | 'continue' | 'stop' {
   return intent === 'pause-after-brief' ? 'stop' : 'continue';
 }
 
+/** This process holds a pass of the run that a stop can end. */
+function passHasSomethingToStop(): boolean {
+  return handlers.stop !== undefined || abortHandlers.length > 0 || handlers.cancel !== undefined;
+}
+
+/** A stop was asked for and has not parked or failed yet. Until then a steer is refused. */
+export function stopInProgress(): boolean {
+  const { intent, phase } = stopStore.get();
+  return (
+    intent !== 'none' && intent !== 'pause-after-brief' && phase !== 'parked' && phase !== 'failed'
+  );
+}
+
 // A stop that has nothing to stop is not announced: the byline would report a run terminating
 // while no process was ever asked to.
 export function requestStopNow(): boolean {
   clearPendingSteer();
   const state = stopStore.get();
   if (state.phase === 'parked' || state.phase === 'ended') return false;
-  if (state.intent !== 'none' && state.intent !== 'pause-after-brief' && state.phase !== 'failed')
-    return true;
-  if (!handlers.stop && abortHandlers.length === 0 && !handlers.cancel) return false;
+  if (stopInProgress()) return true;
+  if (!passHasSomethingToStop()) return false;
   // Announce before calling a handler: an already-idle operation may settle synchronously.
   stopStore.request(state.intent === 'end-run' ? 'end-run' : 'stop-now');
   pendingBoundaryPause = false;
@@ -190,16 +217,18 @@ export function requestStopNow(): boolean {
 }
 
 // Continuing is one path, and the run owns it: the handler it installs settles a park
-// this process is holding or re-enters the run at rest, and decides which.
-export function requestResume(message: UserMessageInput): boolean {
+// this process is holding or re-enters the run at rest, and decides which. A refusal comes back
+// as its reason, and the caller shows it.
+export function requestResume(message: UserMessageInput): string | undefined {
   const stop = stopStore.get();
   if (stop.intent !== 'none' && stop.intent !== 'pause-after-brief' && stop.phase !== 'parked') {
-    feedbackStore.setMessage('Finish stopping before resuming.');
-    return false;
+    return 'Finish stopping before resuming.';
   }
-  if (!handlers.resume) return false;
-  handlers.resume(message);
-  return true;
+  if (stop.phase !== 'parked' && passHasSomethingToStop()) {
+    return 'Nothing to resume: the run has not stopped.';
+  }
+  if (!handlers.resume) return 'Nothing to resume.';
+  return handlers.resume(message);
 }
 
 /**
@@ -219,33 +248,42 @@ export function resumeParkedRun(steer: UserMessageInput): boolean {
   return true;
 }
 
+// A steer with no call to stop and no park to settle continues the run, which can refuse the text.
+function steerAtRest(message: UserMessageInput): string | undefined {
+  return handlers.resume ? requestResume(message) : 'Nothing to steer.';
+}
+
 /**
- * `/steer <text>`: stop now and continue with the text as the correction. A run already parked
- * resumes here; a live call is stopped and the text held until its park lands, so a steer typed
- * during the stop race is not lost. A run at rest has nothing to stop and continues with the text.
+ * `/steer <text>` and ctrl+⏎: stop now and continue with the text as the correction. A run already
+ * parked resumes here; a live call is stopped and the text held until its park lands, so a steer
+ * typed during the stop race is not lost. A waiting plan card or question has nothing to stop and
+ * takes the text as its change request or its answer. A run at rest has nothing to stop
+ * and continues with the text. A refusal comes back as its one reason, and the caller shows it.
  */
-export function requestSteer(message: UserMessageInput): boolean {
-  if (message.text.trim() === '') return false;
+export function requestSteer(message: UserMessageInput): string | undefined {
+  if (message.text.trim() === '') return 'Nothing to steer.';
   const stop = stopStore.get();
-  if (stop.phase === 'parked') return resumeParkedRun(message) || requestResume(message);
-  if (stop.intent !== 'none' && stop.intent !== 'pause-after-brief' && stop.phase !== 'failed') {
-    feedbackStore.setMessage('Finish stopping before steering.');
-    return false;
+  if (stop.phase === 'parked') return resumeParkedRun(message) ? undefined : steerAtRest(message);
+  if (stopInProgress()) return 'Finish stopping before steering.';
+  if (handlers.waitingPrompt) {
+    handlers.waitingPrompt(message);
+    return undefined;
   }
-  if (!handlers.stop && abortHandlers.length === 0 && !handlers.cancel) {
-    return requestResume(message);
-  }
+  if (!passHasSomethingToStop()) return steerAtRest(message);
   clearPendingSteer();
   if (stop.intent === 'pause-after-brief') cancelBoundaryPause();
-  if (!abortTurn() && !requestStopNow()) return false;
+  if (!abortTurn() && !requestStopNow()) return 'Nothing to steer.';
   const resumeSteer = () => {
     if (stopStore.get().phase !== 'parked') return;
     clearPendingSteer();
-    if (!resumeParkedRun(message)) requestResume(message);
+    if (resumeParkedRun(message)) return;
+    // The caller got its answer when the stop began, so a refusal after the park shows here.
+    const refusal = steerAtRest(message);
+    if (refusal !== undefined) feedbackStore.setError(refusal);
   };
   steerUnsubscribe = stopStore.subscribe(resumeSteer);
   resumeSteer();
-  return true;
+  return undefined;
 }
 
 /**

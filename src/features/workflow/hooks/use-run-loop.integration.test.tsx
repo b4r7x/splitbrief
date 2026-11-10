@@ -105,7 +105,7 @@ import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 // preparation suite's concern.
 
 interface RunnerHandle {
-  handleResume: (message?: UserMessageInput) => void;
+  handleResume: (message?: UserMessageInput) => string | undefined;
   /** Answers the question the recovery panel is asking, as the composer would. */
   answer: (answer: QuestionAnswer) => void;
 }
@@ -117,7 +117,7 @@ interface HarnessProps {
   captureRunner?: { current: RunnerHandle | null };
   runWorkflow?: RunWorkflowFn | undefined;
   prepareExecution?: PrepareExecutionFn | undefined;
-  continueAtRest?: ((record: RunRecord, steer: UserMessageInput) => void) | undefined;
+  continueAtRest?: ((record: RunRecord, steer: UserMessageInput) => string | undefined) | undefined;
 }
 
 function Harness({
@@ -1116,7 +1116,7 @@ describe('useRunLoop', () => {
     inst.unmount();
   });
 
-  it('handleResume shows a feedback error when there is no saved state on disk', async () => {
+  it('handleResume returns the reason when there is no saved state on disk', async () => {
     const captureRunner: HarnessProps['captureRunner'] = { current: null };
     const prepared = preparedExecution({ projectDir, feature: 'add auth' });
     const runWorkflowStub: RunWorkflowFn = vi.fn(async () => makeSummary());
@@ -1124,8 +1124,8 @@ describe('useRunLoop', () => {
     const inst = renderHarness({ prepared, captureRunner, runWorkflow: runWorkflowStub });
     await tick(60);
 
-    // No active session was written — handleResume should surface a feedback
-    // error instead of trying to resume.
+    // No active session was written: handleResume returns the reason instead of trying to
+    // resume, and the caller that asked for the continuation shows it.
     const runner = captureRunner.current;
     if (!runner) throw new Error('expected captureRunner.current to be populated');
     runViewStore.__testReset({ phase: 'final-review' });
@@ -1140,11 +1140,10 @@ describe('useRunLoop', () => {
         },
       ],
     });
-    runner.handleResume();
-    await tick(60);
+    const refusal = runner.handleResume();
 
-    expect(feedbackStore.get().message).toMatch(/no saved state/i);
-    expect(feedbackStore.get().isError).toBe(true);
+    expect(refusal).toBe('No saved state to continue. Press esc to return home.');
+    expect(feedbackStore.get().message).toBeNull();
     expect(lifecycleStore.get().cancelled).toBe(false);
     expect(lifecycleStore.get().queueDepth).toBe(0);
     expect(eventsStore.get().events).toEqual([]);
@@ -1539,9 +1538,49 @@ describe('useRunLoop', () => {
     expect(continueAtRest).toHaveBeenCalledWith(
       expect.objectContaining({ ref: { projectDir, sessionId } }),
       plainUserMessage(''),
+      'seat-change',
     );
     expect(stopStore.get()).toMatchObject({ intent: 'none', phase: 'idle' });
     expect(overlayStore.get().active).toBe('none');
+
+    inst.unmount();
+  });
+
+  it('shows the reason when the run at rest refuses to continue after a seat changed under it', async () => {
+    const sessionId = '2026-11-10-seat-change-refused';
+    ensureSessionDir(projectDir, sessionId);
+    saveState(
+      { projectDir, sessionId },
+      { ...createInitialState('add auth'), ...RUN_CREW, phase: 'implementing' },
+    );
+    const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
+    configStore.__testReset({ projectDir, config: prepared.config });
+    const reason = 'No saved state to continue.';
+    const continueAtRest = vi.fn(() => reason);
+    const { promise: seatChanged, resolve: seatChangedNow } = Promise.withResolvers<void>();
+    const runWorkflowStub: RunWorkflowFn = vi.fn(async (options) => {
+      await seatChanged;
+      options.sinks.consumeBoundaryPause?.();
+      await options.callbacks.onContinuationNeeded?.('', 'boundary', []);
+      return makeSummary();
+    });
+
+    const inst = renderHarness({ prepared, continueAtRest, runWorkflow: runWorkflowStub });
+    await vi.waitFor(() => {
+      expect(runWorkflowStub).toHaveBeenCalledTimes(1);
+    });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }),
+    });
+
+    seatChangedNow();
+    await vi.waitFor(() => {
+      expect(feedbackStore.get()).toEqual({ message: reason, isError: true });
+    });
+    expect(continueAtRest).toHaveBeenCalledTimes(1);
 
     inst.unmount();
   });
@@ -1629,9 +1668,9 @@ describe('useRunLoop', () => {
     ) {
       const captureRunner: HarnessProps['captureRunner'] = { current: null };
       // The screen's continuation of a run at rest re-enters it; here the loop's own re-entry.
-      const continueAtRest = vi.fn((_record: RunRecord, steer: UserMessageInput) => {
-        captureRunner.current?.handleResume(steer);
-      });
+      const continueAtRest = vi.fn((_record: RunRecord, steer: UserMessageInput) =>
+        captureRunner.current?.handleResume(steer),
+      );
       const inst = renderHarness({
         prepared,
         captureRunner,

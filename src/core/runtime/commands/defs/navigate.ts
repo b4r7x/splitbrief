@@ -59,7 +59,7 @@ export function navigateCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
         const tokens = args?.trim().split(/\s+/).filter(Boolean) ?? [];
         if (tokens.length === 0) {
           ctx.openOverlay('skills');
-          return;
+          return undefined;
         }
         const attached: string[] = [];
         const detached: string[] = [];
@@ -75,13 +75,15 @@ export function navigateCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
         const parts: string[] = [];
         if (attached.length > 0) parts.push(`Attached: ${attached.join(', ')}`);
         if (detached.length > 0) parts.push(`Detached: ${detached.join(', ')}`);
-        if (parts.length > 0) ctx.setFeedbackMessage(parts.join('; '));
-        for (const message of unavailable) ctx.setFeedbackError(message);
+        const failures = [...unavailable];
         if (unknown.length > 0) {
-          ctx.setFeedbackError(
-            `Unknown ${pluralize(unknown.length, 'skill')}: ${unknown.join(', ')}`,
-          );
+          failures.push(`Unknown ${pluralize(unknown.length, 'skill')}: ${unknown.join(', ')}`);
         }
+        // A line that changed no skill is refused with its reason. A line that changed one ran.
+        if (parts.length === 0) return failures.join(' ');
+        ctx.setFeedbackMessage(parts.join('; '));
+        for (const failure of failures) ctx.setFeedbackError(failure);
+        return undefined;
       },
     },
     {

@@ -25,6 +25,7 @@ import {
 } from '../../../stores/workflow/operations/state.js';
 import { requestSteer } from '../handlers.js';
 import { composerDraftStore } from '../../../stores/ui/composer-draft.js';
+import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { settleSlashHandoff, startSlashHandoff } from '../slash-handoff.js';
 
 export function WorkflowHeader({
@@ -180,7 +181,11 @@ export function WorkflowFooter({
         key={composerSession}
         width={composerWidth}
         onSubmit={handleInput}
-        onSendNow={(submission) => requestSteer(submission.message)}
+        onSendNow={(submission) => {
+          const refusal = requestSteer(submission.message);
+          if (refusal !== undefined) feedbackStore.setError(refusal);
+          return refusal === undefined;
+        }}
         readClipboardImage={readClipboardImage}
         listProjectFiles={listProjectFiles}
         onEmptySubmit={onEmptySubmit}

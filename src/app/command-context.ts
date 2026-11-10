@@ -26,7 +26,9 @@ import { configStore } from '../stores/project/config.js';
 import { sessionsStore } from '../stores/project/sessions.js';
 import { overlayStore } from '../stores/ui/overlay.js';
 import { composerDraftStore } from '../stores/ui/composer-draft.js';
+import { composerLiveStore } from '../stores/ui/composer-live.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
+import { questionPromptStore } from '../stores/question-prompt/prompt.js';
 import { controlsStore } from '../stores/ui/controls.js';
 import { terminalSizeStore } from '../stores/ui/terminal-size.js';
 import {
@@ -471,7 +473,10 @@ export function useRuntimeCommands({
   skillsStore.use((s) => s);
   const commands = createRuntimeCommands(ctx);
   const runtimeChainRef = useRef(Promise.resolve());
-  const handleRuntimeCommand = (raw: string, from: Screen) => {
+  // A typed line left its field at submit: the composer, or the answer field of a question. A
+  // refusal gives it back to that field, unless the user typed there again in the meantime. A
+  // command that a menu row sent was never in a field.
+  const handleRuntimeCommand = (raw: string, from: Screen, sentBy?: 'row' | 'answer') => {
     const config = configStore.get().config;
     runtimeChainRef.current = runtimeChainRef.current.then(() => {
       const applyBefore = activeApply();
@@ -482,7 +487,15 @@ export function useRuntimeCommands({
         openRunAtRest: isOpenRunAtRest(routerStore.get()),
         applyUnfinished: isApplyUnfinishedAtRest(routerStore.get()),
         applying: applyBefore !== undefined,
-        onError: feedbackStore.setError,
+        onError: (message, line) => {
+          feedbackStore.setError(message);
+          if (sentBy === 'answer') {
+            const { drafts, index } = questionPromptStore.get();
+            if (drafts[index]?.text === '') questionPromptStore.setFocus('answer', line);
+          } else if (sentBy !== 'row' && composerLiveStore.get().empty) {
+            composerDraftStore.requestPrepend(createDraftDocument(line));
+          }
+        },
       });
       // A command that started an Apply reports it when Apply settles; the next command runs now.
       return activeApply() === applyBefore ? command : undefined;

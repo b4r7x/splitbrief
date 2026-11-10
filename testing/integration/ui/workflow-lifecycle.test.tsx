@@ -287,7 +287,7 @@ describe('WorkflowScreen lifecycle', () => {
     }
   });
 
-  it('resumes a cancelled resumable session through /resume, never a blank Enter', async () => {
+  it('starts no pass on a blank Enter or /resume while the cancelled pass has not returned', async () => {
     const projectDir = createTempDir('workflow-screen-cancel-resumable');
     try {
       const sessionId = 'cancelled-planning';
@@ -329,11 +329,12 @@ describe('WorkflowScreen lifecycle', () => {
       await tick(20);
       expect(runWorkflow).toHaveBeenCalledTimes(1);
 
-      requestResume(plainUserMessage(''));
-
-      await vi.waitFor(() => {
-        expect(runWorkflow).toHaveBeenCalledTimes(2);
-      });
+      // The pass still holds its stop: /resume has nothing parked to continue, and a second pass
+      // over it would race the one that is still returning.
+      expect(requestResume(plainUserMessage(''))).toBe(
+        'Nothing to resume: the run has not stopped.',
+      );
+      expect(runWorkflow).toHaveBeenCalledTimes(1);
       ui.unmount();
     } finally {
       cleanupTempDir(projectDir);

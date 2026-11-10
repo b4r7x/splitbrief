@@ -1,7 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { renderInputMode } from '#testing/helpers/input-mode.js';
 import { plainUserMessage, type UserMessageInput } from '../../core/types/user-input.js';
 import { questionPromptStore } from '../../stores/question-prompt/prompt.js';
 import { buildPromptCallbacks } from './prompt-callbacks.js';
+import { clearAllHandlers, requestSteer } from './handlers.js';
+import type { PlannerConversation } from '../../core/schemas/workflow.js';
 import {
   plainAnswer,
   type QuestionAnswer,
@@ -13,6 +16,8 @@ import { runViewStore } from '../../stores/workflow/run-view.js';
 import { stopStore } from '../../stores/workflow/stop.js';
 import { seedBriefs } from '#testing/helpers/stores.js';
 import { reviewStore } from '../../stores/workflow/review.js';
+import { controlsStore } from '../../stores/ui/controls.js';
+import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../engine/events/workflow-cancel.js';
 
 function makeInputMode(answers: string | string[]): UseInputModeResult {
   const queue = Array.isArray(answers) ? [...answers] : [answers];
@@ -299,6 +304,84 @@ describe('buildPromptCallbacks onPlannerReply', () => {
     });
 
     await expect(callbacks.onPlannerReply?.(reply)).resolves.toBeUndefined();
+  });
+});
+
+describe('buildPromptCallbacks onPlannerReply, a steer over the question', () => {
+  const STEER = plainUserMessage('also fix the typo');
+
+  beforeEach(() => {
+    clearAllHandlers();
+    stopStore.__testReset();
+    lifecycleStore.__testReset({ status: 'running' });
+  });
+
+  afterEach(() => {
+    clearAllHandlers();
+    stopStore.__testReset();
+    lifecycleStore.__testReset();
+    questionPromptStore.reset();
+    controlsStore.reset();
+  });
+
+  // The question that the planner asks, through the input mode that the screen renders.
+  async function ask(questions: PlannerConversation['questions']) {
+    const { inputMode, mode, unmount } = await renderInputMode();
+    onTestFinished(unmount);
+    const pending = makeCallbacksWithInputMode(inputMode).onPlannerReply?.({
+      call: 'plan',
+      text: '',
+      questions,
+      answers: [],
+      answered: false,
+    });
+    await vi.waitFor(() => expect(mode()).toBe('question'));
+    return { inputMode, pending };
+  }
+
+  it('takes a steer as the answer while the question waits, and no steer once it is answered', async () => {
+    const { pending } = await ask([{ id: 'numbers', type: 'input', text: 'Which numbers?' }]);
+
+    expect(requestSteer(STEER)).toBeUndefined();
+
+    await expect(pending).resolves.toEqual(STEER);
+    expect(requestSteer(STEER)).toBe('Nothing to steer.');
+  });
+
+  it('takes a steer as the reply to a planner that asked in plain text', async () => {
+    const { pending } = await ask([]);
+
+    expect(requestSteer(STEER)).toBeUndefined();
+
+    await expect(pending).resolves.toEqual(STEER);
+  });
+
+  it('takes no steer once the wait ended with no answer', async () => {
+    const { inputMode, pending } = await ask([
+      { id: 'numbers', type: 'input', text: 'Which numbers?' },
+    ]);
+
+    inputMode.resetMode();
+    await expect(pending).rejects.toBe(WORKFLOW_USER_CANCELLED_ABORT_REASON);
+
+    expect(requestSteer(STEER)).toBe('Nothing to steer.');
+  });
+
+  it('clears an interrupt before the steer answers, as an answer from the composer does', async () => {
+    const { pending } = await ask([{ id: 'numbers', type: 'input', text: 'Which numbers?' }]);
+    const statusAtAnswer: string[] = [];
+    const stopWatching = controlsStore.subscribe(() => {
+      if (controlsStore.get().inputMode === 'normal') {
+        statusAtAnswer.push(lifecycleStore.get().status);
+      }
+    });
+    onTestFinished(stopWatching);
+    lifecycleStore.__testReset({ status: 'interrupted' });
+
+    requestSteer(STEER);
+
+    expect(statusAtAnswer).toEqual(['running']);
+    await expect(pending).resolves.toEqual(STEER);
   });
 });
 

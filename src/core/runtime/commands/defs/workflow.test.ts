@@ -61,8 +61,23 @@ describe('/resume', () => {
     ).toBe('No run to resume in this phase');
   });
 
+  it.each(['reviewing-plan', 'validating-task'] as const)(
+    'keeps its guard in %s, where a steer and an end are taken',
+    (phase) => {
+      expect(
+        command('/resume').guard?.({
+          phase,
+          plannerSupportsImages: true,
+          openRunAtRest: false,
+          applyUnfinished: false,
+          applying: false,
+        }),
+      ).toBe('No run to resume in this phase');
+    },
+  );
+
   it('continues the run through the resume port', async () => {
-    const resumeRun = vi.fn(() => true);
+    const resumeRun = vi.fn(() => undefined);
     const errors: string[] = [];
 
     await command('/resume', { resumeRun, setFeedbackError: (m) => errors.push(m) }).handler();
@@ -71,16 +86,12 @@ describe('/resume', () => {
     expect(errors).toEqual([]);
   });
 
-  it('says so when nothing is parked or saved', async () => {
-    const errors: string[] = [];
-
-    await command('/resume', {
-      resumeRun: () => false,
-      setFeedbackError: (m) => errors.push(m),
-    }).handler();
-
-    expect(errors).toEqual(['Nothing to resume.']);
-  });
+  it.each(['Nothing to resume.', 'Finish stopping before resuming.'])(
+    'refuses with the reason that the run gives: %s',
+    async (reason) => {
+      expect(await command('/resume', { resumeRun: () => reason }).handler()).toBe(reason);
+    },
+  );
 });
 
 describe('/steer', () => {
@@ -117,7 +128,7 @@ describe('/steer', () => {
   });
 
   it('stops now and continues with the correction through the steer port', async () => {
-    const steerRun = vi.fn(() => true);
+    const steerRun = vi.fn(() => undefined);
     const errors: string[] = [];
 
     await argCommand('/steer', { steerRun, setFeedbackError: (m) => errors.push(m) }).handler(
@@ -129,13 +140,50 @@ describe('/steer', () => {
   });
 
   it('asks for a correction when the text is blank', async () => {
-    const steerRun = vi.fn(() => true);
-    const errors: string[] = [];
+    const steerRun = vi.fn(() => undefined);
 
-    await argCommand('/steer', { steerRun, setFeedbackError: (m) => errors.push(m) }).handler('  ');
-
+    expect(await argCommand('/steer', { steerRun }).handler('  ')).toBe(
+      'Usage: /steer <correction>',
+    );
     expect(steerRun).not.toHaveBeenCalled();
-    expect(errors).toEqual(['Usage: /steer <correction>']);
+  });
+
+  it.each([
+    'Nothing to steer.',
+    'Finish stopping before steering.',
+    'Cannot continue: this run is ready to apply; choose Apply or Discard (/run accept, /run reject confirm).',
+  ])('refuses with the reason that the run gives: %s', async (reason) => {
+    expect(await argCommand('/steer', { steerRun: () => reason }).handler('focus on retries')).toBe(
+      reason,
+    );
+  });
+
+  it.each([
+    ['idle', 'No run to steer in this phase'],
+    ['researching', undefined],
+    ['specifying', undefined],
+    ['reviewing-spec', 'No run to steer in this phase'],
+    ['clarifying', 'No run to steer in this phase'],
+    ['constitution-check', 'No run to steer in this phase'],
+    ['planning', undefined],
+    ['reviewing-plan', undefined],
+    ['reviewing-briefs', 'No run to steer in this phase'],
+    ['analyzing', 'No run to steer in this phase'],
+    ['implementing', undefined],
+    ['validating-task', undefined],
+    ['escalating', undefined],
+    ['final-review', undefined],
+    ['complete', 'No run to steer in this phase'],
+  ] as const)('guards a steer in %s with %s', (phase, refusal) => {
+    expect(
+      argCommand('/steer').guard?.({
+        phase,
+        plannerSupportsImages: true,
+        openRunAtRest: false,
+        applyUnfinished: false,
+        applying: false,
+      }),
+    ).toBe(refusal);
   });
 });
 
@@ -191,6 +239,34 @@ describe('/end', () => {
     ).toBe('No run to end in this phase');
   });
 
+  it.each([
+    ['idle', 'No run to end in this phase'],
+    ['researching', undefined],
+    ['specifying', undefined],
+    ['reviewing-spec', 'No run to end in this phase'],
+    ['clarifying', 'No run to end in this phase'],
+    ['constitution-check', 'No run to end in this phase'],
+    ['planning', undefined],
+    ['reviewing-plan', undefined],
+    ['reviewing-briefs', 'No run to end in this phase'],
+    ['analyzing', 'No run to end in this phase'],
+    ['implementing', undefined],
+    ['validating-task', undefined],
+    ['escalating', undefined],
+    ['final-review', undefined],
+    ['complete', 'No run to end in this phase'],
+  ] as const)('guards an end in %s with %s', (phase, refusal) => {
+    expect(
+      command('/end').guard?.({
+        phase,
+        plannerSupportsImages: true,
+        openRunAtRest: false,
+        applyUnfinished: false,
+        applying: false,
+      }),
+    ).toBe(refusal);
+  });
+
   it('is not offered on a run at rest whose Apply did not finish', () => {
     expect(
       command('/end').guard?.({
@@ -212,13 +288,6 @@ describe('/end', () => {
   });
 
   it('says so when there is no run to end', async () => {
-    const errors: string[] = [];
-
-    await command('/end', {
-      endRun: () => false,
-      setFeedbackError: (m) => errors.push(m),
-    }).handler();
-
-    expect(errors).toEqual(['No active run to end.']);
+    expect(await command('/end', { endRun: () => false }).handler()).toBe('No active run to end.');
   });
 });
