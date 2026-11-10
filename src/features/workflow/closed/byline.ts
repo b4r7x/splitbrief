@@ -15,7 +15,7 @@ import {
   segmentsForRowText,
 } from '../../../utils/display-text.js';
 import { countNoun } from '../../../utils/pluralize.js';
-import { formatElapsedClock } from '../../../utils/format-time.js';
+import { formatDatedClock, formatElapsedClock } from '../../../utils/format-time.js';
 import type { DepartureKind } from '../../../stores/workflow/departure.js';
 import { stepWord, stopPoint } from '../stop/copy.js';
 import { statusLeavesWordsUnread } from '../../../core/recovery/typed-words.js';
@@ -117,16 +117,21 @@ function bylineFor(view: SummaryView): Byline {
   if (kind === 'applied' && view.canUndoApply) {
     return { reason: null, action: 'Undo the Apply with /run reject confirm' };
   }
-  if (kind === 'ended') {
-    return {
-      reason: [{ text: 'Ended', tone: stateTone('attention') }],
-      action: view.files.patch === null ? 'esc home' : BRING_BACK,
-    };
+  if (kind === 'ended' && view.files.patch !== null) {
+    return { reason: [{ text: 'Ended', tone: stateTone('attention') }], action: BRING_BACK };
   }
   if (view.files.patch !== null) return { reason: null, action: BRING_BACK };
   if (kind === 'needs-attention') return { reason: null, action: attentionByline(view) };
   // Going home is the legend's: a byline that only repeated it would say nothing.
   return { reason: null, action: '' };
+}
+
+/**
+ * The words on the rule that ends a closed run's transcript: that it closed, and when. The time is
+ * always dated, so it reads right on any later day without a clock.
+ */
+export function runClosedLabel(closedAt: number | null): string {
+  return closedAt === null ? 'Run closed' : `Run closed${SOFT_SEP}${formatDatedClock(closedAt)}`;
 }
 
 /**
@@ -137,7 +142,6 @@ export const AT_REST_PLACEHOLDER = {
   open: 'Type a correction…',
   noWords: '/ for a command…',
   inputRequired: 'Type your answer…',
-  closed: `/ for a command${SOFT_SEP}⏎ for home…`,
   applying: `/ for a command${SOFT_SEP}⏎ for home when Apply finishes…`,
   quitting: '/ for a command…',
   ready: `/ for a command${SOFT_SEP}tab for the result menu…`,

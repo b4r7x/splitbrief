@@ -9,6 +9,9 @@ import { activityBatchKey } from './activity-batch-key.js';
 import { buildConversationRows } from '#testing/helpers/event-rows.js';
 import { buildConversationRowsProjection } from './build.js';
 import { buildConversationRowActions, findLatestConversationRowAction } from './row-actions.js';
+import { rowText, segmentedRow } from './row-format/rows.js';
+import { computeConversationRowScroll } from './scroll.js';
+import type { ConversationRowBlock } from './types.js';
 
 const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };
 
@@ -104,6 +107,12 @@ describe('buildConversationRowActions', () => {
     expect(findLatestConversationRowAction(actions, 'toggle-activity-batch')).toEqual(
       latestActivity,
     );
+    // The row that names the key is the row the key toggles.
+    expect(
+      rows
+        .filter((row) => row.kind === 'activity-more' && rowText(row).endsWith('ctrl+a'))
+        .map((row) => actions.get(row.key)),
+    ).toEqual([latestActivity]);
     const expanded = buildConversationRowActions({
       ...inputs,
       expandedDiffs: new Set([diff.key]),
@@ -313,5 +322,78 @@ describe('buildConversationRowActions', () => {
     });
 
     expect(actions.size).toBe(0);
+  });
+
+  it('gives the key to the lowest folded row while each folded row keeps its own action', () => {
+    const sections: Section<EngineEvent>[] = [
+      {
+        type: 'events',
+        startIndex: 0,
+        items: ['a', 'b', 'c', 'd'].map((name, index) =>
+          activity({
+            callId: 'batch',
+            sequence: index + 1,
+            activityId: `batch-${name}`,
+            kind: 'read',
+            label: `reading ${name}.ts`,
+          }),
+        ),
+      },
+    ];
+    const tailKey = 'closed-block:session';
+    const tail: ConversationRowBlock[] = [
+      {
+        key: tailKey,
+        rowCount: 3,
+        renderableUnits: 0,
+        foldRowKey: `${tailKey}-hidden`,
+        createRows: () => [
+          segmentedRow(`${tailKey}:outcome`, [{ text: 'Complete', tone: 'success' }], 'activity'),
+          segmentedRow(
+            `${tailKey}-hidden`,
+            [{ text: '+4 more', tone: 'textDim' }],
+            'activity-more',
+          ),
+          segmentedRow(
+            `${tailKey}:session`,
+            [{ text: 'Session', tone: 'text' }],
+            'activity-child-last',
+          ),
+        ],
+      },
+    ];
+    const inputs = {
+      sections,
+      cols: 88,
+      viewportHeight: 20,
+      streaming,
+      expandedDiffs: new Set<string>(),
+      expandedActivityBatches: new Set<string>(),
+    };
+    const batch = { type: 'toggle-activity-batch', key: activityBatchKey(0, 'batch') } as const;
+    const block = { type: 'toggle-activity-batch', key: tailKey } as const;
+
+    const actions = buildConversationRowActions({ ...inputs, tail });
+    const { rows } = computeConversationRowScroll({
+      ...inputs,
+      tail,
+      rawScrollOffset: 0,
+      renderableCountAtScroll: 0,
+      heightAtScroll: 0,
+    });
+
+    expect(actions.get(`${batch.key}-hidden`)).toEqual(batch);
+    expect(actions.get(`${tailKey}-hidden`)).toEqual(block);
+    expect(actions.has(`${tailKey}:outcome`)).toBe(false);
+    // The row that names the key is the row the key toggles.
+    expect(
+      rows
+        .filter((row) => row.kind === 'activity-more' && rowText(row).endsWith('ctrl+a'))
+        .map((row) => actions.get(row.key)),
+    ).toEqual([findLatestConversationRowAction(actions, 'toggle-activity-batch')]);
+    expect(findLatestConversationRowAction(actions, 'toggle-activity-batch')).toEqual(block);
+    expect(
+      findLatestConversationRowAction(buildConversationRowActions(inputs), 'toggle-activity-batch'),
+    ).toEqual(batch);
   });
 });

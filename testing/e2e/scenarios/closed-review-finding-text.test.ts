@@ -20,6 +20,7 @@ import {
 
 const AT = '2026-10-11T00:00:00.000Z';
 const FEATURE = 'Add a word counter,\nas one task';
+const CTRL_A = '\u0001';
 
 let fixture: StopContinueFixture | undefined;
 
@@ -66,7 +67,7 @@ function seedClosedRun(target: StopContinueFixture): void {
   });
 }
 
-it('keeps the lines of the task and of an earlier failed review finding apart in the closed block', async () => {
+it('keeps the lines of an earlier failed review finding apart in the closed record', async () => {
   const target = createStopContinueFixture(() => '', { isolation: 'none' });
   fixture = target;
   seedClosedRun(target);
@@ -113,6 +114,10 @@ it('keeps the lines of the task and of an earlier failed review finding apart in
         await waitForText('Sessions · 1');
         await delay(PROMPT_TYPEAHEAD_GRACE_MS);
         child.write('\r');
+        // The summary counts the earlier review; the whole record quotes its findings.
+        await waitForText('1 earlier review failed (1 blocking)');
+        await waitForText('+1 review · ctrl+a');
+        child.write(CTRL_A);
         await waitForText('P1 No task changed it.');
         return { value: screen() };
       } finally {
@@ -124,7 +129,6 @@ it('keeps the lines of the task and of an earlier failed review finding apart in
     },
   );
   if (!('value' in result)) throw new Error(result.reason);
-  expect(result.value).toContain('Add a word counter, as one task');
   expect(result.value).toContain('Final review failed');
   expect(result.value).toContain('P1 No task changed it. Required check K1 did not pass (fail)');
 });

@@ -46,7 +46,7 @@ New actions: `CLOSE_RUN`, `INTERRUPT_STEP`, `RESUME_STEP`, `BEGIN_PLANNING`. New
 
 ### Removed UI surface
 
-The summary screen is gone, and with it the `summary` route, `loadSummaryContext` and `resume-verdict.ts`. A run that stops stays on the run screen; a closed run grows a ledger block at the tail of its own transcript. The cost drilldown overlay, its `Ctrl+G` binding and the `/cost` command are also gone.
+The summary screen is gone, and with it the `summary` route, `loadSummaryContext` and `resume-verdict.ts`. A run that stops stays on the run screen; a closed run ends its own transcript with a summary of the run. The cost drilldown overlay, its `Ctrl+G` binding and the `/cost` command are also gone.
 
 ### Removed commands and flags
 

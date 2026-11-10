@@ -211,20 +211,12 @@ function togglePreviewSkill(id: string): SkillToggleResult {
   return { status: wasSelected ? 'deselected' : 'selected', name: skill.name };
 }
 
-// The layout owns the breakpoint and a closed run owns its whole width, so the preview answers
-// both the way the production context does — minus the preference it would write to disk.
+// The layout owns the breakpoint, so the preview answers the way the production context does —
+// minus the preference it would write to disk.
 function togglePreviewSidebar(): ToggleSidebarResult {
   const { cols } = terminalSizeStore.get();
   if (getWorkflowSidebarWidth({ cols, sidebarVisible: true }) === 0) {
     return { status: 'unavailable', message: 'Sidebar is hidden on small terminals.' };
-  }
-  const route = routerStore.get();
-  if (
-    route.screen === 'workflow' &&
-    route.execution.kind === 'at-rest' &&
-    route.run.status.kind === 'closed'
-  ) {
-    return { status: 'unavailable', message: 'A closed run has no sidebar.' };
   }
   controlsStore.toggleSidebar();
   return { status: 'toggled', visible: controlsStore.get().sidebarVisible };

@@ -62,9 +62,9 @@ describe('install story', () => {
 });
 
 describe('usage details section', () => {
-  it('keeps counters out of the main workflow and closed-run ledger', () => {
+  it('keeps counters out of the main workflow and closed-run summary', () => {
     expect(usageSection).toContain(
-      'Main workflow screens and the closed-run ledger do not show these counters',
+      'Main workflow screens and the closed-run summary do not show these counters',
     );
     expect(usageSection).toContain('There is no Show spend control');
   });

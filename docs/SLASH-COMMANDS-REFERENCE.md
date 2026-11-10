@@ -203,7 +203,7 @@ Commands that act on the active run: stop, resume or end the run, manage the que
 - **Args**: `accept` or `reject`. `reject` requires the literal `confirm`. An Accept as is override also requires `accept confirm`.
 - **Example**: `/run accept`, `/run accept confirm`, `/run reject confirm`.
 - **Behavior on a worktree or staged-copy run**: `accept` starts [Apply](./WORKFLOW.md#apply) when the run is ready to apply. It writes no accepted-run snapshot entry. `accept` reads `.splitbrief/config.yaml` again first: a config that does not load shows its error, and Apply does not start. Apply reads REVIEW from `.splitbrief/config.yaml`, or from `--reviewer` when the command that opened the run screen passes it, each time it runs. A changed candidate returns to checks and review, and the notice reads `Your checkout changed files this run changed too; the merged result needs its checks and review again. Continue the run to start them.` With REVIEW None it returns to its checks only, and the notice reads `needs its checks again`. Before Apply, `reject confirm` means Discard. Discard refuses an unfinished Apply: restore or retry Apply first. After a completed Apply, `reject confirm` undoes Apply from its backup. It restores only paths that still match the applied result and names later edits it leaves intact. The run stays closed and records the undo; a second undo is refused. See [Partial Apply recovery](./APPROVAL-AND-RECOVERY.md#partial-apply-recovery) for restoring an unfinished Apply.
-- **Behavior on a checkout run**: `accept` closes an open run as `ended`, with its current files. A closed run refuses acceptance and rejection. `reject confirm` compares the baseline, the latest recorded run snapshot and the current checkout. The run records a run snapshot after each brief settles and when the run comes to rest, so a run that stopped or halted before its review can also be rejected. It restores or deletes only recorded run changes that still match the run snapshot. A file it recreates gets the mode that the baseline recorded. Later user edits and files outside that recorded change stay untouched. Each rejection is a `Rejected` row in the run's transcript, live and on reopen (the `run_rejected` event): it counts the replaced files it put back and the created files it removed (for example `Put back 1 replaced file, removed 2 created files.`), names up to five paths left as you changed them and counts the rest, and names the saved folder. The feedback line only points at that row. A changed path that now holds a symlink or directory is a conflict. Rejection saves replaced files with their modes under `.splitbrief/sessions/<id>/reverted/<stamp>/`. A rejection with no conflicts or missing snapshot files closes the run as `discarded`; it writes no `run.patch`, and the closed block reads the same counts, summed over every rejection of the run. Otherwise the run stays open. A stopped brief no longer counts the files the rejection put back as its kept partial changes, and the run no longer lists them. A brief that passed and had a file put back is open again: the run waits before the first such brief (`Stopped before T<id>`), and continuing it builds that brief again. This is also true when the run was halted on a later brief or on the final review: that halt ends. You can also reject the run again. Only a run killed before its first brief settled has no recorded run snapshot. Rejection then reports `No run snapshot to reject.` and changes no files.
+- **Behavior on a checkout run**: `accept` closes an open run as `ended`, with its current files. A closed run refuses acceptance and rejection. `reject confirm` compares the baseline, the latest recorded run snapshot and the current checkout. The run records a run snapshot after each brief settles and when the run comes to rest, so a run that stopped or halted before its review can also be rejected. It restores or deletes only recorded run changes that still match the run snapshot. A file it recreates gets the mode that the baseline recorded. Later user edits and files outside that recorded change stay untouched. Each rejection is a `Rejected` row in the run's transcript, live and on reopen (the `run_rejected` event): it counts the replaced files it put back and the created files it removed (for example `Put back 1 replaced file, removed 2 created files.`), names up to five paths left as you changed them and counts the rest, and names the saved folder. The feedback line only points at that row. A changed path that now holds a symlink or directory is a conflict. Rejection saves replaced files with their modes under `.splitbrief/sessions/<id>/reverted/<stamp>/`. A rejection with no conflicts or missing snapshot files closes the run as `discarded`; it writes no `run.patch`, and the summary of the closed run reads the same counts, summed over every rejection of the run. Otherwise the run stays open. A stopped brief no longer counts the files the rejection put back as its kept partial changes, and the run no longer lists them. A brief that passed and had a file put back is open again: the run waits before the first such brief (`Stopped before T<id>`), and continuing it builds that brief again. This is also true when the run was halted on a later brief or on the final review: that halt ends. You can also reject the run again. Only a run killed before its first brief settled has no recorded run snapshot. Rejection then reports `No run snapshot to reject.` and changes no files.
 - **Behavior on an older run**: `accept` seals its snapshot ledger and reports the accepted snapshot id. An open run's `reject confirm` uses the same snapshot comparison as checkout runs. It saves the replaced files first and records the same `Rejected` row. It reports missing snapshots, accepted runs and later edits instead of overwriting them. A closed run refuses rejection.
 - **Implementation**: `src/core/runtime/commands/defs/workflow.ts`, with ports in `src/app/command-context.ts`. Apply and restore live under `src/engine/orchestrator/apply/`. Older snapshot behavior stays in `src/engine/snapshots/run/lifecycle.ts` and `rollback.ts`.
 
@@ -225,13 +225,13 @@ Commands that change what the workflow screen shows without touching the run. `c
 
 ### `/activity`
 
-- **Purpose**: Toggle the latest expandable runner-activity block in the workflow conversation.
+- **Purpose**: Expand or collapse the last folded rows of the workflow conversation.
 - **Screens**: `workflow`.
 - **Args**: none.
 - **Shortcut**: `Ctrl+A` (`src/core/keybindings/registry.ts`); `/activity` is the guaranteed command path.
 - **Example**: `/activity`
-- **Behavior**: Expands the most recent compact activity block with hidden rows, or collapses it if it is already expanded. Collapsed activity blocks show a compact key affordance such as `ctrl+a` when earlier rows are hidden. If no activity block has hidden rows, the feedback line says so.
-- **Implementation**: catalog at `src/core/runtime/commands/defs/view.ts`. The command context selects a target from `readConversationRowActions()` with `findLatestConversationRowAction()`, then calls `conversationScrollStore.toggleActivityBatch()`.
+- **Behavior**: Expands the lowest folded row of the transcript, or collapses it if it is already expanded. A folded row is an activity block with hidden rows or the summary of a closed run. Only the lowest folded row shows the key, such as `+3 earlier · ctrl+a`; a folded row above it shows only what it hides, such as `+3 earlier`. A click expands or collapses the row that you click. If the transcript has no folded row, the feedback line says so.
+- **Implementation**: catalog at `src/core/runtime/commands/defs/view.ts`. The command context selects a target from `readConversationRowActions()` with `findLatestConversationRowAction()`, then calls `toggleFoldedRows()`.
 - **See also**: `/scroll`, `/diff`.
 
 ### `/sidebar`
@@ -379,8 +379,8 @@ macOS terminals do not always forward physical `PageUp`, `PageDown`, `Home`, or 
 | `/scroll bottom` | Command path to jump to bottom of conversation | runtime command registry |
 | `/scroll page-up` | Command path to scroll conversation up by one page | runtime command registry |
 | `/scroll page-down` | Command path to scroll conversation down by one page | runtime command registry |
-| `Ctrl+A` | Expand or collapse the latest hidden activity rows | `keyboard.ts` `handleWorkflowCtrlChords` |
-| `/activity` | Expand or collapse the latest hidden activity rows | runtime command registry |
+| `Ctrl+A` | Expand or collapse the last folded rows | `keyboard.ts` `handleWorkflowCtrlChords` |
+| `/activity` | Expand or collapse the last folded rows | runtime command registry |
 
 ### Review pane (workflow screen, when a file is open)
 
@@ -463,7 +463,7 @@ The `SHORTCUTS` table in `src/core/keybindings/registry.ts` is the single source
 | `toggle-diff` | `ctrl+d` | Toggle diff | workflow |
 | `scroll` | `shift+↑/↓, pgup/pgdn, home/end` | Scroll; PageUp/PageDown; /scroll top\|bottom | workflow |
 | `review-edit` | `ctrl+e` | Open editor in review mode only | workflow |
-| `activity` | `ctrl+a` | Expand activity rows | workflow |
+| `activity` | `ctrl+a` | Expand the last folded rows | workflow |
 
 ---
 
@@ -471,7 +471,7 @@ The `SHORTCUTS` table in `src/core/keybindings/registry.ts` is the single source
 
 Alphabetical, for fast lookup.
 
-- [`/activity`](#activity) — expand or collapse the latest hidden activity rows.
+- [`/activity`](#activity) — expand or collapse the last folded rows.
 - [`/copy`](#copy-messagebriefpathcommandcost) — copy a reviewed value to the system clipboard.
 - [`/crew`](#crew-planbuildreview) — change who fills the `PLAN`, `BUILD`, or `REVIEW` seat.
 - [`/diff`](#diff) — expand or collapse the latest diff.

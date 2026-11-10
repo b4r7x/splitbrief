@@ -10,6 +10,7 @@ import { formatStageLabel } from '../../../../core/phase-display.js';
 import { stateTone } from '../../../../core/theme/state-tone.js';
 import { oneLineDisplayText } from '../../../../utils/display-text.js';
 import { finalReviewAnchor, unverifiedCriteriaCount } from '../../../../core/recovery/headline.js';
+import { findingFacts } from '../../../../core/review/verdict.js';
 
 export function stageSummaryRow(summary: StageSummary): {
   state: Extract<TaskSummaryState, { kind: 'stage' }>;
@@ -62,7 +63,11 @@ export function stageSummaryRow(summary: StageSummary): {
         detail:
           summary.outcome === 'passed-with-notes' && summary.findings
             ? [
-                countNoun(summary.findings.minor + (summary.findings.outOfScope ?? 0), 'note'),
+                ...findingFacts({
+                  critical: summary.findings.blocking,
+                  warning: summary.findings.minor,
+                  note: summary.findings.outOfScope ?? 0,
+                }),
                 duration,
               ]
             : [duration],

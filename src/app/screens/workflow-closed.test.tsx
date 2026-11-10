@@ -22,10 +22,6 @@ import { feedbackStore } from '../../stores/ui/feedback.js';
 import { controlsStore } from '../../stores/ui/controls.js';
 import { COMMANDS_ONLY_NOTICE } from '../../components/composer/composer.js';
 import { WORKFLOW_GUTTER_X } from '../../features/workflow/layout/chrome-rows.js';
-import {
-  getWorkflowContentWidth,
-  getWorkflowSidebarWidth,
-} from '../../features/workflow/layout/rect.js';
 import { MARK_SLOT_CELLS } from '../../components/row-leading.js';
 import { buildApplyConflictRecoveryIssue } from '../../engine/orchestrator/recovery/builders/apply.js';
 import { glyph } from '../../lib/glyphs.js';
@@ -34,8 +30,8 @@ import { WorkflowScreen } from './workflow.js';
 const ESC = String.fromCharCode(27);
 const BEL = String.fromCharCode(7);
 const PAGE_DOWN = '\u001b[6~';
-const HOME = '\u001b[H';
 const END = '\u001b[F';
+const CTRL_A = '\u0001';
 
 /** A closed run on the workflow screen, at rest: the presentation this file is about. */
 function showClosedRun(opts: {
@@ -131,13 +127,19 @@ describe('the workflow screen showing a closed run', () => {
     ui.unmount();
   });
 
-  it('keeps the hint in the focused composer', async () => {
+  it('names the home key once, in the legend, and says the run closed on the rule above the composer', async () => {
     showClosedRun({ summary: makeSummary() });
 
     const ui = mount(120, 40);
     await flushEffects();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('/ for a command · ⏎ for home…');
+    expect(frame).toContain('/ for a command…');
+    expect(frame.match(/home/g)).toHaveLength(1);
+    expect(frame).toContain('esc home');
+    const rule = frame.split('\n').find((line) => line.includes('Run closed'));
+    const dash = glyph('divider');
+    expect(rule).toBe(`${dash.repeat(54)} Run closed ${dash.repeat(54)}`);
 
     ui.unmount();
   });
@@ -190,7 +192,7 @@ describe('the workflow screen showing a closed run', () => {
     ui.unmount();
   });
 
-  it('pages through every brief id and ends on the run block', async () => {
+  it('folds the briefs away, and opens every brief id on the activity key', async () => {
     showClosedRun({
       summary: makeSummary({
         totalTasks: 20,
@@ -201,9 +203,16 @@ describe('the workflow screen showing a closed run', () => {
 
     const ui = mount(160, 24);
     await flushEffects();
-    ui.stdin.write(HOME);
+    const folded = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(visibleTaskIds(folded)).toEqual([]);
+    expect(folded).toMatch(/\+20 briefs.* · ctrl\+a/);
+
+    ui.stdin.write(CTRL_A);
     await tick(20);
-    expect(visibleTaskIds(ui.lastFrame() ?? '')).toContain('T001');
+    const opened = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(opened).toContain('Needs attention');
+    expect(opened).toContain('collapse · ctrl+a');
+    expect(visibleTaskIds(opened)).toContain('T001');
 
     const seen = new Set<string>();
     for (let page = 0; page < 25; page++) {
@@ -243,6 +252,9 @@ describe('the workflow screen showing a closed run', () => {
 
     const short = mount(160, 24);
     await flushEffects();
+    expect(stripAnsiStyles(short.lastFrame() ?? '')).not.toContain('scroll');
+    short.stdin.write(CTRL_A);
+    await tick(20);
     expect(stripAnsiStyles(short.lastFrame() ?? '')).toContain('scroll');
     short.unmount();
   });
@@ -272,42 +284,18 @@ describe('the workflow screen showing a closed run', () => {
     ui.unmount();
   });
 
-  it('stands the sidebar down and spends its width on a closed run', () => {
-    // Control: an open run at this width paints the pane, so its absence below is the closed
-    // stand-down and not a viewport that could never draw one.
-    routerStore.init({
-      screen: 'workflow',
-      run: makeRunRecord({
-        ref: {
-          projectDir: join(process.env.XDG_STATE_HOME ?? tmpdir(), 'workflow-closed-test'),
-          sessionId: '2026-09-14-test-feature',
-        },
-        status: { kind: 'running' },
-        summary: makeSummary(),
-        ledger: null,
-      }),
-      execution: { kind: 'at-rest' },
-    });
-    const control = mount(160, 40);
-    expect(stripAnsiStyles(control.lastFrame() ?? '')).toContain('Tasks');
-    control.unmount();
-
+  it('keeps the sidebar beside a closed run', () => {
     showClosedRun({ summary: makeSummary() });
-    // The pane is wanted at this width; only the closed record stands it down.
     expect(controlsStore.get().sidebarVisible).toBe(true);
-    expect(getWorkflowSidebarWidth({ cols: 160, sidebarVisible: true })).toBeGreaterThan(0);
 
-    const ui = mount(160, 40);
-    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    const wide = mount(160, 40);
+    expect(stripAnsiStyles(wide.lastFrame() ?? '')).toContain('Tasks');
+    wide.unmount();
 
-    // No `Tasks` pane anywhere: the closed account takes the column the sidebar would hold.
-    expect(frame).not.toContain('Tasks');
-
-    // Its ledger rule spans the reclaimed pane, one cell short where `LedgerRule` ink stops.
-    const rule = frame.split('\n').find((line) => /^\s*Closed \S/.test(line)) ?? '';
-    expect(rule.length).toBe(getWorkflowContentWidth({ cols: 160, sidebarVisible: false }) - 1);
-
-    ui.unmount();
+    // At the breakpoint no column paints, on a closed run as on an open one.
+    const narrow = mount(120, 40);
+    expect(stripAnsiStyles(narrow.lastFrame() ?? '')).not.toContain('Tasks');
+    narrow.unmount();
   });
 
   it('names the crew by model at 160, and by tool over the model run block at 80', () => {
@@ -322,7 +310,7 @@ describe('the workflow screen showing a closed run', () => {
       {
         cols: 80,
         header: `PLAN codex · BUILD ollama · REVIEW ${PLANNER_INHERITANCE.mark}`,
-        crewRow: `Crew      ${modelLine}`,
+        crewRow: `Crew     ${modelLine}`,
       },
     ];
 
@@ -388,7 +376,7 @@ describe('the workflow screen showing a closed run', () => {
       `PLAN codex · BUILD ollama · REVIEW ${PLANNER_INHERITANCE.mark}`,
     );
     expect(header, 'at 60').not.toContain('Qwen Small');
-    expect(crewRow.trim()).toBe('Crew      PLAN OpenAI Codex CLI · BUILD Qwen Small');
+    expect(crewRow.trim()).toBe('Crew     PLAN OpenAI Codex CLI · BUILD Qwen Small');
 
     ui.unmount();
   });
@@ -465,7 +453,7 @@ describe('the workflow screen showing a closed run', () => {
     const ui = mount(120, 40);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('Ended · Plan 0/3 · nothing built');
+    expect(frame).toContain('Ended  Plan 0/3 · nothing built');
     expect(frame).not.toContain('files not recorded');
 
     ui.unmount();
@@ -495,8 +483,8 @@ describe('the workflow screen showing a closed run', () => {
     const ui = mount(120, 40);
     const frame = withoutTextLead(stripAnsiStyles(ui.lastFrame() ?? ''));
 
-    // The ledger paints, and the facts it does account for still spell absence as a word.
-    expect(frame).toMatch(/^Run /m);
+    // The summary paints, and the facts it does account for still spell absence as a word.
+    expect(frame).toMatch(/^Session\s+2026-09-14-test-feature\b/m);
     expect(frame).toMatch(/^Review\s+final review not run\b/m);
     // Money is not one of those facts any more: `/usage` is where an unpriced run is reported.
     expect(frame).not.toContain('not estimated');
@@ -524,9 +512,8 @@ describe('the workflow screen showing a closed run', () => {
     const ui = mount(160, 40);
     const frame = withoutTextLead(stripAnsiStyles(ui.lastFrame() ?? ''));
 
-    // The record priced every seat; the ledger still reads, and still says nothing about money.
-    expect(frame).toMatch(/^Run /m);
-    expect(frame).toMatch(/^Session\s+2026-09-14-test-feature\b/m);
+    // The record priced every seat; the summary still reads, and still says nothing about money.
+    expect(frame).toMatch(/\bSession\s+2026-09-14-test-feature\b/);
     expect(frame).not.toContain('$');
     expect(frame).not.toContain('0.15');
     expect(frame).not.toContain('all-planner');
@@ -579,7 +566,7 @@ describe('the workflow screen showing a closed run', () => {
     ui.unmount();
   });
 
-  it('strips terminal-control bytes from persisted feature and model fields', () => {
+  it('strips terminal-control bytes from persisted model fields and paints no feature bytes', () => {
     showClosedRun({
       summary: makeSummary({
         feature: `Ship ${ESC}]52;c;clip-feature${BEL}dashboard${ESC}[31m`,
@@ -593,8 +580,8 @@ describe('the workflow screen showing a closed run', () => {
     const ui = mount(160, 40);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('Ship');
-    expect(frame).toContain('dashboard');
+    expect(frame).toContain('GPT-5');
+    expect(frame).toContain('Qwen Small');
     expect(frame).not.toContain('clip-feature');
     expect(frame).not.toContain('clip-planner');
     expect(frame).not.toContain('clip-impl');

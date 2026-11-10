@@ -233,7 +233,7 @@ For every other planner/implementer combination, swap tools and models via the c
 
 ## 8. Usage details
 
-Open `/usage` from the workflow to inspect reported token counters and monetary estimates. These details are available for live and saved runs. Unknown usage stays unknown; an unpriced run is not a zero-cost run. Main workflow screens and the closed-run ledger do not show these counters. There is no Show spend control.
+Open `/usage` from the workflow to inspect reported token counters and monetary estimates. These details are available for live and saved runs. Unknown usage stays unknown; an unpriced run is not a zero-cost run. Main workflow screens and the closed-run summary do not show these counters. There is no Show spend control.
 
 ---
 

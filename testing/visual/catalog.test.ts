@@ -201,6 +201,8 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-implementation-shell-seat-resolved', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-seat-crew-changed', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-seat-review-no-image', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-closed-summary', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-closed-ended', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-review-fix-cycles', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-review-stuck-planner', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-review-corrected', ['120x40', '80x24', '60x18', '160x45']],
@@ -690,7 +692,7 @@ describe('visual catalog', () => {
   it.each([
     [
       'spent-b2-replay-t001-activity',
-      ['BUILD activity  5 updates', '+2 earlier · ctrl+a', 'Edit    test/text.test.js'],
+      ['BUILD activity  5 updates', '+2 earlier', 'Edit    test/text.test.js'],
     ],
     ['spent-b2-replay-t001-completion', ['src/text.js · test/text.test.js']],
     [

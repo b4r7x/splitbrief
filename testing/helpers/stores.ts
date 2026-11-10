@@ -23,7 +23,7 @@ import { skillsStore } from '../../src/stores/project/skills.js';
 import { detectionStore } from '../../src/stores/project/detection.js';
 import { modelCacheStore } from '../../src/stores/discovery/model-cache/state.js';
 import { streamingOutputStore } from '../../src/stores/workflow/streaming-output.js';
-import { transcriptTailStore } from '../../src/stores/workflow/transcript-tail.js';
+import { publishTranscriptTail } from '../../src/features/workflow/conversation-rows/transcript-tail.js';
 import { resultMenuStore } from '../../src/stores/workflow/result-menu.js';
 import { approvalPromptStore } from '../../src/stores/approval-prompt/prompt.js';
 import { commandPaletteMruStore } from '../../src/stores/ui/command-palette-mru.js';
@@ -70,7 +70,7 @@ export function resetAllStores(): void {
   detectionStore.reset();
   modelCacheStore.reset();
   streamingOutputStore.reset();
-  transcriptTailStore.__testReset();
+  publishTranscriptTail([]);
   resultMenuStore.reset();
   approvalPromptStore.reset();
   commandPaletteMruStore.reset();

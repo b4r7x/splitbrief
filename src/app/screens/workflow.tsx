@@ -14,6 +14,7 @@ import {
   resultMenuHeight,
 } from '../../features/workflow/result/options.js';
 import { resultMenuStore } from '../../stores/workflow/result-menu.js';
+import { conversationScrollStore } from '../../stores/workflow/conversation-scroll.js';
 import { showRunDiff } from '../../features/workflow/result/show-diff.js';
 import { changedFileCount } from '../../features/workflow/closed/projections.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
@@ -24,14 +25,13 @@ import { QuestionPrompt } from '../../features/workflow/components/question-prom
 import { ScreenShell } from '../../components/screen-shell.js';
 import { Divider } from '../../components/divider.js';
 import { MARK_SLOT_CELLS } from '../../components/row-leading.js';
-import { useTheme } from '../../components/theme.js';
 import { WorkflowBody } from '../../features/workflow/components/body.js';
 import { WorkflowFooter, WorkflowHeader } from '../../features/workflow/components/chrome.js';
 import {
   useWorkflowScreen,
   type WorkflowScreenDeps,
 } from '../../features/workflow/hooks/workflow-screen/use-model.js';
-import { closedTranscriptBlock } from '../../features/workflow/closed/block.js';
+import { closedBlockKey, closedTranscriptBlock } from '../../features/workflow/closed/block.js';
 import { calloutRowsBlock } from '../../features/workflow/conversation-rows/callout-block.js';
 import { sectionSpacerBlock } from '../../features/workflow/conversation-rows/row-block-compose.js';
 import { applyRunning, openRoundQuestions } from '../../features/workflow/at-rest.js';
@@ -42,9 +42,11 @@ import {
   bylineParts,
   legendText,
   openRunBylineParts,
+  runClosedLabel,
 } from '../../features/workflow/closed/byline.js';
 import { useSharedClock } from '../../hooks/use-shared-clock.js';
 import { seatWaitParts } from '../../core/sessions/seat-wait-line.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import { departureStore } from '../../stores/workflow/departure.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { preparationStore } from '../../stores/navigation/preparation.js';
@@ -123,7 +125,6 @@ export function WorkflowScreen({
   readClipboardImage,
   listProjectFiles,
 }: WorkflowScreenProps) {
-  const theme = useTheme();
   const [input, terminal] = useStores(inputHeightStore, terminalSizeStore);
   const { cols, rows } = terminal;
   useStores(stopStore, runViewStore);
@@ -265,14 +266,7 @@ export function WorkflowScreen({
     void model.handleInput(message);
   };
 
-  // A closed run's account is the block at the end of its transcript: it names the crew that ran
-  // and the briefs that landed. The sidebar would answer both again in a column, so the closed
-  // presentation takes the whole width instead.
-  const sidebarWanted = sidebarVisible && !model.closed;
-  const sidebarWidth = getWorkflowSidebarWidth({
-    cols,
-    sidebarVisible: sidebarWanted,
-  });
+  const sidebarWidth = getWorkflowSidebarWidth({ cols, sidebarVisible });
   const showSidebar = sidebarWidth > 0;
   const questionHint = model.inputMode.mode === 'question' ? model.inputMode.hint : null;
   const recoveryPromptOpen = recoveryIssue !== null && recoveryAsking && questionHint !== null;
@@ -360,10 +354,7 @@ export function WorkflowScreen({
     progressRows,
     promptRows: promptBoxRows,
   });
-  const contentWidth = getWorkflowContentWidth({
-    cols,
-    sidebarVisible: sidebarWanted,
-  });
+  const contentWidth = getWorkflowContentWidth({ cols, sidebarVisible });
 
   // The closed run's ledger is the tail of its own transcript: one scroller, the verdict below the
   // last event the run wrote. The header names the crew that ran it, so the block names it only
@@ -393,15 +384,24 @@ export function WorkflowScreen({
     model.crewRecord === undefined
       ? null
       : recordedCrewHeader({ record: model.crewRecord, form: railForm, railCells, cols });
-  const closedBlock =
+  const closedKey =
     model.closed && model.atRestRecord !== undefined
-      ? closedTranscriptBlock({
+      ? closedBlockKey(model.atRestRecord.ref.sessionId)
+      : null;
+  const closedExpanded = conversationScrollStore.use(
+    (scroll) => closedKey !== null && scroll.expandedActivityBatches.has(closedKey),
+  );
+  const closedBlock =
+    closedKey === null
+      ? null
+      : closedTranscriptBlock({
+          key: closedKey,
           view: model.closedView,
           width: contentWidth,
-          theme,
+          viewportRows: contentHeight,
           crewNamed: crewChrome?.crewNamed ?? false,
-        })
-      : null;
+          expanded: closedExpanded,
+        });
   // A draft that could not be saved is named below the run's own events, so a re-read of the run's
   // history, which replaces those events, never erases the cause and the file.
   const draftRefusal = draftRefusalStore.use((refusal) => refusal?.message ?? null);
@@ -429,7 +429,7 @@ export function WorkflowScreen({
     width: contentWidth,
   });
   const transcriptTail = [
-    ...(closedBlock === null ? [] : [closedBlock]),
+    ...(closedBlock === null ? [] : [sectionSpacerBlock(closedBlock.key), closedBlock]),
     ...(roundBlock === null ? [] : [sectionSpacerBlock(roundBlock.key), roundBlock]),
     ...(draftBlock === null ? [] : [sectionSpacerBlock(draftBlock.key), draftBlock]),
   ];
@@ -462,6 +462,13 @@ export function WorkflowScreen({
     active: (sample) =>
       applying || (wait !== null && seatWaitParts(wait.tool, wait.wait.resetAt, sample) !== null),
   });
+  // The rule above the composer ends a closed run: it says so, before what still waits below.
+  const ruleLabel =
+    closedKey === null
+      ? scrollBelowLabel
+      : [runClosedLabel(model.closedView?.closedAt ?? null), scrollBelowLabel]
+          .filter((part) => part !== '')
+          .join(SOFT_SEP);
   const queuedDeparture = departureStore.use((state) => state?.kind ?? null);
   // This process's Apply reads 0:00 until the bus delivers its start.
   const apply = applying
@@ -560,7 +567,7 @@ export function WorkflowScreen({
       }
       footer={
         <Box flexDirection="column" width="100%" flexShrink={0}>
-          <Divider width={cols} tone="textDim" label={scrollBelowLabel} />
+          <Divider width={cols} tone="textDim" label={ruleLabel} />
           <WorkflowFooter
             compactInput={stopMenuOpen || resultMenuOpen}
             beforeComposer={

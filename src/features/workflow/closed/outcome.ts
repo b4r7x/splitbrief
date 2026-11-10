@@ -1,33 +1,29 @@
-import { glyph, type GlyphName } from '../../../lib/glyphs.js';
-import { ROW_LEADING } from '../../../components/row-leading.js';
+import type { GlyphName } from '../../../lib/glyphs.js';
 import type { ReviewView, ScopeView, SummaryView } from './view-model.js';
 import { formatStageLabel } from '../../../core/phase-display.js';
 import { isRailCurrent, railStageSeat } from '../../../core/rail-stages.js';
 import type { CrewSeatId } from '../../../core/crew/identity.js';
-import { SOFT_SEP } from '../../../core/separators.js';
 import {
   getTerminalCellWidth,
   segmentsForRowText,
   truncateTerminalDisplayText,
 } from '../../../utils/display-text.js';
+import { formatTime } from '../../../utils/format-time.js';
 import { countNoun } from '../../../utils/pluralize.js';
 import { formatApplyRestoreCounts } from '../../../core/runtime/commands/messages.js';
 import { scopeCleanSegment, unwrittenReviewText, type CopyTone } from './copy.js';
-import { formatFindingCounts } from '../../../core/review/verdict.js';
+import { findingFacts } from '../../../core/review/verdict.js';
 import { stopPoint } from '../stop/copy.js';
 import { stateTone } from '../../../core/theme/state-tone.js';
 import { passedFractionSpans } from '../display/build-progress.js';
+import { rowLeadingCells } from '../conversation-rows/row-markers.js';
+import { fitFacts } from './fit-facts.js';
 
-// The transcript's leading: the shared one-cell pad the hover bar paints into, then the outcome mark
-// and its trailing space. The mark lands on column 1 with the sentence on column 3, matching a
-// brief's own row, and the `width` a caller passes is the whole row, marker slot included.
-export function outcomeLeading(mark: string): string {
-  return `${ROW_LEADING}${mark} `;
-}
-
-export const OUTCOME_LEADING_CELLS = getTerminalCellWidth(outcomeLeading(glyph('statusCancelled')));
-
-export function outcomeMarker(view: SummaryView): Readonly<{ glyph: GlyphName; tone: CopyTone }> {
+/** Null is a run that closed without a record: it wears the mark of a run somebody ended. */
+export function outcomeMarker(
+  view: SummaryView | null,
+): Readonly<{ glyph: GlyphName; tone: CopyTone }> {
+  if (view === null) return { glyph: 'statusCancelled', tone: stateTone('attention') };
   switch (view.outcome.kind) {
     case 'applied':
       if (view.applyUndo !== null)
@@ -44,38 +40,28 @@ export function outcomeMarker(view: SummaryView): Readonly<{ glyph: GlyphName; t
 
 type OutcomeSpan = Readonly<{ text: string; seat?: CrewSeatId; tone: CopyTone }>;
 
-/** The sentence fits whole facts from its head; width includes the marker slot. */
-export function outcomeLineSpans(view: SummaryView | null, width: number): readonly OutcomeSpan[] {
-  if (view === null)
-    return [
-      { text: ENDED_LEAD, tone: stateTone('attention') },
-      { text: SOFT_SEP, tone: 'textDim' },
-      { text: 'no run record was written', tone: 'textDim' },
-    ];
-  const budget = Math.max(0, width - OUTCOME_LEADING_CELLS);
-  const segments = outcomeSegments(view);
-  let kept = segments.length;
-  while (
-    kept > 1 &&
-    getTerminalCellWidth(
-      joinSoft(segments, kept)
-        .map((span) => span.text)
-        .join(''),
-    ) > budget
-  )
-    kept -= 1;
-  const spans = joinSoft(segments, kept);
-  const fitted = truncateTerminalDisplayText(spans.map((span) => span.text).join(''), budget);
-  return segmentsForRowText(spans, fitted);
-}
+/** Two spaces part the verdict from its facts, the way a transcript header parts its title. */
+const VERDICT_GAP = '  ';
 
-function joinSoft(segments: readonly (readonly OutcomeSpan[])[], kept: number): OutcomeSpan[] {
-  return segments
-    .slice(0, kept)
-    .flatMap((fact, index) => [
-      ...(index === 0 ? [] : [{ text: SOFT_SEP, tone: 'textDim' } satisfies OutcomeSpan]),
-      ...fact,
-    ]);
+/**
+ * The verdict, then the facts the row seats whole; `width` is the whole row, marker slot included.
+ * A row too narrow for one fact keeps the verdict alone.
+ */
+export function outcomeLineSpans(view: SummaryView | null, width: number): readonly OutcomeSpan[] {
+  const segments: OutcomeSpan[][] =
+    view === null
+      ? [
+          [{ text: ENDED_LEAD, tone: stateTone('attention') }],
+          secondaryFact('no run record was written'),
+        ]
+      : outcomeSegments(view);
+  const [verdict = [], ...facts] = segments;
+  const budget = Math.max(0, width - rowLeadingCells('activity'));
+  const lead = verdict.map((span) => span.text).join('');
+  const fitted = fitFacts(facts, budget - getTerminalCellWidth(lead) - VERDICT_GAP.length);
+  if (fitted.length === 0)
+    return segmentsForRowText(verdict, truncateTerminalDisplayText(lead, budget));
+  return [...verdict, { text: VERDICT_GAP, tone: 'textDim' }, ...fitted];
 }
 
 function secondaryFact(text: string): OutcomeSpan[] {
@@ -148,17 +134,15 @@ function appliedSegments(view: SummaryView): OutcomeSpan[][] {
       scopeFact(view.scope),
     ];
   const changed = view.files.changed;
+  // The stage rows under this line state the briefs, the review and the scope.
   return [
-    [{ text: 'Applied', tone: stateTone('passed') }],
-    briefFraction(view),
-    reviewFact(view.review),
-    scopeFact(view.scope),
-    changed === null || changed.length === 0
-      ? secondaryFact(filesFact(view))
-      : [
-          ...secondaryFact(`${countNoun(changed.length, 'file')} `),
-          { text: 'applied', tone: stateTone('passed') },
-        ],
+    [{ text: 'Applied to your checkout', tone: stateTone('passed') }],
+    secondaryFact(
+      changed === null || changed.length === 0
+        ? filesFact(view)
+        : countNoun(changed.length, 'file'),
+    ),
+    ...(view.ran === null ? [] : [secondaryFact(formatTime(view.ran))]),
   ];
 }
 
@@ -219,14 +203,14 @@ function filesFact(view: SummaryView): string {
 
 function reviewFact(review: ReviewView): OutcomeSpan[] {
   if (review.kind !== 'written') return secondaryFact(unwrittenReviewText(review));
-  const counts = formatFindingCounts(review.counts);
+  const findings = findingFacts(review.counts).join(', ');
   return review.verdict === 'fail'
     ? [
         ...secondaryFact('review '),
         { text: 'failed', tone: stateTone('failed') },
-        ...secondaryFact(` ${counts}`),
+        ...(findings === '' ? [] : secondaryFact(` ${findings}`)),
       ]
-    : secondaryFact(`review ${counts}`);
+    : secondaryFact(`review ${findings === '' ? 'no findings' : findings}`);
 }
 
 function scopeFact(scope: ScopeView): OutcomeSpan[] {

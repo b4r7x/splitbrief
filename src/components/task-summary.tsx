@@ -2,8 +2,9 @@ import { ThemeText as Text, useTheme } from './theme.js';
 import { TextSpans } from './text-spans.js';
 import { Box } from 'ink';
 import type { Theme } from '../core/theme/palette.js';
+import type { TextTone } from '../core/theme/tone-color.js';
 import type { TaskCompletionMethod } from '../core/schemas/enums.js';
-import { getMethodDisplay } from '../core/sessions/display.js';
+import { methodWord } from '../core/sessions/display.js';
 import { classifyTaskCompletionMethod } from '../core/task-completion.js';
 import { SOFT_SEP } from '../core/separators.js';
 import { formatDuration } from '../utils/format-time.js';
@@ -178,9 +179,9 @@ export function fitDetailRun(
         : getTerminalCellWidth(SOFT_SEP) + getTerminalCellWidth(tailText(afterFile));
     const room = budget - getTerminalCellWidth(head) - TITLE_SEP.length - afterFileWidth;
     if (room > 0) {
-      // A bare `…` names no file, so the path and its count drop together.
+      // A path cut inside its file name names no file, so the path and its count drop together.
       const shortenedFile = elidePathMiddle(file.text, room);
-      if (shortenedFile !== '…')
+      if (shortenedFile.endsWith(file.text.slice(file.text.lastIndexOf('/') + 1)))
         return { head, tail: [{ ...file, text: shortenedFile }, ...afterFile] };
     }
   }
@@ -233,6 +234,8 @@ interface TaskSummaryBaseProps {
   /** What a halted row still owes the reader: `2 partial files`. */
   note?: string | undefined;
   focused?: boolean | undefined;
+  /** A surface that lists settled briefs under its own headline dims their titles. */
+  quiet?: boolean | undefined;
 }
 
 type TaskSummaryProps = TaskSummaryBaseProps &
@@ -274,15 +277,8 @@ function markerSpec(state: TaskSummaryState, t: Theme): MarkerSpec {
 }
 
 export function TaskSummary(props: TaskSummaryProps) {
-  const { state, width, retries, duration, file, fileNote, extraFiles, reason, note, focused } =
-    props;
+  const { state, focused } = props;
   const t = useTheme();
-  const safeFile = file === undefined ? undefined : sanitizeTerminalDisplayText(file);
-  const safeFileNote = fileNote === undefined ? undefined : sanitizeTerminalDisplayText(fileNote);
-  const safeExtraFiles =
-    extraFiles === undefined ? undefined : sanitizeTerminalDisplayText(extraFiles);
-  const safeReason = reason === undefined ? undefined : sanitizeTerminalDisplayText(reason);
-  const safeNote = note === undefined ? undefined : sanitizeTerminalDisplayText(note);
   const marker = markerSpec(state, t);
   // One leading for every row kind — the transcript's padding then the marker slot — so a settled
   // brief and a pending one line their marks up in the same column, and that column is the one the
@@ -305,11 +301,37 @@ export function TaskSummary(props: TaskSummaryProps) {
       <Text color={marker.color}>{leading}</Text>
     );
 
+  return (
+    <Box>
+      <Text wrap="truncate-end">
+        {markerSlot}
+        <TextSpans parts={taskSummarySpans(props)} />
+      </Text>
+    </Box>
+  );
+}
+
+/**
+ * The row after its mark, fitted to `width` (the whole row, mark slot included). The transcript
+ * paints these spans, and the closed run's record lists the same ones, so one brief reads one way.
+ */
+export function taskSummarySpans(
+  props: TaskSummaryProps,
+): Readonly<{ text: string; tone: TextTone }>[] {
+  const { state, width, retries, duration, file, fileNote, extraFiles, reason, note } = props;
+  const safeFile = file === undefined ? undefined : sanitizeTerminalDisplayText(file);
+  const safeFileNote = fileNote === undefined ? undefined : sanitizeTerminalDisplayText(fileNote);
+  const safeExtraFiles =
+    extraFiles === undefined ? undefined : sanitizeTerminalDisplayText(extraFiles);
+  const safeReason = reason === undefined ? undefined : sanitizeTerminalDisplayText(reason);
+  const safeNote = note === undefined ? undefined : sanitizeTerminalDisplayText(note);
   const failed =
     (state.kind === 'settled' && state.method === 'failed') ||
     (state.kind === 'stage' && state.outcome === 'failed');
   const quiet =
-    state.kind === 'pending' || (state.kind === 'settled' && state.method === 'skipped');
+    props.quiet === true ||
+    state.kind === 'pending' ||
+    (state.kind === 'settled' && state.method === 'skipped');
   let headingParts: readonly TaskSummaryHeadingPart[] | null = null;
   let taskHeading: Pick<WorkflowTask, 'id' | 'title'>;
   if (props.id !== undefined) {
@@ -337,7 +359,7 @@ export function TaskSummary(props: TaskSummaryProps) {
   }
   const fitted = fitDetailRun(
     taskHeading,
-    detailRun({ state, safeFile, safeReason, safeNote, retries, duration, t }),
+    detailRun({ state, safeFile, safeReason, safeNote, retries, duration }),
     width - (failed ? FAILED_SUFFIX.length : 0),
     // A halted brief with a file fits the way a settled one does: its state word and note keep
     // their room, and the path and its count go first.
@@ -346,30 +368,16 @@ export function TaskSummary(props: TaskSummaryProps) {
     isPresent(safeFile) ? safeExtraFiles : undefined,
   );
 
-  return (
-    <Box>
-      <Text wrap="truncate-end">
-        {markerSlot}
-        {headingParts !== null ? (
-          <TextSpans parts={segmentsForRowText(headingParts, fitted.head)} />
-        ) : (
-          <Text color={quiet ? t.textDim : t.text}>{fitted.head}</Text>
-        )}
-        {failed && <Text color={t[stateTone('failed')]}>{FAILED_SUFFIX}</Text>}
-        {fitted.tail.length > 0 && (
-          <Text color={t.textDim}>
-            {TITLE_SEP}
-            {fitted.tail.map((part, index) => (
-              <Text key={index}>
-                {index > 0 && <Text color={t.textDim}>{SOFT_SEP}</Text>}
-                <Text color={t[part.tone]}>{part.text}</Text>
-              </Text>
-            ))}
-          </Text>
-        )}
-      </Text>
-    </Box>
-  );
+  return [
+    ...(headingParts === null
+      ? [{ text: fitted.head, tone: quiet ? ('textDim' as const) : ('text' as const) }]
+      : segmentsForRowText(headingParts, fitted.head)),
+    ...(failed ? [{ text: FAILED_SUFFIX, tone: stateTone('failed') }] : []),
+    ...fitted.tail.flatMap((part, index) => [
+      { text: index === 0 ? TITLE_SEP : SOFT_SEP, tone: 'textDim' as const },
+      part,
+    ]),
+  ];
 }
 
 function detailRun(input: {
@@ -379,7 +387,6 @@ function detailRun(input: {
   safeNote: string | undefined;
   retries: number | undefined;
   duration: number | undefined;
-  t: Theme;
 }): DetailSpan[] {
   const { state, safeFile, safeReason, safeNote, retries, duration } = input;
   if (state.kind === 'pending') return [];
@@ -403,7 +410,7 @@ function detailRun(input: {
       { text: 'skipped', tone: stateTone('pending') },
       ...(safeReason ? [{ text: safeReason, tone: 'textDim' as const }] : []),
     ];
-  const meta = [getMethodDisplay(state.method, input.t).text];
+  const meta = [methodWord(state.method)];
   if (retries !== undefined && retries > 0) meta.push(countNoun(retries, 'retry', 'retries'));
   if (duration != null) meta.push(formatDuration(duration));
   return [

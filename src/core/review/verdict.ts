@@ -182,11 +182,23 @@ export function reviewFindingCounts(outcome: ReviewOutcome) {
   };
 }
 
-/** The finding tallies the closed run and the review packet spell the same way: a minor and an out-of-scope finding are both notes. */
-export function formatFindingCounts(
-  counts: Readonly<{ critical: number; warning: number; note: number }>,
-): string {
+type FindingCounts = Readonly<{ critical: number; warning: number; note: number }>;
+
+/** The finding tallies of the review packet, zeros stated: a minor and an out-of-scope finding are both notes. */
+export function formatFindingCounts(counts: FindingCounts): string {
   return `${counts.critical} blocking, ${countNoun(counts.warning + counts.note, 'note')}`;
+}
+
+/**
+ * The findings a review left, one fact per kind and none for a kind with no finding: the closed
+ * run and the transcript say `1 note`, never `0 blocking`.
+ */
+export function findingFacts(counts: FindingCounts): string[] {
+  const notes = counts.warning + counts.note;
+  return [
+    ...(counts.critical > 0 ? [`${counts.critical} blocking`] : []),
+    ...(notes > 0 ? [countNoun(notes, 'note')] : []),
+  ];
 }
 
 export function verdictCoverageErrors(verdict: ReviewVerdict, scope: ReviewScope): string[] {

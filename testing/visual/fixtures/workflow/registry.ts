@@ -146,6 +146,22 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
       };
     };
   }
+  if (projection.scenarioId === 'workflow-closed-summary') {
+    return () => {
+      const lifecycle = base();
+      let expand = false;
+      return {
+        ...lifecycle,
+        setup: async (context) => {
+          expand = context.checkpoint.id === 'closed-summary-expanded';
+          await lifecycle.setup(context);
+        },
+        afterMount: async (write) => {
+          if (expand) await write.press('\u0001');
+        },
+      };
+    };
+  }
   if (
     projection.scenarioId === 'workflow-seat-switched' ||
     projection.scenarioId === 'workflow-seat-switched-manual' ||
@@ -255,7 +271,7 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
   if (projection.scenarioId === 'workflow-closed-undone') {
     return () => ({
       ...base(),
-      afterMount: () => feedbackStore.setMessage('Apply undone: removed 2 created files.'),
+      afterMount: () => feedbackStore.setMessage('Apply undone: removed 4 created files.'),
     });
   }
   if (atRest !== undefined && projection.events.length > 0) {
@@ -543,6 +559,18 @@ function includesAll(...markers: readonly string[]): CheckpointPredicate {
 
 function excludesAll(...markers: readonly string[]): CheckpointPredicate {
   return ({ output }) => markers.every((marker) => !output.includes(marker));
+}
+
+// The fold of a closed run's summary counts what the record adds, and names the activity key.
+const SUMMARY_FOLD = /\+\d+ briefs?\b.* · ctrl\+a/u;
+
+// A summary taller than the view keeps its labelled rows only, so each checkpoint requires its
+// markers from `fromRows`, the shortest view that shows them.
+function aboveSummaryFold(fromRows: number, ...markers: readonly string[]): CheckpointPredicate {
+  return (context) =>
+    includesAll()(context) &&
+    SUMMARY_FOLD.test(context.output) &&
+    (context.viewport.rows < fromRows || includesAll(...markers)(context));
 }
 
 function transcriptRowText(row: ConversationRow, columns: number): string {
@@ -897,7 +925,8 @@ const checkpointPredicates = [
         (stageMarks === 3 || (stageMarks === 1 && rail.includes('Review'))) &&
         excludesAll('done ·', 'drift not run', 'briefs passed')(context) &&
         (context.viewport.cols < 160 || context.output.includes('Tasks 4/4')) &&
-        (context.viewport.cols < 80 || context.output.includes('+1 file'))
+        // Up to 80 columns the file name does not fit whole, so the path and its count go.
+        (context.viewport.cols <= 80 || context.output.includes('+1 file'))
       );
     },
   ],
@@ -1249,7 +1278,7 @@ const checkpointPredicates = [
       const snapshot = readConversationScrollSnapshot();
       const above = snapshot.maxOffset - snapshot.scrollOffset;
       return (
-        includesAll('Ended ·')(context) &&
+        includesAll('Ended', 'Run closed')(context) &&
         excludesAll('Resume ·', '⏎ resume')(context) &&
         (above === 0 || context.output.includes(`${above} lines above`))
       );
@@ -1370,8 +1399,8 @@ const checkpointPredicates = [
   [
     checkpointId('at-rest-applying-closed'),
     (context) =>
-      includesAll('⏎ for home…')(context) &&
-      excludesAll('when Apply finishes', 'Applying to your checkout')(context) &&
+      includesAll('/ for a command…')(context) &&
+      excludesAll('for home', 'when Apply finishes', 'Applying to your checkout')(context) &&
       activeApply() !== undefined,
   ],
   // A queued quit leaves no way home, so the composer promises none.
@@ -1401,15 +1430,15 @@ const checkpointPredicates = [
   [
     checkpointId('at-rest-other-process-applying'),
     (context) =>
-      includesAll('Running in another process', '● Apply', '⏎ for home…')(context) &&
-      excludesAll('Applying to your checkout', 'when Apply finishes', 'Ready to apply')(context),
+      includesAll('Running in another process', '● Apply', '/ for a command…')(context) &&
+      excludesAll('Applying to your checkout', 'for home', 'Ready to apply')(context),
   ],
   // The log names when the other process's Apply began, so its clock counts from there.
   [
     checkpointId('at-rest-other-process-applying-clock'),
     (context) =>
-      includesAll('Applying to your checkout · 0:06', '● Apply', '⏎ for home…')(context) &&
-      excludesAll('Running in another process', 'when Apply finishes', 'Ready to apply')(context),
+      includesAll('Applying to your checkout · 0:06', '● Apply', '/ for a command…')(context) &&
+      excludesAll('Running in another process', 'for home', 'Ready to apply')(context),
   ],
   [checkpointId('ready-composer-focus'), includesAll('Ready to apply')],
   [checkpointId('ready-slash-command'), includesAll('Ready to apply', '› /settings')],
@@ -1429,35 +1458,29 @@ const checkpointPredicates = [
   ],
   [checkpointId('ready-planner-accept-short'), includesAll('Apply as is')],
   [checkpointId('closed-applied'), includesAll()],
-  [checkpointId('closed-pre-existing'), includesAll('V2 pre-existing')],
-  // A finding wraps at words, so at 60x18 the earlier failed review scrolls above the viewport.
+  [checkpointId('closed-pre-existing'), aboveSummaryFold(40, 'V2 pre-existing')],
+  [checkpointId('closed-fix-cycle'), aboveSummaryFold(24, 'earlier reviews failed')],
+  [checkpointId('closed-summary'), aboveSummaryFold(0)],
   [
-    checkpointId('closed-fix-cycle'),
-    (context) =>
-      includesAll('Final review after 1 fix cycle', 'email field is missing.')(context) &&
-      (context.viewport.cols < 80 ||
-        includesAll('Review T002 failed · 1 blocking', '2 blocking')(context)),
+    checkpointId('closed-summary-expanded'),
+    includesAll('Applied to your checkout', 'collapse · ctrl+a', 'T001'),
   ],
-  [checkpointId('closed-set-aside'), includesAll('Set aside V1: npm run lint fails')],
+  [checkpointId('closed-set-aside'), aboveSummaryFold(24, 'Set aside V1: npm run lint fails')],
   [checkpointId('closed-undone'), includesAll('Apply undone')],
   [checkpointId('closed-undo-conflicts'), includesAll('1 conflict kept')],
   [checkpointId('closed-discarded'), includesAll()],
   [checkpointId('closed-rejected'), includesAll()],
   [checkpointId('closed-needs-attention'), includesAll()],
-  [checkpointId('closed-planner-accept'), includesAll('Accepted as is', "Planner's note:")],
-  // The skipped brief's row scrolls above the viewport below 120 columns.
   [
-    checkpointId('closed-decided-skip'),
-    (context) =>
-      includesAll()(context) &&
-      (context.viewport.cols < 120 ||
-        includesAll('skipped · Planner said:', '2/3 briefs validated', '2 files changed')(context)),
+    checkpointId('closed-planner-accept'),
+    aboveSummaryFold(40, 'Accepted as is', "Planner's note:"),
   ],
+  [checkpointId('closed-decided-skip'), aboveSummaryFold(0, '1 skipped')],
   [checkpointId('closed-ended'), includesAll()],
   [checkpointId('closed-ended-empty'), includesAll()],
   [checkpointId('closed-ended-workspace'), includesAll('run.patch')],
-  // The closed-run ledger renders run.patch in the visible frame outside event rows, while the
-  // transcript retains the foreign-workspace notice.
+  // The summary of the closed run renders run.patch in the visible frame outside event rows, while
+  // the transcript retains the foreign-workspace notice.
   [
     checkpointId('closed-ended-moved-workspace'),
     (context) => {
@@ -1615,7 +1638,8 @@ const checkpointPredicates = [
   ],
   [
     checkpointId('spent-b2-replay-t001-activity'),
-    includesAll('+2 earlier · ctrl+a', 'Edit    test/text.test.js'),
+    // The batch of T002 is the lowest fold of the replayed transcript, so this one names no key.
+    includesAll('+2 earlier', 'Edit    test/text.test.js'),
   ],
   [checkpointId('spent-b2-replay-t001-completion'), includesAll()],
   [

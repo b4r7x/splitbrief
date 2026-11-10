@@ -273,7 +273,7 @@ globalThis.fetch = async (input, options) => {
           expect(frame).not.toContain('Wrong or missing value in tasks');
           expect(frame).not.toContain('Asking the seat again.');
           releaseThird.resolve();
-          await expect.poll(screen, WAIT).toContain('Complete · 1/1 briefs passed');
+          await expect.poll(screen, WAIT).toContain('Complete  1/1 briefs passed');
           child.write('\x11');
           await expect.poll(() => outcome, { timeout: 10_000 }).toBeDefined();
           expect(outcome?.exitCode, screen()).toBe(0);

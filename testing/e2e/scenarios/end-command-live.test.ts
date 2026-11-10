@@ -22,9 +22,9 @@ const END = '/end';
 const REFUSAL = 'No run to end in this phase';
 const PLAN_CARD = 'Approve plan and start the build';
 // The closed screen of each place is the one that its End run row gives.
-const ENDED_AT_CARD = ['× Ended · Plan 0/1 · nothing built', 'Ended · esc home'];
+const ENDED_AT_CARD = ['× Ended  Plan 0/1 · nothing built', 'Run closed · '];
 const ENDED_IN_CHECK = [
-  '× Ended · Build 0/1 · stopped at T001 · changes saved in run.patch',
+  '× Ended  Build 0/1 · stopped at T001 · changes saved in run.patch',
   'Ended · bring the changes back with git apply on the Patch file',
 ];
 

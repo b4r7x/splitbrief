@@ -40,8 +40,11 @@ export interface ConversationRow {
   kind: ConversationRowKind;
   segments: ConversationRowSegment[];
   markerTone?: ConversationRowTone;
-  /** A settled row whose call a stop cut: it wears the stop mark instead of the done mark. */
-  interrupted?: true;
+  /**
+   * A settled row that does not wear the done mark: a stop cut its call (`cancelled`), or its
+   * outcome needs the reader (`attention`).
+   */
+  doneAs?: 'cancelled' | 'attention';
   headerContinuation?: boolean;
   codeBg?: true;
   /**
@@ -57,6 +60,16 @@ export interface ConversationRowBlock {
   rowCount: number;
   renderableUnits: number;
   activeRowKey?: string;
+  /**
+   * The rows the block takes after its fold flips. A block at the tail of the transcript states
+   * it, so a toggle can place the view before the block changes height.
+   */
+  toggledRowCount?: number;
+  /**
+   * The key of the row that folds the block, when it has one. The lowest such row of the
+   * transcript names the activity key, and a click on any of them toggles its own block.
+   */
+  foldRowKey?: string;
   createRows: (windowStart: number, windowEnd: number) => ConversationRow[];
 }
 
@@ -94,7 +107,7 @@ export interface ConversationRowScrollInputs extends ConversationRowInputs {
   rawScrollOffset: number;
   renderableCountAtScroll: number;
   heightAtScroll: number;
-  /** Blocks appended after the last event; the closed run's ledger is the only one today. */
+  /** Blocks appended after the last event, such as the summary of a closed run. */
   tail?: readonly ConversationRowBlock[] | undefined;
 }
 

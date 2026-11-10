@@ -79,7 +79,7 @@ describe('workflow scroll shortcut', () => {
     const activity = getShortcutsForScreen('workflow').find((s) => s.id === 'activity');
     expect(activity).toMatchObject({
       key: 'ctrl+a',
-      description: 'Expand activity rows',
+      description: 'Expand the last folded rows',
     });
     expect(activity?.key).not.toContain('Alt+A');
   });

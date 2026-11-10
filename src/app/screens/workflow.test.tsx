@@ -2389,8 +2389,9 @@ describe('WorkflowScreen showing a run at rest', () => {
     await flushEffects();
 
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(frame).toContain('Closed');
-    expect(frame).toContain('/ for a command · ⏎ for home…');
+    expect(frame).toContain('Applied to your checkout');
+    expect(frame).toContain('/ for a command…');
+    expect(frame).not.toContain('⏎ for home');
     expect(frame).not.toContain('when Apply finishes');
     expect(frame).not.toContain('Applying to your checkout');
     ui.unmount();
@@ -2445,7 +2446,8 @@ describe('WorkflowScreen showing a run at rest', () => {
     await flushEffects();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain('Running in another process');
-    expect(frame).toContain('/ for a command · ⏎ for home…');
+    expect(frame).toContain('/ for a command…');
+    expect(frame).not.toContain('⏎ for home');
     expect(frame).not.toContain('Applying to your checkout');
     expect(frame).not.toContain('when Apply finishes');
 
@@ -3079,14 +3081,16 @@ describe('WorkflowScreen showing a run at rest', () => {
     ui.unmount();
   });
 
-  it('takes only commands on a closed run and paints its ledger at the transcript tail', async () => {
+  it('takes only commands on a closed run and paints its summary at the transcript tail', async () => {
     closedRun('complete');
 
     const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
     await flushEffects();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(frame).toContain('Closed');
-    expect(frame).toContain('Session');
+    expect(frame).toContain('Needs attention  no briefs');
+    expect(frame).toContain('Review   final review not run');
+    expect(frame).not.toContain('0 briefs');
+    expect(frame).toContain('Session  at-rest-session');
 
     ui.stdin.write('z');
     await flushEffects();

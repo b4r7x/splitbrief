@@ -1,7 +1,7 @@
 import { afterEach, expect, it } from 'vitest';
 import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
-import { factSpans, runRows } from '../../../src/features/workflow/closed/copy.js';
+import { factSpans, recordRows } from '../../../src/features/workflow/closed/copy.js';
 import { deriveSummaryView } from '../../../src/features/workflow/closed/view-model.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
@@ -31,7 +31,7 @@ afterEach(async () => {
   fixture = undefined;
 });
 
-it('counts planning and the whole brief in the closed Phases row after a stop and a Continue, and its parts add up to Ran', {
+it('counts planning and the whole brief in the closed stage rows after a stop and a Continue, and their times add up to Ran', {
   timeout: 240_000,
 }, async () => {
   fixture = createStopContinueFixture(undefined, { isolation: 'none' });
@@ -45,13 +45,16 @@ it('counts planning and the whole brief in the closed Phases row after a stop an
   const record = readRunRecord(ref, false);
   const view = deriveSummaryView({ record });
   if (view === null) throw new Error(`The run did not close: ${record.status.kind}`);
-  const phases = runRows(view).find((row) => row.label === 'Phases');
-  const rowText = phases?.segments.flatMap((fact) => factSpans(fact).map((span) => span.text));
-  expect(rowText?.[0]).toMatch(/^planning /);
-  const ran = runRows(view).find((row) => row.label === 'Ran');
-  const ranText = ran?.segments.flatMap((fact) => factSpans(fact).map((span) => span.text)) ?? [];
-  const parts = (rowText ?? []).map((text) => shownSeconds(text.replace(/^\S+ /, '')));
-  expect(parts.reduce((sum, value) => sum + value, 0)).toBe(shownSeconds(ranText.join('')));
+  // Each stage row ends with the time of its stage; the record states the whole time as Ran.
+  const lastFact = (label: string) =>
+    recordRows(view)
+      .flatMap((row) => ('brief' in row ? [] : [row]))
+      .find((row) => row.label === label)
+      ?.segments.flatMap((fact) => factSpans(fact).map((span) => span.text))
+      .at(-1) ?? '';
+  expect(lastFact('Plan')).toMatch(/^\d+[hms]/);
+  const stages = ['Plan', 'Build', 'Review'].map((label) => shownSeconds(lastFact(label)));
+  expect(stages.reduce((sum, value) => sum + value, 0)).toBe(shownSeconds(lastFact('Ran')));
 
   const { events } = await readRunEvents(ref);
   const completed = events.find((event) => event.type === 'task_completed');

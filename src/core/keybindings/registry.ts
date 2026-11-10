@@ -64,7 +64,7 @@ const SHORTCUTS: ShortcutInfo[] = [
   {
     id: 'activity',
     key: 'ctrl+a',
-    description: 'Expand activity rows',
+    description: 'Expand the last folded rows',
     screens: ['workflow'],
   },
 ];

@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { getWorkflowSidebarWidth } from '../../src/features/workflow/layout/rect.js';
@@ -26,6 +27,13 @@ import { glyph } from '../../src/lib/glyphs.js';
 import { stripTerminalControls } from '../../src/utils/display-text.js';
 import { EngineEventSchema } from '../../src/engine/events/schema.js';
 import { deriveRunStatus } from '../../src/core/sessions/run-status.js';
+import {
+  reviewFindingCounts,
+  reviewOutcomeOf,
+  reviewOutcomeWord,
+} from '../../src/core/review/verdict.js';
+import { factSpans, runRows } from '../../src/features/workflow/closed/copy.js';
+import { deriveSummaryView } from '../../src/features/workflow/closed/view-model.js';
 import { findVisualScenario, REQUIRED_VIEWPORTS, WIDE_VIEWPORTS } from './catalog.js';
 import { viewport } from './contracts/geometry.js';
 import { scenarioId, type ScenarioId } from './contracts/identifiers.js';
@@ -157,6 +165,49 @@ it('logs the error row of the at-rest left-isolation halt as the product writes 
     .filter((entry) => entry.type === 'error')
     .map((entry) => entry.data.message);
   expect(messages).toEqual([halt?.message]);
+});
+
+it('counts the saved final review in the packet and the Review row of every closed run', () => {
+  const disagreements: string[] = [];
+  for (const projection of workflowFixtureProjections.values()) {
+    const record = projection.atRest?.record;
+    const packet = record?.summary?.reviewPacket;
+    if (record?.status.kind !== 'closed' || packet?.finalReviewStatus !== 'written') continue;
+    const id = projection.scenarioId;
+    const review = record.hydration.kind === 'loaded' ? record.hydration.state.review : undefined;
+    if (review === undefined || review.scope === 'task') {
+      disagreements.push(`${id}: the packet is written but the state saves no final review`);
+    } else {
+      const outcome = reviewOutcomeOf(review);
+      const saved = { verdict: reviewOutcomeWord(outcome), counts: reviewFindingCounts(outcome) };
+      const packed = {
+        verdict: packet.finalReviewVerdict,
+        counts: packet.finalReviewFindingCounts,
+      };
+      if (!isDeepStrictEqual(packed, saved)) {
+        disagreements.push(
+          `${id}: packet ${JSON.stringify(packed)}, review ${JSON.stringify(saved)}`,
+        );
+      }
+    }
+    const view = deriveSummaryView({ record });
+    const reviewRow =
+      view === null ? undefined : runRows(view).find((row) => row.seat === 'review');
+    if (view === null || reviewRow === undefined) {
+      disagreements.push(`${id}: the closed summary has no Review row`);
+      continue;
+    }
+    const notesFact = reviewRow.segments
+      .flatMap((fact) => factSpans(fact).map((span) => span.text))
+      .find((text) => /^\d+ notes?$/.test(text));
+    const counted = notesFact === undefined ? 0 : Number.parseInt(notesFact, 10);
+    if (counted !== view.digest.notes.length) {
+      disagreements.push(
+        `${id}: the Review row counts ${counted} notes, the summary quotes ${view.digest.notes.length}`,
+      );
+    }
+  }
+  expect(disagreements).toEqual([]);
 });
 
 function lifecycleFor(scenarioId: ScenarioId): FixtureLifecycle {
@@ -491,8 +542,10 @@ describe('workflow visual fixtures', () => {
         const text = workflowTranscriptText();
         expect(text.match(/BUILD activity {2}5 updates/g)).toHaveLength(1);
         expect(text.match(/BUILD activity {2}4 updates/g)).toHaveLength(1);
-        expect(text.match(/\+2 earlier · ctrl\+a/g)).toHaveLength(1);
+        // Only the lowest fold of the transcript names the activity key.
+        expect(text.match(/\+2 earlier$/gm)).toHaveLength(1);
         expect(text.match(/\+1 earlier · ctrl\+a/g)).toHaveLength(1);
+        expect(text.match(/ctrl\+a/g)).toHaveLength(1);
         expect(frame).toContain('● Plan → × Build → ○ Review');
         if (renderViewport.cols === 200) expect(frame).toContain('Stopped before the review');
         expect(text.match(/Recovery {2}/g)).toHaveLength(1);

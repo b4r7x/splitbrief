@@ -345,7 +345,7 @@ describe('buildCommandContext', () => {
     expect(controlsStore.get().sidebarVisible).toBe(true);
   });
 
-  it('does not report a sidebar on a run that has closed', () => {
+  it('toggles the sidebar on a run that has closed', () => {
     terminalSizeStore.__testReset({ cols: 160, rows: 40, isSmall: false });
     routerStore.init({
       screen: 'workflow',
@@ -353,11 +353,8 @@ describe('buildCommandContext', () => {
       execution: { kind: 'at-rest' },
     });
 
-    expect(build().toggleSidebar()).toEqual({
-      status: 'unavailable',
-      message: 'A closed run has no sidebar.',
-    });
-    expect(controlsStore.get().sidebarVisible).toBe(true);
+    expect(build().toggleSidebar()).toEqual({ status: 'toggled', visible: false });
+    expect(controlsStore.get().sidebarVisible).toBe(false);
   });
 
   it('lists the planned briefs in plan order from the run view', () => {

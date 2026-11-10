@@ -367,7 +367,8 @@ it('goes home at once from a run another process applies, and names that process
       },
     );
     expect(opened.split('\n')[0]).toContain(APPLY_RAIL);
-    expect(opened).toContain('/ for a command · ⏎ for home…');
+    expect(opened).toContain('/ for a command…');
+    expect(opened).not.toContain('for home');
     expect(opened).not.toContain('Applying to your checkout');
     expect(opened).not.toContain('when Apply finishes');
     expect(readState(target, ready.ref.sessionId).closed).toBeUndefined();
@@ -419,7 +420,8 @@ setInterval(() => {}, 1000);
         return { owned, killedLock, after: screen() };
       },
     );
-    expect(owned).toContain('/ for a command · ⏎ for home…');
+    expect(owned).toContain('/ for a command…');
+    expect(owned).not.toContain('for home');
     // The window saw the dead owner by itself: the lockfile still names it, unchanged.
     expect(readFileSync(lockPath, 'utf8')).toBe(killedLock);
     expect(JSON.parse(killedLock)).not.toHaveProperty('exitedAt');

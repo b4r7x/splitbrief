@@ -15,7 +15,7 @@ import type { ReviewAnswer } from '../../../src/core/schemas/review.js';
 import { WorkflowStateSchema } from '../../../src/core/schemas/workflow.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
-import { runRows } from '../../../src/features/workflow/closed/copy.js';
+import { recordRows } from '../../../src/features/workflow/closed/copy.js';
 import { deriveSummaryView } from '../../../src/features/workflow/closed/view-model.js';
 import { rowText } from '../../../src/features/workflow/conversation-rows/row-format/rows.js';
 import { readStopMenuRows } from '../../../src/features/workflow/stop/options.js';
@@ -457,9 +457,12 @@ describe('e2e: task review cadence', () => {
     expect(closed?.failedReviews).toEqual([
       { label: 'Review T001', blocking: [{ id: 'F2', text: findings[1]?.text }], setAside: [] },
     ]);
-    expect(closed === null ? [] : runRows(closed).map((row) => row.segments)).toContainEqual([
-      { text: `  F2 ${findings[1]?.text}`, tone: 'textDim' },
-    ]);
+    // The summary counts the failed review; the record states its finding.
+    expect(
+      closed === null
+        ? []
+        : recordRows(closed).flatMap((row) => ('brief' in row ? [] : [row.segments])),
+    ).toContainEqual([{ text: `  F2 ${findings[1]?.text}`, tone: 'textDim' }]);
     const initial = runViewStore.get().briefs;
     const running = events.slice(0, fixStartIndex + 1).reduce(reduceBriefs, initial);
     expect(running.tasks.map((task) => task.id)).toEqual(order);

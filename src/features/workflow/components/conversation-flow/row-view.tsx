@@ -56,9 +56,17 @@ function ActiveDot({ theme, leadingWidth }: { theme: Theme; leadingWidth: number
 
 /**
  * `cancelled` and `failed` mark a brief left in progress on a run at rest, as its rail marks it;
- * `cancelled` also marks an earlier attempt the run stopped or redid.
+ * `cancelled` also marks an earlier attempt the run stopped or redid. `attention` marks a settled
+ * row whose outcome needs the reader.
  */
-export type RowLifecycle = 'live' | 'active' | 'queued' | 'done' | 'cancelled' | 'failed';
+export type RowLifecycle =
+  | 'live'
+  | 'active'
+  | 'queued'
+  | 'done'
+  | 'cancelled'
+  | 'attention'
+  | 'failed';
 
 function alignLeadingWithinWidth(content: string, width: number): string {
   const pad = Math.max(0, width - getTerminalCellWidth(content));
@@ -84,7 +92,10 @@ function RowLeading({
     (kind === 'activity' || kind === 'task-header') && headerContinuation !== true;
   const isPulsingDot = isHeaderMarker && lifecycle === 'live';
   const status: RowMarkerStatus =
-    lifecycle === 'queued' || lifecycle === 'cancelled' || lifecycle === 'failed'
+    lifecycle === 'queued' ||
+    lifecycle === 'cancelled' ||
+    lifecycle === 'attention' ||
+    lifecycle === 'failed'
       ? lifecycle
       : isPulsingDot || lifecycle === 'active'
         ? 'live'
@@ -124,7 +135,7 @@ function markerColorFor(
   t: Theme,
 ): string | undefined {
   if (lifecycle === 'queued') return t.textDim;
-  if (lifecycle === 'cancelled') return t[stateTone('attention')];
+  if (lifecycle === 'cancelled' || lifecycle === 'attention') return t[stateTone('attention')];
   if (lifecycle === 'failed') return t[stateTone('failed')];
   if (row.markerTone !== undefined) return colorForTone(row.markerTone, t);
   if (row.kind === 'activity' || row.kind === 'callout-top' || row.kind === 'callout-body') {
@@ -152,7 +163,7 @@ export function ConversationRowView({
       </Box>
     );
   }
-  const settled = lifecycle === 'done' && row.interrupted === true ? 'cancelled' : lifecycle;
+  const settled = lifecycle === 'done' && row.doneAs !== undefined ? row.doneAs : lifecycle;
   const markerColor = markerColorFor(row, settled, t);
   const codeBg = row.codeBg === true ? t.markdown.codeBg : undefined;
   const content = (

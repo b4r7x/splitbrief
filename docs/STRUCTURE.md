@@ -313,7 +313,7 @@ features/workflow/
 │   ├── use-run-loop.ts       # runWorkflow + the recovery loop + the process-registry stop watcher
 │   ├── use-run-continue.ts   # how the run is re-entered: the state, the steer, continueRun
 │   └── use-keys.ts
-├── closed/                   # a closed run's ledger: view-model, projections, outcome, byline, copy, rows
+├── closed/                   # a closed run's summary: view-model, projections, outcome, byline, copy, fit-facts, block, header
 ├── run-history.ts            # hydrateRun — replay the log, lay the saved state over it
 ├── at-rest.ts                # rail stages and composer contract when nothing is running
 ├── spend-text.ts             # the one spend formatter the sidebar, the hint and /copy cost read
@@ -325,7 +325,7 @@ features/workflow/
 └── layout/                   # geometry helpers — rects, chrome rows, snapshots
 ```
 
-There is no `features/summary/` and no `app/screens/summary.tsx`. A run that stops stays on the run screen; `features/workflow/closed/` is its ledger, rendered as a block at the tail of the same transcript.
+There is no `features/summary/` and no `app/screens/summary.tsx`. A run that stops stays on the run screen; `features/workflow/closed/` is its summary, rendered as the last rows of the same transcript.
 
 The page `app/screens/workflow.tsx` holds the composition (layout math + `ScreenShell` JSX) and delegates state to `useWorkflowScreen()` in `hooks/workflow-screen/use-model.ts`.
 

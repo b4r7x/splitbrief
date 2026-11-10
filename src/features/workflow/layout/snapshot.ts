@@ -22,7 +22,6 @@ import { getSections } from '../../../stores/workflow/actions/sections.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
 import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
-import { transcriptTailStore } from '../../../stores/workflow/transcript-tail.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
@@ -32,8 +31,8 @@ import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { reviewArtifactForPhase } from '../prompt-rows/approval.js';
 import { getWorkflowPromptRows } from '../prompt-rows/workflow.js';
-import type { ConversationRowBlock } from '../conversation-rows/types.js';
 import { computeConversationRowScroll } from '../conversation-rows/scroll.js';
+import { readTranscriptTail } from '../conversation-rows/transcript-tail.js';
 import { splitConversationViewport } from '../conversation-rows/viewport.js';
 import { queuedBriefs } from '../conversation-rows/queued-briefs.js';
 import { resultMenuStore } from '../../../stores/workflow/result-menu.js';
@@ -204,16 +203,6 @@ export function readConversationHoverSnapshot(): ConversationHoverSnapshot {
   };
 }
 
-/**
- * What the screen appended after the run's own events, as measurements only: the keys scroll the
- * same document the renderer painted, and they never need the rows themselves.
- */
-function transcriptTailBlocks(): readonly ConversationRowBlock[] {
-  const { rowCount, renderableUnits } = transcriptTailStore.get();
-  if (rowCount === 0 && renderableUnits === 0) return [];
-  return [{ key: 'transcript-tail', rowCount, renderableUnits, createRows: () => [] }];
-}
-
 export function readConversationScrollSnapshot(): ConversationScrollSnapshot {
   const layout = readConversationLayoutSnapshot();
   const scroll = conversationScrollStore.get();
@@ -233,7 +222,7 @@ export function readConversationScrollSnapshot(): ConversationScrollSnapshot {
     renderableCountAtScroll: scroll.renderableCountAtScroll,
     heightAtScroll: scroll.heightAtScroll,
     streaming: streamingOutputStore.get(),
-    tail: transcriptTailBlocks(),
+    tail: readTranscriptTail(),
   });
   return {
     conversationWidth: layout.conversationWidth,

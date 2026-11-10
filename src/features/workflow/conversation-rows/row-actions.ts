@@ -1,5 +1,10 @@
 import { diffEventKey } from '../../../core/sections/event-sections.js';
-import type { ConversationRowInputs, RowBuildContext } from './types.js';
+import type {
+  ConversationRowBlock,
+  ConversationRowInputs,
+  ConversationRowScrollInputs,
+  RowBuildContext,
+} from './types.js';
 import { activityBatchKey } from './activity-batch-key.js';
 import { buildActivityBatchViewModel } from './activity-batch-model.js';
 import { implementerFailureCard, eventRowBlock, recoveryRowBlock } from './event-rows/dispatch.js';
@@ -20,12 +25,13 @@ export function findLatestConversationRowAction(
 }
 
 // Maps each actionable transcript row key to its expand/collapse action so a click on the row can
-// trigger the same toggle as the keyboard. Only the activity disclosure (`+N more` / `collapse`),
-// diff rows and a failure card whose cause was cut are actionable.
-// Every other row key is absent and a click on it is inert. Shares walkTranscript with the
-// projection so its batch grouping matches the rendered rows exactly.
+// trigger the same toggle as the keyboard. Only a fold row (`+N earlier` / `+N more` / `collapse`)
+// of an activity batch or of a block at the tail, diff rows and a failure card whose cause was cut
+// are actionable. Every other row key is absent and a click on it is inert. Shares walkTranscript
+// with the projection so its batch grouping matches the rendered rows exactly. The tail comes
+// last, so the latest fold is the lowest one on the screen.
 export function buildConversationRowActions(
-  inputs: ConversationRowInputs,
+  inputs: ConversationRowInputs & Pick<ConversationRowScrollInputs, 'tail'>,
 ): Map<string, ConversationRowAction> {
   const ctx: RowBuildContext = {
     width: Math.max(MIN_ROW_WIDTH, inputs.cols),
@@ -33,6 +39,11 @@ export function buildConversationRowActions(
     streaming: inputs.streaming,
   };
   const actions = new Map<string, ConversationRowAction>();
+
+  const registerFoldRows = (block: ConversationRowBlock, key: string): void => {
+    if (block.foldRowKey !== undefined)
+      actions.set(block.foldRowKey, { type: 'toggle-activity-batch', key });
+  };
 
   const flushActivityBatch = (batch: RunnerActivityBatch): void => {
     const batchKey = activityBatchKey(batch.firstIndex, batch.callId);
@@ -43,12 +54,7 @@ export function buildConversationRowActions(
     });
     if (model.expandableKey === null) return;
     const block = runnerActivityBatchRowBlock({ model, width: ctx.width });
-    if (block === null) return;
-    for (const row of block.createRows(0, block.rowCount)) {
-      if (row.kind === 'activity-more') {
-        actions.set(row.key, { type: 'toggle-activity-batch', key: batchKey });
-      }
-    }
+    if (block !== null) registerFoldRows(block, batchKey);
   };
 
   for (const step of walkTranscript(inputs.sections)) {
@@ -97,6 +103,8 @@ export function buildConversationRowActions(
       }
     }
   }
+
+  for (const block of inputs.tail ?? []) registerFoldRows(block, block.key);
 
   return actions;
 }

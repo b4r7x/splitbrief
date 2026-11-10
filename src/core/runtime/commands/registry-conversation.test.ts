@@ -109,7 +109,7 @@ describe('/scroll command', () => {
 });
 
 describe('/activity command', () => {
-  it('toggles the latest activity batch through the command context', () => {
+  it('toggles the last folded rows through the command context', () => {
     let toggled = false;
     let feedback: string | undefined;
     const commands = createRuntimeCommands(
@@ -127,16 +127,16 @@ describe('/activity command', () => {
     runCommandInTest({ commands: commands, raw: '/activity', screen: 'workflow', onError: noop });
 
     expect(toggled).toBe(true);
-    expect(feedback).toMatch(/expanded latest activity batch/i);
+    expect(feedback).toBe('Expanded the last folded rows');
   });
 
-  it('reports when no expandable activity batch exists', async () => {
+  it('reports when no folded rows exist', async () => {
     let error: string | undefined;
     const commands = createRuntimeCommands(
       makeCtx({
         toggleLatestActivityBatch: () => ({
           status: 'unavailable',
-          message: 'No expandable activity batch is available.',
+          message: 'No folded rows to expand.',
         }),
       }),
     );
@@ -150,7 +150,7 @@ describe('/activity command', () => {
       },
     });
 
-    expect(error).toBe('No expandable activity batch is available.');
+    expect(error).toBe('No folded rows to expand.');
   });
 
   it('labels scroll and activity commands for palette and help surfaces', () => {

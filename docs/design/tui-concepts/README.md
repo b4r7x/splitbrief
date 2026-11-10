@@ -37,7 +37,7 @@ See the complete set in [`overview.png`](overview.png).
 - Home: `src/app/screens/home.tsx` and `src/features/home/`.
 - Summary: the summary screen (`src/app/screens/summary.tsx`, `src/features/summary/`) is removed;
   the closed-run block replaced it. A closed run now states its outcome at the tail of its own
-  transcript: `src/features/workflow/closed/block.tsx` (`closedTranscriptBlock`),
+  transcript: `src/features/workflow/closed/block.ts` (`closedTranscriptBlock`),
   `src/features/workflow/closed/view-model.ts` (`deriveSummaryView`), and
   `src/features/workflow/closed/copy.ts`.
 - Command palette: `src/app/overlays/palette.tsx` and `src/features/palette/`.

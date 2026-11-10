@@ -5,18 +5,13 @@ import {
 import { ACTIVITY_LABEL_PAD, displayActivityLabel } from '../display/activity-label-display.js';
 import type { RunnerActivityLedgerLabel } from '../display/runner-activity-display.js';
 import { cutSeatIdentity } from '../../../core/crew/identity.js';
-import { getShortcutKey } from '../../../core/keybindings/registry.js';
-import {
-  ELLIPSIS,
-  getTerminalCellWidth,
-  truncateTerminalDisplayText,
-  segmentsForRowText,
-} from '../../../utils/display-text.js';
+import { ELLIPSIS, getTerminalCellWidth, segmentsForRowText } from '../../../utils/display-text.js';
 import {
   buildActivityBatchViewModel,
   type ActivityBatchViewModel,
   type RunnerActivityEvent,
 } from './activity-batch-model.js';
+import { foldRow, foldRowKey } from './fold-row.js';
 import { row, segmentedRow } from './row-format/rows.js';
 import { rowLeadingCells } from './row-markers.js';
 import type {
@@ -55,6 +50,7 @@ export function runnerActivityBatchRowBlock(
     rowCount,
     renderableUnits: model.renderableUnits,
     ...(activeRowKey !== undefined ? { activeRowKey } : {}),
+    ...(model.hiddenCount > 0 && { foldRowKey: foldRowKey(model.batchKey) }),
     createRows: (windowStart, windowEnd) =>
       runnerActivityBatchWindowRows({ model, width, windowStart, windowEnd }),
   };
@@ -107,7 +103,14 @@ export function runnerActivityBatchWindowRows(input: {
   }
 
   if (model.hiddenCount > 0) {
-    appendVisibleRow(() => activityDisclosureRow({ model, width }));
+    appendVisibleRow(() =>
+      foldRow({
+        foldKey: model.batchKey,
+        expanded: model.expanded,
+        hidden: [`+${model.hiddenCount} earlier`],
+        width,
+      }),
+    );
   }
 
   const lastItemIndex = model.visibleItems.length - 1;
@@ -177,29 +180,8 @@ function activityHeaderRow(input: {
       'activity',
     ),
     markerTone: input.model.markerTone,
-    ...(input.model.interrupted && { interrupted: true }),
+    ...(input.model.interrupted && { doneAs: 'cancelled' as const }),
   };
-}
-
-function activityDisclosureRow(input: {
-  model: ActivityBatchViewModel;
-  width: number;
-}): ConversationRow {
-  const prefixCells = rowLeadingCells('activity-more');
-  const budget = Math.max(0, input.width - prefixCells);
-  const label = input.model.expanded ? 'collapse' : `+${input.model.hiddenCount} earlier`;
-  const text = truncateTerminalDisplayText(`${label}${activityDisclosureHint()}`, budget);
-
-  return segmentedRow(
-    `${input.model.batchKey}-hidden`,
-    [{ text, tone: 'textDim' as const }],
-    'activity-more',
-  );
-}
-
-function activityDisclosureHint(): string {
-  const shortcut = getShortcutKey('activity');
-  return shortcut === null ? '' : ` · ${shortcut}`;
 }
 
 function resolveActivityBatchRowsOptions(options: RunnerActivityBatchRowsOptions): {

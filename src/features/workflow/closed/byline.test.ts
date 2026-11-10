@@ -1,6 +1,6 @@
 import type { StepRef } from '../../../core/schemas/run-step.js';
 import type { RunStatus } from '../../../core/sessions/run-status.js';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WIDE, endedInBuild, makeView } from '#testing/helpers/factories/summary-view.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { taskId } from '../../../core/schemas/task.js';
@@ -8,7 +8,13 @@ import { RECOVERY_ACTIONS, type RecoveryAction } from '../../../core/schemas/enu
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { seatWaitSentence } from '../../../core/sessions/seat-wait-line.js';
 import type { ViewSeatWait } from '../../../core/run-view/reduce.js';
-import { bylineParts, legendText, openRunBylineParts } from './byline.js';
+import {
+  AT_REST_PLACEHOLDER,
+  bylineParts,
+  legendText,
+  openRunBylineParts,
+  runClosedLabel,
+} from './byline.js';
 import { stopPoint } from '../stop/copy.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
 
@@ -148,8 +154,23 @@ describe('bylineText', () => {
     expect(bylineText(view, WIDE)).toBe('');
   });
 
-  it('sends an ended run home, because there is nothing left to accept', () => {
-    expect(bylineText(endedInBuild(), WIDE)).toBe('Ended · esc home');
+  it('leaves going home on an ended run to the legend, and names the patch when it kept one', () => {
+    expect(bylineText(endedInBuild(), WIDE)).toBe('');
+    const kept = endedInBuild();
+    expect(
+      bylineText(
+        { ...kept, files: { ...kept.files, patch: '.splitbrief/sessions/run/run.patch' } },
+        WIDE,
+      ),
+    ).toBe('Ended · bring the changes back with git apply on the Patch file');
+  });
+
+  it('names no home key in a placeholder: the legend holds it', () => {
+    for (const [key, placeholder] of Object.entries(AT_REST_PLACEHOLDER)) {
+      if (key === 'applying') continue;
+      expect(placeholder).not.toContain('home');
+    }
+    expect(AT_REST_PLACEHOLDER).not.toHaveProperty('closed');
   });
 
   it('reports a decided checkpoint instead of offering one', () => {
@@ -919,7 +940,12 @@ describe('fitted byline parts', () => {
 it('keeps status receipt text and fitting while coloring Apply undone and Ended', () => {
   const undone = makeView({ applyUndo: { conflicts: [] } });
   expect(bylineParts(undone, WIDE)[0]).toEqual({ text: 'Apply undone', tone: 'warning' });
-  expect(bylineParts(endedInBuild(), WIDE)[0]).toEqual({ text: 'Ended', tone: 'warning' });
+  const ended = endedInBuild();
+  const endedWithPatch = {
+    ...ended,
+    files: { ...ended.files, patch: '.splitbrief/sessions/run/run.patch' },
+  };
+  expect(bylineParts(endedWithPatch, WIDE)[0]).toEqual({ text: 'Ended', tone: 'warning' });
   for (const [width, expected, expectedParts] of [
     [5, 'Appl…', [{ text: 'Appl…', tone: 'warning' }]],
     [11, 'Apply undo…', [{ text: 'Apply undo…', tone: 'warning' }]],
@@ -1089,4 +1115,22 @@ it('keeps the chosen Review again of a failed review with a review seat', () => 
       now: NOW,
     }),
   ).toContain('⏎ to review again');
+});
+
+describe('runClosedLabel', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('says when the run closed with its date, on the day it closed too', () => {
+    vi.useFakeTimers({ now: NOW, toFake: ['Date'] });
+    const closedToday = new Date(2026, 9, 10, 9, 5, 0, 0).getTime();
+    const closedEarlier = new Date(2026, 9, 8, 21, 14, 0, 0).getTime();
+    expect(runClosedLabel(closedToday)).toBe('Run closed · Oct 10, 09:05');
+    expect(runClosedLabel(closedEarlier)).toBe('Run closed · Oct 8, 21:14');
+  });
+
+  it('says only that the run closed when its record kept no time', () => {
+    expect(runClosedLabel(null)).toBe('Run closed');
+  });
 });

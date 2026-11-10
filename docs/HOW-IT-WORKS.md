@@ -60,7 +60,7 @@ Screen selection is a switch on `routerStore`'s `screen` field (`ALL_SCREENS`, `
 - **workflow** — `<WorkflowScreen/>` — the run's home, whether something is running on it or not
 - **setup** — `<SetupScreen/>` — first-run configuration wizard
 
-There is no summary screen. A run that stops stays on the screen it was already on: the route's execution flips to `at-rest` and the same screen paints the run from its `RunRecord`, with a `Closed ─` block at the tail of its own transcript once the run is closed.
+There is no summary screen. A run that stops stays on the screen it was already on: the route's execution flips to `at-rest` and the same screen paints the run from its `RunRecord`, with a summary of the run as the last rows of its own transcript once the run is closed.
 
 `<WorkflowScreen/>` is where the engine starts. `useRunLoop()` (`src/features/workflow/hooks/use-run-loop.ts`) triggers `runWorkflow()` from the engine: it creates an `AbortController`, wires up cancel/rewind handlers, creates a TUI event sink, and calls `runWorkflow()` with callbacks that bridge engine gate requests to the UI's input mode system. Beside it, `useRunContinue()` (`use-run-continue.ts`) owns how the run is re-entered — the state and steer its next turn starts from, and the `continueRun` call behind `/resume` and a typed correction.
 
@@ -274,7 +274,7 @@ Evidence recording happens throughout: the evidence ledger tracks approvals, rej
 
 The function transitions to `REVIEW_DONE`, publishes `workflow_complete`, builds the summary, and calls `callbacks.onComplete(summary)`. `saveFinalSession()` writes `summary.json`. A workspace result with a passing review, or from a REVIEW None run, remains ready to apply; it keeps the active pointer until closure. Older runs without a workspace close on pass. See [Run status](./WORKFLOW.md#run-status).
 
-In the TUI, the run loop settles at rest on the same screen and re-reads its `RunRecord`. A ready run shows [the result menu](./FEATURES.md#run-result-menu). A closed run shows its ledger at the transcript's tail. `/usage` owns the cost details. A configured reviewer has its own recorded cost line; otherwise review usage stays with the planner.
+In the TUI, the run loop settles at rest on the same screen and re-reads its `RunRecord`. A ready run shows [the result menu](./FEATURES.md#run-result-menu). A closed run shows its summary as the last rows of the transcript. `/usage` owns the cost details. A configured reviewer has its own recorded cost line; otherwise review usage stays with the planner.
 
 ---
 

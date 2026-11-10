@@ -10,7 +10,6 @@ import { approvalPromptStore } from '../../../../stores/approval-prompt/prompt.j
 import { deriveWorkflowDisplay } from '../../display/workflow-status.js';
 import { conversationScrollStore } from '../../../../stores/workflow/conversation-scroll.js';
 import { streamingOutputStore } from '../../../../stores/workflow/streaming-output.js';
-import { transcriptTailStore } from '../../../../stores/workflow/transcript-tail.js';
 import { lifecycleStore } from '../../../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../../../stores/workflow/run-view.js';
 import { formatTaskHeading } from '../../../../core/run-view/brief-labels.js';
@@ -18,6 +17,7 @@ import { useSections } from '../../../../stores/workflow/actions/sections.js';
 import { useStores } from '../../../../stores/use-stores.js';
 import type { ConversationRowBlock } from '../../conversation-rows/types.js';
 import { computeConversationRowScroll } from '../../conversation-rows/scroll.js';
+import { publishTranscriptTail } from '../../conversation-rows/transcript-tail.js';
 import { splitConversationViewport } from '../../conversation-rows/viewport.js';
 import { queuedBriefs } from '../../conversation-rows/queued-briefs.js';
 import { row } from '../../conversation-rows/row-format/rows.js';
@@ -168,14 +168,12 @@ export function ConversationFlow({
   // follows it. The empty-state line is a row too, and a zero-height pane would clip it.
   const showsEmptyState = rows.length === 0;
 
-  // The keyboard measures the transcript from the stores, so what the tail adds has to reach it
-  // or `home` and `end` stop at the last event the run wrote.
-  const tailRows = (tail ?? []).reduce((sum, block) => sum + block.rowCount, 0);
-  const tailUnits = (tail ?? []).reduce((sum, block) => sum + block.renderableUnits, 0);
+  // The keys and the pointer read the transcript from outside React, so the tail has to reach
+  // them, or `home`, `end` and a click stop at the last event the run wrote.
   useEffect(() => {
-    transcriptTailStore.setMetrics({ rowCount: tailRows, renderableUnits: tailUnits });
-    return () => transcriptTailStore.setMetrics({ rowCount: 0, renderableUnits: 0 });
-  }, [tailRows, tailUnits]);
+    publishTranscriptTail(tail ?? []);
+    return () => publishTranscriptTail([]);
+  }, [tail]);
 
   useEffect(() => {
     onScrollAbove?.(above);

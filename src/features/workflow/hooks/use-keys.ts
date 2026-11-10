@@ -10,6 +10,7 @@ import { assertNever } from '../../../utils/type-guards.js';
 import { clamp } from '../../../utils/math.js';
 import { resolveScrollKey } from '../../../core/keybindings/scroll.js';
 import { readConversationRowActions } from '../conversation-rows/read-row-actions.js';
+import { toggleFoldedRows } from '../conversation-rows/toggle-folded-rows.js';
 import {
   handleWorkflowCtrlChords,
   handleReviewScroll,
@@ -27,7 +28,7 @@ function applyAction(action: WorkflowKeyAction) {
       conversationScrollStore.toggleDiff(action.key);
       return;
     case 'toggle-activity-batch':
-      conversationScrollStore.toggleActivityBatch(action.key);
+      toggleFoldedRows(action.key);
       return;
     case 'review-scroll':
       reviewStore.setScrollOffset(action.offset);

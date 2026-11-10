@@ -1,12 +1,32 @@
 import { REVIEW_FILE } from '../../../../src/core/paths.js';
+import { BASE_SPLIT_NAMED } from '../../../../src/core/review/base-split.js';
 import type { Phase } from '../../../../src/core/schemas/enums.js';
 import type { ClarificationQuestion } from '../../../../src/core/schemas/question.js';
-import type { EvidenceLedger, EvidenceTask } from '../../../../src/core/schemas/evidence.js';
+import type {
+  EvidenceLedger,
+  EvidenceReview,
+  EvidenceTask,
+} from '../../../../src/core/schemas/evidence.js';
 import type { RunRecord } from '../../../../src/core/sessions/run-record.js';
 import { deriveRunStatus, type RunStatus } from '../../../../src/core/sessions/run-status.js';
-import type { SeatWait, WorkflowState } from '../../../../src/core/schemas/workflow.js';
+import type {
+  ReviewRecord,
+  SeatWait,
+  WorkflowState,
+} from '../../../../src/core/schemas/workflow.js';
+import {
+  type Finding,
+  reviewFindingCounts,
+  reviewOutcomeOf,
+  reviewOutcomeWord,
+} from '../../../../src/core/review/verdict.js';
 import type { RecoveryIssue } from '../../../../src/core/schemas/recovery/schemas.js';
-import type { EngineEvent } from '../../../../src/engine/events/types.js';
+import type { EngineEvent, EngineEventOf } from '../../../../src/engine/events/types.js';
+import {
+  FIX_CYCLE_RUN_FEATURE,
+  fixCycleRun,
+  fixCycleRunLog,
+} from '../../../helpers/factories/fix-cycle-run.js';
 import { makeTask } from '../../../helpers/factories/task.js';
 import { makeMessage } from '../../../helpers/queue.js';
 import type {
@@ -124,20 +144,21 @@ function packetMarkdownPath(sessionId: string): string {
   return `.splitbrief/sessions/${sessionId}/review-packet.md`;
 }
 
+/** The packet counts the saved final review the way the orchestrator writes it, so the two agree. */
 function reviewPacket(input: {
   readonly sessionId: string;
-  readonly verdict: ReviewPacketSummary['finalReviewVerdict'];
-  readonly counts: ReviewPacketSummary['finalReviewFindingCounts'];
+  readonly review: ReviewRecord;
   readonly driftPassed: boolean;
   readonly tasks: number;
 }): ReviewPacketSummary {
+  const outcome = reviewOutcomeOf(input.review);
   return {
     jsonPath: `.splitbrief/sessions/${input.sessionId}/review-packet.json`,
     markdownPath: packetMarkdownPath(input.sessionId),
     generatedAt: GENERATED_AT,
     finalReviewStatus: 'written',
-    finalReviewVerdict: input.verdict,
-    finalReviewFindingCounts: input.counts,
+    finalReviewVerdict: reviewOutcomeWord(outcome),
+    finalReviewFindingCounts: reviewFindingCounts(outcome),
     driftPassed: input.driftPassed,
     evidenceValidatedTasks: input.tasks,
     evidenceTotalTasks: input.tasks,
@@ -375,10 +396,63 @@ function settledLocalTasks(
   ];
 }
 
+const VALIDATOR_NOTE: Finding = {
+  id: 'F1',
+  kind: 'defect',
+  severity: 'minor',
+  taskId: BRIEFS.validator.id,
+  file: FILES.validate,
+  line: null,
+  text: 'isEmail trims the input a second time; the form already trims it.',
+  acceptance: null,
+  checkIds: null,
+  criterionId: null,
+};
+
+/** The ready run's final review: it passed with one minor note on the validator. */
+const READY_FINAL_REVIEW: ReviewRecord = {
+  scope: 'final',
+  cycle: 0,
+  verdict: { tasks: [], criteria: [], findings: [VALIDATOR_NOTE] },
+  outcome: 'pass-with-notes',
+  verification: [],
+  at: GENERATED_AT,
+};
+
+/** The final review that blocks a run: the two findings an Accept as is names, and the same note. */
+const FAILED_REVIEW: ReviewRecord = {
+  scope: 'final',
+  cycle: 0,
+  verdict: {
+    tasks: [],
+    criteria: [],
+    findings: [
+      {
+        ...VALIDATOR_NOTE,
+        severity: 'blocking',
+        taskId: BRIEFS.wire.id,
+        file: FILES.form,
+        text: 'src/form.ts re-validates on every keystroke',
+      },
+      {
+        ...VALIDATOR_NOTE,
+        id: 'F2',
+        severity: 'blocking',
+        taskId: null,
+        file: FILES.docs,
+        text: 'docs/validation-errors.md names a retired code',
+      },
+      { ...VALIDATOR_NOTE, id: 'F3' },
+    ],
+  },
+  outcome: 'fail',
+  verification: [],
+  at: GENERATED_AT,
+};
+
 const READY_PACKET = reviewPacket({
   sessionId: COMPLETE_SESSION,
-  verdict: 'pass_with_notes',
-  counts: { critical: 0, warning: 1, note: 2 },
+  review: READY_FINAL_REVIEW,
   driftPassed: true,
   tasks: 3,
 });
@@ -393,6 +467,7 @@ const READY_LEDGER: EvidenceLedger = ledger({
 
 const READY_BUILD = { tool: 'custom-endpoint', model: 'gpt-5-mini' } as const;
 const READY_REVIEW = { tool: 'custom-endpoint', model: 'gpt-5-codex' } as const;
+const READY_REVIEW_MS = 65_000;
 
 /** The finished run every fact agrees on: packet written, verdict allows it, scope clean. */
 const READY_SUMMARY: Readonly<Summary> = Object.freeze({
@@ -437,7 +512,7 @@ const READY_SUMMARY: Readonly<Summary> = Object.freeze({
   implementerModel: READY_BUILD.model,
   reviewerTool: READY_REVIEW.tool,
   reviewerModel: READY_REVIEW.model,
-  phaseTimings: { planning: 170_000, implementing: 492_000, review: 65_000 },
+  phaseTimings: { planning: 170_000, implementing: 492_000, review: READY_REVIEW_MS },
   mode: 'standard',
   driftSummary: { passed: true, score: 1, errorCount: 0, warningCount: 0 },
   reviewPacket: READY_PACKET,
@@ -480,15 +555,14 @@ const NEEDS_ATTENTION_TASKS: readonly TaskTokenUsage[] = [
 
 const NEEDS_ATTENTION_PACKET = reviewPacket({
   sessionId: NEEDS_ATTENTION_SESSION,
-  verdict: 'fail',
-  counts: { critical: 2, warning: 1, note: 0 },
+  review: FAILED_REVIEW,
   driftPassed: false,
   tasks: 3,
 });
 
 const NEEDS_ATTENTION_LEDGER: EvidenceLedger = ledger({
   sessionId: NEEDS_ATTENTION_SESSION,
-  tasks: settledLocalTasks([84_200, 312_600, 96_300]).map((task) =>
+  tasks: settledLocalTasks([84_200, 311_000, 96_300]).map((task) =>
     task.id === BRIEFS.wire.id
       ? {
           ...task,
@@ -1016,6 +1090,11 @@ const CLOSED_COMPLETE_SUMMARY: Summary = {
   ),
 };
 
+/** The ready run's review ended its run time after the start: the run completed then. */
+const READY_COMPLETED_AT = new Date(
+  Date.parse(STARTED_AT_ISO) + READY_SUMMARY.totalTime,
+).toISOString();
+
 const CLOSED_COMPLETE = record({
   sessionId: COMPLETE_SESSION,
   status: { kind: 'closed', as: 'complete' },
@@ -1026,6 +1105,8 @@ const CLOSED_COMPLETE = record({
       { id: BRIEFS.wire.id, status: 'done' },
       { id: BRIEFS.routeTests.id, status: 'done' },
     ],
+    review: READY_FINAL_REVIEW,
+    completedAt: READY_COMPLETED_AT,
   }),
   summary: CLOSED_COMPLETE_SUMMARY,
   ledger: {
@@ -1072,6 +1153,8 @@ function reviewNoneSummary(recorded: Readonly<Summary>): Readonly<Summary> {
     costBreakdown: _noReviewCost,
     ...summary
   } = recorded;
+  const phaseTimings = { planning: 170_000, implementing: 492_000 };
+  const ran = phaseTimings.planning + phaseTimings.implementing;
   return {
     ...summary,
     reviewerSeat: 'none',
@@ -1081,7 +1164,9 @@ function reviewNoneSummary(recorded: Readonly<Summary>): Readonly<Summary> {
       implementerInput: 168_500,
       implementerOutput: 36_000,
     }),
-    phaseTimings: { planning: 170_000, implementing: 492_000 },
+    phaseTimings,
+    totalTime: ran,
+    activeTime: ran,
   };
 }
 
@@ -1093,11 +1178,20 @@ function reviewNoneLedger(sessionId: string): EvidenceLedger {
   };
 }
 
+const CLOSED_REVIEW_NONE_SUMMARY = reviewNoneSummary(READY_SUMMARY);
+const { review: _noReviewSaved, ...CLOSED_REVIEW_NONE_STATE } = CLOSED_COMPLETE.hydration.state;
 const CLOSED_REVIEW_NONE = record({
   sessionId: 'visual-closed-none',
   status: CLOSED_COMPLETE.status,
-  state: { ...CLOSED_COMPLETE.hydration.state, reviewStatus: 'none', reviewerSeat: 'none' },
-  summary: reviewNoneSummary(READY_SUMMARY),
+  state: {
+    ...CLOSED_REVIEW_NONE_STATE,
+    reviewStatus: 'none',
+    reviewerSeat: 'none',
+    completedAt: new Date(
+      Date.parse(STARTED_AT_ISO) + CLOSED_REVIEW_NONE_SUMMARY.totalTime,
+    ).toISOString(),
+  },
+  summary: CLOSED_REVIEW_NONE_SUMMARY,
   ledger: reviewNoneLedger('visual-closed-none'),
 });
 
@@ -1400,6 +1494,154 @@ function savedAction(state: WorkflowState, id: string): Task['action'] {
   return task.action;
 }
 
+/**
+ * The transcript of a closed run, built from its own record: the plan, each brief on the seat that
+ * built it, each review the ledger names, the review of record as the packet states it, then the
+ * way the run closed. The record keeps one time for all its reviews, so they share it in equal parts.
+ */
+function recordedRunLog(run: RunRecord): EngineEvent[] {
+  const { summary, ledger, hydration } = run;
+  const packet = summary?.reviewPacket;
+  const reviewTool = summary?.reviewerTool ?? summary?.plannerTool;
+  const planMs = summary?.phaseTimings?.planning;
+  const reviewPhaseMs = summary?.phaseTimings?.review;
+  if (
+    summary === null ||
+    ledger === null ||
+    hydration.kind !== 'loaded' ||
+    packet === undefined ||
+    reviewTool === undefined ||
+    planMs === undefined ||
+    reviewPhaseMs === undefined
+  ) {
+    throw new Error(`The fixture run ${run.ref.sessionId} holds no reviewed record`);
+  }
+  const { state } = hydration;
+  const reviewModel =
+    summary.reviewerTool === undefined ? summary.plannerModel : summary.reviewerModel;
+  const reviewSeat = { tool: reviewTool, ...(reviewModel !== undefined && { model: reviewModel }) };
+  const reviews = ledger.reviews ?? [];
+  const earlier = reviews.slice(0, -1);
+  const reviewMs = reviewPhaseMs / Math.max(reviews.length, 1);
+  const verdict =
+    packet.finalReviewStatus !== 'written' || packet.finalReviewVerdict === null
+      ? 'no-verdict'
+      : packet.finalReviewVerdict === 'pass_with_notes'
+        ? 'pass-with-notes'
+        : packet.finalReviewVerdict;
+  const events: EngineEvent[] = [];
+  let ts = Date.parse(STARTED_AT_ISO);
+  let fixCycles = 0;
+
+  const review = (
+    entry: Pick<EvidenceReview, 'scope' | 'afterTaskId' | 'cycle'>,
+    outcome: Pick<EngineEventOf<'review_completed'>, 'verdict' | 'findings' | 'blockingFindings'>,
+  ) => {
+    if (entry.scope === 'final' && entry.cycle > fixCycles) {
+      fixCycles = entry.cycle;
+      events.push({
+        type: 'review_fix_started',
+        ts,
+        phase: 'implementing',
+        cycle: fixCycles,
+        taskIds: [],
+      });
+    }
+    const phase: Phase = entry.scope === 'final' ? 'final-review' : 'implementing';
+    const call = {
+      phase,
+      scope: entry.scope,
+      ...(entry.afterTaskId !== undefined && { afterTaskId: entry.afterTaskId }),
+      ...reviewSeat,
+    };
+    events.push({ type: 'review_started', ts, ...call });
+    ts += reviewMs;
+    events.push({ type: 'review_completed', ts, ...call, ...outcome, duration: reviewMs });
+  };
+  const ledgerReview = (entry: EvidenceReview) =>
+    review(entry, {
+      verdict: entry.outcome,
+      findings: { blocking: entry.blocking.length, minor: 0, outOfScope: 0 },
+      blockingFindings: entry.blocking,
+    });
+
+  events.push({ type: 'workflow_started', ts, phase: 'planning', feature: run.feature });
+  ts += planMs;
+  events.push({ type: 'plan_approved', ts, phase: 'planning' });
+  ledger.tasks.forEach((brief, index) => {
+    const built = summary.taskBreakdown?.find((task) => task.taskId === brief.id);
+    if (built === undefined || brief.durationMs === undefined) {
+      throw new Error(`The fixture run ${run.ref.sessionId} holds no build record of ${brief.id}`);
+    }
+    const seat = {
+      ...(built.tool !== undefined && { tool: built.tool }),
+      ...(built.model !== undefined && { model: built.model }),
+      ...(built.implementerProfile !== undefined && {
+        implementerProfile: built.implementerProfile,
+      }),
+    };
+    events.push({
+      type: 'task_started',
+      ts,
+      phase: 'implementing',
+      taskId: brief.id,
+      title: brief.title,
+      file: brief.file,
+      action: savedAction(state, brief.id),
+      index,
+      total: ledger.tasks.length,
+      ...seat,
+    });
+    ts += brief.durationMs;
+    events.push({
+      type: 'task_completed',
+      ts,
+      phase: 'implementing',
+      taskId: brief.id,
+      title: brief.title,
+      method: built.method,
+      retries: built.retryCount,
+      duration: brief.durationMs,
+      ...seat,
+    });
+    for (const entry of earlier) {
+      if (entry.scope === 'task' && entry.afterTaskId === brief.id) ledgerReview(entry);
+    }
+  });
+  for (const entry of earlier) {
+    if (entry.scope === 'final') ledgerReview(entry);
+  }
+  const counts = packet.finalReviewFindingCounts;
+  review(
+    { scope: 'final', cycle: reviews.at(-1)?.cycle ?? 0 },
+    verdict === 'no-verdict'
+      ? { verdict }
+      : {
+          verdict,
+          findings: { blocking: counts.critical, minor: counts.warning, outOfScope: counts.note },
+        },
+  );
+  if (verdict !== 'no-verdict') {
+    events.push({
+      type: 'workflow_complete',
+      ts,
+      phase: 'complete',
+      review: verdict === 'fail' ? 'failed' : 'passed',
+      ...(verdict === 'fail' && { blocking: counts.critical }),
+      completedTasks: ledger.tasks.length,
+    });
+  }
+  if (run.status.kind === 'closed' && run.status.as === 'ended') {
+    events.push({
+      type: 'workflow_cancelled',
+      ts,
+      phase: state.phase,
+      reason: WORKFLOW_CANCEL_REASON_USER,
+    });
+  }
+  return events;
+}
+
 const READY_LOG: readonly EngineEvent[] = [
   {
     type: 'workflow_started',
@@ -1434,7 +1676,7 @@ const READY_LOG: readonly EngineEvent[] = [
   ]),
   {
     type: 'review_started',
-    ts: Date.parse(STARTED_AT_ISO) + READY_SUMMARY.totalTime - 62_000,
+    ts: Date.parse(STARTED_AT_ISO) + READY_SUMMARY.totalTime - READY_REVIEW_MS,
     phase: 'final-review',
     scope: 'final',
     tool: 'claude-code',
@@ -1447,13 +1689,13 @@ const READY_LOG: readonly EngineEvent[] = [
     scope: 'final',
     tool: 'claude-code',
     model: 'claude-sonnet-4',
-    verdict: 'pass-with-notes',
+    verdict: READY_FINAL_REVIEW.outcome,
     findings: {
       blocking: READY_PACKET.finalReviewFindingCounts.critical,
       minor: READY_PACKET.finalReviewFindingCounts.warning,
       outOfScope: READY_PACKET.finalReviewFindingCounts.note,
     },
-    duration: 62_000,
+    duration: READY_REVIEW_MS,
   },
   {
     type: 'workflow_complete',
@@ -1468,6 +1710,23 @@ const READY_REVIEW_NONE_LOG: readonly EngineEvent[] = READY_LOG.flatMap((event):
   if (event.type === 'review_started' || event.type === 'review_completed') return [];
   return event.type === 'workflow_complete' ? [{ ...event, review: 'none' }] : [event];
 });
+
+/**
+ * A transcript built on the ready log, under the plan stage of a closed run's own record: the plan
+ * opens the run, and every later event moves by the plan time, so the build starts at the approval.
+ */
+function withRecordedPlan(run: RunRecord, log: readonly EngineEvent[]): EngineEvent[] {
+  const planMs = run.summary?.phaseTimings?.planning;
+  const [started, ...rest] = log;
+  if (planMs === undefined || started?.type !== 'workflow_started') {
+    throw new Error(`The fixture run ${run.ref.sessionId} holds no plan time or its log no start`);
+  }
+  return [
+    { ...started, phase: 'planning' },
+    { type: 'plan_approved', ts: started.ts + planMs, phase: 'planning' },
+    ...rest.map((event) => ({ ...event, ts: event.ts + planMs })),
+  ];
+}
 
 const READY_OVERRIDE_LOG: readonly EngineEvent[] = READY_LOG.map((event) =>
   event.type === 'review_completed'
@@ -1610,6 +1869,14 @@ const CRASHED_APPLY = record({
   ledger: READY_LEDGER,
 });
 
+/** Apply wrote the ready run's four files into the checkout half a minute after its review. */
+const APPLIED_AT = new Date(Date.parse(READY_COMPLETED_AT) + 30_000).toISOString();
+const APPLIED = {
+  at: APPLIED_AT,
+  backupId: 'visual-backup',
+  files: [FILES.formTest, FILES.form, FILES.signupTest, FILES.validate],
+};
+
 const CLOSED_APPLIED = record({
   sessionId: 'visual-closed-applied',
   status: { kind: 'closed', as: 'applied' },
@@ -1618,21 +1885,53 @@ const CLOSED_APPLIED = record({
     briefs: WORKSPACE_BRIEFS,
     reviewStatus: 'passed',
     workspace: RUN_WORKSPACE,
-    applied: {
-      at: GENERATED_AT,
-      backupId: 'visual-backup',
-      files: [FILES.formTest, FILES.form, FILES.signupTest, FILES.validate],
-    },
-    closed: { at: GENERATED_AT, as: 'applied' },
+    review: READY_FINAL_REVIEW,
+    applied: APPLIED,
+    closed: { at: APPLIED_AT, as: 'applied' },
   }),
   summary: workspaceSummary('visual-closed-applied'),
   ledger: READY_LEDGER,
 });
+/** The transcript of an applied run: its own record, then the Apply that closed it. */
+function appliedRunLog(run: RunRecord): EngineEvent[] {
+  return [
+    ...recordedRunLog(run),
+    { type: 'apply_started', ts: Date.parse(APPLIED_AT) - 4_000 },
+    { type: 'apply_finished', ts: Date.parse(APPLIED_AT) },
+  ];
+}
+const APPLIED_LOG: readonly EngineEvent[] = appliedRunLog(CLOSED_APPLIED);
+
+const PRE_EXISTING_CHECK = {
+  id: 'V2',
+  command: 'npx --no-install vitest run legacy',
+  keys: [
+    'legacy/report.test.ts > legacy report > total matches the ledger',
+    'legacy/report.test.ts > legacy report > rounds the tax',
+    'legacy/ledger.test.ts > legacy ledger > opens the ledger',
+    'legacy/ledger.test.ts > legacy ledger > closes the ledger',
+  ],
+};
 
 /**
  * An applied run whose final review ran a reviewer check that was red at the run base too: the
- * review raised no finding for it, and the closed block names the check and its failing tests.
+ * review raised no finding for it, and the summary names the check and its failing tests.
  */
+const PRE_EXISTING_REVIEW: ReviewRecord = {
+  scope: 'final',
+  cycle: 0,
+  verdict: { tasks: [], criteria: [], findings: [] },
+  outcome: 'pass',
+  verification: [],
+  preExistingChecks: [PRE_EXISTING_CHECK],
+  at: GENERATED_AT,
+};
+const PRE_EXISTING_PACKET = reviewPacket({
+  sessionId: 'visual-closed-pre-existing',
+  review: PRE_EXISTING_REVIEW,
+  driftPassed: true,
+  tasks: 3,
+});
 const CLOSED_PRE_EXISTING = record({
   sessionId: 'visual-closed-pre-existing',
   status: { kind: 'closed', as: 'applied' },
@@ -1641,36 +1940,39 @@ const CLOSED_PRE_EXISTING = record({
     briefs: WORKSPACE_BRIEFS,
     reviewStatus: 'passed',
     workspace: RUN_WORKSPACE,
-    review: {
-      scope: 'final',
-      cycle: 0,
-      verdict: { tasks: [], criteria: [], findings: [] },
-      outcome: 'pass',
-      verification: [],
-      preExistingChecks: [
-        {
-          id: 'V2',
-          command: 'npx --no-install vitest run legacy',
-          keys: [
-            'legacy/report.test.ts > legacy report > total matches the ledger',
-            'legacy/report.test.ts > legacy report > rounds the tax',
-            'legacy/ledger.test.ts > legacy ledger > opens the ledger',
-            'legacy/ledger.test.ts > legacy ledger > closes the ledger',
-          ],
-        },
-      ],
-      at: GENERATED_AT,
-    },
-    applied: {
-      at: GENERATED_AT,
-      backupId: 'visual-backup',
-      files: [FILES.formTest, FILES.form, FILES.signupTest, FILES.validate],
-    },
-    closed: { at: GENERATED_AT, as: 'applied' },
+    review: PRE_EXISTING_REVIEW,
+    applied: APPLIED,
+    closed: { at: APPLIED_AT, as: 'applied' },
   }),
-  summary: workspaceSummary('visual-closed-pre-existing'),
+  summary: {
+    ...READY_SUMMARY,
+    reviewPacket: PRE_EXISTING_PACKET,
+    review: legacyReview(PRE_EXISTING_PACKET),
+  },
   ledger: READY_LEDGER,
 });
+/** The check ran before the review and every one of its failures was red at the run base too. */
+const CLOSED_PRE_EXISTING_LOG: readonly EngineEvent[] = appliedRunLog(CLOSED_PRE_EXISTING).flatMap(
+  (event): EngineEvent[] =>
+    event.type === 'review_started'
+      ? [
+          {
+            type: 'full_suite',
+            ts: event.ts,
+            phase: 'final-review',
+            moment: 'pre-review',
+            status: 'done',
+            id: PRE_EXISTING_CHECK.id,
+            command: PRE_EXISTING_CHECK.command,
+            passed: false,
+            newFailures: 0,
+            preExisting: PRE_EXISTING_CHECK.keys.length,
+            preExistingKeys: PRE_EXISTING_CHECK.keys.slice(0, BASE_SPLIT_NAMED),
+          },
+          event,
+        ]
+      : [event],
+);
 
 /**
  * A completed run whose task review and first final review failed before its fix cycle passed: the
@@ -1723,11 +2025,29 @@ const CLOSED_FIX_CYCLE: RunRecord = {
         ],
         at: GENERATED_AT,
       },
-      { scope: 'final', cycle: 2, outcome: 'pass', blocking: [], at: GENERATED_AT },
+      { scope: 'final', cycle: 2, outcome: 'pass-with-notes', blocking: [], at: GENERATED_AT },
     ],
   },
 };
 
+const CLOSED_SUMMARY_RUN = fixCycleRun('visual-closed-summary');
+/** A long applied run: 15 briefs, 65 files, three failed reviews before the one that passed. */
+const CLOSED_SUMMARY: RunRecord = {
+  ...record({
+    sessionId: 'visual-closed-summary',
+    status: { kind: 'closed', as: 'applied' },
+    state: { ...CLOSED_SUMMARY_RUN.state, workspace: RUN_WORKSPACE },
+    summary: CLOSED_SUMMARY_RUN.summary,
+    ledger: CLOSED_SUMMARY_RUN.ledger,
+  }),
+  feature: FIX_CYCLE_RUN_FEATURE,
+};
+
+const SET_ASIDE_CHECK = {
+  id: 'V1',
+  reason:
+    'npm run lint fails on src/legacy/report.ts, which no brief touches; the same error is red at the run base.',
+};
 /**
  * An applied run whose final review set aside a red reviewer check with a reason: the closed block
  * names it under the Review row, in the words of the transcript.
@@ -1740,12 +2060,9 @@ const CLOSED_SET_ASIDE = record({
     briefs: WORKSPACE_BRIEFS,
     reviewStatus: 'passed',
     workspace: RUN_WORKSPACE,
-    applied: {
-      at: GENERATED_AT,
-      backupId: 'visual-backup',
-      files: [FILES.formTest, FILES.form, FILES.signupTest, FILES.validate],
-    },
-    closed: { at: GENERATED_AT, as: 'applied' },
+    review: READY_FINAL_REVIEW,
+    applied: APPLIED,
+    closed: { at: APPLIED_AT, as: 'applied' },
   }),
   summary: workspaceSummary('visual-closed-set-aside'),
   ledger: {
@@ -1755,20 +2072,17 @@ const CLOSED_SET_ASIDE = record({
       {
         scope: 'final',
         cycle: 0,
-        outcome: 'pass',
+        outcome: 'pass-with-notes',
         blocking: [],
-        setAside: [
-          {
-            id: 'V1',
-            reason:
-              'npm run lint fails on src/legacy/report.ts, which no brief touches; the same error is red at the run base.',
-          },
-        ],
+        setAside: [SET_ASIDE_CHECK],
         at: GENERATED_AT,
       },
     ],
   },
 });
+const CLOSED_SET_ASIDE_LOG: readonly EngineEvent[] = APPLIED_LOG.map((event) =>
+  event.type === 'review_completed' ? { ...event, setAside: [SET_ASIDE_CHECK] } : event,
+);
 
 function undoneApplyRecord(conflicts: string[]): RunRecord {
   const sessionId =
@@ -1781,19 +2095,19 @@ function undoneApplyRecord(conflicts: string[]): RunRecord {
       briefs: WORKSPACE_BRIEFS,
       reviewStatus: 'passed',
       workspace: RUN_WORKSPACE,
+      review: READY_FINAL_REVIEW,
       applied: {
-        at: GENERATED_AT,
-        backupId: 'visual-backup',
-        files: [FILES.formTest, FILES.form],
-        undone: { at: GENERATED_AT, conflicts },
+        ...APPLIED,
+        undone: { at: new Date(Date.parse(APPLIED_AT) + 60_000).toISOString(), conflicts },
       },
-      closed: { at: GENERATED_AT, as: 'applied' },
+      closed: { at: APPLIED_AT, as: 'applied' },
     }),
     summary: workspaceSummary(sessionId),
     ledger: READY_LEDGER,
   });
 }
 
+const CLOSED_DISCARDED_AT = Date.parse(READY_COMPLETED_AT) + 40_000;
 const CLOSED_DISCARDED = record({
   sessionId: 'visual-closed-discarded',
   status: { kind: 'closed', as: 'discarded' },
@@ -1802,8 +2116,9 @@ const CLOSED_DISCARDED = record({
     briefs: WORKSPACE_BRIEFS,
     reviewStatus: 'passed',
     workspace: RUN_WORKSPACE,
+    review: READY_FINAL_REVIEW,
     closed: {
-      at: GENERATED_AT,
+      at: new Date(CLOSED_DISCARDED_AT).toISOString(),
       as: 'discarded',
       patch: '.splitbrief/sessions/visual-closed-discarded/run.patch',
     },
@@ -1811,22 +2126,9 @@ const CLOSED_DISCARDED = record({
   summary: workspaceSummary('visual-closed-discarded'),
   ledger: READY_LEDGER,
 });
-/**
- * End run on the ready run: it discards, saves the patch and stops nothing, so the log has no stop.
- * A closed run names its own crew, so the briefs and the review ran on the seats its summary names.
- */
-const CLOSED_DISCARDED_AT = Date.parse(STARTED_AT_ISO) + READY_SUMMARY.totalTime + 40_000;
+/** End run on the ready run: it discards, saves the patch and stops nothing, so the log has no stop. */
 const CLOSED_DISCARDED_LOG: readonly EngineEvent[] = [
-  ...READY_LOG.map(
-    (event): EngineEvent =>
-      event.type === 'task_started'
-        ? { ...event, ...READY_BUILD, backendKind: 'api' }
-        : event.type === 'task_completed'
-          ? { ...event, ...READY_BUILD }
-          : event.type === 'review_started' || event.type === 'review_completed'
-            ? { ...event, ...READY_REVIEW }
-            : event,
-  ),
+  ...recordedRunLog(CLOSED_DISCARDED),
   { type: 'workspace_closed', ts: CLOSED_DISCARDED_AT, phase: 'complete' },
 ];
 
@@ -1838,8 +2140,7 @@ const SEAT_MOVED_SESSION = 'visual-closed-seat-moved';
 const SEAT_MOVED_TOOL = { tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash' } as const;
 const SEAT_MOVED_PACKET = reviewPacket({
   sessionId: SEAT_MOVED_SESSION,
-  verdict: 'pass_with_notes',
-  counts: { critical: 0, warning: 1, note: 2 },
+  review: READY_FINAL_REVIEW,
   driftPassed: true,
   tasks: 3,
 });
@@ -1853,6 +2154,8 @@ const CLOSED_SEAT_MOVED = record({
       { id: BRIEFS.wire.id, status: 'done' },
       { id: BRIEFS.routeTests.id, status: 'done' },
     ],
+    review: READY_FINAL_REVIEW,
+    completedAt: READY_COMPLETED_AT,
   }),
   summary: Object.freeze({
     ...READY_SUMMARY,
@@ -1877,8 +2180,7 @@ const CLOSED_SEAT_MOVED = record({
 const MIXED_WORKERS_SESSION = 'visual-closed-mixed-workers';
 const MIXED_WORKERS_PACKET = reviewPacket({
   sessionId: MIXED_WORKERS_SESSION,
-  verdict: 'pass_with_notes',
-  counts: { critical: 0, warning: 1, note: 2 },
+  review: READY_FINAL_REVIEW,
   driftPassed: true,
   tasks: 3,
 });
@@ -1892,6 +2194,8 @@ const CLOSED_MIXED_WORKERS = record({
       { id: BRIEFS.wire.id, status: 'done' },
       { id: BRIEFS.routeTests.id, status: 'done' },
     ],
+    review: READY_FINAL_REVIEW,
+    completedAt: READY_COMPLETED_AT,
   }),
   summary: Object.freeze({
     ...READY_SUMMARY,
@@ -1920,6 +2224,8 @@ const CLOSED_NEEDS_ATTENTION = record({
       { id: BRIEFS.wire.id, status: 'escalated' },
       { id: BRIEFS.routeTests.id, status: 'done' },
     ],
+    review: FAILED_REVIEW,
+    completedAt: READY_COMPLETED_AT,
   }),
   summary: NEEDS_ATTENTION_SUMMARY,
   ledger: NEEDS_ATTENTION_LEDGER,
@@ -1927,8 +2233,7 @@ const CLOSED_NEEDS_ATTENTION = record({
 
 const PLANNER_ACCEPT_PACKET = reviewPacket({
   sessionId: 'visual-closed-planner-accept',
-  verdict: 'fail',
-  counts: { critical: 2, warning: 1, note: 0 },
+  review: FAILED_REVIEW,
   driftPassed: false,
   tasks: 3,
 });
@@ -1945,6 +2250,8 @@ const CLOSED_PLANNER_ACCEPT = record({
       { id: BRIEFS.routeTests.id, status: 'done' },
     ],
     reviewStatus: 'failed',
+    review: FAILED_REVIEW,
+    completedAt: READY_COMPLETED_AT,
     acceptedAsIs: {
       at: GENERATED_AT,
       findings: [
@@ -1966,6 +2273,19 @@ const CLOSED_PLANNER_ACCEPT = record({
     finalReview: { path: packetMarkdownPath('visual-closed-planner-accept'), status: 'written' },
   },
 });
+/** The accept is the one the ready run's log states: the same findings, the same note. */
+const CLOSED_PLANNER_ACCEPT_LOG: readonly EngineEvent[] = recordedRunLog(
+  CLOSED_PLANNER_ACCEPT,
+).flatMap((event): EngineEvent[] =>
+  event.type === 'workflow_complete'
+    ? [
+        ...READY_PLANNER_ACCEPT_LOG.filter((accept) => accept.type === 'consult_answered').map(
+          (accept): EngineEvent => ({ ...accept, ts: event.ts }),
+        ),
+        event,
+      ]
+    : [event],
+);
 
 /**
  * The user chose Decide for me at a planning question; later the planner said T002 cannot be done
@@ -1977,8 +2297,7 @@ const DECIDED_SKIP_REASON =
 const DECIDED_SKIP_PACKET = {
   ...reviewPacket({
     sessionId: DECIDED_SKIP_SESSION,
-    verdict: 'pass_with_notes',
-    counts: { critical: 0, warning: 1, note: 2 },
+    review: READY_FINAL_REVIEW,
     driftPassed: true,
     tasks: 3,
   }),
@@ -2021,6 +2340,8 @@ const CLOSED_DECIDED_SKIP = record({
       { id: BRIEFS.routeTests.id, status: 'done' },
     ],
     decideForMe: true,
+    review: READY_FINAL_REVIEW,
+    completedAt: READY_COMPLETED_AT,
   }),
   summary: Object.freeze({
     ...READY_SUMMARY,
@@ -2045,6 +2366,7 @@ const CLOSED_DECIDED_SKIP = record({
   }),
 });
 
+const CLOSED_ENDED_AT = Date.parse(STARTED_AT_ISO) + INTERRUPTED_BUILD_SUMMARY.totalTime;
 const CLOSED_ENDED = record({
   sessionId: INTERRUPTED_BUILD_SESSION,
   status: { kind: 'closed', as: 'ended' },
@@ -2058,10 +2380,80 @@ const CLOSED_ENDED = record({
       { id: BRIEFS.blur.id, status: 'pending' },
       { id: BRIEFS.docs.id, status: 'pending' },
     ],
+    closed: { at: new Date(CLOSED_ENDED_AT).toISOString(), as: 'ended' },
   }),
   summary: INTERRUPTED_BUILD_SUMMARY,
   ledger: INTERRUPTED_BUILD_LEDGER,
 });
+const ENDED_BUILD = { tool: 'ollama', model: 'qwen2.5-coder:7b' } as const;
+/** The interrupted run up to its stop: the plan, two settled briefs and the brief it stopped in. */
+const ENDED_BUILD_LOG: readonly EngineEvent[] = [
+  {
+    type: 'workflow_started',
+    ts: Date.parse(STARTED_AT_ISO),
+    phase: 'planning',
+    feature: AT_REST_FIXTURE_FEATURE,
+  },
+  { type: 'plan_approved', ts: Date.parse(STARTED_AT_ISO) + 182_000, phase: 'planning' },
+  ...(
+    [
+      { brief: BRIEFS.validator, startedAfter: 182_000, method: 'local', retries: 0, ms: 84_200 },
+      {
+        brief: BRIEFS.wire,
+        startedAfter: 266_700,
+        method: 'escalated-full',
+        retries: 2,
+        ms: 312_600,
+      },
+      { brief: BRIEFS.routeTests, startedAfter: 579_400, method: null, retries: 0, ms: 0 },
+    ] as const
+  ).flatMap(({ brief, startedAfter, method, retries, ms }, index): EngineEvent[] => [
+    {
+      type: 'task_started',
+      ts: Date.parse(STARTED_AT_ISO) + startedAfter,
+      phase: 'implementing',
+      taskId: brief.id,
+      title: brief.title,
+      file: brief.file,
+      action: savedAction(CLOSED_ENDED.hydration.state, brief.id),
+      index,
+      total: INTERRUPTED_BUILD_SUMMARY.totalTasks,
+      ...ENDED_BUILD,
+    },
+    ...(method === null
+      ? []
+      : [
+          {
+            type: 'task_completed' as const,
+            ts: Date.parse(STARTED_AT_ISO) + startedAfter + ms,
+            phase: 'implementing' as const,
+            taskId: brief.id,
+            title: brief.title,
+            method,
+            retries,
+            duration: ms,
+            ...ENDED_BUILD,
+          },
+        ]),
+  ]),
+];
+const CLOSED_ENDED_LOG: readonly EngineEvent[] = [
+  ...ENDED_BUILD_LOG,
+  {
+    type: 'turn_interrupted',
+    ts: CLOSED_ENDED_AT - 1_000,
+    phase: 'implementing',
+    source: 'user',
+    at: 'mid-step',
+    step: { kind: 'brief', taskId: BRIEFS.routeTests.id, attempt: 0 },
+  },
+  {
+    type: 'workflow_cancelled',
+    ts: CLOSED_ENDED_AT,
+    phase: 'implementing',
+    reason: WORKFLOW_CANCEL_REASON_USER,
+  },
+];
 
 /**
  * A checkout run stopped inside T003, rejected once in part (it left a file the user had changed),
@@ -2100,13 +2492,9 @@ const CLOSED_REJECTED = record({
   summary: INTERRUPTED_BUILD_SUMMARY,
   ledger: INTERRUPTED_BUILD_LEDGER,
 });
+// Each reject saves the files it replaces in a folder named for the time it ran.
 const CLOSED_REJECTED_LOG: readonly EngineEvent[] = [
-  {
-    type: 'workflow_started',
-    ts: Date.parse(STARTED_AT_ISO),
-    phase: 'implementing',
-    feature: AT_REST_FIXTURE_FEATURE,
-  },
+  ...CLOSED_ENDED_LOG,
   {
     type: 'run_rejected',
     ts: CLOSED_REJECTED_AT,
@@ -2114,7 +2502,7 @@ const CLOSED_REJECTED_LOG: readonly EngineEvent[] = [
     removed: [FILES.validate, FILES.formTest, FILES.signup, FILES.signupTest],
     conflicted: [FILES.form],
     missing: 0,
-    savedTo: `.splitbrief/sessions/${CLOSED_REJECTED_SESSION}/reverted/2026-09-14T10-18-07-873Z`,
+    savedTo: `.splitbrief/sessions/${CLOSED_REJECTED_SESSION}/reverted/2026-09-14T09-51-00-000Z`,
   },
   {
     type: 'run_rejected',
@@ -2123,7 +2511,7 @@ const CLOSED_REJECTED_LOG: readonly EngineEvent[] = [
     removed: [FILES.form],
     conflicted: [],
     missing: 0,
-    savedTo: `.splitbrief/sessions/${CLOSED_REJECTED_SESSION}/reverted/2026-09-14T10-20-11-480Z`,
+    savedTo: `.splitbrief/sessions/${CLOSED_REJECTED_SESSION}/reverted/2026-09-14T09-53-00-000Z`,
   },
 ];
 
@@ -2157,7 +2545,6 @@ const CLOSED_ENDED_EMPTY = record({
  * partial files, and its log kept the workspace for Continue before the close let it go.
  */
 const ENDED_WORKSPACE_SESSION = 'visual-closed-ended-workspace';
-const ENDED_WORKSPACE_AT = Date.parse(STARTED_AT_ISO) + INTERRUPTED_BUILD_SUMMARY.totalTime;
 const ENDED_WORKSPACE_PATCH = `.splitbrief/sessions/${ENDED_WORKSPACE_SESSION}/run.patch`;
 const CLOSED_ENDED_WORKSPACE = record({
   sessionId: ENDED_WORKSPACE_SESSION,
@@ -2166,7 +2553,7 @@ const CLOSED_ENDED_WORKSPACE = record({
     ...CLOSED_ENDED.hydration.state,
     workspace: RUN_WORKSPACE,
     closed: {
-      at: new Date(ENDED_WORKSPACE_AT).toISOString(),
+      at: new Date(CLOSED_ENDED_AT).toISOString(),
       as: 'ended',
       patch: ENDED_WORKSPACE_PATCH,
     },
@@ -2175,15 +2562,10 @@ const CLOSED_ENDED_WORKSPACE = record({
   ledger: { ...INTERRUPTED_BUILD_LEDGER, sessionId: ENDED_WORKSPACE_SESSION },
 });
 const ENDED_WORKSPACE_LOG: readonly EngineEvent[] = [
-  {
-    type: 'workflow_started',
-    ts: Date.parse(STARTED_AT_ISO),
-    phase: 'planning',
-    feature: AT_REST_FIXTURE_FEATURE,
-  },
+  ...ENDED_BUILD_LOG,
   {
     type: 'turn_interrupted',
-    ts: ENDED_WORKSPACE_AT - 3_000,
+    ts: CLOSED_ENDED_AT - 1_500,
     phase: 'implementing',
     source: 'user',
     at: 'mid-step',
@@ -2191,23 +2573,22 @@ const ENDED_WORKSPACE_LOG: readonly EngineEvent[] = [
   },
   {
     type: 'warning',
-    ts: ENDED_WORKSPACE_AT - 2_000,
+    ts: CLOSED_ENDED_AT - 1_000,
     phase: 'implementing',
     message: retainedWorkspaceNotice(RUN_WORKSPACE.path),
     category: WORKSPACE_NOTICE_CATEGORY,
     code: WORKSPACE_KEPT_CODE,
   },
-  { type: 'workspace_closed', ts: ENDED_WORKSPACE_AT - 1_000, phase: 'implementing' },
+  { type: 'workspace_closed', ts: CLOSED_ENDED_AT - 500, phase: 'implementing' },
   {
     type: 'workflow_cancelled',
-    ts: ENDED_WORKSPACE_AT,
+    ts: CLOSED_ENDED_AT,
     phase: 'implementing',
     reason: WORKFLOW_CANCEL_REASON_USER,
   },
 ];
 
 const ENDED_MOVED_WORKSPACE_SESSION = 'visual-closed-ended-moved-workspace';
-const ENDED_MOVED_WORKSPACE_AT = Date.parse(STARTED_AT_ISO) + INTERRUPTED_BUILD_SUMMARY.totalTime;
 const ENDED_MOVED_WORKSPACE_PATCH = `.splitbrief/sessions/${ENDED_MOVED_WORKSPACE_SESSION}/run.patch`;
 const CLOSED_ENDED_MOVED_WORKSPACE = record({
   sessionId: ENDED_MOVED_WORKSPACE_SESSION,
@@ -2216,7 +2597,7 @@ const CLOSED_ENDED_MOVED_WORKSPACE = record({
     ...CLOSED_ENDED.hydration.state,
     workspace: RUN_WORKSPACE,
     closed: {
-      at: new Date(ENDED_MOVED_WORKSPACE_AT).toISOString(),
+      at: new Date(CLOSED_ENDED_AT).toISOString(),
       as: 'ended',
       patch: ENDED_MOVED_WORKSPACE_PATCH,
     },
@@ -2225,15 +2606,10 @@ const CLOSED_ENDED_MOVED_WORKSPACE = record({
   ledger: { ...INTERRUPTED_BUILD_LEDGER, sessionId: ENDED_MOVED_WORKSPACE_SESSION },
 });
 const ENDED_MOVED_WORKSPACE_LOG: readonly EngineEvent[] = [
-  {
-    type: 'workflow_started',
-    ts: Date.parse(STARTED_AT_ISO),
-    phase: 'planning',
-    feature: AT_REST_FIXTURE_FEATURE,
-  },
+  ...ENDED_BUILD_LOG,
   {
     type: 'turn_interrupted',
-    ts: ENDED_MOVED_WORKSPACE_AT - 3_000,
+    ts: CLOSED_ENDED_AT - 1_500,
     phase: 'implementing',
     source: 'user',
     at: 'mid-step',
@@ -2241,27 +2617,23 @@ const ENDED_MOVED_WORKSPACE_LOG: readonly EngineEvent[] = [
   },
   {
     type: 'info',
-    ts: ENDED_MOVED_WORKSPACE_AT - 2_000,
+    ts: CLOSED_ENDED_AT - 1_000,
     phase: 'implementing',
     message: foreignWorkspaceNotice(RUN_WORKSPACE.path),
   },
-  { type: 'workspace_closed', ts: ENDED_MOVED_WORKSPACE_AT - 1_000, phase: 'implementing' },
+  { type: 'workspace_closed', ts: CLOSED_ENDED_AT - 500, phase: 'implementing' },
   {
     type: 'workflow_cancelled',
-    ts: ENDED_MOVED_WORKSPACE_AT,
+    ts: CLOSED_ENDED_AT,
     phase: 'implementing',
     reason: WORKFLOW_CANCEL_REASON_USER,
   },
 ];
 
 const ENDED_REVIEW_SESSION = 'visual-ended-review';
-const ENDED_REVIEW_AT = new Date(
-  Date.parse(STARTED_AT_ISO) + READY_SUMMARY.totalTime,
-).toISOString();
 const ENDED_REVIEW_PACKET = reviewPacket({
   sessionId: ENDED_REVIEW_SESSION,
-  verdict: 'fail',
-  counts: { critical: 2, warning: 1, note: 0 },
+  review: FAILED_REVIEW,
   driftPassed: true,
   tasks: 3,
 });
@@ -2280,8 +2652,9 @@ const CLOSED_ENDED_REVIEW = record({
       ],
     }),
     reviewStatus: 'failed',
-    completedAt: ENDED_REVIEW_AT,
-    closed: { as: 'ended', at: ENDED_REVIEW_AT },
+    review: FAILED_REVIEW,
+    completedAt: READY_COMPLETED_AT,
+    closed: { as: 'ended', at: READY_COMPLETED_AT },
   },
   summary: {
     ...READY_SUMMARY,
@@ -2297,10 +2670,11 @@ const CLOSED_ENDED_REVIEW = record({
 
 /** A run ended on the halt of a final review that ran and returned no verdict. */
 const REVIEW_NO_VERDICT_SESSION = 'visual-closed-review-no-verdict';
+const { review: _noVerdictSaved, ...REVIEW_NO_VERDICT_STATE } = CLOSED_ENDED_REVIEW.hydration.state;
 const CLOSED_REVIEW_NO_VERDICT = record({
   sessionId: REVIEW_NO_VERDICT_SESSION,
   status: { kind: 'closed', as: 'ended' },
-  state: CLOSED_ENDED_REVIEW.hydration.state,
+  state: REVIEW_NO_VERDICT_STATE,
   summary: {
     ...READY_SUMMARY,
     reviewPacket: { ...ENDED_REVIEW_PACKET, finalReviewStatus: 'failed' },
@@ -2323,9 +2697,10 @@ const CLOSED_ENDED_REVIEW_WORKSPACE = record({
     briefs: WORKSPACE_BRIEFS,
     reviewStatus: 'failed',
     workspace: RUN_WORKSPACE,
-    completedAt: ENDED_REVIEW_AT,
+    review: FAILED_REVIEW,
+    completedAt: READY_COMPLETED_AT,
     closed: {
-      at: ENDED_REVIEW_AT,
+      at: READY_COMPLETED_AT,
       as: 'ended',
       patch: `.splitbrief/sessions/${ENDED_REVIEW_WORKSPACE_SESSION}/run.patch`,
     },
@@ -3122,10 +3497,16 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
     id: 'workflow-at-rest-waiting-gate',
     route: { record: AT_REST_WAITING_GATE },
   }),
-  atRestProjection({ id: 'workflow-closed-complete', route: { record: CLOSED_COMPLETE } }),
+  atRestProjection({
+    id: 'workflow-closed-complete',
+    route: { record: CLOSED_COMPLETE, log: recordedRunLog(CLOSED_COMPLETE) },
+  }),
   atRestProjection({
     id: 'workflow-closed-complete-review-none',
-    route: { record: CLOSED_REVIEW_NONE },
+    route: {
+      record: CLOSED_REVIEW_NONE,
+      log: withRecordedPlan(CLOSED_REVIEW_NONE, READY_REVIEW_NONE_LOG),
+    },
   }),
   atRestProjection({
     id: 'workflow-ready-to-apply-review-none',
@@ -3163,11 +3544,11 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   }),
   atRestProjection({
     id: 'workflow-at-rest-applying-closed',
-    route: { record: CLOSED_APPLIED },
+    route: { record: CLOSED_APPLIED, log: APPLIED_LOG },
   }),
   atRestProjection({
     id: 'workflow-at-rest-applying-closed-quit-queued',
-    route: { record: CLOSED_APPLIED },
+    route: { record: CLOSED_APPLIED, log: APPLIED_LOG },
   }),
   atRestProjection({
     id: 'workflow-at-rest-other-process-applying',
@@ -3236,17 +3617,36 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
     id: 'workflow-ready-planner-accept-short',
     route: { record: READY_PLANNER_ACCEPT_LONG_NOTE, log: READY_PLANNER_ACCEPT_LONG_NOTE_LOG },
   }),
-  atRestProjection({ id: 'workflow-closed-applied', route: { record: CLOSED_APPLIED } }),
+  atRestProjection({
+    id: 'workflow-closed-applied',
+    route: { record: CLOSED_APPLIED, log: APPLIED_LOG },
+  }),
   atRestProjection({
     id: 'workflow-closed-pre-existing',
-    route: { record: CLOSED_PRE_EXISTING },
+    route: { record: CLOSED_PRE_EXISTING, log: CLOSED_PRE_EXISTING_LOG },
   }),
-  atRestProjection({ id: 'workflow-closed-fix-cycle', route: { record: CLOSED_FIX_CYCLE } }),
-  atRestProjection({ id: 'workflow-closed-set-aside', route: { record: CLOSED_SET_ASIDE } }),
-  atRestProjection({ id: 'workflow-closed-undone', route: { record: undoneApplyRecord([]) } }),
+  atRestProjection({
+    id: 'workflow-closed-fix-cycle',
+    route: { record: CLOSED_FIX_CYCLE, log: recordedRunLog(CLOSED_FIX_CYCLE) },
+  }),
+  {
+    ...atRestProjection({
+      id: 'workflow-closed-summary',
+      route: { record: CLOSED_SUMMARY, log: fixCycleRunLog() },
+    }),
+    sidebarVisible: true,
+  },
+  atRestProjection({
+    id: 'workflow-closed-set-aside',
+    route: { record: CLOSED_SET_ASIDE, log: CLOSED_SET_ASIDE_LOG },
+  }),
+  atRestProjection({
+    id: 'workflow-closed-undone',
+    route: { record: undoneApplyRecord([]), log: APPLIED_LOG },
+  }),
   atRestProjection({
     id: 'workflow-closed-undo-conflicts',
-    route: { record: undoneApplyRecord([FILES.form]) },
+    route: { record: undoneApplyRecord([FILES.form]), log: APPLIED_LOG },
   }),
   atRestProjection({
     id: 'workflow-closed-discarded',
@@ -3254,21 +3654,30 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   }),
   atRestProjection({
     id: 'workflow-closed-complete-needs-attention',
-    route: { record: CLOSED_NEEDS_ATTENTION },
+    route: { record: CLOSED_NEEDS_ATTENTION, log: recordedRunLog(CLOSED_NEEDS_ATTENTION) },
   }),
   atRestProjection({
     id: 'workflow-closed-planner-accept',
-    route: { record: CLOSED_PLANNER_ACCEPT },
+    route: { record: CLOSED_PLANNER_ACCEPT, log: CLOSED_PLANNER_ACCEPT_LOG },
   }),
   atRestProjection({
     id: 'workflow-closed-decided-skip',
-    route: { record: CLOSED_DECIDED_SKIP, log: DECIDED_SKIP_LOG },
+    route: {
+      record: CLOSED_DECIDED_SKIP,
+      log: withRecordedPlan(CLOSED_DECIDED_SKIP, DECIDED_SKIP_LOG),
+    },
   }),
   atRestProjection({
     id: 'workflow-closed-rejected',
     route: { record: CLOSED_REJECTED, log: CLOSED_REJECTED_LOG },
   }),
-  atRestProjection({ id: 'workflow-closed-ended', route: { record: CLOSED_ENDED } }),
+  {
+    ...atRestProjection({
+      id: 'workflow-closed-ended',
+      route: { record: CLOSED_ENDED, log: CLOSED_ENDED_LOG },
+    }),
+    sidebarVisible: true,
+  },
   atRestProjection({
     id: 'workflow-closed-ended-empty',
     route: {
@@ -3279,6 +3688,27 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
           ts: Date.parse(STARTED_AT_ISO),
           phase: 'planning',
           feature: AT_REST_FIXTURE_FEATURE,
+        },
+        { type: 'plan_approved', ts: Date.parse(STARTED_AT_ISO) + 1_000, phase: 'planning' },
+        {
+          type: 'task_started',
+          ts: Date.parse(STARTED_AT_ISO) + 1_000,
+          phase: 'implementing',
+          taskId: BRIEFS.validator.id,
+          title: BRIEFS.validator.title,
+          file: BRIEFS.validator.file,
+          action: savedAction(CLOSED_ENDED_EMPTY.hydration.state, BRIEFS.validator.id),
+          index: 0,
+          total: CLOSED_ENDED_EMPTY.hydration.state.tasks.length,
+          ...ENDED_BUILD,
+        },
+        {
+          type: 'turn_interrupted',
+          ts: Date.parse(STARTED_AT_ISO) + 1_800,
+          phase: 'implementing',
+          source: 'user',
+          at: 'mid-step',
+          step: { kind: 'brief', taskId: BRIEFS.validator.id, attempt: 0 },
         },
         { type: 'workspace_closed', ts: Date.parse(STARTED_AT_ISO) + 1_900, phase: 'implementing' },
         {
@@ -3298,19 +3728,28 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
     id: 'workflow-closed-ended-moved-workspace',
     route: { record: CLOSED_ENDED_MOVED_WORKSPACE, log: ENDED_MOVED_WORKSPACE_LOG },
   }),
-  atRestProjection({ id: 'workflow-closed-ended-review', route: { record: CLOSED_ENDED_REVIEW } }),
+  atRestProjection({
+    id: 'workflow-closed-ended-review',
+    route: { record: CLOSED_ENDED_REVIEW, log: recordedRunLog(CLOSED_ENDED_REVIEW) },
+  }),
   atRestProjection({
     id: 'workflow-closed-review-no-verdict',
-    route: { record: CLOSED_REVIEW_NO_VERDICT },
+    route: { record: CLOSED_REVIEW_NO_VERDICT, log: recordedRunLog(CLOSED_REVIEW_NO_VERDICT) },
   }),
   atRestProjection({
     id: 'workflow-closed-ended-review-workspace',
-    route: { record: CLOSED_ENDED_REVIEW_WORKSPACE },
+    route: {
+      record: CLOSED_ENDED_REVIEW_WORKSPACE,
+      log: recordedRunLog(CLOSED_ENDED_REVIEW_WORKSPACE),
+    },
   }),
-  atRestProjection({ id: 'workflow-closed-seat-moved', route: { record: CLOSED_SEAT_MOVED } }),
+  atRestProjection({
+    id: 'workflow-closed-seat-moved',
+    route: { record: CLOSED_SEAT_MOVED, log: recordedRunLog(CLOSED_SEAT_MOVED) },
+  }),
   atRestProjection({
     id: 'workflow-closed-mixed-workers',
-    route: { record: CLOSED_MIXED_WORKERS },
+    route: { record: CLOSED_MIXED_WORKERS, log: recordedRunLog(CLOSED_MIXED_WORKERS) },
   }),
   atRestProjection({
     id: 'workflow-replayed-history',

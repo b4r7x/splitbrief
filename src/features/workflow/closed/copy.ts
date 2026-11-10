@@ -12,28 +12,31 @@ import {
   PLANNER_INHERITANCE,
   REVIEW_NONE,
   formatCollapsedSeatSpansFromIdentities,
-  type SeatLineSpan,
   type CrewSeatId,
+  type SeatLineSpan,
 } from '../../../core/crew/identity.js';
+import { formatStageLabel } from '../../../core/phase-display.js';
 import { formatScoreSummaryParts } from '../../../core/formatting.js';
 import { SESSIONS_DIR, SPLITBRIEF_DIR } from '../../../core/paths.js';
 import { arrowSep, SOFT_SEP } from '../../../core/separators.js';
 import { formatTime } from '../../../utils/format-time.js';
 import { countNoun } from '../../../utils/pluralize.js';
 import type { SetAside } from '../../../core/schemas/review.js';
-import { formatFindingCounts, setAsideLabel, setAsideLine } from '../../../core/review/verdict.js';
+import { findingFacts, setAsideLabel, setAsideLine } from '../../../core/review/verdict.js';
 import { stateTone, type StateTone } from '../../../core/theme/state-tone.js';
+import { passedFractionSpans } from '../display/build-progress.js';
 
 /**
  * Theme keys, so a row says which colour it wants and the renderer indexes the theme instead of
- * translating a second vocabulary. `link` is the one that is not a top-level key: it is
- * `theme.markdown.link`, the colour every other file path on the screen already wears.
+ * translating a second vocabulary.
  */
-export type CopyTone = 'text' | 'link' | StateTone | 'planner' | 'implementer' | 'reviewer';
+export type CopyTone = 'text' | StateTone | 'planner' | 'implementer' | 'reviewer';
 
 export interface CopySegment {
   text: string;
   tone: CopyTone;
+  /** The changed file this text names, which the block links into the project. */
+  path?: string;
 }
 
 export type CopyFact = CopySegment | Readonly<{ spans: readonly CopySegment[] }>;
@@ -45,6 +48,7 @@ export function factSpans(fact: CopyFact): readonly CopySegment[] {
 export interface RunRow {
   /** Empty on a follow-on row, which reads as part of the labelled row above it. */
   label: string;
+  /** The seat a stage row reports on; its label wears the tone of that seat. */
   seat?: CrewSeatId;
   /** Each fact fits as one unit; the renderer joins facts with ` · `. */
   segments: readonly CopyFact[];
@@ -53,7 +57,12 @@ export interface RunRow {
    * after the lead, so a sentence is never cut. A row without it is cut in the middle, as a path.
    */
   hang?: number;
+  /** The rows a prose row may take; the summary quotes a note, the record keeps it whole. */
+  maxLines?: number;
 }
+
+/** A row of the whole record: a run row, or one brief in the words the transcript settled it with. */
+export type RecordRow = RunRow | Readonly<{ brief: BriefRowParts }>;
 
 export interface FileRow {
   path: string;
@@ -72,21 +81,212 @@ export interface BriefRowParts {
   note?: string | undefined;
 }
 
+/** How many review notes the summary quotes, and how many rows each one may take. */
+const SUMMARY_NOTES = 2;
+const NOTE_LINES = 2;
+
+/** The summary whole, or only its labelled rows for a view too short to seat it whole. */
+export type SummaryForm = 'whole' | 'labelled';
+
 /**
- * What the run did, and never what it cost. The view carries no money and no token counts: the
- * record keeps them for the reader who opens `/usage`.
+ * The run in one row per stage: what the plan asked for, what the build did, what the review
+ * said and what landed. It never says what the run cost: the view carries no money and no token
+ * counts, and the record keeps them for the reader who opens `/usage`. Every brief, every file
+ * and every earlier finding stay in `recordRows`.
  */
-export function runRows(view: SummaryView): RunRow[] {
+export function runRows(view: SummaryView, form: SummaryForm = 'whole'): RunRow[] {
+  const times = phaseTimes(view.phases, view.ran);
   const rows: RunRow[] = [
-    { label: 'Review', seat: 'review', segments: reviewSegments(view.review) },
-    ...(view.review.kind === 'written' ? setAsideRows(view.review.setAside) : []),
+    ...stageRow('plan', planSegments(view), times.get('planning')),
+    ...stageRow('build', buildSegments(view), times.get('implementing')),
+    ...stageRow(
+      'review',
+      [...reviewSegments(view.review, { evidence: false }), ...criteriaSegments(view)],
+      times.get('review'),
+    ),
+    ...(view.review.kind === 'written' ? setAsideRows(view.review.setAside, '') : []),
     ...acceptedRows(view.accepted),
     ...preExistingRows(view.review),
-    ...failedReviewRows(view.failedReviews),
+    ...noteRows(view, { quoted: true }),
+    ...earlierReviewRows(view),
+    ...applyUndoRows(view.applyUndo),
+    ...changedRows(
+      view,
+      view.digest.leadFiles.map((path) => fileRow(view, path)),
+    ),
   ];
-  if (view.applyUndo !== null) {
-    const conflicts = view.applyUndo.conflicts.length;
-    rows.push({
+  if (view.files.patch !== null) {
+    rows.push({ label: 'Patch', segments: [{ text: view.files.patch, tone: 'textDim' }] });
+  }
+  if (view.scope.kind === 'checked' && scopeCleanSegment(view.scope) === null) {
+    rows.push({ label: 'Scope', segments: scopeSegments(view.scope) });
+  }
+  rows.push(...qualityRows(view.quality));
+  rows.push({ label: 'Session', segments: sessionSegments(view.run) });
+  return form === 'whole' ? rows : rows.filter((row) => row.label !== '');
+}
+
+/**
+ * What the record adds to the summary, counted by kind, the most telling kind first: the words of
+ * the fold. The labelled summary quotes no note and lists no file, so the record adds them all.
+ */
+export function recordFold(view: SummaryView, form: SummaryForm): string[] {
+  const notes = view.review.kind === 'written' ? view.digest.notes.length : 0;
+  const kinds: readonly (readonly [number, string])[] = [
+    [view.briefs.rows.length + view.briefs.earlierRows.length, 'brief'],
+    [
+      (view.files.changed?.length ?? 0) - (form === 'whole' ? view.digest.leadFiles.length : 0),
+      'file',
+    ],
+    [notes - (form === 'whole' ? Math.min(notes, SUMMARY_NOTES) : 0), 'note'],
+    [view.failedReviews.length, 'review'],
+  ];
+  const [first, ...rest] = kinds
+    .filter(([count]) => count > 0)
+    .map(([count, noun]) => countNoun(count, noun));
+  return first === undefined ? ['more'] : [`+${first}`, ...rest];
+}
+
+/** A stage with nothing to state and no time on record has no row. */
+function stageRow(seat: CrewSeatId, facts: CopyFact[], time: string | undefined): RunRow[] {
+  const segments =
+    time === undefined ? facts : [...facts, { text: time, tone: 'textDim' as const }];
+  return segments.length === 0 ? [] : [{ label: formatStageLabel(seat), seat, segments }];
+}
+
+function planSegments(view: SummaryView): CopyFact[] {
+  const { plannedBriefs, planCriteria } = view.digest;
+  return [
+    ...(plannedBriefs === null || plannedBriefs === 0
+      ? []
+      : [{ text: countNoun(plannedBriefs, 'brief'), tone: 'textDim' as const }]),
+    ...(planCriteria === null
+      ? []
+      : [{ text: countNoun(planCriteria, 'criterion', 'criteria'), tone: 'textDim' as const }]),
+  ];
+}
+
+function buildSegments(view: SummaryView): CopyFact[] {
+  const { total, passed, failed, rows } = view.briefs;
+  if (total === 0) return [{ text: 'no briefs', tone: 'textDim' }];
+  const consulted = rows.filter((row) => row.method === 'consulted').length;
+  const escalated = rows.filter((row) => row.state === 'escalated').length;
+  const skipped = rows.filter((row) => row.state === 'skipped').length;
+  const retries = rows.reduce((sum, row) => sum + row.retries, 0);
+  const fixBriefs = view.digest.fixBriefs;
+  return [
+    { spans: passedFractionSpans(`${passed}/${total} briefs`) },
+    ...(failed > 0 ? [{ text: `${failed} failed`, tone: stateTone('failed') }] : []),
+    ...(fixBriefs > 0 ? [{ text: `${fixBriefs} from fix cycles`, tone: 'textDim' as const }] : []),
+    ...(consulted > 0 ? [{ text: `${consulted} consulted`, tone: 'textDim' as const }] : []),
+    ...(escalated > 0 ? [{ text: `${escalated} escalated`, tone: stateTone('attention') }] : []),
+    ...(skipped > 0 ? [{ text: `${skipped} skipped`, tone: stateTone('pending') }] : []),
+    ...(retries > 0
+      ? [{ text: countNoun(retries, 'retry', 'retries'), tone: 'textDim' as const }]
+      : []),
+  ];
+}
+
+function criteriaSegments(view: SummaryView): CopyFact[] {
+  const criteria = view.digest.criteria;
+  if (view.review.kind !== 'written' || criteria === null) return [];
+  return [{ text: `${criteria.passed}/${criteria.total} criteria`, tone: 'textDim' }];
+}
+
+/**
+ * The notes of the review of record: where each one points, then what it says as prose. The
+ * summary quotes the first notes in two rows each; the record keeps every note whole.
+ */
+function noteRows(view: SummaryView, options: Readonly<{ quoted: boolean }>): RunRow[] {
+  if (view.review.kind !== 'written') return [];
+  const notes = options.quoted ? view.digest.notes.slice(0, SUMMARY_NOTES) : view.digest.notes;
+  const lines = options.quoted ? { maxLines: NOTE_LINES } : {};
+  return notes.flatMap((note): RunRow[] => {
+    const lead = `${note.id} `;
+    if (note.file === null) {
+      return [
+        {
+          label: '',
+          segments: [{ text: `${lead}${note.text}`, tone: 'textDim' }],
+          hang: lead.length,
+          ...lines,
+        },
+      ];
+    }
+    return [
+      { label: '', segments: [{ text: `${lead}${note.file}`, tone: 'textDim' }] },
+      { label: '', segments: [{ text: note.text, tone: 'textDim' }], hang: 0, ...lines },
+    ];
+  });
+}
+
+/** The reviews that failed before the review of record, as one line of history. */
+function earlierReviewRows(view: SummaryView): RunRow[] {
+  const failed = view.failedReviews;
+  if (failed.length === 0) return [];
+  const blocking = failed.map((review) => review.blocking.length).join(', ');
+  const passed =
+    view.review.kind === 'written' &&
+    (view.review.verdict === 'pass' || view.review.verdict === 'pass_with_notes');
+  const cycles = view.digest.fixCycles;
+  return [
+    {
+      label: '',
+      segments: [
+        {
+          text: `${countNoun(failed.length, 'earlier review')} failed (${blocking} blocking)`,
+          tone: 'textDim',
+        },
+        ...(passed && cycles > 0
+          ? [{ text: `fixed in ${countNoun(cycles, 'fix cycle')}`, tone: 'textDim' as const }]
+          : []),
+      ],
+    },
+  ];
+}
+
+/** What the run changed: the count, then one row per listed file. */
+function changedRows(view: SummaryView, files: readonly FileRow[]): RunRow[] {
+  const changed = view.files.changed;
+  if (changed === null || changed.length === 0) return [];
+  const testFiles = view.digest.testFiles;
+  const partial = view.files.partial.size;
+  return [
+    {
+      label: 'Files',
+      segments: [
+        { text: countNoun(changed.length, 'file'), tone: 'textDim' },
+        ...(testFiles > 0
+          ? [{ text: countNoun(testFiles, 'test file'), tone: 'textDim' as const }]
+          : []),
+        ...(partial > 0 ? [{ text: `${partial} partial`, tone: 'warning' as const }] : []),
+      ],
+    },
+    ...files.map((file): RunRow => {
+      const path: CopySegment = { text: file.path, tone: 'textDim', path: file.path };
+      return {
+        label: '',
+        segments: [
+          file.partial
+            ? {
+                spans: [
+                  path,
+                  { text: SOFT_SEP, tone: 'textDim' },
+                  { text: 'partial', tone: 'warning' },
+                ],
+              }
+            : path,
+        ],
+      };
+    }),
+  ];
+}
+
+function applyUndoRows(applyUndo: SummaryView['applyUndo']): RunRow[] {
+  if (applyUndo === null) return [];
+  const conflicts = applyUndo.conflicts.length;
+  return [
+    {
       label: 'Apply',
       segments: [
         {
@@ -98,37 +298,72 @@ export function runRows(view: SummaryView): RunRow[] {
           ],
         },
       ],
-    });
-  }
+    },
+  ];
+}
+
+function qualityRows(quality: SummaryView['quality']): RunRow[] {
+  if (quality === null) return [];
+  const spans = formatScoreSummaryParts(quality.score, quality, 'quality').map(
+    (part): CopySegment => ({
+      text: part.text,
+      tone:
+        part.kind === 'error'
+          ? stateTone('failed')
+          : part.kind === 'warning' || (part.kind === 'score' && !quality.passed)
+            ? stateTone('attention')
+            : 'textDim',
+    }),
+  );
+  return [{ label: 'Briefs', segments: [{ spans }] }];
+}
+
+/**
+ * The whole record of the run, in the order of the summary: every brief under the build, every
+ * note and every failed review under the review, every changed file, then the packet, the scope
+ * and the time.
+ */
+export function recordRows(view: SummaryView): RecordRow[] {
+  const times = phaseTimes(view.phases, view.ran);
+  const briefs = (rows: readonly BriefRow[]): RecordRow[] =>
+    rows.map((row) => ({ brief: briefRowParts({ row }) }));
+  const rows: RecordRow[] = [
+    ...stageRow('plan', planSegments(view), times.get('planning')),
+    ...stageRow('build', buildSegments(view), times.get('implementing')),
+    ...briefs(view.briefs.rows),
+    ...(view.briefs.earlierRows.length === 0
+      ? []
+      : [
+          { label: '', segments: [{ text: 'Earlier work', tone: 'text' as const }] },
+          ...briefs(view.briefs.earlierRows),
+        ]),
+    ...stageRow(
+      'review',
+      [...reviewSegments(view.review), ...criteriaSegments(view)],
+      times.get('review'),
+    ),
+    ...(view.review.kind === 'written' ? setAsideRows(view.review.setAside, '') : []),
+    ...acceptedRows(view.accepted),
+    ...preExistingRows(view.review),
+    ...noteRows(view, { quoted: false }),
+    ...failedReviewRows(view.failedReviews),
+    ...applyUndoRows(view.applyUndo),
+    ...changedRows(view, filesRows(view)),
+  ];
   const packet = packetPath(view);
-  if (packet !== null) rows.push({ label: 'Packet', segments: [{ text: packet, tone: 'link' }] });
+  if (packet !== null)
+    rows.push({ label: 'Packet', segments: [{ text: packet, tone: 'textDim' }] });
   if (view.files.patch !== null) {
-    rows.push({ label: 'Patch', segments: [{ text: view.files.patch, tone: 'link' }] });
+    rows.push({ label: 'Patch', segments: [{ text: view.files.patch, tone: 'textDim' }] });
   }
   rows.push({ label: 'Scope', segments: scopeSegments(view.scope) });
-  const quality = view.quality;
-  if (quality !== null) {
-    const spans = formatScoreSummaryParts(quality.score, quality, 'quality').map(
-      (part): CopySegment => ({
-        text: part.text,
-        tone:
-          part.kind === 'error'
-            ? stateTone('failed')
-            : part.kind === 'warning' || (part.kind === 'score' && !quality.passed)
-              ? stateTone('attention')
-              : 'textDim',
-      }),
-    );
-    rows.push({ label: 'Briefs', segments: [{ spans }] });
-  }
+  rows.push(...qualityRows(view.quality));
   rows.push({
     label: 'Ran',
     segments: [
       { text: view.ran === null ? 'not recorded' : formatTime(view.ran), tone: 'textDim' },
     ],
   });
-  const phases = phaseSegments(view.phases, view.ran);
-  if (phases.length > 0) rows.push({ label: 'Phases', segments: phases });
   rows.push({ label: 'Session', segments: sessionSegments(view.run) });
   return rows;
 }
@@ -142,13 +377,19 @@ export function unwrittenReviewText(review: Exclude<ReviewView, { kind: 'written
   return review.kind === 'failed' ? 'final review no verdict' : 'final review not run';
 }
 
-function reviewSegments(review: ReviewView): CopySegment[] {
+/** The summary leaves out the validated briefs: its Build row states them. */
+function reviewSegments(
+  review: ReviewView,
+  options: Readonly<{ evidence: boolean }> = { evidence: true },
+): CopySegment[] {
   if (review.kind !== 'written') return [{ text: unwrittenReviewText(review), tone: 'textDim' }];
   const segments: CopySegment[] = [];
   const verdict = verdictSegment(review.verdict);
   if (verdict !== null) segments.push(verdict);
-  segments.push({ text: formatFindingCounts(review.counts), tone: 'textDim' });
-  if (review.evidence.total > 0) {
+  segments.push(
+    ...findingFacts(review.counts).map((text): CopySegment => ({ text, tone: 'textDim' })),
+  );
+  if (options.evidence && review.evidence.total > 0) {
     segments.push({
       text: `${review.evidence.validated}/${review.evidence.total} briefs validated`,
       tone: 'textDim',
@@ -168,7 +409,7 @@ function acceptedRows(accepted: SummaryView['accepted']): RunRow[] {
   if (accepted === null) return [];
   const text =
     accepted.note === null ? 'Accepted as is' : `Accepted as is${SOFT_SEP}${accepted.note}`;
-  return [{ label: '', segments: [{ text: `  ${text}`, tone: 'text' }], hang: 2 }];
+  return [{ label: '', segments: [{ text, tone: 'text' }], hang: 0 }];
 }
 
 /**
@@ -226,19 +467,22 @@ function failedReviewRows(reviews: SummaryView['failedReviews']): RunRow[] {
         hang: lead.length,
       };
     }),
-    ...setAsideRows(review.setAside),
+    ...setAsideRows(review.setAside, '  '),
   ]);
 }
 
-/** Each red input a review set aside, in the words of the transcript, its reason wrapped as prose. */
-function setAsideRows(setAside: readonly SetAside[]): RunRow[] {
-  return setAside.map((entry): RunRow => {
-    return {
+/**
+ * Each red input a review set aside, in the words of the transcript, its reason wrapped as prose.
+ * The lead puts a row under the earlier review that set it aside.
+ */
+function setAsideRows(setAside: readonly SetAside[], lead: string): RunRow[] {
+  return setAside.map(
+    (entry): RunRow => ({
       label: '',
-      segments: [{ text: `  ${setAsideLine(entry)}`, tone: 'textDim' }],
-      hang: `  ${setAsideLabel(entry.id)}: `.length,
-    };
-  });
+      segments: [{ text: `${lead}${setAsideLine(entry)}`, tone: 'textDim' }],
+      hang: `${lead}${setAsideLabel(entry.id)}: `.length,
+    }),
+  );
 }
 
 function verdictSegment(verdict: 'pass' | 'pass_with_notes' | 'fail' | null): CopySegment | null {
@@ -282,11 +526,13 @@ function scopeSegments(scope: ScopeView): CopySegment[] {
 }
 
 /**
- * One phase would only restate the `Ran` row above it. The whole seconds of `Ran` are split by
- * largest remainder, so the phases add up to it where flooring each alone would lose up to a second each.
+ * Each phase's time, in the whole seconds that add up to the run's own: the whole seconds of the
+ * run are split by largest remainder, where flooring each phase alone would lose up to a second each.
  */
-function phaseSegments(phases: SummaryView['phases'], ran: number | null): CopySegment[] {
-  if (phases.length < 2) return [];
+function phaseTimes(
+  phases: SummaryView['phases'],
+  ran: number | null,
+): Map<SummaryView['phases'][number]['phase'], string> {
   const seconds = (ms: number) => Math.floor(ms / 1000);
   const whole = seconds(ran ?? phases.reduce((sum, timing) => sum + timing.ms, 0));
   const short = whole - phases.reduce((sum, timing) => sum + seconds(timing.ms), 0);
@@ -297,10 +543,12 @@ function phaseSegments(phases: SummaryView['phases'], ran: number | null): CopyS
       .slice(0, Math.max(0, short))
       .map((entry) => entry.index),
   );
-  return phases.map((timing, index) => ({
-    text: `${timing.phase} ${formatTime((seconds(timing.ms) + (roundedUp.has(index) ? 1 : 0)) * 1000)}`,
-    tone: 'textDim',
-  }));
+  return new Map(
+    phases.map((timing, index) => [
+      timing.phase,
+      formatTime((seconds(timing.ms) + (roundedUp.has(index) ? 1 : 0)) * 1000),
+    ]),
+  );
 }
 
 function sessionSegments(run: SummaryView['run']): CopySegment[] {
@@ -435,8 +683,9 @@ function briefState(row: BriefRow): BriefRowParts['state'] {
 }
 
 export function filesRows(view: SummaryView): FileRow[] {
-  return (view.files.changed ?? []).map((path) => ({
-    path,
-    partial: view.files.partial.has(path),
-  }));
+  return (view.files.changed ?? []).map((path) => fileRow(view, path));
+}
+
+function fileRow(view: SummaryView, path: string): FileRow {
+  return { path, partial: view.files.partial.has(path) };
 }

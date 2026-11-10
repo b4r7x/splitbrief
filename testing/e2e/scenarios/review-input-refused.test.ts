@@ -169,8 +169,10 @@ describe('e2e: the review tool refuses its input as too long', { timeout: 240_00
     const view = deriveSummaryView({ record: readRunRecord({ projectDir, sessionId }, false) });
     if (view === null) throw new Error('the ended run has no closed view');
     const review = runRows(view).find((row) => row.label === 'Review');
+    // The row ends with the time of the review phase.
     expect(review?.segments.flatMap(factSpans).map((span) => span.text)).toEqual([
       'final review no verdict',
+      expect.stringMatching(/^(\d+h )?(\d+m )?\d+s$/),
     ]);
   });
 });

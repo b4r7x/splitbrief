@@ -17,6 +17,8 @@ import {
 } from '../layout/snapshot.js';
 import { readConversationRowActions } from '../conversation-rows/read-row-actions.js';
 import { computeConversationRowScroll } from '../conversation-rows/scroll.js';
+import { toggleFoldedRows } from '../conversation-rows/toggle-folded-rows.js';
+import { readTranscriptTail } from '../conversation-rows/transcript-tail.js';
 
 const HOVER_THROTTLE_MS = 16;
 let lastHoverAt = 0;
@@ -83,26 +85,24 @@ function handleHover(sgrX: number, sgrY: number): void {
 function activateConversationRow(windowIndex: number): void {
   const snapshot = readConversationScrollSnapshot();
   const scroll = conversationScrollStore.get();
-  const inputs = {
+  const computed = computeConversationRowScroll({
     sections: getSections(),
     expandedDiffs: scroll.expandedDiffs,
     expandedActivityBatches: scroll.expandedActivityBatches,
     cols: snapshot.conversationWidth,
     viewportHeight: snapshot.transcriptViewportHeight,
     streaming: streamingOutputStore.get(),
-  };
-  const computed = computeConversationRowScroll({
-    ...inputs,
     rawScrollOffset: scroll.scrollOffset,
     renderableCountAtScroll: scroll.renderableCountAtScroll,
     heightAtScroll: scroll.heightAtScroll,
+    tail: readTranscriptTail(),
   });
   const clickedRow = windowIndex >= 0 ? computed.rows[windowIndex] : undefined;
   if (clickedRow === undefined) return;
   const action = readConversationRowActions().get(clickedRow.key);
   if (action === undefined) return;
   if (action.type === 'toggle-diff') conversationScrollStore.toggleDiff(action.key);
-  else conversationScrollStore.toggleActivityBatch(action.key);
+  else toggleFoldedRows(action.key);
 }
 
 export function clearWorkflowHover(): void {

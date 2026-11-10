@@ -3,6 +3,7 @@ import { conversationScrollStore } from '../../../stores/workflow/conversation-s
 import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
 import { readConversationScrollSnapshot } from '../layout/snapshot.js';
 import { buildConversationRowActions } from './row-actions.js';
+import { readTranscriptTail } from './transcript-tail.js';
 
 export function readConversationRowActions() {
   const snapshot = readConversationScrollSnapshot();
@@ -14,5 +15,6 @@ export function readConversationRowActions() {
     cols: snapshot.conversationWidth,
     viewportHeight: snapshot.transcriptViewportHeight,
     streaming: streamingOutputStore.get(),
+    tail: readTranscriptTail(),
   });
 }

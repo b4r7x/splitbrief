@@ -215,7 +215,7 @@ export function atRestComposer(
         : apply !== undefined && (record.status.kind === 'running' || apply.queued === 'quit')
           ? applyComposer(apply.queued).placeholder
           : !continuable
-            ? AT_REST_PLACEHOLDER.closed
+            ? AT_REST_PLACEHOLDER.noWords
             : record.status.kind === 'open' && record.status.stop.on.kind === 'question'
               ? AT_REST_PLACEHOLDER.inputRequired
               : statusLeavesWordsUnread(record.status)
