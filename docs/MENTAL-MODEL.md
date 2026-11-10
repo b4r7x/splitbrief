@@ -101,7 +101,7 @@ One active session at a time per project directory. `.splitbrief/active` contain
 
 `splitbrief resume` continues the most recent run; `splitbrief continue <session-id>` names one. If the backend supports session persistence (Claude Code, Codex), it reconnects to the thread the tool itself reported. Otherwise it rebuilds context from the JSONL log.
 
-There is no separate results screen. A run stays on the screen it was already on, live or not: opening one from `/sessions` replays its history onto that screen and paints where it stopped, typing a correction flips it back to live in place, and a closed run grows a `Closed ─` block at the tail of its own transcript.
+There is no separate results screen. A run stays on the screen it was already on, live or not: opening one from `/sessions` replays its history onto that screen and paints where it stopped, typing a correction flips it back to live in place, and a closed run ends its own transcript with a summary of the run.
 
 ---
 

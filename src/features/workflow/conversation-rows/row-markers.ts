@@ -3,7 +3,7 @@ import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { ROW_LEADING, TEXT_LEADING } from '../../../components/row-leading.js';
 import type { ConversationRowKind } from './types.js';
 
-export type RowMarkerStatus = 'live' | 'done' | 'queued' | 'cancelled' | 'failed';
+export type RowMarkerStatus = 'live' | 'done' | 'queued' | 'cancelled' | 'attention' | 'failed';
 
 // The full leading from terminal column 0: cell 0 is the empty padding the hover bar paints into,
 // a row that carries a mark puts it on column 1 with content on column 3, and an unmarked row
@@ -15,6 +15,7 @@ export function rowLeading(kind: ConversationRowKind, status: RowMarkerStatus = 
     if (status === 'done') return `${ROW_LEADING}${glyph('stageDone')} `;
     if (status === 'queued') return `${ROW_LEADING}${glyph('statusPending')} `;
     if (status === 'cancelled') return `${ROW_LEADING}${glyph('statusCancelled')} `;
+    if (status === 'attention') return `${ROW_LEADING}${glyph('statusWarning')} `;
     if (status === 'failed') return `${ROW_LEADING}${glyph('statusFailed')} `;
     return `${ROW_LEADING}${glyph('statusInProgress')} `;
   }

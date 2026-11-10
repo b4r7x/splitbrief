@@ -9,7 +9,6 @@ export function makeView(overrides: Partial<SummaryView> = {}): SummaryView {
   return {
     outcome: { kind: 'complete' },
     run: {
-      feature: 'Add email validation with tests',
       sessionId: '2026-09-14-add-email-validation-with-tests',
     },
     rail: getRailStages('complete'),
@@ -64,6 +63,22 @@ export function makeView(overrides: Partial<SummaryView> = {}): SummaryView {
       { phase: 'review', ms: 65_000 },
     ],
     ran: 727_000,
+    closedAt: null,
+    digest: {
+      plannedBriefs: 3,
+      planCriteria: null,
+      fixBriefs: 0,
+      fixCycles: 0,
+      notes: [],
+      criteria: null,
+      leadFiles: [
+        'src/form.ts',
+        'src/validate.ts',
+        'src/form.test.ts',
+        'src/routes/signup.test.ts',
+      ],
+      testFiles: 2,
+    },
     ...overrides,
   };
 }

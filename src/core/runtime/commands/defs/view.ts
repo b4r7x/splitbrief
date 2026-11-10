@@ -69,7 +69,7 @@ export function viewCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
       kind: 'noarg',
       name: '/activity',
       label: 'activity',
-      description: 'Expand or collapse the latest activity batch',
+      description: 'Expand or collapse the last folded rows',
       shortcut: getShortcutKey('activity'),
       category: 'view',
       validScreens: ['workflow'],
@@ -80,7 +80,7 @@ export function viewCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
           return;
         }
         ctx.setFeedbackMessage(
-          result.expanded ? 'Expanded latest activity batch' : 'Collapsed latest activity batch',
+          result.expanded ? 'Expanded the last folded rows' : 'Collapsed the last folded rows',
         );
       },
     },

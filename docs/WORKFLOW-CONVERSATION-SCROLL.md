@@ -44,13 +44,15 @@ const rows = getConversationRowsWindowProjection({ projection, windowStart, wind
 
 `src/features/workflow/conversation-rows/projection-cache.ts` caches projections by width, viewport height, expansion state, streaming state, and event content. `src/features/workflow/conversation-rows/build.ts` returns `ConversationRowBlock` records with `rowCount`, `renderableUnits`, and `createRows(windowStart, windowEnd)`, so scrolling by one row does not allocate every row in a large session. Each materialized row is rendered by `ConversationRowView` in `src/features/workflow/components/conversation-flow/row-view.tsx`. The row view has `height={1}`, `overflow="hidden"`, and `Text wrap="truncate-end"` so a row descriptor cannot expand the viewport.
 
-A closed run's ledger is part of this transcript, not a second scroller: `closedTranscriptBlock`
-(`src/features/workflow/closed/block.tsx`) is appended to the projection's block list after the run's
-own events (`tail`, `computeConversationRowScroll`), so `Closed ─ / Briefs ─ / Files ─ / Run ─`
-scrolls with the events above it under one offset. Its rows carry a prebuilt `node` rather than
-segments, and each is one line, so the row count the scroll model charges is exact. It registers
-zero renderable units — it is not an event the run emitted, so it never counts toward the
-`N new events` banner.
+A closed run's summary is part of this transcript, not a second scroller: `closedTranscriptBlock`
+(`src/features/workflow/closed/block.ts`) is appended to the projection's block list after the run's
+own events (`tail`, `computeConversationRowScroll`), so the summary scrolls with the events above it
+under one offset. Its rows are plain segment rows in the grammar of an activity batch (`activity`,
+`activity-child`, `callout-body`, `activity-more`, `activity-child-last`), and each is one line, so
+the row count the scroll model charges is exact. It registers zero renderable units — it is not an
+event the run emitted, so it never counts toward the `N new events` banner. Its fold row opens the
+whole record, and `toggledRowCount` tells the scroll helper how many rows the block has after the
+toggle.
 
 Settled sections stay in the transcript in event order. `groupEventsIntoSections` groups each brief, Plan stage and review attempt. `walkTranscript` yields the heading, then the retained body rows. A review's result follows its body; a review with no visible body shows only its result. One blank row separates sections. `settledRowBlock` renders the brief and Plan headings and the review result with the existing `TaskSummary` mark and detail run. Headings have no disclosure glyph. Sections can use compact rows. They do not hide their body when they settle.
 
@@ -62,7 +64,7 @@ A settled Plan keeps the request, questions and answers, narration, activity, pl
 
 The scroller shows settled sections before the live stage and running brief. Pending briefs keep their existing `Pending n` block below the scroller. When only one pending row fits, the heading includes `+N more` for the hidden briefs. A skipped brief settles on `task_skipped`, even when a pre-hook denied it before `task_started`. Build rows between two briefs join the earlier brief up to the first `consult_answered` event for the next brief. When the next brief is skipped before it starts, its first `recovery_prompted` event also ends the earlier brief, whichever of the two comes first. Rows from that event join the next brief. Run-level build rows join the first brief and stay in its body. The operator's consult answer uses a `user_message` event with `qa`. The shared answered-questions row block renders `You → <answer>` beneath the question. A bare Enter records and renders the default answer.
 
-Done brief rows in both the transcript and closed ledger use `TaskSummary` and its shared `fitDetailRun`. The closed ledger uses the same target label as the brief heading. The method and duration stay whole while space permits. If metadata leaves no room for the task id and a title fragment, the row drops metadata first. The count keeps its room while the path shortens. A path shortened to a bare `…` drops with its count. A stopped brief in the closed ledger fits the same way, and its `stopped` word keeps its room. Retries go before the path shortens by whole middle directory segments (`testing/…/projections.ts`), then to `…/projections.ts` and the bare filename. Only a filename that cannot fit loses characters. Path elision lives with the picker label rule in `src/utils/display-text.ts`.
+Done brief rows in both the transcript and the record of a closed run use `taskSummarySpans` and its shared `fitDetailRun`. The record uses the same target label as the brief heading. The method and duration stay whole while space permits. If metadata leaves no room for the task id and a title fragment, the row drops metadata first. The count keeps its room while the path shortens. A path shortened to a bare `…` drops with its count. A stopped brief in the record of a closed run fits the same way, and its `stopped` word keeps its room. Retries go before the path shortens by whole middle directory segments (`testing/…/projections.ts`), then to `…/projections.ts` and the bare filename. Only a filename that cannot fit loses characters. Path elision lives with the picker label rule in `src/utils/display-text.ts`.
 
 The check-row status `not run` joins its words with a non-breaking space (`\u00a0`), so wrapping at 60 columns keeps each phrase whole. Running checks use `formatElapsedClock` in the build block and byline (`running 10:02`, `running 0:35` in the block). Finished-row durations keep `2m 0s` or `14.0s`.
 
@@ -84,7 +86,7 @@ Conversation scrolling uses one semantic set of actions over the row window:
 - `Home` / `End` jump to the top or bottom.
 - `/scroll top`, `/scroll bottom`, `/scroll page-up`, and `/scroll page-down` provide the same actions through the runtime command path.
 
-Conversation shortcuts do not claim `Ctrl+B` or `Ctrl+F` while the composer owns normal-mode text focus; use physical page keys or `/scroll` for conversation paging. Review panes use the same line, page, top, and bottom semantics while a review file is open, including `Ctrl+B` and `Ctrl+F` as review-page fallbacks. `/activity` and `Ctrl+A` toggle the latest expandable activity batch in the whole transcript, including settled sections. Older activity disclosures stay clickable. `Ctrl+D` toggles the latest expandable diff in the whole transcript. Older diff disclosures stay clickable. Compact rows show the lowercase key affordance, such as `ctrl+a` or `ctrl+d`.
+Conversation shortcuts do not claim `Ctrl+B` or `Ctrl+F` while the composer owns normal-mode text focus; use physical page keys or `/scroll` for conversation paging. Review panes use the same line, page, top, and bottom semantics while a review file is open, including `Ctrl+B` and `Ctrl+F` as review-page fallbacks. `/activity` and `Ctrl+A` toggle the lowest folded row of the whole transcript: an activity batch, settled sections included, or the summary of a closed run. A click toggles the folded row that the pointer is on, so every other fold stays clickable. The rule and its code are in [STORES-AND-UI.md › Folded rows](./STORES-AND-UI.md#folded-rows). `Ctrl+D` toggles the latest expandable diff in the whole transcript. Older diff disclosures stay clickable. Compact rows show the lowercase key affordance, such as `ctrl+a` or `ctrl+d`.
 
 An older run parked at `reviewing-briefs` displays its review document as markdown.
 Keyboard and wheel scrolling use the markdown frame and overflow rows, as for every other review document.
@@ -93,8 +95,8 @@ Saved brief-load errors reserve no rows in this pane.
 `queuedBriefs` in `src/features/workflow/conversation-rows/queued-briefs.ts` supplies the queued tasks
 to both `ConversationFlow` and the keyboard and mouse snapshot. It excludes the running brief,
 even when recovery resets it to `pending`. It returns no queued tasks while the sidebar shows tasks
-or a closed ledger occupies the transcript tail. The snapshot reads the tail measurements from
-`transcriptTailStore`. Both callers pass the resulting count to `splitConversationViewport`.
+or the summary of a closed run occupies the transcript tail. The snapshot reads the tail blocks with
+`readTranscriptTail()`. Both callers pass the resulting count to `splitConversationViewport`.
 
 ## Projection Performance
 
@@ -185,7 +187,7 @@ The key regression coverage is observable Ink output, not implementation wiring:
 - `src/features/workflow/keyboard.test.ts`
   - conversation panes support Shift+arrow, PageUp/PageDown, Home/End, and `/scroll`
   - review panes support Shift+arrow, PageUp/PageDown, Home/End, and Ctrl+B/Ctrl+F
-  - `/activity` and `Ctrl+A` toggle the latest expandable activity batch in the whole transcript
+  - `/activity` and `Ctrl+A` toggle the lowest folded row of the whole transcript; a click toggles the row under the pointer
   - `Ctrl+D` toggles the latest expandable diff in the whole transcript
 - `src/features/workflow/layout/scroll-window.test.ts`
   - the window spans the full visible height; banners ride the chrome dividers

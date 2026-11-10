@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
@@ -20,6 +20,7 @@ import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { WorkflowScreen } from '../../../src/app/screens/workflow.js';
 
 const SESSION_ID = 'summary-evidence-session';
+const CTRL_A = '\u0001';
 
 function showClosedRun(opts: {
   summary: ReturnType<typeof makeSummary>;
@@ -115,13 +116,18 @@ describe('closed-run evidence ledger (integration)', () => {
       rows: 60,
     });
     await tick();
+    // The summary counts the brief; its row is in the whole record, which ctrl+a opens.
+    const folded = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(folded).toContain(`${glyph('stageDone')} Complete  1/1 briefs passed`);
+    expect(folded).toContain('+1 brief · ctrl+a');
+    await flushEffects();
+    ui.stdin.write(CTRL_A);
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('collapse · ctrl+a');
+    });
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toMatch(/^\s*Briefs [─-]/m);
-    expect(frame).toContain('T001 Evidence detail');
-    expect(frame).toContain('src/evidence.ts');
-    expect(frame).toContain(`${glyph('stageDone')} T001 Evidence detail`);
-    expect(frame).toContain(`${glyph('stageDone')} Complete · 1/1 briefs passed`);
+    expect(frame).toMatch(/\bT001 Evidence detail {2}src\/evidence\.ts \(create\) · passed\b/);
     expect(frame).not.toContain('clipboard-title');
     expect(frame).not.toContain('clipboard-ledger');
 
@@ -142,8 +148,9 @@ describe('closed-run evidence ledger (integration)', () => {
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('ledgerless run');
-    expect(frame).toContain(SESSION_ID);
+    // The summary names the run by its session and states its outcome from the summary alone.
+    expect(frame).toContain(`${glyph('statusWarning')} Needs attention  1/1 briefs passed`);
+    expect(frame).toContain(`Session  ${SESSION_ID}`);
 
     ui.unmount();
   });

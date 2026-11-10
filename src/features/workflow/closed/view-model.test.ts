@@ -5,7 +5,7 @@ import type { EvidenceLedger, EvidenceTask } from '../../../core/schemas/evidenc
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { ReviewRecord, WorkflowState } from '../../../core/schemas/workflow.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
@@ -163,6 +163,35 @@ describe('ran', () => {
   it('reads how long the run ran off its record, and null on a record that never kept it', () => {
     expect(derive(readySummary({ activeTime: 111_503 })).ran).toBe(111_503);
     expect(derive(readySummary()).ran).toBeNull();
+  });
+});
+
+describe('closedAt', () => {
+  it('reads the time the run closed off its state, and the time it completed without a close', () => {
+    const closed = derive(readySummary(), {
+      status: { kind: 'closed', as: 'applied' },
+      hydration: {
+        kind: 'loaded',
+        state: makeWorkflowState({
+          phase: 'complete',
+          completedAt: '2026-09-14T09:00:00.000Z',
+          closed: { at: '2026-09-14T10:00:00.000Z', as: 'applied' },
+        }),
+      },
+    });
+    expect(closed.closedAt).toBe(Date.parse('2026-09-14T10:00:00.000Z'));
+
+    const completed = derive(readySummary(), {
+      hydration: {
+        kind: 'loaded',
+        state: makeWorkflowState({ phase: 'complete', completedAt: '2026-09-14T09:00:00.000Z' }),
+      },
+    });
+    expect(completed.closedAt).toBe(Date.parse('2026-09-14T09:00:00.000Z'));
+  });
+
+  it('is null for a run whose state kept no time', () => {
+    expect(derive(readySummary()).closedAt).toBeNull();
   });
 });
 
@@ -405,7 +434,7 @@ describe('a run with a workspace', () => {
       outcomeLineSpans(view, 120)
         .map((span) => span.text)
         .join(''),
-    ).toBe('Ended · Review 3/3 · changes saved in run.patch');
+    ).toBe('Ended  Review 3/3 · changes saved in run.patch');
   });
 
   it('names no patch the close did not record', () => {
@@ -1312,6 +1341,100 @@ describe('review', () => {
   );
 });
 
+describe('digest', () => {
+  function reviewDigest(
+    review: Pick<ReviewRecord, 'verdict' | 'verification' | 'outcome'> &
+      Partial<Pick<ReviewRecord, 'scope' | 'afterTaskId'>>,
+  ) {
+    return derive(readySummary(), {
+      status: { kind: 'closed', as: 'applied' },
+      hydration: {
+        kind: 'loaded',
+        state: makeWorkflowState({
+          phase: 'complete',
+          review: { scope: 'final', cycle: 0, ...review, at: CLOSED_AT },
+        }),
+      },
+    }).digest;
+  }
+
+  it('counts a criterion that its checks verified as passed, as the review outcome does', () => {
+    const digest = reviewDigest({
+      verdict: {
+        tasks: [],
+        criteria: [
+          { id: 'C1', status: 'pass', evidence: 'The form rejects an empty address.' },
+          { id: 'C2', status: 'unverified', evidence: 'Only the e2e run can show it.' },
+        ],
+        findings: [],
+      },
+      verification: [{ id: 'criterion:C2', status: 'pass', output: 'K2: pass' }],
+      outcome: 'pass',
+    });
+
+    expect(digest.criteria).toEqual({ passed: 2, total: 2 });
+  });
+
+  it('quotes a blocking unverified finding that its checks verified as a note, as the review outcome counts it', () => {
+    const digest = reviewDigest({
+      verdict: {
+        tasks: [],
+        criteria: [],
+        findings: [
+          {
+            id: 'F1',
+            kind: 'unverified',
+            severity: 'blocking',
+            taskId: 'T001',
+            file: 'src/validate.ts',
+            line: null,
+            text: 'An empty address may still pass the form.',
+            acceptance: null,
+            checkIds: ['K1'],
+            criterionId: null,
+          },
+        ],
+      },
+      verification: [{ id: 'finding:F1', status: 'pass', output: 'K1: pass' }],
+      outcome: 'pass-with-notes',
+    });
+
+    expect(digest.notes).toEqual([
+      { id: 'F1', file: 'src/validate.ts', text: 'An empty address may still pass the form.' },
+    ]);
+  });
+
+  it('quotes no note and counts no criterion of a task review, which is not the review of record', () => {
+    const digest = reviewDigest({
+      scope: 'task',
+      afterTaskId: taskId('T001'),
+      verdict: {
+        tasks: [{ id: taskId('T001'), plan: 'met', note: 'The validator is in place.' }],
+        criteria: [{ id: 'C1', status: 'pass', evidence: 'The form rejects an empty address.' }],
+        findings: [
+          {
+            id: 'F1',
+            kind: 'defect',
+            severity: 'minor',
+            taskId: 'T001',
+            file: 'src/validate.ts',
+            line: null,
+            text: 'The validator name does not say what it checks.',
+            acceptance: null,
+            checkIds: null,
+            criterionId: null,
+          },
+        ],
+      },
+      verification: [],
+      outcome: 'pass-with-notes',
+    });
+
+    expect(digest.notes).toEqual([]);
+    expect(digest.criteria).toBeNull();
+  });
+});
+
 describe('scope', () => {
   it('is not run when the record has no drift summary', () => {
     expect(derive(makeSummary()).scope).toEqual({ kind: 'not-run' });
@@ -1383,7 +1506,6 @@ describe('checkpoint, phases and pass-through', () => {
       ref: { projectDir: '/tmp/p', sessionId: '2026-09-14-add-email-validation' },
     });
     expect(view.run).toEqual({
-      feature: expect.any(String),
       sessionId: '2026-09-14-add-email-validation',
     });
   });
@@ -1391,21 +1513,12 @@ describe('checkpoint, phases and pass-through', () => {
   it('strips control bytes out of every persisted string it shows', () => {
     const view = derive(
       makeSummary({
-        feature: 'add \u001b[31mvalidation\u001b[0m',
         changedFiles: ['src/\u0007a.ts'],
         totalTasks: 1,
       }),
       { ledger: makeLedger([ledgerTask({ id: taskId('T001'), title: 'wire \u0000it up' })]) },
     );
-    expect(view.run.feature).toBe('add validation');
     expect(view.files.changed).toEqual(['src/a.ts']);
     expect(view.briefs.rows[0]?.title).toBe('wire it up');
-  });
-
-  it('keeps the words of a multi-line task apart on its one row', () => {
-    const view = derive(
-      makeSummary({ feature: 'Add data fixtures, as one task:\n\n- Add a generator' }),
-    );
-    expect(view.run.feature).toBe('Add data fixtures, as one task: - Add a generator');
   });
 });

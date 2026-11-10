@@ -173,7 +173,10 @@ describe('ConversationRowView lifecycle and focus glyphs', () => {
     settled.unmount();
   });
   it('settles an activity row whose call a stop cut with the stop ×, not the done ●', () => {
-    const row: ConversationRow = { ...makeActivityRow('activity-batch:0:cut'), interrupted: true };
+    const row: ConversationRow = {
+      ...makeActivityRow('activity-batch:0:cut'),
+      doneAs: 'cancelled',
+    };
     const settled = renderFeature(<ConversationRowView row={row} />);
     expect(settled.lastFrame()).toContain(glyph('statusCancelled'));
     expect(settled.lastFrame()).not.toContain(DONE_MARK);

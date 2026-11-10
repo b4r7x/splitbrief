@@ -18,30 +18,23 @@ export interface SessionStatusDisplay {
   word: string;
 }
 
-export interface MethodDisplay {
-  text: string;
-  color: string | undefined;
-}
-
-export function getMethodDisplay(
-  method: TaskCompletionMethod,
-  theme: SessionDisplayColors,
-): MethodDisplay {
+/** The one word that says how a brief settled. */
+export function methodWord(method: TaskCompletionMethod): string {
   switch (method) {
     case 'local':
-      return { text: 'passed', color: theme.success };
+      return 'passed';
     case 'consulted':
-      return { text: 'consulted', color: theme.success };
+      return 'consulted';
     case 'escalated-intermediate':
-      return { text: 'intermediate', color: theme.warning };
+      return 'intermediate';
     case 'escalated-hint':
-      return { text: 'hint', color: theme.warning };
+      return 'hint';
     case 'escalated-full':
-      return { text: 'escalated', color: theme.error };
+      return 'escalated';
     case 'failed':
-      return { text: 'fail', color: theme.error };
+      return 'fail';
     case 'skipped':
-      return { text: 'skip', color: theme.textDim };
+      return 'skip';
     default:
       return assertNever(method);
   }

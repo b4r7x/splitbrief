@@ -154,7 +154,7 @@ describe('HelpOverlay', () => {
     expect(frame).toContain('/scroll top|bottom');
     expect(frame).toContain('ctrl+a');
     expect(frame).not.toContain('/activity, ctrl+a');
-    expect(frame).toContain('Expand activity rows');
+    expect(frame).toContain('Expand the last folded rows');
     expect(frame).not.toContain('ctrl+e');
 
     ui.unmount();

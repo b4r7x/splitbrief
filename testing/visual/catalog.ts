@@ -3672,12 +3672,38 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-closed-summary',
+      title: 'Workflow · a long applied run as a summary',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: [
+        {
+          id: 'closed-summary',
+          title: 'The summary closes the transcript: one row per stage and three of 65 files',
+          kind: 'success',
+          marker: 'visual-closed-summary',
+        },
+        {
+          id: 'closed-summary-expanded',
+          title: 'The whole record opened with ctrl+a: every brief, note and file',
+          kind: 'success',
+          marker: 'collapse',
+        },
+      ],
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Transcript and closed run summary' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-closed-fix-cycle',
       title: 'Workflow · closed after failed reviews and two fix cycles',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'closed-fix-cycle',
-        title: 'The closed ledger names each failed review and its blocking findings',
+        title: 'The closed summary counts the reviews that failed before the review of record',
         kind: 'success',
         marker: 'visual-closed-fix-cycle',
       },
@@ -3805,7 +3831,8 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'closed-decided-skip',
-        title: "The closed ledger names the skipped brief, the transcript the planner's reason",
+        title:
+          "The closed summary counts the skipped brief, the transcript names the planner's reason",
         kind: 'success',
         marker: 'visual-closed-decided-skip',
       },
@@ -3819,6 +3846,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       id: 'workflow-closed-ended',
       title: 'Workflow · ended by the user',
       surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
       checkpoint: {
         id: 'closed-ended',
         title: 'Ended run',
@@ -3827,7 +3855,8 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
-        { id: 'transcript', title: 'Closed run ledger' },
+        { id: 'transcript', title: 'Transcript and closed run summary' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
@@ -7148,12 +7177,12 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'workflow-stop-menu-ended-gate',
         title: 'Workflow · ended at the plan gate',
-        marker: 'Ended · esc home',
+        marker: 'Run closed',
       },
       {
         id: 'workflow-stop-menu-ended-rewound-gate',
         title: 'Workflow · ended after revising the plan',
-        marker: 'Ended · esc home',
+        marker: 'Run closed',
         viewports: [...REQUIRED_VIEWPORTS, viewport({ cols: 60, rows: 40 })],
       },
       {

@@ -7,14 +7,26 @@ import {
 import type { BriefRow, SummaryView } from './view-model.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { arrowSep } from '../../../core/separators.js';
-import type { CopySegment } from './copy.js';
-import { briefRowParts, crewLine, factSpans, filesRows, runRows } from './copy.js';
+import type { CopySegment, RunRow } from './copy.js';
+import { briefRowParts, crewLine, factSpans, filesRows, recordRows, runRows } from './copy.js';
 
-describe('runRows', () => {
+describe('runRows and recordRows', () => {
   function segmentsFor(view: SummaryView, label: string): readonly CopySegment[] | undefined {
     const row = runRows(view).find((candidate) => candidate.label === label);
     return row?.segments.flatMap(factSpans);
   }
+
+  function recordProse(view: SummaryView): RunRow[] {
+    return recordRows(view).filter((row): row is RunRow => 'label' in row);
+  }
+
+  function recordFor(view: SummaryView, label: string): readonly CopySegment[] | undefined {
+    const row = recordProse(view).find((candidate) => candidate.label === label);
+    return row?.segments.flatMap(factSpans);
+  }
+
+  const stageTimes = (view: SummaryView) =>
+    ['Plan', 'Build', 'Review'].map((label) => segmentsFor(view, label)?.at(-1)?.text);
 
   it.each([{ conflicts: [] }, { conflicts: ['src/later-edit.ts'] }])(
     'keeps the Apply undo state in attention with conflicts $conflicts',
@@ -27,44 +39,70 @@ describe('runRows', () => {
   );
 
   it('fact words: a None run reads no review', () => {
-    const texts = segmentsFor(makeView({ review: { kind: 'none' } }), 'Review')?.map((segment) =>
-      'text' in segment ? segment.text : '',
+    const texts = segmentsFor(makeView({ review: { kind: 'none' } }), 'Review')?.map(
+      (segment) => segment.text,
     );
 
-    expect(texts).toEqual(['no review']);
+    expect(texts).toEqual(['no review', '1m 5s']);
   });
 
-  it('states a passing review, its packet and its scope once each', () => {
+  it('states a passing review in the summary, and its briefs, packet and scope in the record', () => {
     const view = makeView();
     expect(segmentsFor(view, 'Review')).toEqual([
       { text: 'pass with notes', tone: 'success' },
-      { text: '0 blocking, 1 note', tone: 'textDim' },
-      { text: '3/3 briefs validated', tone: 'textDim' },
+      { text: '1 note', tone: 'textDim' },
+      { text: '1m 5s', tone: 'textDim' },
     ]);
-    expect(segmentsFor(view, 'Packet')).toEqual([
+    expect(segmentsFor(view, 'Packet')).toBeUndefined();
+    expect(segmentsFor(view, 'Scope')).toBeUndefined();
+    expect(recordFor(view, 'Review')).toEqual([
+      { text: 'pass with notes', tone: 'success' },
+      { text: '1 note', tone: 'textDim' },
+      { text: '3/3 briefs validated', tone: 'textDim' },
+      { text: '1m 5s', tone: 'textDim' },
+    ]);
+    expect(recordFor(view, 'Packet')).toEqual([
       {
         text: '.splitbrief/sessions/2026-09-14-add-email-validation-with-tests/review-packet.md',
-        tone: 'link',
+        tone: 'textDim',
       },
     ]);
-    expect(segmentsFor(view, 'Scope')).toEqual([{ text: 'clean', tone: 'success' }]);
+    expect(recordFor(view, 'Scope')).toEqual([{ text: 'clean', tone: 'success' }]);
   });
 
   it.each([
     [
       "Planner's note: The old error type is public API",
-      "  Accepted as is · Planner's note: The old error type is public API",
+      "Accepted as is · Planner's note: The old error type is public API",
     ],
-    [null, '  Accepted as is'],
+    [null, 'Accepted as is'],
   ])('names an accept as is under the review, with its note %s', (note, text) => {
     const rows = runRows(makeView({ accepted: { note } }));
     const review = rows.findIndex((row) => row.label === 'Review');
-    expect(rows[review + 1]).toEqual({ label: '', segments: [{ text, tone: 'text' }], hang: 2 });
+    expect(rows[review + 1]).toEqual({ label: '', segments: [{ text, tone: 'text' }], hang: 0 });
     expect(
       runRows(makeView()).some((row) =>
         row.segments.some((s) => 'text' in s && s.text.includes('Accepted')),
       ),
     ).toBe(false);
+  });
+
+  it('states each kind of finding as its own fact, and no fact for a kind with none', () => {
+    const base = makeView();
+    const written = base.review;
+    if (written.kind !== 'written') throw new Error('fixture review is not written');
+    const texts = (counts: { critical: number; warning: number; note: number }) =>
+      segmentsFor(makeView({ review: { ...written, verdict: 'fail', counts } }), 'Review')?.map(
+        (segment) => segment.text,
+      );
+
+    expect(texts({ critical: 2, warning: 1, note: 0 })).toEqual([
+      'failed',
+      '2 blocking',
+      '1 note',
+      '1m 5s',
+    ]);
+    expect(texts({ critical: 0, warning: 0, note: 0 })).toEqual(['failed', '1m 5s']);
   });
 
   it('counts every minor and out-of-scope finding as a note', () => {
@@ -74,7 +112,7 @@ describe('runRows', () => {
       review: { ...base.review, counts: { critical: 0, warning: 1, note: 2 } },
     });
     expect(segmentsFor(view, 'Review')).toContainEqual({
-      text: '0 blocking, 3 notes',
+      text: '3 notes',
       tone: 'textDim',
     });
   });
@@ -89,14 +127,14 @@ describe('runRows', () => {
     expect(segmentsFor(view, 'Patch')).toEqual([
       {
         text: '.splitbrief/sessions/2026-09-14-add-email-validation-with-tests/run.patch',
-        tone: 'link',
+        tone: 'textDim',
       },
     ]);
-    expect(
-      runRows(view)
-        .map((row) => row.label)
-        .slice(0, 3),
-    ).toEqual(['Review', 'Packet', 'Patch']);
+    const labels = recordProse(view).map((row) => row.label);
+    expect(labels.slice(labels.indexOf('Packet'), labels.indexOf('Packet') + 2)).toEqual([
+      'Packet',
+      'Patch',
+    ]);
     expect(segmentsFor(makeView(), 'Patch')).toBeUndefined();
   });
 
@@ -112,8 +150,9 @@ describe('runRows', () => {
     const view = makeView({
       review: { ...makeView().review, missingArtifacts: 2 } as SummaryView['review'],
     });
-    const row = runRows(view).find((candidate) => candidate.label === 'Review');
-    expect(row?.segments.at(-1)).toEqual({ text: '2 missing artifacts', tone: 'warning' });
+    const facts = segmentsFor(view, 'Review') ?? [];
+    const counts = facts.findIndex((fact) => fact.text === '1 note');
+    expect(facts[counts + 1]).toEqual({ text: '2 missing artifacts', tone: 'warning' });
   });
 
   it('names each check red at the run base too under the review, one row per test', () => {
@@ -130,8 +169,15 @@ describe('runRows', () => {
       } as SummaryView['review'],
     });
     const rows = runRows(view);
-    expect(rows.slice(0, 5).map((row) => row.label)).toEqual(['Review', '', '', '', 'Packet']);
-    expect(rows[1]?.segments).toEqual([
+    const review = rows.findIndex((row) => row.label === 'Review');
+    expect(rows.slice(review, review + 5).map((row) => row.label)).toEqual([
+      'Review',
+      '',
+      '',
+      '',
+      'Files',
+    ]);
+    expect(rows[review + 1]?.segments).toEqual([
       {
         spans: [
           { text: 'V2 ', tone: 'text' },
@@ -140,11 +186,12 @@ describe('runRows', () => {
       },
       { text: 'npm test', tone: 'textDim' },
     ]);
-    expect(rows.slice(2, 4).map((row) => row.segments)).toEqual([
+    expect(rows.slice(review + 2, review + 4).map((row) => row.segments)).toEqual([
       [{ text: '  src/a.test.ts > adds', tone: 'textDim' }],
       [{ text: '  src/a.test.ts > subtracts', tone: 'textDim' }],
     ]);
-    expect(runRows(makeView()).filter((row) => row.label === '')).toEqual([]);
+    const plain = runRows(makeView());
+    expect(plain[plain.findIndex((row) => row.label === 'Review') + 1]?.label).toBe('Files');
   });
 
   it('names each red input a review set aside under that review, with the reason as prose', () => {
@@ -161,21 +208,36 @@ describe('runRows', () => {
         },
       ],
     });
-    const rows = runRows(view);
-    expect(rows.slice(0, 6).map((row) => row.label)).toEqual(['Review', '', '', '', '', 'Packet']);
-    expect(rows[1]).toEqual({
+    const rows = recordProse(view);
+    const review = rows.findIndex((row) => row.label === 'Review');
+    expect(rows.slice(review, review + 6).map((row) => row.label)).toEqual([
+      'Review',
+      '',
+      '',
+      '',
+      '',
+      'Files',
+    ]);
+    expect(rows[review + 1]).toEqual({
       label: '',
       segments: [
         {
-          text: '  Set aside V1: The lint error is in a file the plan does not touch.',
+          text: 'Set aside V1: The lint error is in a file the plan does not touch.',
           tone: 'textDim',
         },
       ],
-      hang: '  Set aside V1: '.length,
+      hang: 'Set aside V1: '.length,
     });
-    expect(rows[4]?.segments).toEqual([
-      { text: '  Set aside V2: The e2e suite needs a browser.', tone: 'textDim' },
-    ]);
+    // A red input that an earlier failed review set aside stays under that review, one step in.
+    expect(rows[review + 4]).toEqual({
+      label: '',
+      segments: [{ text: '  Set aside V2: The e2e suite needs a browser.', tone: 'textDim' }],
+      hang: '  Set aside V2: '.length,
+    });
+    const summary = runRows(view);
+    expect(summary[summary.findIndex((row) => row.label === 'Review') + 1]).toEqual(
+      rows[review + 1],
+    );
   });
 
   it('names each review that failed before the review of record, one row per finding', () => {
@@ -188,9 +250,15 @@ describe('runRows', () => {
         },
       ],
     });
-    const rows = runRows(view);
-    expect(rows.slice(0, 4).map((row) => row.label)).toEqual(['Review', '', '', 'Packet']);
-    expect(rows[1]?.segments).toEqual([
+    const rows = recordProse(view);
+    const review = rows.findIndex((row) => row.label === 'Review');
+    expect(rows.slice(review, review + 4).map((row) => row.label)).toEqual([
+      'Review',
+      '',
+      '',
+      'Files',
+    ]);
+    expect(rows[review + 1]?.segments).toEqual([
       {
         spans: [
           { text: 'Review T001 ', tone: 'text' },
@@ -199,25 +267,51 @@ describe('runRows', () => {
       },
       { text: '1 blocking', tone: 'textDim' },
     ]);
-    expect(rows[2]?.segments).toEqual([
+    expect(rows[review + 2]?.segments).toEqual([
       { text: '  F1 The test file lacks the four examples.', tone: 'textDim' },
     ]);
     // The finding is prose: it wraps under the text after `  F1 `, never cut in the middle.
-    expect(rows[2]?.hang).toBe('  F1 '.length);
+    expect(rows[review + 2]?.hang).toBe('  F1 '.length);
+  });
+
+  it('counts the reviews that failed before the review of record in one summary row', () => {
+    const view = makeView({
+      failedReviews: [
+        {
+          label: 'Review T001',
+          blocking: [{ id: 'F1', text: 'The test file lacks the four examples.' }],
+          setAside: [],
+        },
+      ],
+    });
+    const rows = runRows(view);
+    const review = rows.findIndex((row) => row.label === 'Review');
+    expect(rows.slice(review + 1, review + 3).map((row) => [row.label, row.segments])).toEqual([
+      ['', [{ text: '1 earlier review failed (1 blocking)', tone: 'textDim' }]],
+      [
+        'Files',
+        [
+          { text: '4 files', tone: 'textDim' },
+          { text: '2 test files', tone: 'textDim' },
+        ],
+      ],
+    ]);
   });
 
   it('reads a packet that was never written as a review that never ran', () => {
     const view = makeView({ review: { kind: 'missing' } });
-    expect(segmentsFor(view, 'Review')).toEqual([
-      { text: 'final review not run', tone: 'textDim' },
-    ]);
-    expect(segmentsFor(view, 'Packet')).toBeUndefined();
+    expect(segmentsFor(view, 'Review')?.[0]).toEqual({
+      text: 'final review not run',
+      tone: 'textDim',
+    });
+    expect(recordFor(view, 'Packet')).toBeUndefined();
   });
 
   it('reads a final review that returned no verdict as no verdict', () => {
-    expect(segmentsFor(makeView({ review: { kind: 'failed' } }), 'Review')).toEqual([
-      { text: 'final review no verdict', tone: 'textDim' },
-    ]);
+    expect(segmentsFor(makeView({ review: { kind: 'failed' } }), 'Review')?.[0]).toEqual({
+      text: 'final review no verdict',
+      tone: 'textDim',
+    });
   });
 
   it('spells absence with one word each', () => {
@@ -225,7 +319,8 @@ describe('runRows', () => {
     expect(segmentsFor(view, 'Review')).toEqual([
       { text: 'final review not run', tone: 'textDim' },
     ]);
-    expect(segmentsFor(view, 'Scope')).toEqual([{ text: 'not checked', tone: 'textDim' }]);
+    expect(segmentsFor(view, 'Scope')).toBeUndefined();
+    expect(recordFor(view, 'Scope')).toEqual([{ text: 'not checked', tone: 'textDim' }]);
   });
 
   it('warns on a scope check that did not pass', () => {
@@ -239,11 +334,12 @@ describe('runRows', () => {
     ]);
   });
 
-  it('paints clean scope as passed when the check failed without findings', () => {
+  it('paints clean scope as passed in the record when the check failed without findings', () => {
     const view = makeView({
       scope: { kind: 'checked', passed: false, errors: 0, warnings: 0 },
     });
-    expect(segmentsFor(view, 'Scope')).toEqual([{ text: 'clean', tone: 'success' }]);
+    expect(recordFor(view, 'Scope')).toEqual([{ text: 'clean', tone: 'success' }]);
+    expect(segmentsFor(view, 'Scope')).toBeUndefined();
   });
 
   it('warns on advisory scope issues even when the scope check passed', () => {
@@ -290,12 +386,11 @@ describe('runRows', () => {
     ]);
   });
 
-  it('dims a quality score without findings and records the Review label seat', () => {
+  it('dims a quality score without findings', () => {
     const view = makeView({
       quality: { score: 1, passed: true, errorCount: 0, warningCount: 0 },
     });
     expect(segmentsFor(view, 'Briefs')).toEqual([{ text: 'quality 1.00', tone: 'textDim' }]);
-    expect(runRows(view).find((row) => row.label === 'Review')?.seat).toBe('review');
   });
 
   it('warns on a failed quality score even without findings', () => {
@@ -309,14 +404,10 @@ describe('runRows', () => {
     ).toEqual([{ text: 'quality 0.40', tone: 'warning' }]);
   });
 
-  it('shows phase times only when more than one phase booked time', () => {
-    expect(segmentsFor(makeView(), 'Phases')).toEqual([
-      { text: 'planning 2m 50s', tone: 'textDim' },
-      { text: 'implementing 8m 12s', tone: 'textDim' },
-      { text: 'review 1m 5s', tone: 'textDim' },
-    ]);
-    const one = makeView({ phases: [{ phase: 'planning', ms: 170_000 }] });
-    expect(runRows(one).some((row) => row.label === 'Phases')).toBe(false);
+  it('ends each stage row on the time its phase booked, and gives no time to a phase without one', () => {
+    expect(stageTimes(makeView())).toEqual(['2m 50s', '8m 12s', '1m 5s']);
+    const one = makeView({ ran: 170_000, phases: [{ phase: 'planning', ms: 170_000 }] });
+    expect(stageTimes(one)).toEqual(['2m 50s', '3/3 briefs passed', '1 note']);
   });
 
   it('splits the whole seconds of Ran across the phases, so they add up to it', () => {
@@ -328,21 +419,24 @@ describe('runRows', () => {
         { phase: 'review', ms: 37_813 },
       ],
     });
-    expect(segmentsFor(view, 'Ran')).toEqual([{ text: '2m 10s', tone: 'textDim' }]);
-    expect(segmentsFor(view, 'Phases')).toEqual([
-      { text: 'planning 19s', tone: 'textDim' },
-      { text: 'implementing 1m 13s', tone: 'textDim' },
-      { text: 'review 38s', tone: 'textDim' },
-    ]);
+    expect(recordFor(view, 'Ran')).toEqual([{ text: '2m 10s', tone: 'textDim' }]);
+    expect(stageTimes(view)).toEqual(['19s', '1m 13s', '38s']);
   });
 
   it('states how long the run ran, and says so when the record never kept it', () => {
-    expect(segmentsFor(makeView({ ran: 111_503 }), 'Ran')).toEqual([
+    expect(recordFor(makeView({ ran: 111_503 }), 'Ran')).toEqual([
       { text: '1m 51s', tone: 'textDim' },
     ]);
-    expect(segmentsFor(makeView({ ran: null }), 'Ran')).toEqual([
+    expect(recordFor(makeView({ ran: null }), 'Ran')).toEqual([
       { text: 'not recorded', tone: 'textDim' },
     ]);
+    expect(segmentsFor(makeView(), 'Ran')).toBeUndefined();
+  });
+
+  it('states no brief count in the Plan row when the plan compiled no brief', () => {
+    const view = makeView({ digest: { ...makeView().digest, plannedBriefs: 0 } });
+    expect(segmentsFor(view, 'Plan')).toEqual([{ text: '2m 50s', tone: 'textDim' }]);
+    expect(segmentsFor(makeView({ ...view, phases: [] }), 'Plan')).toBeUndefined();
   });
 
   it('names the session and no mode', () => {
@@ -355,13 +449,25 @@ describe('runRows', () => {
     const view = makeView({
       quality: { score: 0.92, passed: true, errorCount: 0, warningCount: 0 },
     });
-    expect(runRows(view).map((row) => row.label)).toEqual([
+    const labels = (rows: readonly RunRow[]) =>
+      rows.map((row) => row.label).filter((label) => label !== '');
+    expect(labels(runRows(view))).toEqual([
+      'Plan',
+      'Build',
       'Review',
+      'Files',
+      'Briefs',
+      'Session',
+    ]);
+    expect(labels(recordProse(view))).toEqual([
+      'Plan',
+      'Build',
+      'Review',
+      'Files',
       'Packet',
       'Scope',
       'Briefs',
       'Ran',
-      'Phases',
       'Session',
     ]);
   });

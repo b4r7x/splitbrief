@@ -89,4 +89,11 @@ describe('rowLeading', () => {
       }
     }
   });
+
+  it('marks a settled header that needs attention with the warning glyph', () => {
+    for (const kind of ['activity', 'task-header'] as const) {
+      expect(rowLeading(kind, 'attention')).toBe(` ${glyph('statusWarning')} `);
+      expect(getTerminalCellWidth(rowLeading(kind, 'attention'))).toBe(3);
+    }
+  });
 });

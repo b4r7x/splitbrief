@@ -8,11 +8,12 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import {
   TaskSummary,
   fitDetailRun as fitDetailSpans,
+  taskSummarySpans,
   type TaskSummaryState,
 } from './task-summary.js';
 import { glyph } from '../lib/glyphs.js';
 import { getTerminalCellWidth } from '../utils/display-text.js';
-import { getMethodDisplay } from '../core/sessions/display.js';
+import { methodWord } from '../core/sessions/display.js';
 import { taskTargetParts } from '../core/run-view/brief-labels.js';
 import { stageSummaryRow } from '../features/workflow/components/conversation-flow/stage-summary.js';
 
@@ -135,7 +136,7 @@ describe('TaskSummary', () => {
     expect(getTerminalCellWidth(frame)).toBeLessThanOrEqual(width);
     if (width === 18) {
       expect(frame).toBe(` ${glyph('stageDone')} T001 Add the b…`);
-      expect(frame).not.toContain(getMethodDisplay('local', defaultTheme).text);
+      expect(frame).not.toContain(methodWord('local'));
     } else if (width >= 60) {
       expect(frame).toBe(
         ` ${glyph('stageDone')} T001 Add the book catalogue schema  passed · 5.0s`,
@@ -144,13 +145,13 @@ describe('TaskSummary', () => {
     ui.unmount();
   });
 
-  it('drops the action note, keeps the file count, then shortens the path', () => {
+  it('drops the action note, keeps the file count, shortens the path, then drops both', () => {
     const target = taskTargetParts({
       file: 'testing/visual/fixtures/workflow/registry.ts',
       files: ['registry.ts', 'a.ts', 'b.ts', 'c.ts'],
       action: 'modify',
     });
-    const method = getMethodDisplay('local', defaultTheme).text;
+    const method = methodWord('local');
     const head = 'T002 Register fixtures';
     const exactPathWidth = getTerminalCellWidth(` ✓ ${head}  ${target.path} · ${method} · 2m 0s`);
     for (const width of [60, exactPathWidth, 120]) {
@@ -168,9 +169,12 @@ describe('TaskSummary', () => {
         { cols: width, rows: 18 },
       );
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(frame).toContain(`+3 files · ${method} · 2m 0s`);
-      if (width === 120) expect(frame).toContain(`${target.path} (modify) · +3 files`);
+      // At 60 columns the file name does not fit whole, so the path and its count go together.
+      if (width === 60) expect(frame).toBe(` ${glyph('stageDone')} ${head}  ${method} · 2m 0s`);
+      else if (width === 120)
+        expect(frame).toContain(`${target.path} (modify) · +3 files · ${method} · 2m 0s`);
       else {
+        expect(frame).toContain(`registry.ts · +3 files · ${method} · 2m 0s`);
         expect(frame).not.toContain(target.note);
         expect(frame).not.toContain(target.path);
       }
@@ -229,11 +233,16 @@ describe('TaskSummary', () => {
       expect(getTerminalCellWidth(frame)).toBeLessThanOrEqual(width);
     });
 
-    it('drops the count only with its path', () => {
-      for (const detail of ['+1 file · passed · 11.8s', '… · +1 file · passed · 11.8s']) {
+    it('drops the count only with its path, and both when the file name does not fit whole', () => {
+      for (const detail of [
+        '+1 file · passed · 11.8s',
+        '… · +1 file · passed · 11.8s',
+        '…s · +1 file · passed · 11.8s',
+        'cl…js · +1 file · passed · 11.8s',
+      ]) {
         expect(render(getTerminalCellWidth(row(detail)))).toBe(row('passed · 11.8s'));
       }
-      const named = row('…s · +1 file · passed · 11.8s');
+      const named = row('cli.js · +1 file · passed · 11.8s');
       expect(render(getTerminalCellWidth(named))).toBe(named);
     });
 
@@ -811,7 +820,6 @@ describe('TaskSummary', () => {
         [24, 'testing/…/projections.ts'],
         [16, '…/projections.ts'],
         [14, 'projections.ts'],
-        [8, 'pro…s.ts'],
       ] as const) {
         const head = 'T1'.padEnd(width - 22 - room, 'x');
         const fitted = fitDetailRun(
@@ -823,6 +831,37 @@ describe('TaskSummary', () => {
         expect(fitted.tail).toEqual([expected, 'passed', '2m 0s']);
       }
     }
+  });
+
+  it('drops a file whose whole name does not fit: half a name names no file', () => {
+    const file = 'testing/visual/fixtures/workflow/projections.ts';
+    for (const width of [60, 80, 120]) {
+      for (const room of [13, 8, 4]) {
+        const head = 'T1'.padEnd(width - 22 - room, 'x');
+        const fitted = fitDetailRun(
+          { id: head, title: '' },
+          [file, 'passed', '1 retry', '2m 0s'],
+          width,
+          true,
+        );
+        expect(fitted.tail).toEqual(['passed', '2m 0s']);
+      }
+    }
+  });
+
+  it('dims the title of a settled brief on a surface that asks for a quiet row', () => {
+    const row = {
+      id: 'T001',
+      title: 'validate',
+      state: { kind: 'settled', method: 'local' },
+      width: 80,
+    } as const;
+
+    expect(taskSummarySpans(row)[0]).toEqual({ text: 'T001 validate', tone: 'text' });
+    expect(taskSummarySpans({ ...row, quiet: true })[0]).toEqual({
+      text: 'T001 validate',
+      tone: 'textDim',
+    });
   });
 
   it('uses the settled retry priority for the closed signup row', () => {

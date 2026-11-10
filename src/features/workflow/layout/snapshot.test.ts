@@ -46,7 +46,7 @@ import type { TieredApprovalRequest } from '../../../core/approval/types.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { routerStore } from '../../../stores/navigation/router.js';
-import { transcriptTailStore } from '../../../stores/workflow/transcript-tail.js';
+import { publishTranscriptTail } from '../conversation-rows/transcript-tail.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { ConversationFlow } from '../components/conversation-flow/flow.js';
 import type { ConversationRowBlock } from '../conversation-rows/types.js';
@@ -73,7 +73,7 @@ beforeEach(() => {
   approvalPromptStore.reset();
   questionPromptStore.reset();
   overlayStore.reset();
-  transcriptTailStore.__testReset();
+  publishTranscriptTail([]);
 });
 
 function makeConfirmRequest(actionDescription: string): TieredApprovalRequest {

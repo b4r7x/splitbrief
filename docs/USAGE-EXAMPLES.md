@@ -259,7 +259,7 @@ The planner bills through your Claude Code subscription, so its usage reads `unp
 
 **Run:**
 
-Open `/usage` from the workflow, including a saved run. The details show reported usage, missing or partial coverage, and available monetary estimates. The sidebar and closed-run ledger do not display spend; there is no Show spend control.
+Open `/usage` from the workflow, including a saved run. The details show reported usage, missing or partial coverage, and available monetary estimates. The sidebar and closed-run summary do not display spend; there is no Show spend control.
 
 For a recorded event-level export:
 
@@ -370,7 +370,7 @@ drift_report passed=true errors=0 warnings=2
 
 The drift report compares the briefs with the run's diff and evidence. An `out_of_scope_file` finding names a changed file that no brief suggested. It is an `info` finding, never a failure: a brief's files are suggestions, and the final reviewer reads the files the run touched but no brief suggested. Many such files usually mean the plan was wrong about scope.
 
-**Variations:** Inspect the final deterministic report directly: `cat .splitbrief/sessions/<id>/drift-report.json | jq`. A closed run shows a `Scope` row: `clean`, or the counts such as `1 error · 1 warning`.
+**Variations:** Inspect the final deterministic report directly: `cat .splitbrief/sessions/<id>/drift-report.json | jq`. The summary of a closed run shows a `Scope` row with the counts, such as `1 error · 1 warning`, when the report found an error or a warning. Its whole record (`ctrl+a`) always has a `Scope` row: `clean`, the counts, or `not checked`.
 
 **See also:** [docs/TASK-CONTRACT.md](./TASK-CONTRACT.md) §Drift detection rules.
 

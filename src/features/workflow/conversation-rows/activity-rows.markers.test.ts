@@ -152,7 +152,7 @@ describe('runnerActivityBatchRowBlock tree markers', () => {
     expect(rowText(header)).toContain('4 updates');
     expect(disclosure.kind).toBe('activity-more');
     expect(disclosure.key).toBe('activity-batch-hidden');
-    expect(rowText(disclosure)).toBe('+1 earlier · ctrl+a');
+    expect(rowText(disclosure)).toBe('+1 earlier');
     expect(disclosure.segments[0]?.tone).toBe('textDim');
     expect(rowLeading(disclosure.kind)).toBe(` ${glyph('treeBranch')} `);
     expect(items.map((item) => item.kind)).toEqual([
@@ -192,7 +192,7 @@ describe('runnerActivityBatchRowBlock tree markers', () => {
     expect(rowText(header)).toContain('4 updates');
     expect(disclosure.kind).toBe('activity-more');
     expect(disclosure.key).toBe('activity-batch-hidden');
-    expect(rowText(disclosure)).toBe('collapse · ctrl+a');
+    expect(rowText(disclosure)).toBe('collapse');
     expect(disclosure.segments[0]?.tone).toBe('textDim');
     expect(rowLeading(disclosure.kind)).toBe(` ${glyph('treeBranch')} `);
     expect(items.map((item) => item.kind)).toEqual([
@@ -234,7 +234,7 @@ describe('runnerActivityBatchRowBlock tree markers', () => {
     expect(header.kind).toBe('activity');
     expect(rowText(header)).toContain(`${total} updates`);
     expect(disclosure.kind).toBe('activity-more');
-    expect(rowText(disclosure)).toBe(`+${hidden} earlier · ctrl+a`);
+    expect(rowText(disclosure)).toBe(`+${hidden} earlier`);
     expect(disclosure.segments[0]?.tone).toBe('textDim');
     expect(rowLeading(disclosure.kind)).toBe(` ${glyph('treeBranch')} `);
     expect(items.map((item) => item.kind)).toEqual([

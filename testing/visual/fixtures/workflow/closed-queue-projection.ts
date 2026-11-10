@@ -1,4 +1,5 @@
 import { deriveRunStatus } from '../../../../src/core/sessions/run-status.js';
+import type { EngineEvent } from '../../../../src/engine/events/types.js';
 import { makeMessage } from '../../../helpers/queue.js';
 import { scenarioId } from '../../contracts/identifiers.js';
 import { atRestProjections } from './at-rest-projections.js';
@@ -8,8 +9,10 @@ const ended = atRestProjections.find(
   (projection) => projection.scenarioId === 'workflow-closed-ended',
 );
 const record = ended?.atRest?.record;
+const endedLog = ended?.atRest?.log;
 if (
   ended === undefined ||
+  typeof endedLog !== 'object' ||
   record?.hydration.kind !== 'loaded' ||
   record.startedAt === null ||
   record.summary === null
@@ -17,15 +20,15 @@ if (
   throw new Error('The closed queue fixture requires the ended BUILD run');
 }
 
-const endedAt = Date.parse(record.startedAt) + record.summary.totalTime;
+// The message was queued for BUILD while T003 ran, before the stop that ended the run.
+const queuedAt = Date.parse(record.startedAt) + record.summary.totalTime - 1_500;
 const message = {
   ...makeMessage('Keep the validation API'),
   phase: 'implementing',
-  queuedAt: new Date(endedAt - 1).toISOString(),
+  queuedAt: new Date(queuedAt).toISOString(),
 } satisfies ReturnType<typeof makeMessage>;
 const state = {
   ...record.hydration.state,
-  closed: { as: 'ended', at: new Date(endedAt).toISOString() },
   messageQueue: [message],
 } satisfies typeof record.hydration.state;
 
@@ -39,15 +42,20 @@ export const closedQueueProjection: WorkflowFixtureProjection = {
       hydration: { kind: 'loaded', state },
       status: deriveRunStatus({ state, liveness: 'not-alive', reviewNone: false }),
     },
-    log: [
-      {
-        type: 'message_queued',
-        ts: endedAt - 1,
-        phase: 'implementing',
-        id: message.id,
-        seat: 'build',
-        preview: message.text,
-      },
-    ],
+    log: endedLog.flatMap<EngineEvent>((event) =>
+      event.type === 'turn_interrupted'
+        ? [
+            {
+              type: 'message_queued',
+              ts: queuedAt,
+              phase: 'implementing',
+              id: message.id,
+              seat: 'build',
+              preview: message.text,
+            },
+            event,
+          ]
+        : [event],
+    ),
   },
 };

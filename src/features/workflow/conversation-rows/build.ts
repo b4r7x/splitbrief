@@ -203,6 +203,7 @@ function withoutActiveRow(block: ConversationRowBlock): ConversationRowBlock {
     key: block.key,
     rowCount: block.rowCount,
     renderableUnits: block.renderableUnits,
+    ...(block.foldRowKey !== undefined && { foldRowKey: block.foldRowKey }),
     createRows: block.createRows,
   };
 }

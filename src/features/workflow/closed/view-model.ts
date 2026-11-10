@@ -5,7 +5,7 @@ import type { TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { RunCheckpoint, RunRecord } from '../../../core/sessions/run-record.js';
 import { awaitsApply, canUndoApply, type RunStatus } from '../../../core/sessions/run-status.js';
-import { oneLineDisplayText, sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
+import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import type { RailStageState } from '../../../core/rail-stages.js';
 import { acceptedNote } from '../../../core/review/verdict.js';
 import { atRestRailStages } from '../at-rest.js';
@@ -18,6 +18,7 @@ import {
   plannerSeatView,
   reviewSeatView,
   reviewView,
+  runDigest,
   scopeView,
   stoppedAtForCurrentPlan,
 } from './projections.js';
@@ -99,10 +100,29 @@ export type ScopeView =
 
 export type PhaseTiming = Readonly<{ phase: 'planning' | 'implementing' | 'review'; ms: number }>;
 
+/** A minor finding of the review of record, as the summary quotes it. */
+export type ReviewNoteView = Readonly<{ id: string; file: string | null; text: string }>;
+
+/**
+ * What the closed summary states beyond the ledger rows. A fact the record cannot give is null,
+ * and the row that would state it leaves it out.
+ */
+export interface RunDigest {
+  /** The briefs the plan compiled, without the ones a fix cycle added. */
+  plannedBriefs: number | null;
+  planCriteria: number | null;
+  fixBriefs: number;
+  fixCycles: number;
+  notes: readonly ReviewNoteView[];
+  criteria: Readonly<{ passed: number; total: number }> | null;
+  /** The changed files the summary names: the ones the most briefs changed, test files last. */
+  leadFiles: readonly string[];
+  testFiles: number;
+}
+
 export interface SummaryView {
   outcome: Readonly<{ kind: SummaryOutcomeKind }>;
   run: Readonly<{
-    feature: string;
     sessionId: string;
   }>;
   rail: RailStageState[];
@@ -134,6 +154,9 @@ export interface SummaryView {
   phases: PhaseTiming[];
   /** How long the run ran, in ms; null on a record from before it was kept. */
   ran: number | null;
+  /** When the run closed, in ms; null when its state kept no time that reads as one. */
+  closedAt: number | null;
+  digest: RunDigest;
 }
 
 /** The closed block derives its view from the record navigation carried and nothing else. */
@@ -163,7 +186,6 @@ export function deriveSummaryView(input: DeriveSummaryViewInput): SummaryView | 
   return {
     outcome: { kind: outcomeKind },
     run: {
-      feature: oneLineDisplayText(summary.feature),
       sessionId,
     },
     rail: atRestRailStages(record),
@@ -194,7 +216,15 @@ export function deriveSummaryView(input: DeriveSummaryViewInput): SummaryView | 
           },
     phases: phaseTimings(summary),
     ran: summary.activeTime ?? null,
+    closedAt: closedAtOf(state),
+    digest: runDigest({ summary, ledger, state, changed: files.changed }),
   };
+}
+
+/** The close of the run, or its completion on a run that ended with no close on record. */
+function closedAtOf(state: WorkflowState | null): number | null {
+  const at = Date.parse(state?.closed?.at ?? state?.completedAt ?? '');
+  return Number.isNaN(at) ? null : at;
 }
 
 /**

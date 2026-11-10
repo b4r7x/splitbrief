@@ -349,7 +349,7 @@ src/
 │                                  conversation-scroll, departure, events,
 │                                  lifecycle, operations, recovery-notice,
 │                                  result-menu, review, run-view, stop,
-│                                  streaming-output, tokens, transcript-tail
+│                                  streaming-output, tokens
 │
 ├── features/                      TUI feature slices — components/hooks/helpers
 │                                  (page entries are FLAT pages under app/)
@@ -389,9 +389,9 @@ src/
 │       ├── prompt-rows/           approval, question, recovery
 │       ├── handlers.ts            Runtime command context actions
 │       ├── at-rest.ts             Rail + composer contract when nothing runs
-│       ├── closed/                A closed run's ledger: view-model,
-│       │                          projections, outcome, byline, copy, rows,
-│       │                          block, header
+│       ├── closed/                A closed run's summary: view-model,
+│       │                          projections, outcome, byline, copy,
+│       │                          fit-facts, block, header
 │       ├── hooks/                 use-input-mode, use-keys,
 │       │                          use-mouse-pointer, use-mouse-scroll,
 │       │                          use-review-content, use-run-loop,
@@ -879,7 +879,7 @@ The registry holds 23 commands in five categories. A removed command, such as `/
 | Runtime command | Description |
 |---|---|
 | `/scroll <top\|bottom\|page-up\|page-down>` | Scroll the workflow conversation |
-| `/activity` | Expand or collapse the latest activity batch |
+| `/activity` | Expand or collapse the last folded rows |
 | `/diff` | Expand or collapse the latest diff |
 | `/sidebar` | Show or hide the workflow sidebar |
 | `/tasks` | Show the brief list |

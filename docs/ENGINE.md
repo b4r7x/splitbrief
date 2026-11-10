@@ -426,7 +426,7 @@ type Summary = {
 }
 ```
 
-The summary is the final artifact. It carries enough data to render a closed run’s ledger and compute cumulative project stats without re-reading the JSONL log.
+The summary is the final artifact. It carries enough data to render a closed run’s summary and compute cumulative project stats without re-reading the JSONL log.
 
 ---
 

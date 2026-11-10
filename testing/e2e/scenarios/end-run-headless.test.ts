@@ -20,6 +20,7 @@ import { rowText } from '../../../src/features/workflow/conversation-rows/row-fo
 import { hydrateRun } from '../../../src/features/workflow/run-history.js';
 import { rereadRunAtRest } from '../../../src/features/workflow/handlers.js';
 import { showRunDiff } from '../../../src/features/workflow/result/show-diff.js';
+import { glyph } from '../../../src/lib/glyphs.js';
 import type { SpawnEditor } from '../../../src/features/workflow/review-parser.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { configStore } from '../../../src/stores/project/config.js';
@@ -260,7 +261,8 @@ describe('headless End run', { timeout: 240_000 }, () => {
         await vi.waitFor(
           () => {
             const frame = stripAnsiStyles(ui.lastFrame());
-            expect(frame).toContain('Closed');
+            expect(frame).toContain('Run closed');
+            expect(frame).toContain(`${glyph('statusCancelled')} Ended`);
             expect(frame).toContain('Stopped by you');
             expect(frame).not.toContain('Resume');
             expect(frame).not.toContain('to continue');

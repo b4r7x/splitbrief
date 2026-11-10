@@ -713,7 +713,7 @@ describe('buildConversationRows', () => {
       windowEnd: projection.totalRows,
     });
     const batch = rows.find((row) => row.kind === 'activity');
-    expect(batch?.interrupted).toBe(true);
+    expect(batch?.doneAs).toBe('cancelled');
     const { activeRowKey } = computeConversationRowsWindowFromProjection({
       projection,
       viewportHeight: 20,
@@ -813,7 +813,7 @@ describe('buildConversationRows', () => {
     expect(finished.activeRowKey).toBe(finished.header);
 
     const cutBeforeStop = marks([...running, ...cut]);
-    expect(cutBeforeStop.batches.map((batch) => batch.interrupted)).toEqual([undefined, true]);
+    expect(cutBeforeStop.batches.map((batch) => batch.doneAs)).toEqual([undefined, 'cancelled']);
     expect(cutBeforeStop.activeRowKey).toBe(cutBeforeStop.header);
 
     const continued: EngineEvent[] = [
@@ -1634,7 +1634,7 @@ describe('buildConversationRows', () => {
     expect(text).toContain(activityLine('STOP', 'current turn interrupted'));
     expect(text).not.toContain('runner_interrupted');
     const header = rows.find((row) => row.kind === 'activity');
-    expect(header?.interrupted).toBe(true);
+    expect(header?.doneAs).toBe('cancelled');
     expect(header === undefined ? '' : rowText(header)).toContain('1 update  interrupted');
     expect(text).not.toContain('warn');
   });

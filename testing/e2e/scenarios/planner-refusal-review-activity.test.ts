@@ -154,7 +154,7 @@ console.log(${JSON.stringify(JSON.stringify(verdict))});
           expect(frame).toContain('Review · Custom Shell · auto · reviewing changes');
           expect(frame).not.toContain('answering again');
           writeFileSync(release, '');
-          await expect.poll(screen, { timeout: 45_000 }).toContain('Complete · 1/1 briefs passed');
+          await expect.poll(screen, { timeout: 45_000 }).toContain('Complete  1/1 briefs passed');
           child.write('\x11');
           await expect.poll(() => outcome, { timeout: 10_000 }).toBeDefined();
           expect(outcome?.exitCode, screen()).toBe(0);

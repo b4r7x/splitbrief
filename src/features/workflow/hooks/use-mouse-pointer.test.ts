@@ -23,7 +23,9 @@ import { _resetMouseZones, registerMouseZone } from '../../../lib/terminal/mouse
 import { readConversationScrollSnapshot, readRailSnapshot } from '../layout/snapshot.js';
 import { computeConversationRowScroll } from '../conversation-rows/scroll.js';
 import { activityBatchKey } from '../conversation-rows/activity-batch-key.js';
-import { rowText } from '../conversation-rows/row-format/rows.js';
+import { rowText, segmentedRow } from '../conversation-rows/row-format/rows.js';
+import { publishTranscriptTail, readTranscriptTail } from '../conversation-rows/transcript-tail.js';
+import type { ConversationRowBlock } from '../conversation-rows/types.js';
 import { getSections } from '../../../stores/workflow/actions/sections.js';
 import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
@@ -141,6 +143,73 @@ function transcriptRows() {
   }).rows;
 }
 
+const TAIL_KEY = 'closed-block:mouse-pointer-session';
+
+type FoldedRowCounts = Readonly<{ collapsed: number; expanded: number }>;
+
+function foldedTailBlock(counts: FoldedRowCounts): ConversationRowBlock {
+  const expanded = conversationScrollStore.get().expandedActivityBatches.has(TAIL_KEY);
+  const count = expanded ? counts.expanded : counts.collapsed;
+  const rows = Array.from({ length: count }, (_, index) => {
+    if (index === 0)
+      return segmentedRow(
+        `${TAIL_KEY}:outcome`,
+        [{ text: 'Complete', tone: 'success' }],
+        'activity',
+      );
+    if (index === 1)
+      return segmentedRow(
+        `${TAIL_KEY}-hidden`,
+        [{ text: expanded ? 'collapse' : 'more', tone: 'textDim' }],
+        'activity-more',
+      );
+    return segmentedRow(
+      `${TAIL_KEY}:${index}`,
+      [{ text: `row ${index}`, tone: 'textDim' }],
+      index === count - 1 ? 'activity-child-last' : 'activity-child',
+    );
+  });
+  return {
+    key: TAIL_KEY,
+    rowCount: count,
+    renderableUnits: 0,
+    foldRowKey: `${TAIL_KEY}-hidden`,
+    toggledRowCount: expanded ? counts.collapsed : counts.expanded,
+    createRows: (windowStart, windowEnd) => rows.slice(windowStart, windowEnd),
+  };
+}
+
+/** What the screen does after every toggle: it builds the block again and publishes it. */
+function publishFoldedTail(counts: FoldedRowCounts): void {
+  publishTranscriptTail([foldedTailBlock(counts)]);
+}
+
+function windowRowsWithTail() {
+  const snapshot = readConversationScrollSnapshot();
+  const scroll = conversationScrollStore.get();
+  return computeConversationRowScroll({
+    sections: getSections(),
+    expandedDiffs: scroll.expandedDiffs,
+    expandedActivityBatches: scroll.expandedActivityBatches,
+    cols: snapshot.conversationWidth,
+    viewportHeight: snapshot.transcriptViewportHeight,
+    rawScrollOffset: scroll.scrollOffset,
+    renderableCountAtScroll: scroll.renderableCountAtScroll,
+    heightAtScroll: scroll.heightAtScroll,
+    streaming: streamingOutputStore.get(),
+    tail: readTranscriptTail(),
+  }).rows;
+}
+
+function pressRow(key: string): void {
+  const snapshot = readConversationScrollSnapshot();
+  const windowIndex = windowRowsWithTail().findIndex((row) => row.key === key);
+  expect(windowIndex).toBeGreaterThanOrEqual(0);
+  dispatchWorkflowPointer(
+    pointerEvent('press', snapshot.contentRect.left, snapshot.contentRect.top + windowIndex),
+  );
+}
+
 function dispatchWorkflowPointer(event: MouseEvent): void {
   if (event.type === 'move') {
     handleWorkflowMouseMove(event);
@@ -164,6 +233,7 @@ describe('workflow pointer handling', () => {
     lifecycleStore.__testReset();
     _resetMouseZones();
     _resetHoverThrottle();
+    publishTranscriptTail([]);
   });
 
   it('ignores a click outside any zone or row', () => {
@@ -482,5 +552,94 @@ describe('workflow pointer handling', () => {
 
     dispatchWorkflowPointer(pointerEvent('move', left, top + 1));
     expect(hoverStore.get()).toBe(0);
+  });
+
+  it('click on a batch row above a folded tail block toggles the batch and nothing else', () => {
+    routerStore.init(WORKFLOW_ROUTE);
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
+    seedLiveDisclosureTranscript();
+    publishFoldedTail({ collapsed: 6, expanded: 12 });
+    expect(readConversationScrollSnapshot().maxOffset).toBeGreaterThan(0);
+    const batchRow = windowRowsWithTail().find(
+      (row) => row.kind === 'activity-more' && !row.key.startsWith(TAIL_KEY),
+    );
+    if (batchRow === undefined) throw new Error('expected the batch fold row in the window');
+
+    pressRow(batchRow.key);
+
+    expect([...conversationScrollStore.get().expandedActivityBatches]).toEqual([
+      batchRow.key.replace(/-hidden$/u, ''),
+    ]);
+  });
+
+  it('click on the fold row of a tail block toggles that block and nothing else', () => {
+    routerStore.init(WORKFLOW_ROUTE);
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
+    seedLiveDisclosureTranscript();
+    publishFoldedTail({ collapsed: 6, expanded: 12 });
+
+    pressRow(`${TAIL_KEY}-hidden`);
+
+    expect([...conversationScrollStore.get().expandedActivityBatches]).toEqual([TAIL_KEY]);
+  });
+
+  it('puts the header of a tail block on the first row when its rows open past the view', () => {
+    routerStore.init(WORKFLOW_ROUTE);
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
+    seedLiveDisclosureTranscript();
+    const counts = { collapsed: 6, expanded: 60 };
+    publishFoldedTail(counts);
+
+    pressRow(`${TAIL_KEY}-hidden`);
+    publishFoldedTail(counts);
+
+    expect(windowRowsWithTail()[0]?.key).toBe(`${TAIL_KEY}:outcome`);
+
+    pressRow(`${TAIL_KEY}-hidden`);
+    publishFoldedTail(counts);
+
+    expect(conversationScrollStore.get().scrollOffset).toBe(0);
+    expect(windowRowsWithTail().at(-1)?.key).toBe(`${TAIL_KEY}:5`);
+  });
+
+  it('puts the header of a tail block on the first row when another tail block sits below it', () => {
+    routerStore.init(WORKFLOW_ROUTE);
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
+    seedLiveDisclosureTranscript();
+    const counts = { collapsed: 6, expanded: 60 };
+    const belowRows = ['a', 'b', 'c'].map((name) =>
+      segmentedRow(`tail-below:${name}`, [{ text: name, tone: 'text' }], 'activity-child'),
+    );
+    const below: ConversationRowBlock = {
+      key: 'tail-below',
+      rowCount: belowRows.length,
+      renderableUnits: 0,
+      createRows: (windowStart, windowEnd) => belowRows.slice(windowStart, windowEnd),
+    };
+    publishTranscriptTail([foldedTailBlock(counts), below]);
+
+    pressRow(`${TAIL_KEY}-hidden`);
+    publishTranscriptTail([foldedTailBlock(counts), below]);
+
+    expect(windowRowsWithTail()[0]?.key).toBe(`${TAIL_KEY}:outcome`);
+  });
+
+  it('stays on the last row when the opened rows of a tail block fit the view', () => {
+    routerStore.init(WORKFLOW_ROUTE);
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
+    seedLiveDisclosureTranscript();
+    const counts = { collapsed: 4, expanded: 8 };
+    publishFoldedTail(counts);
+
+    pressRow(`${TAIL_KEY}-hidden`);
+    publishFoldedTail(counts);
+
+    expect(conversationScrollStore.get().scrollOffset).toBe(0);
+    expect(windowRowsWithTail().at(-1)?.key).toBe(`${TAIL_KEY}:7`);
   });
 });

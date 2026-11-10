@@ -14,6 +14,7 @@ import {
   type ConversationRowAction,
 } from '../features/workflow/conversation-rows/row-actions.js';
 import { readConversationRowActions } from '../features/workflow/conversation-rows/read-row-actions.js';
+import { toggleFoldedRows } from '../features/workflow/conversation-rows/toggle-folded-rows.js';
 import { readConversationScrollSnapshot } from '../features/workflow/layout/snapshot.js';
 import { getWorkflowSidebarWidth } from '../features/workflow/layout/rect.js';
 import { resolveCopyValue } from '../features/workflow/copy/resolve.js';
@@ -291,12 +292,12 @@ function toggleLatestActivityBatch(
   if (action === null) {
     return {
       status: 'unavailable',
-      message: 'No expandable activity batch is available.',
+      message: 'No folded rows to expand.',
     };
   }
 
   const expanded = !conversationScrollStore.get().expandedActivityBatches.has(action.key);
-  conversationScrollStore.toggleActivityBatch(action.key);
+  toggleFoldedRows(action.key);
   return { status: 'toggled', expanded };
 }
 
@@ -423,16 +424,6 @@ export function buildCommandContext({
       const { cols } = terminalSizeStore.get();
       if (getWorkflowSidebarWidth({ cols, sidebarVisible: true }) === 0) {
         return { status: 'unavailable', message: 'Sidebar is hidden on small terminals.' };
-      }
-      // A closed run takes the whole width and states its crew and its briefs in the block at the
-      // end of its transcript, so there is no column for this to open.
-      const current = routerStore.get();
-      if (
-        current.screen === 'workflow' &&
-        current.execution.kind === 'at-rest' &&
-        current.run.status.kind === 'closed'
-      ) {
-        return { status: 'unavailable', message: 'A closed run has no sidebar.' };
       }
       controlsStore.toggleSidebar();
       const visible = controlsStore.get().sidebarVisible;

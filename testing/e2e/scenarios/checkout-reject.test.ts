@@ -759,7 +759,7 @@ else {
       outcomeLineSpans(view, 120)
         .map((span) => span.text)
         .join(''),
-    ).toBe('Discarded · 0/2 briefs passed · removed 3 created files');
+    ).toBe('Discarded  0/2 briefs passed · removed 3 created files');
     // The first reject already put back the marker and the second module, so the run no longer
     // lists them, and T001 is open again.
     expect(view.files.changed).toEqual([GREET_FILE]);

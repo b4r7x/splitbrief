@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { withCaptureEnvironment } from '#testing/visual/gallery/environment.js';
 import { glyph } from '../../lib/glyphs.js';
-import { getMethodDisplay, getSessionStatusDisplay, sessionStatusWord } from './display.js';
+import { getSessionStatusDisplay, methodWord, sessionStatusWord } from './display.js';
 
 const theme = {
   accent: 'accent',
@@ -11,9 +11,9 @@ const theme = {
   textDim: 'textDim',
 };
 
-describe('getMethodDisplay', () => {
-  it('labels a local completion passed in the success color', () => {
-    expect(getMethodDisplay('local', theme)).toEqual({ text: 'passed', color: theme.success });
+describe('methodWord', () => {
+  it('says a local completion passed', () => {
+    expect(methodWord('local')).toBe('passed');
   });
 });
 

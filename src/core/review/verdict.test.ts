@@ -8,6 +8,7 @@ import {
   blockingKeys,
   blockingRedInputs,
   deriveReviewOutcome,
+  findingFacts,
   findingInReviewScope,
   reviewFindingCounts,
   reviewOutcomeOf,
@@ -664,5 +665,17 @@ describe('a finding that restates a red input', () => {
       at: '2026-10-28T10:00:00.000Z',
     };
     expect(reviewOutcomeOf(record)).toEqual(outcome);
+  });
+});
+
+describe('findingFacts', () => {
+  it('states one fact per kind of finding and none for a zero', () => {
+    expect(findingFacts({ critical: 0, warning: 0, note: 0 })).toEqual([]);
+    expect(findingFacts({ critical: 0, warning: 1, note: 0 })).toEqual(['1 note']);
+    expect(findingFacts({ critical: 2, warning: 0, note: 0 })).toEqual(['2 blocking']);
+  });
+
+  it('counts a minor and an out-of-scope finding as notes, after the blocking ones', () => {
+    expect(findingFacts({ critical: 1, warning: 1, note: 2 })).toEqual(['1 blocking', '3 notes']);
   });
 });

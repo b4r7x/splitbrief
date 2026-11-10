@@ -29,6 +29,7 @@ import { feedbackStore } from '../../../src/stores/ui/feedback.js';
 import { eventsStore } from '../../../src/stores/workflow/events.js';
 import { addEvent } from '../../../src/stores/workflow/actions/event.js';
 import { useInputMode } from '../../../src/features/workflow/hooks/use-input-mode.js';
+import { glyph } from '../../../src/lib/glyphs.js';
 import {
   useRunContinue,
   type UseRunContinueResult,
@@ -180,9 +181,10 @@ describe('a run at rest that another process closes', () => {
       });
     });
     await vi.waitFor(() => {
-      expect(stripAnsiStyles(ui?.lastFrame() ?? '')).toContain('Closed');
+      expect(stripAnsiStyles(ui?.lastFrame() ?? '')).toContain('Run closed');
     });
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain(`${glyph('statusCancelled')} Ended`);
     expect(frame).not.toContain('Resume ·');
     expect(frame).not.toContain('⏎ resume');
     expect(overlayStore.get().active).toBe('none');
