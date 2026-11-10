@@ -305,6 +305,7 @@ describe('/run on a run with a workspace', () => {
           kind: 'open',
           stop: { kind: 'stopped', on: { kind: 'interrupted' } },
           resumeAt: { kind: 'apply' },
+          reviewNone: true,
         };
         const railAtApply = [
           { stage: 'plan', status: 'done' },
