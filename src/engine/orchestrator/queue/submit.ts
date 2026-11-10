@@ -1,6 +1,6 @@
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { QueuedMessage, WorkflowState } from '../../../core/schemas/workflow.js';
-import { isImplementerPhase, isLivePhase } from '../../../core/phases.js';
+import { isLivePhase, isQueuePhase } from '../../../core/phases.js';
 import { seatForRunningCall } from '../../../core/runners/seat-roles.js';
 import type { Planner } from '../../planners/types.js';
 import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
@@ -54,7 +54,7 @@ export function enqueueUserMessage({
   const base = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state, {
     keepUnsaved: true,
   });
-  if (enforcePhasePolicy && !isLivePhase(phase) && !isImplementerPhase(phase)) {
+  if (enforcePhasePolicy && !isQueuePhase(phase)) {
     const message = `Queue is only available while a run is live; current phase is ${phase}.`;
     publishWarning({
       bus,

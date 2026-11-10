@@ -2173,6 +2173,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-approval-confirm-over-draft',
+      title: 'Workflow · confirm gate that opens over a typed correction',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'approval-confirm-over-draft',
+        title: 'Confirm gate with the keys left in the composer',
+        kind: 'review',
+        marker: 'Confirm with a reason',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-approval-confirm-short',
       title: 'Workflow · destructive confirm gate in a short terminal',
       surface: screenSurface('workflow'),

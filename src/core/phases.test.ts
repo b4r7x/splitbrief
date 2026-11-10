@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { phaseTokenRole, phaseRole } from './phases.js';
+import { isQueuePhase, phaseTokenRole, phaseRole } from './phases.js';
 import { attributePhaseTokenDelta } from './state/token-attribution.js';
 import type { TokenUsage } from './schemas/tokens.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
@@ -40,5 +40,32 @@ describe('phase roles', () => {
       cacheRead: 0,
       cacheCreate: 0,
     });
+  });
+});
+
+describe('isQueuePhase', () => {
+  it.each(['researching', 'specifying', 'planning', 'final-review'] as const)(
+    'queues composer words for the live call in %s',
+    (phase) => {
+      expect(isQueuePhase(phase)).toBe(true);
+    },
+  );
+
+  it.each(['implementing', 'validating-task', 'escalating'] as const)(
+    'queues composer words for the brief in BUILD in %s',
+    (phase) => {
+      expect(isQueuePhase(phase)).toBe(true);
+    },
+  );
+
+  it.each([
+    'idle',
+    'clarifying',
+    'reviewing-spec',
+    'reviewing-plan',
+    'reviewing-briefs',
+    'complete',
+  ] as const)('takes no queued words in %s', (phase) => {
+    expect(isQueuePhase(phase)).toBe(false);
   });
 });

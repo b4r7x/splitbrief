@@ -642,6 +642,30 @@ describe('review input effects', () => {
     expect(composerDraftStore.get().request?.value).toBe('keep me');
   });
 
+  it.each([
+    ['complete', { message: null, isError: false }],
+    ['reviewing-plan', { message: reviewOpeningPromptMessage(), isError: true }],
+  ] as const)(
+    'gives plain words back to the composer in %s, where no seat takes them',
+    async (phase, feedback) => {
+      runViewStore.__testReset({ phase });
+      lifecycleStore.__testReset({ status: 'running' });
+      const effects = makeEffects();
+
+      composerLiveStore.setDraft(createDraftDocument('keep the parser'));
+      await createReviewInputHandler(makeInputMode('normal'), effects).handleInput(
+        plainUserMessage('keep the parser'),
+      );
+
+      expect(effects.enqueue).not.toHaveBeenCalled();
+      expect(composerDraftStore.get().request).toMatchObject({
+        kind: 'prepend',
+        value: 'keep the parser',
+      });
+      expect(feedbackStore.get()).toEqual(feedback);
+    },
+  );
+
   it('keeps the registered queue handler when no effects are supplied', async () => {
     runViewStore.__testReset({ phase: 'specifying' });
     lifecycleStore.__testReset({ status: 'running' });

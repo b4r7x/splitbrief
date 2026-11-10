@@ -8,11 +8,17 @@ import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import type { TieredApprovalResponse } from '../core/approval/types.js';
 import type { ReadinessReport } from '../core/readiness/types.js';
 import { createInitialState } from '../core/state/machine.js';
 import { loadOwnerWorkflowState } from '../core/state/resume-hydration.js';
 import type { PrepareExecutionInput } from '../engine/runners/prepare-execution/prepare-execution.js';
 import type { PreparationOutcome } from '../engine/runners/prepared-execution.js';
+import { closeApprovalPrompt, openApprovalPrompt } from '../stores/approval-prompt/prompt.js';
+import { composerLiveStore } from '../stores/ui/composer-live.js';
+import { feedbackStore } from '../stores/ui/feedback.js';
+import { draftDocumentText, inputHistoryStore } from '../stores/ui/input-history.js';
+import { PROMPT_TYPEAHEAD_GRACE_MS } from '../lib/terminal/typeahead-grace.js';
 import { overlayStore } from '../stores/ui/overlay.js';
 import { terminalSizeStore } from '../stores/ui/terminal-size.js';
 import { configStore } from '../stores/project/config.js';
@@ -407,6 +413,99 @@ describe('a resume checking its tools', () => {
     await tick(20);
     expect(routerStore.get()).toBe(exactRoute);
     expect(ui.lastFrame()).toBe(atRestFrame);
+    ui.unmount();
+  });
+});
+
+describe('a runner trust gate on the continuation page', () => {
+  const WORDS = 'keep the parser';
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    closeApprovalPrompt();
+  });
+
+  // The words wait in the run's composer under the page. The clock stops at the open and then
+  // moves past the grace, so the next key is one the user typed with the gate on the page.
+  async function openGateOverWords() {
+    // The run lives in this test's own project, so no draft that another test saved comes back.
+    const run = makeRunRecord({ ...AT_REST_RUN, ref: { ...AT_REST_RUN.ref, projectDir } });
+    routerStore.init({ screen: 'workflow', run, execution: { kind: 'at-rest' } });
+    const gateOpens = Promise.withResolvers<void>();
+    const answers: TieredApprovalResponse[] = [];
+    const sessionSelect: SessionSelectDeps = {
+      applying: () => false,
+      loadResumeState: () => ({ kind: 'loaded', state: RESUME_STATE }),
+      hydrateRun: async () => {},
+      cancelPendingApproval: closeApprovalPrompt,
+      prepareResume: async () => {
+        await gateOpens.promise;
+        answers.push(
+          await openApprovalPrompt({
+            tier: 'confirm',
+            actionClass: 'runner_trust',
+            actionDescription: 'Executable: "tools/review-bot"',
+            phase: 'implementing',
+          }),
+        );
+        return { kind: 'aborted' };
+      },
+    };
+    const deps: WorkflowScreenDeps = {
+      runWorkflow: async () => {
+        throw new Error('a run at rest must not start a workflow');
+      },
+      sessionSelect,
+    };
+    const ui = renderFeature(<WorkflowRoute deps={deps} />, { cols: 100, rows: 30 });
+    await vi.waitFor(() => expect(ui.lastFrame()).toContain('esc home'));
+    const selection = continueRunInPlace({
+      record: run,
+      state: RESUME_STATE,
+      deps: sessionSelect,
+    });
+    await vi.waitFor(() => expect(preparationStore.get().kind).toBe('checking'));
+    ui.stdin.write(WORDS);
+    await vi.waitFor(() => expect(composerLiveStore.get().text).toBe(WORDS));
+    const openedAt = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(openedAt);
+    gateOpens.resolve();
+    await vi.waitFor(() => expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Deny'));
+    clock.mockReturnValue(openedAt + PROMPT_TYPEAHEAD_GRACE_MS + 30);
+    await flushEffects();
+    return { ui, selection, answers };
+  }
+
+  it('denies on x and leaves the words in the composer as they were', async () => {
+    const { ui, selection, answers } = await openGateOverWords();
+    ui.stdin.write('x');
+    await vi.waitFor(() => expect(answers).toHaveLength(1));
+    await selection;
+    await flushEffects();
+    expect({
+      answers: answers.map((answer) => answer.decision),
+      text: composerLiveStore.get().text,
+    }).toEqual({ answers: ['deny'], text: WORDS });
+    ui.unmount();
+  });
+
+  it('confirms on ⏎, sends none of the words and shows no feedback', async () => {
+    const { ui, selection, answers } = await openGateOverWords();
+    ui.stdin.write(ENTER);
+    await vi.waitFor(() => expect(answers).toHaveLength(1));
+    await selection;
+    await flushEffects();
+    expect({
+      answers: answers.map((answer) => answer.decision),
+      text: composerLiveStore.get().text,
+      sent: inputHistoryStore.get().entries.map(draftDocumentText),
+      feedback: feedbackStore.get(),
+    }).toEqual({
+      answers: ['confirm'],
+      text: WORDS,
+      sent: [],
+      feedback: { message: null, isError: false },
+    });
     ui.unmount();
   });
 });

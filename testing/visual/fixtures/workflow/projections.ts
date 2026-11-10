@@ -2756,6 +2756,15 @@ const approvalConfirmProjection: WorkflowFixtureProjection = {
   },
 };
 
+// The same BUILD with no gate open yet: the fixture types a correction and then opens the gate.
+const approvalConfirmOverDraftProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-approval-confirm-over-draft'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: false,
+  events: approvalConfirmProjection.events,
+};
+
 const approvalConfirmSecretProjection: WorkflowFixtureProjection = {
   ...approvalConfirmProjection,
   scenarioId: scenarioId('workflow-approval-confirm-secret'),
@@ -9322,6 +9331,7 @@ const projections = [
   reviewProjection,
   reviewSubagentRowProjection,
   approvalConfirmProjection,
+  approvalConfirmOverDraftProjection,
   approvalConfirmSecretProjection,
   { ...approvalConfirmProjection, scenarioId: scenarioId('workflow-approval-confirm-short') },
   approvalConfirmLongPathProjection,

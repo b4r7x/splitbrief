@@ -36,11 +36,21 @@ interface ApprovalPromptProps {
   /** Without a card, or where the card cannot keep every line and key, the panel draws its own box. */
   card?: OverlayCard;
   review?: ReviewPanelProps | undefined;
+  /** False while the composer below keeps the keys: a gate that opened over a draft. */
+  focused?: boolean;
+  /** True in a phase where the composer below queues its plain words for a seat. */
+  queues?: boolean;
 }
 
 type PromptIdentity = ((response: TieredApprovalResponse) => void) | null;
 
-export function ApprovalPrompt({ clampedBoxRows, card, review }: ApprovalPromptProps) {
+export function ApprovalPrompt({
+  clampedBoxRows,
+  card,
+  review,
+  focused = true,
+  queues = false,
+}: ApprovalPromptProps) {
   const state = approvalPromptStore.use((s) => s);
   const graceUntilRef = useRef(0);
   const promptIdentityRef = useRef<PromptIdentity>(null);
@@ -49,13 +59,15 @@ export function ApprovalPrompt({ clampedBoxRows, card, review }: ApprovalPromptP
   const rows = terminalSizeStore.use((s) => s.rows);
   const hasOverlay = overlayStore.use((s) => s.active !== 'none');
 
-  const isActive = state.status === 'pending' && !hasOverlay;
+  const isActive = state.status === 'pending' && !hasOverlay && focused;
   const promptIdentity = state.status === 'pending' ? state.resolve : null;
 
   if (promptIdentity !== promptIdentityRef.current) {
     promptIdentityRef.current = promptIdentity;
     if (promptIdentity) {
-      graceUntilRef.current = Date.now() + PROMPT_TYPEAHEAD_GRACE_MS;
+      // A gate that opens without the keys sends a key in flight to the composer, and a later Tab
+      // that gives it the keys is no key in flight.
+      graceUntilRef.current = focused ? Date.now() + PROMPT_TYPEAHEAD_GRACE_MS : 0;
       setGeneration((value) => value + 1);
     }
   }
@@ -86,6 +98,8 @@ export function ApprovalPrompt({ clampedBoxRows, card, review }: ApprovalPromptP
       promptRows={getConfirmPanelRows(state.request, frame)}
       clampedBoxRows={clampedBoxRows}
       isActive={isActive}
+      focused={focused}
+      queues={queues}
       graceUntil={graceUntilRef.current}
     />
   );

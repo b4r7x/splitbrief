@@ -48,6 +48,8 @@ import { seatWaitParts } from '../../core/sessions/seat-wait-line.js';
 import { departureStore } from '../../stores/workflow/departure.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { preparationStore } from '../../stores/navigation/preparation.js';
+import { useSessionPreparationTakesPage } from '../session-preparation.js';
+import { isQueuePhase } from '../../core/phases.js';
 import { controlsStore } from '../../stores/ui/controls.js';
 import { inputHeightStore } from '../../stores/ui/input-height.js';
 import { reviewStore } from '../../stores/workflow/review.js';
@@ -291,6 +293,12 @@ export function WorkflowScreen({
     resultFocusKey,
     resultMenuOpen,
   );
+  const gateRequest =
+    model.approvalPromptState.status === 'pending' ? model.approvalPromptState.request : undefined;
+  const { focused: gateFocused, setMenu: setGateMenu } = usePanelFocus(
+    `${gateRequest?.taskId ?? ''}:${gateRequest?.actionDescription ?? ''}`,
+    model.promptPending,
+  );
   const override =
     ready !== undefined && ready.status.kind === 'ready-to-apply' ? ready.status.override : false;
   const accepted =
@@ -487,14 +495,12 @@ export function WorkflowScreen({
   // composer does not offer it for going home at the same time. Neither does a quit queued behind
   // Apply, which Escape no longer changes.
   const checking = preparationStore.use((state) => state.kind === 'checking');
-  // A check that stopped covers this screen with the problem panel. The composer under it keeps its
-  // draft but takes no keys, so the panel's own retry, back and scroll keys mean one thing each.
-  const covered = preparationStore.use(
-    (state) => state.kind === 'blocked' || state.kind === 'failed',
-  );
-  // An overlay, a pending prompt or the problem panel holds the keys. Then neither the composer nor
-  // a panel on this screen reads them.
-  const keysHeldAbove = model.hasOverlay || model.promptPending || covered;
+  // The preparation page covers this screen: a check that stopped, or a gate it opened. The composer
+  // under it keeps its draft but takes no keys, so each key on the page means one thing.
+  const covered = useSessionPreparationTakesPage();
+  // An overlay, a focused gate or the preparation page holds the keys. Then neither the composer
+  // nor a panel on this screen reads them.
+  const keysHeldAbove = model.hasOverlay || (model.promptPending && gateFocused) || covered;
   const questionPanelFocused = structuredQuestion && questionState.focus !== 'composer';
   // The panel that holds the keys lets go of them for a command requested into the composer, typed
   // as a slash or picked in the palette. The stop sheet covers the panel below it, so closing the
@@ -513,7 +519,7 @@ export function WorkflowScreen({
         ? { focused: true, release: () => questionPromptStore.setFocus('composer') }
         : undefined;
   const takeKeys =
-    covered || model.promptPending
+    covered || (model.promptPending && gateFocused)
       ? undefined
       : stopMenuOpen
         ? () => {
@@ -582,11 +588,13 @@ export function WorkflowScreen({
             readClipboardImage={readClipboardImage}
             listProjectFiles={listProjectFiles}
             onEmptySubmit={
-              resultMenuOpen
-                ? () => setResultMenu(true)
-                : planCardWaits
-                  ? () => setPlanCardFocused(true)
-                  : model.onEmptySubmit
+              model.promptPending
+                ? () => setGateMenu(true)
+                : resultMenuOpen
+                  ? () => setResultMenu(true)
+                  : planCardWaits
+                    ? () => setPlanCardFocused(true)
+                    : model.onEmptySubmit
             }
             emptyAnswerNotice={recoveryPromptOpen ? RECOVERY_EMPTY_ENTER_NOTICE : undefined}
             onRuntimeCommand={model.handleRuntimeCommand}
@@ -617,23 +625,30 @@ export function WorkflowScreen({
             keepPlaceholderWhileFocused={
               recoveryPromptOpen || model.atRestRecord !== undefined || model.applying
             }
-            {...(recoveryPromptOpen
+            {...(model.promptPending
               ? {
-                  menuFocused: recoveryMenuFocused,
+                  menuFocused: gateFocused,
                   onToggleMenu: () => {
-                    setRecoveryMenu(!recoveryMenuFocused);
+                    setGateMenu(true);
                   },
                 }
-              : resultMenuOpen
+              : recoveryPromptOpen
                 ? {
-                    menuFocused: resultMenuFocused,
+                    menuFocused: recoveryMenuFocused,
                     onToggleMenu: () => {
-                      setResultMenu(!resultMenuFocused);
+                      setRecoveryMenu(!recoveryMenuFocused);
                     },
                   }
-                : planCardWaits
-                  ? { onToggleMenu: () => setPlanCardFocused(true) }
-                  : {})}
+                : resultMenuOpen
+                  ? {
+                      menuFocused: resultMenuFocused,
+                      onToggleMenu: () => {
+                        setResultMenu(!resultMenuFocused);
+                      },
+                    }
+                  : planCardWaits
+                    ? { onToggleMenu: () => setPlanCardFocused(true) }
+                    : {})}
             panelHoldsKeys={takeKeys !== undefined}
             onReviewBoundaryNavigate={handleReviewBoundaryNavigate}
             {...(byline !== undefined && { byline })}
@@ -672,6 +687,8 @@ export function WorkflowScreen({
         {!stopMenuOpen && (model.promptPending || reviewArtifact !== null) && (
           <ApprovalPrompt
             clampedBoxRows={promptBoxRows}
+            focused={gateFocused}
+            queues={isQueuePhase(model.phase)}
             {...(reviewArtifact === null
               ? {}
               : {

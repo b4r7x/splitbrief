@@ -14,6 +14,10 @@ import {
 } from '../../../src/features/workflow/prompt-rows/approval.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
 import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
+import type { ReviewInputEffects } from '../../../src/features/workflow/review-parser.js';
+import { composerLiveStore } from '../../../src/stores/ui/composer-live.js';
+import { draftDocumentText, inputHistoryStore } from '../../../src/stores/ui/input-history.js';
+import type { Phase } from '../../../src/core/schemas/enums.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
 import { glyph } from '../../../src/lib/glyphs.js';
 import { mountWorkflowScreen } from '#testing/helpers/workflow-screen.js';
@@ -172,6 +176,132 @@ describe('WorkflowScreen key ownership', () => {
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(`${glyph('prompt')} j`);
 
     ui.unmount();
+  });
+
+  describe('a gate that opens while BUILD runs', () => {
+    const DRAFT = 'also fix the typo';
+    const enqueue = vi.fn<ReviewInputEffects['enqueue']>();
+
+    // The clock stops at the open and then moves past the grace, so every key after that is one
+    // the user typed with the gate on screen.
+    async function openGate(
+      draft: string,
+      phase: Phase = 'implementing',
+      request = confirmRequest(),
+    ) {
+      enqueue.mockReset();
+      enqueue.mockResolvedValue({ status: 'accepted', messageId: 'queued-1' });
+      const ui = mountWorkflowScreen({
+        deps: { runWorkflow, reviewInput: { openExternalEditor: async () => {}, enqueue } },
+        projectDir,
+      });
+      await vi.waitFor(() => expect(runWorkflow).toHaveBeenCalled());
+      runViewStore.__testReset({ phase });
+      lifecycleStore.__testReset({ status: 'running' });
+      await flushEffects();
+      if (draft !== '') {
+        ui.stdin.write(draft);
+        await vi.waitFor(() => expect(composerLiveStore.get().text).toBe(draft));
+        await flushEffects();
+      }
+      const openedAt = Date.now();
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(openedAt);
+      const framesBefore = ui.frames.length;
+      let settled: TieredApprovalResponse | undefined;
+      void openApprovalPrompt(request).then((response) => {
+        settled = response;
+      });
+      await vi.waitFor(() => expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Deny'));
+      const firstFrame =
+        ui.frames
+          .slice(framesBefore)
+          .map((frame) => stripAnsiStyles(frame))
+          .find((frame) => frame.includes('Deny')) ?? '';
+      clock.mockReturnValue(openedAt + PAST_GRACE);
+      await flushEffects();
+      return {
+        ui,
+        // Inside the panel border: the ASCII live bar is the same `|` as the border.
+        firstGateRows: firstFrame
+          .split('\n')
+          .filter((line) => /Confirm|Deny/.test(line))
+          .map((line) => line.trim().slice(1, -1)),
+        settled: () => settled,
+      };
+    }
+
+    it('over a draft paints its first frame with no ▌ on a gate row', async () => {
+      const gate = await openGate(DRAFT);
+      expect(gate.firstGateRows).toHaveLength(3);
+      expect(gate.firstGateRows.filter((row) => row.includes(glyph('liveBar')))).toEqual([]);
+      gate.ui.unmount();
+    });
+
+    it.each(['y', 'n', 'x', 'r'])(
+      'over a draft keeps %s in the draft after the grace and keeps waiting',
+      async (letter) => {
+        const gate = await openGate(DRAFT);
+        gate.ui.stdin.write(letter);
+        await vi.waitFor(() =>
+          expect({ text: composerLiveStore.get().text, settled: gate.settled() }).toEqual({
+            text: `${DRAFT}${letter}`,
+            settled: undefined,
+          }),
+        );
+        gate.ui.unmount();
+      },
+    );
+
+    it('over a draft queues the draft on ⏎ after the grace and keeps waiting', async () => {
+      const gate = await openGate(DRAFT);
+      gate.ui.stdin.write('\r');
+      await vi.waitFor(() =>
+        expect({
+          sent: enqueue.mock.calls.map(([message]) => message.displayText),
+          settled: gate.settled(),
+        }).toEqual({ sent: [DRAFT], settled: undefined }),
+      );
+      gate.ui.unmount();
+    });
+
+    it.each(['complete', 'reviewing-plan'] as const)(
+      'over a draft in %s, where no seat takes queued words, keeps the draft on ⏎ and promises no queue',
+      async (phase) => {
+        const words = 'keep the parser';
+        const gate = await openGate(words, phase, {
+          tier: 'confirm',
+          actionClass: 'runner_trust',
+          actionDescription: 'Executable: "tools/review-bot"\nArguments: "--diff"',
+          phase,
+        });
+        const legend = stripAnsiStyles(gate.ui.lastFrame() ?? '')
+          .split('\n')
+          .filter((line) => line.includes('tab back to the actions'))
+          .map((line) => line.trim().slice(1, -1).trim());
+        expect(legend).toEqual(['tab back to the actions']);
+        gate.ui.stdin.write('\r');
+        await vi.waitFor(() =>
+          expect(inputHistoryStore.get().entries.map(draftDocumentText)).toContain(words),
+        );
+        await flushEffects();
+        await vi.waitFor(() =>
+          expect({ text: composerLiveStore.get().text, settled: gate.settled() }).toEqual({
+            text: words,
+            settled: undefined,
+          }),
+        );
+        expect(enqueue).not.toHaveBeenCalled();
+        gate.ui.unmount();
+      },
+    );
+
+    it('over an empty composer confirms on ⏎ after the grace', async () => {
+      const gate = await openGate('');
+      gate.ui.stdin.write('\r');
+      await vi.waitFor(() => expect(gate.settled()).toEqual(CONFIRMED));
+      expect(enqueue).not.toHaveBeenCalled();
+      gate.ui.unmount();
+    });
   });
 
   describe('a click on the confirm panel', () => {

@@ -34,6 +34,9 @@ import type { TieredApprovalRequest } from '../../../../core/approval/types.js';
 import { navigateIndex } from '../../../../utils/indexing.js';
 import { fitKeyLegend } from '../../../../core/key-legend.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
+import { isCommandDraft } from '../../../../core/composer/submission.js';
+import { composerLiveStore } from '../../../../stores/ui/composer-live.js';
+import { RESULT_MENU_UNFOCUSED_LEGEND } from '../../result/options.js';
 import { ELLIPSIS } from '../../../../utils/display-text.js';
 import { countNoun } from '../../../../utils/pluralize.js';
 
@@ -56,6 +59,10 @@ interface ConfirmApprovalPromptProps {
   promptRows: number;
   clampedBoxRows?: number | undefined;
   isActive: boolean;
+  /** False while the composer keeps the keys: the rows show no cursor and no keys. */
+  focused: boolean;
+  /** True in a phase where the composer's plain words queue for a seat (`isQueuePhase`). */
+  queues: boolean;
   graceUntil: number;
 }
 
@@ -65,6 +72,8 @@ export function ConfirmApprovalPrompt({
   promptRows,
   clampedBoxRows,
   isActive,
+  focused,
+  queues,
   graceUntil,
 }: ConfirmApprovalPromptProps) {
   const [reasonInput, setReasonInput] = useState('');
@@ -95,6 +104,14 @@ export function ConfirmApprovalPrompt({
     fit.subject.length === 0
       ? formatApprovalActionDescription(request.actionDescription).split('\n')[0]
       : undefined;
+  // Without the keys the panel says what ⏎ does with the draft below and how to reach its rows.
+  // Plain words that no seat takes in this phase stay in the composer, so ⏎ promises nothing.
+  const commandDraft = composerLiveStore.use((draft) => isCommandDraft(draft.document));
+  const composerEmpty = composerLiveStore.use((draft) => draft.empty);
+  const unfocusedLegend =
+    composerEmpty || (!commandDraft && !queues)
+      ? RESULT_MENU_UNFOCUSED_LEGEND
+      : `${commandDraft ? '⏎ runs the command' : '⏎ queues the typed correction'}${SOFT_SEP}${RESULT_MENU_UNFOCUSED_LEGEND}`;
 
   const moveTo = (index: number): void => {
     selectedIndexRef.current = index;
@@ -245,12 +262,14 @@ export function ConfirmApprovalPrompt({
               })}
               renderItem={(option, ctx) => (
                 <Text wrap="truncate-end">
-                  <Text color={ctx.isCursor ? t.accent : t.textDim}>
-                    {listRowLead(ctx.isCursor ? 'active' : 'default')}
+                  <Text color={ctx.isCursor && focused ? t.accent : t.textDim}>
+                    {listRowLead(ctx.isCursor && focused ? 'active' : 'default')}
                   </Text>
-                  <Text color={t.textDim}>{approvalOptionKeyCell(option, keyWidth)}</Text>
+                  <Text color={t.textDim}>
+                    {focused ? approvalOptionKeyCell(option, keyWidth) : ''.padEnd(keyWidth)}
+                  </Text>
                   {'   '}
-                  <Text color={ctx.isCursor ? t.accent : t.text}>
+                  <Text color={ctx.isCursor && focused ? t.accent : t.text}>
                     {approvalOptionLabelText({ option, keyWidth, width: frame.width })}
                   </Text>
                   {rowAction !== undefined && (
@@ -265,7 +284,9 @@ export function ConfirmApprovalPrompt({
             (nudged ? (
               <Text color={t.warning}>{fitKeyLegend(CONFIRM_NUDGE, frame.width)}</Text>
             ) : (
-              <Text color={t.textDim}>{fitKeyLegend(CHOOSE_HINTS, frame.width)}</Text>
+              <Text color={t.textDim}>
+                {fitKeyLegend(focused ? CHOOSE_HINTS : unfocusedLegend, frame.width)}
+              </Text>
             ))}
         </>
       ) : (

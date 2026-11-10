@@ -62,7 +62,7 @@ Hooks whose sole consumer is inside one feature folder. Example from `features/w
 | `use-review-content.ts` | Async file read via `AbortController`-cancelled `fs.readFile` + line-count sync to `reviewStore`. |
 | `use-mouse-scroll.ts` | Workflow-owned mouse-wheel handlers for conversation/review scroll. App-level dispatch decides when workflow may receive wheel events. |
 | `use-mouse-pointer.ts` | Workflow-owned hit testing for rail, brief, and conversation rows. App-level dispatch owns overlays, non-workflow screens, and prompt gating. |
-| `use-panel-focus.ts` | Whether the result menu, the recovery menu or the plan card holds the keys. A panel takes them when it opens, unless the composer holds a draft. `open` says that the panel exists, painted or not, so a plan card below an overlay keeps its focus. |
+| `use-panel-focus.ts` | Whether the result menu, the recovery menu, the plan card or the protected-write prompt holds the keys. A panel takes them when it opens, unless the composer holds a draft. `open` says that the panel exists, painted or not, so a plan card below an overlay keeps its focus. |
 | `use-rail-cells.ts` | The cells the header rail paints, so the header and the screen fit a seat line to the same room. |
 | `use-halt-ran-on.ts` | `useHaltRanOn()` — the seat the halted call ran on, read from the run's seat record once per halt, so the header names a reset only beside that seat. |
 | `use-keys.ts` | Workflow-only keyboard: conversation/review scroll and diff/activity expansion. Mounted only when `screen === 'workflow'`. |

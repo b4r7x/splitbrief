@@ -60,9 +60,10 @@ export const DENY_HINT: KeyHint = { key: 'esc', verb: 'deny' };
 export const CONFIRM_HINT: KeyHint = { key: '⏎', verb: 'confirm' };
 
 // One selection grammar for both gate panels: the rows move under `↑↓` and settle on `⏎`. A panel
-// that holds the keyboard keeps its letters live as accelerators; the plan card leaves the keyboard
-// to the composer, where a letter is text, so its rows carry none. Only one gate panel is ever on
-// screen, so this legend is the single place either of them teaches the keys.
+// that holds the keyboard keeps its letters live as accelerators; the plan card, and a gate that
+// opens over a draft, leave the keyboard to the composer, where a letter is text, so their rows
+// carry none. Only one gate panel is ever on screen, so this legend is the single place either of
+// them teaches the keys.
 export const SELECT_HINT: KeyHint = { key: '↑↓', verb: 'select' };
 export const CHOOSE_HINTS = formatKeyHints([SELECT_HINT, { key: '⏎', verb: 'confirm' }, DENY_HINT]);
 export const CONFIRM_REASON_HINTS = formatKeyHints([CONFIRM_HINT, DENY_HINT]);

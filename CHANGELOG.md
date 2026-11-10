@@ -646,6 +646,7 @@
 - `/end` now closes the run over a waiting plan card and while a brief's checks run.
 - `/resume` while a planner, build or review call runs no longer stops that call. It now says `Nothing to resume: the run has not stopped.`, and the call goes on.
 - While a stop is in progress, the notice after `⏎` no longer offers `ctrl+⏎`. That key waits until the run has stopped.
+- A confirmation prompt that opens on the run screen while you type no longer takes your keys. Your words stay in the composer, and `⏎` queues them while the prompt waits. Tab, or `⏎` on an empty composer, moves to the prompt. With an empty composer, the prompt takes the keys as before.
 
 ## [0.1.0] - 2026-08-07
 

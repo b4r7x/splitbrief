@@ -53,9 +53,11 @@ import {
   trackActiveApply,
 } from '../../../../src/engine/orchestrator/session-lifecycle/shutdown.js';
 import { overlayStore } from '../../../../src/stores/ui/overlay.js';
+import { openApprovalPrompt } from '../../../../src/stores/approval-prompt/prompt.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../../src/lib/terminal/typeahead-grace.js';
 import {
   MOVED_PROJECT_MESSAGE,
+  WORKFLOW_FIXTURE_TASK_ID,
   WORKFLOW_FIXTURE_TEXT,
   workflowFixtureProjections,
   type FixtureStopState,
@@ -111,6 +113,22 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
   }
   if (projection.scenarioId === 'workflow-plan-card-request-empty') {
     return () => ({ ...base(), afterMount: () => reviewKeysStore.requestComment() });
+  }
+  // The words go through the composer first, so the gate opens over a real draft.
+  if (projection.scenarioId === 'workflow-approval-confirm-over-draft') {
+    return () => ({
+      ...base(),
+      afterMount: async (write) => {
+        await write.press(TYPED_WORDS);
+        void openApprovalPrompt({
+          tier: 'confirm',
+          actionClass: 'destructive',
+          actionDescription: '.splitbrief/state.json',
+          taskId: WORKFLOW_FIXTURE_TASK_ID,
+          phase: 'implementing',
+        });
+      },
+    });
   }
   // The draft was typed before the plan arrived, so the composer restores it when the screen mounts
   // and the card opens over it.
@@ -1038,6 +1056,10 @@ const checkpointPredicates = [
   // its own document too — otherwise the frame captures a gate over an empty box.
   [checkpointId('selection-copy'), includesAll('End run', 'Edit plan.json')],
   [checkpointId('approval-confirm'), includesAll('Confirm with a reason')],
+  [
+    checkpointId('approval-confirm-over-draft'),
+    includesAll(TYPED_WORDS, 'queues the typed correction'),
+  ],
   [checkpointId('approval-confirm-secret'), includesAll('Confirm with a reason')],
   [checkpointId('approval-confirm-short'), includesAll('Confirm')],
   [checkpointId('approval-confirm-long-path'), includesAll('src/features/workflow')],

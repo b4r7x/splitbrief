@@ -14,7 +14,7 @@ import {
   viewerRestoresScreen,
   type ViewerArgv,
 } from './editor-command.js';
-import { isImplementerPhase, isLivePhase } from '../../core/phases.js';
+import { isQueuePhase } from '../../core/phases.js';
 import { messageSeat } from '../../core/queue-state.js';
 import { operationsStore, selectScheduledReview } from '../../stores/workflow/operations/state.js';
 import { selectBuildMessageBrief } from '../../core/run-view/briefs.js';
@@ -287,7 +287,7 @@ export function createReviewInputHandler(
         return;
       }
       const { phase, briefs, reviewNone } = runViewStore.get();
-      if (isLivePhase(phase) || isImplementerPhase(phase)) {
+      if (isQueuePhase(phase)) {
         const trimmed = text.trim();
         if (trimmed) {
           const document = composerLiveStore.get().document;
@@ -315,11 +315,16 @@ export function createReviewInputHandler(
             );
           }
         }
-      } else if (
-        text.trim() &&
-        (phase === 'reviewing-spec' || phase === 'reviewing-plan' || phase === 'reviewing-briefs')
-      ) {
-        feedbackStore.setError(reviewOpeningPromptMessage());
+      } else if (text.trim()) {
+        // No seat takes queued words in this phase, so the words go back to the composer.
+        composerDraftStore.requestPrepend(composerLiveStore.get().document);
+        if (
+          phase === 'reviewing-spec' ||
+          phase === 'reviewing-plan' ||
+          phase === 'reviewing-briefs'
+        ) {
+          feedbackStore.setError(reviewOpeningPromptMessage());
+        }
       }
       return;
     }

@@ -936,11 +936,12 @@ Captured at 80x24 on the workflow screen, in a project with two skills. Their `S
 
 **Rejection cases:**
 - `x`, `n`, `⏎` on the highlighted `x` row, or Escape → action denied (`user_cancelled`).
-- Keystrokes buffered before the prompt appeared are discarded for 150 ms, so typeahead cannot confirm a write.
+- When the gate opens with the keys, keystrokes buffered before it appeared are discarded for 150 ms, so typeahead cannot confirm a write.
 
 **Notes:**
 - A confirmation holds for that path for the rest of the run; it is recorded in the run's `evidence.json`, not in a grants file.
 - There are no sticky grants and no tier overrides.
+- A write gate that opens while you type in the composer leaves the keys there: `⏎` queues your text and the gate keeps waiting. Press Tab, or `⏎` on an empty composer, to move to the gate.
 
 **See also:** [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#protected-path-confirmation), recipe 9.
 

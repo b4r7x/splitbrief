@@ -62,6 +62,11 @@ export function isImplementerPhase(phase: Phase): boolean {
   return IMPLEMENTER_PHASES.has(phase);
 }
 
+/** The phases where words sent from the composer queue for a seat: a live call, or a brief in BUILD. */
+export function isQueuePhase(phase: Phase): boolean {
+  return isLivePhase(phase) || isImplementerPhase(phase);
+}
+
 // `idle` is the pre-start phase, not an end: a run resets to it and can start over.
 export function isTerminalPhase(phase: Phase): boolean {
   return phase === 'complete';
