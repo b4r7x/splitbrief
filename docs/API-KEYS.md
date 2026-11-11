@@ -6,8 +6,6 @@ An explicit session or api-key method requires current invocation-enforcement ev
 
 The current enforcement matrix is empty. No admitted installed CLI version has a proven selectable authentication method, and an explicit unproven choice is refused before dispatch. Provider/model choice does not prove subscription or API billing. Configure authentication in the host CLI, omit `authChannel`, and inspect its own account state. SPLITBRIEF never logs in or switches that account.
 
-For local API connections, Settings → Crew opens the seat picker and connection editor. Set the address and exact model there, and use Retry after starting the server externally. The dedicated credential control accepts an environment reference such as `env:YOUR_VAR`, not a raw token. Export the value in your shell; never paste it into the composer, screenshots or versioned files. Known local endpoints retain their loopback policy; a connection editor does not grant trust to arbitrary remote origins.
-
 ## Recommended: environment variables
 
 Set your API key as an environment variable. This keeps it out of project files and version control.
@@ -24,7 +22,7 @@ Environment variables are not committed to git, are not stored on disk in projec
 
 ### Admitted credential reference
 
-Every credential environment variable SPLITBRIEF reads. The first four describe credentials understood by host CLIs, not API providers or proven method switches. An environment variable alone does not establish the authentication or billing method actually used.
+Every credential environment variable SPLITBRIEF reads. The first three describe credentials understood by host CLIs, not API providers or proven method switches. An environment variable alone does not establish the authentication or billing method actually used.
 
 The `api-key` channel rows describe what that channel stages. Selecting it explicitly (`auth_channel: api-key`) is refused at readiness, because no CLI tool has an enforceable method ([AUTH-METHOD-MATRIX.md](./AUTH-METHOD-MATRIX.md)); the host CLI's own login decides.
 
@@ -33,12 +31,9 @@ The `api-key` channel rows describe what that channel stages. Selecting it expli
 | Claude Code CLI (`api-key` channel) | `ANTHROPIC_API_KEY` | — | Passed to the `claude` subprocess; nothing else in the environment is copied |
 | Codex CLI (`api-key` channel) | `OPENAI_API_KEY` | — | Passed to the `codex` subprocess |
 | Cursor Agent CLI (`api-key` channel) | `CURSOR_API_KEY` | — | Passed to the `cursor-agent` subprocess |
-| Local Ollama | `OLLAMA_LOCAL_API_KEY` | — | Optional only for a secured loopback daemon; configure `apiKey: env:OLLAMA_LOCAL_API_KEY`. `OLLAMA_API_KEY` is never accepted or sent locally. |
-| LM Studio | Not inferred | — | Local provider; no key required. A daemon you put behind one takes it inline or as `apiKey: env:YOUR_VAR` |
-| llama.cpp | Not inferred | — | Local provider; no key required. A server you put behind one takes it inline or as `apiKey: env:YOUR_VAR` |
 | Custom remote provider | Not inferred | — | Carries an inline `apiKey`, accepted only when you accept **normalized-origin trust** for the declared `apiBase` |
 
-A provider descriptor may declare a `credentialPrefix`; a mismatch fails closed before network access (`provider-credential-prefix-mismatch`), and offering selection never follows from the prefix alone. None of the three admitted providers (Ollama, LM Studio and llama.cpp) declares one. All three connect to local servers and accept an optional credential for a secured daemon.
+A provider descriptor may declare a `credentialPrefix`; a mismatch fails closed before network access (`provider-credential-prefix-mismatch`), and offering selection never follows from the prefix alone.
 
 ## Alternative: config file
 
@@ -52,10 +47,10 @@ implementer:
   offering: payg
   apiBase: https://api.my-endpoint.example/v1
   apiKey: your-key
-  model: qwen2.5-coder-7b
+  model: your-implementer-model
 ```
 
-The key must be inline. An `env:` reference on a custom provider is rejected at load (`API key exfiltration risk`) so a key you exported for one host is never sent to another; keep it inline only when you accept **normalized-origin trust** for that `apiBase`. `apiKey: env:VAR` is accepted only for a catalog provider: local `ollama` takes exactly one reference, `apiKey: env:OLLAMA_LOCAL_API_KEY`, and `lm-studio` and `llama-cpp` take any variable you name.
+The key must be inline. An `env:` reference on a custom provider is rejected at load (`API key exfiltration risk`) so a key you exported for one host is never sent to another; keep it inline only when you accept **normalized-origin trust** for that `apiBase`.
 
 Never paste real or placeholder secrets (`sk-ant-…`, `sk-or-…`, `gsk_…`) into committed YAML examples.
 
@@ -69,7 +64,7 @@ OpenCode and Kilo Code call a `provider/model` route through that provider's cre
 
 | Route word | Meaning |
 |---|---|
-| `signed in · <source>` | The tool's credential listing names the provider: `oauth`, `api key`, `stored credential` or the environment variable, such as `$OLLAMA_API_KEY`. |
+| `signed in · <source>` | The tool's credential listing names the provider: `oauth`, `api key`, `stored credential` or the environment variable, such as `$OPENROUTER_API_KEY`. |
 | `available` | No credential of the tool names the provider, and its model listing serves a model of that provider, for example a provider set up in the tool's own config. This holds also when the tool holds no credential at all. |
 | `needs sign-in` | The tool has no credential for the provider, and its model listing serves no model of that provider. The tool's own gateway (`opencode/…`, `kilo/…`) always needs its credential. When the tool holds no credential at all, every route that its model listing does not serve reads `needs sign-in`. The tool reads **Auth required** when its listing serves no provider besides its gateway, or was not read. The line under the lists names the sign-in command, for example `opencode auth login opencode-go`, or `signed in to no providers yet: opencode auth login opencode-go` when the tool holds no credential. |
 | `sign-in unknown` | The tool's credential listing could not be read, or the tool has no credential for the provider and its model listing was not read. The line under the lists reads `ctrl+r to read the model list` in the second case. Press `ctrl+r` to read both again. |
@@ -88,7 +83,7 @@ Custom OpenAI-compatible providers must declare both `apiBase` and explicit `ser
 - Cross-origin redirects are rejected: the request fails with `provider-endpoint-invalid` instead of following a redirect to another origin.
 - Arbitrary env-key forwarding to unknown hosts is unsafe and unsupported for catalog providers.
 
-See [CONFIGURATION.md](./CONFIGURATION.md) §18 for admitted provider endpoints and the generic remote example.
+See [CONFIGURATION.md](./CONFIGURATION.md#generic-remote-openai-compatible-endpoint) for the generic remote example.
 
 ## Security measures
 

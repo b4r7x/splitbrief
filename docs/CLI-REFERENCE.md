@@ -99,7 +99,7 @@ splitbrief start [feature] [files...] \
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--planner <tool>` | string | from config | Planner tool: `claude-code`, `codex`, `opencode`, `kilo-code`, `cursor`, `command-code`, `antigravity`, `ollama`, `lm-studio`, `llama-cpp`, `shell`, `agent`. `splitbrief start --help` prints the same list. A CLI tool id here always selects the CLI; an API provider that reuses a CLI tool's id is configured in `.splitbrief/config.yaml` (`kind: api`) and cannot be selected by this flag. |
+| `--planner <tool>` | string | from config | Planner tool: `claude-code`, `codex`, `opencode`, `kilo-code`, `cursor`, `command-code`, `antigravity`, `shell`, `agent`. `splitbrief start --help` prints the same list. A CLI tool id here always selects the CLI; an API provider that reuses a CLI tool's id is configured in `.splitbrief/config.yaml` (`kind: api`) and cannot be selected by this flag. |
 | `--planner-model <model>` | string | from config | Planner model (CLI and API planners). |
 | `--planner-command <cmd>` | string | from config | Custom planner command (when `--planner=shell`). |
 | `--planner-api-base <url>` | string | from config | Planner API base URL. Applies only to `api` runners; ignored (with a stderr warning) for other kinds. |
@@ -108,7 +108,7 @@ splitbrief start [feature] [files...] \
 | `--planner-output-format <format>` | enum | from config | Planner output format: `stream-json`, `jsonl`, `text`, or `opencode`. Applies to `cli`, `shell`, and `agent` runners. |
 | `--planner-context-length <tokens>` | number | from config | Planner context length in tokens. Consumed only by the `api` planner kind, where it sizes the request's `max_tokens` output budget; other kinds delegate the budget to their backend and ignore it. |
 | `--planner-effort <level>` | enum | — | Planner effort hint: `off`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra`. The seat's tool accepts a subset and reports what it rejects; dropped with a warning on seats that cannot send it. |
-| `--implementer <provider>` | string | from config | Implementer provider: `claude-code`, `codex`, `opencode`, `kilo-code`, `cursor`, `command-code`, `antigravity`, `ollama`, `lm-studio`, `llama-cpp`, `shell`, `agent`. `splitbrief start --help` prints the same list. A CLI tool id here always selects the CLI; an API provider that reuses a CLI tool's id is configured in `.splitbrief/config.yaml` (`kind: api`) and cannot be selected by this flag. |
+| `--implementer <provider>` | string | from config | Implementer provider: `claude-code`, `codex`, `opencode`, `kilo-code`, `cursor`, `command-code`, `antigravity`, `shell`, `agent`. `splitbrief start --help` prints the same list. A CLI tool id here always selects the CLI; an API provider that reuses a CLI tool's id is configured in `.splitbrief/config.yaml` (`kind: api`) and cannot be selected by this flag. |
 | `--implementer-model <model>` | string | from config | Implementer model identifier. |
 | `--implementer-command <cmd>` | string | from config | Custom implementer command (when `--implementer=shell`). |
 | `--implementer-api-base <url>` | string | from config | Implementer API base URL. Applies only to `api` runners; ignored (with a stderr warning) for other kinds. |
@@ -907,7 +907,7 @@ There are no workflow modes. Every run plans in one session: one typed planner c
 | `kind` | What it is | Examples |
 |---|---|---|
 | `cli` | Known tool subprocess | `claude-code`, `codex`, `opencode`, `kilo-code`, `cursor`, `command-code`, `antigravity` (binary `agy`) |
-| `api` | OpenAI-compatible HTTP endpoint | `ollama`, `lm-studio`, `llama-cpp` |
+| `api` | OpenAI-compatible HTTP endpoint | A custom endpoint in `.splitbrief/config.yaml` |
 | `shell` | Arbitrary command (stdin → stdout), no shell/network sandbox | Custom scripts via `--planner-command` / `--implementer-command` |
 | `agent` | Subprocess that writes files directly, no stdout extraction or shell/network sandbox | Custom file-writing tools |
 

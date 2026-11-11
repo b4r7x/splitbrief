@@ -282,6 +282,34 @@ console.log(${JSON.stringify(JSON.stringify({ version: 1, files: [{ path: 'src/g
     },
   );
 
+  it('a running Ollama does not take the BUILD seat on a first run', async () => {
+    const { target, bin, calls, home } = freshProject();
+    readyClaude(bin, calls, home);
+    readyCodex(bin, calls, home);
+    const requests = join(target.tmpDir, 'local-server.jsonl');
+    writeFileSync(
+      join(target.tmpDir, 'offline.mjs'),
+      `import { appendFileSync } from 'node:fs';
+globalThis.fetch = async input => {
+  const url = new URL(String(input instanceof Request ? input.url : input));
+  if (['localhost', '127.0.0.1'].includes(url.hostname) && ['11434', '1234', '8080'].includes(url.port)) {
+    appendFileSync(${JSON.stringify(requests)}, url.href + '\\n');
+    return Response.json({ models: [{ name: 'qwen3-coder:30b' }], data: [{ id: 'qwen3-coder:30b' }] });
+  }
+  throw new Error('Network disabled in no-config E2E');
+};\n`,
+    );
+    const run = await cli(target, ['start', 'Add a greeting helper'], { timeoutMs: 90_000 });
+    expect(existsSync(requests)).toBe(false);
+    expect(loadConfig(target.projectDir).config.implementer).toEqual({
+      kind: 'cli',
+      tool: 'claude-code',
+    });
+    expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
+    expect(readFileSync(calls, 'utf8')).toContain('"seat":"build"');
+    expect(run.stderr).toContain('Saved a ready crew to .splitbrief/config.yaml.');
+  });
+
   it.each([
     { source: 'flag', args: ['--implementer-context-length', '200000'] },
     { source: 'env', args: [] },
@@ -367,7 +395,7 @@ console.log(${JSON.stringify(JSON.stringify({ version: 1, files: [{ path: 'src/g
   });
 
   it.each([true, false])(
-    'checks the API endpoint and model before saving, explicit tool=%s',
+    'uses the endpoint of --implementer-api-base only with an explicit API tool, explicit tool=%s',
     async (explicitTool) => {
       const { target, bin, calls, home } = freshProject();
       readyClaude(bin, calls, home);
@@ -393,13 +421,27 @@ globalThis.fetch = async input => {
         'http://127.0.0.1:12434/v1',
         'Add a greeting helper',
       ]);
-      expect(run.exitCode).toBe(1);
-      expect(run.stderr).toContain('BUILD is unavailable');
-      expect(existsSync(configPath(target.projectDir))).toBe(false);
-      expect(existsSync(probes)).toBe(true);
-      expect(readFileSync(probes, 'utf8')).toContain('http://127.0.0.1:12434/');
-      expect(existsSync(calls)).toBe(false);
-      expect(readActive(target.projectDir)).toBeNull();
+      if (explicitTool) {
+        expect(run.exitCode).toBe(1);
+        expect(run.stderr).toContain('BUILD is unavailable');
+        expect(existsSync(configPath(target.projectDir))).toBe(false);
+        expect(existsSync(probes)).toBe(true);
+        expect(readFileSync(probes, 'utf8')).toContain('http://127.0.0.1:12434/');
+        expect(existsSync(calls)).toBe(false);
+        expect(readActive(target.projectDir)).toBeNull();
+      } else {
+        // With no tool, the flags change the model of the default Claude Code BUILD seat.
+        expect(run.stderr).toContain(
+          "--implementer-api-base is ignored: the implementer 'cli' runner does not use it.",
+        );
+        expect(existsSync(probes)).toBe(false);
+        expect(loadConfig(target.projectDir).config.implementer).toEqual({
+          kind: 'cli',
+          tool: 'claude-code',
+        });
+        expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
+        expect(readFileSync(calls, 'utf8')).toContain('"--model","selected-model"');
+      }
     },
   );
 
@@ -409,6 +451,7 @@ globalThis.fetch = async input => {
     resetAllStores();
     configStore.load(target.projectDir, {
       implementer: {
+        tool: 'ollama',
         model: 'custom-coder',
         apiBase: 'http://127.0.0.1:12434/v1',
       },
@@ -517,7 +560,14 @@ globalThis.fetch = async (input, init) => {
           'start',
           ...(custom
             ? []
-            : ['--implementer-api-base', apiBase, '--implementer-model', 'custom-coder']),
+            : [
+                '--implementer',
+                'ollama',
+                '--implementer-api-base',
+                apiBase,
+                '--implementer-model',
+                'custom-coder',
+              ]),
           'Add a greeting helper',
         ],
         { json: true, timeoutMs: 90_000 },

@@ -7,6 +7,7 @@ import {
   applyPlannerEffort,
   applyReviewerEffort,
   applyRunnerOverrides,
+  type AppliedOverrides,
 } from './runner.js';
 import type { CLIOverrides } from './schema.js';
 
@@ -23,25 +24,32 @@ function parseOverrideOrThrow<T>(
   return parsed.data;
 }
 
-export function applyCLIOverrides(config: Config, overrides: CLIOverrides): Config {
+export function applyCLIOverrides(config: Config, overrides: CLIOverrides): AppliedOverrides {
   let next = config;
+  const ignoredFlags: string[] = [];
+  const take = (applied: AppliedOverrides) => {
+    ignoredFlags.push(...applied.ignoredFlags);
+    next = applied.config;
+  };
   if (overrides.planner) {
-    next = applyRunnerOverrides('planner', overrides.planner, next);
+    take(applyRunnerOverrides('planner', overrides.planner, next));
   }
   if (overrides.implementer || overrides.contextLength !== undefined) {
-    next = applyImplementerOverrides(
-      {
-        ...overrides.implementer,
-        ...(overrides.implementer?.contextLength !== undefined ||
-        overrides.contextLength !== undefined
-          ? { contextLength: overrides.implementer?.contextLength ?? overrides.contextLength }
-          : {}),
-      },
-      next,
+    take(
+      applyImplementerOverrides(
+        {
+          ...overrides.implementer,
+          ...(overrides.implementer?.contextLength !== undefined ||
+          overrides.contextLength !== undefined
+            ? { contextLength: overrides.implementer?.contextLength ?? overrides.contextLength }
+            : {}),
+        },
+        next,
+      ),
     );
   }
   if (overrides.reviewer) {
-    next = applyRunnerOverrides('reviewer', overrides.reviewer, next);
+    take(applyRunnerOverrides('reviewer', overrides.reviewer, next));
   }
   if (overrides.plannerEffort !== undefined) {
     const effort = parseOverrideOrThrow(
@@ -61,5 +69,5 @@ export function applyCLIOverrides(config: Config, overrides: CLIOverrides): Conf
     );
     next = applyReviewerEffort(next, effort);
   }
-  return next;
+  return { config: next, ignoredFlags };
 }

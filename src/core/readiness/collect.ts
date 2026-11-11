@@ -309,14 +309,10 @@ function loadReadinessConfig(
   try {
     const loaded = loadConfig(options.projectDir);
     const cliOverrides = workflowOptsToCLIOverrides(options.opts ?? {});
-    const { config, warnings: effectiveWarnings } = resolveEffectiveConfig({
-      base: loaded.config,
-      overrides: cliOverrides,
-      loaderDiagnostics: loaded.loaderDiagnostics,
-    });
+    const { config } = resolveEffectiveConfig({ base: loaded.config, overrides: cliOverrides });
     return {
       config,
-      configLoad: { state: 'loaded', path: filePath, warnings: effectiveWarnings },
+      configLoad: { state: 'loaded', path: filePath, warnings: loaded.loaderDiagnostics },
       isolation: configuredIsolation(config, loaded.document),
     };
   } catch (err) {

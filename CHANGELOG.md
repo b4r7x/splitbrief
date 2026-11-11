@@ -106,6 +106,7 @@
 - **A brief's own check names the brief.** While a brief runs its own checks, the check row reads `T007 check K034 · npm test`. A check id that already starts with the brief id names the brief once: `Check T007-K1 · npm test`. Before, it read `Plan check K034`, with `Plan` in the color of the planner, as if the planner were on a call. Before review, a plan check still reads `Plan check K034`. Every check name now shows in the same color, except `Reviewer` in a reviewer check. Headless text output names the brief too, for example `T007 check K034: 1 new, 2 pre-existing (npm test)`.
 - When you quit a run that is not closed, the shell now shows the command that continues it: `Continue this run with: splitbrief continue <id>`.
 - When a run still runs in another window, every command now says the same thing: `Run <id> is still running. Stop it in the window that runs it, then run 'splitbrief continue <id>'.` Before, each command used its own words, and one told you to delete a file, which does not stop the run.
+- **A new project builds with a CLI tool.** On a first run with no config, the BUILD seat takes the first ready tool. It tries Claude Code, Codex and OpenCode first, then the other tools that SPLITBRIEF lists. A config with no `implementer` block builds with Claude Code.
 
 ### Removed
 
@@ -128,6 +129,7 @@
 
 ### Fixed
 
+- A runner flag that its seat does not use, such as `--planner-api-base` for a CLI planner, is told one time.
 - The Command Code picker offers each model's own effort levels and shows each model's own name, such as `DeepSeek V4.1 Flash Fast (latest)` with `off`, `low`, `high` and `max`. When you choose a model, an effort level that it does not offer is cleared.
 - `off` and `ultra` are effort levels. Config, `--planner-effort` and `--reviewer-effort` accept them, and the Codex picker offers `ultra` on a model that has it.
 - A review seat on an OpenCode or Kilo Code model that reads only text holds render criteria as unverified, and the plan card says that the seat cannot see the renders. A PLAN seat on such a model takes no images.

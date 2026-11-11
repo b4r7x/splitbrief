@@ -458,6 +458,8 @@ Spawns a CLI tool as a subprocess. Supported tools: `claude-code`, `codex`, `ope
 
 Copilot is present but hidden: a config that names it runs, and no surface offers it (`UNLISTED_CLI_TOOL_IDS` in `src/core/runners/cli-tool-catalog.ts`). Turning it back on is one edit: that list becomes `[]`.
 
+The local API providers `ollama`, `lm-studio` and `llama-cpp` are present but hidden: a config that names one runs, and no surface offers them (`UNLISTED_API_PROVIDER_IDS` in `src/core/providers/api-provider-catalog.ts`). Turning them back on is one edit of that list, which becomes `[]`, plus the implementer default of `createDefaultConfig()` in `src/core/config/load/defaults.ts`. The first-run crew (`selectDefaultCrew`, `src/core/crew/default.ts`) takes CLI tools only.
+
 Every planner call declares its transport before dispatch: the current call's final response (`stdout-final`) or an exact declared-file lease. The candidate is that call's authoritative final output; session files, project-root artifacts, markdown-linked paths, prose mentions, stderr, and earlier attempts are evidence at most, never content. Claude Code continues a session it already minted with `--resume`. Output is parsed line by line via each tool's protocol parser; a configured `outputFormat` cannot replace a structured terminal contract. A tool with a structured terminal (`claude-code`, `codex`, `cursor`, `command-code`, `antigravity`) ends its call with its final result line. The tool then gets two seconds to exit by itself, and its exit code and stderr still count in that time. A tool that is still running after two seconds is stopped with its process group, and the call ends with the result it printed. A configured `timeout` or idle cut that fires after that result line also ends the call with the result.
 
 The implementer writes files directly (`writesFiles: 'direct'`) inside the run's isolation directory, and change detection runs there. Claude Code uses the shared `invokeCliAdapter()` transport. A CLI configured with a smaller model than the planner's is one of the two canonical implementer setups -- see [Write modes](#write-modes).
@@ -620,7 +622,7 @@ These candidates have **dated blocked verdicts** — no first-class ID, descript
 
 REST call to an OpenAI-compatible HTTP endpoint. Ollama, LM Studio and llama.cpp can fill PLAN, BUILD and REVIEW independently, as can an admitted custom endpoint. Every seat retains its own address and exact model ID.
 
-Local server connections do not require a provider executable on PATH. Start the server externally and use Retry after correcting the connection. Discovery and admission never implicitly load or download models. Observed active context, maximum context and the configured application budget are separate values.
+Local server connections do not require a provider executable on PATH. Start the server externally. The connection form and its Retry (`src/features/runners/local-connection-form.tsx`) open from a local provider's picker row, and no such row is listed (see the hidden-provider note under [cli](#cli)). Discovery and admission never implicitly load or download models. Observed active context, maximum context and the configured application budget are separate values.
 
 The planner uses `dispatchStreamCompletion()`, which streams the OpenAI-compatible chat-completions protocol. Prior messages are passed as a proper messages array (`consumesPriorMessages: true`). Token usage comes from the API response.
 

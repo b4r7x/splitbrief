@@ -312,7 +312,7 @@ describe('SetupScreen', () => {
     await flushEffects();
 
     const shownConfig = configStore.get().config;
-    expect(shownConfig?.implementer).toMatchObject({ kind: 'cli', tool: 'codex' });
+    expect(shownConfig?.implementer).toMatchObject({ kind: 'cli', tool: 'claude-code' });
     expect(markedRows(ui)).toEqual([expect.stringContaining('PLAN')]);
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('⏎ change seat');
 
@@ -372,9 +372,9 @@ describe('SetupScreen', () => {
       });
       const ui = renderFeature(<SetupScreen />);
       await vi.waitFor(() => {
-        expect(configStore.get().config?.implementer).toEqual({ kind: 'cli', tool: 'opencode' });
+        expect(configStore.get().config?.implementer).toEqual({ kind: 'cli', tool: 'claude-code' });
         expect(configStore.get().config?.planner.effort).toBe('high');
-        expect(configStore.getDetectedContextLength()).toBeUndefined();
+        expect(configStore.getDetectedContextLength()).toBe(8192);
         const frame = stripAnsiStyles(ui.lastFrame() ?? '');
         expect(frame).toContain('No config. Setup saves .splitbrief/config.yaml.');
         expect(frame).not.toContain('Ollama');
@@ -382,7 +382,10 @@ describe('SetupScreen', () => {
       expect(existsSync(configPath(projectDir))).toBe(false);
       await continueSetup(ui);
       await vi.waitFor(() => expect(existsSync(configPath(projectDir))).toBe(true));
-      expect(loadConfig(projectDir).config.implementer).toEqual({ kind: 'cli', tool: 'opencode' });
+      expect(loadConfig(projectDir).config.implementer).toEqual({
+        kind: 'cli',
+        tool: 'claude-code',
+      });
       expect(loadConfig(projectDir).config.planner.effort).toBeUndefined();
       ui.unmount();
     });
@@ -410,48 +413,8 @@ describe('SetupScreen', () => {
     });
   });
 
-  it('uses the current seat catalog when the local model is ready', async () => {
-    await withTempDir('setup-local-ready', async (projectDir) => {
-      configStore.load(projectDir);
-      const config = configStore.get().config;
-      if (config === null) throw new Error('Expected a loaded config');
-      const { sourceContexts } = createProductionDetectionDeps({ config, projectDir });
-      freshDiscovery(beginDiscovery(), 1);
-      detectionStore.setDetection({
-        ...INSTALLED_RUNNERS,
-        providerOutcomes: sourceContexts.configuredProviders?.map((connection) => ({
-          connection,
-          state: 'fresh',
-          catalog: 'populated',
-          models: [{ id: 'installed-coder' }],
-          fetchedAt: 1,
-          validatedAt: 1,
-        })),
-      });
-      const ui = renderFeature(<SetupScreen />);
-      await vi.waitFor(() => {
-        expect(configStore.get().config?.implementer).toMatchObject({
-          kind: 'api',
-          model: 'installed-coder',
-        });
-        const build = stripAnsiStyles(ui.lastFrame() ?? '')
-          .split('\n')
-          .find((row) => row.includes('BUILD'));
-        expect(build).not.toContain('Unavailable');
-      });
-      await continueSetup(ui);
-      await vi.waitFor(() => expect(routerStore.get().screen).toBe('home'));
-      expect(loadConfig(projectDir).config.implementer).toMatchObject({
-        kind: 'api',
-        model: 'installed-coder',
-        apiBase: 'http://localhost:11434/v1',
-      });
-      ui.unmount();
-    });
-  });
-
   it.each([true, false])(
-    'keeps an endpoint override out of the persisted default crew, explicit tool=%s',
+    'keeps an implementer override out of the persisted default crew, explicit tool=%s',
     async (explicitTool) => {
       await withTempDir('setup-api-override', async (projectDir) => {
         configStore.load(projectDir, {
@@ -481,12 +444,12 @@ describe('SetupScreen', () => {
         await continueSetup(ui);
         await vi.waitFor(() => expect(routerStore.get().screen).toBe('home'));
         const saved = loadConfig(projectDir).config;
-        expect(saved.implementer).toEqual({ kind: 'cli', tool: 'codex' });
-        expect(configStore.get().config?.implementer).toMatchObject({
-          kind: 'api',
-          apiBase: 'http://127.0.0.1:12434/v1',
-          model: 'custom-coder',
-        });
+        expect(saved.implementer).toEqual({ kind: 'cli', tool: 'claude-code' });
+        expect(configStore.get().config?.implementer).toMatchObject(
+          explicitTool
+            ? { kind: 'api', apiBase: 'http://127.0.0.1:12434/v1', model: 'custom-coder' }
+            : { kind: 'cli', tool: 'claude-code', model: 'custom-coder' },
+        );
         ui.unmount();
         configStore.load(projectDir);
         expect(configStore.get().config?.implementer).toEqual(saved.implementer);
@@ -568,7 +531,11 @@ describe('SetupScreen', () => {
     async (change) => {
       await withTempDir('setup-changing-detection', async (projectDir) => {
         configStore.load(projectDir, {
-          implementer: { apiBase: 'http://127.0.0.1:12434/v1', model: 'custom-coder' },
+          implementer: {
+            tool: 'ollama',
+            apiBase: 'http://127.0.0.1:12434/v1',
+            model: 'custom-coder',
+          },
         });
         freshDiscovery(beginDiscovery(), 1, {
           cliTools: [cliDetectionFor('ready', 'claude-code')],
@@ -662,11 +629,14 @@ describe('SetupScreen', () => {
       await vi.waitFor(() => {
         expect(ui.lastFrame() ?? '').toContain(CREW_TITLE);
         expect(ui.lastFrame() ?? '').not.toContain('Ollama');
-        expect(configStore.get().config?.implementer).toEqual({ kind: 'cli', tool: 'opencode' });
+        expect(configStore.get().config?.implementer).toEqual({ kind: 'cli', tool: 'claude-code' });
       });
       await continueSetup(ui);
       await vi.waitFor(() => expect(existsSync(configPath(projectDir))).toBe(true));
-      expect(loadConfig(projectDir).config.implementer).toEqual({ kind: 'cli', tool: 'opencode' });
+      expect(loadConfig(projectDir).config.implementer).toEqual({
+        kind: 'cli',
+        tool: 'claude-code',
+      });
       ui.unmount();
     });
   });
@@ -732,8 +702,8 @@ describe('SetupScreen', () => {
       await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain(CREW_TITLE));
       detectionStore.setDetection({
         cliTools: [
-          cliDetectionFor('ready', 'claude-code'),
-          cliDetectionFor('unavailable', 'codex'),
+          cliDetectionFor('unavailable', 'claude-code'),
+          cliDetectionFor('ready', 'codex'),
         ],
         providers: [],
       });
@@ -1225,7 +1195,7 @@ describe('SetupScreen', () => {
     await vi.waitFor(() => {
       expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Claude crew');
       expect(markedRows(ui)).toEqual([expect.stringContaining('PLAN')]);
-      expect(configStore.get().config?.implementer).toEqual({ kind: 'cli', tool: 'codex' });
+      expect(configStore.get().config?.implementer).toEqual({ kind: 'cli', tool: 'claude-code' });
     });
     ui.unmount();
   });

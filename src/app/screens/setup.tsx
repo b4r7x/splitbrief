@@ -8,11 +8,8 @@ import { SOFT_SEP } from '../../core/separators.js';
 import type { CrewLabVerdict } from '../../core/crew/labs.js';
 import type { CrewPreset } from '../../core/crew/presets.js';
 import { type CrewRow, crewRowKey } from '../../core/crew/rows.js';
-import {
-  checkCrewAvailability,
-  selectDetectedDefaultCrew,
-  unavailableCrewSeats,
-} from '../../engine/detection/crew.js';
+import { selectDefaultCrew } from '../../core/crew/default.js';
+import { checkCrewAvailability, unavailableCrewSeats } from '../../engine/detection/crew.js';
 import type { CrewSeat } from '../../core/crew/seats.js';
 import type { PickerDetectionSnapshot } from '../../features/runners/model-catalog/status.js';
 import type { Config } from '../../core/schemas/config.js';
@@ -585,7 +582,7 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
       readiness.refreshing
     )
       return;
-    const crew = selectDetectedDefaultCrew(detectionStore.get());
+    const crew = selectDefaultCrew(detectionStore.get());
     if (crew !== null) {
       initialCrewSelected.current = true;
       configStore.setInitialCrew(crew);

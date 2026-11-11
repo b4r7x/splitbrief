@@ -2,7 +2,7 @@ import { getRunnerDisplayName } from '../../../core/config/accessors/runner-conf
 import { PLANNER_INHERITANCE, REVIEW_NONE } from '../../../core/crew/identity.js';
 import {
   API_PROVIDER_CATALOG,
-  KNOWN_API_PROVIDER_IDS,
+  LISTED_API_PROVIDER_IDS,
   type ApiProviderDescriptor,
   type DataUsePosture,
 } from '../../../core/providers/api-provider-catalog.js';
@@ -291,7 +291,7 @@ export function assemblePickerDescriptors(): readonly RunnerPickerDescriptor[] {
     kind: 'cli',
     descriptor: CLI_TOOL_CATALOG[id],
   }));
-  const api: RunnerPickerDescriptor[] = KNOWN_API_PROVIDER_IDS.map((id) => ({
+  const api: RunnerPickerDescriptor[] = LISTED_API_PROVIDER_IDS.map((id) => ({
     kind: 'api',
     descriptor: API_PROVIDER_CATALOG[id],
   }));

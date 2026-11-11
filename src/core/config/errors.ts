@@ -100,11 +100,11 @@ export const configError = {
       `Unknown CLI tool: ${tool}. Valid tools: ${allowed.join(', ')}`,
       { tool, allowed },
     ),
-  unknownProvider: (provider: string, allowed: readonly string[], role?: ActiveRunnerRole) =>
+  unknownProvider: (provider: string, role?: ActiveRunnerRole) =>
     error(
       'config-unknown-provider',
-      `${role ? `${role}: ` : ''}Unknown provider '${provider}' requires explicit apiBase. Known providers: ${allowed.join(', ')}`,
-      { provider, allowed, role },
+      `${role ? `${role}: ` : ''}Unknown provider '${provider}' requires explicit apiBase.`,
+      { provider, role },
     ),
   invalidOverride: (field: string, value: unknown, reason: string) =>
     error('config-invalid-override', `Invalid ${field}: ${String(value)}. ${reason}`, {

@@ -9,7 +9,7 @@ Shared vocabulary for anyone (human or AI agent) reading the codebase. All terms
 SPLITBRIEF is a CLI that splits AI coding work across two roles:
 
 - A **planner** — an expensive, high-quality model (Claude Code, Codex, GPT-4-class, …) does the *thinking*: researches the codebase and answers one typed plan, whose tasks become the Task Briefs.
-- An **implementer** — a weaker **model**, reached either as a CLI tool running a cheap model or as an API model (Ollama, LM Studio, a custom endpoint) — does the *typing*: turns each task from the list into code, one task at a time. Both transports are first-class; SPLITBRIEF favours neither.
+- An **implementer** — a weaker **model**, reached either as a CLI tool running a cheap model or as an API model (a custom endpoint) — does the *typing*: turns each task from the list into code, one task at a time. Both transports are first-class; SPLITBRIEF favours neither.
 
 The orchestrator in the middle owns the workflow: it runs the planner, persists the plan and the Task Brief transport, walks through tasks, validates each one (its checks, then the reviewer checks before the review), records evidence and checkpoint boundaries, and consults the planner when the implementer gets stuck, on a plan task or a fix task. Git staging and commits belong to the user.
 
@@ -63,7 +63,7 @@ Both the planner and the implementer are configured with a `kind` field. There a
 | Kind | What it is | Example | Write mode as implementer | When to use |
 |------|-----------|---------|---------------------------|-------------|
 | `cli` | A known CLI tool invoked as a subprocess (stream-json or jsonl parsed) | `claude-code`, `codex`, `opencode`, `kilo-code`, `cursor`, `command-code`, `antigravity` | `direct` | Default planner path; uses existing subscriptions. As an implementer, one of the two first-class transports — a known tool pointed at a smaller model |
-| `api` | Any OpenAI-compatible HTTP endpoint | Ollama, LM Studio, custom endpoint | `extracted-code` | The other first-class implementer transport — a weaker model behind an endpoint, local or remote |
+| `api` | Any OpenAI-compatible HTTP endpoint | Custom endpoint | `extracted-code` | The other first-class implementer transport — a weaker model behind an endpoint, local or remote |
 | `shell` | An arbitrary command. Prompt → stdin, code → stdout. No shell/network sandbox | Any custom script | `extracted-code` | Users who want to plug in a tool we don't know |
 | `agent` | A command that writes files directly to disk. No stdout extraction or shell/network sandbox | A complete coding agent used as an implementer | `direct` | When the tool handles file writing itself |
 
@@ -377,11 +377,12 @@ planner:     # discriminated union on `kind` — cli | api | shell | agent
 
 implementer: # same four kinds
   kind: api
-  provider: ollama
-  service: ollama
-  offering: local
-  model: qwen2.5-coder:7b
-  apiBase: http://localhost:11434/v1
+  provider: custom-endpoint
+  service: custom-endpoint
+  offering: payg
+  model: your-implementer-model
+  apiBase: https://api.example.test/v1
+  apiKey: <paste-your-endpoint-key>
 ```
 
 Optional `implementerProfiles` add named implementer configs that task routing and recovery select between, while preserving the same single implementer role. Schemas: `src/core/schemas/planner-config.ts`, `src/core/schemas/implementer-config.ts`. Any config version other than 3 is rejected at load.

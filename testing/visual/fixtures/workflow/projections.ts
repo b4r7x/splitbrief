@@ -3527,10 +3527,11 @@ const SEAT_FALLBACK = {
 const OLLAMA_LIMIT_WORDS = 'quota exhausted · resets 5pm';
 
 /**
- * The BUILD seat out of quota on the brief's first attempt, as the engine halts it. Six tools were
+ * The BUILD seat out of quota on the brief's first attempt, as the engine halts it. Five tools were
  * detected: more than the three the text prompt names, so the panel's own height is proved to
- * follow its action rows and not the offer. Built when the capture reads it, because the tool's
- * clock resolves against the capture's own clock and zone.
+ * follow its action rows and not the offer. The ready fallback leads, then the detection order.
+ * Built when the capture reads it, because the tool's clock resolves against the capture's own
+ * clock and zone.
  */
 function usageLimitRecoveryIssue(
   overrides: Readonly<
@@ -3556,7 +3557,7 @@ function usageLimitRecoveryIssue(
       currentTool: '',
       from: { tool: 'ollama', model: BASE_IMPLEMENTER.model },
       fallback: SEAT_FALLBACK,
-      detectedTools: ['opencode', 'codex', 'claude-code', 'cursor', 'kilo-code'].map((tool) => ({
+      detectedTools: ['opencode', 'claude-code', 'codex', 'kilo-code', 'cursor'].map((tool) => ({
         tool,
         ready: true,
       })),

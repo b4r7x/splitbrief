@@ -1,16 +1,20 @@
 import type { Config } from '../../schemas/config.js';
 import { validateConfig } from '../load/validation/config.js';
 import type { ConfigError } from '../load/validation/types.js';
-import { formatConfigLoaderDiagnostics } from '../load/io.js';
+import { formatConfigLoaderDiagnostic } from '../load/io.js';
 import type { ConfigLoaderDiagnostic } from '../load/io.js';
 import { configError } from '../errors.js';
 import { warnStderr } from '../../../lib/warn.js';
 import { applyCLIOverrides } from './overrides/apply.js';
 import type { CLIOverrides } from './overrides/schema.js';
 
+export type EffectiveConfigWarning =
+  | ConfigLoaderDiagnostic
+  | Readonly<{ kind: 'ignored-flag'; notice: string }>;
+
 export interface EffectiveConfigResult {
   config: Config;
-  warnings: ConfigLoaderDiagnostic[];
+  warnings: EffectiveConfigWarning[];
 }
 
 function formatValidationErrors(errors: ConfigError[]): string[] {
@@ -23,13 +27,17 @@ const toldNotices = new Set<string>();
 
 export function emitEffectiveConfigWarnings(
   projectDir: string,
-  warnings: readonly ConfigLoaderDiagnostic[],
+  warnings: readonly EffectiveConfigWarning[],
 ): void {
-  for (const message of formatConfigLoaderDiagnostics(warnings)) {
+  for (const warning of warnings) {
+    const message =
+      warning.kind === 'ignored-flag'
+        ? warning.notice
+        : `⚠ ${formatConfigLoaderDiagnostic(warning)}`;
     const notice = `${projectDir}\0${message}`;
     if (toldNotices.has(notice)) continue;
     toldNotices.add(notice);
-    warnStderr(`⚠ ${message}`);
+    warnStderr(message);
   }
 }
 
@@ -38,7 +46,7 @@ export function resolveEffectiveConfig(opts: {
   overrides?: CLIOverrides | undefined;
   loaderDiagnostics?: ConfigLoaderDiagnostic[] | undefined;
 }): EffectiveConfigResult {
-  const config = applyCLIOverrides(opts.base, opts.overrides ?? {});
+  const { config, ignoredFlags } = applyCLIOverrides(opts.base, opts.overrides ?? {});
   const { errors, data } = validateConfig(config);
 
   if (errors.length > 0) {
@@ -50,5 +58,11 @@ export function resolveEffectiveConfig(opts: {
     ]);
   }
 
-  return { config: data, warnings: opts.loaderDiagnostics ?? [] };
+  return {
+    config: data,
+    warnings: [
+      ...ignoredFlags.map((notice) => ({ kind: 'ignored-flag' as const, notice })),
+      ...(opts.loaderDiagnostics ?? []),
+    ],
+  };
 }

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import * as apiProviderCatalog from '../../../src/core/providers/api-provider-catalog.js';
 import {
   API_PROVIDER_CATALOG,
   IMPLEMENTER_API_PROVIDER_IDS,
@@ -185,7 +186,7 @@ describe('runner catalog parity by role', () => {
       .map((entry) => entry.descriptor.id);
 
     expect(descriptorCliIds).toEqual([...LISTED_CLI_TOOL_IDS]);
-    expect(descriptorApiIds).toEqual([...KNOWN_API_PROVIDER_IDS]);
+    expect(descriptorApiIds).toEqual(apiProviderCatalog.LISTED_API_PROVIDER_IDS);
     expect(new Set(descriptorCliIds).size).toBe(descriptorCliIds.length);
     expect(new Set(descriptorApiIds).size).toBe(descriptorApiIds.length);
 
@@ -195,14 +196,14 @@ describe('runner catalog parity by role', () => {
 
       const admissionRole = role === 'reviewer' ? 'planner' : role;
       const expectedCliIds = ADMITTED_IDS[admissionRole].cli.filter(isListedCliTool);
-      const expectedApiIds = ADMITTED_IDS[admissionRole].api;
+      const unlistedApiIds = ADMITTED_IDS[admissionRole].api;
       const expectedMetaIds = ['custom-command'];
 
       for (const id of expectedCliIds) {
         expect(pickerIds).toContain(id);
       }
-      for (const id of expectedApiIds) {
-        expect(pickerIds).toContain(id);
+      for (const id of unlistedApiIds) {
+        expect(pickerIds).not.toContain(id);
       }
       for (const id of expectedMetaIds) {
         expect(pickerIds).toContain(id);

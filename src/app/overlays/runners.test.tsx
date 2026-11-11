@@ -324,12 +324,27 @@ describe('ToolModelPicker focus changes', () => {
     });
     detectionStore.setDetection({
       cliTools: [cliDetectionFor('ready', 'claude-code')],
-      providers: [{ provider: 'ollama', available: true, isLocal: true }],
+      providers: [],
     });
-    modelCacheStore.setProviderModels('ollama', [{ id: 'c4-ollama-model' }]);
   });
 
   it('moves the mounted picker to a new tool and clears omitted focus without self-stacking', async () => {
+    const request = detectionStore.beginRefresh({ contexts: catalogContexts });
+    detectionStore.publish({
+      request,
+      result: {
+        providers: [],
+        cliTools: [cliDetectionFor('ready', 'claude-code'), cliDetectionFor('ready', 'codex')],
+        catalog: null,
+        cliModels: [
+          {
+            connection: { tool: 'codex', contextKey: catalogContexts.cliModels },
+            outcome: { kind: 'success', value: [{ id: 'c4-codex-model' }] },
+          },
+        ],
+        generation: 1,
+      },
+    });
     overlayStore.open('planner-picker', 'tool:claude-code');
     const ui = renderFeature(<ToolModelPicker slot="seat" role="planner" />, {
       cols: 120,
@@ -352,14 +367,14 @@ describe('ToolModelPicker focus changes', () => {
     expect(overlayStore.get()).toBe(before);
     expect(frameText(ui)).toContain(`${listRowLead('active')}Claude Code CLI`);
 
-    overlayStore.open('planner-picker', 'tool:ollama');
+    overlayStore.open('planner-picker', 'tool:codex');
     await flushEffects();
-    expect(frameText(ui)).toContain(`${listRowLead('context')}Ollama`);
+    expect(frameText(ui)).toContain(`${listRowLead('context')}OpenAI Codex CLI`);
     expect(frameText(ui)).not.toContain('Sonnet 5');
-    expect(frameText(ui)).toContain('C4 Ollama Model');
+    expect(frameText(ui)).toContain('C4 Codex Model');
     expect(overlayStore.get()).toEqual({
       active: 'planner-picker',
-      focus: 'tool:ollama',
+      focus: 'tool:codex',
       exclusive: true,
       stack: [],
     });
@@ -367,7 +382,7 @@ describe('ToolModelPicker focus changes', () => {
     await flushEffects();
     expect(frameText(ui)).toContain(`${listRowLead('active')}Claude Code CLI`);
     expect(frameText(ui)).toContain('Sonnet 5');
-    expect(frameText(ui)).not.toContain('C4 Ollama Model');
+    expect(frameText(ui)).not.toContain('C4 Codex Model');
     expect(overlayStore.get()).toEqual({
       active: 'planner-picker',
       focus: undefined,

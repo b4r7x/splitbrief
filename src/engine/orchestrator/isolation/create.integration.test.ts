@@ -360,7 +360,7 @@ describe('createRunIsolation', () => {
         SPLITBRIEF_DIR,
         'sandbox',
         'implementer',
-        config.implementer.kind === 'cli' ? config.implementer.tool : 'codex',
+        'codex',
         'home',
         '.codex',
         'auth.json',

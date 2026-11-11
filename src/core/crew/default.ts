@@ -6,7 +6,10 @@ import { routeAuthState } from '../runners/route-auth.js';
 import { seatRouteModel } from '../providers/automatic-model.js';
 import { cliToolSupportsRole, LISTED_CLI_TOOL_IDS } from '../runners/cli-tool-catalog.js';
 import type { Config } from '../schemas/config.js';
-import { resolveEffectiveConfig } from '../config/runtime/effective-config.js';
+import {
+  resolveEffectiveConfig,
+  type EffectiveConfigResult,
+} from '../config/runtime/effective-config.js';
 import type { CLIOverrides } from '../config/runtime/overrides/schema.js';
 import { readActiveRunner } from '../config/accessors/active-runner.js';
 
@@ -37,37 +40,50 @@ function promptBudgets(overrides: CLIOverrides): CLIOverrides {
   };
 }
 
-export function resolveInitialCrew(input: { persisted: Config; overrides: CLIOverrides }): Config {
+export function resolveInitialCrew(input: {
+  persisted: Config;
+  overrides: CLIOverrides;
+}): EffectiveConfigResult {
   const { persisted } = input;
   const overrides = withoutPromptBudgets(input.overrides);
   const hasSeatOverride = (role: 'planner' | 'implementer' | 'reviewer') =>
     Object.values(overrides[role] ?? {}).some((value) => value !== undefined) ||
     (role === 'planner' && overrides.plannerEffort !== undefined) ||
     (role === 'reviewer' && overrides.reviewerEffort !== undefined);
-  const invocation = resolveEffectiveConfig({ base: createDefaultConfig(), overrides }).config;
+  const { config: invocation, warnings } = resolveEffectiveConfig({
+    base: createDefaultConfig(),
+    overrides,
+  });
   return {
-    ...invocation,
-    planner: hasSeatOverride('planner') ? invocation.planner : persisted.planner,
-    implementer: hasSeatOverride('implementer') ? invocation.implementer : persisted.implementer,
-    ...(hasSeatOverride('reviewer')
-      ? { reviewer: readActiveRunner({ config: invocation, role: 'reviewer' }) }
-      : persisted.reviewer === undefined
-        ? {}
-        : { reviewer: persisted.reviewer }),
+    config: {
+      ...invocation,
+      planner: hasSeatOverride('planner') ? invocation.planner : persisted.planner,
+      implementer: hasSeatOverride('implementer') ? invocation.implementer : persisted.implementer,
+      ...(hasSeatOverride('reviewer')
+        ? { reviewer: readActiveRunner({ config: invocation, role: 'reviewer' }) }
+        : persisted.reviewer === undefined
+          ? {}
+          : { reviewer: persisted.reviewer }),
+    },
+    warnings,
   };
 }
 
 export function selectInitialCrew(input: { detected: Config | null; overrides: CLIOverrides }): {
   persisted: Config;
   effective: Config;
+  warnings: EffectiveConfigResult['warnings'];
 } {
   const { detected, overrides } = input;
-  const crew = resolveInitialCrew({ persisted: detected ?? createDefaultConfig(), overrides });
+  const { config: crew, warnings } = resolveInitialCrew({
+    persisted: detected ?? createDefaultConfig(),
+    overrides,
+  });
   const effective = resolveEffectiveConfig({
     base: crew,
     overrides: promptBudgets(overrides),
   }).config;
-  return { persisted: detected ?? crew, effective };
+  return { persisted: detected ?? crew, effective, warnings };
 }
 
 export function detectedSeatReady(runner: RunnerConfig, detection: CrewDetection): boolean {
@@ -110,26 +126,14 @@ export function selectDefaultCrew(detection: CrewDetection): Config | null {
   const plan = planOrder.find((tool) => ready.has(tool) && cliToolSupportsRole(tool, 'planner'));
   if (plan === undefined) return null;
 
-  const config = createDefaultConfig();
-  const local = detection.providers.find(
-    (provider) => provider.provider === 'ollama' && provider.available,
-  );
-  const defaultModel = getRunnerModelName(config.implementer);
-  const model = local?.models?.find((entry) => entry.id === defaultModel) ?? local?.models?.[0];
-  const buildOrder = ['opencode', 'codex', 'claude-code', ...LISTED_CLI_TOOL_IDS] as const;
+  const buildOrder = ['claude-code', 'codex', 'opencode', ...LISTED_CLI_TOOL_IDS] as const;
   const build = buildOrder.find(
     (tool) => ready.has(tool) && cliToolSupportsRole(tool, 'implementer'),
   );
-  const implementer =
-    model !== undefined && config.implementer.kind === 'api'
-      ? { ...config.implementer, model: model.id }
-      : build === undefined
-        ? null
-        : { kind: 'cli' as const, tool: build };
-  if (implementer === null) return null;
+  if (build === undefined) return null;
   return {
-    ...config,
+    ...createDefaultConfig(),
     planner: { kind: 'cli', tool: plan },
-    implementer,
+    implementer: { kind: 'cli', tool: build },
   };
 }

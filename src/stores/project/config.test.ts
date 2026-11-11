@@ -23,6 +23,7 @@ import { configError } from '../../core/config/errors.js';
 import type { Config } from '../../core/schemas/config.js';
 import { editsForSave } from './config-persistence.js';
 import { narrowRecord } from '../../utils/type-guards.js';
+import { installDiagnosticSink, withHeldDiagnostics } from '../../lib/warn.js';
 
 // A load that throws an error no document on disk produces, such as one with a nested intro line.
 const loadFailure = vi.hoisted(() => ({ error: undefined as unknown }));
@@ -118,10 +119,7 @@ describe('configStore.load', () => {
     configStore.load(tmpDir);
     const config = loadedConfig();
     expect(expectCli(config.planner).tool).toBe('claude-code');
-    const implementer = expectApi(config.implementer);
-    expect(implementer.provider).toBe('ollama');
-    expect(implementer.model).toBe('qwen3-coder:30b');
-    expect(implementer.contextLength).toBeUndefined();
+    expect(config.implementer).toEqual({ kind: 'cli', tool: 'claude-code' });
   });
 
   it('seeds and saves explicit seats when no config file exists', async () => {
@@ -237,6 +235,35 @@ describe('configStore.load', () => {
 
     const permissionWarnings = stderrChunks.filter((chunk) => chunk.includes('chmod 600'));
     expect(permissionWarnings).toHaveLength(1);
+    vi.restoreAllMocks();
+  });
+
+  it.each([
+    {
+      flags: { implementer: { apiBase: 'http://127.0.0.1:9/v1', model: 'm' } },
+      line: "--implementer-api-base is ignored: the implementer 'cli' runner does not use it.",
+    },
+    {
+      flags: { planner: { apiBase: 'http://127.0.0.1:9/v1' } },
+      line: "--planner-api-base is ignored: the planner 'cli' runner does not use it.",
+    },
+  ])('tells an ignored flag of an interactive first run once: $line', async ({ flags, line }) => {
+    const stderrChunks: string[] = [];
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      stderrChunks.push(String(chunk));
+      return true;
+    });
+    const shown: string[] = [];
+
+    await withHeldDiagnostics(async () => {
+      configStore.load(tmpDir, flags);
+      const release = installDiagnosticSink((message) => shown.push(message));
+      configStore.setInitialCrew(createDefaultConfig());
+      release();
+    });
+
+    expect(shown).toEqual([line]);
+    expect(stderrChunks).toEqual([`${line}\n`]);
     vi.restoreAllMocks();
   });
 });

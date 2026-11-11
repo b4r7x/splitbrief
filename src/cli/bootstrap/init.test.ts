@@ -16,6 +16,7 @@ import { controlsStore } from '../../stores/ui/controls.js';
 import { SPLITBRIEF_DIR } from '../../core/paths.js';
 import { toYaml } from '../../core/config/load/transform.js';
 import { createDefaultConfig } from '../../core/config/load/defaults.js';
+import type { Config } from '../../core/schemas/config.js';
 import { detectCapabilities } from '../../engine/providers/capabilities.js';
 import * as capabilitiesModule from '../../engine/providers/capabilities.js';
 import { loadDetectionCacheSnapshot, saveDetectionCache } from '../../engine/detection/cache.js';
@@ -406,9 +407,9 @@ describe('initStores', () => {
     await initStores(dir);
 
     const config = requireConfig();
-    // Defaults: planner is cli/claude-code, implementer is api/ollama.
+    // Defaults: planner and implementer are cli/claude-code.
     expect(config.planner.kind).toBe('cli');
-    expect(config.implementer.kind).toBe('api');
+    expect(config.implementer.kind).toBe('cli');
   }, 30_000);
 
   it('populates sessionsStore.sessions from the on-disk session directory', async () => {
@@ -627,9 +628,21 @@ describe('initStores', () => {
     expect(configStore.get().config?.implementer.contextLength).toBeUndefined();
   }, 30_000);
 
-  it('fresh default config with no live provider does not claim a static local context limit', async () => {
+  it('an Ollama implementer with no live provider does not claim a static local context limit', async () => {
     const dir = makeProjectDir();
-    const caps = await detectCapabilities(createDefaultConfig());
+    const config: Config = {
+      ...createDefaultConfig(),
+      implementer: {
+        kind: 'api',
+        provider: 'ollama',
+        service: 'ollama',
+        offering: 'local',
+        apiBase: 'http://localhost:11434/v1',
+        model: 'qwen3-coder:30b',
+      },
+    };
+    writeConfigYaml(dir, toYaml(config));
+    const caps = await detectCapabilities(config);
 
     expect(caps).toBeUndefined();
 

@@ -333,7 +333,7 @@ export async function createFixtureSession(input: FixtureSessionInput): Promise<
 
   let disposal: Promise<void> | undefined;
   let activation: Promise<void> | undefined;
-  const { checkConnection, prepareExecution } = fixture;
+  const { prepareExecution } = fixture;
   return {
     scenario,
     checkpoint,
@@ -348,7 +348,6 @@ export async function createFixtureSession(input: FixtureSessionInput): Promise<
           home: { ...previewHome, prepareExecution },
           setup: { ...previewSetup, prepareExecution },
         }),
-        ...(checkConnection !== undefined && { picker: { ...previewPicker, checkConnection } }),
       },
     },
     activate: (write) => {

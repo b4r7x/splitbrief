@@ -284,6 +284,15 @@ describe('settings overlay integration', () => {
   it('PageDown moves by visible selectable settings without skipping a section', async () => {
     // Tall enough to seat the whole Workflow section, which the page has to bring on screen.
     terminalSizeStore.__testReset({ cols: 100, rows: 26, isSmall: false });
+    writeConfigYaml(dir, {
+      implementer: {
+        kind: 'api',
+        provider: 'ollama',
+        apiBase: 'http://localhost:11434/v1',
+        model: 'qwen3-coder:30b',
+      },
+    });
+    configStore.load(dir);
     overlayStore.open('settings', 'implementer.temperature');
     const ui = renderFeature(<SettingsOverlay />);
     await flushEffects();

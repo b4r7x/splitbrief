@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createDefaultConfig } from '../config/load/defaults.js';
 import { detectedSeatReady, selectDefaultCrew, selectInitialCrew } from './default.js';
+
+const runningOllama = {
+  provider: 'ollama',
+  available: true,
+  isLocal: true,
+  models: [{ id: 'qwen3-coder:30b' }, { id: 'installed-coder', displayName: 'Installed coder' }],
+};
 
 describe('selectInitialCrew', () => {
   it('uses defaults when no crew is detected and no overrides are supplied', () => {
@@ -82,6 +90,38 @@ describe('selectInitialCrew', () => {
   });
 });
 
+describe('selectInitialCrew with an implementer flag over the default crew', () => {
+  it('refuses --implementer ollama with no model', () => {
+    expect(() =>
+      selectInitialCrew({ detected: null, overrides: { implementer: { tool: 'ollama' } } }),
+    ).toThrow("implementer: 'model' is required but was not provided.");
+  });
+
+  it('gives Claude Code with the model of --implementer-model alone', () => {
+    const selected = selectInitialCrew({
+      detected: null,
+      overrides: { implementer: { model: 'opus' } },
+    });
+    expect(selected.effective.implementer).toEqual({
+      kind: 'cli',
+      tool: 'claude-code',
+      model: 'opus',
+    });
+  });
+
+  it('keeps Claude Code and drops the endpoint of --implementer-api-base with no tool', () => {
+    const selected = selectInitialCrew({
+      detected: null,
+      overrides: { implementer: { apiBase: 'http://127.0.0.1:12434/v1', model: 'custom-coder' } },
+    });
+    expect(selected.effective.implementer).toEqual({
+      kind: 'cli',
+      tool: 'claude-code',
+      model: 'custom-coder',
+    });
+  });
+});
+
 describe('selectDefaultCrew', () => {
   it('uses a ready build tool when the default local server is unavailable', () => {
     const config = selectDefaultCrew({
@@ -89,8 +129,23 @@ describe('selectDefaultCrew', () => {
       providers: [{ provider: 'ollama', available: false, isLocal: true }],
     });
     expect(config?.planner).toEqual({ kind: 'cli', tool: 'claude-code' });
-    expect(config?.implementer).toEqual({ kind: 'cli', tool: 'opencode' });
+    expect(config?.implementer).toEqual({ kind: 'cli', tool: 'claude-code' });
     expect(config?.reviewer).toBeUndefined();
+  });
+
+  it('takes the first ready tool of claude-code, codex, opencode, then the other listed tools for BUILD', () => {
+    const order = ['claude-code', 'codex', 'opencode', 'kilo-code'] as const;
+    const builds = order.map(
+      (_, index) =>
+        selectDefaultCrew({
+          cliTools: order
+            .slice(index)
+            .reverse()
+            .map((tool) => cliDetectionFor('ready', tool)),
+          providers: [],
+        })?.implementer,
+    );
+    expect(builds).toEqual(order.map((tool) => ({ kind: 'cli', tool })));
   });
 
   it('falls back for both seats and refuses a crew when no tool is ready', () => {
@@ -105,16 +160,30 @@ describe('selectDefaultCrew', () => {
     expect(selectDefaultCrew({ cliTools: cliTools.slice(0, 2), providers: [] })).toBeNull();
   });
 
-  it('selects only a model the local server lists', () => {
-    const cliTools = [cliDetectionFor('ready', 'claude-code')];
-    const provider = { provider: 'ollama' as const, available: true, isLocal: true };
-    expect(selectDefaultCrew({ cliTools, providers: [provider] })?.implementer.kind).toBe('cli');
-    const models = [{ id: 'installed-coder', displayName: 'Installed coder' }];
-    const detected = { cliTools, providers: [{ ...provider, models }] };
-    const config = selectDefaultCrew(detected);
-    expect(config?.implementer).toMatchObject({ provider: 'ollama', model: 'installed-coder' });
-    expect(detectedSeatReady(createDefaultConfig().implementer, detected)).toBe(false);
-    if (config === null) throw new Error('Expected a ready crew');
-    expect(detectedSeatReady(config.implementer, detected)).toBe(true);
+  it('keeps a running Ollama with listed models out of the BUILD seat', () => {
+    const config = selectDefaultCrew({
+      cliTools: [cliDetectionFor('ready', 'claude-code')],
+      providers: [runningOllama],
+    });
+    expect(config?.implementer).toEqual({ kind: 'cli', tool: 'claude-code' });
+  });
+
+  it('refuses a crew when no CLI tool is ready, also when Ollama runs with listed models', () => {
+    const cliTools = [
+      cliDetectionFor('unavailable', 'claude-code'),
+      cliDetectionFor('unauthenticated', 'opencode'),
+    ];
+    expect(selectDefaultCrew({ cliTools, providers: [runningOllama] })).toBeNull();
+  });
+});
+
+describe('detectedSeatReady', () => {
+  it('reads an API seat as ready only on a model its server lists', () => {
+    const seat = makeConfig({
+      implementer: { kind: 'api', provider: 'ollama', model: 'installed-coder' },
+    }).implementer;
+    const detection = { cliTools: [], providers: [runningOllama] };
+    expect(detectedSeatReady(seat, detection)).toBe(true);
+    expect(detectedSeatReady({ ...seat, model: 'missing-coder' }, detection)).toBe(false);
   });
 });

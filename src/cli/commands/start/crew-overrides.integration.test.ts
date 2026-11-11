@@ -15,10 +15,8 @@ import { readActiveRunner } from '../../../core/config/accessors/active-runner.j
 import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
 import type { WorkflowOpts } from '../../../core/types/config-options.js';
 import type { Config } from '../../../core/schemas/config.js';
-import {
-  checkCrewAvailability,
-  selectDetectedDefaultCrew,
-} from '../../../engine/detection/crew.js';
+import { selectDefaultCrew } from '../../../core/crew/default.js';
+import { checkCrewAvailability } from '../../../engine/detection/crew.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import type { RunnerEvidence } from '../../../core/discovery/runner-evidence.js';
 import { saveDetectionCache } from '../../../engine/detection/cache.js';
@@ -102,7 +100,7 @@ describe('first-run seat override parity', () => {
           'fixture',
           ...(separateReviewer ? ['--reviewer-command', process.execPath] : []),
         ]);
-        expect(selectDetectedDefaultCrew(detection)).toBeNull();
+        expect(selectDefaultCrew(detection)).toBeNull();
         configStore.load(projectDir, workflowOptsToCLIOverrides(opts));
         const { config: setupConfig, diskConfig: setupPersisted } = configStore.get();
         let preparedConfig: Config | undefined;
@@ -184,7 +182,7 @@ describe('first-run seat override parity', () => {
           providers: [{ provider: 'ollama' as const, available: false, isLocal: true }],
         };
         boundary.detectAll.mockResolvedValue(detection);
-        const persisted = selectDetectedDefaultCrew(detection);
+        const persisted = selectDefaultCrew(detection);
         if (persisted === null) throw new Error('Expected a ready default crew');
         const fields = fieldsFor(role);
         const restoreDiagnostics = installDiagnosticSink(() => {});

@@ -144,6 +144,14 @@ describe('buildRunnerConfig', () => {
       expect(expectApi(result).apiBase).toBe('http://localhost:11434/v1');
     });
 
+    it('keeps ollama as the provider of an implementer API seat that names none', () => {
+      const result = buildRunnerConfig('implementer', { kind: 'api', model: 'qwen2.5:7b' });
+      expect(expectApi(result)).toMatchObject({
+        provider: 'ollama',
+        apiBase: 'http://localhost:11434/v1',
+      });
+    });
+
     it('auto-fills apiBase for lm-studio', () => {
       const result = buildRunnerConfig('implementer', {
         kind: 'api',
@@ -199,14 +207,19 @@ describe('buildRunnerConfig', () => {
   });
 
   describe('unknown provider errors', () => {
-    it('throws for unknown provider without apiBase', () => {
+    it('throws for unknown provider without apiBase, naming no provider list', () => {
       expect(() =>
         buildRunnerConfig('implementer', {
           kind: 'api',
           tool: 'my-custom-provider',
           model: 'test',
         }),
-      ).toThrow(/apiBase/);
+      ).toThrow(
+        expect.objectContaining({
+          kind: 'config-unknown-provider',
+          message: "Unknown provider 'my-custom-provider' requires explicit apiBase.",
+        }),
+      );
     });
 
     it('accepts unknown provider with explicit apiBase', () => {

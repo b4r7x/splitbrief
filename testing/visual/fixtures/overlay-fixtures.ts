@@ -1,16 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { type OverlayType, seatAxisFocus } from '../../../src/core/navigation/types.js';
-import {
-  API_PROVIDER_CATALOG,
-  type ApiProviderId,
-} from '../../../src/core/providers/api-provider-catalog.js';
-import type {
-  ProviderCatalogFailureKind,
-  ProviderCatalogOutcome,
-} from '../../../src/engine/providers/types.js';
 import { LISTED_CLI_TOOL_IDS } from '../../../src/core/runners/cli-tool-catalog.js';
-import type { SeatPickerRole } from '../../../src/core/runners/seat-roles.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import { commandPaletteMruStore } from '../../../src/stores/ui/command-palette-mru.js';
 import type {
@@ -105,7 +96,7 @@ import { realPickerOption } from '../../helpers/runner-picker.js';
 import { createEvidenceLedger } from '../../../src/core/evidence/ledger-state.js';
 import { hashTaskBrief } from '../../../src/core/evidence/brief-hash.js';
 import type { FixtureFactory, FixtureLifecycle, FixtureRegistry } from './common.js';
-import { trackSlowProbe, VISUAL_FIXTURE_EPOCH } from './common.js';
+import { VISUAL_FIXTURE_EPOCH } from './common.js';
 import {
   opencodeApiModels,
   opencodeConfigOnlyModels,
@@ -628,30 +619,6 @@ function seedClaudeAliasRows(): void {
     modelsDev: { catalog: modelsDevSlice() },
   });
 }
-function seedOllamaCatalogLane(): void {
-  seedConfig({
-    implementer: {
-      kind: 'api',
-      provider: 'ollama',
-      apiBase: 'http://localhost:11434/v1',
-      model: 'gpt-oss:120b-cloud',
-    },
-  })();
-  const slice = modelsDevSlice();
-  const cloud = slice['ollama-cloud'];
-  if (cloud === undefined) throw new Error('models-dev-slice.json has no ollama-cloud provider');
-  detectionStore.setDetection({
-    cliTools: [],
-    providers: [{ provider: 'ollama', available: true, isLocal: true, hasKey: false, models: [] }],
-  });
-  modelCacheStore.setProviderModels('ollama', []);
-  modelCacheStore.hydrateModelsDevCatalog({
-    catalog: { ...slice, ollama: { ...cloud, id: 'ollama' } },
-    fetchedAt: VISUAL_PUBLISHED_AT,
-    validatedAt: VISUAL_PUBLISHED_AT,
-  });
-}
-
 function seedCopilotNativeListing(): void {
   const models = copilotHelpConfigModels();
   const persisted = models[0]?.id ?? 'gpt-5.6-luna';
@@ -1914,11 +1881,7 @@ function seedToolOrderDetections(): void {
       if (id === 'kilo-code') return cliDetectionFor('unverified', id);
       return cliDetectionFor('unavailable', id);
     }),
-    providers: [
-      { provider: 'ollama', available: true, isLocal: true },
-      { provider: 'lm-studio', available: false, isLocal: true },
-      { provider: 'llama-cpp', available: false, isLocal: true },
-    ],
+    providers: [],
   });
 }
 
@@ -1941,25 +1904,6 @@ const createToolOrderFilterFixture: FixtureFactory = () => ({
 // fixture parks there with nothing configured — the state the card guides.
 const createCustomCommandLauncherFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'planner-picker', focus: 'tool:custom-command' });
-/** Nothing is listening on the loopback port, so the seat has no catalog to choose from. */
-function seedStoppedOllama(): void {
-  const cliTools = [...detectionStore.get().cliTools];
-  // The catalog and the detection share one store, so the remembered models go first.
-  modelCacheStore.reset();
-  detectionStore.setDetection({
-    cliTools,
-    providers: [
-      {
-        provider: 'ollama',
-        available: false,
-        isLocal: true,
-        hasKey: false,
-        failure: 'offline',
-        error: 'connect ECONNREFUSED 127.0.0.1:11434',
-      },
-    ],
-  });
-}
 
 // A tool that is not signed in takes neither → nor ⏎; the hint offers only the keys that act.
 const createSignedOutToolFixture: FixtureFactory = () =>
@@ -1975,109 +1919,6 @@ const createSignedOutToolFixture: FixtureFactory = () =>
     },
     focus: 'tool:claude-code',
   });
-
-// Offline servers keep a reachable entry, followed by the editable connection form.
-const createLocalServerFixture: FixtureFactory = () =>
-  createOverlayFixture({
-    overlay: 'planner-picker',
-    seed: seedStoppedOllama,
-    focus: 'tool:ollama',
-  });
-
-function localConnectionFixture(
-  input: {
-    provider?: ApiProviderId;
-    role?: SeatPickerRole;
-    failure?: Extract<
-      ProviderCatalogFailureKind,
-      | 'offline'
-      | 'timeout'
-      | 'invalid-credential'
-      | 'malformed'
-      | 'endpoint-invalid'
-      | 'request-failed'
-    >;
-    models?: readonly DetectedModel[];
-    selectedModel?: string;
-  } = {},
-): FixtureLifecycle {
-  const provider = input.provider ?? 'ollama';
-  const role = input.role ?? 'planner';
-  const policy = API_PROVIDER_CATALOG[provider].endpointPolicy;
-  if (policy.kind !== 'loopback') throw new Error('Local fixture requires a loopback profile');
-  const fixture = createOverlayFixture({
-    overlay: `${role}-picker`,
-    focus: `tool:${provider}`,
-    seed: () => {
-      seedVisualConfig({
-        [role]: {
-          kind: 'api',
-          provider,
-          apiBase: policy.defaultBaseURL,
-          model: input.selectedModel ?? 'qwen2.5-coder:7b',
-          contextLength: 32_768,
-        },
-      });
-      pickerViewStore.open({ kind: 'local-connection', provider });
-    },
-  });
-  if (input.failure === undefined && input.models === undefined) return fixture;
-  const outcome: ProviderCatalogOutcome =
-    input.failure !== undefined
-      ? {
-          kind: 'failed',
-          source: 'provider-runtime',
-          provider,
-          isLocal: true,
-          credential: 'not-required',
-          failure: input.failure,
-          diagnostic:
-            {
-              offline: 'The server is not running.',
-              timeout: 'The catalog request timed out.',
-              'invalid-credential': 'The configured token was refused.',
-              malformed: 'The server returned an unreadable catalog.',
-              'endpoint-invalid': 'The server refused this endpoint.',
-              'request-failed': 'The request failed without a more specific diagnosis.',
-            }[input.failure] ?? 'The catalog check failed.',
-        }
-      : {
-          kind: 'success',
-          source: 'provider-runtime',
-          provider,
-          isLocal: true,
-          credential: 'not-required',
-          catalog: input.models?.length === 0 ? 'empty' : 'populated',
-          models: input.models ?? [],
-        };
-  return { ...fixture, checkConnection: async () => outcome, afterMount: (write) => write('\r') };
-}
-
-// A check past ten seconds: the form names the provider, the check and the wait. The check stays
-// open until the scenario ends, and the end fails it.
-function localConnectionSlowFixture(): FixtureLifecycle {
-  const fixture = localConnectionFixture();
-  const release = Promise.withResolvers<void>();
-  const held: Promise<ProviderCatalogOutcome>[] = [];
-  return {
-    ...fixture,
-    checkConnection: (input) => {
-      const run = trackSlowProbe({ provider: input.provider, check: 'model list' }, () =>
-        release.promise.then((): never => {
-          throw new Error('The scenario ended.');
-        }),
-      );
-      held.push(run);
-      return run;
-    },
-    afterMount: (write) => write('\r'),
-    teardown: async () => {
-      release.resolve();
-      await Promise.allSettled(held);
-      await fixture.teardown();
-    },
-  };
-}
 
 // The cursor opens on the expanded model row; one step down lands it on the auth row, whose
 // byline is the frame's subject.
@@ -2127,7 +1968,7 @@ const createCustomModelFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'planner-picker',
     seed: () => pickerViewStore.open({ kind: 'custom-model' }),
-    focus: 'tool:ollama',
+    focus: 'tool:codex',
   });
 // The entry's examples are the highlighted tool's own ids: Claude Code's aliases name the ids
 // they resolve to, and Kilo spells its ids `provider/model`.
@@ -2173,7 +2014,10 @@ const createCustomModelKiloFixture: FixtureFactory = () =>
     focus: 'tool:kilo-code',
   });
 const createImplementerPickerFixture: FixtureFactory = () =>
-  createOverlayFixture({ overlay: 'implementer-picker' });
+  createOverlayFixture({
+    overlay: 'implementer-picker',
+    seed: seedConfig({ implementer: BUILD_CODEX_SEAT }),
+  });
 // The build seat on OpenCode: the tools byline names the listing its models come from.
 const createImplementerPickerOpencodeFixture: FixtureFactory = () =>
   createOverlayFixture({
@@ -2226,12 +2070,6 @@ const createSeatSwapPickerExpandedFixture: FixtureFactory = () => ({
   }),
   afterMount: (write) => write.press('\r'),
 });
-const createPickerBrowseEscapeFixture: FixtureFactory = () =>
-  createOverlayFixture({
-    overlay: 'implementer-picker',
-    seed: seedOllamaCatalogLane,
-    focus: 'tool:ollama',
-  });
 const createReviewerPickerFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'reviewer-picker' });
 const createReviewerPickerToolFixture: FixtureFactory = () =>
@@ -3239,7 +3077,6 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-picker-custom-launcher'), createCustomCommandLauncherFixture],
   [scenarioId('overlay-picker-tool-order'), createToolOrderFixture],
   [scenarioId('overlay-picker-tool-order-filter'), createToolOrderFilterFixture],
-  [scenarioId('overlay-picker-local-server'), createLocalServerFixture],
   [scenarioId('overlay-picker-signed-out-tool'), createSignedOutToolFixture],
   [
     scenarioId('overlay-picker-signed-out-probe-timeout'),
@@ -3264,75 +3101,6 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-picker-tool-incompatible'), createPickerToolIncompatibleFixture],
   [scenarioId('overlay-picker-tool-untrusted'), createPickerToolUntrustedFixture],
   [scenarioId('overlay-picker-tool-disabled'), createPickerToolDisabledFixture],
-  [scenarioId('overlay-local-connection-ollama'), () => localConnectionFixture()],
-  [
-    scenarioId('overlay-local-connection-lmstudio'),
-    () => localConnectionFixture({ provider: 'lm-studio', role: 'implementer' }),
-  ],
-  [
-    scenarioId('overlay-local-connection-llamacpp'),
-    () => localConnectionFixture({ provider: 'llama-cpp', role: 'reviewer' }),
-  ],
-  [
-    scenarioId('overlay-local-connection-offline'),
-    () => localConnectionFixture({ failure: 'offline' }),
-  ],
-  [
-    scenarioId('overlay-local-connection-timeout'),
-    () => localConnectionFixture({ failure: 'timeout' }),
-  ],
-  [
-    scenarioId('overlay-local-connection-unauthorized'),
-    () => localConnectionFixture({ provider: 'lm-studio', failure: 'invalid-credential' }),
-  ],
-  [
-    scenarioId('overlay-local-connection-invalid'),
-    () => localConnectionFixture({ failure: 'endpoint-invalid' }),
-  ],
-  [
-    scenarioId('overlay-local-connection-unknown'),
-    () => localConnectionFixture({ failure: 'request-failed' }),
-  ],
-  [
-    scenarioId('overlay-local-connection-malformed'),
-    () => localConnectionFixture({ failure: 'malformed' }),
-  ],
-  [scenarioId('overlay-local-connection-empty'), () => localConnectionFixture({ models: [] })],
-  [scenarioId('overlay-local-connection-slow'), localConnectionSlowFixture],
-  [
-    scenarioId('overlay-local-connection-missing'),
-    () => localConnectionFixture({ models: [{ id: 'gemma3:27b' }] }),
-  ],
-  [
-    scenarioId('overlay-local-connection-loaded'),
-    () =>
-      localConnectionFixture({
-        provider: 'lm-studio',
-        models: [
-          {
-            id: 'qwen2.5-coder:7b',
-            runtime: { loadState: 'loaded', observedAt: VISUAL_PUBLISHED_AT },
-          },
-        ],
-      }),
-  ],
-  [
-    scenarioId('overlay-local-connection-not-loaded'),
-    () =>
-      localConnectionFixture({
-        provider: 'lm-studio',
-        models: [
-          {
-            id: 'qwen2.5-coder:7b',
-            runtime: { loadState: 'not-loaded', observedAt: VISUAL_PUBLISHED_AT },
-          },
-        ],
-      }),
-  ],
-  [
-    scenarioId('overlay-local-connection-listed'),
-    () => localConnectionFixture({ models: [{ id: 'qwen2.5-coder:7b' }] }),
-  ],
   [scenarioId('overlay-picker-auth-config-owned'), createAuthConfigOwnedFixture],
   [scenarioId('overlay-picker-auth-unsupported'), createAuthUnsupportedFixture],
   [scenarioId('overlay-picker-contract-choice'), createContractChoiceFixture],
@@ -3347,7 +3115,6 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-implementer-picker-api-twin'), createImplementerPickerApiTwinFixture],
   [scenarioId('overlay-picker-seat-swap'), createSeatSwapPickerFixture],
   [scenarioId('overlay-picker-seat-swap-expanded'), createSeatSwapPickerExpandedFixture],
-  [scenarioId('overlay-picker-browse-escape'), createPickerBrowseEscapeFixture],
   [scenarioId('overlay-reviewer-picker-inherited'), createReviewerPickerFixture],
   [scenarioId('overlay-reviewer-picker-tool'), createReviewerPickerToolFixture],
   [scenarioId('overlay-reviewer-picker-none'), createReviewerPickerNoneFixture],

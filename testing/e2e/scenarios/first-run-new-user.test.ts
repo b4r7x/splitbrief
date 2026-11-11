@@ -49,19 +49,9 @@ const PLAN_ANSWER = {
 
 const REVIEW_ANSWER = passingVerdict({ kind: 'final', taskIds: ['T001'], criterionIds: ['C1'] });
 
-const BUILD_REPLY = JSON.stringify({
-  version: 1,
-  files: [{ path: GREET_FILE, action: 'create', content: GREET_SOURCE }],
-});
-
 const ClaudeCallSchema = z.object({
-  seat: z.enum(['plan', 'review', 'other']),
+  seat: z.enum(['plan', 'build', 'review']),
   args: z.array(z.string()),
-});
-
-const ChatRequestSchema = z.object({
-  model: z.string(),
-  messages: z.array(z.object({ role: z.string() })),
 });
 
 const DoctorRecordSchema = z.object({
@@ -120,20 +110,7 @@ function sendJson(response: ServerResponse, body: unknown): void {
   response.end(JSON.stringify(body));
 }
 
-function sendCompletion(response: ServerResponse, text: string): void {
-  response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
-  const frame = { id: 'first-run-build', object: 'chat.completion.chunk', created: 1 };
-  const model = OLLAMA_MODEL;
-  response.write(
-    `data: ${JSON.stringify({ ...frame, model, choices: [{ index: 0, delta: { role: 'assistant', content: text }, finish_reason: null }] })}\n\n`,
-  );
-  response.write(
-    `data: ${JSON.stringify({ ...frame, model, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 } })}\n\n`,
-  );
-  response.end('data: [DONE]\n\n');
-}
-
-/** Answers the Ollama routes the default implementer reads: `src/engine/providers/ollama.ts`. */
+/** Answers the Ollama routes that readiness reads: `src/engine/providers/ollama.ts`. */
 async function serveOllama(
   request: IncomingMessage,
   response: ServerResponse,
@@ -169,9 +146,6 @@ async function serveOllama(
         data: [{ id: OLLAMA_MODEL, object: 'model', owned_by: 'library' }],
       });
       return;
-    case 'POST /v1/chat/completions':
-      sendCompletion(response, BUILD_REPLY);
-      return;
     default:
       response.statusCode = 404;
       response.end();
@@ -206,8 +180,8 @@ async function startOllama(): Promise<OllamaFake> {
 }
 
 /**
- * Every node process of the run loads this first. The default implementer's endpoint,
- * `localhost:11434`, reaches the fake on its own port; every other request fails.
+ * Every node process of the run loads this first. The Ollama endpoint, `localhost:11434`,
+ * reaches the fake on its own port; every other request fails.
  */
 function writeNetworkPreload(dir: string, port: number): string {
   const preload = join(dir, 'offline.mjs');
@@ -232,7 +206,7 @@ globalThis.fetch = async (input, init) => {
 
 /**
  * A Claude Code CLI that answers the readiness probes and speaks the stream-json protocol
- * for the three typed calls of the run: the plan, the reviewer checks and the final review.
+ * for the three calls of the run: the plan, the build and the final review.
  */
 function installClaudeShim(bin: string, callsPath: string): void {
   writeFakeNodeCli(
@@ -252,11 +226,15 @@ const promptText = (content) => typeof content === 'string'
 const answer = (text) => {
   const seat = text.includes(${JSON.stringify(REVIEW_PROMPT)})
     ? 'review'
-    : args.includes('--json-schema') ? 'plan' : 'other';
+    : args.includes('--json-schema') ? 'plan' : 'build';
   fs.appendFileSync(${JSON.stringify(callsPath)}, JSON.stringify({ seat, args }) + '\\n');
+  if (seat === 'build') {
+    fs.mkdirSync('src', { recursive: true });
+    fs.writeFileSync(${JSON.stringify(GREET_FILE)}, ${JSON.stringify(GREET_SOURCE)});
+  }
   emit({ type: 'system', subtype: 'init', session_id: 'first-run-session' });
   if (args.includes('--input-format')) emit({ type: 'user', parent_tool_use_id: null, message: { role: 'user', content: text } });
-  const value = seat === 'other' ? 'Done.' : answers[seat];
+  const value = seat === 'build' ? 'Done.' : answers[seat];
   emit({
     type: 'result',
     session_id: 'first-run-session',
@@ -278,7 +256,7 @@ if (args.includes('--input-format')) {
   );
 }
 
-/** A fresh HOME, a fresh repository with no config, and the default implementer's endpoint. */
+/** A fresh HOME, a fresh repository with no config, and a running Ollama server. */
 async function firstRunFixture(prefix: string): Promise<FirstRun> {
   trustHome = createTrustHome(`${prefix}-home`);
   const home = trustHome.home;
@@ -343,8 +321,7 @@ function claudeSeats(callsPath: string): string[] {
   return readFileSync(callsPath, 'utf8')
     .trim()
     .split('\n')
-    .map((line) => ClaudeCallSchema.parse(JSON.parse(line)).seat)
-    .filter((seat) => seat !== 'other');
+    .map((line) => ClaudeCallSchema.parse(JSON.parse(line)).seat);
 }
 
 describe('e2e: first run of a new user', { timeout: 240_000 }, () => {
@@ -358,12 +335,7 @@ describe('e2e: first run of a new user', { timeout: 240_000 }, () => {
     const configBytes = await initProject(target);
     const config = loadConfig(target.projectDir).config;
     expect(config.planner).toMatchObject({ kind: 'cli', tool: 'claude-code' });
-    expect(config.implementer).toMatchObject({
-      kind: 'api',
-      provider: 'ollama',
-      model: OLLAMA_MODEL,
-      apiBase: OLLAMA_BASE,
-    });
+    expect(config.implementer).toEqual({ kind: 'cli', tool: 'claude-code' });
     expect(config.reviewer).toBeUndefined();
     expect(config.workflow.approve).toBe('plan');
 
@@ -371,7 +343,6 @@ describe('e2e: first run of a new user', { timeout: 240_000 }, () => {
     expect(doctor.run.exitCode, `${doctor.run.stdout}\n${doctor.run.stderr}`).toBe(0);
     expect(doctor.report.status).not.toBe('blocked');
     expect(doctor.check('runners.cli.claude-code.readiness')?.severity).toBe('ok');
-    expect(doctor.check('runners.availability.implementer.default')?.severity).toBe('ok');
 
     const run = await splitbrief(target, ['start', FEATURE, '--plain'], START_TIMEOUT_MS);
     const output = `${run.stdout}\n${run.stderr}\n${JSON.stringify(target.ollama.requests)}`;
@@ -393,12 +364,8 @@ describe('e2e: first run of a new user', { timeout: 240_000 }, () => {
     });
     expect(existsSync(join(target.projectDir, GREET_FILE))).toBe(false);
 
-    expect(claudeSeats(target.callsPath)).toEqual(['plan', 'review']);
-    const builds = target.ollama.requests
-      .filter((request) => request.method === 'POST' && request.path === '/v1/chat/completions')
-      .map((request) => ChatRequestSchema.parse(request.body));
-    expect(builds).toHaveLength(1);
-    expect(builds[0]?.model).toBe(OLLAMA_MODEL);
+    expect(claudeSeats(target.callsPath)).toEqual(['plan', 'build', 'review']);
+    expect(target.ollama.requests).toEqual([]);
 
     const applied = await splitbrief(target, [
       'continue',
@@ -419,7 +386,17 @@ describe('e2e: first run of a new user', { timeout: 240_000 }, () => {
     const target = await firstRunFixture('e2e-first-run-missing');
     vi.stubEnv('PATH', [target.bin, '/usr/bin', '/bin'].join(delimiter));
 
-    writeConfig(target.projectDir, createDefaultConfig());
+    writeConfig(target.projectDir, {
+      ...createDefaultConfig(),
+      implementer: {
+        kind: 'api',
+        provider: 'ollama',
+        service: 'ollama',
+        offering: 'local',
+        model: OLLAMA_MODEL,
+        apiBase: OLLAMA_BASE,
+      },
+    });
 
     const doctor = await doctorJson(target);
     expect(doctor.run.exitCode, `${doctor.run.stdout}\n${doctor.run.stderr}`).toBe(1);

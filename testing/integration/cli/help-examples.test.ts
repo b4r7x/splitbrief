@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { HELP_EXAMPLES } from '../../../src/cli/help-examples.js';
+import { createDefaultConfig } from '../../../src/core/config/load/defaults.js';
+import { findKnownModel } from '../../../src/core/providers/known-models.js';
 import { getApiProviderDescriptor } from '../../../src/core/providers/api-provider-catalog.js';
 import { CLI_TOOL_CATALOG, isCliToolId } from '../../../src/core/runners/cli-tool-catalog.js';
 
@@ -27,7 +29,15 @@ describe('CLI help examples', () => {
         .filter((line) => line.includes('--planner '))
         .join('\n'),
     ).toMatchInlineSnapshot(
-      `"    $ splitbrief "add tests" --planner claude-code --implementer ollama"`,
+      `"    $ splitbrief "add tests" --planner claude-code --implementer codex"`,
     );
+  });
+
+  it('names a model that the default BUILD seat knows', () => {
+    const build = createDefaultConfig().implementer;
+    const [, model] = HELP_EXAMPLES.match(/ --model (\S+)/) ?? [];
+
+    expect(build.kind).toBe('cli');
+    expect(build.kind === 'cli' && findKnownModel(build.tool, model ?? '')).toBeTruthy();
   });
 });

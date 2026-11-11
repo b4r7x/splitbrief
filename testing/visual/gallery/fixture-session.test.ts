@@ -379,7 +379,7 @@ describe('a previewed App spends fixture effects and no production one', () => {
   });
 
   it('refreshes, checks and saves a local connection without a process or a write', async () => {
-    const preview = await open('overlay-picker-local-server');
+    const preview = await open('overlay-planner-picker');
     const configFile = join(FIXTURE_SESSION_ROOT, '.splitbrief', 'config.yaml');
     const seeded = readFileSync(configFile, 'utf8');
 

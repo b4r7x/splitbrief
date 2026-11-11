@@ -608,9 +608,6 @@ describe('visual catalog', () => {
   });
 
   it('lists idle and filtered tools in one order without group rows', async () => {
-    const localNames = ['llama.cpp', 'LM Studio'].toSorted((left, right) =>
-      left.localeCompare(right),
-    );
     const idleNames = [
       '+ Add custom command…',
       'OpenAI Codex CLI',
@@ -620,8 +617,6 @@ describe('visual catalog', () => {
       'Cursor Agent CLI',
       'Google Antigravity CLI',
       'OpenCode CLI',
-      'Ollama',
-      ...localNames,
     ];
     const filteredNames = [
       'OpenAI Codex CLI',
@@ -648,8 +643,6 @@ describe('visual catalog', () => {
         if (id === 'overlay-picker-tool-order-filter') {
           expect(frame).not.toContain('Cursor Agent CLI');
           expect(frame).not.toContain('Google Antigravity CLI');
-          expect(frame).not.toContain('llama.cpp');
-          expect(frame).not.toContain('LM Studio');
         }
       } finally {
         await handle.unmount();
@@ -1057,7 +1050,7 @@ describe('visual catalog', () => {
     }
   });
 
-  it('retains fixtures for the changed composer, preparation, usage and local-server surfaces', () => {
+  it('retains fixtures for the changed composer, preparation, usage and picker surfaces', () => {
     for (const id of [
       'home-preparing',
       'home-preparation-failed',
@@ -1081,9 +1074,6 @@ describe('visual catalog', () => {
       'overlay-usage-details-legacy',
       'overlay-usage-details-unpriced',
       'overlay-usage-context-insufficient',
-      'overlay-local-connection-ollama',
-      'overlay-local-connection-lmstudio',
-      'overlay-local-connection-llamacpp',
       'overlay-picker-auth-config-owned',
       'overlay-picker-auth-unsupported',
     ]) {
@@ -1142,32 +1132,6 @@ describe('visual catalog', () => {
     },
   );
 
-  it.each([
-    ['offline', 'Ollama is not reachable'],
-    ['timeout', 'Ollama did not answer'],
-    ['unauthorized', 'LM Studio rejected the token'],
-    ['empty', 'no models installed'],
-    ['missing', 'not in this catalog'],
-    ['loaded', 'loaded'],
-    ['not-loaded', 'not loaded'],
-    ['listed', 'listed'],
-  ])('renders the %s server outcome through the mounted connection check', async (state, text) => {
-    const scenario = findVisualScenario(`overlay-local-connection-${state}`);
-    if (scenario === undefined) throw new Error(`Missing local fixture: ${state}`);
-    const checkpoint = scenario.checkpoints[0];
-    if (checkpoint === undefined) throw new Error('Missing checkpoint');
-    for (const viewport of REQUIRED_VIEWPORTS) {
-      const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
-      try {
-        const frame = stripAnsiStyles(await handle.waitForCheckpoint());
-        expect(frame).toContain(text);
-        expect(frame).toContain('retry');
-        if (state !== 'unauthorized') expect(frame).not.toContain('rejected the token');
-      } finally {
-        await handle.unmount();
-      }
-    }
-  });
   it('covers the exact router screen and overlay unions with unique versioned scenarios', () => {
     const screens = VISUAL_CATALOG.flatMap((scenario) =>
       scenario.surface.kind === 'screen' ? [scenario.surface.screen] : [],

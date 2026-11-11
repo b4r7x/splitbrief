@@ -1,14 +1,27 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { createDefaultConfig } from '../../core/config/load/defaults.js';
 import { detectedSeatReady } from '../../core/crew/default.js';
 import type { Config } from '../../core/schemas/config.js';
 import { createProductionDetectionDeps } from './deps.js';
-import { checkCrewAvailability, crewDetectionForSeat, selectDetectedDefaultCrew } from './crew.js';
+import { checkCrewAvailability, crewDetectionForSeat } from './crew.js';
 import { probeRunnerAvailability } from '../runners/probe-availability.js';
 
 afterEach(() => vi.unstubAllGlobals());
+
+/** A config file that names Ollama on its default endpoint for the BUILD seat. */
+function ollamaSeat(implementer: { apiBase?: string; model?: string } = {}) {
+  return makeConfig({
+    planner: { kind: 'cli', tool: 'claude-code' },
+    implementer: {
+      kind: 'api',
+      provider: 'ollama',
+      apiBase: 'http://localhost:11434/v1',
+      model: 'qwen3-coder:30b',
+      ...implementer,
+    },
+  });
+}
 
 /** OpenCode with a provider set up only in its config: `opencode auth list` prints []. */
 function noCredentialOpencode(ids: readonly string[] | undefined) {
@@ -162,11 +175,9 @@ describe('detected default crew connections', () => {
     ).toBe(false);
   });
 
-  it('uses a default endpoint catalog after selecting a different model', () => {
-    const detection = detectionFor(createDefaultConfig());
-    const selected = selectDetectedDefaultCrew(detection);
-    if (selected === null) throw new Error('Expected a ready crew');
-    expect(selected.implementer).toMatchObject({ kind: 'api', model: 'installed-coder' });
+  it('reads the endpoint catalog of an Ollama seat on its default endpoint after its model changes', () => {
+    const detection = detectionFor(ollamaSeat());
+    const selected = ollamaSeat({ model: 'installed-coder' });
     expect(
       detectedSeatReady(
         selected.implementer,
@@ -178,24 +189,19 @@ describe('detected default crew connections', () => {
   it.each([
     { apiBase: 'http://127.0.0.1:12434/v1' },
     { apiBase: 'http://localhost:11434/other/v1' },
-  ])('keeps a different connection out of the persisted proposal: %s', (connection) => {
-    const config = createDefaultConfig();
-    if (config.implementer.kind !== 'api') throw new Error('Expected the default API seat');
-    const detection = detectionFor({
-      ...config,
-      implementer: { ...config.implementer, ...connection, model: 'custom-coder' },
-    });
-    expect(selectDetectedDefaultCrew(detection)?.implementer).toEqual({
-      kind: 'cli',
-      tool: 'claude-code',
-    });
-    expect(
-      detectedSeatReady(
-        { ...config.implementer, model: 'installed-coder' },
-        crewDetectionForSeat({ config, role: 'implementer', detection }),
-      ),
-    ).toBe(false);
-  });
+  ])(
+    'keeps the catalog of a different connection away from an Ollama seat on its default endpoint: %s',
+    (connection) => {
+      const detection = detectionFor(ollamaSeat({ ...connection, model: 'custom-coder' }));
+      const config = ollamaSeat({ model: 'installed-coder' });
+      expect(
+        detectedSeatReady(
+          config.implementer,
+          crewDetectionForSeat({ config, role: 'implementer', detection }),
+        ),
+      ).toBe(false);
+    },
+  );
 
   it.each([
     ['a model its model list serves', 'ollama/llama3', ['ollama/llama3'], []],
@@ -241,9 +247,7 @@ describe('detected default crew connections', () => {
     },
   );
 
-  it('uses ambient detection only for the default connection', () => {
-    const config = createDefaultConfig();
-    if (config.implementer.kind !== 'api') throw new Error('Expected the default API seat');
+  it('uses ambient detection only for an Ollama seat on its default endpoint', () => {
     const detection = {
       cliTools: [cliDetectionFor('ready', 'claude-code')],
       providers: [
@@ -255,15 +259,10 @@ describe('detected default crew connections', () => {
         },
       ],
     };
-    expect(selectDetectedDefaultCrew(detection)?.implementer).toMatchObject({
-      kind: 'api',
-      model: 'installed-coder',
-      apiBase: 'http://localhost:11434/v1',
-    });
-    const custom = {
-      ...config,
-      implementer: { ...config.implementer, apiBase: 'http://127.0.0.1:12434/v1' },
-    };
+    expect(
+      crewDetectionForSeat({ config: ollamaSeat(), role: 'implementer', detection }).providers,
+    ).toEqual(detection.providers);
+    const custom = ollamaSeat({ apiBase: 'http://127.0.0.1:12434/v1' });
     expect(
       crewDetectionForSeat({ config: custom, role: 'implementer', detection }).providers,
     ).toEqual([]);

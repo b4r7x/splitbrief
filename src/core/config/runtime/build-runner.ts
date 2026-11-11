@@ -1,9 +1,6 @@
 import { includes, assertNever } from '../../../utils/type-guards.js';
 import { resolveDefaultApiBase } from '../../providers/catalog.js';
-import {
-  getApiProviderDescriptor,
-  KNOWN_API_PROVIDER_IDS,
-} from '../../providers/api-provider-catalog.js';
+import { getApiProviderDescriptor } from '../../providers/api-provider-catalog.js';
 import { normalizeProviderEndpoint } from '../../providers/endpoint-policy.js';
 import {
   CLI_TOOL_IDS,
@@ -377,7 +374,7 @@ function buildApiConfig(
   const resolvedApiBase = requestedApiBase ?? existingApiBase ?? getDescriptorApiBase(provider);
 
   if (!resolvedApiBase) {
-    throw configError.unknownProvider(provider, KNOWN_API_PROVIDER_IDS);
+    throw configError.unknownProvider(provider);
   }
   const apiBase = descriptor
     ? normalizeProviderEndpoint(descriptor.endpointPolicy, resolvedApiBase)

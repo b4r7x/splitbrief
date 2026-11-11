@@ -2,12 +2,13 @@ import { existsSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { loadConfig, initConfig } from '../core/config/load/io.js';
 import { configPath, IGNORE_RULE_ADDED, readConfigDocument } from '../core/config/load/document.js';
-import { selectInitialCrew } from '../core/crew/default.js';
+import { selectDefaultCrew, selectInitialCrew } from '../core/crew/default.js';
 import type { CLIOverrides } from '../core/config/runtime/overrides/schema.js';
+import { emitEffectiveConfigWarnings } from '../core/config/runtime/effective-config.js';
 import type { Config } from '../core/schemas/config.js';
 import { defaultCliAuthChannel, LISTED_CLI_TOOL_IDS } from '../core/runners/cli-tool-catalog.js';
 import { detectAll, detectAvailableCliTools } from '../engine/detection/detect.js';
-import { checkCrewAvailability, selectDetectedDefaultCrew } from '../engine/detection/crew.js';
+import { checkCrewAvailability } from '../engine/detection/crew.js';
 import { readConfiguredCliRoutes } from './commands/start/readiness.js';
 import { isGitRepo, getRepoToplevel } from '../lib/git/repository.js';
 import { reapOrphanRunners } from '../engine/orchestrator/run/orphan-reaper.js';
@@ -95,8 +96,9 @@ export async function ensureHeadlessConfig(input: {
       LISTED_CLI_TOOL_IDS.map((tool) => [tool, defaultCliAuthChannel(tool).id]),
     ),
   });
-  const detected = selectDetectedDefaultCrew(detection);
-  const { persisted, effective } = selectInitialCrew({ detected, overrides });
+  const detected = selectDefaultCrew(detection);
+  const { persisted, effective, warnings } = selectInitialCrew({ detected, overrides });
+  emitEffectiveConfigWarnings(projectDir, warnings);
   // A tool that stores no credential is ready on a route its model list serves, read as start reads it.
   const { catalogs } = await readConfiguredCliRoutes({
     projectDir,

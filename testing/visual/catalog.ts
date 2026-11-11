@@ -6739,11 +6739,6 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: PICKER_TITLE_MARKER,
       },
       {
-        id: 'overlay-picker-browse-escape',
-        title: 'Overlay · implementer picker · browse the wider catalog',
-        marker: PICKER_TITLE_MARKER,
-      },
-      {
         id: 'overlay-planner-picker-no-listing',
         title: 'Overlay · planner picker · tool without model listing',
         marker: PICKER_TITLE_MARKER,
@@ -6889,11 +6884,6 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: PICKER_TITLE_MARKER,
       },
       {
-        id: 'overlay-picker-local-server',
-        title: 'Overlay · planner picker · a local server that is not running',
-        marker: PICKER_TITLE_MARKER,
-      },
-      {
         id: 'overlay-picker-signed-out-tool',
         title: 'Overlay · planner picker · a tool that is not signed in',
         marker: PICKER_TITLE_MARKER,
@@ -6974,27 +6964,6 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: PICKER_TITLE_MARKER,
         viewports: REQUIRED_VIEWPORTS,
       },
-      ...(
-        [
-          ['ollama', 'Ollama connection editor', 'Not checked yet'],
-          ['offline', 'server offline', 'Ollama is not reachable'],
-          ['timeout', 'catalog timeout', 'Ollama did not answer'],
-          ['unauthorized', 'token refused', 'LM Studio rejected the token'],
-          ['invalid', 'invalid endpoint', 'Ollama does not accept this address'],
-          ['unknown', 'unknown failure', 'Ollama did not say what failed'],
-          ['malformed', 'unreadable catalog', 'Ollama returned an unreadable catalog'],
-          ['empty', 'empty catalog', 'no models installed'],
-          ['missing', 'selected model absent', 'does not serve'],
-          ['loaded', 'model loaded', 'LM Studio answered'],
-          ['not-loaded', 'model not loaded', 'not loaded'],
-          ['listed', 'model listed, loading unknown', 'Ollama answered'],
-          ['slow', 'check past ten seconds', 'Ollama model list 12s'],
-        ] as const
-      ).map(([id, title, marker]) => ({
-        id: `overlay-local-connection-${id}`,
-        title: `Overlay · local connection · ${title}`,
-        marker,
-      })),
       {
         id: 'overlay-picker-auth-config-owned',
         title: 'Overlay · authentication owned by CLI configuration',
@@ -7044,11 +7013,6 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
     checkpointTitle: 'Implementer picker ready',
     scenarios: [
       {
-        id: 'overlay-local-connection-lmstudio',
-        title: 'Overlay · BUILD · LM Studio connection editor',
-        marker: 'Not checked yet',
-      },
-      {
         id: 'overlay-implementer-picker',
         title: 'Overlay · implementer picker',
         marker: 'Add custom model',
@@ -7089,11 +7053,6 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
     panelTitle: 'Reviewer picker panel',
     checkpointTitle: 'Reviewer picker ready',
     scenarios: [
-      {
-        id: 'overlay-local-connection-llamacpp',
-        title: 'Overlay · REVIEW · llama.cpp connection editor',
-        marker: 'Not checked yet',
-      },
       {
         id: 'overlay-reviewer-picker-inherited',
         title: 'Overlay · reviewer picker · inherited from the planner',

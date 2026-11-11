@@ -2,9 +2,13 @@ import { afterEach, describe, it, expect, vi } from 'vitest';
 import {
   detectAvailableProviders,
   detectProviderCatalog,
+  detectProviderCatalogs,
   providerDetectionFromOutcome,
 } from './catalog-detection.js';
-import { KNOWN_PROVIDERS } from './registry.js';
+import {
+  KNOWN_API_PROVIDER_IDS,
+  type ApiProviderId,
+} from '../../core/providers/api-provider-catalog.js';
 import { PROVIDER_CATALOG_FAILURE_KINDS } from './types.js';
 import { CLI_PROBE_TIMEOUT_MS } from '../constants.js';
 import { probeActivitySnapshot } from '../probe-activity.js';
@@ -34,6 +38,10 @@ function mockSlowFetch(answer: (url: string) => SlowAnswer): void {
   });
 }
 
+async function detectNamedProvider(provider: ApiProviderId) {
+  return providerDetectionFromOutcome(await detectProviderCatalog({ provider }));
+}
+
 function mockFetchRoutes(
   routes: Readonly<Record<string, unknown>>,
   fallback: () => Response = () => new Response('', { status: 404 }),
@@ -50,21 +58,31 @@ function mockFetchRoutes(
 describe('detectAvailableProviders', () => {
   setupFetchMock();
 
-  it('returns results for ollama and lm-studio', async () => {
+  it('probes no local service when no option names one', async () => {
+    mockFetchRoutes({
+      '11434': { models: [{ name: 'qwen2.5-coder:7b' }] },
+      '1234': { models: [{ key: 'deepseek-coder-v2', type: 'llm' }] },
+    });
+
+    expect(await detectProviderCatalogs()).toEqual([]);
+    expect(await detectAvailableProviders()).toEqual([]);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('returns results for a named ollama and lm-studio', async () => {
     mockFetchRoutes({
       '11434': { models: [{ name: 'qwen2.5-coder:7b' }, { name: 'llama3:8b' }] },
       '1234': { models: [{ key: 'deepseek-coder-v2', type: 'llm' }] },
     });
 
-    const results = await detectAvailableProviders();
-    const ollama = results.find((r) => r.provider === 'ollama');
+    const ollama = await detectNamedProvider('ollama');
     expect(ollama).toMatchObject({
       available: true,
       models: [{ id: 'qwen2.5-coder:7b' }, { id: 'llama3:8b' }],
     });
     expect(ollama).not.toHaveProperty('failure');
 
-    const lmStudio = results.find((r) => r.provider === 'lm-studio');
+    const lmStudio = await detectNamedProvider('lm-studio');
     expect(lmStudio).toMatchObject({ available: true, models: [{ id: 'deepseek-coder-v2' }] });
   });
 
@@ -73,11 +91,8 @@ describe('detectAvailableProviders', () => {
       throw new Error('Connection refused');
     });
 
-    const results = await detectAvailableProviders();
-    expect(results.length).toBe(Object.keys(KNOWN_PROVIDERS).length);
-
-    const ollama = results.find((r) => r.provider === 'ollama');
-    const lmStudio = results.find((r) => r.provider === 'lm-studio');
+    const ollama = await detectNamedProvider('ollama');
+    const lmStudio = await detectNamedProvider('lm-studio');
 
     expect(ollama).toMatchObject({
       available: true,
@@ -125,8 +140,7 @@ describe('detectAvailableProviders', () => {
   it('projects a valid empty inventory as reachable rather than a failed discovery', async () => {
     mockFetchRoutes({ '11434': { models: [] }, '1234': { models: [] } });
 
-    const results = await detectAvailableProviders();
-    expect(results.find((result) => result.provider === 'ollama')).toEqual({
+    expect(await detectNamedProvider('ollama')).toEqual({
       provider: 'ollama',
       available: true,
       isLocal: true,
@@ -173,9 +187,8 @@ describe('detectAvailableProviders', () => {
   it('handles all providers failing', async () => {
     vi.mocked(globalThis.fetch).mockRejectedValue(new Error('refused'));
 
-    const results = await detectAvailableProviders();
-    for (const r of results) {
-      expect(r.available).toBe(false);
+    for (const provider of KNOWN_API_PROVIDER_IDS) {
+      expect((await detectNamedProvider(provider)).available).toBe(false);
     }
   });
 
@@ -214,10 +227,10 @@ describe('detectAvailableProviders', () => {
         return 'refused';
       });
 
-      const pending = detectAvailableProviders();
+      const pending = detectNamedProvider('ollama');
       await vi.advanceTimersByTimeAsync(6_000);
 
-      expect((await pending).find((r) => r.provider === 'ollama')).toMatchObject({
+      expect(await pending).toMatchObject({
         available: true,
         models: [{ id: 'qwen2.5-coder:7b' }],
       });
@@ -229,7 +242,7 @@ describe('detectAvailableProviders', () => {
       mockSlowFetch(() => 'never');
 
       let settled = false;
-      const pending = detectAvailableProviders().finally(() => {
+      const pending = Promise.all(KNOWN_API_PROVIDER_IDS.map(detectNamedProvider)).finally(() => {
         settled = true;
       });
       await vi.advanceTimersByTimeAsync(CLI_PROBE_TIMEOUT_MS - 1);

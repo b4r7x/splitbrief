@@ -1,4 +1,4 @@
-import { typedEntries } from '../../utils/type-guards.js';
+import { includes, typedEntries } from '../../utils/type-guards.js';
 import type { RunnerBillingPosture } from '../runners/runner-billing.js';
 import type { EndpointPolicy } from './endpoint-policy.js';
 
@@ -240,4 +240,15 @@ export const REMOTE_API_PROVIDER_IDS = Object.freeze(
   KNOWN_API_PROVIDER_IDS.filter(
     (id): id is RemoteApiProviderId => API_PROVIDER_CATALOG[id].offering !== 'local',
   ),
+);
+
+// Runs when a config names it; no surface offers it.
+const UNLISTED_API_PROVIDER_IDS: readonly ApiProviderId[] = ['ollama', 'lm-studio', 'llama-cpp'];
+
+export function isListedApiProvider(id: string): boolean {
+  return !includes(UNLISTED_API_PROVIDER_IDS, id);
+}
+
+export const LISTED_API_PROVIDER_IDS = Object.freeze(
+  KNOWN_API_PROVIDER_IDS.filter(isListedApiProvider),
 );

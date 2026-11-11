@@ -313,7 +313,7 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 **Fix:**
 1. Open `.splitbrief/config.yaml` and inspect `planner.kind` and `planner.model`.
 2. Keep Opus for the planner only when you genuinely need its planning quality; for most work Sonnet 4.6 is the better quality point.
-3. Switch the implementer to a smaller or local runner: an `api` runner pointed at Ollama / LM Studio, or `cli` with a Haiku-class model.
+3. Switch the implementer to a smaller runner: an `api` runner on an endpoint of your own with a smaller model, or `cli` with a Haiku-class model.
 4. Run `splitbrief status` to confirm the resolved configuration matches your intent.
 
 **Prevention:** Keep the two seats on different models — that asymmetry is the entire point of SPLITBRIEF.
@@ -451,7 +451,7 @@ Files can be inside or outside the project. Relative paths use the project root.
 
 ### Symptom: Planner times out before producing a brief
 
-**Likely cause:** A planner call has no default time limit on any seat kind. An `api` planner has no first-response or stream-idle deadline. A planner call times out only at a limit you set: `planner.timeout` for the total call, or `idleKillMs` for output silence on a `cli`, `shell` or `agent` planner. A cold-loading local model (Ollama or LM Studio loads the model into memory) can use most of a short `planner.timeout` before its first token. The **inactivity watchdog** warns after 5 minutes of no output. Beside the build block, the byline shows the normal live status. Where no block is painted, the byline reads `⚠ No output for 5:00`. The call continues until it ends or you press Esc. Set `idleKillMs` to cut a silent call, or `planner.timeout` to put a wall-clock cap on the whole call; both are opt-in.
+**Likely cause:** A planner call has no default time limit on any seat kind. An `api` planner has no first-response or stream-idle deadline. A planner call times out only at a limit you set: `planner.timeout` for the total call, or `idleKillMs` for output silence on a `cli`, `shell` or `agent` planner. A model that the server loads into memory on the first call can use most of a short `planner.timeout` before its first token. The **inactivity watchdog** warns after 5 minutes of no output. Beside the build block, the byline shows the normal live status. Where no block is painted, the byline reads `⚠ No output for 5:00`. The call continues until it ends or you press Esc. Set `idleKillMs` to cut a silent call, or `planner.timeout` to put a wall-clock cap on the whole call; both are opt-in.
 
 **Fix:**
 1. Read the end of the session log. The last event names the phase that was active:
@@ -677,16 +677,16 @@ A commit, a branch switch or a pull in your checkout does not halt the brief: a 
 
 ### Symptom: Implementer fails repeatedly against a local model that is not running
 
-**Likely cause:** An `api`-kind implementer probes its provider's model list instead of assuming a local endpoint is up (`createProviderAvailability`, `src/engine/providers/client/availability.ts`). A dead daemon fails the probe, and the availability gate raises the unavailable-implementer recovery immediately — no local retry and no consult is burned against the dead endpoint, so a stopped Ollama/LM Studio cannot cost you a planner call.
+**Likely cause:** An `api`-kind implementer probes its provider's model list instead of assuming a local endpoint is up (`createProviderAvailability`, `src/engine/providers/client/availability.ts`). A dead daemon fails the probe, and the availability gate raises the unavailable-implementer recovery immediately — no local retry and no consult is burned against the dead endpoint, so a stopped daemon cannot cost you a planner call.
 
 **Fix:**
 1. Read the recovery issue's detail — it carries the runner's own reason (e.g. "the endpoint is unreachable") when one exists.
-2. Start the daemon (`ollama serve`, LM Studio, etc.).
+2. Start the daemon behind the endpoint.
 3. Pick `retry-same-worker` — the next availability probe runs once per task iteration and the verdict is never cached, so the running daemon is detected on the next task.
 
 **Prevention:** Readiness probes the endpoint before the run starts, so a stopped daemon is a blocker at `doctor` and at `start` rather than a mid-run surprise after the planning phase has been paid for (`runners.availability.implementer.<profile>`, `src/core/readiness/checks/availability.ts`). To draft a spec while the daemon is down, use `splitbrief spec` — it never calls the implementer, so its readiness does not gate on one.
 
-A provider that `did not answer in time` did not send its model list in one minute. Each check of the model list waits up to one minute: before the start, at the start and before each brief. The provider scan of home, setup and the model picker, and the Check of a local server, wait up to one minute too. A provider that answers after six seconds is found, not failed. After ten seconds the screen names the provider and the check, for example `Checking tools · Ollama model list 10s`, and Esc stops the check. A stop during the check is not reported as an unavailable provider.
+A provider that `did not answer in time` did not send its model list in one minute. Each check of the model list waits up to one minute: before the start, at the start and before each brief. The provider scan of home, setup and the model picker waits up to one minute too. A provider that answers after six seconds is found, not failed. After ten seconds the screen names the provider and the check, for example `Checking tools · custom-endpoint model list 10s`, and Esc stops the check. A stop during the check is not reported as an unavailable provider.
 
 **See also:** [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md), `src/engine/implementers/api.ts`.
 

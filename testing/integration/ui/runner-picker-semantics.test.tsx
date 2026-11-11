@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactElement } from 'react';
-import { pickerCatalog } from '#testing/helpers/runner-picker.js';
+import { LOCAL_API_DESCRIPTORS, pickerCatalog } from '#testing/helpers/runner-picker.js';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -24,10 +24,7 @@ import {
   type CliToolDetection,
   type ProviderDetection,
 } from '../../../src/core/discovery/detection.js';
-import {
-  IMPLEMENTER_API_PROVIDER_IDS,
-  PLANNER_API_PROVIDER_IDS,
-} from '../../../src/core/providers/api-provider-catalog.js';
+import { IMPLEMENTER_API_PROVIDER_IDS } from '../../../src/core/providers/api-provider-catalog.js';
 import { getProviderDisplayName } from '../../../src/core/providers/catalog.js';
 import {
   CLI_TOOL_IDS,
@@ -247,12 +244,8 @@ describe('runner picker semantics integration', () => {
       expect(plannerZones).toEqual(expect.arrayContaining(plannerCatalog.map((item) => item.id)));
       expect(plannerZones).toContain('cursor');
       expect(plannerZones).toContain('antigravity');
-      expect(plannerCatalog.map((item) => item.id)).toEqual(
-        expect.arrayContaining([
-          'custom-command',
-          ...PLANNER_CLI_TOOL_IDS.filter(isListedCliTool),
-          ...PLANNER_API_PROVIDER_IDS,
-        ]),
+      expect(plannerCatalog.map((item) => item.id).toSorted()).toEqual(
+        ['custom-command', ...PLANNER_CLI_TOOL_IDS.filter(isListedCliTool)].toSorted(),
       );
       plannerUi.unmount();
 
@@ -262,17 +255,13 @@ describe('runner picker semantics integration', () => {
       expect(implementerZones).toEqual(
         expect.arrayContaining(implementerCatalog.map((item) => item.id)),
       );
-      expect(implementerZones).toContain('ollama');
-      expect(implementerZones).toContain('lm-studio');
       expect(implementerZones).toContain('cursor');
       expect(implementerZones).toContain('antigravity');
-      // Both local services are admitted in every seat, so the planner lane
-      // projects the same two rows the implementer lane does. Independence is
-      // the per-role projection above, not a difference in membership.
-      expect(plannerZones).toContain('ollama');
-      expect(plannerZones).toContain('lm-studio');
-      expect(implementerCatalog.some((item) => item.id === 'ollama')).toBe(true);
-      expect(plannerCatalog.some((item) => item.id === 'ollama')).toBe(true);
+      // The local services run when a config names them, but no seat lane offers a row for one.
+      for (const id of IMPLEMENTER_API_PROVIDER_IDS) {
+        expect(implementerZones).not.toContain(id);
+        expect(plannerZones).not.toContain(id);
+      }
       implementerUi.unmount();
     });
   });
@@ -315,38 +304,44 @@ describe('runner picker semantics integration', () => {
     }
 
     it('renders API offline semantics from detection-backed picker state', async () => {
-      detectionStore.setDetection({
-        cliTools: [],
-        providers: [
-          {
-            provider: 'lm-studio',
-            available: false,
-            isLocal: true,
-            hasKey: false,
-          },
-          {
-            provider: 'ollama',
-            available: false,
-            isLocal: true,
-            error: 'Ollama is not running',
-          },
-        ],
-      });
-
-      const ui = await renderPicker('implementer');
-      // The cursor is driven by the filter, not by activating the row:
-      // activating a row this picker cannot run is the key-entry affordance,
-      // and it replaces the frame whose semantics this case is about.
-      let query = '';
-      const cursorOnto = async (next: string): Promise<string> => {
-        for (let index = 0; index < query.length; index++) {
-          ui.stdin.write(BACKSPACE);
-          await flushEffects();
-        }
-        ui.stdin.write(next);
+      // No picker row offers a local service, so the view renders the projected options directly.
+      const options = buildPickerOptions(
+        'implementer',
+        LOCAL_API_DESCRIPTORS,
+        {
+          cliTools: [],
+          providers: [
+            {
+              provider: 'lm-studio',
+              available: false,
+              isLocal: true,
+              hasKey: false,
+            },
+            {
+              provider: 'ollama',
+              available: false,
+              isLocal: true,
+              error: 'Ollama is not running',
+            },
+          ],
+        },
+        undefined,
+      );
+      const cursorOnto = async (id: string): Promise<string> => {
+        const item = options.find((option) => option.id === id);
+        if (!item) throw new Error(`no implementer option for "${id}"`);
+        const ui = mount(
+          <PickerView
+            slot="seat"
+            role="implementer"
+            catalog={catalogForItem('implementer', options, item)}
+            actions={makeActions()}
+          />,
+        );
         await flushEffects();
-        query = next;
-        return frameText(ui);
+        const frame = frameText(ui);
+        ui.unmount();
+        return frame;
       };
 
       const lmStudioFrame = await cursorOnto('lm-studio');
@@ -359,7 +354,6 @@ describe('runner picker semantics integration', () => {
       const ollamaFrame = await cursorOnto('ollama');
       expect(ollamaFrame).toContain('Unavailable');
       expect(ollamaFrame).toContain('Run `ollama serve`');
-      ui.unmount();
     });
   });
 
@@ -700,29 +694,28 @@ describe('runner picker semantics integration', () => {
 
   describe('rapid tool selection', () => {
     it('never shows models from the previously selected tool during rapid input', async () => {
-      detectionStore.setDetection({
-        cliTools: readyCliDetections(),
-        providers: [
-          {
-            provider: 'ollama',
-            available: true,
-            isLocal: true,
-            models: [{ id: 'ollama-only-model', contextLength: 8192 }],
-          },
-          {
-            provider: 'lm-studio',
-            available: true,
-            isLocal: true,
-            models: [{ id: 'lm-studio-only-model', contextLength: 200_000 }],
-          },
-        ],
+      const request = detectionStore.beginRefresh({
+        contexts: { readiness: 'r', modelsDev: 'm', cliModels: 'c' },
       });
-      modelCacheStore.setProviderModels('ollama', [
-        { id: 'ollama-only-model', contextLength: 8192 },
-      ]);
-      modelCacheStore.setProviderModels('lm-studio', [
-        { id: 'lm-studio-only-model', contextLength: 200_000 },
-      ]);
+      detectionStore.publish({
+        request,
+        result: {
+          providers: [],
+          cliTools: readyCliDetections(),
+          catalog: null,
+          cliModels: [
+            {
+              connection: { tool: 'codex', contextKey: 'c' },
+              outcome: { kind: 'success', value: [{ id: 'codex-only-model' }] },
+            },
+            {
+              connection: { tool: 'cursor', contextKey: 'c' },
+              outcome: { kind: 'success', value: [{ id: 'cursor-only-model' }] },
+            },
+          ],
+          generation: 1,
+        },
+      });
 
       const ui = await renderPicker('implementer');
       let query = '';
@@ -736,12 +729,12 @@ describe('runner picker semantics integration', () => {
         query = id;
       };
 
-      for (const provider of ['lm-studio', 'ollama', 'lm-studio', 'ollama'] as const) {
-        const other = provider === 'lm-studio' ? 'ollama' : 'lm-studio';
-        await selectById(provider);
+      for (const tool of ['cursor', 'codex', 'cursor', 'codex'] as const) {
+        const other = tool === 'cursor' ? 'codex' : 'cursor';
+        await selectById(tool);
         await vi.waitFor(() => {
           const ids = rightModelZoneIds();
-          expect(ids).toContain(`model:${provider}-only-model`);
+          expect(ids).toContain(`model:${tool}-only-model`);
           expect(ids).not.toContain(`model:${other}-only-model`);
         });
       }
@@ -756,18 +749,8 @@ describe('runner picker semantics integration', () => {
         configStore.load(projectDir);
         detectionStore.setDetection({
           cliTools: [cliDetectionFor('ready', 'claude-code'), cliDetectionFor('ready', 'codex')],
-          providers: [
-            {
-              provider: 'ollama',
-              available: true,
-              isLocal: true,
-              models: [{ id: 'qwen2.5-coder:7b' }],
-            },
-          ],
+          providers: [],
         });
-        modelCacheStore.setProviderModels('ollama', [
-          { id: 'qwen2.5-coder:7b', contextLength: 8192 },
-        ]);
 
         const plannerUi = await renderPicker('planner');
         await flushEffects();
@@ -793,7 +776,7 @@ describe('runner picker semantics integration', () => {
 
         const implementerUi = await renderPicker('implementer');
         await flushEffects();
-        implementerUi.stdin.write('ollama');
+        implementerUi.stdin.write('codex');
         await flushEffects();
         implementerUi.stdin.write(ENTER);
         await flushEffects();
@@ -802,10 +785,12 @@ describe('runner picker semantics integration', () => {
         implementerUi.unmount();
 
         await vi.waitFor(() => {
-          expect(feedbackStore.get().message).toContain(`Saved ${CREW_SEAT_LABELS.build} · Ollama`);
+          expect(feedbackStore.get().message).toContain(
+            `Saved ${CREW_SEAT_LABELS.build} · OpenAI Codex CLI`,
+          );
           expect(loadConfig(projectDir).config.implementer).toMatchObject({
-            kind: 'api',
-            provider: 'ollama',
+            kind: 'cli',
+            tool: 'codex',
           });
           expect(loadConfig(projectDir).config.implementer.model).toBeTruthy();
         });

@@ -36,7 +36,7 @@ No config. Setup saves .splitbrief/config.yaml.
 
 Crew
 ▌ PLAN      Claude Code CLI · auto
-  BUILD     OpenCode CLI · auto
+  BUILD     Claude Code CLI · auto
   REVIEW    = PLAN
 
   Continue
@@ -120,7 +120,7 @@ The paths are absolute: `spec` prints the project directory it resolved.
 
 `spec` runs the same planning session as `start` and stops after the plan passed its checks. If the planner asks a question, `spec` prints it under `The planner asks:` and reads one line; `⏎` takes the defaults.
 
-**Variations:** Pair `start` with `--implementer ollama` to keep the implementer local. Without a terminal, `spec` takes every question's default.
+**Variations:** Pair `start` with `--implementer codex` to build with Codex. Without a terminal, `spec` takes every question's default.
 
 **See also:** [docs/CLI-REFERENCE.md](./CLI-REFERENCE.md#splitbrief-spec).
 
@@ -195,11 +195,11 @@ The planner may ask up to three questions per round, for at most two rounds; eve
 
 ### 6. Use a smaller implementer
 
-**When:** you want a strong planner (Claude Code subscription) to compile briefs but a small local model to execute them.
+**When:** you want a strong planner (Claude Code subscription) to compile briefs but a smaller model behind your own OpenAI-compatible endpoint to execute them.
 
 **Setup (`.splitbrief/config.yaml`):**
 
-<!-- config-example: local-implementer-profiles -->
+<!-- config-example: endpoint-implementer-profiles -->
 ```yaml
 version: 3
 planner:
@@ -207,32 +207,34 @@ planner:
   tool: claude-code
 implementer:
   kind: api
-  provider: lm-studio
-  service: lm-studio
-  offering: local
-  apiBase: http://localhost:1234/v1
-  model: qwen2.5-coder-7b
+  provider: custom-endpoint
+  service: custom-endpoint
+  offering: payg
+  apiBase: https://api.example.test/v1
+  apiKey: <paste-your-endpoint-key>
+  model: your-implementer-model
 implementerProfiles:
-  default: local-lmstudio
+  default: small-cloud
   profiles:
-    local-lmstudio:
+    small-cloud:
       kind: api
-      provider: lm-studio
-      service: lm-studio
-      offering: local
-      apiBase: http://localhost:1234/v1
-      model: qwen2.5-coder-7b
-      label: LM Studio Qwen2.5 Coder
+      provider: custom-endpoint
+      service: custom-endpoint
+      offering: payg
+      apiBase: https://api.example.test/v1
+      apiKey: <paste-your-endpoint-key>
+      model: your-implementer-model
+      label: Small cloud
 validation:
   end_checks: true
 ```
 
-Load the model in LM Studio and start its server before the run; the model ID must match what `/v1/models` reports. Like every bundled row, a local default is **`compatible-only`**, so it carries no SPLITBRIEF quality claim (see the [bundled model catalog](./CONFIGURATION.md#bundled-model-catalog)). Named `implementerProfiles` persist in config. LM Studio is local: no key, no metered spend, and prompts never leave your machine.
+Set `model` to the exact model ID that your endpoint serves: a custom provider has no default model. A custom provider takes its key inline (see [docs/API-KEYS.md](./API-KEYS.md)). Named `implementerProfiles` persist in config.
 
 **Run:**
 
 ```bash
-splitbrief doctor              # verify claude-code auth and LM Studio reachability
+splitbrief doctor              # verify claude-code auth and your endpoint
 splitbrief start "add a CSV exporter"
 ```
 
@@ -240,14 +242,13 @@ splitbrief start "add a CSV exporter"
 
 ```
 planner: claude-code (cli)  · subscription, no API spend tracked
-implementer: lm-studio · qwen2.5-coder-7b
-cost_update: planner unpriced · implementer local
+implementer: custom-endpoint · your-implementer-model
 validate · tsc ✓ lint ✓ test ✓
 ```
 
-The planner bills through your Claude Code subscription, so its usage reads `unpriced` — never zero cost and never `local`, which is reserved for local backends. The local implementer reads `local`, and the session total reads `unpriced + local`.
+The planner bills through your Claude Code subscription, so its usage reads `unpriced` — never zero cost.
 
-**Variations:** `provider: ollama` with `apiBase: http://localhost:11434/v1` and `provider: llama-cpp` with `apiBase: http://localhost:8080/v1` are the other local backends; a remote OpenAI-compatible endpoint works as a custom provider with an inline `apiKey` (see [docs/API-KEYS.md](./API-KEYS.md)), and metered spend then shows in `cost_update`. Swap the planner `tool` using the [canonical CLI runner matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix).
+**Variations:** The implementer can also be a CLI tool on a smaller model: `kind: cli` with a `tool:` and a `model:`. Swap the planner `tool` using the [canonical CLI runner matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix).
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) §implementer / §implementerProfiles, [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md), [docs/API-KEYS.md](./API-KEYS.md).
 
@@ -281,23 +282,16 @@ Unknown or unpriced usage is not zero cost. Estimates in the explicit details vi
 planner:
   kind: cli
   tool: claude-code
-implementer:
-  kind: api
-  provider: ollama
-  service: ollama
-  offering: local
-  apiBase: http://localhost:11434/v1
-  model: qwen3-coder:30b
 validation:
   end_checks: true
 ```
 
-`claude-code` is a supported CLI runner with subscription-included billing (see the [canonical CLI runner matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix)). The bundled Ollama default is **`compatible-only`** — selectable, but not a runtime recommendation (see the [bundled model catalog](./CONFIGURATION.md#bundled-model-catalog)). Local implementers keep code on your machine; no API credential is required for default loopback Ollama.
+`claude-code` is a supported CLI runner with subscription-included billing (see the [canonical CLI runner matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix)). With no `implementer` block, Claude Code also builds.
 
 **Run:**
 
 ```bash
-splitbrief doctor              # verify claude-code session auth and ollama reachability
+splitbrief doctor              # verify claude-code session auth
 splitbrief start "add input validation to the signup form"
 ```
 
@@ -305,13 +299,13 @@ splitbrief start "add input validation to the signup form"
 
 ```
 planner: claude-code (cli)  · subscription, no API spend tracked
-implementer: ollama · qwen3-coder:30b (local)
+implementer: claude-code (cli)
 validate · tsc ✓ lint ✓ test ✓
 ```
 
-`kind: cli` spawns `claude` as a subprocess with the brief on stdin. Spend goes through your subscription, so SPLITBRIEF shows the planner as `unpriced`; only the Ollama implementer reads `local`, and the session total reads `unpriced`.
+`kind: cli` spawns `claude` as a subprocess with the brief on stdin. Spend goes through your subscription, so SPLITBRIEF shows the planner as `unpriced`, and the session total reads `unpriced`.
 
-**Variations:** Swap `tool` for any admitted CLI in the [canonical CLI runner matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix); `splitbrief init` auto-detects installed tools. For a hosted cloud implementer instead of local Ollama, use recipe 6.
+**Variations:** Swap `tool` for any admitted CLI in the [canonical CLI runner matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix); `splitbrief init` auto-detects installed tools. For an implementer behind your own endpoint, use recipe 6.
 
 **See also:** [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md), [docs/CONFIGURATION.md](./CONFIGURATION.md) §planner / §implementer, [docs/API-KEYS.md](./API-KEYS.md).
 

@@ -111,7 +111,7 @@ The planner, the implementer and the reviewer are pluggable. The same four backe
 
 **cli** — Spawns a CLI tool as a subprocess. Claude Code, Codex, OpenCode, Kilo Code, Cursor, Command Code, Antigravity.
 
-**api** — Calls an OpenAI-compatible HTTP endpoint. Ollama, LM Studio, llama.cpp, custom endpoint.
+**api** — Calls an OpenAI-compatible HTTP endpoint, for example a custom endpoint of your own.
 
 **shell** — Runs an arbitrary command with stdin/stdout piping; no shell/network sandbox.
 

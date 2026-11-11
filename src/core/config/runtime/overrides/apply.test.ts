@@ -9,11 +9,11 @@ const baseConfig: Config = makeConfig({ workflow: { approve: 'plan' } });
 
 describe('applyCLIOverrides — plannerEffort', () => {
   it('sets planner.effort when valid', () => {
-    const result = applyCLIOverrides(baseConfig, { plannerEffort: 'high' });
+    const { config: result } = applyCLIOverrides(baseConfig, { plannerEffort: 'high' });
     expect(result.planner.effort).toBe('high');
   });
   it('accepts max, the top of the vocabulary', () => {
-    const result = applyCLIOverrides(baseConfig, { plannerEffort: 'max' });
+    const { config: result } = applyCLIOverrides(baseConfig, { plannerEffort: 'max' });
     expect(result.planner.effort).toBe('max');
   });
   it('refuses a level outside the vocabulary and names every level it takes', () => {
@@ -22,20 +22,20 @@ describe('applyCLIOverrides — plannerEffort', () => {
     );
   });
   it('leaves config untouched when override absent', () => {
-    const result = applyCLIOverrides(baseConfig, {});
+    const { config: result } = applyCLIOverrides(baseConfig, {});
     expect(result.planner.effort).toBeUndefined();
   });
 });
 
 describe('applyCLIOverrides — contextLength', () => {
   it('applies contextLength override', () => {
-    const result = applyCLIOverrides(baseConfig, { contextLength: 16384 });
+    const { config: result } = applyCLIOverrides(baseConfig, { contextLength: 16384 });
     expect(result.implementer.contextLength).toBe(16384);
   });
 
   it('preserves a configured approve level when no approve override is given', () => {
     const config: Config = { ...baseConfig, workflow: { ...baseConfig.workflow, approve: 'none' } };
-    expect(applyCLIOverrides(config, {}).workflow.approve).toBe('none');
+    expect(applyCLIOverrides(config, {}).config.workflow.approve).toBe('none');
   });
 });
 
@@ -45,7 +45,8 @@ describe('workflowOptsToCLIOverrides with SPLITBRIEF_CONTEXT_LENGTH', () => {
   it('sets the Prompt budget of the default implementer profile', () => {
     vi.stubEnv('SPLITBRIEF_CONTEXT_LENGTH', '4096');
     expect(
-      applyCLIOverrides(baseConfig, workflowOptsToCLIOverrides({})).implementer.contextLength,
+      applyCLIOverrides(baseConfig, workflowOptsToCLIOverrides({})).config.implementer
+        .contextLength,
     ).toBe(4096);
   });
 
@@ -53,14 +54,14 @@ describe('workflowOptsToCLIOverrides with SPLITBRIEF_CONTEXT_LENGTH', () => {
     vi.stubEnv('SPLITBRIEF_CONTEXT_LENGTH', '4096');
     expect(
       applyCLIOverrides(baseConfig, workflowOptsToCLIOverrides({ implementerContextLength: 8192 }))
-        .implementer.contextLength,
+        .config.implementer.contextLength,
     ).toBe(8192);
   });
 });
 
 describe('applyCLIOverrides — the reviewer seat', () => {
   it('--reviewer codex --reviewer-model <id> writes reviewer and leaves planner untouched', () => {
-    const result = applyCLIOverrides(
+    const { config: result } = applyCLIOverrides(
       baseConfig,
       workflowOptsToCLIOverrides({ reviewer: 'codex', reviewerModel: 'gpt-5.4' }),
     );
@@ -70,11 +71,13 @@ describe('applyCLIOverrides — the reviewer seat', () => {
   });
 
   it('leaves reviewer unset when no reviewer flag is given', () => {
-    expect(applyCLIOverrides(baseConfig, workflowOptsToCLIOverrides({})).reviewer).toBeUndefined();
+    expect(
+      applyCLIOverrides(baseConfig, workflowOptsToCLIOverrides({})).config.reviewer,
+    ).toBeUndefined();
   });
 
   it('--reviewer-effort applies to the reviewer seat, not the planner', () => {
-    const result = applyCLIOverrides(
+    const { config: result } = applyCLIOverrides(
       baseConfig,
       workflowOptsToCLIOverrides({ reviewer: 'codex', reviewerEffort: 'high' }),
     );

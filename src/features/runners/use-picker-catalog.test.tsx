@@ -22,7 +22,6 @@ import { PICKER_ROLE_SEAT_IDS, type ActiveRunnerRole } from '../../core/runners/
 import type { PickerOption } from './model-catalog/options.js';
 import type { RightRow } from './model-catalog/rows.js';
 import type { ModelOption } from './model-catalog/recency.js';
-import type { ConfiguredProviderRuntime } from '../../engine/detection/provider-outcomes.js';
 import { CATALOG_SUGGESTION_MEMBERSHIP } from '../../engine/providers/model/catalog.js';
 import {
   nativeCliCatalogToDetectedModels,
@@ -44,25 +43,8 @@ function rowModels(rows: readonly RightRow[]) {
 function seedDetections() {
   detectionStore.setDetection({
     cliTools: [cliDetectionFor('ready', 'claude-code'), cliDetectionFor('ready', 'codex')],
-    providers: [
-      {
-        provider: 'ollama',
-        available: true,
-        isLocal: true,
-        models: [{ id: 'ollama-only-model', contextLength: 8192 }],
-      },
-      {
-        provider: 'lm-studio',
-        available: true,
-        isLocal: true,
-        models: [{ id: 'lm-studio-only-model', contextLength: 200000 }],
-      },
-    ],
+    providers: [],
   });
-  modelCacheStore.setProviderModels('ollama', [{ id: 'ollama-only-model', contextLength: 8192 }]);
-  modelCacheStore.setProviderModels('lm-studio', [
-    { id: 'lm-studio-only-model', contextLength: 200000 },
-  ]);
 }
 
 describe('usePickerCatalog fallback slot', () => {
@@ -204,15 +186,40 @@ function publishConfirmedCodexList() {
   });
 }
 
+/** Ready Claude Code, Codex and Cursor; Codex and Cursor each list a model the other lacks. */
+function publishDisjointCliLists() {
+  const request = detectionStore.beginRefresh({
+    contexts: { readiness: 'r', modelsDev: 'm', cliModels: 'c' },
+  });
+  detectionStore.publish({
+    request,
+    result: {
+      providers: [],
+      cliTools: [
+        cliDetectionFor('ready', 'claude-code'),
+        cliDetectionFor('ready', 'codex'),
+        cliDetectionFor('ready', 'cursor'),
+      ],
+      catalog: null,
+      cliModels: [
+        {
+          connection: { tool: 'codex', contextKey: 'c' },
+          outcome: { kind: 'success', value: [{ id: 'codex-only-model' }] },
+        },
+        {
+          connection: { tool: 'cursor', contextKey: 'c' },
+          outcome: { kind: 'success', value: [{ id: 'cursor-only-model' }] },
+        },
+      ],
+      generation: 1,
+    },
+  });
+}
+
 let capturedRightRows: RightRow[] = [];
 
 function RowsProbe() {
   capturedRightRows = usePickerCatalog('planner', 'seat', 0, 'codex').rightRows;
-  return <Text>rows</Text>;
-}
-
-function OllamaRowsProbe() {
-  capturedRightRows = usePickerCatalog('implementer', 'seat', 0, 'ollama').rightRows;
   return <Text>rows</Text>;
 }
 
@@ -616,127 +623,11 @@ describe('usePickerCatalog', () => {
     ui.unmount();
   });
 
-  it('projects a role-scoped stale catalog as stale and excludes it from the detected count', () => {
+  it('does not carry current tool selection from planner to implementer', async () => {
     configStore.__testReset({
       projectDir: '/tmp/project',
-      config: makeConfig({
-        implementer: {
-          kind: 'api',
-          provider: 'ollama',
-          apiBase: 'http://localhost:11434/v1',
-          model: 'implementer-last-confirmed-model',
-        },
-      }),
+      config: makeConfig({ implementer: { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' } }),
     });
-    const implementerRuntime: ConfiguredProviderRuntime = {
-      connection: { role: 'implementer', provider: 'ollama', contextKey: 'implementer-context' },
-      state: 'stale',
-      catalog: 'populated',
-      models: [{ id: 'implementer-last-confirmed-model' }],
-      fetchedAt: 1,
-      validatedAt: 2,
-      failure: 'timeout',
-      diagnostic: 'Configured provider catalog refresh did not complete.',
-    };
-    const plannerRuntime: ConfiguredProviderRuntime = {
-      connection: { role: 'planner', provider: 'ollama', contextKey: 'planner-context' },
-      state: 'fresh',
-      catalog: 'populated',
-      models: [{ id: 'planner-confirmed-model' }],
-      fetchedAt: 1,
-      validatedAt: 2,
-    };
-    detectionStore.setDetection({
-      cliTools: [],
-      providers: [],
-      providerOutcomes: [implementerRuntime, plannerRuntime],
-    });
-    let projection:
-      | Readonly<{
-          model: ModelOption | undefined;
-          detected: number;
-          counts: ReturnType<typeof usePickerCatalog>['modelCounts'];
-        }>
-      | undefined;
-
-    function Probe() {
-      const catalog = usePickerCatalog('implementer', 'seat', 0, 'ollama');
-      projection = {
-        model: rowModels(catalog.rightRows).find(
-          (model) => model.id === 'implementer-last-confirmed-model',
-        ),
-        detected: catalog.modelCounts.confirmed,
-        counts: catalog.modelCounts,
-      };
-      return <Text>projection</Text>;
-    }
-
-    const ui = renderFeature(<Probe />);
-
-    expect(projection).toEqual({
-      model: expect.objectContaining({
-        membership: 'stale',
-        isStale: true,
-        isDetected: false,
-      }),
-      detected: 0,
-      counts: expect.objectContaining({
-        confirmed: 0,
-        stale: 1,
-        custom: 0,
-      }),
-    });
-    expect(projection?.model?.id).not.toBe('planner-confirmed-model');
-
-    detectionStore.setDetection({
-      cliTools: [],
-      providers: [],
-      providerOutcomes: [
-        {
-          connection: implementerRuntime.connection,
-          state: 'fresh',
-          catalog: 'populated',
-          models: [{ id: 'implementer-last-confirmed-model' }],
-          fetchedAt: 3,
-          validatedAt: 3,
-        },
-        plannerRuntime,
-      ],
-    });
-    ui.rerender(<Probe />);
-    expect(projection).toEqual({
-      model: expect.objectContaining({ membership: 'confirmed', isDetected: true }),
-      detected: 1,
-      counts: expect.objectContaining({ confirmed: 1, stale: 0 }),
-    });
-
-    detectionStore.setDetection({
-      cliTools: [],
-      providers: [],
-      providerOutcomes: [
-        {
-          connection: implementerRuntime.connection,
-          state: 'fresh',
-          catalog: 'empty',
-          models: [],
-          fetchedAt: 4,
-          validatedAt: 4,
-        },
-        plannerRuntime,
-      ],
-    });
-    ui.rerender(<Probe />);
-    // An empty catalog drops the model from every lane, so the only row left
-    // naming it is the recovery row the configured selection earns.
-    expect(projection).toEqual({
-      model: expect.objectContaining({ membership: 'custom' }),
-      detected: 0,
-      counts: expect.objectContaining({ confirmed: 0, stale: 0 }),
-    });
-    ui.unmount();
-  });
-
-  it('does not carry current tool selection from planner to implementer', async () => {
     const ui = renderFeature(<CatalogProbe role="planner" selectedItemId="claude-code" />);
     await tick(20);
     expect(ui.lastFrame()).toContain('planner:claude-code');
@@ -744,7 +635,7 @@ describe('usePickerCatalog', () => {
     ui.rerender(<CatalogProbe role="implementer" />);
     await tick(20);
 
-    expect(ui.lastFrame()).toContain('implementer:ollama:qwen2.5-coder:7b');
+    expect(ui.lastFrame()).toContain('implementer:codex:gpt-5-codex');
     expect(ui.lastFrame()).not.toContain('claude-code');
     ui.unmount();
   });
@@ -760,14 +651,9 @@ describe('usePickerCatalog', () => {
           model: 'custom-endpoint-model',
         },
         implementerProfiles: {
-          default: 'local-qwen',
+          default: 'codex-build',
           profiles: {
-            'local-qwen': {
-              kind: 'api',
-              provider: 'ollama',
-              apiBase: 'http://localhost:11434/v1',
-              model: 'qwen2.5-coder:7b',
-            },
+            'codex-build': { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' },
           },
         },
       }),
@@ -787,12 +673,8 @@ describe('usePickerCatalog', () => {
     const ui = renderFeature(<Probe />);
     await tick(20);
 
-    expect(ui.lastFrame()).toContain('implementer:ollama:qwen2.5-coder:7b');
-    expect(savedRunner).toMatchObject({
-      kind: 'api',
-      provider: 'ollama',
-      model: 'qwen2.5-coder:7b',
-    });
+    expect(ui.lastFrame()).toContain('implementer:codex:gpt-5-codex');
+    expect(savedRunner).toMatchObject({ kind: 'cli', tool: 'codex', model: 'gpt-5-codex' });
     expect(savedRunner).not.toMatchObject({
       provider: 'custom-endpoint',
       model: 'custom-endpoint-model',
@@ -801,7 +683,7 @@ describe('usePickerCatalog', () => {
   });
 
   it('derives right models in the same render as the selected tool', () => {
-    seedDetections();
+    publishDisjointCliLists();
     const frames: string[] = [];
     function Probe({ toolId }: { toolId: string }) {
       const catalog = usePickerCatalog('implementer', 'seat', 0, toolId);
@@ -813,18 +695,18 @@ describe('usePickerCatalog', () => {
       return <ModelListProbe toolId={toolId} />;
     }
 
-    const ui = renderFeature(<Probe toolId="ollama" />);
-    expect(frames.at(-1)).toContain('ollama-only-model');
-    expect(frames.at(-1)).not.toContain('lm-studio-only-model');
+    const ui = renderFeature(<Probe toolId="codex" />);
+    expect(frames.at(-1)).toContain('codex-only-model');
+    expect(frames.at(-1)).not.toContain('cursor-only-model');
 
-    ui.rerender(<Probe toolId="lm-studio" />);
-    expect(frames.at(-1)).toContain('lm-studio-only-model');
-    expect(frames.at(-1)).not.toContain('ollama-only-model');
+    ui.rerender(<Probe toolId="cursor" />);
+    expect(frames.at(-1)).toContain('cursor-only-model');
+    expect(frames.at(-1)).not.toContain('codex-only-model');
     ui.unmount();
   });
 
   it('rapid tool selection never shows previous-tool model ids', async () => {
-    seedDetections();
+    publishDisjointCliLists();
     const frames: string[] = [];
     function Probe({ toolId }: { toolId: string }) {
       const catalog = usePickerCatalog('implementer', 'seat', 0, toolId);
@@ -838,48 +720,48 @@ describe('usePickerCatalog', () => {
       return <Text>{frames.at(-1)}</Text>;
     }
 
-    const ui = renderFeature(<Probe toolId="ollama" />);
-    const toolSequence = ['lm-studio', 'ollama', 'lm-studio', 'ollama'] as const;
+    const ui = renderFeature(<Probe toolId="codex" />);
+    const toolSequence = ['cursor', 'codex', 'cursor', 'codex'] as const;
     for (const toolId of toolSequence) {
       ui.rerender(<Probe toolId={toolId} />);
     }
 
-    const lmStudioMarker = 'lm-studio-only-model';
-    const ollamaMarker = 'ollama-only-model';
+    const cursorMarker = 'cursor-only-model';
+    const codexMarker = 'codex-only-model';
     // A leaked previous-tool model shows up as a frame carrying both tools' ids,
     // or as a frame pairing one tool with the other tool's models.
     for (const frame of frames) {
-      expect(frame.includes(lmStudioMarker) && frame.includes(ollamaMarker)).toBe(false);
+      expect(frame.includes(cursorMarker) && frame.includes(codexMarker)).toBe(false);
     }
-    expect(frames.some((frame) => frame.startsWith('lm-studio:'))).toBe(true);
-    expect(frames.filter((frame) => frame.startsWith('lm-studio:'))).not.toContainEqual(
-      expect.stringContaining(ollamaMarker),
+    expect(frames.some((frame) => frame.startsWith('cursor:'))).toBe(true);
+    expect(frames.filter((frame) => frame.startsWith('cursor:'))).not.toContainEqual(
+      expect.stringContaining(codexMarker),
     );
-    expect(frames.filter((frame) => frame.startsWith('ollama:'))).not.toContainEqual(
-      expect.stringContaining(lmStudioMarker),
+    expect(frames.filter((frame) => frame.startsWith('codex:'))).not.toContainEqual(
+      expect.stringContaining(cursorMarker),
     );
-    expect(frames.at(-1)).toMatch(/^ollama:/);
-    expect(frames.at(-1)).toContain(ollamaMarker);
-    expect(frames.at(-1)).not.toContain(lmStudioMarker);
+    expect(frames.at(-1)).toMatch(/^codex:/);
+    expect(frames.at(-1)).toContain(codexMarker);
+    expect(frames.at(-1)).not.toContain(cursorMarker);
     ui.unmount();
   });
 
   it('mouse target changes update models without a previous-tool model frame', async () => {
-    seedDetections();
+    publishDisjointCliLists();
     const ui = renderFeature(<ControlledCatalogPicker role="implementer" />);
     await flushEffects();
 
     const zones = collectClickableZones({ cols: 140, rows: 40 });
-    zones.get('runner-left:lm-studio')?.();
+    zones.get('runner-left:cursor')?.();
     await vi.waitFor(() => {
-      expect(ui.lastFrame()).toContain('lm-studio-only-model');
-      expect(ui.lastFrame()).not.toContain('ollama-only-model');
+      expect(ui.lastFrame()).toContain('cursor-only-model');
+      expect(ui.lastFrame()).not.toContain('codex-only-model');
     });
 
-    zones.get('runner-left:ollama')?.();
+    zones.get('runner-left:codex')?.();
     await vi.waitFor(() => {
-      expect(ui.lastFrame()).toContain('ollama-only-model');
-      expect(ui.lastFrame()).not.toContain('lm-studio-only-model');
+      expect(ui.lastFrame()).toContain('codex-only-model');
+      expect(ui.lastFrame()).not.toContain('cursor-only-model');
     });
     ui.unmount();
   });
@@ -897,24 +779,30 @@ describe('usePickerCatalog', () => {
     ];
     configStore.__testReset({
       projectDir: '/tmp/project',
-      config: makeConfig({
-        implementer: {
-          kind: 'api',
-          provider: 'ollama',
-          apiBase: 'http://localhost:11434/v1',
-          model: 'zeta-high',
-        },
-      }),
+      config: makeConfig({ implementer: { kind: 'cli', tool: 'cursor', model: 'zeta-high' } }),
     });
-    detectionStore.setDetection({
-      cliTools: [],
-      providers: [{ provider: 'ollama', available: true, isLocal: true, models: zeta }],
+    const request = detectionStore.beginRefresh({
+      contexts: { readiness: 'r', modelsDev: 'm', cliModels: 'c' },
     });
-    modelCacheStore.setProviderModels('ollama', zeta);
+    detectionStore.publish({
+      request,
+      result: {
+        providers: [],
+        cliTools: [cliDetectionFor('ready', 'cursor')],
+        catalog: null,
+        cliModels: [
+          {
+            connection: { tool: 'cursor', contextKey: 'c' },
+            outcome: { kind: 'success', value: zeta },
+          },
+        ],
+        generation: 1,
+      },
+    });
     pickerViewStore.expand('zeta-high', 'zeta-high');
 
     function AxisProbe() {
-      const catalog = usePickerCatalog('implementer', 'seat', 0, 'ollama');
+      const catalog = usePickerCatalog('implementer', 'seat', 0, 'cursor');
       return (
         <Text>
           {catalog.rightRows
@@ -932,47 +820,6 @@ describe('usePickerCatalog', () => {
     pickerViewStore.setOptionDraftId('zeta-max-fast');
     await tick(20);
     expect(ui.lastFrame()).toContain('effort=max,fast=on');
-    ui.unmount();
-  });
-
-  it('raises no effort axis on an api seat, whose channel has no field to write one', async () => {
-    // The provider publishes a ladder, but an api seat drops the level on save, so
-    // offering one here would draft a value the commit cannot keep.
-    const zeta = [{ id: 'zeta', nativeReasoningEfforts: ['low', 'high'] }];
-    configStore.__testReset({
-      projectDir: '/tmp/project',
-      config: makeConfig({
-        implementer: {
-          kind: 'api',
-          provider: 'ollama',
-          apiBase: 'http://localhost:11434/v1',
-          model: 'zeta',
-        },
-      }),
-    });
-    detectionStore.setDetection({
-      cliTools: [],
-      providers: [{ provider: 'ollama', available: true, isLocal: true, models: zeta }],
-    });
-    modelCacheStore.setProviderModels('ollama', zeta);
-    pickerViewStore.expand('zeta');
-
-    function LadderProbe() {
-      const catalog = usePickerCatalog('implementer', 'seat', 0, 'ollama');
-      return (
-        <Text>
-          {catalog.rightRows
-            .filter((row) => row.kind === 'axis')
-            .map((row) => row.axis)
-            .join(',') || 'no-axis-rows'}
-        </Text>
-      );
-    }
-
-    const ui = renderFeature(<LadderProbe />);
-    await tick(20);
-
-    expect(ui.lastFrame()).toContain('no-axis-rows');
     ui.unmount();
   });
 
@@ -1026,12 +873,16 @@ describe('usePickerCatalog', () => {
   });
 
   it('arrow-key selection updates models without a previous-tool model frame', async () => {
-    seedDetections();
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }),
+    });
+    publishDisjointCliLists();
     const ui = renderFeature(<KeyboardCatalogProbe role="implementer" />);
     await flushEffects();
     const initial = ui.lastFrame() ?? '';
-    expect(initial).toContain('ollama:');
-    expect(initial).toContain('ollama-only-model');
+    expect(initial).toContain('codex:');
+    expect(initial).toContain('codex-only-model');
 
     await flushEffects();
     ui.stdin.write('\u001B[B');
@@ -1039,7 +890,7 @@ describe('usePickerCatalog', () => {
 
     const wrapped = ui.lastFrame() ?? '';
     expect(wrapped).toContain('custom-command:');
-    expect(wrapped).not.toContain('ollama-only-model');
+    expect(wrapped).not.toContain('codex-only-model');
 
     await flushEffects();
     ui.stdin.write('\u001B[B');
@@ -1047,7 +898,7 @@ describe('usePickerCatalog', () => {
 
     const next = ui.lastFrame() ?? '';
     expect(next).toContain('claude-code:');
-    expect(next).not.toContain('ollama-only-model');
+    expect(next).not.toContain('codex-only-model');
     ui.unmount();
   });
 
@@ -1141,43 +992,6 @@ describe('usePickerCatalog', () => {
     const ui = renderFeature(<RowsProbe />);
     await tick(20);
 
-    expect(capturedRightRows.some((row) => row.kind === 'action')).toBe(false);
-    ui.unmount();
-  });
-
-  it('offers the browse-catalog row where browsing widens: an api runner whose bundled row the live lane hides', async () => {
-    configStore.__testReset({
-      projectDir: '/tmp/project',
-      config: makeConfig({
-        implementer: {
-          kind: 'api',
-          provider: 'ollama',
-          apiBase: 'http://localhost:11434/v1',
-        },
-      }),
-    });
-    detectionStore.setDetection({
-      cliTools: [],
-      providers: [{ provider: 'ollama', available: true, isLocal: true, models: [] }],
-    });
-    modelCacheStore.hydrateModelsDevCatalog({
-      catalog: {
-        ollama: { id: 'ollama', models: { 'llama-9': { id: 'llama-9', name: 'Llama 9' } } },
-      },
-      fetchedAt: 1,
-      validatedAt: 1,
-    });
-
-    const ui = renderFeature(<OllamaRowsProbe />);
-    await tick(20);
-
-    expect(rowModels(capturedRightRows).map((model) => model.id)).not.toContain('qwen3-coder:30b');
-    expect(capturedRightRows.at(-1)).toMatchObject({ kind: 'action', action: 'browse-catalog' });
-
-    pickerViewStore.setBrowseCatalog(true);
-    await tick(20);
-
-    expect(rowModels(capturedRightRows).map((model) => model.id)).toContain('qwen3-coder:30b');
     expect(capturedRightRows.some((row) => row.kind === 'action')).toBe(false);
     ui.unmount();
   });
