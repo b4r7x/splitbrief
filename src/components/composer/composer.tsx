@@ -259,6 +259,7 @@ function ComposerInput({
       if (sessionRef !== null) saveSessionDraft(sessionRef, document);
       else if (currentScreen === 'home') saveHomeDraft(projectDir, document);
     },
+    onDraftBack: () => holdMenus(),
   });
   useEffect(
     () => () => {
@@ -298,7 +299,6 @@ function ComposerInput({
 
   const handleChange = (_value: string, edit: InputEdit) => {
     onReviewInteraction?.();
-    noteEdit();
     for (const paste of pasteQueueRef.current) {
       if (edit.start < paste.at) {
         paste.at =
@@ -311,6 +311,8 @@ function ComposerInput({
       if (edit.caret >= edit.end) setCaretSeed({ epoch: inputEpoch + 1, index: 0 });
       bumpEpoch();
     }
+    // Last, so the lists open over a draft that this edit brought back, as after any edit.
+    noteEdit();
   };
   const setText = (next: string) => {
     for (const paste of pasteQueueRef.current) paste.request.controller.abort();

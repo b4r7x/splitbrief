@@ -35,6 +35,9 @@ import type { SessionRef } from '../../core/types/session-ref.js';
 import { configStore } from '../../stores/project/config.js';
 import { parkLeavesWordsUnread } from '../../core/recovery/typed-words.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
+import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
+import { haltReadsNoWords } from '../../core/run-view/halt.js';
+import { correctionActionFor, NO_CORRECTION_MESSAGE } from './recovery-prompt.js';
 
 type AbortHandler = () => void;
 
@@ -257,8 +260,9 @@ function steerAtRest(message: UserMessageInput): string | undefined {
  * `/steer <text>` and ctrl+⏎: stop now and continue with the text as the correction. A run already
  * parked resumes here; a live call is stopped and the text held until its park lands, so a steer
  * typed during the stop race is not lost. A waiting plan card or question has nothing to stop and
- * takes the text as its change request or its answer. A run at rest has nothing to stop
- * and continues with the text. A refusal comes back as its one reason, and the caller shows it.
+ * takes the text as its change request or its answer; a halt panel that takes no typed correction
+ * refuses it. A run at rest has nothing to stop and continues with the text. A refusal comes back
+ * as its one reason, and the caller shows it.
  */
 export function requestSteer(message: UserMessageInput): string | undefined {
   if (message.text.trim() === '') return 'Nothing to steer.';
@@ -266,6 +270,15 @@ export function requestSteer(message: UserMessageInput): string | undefined {
   if (stop.phase === 'parked') return resumeParkedRun(message) ? undefined : steerAtRest(message);
   if (stopInProgress()) return 'Finish stopping before steering.';
   if (handlers.waitingPrompt) {
+    // Only the halt panel's own question refuses words: the note an action asks for takes them.
+    const view = runViewStore.get();
+    if (
+      view.halt !== null &&
+      recoveryNoticeStore.get().asking &&
+      correctionActionFor(view.halt.issue, haltReadsNoWords(view)) === undefined
+    ) {
+      return NO_CORRECTION_MESSAGE;
+    }
     handlers.waitingPrompt(message);
     return undefined;
   }

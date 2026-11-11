@@ -49,10 +49,9 @@ import { nextEntryConfig, nextEntryReviewNone } from './entry-config.js';
 import {
   correctionActionFor,
   formatRecoveryPrompt,
+  NO_CORRECTION_MESSAGE,
   parseRecoveryActionAnswer,
 } from './recovery-prompt.js';
-
-const NO_CORRECTION_MESSAGE = 'This halt takes no typed correction. Choose an action.';
 
 type PendingRecoveryResult =
   | {

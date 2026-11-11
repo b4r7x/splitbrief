@@ -344,6 +344,17 @@ describe('handleWorkflowCtrlChords', () => {
     ).toEqual({ type: 'toggle-diff', key: 'implementer_generate_done:1' });
   });
 
+  it('leaves Ctrl+D silent when no row takes the diff toggle', () => {
+    expect(
+      handleWorkflowCtrlChords({
+        input: 'd',
+        key: key({ ctrl: true }),
+        getRowActions: () =>
+          new Map([['row', { type: 'toggle-activity-batch', key: 'activity_batch:1' }]]),
+      }),
+    ).toEqual({ type: 'none' });
+  });
+
   it('leaves Ctrl+G unbound now that the cost drilldown is gone', () => {
     expect(
       handleWorkflowCtrlChords({

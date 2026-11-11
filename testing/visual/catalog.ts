@@ -241,6 +241,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'home-palette-prefill-refused',
+      title: 'Home · the draft back after the palette command is refused',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'ready',
+        title: 'The reason, with the typed draft back and the command list closed',
+        kind: 'ready',
+        marker: 'Unknown seat: zzz',
+      },
+      elements: [
+        { id: 'header', title: 'Home header' },
+        { id: 'composer', title: 'Feature composer' },
+      ],
+    }),
+    defineScenario({
       id: 'home-draft-long',
       title: 'Home · a draft longer than one row',
       surface: screenSurface('home'),
@@ -2830,6 +2845,18 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [{ id: 'composer', title: 'Workflow composer' }],
     }),
     defineScenario({
+      id: 'workflow-stop-failed-over-draft',
+      title: 'Workflow · a failed stop over typed words',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'stop-failed-over-draft',
+        title: 'Stop failed byline with the sheet closed over the draft',
+        kind: 'ready',
+        marker: 'Stop failed',
+      },
+      elements: [{ id: 'composer', title: 'Workflow composer' }],
+    }),
+    defineScenario({
       id: 'workflow-draft-not-saved',
       title: 'Workflow · leaving with a draft that cannot be saved',
       surface: screenSurface('workflow'),
@@ -4821,6 +4848,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Recovery menu legend over a command draft',
         kind: 'question',
         marker: 'Needs you · T901 failed',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-steer-refused',
+      title: 'Workflow · a /steer line refused at a halt that takes no typed correction',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery-steer-refused',
+        title: 'The reason, with the whole /steer line back in the composer',
+        kind: 'failure',
+        marker: 'This halt takes no typed correction',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

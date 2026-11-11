@@ -1,8 +1,10 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import XtermHeadless from '@xterm/headless';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
+import { sessionDir } from '../../../src/core/paths.js';
+import { readActive } from '../../../src/core/sessions/active-pointer.js';
 import { reapOrphanRunners } from '../../../src/engine/orchestrator/run/orphan-reaper.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { trustDeclaredRunners } from '#testing/helpers/runner-trust.js';
@@ -264,6 +266,28 @@ describe('e2e: a stop that settles under text typed in the composer', {
       expect(run.reviewCalls()).toBe(1);
       expect(screen()).toMatch(/▌ PLAN/);
     });
+  });
+
+  it('keeps the sentence and the sheet closed when the stop fails, and the byline names the failure', async () => {
+    await whileReviewStops(
+      trustHome.home,
+      async ({ screen }, run) => {
+        const sessionId = readActive(run.target.projectDir);
+        if (sessionId === null) throw new Error('no active session');
+        const dir = sessionDir(run.target.projectDir, sessionId);
+        chmodSync(dir, 0o555);
+        try {
+          run.release();
+          await expect.poll(screen, PAINT).toMatch(/Stop failed|Retry stop/);
+          expect(screen()).not.toContain('Stop options');
+          expect(screen()).toContain('Stop failed · ');
+          expect(screen()).toContain(`› ${WORDS}`);
+        } finally {
+          chmodSync(dir, 0o755);
+        }
+      },
+      WORDS,
+    );
   });
 
   it('opens the sheet over an empty composer, and ⏎ takes Resume', async () => {

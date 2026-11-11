@@ -8,6 +8,7 @@ describe('computeConversationRowsWindowFromProjection', () => {
     const createTailRows = vi.fn(() => []);
     const projection: ConversationRowsProjection = {
       activeTaskHeaderKey: 'brief-header',
+      latestDiffKey: null,
       renderableCount: 2,
       totalRows: 50_001,
       blocks: [

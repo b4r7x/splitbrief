@@ -19,7 +19,10 @@ interface ComposerHistory {
   resetHistory: () => void;
   /** An edit means the draft is the operator's again, not the entry they walked back to. */
   noteEdit: () => void;
-  /** A line given back keeps the command and `@` lists closed until an edit, as ↑ recall does. */
+  /**
+   * A line given back, or a held draft that comes back, keeps the command and `@` lists closed
+   * until an edit, as ↑ recall does.
+   */
   holdMenus: () => void;
   menusHeld: boolean;
 }

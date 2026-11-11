@@ -114,6 +114,11 @@ function isWorkflowAborted(controller: AbortController, ref: { current: boolean 
   return controller.signal.aborted || ref.current;
 }
 
+/** The run opens the stop sheet by itself only over an empty composer: a draft keeps the keys. */
+function openStopSheetOverEmptyComposer(): void {
+  if (composerLiveStore.get().empty) overlayStore.open('stop-sheet');
+}
+
 interface UseRunLoopOptions {
   prepared?: PreparedExecution | undefined;
   /** What the operator typed to continue this run; it seeds the first step of this re-entry. */
@@ -573,7 +578,7 @@ export function useRunLoop({
             }
           })();
         });
-        overlayStore.open('stop-sheet');
+        openStopSheetOverEmptyComposer();
       } else {
         await settleRun(session.ref, true);
       }
@@ -675,10 +680,9 @@ export function useRunLoop({
       } else if (
         routerStore.get().screen === 'workflow' &&
         overlayStore.get().active === 'none' &&
-        composerLiveStore.get().empty &&
         preparationStore.get().kind === 'idle'
       )
-        overlayStore.open('stop-sheet');
+        openStopSheetOverEmptyComposer();
     }
     return record;
   };

@@ -7,12 +7,14 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
+import { makeDiffReadCounter } from '#testing/helpers/events/implementer.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import type { EvidenceLedger } from '../../core/schemas/evidence.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { RunCheckpoint } from '../../core/sessions/run-record.js';
 import { taskId } from '../../core/schemas/task.js';
+import { diffEventKey } from '../../core/sections/event-sections.js';
 import { PLANNER_INHERITANCE } from '../../core/crew/identity.js';
 import { configStore } from '../../stores/project/config.js';
 import { routerStore } from '../../stores/navigation/router.js';
@@ -20,6 +22,8 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { controlsStore } from '../../stores/ui/controls.js';
+import { eventsStore } from '../../stores/workflow/events.js';
+import { readLatestDiffKey } from '../../features/workflow/conversation-rows/read-row-actions.js';
 import { COMMANDS_ONLY_NOTICE } from '../../components/composer/composer.js';
 import { WORKFLOW_GUTTER_X } from '../../features/workflow/layout/chrome-rows.js';
 import { MARK_SLOT_CELLS } from '../../components/row-leading.js';
@@ -296,6 +300,34 @@ describe('the workflow screen showing a closed run', () => {
     const narrow = mount(120, 40);
     expect(stripAnsiStyles(narrow.lastFrame() ?? '')).not.toContain('Tasks');
     narrow.unmount();
+  });
+
+  it('gives the /diff guard the row model that the screen built beside the sidebar, before and after a typed key', async () => {
+    // A session of its own: the screen keeps the typed key as the draft of the session, and the next
+    // mount of that session shows the draft.
+    showClosedRun({ summary: makeSummary(), sessionId: '2026-09-14-diff-guard' });
+    const diff = '+ export const total = 1;';
+    const diffReads = makeDiffReadCounter();
+    const done = diffReads.done(diff, 1);
+    eventsStore.__testReset({ events: [done] });
+    const ui = mount(160, 40);
+    const frame = () => stripAnsiStyles(ui.lastFrame() ?? '');
+    await vi.waitFor(() => {
+      expect(frame()).toContain('Tasks');
+      expect(frame()).toMatch(/src\/test\.ts .* ctrl\+d/);
+      expect(frame()).toContain('/ for a command…');
+    });
+
+    diffReads.reset();
+    expect(readLatestDiffKey()).toBe(diffEventKey(done, 0));
+    expect(diffReads.count()).toBe(0);
+
+    ui.stdin.write('/');
+    await vi.waitFor(() => expect(frame()).toMatch(/> \/ +\|/));
+    expect(readLatestDiffKey()).toBe(diffEventKey(done, 0));
+    expect(diffReads.count()).toBe(0);
+
+    ui.unmount();
   });
 
   it('names the crew by model at 160, and by tool over the model run block at 80', () => {

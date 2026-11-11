@@ -2,19 +2,32 @@ import { getSections } from '../../../stores/workflow/actions/sections.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
 import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
 import { readConversationScrollSnapshot } from '../layout/snapshot.js';
+import { getConversationRowsProjection } from './projection-cache.js';
 import { buildConversationRowActions } from './row-actions.js';
 import { readTranscriptTail } from './transcript-tail.js';
+import type { ConversationRowInputs } from './types.js';
 
-export function readConversationRowActions() {
+function readConversationRowInputs(): ConversationRowInputs {
   const snapshot = readConversationScrollSnapshot();
   const scroll = conversationScrollStore.get();
-  return buildConversationRowActions({
+  return {
     sections: getSections(),
     expandedDiffs: scroll.expandedDiffs,
     expandedActivityBatches: scroll.expandedActivityBatches,
     cols: snapshot.conversationWidth,
     viewportHeight: snapshot.transcriptViewportHeight,
     streaming: streamingOutputStore.get(),
+  };
+}
+
+export function readConversationRowActions() {
+  return buildConversationRowActions({
+    ...readConversationRowInputs(),
     tail: readTranscriptTail(),
   });
+}
+
+// The screen builds the row model from the same inputs, so this read hits its cache.
+export function readLatestDiffKey(): string | null {
+  return getConversationRowsProjection(readConversationRowInputs()).latestDiffKey;
 }

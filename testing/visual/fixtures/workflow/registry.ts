@@ -25,8 +25,10 @@ import { conversationScrollStore } from '../../../../src/stores/workflow/convers
 import { streamingOutputStore } from '../../../../src/stores/workflow/streaming-output.js';
 import type { CheckpointId } from '../../contracts/identifiers.js';
 import { checkpointId } from '../../contracts/identifiers.js';
+import { NO_CORRECTION_MESSAGE } from '../../../../src/features/workflow/recovery-prompt.js';
 import {
   LONG_COMPOSER_DRAFT,
+  PREVIEW_UNAVAILABLE,
   VISUAL_FIXTURE_EPOCH,
   trackSlowProbe,
   type CheckpointPredicate,
@@ -90,6 +92,7 @@ function applyStop(stop: FixtureStopState): void {
 const PLAN_CARD_COMMENT_DRAFT = 'Split the CLI change into a separate task.';
 const PLAN_CARD_OVER_DRAFT = 'also print the greeting in uppercase';
 const TYPED_WORDS = 'keep the old lockfile';
+const STEER_REFUSED_LINE = '/steer use the old name';
 
 function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureFactory {
   const base = createWorkflowFixtureFactory(projection);
@@ -466,6 +469,25 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
       afterMount: async (write) => {
         await write.press('\t');
         await write.press(draft);
+      },
+    });
+  }
+  // The preview's `/steer` stops at its own refusal (`steerRun` in `fixture-session.ts`). Once
+  // the line is back, the fixture puts the halt's reason in its place, as `requestSteer` returns it.
+  if (projection.scenarioId === 'workflow-recovery-steer-refused') {
+    return () => ({
+      ...base(),
+      afterMount: async (write) => {
+        await write.press('/');
+        await write.press(STEER_REFUSED_LINE.slice(1));
+        const refused = Promise.withResolvers<void>();
+        const off = feedbackStore.subscribe(() => {
+          if (feedbackStore.get().message === PREVIEW_UNAVAILABLE) refused.resolve();
+        });
+        await write.press('\r');
+        await refused.promise;
+        off();
+        feedbackStore.setError(NO_CORRECTION_MESSAGE);
       },
     });
   }
@@ -1229,6 +1251,7 @@ const checkpointPredicates = [
       );
     },
   ],
+  [checkpointId('recovery-steer-refused'), includesAll(STEER_REFUSED_LINE)],
   [
     checkpointId('recovery-apply-conflict'),
     (context) =>

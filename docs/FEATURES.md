@@ -452,7 +452,7 @@ The summary of a closed run shows a `Scope` row with the counts, such as `1 erro
 |---|---|
 | `/scroll <top\|bottom\|page-up\|page-down>` | Scroll the conversation |
 | `/activity` | Expand or collapse the last folded rows |
-| `/diff` | Expand or collapse the latest diff (Ctrl+D) |
+| `/diff` | Expand or collapse the latest diff (Ctrl+D). Offered only while the conversation has a diff, a cut failure cause or Recovery details to expand |
 | `/sidebar` | Show or hide the workflow sidebar |
 | `/tasks` | Show the brief list — opens the sidebar and leaves it open (at or below 120 columns there is no sidebar, so the command answers with the list itself) |
 | `/usage` | Open token and monetary details for the run |

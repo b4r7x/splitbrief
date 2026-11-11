@@ -64,3 +64,25 @@ export function makeImplementerGenerate(
     ...rest,
   };
 }
+
+// Each build of the row model reads `diff` of each done event, so the count is a build count.
+export function makeDiffReadCounter() {
+  let count = 0;
+  return {
+    done(diff: string, ts: number): ImplementerGenerateDoneEvent {
+      const event = makeImplementerGenerate({ diff, ts });
+      Object.defineProperty(event, 'diff', {
+        enumerable: true,
+        get: () => {
+          count += 1;
+          return diff;
+        },
+      });
+      return event;
+    },
+    count: () => count,
+    reset: () => {
+      count = 0;
+    },
+  };
+}

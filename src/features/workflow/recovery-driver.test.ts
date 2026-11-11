@@ -25,6 +25,7 @@ import { createDraftDocument } from '../../core/composer/document.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
+import { questionPromptStore } from '../../stores/question-prompt/prompt.js';
 import {
   recoveryNoticeStore,
   type RecoveryNoticeState,
@@ -1247,6 +1248,45 @@ describe('createRecoveryDriver', () => {
       expect(result.state.pendingRecovery).toBeUndefined();
       expect(result.state.tasks[0]?.status).toBe('pending');
     }
+  });
+
+  it('takes a steer as the note of a review skip on a halt that takes no typed correction', async () => {
+    const { prepared, state } = setupSession({
+      reason: 'review-input-too-large',
+      taskId: undefined,
+      seat: 'review',
+      availableActions: ['accept-as-is', 'end-run'],
+      recommendedAction: 'end-run',
+    });
+    const { inputMode, mode, unmount } = await renderInputMode();
+    const controller = new AbortController();
+    const outcome = createRecoveryDriver({
+      prepared,
+      configOfRun: prepared.sourceConfig,
+      inputMode,
+      abortedRef: { current: false },
+      retentionNoticeHandled: { current: true },
+      sink: addTuiEvent,
+      setInlineResume: () => {},
+    })({ state, controller, republishPrompt: false });
+    onTestFinished(async () => {
+      controller.abort();
+      await outcome.catch(() => undefined);
+      unmount();
+      clearAllHandlers();
+    });
+    await vi.waitFor(() => expect(mode()).toBe('question'));
+    inputMode.resolve(rowPick('k'));
+    await vi.waitFor(() => {
+      expect(questionPromptStore.get().hint).toBe('Why skip the review? (enter records none)');
+      expect(recoveryNoticeStore.get().asking).toBe(false);
+    });
+
+    expect(requestSteer(plainUserMessage('the change is a generated lockfile'))).toBeUndefined();
+
+    const result = await outcome;
+    expect(result.state?.acceptedAsIs?.note).toBe('the change is a generated lockfile');
+    expect(feedbackStore.get().isError).toBe(false);
   });
 
   it('takes the composer draft as the steer when Try again is chosen on the panel', async () => {

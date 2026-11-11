@@ -124,6 +124,9 @@ export function correctionActionFor(
   );
 }
 
+/** The refusal of typed words on a halt with no correction action. */
+export const NO_CORRECTION_MESSAGE = 'This halt takes no typed correction. Choose an action.';
+
 /** The composer placeholder on an open halt names what the focused side takes. */
 export function recoveryComposerHint(
   issue: RecoveryIssue,

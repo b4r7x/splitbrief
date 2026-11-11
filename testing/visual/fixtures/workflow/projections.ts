@@ -4044,6 +4044,35 @@ const retryExhaustedRecoveryProjection: WorkflowFixtureProjection = {
   resumeState: haltedResumeState(retryExhaustedRecoveryIssue),
 };
 
+/** The brief after a skipped one waits on it: its halt offers Skip task and End run, no correction. */
+const DEPENDENT_TASK = makeTask({
+  id: WORKFLOW_FIXTURE_TASK_ID_2,
+  title: 'Register the bounded fixture projection',
+  suggestedFiles: [WORKFLOW_FIXTURE_SECOND_FILE],
+  dependsOn: [WORKFLOW_FIXTURE_TASK_ID],
+});
+const SKIPPED_DEPENDENCY: Task = { ...HALTED_TASK, status: 'skipped' };
+
+const steerRefusedRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-recovery-steer-refused'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  events: [],
+  resumeState: makeImplState([SKIPPED_DEPENDENCY, DEPENDENT_TASK], {
+    feature: WORKFLOW_FEATURE,
+    startedAt: RESUMED_RUN_STARTED_AT,
+    phase: 'implementing',
+    currentTaskIndex: 1,
+    pendingRecovery: buildDependencyBlockedRecoveryIssue({
+      id: 'rec_visual_dependency_blocked_open',
+      task: DEPENDENT_TASK,
+      blockedByTasks: [SKIPPED_DEPENDENCY],
+      createdAt: new Date(FIXED_TS).toISOString(),
+    }),
+  }),
+};
+
 /** A halt with four actions, the longest menu a short terminal has to fit. */
 const shortRecoveryProjection: WorkflowFixtureProjection = {
   ...retryExhaustedRecoveryProjection,
@@ -9445,6 +9474,7 @@ const projections = [
     ...retryExhaustedRecoveryProjection,
     scenarioId: scenarioId('workflow-recovery-slash-draft'),
   },
+  steerRefusedRecoveryProjection,
   {
     ...retryExhaustedRecoveryProjection,
     scenarioId: scenarioId('workflow-recovery-slash-list'),

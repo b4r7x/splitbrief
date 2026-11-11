@@ -1,12 +1,19 @@
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 import { loadState } from '../../../src/core/state/persistence.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { completionStore } from '../../../src/stores/ui/completion.js';
+import { composerLiveStore } from '../../../src/stores/ui/composer-live.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { flushEffects, type renderFeature } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { glyph } from '../../../src/lib/glyphs.js';
+import {
+  consultFailureHaltFixture,
+  dependentPlan,
+  startToHalt,
+} from '../helpers/consult-failure-halt.js';
 import { openHaltedRun } from '../helpers/halted-run-screen.js';
 import {
   cli,
@@ -81,4 +88,36 @@ it('leaves the keys and the command list with a saved slash draft when the recov
   await vi.waitFor(() => expect(completionStore.get().open).toBe(false));
   screen.stdin.write('\x1b');
   await vi.waitFor(() => expect(stripAnsiStyles(screen.lastFrame())).toContain('Stop options'));
+});
+
+const NO_CORRECTION = 'This halt takes no typed correction. Choose an action.';
+
+it('gives back the whole /steer line with its reason on a halt that takes no typed correction', async () => {
+  const halt = consultFailureHaltFixture(dependentPlan);
+  fixture = halt.fixture;
+  onTestFinished(halt.restorePath);
+  const sessionId = await startToHalt(halt.fixture);
+  const skipped = await cli(halt.fixture, ['continue', sessionId, '--plain', '--action', 'skip']);
+  expect(skipped.exitCode, `${skipped.stdout}\n${skipped.stderr}`).toBe(1);
+  const { screen, ref, state, runWorkflow } = await openHaltedRun(halt.fixture, {
+    heading: 'Needs you',
+  });
+  ui = screen;
+  expect(state.pendingRecovery?.reason).toBe('dependency-blocked');
+
+  screen.stdin.write('/steer use the old name');
+  await flushEffects();
+  screen.stdin.write('\r');
+  await vi.waitFor(() => {
+    expect(composerLiveStore.get().text).toBe('/steer use the old name');
+    expect(feedbackStore.get()).toEqual({ message: NO_CORRECTION, isError: true });
+  });
+  await flushEffects();
+  const frame = stripAnsiStyles(screen.lastFrame());
+  expect(frame).toContain(NO_CORRECTION);
+  expect(frame).toContain(`${glyph('prompt')} /steer use the old name`);
+  expect(completionStore.get().open).toBe(false);
+  expect(frame).toContain('Needs you');
+  expect(runWorkflow).not.toHaveBeenCalled();
+  expect(loadState(ref)?.pendingRecovery?.id).toBe(state.pendingRecovery?.id);
 });

@@ -19,6 +19,10 @@ import {
   saveSessionDraft,
 } from '../../stores/ui/session-drafts.js';
 import { departureStore } from '../../stores/workflow/departure.js';
+import { eventsStore } from '../../stores/workflow/events.js';
+import { diffEventKey } from '../../core/sections/event-sections.js';
+import { readLatestDiffKey } from '../../features/workflow/conversation-rows/read-row-actions.js';
+import { makeDiffReadCounter } from '#testing/helpers/events/implementer.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
@@ -44,6 +48,7 @@ import {
 } from '../../features/workflow/layout/chrome-rows.js';
 import { getWorkflowContentRect } from '../../features/workflow/layout/rect.js';
 import { WorkflowScreen } from './workflow.js';
+import type { WorkflowScreenDeps } from '../../features/workflow/hooks/workflow-screen/use-model.js';
 import { questionPromptStore } from '../../stores/question-prompt/prompt.js';
 import { openApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
 import { CommandPaletteOverlay } from '../overlays/palette.js';
@@ -988,6 +993,36 @@ describe('WorkflowScreen showing a run at rest', () => {
     ui.unmount();
   });
 
+  it('gives the /diff guard the row model that the screen built beside the sidebar, before and after a typed key', async () => {
+    openRun();
+    const diff = '+ export const total = 1;';
+    const diffReads = makeDiffReadCounter();
+    const done = diffReads.done(diff, FIXED_TS);
+    eventsStore.__testReset({ events: [done] });
+    terminalSizeStore.__testReset({ cols: 160, rows: 40, isSmall: false });
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />, {
+      cols: 160,
+      rows: 40,
+    });
+    const frame = () => stripAnsiStyles(ui.lastFrame() ?? '');
+    await vi.waitFor(() => {
+      expect(frame()).toContain('Tasks');
+      expect(frame()).toMatch(/src\/test\.ts .* ctrl\+d/);
+      expect(frame()).toContain('Type a correction…');
+    });
+
+    diffReads.reset();
+    expect(readLatestDiffKey()).toBe(diffEventKey(done, 0));
+    expect(diffReads.count()).toBe(0);
+
+    ui.stdin.write('/');
+    await vi.waitFor(() => expect(frame()).toMatch(/> \/ +\|/));
+    expect(readLatestDiffKey()).toBe(diffEventKey(done, 0));
+    expect(diffReads.count()).toBe(0);
+
+    ui.unmount();
+  });
+
   it('keeps a draft that could not be saved at the tail of the transcript through a re-read', async () => {
     openRun();
     addEvent({
@@ -1738,6 +1773,20 @@ describe('WorkflowScreen showing a run at rest', () => {
     size: { cols: number; rows: number } = { cols: 80, rows: 24 },
     availableActions: RecoveryAction[] = ['skip-current-task', 'end-run'],
   ) {
+    return renderFeature(
+      <WithPalette>
+        <WorkflowScreen
+          commands={[]}
+          onRuntimeCommand={onRuntimeCommand}
+          deps={openDependencyBlockedHalt(availableActions)}
+        />
+      </WithPalette>,
+      size,
+    );
+  }
+
+  /** Opens a run at rest on a dependency halt, and gives the screen deps that continue it. */
+  function openDependencyBlockedHalt(availableActions: RecoveryAction[]): WorkflowScreenDeps {
     const issue = makeRecoveryIssue({
       reason: 'dependency-blocked',
       phase: 'implementing',
@@ -1768,24 +1817,27 @@ describe('WorkflowScreen showing a run at rest', () => {
         runtime: { ...base.runtime, resumeState: halted },
       },
     }));
+    return {
+      runWorkflow,
+      sessionSelect: {
+        applying: () => false,
+        loadResumeState: hydrateResume,
+        prepareResume,
+        hydrateRun: async () => {},
+      },
+    };
+  }
 
-    return renderFeature(
-      <WithPalette>
-        <WorkflowScreen
-          commands={[]}
-          onRuntimeCommand={onRuntimeCommand}
-          deps={{
-            runWorkflow,
-            sessionSelect: {
-              applying: () => false,
-              loadResumeState: hydrateResume,
-              prepareResume,
-              hydrateRun: async () => {},
-            },
-          }}
-        />
-      </WithPalette>,
-      size,
+  /** The halt screen fed by the real command registry, as the app root wires it. */
+  function HaltWithAppCommands({ deps }: { deps: WorkflowScreenDeps }) {
+    const phase = runViewStore.use((state) => state.phase);
+    const model = useRuntimeCommands({ exit: () => {}, phase });
+    return (
+      <WorkflowScreen
+        commands={model.commands}
+        onRuntimeCommand={(raw, sentBy) => model.handleRuntimeCommand(raw, 'workflow', sentBy)}
+        deps={deps}
+      />
     );
   }
 
@@ -1949,6 +2001,64 @@ describe('WorkflowScreen showing a run at rest', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain('Skip task');
     expect(frame).toContain('tab back to the actions');
+    ui.unmount();
+  });
+
+  const NO_CORRECTION = 'This halt takes no typed correction. Choose an action.';
+
+  it('gives back the whole /steer line with its reason on a halt that takes no typed correction', async () => {
+    const ui = renderFeature(
+      <HaltWithAppCommands deps={openDependencyBlockedHalt(['skip-current-task', 'end-run'])} />,
+    );
+    await flushEffects();
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip task');
+    });
+
+    for (const key of '/steer use the old name') {
+      ui.stdin.write(key);
+      await flushEffects();
+    }
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().text).toBe('/steer use the old name');
+      expect(feedbackStore.get()).toEqual({ message: NO_CORRECTION, isError: true });
+    });
+    await flushEffects();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain(NO_CORRECTION);
+    expect(frame).toContain(`${glyph('prompt')} /steer use the old name`);
+    expect(frame).not.toContain('Stop now and continue with your correction');
+    expect(frame).toContain('Skip task');
+    expect(runWorkflow).not.toHaveBeenCalled();
+    ui.unmount();
+  });
+
+  it('gives back the words sent with ctrl+⏎ as typed, with the reason, on a halt that takes no typed correction', async () => {
+    const ui = renderDependencyBlockedHalt();
+    await flushEffects();
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip task');
+    });
+    ui.stdin.write('\t');
+    await flushEffects();
+
+    for (const key of 'use the old name') {
+      ui.stdin.write(key);
+      await flushEffects();
+    }
+    ui.stdin.write(CTRL_ENTER);
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().text).toBe('use the old name');
+      expect(feedbackStore.get()).toEqual({ message: NO_CORRECTION, isError: true });
+    });
+    await flushEffects();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain(NO_CORRECTION);
+    expect(frame).toContain(`${glyph('prompt')} use the old name`);
+    expect(runWorkflow).not.toHaveBeenCalled();
     ui.unmount();
   });
 

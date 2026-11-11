@@ -206,6 +206,8 @@ export function usePasteDrafts(options?: {
    * command joined below it.
    */
   onDocumentChange: (document: DraftDocument) => void;
+  /** The held draft is back in the box. */
+  onDraftBack: () => void;
 }): PasteDrafts {
   const [state, setState] = useState<DraftState>(() => ({
     document: options?.initialDocument() ?? createDraftDocument(''),
@@ -228,7 +230,9 @@ export function usePasteDrafts(options?: {
     currentState.current = next;
     options?.onDocumentChange(keptDraft(next).document);
     setState(next);
-    return released && draftLength(next.document) > 0;
+    const back = released && draftLength(next.document) > 0;
+    if (back) options?.onDraftBack();
+    return back;
   };
   const foldIdRef = useRef(0);
   const view = buildDraftView(state.document, state.folds);

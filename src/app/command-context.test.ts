@@ -39,8 +39,12 @@ import {
 import { executeRuntimeCommand } from '../core/runtime/commands/dispatch.js';
 import { workflowCommands } from '../core/runtime/commands/defs/workflow.js';
 import { activityBatchKey } from '../features/workflow/conversation-rows/activity-batch-key.js';
-import { readConversationRowActions } from '../features/workflow/conversation-rows/read-row-actions.js';
+import {
+  readConversationRowActions,
+  readLatestDiffKey,
+} from '../features/workflow/conversation-rows/read-row-actions.js';
 import { readConversationScrollSnapshot } from '../features/workflow/layout/snapshot.js';
+import { clearSessionScopedStores } from '../features/workflow/session-stores.js';
 import { configStore } from '../stores/project/config.js';
 import { composerDraftStore } from '../stores/ui/composer-draft.js';
 import { composerLiveStore } from '../stores/ui/composer-live.js';
@@ -77,6 +81,7 @@ const originalPlatform = process.platform;
 const workflowPorts: WorkflowCommandPorts = {
   requestClearQueue,
   getRowActions: readConversationRowActions,
+  getLatestDiffKey: readLatestDiffKey,
   readScrollMetrics: readConversationScrollSnapshot,
   resolveCopyValue: (target) => (target === 'message' ? 'port-value' : null),
 };
@@ -696,6 +701,107 @@ describe('useRuntimeCommands', () => {
     await expect.poll(() => stripAnsiStyles(ui.lastFrame())).not.toContain('raw-end');
   });
 
+  async function commandListUnderDraft(done: EngineEventOf<'implementer_generate_done'>) {
+    projectDir = createTempDir('command-composer-diff-list');
+    configStore.__testReset({ projectDir, config: makeConfig() });
+    terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
+    addEvent(done);
+    const ui = renderFeature(createElement(CommandComposerHarness), { cols: 120, rows: 30 });
+    onTestFinished(ui.unmount);
+    await flushEffects();
+    ui.stdin.write('/di');
+    await vi.waitFor(() => {
+      const frame = stripAnsiStyles(ui.lastFrame());
+      expect(frame).toContain('> /di');
+      expect(frame).toContain('↑↓ select');
+    });
+    await flushEffects();
+    return stripAnsiStyles(ui.lastFrame());
+  }
+
+  it('lists no /diff for a /di draft after a brief whose done row holds no diff', async () => {
+    const frame = await commandListUnderDraft(makeImplementerGenerate());
+
+    expect(frame.split('\n').filter((line) => line.includes('/diff'))).toEqual([]);
+  });
+
+  it('lists /diff for a /di draft after a brief whose done row holds a diff', async () => {
+    const frame = await commandListUnderDraft(
+      makeImplementerGenerate({ diff: '+ export const total = 1;' }),
+    );
+
+    expect(frame).toContain('/diff');
+  });
+
+  it('adds /diff to the open list of a /di draft when a done row with a diff arrives, and takes it out when a new run clears the transcript', async () => {
+    projectDir = createTempDir('command-composer-diff-follow');
+    configStore.__testReset({ projectDir, config: makeConfig() });
+    terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
+    addEvent(makeImplementerGenerate());
+    const ui = renderFeature(createElement(CommandComposerHarness), { cols: 120, rows: 30 });
+    onTestFinished(ui.unmount);
+    await flushEffects();
+    ui.stdin.write('/di');
+    await vi.waitFor(() => {
+      const frame = stripAnsiStyles(ui.lastFrame());
+      expect(frame).toContain('> /di');
+      expect(frame).toContain('↑↓ select');
+    });
+    const diffLines = () =>
+      stripAnsiStyles(ui.lastFrame())
+        .split('\n')
+        .filter((line) => line.includes('/diff'));
+    expect(diffLines()).toEqual([]);
+
+    addEvent(makeImplementerGenerate({ diff: '+ export const total = 1;' }));
+    await vi.waitFor(() => {
+      expect(diffLines()).toHaveLength(1);
+    });
+
+    clearSessionScopedStores();
+    await vi.waitFor(() => {
+      expect(diffLines()).toEqual([]);
+    });
+    const frame = stripAnsiStyles(ui.lastFrame());
+    expect(frame).toContain('> /di');
+    expect(frame).toContain('↑↓ select');
+  });
+
+  it('takes /diff out of the open list of a /di draft when a BUILD retry hides the cut failure card that was the only diff row', async () => {
+    projectDir = createTempDir('command-composer-diff-retry');
+    configStore.__testReset({ projectDir, config: makeConfig() });
+    terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
+    addEvent(makeImplementerGenerate({ status: 'running', ts: 1_000 }));
+    const cause = `Runner failed ${'while applying the brief '.repeat(8)}raw-end`;
+    addEvent(makeImplementerGenerate({ status: 'failed', error: cause, ts: 1_100 }));
+    expect(readLatestDiffKey()).not.toBeNull();
+    const ui = renderFeature(createElement(CommandComposerHarness), { cols: 120, rows: 30 });
+    onTestFinished(ui.unmount);
+    await flushEffects();
+    ui.stdin.write('/di');
+    const diffLines = () =>
+      stripAnsiStyles(ui.lastFrame())
+        .split('\n')
+        .filter((line) => line.includes('/diff'));
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame())).toContain('↑↓ select');
+      expect(diffLines()).toHaveLength(1);
+    });
+
+    addEvent({
+      type: 'seat_retry',
+      ts: 1_200,
+      phase: 'implementing',
+      seat: 'build',
+      attempt: 1,
+      delayMs: 2_000,
+    });
+    expect(readLatestDiffKey()).toBeNull();
+    await vi.waitFor(() => {
+      expect(diffLines()).toEqual([]);
+    });
+  });
+
   it('the palette activity command and /activity toggle the latest batch after the context was created', async () => {
     let runtime: ReturnType<typeof useRuntimeCommands> | undefined;
     const ui = renderFeature(
@@ -963,6 +1069,7 @@ describe('useRuntimeCommands', () => {
     ['/zzzz', 'Unknown command: /zzzz. Type /help for available commands.'],
     ['/steer', 'Usage: /steer <correction>'],
     ['/run reject', 'Usage: /run reject confirm'],
+    ['/diff', 'No diff is available to expand.'],
   ])(
     'shows the reason of a refused %s and keeps the line, with the menu closed',
     async (line, reason) => {
@@ -976,6 +1083,46 @@ describe('useRuntimeCommands', () => {
       expect(frame).not.toContain('↑↓ select');
     },
   );
+
+  it('shows the reason of a refused command filled in over a / draft, with the draft back and the menu closed until an edit', async () => {
+    projectDir = createTempDir('command-composer-held-draft');
+    configStore.__testReset({ projectDir, config: makeConfig() });
+    terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
+    const ui = renderFeature(createElement(CommandComposerHarness), { cols: 120, rows: 30 });
+    onTestFinished(ui.unmount);
+    await flushEffects();
+    ui.stdin.write('/he');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame())).toContain('↑↓ select');
+    });
+    composerDraftStore.requestCommand('/run ');
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().text).toBe('/run ');
+    });
+    await flushEffects();
+    ui.stdin.write('reject');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame())).toContain('> /run reject');
+    });
+    await flushEffects();
+
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(feedbackStore.get()).toEqual({ message: 'Usage: /run reject confirm', isError: true });
+      expect(composerLiveStore.get().text).toBe('/he');
+    });
+    await flushEffects();
+    const frame = stripAnsiStyles(ui.lastFrame());
+    expect(frame).toContain('Usage: /run reject confirm');
+    expect(frame).toContain('> /he');
+    expect(frame).not.toContain('↑↓ select');
+
+    ui.stdin.write('l');
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().text).toBe('/hel');
+      expect(stripAnsiStyles(ui.lastFrame())).toContain('↑↓ select');
+    });
+  });
 
   it('opens the menu again after the first edit of a given-back line', async () => {
     const ui = await typeRefusedLine('/zzzz');

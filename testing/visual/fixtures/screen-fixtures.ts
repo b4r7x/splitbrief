@@ -1746,6 +1746,16 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('home-skills-completion'), createSkillsCompletionFixture],
   [scenarioId('home-palette-prefill-draft'), () => createPalettePrefillFixture(false)],
   [scenarioId('home-palette-prefill-cleared'), () => createPalettePrefillFixture(true)],
+  // The palette fills /crew in over the typed `/he`, enter refuses the seat, and `/he` comes back.
+  [
+    scenarioId('home-palette-prefill-refused'),
+    () => ({
+      ...createHomeFixture(),
+      afterMount: async (write) => {
+        for (const key of ['/he', '\x0b', 'crew', '\r', 'zzz', '\r']) await write.press(key);
+      },
+    }),
+  ],
   [scenarioId('home-draft-path'), createDraftPathFixture],
   [scenarioId('home-draft-long'), createLongDraftFixture],
   [scenarioId('home-reference-completion'), createReferenceCompletionFixture],

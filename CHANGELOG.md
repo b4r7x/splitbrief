@@ -637,6 +637,7 @@
 - A Codex review seat can now start sub-agents, as other tools can.
 - A Codex sub-agent call now shows its action, such as `spawn_agent`, in place of `collab_tool_call`. A spawn shows as an agent row.
 - Words that you type while a run stops stay in the composer. The stop no longer opens Session options over them, so the next `⏎` continues the run with your words or runs your command. With an empty composer, the stop opens Session options as before.
+- Words that you type while a stop fails stay in the composer too. The failed stop no longer opens Stop options over them, the byline reads `Stop failed · <cause>`, and the key legend above the composer shows `/stop to retry`. With an empty composer, the failed stop opens Stop options with `Retry stop` as before.
 - The result menu or a `Needs you` or `Seat down` panel that opens while you type no longer takes your keys. Your words stay in the composer, and Tab gives the keys to the menu. With an empty composer, the menu takes the keys as before.
 - The plan card and a planner question that open while you type no longer take your keys. Your words stay in the composer. Over the plan card, `⏎` sends them to the planner as the change request. Tab gives the keys to the card or the question. With an empty composer, the card and the question take the keys as before.
 - When help, the command palette, Settings or the stop sheet opens and closes over the plan card, your draft, a typed comment and the keys stay where they were, so the next `⏎` does not approve the plan.
@@ -644,11 +645,14 @@
 - `ctrl+⏎` with text while a brief's checks run continues the run with the text. Before, the run stopped and the text was lost.
 - `/steer <text>` over a waiting plan card now requests changes with the text, as `⏎` does, and `/steer <text>` while a brief's checks run continues the run with the text. Before, `/steer` in these two states said `No run to steer in this phase`, and the typed line was gone.
 - A typed command that SPLITBRIEF refuses now stays in the composer with its reason, so you can correct it and send it again. The command list stays closed over that line until you edit it. A command that you type in the answer field of a planner question goes back to that field.
+- When `Enter` sends a command that the command palette filled in over your draft, or `Esc` closes the list of that command, the draft comes back with the command list closed until you edit it. Before, the command list opened over a `/` draft and covered the reason when SPLITBRIEF refused the command.
 - `/steer <text>` over a waiting planner question now answers the question with the text and stops nothing. Before, the run stopped and the planner did not get the text.
 - `/steer <text>` over a `Needs you` or `Seat down` panel now sends the text as the typed correction and continues the run at once, as `ctrl+⏎` does. Before, the run stopped and the same panel opened again over an empty composer.
+- `/steer <text>` over a `Needs you` or `Seat down` panel that takes no typed correction now gives the whole `/steer <text>` line back with its reason, as every refused command does. Before, only the text came back, without `/steer`.
 - `/steer <text>` at the result menu of a run that is ready to apply now shows the one reason why the run cannot continue. While a stop is in progress, `/steer <text>` shows only `Finish stopping before steering.`
 - `/skills` with only unknown or unavailable ids now shows the reason and keeps the line in the composer.
 - `/end` now closes the run over a waiting plan card and while a brief's checks run.
+- `/diff` no longer shows in the command list, the command palette or help while the conversation has no diff to expand, and help no longer shows `ctrl+d` then. A typed `/diff` still says `No diff is available to expand.` and stays in the composer.
 - `/resume` while a planner, build or review call runs no longer stops that call. It now says `Nothing to resume: the run has not stopped.`, and the call goes on.
 - While a stop is in progress, the notice after `⏎` no longer offers `ctrl+⏎`. That key waits until the run has stopped.
 - A confirmation prompt that opens on the run screen while you type no longer takes your keys. Your words stay in the composer, and `⏎` queues them while the prompt waits. Tab, or `⏎` on an empty composer, moves to the prompt. With an empty composer, the prompt takes the keys as before.

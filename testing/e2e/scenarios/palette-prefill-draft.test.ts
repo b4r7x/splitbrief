@@ -194,6 +194,129 @@ describe('e2e: a command taken from the palette over a typed home draft', {
   );
 });
 
+describe('e2e: a command refused after the palette filled it in over a typed / draft', {
+  timeout: 120_000,
+}, () => {
+  it('shows the reason with the draft back and the command list closed', async (context) => {
+    await withTempDir('palette-prefill-refused', async (dir) => {
+      const viewport = { cols: 80, rows: 24 };
+      const home = join(dir, 'home');
+      const projectDir = join(dir, 'project');
+      const binDir = join(dir, 'bin');
+      mkdirSync(home);
+      mkdirSync(binDir);
+      mkdirSync(join(projectDir, '.git', 'objects'), { recursive: true });
+      mkdirSync(join(projectDir, '.git', 'refs', 'heads'), { recursive: true });
+      writeFileSync(join(projectDir, '.git', 'HEAD'), 'ref: refs/heads/main\n');
+      const runnerPath = join(dir, 'runner.mjs');
+      writeFileSync(
+        runnerPath,
+        "throw new Error('No workflow may start in the palette prefill refusal E2E');\n",
+      );
+      writeConfig(
+        projectDir,
+        makeConfig({
+          planner: { kind: 'shell', command: process.execPath, args: [runnerPath] },
+          implementer: {
+            kind: 'shell',
+            command: process.execPath,
+            args: [runnerPath],
+            model: 'fixture',
+          },
+          workflow: { isolation: 'none' },
+        }),
+      );
+      for (const tool of Object.values(CLI_TOOL_CATALOG)) {
+        writeFakeNodeCli(binDir, tool.command, 'process.exit(1);');
+      }
+      const offlinePath = join(dir, 'offline.mjs');
+      writeFileSync(
+        offlinePath,
+        "globalThis.fetch = async () => { throw new Error('Offline palette prefill refusal E2E'); };\n",
+      );
+
+      const restorePath = activateSafeCliShimPath(binDir);
+      let environment: Readonly<Record<string, string>>;
+      try {
+        environment = safeChildEnvironment(home, [binDir]);
+      } finally {
+        restorePath();
+      }
+      const result = await runWithPtyChild(
+        {
+          requirement: process.env.SPLITBRIEF_REQUIRE_PTY === '1' ? 'required' : 'optional',
+          argv: ['--import', 'tsx', '--import', offlinePath, 'src/cli.ts', '--project', projectDir],
+          spawnOptions: {
+            name: 'xterm-256color',
+            ...viewport,
+            cwd: fileURLToPath(new URL('../../../', import.meta.url)),
+            env: { ...environment, XDG_STATE_HOME: join(dir, 'state') },
+          },
+        },
+        async (child) => {
+          const terminal = new XtermHeadless.Terminal({
+            ...viewport,
+            allowProposedApi: true,
+            logLevel: 'off',
+          });
+          const exited = Promise.withResolvers<PtyExitEvent>();
+          let didExit = false;
+          const text = () =>
+            Array.from(
+              { length: viewport.rows },
+              (_, row) =>
+                terminal.buffer.active
+                  .getLine(terminal.buffer.active.viewportY + row)
+                  ?.translateToString(true) ?? '',
+            ).join('\n');
+          const shows = (expected: string | RegExp, timeout = 10_000) =>
+            vi.waitFor(
+              () =>
+                typeof expected === 'string'
+                  ? expect(text()).toContain(expected)
+                  : expect(text()).toMatch(expected),
+              { timeout },
+            );
+          const dataListener = child.onData((data) => terminal.write(data));
+          const exitListener = child.onExit((event) => {
+            didExit = true;
+            exited.resolve(event);
+          });
+          try {
+            await shows('Describe your feature', 30_000);
+
+            child.write('/he');
+            await shows('› /he');
+            await shows('tab fill');
+            child.write('\x0b');
+            await shows('Type a command…');
+            child.write('crew');
+            await shows(/▌ \/crew/);
+            child.write('\r');
+            await shows(/│ › \/crew\s+│/);
+            child.write('zzz');
+            await shows('› /crew zzz');
+
+            child.write('\r');
+            await shows('Unknown seat: zzz. Valid: plan, build, review');
+            expect(text()).toMatch(/│ ›\s+\/he\s+│/);
+            expect(text()).not.toContain('tab fill');
+          } finally {
+            try {
+              if (!didExit) await terminatePtyProcessGroup(child, exited.promise);
+            } finally {
+              dataListener.dispose();
+              exitListener.dispose();
+              terminal.dispose();
+            }
+          }
+        },
+      );
+      if (result) context.skip(result.reason);
+    });
+  });
+});
+
 describe('e2e: a typed home draft while a run is opened from the recent sessions', {
   timeout: 180_000,
 }, () => {

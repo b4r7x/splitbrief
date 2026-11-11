@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import { mkdirSync, realpathSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Box } from 'ink';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -1999,6 +1999,225 @@ describe('Composer draft requests', () => {
 
     expect(stripAnsiStyles(second.lastFrame() ?? '')).not.toContain('/copy');
     second.unmount();
+  });
+
+  const HELP: RuntimeCommandDef = {
+    kind: 'noarg',
+    name: '/help',
+    label: 'help',
+    description: 'Show help',
+    category: 'navigate',
+    validScreens: ['workflow'],
+    handler: () => {},
+  };
+  const STEER: RuntimeCommandDef = {
+    kind: 'arg',
+    name: '/steer',
+    label: 'steer',
+    description: 'Steer the run',
+    category: 'workflow',
+    args: { kind: 'free', hint: '<correction>' },
+    validScreens: ['workflow'],
+    handler: () => {},
+  };
+
+  it.each([
+    ['/steer', 'keep the header'],
+    ['/copy', 'brief'],
+  ])(
+    'brings the held / draft back with the command list closed when the filled-in %s %s runs',
+    async (command, arg) => {
+      const dispatched: string[] = [];
+      const ui = renderDockedComposer({
+        commands: [COPY, HELP, STEER],
+        currentScreen: 'workflow',
+        mode: 'normal',
+        hint: '',
+        onSubmit: () => {},
+        onRuntimeCommand: (line) => dispatched.push(line),
+      });
+      onTestFinished(ui.unmount);
+      await flushEffects();
+      ui.stdin.write('/he');
+      await vi.waitFor(() => {
+        expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('↑↓ select');
+      });
+      composerDraftStore.requestCommand(`${command} `);
+      await vi.waitFor(() => {
+        expect(composerLiveStore.get().text).toBe(`${command} `);
+      });
+      await flushEffects();
+      ui.stdin.write(arg);
+      await vi.waitFor(() => {
+        expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(`${command} ${arg}`);
+      });
+      await flushEffects();
+
+      ui.stdin.write('\r');
+      await vi.waitFor(() => {
+        expect(dispatched).toEqual([`${command} ${arg}`]);
+        expect(composerLiveStore.get().text).toBe('/he');
+      });
+      await flushEffects();
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame).toContain(`${glyph('prompt')} /he`);
+      expect(frame).not.toContain('↑↓ select');
+    },
+  );
+
+  it('brings the held / draft back with the command list closed when esc closes the list of the filled-in command', async () => {
+    const ui = renderDockedComposer({
+      commands: [COPY, HELP],
+      currentScreen: 'workflow',
+      mode: 'normal',
+      hint: '',
+      onSubmit: () => {},
+      onRuntimeCommand: () => {},
+    });
+    onTestFinished(ui.unmount);
+    await flushEffects();
+    ui.stdin.write('/he');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('↑↓ select');
+    });
+    composerDraftStore.requestCommand('/copy ');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('transcript');
+    });
+    await flushEffects();
+
+    ui.stdin.write('\x1b');
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().text).toBe('/he');
+    });
+    await flushEffects();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain(`${glyph('prompt')} /he`);
+    expect(frame).not.toContain('↑↓ select');
+
+    ui.stdin.write('l');
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().text).toBe('/hel');
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('↑↓ select');
+    });
+  });
+
+  it('opens the command list over the held / draft that Backspace brings back', async () => {
+    const ui = renderDockedComposer({
+      commands: [COPY, HELP],
+      currentScreen: 'workflow',
+      mode: 'normal',
+      hint: '',
+      onSubmit: () => {},
+      onRuntimeCommand: () => {},
+    });
+    onTestFinished(ui.unmount);
+    await flushEffects();
+    ui.stdin.write('/he');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('↑↓ select');
+    });
+    composerDraftStore.requestCommand('/copy ');
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().text).toBe('/copy ');
+    });
+    await flushEffects();
+
+    for (const left of ['/copy', '/cop', '/co', '/c', '/']) {
+      ui.stdin.write('\b');
+      await vi.waitFor(() => {
+        expect(composerLiveStore.get().text).toBe(left);
+      });
+    }
+    ui.stdin.write('\b');
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().text).toBe('/he');
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('↑↓ select');
+    });
+  });
+
+  it('keeps the lists closed over the held / draft that an empty draft request brings back, until an edit', async () => {
+    const ui = renderDockedComposer({
+      commands: [COPY, HELP],
+      currentScreen: 'workflow',
+      mode: 'normal',
+      hint: '',
+      onSubmit: () => {},
+      onRuntimeCommand: () => {},
+    });
+    onTestFinished(ui.unmount);
+    await flushEffects();
+    ui.stdin.write('/he');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('↑↓ select');
+    });
+    composerDraftStore.requestCommand('/copy ');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('transcript');
+    });
+    await flushEffects();
+
+    composerDraftStore.request('');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(`${glyph('prompt')} /he`);
+    });
+    await flushEffects();
+    expect(composerLiveStore.get().text).toBe('/he');
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('↑↓ select');
+
+    ui.stdin.write('l');
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().text).toBe('/hel');
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('↑↓ select');
+    });
+  });
+
+  it('keeps the lists closed over the held / draft that a new question brings back, until an edit', async () => {
+    const composer = (questionEpoch: number) => (
+      <Composer
+        commands={[COPY, HELP]}
+        currentScreen="workflow"
+        mode="question"
+        hint="Which file?"
+        questionEpoch={questionEpoch}
+        onSubmit={() => {}}
+        onRuntimeCommand={() => {}}
+      />
+    );
+    const ui = renderFeature(
+      <Box flexDirection="column" height={20} justifyContent="flex-end">
+        {composer(1)}
+      </Box>,
+    );
+    onTestFinished(ui.unmount);
+    await flushEffects();
+    ui.stdin.write('/he');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('↑↓ select');
+    });
+    composerDraftStore.requestCommand('/copy ');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('transcript');
+    });
+    await flushEffects();
+
+    ui.rerender(
+      <Box flexDirection="column" height={20} justifyContent="flex-end">
+        {composer(2)}
+      </Box>,
+    );
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(`${glyph('prompt')} /he`);
+    });
+    await flushEffects();
+    expect(composerLiveStore.get().text).toBe('/he');
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('↑↓ select');
+
+    ui.stdin.write('l');
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().text).toBe('/hel');
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('↑↓ select');
+    });
   });
 });
 

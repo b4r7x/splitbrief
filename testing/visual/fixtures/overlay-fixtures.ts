@@ -2238,6 +2238,20 @@ function seedStopSheet(): void {
   });
 }
 
+// The run loop names the failure in the transcript, whole, and on the byline.
+function seedFailedStop(): void {
+  seedStopSheet();
+  stopStore.request('stop-now');
+  const message = stateOpsError.notSaved(
+    LONG_SESSION_ID,
+    Object.assign(new Error("ENOSPC: no space left on device, write '/x/state.json'"), {
+      code: 'ENOSPC',
+    }),
+  ).message;
+  addEvent({ type: 'error', ts: STOP_SHEET_TS + 6_000, phase: 'implementing', message });
+  stopStore.fail(message);
+}
+
 /** A parked run with one feedback line armed after it settles, where nothing clears it. */
 function createParkedFeedbackFixture(feedback: () => void): FixtureLifecycle {
   const base = createOverlayFixture({
@@ -3163,20 +3177,21 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
       createOverlayFixture({
         overlay: 'stop-sheet',
         underlyingScreen: 'workflow',
-        seed: () => {
-          seedStopSheet();
-          stopStore.request('stop-now');
-          // The run loop names the failure in the transcript, whole, and on the byline.
-          const message = stateOpsError.notSaved(
-            LONG_SESSION_ID,
-            Object.assign(new Error("ENOSPC: no space left on device, write '/x/state.json'"), {
-              code: 'ENOSPC',
-            }),
-          ).message;
-          addEvent({ type: 'error', ts: STOP_SHEET_TS + 6_000, phase: 'implementing', message });
-          stopStore.fail(message);
-        },
+        seed: seedFailedStop,
       }),
+  ],
+  // A stop that fails over typed words leaves the sheet closed: the run opens it by itself only
+  // over an empty composer (`openStopSheetOverEmptyComposer` in `use-run-loop.ts`).
+  [
+    scenarioId('workflow-stop-failed-over-draft'),
+    () => ({
+      ...createOverlayFixture({
+        overlay: 'none',
+        underlyingScreen: 'workflow',
+        seed: seedFailedStop,
+      }),
+      afterMount: (write) => write.press('also fix the typo'),
+    }),
   ],
   [
     scenarioId('workflow-quit-hint'),
