@@ -1,4 +1,4 @@
-import { beforeEach, afterEach, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { Command } from 'commander';
 import {
   chmodSync,
@@ -9,6 +9,8 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
+import { hermeticPath } from '#testing/helpers/compatible-cli-shim.js';
+import { stubSignInHome } from '#testing/helpers/sign-in-home.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeSessionLockfile } from '#testing/helpers/factories/session-lockfile.js';
@@ -71,6 +73,7 @@ export const fakeDeps: StartDeps = {
 
 let tmp = '';
 let trustStateDir = '';
+let home = '';
 
 export function getStartCommandTmp(): string {
   return tmp;
@@ -94,6 +97,20 @@ export function setupRunnerTrustIsolation(): void {
 
 export function setupStartCommandIntegration(): void {
   setupRunnerTrustIsolation();
+  // A `start` run detects every listed CLI tool, and that detection outlives the test that
+  // started it. One HOME and one PATH with no CLI tool for the whole file keep it away from the
+  // tools and the sign-ins of this machine.
+  beforeAll(async () => {
+    home = createTempDir('start-command-home');
+    await stubSignInHome(home, []);
+    vi.stubEnv('PATH', hermeticPath([]));
+  });
+
+  afterAll(() => {
+    vi.unstubAllEnvs();
+    cleanupTempDir(home);
+  });
+
   beforeEach(() => {
     tmp = realpathSync(createTempDir('start-command-test'));
     createTestGitRepo(tmp);

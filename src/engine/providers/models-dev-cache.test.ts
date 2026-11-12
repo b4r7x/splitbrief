@@ -86,17 +86,17 @@ describe('models.dev user cache', () => {
     };
   }
 
-  function writeCachedCatalog(): void {
+  function writeCachedCatalog(parserVersion?: string, validatedAt = currentTime): void {
     mkdirSync(cacheDir, { recursive: true });
     writeFileSync(
-      resolveModelsDevCatalogCachePath(options()),
+      resolveModelsDevCatalogCachePath(options({ parserVersion })),
       JSON.stringify({
         version: 1,
         sourceUrl,
-        parserVersion: MODELS_DEV_CATALOG_PARSER_VERSION,
-        catalog: catalog(),
-        fetchedAt: currentTime,
-        validatedAt: currentTime,
+        parserVersion: parserVersion ?? MODELS_DEV_CATALOG_PARSER_VERSION,
+        catalog: catalog(parserVersion),
+        fetchedAt: validatedAt,
+        validatedAt,
       }),
     );
   }
@@ -334,34 +334,46 @@ describe('models.dev user cache', () => {
       writeFileSync(symlinkTarget, 'symlink target remains untouched');
       symlinkSync(symlinkTarget, symlinkPath);
 
-      const parserVersions = [
+      const cacheRecord = (parserVersion: string) => ({
+        parserVersion,
+        fileName: basename(resolveModelsDevCatalogCachePath(options({ parserVersion }))),
+      });
+      const [firstByName, secondByName, thirdByName, lastByName] = [
         'models-dev-api-json-v1',
         'models-dev-api-json-v2',
         'models-dev-api-json-v3',
         'models-dev-api-json-v4',
-        'models-dev-api-json-v5',
-        'models-dev-api-json-v6',
-        'models-dev-api-json-v7',
-      ];
-
-      for (const parserVersion of parserVersions) {
-        responses.push({ status: 200, body: JSON.stringify(catalog(parserVersion)) });
-        await refreshModelsDevCatalogCache(options({ parserVersion }));
-        currentTime += 1_000;
+      ]
+        .map(cacheRecord)
+        .sort((left, right) => (left.fileName < right.fileName ? -1 : 1));
+      if (
+        firstByName === undefined ||
+        secondByName === undefined ||
+        thirdByName === undefined ||
+        lastByName === undefined
+      ) {
+        throw new Error('Expected four earlier cache records.');
+      }
+      // Earlier runs left four records, oldest first. The oldest is neither the first nor the
+      // last by file name, so only an eviction by validatedAt removes it.
+      const earlierRecords = [secondByName, lastByName, firstByName, thirdByName].map(
+        (record, ageRank) => ({ ...record, validatedAt: currentTime - 4_000 + ageRank * 1_000 }),
+      );
+      for (const { parserVersion, validatedAt } of earlierRecords) {
+        writeCachedCatalog(parserVersion, validatedAt);
       }
 
+      const newestRecord = { ...cacheRecord('models-dev-api-json-v5'), validatedAt: currentTime };
+      responses.push({ status: 200, body: JSON.stringify(catalog(newestRecord.parserVersion)) });
+      await refreshModelsDevCatalogCache(options({ parserVersion: newestRecord.parserVersion }));
+
+      const keptRecords = [...earlierRecords.slice(1), newestRecord];
       const persistedCacheFiles = readdirSync(cacheDir)
         .filter((entry) => entry.startsWith('models-dev-catalog-'))
         .filter((entry) => lstatSync(join(cacheDir, entry)).isFile())
         .sort();
-      const expectedNewestFiles = parserVersions
-        .slice(-4)
-        .map((parserVersion) =>
-          basename(resolveModelsDevCatalogCachePath(options({ parserVersion }))),
-        )
-        .sort();
 
-      expect(persistedCacheFiles).toEqual(expectedNewestFiles);
+      expect(persistedCacheFiles).toEqual(keptRecords.map(({ fileName }) => fileName).sort());
       expect(persistedCacheFiles).toHaveLength(4);
       expect(readFileSync(unrelatedPath, 'utf8')).toBe('unrelated cache entry');
       expect(lstatSync(symlinkPath).isSymbolicLink()).toBe(true);
@@ -369,10 +381,10 @@ describe('models.dev user cache', () => {
 
       vi.resetModules();
       const restartedCache = await import('./models-dev-cache.js');
-      for (const parserVersion of parserVersions.slice(-4)) {
+      for (const { parserVersion, validatedAt } of keptRecords) {
         await expect(
           restartedCache.loadModelsDevCatalogCache(options({ parserVersion })),
-        ).resolves.toMatchObject({ parserVersion, catalog: catalog(parserVersion) });
+        ).resolves.toMatchObject({ parserVersion, catalog: catalog(parserVersion), validatedAt });
       }
     },
   );
