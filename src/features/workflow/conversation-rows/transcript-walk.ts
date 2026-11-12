@@ -91,7 +91,7 @@ export type TranscriptWalkStep =
 // not carry on reads as the stop it is. A batch of a call that
 // has ended says so, so no batch of a stopped or finished call carries the live mark. A review opens
 // with its heading while it runs and keeps it once it settles, so no row appears above its rows.
-// A BUILD attempt that a network or server retry follows shows no failed row: the retry row says the call goes on.
+// A BUILD attempt that a network or server retry follows shows no failed row: the status line says the call goes on.
 // A consult rewrite or split shows its row once the brief is replaced or split; the guard question replaces a held one.
 export function* walkTranscript(
   sections: readonly Section<EngineEvent>[],

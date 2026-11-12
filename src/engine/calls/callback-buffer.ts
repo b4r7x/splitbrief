@@ -71,7 +71,7 @@ export function createRunnerAttemptCallbackBuffer(
         code: CALLBACK_BUFFER_OVERFLOW_WARNING_CODE,
         severity: 'warning',
         source: 'system',
-        surface: 'activity',
+        surface: 'debug',
         message: CALLBACK_BUFFER_OVERFLOW_WARNING_MESSAGE,
       }),
     };

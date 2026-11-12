@@ -7636,7 +7636,7 @@ const finalReviewSeatWaitProjection: WorkflowFixtureProjection = {
   },
 };
 
-// The planning call hit two network or server failures: each retry shows as a dim row in the transcript.
+// The planning call hit two network or server failures: the second retry waits on the status line.
 const planningSeatRetryProjection: WorkflowFixtureProjection = {
   ...planningProjection,
   scenarioId: scenarioId('workflow-planning-seat-retry'),
@@ -7661,7 +7661,7 @@ const planningSeatRetryProjection: WorkflowFixtureProjection = {
   ],
 };
 
-// The BUILD call hit two network or server failures: each retry shows as a dim row in the transcript.
+// The BUILD call hit two network or server failures: the second retry waits on the status line.
 const buildSeatRetryProjection: WorkflowFixtureProjection = {
   ...implementationProjection,
   scenarioId: scenarioId('workflow-build-seat-retry'),
@@ -7702,7 +7702,7 @@ const buildSeatRetryProjection: WorkflowFixtureProjection = {
   ],
 };
 
-// The final review call trimmed its input and hit two network or server failures: one trim warning and two dim retry rows.
+// The final review call trimmed its input and hit two network or server failures: one trim warning row and the second retry on the status line.
 const finalReviewSeatRetryProjection: WorkflowFixtureProjection = {
   ...finalReviewProjection,
   scenarioId: scenarioId('workflow-final-review-seat-retry'),
@@ -7953,6 +7953,55 @@ const implementationSearchFolderCalls = (
 const implementationSearchFoldersProjection = toolActivityProjection(
   'workflow-implementation-search-folders',
   implementationSearchFolderCalls,
+);
+
+const implementationReadPathCalls = (
+  callContext: RunnerCallContext,
+  startedAt: number,
+): readonly RunnerCallEvent[] => {
+  const aPath = resolve(VISUAL_FIXTURE_PROJECT_DIR, 'src/a.ts');
+  const bPath = resolve(VISUAL_FIXTURE_PROJECT_DIR, 'src/b.ts');
+  const cPath = resolve(VISUAL_FIXTURE_PROJECT_DIR, 'src/c.ts');
+  return [
+    {
+      ...callContext,
+      ts: startedAt + 1_000,
+      type: 'call_tool_use_done',
+      channel: 'tool',
+      toolUse: {
+        id: 'visual-tool-read-path',
+        name: 'read_file',
+        input: { paths: [aPath] },
+      },
+    },
+    {
+      ...callContext,
+      ts: startedAt + 2_000,
+      type: 'call_tool_use_done',
+      channel: 'tool',
+      toolUse: {
+        id: 'visual-tool-read-paths',
+        name: 'read_file',
+        input: { paths: [aPath, bPath], offset: 12, limit: 30 },
+      },
+    },
+    {
+      ...callContext,
+      ts: startedAt + 3_000,
+      type: 'call_tool_use_done',
+      channel: 'tool',
+      toolUse: {
+        id: 'visual-tool-read-path-range',
+        name: 'read_file',
+        input: { paths: [cPath], offset: 40 },
+      },
+    },
+  ];
+};
+
+const implementationReadPathsProjection = toolActivityProjection(
+  'workflow-implementation-read-paths',
+  implementationReadPathCalls,
 );
 
 // Every brief passed, and the pre-review full suite is ten minutes into `npm test`. No seat is on a
@@ -9648,6 +9697,7 @@ const projections = [
   implementationShellWrapperProjection,
   implementationToolDetailsProjection,
   implementationSearchFoldersProjection,
+  implementationReadPathsProjection,
   reviewCheckRunningProjection,
   reviewCheckReusedProjection,
   reviewRenderRunningProjection,

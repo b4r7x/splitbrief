@@ -3136,7 +3136,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'planning-seat-retry',
-        title: 'Planning shows each PLAN retry as a dim row',
+        title: 'Planning shows the PLAN retry on the status line',
         kind: 'planning',
         marker: 'retry 2 of 10',
       },
@@ -3152,7 +3152,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'build-seat-retry',
-        title: 'Implementation shows each BUILD retry as a dim row',
+        title: 'Implementation shows the BUILD retry on the status line',
         kind: 'implementation',
         marker: 'retry 2 of 10',
       },
@@ -3168,7 +3168,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'final-review-seat-retry',
-        title: 'The final review shows one trim warning and each REVIEW retry as a dim row',
+        title: 'The final review shows one trim warning and the REVIEW retry on the status line',
         kind: 'review',
         marker: 'retry 2 of 10',
       },
@@ -5865,6 +5865,24 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Each Search row names its folder and glob',
         kind: 'implementation',
         marker: 'renewalWindow · src/loans/rules',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header and build progress' },
+        { id: 'transcript', title: 'Tool call transcript' },
+        { id: 'activity', title: 'Tool call activity block' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-implementation-read-paths',
+      title: 'Workflow · Read rows that name each file of the call',
+      surface: screenSurface('workflow'),
+      viewports: REQUIRED_VIEWPORTS,
+      checkpoint: {
+        id: 'implementation-read-paths',
+        title: 'Each Read row names its file and its line range',
+        kind: 'implementation',
+        marker: 'src/a.ts :12-41 · src/b.ts :12-41',
       },
       elements: [
         { id: 'header', title: 'Workflow header and build progress' },

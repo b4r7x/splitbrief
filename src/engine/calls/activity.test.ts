@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { EngineEventSchema } from '../events/schema.js';
 import { projectRunnerCallActivity } from './activity.js';
+import { createRunnerAttemptCallbackBuffer } from './callback-buffer.js';
+import { collectRunnerCallResult } from './collector.js';
 import { createRunnerCallRecorder } from './recorder.js';
 import type { RunnerCallEvent, RunnerCallWarningInput } from './types.js';
 import { normalizeRunnerCallWarning } from './warnings.js';
@@ -180,6 +182,63 @@ describe('projectRunnerCallActivity', () => {
         '/project',
       ),
     ).toMatchObject({ kind: 'warning', label: 'warning' });
+    expect(
+      projectRunnerCallActivity(
+        {
+          ...runnerCallBase,
+          type: 'call_warning',
+          warning: runnerWarning({ code: 'stderr', surface: 'status', message: 'raw' }),
+        },
+        1,
+        '/project',
+      ),
+    ).toMatchObject({ kind: 'warning', label: 'warning', diagnosticPartial: 'raw' });
+  });
+
+  it('gives no activity for an unknown upstream record', () => {
+    expect(
+      projectRunnerCallActivity(
+        {
+          ...runnerCallBase,
+          type: 'call_unknown_upstream',
+          rawPreview: 'unrecognized record token sk-abcdefghijklmnopqrstuvwxyz',
+          backendMetadata: {
+            backendKind: 'cli',
+            source: 'jsonl',
+            parser: 'jsonl',
+            channel: 'stdout',
+            upstreamType: 'future',
+          },
+        },
+        1,
+        '/project',
+      ),
+    ).toBeNull();
+  });
+
+  it('gives no activity for the live-update limit warning', () => {
+    const events: RunnerCallEvent[] = [];
+    const buffer = createRunnerAttemptCallbackBuffer({
+      onOutput: () => {},
+      onCallEvent: (event) => events.push(event),
+    });
+    buffer.callbacks.onCallEvent?.({ ...runnerCallBase, type: 'call_started', ts: 1 });
+    buffer.callbacks.onOutput('x'.repeat(4 * 1024 * 1024));
+    buffer.flush();
+
+    const warning = events.find((event) => event.type === 'call_warning');
+    if (warning?.type !== 'call_warning') throw new Error('Expected the live-update limit warning');
+
+    const collected = collectRunnerCallResult(events);
+    expect(collected.warnings).toHaveLength(1);
+    expect(collected.warnings[0]).toMatchObject({
+      code: 'callback_buffer_overflow',
+      severity: 'warning',
+      source: 'system',
+      surface: 'debug',
+      message: 'Only the first 12288 live updates or 3 MB of this call are shown.',
+    });
+    expect(projectRunnerCallActivity(warning, 1, '/project')).toBeNull();
   });
 
   it('labels Antigravity inputs: CommandLine runs, AbsolutePath reads, TargetFile edits', () => {
@@ -236,6 +295,49 @@ describe('projectRunnerCallActivity', () => {
         '/project',
       ),
     ).toMatchObject({ kind: 'read', label: `reading ${target}`, target });
+  });
+
+  it.each<[Record<string, unknown>, string]>([
+    [{ paths: ['/project/src/a.ts'] }, 'src/a.ts'],
+    [{ paths: ['/project/src/a.ts', '/project/src/b.ts'] }, 'src/a.ts · src/b.ts'],
+    [{ paths: ['/project/src/a.ts'], offset: 420, limit: 80 }, 'src/a.ts :420-499'],
+    [
+      { paths: ['/project/src/a.ts', '/project/src/b.ts'], limit: 140 },
+      'src/a.ts :1-140 · src/b.ts :1-140',
+    ],
+    [{ paths: ['src/a.ts'] }, 'src/a.ts'],
+    [{ paths: ['/elsewhere/src/b.ts'] }, '/elsewhere/src/b.ts'],
+  ])('names each file of a read_file paths list', (input, target) => {
+    expect(
+      projectRunnerCallActivity(
+        runnerToolUse({ name: 'read_file', inputDelta: JSON.stringify(input) }),
+        1,
+        '/project',
+      ),
+    ).toMatchObject({ kind: 'read', label: `reading ${target}`, target });
+  });
+
+  it('keeps the scalar path and an unusable paths list on a read', () => {
+    expect(
+      projectRunnerCallActivity(
+        runnerToolUse({
+          name: 'read_file',
+          inputDelta: JSON.stringify({ file_path: 'src/app.ts', paths: ['src/other.ts'] }),
+        }),
+        1,
+        '/project',
+      ),
+    ).toMatchObject({ kind: 'read', label: 'reading src/app.ts', target: 'src/app.ts' });
+
+    for (const input of [{ paths: [] }, { paths: [1] }]) {
+      const activity = projectRunnerCallActivity(
+        runnerToolUse({ name: 'read_file', inputDelta: JSON.stringify(input) }),
+        1,
+        '/project',
+      );
+      expect(activity).toMatchObject({ kind: 'read', label: 'reading file' });
+      expect(activity?.target).toBeUndefined();
+    }
   });
 
   it('names only the path of a read that asks for no valid lines', () => {

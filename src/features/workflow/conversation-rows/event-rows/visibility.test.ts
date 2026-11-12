@@ -49,7 +49,7 @@ describe('isTranscriptRowlessEvent', () => {
     ).toBe(true);
   });
 
-  it('keeps a seat retry as a transcript row', () => {
+  it('gives a seat retry no transcript row', () => {
     expect(
       isTranscriptRowlessEvent({
         type: 'seat_retry',
@@ -59,7 +59,7 @@ describe('isTranscriptRowlessEvent', () => {
         attempt: 1,
         delayMs: 2_000,
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('hides a refused seat answer that the seat is asked again for', () => {

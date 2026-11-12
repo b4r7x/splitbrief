@@ -42,6 +42,7 @@ function lifecycleFromState(current: LifecycleState, state: WorkflowState): Life
     queuedMessageIds,
     steerableCall: null,
     stall: null,
+    retry: null,
     lastRunnerEventTs: current.lastRunnerEventTs ?? null,
     briefClock: current.briefClock ?? null,
     startedAt,

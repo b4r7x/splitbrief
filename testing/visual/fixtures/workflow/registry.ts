@@ -1939,6 +1939,10 @@ const checkpointPredicates = [
     checkpointId('implementation-search-folders'),
     includesAll('renewalWindow · src/loans · *.ts', 'renewalWindow · src/loans/rules'),
   ],
+  [
+    checkpointId('implementation-read-paths'),
+    includesAll('src/a.ts :12-41 · src/b.ts :12-41', 'src/c.ts :40-end'),
+  ],
   [checkpointId('implementation-silent-bare'), includesAll('Implementing…', 'No output for')],
   [
     checkpointId('live-seat-wait'),
@@ -1948,16 +1952,23 @@ const checkpointPredicates = [
   ],
   [checkpointId('planning-seat-wait'), includesAll('Waiting for Claude Code')],
   [checkpointId('final-review-seat-wait'), includesAll('Waiting for OpenAI Codex CLI')],
-  [checkpointId('planning-seat-retry'), includesAll('Network or server failure', 'retry 1 of 10')],
+  [
+    checkpointId('planning-seat-retry'),
+    (context) =>
+      includesAll('Network or server failure', 'retry 2 of 10')(context) &&
+      excludesAll('PLAN  Network')(context),
+  ],
   [
     checkpointId('build-seat-retry'),
     (context) =>
       includesAll('retry 2 of 10')(context) &&
-      excludesAll('BUILD failed', 'BUILD  failed')(context),
+      excludesAll('BUILD failed', 'BUILD  failed', 'BUILD  Network')(context),
   ],
   [
     checkpointId('final-review-seat-retry'),
-    includesAll('Network or server failure', 'retry 1 of 10', 'Review input trimmed'),
+    (context) =>
+      includesAll('Network or server failure', 'retry 2 of 10', 'Review input trimmed')(context) &&
+      excludesAll('REVIEW  Network')(context),
   ],
   [checkpointId('review-check-running'), includesAll('Review · Reviewer check V2')],
   [checkpointId('review-check-reused'), includesAll('Reviewer check V2', 'reused,')],

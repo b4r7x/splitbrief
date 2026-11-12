@@ -162,6 +162,7 @@ function lifecycleState(
     queuedMessageIds: new Set(),
     steerableCall: null,
     stall: null,
+    retry: null,
     lastRunnerEventTs: NOW,
     startedAt: NOW,
     endedAt: null,

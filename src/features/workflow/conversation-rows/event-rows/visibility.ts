@@ -41,6 +41,7 @@ const TRANSCRIPT_ROWLESS_EVENT_TYPES = [
   'tasks_inserted',
   'task_validating',
   'checks_run',
+  'seat_retry',
   'seat_wait_started',
   'seat_wait_ended',
   'no_progress_cut',

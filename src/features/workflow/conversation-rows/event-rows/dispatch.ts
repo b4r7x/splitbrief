@@ -4,7 +4,6 @@ import { SPLITBRIEF_IDENTITY } from '../../../../core/identity.js';
 import { formatRecordedSeatChangeIdentities } from '../../display/recorded-seat-identity.js';
 import { COLLAPSE_HINT } from '../implementer-diff-card-block.js';
 import { CREW_SEAT_ROLES } from '../../../../core/crew/seats.js';
-import { seatRetrySentence } from '../../../../core/sessions/seat-wait-line.js';
 import { stateTone } from '../../../../core/theme/state-tone.js';
 import { stuckAnswerWords } from '../../../../core/review/stuck.js';
 import { setAsideLabel } from '../../../../core/review/verdict.js';
@@ -209,13 +208,6 @@ export function eventRowBlock(options: {
         keyPrefix,
         // The lineage's attempt, first try included, as the halt's Attempts: N counts it.
         text: `Retry  attempt ${event.lineageAttempt ?? event.attempt + 1}`,
-        width: ctx.width,
-        tone: 'textDim',
-      });
-    case 'seat_retry':
-      return wrappedTextBlock({
-        keyPrefix,
-        text: `${CREW_SEAT_LABELS[event.seat]}  ${seatRetrySentence(event)}`,
         width: ctx.width,
         tone: 'textDim',
       });

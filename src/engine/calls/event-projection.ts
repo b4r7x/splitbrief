@@ -3,7 +3,7 @@ import type { TaskId } from '../../core/schemas/task.js';
 import { assertNever } from '../../utils/type-guards.js';
 import type { EngineEvent } from '../events/types.js';
 import { projectRunnerCallActivity } from './activity.js';
-import { sanitizeRunnerCallRawPreview } from './output-limit.js';
+import { unknownUpstreamWarningInput } from './collector.js';
 import { boundedRunnerCallMessage } from './status.js';
 import { normalizeRunnerCallWarning } from './warnings.js';
 import type { RunnerCallEvent } from './types.js';
@@ -137,16 +137,7 @@ export function projectRunnerCallEvent(
       return {
         type: 'runner_call_warning',
         ...base,
-        warning: normalizeRunnerCallWarning({
-          code: 'unknown_upstream',
-          severity: 'warning',
-          source: event.backendMetadata.source ?? 'upstream',
-          surface: 'activity',
-          parser: event.backendMetadata.parser,
-          upstreamType: event.backendMetadata.upstreamType,
-          channel: event.backendMetadata.channel,
-          message: boundedRunnerCallMessage(sanitizeRunnerCallRawPreview(event.rawPreview)),
-        }),
+        warning: normalizeRunnerCallWarning(unknownUpstreamWarningInput(event)),
       };
     case 'call_stalled':
       return { type: 'runner_call_stalled', ...base, silentMs: event.silentMs };

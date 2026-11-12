@@ -1,9 +1,10 @@
-import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
+import { SOFT_SEP } from '../../../src/core/separators.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { buildActivityBatchViewModel } from '../../../src/features/workflow/conversation-rows/activity-batch-model.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
@@ -21,6 +22,14 @@ import {
   MARKER_SOURCE,
   type StopContinueFixture,
 } from '../helpers/stop-continue-fixture.js';
+
+const COMMAND_CODE_STATUS = readFileSync(
+  join(import.meta.dirname, '../../fixtures/command-code/status.txt'),
+  'utf8',
+)
+  .split(/\r?\n/u)
+  .slice(2)
+  .join('\n');
 
 /**
  * The planner answers the plan and every later prompt, and exits 1 on the final review, so the
@@ -222,6 +231,58 @@ console.log(JSON.stringify({ type: 'step_finish', part: { type: 'step-finish', t
     restorePath();
     vi.unstubAllEnvs();
     home.restore();
+    cleanupTempDir(target.tmpDir);
+  }
+});
+
+it('names each file of a Command Code read_file paths list in the BUILD activity block', async () => {
+  const target = createStopContinueFixture(undefined, {
+    isolation: 'none',
+    consult: () => CRASHING_REVIEW_CONSULT,
+  });
+  const shims = join(target.tmpDir, 'bin');
+  mkdirSync(shims);
+  writeFakeNodeCli(
+    shims,
+    'cmd',
+    `const { mkdirSync, readFileSync, writeFileSync } = require('node:fs');
+const { join } = require('node:path');
+const args = process.argv.slice(2);
+if (args.includes('--version')) {
+  console.log('${CLI_TOOL_CATALOG['command-code'].compatibility.testedVersion}');
+  process.exit(0);
+}
+if (args[0] === 'status') {
+  console.log(${JSON.stringify(COMMAND_CODE_STATUS)});
+  process.exit(0);
+}
+if (args.includes('--help')) {
+  console.log('Command Code fixture');
+  process.exit(0);
+}
+if (!args.includes('-p')) process.exit(1);
+readFileSync(0, 'utf8');
+mkdirSync('src', { recursive: true });
+writeFileSync(${JSON.stringify(GREET_FILE)}, ${JSON.stringify(GREET_SOURCE)});
+writeFileSync(${JSON.stringify(MARKER_FILE)}, ${JSON.stringify(MARKER_SOURCE)});
+const paths = [join(process.cwd(), ${JSON.stringify(GREET_FILE)}), join(process.cwd(), ${JSON.stringify(MARKER_FILE)})];
+console.log(JSON.stringify({ type: 'event', event: { type: 'tool_queued', toolCallId: 'read-paths', toolName: 'read_file', input: { paths } } }));
+console.log(JSON.stringify({ type: 'result', subtype: 'success', sessionId: 'command-code-read-paths', stopReason: 'end_turn', usage: { inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 }, durationMs: 10, finalText: 'Read both files.' }));`,
+  );
+  const restorePath = prependPath(shims);
+  const config = loadConfig(target.projectDir).config;
+  writeConfig(target.projectDir, {
+    ...config,
+    implementer: { kind: 'cli', tool: 'command-code', contextLength: 200_000 },
+  });
+  try {
+    const run = await cli(target, ['start', 'smoke', '--allow-unverified-auth']);
+    expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(1);
+    const frame = await haltedRunFrame(target, 'Read    ');
+    expect(frame).toContain(`Read    ${GREET_FILE}${SOFT_SEP}${MARKER_FILE}`);
+    expect(frame).not.toContain('Read    file');
+  } finally {
+    restorePath();
     cleanupTempDir(target.tmpDir);
   }
 });

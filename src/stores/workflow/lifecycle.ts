@@ -35,6 +35,7 @@ interface LifecycleBase {
   queuedMessageIds: ReadonlySet<string>;
   steerableCall: { seat: CrewSeatId; taskId?: string } | null;
   stall: LifecycleStall;
+  retry: { attempt: number; delayMs: number } | null;
   /** When the run last produced any sign of life, so a silent seat can be named as silent. */
   lastRunnerEventTs?: number | null;
   briefClock?: BriefClockState | null;
@@ -147,6 +148,7 @@ const initial: LifecycleState = {
   queuedMessageIds: new Set(),
   steerableCall: null,
   stall: null,
+  retry: null,
   lastRunnerEventTs: null,
   briefClock: null,
   plannerCall: null,
@@ -317,11 +319,18 @@ function updatePhaseOnly(
   // call spawns while the turn is parked, and the host clears via
   // markInterruptResumed at the submit that triggers the resume.
   if (event.type === 'runner_call_started') {
-    return applyPhaseChange(
+    const resumed = applyPhaseChange(
       clearLifecyclePaused(clearLifecycleInterrupted(state), event.ts),
       phaseChanged,
       event.ts,
     );
+    return resumed.retry === null ? resumed : { ...resumed, retry: null };
+  }
+
+  if (event.type === 'seat_retry') {
+    const retrying = applyPhaseChange(state, phaseChanged, event.ts);
+    if (retrying.status !== 'running') return retrying;
+    return { ...retrying, retry: { attempt: event.attempt, delayMs: event.delayMs } };
   }
 
   return applyPhaseChange(state, phaseChanged, event.ts);
@@ -384,6 +393,7 @@ export function markLifecycleCancellationRequested(
     queuedMessageIds: state.queuedMessageIds,
     steerableCall: null,
     stall: null,
+    retry: null,
     startedAt: state.startedAt,
     endedAt: cancellation.ts,
     durationMs: state.durationMs ?? durationFromStart(state.startedAt, cancellation.ts),
@@ -393,7 +403,7 @@ export function markLifecycleCancellationRequested(
 
 export function markLifecycleInterrupted(state: LifecycleState): LifecycleState {
   if (state.status !== 'running') return state;
-  return { ...state, status: 'interrupted' };
+  return { ...state, status: 'interrupted', retry: null };
 }
 
 export function markLifecyclePaused(state: LifecycleState, ts: number): LifecycleState {
@@ -403,6 +413,7 @@ export function markLifecyclePaused(state: LifecycleState, ts: number): Lifecycl
     status: 'paused',
     interruptParked: false,
     stall: null,
+    retry: null,
     durationMs: state.durationMs ?? durationFromStart(state.startedAt, ts),
   };
 }
@@ -464,6 +475,7 @@ function markLifecycleComplete(state: LifecycleState, endedAt: number): Lifecycl
     queuedMessageIds: state.queuedMessageIds,
     steerableCall: null,
     stall: null,
+    retry: null,
     startedAt: state.startedAt,
     endedAt,
     durationMs: state.durationMs ?? durationFromStart(state.startedAt, endedAt),
@@ -492,6 +504,7 @@ function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
       queuedMessageIds,
       steerableCall: null,
       stall: null,
+      retry: null,
       lastRunnerEventTs: null,
       briefClock: null,
       startedAt,
@@ -511,6 +524,7 @@ function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
       queuedMessageIds,
       steerableCall: null,
       stall: null,
+      retry: null,
       lastRunnerEventTs: null,
       briefClock: null,
       startedAt,
@@ -559,7 +573,7 @@ function applyPhaseChange(
     });
   }
   if (state.status === 'running' || state.status === 'interrupted' || state.status === 'paused') {
-    return { ...state, stall: null };
+    return { ...state, stall: null, retry: null };
   }
   return state;
 }
@@ -579,6 +593,7 @@ function runningLifecycleState(input: {
     queuedMessageIds: input.queuedMessageIds,
     steerableCall: null,
     stall: null,
+    retry: null,
     lastRunnerEventTs: input.lastRunnerEventTs ?? null,
     briefClock: input.briefClock ?? null,
     plannerCall: null,

@@ -16,7 +16,7 @@ import {
 } from './activity-memory.js';
 import type { RunnerCallActivityStageSchema } from './schema.js';
 import type { RunnerCallEvent, RunnerCallWarning } from './types.js';
-import { normalizeRunnerCallWarning, showsRunnerCallWarningOnPrimarySurface } from './warnings.js';
+import { showsRunnerCallWarningOnPrimarySurface } from './warnings.js';
 
 const RUNNER_ACTIVITY_MAX_LENGTH = 512;
 const RUNNER_ACTIVITY_TARGET_MAX_LENGTH = 2048;
@@ -127,16 +127,7 @@ export function projectRunnerCallActivity(
     case 'call_warning':
       return warningActivity(event.callId, event.warning);
     case 'call_unknown_upstream':
-      return warningActivity(
-        event.callId,
-        normalizeRunnerCallWarning({
-          code: unknownUpstreamWarningLabel(event),
-          severity: 'warning',
-          source: event.backendMetadata.source ?? 'upstream',
-          surface: 'activity',
-          message: event.rawPreview,
-        }),
-      );
+      return null;
     case 'call_error':
       releaseCallActivityMemory(event.callId);
       return buildActivity({
@@ -270,18 +261,6 @@ function buildActivity(opts: {
   };
 }
 
-function unknownUpstreamWarningLabel(
-  event: Extract<RunnerCallEvent, { type: 'call_unknown_upstream' }>,
-): string {
-  const parts = [
-    'unknown_upstream',
-    event.backendMetadata.parser,
-    event.backendMetadata.upstreamType,
-    event.backendMetadata.channel,
-  ].filter((part): part is string => part !== undefined && part.length > 0);
-  return parts.join(':');
-}
-
 function parseToolInputDelta(inputDelta: string | undefined): Record<string, unknown> | null {
   if (inputDelta === undefined || inputDelta.trim().length === 0) return null;
   try {
@@ -344,18 +323,29 @@ function toolUseDetails(
     };
   }
   if (isPatchTool(normalized)) return { kind: 'edit', label: 'applying patch' };
-  if (filePath !== undefined && isReadTool(normalized)) {
-    const explicitStart =
-      positiveIntegerInput(input, 'offset') ?? positiveIntegerInput(input, 'StartLine');
-    const endLine = positiveIntegerInput(input, 'EndLine');
-    const limit = positiveIntegerInput(input, 'limit');
-    const start = explicitStart ?? (endLine !== undefined || limit !== undefined ? 1 : undefined);
-    if (start === undefined) {
-      return { kind: 'read', label: `reading ${filePath}`, target: filePath };
+  if (isReadTool(normalized)) {
+    const rawPaths = input?.paths;
+    const listedPaths = Array.isArray(rawPaths)
+      ? rawPaths
+          .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+          .map((value) => projectRelativePathLabel({ path: value.trim(), rootDir }))
+      : [];
+    const readPaths = filePath === undefined ? listedPaths : [filePath];
+    if (readPaths.length > 0) {
+      const explicitStart =
+        positiveIntegerInput(input, 'offset') ?? positiveIntegerInput(input, 'StartLine');
+      const endLine = positiveIntegerInput(input, 'EndLine');
+      const limit = positiveIntegerInput(input, 'limit');
+      const start = explicitStart ?? (endLine !== undefined || limit !== undefined ? 1 : undefined);
+      const end =
+        start === undefined
+          ? undefined
+          : (endLine ?? (limit === undefined ? 'end' : start + limit - 1));
+      const targets =
+        start === undefined ? readPaths : readPaths.map((path) => `${path} :${start}-${end}`);
+      const target = targets.join(SOFT_SEP);
+      return { kind: 'read', label: `reading ${target}`, target };
     }
-    const end = endLine ?? (limit === undefined ? 'end' : start + limit - 1);
-    const target = `${filePath} :${start}-${end}`;
-    return { kind: 'read', label: `reading ${target}`, target };
   }
   if (filePath !== undefined && isWriteTool(normalized)) {
     const raw = input?.new_string ?? input?.content ?? input?.streamContent;
