@@ -486,8 +486,9 @@ export function useRuntimeCommands({
         openRunAtRest: isOpenRunAtRest(routerStore.get()),
         applyUnfinished: isApplyUnfinishedAtRest(routerStore.get()),
         applying: applyBefore !== undefined,
-        onError: (message, line) => {
-          feedbackStore.setError(message);
+        onError: (message, line, outcome) => {
+          if (outcome === 'failed') feedbackStore.setError(message);
+          else feedbackStore.setMessage(message);
           if (sentBy === 'answer') {
             const { drafts, index } = questionPromptStore.get();
             if (drafts[index]?.text === '') questionPromptStore.setFocus('answer', line);

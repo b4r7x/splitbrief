@@ -787,6 +787,55 @@ describe('visual catalog', () => {
     expect(workflowCheckpointPredicates.has(checkpointId(checkpoint))).toBe(true);
   });
 
+  it('registers the refusal checkpoints beside their base scenarios', () => {
+    const ids = VISUAL_CATALOG.map((scenario) => scenario.id);
+    expect(ids.indexOf(scenarioId('workflow-apply-recheck-words-refused'))).toBe(
+      ids.indexOf(scenarioId('workflow-apply-recheck-review-none')) + 1,
+    );
+    expect(ids.indexOf(scenarioId('workflow-stop-steer-refused'))).toBe(
+      ids.indexOf(scenarioId('workflow-stopping')) + 1,
+    );
+
+    const apply = findVisualScenario('workflow-apply-recheck-words-refused');
+    expect(apply?.checkpoints[0]).toMatchObject({
+      id: 'apply-recheck-words-refused',
+      kind: 'implementation',
+      marker: 'Cannot send words to Apply',
+    });
+    expect(apply?.viewports).toEqual(REQUIRED_VIEWPORTS);
+    expect(apply?.elements.map((element) => element.id)).toEqual([
+      'header',
+      'transcript',
+      'composer',
+    ]);
+    expect(workflowFixtureRegistry.has(scenarioId('workflow-apply-recheck-words-refused'))).toBe(
+      true,
+    );
+    expect(workflowCheckpointPredicates.has(checkpointId('apply-recheck-words-refused'))).toBe(
+      true,
+    );
+
+    const stop = findVisualScenario('workflow-stop-steer-refused');
+    expect(stop?.checkpoints[0]).toMatchObject({
+      id: 'stop-steer-refused',
+      kind: 'implementation',
+      marker: 'Finish stopping before steering',
+    });
+    expect(stop?.viewports).toEqual(REQUIRED_VIEWPORTS);
+    expect(stop?.elements.map((element) => element.id)).toEqual([
+      'header',
+      'transcript',
+      'composer',
+    ]);
+    expect(workflowFixtureRegistry.has(scenarioId('workflow-stop-steer-refused'))).toBe(true);
+    expect(workflowCheckpointPredicates.has(checkpointId('stop-steer-refused'))).toBe(true);
+
+    expect(findVisualScenario('workflow-apply-recheck-review-none')?.checkpoints[0]?.id).toBe(
+      'apply-recheck-review-none',
+    );
+    expect(findVisualScenario('workflow-stopping')?.checkpoints[0]?.id).toBe('stopping');
+  });
+
   it('keeps the image reason and the command line with its image at 120 columns', async () => {
     const scenario = findVisualScenario('workflow-command-image-refused');
     const checkpoint = scenario?.checkpoints[0];
@@ -796,7 +845,7 @@ describe('visual catalog', () => {
     try {
       const frame = stripAnsiStyles(await handle.waitForCheckpoint());
       expect(feedbackStore.get()).toEqual({
-        isError: true,
+        isError: false,
         message: 'A command sends no image. Remove the command, then press ctrl+⏎.',
       });
       expect(frame).toContain('A command sends no image. Remove the command, then press ctrl+⏎.');
@@ -815,7 +864,7 @@ describe('visual catalog', () => {
     try {
       const frame = stripAnsiStyles(await handle.waitForCheckpoint());
       expect(feedbackStore.get()).toEqual({
-        isError: true,
+        isError: false,
         message: '/end takes no argument. Usage: /end',
       });
       expect(frame).toContain('/end takes no argument. Usage: /end');

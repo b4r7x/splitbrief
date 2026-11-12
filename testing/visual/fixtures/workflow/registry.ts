@@ -30,6 +30,9 @@ import { streamingOutputStore } from '../../../../src/stores/workflow/streaming-
 import type { CheckpointId, ScenarioId } from '../../contracts/identifiers.js';
 import { checkpointId } from '../../contracts/identifiers.js';
 import { NO_CORRECTION_MESSAGE } from '../../../../src/features/workflow/recovery-prompt.js';
+import { requestSteer } from '../../../../src/features/workflow/handlers.js';
+import { noWordsRefusal } from '../../../../src/core/recovery/typed-words.js';
+import { plainUserMessage } from '../../../../src/core/types/user-input.js';
 import {
   LONG_COMPOSER_DRAFT,
   PREVIEW_UNAVAILABLE,
@@ -98,7 +101,9 @@ function applyStop(stop: FixtureStopState): void {
 const PLAN_CARD_COMMENT_DRAFT = 'Split the CLI change into a separate task.';
 const PLAN_CARD_OVER_DRAFT = 'also print the greeting in uppercase';
 const TYPED_WORDS = 'keep the old lockfile';
+const REFUSED_WORDS = 'also fix the typo';
 const STEER_REFUSED_LINE = '/steer use the old name';
+const STOP_STEER_REFUSED_LINE = `/steer ${REFUSED_WORDS}`;
 const COMMAND_IMAGE_TEXT = '/steer fix the layout ';
 const COMMAND_IMAGE_LINE = `${COMMAND_IMAGE_TEXT}[image #1]`;
 const COMMAND_IMAGE_REASON = 'A command sends no image. Remove the command, then press ctrl+⏎.';
@@ -532,7 +537,7 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
         await write.press('\r');
         await refused.promise;
         off();
-        feedbackStore.setError(NO_CORRECTION_MESSAGE);
+        feedbackStore.setMessage(NO_CORRECTION_MESSAGE);
       },
     });
   }
@@ -576,6 +581,21 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
             off();
           }
         },
+      };
+    };
+  }
+  if (projection.scenarioId === 'workflow-apply-recheck-words-refused') {
+    return () => {
+      const lifecycle = base();
+      return {
+        ...lifecycle,
+        setup: async (context) => {
+          await lifecycle.setup(context);
+          const route = routerStore.get();
+          if (route.screen !== 'workflow') throw new Error('The Apply refusal needs a run');
+          saveSessionDraft(route.run.ref, createDraftDocument(REFUSED_WORDS));
+        },
+        afterMount: () => feedbackStore.setMessage(noWordsRefusal({ kind: 'apply' })),
       };
     };
   }
@@ -631,6 +651,7 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
   }
   const stop = projection.stop;
   if (stop === undefined) return base;
+  const steerRefused = projection.scenarioId === 'workflow-stop-steer-refused';
   return () => {
     const lifecycle = base();
     let off: (() => void) | null = null;
@@ -644,6 +665,25 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
         await lifecycle.setup(context);
         applyStop(stop);
       },
+      ...(steerRefused && {
+        afterMount: async (write: FixtureWrite) => {
+          await write.press('/');
+          await write.press(STOP_STEER_REFUSED_LINE.slice(1));
+          const refused = Promise.withResolvers<void>();
+          const feedbackOff = feedbackStore.subscribe(() => {
+            if (feedbackStore.get().message === PREVIEW_UNAVAILABLE) refused.resolve();
+          });
+          try {
+            await write.press('\r');
+            await refused.promise;
+          } finally {
+            feedbackOff();
+          }
+          const reason = requestSteer(plainUserMessage(REFUSED_WORDS));
+          if (reason === undefined) throw new Error('The stop steer fixture needs its refusal');
+          feedbackStore.setMessage(reason);
+        },
+      }),
       teardown: () => {
         off?.();
         off = null;
@@ -1150,6 +1190,18 @@ const checkpointPredicates = [
       noReviewClaimed(context) &&
       excludesAll('reviewing changes')(context),
   ],
+  [
+    checkpointId('apply-recheck-words-refused'),
+    (context) =>
+      includesAll(
+        'Cannot send words to Apply',
+        REFUSED_WORDS,
+        'Checking the merged result',
+      )(context) &&
+      reviewNoneRowOnce() &&
+      noReviewClaimed(context) &&
+      excludesAll('reviewing changes')(context),
+  ],
   [checkpointId('implementation-escalated'), includesAll('briefs passed')],
   [checkpointId('review-fix-narrow-rail'), includesAll('T006')],
   [checkpointId('review-fix-narrow-rail-stop'), includesAll()],
@@ -1328,6 +1380,10 @@ const checkpointPredicates = [
   [checkpointId('paused-cut-seat'), includesAll('⏎ resume', 'Stopped at T')],
   [checkpointId('paused-boundary'), includesAll('briefs complete', 'before T902')],
   [checkpointId('stopping'), includesAll('esc back after stop')],
+  [
+    checkpointId('stop-steer-refused'),
+    includesAll(STOP_STEER_REFUSED_LINE, 'Finishing cleanup and saving'),
+  ],
   [checkpointId('stopping-review'), includesAll('Stopping the review')],
   // A run at rest carries its own name: the marker is the session the record names, which the
   // closed block states in full and the open byline carries. Nothing else is width-stable — the

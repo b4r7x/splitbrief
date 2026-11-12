@@ -5,7 +5,8 @@ import { reviewStore } from '../../stores/workflow/review.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
-import { requestEnqueue, stopInProgress } from './handlers.js';
+import { stopInProgress, stopStore } from '../../stores/workflow/stop.js';
+import { requestEnqueue } from './handlers.js';
 import { openReviewEditor, reviewEditPath } from './review-editor.js';
 import {
   editorDisplayLabel,
@@ -303,15 +304,21 @@ export function createReviewInputHandler(
           const result = await effects.enqueue(message, phase);
           if (!result) {
             composerDraftStore.requestPrepend(document);
-            feedbackStore.setError('Cannot queue message: no active workflow.');
+            feedbackStore.setMessage('Cannot queue message: no active workflow.');
           } else if (result.status === 'rejected') {
             // The submission was refused: it comes back in front of whatever the composer holds
             // now, so a rejection loses neither what was sent nor what was typed since.
             composerDraftStore.requestPrepend(document);
-            feedbackStore.setError(result.message);
+            if (result.reason === 'failed') feedbackStore.setError(result.message);
+            else feedbackStore.setMessage(result.message);
           } else if (seat !== null) {
             feedbackStore.setMessage(
-              queueCopy({ seat, taskId, steerable, stopping: stopInProgress() }).feedback,
+              queueCopy({
+                seat,
+                taskId,
+                steerable,
+                stopping: stopInProgress(stopStore.get()),
+              }).feedback,
             );
           }
         }

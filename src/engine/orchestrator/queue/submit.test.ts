@@ -1,9 +1,14 @@
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { plainUserMessage } from '../../../core/types/user-input.js';
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import type { WorkflowState, QueuedMessage } from '../../../core/schemas/workflow.js';
+import type { Phase } from '../../../core/schemas/enums.js';
+import type { Config } from '../../../core/schemas/config.js';
 import { briefCorrections, createInitialState } from '../../../core/state/machine.js';
 import { loadState } from '../../../core/state/persistence.js';
+import { STATE_FILE, sessionDir } from '../../../core/paths.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeBusRecorder, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { setupProject, makeResearchingState } from '#testing/helpers/queue.js';
@@ -27,6 +32,7 @@ import { settleMidCallDeliveries } from './mid-call.js';
 import { formatDrainedMessages } from './prompt.js';
 import { clearPendingQueue } from './clear.js';
 import { drainQueue, drainQueueForReview } from './drain.js';
+import { MAX_QUEUE_SIZE } from './types.js';
 
 let dirs: string[] = [];
 
@@ -535,6 +541,15 @@ describe('mid-call delivery', () => {
 });
 
 describe('enqueue', () => {
+  const fullQueue: QueuedMessage[] = Array.from({ length: MAX_QUEUE_SIZE }, (_, index) => ({
+    id: `msg-${index}`,
+    ...plainUserMessage(`message ${index}`),
+    queuedAt: new Date().toISOString(),
+    phase: 'researching' as const,
+    deliveredViaNative: false,
+    nativeDeliveryState: 'pending' as const,
+  }));
+
   it('delivers an attached file through the queue and publishes compact text once before status', async () => {
     const ref = setupProject(dirs);
     const message = attachedMessage(ref.projectDir);
@@ -870,21 +885,14 @@ describe('enqueue', () => {
     expect(events.find((e) => e.type === 'message_queued')).toBeUndefined();
   });
 
-  it('emits warning and does not enqueue when queue is full', async () => {
+  it('does not enqueue when the queue is full and publishes no warning', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
-    let state: WorkflowState | undefined = makeResearchingState();
+    let state: WorkflowState | undefined = {
+      ...makeResearchingState(),
+      messageQueue: fullQueue,
+    };
     const { bus, events } = makeBusRecorder();
     const planner = makePlanner();
-
-    const fakeMessages: QueuedMessage[] = Array.from({ length: 50 }, (_, i) => ({
-      id: `msg-${i}`,
-      ...plainUserMessage(`message ${i}`),
-      queuedAt: new Date().toISOString(),
-      phase: 'researching' as const,
-      deliveredViaNative: false,
-      nativeDeliveryState: 'pending' as const,
-    }));
-    state = { ...state!, messageQueue: fakeMessages };
 
     const handler = createQueueHandler({
       config: makeConfig(),
@@ -902,9 +910,49 @@ describe('enqueue', () => {
     const result = await handler(plainUserMessage('overflow'), 'researching');
 
     expect(result).toMatchObject({ status: 'rejected', reason: 'queue-full' });
-    const warning = events.find((e) => e.type === 'warning');
-    expect(warning).toBeDefined();
-    expect(state?.messageQueue).toHaveLength(50);
+    expect(events.filter((event) => event.type === 'warning')).toEqual([]);
+    expect(state?.messageQueue).toHaveLength(MAX_QUEUE_SIZE);
+  });
+
+  it('returns a failed result when the queue itself throws', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    let state: WorkflowState | undefined = makeResearchingState();
+    const { bus, events } = makeBusRecorder();
+    writeFileSync(join(sessionDir(projectDir, sessionId), STATE_FILE), '{"tru');
+    const writes: string[] = [];
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      writes.push(String(chunk));
+      return true;
+    });
+
+    try {
+      const handler = createQueueHandler({
+        config: makeConfig(),
+        projectDir,
+        sessionId,
+        getState: () => state,
+        setState: (s) => {
+          state = s;
+        },
+        bus,
+        planner: makePlanner(),
+        serialize: createWriteSequencer(),
+      });
+
+      const result = await handler(plainUserMessage('survive a broken state file'), 'researching');
+
+      expect(result).toEqual({
+        status: 'rejected',
+        reason: 'failed',
+        message: 'Cannot queue message: workflow queue failed.',
+      });
+    } finally {
+      stderr.mockRestore();
+    }
+
+    expect(writes.join('')).toContain('Could not queue your message');
+    expect(events.filter((event) => event.type === 'warning')).toEqual([]);
+    expect(state?.messageQueue).toHaveLength(0);
   });
 
   it('accepts input during a brief and queues it durably for the boundary', async () => {
@@ -940,41 +988,73 @@ describe('enqueue', () => {
     ]);
   });
 
-  it('still rejects a phase that is not live at the shared queue boundary', async () => {
-    const { projectDir, sessionId } = setupProject(dirs);
-    let state: WorkflowState | undefined = {
-      ...makeResearchingState(),
-      phase: 'idle',
-    };
-    const { bus, events } = makeBusRecorder();
-    const planner = makePlanner();
-
-    const handler = createQueueHandler({
-      config: makeConfig(),
-      projectDir,
-      sessionId,
-      getState: () => state,
-      setState: (s) => {
-        state = s;
+  it.each<
+    [string, Phase, WorkflowState, Config, 'phase-unavailable' | 'queue-full', string, number]
+  >([
+    [
+      'idle',
+      'idle',
+      { ...makeResearchingState(), phase: 'idle' },
+      makeConfig(),
+      'phase-unavailable',
+      'The queue takes a message only while a run is live.',
+      0,
+    ],
+    [
+      'a REVIEW None pass under Apply',
+      'final-review',
+      {
+        ...makeResearchingState(),
+        phase: 'final-review',
+        workspace: {
+          kind: 'worktree',
+          path: '/tmp/wt',
+          base: { snapshotId: 'b', head: null },
+        },
       },
-      bus,
-      planner,
-      serialize: createWriteSequencer(),
-    });
+      makeConfig({ reviewer: 'none' }),
+      'phase-unavailable',
+      'Cannot send words to Apply. Clear them.',
+      0,
+    ],
+    [
+      'a full queue',
+      'researching',
+      { ...makeResearchingState(), messageQueue: fullQueue },
+      makeConfig(),
+      'queue-full',
+      `Queue full (${MAX_QUEUE_SIZE} messages). Wait for the current phase to complete.`,
+      MAX_QUEUE_SIZE,
+    ],
+  ])(
+    'refuses %s with one reason and publishes no warning',
+    async (_label, phase, initial, config, reason, message, queued) => {
+      const { projectDir, sessionId } = setupProject(dirs);
+      let state: WorkflowState | undefined = initial;
+      const { bus, events } = makeBusRecorder();
 
-    const result = await handler(plainUserMessage('should not queue'), 'idle');
+      const handler = createQueueHandler({
+        config,
+        projectDir,
+        sessionId,
+        getState: () => state,
+        setState: (s) => {
+          state = s;
+        },
+        bus,
+        planner: makePlanner(),
+        serialize: createWriteSequencer(),
+      });
 
-    expect(result).toMatchObject({ status: 'rejected', reason: 'phase-unavailable' });
-    expect(state?.messageQueue).toHaveLength(0);
-    expect(events.find((event) => event.type === 'message_queued')).toBeUndefined();
-    const warning = events.find((event) => event.type === 'warning');
-    expect(warning).toMatchObject({
-      type: 'warning',
-      category: 'queue',
-      code: 'phase_unavailable',
-      message: 'Queue is only available while a run is live; current phase is idle.',
-    });
-  });
+      const result = await handler(plainUserMessage('should not queue'), phase);
+
+      expect(result).toEqual({ status: 'rejected', reason, message });
+      expect(events.find((event) => event.type === 'message_queued')).toBeUndefined();
+      expect(events.filter((event) => event.type === 'warning')).toEqual([]);
+      expect(state?.messageQueue).toHaveLength(queued);
+      expect(loadState({ projectDir, sessionId })?.messageQueue ?? []).toHaveLength(0);
+    },
+  );
 
   it.each<[string, WorkflowState['workspace'], string]>([
     [
@@ -1022,11 +1102,7 @@ describe('enqueue', () => {
       expect(state?.messageQueue).toHaveLength(0);
       expect(loadState({ projectDir, sessionId })?.messageQueue ?? []).toHaveLength(0);
       expect(events.find((event) => event.type === 'message_queued')).toBeUndefined();
-      expect(events.find((event) => event.type === 'warning')).toMatchObject({
-        category: 'queue',
-        code: 'phase_unavailable',
-        message: refusal,
-      });
+      expect(events.filter((event) => event.type === 'warning')).toEqual([]);
     },
   );
 

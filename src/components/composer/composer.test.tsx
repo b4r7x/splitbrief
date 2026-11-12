@@ -1276,7 +1276,7 @@ describe('Composer image attach gate', () => {
     [true, 'A command sends no image. Remove the command, then press ctrl+⏎.'],
     [false, 'A command sends no image. Remove the image.'],
   ])(
-    'refuses a command line that holds an image and keeps the line and the image (onSendNow: %s)',
+    'refuses a command line that holds an image and keeps the line and the image (onSendNow: %s), in the neutral voice',
     async (withSendNow, reason) => {
       configStore.__testReset({
         projectDir,
@@ -1306,7 +1306,7 @@ describe('Composer image attach gate', () => {
       ui.stdin.write('\r');
       await flushEffects();
 
-      expect(feedbackStore.get()).toEqual({ isError: true, message: reason });
+      expect(feedbackStore.get()).toEqual({ isError: false, message: reason });
       expect(dispatched).toEqual([]);
       expect(submissions).toEqual([]);
       expect(sends).not.toHaveBeenCalled();
@@ -1326,7 +1326,7 @@ describe('Composer image attach gate', () => {
     },
   );
 
-  it('refuses the same line at ctrl+⏎', async () => {
+  it('refuses the same line at ctrl+⏎, in the neutral voice', async () => {
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'running' });
     configStore.__testReset({
@@ -1357,7 +1357,7 @@ describe('Composer image attach gate', () => {
     await flushEffects();
 
     expect(feedbackStore.get()).toEqual({
-      isError: true,
+      isError: false,
       message: 'A command sends no image. Remove the command, then press ctrl+⏎.',
     });
     expect(sends).not.toHaveBeenCalled();
@@ -1367,7 +1367,7 @@ describe('Composer image attach gate', () => {
     ui.unmount();
   });
 
-  it('refuses a command line with an image when argument completion could run it', async () => {
+  it('refuses a command line with an image when argument completion could run it, in the neutral voice', async () => {
     const SKILLS: RuntimeCommandDef = {
       kind: 'arg',
       name: '/skills',
@@ -1417,7 +1417,7 @@ describe('Composer image attach gate', () => {
     await flushEffects();
 
     expect(feedbackStore.get()).toEqual({
-      isError: true,
+      isError: false,
       message: 'A command sends no image. Remove the image.',
     });
     expect(dispatched).toEqual([]);

@@ -7,6 +7,7 @@ import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { SPLITBRIEF_DIR } from '../../../src/core/paths.js';
 import { fixCyclesOf } from '../../../src/core/schemas/workflow.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
+import { resolveTheme } from '../../../src/core/theme/resolve.js';
 import { reapOrphanRunners } from '../../../src/engine/orchestrator/run/orphan-reaper.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { trustDeclaredRunners } from '#testing/helpers/runner-trust.js';
@@ -23,9 +24,11 @@ import {
   readState,
   type StopContinueFixture,
 } from '../helpers/stop-continue-fixture.js';
+import { readForegroundAtText, type TerminalForeground } from '../helpers/terminal-cells.js';
 
 const VIEWPORT = { cols: 120, rows: 40 };
 const NONE_ROW = 'Review · none · REVIEW is None, so no seat reviewed this run';
+const SCREEN_THEME = resolveTheme({ variant: 'dark', level: 3, terminalBackground: undefined });
 
 const TOTAL_FILE = 'src/total.mjs';
 const TOTAL_TEST_FILE = 'src/total.test.mjs';
@@ -121,7 +124,11 @@ test('total adds two numbers', async () => {
 `;
 }
 
-type Tui = Readonly<{ screen: () => string; write: (keys: string) => void }>;
+type Tui = Readonly<{
+  screen: () => string;
+  write: (keys: string) => void;
+  foregroundAt: (phrase: string, offset?: number) => TerminalForeground;
+}>;
 
 /** Writes the fake tools and the config of a run, and returns the file the tools log their calls in. */
 function prepareRun(
@@ -189,7 +196,7 @@ const REVIEW_MOVE = {
 
 /** Moves REVIEW in Settings › Crew, waits for the saved config, and closes Settings. */
 async function moveReview(
-  { screen, write }: Tui,
+  { screen, write }: Pick<Tui, 'screen' | 'write'>,
   target: StopContinueFixture,
   to: keyof typeof REVIEW_MOVE,
 ): Promise<void> {
@@ -272,7 +279,12 @@ async function inTui(
         exit.resolve(event);
       });
       try {
-        await drive({ screen, write: (keys) => child.write(keys) });
+        await drive({
+          screen,
+          write: (keys) => child.write(keys),
+          foregroundAt: (phrase, offset) =>
+            readForegroundAtText(terminal.buffer.active, phrase, offset),
+        });
       } finally {
         if (outcome === undefined) await terminatePtyProcessGroup(child, exit.promise);
         await reapOrphanRunners(target.projectDir);
@@ -429,13 +441,14 @@ it('e2e: REVIEW None sends a changed merge back to its checks under Apply, and t
   );
   writeConfig(target.projectDir, { ...loadConfig(target.projectDir).config, reviewer: 'none' });
   const draft = 'also fix the typo';
+  const refusal = 'Cannot send words to Apply. Clear them.';
   try {
     await inTui(
       target,
       trustHome.home,
       offlinePath,
       () => {},
-      async ({ screen, write }) => {
+      async ({ screen, write, foregroundAt }) => {
         await expect.poll(screen, { timeout: 60_000 }).toContain('Describe your feature');
         write('add a total helper');
         await expect.poll(screen).toContain('› add a total helper');
@@ -472,11 +485,14 @@ it('e2e: REVIEW None sends a changed merge back to its checks under Apply, and t
           .poll(() => {
             const shown = screen();
             return (
-              shown.includes('Cannot send words to Apply. Clear them.') &&
+              shown.split('\n').filter((row) => row.includes(refusal)).length === 1 &&
               shown.includes(`› ${draft}`)
             );
           })
           .toBe(true);
+        const firstWord = foregroundAt(refusal, 0);
+        expect(firstWord).toEqual(foregroundAt(refusal, 'Cannot '.length));
+        expect(firstWord).toEqual({ mode: 'rgb', color: SCREEN_THEME.textDim });
         expect(screen()).toContain('Checking the merged result');
         expect(readState(target, sessionId).messageQueue).toEqual([]);
 
@@ -800,7 +816,7 @@ function prepareHeldTaskReview(target: StopContinueFixture, proposal: typeof pla
 
 /** Starts the run, stops it during its first task review, and returns the session. `queued` is sent while that review runs. */
 async function stopInTaskReview(
-  { screen, write }: Tui,
+  { screen, write }: Pick<Tui, 'screen' | 'write'>,
   target: StopContinueFixture,
   run: ReturnType<typeof prepareHeldTaskReview>,
   queued?: string,

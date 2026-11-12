@@ -69,7 +69,7 @@ export function runCommandInTest(args: {
   phase?: Phase;
   openRunAtRest?: boolean;
   applyUnfinished?: boolean;
-  onError: (msg: string, raw: string) => void;
+  onError: (msg: string, raw: string, outcome: 'refused' | 'failed') => void;
 }): Promise<void> {
   return executeRuntimeCommand(args.commands, args.raw, {
     screen: args.screen,

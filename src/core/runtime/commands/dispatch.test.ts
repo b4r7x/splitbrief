@@ -26,6 +26,57 @@ const end: RuntimeCommandDef = {
 describe('executeRuntimeCommand', () => {
   it.each([
     {
+      refuser: 'an unknown name',
+      raw: '/ster use the old name',
+      screen: 'workflow',
+      phase: 'planning',
+      refusal: 'Unknown command: /ster. Did you mean /steer?',
+    },
+    {
+      refuser: 'a removed name',
+      raw: '/effort high',
+      screen: 'home',
+      phase: 'planning',
+      refusal: '/effort was removed: effort is chosen with the model: /crew plan, then ⏎',
+    },
+    {
+      refuser: 'a wrong screen',
+      raw: '/steer use the old name',
+      screen: 'home',
+      phase: 'planning',
+      refusal: '/steer is only available on the workflow screen.',
+    },
+    {
+      refuser: 'a guard',
+      raw: '/steer use the old name',
+      screen: 'workflow',
+      phase: 'validating-task',
+      refusal: 'No run to steer in this phase',
+    },
+    {
+      refuser: 'a no-argument command with words',
+      raw: '/end now',
+      screen: 'workflow',
+      phase: 'planning',
+      refusal: '/end takes no argument. Usage: /end',
+    },
+    {
+      refuser: 'the handler',
+      raw: '/steer',
+      screen: 'workflow',
+      phase: 'planning',
+      refusal: 'Usage: /steer <correction>',
+    },
+  ] as const)('names a refusal as refused: $refuser', async ({ raw, screen, phase, refusal }) => {
+    const onError = vi.fn();
+
+    await runCommandInTest({ commands: [steer, end], raw, screen, phase, onError });
+
+    expect(onError).toHaveBeenCalledExactlyOnceWith(refusal, raw, 'refused');
+  });
+
+  it.each([
+    {
       refuser: 'a guard',
       raw: '/steer use the old name',
       screen: 'workflow',
@@ -67,7 +118,7 @@ describe('executeRuntimeCommand', () => {
 
       await runCommandInTest({ commands: [steer, end], raw, screen, phase, onError });
 
-      expect(onError).toHaveBeenCalledExactlyOnceWith(refusal, raw);
+      expect(onError).toHaveBeenCalledExactlyOnceWith(refusal, raw, 'refused');
     },
   );
 
@@ -123,9 +174,9 @@ describe('executeRuntimeCommand', () => {
   });
 
   it.each(['sync', 'async'] as const)(
-    'settles a %s handler error through onError exactly once',
+    'names a thrown handler error as failed: %s handler',
     async (kind) => {
-      const failure = new Error('Cannot send: file not found.');
+      const failure = new Error('disk full');
       const onError = vi.fn();
       const commands: RuntimeCommandDef[] = [
         {
@@ -147,7 +198,7 @@ describe('executeRuntimeCommand', () => {
       await expect(
         runCommandInTest({ commands, raw: '/test', screen: 'home', onError }),
       ).resolves.toBeUndefined();
-      expect(onError).toHaveBeenCalledExactlyOnceWith(failure.message, '/test');
+      expect(onError).toHaveBeenCalledExactlyOnceWith('disk full', '/test', 'failed');
     },
   );
 

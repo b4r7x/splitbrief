@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import XtermHeadless from '@xterm/headless';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
+import { resolveTheme } from '../../../src/core/theme/resolve.js';
 import { reapOrphanRunners } from '../../../src/engine/orchestrator/run/orphan-reaper.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { trustDeclaredRunners } from '#testing/helpers/runner-trust.js';
@@ -15,6 +16,7 @@ import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
 import { moveCursorTo } from '../helpers/move-cursor.js';
 import { createStopContinueFixture } from '../helpers/stop-continue-fixture.js';
+import { readForegroundAtText, type TerminalForeground } from '../helpers/terminal-cells.js';
 
 const VIEWPORT = { cols: 120, rows: 40 };
 const PAINT = { timeout: 15_000 };
@@ -23,6 +25,7 @@ const WORDS = 'also fix the typo';
 const LINE = `/steer ${WORDS}`;
 const STOP_REASON = 'Finish stopping before steering.';
 const NO_RUN_REASON = 'Nothing to steer.';
+const SCREEN_THEME = resolveTheme({ variant: 'dark', level: 3, terminalBackground: undefined });
 
 const TOTAL_FILE = 'src/total.mjs';
 const TOTAL_TEST_FILE = 'src/total.test.mjs';
@@ -47,7 +50,11 @@ const REVIEW_REPLY = JSON.stringify(
   passingVerdict({ kind: 'final', taskIds: [brief.id], criterionIds: ['C1'] }),
 );
 
-type Tui = Readonly<{ screen: () => string; write: (keys: string) => void }>;
+type Tui = Readonly<{
+  screen: () => string;
+  write: (keys: string) => void;
+  foregroundAt: (phrase: string, offset?: number) => TerminalForeground;
+}>;
 
 function plannerScript(): string {
   return `const chunks = [];
@@ -165,7 +172,12 @@ async function inTui(run: Run, home: string, drive: (tui: Tui) => Promise<void>)
         exit.resolve(event);
       });
       try {
-        await drive({ screen, write: (keys) => child.write(keys) });
+        await drive({
+          screen,
+          write: (keys) => child.write(keys),
+          foregroundAt: (phrase, offset) =>
+            readForegroundAtText(terminal.buffer.active, phrase, offset),
+        });
       } finally {
         if (outcome === undefined) await terminatePtyProcessGroup(child, exit.promise);
         await reapOrphanRunners(target.projectDir);
@@ -192,7 +204,7 @@ it('names the stop as the reason when /steer runs before the run stopped, and st
 }, async () => {
   const run = setup();
   try {
-    await inTui(run, trustHome.home, async ({ screen, write }) => {
+    await inTui(run, trustHome.home, async ({ screen, write, foregroundAt }) => {
       await expect.poll(screen, RUN).toContain('Describe your feature');
       write('add a total helper');
       await expect.poll(screen, PAINT).toContain('› add a total helper');
@@ -215,6 +227,9 @@ it('names the stop as the reason when /steer runs before the run stopped, and st
       );
       expect(screen()).not.toContain(NO_RUN_REASON);
       expect(screen()).toContain(STOP_REASON);
+      const firstLetter = foregroundAt(STOP_REASON, 0);
+      expect(firstLetter).toEqual(foregroundAt(STOP_REASON, 'Finish '.length));
+      expect(firstLetter).toEqual({ mode: 'rgb', color: SCREEN_THEME.textDim });
       expect(screen()).toContain(`› ${LINE}`);
 
       await expect.poll(screen, PAINT).toContain('○ Stopped at T001');

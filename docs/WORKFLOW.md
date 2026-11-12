@@ -431,7 +431,7 @@ A stopped workspace keeps its private CLI state and caches. Static credential co
 
 **Queue lifecycle.** The queued count drops at a message's first delivery to any seat. A later delivery of that id changes no count. A message that REVIEW read also goes to the next fix brief's BUILD call. After first delivery, the message is history and `/queue clear` preserves it. See [Queued count](./ENGINE.md#queued-count) for state and replay rules.
 
-Queue submissions return accepted or rejected results. Unsupported live phases and the 50-message cap cause a rejection and a bounded warning. The UI shows feedback near the composer. `/queue show` reports the queued count. `/queue clear` removes only messages awaiting first delivery. It reports unavailable when the run has no live clear handler.
+Queue submissions return accepted or rejected results. Unsupported live phases and the 50-message cap cause a rejection. The UI shows the reason near the composer. `/queue show` reports the queued count. `/queue clear` removes only messages awaiting first delivery. It reports unavailable when the run has no live clear handler.
 
 **Stopping a run.** `esc` opens the inline menu above the composer; another `esc` stops resumably. A third press requests home after cleanup and persistence, even when all three presses arrive together. After stopping, the menu offers **Resume / End run / Back to sessions**. When the composer holds text as the stop ends, the menu stays closed and the keys stay in the composer. Tab returns to the composer; `/stop` or the command palette reopens these options. End run remains an explicit action; no Escape or Ctrl+C sequence closes the saved run.
 

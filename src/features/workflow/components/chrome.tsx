@@ -183,7 +183,7 @@ export function WorkflowFooter({
         onSubmit={handleInput}
         onSendNow={(submission) => {
           const refusal = requestSteer(submission.message);
-          if (refusal !== undefined) feedbackStore.setError(refusal);
+          if (refusal !== undefined) feedbackStore.setMessage(refusal);
           return refusal === undefined;
         }}
         readClipboardImage={readClipboardImage}

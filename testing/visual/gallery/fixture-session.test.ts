@@ -352,7 +352,7 @@ describe('a previewed App spends fixture effects and no production one', () => {
     // preparation followed, and no real project was opened to find one.
     expect(feedbackStore.get()).toEqual({
       message: 'No saved state to continue.',
-      isError: true,
+      isError: false,
     });
     const route = routerStore.get();
     expect(route.screen === 'workflow' && route.execution.kind).toBe('at-rest');

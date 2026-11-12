@@ -328,6 +328,48 @@ describe('requestResume', () => {
     expect(feedbackStore.get().message).toBeNull();
   });
 
+  it('refuses Resume after a failed stop until the stop is retried', () => {
+    const resume = vi.fn(() => undefined);
+    setResumeHandler(resume);
+    setStopHandler(vi.fn());
+
+    for (const intent of ['stop-now', 'pause-after-brief'] as const) {
+      stopStore.__testReset();
+      stopStore.request(intent);
+      stopStore.fail('Disk full');
+
+      expect(requestResume(plainUserMessage(''))).toBe('Finish stopping before resuming.');
+      expect(resume).not.toHaveBeenCalled();
+
+      expect(requestStopNow()).toBe(true);
+      expect(stopStore.get()).toMatchObject({ intent: 'stop-now', phase: 'requested' });
+      expect(requestResume(plainUserMessage(''))).toBe('Finish stopping before resuming.');
+      expect(resume).not.toHaveBeenCalled();
+
+      stopStore.park('mid-brief', 'T001', null);
+      expect(requestResume(plainUserMessage(''))).toBeUndefined();
+      expect(resume).toHaveBeenCalledExactlyOnceWith(plainUserMessage(''));
+      resume.mockClear();
+    }
+
+    expect(feedbackStore.get().message).toBeNull();
+  });
+
+  it('lets an ended stop resume and steer without a finish-stopping reason', () => {
+    const resume = vi.fn(() => undefined);
+    setResumeHandler(resume);
+    stopStore.request('stop-now');
+    stopStore.end();
+    const message = plainUserMessage('keep the greeting API');
+
+    expect(requestResume(message)).toBeUndefined();
+    expect(requestSteer(message)).toBeUndefined();
+
+    expect(resume).toHaveBeenNthCalledWith(1, message);
+    expect(resume).toHaveBeenNthCalledWith(2, message);
+    expect(feedbackStore.get().message).toBeNull();
+  });
+
   it('requestResume refuses while a call runs and no park waits, and calls no resume handler', () => {
     const resume = vi.fn(() => undefined);
     const stop = vi.fn();
@@ -576,7 +618,7 @@ describe('requestSteer', () => {
     expect(feedbackStore.get().message).toBeNull();
   });
 
-  it('shows the reason when the run refuses the words after the stop parked', () => {
+  it('shows the reason when the run refuses the words after the stop parked, in the neutral voice', () => {
     const refusal = 'No saved state to continue.';
     setStopHandler(vi.fn());
     setResumeHandler(() => refusal);
@@ -584,7 +626,7 @@ describe('requestSteer', () => {
     expect(requestSteer(plainUserMessage('also fix the typo'))).toBeUndefined();
     stopStore.park('mid-brief', 'T001', null);
 
-    expect(feedbackStore.get()).toEqual({ message: refusal, isError: true });
+    expect(feedbackStore.get()).toEqual({ message: refusal, isError: false });
   });
 
   it('sends the words to the waiting plan card as its change request and stops nothing', async () => {

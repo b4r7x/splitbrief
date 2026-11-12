@@ -125,7 +125,7 @@ describe('createReviewInputHandler – queueing during a brief', () => {
     await handleInput(plainUserMessage('keep every word'));
 
     expect(feedbackStore.get()).toMatchObject({
-      isError: true,
+      isError: false,
       message: 'Queue full (50 messages). Wait for the current phase to complete.',
     });
     expect(composerDraftStore.get().request?.value).toBe('keep every word');
@@ -198,18 +198,18 @@ describe('createReviewInputHandler – enqueue during live planner phase (Bug #4
     await handleInput(plainUserMessage('add error handling'));
 
     expect(feedbackStore.get()).toMatchObject({
-      isError: true,
+      isError: false,
       message: 'Queue full (50 messages). Wait for the current phase to complete.',
     });
   });
 
-  it('sets error when no queue handler is set', async () => {
+  it('shows neutral feedback when no queue handler is set', async () => {
     setPhase('researching');
 
     const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
     await handleInput(plainUserMessage('no handler'));
 
-    expect(feedbackStore.get().isError).toBe(true);
+    expect(feedbackStore.get().isError).toBe(false);
     expect(feedbackStore.get().message).toContain('no active workflow');
   });
 });

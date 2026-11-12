@@ -7093,6 +7093,11 @@ const stoppingProjection: WorkflowFixtureProjection = {
   stop: { intent: 'stop-now', phase: 'settling' },
 };
 
+const stopSteerRefusedProjection: WorkflowFixtureProjection = {
+  ...stoppingProjection,
+  scenarioId: scenarioId('workflow-stop-steer-refused'),
+};
+
 function claudeSystemFrame(subtype: string, fields: Record<string, unknown> = {}) {
   return { type: 'system', subtype, ...fields };
 }
@@ -9181,6 +9186,11 @@ const crewWideProjection: WorkflowFixtureProjection = {
   }),
 };
 
+const applyRecheckWordsRefusedProjection: WorkflowFixtureProjection = {
+  ...applyRecheckReviewNoneProjection,
+  scenarioId: scenarioId('workflow-apply-recheck-words-refused'),
+};
+
 const projections = [
   reviewResumeProjection,
   reviewCheckCrashProjection,
@@ -9499,6 +9509,7 @@ const projections = [
   reviewChecksOffProjection,
   reviewNoneEndProjection,
   applyRecheckReviewNoneProjection,
+  applyRecheckWordsRefusedProjection,
   reviewFixNarrowRailProjection,
   taskStatusesProjection,
   implementationEscalatedProjection,
@@ -9588,6 +9599,7 @@ const projections = [
   resumedKeptWorkProjection,
   pausedBoundaryProjection,
   stoppingProjection,
+  stopSteerRefusedProjection,
   failureProjection,
   movedProjectRunProjection,
   plannerCommandsRefusedProjection,

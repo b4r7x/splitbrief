@@ -57,7 +57,7 @@ import { endRun, endRunError } from '../../../engine/orchestrator/run/close.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { composerLiveStore } from '../../../stores/ui/composer-live.js';
 import { deriveRunStatus } from '../../../core/sessions/run-status.js';
-import { stopStore, takesSeatAtBoundary } from '../../../stores/workflow/stop.js';
+import { stopInProgress, stopStore, takesSeatAtBoundary } from '../../../stores/workflow/stop.js';
 import {
   createProcessScope,
   killProcessScope,
@@ -526,7 +526,7 @@ export function useRunLoop({
               steerAtBoundary,
               'seat-change',
             );
-            if (refusal !== undefined) feedbackStore.setError(refusal);
+            if (refusal !== undefined) feedbackStore.setMessage(refusal);
           } else await settleRun(session.ref, true);
           return;
         }
@@ -610,15 +610,9 @@ export function useRunLoop({
 
   useEffect(() => {
     const update = () => {
-      const { intent, phase } = stopStore.get();
-      if (
-        intent === 'none' ||
-        intent === 'pause-after-brief' ||
-        phase === 'parked' ||
-        phase === 'ended' ||
-        phase === 'failed'
-      )
-        return;
+      const stop = stopStore.get();
+      if (!stopInProgress(stop)) return;
+      const { phase } = stop;
       const scope = processScopeRef.current;
       if (scope !== undefined && processScopeCount(scope) > 0) {
         if (phase !== 'terminating') stopStore.markTerminating();

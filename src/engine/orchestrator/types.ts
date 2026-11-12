@@ -59,7 +59,7 @@ export interface ResumeContextHolder {
 
 export type QueueSubmissionResult =
   | { status: 'accepted'; messageId: string; preview?: string | undefined }
-  | { status: 'rejected'; reason: 'queue-full' | 'phase-unavailable'; message: string };
+  | { status: 'rejected'; reason: 'queue-full' | 'phase-unavailable' | 'failed'; message: string };
 
 export type QueueClearResult =
   | { status: 'cleared'; count: number }

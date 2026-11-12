@@ -21,7 +21,7 @@ import { warnStderr } from '../../lib/warn.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import { markCancellationRequested } from '../../stores/workflow/actions/interrupt.js';
 import { markWorkflowResumed } from '../../stores/workflow/actions/resume.js';
-import { stopStore } from '../../stores/workflow/stop.js';
+import { stopInProgress, stopStore } from '../../stores/workflow/stop.js';
 import { departureStore, type Departure } from '../../stores/workflow/departure.js';
 import { activeApply } from '../../engine/orchestrator/session-lifecycle/shutdown.js';
 import type {
@@ -204,21 +204,13 @@ function passHasSomethingToStop(): boolean {
   return handlers.stop !== undefined || abortHandlers.length > 0 || handlers.cancel !== undefined;
 }
 
-/** A stop was asked for and has not parked or failed yet. Until then a steer is refused. */
-export function stopInProgress(): boolean {
-  const { intent, phase } = stopStore.get();
-  return (
-    intent !== 'none' && intent !== 'pause-after-brief' && phase !== 'parked' && phase !== 'failed'
-  );
-}
-
 // A stop that has nothing to stop is not announced: the byline would report a run terminating
 // while no process was ever asked to.
 export function requestStopNow(): boolean {
   clearPendingSteer();
   const state = stopStore.get();
   if (state.phase === 'parked' || state.phase === 'ended') return false;
-  if (stopInProgress()) return true;
+  if (stopInProgress(state)) return true;
   if (!passHasSomethingToStop()) return false;
   // Announce before calling a handler: an already-idle operation may settle synchronously.
   stopStore.request(state.intent === 'end-run' ? 'end-run' : 'stop-now');
@@ -233,9 +225,7 @@ export function requestStopNow(): boolean {
 // as its reason, and the caller shows it.
 export function requestResume(message: UserMessageInput): string | undefined {
   const stop = stopStore.get();
-  if (stop.intent !== 'none' && stop.intent !== 'pause-after-brief' && stop.phase !== 'parked') {
-    return 'Finish stopping before resuming.';
-  }
+  if (stopInProgress(stop) || stop.phase === 'failed') return 'Finish stopping before resuming.';
   if (stop.phase !== 'parked' && passHasSomethingToStop()) {
     return 'Nothing to resume: the run has not stopped.';
   }
@@ -277,7 +267,7 @@ export function requestSteer(message: UserMessageInput): string | undefined {
   if (message.text.trim() === '') return 'Nothing to steer.';
   const stop = stopStore.get();
   if (stop.phase === 'parked') return resumeParkedRun(message) ? undefined : steerAtRest(message);
-  if (stopInProgress()) return 'Finish stopping before steering.';
+  if (stopInProgress(stop)) return 'Finish stopping before steering.';
   if (handlers.waitingPrompt) {
     // Only the halt panel's own question refuses words: the note an action asks for takes them.
     const view = runViewStore.get();
@@ -301,7 +291,7 @@ export function requestSteer(message: UserMessageInput): string | undefined {
     if (resumeParkedRun(message)) return;
     // The caller got its answer when the stop began, so a refusal after the park shows here.
     const refusal = steerAtRest(message);
-    if (refusal !== undefined) feedbackStore.setError(refusal);
+    if (refusal !== undefined) feedbackStore.setMessage(refusal);
   };
   steerUnsubscribe = stopStore.subscribe(resumeSteer);
   resumeSteer();

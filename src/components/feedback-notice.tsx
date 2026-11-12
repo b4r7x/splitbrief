@@ -32,7 +32,7 @@ export function FeedbackNotice({ notice, width }: { notice: FeedbackNoticeLayout
   const t = useTheme();
   return (
     <Box marginTop={1} width={width}>
-      <Text color={notice.isError ? t.error : t.success} wrap="truncate-end">
+      <Text color={notice.isError ? t.error : t.textDim} wrap="truncate-end">
         {notice.text}
       </Text>
     </Box>

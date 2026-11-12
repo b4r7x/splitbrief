@@ -4,7 +4,6 @@ import { isLivePhase, isQueuePhase } from '../../../core/phases.js';
 import { seatForRunningCall } from '../../../core/runners/seat-roles.js';
 import type { Planner } from '../../planners/types.js';
 import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
-import { publishWarning } from '../events.js';
 import type { UserMessageInput } from '../../../core/types/user-input.js';
 import { recordUserMessage } from '../transcript/user-message.js';
 import { dispatchNativeInjection } from './native-injection.js';
@@ -55,17 +54,14 @@ export function enqueueUserMessage({
     keepUnsaved: true,
   });
   if (enforcePhasePolicy && !isQueuePhase(phase)) {
-    const message = `Queue is only available while a run is live; current phase is ${phase}.`;
-    publishWarning({
-      bus,
-      phase,
-      message,
-      safety: {
-        category: 'queue',
-        code: 'phase_unavailable',
+    return {
+      state: base,
+      result: {
+        status: 'rejected',
+        reason: 'phase-unavailable',
+        message: 'The queue takes a message only while a run is live.',
       },
-    });
-    return { state: base, result: { status: 'rejected', reason: 'phase-unavailable', message } };
+    };
   }
 
   const seat = messageSeat(
@@ -75,32 +71,26 @@ export function enqueueUserMessage({
     base.tasks[base.currentTaskIndex] !== undefined,
   );
   if (enforcePhasePolicy && seat === null && isLivePhase(phase)) {
-    const message = noWordsRefusal(resumeStep(base, reviewNone));
-    publishWarning({
-      bus,
-      phase,
-      message,
-      safety: {
-        category: 'queue',
-        code: 'phase_unavailable',
+    return {
+      state: base,
+      result: {
+        status: 'rejected',
+        reason: 'phase-unavailable',
+        message: noWordsRefusal(resumeStep(base, reviewNone)),
       },
-    });
-    return { state: base, result: { status: 'rejected', reason: 'phase-unavailable', message } };
+    };
   }
 
   const pending = base.messageQueue.filter(isQueuedMessagePendingFirstDelivery);
   if (pending.length >= MAX_QUEUE_SIZE) {
-    const message = `Queue full (${MAX_QUEUE_SIZE} messages). Wait for the current phase to complete.`;
-    publishWarning({
-      bus,
-      phase,
-      message,
-      safety: {
-        category: 'queue',
-        code: 'queue_full',
+    return {
+      state: base,
+      result: {
+        status: 'rejected',
+        reason: 'queue-full',
+        message: `Queue full (${MAX_QUEUE_SIZE} messages). Wait for the current phase to complete.`,
       },
-    });
-    return { state: base, result: { status: 'rejected', reason: 'queue-full', message } };
+    };
   }
 
   const message = queuedUserMessage(input, phase);
@@ -309,7 +299,7 @@ export function createQueueHandler(
       warnError('Could not queue your message', err);
       return {
         status: 'rejected',
-        reason: 'phase-unavailable',
+        reason: 'failed',
         message: 'Cannot queue message: workflow queue failed.',
       };
     }

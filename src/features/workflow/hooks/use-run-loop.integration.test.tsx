@@ -1546,7 +1546,7 @@ describe('useRunLoop', () => {
     inst.unmount();
   });
 
-  it('shows the reason when the run at rest refuses to continue after a seat changed under it', async () => {
+  it('shows the reason when the run at rest refuses to continue after a seat changed under it, in the neutral voice', async () => {
     const sessionId = '2026-11-10-seat-change-refused';
     ensureSessionDir(projectDir, sessionId);
     saveState(
@@ -1578,7 +1578,7 @@ describe('useRunLoop', () => {
 
     seatChangedNow();
     await vi.waitFor(() => {
-      expect(feedbackStore.get()).toEqual({ message: reason, isError: true });
+      expect(feedbackStore.get()).toEqual({ message: reason, isError: false });
     });
     expect(continueAtRest).toHaveBeenCalledTimes(1);
 

@@ -5,7 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionDir } from '../../../src/core/paths.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
+import { resolveTheme } from '../../../src/core/theme/resolve.js';
 import { reapOrphanRunners } from '../../../src/engine/orchestrator/run/orphan-reaper.js';
+import { glyph } from '../../../src/lib/glyphs.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { trustDeclaredRunners } from '#testing/helpers/runner-trust.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -17,6 +19,7 @@ import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
 import { moveCursorTo } from '../helpers/move-cursor.js';
 import { createStopContinueFixture } from '../helpers/stop-continue-fixture.js';
+import { readForegroundAtText, type TerminalForeground } from '../helpers/terminal-cells.js';
 
 const VIEWPORT = { cols: 120, rows: 40 };
 const PAINT = { timeout: 15_000 };
@@ -24,6 +27,9 @@ const RUN = { timeout: 120_000 };
 const ENTER = '\r';
 const STOPPED = '○ Stopped at the review';
 const WORDS = 'also fix the typo';
+// The child runs with FORCE_COLOR=3 and no answer to the background query, so its screen paints the
+// dark palette in truecolor.
+const SCREEN_THEME = resolveTheme({ variant: 'dark', level: 3, terminalBackground: undefined });
 
 const TOTAL_FILE = 'src/total.mjs';
 const TOTAL_TEST_FILE = 'src/total.test.mjs';
@@ -120,7 +126,11 @@ function prepareRun() {
 }
 
 type Run = ReturnType<typeof prepareRun>;
-type Tui = Readonly<{ screen: () => string; write: (keys: string) => void }>;
+type Tui = Readonly<{
+  screen: () => string;
+  write: (keys: string) => void;
+  foregroundAt: (phrase: string, offset?: number) => TerminalForeground;
+}>;
 
 async function inTui(run: Run, home: string, drive: (tui: Tui) => Promise<void>): Promise<void> {
   const { target, offlinePath } = run;
@@ -174,7 +184,12 @@ async function inTui(run: Run, home: string, drive: (tui: Tui) => Promise<void>)
         exit.resolve(event);
       });
       try {
-        await drive({ screen, write: (keys) => child.write(keys) });
+        await drive({
+          screen,
+          write: (keys) => child.write(keys),
+          foregroundAt: (phrase, offset) =>
+            readForegroundAtText(terminal.buffer.active, phrase, offset),
+        });
       } finally {
         if (outcome === undefined) await terminatePtyProcessGroup(child, exit.promise);
         await reapOrphanRunners(target.projectDir);
@@ -288,6 +303,27 @@ describe('e2e: a stop that settles under text typed in the composer', {
       },
       WORDS,
     );
+  });
+
+  it('marks a draft that cannot be saved with the failed mark', async () => {
+    await whileReviewStops(trustHome.home, async ({ screen, write, foregroundAt }, run) => {
+      const sessionId = readActive(run.target.projectDir);
+      if (sessionId === null) throw new Error('no active session');
+      const dir = sessionDir(run.target.projectDir, sessionId);
+      chmodSync(dir, 0o555);
+      try {
+        write('!');
+        const row = `${glyph('statusFailed', 'unicode')} Draft not saved`;
+        await expect.poll(screen, PAINT).toContain(row);
+        const mark = foregroundAt(row);
+        const firstLetter = foregroundAt(row, row.indexOf('Draft not saved'));
+        expect(mark).not.toEqual(firstLetter);
+        expect(mark).toEqual({ mode: 'rgb', color: SCREEN_THEME.error });
+        expect(firstLetter).toEqual({ mode: 'rgb', color: SCREEN_THEME.text });
+      } finally {
+        chmodSync(dir, 0o755);
+      }
+    });
   });
 
   it('opens the sheet over an empty composer, and ⏎ takes Resume', async () => {

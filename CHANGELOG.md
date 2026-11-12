@@ -111,6 +111,9 @@
 - **A new project builds with a CLI tool.** On a first run with no config, the BUILD seat takes the first ready tool. It tries Claude Code, Codex and OpenCode first, then the other tools that SPLITBRIEF lists. A config with no `implementer` block builds with Claude Code.
 - The command list describes `/steer` as `Send a correction now; a running call stops first`.
 - The workflow guide says what happens when a stop ends while the composer holds text: no menu opens, and the keys stay in the composer.
+- A key or a command that the run cannot take now shows its reason in plain text, not in the colour of an error. Only a failure shows the error mark.
+- A failure on the run screen shows `✗` in front of its sentence, in place of a red first word.
+- Settings and the setup screen show a saved change or the reason of a refused command in dim text, not in green.
 
 ### Removed
 
@@ -671,6 +674,7 @@
 - On a short terminal a recovery panel gives the blank row under its headline to a question or reason that it cuts.
 - The help of a read-only Settings row shows only why the row is read-only. Before, its last word was cut at 80x24.
 - ⏎ on a read-only Settings row no longer shows the reason twice.
+- A message that the queue refuses shows its reason once. Before, a second copy stayed in the conversation as a warning, and one reason named an internal phase.
 
 ## [0.1.0] - 2026-08-07
 

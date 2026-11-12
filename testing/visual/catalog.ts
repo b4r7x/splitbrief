@@ -1866,6 +1866,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-apply-recheck-words-refused',
+      title: 'Workflow · words typed for Apply on the rechecked merged result',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'apply-recheck-words-refused',
+        title: 'The reason, with the typed words back in the composer',
+        kind: 'implementation',
+        marker: 'Cannot send words to Apply',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Recheck transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-implementation-retry',
       title: 'Workflow · retried brief',
       surface: screenSurface('workflow'),
@@ -2935,6 +2951,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Stopping the run',
         kind: 'implementation',
         marker: 'Finishing cleanup and saving',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-stop-steer-refused',
+      title: 'Workflow · a /steer line refused while the run stops',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'stop-steer-refused',
+        title: 'The reason, with the whole /steer line back in the composer',
+        kind: 'implementation',
+        marker: 'Finish stopping before steering',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

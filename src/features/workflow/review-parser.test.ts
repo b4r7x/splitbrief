@@ -473,13 +473,13 @@ describe('review input effects', () => {
       },
       feedback: {
         message: 'Queue full (50 messages). Wait for the current phase to complete.',
-        isError: true,
+        isError: false,
       },
     },
     {
       label: 'no workflow',
       outcome: null,
-      feedback: { message: 'Cannot queue message: no active workflow.', isError: true },
+      feedback: { message: 'Cannot queue message: no active workflow.', isError: false },
     },
   ])(
     'queues live planner input through the supplied enqueue — $label',
@@ -637,6 +637,27 @@ describe('review input effects', () => {
 
     expect(feedbackStore.get()).toEqual({
       message: 'Queue full (50 messages). Wait for the current phase to complete.',
+      isError: false,
+    });
+    expect(composerDraftStore.get().request?.value).toBe('keep me');
+  });
+
+  it('keeps the failure voice when the queue itself fails', async () => {
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
+    const effects = makeEffects(async () => ({
+      status: 'rejected' as const,
+      reason: 'failed' as const,
+      message: 'Cannot queue message: workflow queue failed.',
+    }));
+
+    composerLiveStore.setDraft(createDraftDocument('keep me'));
+    await createReviewInputHandler(makeInputMode('normal'), effects).handleInput(
+      plainUserMessage('keep me'),
+    );
+
+    expect(feedbackStore.get()).toEqual({
+      message: 'Cannot queue message: workflow queue failed.',
       isError: true,
     });
     expect(composerDraftStore.get().request?.value).toBe('keep me');

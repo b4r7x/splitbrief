@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { writeConfigYaml } from '#testing/helpers/config-io.js';
 import { configStore } from '../../stores/project/config.js';
@@ -15,8 +15,33 @@ import { CREW_SEAT_LABELS, PLANNER_INHERITANCE } from '../../core/crew/identity.
 import { SETTINGS_DEFS } from '../../core/settings/catalog.js';
 import { glyph } from '../../lib/glyphs.js';
 import { listRowLead } from '../../components/list-row.js';
+import { defaultTheme } from '../../components/theme.js';
+import { paint } from '../../core/theme/paint.js';
 import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
 import { SettingsOverlay } from './settings.js';
+
+// The frames carry their SGR escapes only when chalk emits colour at all; a silent terminal would
+// make every colour comparison agree by accident.
+const originalForceColor = vi.hoisted(() => {
+  const saved = process.env['FORCE_COLOR'];
+  process.env['FORCE_COLOR'] = '3';
+  return saved;
+});
+
+afterAll(() => {
+  if (originalForceColor === undefined) delete process.env['FORCE_COLOR'];
+  else process.env['FORCE_COLOR'] = originalForceColor;
+});
+
+/** The SGR parameters a run of text is painted with, read from the escape that opens it. */
+function colorOf(frame: string, text: string): string | undefined {
+  const before = frame.split(text)[0];
+  return before?.split('\u001B[').at(-1)?.split('m')[0];
+}
+
+function inkOf(color: string | undefined): string | undefined {
+  return colorOf(paint(color, 'x'), 'x');
+}
 
 const ESC = String.fromCharCode(27);
 const BEL = String.fromCharCode(7);
@@ -648,6 +673,19 @@ describe('SettingsOverlay', () => {
     const frame = stripAnsiStyles(ui.lastFrame());
     expect(frame).toContain(kindLabel);
     expect(frame).not.toContain(def?.label);
+
+    ui.unmount();
+  });
+
+  it('shows a neutral message in the neutral ink, not in the success ink', async () => {
+    const message = 'Unknown command: /setings. Did you mean /settings?';
+    feedbackStore.setMessage(message);
+    const ui = renderAt(120, 40);
+    await flushEffects();
+
+    const frame = ui.lastFrame();
+    expect(stripAnsiStyles(frame)).toContain(message);
+    expect(colorOf(frame, message)).toBe(inkOf(defaultTheme.textDim));
 
     ui.unmount();
   });

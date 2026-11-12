@@ -1301,7 +1301,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     await vi.waitFor(() => {
       expect(feedbackStore.get()).toEqual({
         message: 'No saved state to continue.',
-        isError: true,
+        isError: false,
       });
     });
     await vi.waitFor(() => {
@@ -1338,7 +1338,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     await vi.waitFor(() => {
       expect(feedbackStore.get()).toEqual({
         message: 'No saved state to continue.',
-        isError: true,
+        isError: false,
       });
     });
     await flushEffects();
@@ -2023,7 +2023,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     ui.stdin.write('\r');
     await vi.waitFor(() => {
       expect(composerLiveStore.get().text).toBe('/steer use the old name');
-      expect(feedbackStore.get()).toEqual({ message: NO_CORRECTION, isError: true });
+      expect(feedbackStore.get()).toEqual({ message: NO_CORRECTION, isError: false });
     });
     await flushEffects();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');

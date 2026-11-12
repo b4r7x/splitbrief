@@ -172,7 +172,13 @@ describe('buildCommandContext', () => {
       message: 'Cannot send: file not found. Check the path and try again. File: context.txt.',
       isError: true,
     });
-    expect(onError).toHaveBeenCalledOnce();
+    expect(onError.mock.calls).toEqual([
+      [
+        'Cannot send: file not found. Check the path and try again. File: context.txt.',
+        '/steer use @/definitely-missing/context.txt',
+        'failed',
+      ],
+    ]);
     expect(resume).not.toHaveBeenCalled();
     expect(attachmentsStore.peek()).toEqual([pending]);
     expect(composerDraftStore.get().request).toBeNull();
@@ -541,10 +547,12 @@ describe('buildCommandContext skills ports', () => {
 
 function RuntimeCommandsHarness({
   onModel,
+  phase = 'idle',
 }: {
   onModel: (model: ReturnType<typeof useRuntimeCommands>) => void;
+  phase?: Phase;
 }) {
-  const model = useRuntimeCommands({ exit: () => {}, phase: 'idle' });
+  const model = useRuntimeCommands({ exit: () => {}, phase });
   onModel(model);
   const snapshot = readConversationScrollSnapshot();
   return createElement(ConversationFlow, {
@@ -999,7 +1007,7 @@ describe('useRuntimeCommands', () => {
     expect(attachmentsStore.peek()).toEqual([]);
   });
 
-  it('surfaces an unknown command as feedback error state', async () => {
+  it('shows a refused command in the neutral voice and gives the line back', async () => {
     let model: ReturnType<typeof useRuntimeCommands> | undefined;
     const ui = renderFeature(
       createElement(RuntimeCommandsHarness, {
@@ -1008,16 +1016,44 @@ describe('useRuntimeCommands', () => {
         },
       }),
     );
+    onTestFinished(ui.unmount);
     await tick();
 
     model?.handleRuntimeCommand('/totally-unknown-xyz', 'home');
     await tick();
 
     const feedback = feedbackStore.get();
-    expect(feedback.isError).toBe(true);
+    expect(feedback.isError).toBe(false);
     expect(feedback.message).toContain('Unknown command');
     expect(feedback.message).toContain('/totally-unknown-xyz');
-    ui.unmount();
+    expect(composerDraftStore.get().request).toMatchObject({
+      kind: 'prepend',
+      value: '/totally-unknown-xyz',
+    });
+  });
+
+  it('shows a thrown command error in the failure voice', async () => {
+    projectDir = createTempDir('command-failure-voice');
+    configStore.__testReset({ projectDir, config: makeConfig() });
+    let model: ReturnType<typeof useRuntimeCommands> | undefined;
+    const ui = renderFeature(
+      createElement(RuntimeCommandsHarness, {
+        phase: 'implementing',
+        onModel: (m) => {
+          model = m;
+        },
+      }),
+    );
+    onTestFinished(ui.unmount);
+    await tick();
+
+    model?.handleRuntimeCommand('/steer use @/definitely-missing/context.txt', 'workflow');
+    await tick();
+
+    expect(feedbackStore.get()).toEqual({
+      message: 'Cannot send: file not found. Check the path and try again. File: context.txt.',
+      isError: true,
+    });
   });
 
   // `afterSend` runs when the line left its field, before SPLITBRIEF refuses it.
@@ -1038,7 +1074,7 @@ describe('useRuntimeCommands', () => {
     await vi.waitFor(() => {
       expect(feedbackStore.get()).toEqual({
         message: 'No run to steer in this phase',
-        isError: true,
+        isError: false,
       });
     });
   }
@@ -1063,7 +1099,8 @@ describe('useRuntimeCommands', () => {
     await flushEffects();
     ui.stdin.write('\r');
     await vi.waitFor(() => {
-      expect(feedbackStore.get().isError).toBe(true);
+      expect(feedbackStore.get().message).not.toBeNull();
+      expect(feedbackStore.get().isError).toBe(false);
       expect(composerLiveStore.get().text).toBe(line);
     });
     return ui;
@@ -1121,7 +1158,10 @@ describe('useRuntimeCommands', () => {
     await flushEffects();
     ui.stdin.write('\r');
     await vi.waitFor(() => {
-      expect(feedbackStore.get()).toEqual({ message: 'Usage: /steer <correction>', isError: true });
+      expect(feedbackStore.get()).toEqual({
+        message: 'Usage: /steer <correction>',
+        isError: false,
+      });
       expect(composerLiveStore.get().text).toBe('/steer');
     });
     await flushEffects();
@@ -1158,7 +1198,10 @@ describe('useRuntimeCommands', () => {
 
     ui.stdin.write('\r');
     await vi.waitFor(() => {
-      expect(feedbackStore.get()).toEqual({ message: 'Usage: /run reject confirm', isError: true });
+      expect(feedbackStore.get()).toEqual({
+        message: 'Usage: /run reject confirm',
+        isError: false,
+      });
       expect(composerLiveStore.get().text).toBe('/he');
     });
     await flushEffects();
@@ -1409,7 +1452,7 @@ describe('useRuntimeCommands while Apply writes the run at rest', () => {
     model?.handleRuntimeCommand(command, 'workflow');
     await tick();
 
-    expect(feedbackStore.get()).toMatchObject({ isError: true, message: line });
+    expect(feedbackStore.get()).toMatchObject({ isError: false, message: line });
     expect(overlayStore.get().active).toBe('none');
     expect(routerStore.get().screen).toBe('workflow');
     ui.unmount();

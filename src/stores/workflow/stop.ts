@@ -94,6 +94,15 @@ export function parksCutCall({ phase, parked }: StopState): boolean {
   return phase === 'parked' && parked?.kind === 'mid-brief' && parked.resolve !== null;
 }
 
+/**
+ * A stop, an End run or a quit was asked for and has not parked, ended or failed yet: a Resume and
+ * a steer are refused until it settles. A pause after the brief stops nothing, so it is no stop.
+ */
+export function stopInProgress({ intent, phase }: StopState): boolean {
+  if (intent === 'none' || intent === 'pause-after-brief') return false;
+  return phase !== 'parked' && phase !== 'ended' && phase !== 'failed';
+}
+
 function markSeatChange(pending: boolean): void {
   store.set((s) => ({ ...s, seatChange: pending }));
 }

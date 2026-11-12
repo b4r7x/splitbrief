@@ -311,7 +311,7 @@ This means Stop now during a planner call doesn't kill the workflow — it pause
 
 `enqueueUserMessage()` adds a `QueuedMessage` to `state.messageQueue`, which caps messages awaiting first delivery at 50. It persists the message and publishes `message_queued` with a sanitized, bounded preview. `phaseStage(phase)` in `src/core/rail-stages.ts` names the receiving seat: `plan`, `build`, or `review`. `message_queued` carries optional `seat` and `taskId` fields. For BUILD, `taskId` names the running brief.
 
-The shared enqueue function rejects messages outside supported live phases or when the cap is full. It returns the rejection and publishes a bounded warning. The TUI shows feedback near the composer.
+The shared enqueue function rejects messages outside supported live phases or when the cap is full. It returns the rejection. The TUI shows the reason near the composer.
 
 Without a matching steerable call, each seat uses the queue delivery path. PLAN reads pending messages at the next planner call. `drainQueue()` marks them drained and publishes `queue_drained`. `formatDrainedMessages` formats typed messages as `[user also says during <phase>]` blocks.
 
