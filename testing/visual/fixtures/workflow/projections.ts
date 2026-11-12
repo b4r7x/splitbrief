@@ -2989,6 +2989,38 @@ const planCardSessionPathProjection: WorkflowFixtureProjection = {
   },
 };
 
+// The plan card of a plan whose project gate holds 10 commands, 4 of them vitest commands that
+// name their files. The plan has no decision and no protected operation, so the gate starts
+// under the criteria and the card has nothing to confirm.
+const LONG_GATE_PLAN = makePlanProposal({
+  ...PLAN_CARD_PLAN,
+  decisions: [],
+  gate: [
+    'npm run format:check',
+    'npm run typecheck',
+    'npm run lint',
+    'npx --no-install vitest run --project unit src/features/workflow/components/approval-prompt/confirm.test.tsx src/features/workflow/components/approval-prompt/document.test.tsx src/app/screens/workflow.test.tsx src/components/composer/composer.test.tsx testing/visual/catalog.test.ts testing/visual/fixtures.test.tsx',
+    'npx --no-install vitest run --project integration testing/integration/ui/inline-stop-menu.test.tsx',
+    'npx --no-install vitest run --project workflow-screen testing/integration/ui/workflow-key-ownership.test.tsx',
+    'npx --no-install vitest run --config testing/e2e/vitest.e2e.config.ts testing/e2e/scenarios/gate-over-draft.test.ts testing/e2e/scenarios/plan-card-over-draft.test.ts testing/e2e/scenarios/recovery-menu-command.test.ts',
+    'npm run build',
+    'npm run invariants',
+    'npm run skills:check',
+  ],
+  tasks: PLAN_CARD_PLAN.tasks.map((task) => ({ ...task, protectedOperations: null })),
+});
+
+const planCardLongGateProjection: WorkflowFixtureProjection = {
+  ...planCardProjection,
+  scenarioId: scenarioId('workflow-plan-card-long-gate'),
+  review: {
+    filePath: 'testing/visual/fixtures/workflow/plan-card/plan.md',
+    source: formatPlanMarkdown(LONG_GATE_PLAN, []),
+    planJson: `${JSON.stringify(LONG_GATE_PLAN, null, 2)}\n`,
+    confirms: [],
+  },
+};
+
 const PLAN_CARD_TASKS = PLAN_CARD_PLAN.tasks.map((spec) => taskFromSpec(spec, '/nonexistent'));
 
 // The planning session right after its plan passed the checks: the two cards it announces, plan.md
@@ -5297,6 +5329,47 @@ const planQuestionsRecoveryProjection: WorkflowFixtureProjection = {
   },
 };
 
+// The same halt with a long third round while a plan correction of the user waits: the panel
+// lists each question where it has the rows, and the line of the correction stays.
+function planQuestionsLongRecoveryIssue(): RecoveryIssue {
+  return buildPlanSessionHaltRecoveryIssue({
+    id: 'rec_visual_plan_questions_long',
+    reason: 'plan-questions-exhausted',
+    phase: 'planning',
+    message: `The planner asked a third round of questions; a session takes ${MAX_QUESTION_ROUNDS}.`,
+    details: [
+      'Which store keeps the greeting?',
+      'Should the CLI print a trailing newline?',
+      'Which locale is the default?',
+      'Does an empty name get an error or a default greeting?',
+      'Should the greeting end with a full stop?',
+      'Which exit code does a refused name give?',
+      'Does the module export a default or a named function?',
+      'Should the help text show an example?',
+      'Your plan correction goes again with this step.',
+    ],
+    createdAt: new Date(FIXED_TS).toISOString(),
+  });
+}
+
+const planQuestionsLongRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-recovery-plan-questions-long'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  get events() {
+    return planQuestionsRecoveryProjection.events;
+  },
+  get resumeState() {
+    return makeWorkflowState({
+      feature: WORKFLOW_FEATURE,
+      startedAt: RESUMED_RUN_STARTED_AT,
+      phase: 'planning',
+      pendingRecovery: planQuestionsLongRecoveryIssue(),
+    });
+  },
+};
+
 const planChecksRecoveryProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_RECOVERY_PLAN_CHECKS_ID,
   feature: WORKFLOW_FEATURE,
@@ -5529,6 +5602,31 @@ const planOutputLimitRecoveryProjection: WorkflowFixtureProjection = {
   config: CODEX_PLAN_CREW,
   get resumeState() {
     return haltedResumeState(planOutputLimitRecoveryIssue());
+  },
+};
+
+// The same halt while a plan correction of the user waits: its last detail says that the
+// correction goes again with the next step.
+function planCorrectionAgainRecoveryIssue(): RecoveryIssue {
+  const issue = planOutputLimitRecoveryIssue();
+  return {
+    ...issue,
+    id: 'rec_visual_plan_correction_again',
+    details: [...issue.details, 'Your plan correction goes again with this step.'],
+  };
+}
+
+const planCorrectionAgainRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-recovery-plan-correction-again'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  get events() {
+    return planOutputLimitRecoveryProjection.events;
+  },
+  config: CODEX_PLAN_CREW,
+  get resumeState() {
+    return haltedResumeState(planCorrectionAgainRecoveryIssue());
   },
 };
 
@@ -9105,6 +9203,7 @@ const projections = [
   reviewModelRefusalProjection,
   planInputTooLargeRecoveryProjection,
   planOutputLimitRecoveryProjection,
+  planCorrectionAgainRecoveryProjection,
   balanceSeatSwitchProjection,
   stopSheetRecoveryProjection,
   buildConsultProjection,
@@ -9389,6 +9488,7 @@ const projections = [
   planCardNoImageReviewerProjection,
   planCardSharedCommandProjection,
   planCardSessionPathProjection,
+  planCardLongGateProjection,
   { ...planCardProjection, scenarioId: scenarioId('workflow-selection-copy') },
   tasksCardProjection,
   questionProjection,
@@ -9521,6 +9621,7 @@ const projections = [
   planRunnerCheckFailedRecoveryProjection,
   planChecksRecoveryProjection,
   planQuestionsRecoveryProjection,
+  planQuestionsLongRecoveryProjection,
   planSeatSwappedProjection,
   reviewSeatRecoveryProjection,
   reviewRunnerCheckFailedDriftRecoveryProjection,
@@ -9717,6 +9818,8 @@ export function assertProjectionBounds(projection: WorkflowFixtureProjection): v
       value !== planCardNoImageReviewerProjection.review?.source &&
       value !== planCardSharedCommandProjection.review?.source &&
       value !== planCardSharedCommandProjection.review?.planJson &&
+      value !== planCardLongGateProjection.review?.source &&
+      value !== planCardLongGateProjection.review?.planJson &&
       value !== ANSWERED_QUESTIONS_TEXT &&
       value !== RESUMED_REPORT_TEXT &&
       value !== FIX_CHECK_RETRY_TEXT &&

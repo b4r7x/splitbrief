@@ -168,7 +168,7 @@ Both sides accept four **runner kinds** behind a unified interface (`cli`, `api`
 
 Every run plans in one session. There are no workflow modes to pick.
 
-1. The planner may ask up to 3 questions per round, for at most 2 rounds. Each question has a default, and an empty `⏎` takes the defaults.
+1. The planner may ask questions, for at most 2 rounds. Each question has a default, and an empty `⏎` takes the defaults.
 2. The planner returns one typed plan: acceptance criteria, checks and tasks. SPLITBRIEF checks it and writes `plan.json`, `plan.md` and `tasks.md` to the session directory. A plan that fails a check goes back to the planner once.
 3. With `workflow.approve: plan` (the default), the plan card opens: approve it, request changes, edit `plan.json`, or end the run. `workflow.approve: none` skips the card and starts the build.
 

@@ -340,8 +340,8 @@ Every run plans in one typed planning session. There are no workflow modes and n
 
 | Step | What happens | Code |
 |---|---|---|
-| Questions | The planner may answer with questions instead of a plan: at most 3 per round, each with a `default`, for at most 2 rounds (`MAX_QUESTION_ROUNDS`). A third round halts the run with `plan-questions-exhausted`. After **Decide for me** the round answered is the last, and a later round takes its defaults without asking. | `plan-session.ts` |
-| Typed plan | The planner answers `{ result }` against `PlanAnswerSchema` (`src/core/schemas/plan.ts`): a summary, decisions, acceptance criteria, checks, validation commands, the project gate (`gate`, at most 6 commands, run as `V1`, `V2`, … before the final review) and tasks (`TaskSpec`). SPLITBRIEF validates the answer with Zod. The call goes through `requestTyped` with the tool's native schema flag where it has one. | `session.ts` |
+| Questions | The planner may answer with questions instead of a plan, each with a `default`, for at most 2 rounds (`MAX_QUESTION_ROUNDS`). A third round halts the run with `plan-questions-exhausted`. After **Decide for me** the round answered is the last, and a later round takes its defaults without asking. | `plan-session.ts` |
+| Typed plan | The planner answers `{ result }` against `PlanAnswerSchema` (`src/core/schemas/plan.ts`): a summary, decisions, acceptance criteria, checks, validation commands, the project gate (`gate`, run as `V1`, `V2`, … before the final review) and tasks (`TaskSpec`). SPLITBRIEF validates the answer with Zod. The call goes through `requestTyped` with the tool's native schema flag where it has one. | `session.ts` |
 | Checks | `checkFullPlan` runs `checkPlan` (`src/engine/spec/plan-checks.ts`) plus the context fit of each task (`estimatePlanContextFits`), which fails a task only when a Prompt budget is set. A failing plan goes back to the planner once with the errors; a second failure halts with `plan-checks-failed`. A transport repair inside `requestTyped` is counted apart from this one semantic repair. | `session.ts`, `plan-checks.ts` |
 | Compile | `compilePlan` maps each task with `taskFromSpec`, writes `plan.json`, renders `plan.md` and `tasks.md`, and dispatches `PLAN_COMPILED`, which stores `state.plan` and `state.tasks`. The plan's validation block becomes `state.discoveredValidation`. | `session.ts`, `src/engine/spec/plan-tasks.ts` |
 | Plan card | `runPlanApproval` opens the plan card when `workflow.approve` is `plan`, then dispatches `BEGIN_IMPLEMENTATION`. | `session.ts` |
@@ -584,7 +584,7 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
     The planning session sends the typed plan prompt.
     Planner session ID captured → SET_PLANNER_SESSION_ID → state.json.
 
- 7. Questions (optional, at most 2 rounds of at most 3)
+ 7. Questions (optional, at most 2 rounds)
     SET_PLANNER_CONVERSATION records them; the question box waits.
     The answers go back on the same planner session.
 
@@ -682,7 +682,7 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
     each task after its due checks pass.
     Before the final review, every registered plan and task check runs.
     Then the final review runs the project gate, then the verdict call:
-      1. The project gate: the plan names at most 6 commands (plan.gate) that
+      1. The project gate: the plan names the commands (plan.gate) that
          the project's scripts or CI run to verify a change; they are the
          reviewer checks V1, V2, …. A task review runs no gate. When the plan
          names no gate, one row says so (review_checks, status none) and

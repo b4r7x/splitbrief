@@ -11,7 +11,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { defaultCliAuthChannel } from '../../../core/runners/cli-tool-catalog.js';
+import { type CliToolId, defaultCliAuthChannel } from '../../../core/runners/cli-tool-catalog.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
@@ -24,6 +24,7 @@ import { runnerCallInterruptedStatus } from '../../calls/status.js';
 import { createPlannerBase, type PlannerBaseConfig } from '../../planners/base.js';
 import { createCommandPlanner } from '../../planners/command-invoke.js';
 import type { Planner } from '../../planners/types.js';
+import { apiContextError } from '../../providers/api-context-diagnostic.js';
 import { streamCompletion } from '../../providers/openai-stream/completion.js';
 import { interruptedError } from '../../planners/claude-invoke.js';
 import type { PlannerCallbacksContext } from '../types.js';
@@ -456,6 +457,146 @@ describe('handlePlanningFailure', () => {
     expect(published?.type === 'error' && published.message).toContain('then continue');
     expect(published?.type === 'error' && published.message).not.toContain('start again');
     expect(published?.type === 'error' && published.message).not.toContain('..');
+  });
+});
+
+describe('a planning halt while the run holds a plan correction', () => {
+  const correctionGoesAgain = 'Your plan correction goes again with this step.';
+  const outputLimit = 'Incomplete response returned, reason: max_output_tokens';
+  const outputLimitDetails = [
+    `OpenAI Codex CLI reported: ${outputLimit}`,
+    'A retry can run as long and stop at the same limit. Type a correction that asks for a shorter answer, or change the tool.',
+  ];
+  const correction = {
+    target: 'plan',
+    comment: 'Name the 7 commands of the release gate in the project gate',
+  } as const;
+
+  function codexCallFailure(code: string, message: string): unknown {
+    return error('runner-call-failed', 'Planner planner call failed', {
+      status: 'failed',
+      error: { code, message },
+    });
+  }
+
+  async function haltIssue(
+    err: unknown,
+    rewindPending: WorkflowState['rewindPending'],
+    readyTools: readonly CliToolId[] = [],
+  ) {
+    const { projectDir, sessionId } = setupProject();
+    await rememberDetectedTools(projectDir, cliDetectionsFor('ready', readyTools));
+    const state: WorkflowState = {
+      ...createInitialState('feature'),
+      phase: 'planning',
+      rewindPending,
+    };
+    saveState({ projectDir, sessionId }, state);
+
+    const result = await handlePlanningFailure({
+      err,
+      projectDir,
+      sessionId,
+      state,
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config: makeConfig({
+          planner: { kind: 'cli', tool: 'codex', authChannel: defaultCliAuthChannel('codex').id },
+        }),
+      }),
+    });
+
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'halted' });
+    return result.state.pendingRecovery;
+  }
+
+  it('says on a failed planner call that the correction goes again', async () => {
+    const issue = await haltIssue(codexCallFailure('output-token-limit', outputLimit), correction);
+
+    expect(issue?.reason).toBe('planner-call-failed');
+    expect(issue?.message).toBe('Planning failed: output token limit reached');
+    expect(issue?.details).toEqual([...outputLimitDetails, correctionGoesAgain]);
+  });
+
+  it('says on a seat-down halt that the correction goes again', async () => {
+    const usageLimit =
+      "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Aug 8th, 2026 3:27 PM.";
+
+    const issue = await haltIssue(codexCallFailure('codex-turn-failed', usageLimit), correction);
+
+    expect(issue?.reason).toBe('runner-usage-limit');
+    expect(issue?.details).toEqual([
+      `OpenAI Codex CLI reported: ${usageLimit}`,
+      'no fallback set',
+      correctionGoesAgain,
+    ]);
+  });
+
+  it('says on a halt before the planner call that the correction goes again', async () => {
+    const issue = await haltIssue(
+      apiContextError({
+        code: 'insufficient-context',
+        seat: 'plan',
+        cause: 'input-budget',
+        missingSections: ['repo map'],
+      }),
+      correction,
+    );
+
+    expect(issue?.reason).toBe('planner-call-failed');
+    expect(issue?.details).toEqual([
+      'Missing: repo map',
+      'Pick a plan seat with a larger context in /crew plan, then choose Try again.',
+      correctionGoesAgain,
+    ]);
+  });
+
+  it('adds no line to a halt that offers End run only', async () => {
+    const issue = await haltIssue(
+      error('input-too-large', 'Prompt is too long', {
+        error: { code: 'input-too-large', message: 'Prompt is too long' },
+      }),
+      correction,
+    );
+
+    expect(issue?.reason).toBe('planner-call-failed');
+    expect(issue?.availableActions).toEqual(['end-run']);
+    expect(issue?.details).toEqual([
+      'OpenAI Codex CLI reported: Prompt is too long',
+      'A retry sends the same prompt.',
+    ]);
+  });
+
+  it('says on a halt that offers another tool and End run that the correction goes again', async () => {
+    const issue = await haltIssue(
+      error('input-too-large', 'Prompt is too long', {
+        error: { code: 'input-too-large', message: 'Prompt is too long' },
+      }),
+      correction,
+      ['codex', 'claude-code'],
+    );
+
+    expect(issue?.reason).toBe('planner-call-failed');
+    expect(issue?.availableActions).toEqual(['switch-seat', 'end-run']);
+    expect(issue?.details).toEqual([
+      'OpenAI Codex CLI reported: Prompt is too long',
+      'A retry sends the same prompt.',
+      correctionGoesAgain,
+    ]);
+  });
+
+  it.each([
+    ['no stored correction', undefined],
+    ['a stored correction that has no words', { target: 'plan' }],
+    ['a stored correction of blank words', { target: 'plan', comment: '   ' }],
+  ] as const)('adds no line to the halt with %s', async (_case, rewindPending) => {
+    const issue = await haltIssue(
+      codexCallFailure('output-token-limit', outputLimit),
+      rewindPending,
+    );
+
+    expect(issue?.details).toEqual(outputLimitDetails);
   });
 });
 

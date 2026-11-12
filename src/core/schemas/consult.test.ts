@@ -64,13 +64,16 @@ describe('ConsultAnswerSchema', () => {
     }
   });
 
-  it('refuses a split-task with one or five tasks', () => {
+  it('refuses a split-task with one task', () => {
     const one = answer({ action: 'split-task', tasks: [makeTaskSpec()] });
     expect(ConsultAnswerSchema.safeParse(one).success).toBe(false);
+  });
+
+  it('parses a split-task with 5 tasks', () => {
     const five = Array.from({ length: 5 }, (_, index) => makeTaskSpec({ id: `T00${index + 1}` }));
-    expect(
-      ConsultAnswerSchema.safeParse(answer({ action: 'split-task', tasks: five })).success,
-    ).toBe(false);
+    const parsed = ConsultAnswerSchema.safeParse(answer({ action: 'split-task', tasks: five }));
+    expect(parsed.error?.issues).toBeUndefined();
+    expect(parsed.data?.answer).toMatchObject({ action: 'split-task', tasks: five });
   });
 
   it('refuses the retired confirm action', () => {

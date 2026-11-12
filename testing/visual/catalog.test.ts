@@ -280,6 +280,10 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-approval-confirm-short', ['80x11', '80x10', '80x9', '80x8', '60x10']],
   ['workflow-approval-confirm-long-path', ['60x10', '60x12', '60x14', '60x15', '60x16', '80x12']],
   ['workflow-plan-card-short', ['80x12', '80x10', '80x9', '80x8', '60x10']],
+  [
+    'workflow-plan-card-long-gate',
+    ['120x40', '80x24', '60x18', '160x45', '80x12', '80x10', '80x9', '80x8', '60x10'],
+  ],
   ['workflow-question-short', ['80x13', '80x11', '80x10', '60x12']],
   ['workflow-planner-question-short', ['80x12', '80x10', '80x9']],
   ['workflow-planner-question-free-short', ['80x10', '80x9', '80x8']],

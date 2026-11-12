@@ -1030,8 +1030,8 @@ describe('recovery prompt', () => {
     expect(recoveryMenuText('retry-same-worker', baseIssue)).toBe('Try again');
   });
 
-  // At its widest the retry-exhausted builder ends on the two voices and the verdict. A tighter
-  // budget would drop exactly the evidence the halt is for.
+  // At its widest the retry-exhausted builder ends on the two voices and the verdict: the evidence
+  // the halt is for.
   it('keeps both voices and the verdict on the widest retry-exhausted halt', async () => {
     const issue: RecoveryIssue = {
       ...baseIssue,

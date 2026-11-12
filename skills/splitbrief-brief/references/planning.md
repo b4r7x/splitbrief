@@ -6,7 +6,7 @@ Initialize the run with references/gates.md.
 
 ## Planning session
 
-1. Ask at most three questions per round, for at most two rounds.
+1. Ask questions for at most two rounds.
 2. Give each question a default. An empty answer takes the defaults.
 3. Record answers and assumptions in the plan artifacts.
 4. Write the typed plan below. Keep the behaviour, tests, and callers together under the brief grouping rule.

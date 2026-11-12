@@ -489,7 +489,7 @@ Every run plans in one typed planning session; there are no workflow modes. `wor
 
 | Step | Code | Artifact |
 |---|---|---|
-| Questions (at most 3 per round, at most 2 rounds) | `runPlanSession` (`planning/plan-session.ts`) | `state.pendingPlannerConversation` |
+| Questions (at most 2 rounds) | `runPlanSession` (`planning/plan-session.ts`) | `state.pendingPlannerConversation` |
 | Typed plan through `requestTyped` and `PlanAnswerSchema` | `runPlanningSession` (`planning/session.ts`) | — |
 | `checkPlan` plus the context fit, one repair | `checkFullPlan` (`planning/session.ts`), `src/engine/spec/plan-checks.ts` | — |
 | Compile | `compilePlan` (`planning/session.ts`), `taskFromSpec` (`src/engine/spec/plan-tasks.ts`) | `plan.json`, `plan.md`, `tasks.md`; `PLAN_COMPILED` |

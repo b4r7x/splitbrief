@@ -1220,6 +1220,141 @@ it.each([12, 14])('counts one cut line in the singular at 140x%s', async (termin
   ui.unmount();
 });
 
+const CORRECTION_GOES_AGAIN = 'Your plan correction goes again with this step.';
+
+function correctedPlanHalt() {
+  return makeRecoveryIssue({
+    reason: 'planner-call-failed',
+    seat: 'plan',
+    phase: 'planning',
+    message: 'Planning failed: output token limit reached',
+    details: [
+      'OpenAI Codex CLI reported: Incomplete response returned, reason: max_output_tokens',
+      'A retry can run as long and stop at the same limit. Type a correction that asks for a shorter answer, or change the tool.',
+      CORRECTION_GOES_AGAIN,
+    ],
+    availableActions: ['retry-same-worker', 'switch-seat', 'end-run'],
+    recommendedAction: 'switch-seat',
+    switchSeat: { seat: 'plan', candidates: [{ tool: 'claude-code' }] },
+    files: [],
+    affectedTaskIds: [],
+    taskId: undefined,
+    taskTitle: undefined,
+  });
+}
+
+it.each([
+  [60, 18],
+  [80, 24],
+  [120, 40],
+])(
+  'shows the last detail line of a planner halt whole at %ix%i',
+  async (terminalCols, terminalRows) => {
+    const issue = correctedPlanHalt();
+    const ui = await mountPanel(issue, terminalRows, terminalCols);
+    const rows = frameRows(ui);
+    expect(compact(panelText(rows)), rows.join('\n')).toContain(compact(CORRECTION_GOES_AGAIN));
+    expect(actionShown(rows, issue, 'switch-seat'), rows.join('\n')).toBe(true);
+    expectHiddenActionsMarked(rows, issue);
+    expect(rows.some((row) => row.includes('↑↓ select · ⏎ confirm'))).toBe(true);
+    ui.unmount();
+  },
+);
+
+it.each([
+  [80, 24],
+  [120, 40],
+])(
+  'shows each detail line of a planner halt whole at %ix%i',
+  async (terminalCols, terminalRows) => {
+    const issue = correctedPlanHalt();
+    const ui = await mountPanel(issue, terminalRows, terminalCols);
+    const shown = compact(panelText(frameRows(ui)));
+    for (const detail of issue.details) expect(shown).toContain(compact(detail));
+    ui.unmount();
+  },
+);
+
+function questionsHalt(questions: readonly string[], correction: boolean) {
+  return makeRecoveryIssue({
+    reason: 'plan-questions-exhausted',
+    seat: 'plan',
+    phase: 'planning',
+    message: 'The planner asked a third round of questions; a session takes 2.',
+    details: [...questions, ...(correction ? [CORRECTION_GOES_AGAIN] : [])],
+    availableActions: ['retry-same-worker', 'revise', 'end-run'],
+    recommendedAction: 'revise',
+    files: [],
+    affectedTaskIds: [],
+    taskId: undefined,
+    taskTitle: undefined,
+  });
+}
+
+const EIGHT_QUESTIONS = Array.from(
+  { length: 8 },
+  (_, at) => `Which name does part ${at + 1} take?`,
+);
+
+it('shows the plan correction line whole at 60x18 when a planner question starts with its first words', async () => {
+  const issue = questionsHalt(
+    [
+      'Your plan correction asks for 7 commands. Do you want 7?',
+      'Which registry takes the package?',
+    ],
+    true,
+  );
+  const ui = await mountPanel(issue, 18, 60);
+  const rows = frameRows(ui);
+  expect(compact(panelText(rows)), rows.join('\n')).toContain(compact(CORRECTION_GOES_AGAIN));
+  ui.unmount();
+});
+
+it('shows each of 8 planner questions of a halt at 120x40', async () => {
+  const issue = questionsHalt(EIGHT_QUESTIONS, false);
+  const ui = await mountPanel(issue, 40, 120);
+  const rows = frameRows(ui);
+  const shown = compact(panelText(rows));
+  for (const question of EIGHT_QUESTIONS)
+    expect(shown, rows.join('\n')).toContain(compact(question));
+  ui.unmount();
+});
+
+it.each([
+  [60, 18],
+  [80, 24],
+])(
+  'counts each hidden planner question of a halt in the cut mark at %ix%i',
+  async (terminalCols, terminalRows) => {
+    const issue = questionsHalt(EIGHT_QUESTIONS, false);
+    const ui = await mountPanel(issue, terminalRows, terminalCols);
+    const rows = frameRows(ui);
+    const text = compact(panelText(rows));
+    const shown = EIGHT_QUESTIONS.filter((question) => text.includes(compact(question)));
+    const hidden = Number(/… (\d+) more lines?/.exec(rows.join('\n'))?.[1] ?? 0);
+    expect(shown.length + hidden, rows.join('\n')).toBe(EIGHT_QUESTIONS.length);
+    expect(actionShown(rows, issue, 'revise'), rows.join('\n')).toBe(true);
+    expectHiddenActionsMarked(rows, issue);
+    expect(rows.some((row) => row.includes('↑↓ select · ⏎ confirm'))).toBe(true);
+    ui.unmount();
+  },
+);
+
+it.each([
+  [60, 18],
+  [80, 24],
+  [120, 40],
+])(
+  'shows the plan correction line whole under 8 planner questions at %ix%i',
+  async (terminalCols, terminalRows) => {
+    const issue = questionsHalt(EIGHT_QUESTIONS, true);
+    const ui = await mountPanel(issue, terminalRows, terminalCols);
+    const rows = frameRows(ui);
+    expect(compact(panelText(rows)), rows.join('\n')).toContain(compact(CORRECTION_GOES_AGAIN));
+    ui.unmount();
+  },
+);
+
 async function panelAt120(issue: RecoveryIssue, terminalRows: number): Promise<string> {
   const ui = await mountPanel(issue, terminalRows, 120);
   const frame = frameRows(ui).join('\n');

@@ -3,11 +3,7 @@ import type { PlanningPhaseResult } from './types.js';
 import type { PlannerCallbacksContext } from '../types.js';
 import { publishError } from '../events.js';
 import { workflowCancelledReasonFromSignal } from '../../events/workflow-cancel.js';
-import {
-  parkStoppedRun,
-  raisePendingRecovery,
-  rebaseOnPersistedWorkflowState,
-} from '../state-ops.js';
+import { parkStoppedRun, rebaseOnPersistedWorkflowState } from '../state-ops.js';
 import {
   diagnosePlannerCallFailure,
   plannerCallHaltIssue,
@@ -22,6 +18,7 @@ import { isAbortError } from '../../../utils/abort.js';
 import { recoveryActionLabel } from '../../../core/recovery/action-label.js';
 import { sessionError } from '../../../core/sessions/errors.js';
 import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
+import { raisePlanningHalt } from './halt.js';
 
 export async function handlePlanningFailure(opts: {
   err: unknown;
@@ -91,7 +88,7 @@ export async function handlePlanningFailure(opts: {
     });
     return {
       disposition: 'terminal',
-      state: raisePendingRecovery({ ...ref, bus: wctx.bus }, latest, issue),
+      state: raisePlanningHalt({ ...ref, bus: wctx.bus }, latest, issue),
       outcome: 'halted',
     };
   }
@@ -121,7 +118,7 @@ export async function handlePlanningFailure(opts: {
 
   return {
     disposition: 'terminal',
-    state: raisePendingRecovery({ ...ref, bus: wctx.bus }, latest, issue),
+    state: raisePlanningHalt({ ...ref, bus: wctx.bus }, latest, issue),
     outcome: 'halted',
   };
 }

@@ -43,7 +43,7 @@ Task Briefs are the durable contract. The planner writes them as one typed plan:
 A typical run, step by step:
 
 1. User types `splitbrief start "add email validation"`
-2. The planner reads the codebase and may ask up to 3 questions, each with a default, for at most 2 rounds
+2. The planner reads the codebase and may ask questions, each with a default, for at most 2 rounds
 3. The planner answers one typed plan — criteria, checks, and Task Briefs, one per slice, ordered by dependency and grouped in batches
 4. SPLITBRIEF checks the plan deterministically (every criterion has a check and a task, the dependencies make sense, every task fits the implementer's context); a failing plan goes back to the planner once
 5. User reviews the plan on one plan card: approve, request changes, edit `plan.json`, or end the run. Approving also confirms the protected writes the plan lists
@@ -142,7 +142,7 @@ If validation fails, SPLITBRIEF asks the planner, read-only, for one typed answe
 
 - **Guidance** — the implementer retries once more with the planner's instructions in its error block
 - **Rewrite-task** — the brief is replaced at the same id, one revision further, and it continues on the files of the failed attempt
-- **Split-task** — the brief becomes 2–4 subtasks at the next free ids, with every pending dependent re-pointed to them; the subtasks continue on the files of the failed attempt
+- **Split-task** — the brief becomes 2 or more subtasks at the next free ids, with every pending dependent re-pointed to them; the subtasks continue on the files of the failed attempt
 - **Verify** — no implementer call: the validation pipeline and the named checks run again, and a clean run completes the task
 - **Ask-user** — the one question the ladder asks you, with a default; the answer continues as guidance
 

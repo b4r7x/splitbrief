@@ -114,9 +114,19 @@ export function cannotDetail(by: string, reason: string): string {
   return `${capitalize(by)} said: ${reason}`;
 }
 
-/** The line the halt asks the user to read: the planner's question, or why it cannot be done. */
+/** What a halt of the planning phase says while a plan correction stands on the run. */
+export const PLAN_CORRECTION_GOES_AGAIN = 'Your plan correction goes again with this step.';
+
+/**
+ * The line the halt asks the user to read: the planner's question, why it cannot be done, or the
+ * plan correction that goes again.
+ */
 export function isAskedDetail(detail: string): boolean {
-  return detail.startsWith('Question: ') || detail.startsWith('Planner said: ');
+  return (
+    detail.startsWith('Question: ') ||
+    detail.startsWith('Planner said: ') ||
+    detail.startsWith(PLAN_CORRECTION_GOES_AGAIN)
+  );
 }
 
 /** A repository change under a brief, with the changes the audit saw, in the words every surface shares. */

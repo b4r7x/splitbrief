@@ -514,6 +514,33 @@ describe('requestTyped', () => {
     expect(invokes[1]?.schema).toBeUndefined();
   });
 
+  it('asks a strict-mode seat in the prompt for a schema that holds maxItems', async () => {
+    const boundedSchema = {
+      ...jsonSchema,
+      properties: {
+        ...jsonSchema.properties,
+        gate: { type: 'array', items: { type: 'string' }, maxItems: 6 },
+      },
+      required: [...jsonSchema.required, 'gate'],
+    };
+    const { call, invokes } = makeSeatCall({
+      typedOutput: 'strict-native',
+      results: [completed('{"answer":1}'), completed('{"answer":2}')],
+    });
+
+    const failure = expectError(
+      await requestTyped({
+        ...options({ call, prompt: 'Ask something' }),
+        jsonSchema: boundedSchema,
+      }),
+    );
+
+    expect(failure.data.transport).toBe('fallback');
+    expect(invokes[0]?.schema).toBeUndefined();
+    expect(invokes[0]?.prompt).toBe('Ask something' + fallbackInstruction(boundedSchema));
+    expect(invokes[1]?.schema).toBeUndefined();
+  });
+
   it('does not repair a valid first answer', async () => {
     const { call, invokes } = makeSeatCall({
       typedOutput: 'fallback',

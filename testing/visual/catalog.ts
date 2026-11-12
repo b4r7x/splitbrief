@@ -2497,6 +2497,29 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
+    // A project gate of 10 commands, 4 of them vitest commands that name their files, at each
+    // size that a plan card scenario uses. The short sizes hold no whole panel, so the header is
+    // the one element.
+    defineScenario({
+      id: 'workflow-plan-card-long-gate',
+      title: 'Workflow · plan card with a project gate of 10 commands',
+      surface: screenSurface('workflow'),
+      viewports: [
+        ...WIDE_VIEWPORTS,
+        viewport({ cols: 80, rows: 12 }),
+        viewport({ cols: 80, rows: 10 }),
+        viewport({ cols: 80, rows: 9 }),
+        viewport({ cols: 80, rows: 8 }),
+        viewport({ cols: 60, rows: 10 }),
+      ],
+      checkpoint: {
+        id: 'plan-card-long-gate',
+        title: 'Plan card with a long project gate',
+        kind: 'review',
+        marker: 'Approve plan',
+      },
+      elements: [{ id: 'header', title: 'Workflow header' }],
+    }),
     // Seven briefs as `formatTasks` persists them, two with headers past twelve lines: the card
     // lists every one of them.
     defineScenario({
@@ -4442,6 +4465,41 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Planner output-token limit recovery menu',
         kind: 'question',
         marker: 'output token limit',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    // The same halt while a plan correction waits: the last detail says that it goes again.
+    defineScenario({
+      id: 'workflow-recovery-plan-correction-again',
+      title: 'Workflow · PLAN halt while a plan correction waits',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery-plan-correction-again',
+        title: 'Planner halt that names the stored plan correction',
+        kind: 'question',
+        marker: 'Your plan correction goes again',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    // A long third round of questions while a plan correction waits: no question is cut without
+    // a mark, and the line of the correction stays.
+    defineScenario({
+      id: 'workflow-recovery-plan-questions-long',
+      title: 'Workflow · a long third round of planner questions while a plan correction waits',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery-plan-questions-long',
+        title: 'Plan questions halt with 8 questions and the stored plan correction',
+        kind: 'question',
+        marker: 'Your plan correction goes again',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

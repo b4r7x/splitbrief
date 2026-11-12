@@ -447,23 +447,10 @@ function fitFileList(files: string[], room: number): string {
   return `${elidePathMiddle(files[0] ?? '', room - getTerminalCellWidth(tail))}${tail}`;
 }
 
-/**
- * The widest halt a builder writes is retry-exhausted: the last error, the attempts, the bigger
- * worker on offer, what the implementer said, what the planner answered, and the planner's
- * verdict. The budget covers all six, so the two voices are never the rows that fall off.
- * Apply conflicts and partial Apply keep every file detail and the workspace or backup path.
- */
-const MAX_DETAIL_LINES = 6;
-
 function formatDetailLines(issue: RecoveryIssue): string[] {
   const dropQuotedReset = formatResetAt(issue.resetAt) !== undefined;
-  const details =
-    issue.reason === 'apply-conflict' || issue.reason === 'apply-partial'
-      ? issue.details
-      : issue.details
-          .filter((detail) => !detail.startsWith('Worker profile:'))
-          .slice(0, MAX_DETAIL_LINES);
-  return details
+  return issue.details
+    .filter((detail) => !detail.startsWith('Worker profile:'))
     .map(formatDetailLine)
     .map((detail) => (dropQuotedReset ? stripRecoveryResetClause(detail) : detail));
 }

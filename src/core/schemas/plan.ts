@@ -32,7 +32,7 @@ const PlanQuestionSchema = z
 
 const PlanQuestionsSchema = z.object({
   kind: z.literal('questions'),
-  questions: z.array(PlanQuestionSchema).min(1).max(3),
+  questions: z.array(PlanQuestionSchema).min(1),
 });
 
 export const TaskSpecSchema = z.object({
@@ -70,13 +70,9 @@ const PlanValidationSchema = z.object({
     ),
 });
 
-/** The most commands a project gate holds. */
-export const MAX_GATE_COMMANDS = 6;
-
 /** The commands the project itself verifies a change with; SPLITBRIEF runs them before the final review. */
 const PlanGateSchema = z
   .array(z.string().min(1))
-  .max(MAX_GATE_COMMANDS)
   .describe(
     "The project's own gate: the commands its scripts or CI run to verify a change, in the order they run. Empty when the project has none.",
   );

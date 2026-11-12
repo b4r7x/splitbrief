@@ -38,6 +38,7 @@ import type { Planner } from '../../planners/types.js';
 import { createSteeringPort, type SteeringPort } from '../../calls/steering.js';
 import { sessionResumeExpiredError } from '../../session-expiry.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
+import { reviewCheckList } from '../validation/run-checks.js';
 import { resumeContinuation } from '../run/init.js';
 import { measureApiBudget } from '../../providers/api-budget.js';
 import { runPlanningPhase } from './run.js';
@@ -93,6 +94,8 @@ const uncoveredPlan = makePlanProposal({
     { id: 'C2', text: 'An empty name is refused', checkIds: ['K1'] },
   ],
 });
+
+const CORRECTION_GOES_AGAIN = 'Your plan correction goes again with this step.';
 
 async function plan(opts: {
   script: Array<PlanResult | string | Error>;
@@ -1261,6 +1264,7 @@ describe('the plan card', () => {
     );
     expect(first.result.state.pendingRecovery?.details).toEqual([
       'No JSON object found in the answer.',
+      CORRECTION_GOES_AGAIN,
     ]);
     expect(first.events.filter((event) => event.type === 'error')).toEqual([
       expect.objectContaining({
@@ -1279,6 +1283,54 @@ describe('the plan card', () => {
     expect(next.prompts[0]).toContain('"summary": "Greet people by name"');
     expect(next.result.disposition).toBe('ready-for-tasks');
     expect(loadState(first)?.rewindPending).toBeUndefined();
+  });
+
+  it('says on a halt of the corrected plan that the correction goes again', async () => {
+    const run = await plan({
+      script: [makePlanProposal(), uncoveredPlan, uncoveredPlan],
+      callbacks: { onApprovalNeeded: reviseOnce() },
+    });
+
+    expect(run.result).toMatchObject({ disposition: 'terminal', outcome: 'halted' });
+    expect(run.result.state.pendingRecovery?.reason).toBe('plan-checks-failed');
+    expect(run.result.state.pendingRecovery?.details).toEqual([
+      'Criterion C2 is served by no task.',
+      CORRECTION_GOES_AGAIN,
+    ]);
+  });
+
+  it('takes a corrected plan with 7 gate commands and lists the reviewer checks V1 to V7', async () => {
+    const gate = [
+      'npm run format:check',
+      'npm run typecheck',
+      'npm run lint',
+      'npm run test',
+      'npm run test:integration',
+      'npm run build',
+      'npm run test:e2e',
+    ];
+    const onApprovalNeeded = vi
+      .fn()
+      .mockResolvedValueOnce({
+        approved: false,
+        action: 'revise',
+        message: plainUserMessage('Name the 7 commands of the release gate in the project gate'),
+      })
+      .mockResolvedValue({ approved: true });
+    const corrected = makePlanProposal({ gate });
+    // An answer that fails its contract gets one repair call, which the planner answers the same way.
+    const run = await plan({
+      script: [makePlanProposal(), corrected, corrected],
+      callbacks: { onApprovalNeeded },
+    });
+
+    expect(run.result.state.pendingRecovery?.message).toBeUndefined();
+    expect(run.prompts).toHaveLength(2);
+    expect(run.result.disposition).toBe('ready-for-tasks');
+    expect(run.result.state.plan?.gate).toEqual(gate);
+    const checks = reviewCheckList(run.result.state.plan);
+    expect(checks.map((check) => check.id)).toEqual(['V1', 'V2', 'V3', 'V4', 'V5', 'V6', 'V7']);
+    expect(checks.map((check) => check.value)).toEqual(gate);
   });
 
   it('hands a steer to the replan a stop cut mid-call', async () => {

@@ -259,7 +259,7 @@ splitbrief spec --allow-hooks "tighten zod schemas"
 - The planner's stream is not echoed: its answer is typed JSON.
 - A network failure or a server error on the planner call retries the same call up to 10 times. The first wait is 2s, each wait doubles, and no wait is longer than 60s. A `retry-after` from the provider sets the wait instead. Each retry prints one line: `Network or server failure · retry <n> of 10 in <wait>`.
 - A usage limit that names its reset makes the command wait until that reset. Then it calls the planner once more. The wait prints one line: `Waiting for <tool> · resets <clock>`. A limit that names no reset, or a limit on the call after the wait, fails the command with exit code `1`.
-- Questions: the planner may ask up to three questions per round, for at most two rounds, and every question carries a default. `spec` prints them under `The planner asks:`. In a terminal it reads one line (`Your answer (⏎ takes the defaults): `), and an empty line takes the defaults. Without a terminal every question takes its default.
+- Questions: the planner may ask questions, for at most two rounds, and every question carries a default. `spec` prints them under `The planner asks:`. In a terminal it reads one line (`Your answer (⏎ takes the defaults): `), and an empty line takes the defaults. Without a terminal every question takes its default.
 - The planner is told the BUILD context when it is known: the profile's declared `contextLength`, else the model catalog. `spec` takes no `--skills`, so its prompt carries no skills block, as a `start` with no skills selected.
 - `spec` shows no plan card. `--mode` and `--approve` were removed and fail the command with exit code 1.
 - The stale-session sweep runs before the new session is prepared — a crashed prior run will not block this one.
@@ -900,7 +900,7 @@ A quota halt ends the first line with the clock its limit resets on, spelled whe
 
 ### Planning session
 
-There are no workflow modes. Every run plans in one session: one typed planner call, plus one per question round (at most two rounds of at most three questions), plus at most one repair when the plan fails its checks. The plan card then waits for approval unless `workflow.approve: none`. `--mode` was removed; see [MIGRATION.md](./MIGRATION.md#removed-commands-and-flags). Detailed semantics in [WORKFLOW.md](./WORKFLOW.md#3-the-planning-session).
+There are no workflow modes. Every run plans in one session: one typed planner call, plus one per question round (at most two rounds), plus at most one repair when the plan fails its checks. The plan card then waits for approval unless `workflow.approve: none`. `--mode` was removed; see [MIGRATION.md](./MIGRATION.md#removed-commands-and-flags). Detailed semantics in [WORKFLOW.md](./WORKFLOW.md#3-the-planning-session).
 
 ### Runner kinds (`--planner` / `--implementer`)
 

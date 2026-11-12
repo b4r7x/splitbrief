@@ -635,6 +635,7 @@ orchestrator/
 │   ├── call-loop.ts  # internal — waits for the user's answers to planner questions
 │   ├── queue-drain.ts # internal — drain queued messages into the planner
 │   ├── failure.ts    # internal — planner failure handling
+│   ├── halt.ts       # internal — raises each planning halt, with the plan correction that goes again
 │   ├── heartbeat.ts  # internal — planner_heartbeat events during long waits
 │   ├── sanitize-discovered-validation.ts # the plan command allowlist (also imported by `validation/`)
 │   ├── types.ts      # internal — PlanningPhaseResult and the phase options

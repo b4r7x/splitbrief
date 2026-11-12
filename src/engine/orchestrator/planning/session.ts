@@ -87,7 +87,6 @@ import { seatProtocolHaltIssue } from '../recovery/seat-protocol-halt.js';
 import { closeRunIfOpen } from '../run/close.js';
 import {
   addUsageAndSave,
-  raisePendingRecovery,
   rebaseOnPersistedWorkflowState,
   transitionAndSave,
 } from '../state-ops.js';
@@ -96,6 +95,7 @@ import type { PlannerCallbacksContext } from '../types.js';
 import { askOperator, plannerRejectionContext } from './call-loop.js';
 import { apiPlanningPacket } from './api-packet.js';
 import { handlePlanningFailure } from './failure.js';
+import { raisePlanningHalt } from './halt.js';
 import { startPlannerHeartbeat } from './heartbeat.js';
 import { estimatePlanContextFits } from './plan-context-fit.js';
 import {
@@ -560,9 +560,9 @@ async function settle(
   const { wctx } = opts;
   const { projectDir, sessionId, bus, config } = wctx;
   const ref = { projectDir, sessionId };
-  const halt = (issue: Parameters<typeof raisePendingRecovery>[2]): Terminal => ({
+  const halt = (issue: Parameters<typeof raisePlanningHalt>[2]): Terminal => ({
     disposition: 'terminal',
-    state: raisePendingRecovery({ ...ref, bus }, state, issue),
+    state: raisePlanningHalt({ ...ref, bus }, state, issue),
     outcome: 'halted',
   });
 

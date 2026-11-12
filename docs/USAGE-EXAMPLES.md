@@ -183,7 +183,7 @@ phase: implementing
 phase: final-review
 ```
 
-The planner may ask up to three questions per round, for at most two rounds; every question has a default, and `⏎` through the panel takes them. The plan lists the protected writes it needs; approving the card confirms them, so `write package.json` does not ask again during the build. A protected write the plan did not list still asks.
+The planner may ask questions, for at most two rounds; every question has a default, and `⏎` through the panel takes them. The plan lists the protected writes it needs; approving the card confirms them, so `write package.json` does not ask again during the build. A protected write the plan did not list still asks.
 
 **Variations:** Give the planner more context with `@file` arguments, or attach project skills with `/skills` (recipe 21).
 
