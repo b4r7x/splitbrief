@@ -1,9 +1,10 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import XtermHeadless from '@xterm/headless';
 import { describe, expect, it, vi } from 'vitest';
+import YAML from 'yaml';
 import { writeConfig } from '../../../src/core/config/load/io.js';
 import { CLI_TOOL_CATALOG, type CliToolId } from '../../../src/core/runners/cli-tool-catalog.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
@@ -12,6 +13,7 @@ import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { moveCursorTo } from '../helpers/move-cursor.js';
+import { wholeFrames } from '../helpers/whole-frames.js';
 import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
@@ -45,16 +47,20 @@ type Screen = Readonly<{
   shows: (expected: string | RegExp, timeout?: number) => Promise<unknown>;
 }>;
 
+type SeatFixture = Readonly<{
+  tool: CliToolId;
+  model: string;
+  prepareHome: (home: string) => void;
+  fakeBody: string;
+}>;
+
 /** Opens the BUILD seat picker from Settings, the way a user does, then hands the screen over. */
 async function inBuildSeatPicker(
-  input: Readonly<{
-    prefix: string;
-    tool: CliToolId;
-    model: string;
-    prepareHome: (home: string) => void;
-    fakeBody: string;
-    steps: (screen: Screen) => Promise<void>;
-  }>,
+  input: SeatFixture &
+    Readonly<{
+      prefix: string;
+      steps: (screen: Screen, projectDir: string) => Promise<void>;
+    }>,
 ): Promise<string | undefined> {
   return withTempDir(input.prefix, async (dir) => {
     const home = join(dir, 'home');
@@ -132,8 +138,10 @@ async function inBuildSeatPicker(
                 : expect(text()).toMatch(expected),
             { timeout },
           );
-        const dataListener = child.onData((data) => terminal.write(data));
+        const frames = wholeFrames((data) => terminal.write(data));
+        const dataListener = child.onData(frames.feed);
         const exitListener = child.onExit((event) => {
+          frames.flush();
           didExit = true;
           exited.resolve(event);
         });
@@ -147,7 +155,7 @@ async function inBuildSeatPicker(
           await moveCursorTo(text, write, '\x1b[B', /▌ BUILD/);
           write('\r');
           await shows('BUILD · tool, model, effort');
-          await input.steps({ text, write, shows });
+          await input.steps({ text, write, shows }, projectDir);
         } finally {
           try {
             if (!didExit) await terminatePtyProcessGroup(child, exited.promise);
@@ -162,6 +170,32 @@ async function inBuildSeatPicker(
     return result?.reason;
   });
 }
+
+const SAVED_BUILD = /Saved BUILD · .* to \.splitbrief\/config\.yaml/;
+
+/** A Codex 0.155.1 BUILD seat on `gpt-6-sol`, signed in through ChatGPT. */
+const CODEX_SEAT: SeatFixture = {
+  tool: 'codex',
+  model: 'gpt-6-sol',
+  prepareHome: (home) => {
+    mkdirSync(join(home, '.codex'));
+    writeFileSync(join(home, '.codex', 'auth.json'), '{"tokens":{"refresh_token":"e2e"}}\n');
+  },
+  fakeBody: `const args = process.argv.slice(2).join(' ');
+if (args === '--version') {
+  console.log('codex-cli 0.155.1');
+  process.exit(0);
+}
+if (args === 'login status') {
+  console.log('Logged in using ChatGPT');
+  process.exit(0);
+}
+if (args.startsWith('debug models')) {
+  process.stdout.write(require('node:fs').readFileSync(${JSON.stringify(CODEX_MODELS)}, 'utf8'));
+  process.exit(0);
+}
+process.exit(1);`,
+};
 
 /** Presses space on the effort row and waits for each level in turn. */
 async function cycleEffort(screen: Screen, levels: readonly string[]): Promise<void> {
@@ -216,31 +250,89 @@ process.exit(1);`,
 
   it('offers ultra on a Codex model whose own ladder lists it', async (context) => {
     const skipped = await inBuildSeatPicker({
+      ...CODEX_SEAT,
       prefix: 'picker-codex-ultra',
-      tool: 'codex',
-      model: 'gpt-6-sol',
-      prepareHome: (home) => {
-        mkdirSync(join(home, '.codex'));
-        writeFileSync(join(home, '.codex', 'auth.json'), '{"tokens":{"refresh_token":"e2e"}}\n');
-      },
-      fakeBody: `const args = process.argv.slice(2).join(' ');
-if (args === '--version') {
-  console.log('codex-cli 0.155.1');
-  process.exit(0);
-}
-if (args === 'login status') {
-  console.log('Logged in using ChatGPT');
-  process.exit(0);
-}
-if (args.startsWith('debug models')) {
-  process.stdout.write(require('node:fs').readFileSync(${JSON.stringify(CODEX_MODELS)}, 'utf8'));
-  process.exit(0);
-}
-process.exit(1);`,
       steps: async (screen) => {
         // GPT-6-Luna comes only from the listing, so its row says the listing has landed.
         await screen.shows('GPT-6-Luna', 30_000);
         await cycleEffort(screen, ['low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'auto']);
+      },
+    });
+    if (skipped !== undefined) context.skip(skipped);
+  });
+});
+
+describe('e2e: a key burst on the seat picker saves what slow keys save', {
+  timeout: 120_000,
+}, () => {
+  /** Puts the cursor on the collapsed GPT-6-Luna row, runs `press`, and reads the save it makes. */
+  async function saveFromLuna(prefix: string, press: (screen: Screen) => Promise<void>) {
+    let saved: Readonly<{ line: string | undefined; implementer: unknown }> | undefined;
+    const skipped = await inBuildSeatPicker({
+      ...CODEX_SEAT,
+      prefix,
+      steps: async (screen, projectDir) => {
+        await screen.shows('GPT-6-Luna', 30_000);
+        await moveCursorTo(screen.text, screen.write, '\x1b[B', /▌ GPT-6-Luna/);
+        await press(screen);
+        await screen.shows(SAVED_BUILD);
+        saved = {
+          line: screen.text().match(SAVED_BUILD)?.[0],
+          implementer: YAML.parse(
+            readFileSync(join(projectDir, '.splitbrief', 'config.yaml'), 'utf8'),
+          ).implementer,
+        };
+      },
+    });
+    return { skipped, saved };
+  }
+
+  it('saves the model when ⏎ ↓ ⏎ reach the picker in one read, as the same keys pressed slowly do', async (context) => {
+    const slow = await saveFromLuna('picker-burst-slow', async (screen) => {
+      screen.write('\r');
+      await screen.shows('▌ ├─ auth');
+      screen.write('\x1b[B');
+      await screen.shows('▌ └─ effort');
+      screen.write('\r');
+    });
+    if (slow.skipped !== undefined) context.skip(slow.skipped);
+    // A picker that drops the last two keys leaves the expansion open, and a sound one shows
+    // that same screen on its way to the save, so the wait ends on the save line alone.
+    const burst = await saveFromLuna('picker-burst-one-read', async (screen) => {
+      screen.write('\r\x1b[B\r');
+    });
+    if (burst.skipped !== undefined) context.skip(burst.skipped);
+
+    expect(burst.saved).toEqual(slow.saved);
+  });
+});
+
+describe('e2e: a click on a tool that reads Auth required keeps the seat', {
+  timeout: 120_000,
+}, () => {
+  it('saves nothing on ⏎ after the click, and ↓ moves the tool cursor', async (context) => {
+    const skipped = await inBuildSeatPicker({
+      ...CODEX_SEAT,
+      prefix: 'picker-click-not-ready',
+      steps: async (screen, projectDir) => {
+        await screen.shows('GPT-6-Luna', 30_000);
+        await screen.shows(/Command Code CLI +Auth required/);
+        const configPath = join(projectDir, '.splitbrief', 'config.yaml');
+        const before = YAML.parse(readFileSync(configPath, 'utf8')).implementer;
+        const lines = screen.text().split('\n');
+        const row = lines.findIndex((line) => line.includes('Command Code CLI'));
+        const col = lines[row]?.indexOf('Command Code CLI') ?? -1;
+        if (col === -1) throw new Error('No Command Code CLI row on the screen.');
+        // SGR mouse reports count from 1: a left press, then its release.
+        screen.write(`\x1b[<0;${col + 1};${row + 1}M`);
+        screen.write(`\x1b[<0;${col + 1};${row + 1}m`);
+        await screen.shows(/▌ Command Code CLI/);
+        screen.write('\r');
+        screen.write('\x1b[B');
+        await screen.shows(/▌ Cursor Agent CLI/);
+
+        expect(screen.text()).not.toMatch(SAVED_BUILD);
+        expect(YAML.parse(readFileSync(configPath, 'utf8')).implementer).toEqual(before);
       },
     });
     if (skipped !== undefined) context.skip(skipped);

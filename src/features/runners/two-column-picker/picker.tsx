@@ -416,8 +416,8 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
             getKey={leftProps.getKey}
             contentMaxWidth={leftContentWidth}
             emptyText={leftEmptyText}
-            onRowActivate={nav.activateLeft}
-            onWheel={(direction) => nav.moveLeft(wheelStep(direction))}
+            onRowActivate={nav.clickLeft}
+            onWheel={(direction) => nav.wheelLeft(wheelStep(direction))}
             rowZonePrefix="runner-left"
             rowZoneZ={ROW_ZONE_Z_OVERLAY}
             renderRow={(item, isCursor, maxWidth) => {
@@ -454,14 +454,9 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
               contentMaxWidth={rightContentWidth}
               onRowActivate={(displayIndex) => {
                 const slot = display[displayIndex];
-                if (slot?.kind !== 'row') return;
-                // A row that steps its own value is a control, not a choice: a
-                // click on it must not confirm the picker and dismiss it. A row that
-                // only holds the space key is still a choice, so it stays clickable.
-                if (nav.cycleRight(slot.navIndex) === 'stepped') return;
-                nav.activateRight(slot.navIndex);
+                if (slot?.kind === 'row') nav.clickRight(slot.navIndex);
               }}
-              onWheel={(direction) => nav.moveRight(wheelStep(direction))}
+              onWheel={(direction) => nav.wheelRight(wheelStep(direction))}
               rowZonePrefix="runner-right"
               rowZoneZ={ROW_ZONE_Z_OVERLAY}
               renderRow={(slot, isCursor, maxWidth) => {

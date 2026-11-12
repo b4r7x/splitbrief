@@ -18,6 +18,7 @@ import { PTY_SUBMIT_INPUT } from '../../integration/cli/pty/contract.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
 import { moveCursorTo } from '../helpers/move-cursor.js';
+import { wholeFrames } from '../helpers/whole-frames.js';
 import {
   createStopContinueFixture,
   readState,
@@ -266,8 +267,10 @@ async function inTui(
           { length: VIEWPORT.rows },
           (_, row) => terminal.buffer.active.getLine(row)?.translateToString(true) ?? '',
         ).join('\n');
-      const dataListener = child.onData((data) => terminal.write(data, () => watch(screen())));
+      const frames = wholeFrames((data) => terminal.write(data, () => watch(screen())));
+      const dataListener = child.onData(frames.feed);
       const exitListener = child.onExit((event) => {
+        frames.flush();
         outcome = event;
         exit.resolve(event);
       });

@@ -39,13 +39,13 @@ export function useColumnState<T>(input: ColumnStateInput<T>): ColumnStateHook<T
     onCurrentItemChange,
   } = input;
   const [filter, setFilterState] = useState('');
-  const [index, setIndexState] = useState(initialIndex);
+  const [storedIndex, setIndexState] = useState(initialIndex);
 
   const filterRef = useRef(filter);
-  const indexRef = useRef(index);
+  const indexRef = useRef(storedIndex);
   const sourceRef = useRef(source);
+  const notifiedKey = useRef<string | null>(null);
   filterRef.current = filter;
-  indexRef.current = index;
   sourceRef.current = source;
 
   const getItems = (filterValue: string, src: T[] = sourceRef.current) => {
@@ -61,29 +61,29 @@ export function useColumnState<T>(input: ColumnStateInput<T>): ColumnStateHook<T
       : nextItems[clampIndex(nextIndex - virtualCount, nextItems.length)];
 
   const items = getItems(filter);
+  // Follow the selected key across a reorder in the render itself: a render on the row that took
+  // its place reaches the caller's rules and a queued key that runs in the same commit.
+  const remembered = notifiedKey.current;
+  const storedItem = itemAt(clampIndex(storedIndex, items.length + virtualCount), items);
+  const realIndex =
+    storedItem === undefined || remembered === null || getKey(storedItem) === remembered
+      ? -1
+      : items.findIndex((item) => getKey(item) === remembered);
+  const index = realIndex >= 0 ? realIndex + virtualCount : storedIndex;
   const effectiveIndex = clampIndex(index, items.length + virtualCount);
   const currentItem = itemAt(effectiveIndex, items);
+  indexRef.current = index;
 
-  const notifiedKey = useRef<string | null>(null);
   const notifyCurrentItem = (item: T | undefined) => {
     if (item !== undefined) notifiedKey.current = getKey(item);
     onCurrentItemChange?.(item);
   };
 
-  // Follow the selected key across a reorder. Clamp and notify only when that key is gone.
+  // Clamp and notify only when the selected key is gone.
   useLayoutEffect(() => {
+    if (index !== storedIndex) setIndexState(index);
     if (currentItem === undefined) return;
-    const remembered = notifiedKey.current;
     if (remembered !== null && getKey(currentItem) === remembered) return;
-    if (remembered !== null) {
-      const realIndex = items.findIndex((item) => getKey(item) === remembered);
-      if (realIndex >= 0) {
-        const displayed = realIndex + virtualCount;
-        indexRef.current = displayed;
-        setIndexState(displayed);
-        return;
-      }
-    }
     notifyCurrentItem(currentItem);
   });
 

@@ -1,10 +1,11 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
+import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { PINNED_CLAUDE_CODE_OPTIONS } from '#testing/helpers/factories/model-cache.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -19,7 +20,13 @@ import {
   type PickerEffectDeps,
 } from '../../features/runners/use-picker-actions.js';
 import type { ScopedCliCatalogAttempt } from '../../engine/detection/cli-catalog-outcomes.js';
-import type { DetectionServiceResult } from '../../engine/detection/service.js';
+import type { DetectionService, DetectionServiceResult } from '../../engine/detection/service.js';
+import {
+  detectionContextsForCurrentConfig,
+  refreshDetectionForCurrentConfig,
+} from '../../engine/detection/store-publication.js';
+import type { DiscoveryRefreshSummary } from '../../core/runtime/commands/types.js';
+import { refreshPickerDetection } from '../../features/runners/refresh-detection.js';
 import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
 import { type ConfigSaveResult, configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/project/detection.js';
@@ -1401,6 +1408,228 @@ describe('ToolModelPicker after a hand edit of config.yaml', () => {
     const checked = checkedModelLines(frameText(ui)).join('');
     expect(checked).toContain('Opus');
     expect(checked).not.toContain('Sonnet');
+    ui.unmount();
+  });
+});
+
+describe('ToolModelPicker on a tool that is not ready', () => {
+  const VIEWPORT = { cols: 120, rows: 36 };
+  const PLAN_SEAT = makeConfig({
+    planner: { kind: 'cli', tool: 'claude-code', model: 'opus', effort: 'max' },
+  });
+  const NO_MODELS_YET = 'Its models show here when it is ready.';
+
+  beforeEach(() => {
+    forceUnicodeGlyphs();
+    resetPickerStores();
+    _resetMouseZones();
+    terminalSizeStore.__testReset({ ...VIEWPORT, isSmall: false });
+  });
+
+  afterEach(() => _resetMouseZones());
+
+  const cursorText = (ui: ReturnType<typeof renderFeature>) =>
+    frameText(ui)
+      .split('\n')
+      .filter((line) => line.includes(glyph('liveBar')))
+      .map((line) => line.replace(/\s+/g, ' ').trim())
+      .join('\n');
+
+  /** Opens the PLAN seat picker the way Settings does: the model column holds the keys. */
+  async function openOnEffort(
+    cliTools: CliToolDetection[],
+    refresh: PickerEffectDeps['refresh'] = defaultPickerEffectDeps.refresh,
+  ) {
+    configStore.__testReset({ projectDir: '/tmp/project', config: PLAN_SEAT });
+    detectionStore.setDetection({ providers: [], cliTools });
+    const plan = deriveCrewRows({ config: PLAN_SEAT }).find((row) => row.id === 'plan');
+    if (plan === undefined) throw new Error('No plan seat row.');
+    crewActivate({ target: { kind: 'crew', row: plan }, config: PLAN_SEAT });
+    const saveConfig = vi.fn<PickerEffectDeps['saveConfig']>(async () => SAVED);
+    const ui = renderFeature(
+      <ToolModelPicker
+        slot="seat"
+        role="planner"
+        deps={{ ...defaultPickerEffectDeps, refresh, saveConfig }}
+      />,
+      VIEWPORT,
+    );
+    await vi.waitFor(() => expect(cursorText(ui)).toContain('▌ └─ effort max'));
+    await flushEffects();
+    return { ui, saveConfig };
+  }
+
+  async function clickTool(ui: ReturnType<typeof renderFeature>, id: string, row: string) {
+    const click = collectClickableZones(VIEWPORT).get(`runner-left:${id}`);
+    if (click === undefined) throw new Error(`no click zone runner-left:${id}`);
+    click();
+    await vi.waitFor(() => expect(cursorText(ui)).toContain(`▌ ${row}`));
+    await flushEffects();
+  }
+
+  /**
+   * ⏎, then ↓. The keys run in order, so once ↓ has moved the tool cursor to `nextRow`, ⏎ has
+   * already made any save it was going to make.
+   */
+  async function enterThenDown(
+    ui: ReturnType<typeof renderFeature>,
+    saveConfig: Mock<PickerEffectDeps['saveConfig']>,
+    nextRow: string,
+  ) {
+    ui.stdin.write('\r');
+    await flushEffects();
+    ui.stdin.write(ARROW_DOWN);
+    await vi.waitFor(() =>
+      expect({
+        saves: saveConfig.mock.calls.map(([config]) => config.planner),
+        overlay: overlayStore.get().active,
+        cursor: cursorText(ui),
+      }).toEqual({
+        saves: [],
+        overlay: 'planner-picker',
+        cursor: expect.stringContaining(`▌ ${nextRow}`),
+      }),
+    );
+  }
+
+  it('saves nothing on ⏎ after a click on a tool that reads Unavailable', async () => {
+    const { ui, saveConfig } = await openOnEffort([
+      cliDetectionFor('ready', 'claude-code'),
+      cliDetectionFor('ready', 'codex'),
+      cliDetectionFor('unavailable', 'command-code'),
+    ]);
+
+    await clickTool(ui, 'command-code', 'Command Code CLI');
+    expect(frameText(ui)).toContain(NO_MODELS_YET);
+    await enterThenDown(ui, saveConfig, 'Cursor Agent CLI');
+    ui.unmount();
+  });
+
+  it('saves nothing on ⏎ after a click on a tool that reads Auth required', async () => {
+    const { ui, saveConfig } = await openOnEffort([
+      cliDetectionFor('ready', 'claude-code'),
+      cliDetectionFor('unauthenticated', 'codex'),
+    ]);
+
+    await clickTool(ui, 'codex', 'OpenAI Codex CLI');
+    expect(cursorText(ui)).toContain('Auth required');
+    expect(frameText(ui)).toContain(NO_MODELS_YET);
+    await enterThenDown(ui, saveConfig, 'Command Code CLI');
+    ui.unmount();
+  });
+
+  it('saves nothing on ⏎ after the tool under the model column turns not ready', async () => {
+    const { ui, saveConfig } = await openOnEffort([
+      cliDetectionFor('ready', 'claude-code'),
+      cliDetectionFor('ready', 'codex'),
+    ]);
+    await clickTool(ui, 'codex', 'OpenAI Codex CLI');
+    expect(frameText(ui)).not.toContain(NO_MODELS_YET);
+
+    detectionStore.setDetection({
+      providers: [],
+      cliTools: [cliDetectionFor('ready', 'claude-code'), cliDetectionFor('unavailable', 'codex')],
+    });
+    await vi.waitFor(() => expect(frameText(ui)).toContain(NO_MODELS_YET));
+    await flushEffects();
+    await enterThenDown(ui, saveConfig, 'OpenCode CLI');
+    ui.unmount();
+  });
+
+  const AUTO_ROW = '▌ auto tool decides';
+  const ASTRA_ROW = '▌ GPT-6-Astra 272K ▾';
+  const modelCursorOf = (frame: string) =>
+    modelColumnLines(stripAnsiStyles(frame))
+      .filter((line) => line.includes(glyph('liveBar')))
+      .map((line) => line.replace(/\s+/g, ' ').trim());
+  /** The frames since `start` whose model column has no cursor on `row`. */
+  const framesOffRow = (ui: ReturnType<typeof renderFeature>, start: number, row: string) =>
+    ui.frames
+      .slice(start)
+      .map(modelCursorOf)
+      .filter((cursor) => cursor.length !== 1 || cursor[0] !== row);
+
+  it('keeps the keys on the model column of a ready tool when another tool turns Auth required', async () => {
+    const { ui, saveConfig } = await openOnEffort([
+      cliDetectionFor('ready', 'claude-code'),
+      cliDetectionFor('ready', 'codex'),
+    ]);
+    await clickTool(ui, 'codex', 'OpenAI Codex CLI');
+    expect(modelCursorOf(ui.lastFrame())).toEqual([AUTO_ROW]);
+    const start = ui.frames.length;
+
+    detectionStore.setDetection({
+      providers: [],
+      cliTools: [
+        cliDetectionFor('unauthenticated', 'claude-code'),
+        cliDetectionFor('ready', 'codex'),
+      ],
+    });
+    await vi.waitFor(() => expect(frameText(ui)).toContain('Auth required'));
+    await flushEffects();
+
+    expect(ui.frames.length).toBeGreaterThan(start);
+    expect(framesOffRow(ui, start, AUTO_ROW)).toEqual([]);
+    ui.stdin.write(ARROW_DOWN);
+    await vi.waitFor(() => expect(modelCursorOf(ui.lastFrame())).toEqual([ASTRA_ROW]));
+    expect(saveConfig).not.toHaveBeenCalled();
+    ui.unmount();
+  });
+
+  it('keeps the keys on the model column of a ready tool in every frame of a ctrl+r refresh', async () => {
+    const cliTools = [cliDetectionFor('ready', 'claude-code'), cliDetectionFor('ready', 'codex')];
+    const detected: DetectionServiceResult = {
+      providers: [],
+      cliTools,
+      catalog: null,
+      cliModels: [],
+    };
+    // The startup check has landed, as it has for a user who opens Settings: a refresh is warm.
+    const startup = detectionStore.beginRefresh({
+      contexts: detectionContextsForCurrentConfig({
+        config: PLAN_SEAT,
+        projectDir: '/tmp/project',
+      }),
+    });
+    expect(detectionStore.publish({ result: detected, request: startup })).toBe(true);
+    const result = Promise.withResolvers<DetectionServiceResult>();
+    const refreshDetection = vi.fn<DetectionService['refreshDetection']>(() => result.promise);
+    const service: DetectionService = {
+      shutdown: async () => {},
+      loadDetection: () => result.promise,
+      refreshDetection,
+    };
+    const summaries: DiscoveryRefreshSummary[] = [];
+    const refresh: PickerEffectDeps['refresh'] = (projectDir) =>
+      refreshPickerDetection(projectDir, async () => {
+        const summary = await refreshDetectionForCurrentConfig({
+          service,
+          publication: detectionStore,
+          getCurrent: () => ({ config: PLAN_SEAT, projectDir }),
+        });
+        summaries.push(summary);
+        return summary;
+      });
+    const { ui, saveConfig } = await openOnEffort(cliTools, refresh);
+    await clickTool(ui, 'codex', 'OpenAI Codex CLI');
+    expect(modelCursorOf(ui.lastFrame())).toEqual([AUTO_ROW]);
+    const start = ui.frames.length;
+
+    ui.stdin.write('\u0012');
+    await vi.waitFor(() => expect(refreshDetection).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(frameText(ui)).toContain('refreshing…'));
+    result.resolve(detected);
+    await vi.waitFor(() =>
+      expect(summaries).toEqual([expect.objectContaining({ published: true })]),
+    );
+    await vi.waitFor(() => expect(frameText(ui)).not.toContain('refreshing…'));
+    await flushEffects();
+
+    expect(ui.frames.slice(start).some((frame) => frame.includes('refreshing…'))).toBe(true);
+    expect(framesOffRow(ui, start, AUTO_ROW)).toEqual([]);
+    ui.stdin.write(ARROW_DOWN);
+    await vi.waitFor(() => expect(modelCursorOf(ui.lastFrame())).toEqual([ASTRA_ROW]));
+    expect(saveConfig).not.toHaveBeenCalled();
     ui.unmount();
   });
 });

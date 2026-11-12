@@ -42,6 +42,7 @@ import {
   noFallbackOption,
   type PickerOption,
 } from './model-catalog/options.js';
+import { routeDraftOf } from './model-catalog/option-axis.js';
 import {
   authMethodOffer,
   buildRightRows,
@@ -147,8 +148,18 @@ function countModelRows(rows: readonly RightRow[]): number {
   ).length;
 }
 
-function rowIndexForEffortAxis(rows: readonly RightRow[]): number {
-  return rows.findIndex((row) => row.kind === 'axis' && row.axis === 'effort');
+/** The effort row on which Enter saves the seat's own model: another route's row would move the seat. */
+function rowIndexForEffortAxis(
+  rows: readonly RightRow[],
+  persistedModel: string | undefined,
+  optionDraftId: string | null,
+): number {
+  return rows.findIndex(
+    (row) =>
+      row.kind === 'axis' &&
+      row.axis === 'effort' &&
+      routeDraftOf(row.model, row.providerPrefix, optionDraftId) === persistedModel,
+  );
 }
 
 function buildLeftItems(input: {
@@ -334,7 +345,9 @@ export function usePickerCatalog(
   };
 
   const { models: rightModels, rows: rightRows } = catalogFor(currentItem);
-  const seatAxisIndex = seatAxisFocused ? rowIndexForEffortAxis(rightRows) : -1;
+  const seatAxisIndex = seatAxisFocused
+    ? rowIndexForEffortAxis(rightRows, persistedModel, optionDraftId)
+    : -1;
   const modelCounts = countModelOptions(rightModels);
   const catalogDiagnostic =
     modelCounts.confirmed > 0 ? undefined : deriveCatalogDiagnostic(currentItem, modelCounts.stale);

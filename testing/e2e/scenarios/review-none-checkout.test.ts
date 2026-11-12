@@ -17,6 +17,7 @@ import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
 import { moveCursorTo } from '../helpers/move-cursor.js';
 import { createStopContinueFixture, readState } from '../helpers/stop-continue-fixture.js';
+import { wholeFrames } from '../helpers/whole-frames.js';
 
 const VIEWPORT = { cols: 120, rows: 40 };
 const NONE_ROW = 'Review · none · REVIEW is None, so no seat reviewed this run';
@@ -159,8 +160,10 @@ async function inTui(run: Run, home: string, drive: (tui: Tui) => Promise<void>)
           { length: VIEWPORT.rows },
           (_, row) => terminal.buffer.active.getLine(row)?.translateToString(true) ?? '',
         ).join('\n');
-      const dataListener = child.onData((data) => terminal.write(data));
+      const frames = wholeFrames((data) => terminal.write(data));
+      const dataListener = child.onData(frames.feed);
       const exitListener = child.onExit((event) => {
+        frames.flush();
         outcome = event;
         exit.resolve(event);
       });

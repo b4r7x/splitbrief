@@ -12,6 +12,7 @@ import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { moveCursorTo } from '../helpers/move-cursor.js';
+import { wholeFrames } from '../helpers/whole-frames.js';
 import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
@@ -136,8 +137,10 @@ process.exit(1);`,
                     : expect(text()).toMatch(expected),
                 { timeout },
               );
-            const dataListener = child.onData((data) => terminal.write(data));
+            const frames = wholeFrames((data) => terminal.write(data));
+            const dataListener = child.onData(frames.feed);
             const exitListener = child.onExit((event) => {
+              frames.flush();
               didExit = true;
               exited.resolve(event);
             });
@@ -149,7 +152,9 @@ process.exit(1);`,
               await shows('/crew build');
               child.write('\r');
               await shows('BUILD · tool, model, effort');
-              await shows('DeepSeek V4.1', 30_000);
+              // Only the landed listing names this row alone: the bundled list adds ` · id` to
+              // its two DeepSeek rows.
+              await shows(/DeepSeek V4\.1(?! Flash ·)/, 30_000);
               child.write('\x1b[C');
               await shows(/▌ DeepSeek V4\.1/);
               await moveCursorTo(

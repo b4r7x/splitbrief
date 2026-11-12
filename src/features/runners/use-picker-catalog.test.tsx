@@ -1333,10 +1333,12 @@ describe('usePickerCatalog seat-axis landing', () => {
     rightIndex: number;
     rowKind: string | undefined;
     axisName: string | undefined;
+    routePrefix: string | undefined;
     modelId: string | undefined;
     focusModels: boolean;
     axisIndex: number;
     modelIndex: number;
+    effortRoutes: string[];
   } | null = null;
 
   function AxisProbe() {
@@ -1346,14 +1348,52 @@ describe('usePickerCatalog seat-axis landing', () => {
       rightIndex: catalog.initialRightIndex,
       rowKind: row?.kind,
       axisName: row?.kind === 'axis' ? row.axis : undefined,
+      routePrefix: row?.kind === 'axis' ? row.providerPrefix : undefined,
       modelId: row?.kind === 'model' ? row.model.id : undefined,
       focusModels: catalog.focusModels,
       axisIndex: catalog.rightRows.findIndex((r) => r.kind === 'axis' && r.axis === 'effort'),
       modelIndex: catalog.rightRows.findIndex(
         (r) => r.kind === 'model' && r.model.id === catalog.currentModel,
       ),
+      effortRoutes: catalog.rightRows.flatMap((r) =>
+        r.kind === 'axis' && r.axis === 'effort' ? [r.providerPrefix] : [],
+      ),
     };
     return <Text>probe</Text>;
+  }
+
+  const EFFORTS = ['low', 'medium', 'high'];
+
+  /** The PLAN seat runs `openai/gpt-5.5` on Kilo, which lists that model on two routes in this order. */
+  function seatOnKiloRoutes(listing: { id: string; nativeReasoningEfforts?: string[] }[]) {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        planner: { kind: 'cli', tool: 'kilo-code', model: 'openai/gpt-5.5' },
+      }),
+    });
+    detectionStore.reset();
+    modelCacheStore.reset();
+    const request = detectionStore.beginRefresh({
+      contexts: { readiness: 'r', modelsDev: 'm', cliModels: 'c' },
+    });
+    detectionStore.publish({
+      request,
+      result: {
+        providers: [],
+        cliTools: [cliDetectionFor('ready', 'kilo-code')],
+        catalog: {},
+        cliModels: [
+          {
+            connection: { tool: 'kilo-code', contextKey: 'c' },
+            outcome: { kind: 'success', value: listing },
+          },
+        ],
+        generation: 1,
+      },
+    });
+    pickerViewStore.expand('openai/gpt-5.5');
+    overlayStore.setFocus(seatAxisFocus('plan'));
   }
 
   beforeEach(() => {
@@ -1391,6 +1431,46 @@ describe('usePickerCatalog seat-axis landing', () => {
     expect(landing?.axisIndex).toBe(-1);
     expect(landing?.rowKind).toBe('model');
     expect(landing?.modelId).toBe('opus');
+    expect(landing?.rightIndex).toBe(landing?.modelIndex);
+    expect(landing?.focusModels).toBe(true);
+    ui.unmount();
+  });
+
+  it("lands on the effort row of the seat's own route when another route is listed first", () => {
+    seatOnKiloRoutes([
+      { id: 'github-copilot/gpt-5.5', nativeReasoningEfforts: EFFORTS },
+      { id: 'openai/gpt-5.5', nativeReasoningEfforts: EFFORTS },
+    ]);
+    const ui = renderFeature(<AxisProbe />);
+
+    expect(landing?.effortRoutes).toEqual(['github-copilot', 'openai']);
+    expect(landing).toMatchObject({ rowKind: 'axis', axisName: 'effort', routePrefix: 'openai' });
+    expect(landing?.focusModels).toBe(true);
+    ui.unmount();
+  });
+
+  it("lands on the effort row of the seat's own route when that route is listed first", () => {
+    seatOnKiloRoutes([
+      { id: 'openai/gpt-5.5', nativeReasoningEfforts: EFFORTS },
+      { id: 'github-copilot/gpt-5.5', nativeReasoningEfforts: EFFORTS },
+    ]);
+    const ui = renderFeature(<AxisProbe />);
+
+    expect(landing?.effortRoutes).toEqual(['openai', 'github-copilot']);
+    expect(landing).toMatchObject({ rowKind: 'axis', axisName: 'effort', routePrefix: 'openai' });
+    ui.unmount();
+  });
+
+  it("lands on the seat's model row when only another route has an effort row", () => {
+    seatOnKiloRoutes([
+      { id: 'github-copilot/gpt-5.5', nativeReasoningEfforts: EFFORTS },
+      { id: 'openai/gpt-5.5' },
+    ]);
+    const ui = renderFeature(<AxisProbe />);
+
+    expect(landing?.effortRoutes).toEqual(['github-copilot']);
+    expect(landing?.rowKind).toBe('model');
+    expect(landing?.modelId).toBe('openai/gpt-5.5');
     expect(landing?.rightIndex).toBe(landing?.modelIndex);
     expect(landing?.focusModels).toBe(true);
     ui.unmount();

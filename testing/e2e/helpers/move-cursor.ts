@@ -13,6 +13,7 @@ function cursorRows(text: string): string {
 /**
  * Presses `key` until the row matching `row` holds the cursor. Each press waits for the
  * cursor to move before the next one, so a slow render cannot carry the cursor past the row.
+ * `text` must read a terminal that is fed whole frames (`wholeFrames`).
  */
 export async function moveCursorTo(
   text: () => string,

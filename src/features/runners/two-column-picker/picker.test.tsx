@@ -1011,7 +1011,7 @@ describe('TwoColumnPicker', () => {
 
     await flushEffects();
     ui.stdin.write('\r');
-    await flushEffects();
+    await vi.waitFor(() => expect(confirms).toEqual(['model-6']));
 
     expect(confirms).toEqual(['model-6']);
     ui.unmount();

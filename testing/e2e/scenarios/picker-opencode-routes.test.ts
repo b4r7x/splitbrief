@@ -12,6 +12,7 @@ import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { moveCursorTo } from '../helpers/move-cursor.js';
+import { wholeFrames } from '../helpers/whole-frames.js';
 import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
@@ -133,8 +134,10 @@ process.exit(1);`,
                 .getLine(terminal.buffer.active.viewportY + row)
                 ?.translateToString(true) ?? '',
           ).join('\n');
-        const dataListener = child.onData((data) => terminal.write(data));
+        const frames = wholeFrames((data) => terminal.write(data));
+        const dataListener = child.onData(frames.feed);
         const exitListener = child.onExit((event) => {
+          frames.flush();
           didExit = true;
           exited.resolve(event);
         });
@@ -186,7 +189,9 @@ async function openBuildPicker(screen: Screen): Promise<void> {
   await moveCursorTo(screen.text, screen.write, '\x1b[B', /▌ BUILD/);
   screen.write('\r');
   await screen.shows('BUILD · tool, model, effort');
-  await screen.shows('DeepSeek V4.1 Flash', 30_000);
+  // Only the landed listing names this row alone: the bundled list adds ` · id` to its two
+  // DeepSeek rows.
+  await screen.shows(/DeepSeek V4\.1(?! Flash ·)/, 30_000);
   screen.write('\x1b[C');
 }
 
@@ -338,6 +343,36 @@ describe('e2e: the BUILD picker on an OpenCode seat', { timeout: 120_000 }, () =
 
         await screen.shows(/└─ openrouter +signed in/);
         expect(screen.text()).not.toMatch(/─ deepseek\b/);
+      },
+      (reason) => context.skip(reason),
+    );
+  });
+
+  it('opens the custom-model form when ↑ and ⏎ reach the picker in one read', async (context) => {
+    await withOpencodeHome(
+      'picker-up-enter-one-read',
+      {
+        signedIn: { id: 'deepseek', name: 'DeepSeek' },
+        served: { id: 'deepseek-flash', providerID: 'deepseek' },
+        buildModel: 'deepseek/deepseek-flash',
+      },
+      async (screen) => {
+        screen.write('/crew');
+        await screen.shows('▌ /crew  Who fills each seat');
+        screen.write('\r');
+        await screen.shows('Settings');
+        await openBuildPicker(screen);
+        await screen.shows(/▌ DeepSeek V4\.1 Flash/);
+        await moveCursorTo(screen.text, screen.write, '\x1b[A', /▌ auto/);
+
+        screen.write('\x1b[A\r');
+        // The wait ends on either outcome: the row above opens its form, or `auto` is saved.
+        await vi.waitFor(
+          () =>
+            expect(screen.text()).toMatch(/Model id for OpenCode CLI|BUILD +OpenCode CLI · auto/),
+          { timeout: 10_000 },
+        );
+        expect(screen.text()).toContain('Model id for OpenCode CLI');
       },
       (reason) => context.skip(reason),
     );

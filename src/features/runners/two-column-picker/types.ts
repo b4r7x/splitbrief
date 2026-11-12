@@ -106,9 +106,9 @@ export interface TwoColumnNavState<L, R> {
   isOnCustomItem: boolean;
   currentRightIsCustom: boolean;
   escape: EscapeAction;
-  moveLeft: (direction: 1 | -1) => void;
-  moveRight: (direction: 1 | -1) => void;
-  activateLeft: (index: number) => void;
-  activateRight: (index: number) => void;
-  cycleRight: (index: number) => CycleOutcome;
+  /** Each one queues the input behind the keys, clicks and wheel steps that came before it. */
+  wheelLeft: (direction: 1 | -1) => void;
+  wheelRight: (direction: 1 | -1) => void;
+  clickLeft: (index: number) => void;
+  clickRight: (index: number) => void;
 }
