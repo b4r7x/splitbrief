@@ -56,23 +56,34 @@ export function Header({
 }: HeaderProps) {
   const cols = terminalSizeStore.use((s) => s.cols);
   const lines = useHeaderSeatLines();
-  const railCellsByForm = {
-    B: useRailCells({ form: 'B', buildBlockShown, ...(stages !== undefined && { stages }) }),
+  const railWidths = {
+    B: useRailCells({
+      form: 'B',
+      short: false,
+      buildBlockShown,
+      ...(stages !== undefined && { stages }),
+    }),
+    BShort: useRailCells({
+      form: 'B',
+      short: true,
+      buildBlockShown,
+      ...(stages !== undefined && { stages }),
+    }),
     C: useRailCells({ form: 'C', buildBlockShown, ...(stages !== undefined && { stages }) }),
   };
   const choice = selectRailFormAndLine({
     cols,
     railWidths:
       railForm === undefined
-        ? railCellsByForm
+        ? railWidths
         : railForm === 'B'
-          ? { B: railCellsByForm.B }
-          : { C: railCellsByForm.C },
+          ? { B: railWidths.B, BShort: railWidths.BShort }
+          : { C: railWidths.C },
     modelLineCells: getTerminalCellWidth(seatLineText(lines.model)),
     toolLineCells: getTerminalCellWidth(seatLineText(lines.tool)),
   });
   const form = railForm ?? choice.form;
-  const railCells = railCellsByForm[form];
+  const railCells = form === 'C' ? railWidths.C : choice.short ? railWidths.BShort : railWidths.B;
   // The choice already paid for a whole line; only the elided line spends the seat room again.
   const { seatRoom } = getHeaderLayout({ cols, railCells });
   const seats = lines.todaySeats;
@@ -91,6 +102,7 @@ export function Header({
       rail={
         <Rail
           form={form}
+          short={choice.short}
           buildBlockShown={buildBlockShown}
           {...(stages !== undefined && { stages })}
         />

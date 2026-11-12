@@ -12,6 +12,10 @@ import { saveState } from '../../../../src/core/state/persistence.js';
 import { writeEvidenceLedger } from '../../../../src/core/evidence/ledger-storage.js';
 import { WORKFLOW_STATE_VERSION } from '../../../../src/core/schemas/workflow.js';
 import { getWorkflowSidebarWidth } from '../../../../src/features/workflow/layout/rect.js';
+import {
+  RAIL_SHORT_LABEL,
+  railConnectorString,
+} from '../../../../src/features/workflow/layout/chrome-rows.js';
 import { readConversationScrollSnapshot } from '../../../../src/features/workflow/layout/snapshot.js';
 import {
   getConversationRowsProjection,
@@ -23,7 +27,7 @@ import { displayActivityLabel } from '../../../../src/features/workflow/display/
 import { getSections } from '../../../../src/stores/workflow/actions/sections.js';
 import { conversationScrollStore } from '../../../../src/stores/workflow/conversation-scroll.js';
 import { streamingOutputStore } from '../../../../src/stores/workflow/streaming-output.js';
-import type { CheckpointId } from '../../contracts/identifiers.js';
+import type { CheckpointId, ScenarioId } from '../../contracts/identifiers.js';
 import { checkpointId } from '../../contracts/identifiers.js';
 import { NO_CORRECTION_MESSAGE } from '../../../../src/features/workflow/recovery-prompt.js';
 import {
@@ -70,6 +74,7 @@ import {
   OUTPUT_LIMIT_READ_FILE,
   OUTPUT_LIMIT_TOOL_OUTPUT_MESSAGE,
 } from './output-limit-projection.js';
+import { seatMovedModelLineProjection } from './seat-moved-model-line.js';
 import { createWorkflowFixtureFactory } from './setup.js';
 
 const PLAN_USAGE_LIMIT_FRAGMENT = "You've used 75%";
@@ -649,8 +654,16 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
   };
 }
 
+export const workflowProjectionRegistry: ReadonlyMap<ScenarioId, WorkflowFixtureProjection> =
+  new Map(
+    [...workflowFixtureProjections.values(), seatMovedModelLineProjection].map((projection) => [
+      projection.scenarioId,
+      projection,
+    ]),
+  );
+
 export const workflowFixtureRegistry: FixtureRegistry = new Map(
-  [...workflowFixtureProjections.values()].map((projection) => [
+  [...workflowProjectionRegistry.values()].map((projection) => [
     projection.scenarioId,
     createStopAwareFactory(projection),
   ]),
@@ -1356,10 +1369,17 @@ const checkpointPredicates = [
       if (!includesAll('This halt takes no typed correction', TYPED_WORDS)(context)) return false;
       if (context.viewport.cols > 80) return true;
       const headerRow = context.output.split('\n')[0] ?? '';
-      return (
-        headerRow.includes(`${glyph('statusFailed')} Apply`) &&
-        headerRow.includes('PLAN claude · BUILD claude · REVIEW = PLAN')
-      );
+      const crewLine = headerRow.includes('PLAN claude · BUILD claude · REVIEW = PLAN');
+      if (context.viewport.cols === 80) {
+        const shortRail = [
+          `${glyph('stageDone')} ${RAIL_SHORT_LABEL.plan}`,
+          `${glyph('stageDone')} ${RAIL_SHORT_LABEL.build}`,
+          `${glyph('stageDone')} ${RAIL_SHORT_LABEL.review}`,
+          `${glyph('statusFailed')} ${RAIL_SHORT_LABEL.apply}`,
+        ].join(railConnectorString());
+        return headerRow.includes(shortRail) && crewLine;
+      }
+      return headerRow.includes(`${glyph('statusFailed')} Apply`) && crewLine;
     },
   ],
   [
@@ -1507,9 +1527,9 @@ const checkpointPredicates = [
       const headerRow = context.output.split('\n')[0] ?? '';
       if (context.viewport.cols === 120) {
         return (
-          headerRow.includes('○ Apply') &&
+          headerRow.includes(`○ ${RAIL_SHORT_LABEL.apply}`) &&
           headerRow.includes(
-            'PLAN custom-endpoint · BUILD Gemini 3.8 Flash → Google Antigravity CLI · REVIEW custom-endpoint',
+            'PLAN GPT-5.1 · BUILD Gemini 3.8 Flash → Google Antigravity CLI · REVIEW GPT-5 Codex',
           )
         );
       }
@@ -1517,6 +1537,19 @@ const checkpointPredicates = [
         context.output.includes('PLAN GPT-5.1') &&
         (context.viewport.cols !== 160 ||
           headerRow.includes('BUILD Gemini 3.8 Flash → Google Antigravity CLI'))
+      );
+    },
+  ],
+  [
+    checkpointId('ready-seat-moved-model-line'),
+    (context) => {
+      if (!context.output.includes(context.checkpoint.marker)) return false;
+      const headerRow = context.output.split('\n')[0] ?? '';
+      return (
+        headerRow.includes('○ Apply') &&
+        headerRow.includes(
+          'PLAN GPT-5.1 · BUILD Gemini 3.8 Flash → Google Antigravity CLI · REVIEW GPT-5 Codex',
+        )
       );
     },
   ],
@@ -1856,7 +1889,28 @@ const checkpointPredicates = [
   ],
   [
     checkpointId('task-review-no-progress'),
-    includesAll('Review T904 made no progress on F1', WORKFLOW_FIXTURE_TEXT.reviewFailed),
+    (context) => {
+      const matches = includesAll(
+        'Review T904 made no progress on F1',
+        WORKFLOW_FIXTURE_TEXT.reviewFailed,
+      );
+      if (!matches(context)) return false;
+      if (context.viewport.cols !== 60 || context.viewport.rows !== 18) return true;
+      // The planner's reason is the only fact, so its cut rows take the blank row under the
+      // headline: three reason rows follow it with no gap, and the last one carries the cut mark.
+      const rows = stripAnsiStyles(context.output)
+        .split('\n')
+        .map((row) => row.replace(/[│|]/gu, '').trim());
+      const headline = rows.findIndex((row) => row.includes('no progress on F1'));
+      if (headline < 0) return false;
+      const reason = rows.slice(headline + 1, headline + 4);
+      return (
+        reason.length === 3 &&
+        reason.every((row) => row.length > 0) &&
+        reason[0]?.startsWith('Planner said: The type test') === true &&
+        reason[2]?.includes('…') === true
+      );
+    },
   ],
   [
     checkpointId('recovery-checks-missing-program'),

@@ -14,7 +14,6 @@ import { lifecycleStore, type LifecycleState } from '../../../stores/workflow/li
 import type { RunBriefs } from '../../../core/run-view/briefs.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
-import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import {
@@ -27,8 +26,6 @@ import {
   type RailStageStatus,
 } from '../../../core/rail-stages.js';
 import {
-  chooseFormBVariant,
-  getChromeContentWidth,
   measureFormB,
   railConnectorString,
   railFormBLabel,
@@ -128,14 +125,7 @@ function RailFormBNode({
   );
 }
 
-export function RailFormB({
-  stages,
-  contentWidth,
-}: {
-  stages: RailStageState[];
-  contentWidth: number;
-}) {
-  const { short } = chooseFormBVariant(stages, contentWidth);
+export function RailFormB({ stages, short }: { stages: RailStageState[]; short: boolean }) {
   return (
     <Box height={1} overflow="hidden">
       {stages.map((state, index) => (
@@ -222,6 +212,8 @@ export function measureRailCells(input: {
   status: LifecycleState['status'];
   cancelled: boolean;
   form: RailForm;
+  /** Form B's label variant, as the selector chose it beside the crew line. */
+  short: boolean;
   cols: number;
   tasks: RunBriefs;
   events: readonly EngineEvent[];
@@ -253,29 +245,29 @@ export function measureRailCells(input: {
     });
     return getTerminalCellWidth(railFormCText({ stages, fraction }));
   }
-  const { short } = chooseFormBVariant(stages, getChromeContentWidth(input.cols));
-  return measureFormB(stages, { short });
+  return measureFormB(stages, { short: input.short });
 }
 
 export function Rail({
   form,
+  short,
   stages: givenStages,
   buildBlockShown = false,
 }: {
   form?: RailForm | undefined;
+  /** Form B's label variant, which the selector alone chooses. */
+  short: boolean;
   buildBlockShown?: boolean | undefined;
   /** A run at rest paints the stages its record names, not the ones a live phase implies. */
   stages?: readonly RailStageState[] | undefined;
 }) {
-  const [{ cols }, lifecycle, eventsState, { phase, briefs, halt, afterLastBrief }] = useStores(
-    terminalSizeStore,
+  const [lifecycle, eventsState, { phase, briefs, halt, afterLastBrief }] = useStores(
     lifecycleStore,
     eventsStore,
     runViewStore,
   );
   const cancelled = lifecycle.cancelled;
   const resolved: RailForm = form ?? 'B';
-  const contentWidth = getChromeContentWidth(cols);
   const stages = [
     ...resolveRailStages({
       phase,
@@ -299,5 +291,5 @@ export function Rail({
     return <RailFormC stages={stages} fraction={fraction} />;
   }
 
-  return <RailFormB stages={stages} contentWidth={contentWidth} />;
+  return <RailFormB stages={stages} short={short} />;
 }

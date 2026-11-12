@@ -3454,6 +3454,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-ready-seat-moved-model-line',
+      title: 'Workflow · a ready run whose moved BUILD seat keeps the model line beside the rail',
+      surface: screenSurface('workflow'),
+      viewports: [viewport({ cols: 100, rows: 30 })],
+      checkpoint: {
+        id: 'ready-seat-moved-model-line',
+        title: 'Ready to apply, the whole crew named by its models',
+        kind: 'ready',
+        marker: 'Ready to apply',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-ready-crew-saved',
       title: 'Workflow · a ready run after another crew was saved',
       surface: screenSurface('workflow'),

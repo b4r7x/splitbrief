@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
@@ -23,6 +23,7 @@ type Screen = Readonly<{
   text: () => string;
   write: (keys: string) => void;
   shows: (expected: string | RegExp, timeout?: number) => Promise<unknown>;
+  awaitsEnter: () => Promise<void>;
 }>;
 
 /** Boots the TUI under REVIEW None on a Claude Code planner with one custom model. */
@@ -59,9 +60,29 @@ async function underReviewNone(
       authChannel: 'session',
     });
     const offlinePath = join(dir, 'offline.mjs');
+    const enterAcksPath = join(dir, 'enter-acks.txt');
+    writeFileSync(enterAcksPath, '');
+    const inkHelpers = new URL('../../helpers/ink.js', import.meta.url).href;
     writeFileSync(
       offlinePath,
-      "globalThis.fetch = async () => { throw new Error('Offline REVIEW None E2E'); };\n",
+      [
+        "globalThis.fetch = async () => { throw new Error('Offline REVIEW None E2E'); };",
+        "const { appendFileSync } = await import('node:fs');",
+        `const { flushEffects } = await import(${JSON.stringify(inkHelpers)});`,
+        `const enterAcksPath = ${JSON.stringify(enterAcksPath)};`,
+        'let receivedEnters = 0;',
+        "process.stdin.on('data', (chunk) => {",
+        '  const acknowledged = [];',
+        '  for (const char of String(chunk)) {',
+        "    if (char === '\\r' || char === '\\n') acknowledged.push(++receivedEnters);",
+        '  }',
+        '  if (acknowledged.length === 0) return;',
+        '  void flushEffects().then(() => {',
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: the generated module source must carry a literal template ${id}
+        "    appendFileSync(enterAcksPath, acknowledged.map((id) => `${id}\\n`).join(''));",
+        '  });',
+        '});',
+      ].join('\n'),
     );
 
     const restorePath = activateSafeCliShimPath(binDir);
@@ -98,7 +119,15 @@ async function underReviewNone(
                 .getLine(terminal.buffer.active.viewportY + row)
                 ?.translateToString(true) ?? '',
           ).join('\n');
-        const write = (keys: string) => child.write(keys);
+        const enterAcks = (): number => {
+          const lines = readFileSync(enterAcksPath, 'utf8').split('\n');
+          return lines.filter((line) => line !== '').length;
+        };
+        let enters = 0;
+        const write = (keys: string) => {
+          enters += keys.split('\r').length - 1;
+          child.write(keys);
+        };
         const shows = (expected: string | RegExp, timeout = 10_000) =>
           vi.waitFor(
             () =>
@@ -107,6 +136,11 @@ async function underReviewNone(
                 : expect(text()).toMatch(expected),
             { timeout },
           );
+        const awaitsEnter = async (): Promise<void> => {
+          await vi.waitFor(() => expect(enterAcks()).toBeGreaterThanOrEqual(enters), {
+            timeout: 10_000,
+          });
+        };
         const dataListener = child.onData((data) => terminal.write(data));
         const exitListener = child.onExit((event) => {
           didExit = true;
@@ -115,7 +149,7 @@ async function underReviewNone(
         try {
           await shows('Describe your feature', 30_000);
           await delay(PROMPT_TYPEAHEAD_GRACE_MS);
-          await input.steps({ text, write, shows }, projectDir);
+          await input.steps({ text, write, shows, awaitsEnter }, projectDir);
         } finally {
           try {
             if (!didExit) await terminatePtyProcessGroup(child, exited.promise);
@@ -151,6 +185,41 @@ describe('e2e: a key on what REVIEW None holds names the reason and changes noth
         screen.write('\r');
 
         await screen.shows(reason);
+        expect(loadConfig(projectDir).config.validation.endChecks).toBe(true);
+      },
+    });
+    if (skipped !== undefined) context.skip(skipped);
+  });
+
+  it('shows the reason once at 80x24, before and after Enter on End-of-run checks', async (context) => {
+    const reason = 'Read-only while REVIEW is None: no review runs.';
+    const reasonRows = (screen: Screen): number => {
+      const lines = screen.text().split('\n');
+      return lines.filter((line) => line.includes(reason)).length;
+    };
+    const skipped = await underReviewNone({
+      prefix: 'review-none-locked-row-help',
+      viewport: { cols: 80, rows: 24 },
+      steps: async (screen, projectDir) => {
+        screen.write('/settings');
+        await screen.shows('▌ /settings');
+        screen.write('\r');
+        await screen.shows('Settings');
+        screen.write('end-of-run');
+        await screen.shows(/▌.*End-of-run checks/);
+        await screen.shows(reason);
+        expect(reasonRows(screen)).toBe(1);
+        expect(screen.text()).not.toContain('SPLITBRIEF runs the project gate');
+
+        screen.write('\r');
+        // The child acknowledges an Enter only once it has drained the render and effects that
+        // consume the select commit, so this Backspace lands after the list stops dropping keys.
+        // Its shortened echo still leaves `End-of-run checks` the selected row.
+        await screen.awaitsEnter();
+        screen.write('\x7f');
+        await screen.shows(/end-of-ru[^n]/);
+
+        expect(reasonRows(screen)).toBe(1);
         expect(loadConfig(projectDir).config.validation.endChecks).toBe(true);
       },
     });

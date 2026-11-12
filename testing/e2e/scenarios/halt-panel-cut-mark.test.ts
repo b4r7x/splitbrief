@@ -1,4 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { canonicalizeProjectDir } from '../../../src/cli/setup.js';
+import { readActive } from '../../../src/core/sessions/active-pointer.js';
+import { taskId } from '../../../src/core/schemas/task.js';
+import { loadState, saveState } from '../../../src/core/state/persistence.js';
+import { buildReviewFailedRecoveryIssue } from '../../../src/engine/orchestrator/recovery/builders/task.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { flushEffects, type renderFeature } from '#testing/helpers/ink.js';
@@ -12,6 +17,12 @@ import {
 } from '../helpers/stop-continue-fixture.js';
 
 const QUESTION = `${'greet.ts needs a locale table, but the brief names no locale source. '.repeat(4)}Which file holds the locales?`;
+
+/**
+ * The planner's reason on the task-review no-progress halt the visual fixture renders, long enough
+ * to outrun every summary budget a short panel holds.
+ */
+const PLANNER_REASON = `The type test needs a decision on what alpha exports. ${'word '.repeat(70)}alpha-reason-end`;
 
 /** Writes nothing and reports itself blocked on a long question, on every attempt. */
 function blockedImplementerScript(): string {
@@ -92,6 +103,42 @@ async function openConsultHalt() {
   return opened;
 }
 
+/**
+ * The task-review no-progress halt of `workflow-recovery-task-review-no-progress` on a run the CLI
+ * left halted. Its only fact is the planner's reason, so the blank row under the headline is the
+ * one row the summary can spend on the reason itself.
+ */
+async function openNoProgressHalt() {
+  fixture = createStopContinueFixture(blockedImplementerScript, { consult: askingConsult });
+  const halted = await cli(fixture, ['start', 'smoke']);
+  expect(halted.exitCode, `${halted.stdout}\n${halted.stderr}`).toBe(1);
+
+  const projectDir = await canonicalizeProjectDir({ project: fixture.projectDir });
+  const sessionId = readActive(projectDir);
+  if (sessionId === null) throw new Error('The halted run saved no session');
+  const ref = { projectDir, sessionId };
+  const state = loadState(ref);
+  if (state === null) throw new Error('The halted run saved no state');
+  saveState(ref, {
+    ...state,
+    pendingRecovery: buildReviewFailedRecoveryIssue({
+      id: 'rec_no_progress_replay',
+      blocking: 1,
+      noProgress: ['F1'],
+      fixCycle: 2,
+      cannot: PLANNER_REASON,
+      phase: 'implementing',
+      scope: 'task',
+      afterTaskId: taskId('T002'),
+      createdAt: '2026-09-24T00:00:00.000Z',
+    }),
+  });
+
+  const opened = await openHaltedRun(fixture, { heading: 'Needs you' });
+  ui = opened.screen;
+  return opened;
+}
+
 describe('e2e: a halt panel too short for its text', () => {
   it('shows the whole question, marks the cut lines at 80x24, and keeps the actions and the legend', async () => {
     const opened = await openConsultHalt();
@@ -144,6 +191,48 @@ describe('e2e: a halt panel too short for its text', () => {
     expect(question).toBeGreaterThan(-1);
     expect(question).toBeLessThan(frame.indexOf('Task T001'));
     expect(frame).toContain('Files src/greet.ts');
+  });
+
+  it('puts the cut question on the row under the headline at 60x18', async () => {
+    const opened = await openConsultHalt();
+
+    terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
+    await flushEffects();
+    const rows = stripAnsiStyles(opened.screen.lastFrame()).split('\n');
+
+    const headline = rows.findLastIndex((row) =>
+      row.includes('Needs you · T001 needs your answer'),
+    );
+    expect(headline, rows.join('\n')).toBeGreaterThan(-1);
+    const next = panelRow(rows[headline + 1]);
+    expect(next, rows.join('\n')).not.toBe('');
+    expect(next).toContain('Question: greet.ts needs');
+    expect(next.endsWith('…'), rows.join('\n')).toBe(true);
+    expect(panelRow(rows[headline + 2]), rows.join('\n')).toMatch(/^… \d+ more lines?$/);
+  });
+
+  it('gives the blank row to the planner reason of a stuck task review at 60x18', async () => {
+    const opened = await openNoProgressHalt();
+    expect(opened.state.pendingRecovery).toMatchObject({
+      reason: 'review-failed',
+      details: [`Planner said: ${PLANNER_REASON}`],
+    });
+
+    terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
+    await flushEffects();
+    const rows = stripAnsiStyles(opened.screen.lastFrame()).split('\n');
+
+    const headline = rows.findLastIndex((row) =>
+      row.includes('Needs you · Review T002 made no progress on F1'),
+    );
+    expect(headline, rows.join('\n')).toBeGreaterThan(-1);
+    const reason = rows.slice(headline + 1, headline + 4).map(panelRow);
+    expect(reason, rows.join('\n')).toHaveLength(3);
+    for (const reasonRow of reason) expect(reasonRow, rows.join('\n')).not.toBe('');
+    expect(reason[0]).toContain('Planner said: The type test');
+    expect(reason[2], rows.join('\n')).toMatch(/…$/);
+    expect(rows.join('\n')).toContain('End run');
+    expect(rows.join('\n')).toContain('↑↓ select · ⏎ confirm');
   });
 
   it.each([
@@ -199,6 +288,11 @@ describe('e2e: a halt panel too short for its text', () => {
     }
   });
 });
+
+/** The words of a panel row, inside its border and its padding. */
+function panelRow(row: string | undefined): string {
+  return ((row ?? '').split(/[│|]/u)[1] ?? '').trim();
+}
 
 /** Try again, Decide for me, Skip task and End run: each one off screen sits behind a mark on its side. */
 function expectHiddenActionsMarked(frame: string, label: string): void {

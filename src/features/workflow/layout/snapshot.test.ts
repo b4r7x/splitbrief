@@ -12,7 +12,13 @@ import {
 import { getRailStageZones, hitTranscriptRow } from './hit-test.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { makeReviewFixInsertedEvents, makeTaskStart } from '#testing/helpers/events/task.js';
-import { getContentTopRow, getProgressRows, WORKFLOW_GUTTER_X } from './chrome-rows.js';
+import {
+  getContentTopRow,
+  getProgressRows,
+  RAIL_MARKER_SLOT_WIDTH,
+  RAIL_SHORT_LABEL,
+  WORKFLOW_GUTTER_X,
+} from './chrome-rows.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
@@ -753,6 +759,7 @@ describe('readRailSnapshot', () => {
       expect(readRailSnapshot().zones).toEqual(
         getRailStageZones({
           form: 'C',
+          short: false,
           phase: 'implementing',
           cols: 20,
           fraction: buildBlockShown ? '' : '4/7',
@@ -811,6 +818,7 @@ describe('readRailSnapshot', () => {
       expect(snap.zones).toEqual(
         getRailStageZones({
           form: 'C',
+          short: false,
           phase: 'implementing',
           cols: 60,
           fraction: '',
@@ -848,7 +856,7 @@ describe('readRailSnapshot', () => {
     }
   });
 
-  it('puts the Apply zones on the rail the recorded crew fits, not the crew saved today', () => {
+  it('puts the rail click zones on the short labels when the header paints them at 80 columns', () => {
     configStore.__testReset({
       projectDir: '/tmp/p',
       config: makeConfig({
@@ -893,12 +901,17 @@ describe('readRailSnapshot', () => {
       });
 
       const snap = readRailSnapshot();
-      const painted = getTerminalCellWidth(`${glyph('statusFailed')} Apply`);
+      const apply = snap.zones.at(-1);
 
-      expect(snap.zones).toHaveLength(1);
-      expect(snap.zones[0]?.stage).toBe('apply');
-      expect(snap.zones[0]?.index).toBe(3);
-      expect(snap.zones[0]?.right).toBe(WORKFLOW_GUTTER_X + painted - 1);
+      // The recorded crew fits only beside the short labels, so every zone spans the marker slot
+      // plus the three-letter label the header paints — never the long one the crew cannot seat.
+      expect(snap.zones.map((zone) => zone.stage)).toEqual(['plan', 'build', 'review', 'apply']);
+      expect(apply).toMatchObject({ index: 3 });
+      for (const zone of snap.zones) {
+        expect(zone.right - zone.left + 1).toBe(
+          RAIL_MARKER_SLOT_WIDTH + RAIL_SHORT_LABEL[zone.stage].length,
+        );
+      }
     } finally {
       setRunHalt(null);
       routerStore.reset();
@@ -907,7 +920,7 @@ describe('readRailSnapshot', () => {
   });
 
   it.each([
-    [80, ['apply']],
+    [60, ['apply']],
     [88, ['plan', 'build', 'review', 'apply']],
   ] as const)('zones the stages a ready run at rest paints at %i columns', (cols, stages) => {
     configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });

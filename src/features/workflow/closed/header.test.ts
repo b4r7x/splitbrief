@@ -34,6 +34,7 @@ function header(
   return recordedCrewHeader({
     record: makeRunRecord({ summary: crew, ...record }),
     form,
+    short: false,
     railCells,
     cols,
   });
@@ -163,6 +164,7 @@ describe('recordedCrewHeader of a run closed on its recorded crew', () => {
     const line = recordedCrewHeader({
       record: makeRunRecord({ ref, summary }),
       form: 'B',
+      short: false,
       railCells: RAIL_CELLS,
       cols: 200,
     })?.seatLine;

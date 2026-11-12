@@ -350,6 +350,9 @@ function isZeroWidthCodePoint(codePoint: number): boolean {
   return (
     codePoint === 0x200d ||
     (codePoint >= 0x0300 && codePoint <= 0x036f) ||
+    codePoint === 0x0e31 ||
+    (codePoint >= 0x0e34 && codePoint <= 0x0e3a) ||
+    (codePoint >= 0x0e47 && codePoint <= 0x0e4e) ||
     (codePoint >= 0x1ab0 && codePoint <= 0x1aff) ||
     (codePoint >= 0x1dc0 && codePoint <= 0x1dff) ||
     (codePoint >= 0x20d0 && codePoint <= 0x20ff) ||

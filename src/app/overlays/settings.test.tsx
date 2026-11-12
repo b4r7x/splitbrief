@@ -521,6 +521,10 @@ describe('SettingsOverlay', () => {
   describe('a row that REVIEW None makes read-only', () => {
     const REASON = 'Read-only while REVIEW is None: no review runs.';
 
+    function reasonCount(ui: { lastFrame: () => string }): number {
+      return stripAnsiStyles(ui.lastFrame()).split(REASON).length - 1;
+    }
+
     it('advertises no action key on the row', async () => {
       seed({ reviewer: 'none' });
       overlayStore.open('settings', 'validation.endChecks');
@@ -549,7 +553,63 @@ describe('SettingsOverlay', () => {
       await vi.waitFor(() => {
         expect(stripAnsiStyles(ui.lastFrame())).toContain(REASON);
       });
+      expect(reasonCount(ui)).toBe(1);
       expect(feedbackStore.get()).toEqual({ message: REASON, isError: true });
+      expect(configStore.get().config?.validation.endChecks).toBe(true);
+
+      ui.unmount();
+    });
+
+    it.each([
+      [80, 24],
+      [120, 40],
+    ])('shows the lock reason once after ⏎ on a read-only row at %ix%i', async (cols, rows) => {
+      seed({ reviewer: 'none', validation: { endChecks: true } });
+      overlayStore.open('settings', 'validation.endChecks');
+      const ui = renderAt(cols, rows);
+      await flushEffects();
+
+      expect(reasonCount(ui)).toBe(1);
+      expect(stripAnsiStyles(ui.lastFrame())).not.toContain('SPLITBRIEF runs the project gate');
+
+      ui.stdin.write(ENTER);
+      await tick(20);
+
+      expect(reasonCount(ui)).toBe(1);
+      expect(feedbackStore.get()).toEqual({ message: null, isError: false });
+      expect(configStore.get().config?.validation.endChecks).toBe(true);
+
+      ui.unmount();
+    });
+
+    it('refuses Space on a read-only row while the help shows the reason once', async () => {
+      seed({ reviewer: 'none', validation: { endChecks: true } });
+      overlayStore.open('settings', 'validation.endChecks');
+      const ui = renderAt(120, 40);
+      await flushEffects();
+
+      ui.stdin.write(' ');
+      await tick(20);
+
+      expect(reasonCount(ui)).toBe(1);
+      expect(feedbackStore.get()).toEqual({ message: null, isError: false });
+      expect(configStore.get().config?.validation.endChecks).toBe(true);
+
+      ui.unmount();
+    });
+
+    it('refuses a row click on a read-only row while the help shows the reason once', async () => {
+      _resetMouseZones();
+      seed({ reviewer: 'none', validation: { endChecks: true } });
+      overlayStore.open('settings', 'validation.endChecks');
+      const ui = renderAt(120, 40);
+      await flushEffects();
+
+      collectClickableZones({ cols: 120, rows: 40 }).get('list-row:validation.endChecks')?.();
+      await tick(20);
+
+      expect(reasonCount(ui)).toBe(1);
+      expect(feedbackStore.get()).toEqual({ message: null, isError: false });
       expect(configStore.get().config?.validation.endChecks).toBe(true);
 
       ui.unmount();

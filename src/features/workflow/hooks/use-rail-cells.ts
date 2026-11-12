@@ -29,6 +29,7 @@ export function readRailStages(): readonly RailStageState[] {
 /** The cells the rail paints, read from the stores alone for the callers that cannot run hooks. */
 export function readRailCells(input: {
   form?: RailForm | undefined;
+  short?: boolean | undefined;
   buildBlockShown: boolean;
   stages?: readonly RailStageState[] | undefined;
 }): number {
@@ -40,6 +41,7 @@ export function readRailCells(input: {
     status: lifecycle.status,
     cancelled: lifecycle.cancelled,
     form: input.form ?? 'B',
+    short: input.short ?? false,
     cols: terminalSizeStore.get().cols,
     tasks: briefs,
     events: eventsState.events,
@@ -53,6 +55,7 @@ export function readRailCells(input: {
 /** The cells of the rail the header paints, for every seat line fitted beside it. */
 export function useRailCells(input: {
   form?: RailForm | undefined;
+  short?: boolean | undefined;
   buildBlockShown: boolean;
   stages?: readonly RailStageState[] | undefined;
 }): number {
@@ -67,6 +70,7 @@ export function useRailCells(input: {
     status: lifecycle.status,
     cancelled: lifecycle.cancelled,
     form: input.form ?? 'B',
+    short: input.short ?? false,
     cols,
     tasks: briefs,
     events: eventsState.events,

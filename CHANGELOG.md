@@ -665,6 +665,12 @@
 - A command line that holds an image no longer runs without the image. SPLITBRIEF keeps the line and the image and says how to send them.
 - A command that takes no argument, such as `/resume` or `/end`, no longer runs when words follow it. SPLITBRIEF shows its usage and keeps the line.
 - `/resume` over a waiting plan card, or while the checks of a brief run, now says `Nothing to resume: the run has not stopped.`
+- A Thai vowel or tone mark above or below a letter no longer counts as a cell, so a row with Thai text is not cut or wrapped early.
+- Above 80 columns the header keeps the model names beside the one-stage rail when they fit there.
+- The header shows every stage with short labels (`Pln`, `Bld`, `Rvw`, `Apl`) when the crew fits beside them. Before, an 80-column terminal showed one stage and a gap.
+- On a short terminal a recovery panel gives the blank row under its headline to a question or reason that it cuts.
+- The help of a read-only Settings row shows only why the row is read-only. Before, its last word was cut at 80x24.
+- ⏎ on a read-only Settings row no longer shows the reason twice.
 
 ## [0.1.0] - 2026-08-07
 

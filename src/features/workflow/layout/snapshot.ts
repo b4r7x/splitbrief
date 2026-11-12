@@ -134,17 +134,26 @@ export function readRailSnapshot(): RailSnapshot {
   const buildBlockShown = readProgressRows(readWorkflowPromptRows()) > 0;
   const stages = readRailStages();
   const lines = readHeaderSeatLines();
-  const { form } = selectRailFormAndLine({
+  const choice = selectRailFormAndLine({
     cols,
     railWidths: {
-      B: readRailCells({ form: 'B', buildBlockShown, stages }),
+      B: readRailCells({ form: 'B', short: false, buildBlockShown, stages }),
+      BShort: readRailCells({ form: 'B', short: true, buildBlockShown, stages }),
       C: readRailCells({ form: 'C', buildBlockShown, stages }),
     },
     modelLineCells: getTerminalCellWidth(seatLineText(lines.model)),
     toolLineCells: getTerminalCellWidth(seatLineText(lines.tool)),
   });
   return {
-    zones: getRailStageZones({ form, phase, cols, fraction, cancelled, stages }),
+    zones: getRailStageZones({
+      form: choice.form,
+      short: choice.short,
+      phase,
+      cols,
+      fraction,
+      cancelled,
+      stages,
+    }),
     activeIndex: getRailActiveIndex(phase),
   };
 }

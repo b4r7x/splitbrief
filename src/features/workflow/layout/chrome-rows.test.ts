@@ -14,7 +14,6 @@ import {
   RAIL_MARKER_SLOT_WIDTH,
   RAIL_SHORT_LABEL,
   FIXED_CHROME_ROWS,
-  chooseFormBVariant,
   getChromeContentWidth,
   getChromeHeight,
   getContentTopRow,
@@ -175,43 +174,114 @@ describe('rail Form-B width primitives', () => {
     expect(measureFormB(stages, { short: false }, 'ascii')).toBe(6 + 15 + 8);
     expect(measureFormB(stages, { short: true }, 'ascii')).toBe(6 + 9 + 8);
   });
-
-  it('keeps full labels while they fit and collapses to short labels under pressure', () => {
-    const stages = getRailStages('implementing');
-    const full = measureFormB(stages, { short: false }, 'unicode');
-    expect(chooseFormBVariant(stages, full, 'unicode')).toEqual({ short: false });
-    expect(chooseFormBVariant(stages, full - 1, 'unicode')).toEqual({ short: true });
-  });
 });
 
 describe('selectRailFormAndLine', () => {
   it('drops to Form C one cell before the thinnest three-stage line would overflow', () => {
     forceUnicodeGlyphs();
     const stages = getRailStages('implementing');
+    const full = measureFormB(stages, { short: false }, 'unicode');
     const min = measureFormB(stages, { short: true }, 'unicode');
     const noLine = { modelLineCells: 0, toolLineCells: 0 };
+    const railWidths = { B: full, BShort: min, C: 10 };
     // The rail renders inside the gutter, so Form B holds while the width inside it seats the line
     // and drops one cell below it. `min` cells inside the gutter need `min` + 2 terminal columns.
-    expect(
-      selectRailFormAndLine({ cols: min + 2, railWidths: { B: min, C: 10 }, ...noLine }),
-    ).toEqual({ form: 'B', line: 'elided' });
-    expect(
-      selectRailFormAndLine({ cols: min + 1, railWidths: { B: min, C: 10 }, ...noLine }),
-    ).toEqual({ form: 'C', line: 'elided' });
+    expect(selectRailFormAndLine({ cols: min + 2, railWidths, ...noLine })).toEqual({
+      form: 'B',
+      short: true,
+      line: 'elided',
+    });
+    expect(selectRailFormAndLine({ cols: min + 1, railWidths, ...noLine })).toEqual({
+      form: 'C',
+      short: false,
+      line: 'elided',
+    });
   });
 
   it('names the tools first at 80 columns and the models first above it', () => {
     const input = { railWidths: { B: 27, C: 7 }, modelLineCells: 45, toolLineCells: 30 };
 
-    expect(selectRailFormAndLine({ cols: 80, ...input })).toEqual({ form: 'B', line: 'tool' });
-    expect(selectRailFormAndLine({ cols: 81, ...input })).toEqual({ form: 'B', line: 'model' });
+    expect(selectRailFormAndLine({ cols: 80, ...input })).toEqual({
+      form: 'B',
+      short: false,
+      line: 'tool',
+    });
+    expect(selectRailFormAndLine({ cols: 81, ...input })).toEqual({
+      form: 'B',
+      short: false,
+      line: 'model',
+    });
+  });
+
+  it('seats the model line beside the one-stage rail above 80 columns', () => {
+    expect(
+      selectRailFormAndLine({
+        cols: 120,
+        railWidths: { B: 37, C: 7 },
+        modelLineCells: 95,
+        toolLineCells: 100,
+      }),
+    ).toMatchObject({ form: 'C', line: 'model' });
+  });
+
+  it('names the tools beside the one-stage rail at 80 columns when the model line is shorter', () => {
+    expect(
+      selectRailFormAndLine({
+        cols: 80,
+        railWidths: { B: 27, C: 7 },
+        modelLineCells: 45,
+        toolLineCells: 60,
+      }),
+    ).toMatchObject({ form: 'C', line: 'tool' });
+  });
+
+  it('seats the tool line beside the short-label rail at 80 columns', () => {
+    expect(
+      selectRailFormAndLine({
+        cols: 80,
+        railWidths: { B: 37, BShort: 29, C: 7 },
+        modelLineCells: 60,
+        toolLineCells: 42,
+      }),
+    ).toEqual({ form: 'B', short: true, line: 'tool' });
+  });
+
+  it('seats the model line beside the short-label rail above 80 columns', () => {
+    expect(
+      selectRailFormAndLine({
+        cols: 120,
+        railWidths: { B: 37, BShort: 29, C: 7 },
+        modelLineCells: 83,
+        toolLineCells: 95,
+      }),
+    ).toEqual({ form: 'B', short: true, line: 'model' });
+    // The same widths keep the full labels while the model line fits beside them.
+    expect(
+      selectRailFormAndLine({
+        cols: 120,
+        railWidths: { B: 37, BShort: 29, C: 7 },
+        modelLineCells: 60,
+        toolLineCells: 42,
+      }),
+    ).toEqual({ form: 'B', short: false, line: 'model' });
   });
 
   it('falls to the one-stage rail when only it seats the tool line', () => {
-    const input = { railWidths: { B: 27, C: 7 }, modelLineCells: 60, toolLineCells: 42 };
+    const input = {
+      railWidths: { B: 37, BShort: 29, C: 7 },
+      modelLineCells: 60,
+      toolLineCells: 42,
+    };
 
-    expect(selectRailFormAndLine({ cols: 60, ...input })).toEqual({ form: 'C', line: 'tool' });
-    expect(selectRailFormAndLine({ cols: 22, ...input })).toEqual({ form: 'C', line: 'elided' });
+    expect(selectRailFormAndLine({ cols: 60, ...input })).toMatchObject({
+      form: 'C',
+      line: 'tool',
+    });
+    expect(selectRailFormAndLine({ cols: 22, ...input })).toEqual({
+      form: 'C',
+      short: false,
+      line: 'elided',
+    });
   });
 
   it('falls back to Form B and the elided line when no form seats a whole line', () => {
@@ -222,7 +292,7 @@ describe('selectRailFormAndLine', () => {
         modelLineCells: 120,
         toolLineCells: 115,
       }),
-    ).toEqual({ form: 'B', line: 'elided' });
+    ).toEqual({ form: 'B', short: false, line: 'elided' });
   });
 
   it('offers only the form the caller can paint', () => {
@@ -233,7 +303,7 @@ describe('selectRailFormAndLine', () => {
         modelLineCells: 60,
         toolLineCells: 10,
       }),
-    ).toEqual({ form: 'C', line: 'tool' });
+    ).toMatchObject({ form: 'C', line: 'tool' });
   });
 });
 

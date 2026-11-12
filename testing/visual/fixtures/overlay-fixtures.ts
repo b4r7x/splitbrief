@@ -83,6 +83,7 @@ import { configError } from '../../../src/core/config/errors.js';
 import { tokensStore } from '../../../src/stores/workflow/tokens.js';
 import { routerStore, type RouteData } from '../../../src/stores/navigation/router.js';
 import { prepareWorkflowExecution } from '../../helpers/workflow-screen.js';
+import { flushEffects } from '../../helpers/ink.js';
 import { makeRunRecord } from '../../helpers/factories/run-record.js';
 import { setRunHalt } from '../../helpers/stores.js';
 import { makePlanProposal } from '../../helpers/factories/plan.js';
@@ -1221,7 +1222,10 @@ const createSettingsReviewNoneFixture: FixtureFactory = () =>
   });
 const createSettingsReviewNoneLockedEnterFixture: FixtureFactory = () => ({
   ...createSettingsReviewNoneFixture(),
-  afterMount: (write) => write.press('\r'),
+  afterMount: async (write) => {
+    write('\r');
+    await flushEffects();
+  },
 });
 const createSettingsFallbackReviewNoneFixture: FixtureFactory = () =>
   createOverlayFixture({

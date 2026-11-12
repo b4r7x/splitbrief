@@ -65,7 +65,13 @@ describe('rail stage hit zones', () => {
         fraction === '' ? [] : [{ text: `  ${fraction} passed`, tone: 'textDim' }],
       );
       expect(railFormCFractionText(fraction)).toBe(spans.map((span) => span.text).join(''));
-      const zones = getRailStageZones({ form: 'C', phase: 'implementing', cols: 44, fraction });
+      const zones = getRailStageZones({
+        form: 'C',
+        short: false,
+        phase: 'implementing',
+        cols: 44,
+        fraction,
+      });
       const zone = zoneByIndex(zones, 1);
       expect(zone.right).toBe(
         RAIL_CONTENT_LEFT_COL + `● Build${railFormCFractionText(fraction)}`.length - 1,
@@ -82,6 +88,7 @@ describe('rail stage hit zones', () => {
   it('lays Form B stages left-to-right on the first rail row from the content edge', () => {
     const zones = getRailStageZones({
       form: 'B',
+      short: false,
       phase: 'implementing',
       cols: 80,
       fraction: buildRailFraction('build', 3, 7),
@@ -100,6 +107,7 @@ describe('rail stage hit zones', () => {
   it('round-trips a click in each Form B zone back to its stage index (calibration)', () => {
     const zones = getRailStageZones({
       form: 'B',
+      short: false,
       phase: 'implementing',
       cols: 80,
       fraction: buildRailFraction('build', 3, 7),
@@ -116,6 +124,7 @@ describe('rail stage hit zones', () => {
   it('Form C registers only the active stage on the first rail row', () => {
     const zones = getRailStageZones({
       form: 'C',
+      short: false,
       phase: 'implementing',
       cols: 44,
       fraction: buildRailFraction('build', 3, 7),
@@ -131,6 +140,7 @@ describe('rail stage hit zones', () => {
     const maxCol = RAIL_CONTENT_LEFT_COL + getChromeContentWidth(cols) - 1;
     const zones = getRailStageZones({
       form: 'C',
+      short: false,
       phase: 'researching',
       cols,
       fraction: '',
@@ -149,6 +159,7 @@ describe('rail stage hit zones', () => {
     const maxCol = RAIL_CONTENT_LEFT_COL + getChromeContentWidth(cols) - 1;
     const zones = getRailStageZones({
       form: 'C',
+      short: false,
       phase: 'complete',
       cols,
       fraction: '',
@@ -167,6 +178,7 @@ describe('rail stage hit zones', () => {
     const maxCol = RAIL_CONTENT_LEFT_COL + getChromeContentWidth(cols) - 1;
     const zones = getRailStageZones({
       form: 'C',
+      short: false,
       phase: 'implementing',
       cols,
       fraction: '',
@@ -185,6 +197,7 @@ describe('rail stage hit zones', () => {
     const cols = 20;
     const zones = getRailStageZones({
       form: 'B',
+      short: false,
       phase: 'implementing',
       cols,
       fraction: buildRailFraction('build', 3, 7),
@@ -200,12 +213,14 @@ describe('rail stage hit zones', () => {
     // for the fraction), so the fraction can never advance the trailing zones.
     const withFraction = getRailStageZones({
       form: 'B',
+      short: false,
       phase: 'implementing',
       cols: 80,
       fraction: buildRailFraction('build', 3, 7),
     });
     const without = getRailStageZones({
       form: 'B',
+      short: false,
       phase: 'implementing',
       cols: 80,
       fraction: '',

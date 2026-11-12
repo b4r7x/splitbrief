@@ -80,7 +80,7 @@ function lineContaining(frame: string, needle: string): string {
 function renderRail(form: 'B' | 'C', buildBlockShown = false) {
   return renderFeature(
     <Box paddingLeft={WORKFLOW_GUTTER_X}>
-      <Rail form={form} buildBlockShown={buildBlockShown} />
+      <Rail form={form} short={false} buildBlockShown={buildBlockShown} />
     </Box>,
   );
 }
@@ -168,7 +168,7 @@ describe('Rail — Form B (horizontal pipeline)', () => {
       await tick();
       const frame = ui.lastFrame() ?? '';
 
-      const zones = getRailStageZones({ form: 'B', phase, cols, fraction: '' });
+      const zones = getRailStageZones({ form: 'B', short: false, phase, cols, fraction: '' });
       expect(zones).toHaveLength(3);
       for (const zone of zones) {
         // The label is painted one marker slot to the right of the zone's left edge (the marker).
@@ -271,9 +271,9 @@ describe('Rail colors', () => {
         const ui = renderFeature(
           <ThemeProvider theme={theme}>
             {form === 'B' ? (
-              <RailFormB stages={[{ stage, status }]} contentWidth={200} />
+              <RailFormB stages={[{ stage, status }]} short={false} />
             ) : (
-              <Rail form={form} stages={[{ stage, status }]} />
+              <Rail form={form} short={false} stages={[{ stage, status }]} />
             )}
           </ThemeProvider>,
         );
@@ -305,7 +305,7 @@ describe('Rail colors', () => {
     lifecycleStore.__testReset({ status: 'paused' });
     const ui = renderFeature(
       <ThemeProvider theme={theme}>
-        <Rail form={form} />
+        <Rail form={form} short={false} />
       </ThemeProvider>,
     );
     const frame = ui.lastFrame();
@@ -329,7 +329,7 @@ describe('Rail colors', () => {
       lifecycleStore.__testReset({ status: 'running' });
       const active = renderFeature(
         <ThemeProvider theme={theme}>
-          <Rail form="C" />
+          <Rail form="C" short={false} />
         </ThemeProvider>,
       );
       const frame = active.lastFrame();
@@ -340,7 +340,7 @@ describe('Rail colors', () => {
       active.unmount();
       const halted = renderFeature(
         <ThemeProvider theme={theme}>
-          <Rail form="C" stages={[{ stage: 'review', status: 'cancelled' }]} />
+          <Rail form="C" short={false} stages={[{ stage: 'review', status: 'cancelled' }]} />
         </ThemeProvider>,
       );
       expect(halted.lastFrame()).toContain(
@@ -388,6 +388,7 @@ describe('Rail — a passed review', () => {
         status: 'complete',
         cancelled: false,
         form,
+        short: false,
         cols: 100,
         tasks: runViewStore.get().briefs,
         events: eventsStore.get().events,
@@ -465,6 +466,7 @@ describe('Rail — a run with REVIEW None', () => {
       status: lifecycleStore.get().status,
       cancelled: false,
       form,
+      short: false,
       cols: 100,
       tasks: runViewStore.get().briefs,
       events: eventsStore.get().events,
@@ -653,6 +655,7 @@ describe('Rail — completion with a halt open', () => {
         status: 'complete',
         cancelled: false,
         form: 'B',
+        short: false,
         cols: 100,
         tasks: runViewStore.get().briefs,
         events: eventsStore.get().events,
@@ -693,6 +696,7 @@ describe('Rail — a pending recovery on a cancelled run', () => {
         status: 'cancelled',
         cancelled: true,
         form,
+        short: false,
         cols: 44,
         tasks: runViewStore.get().briefs,
         events: eventsStore.get().events,
@@ -738,6 +742,7 @@ describe('Rail — a live run resumed into its Apply step', () => {
         status: lifecycleStore.get().status,
         cancelled: false,
         form: 'B',
+        short: false,
         cols: 100,
         tasks: runViewStore.get().briefs,
         events: eventsStore.get().events,
@@ -789,6 +794,7 @@ describe('Rail — Form C (narrow floor)', () => {
           status: 'running',
           cancelled: false,
           form: 'C',
+          short: false,
           cols: 22,
           tasks: runViewStore.get().briefs,
           events: eventsStore.get().events,
@@ -854,6 +860,7 @@ describe('Rail — Form C (narrow floor)', () => {
 
     const zones = getRailStageZones({
       form: 'C',
+      short: false,
       phase: 'implementing',
       cols,
       fraction: buildRailFraction('build', 0, 7),
@@ -888,6 +895,7 @@ describe('Rail — Form C (narrow floor)', () => {
 
     const zones = getRailStageZones({
       form: 'C',
+      short: false,
       phase: 'implementing',
       cols,
       fraction: '',

@@ -49,8 +49,10 @@ import {
 import { overlayFixtureRegistry } from '../fixtures/overlay-fixtures.js';
 import { screenFixtureRegistry, VISUAL_FIXTURE_PROJECT_DIR } from '../fixtures/screen-fixtures.js';
 import { createWorkflowFixtureAppDeps } from '../fixtures/workflow/setup.js';
-import { workflowFixtureProjections } from '../fixtures/workflow/projections.js';
-import { workflowFixtureRegistry } from '../fixtures/workflow/registry.js';
+import {
+  workflowFixtureRegistry,
+  workflowProjectionRegistry,
+} from '../fixtures/workflow/registry.js';
 
 /** The one directory a previewed App may read or write; every fixture port checks against it. */
 export const FIXTURE_SESSION_ROOT = resolve(VISUAL_FIXTURE_PROJECT_DIR);
@@ -340,7 +342,7 @@ export async function createFixtureSession(input: FixtureSessionInput): Promise<
     checkpoint,
     props: {
       workflowDeps: createWorkflowFixtureAppDeps(
-        workflowFixtureProjections.get(scenario.id),
+        workflowProjectionRegistry.get(scenario.id),
         previewSessionSelect,
       ),
       interactionDeps: {

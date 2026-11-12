@@ -31,6 +31,7 @@ import {
 import {
   workflowCheckpointPredicates,
   workflowFixtureRegistry,
+  workflowProjectionRegistry,
   workflowTranscriptText,
 } from './fixtures/workflow/registry.js';
 import { mountGalleryScenario } from './gallery/mount.js';
@@ -218,6 +219,7 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-ready-to-apply', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-ready-crew-saved', ['120x40', '80x24', '60x18', '160x45', '200x50']],
   ['workflow-ready-seat-moved-auto', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-ready-seat-moved-model-line', ['100x30']],
   ['workflow-at-rest-crashed-build', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-at-rest-apply-conflict', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-at-rest-applying', ['120x40', '80x24', '60x18', '160x45']],
@@ -867,13 +869,44 @@ describe('visual catalog', () => {
     expect(
       selectRailFormAndLine({
         cols: 22,
-        railWidths: { B: 21, C: 10 },
+        railWidths: { B: 27, BShort: 21, C: 10 },
         modelLineCells: 60,
         toolLineCells: 42,
       }).form,
     ).toBe('C');
     const statuses = findVisualScenario('workflow-task-statuses');
     expect(statuses?.viewports.map(formatViewport)).toEqual(['160x45', '80x24']);
+  });
+
+  it('covers the moved BUILD seat keeping the model line beside the one-stage rail', () => {
+    const scenario = findVisualScenario('workflow-ready-seat-moved-model-line');
+    const moved = findVisualScenario('workflow-ready-seat-moved-auto');
+
+    expect(scenario?.viewports.map(formatViewport)).toEqual(['100x30']);
+    expect(scenario?.checkpoints[0]).toMatchObject({
+      id: 'ready-seat-moved-model-line',
+      kind: 'ready',
+      marker: 'Ready to apply',
+    });
+    expect(scenario?.elements.map((element) => element.id)).toEqual(
+      moved?.elements.map((element) => element.id),
+    );
+    expect(workflowFixtureRegistry.has(scenarioId('workflow-ready-seat-moved-model-line'))).toBe(
+      true,
+    );
+    expect(workflowCheckpointPredicates.has(checkpointId('ready-seat-moved-model-line'))).toBe(
+      true,
+    );
+    const projection = workflowProjectionRegistry.get(
+      scenarioId('workflow-ready-seat-moved-model-line'),
+    );
+    const movedProjection = workflowProjectionRegistry.get(
+      scenarioId('workflow-ready-seat-moved-auto'),
+    );
+    expect(projection).toEqual({
+      ...movedProjection,
+      scenarioId: scenarioId('workflow-ready-seat-moved-model-line'),
+    });
   });
 
   it('covers the running inserted fix pause copy and the sidebar above 120 columns', () => {

@@ -267,7 +267,11 @@ Runtime commands live in `src/core/runtime/commands/`. They use slash names, and
 
 ### Seat identity
 
-One formatter (`src/core/crew/identity.ts`) spells a seat: `<tool> · <model>` plus one ` · <word>` per axis the seat's effort channel carries, in effort → thinking → fast order, sanitized before measurement. It feeds home, Settings, Setup, the picker mirror and the workflow header and sidebar. The short (collapsed) form carries no axis. When the model line overruns its width, the line names each seat by its tool word instead (`formatSeatToolWord`). When the tool line also overruns, a seat leaves the line entirely rather than show half a model name (`elideCollapsedSeats`):
+One formatter (`src/core/crew/identity.ts`) spells a seat: `<tool> · <model>` plus one ` · <word>` per axis the seat's effort channel carries, in effort → thinking → fast order, sanitized before measurement. It feeds home, Settings, Setup, the picker mirror and the workflow header and sidebar. The short (collapsed) form carries no axis.
+
+The header picks the rail form, its stage labels and the crew line together, in one order (`selectRailFormAndLine`, `layout/chrome-rows.ts`). At 80 columns or fewer it tries the three-stage rail with its full stage labels beside the tool words, then the same rail with the short labels (`Pln`, `Bld`, `Rvw`, `Apl`), then the one-stage rail beside the tool words. Above 80 columns it tries the three-stage rail beside the model names and then beside the tool words, each with its full labels before its short ones, then the one-stage rail beside the model names and then beside the tool words. A candidate counts only when its whole line fits the room its rail leaves, after the two-cell gap the header keeps before the pinned line. Only when no candidate seats a whole line does the header elide seats beside the form the width allows, and then the long stage labels give way to the short ones once they exceed the content width.
+
+When the model line overruns its width, the line names each seat by its tool word instead (`formatSeatToolWord`). When the tool line also overruns, a seat leaves the line entirely rather than show half a model name (`elideCollapsedSeats`):
 
 - The line hides the fewest seats it can, the seat furthest along the line first.
 - A seat with a note stays only while the line fits with every note. Else the line drops every note, and its seats follow the plain rule.

@@ -178,7 +178,13 @@ describe('useWorkflowScreen continuing a run stopped at Apply', () => {
     useEffect(() => {
       capture.current = model;
     });
-    return <Rail form="B" {...(model.railStages !== undefined && { stages: model.railStages })} />;
+    return (
+      <Rail
+        form="B"
+        short={false}
+        {...(model.railStages !== undefined && { stages: model.railStages })}
+      />
+    );
   }
 
   beforeEach(() => {

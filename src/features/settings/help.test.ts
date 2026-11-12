@@ -50,6 +50,12 @@ describe('settingsHelpLines', () => {
         text: 'Read-only while REVIEW is None: no review runs.',
       });
     });
+
+    it('shows only the reason on a read-only row', () => {
+      expect(settingsHelpLines(itemAt(items, 'validation.endChecks'), noneConfig)).toEqual([
+        { text: 'Read-only while REVIEW is None: no review runs.' },
+      ]);
+    });
   });
 
   it.each(['plan', 'build', 'review'])(

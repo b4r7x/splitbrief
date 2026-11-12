@@ -246,7 +246,9 @@ export function formatMiddotList(values: string[], max: number): string {
 /**
  * The issue and its facts at the panel's text width; the menu under them holds the actions.
  * `askedRows` puts the asked row before the task and its files, on at most that many rows, for a
- * panel too short to reach it.
+ * panel too short to reach it. A cut asked row with no fact after it takes the blank row under the
+ * headline as one more row of its own. When a fact follows it, the blank row stays, and the panel's
+ * clip drops that row first.
  */
 export function recoveryPromptSummaryRows(
   issue: RecoveryIssue,
@@ -257,21 +259,26 @@ export function recoveryPromptSummaryRows(
   const details = formatDetailLines(issue);
   const room = width - getTerminalCellWidth(FACT_INDENT);
   const asked = details.filter(isAskedDetail);
+  const after = details.filter((detail) => !isAskedDetail(detail));
+  const spendsBlank =
+    askedRows !== undefined &&
+    askedRows > 0 &&
+    subject.length === 0 &&
+    after.length === 0 &&
+    asked.some((detail) => fitAskedDetail(detail, room, askedRows) !== oneLineDisplayText(detail));
+  const askedBudget = askedRows !== undefined && spendsBlank ? askedRows + 1 : askedRows;
   const facts =
-    askedRows === undefined
+    askedBudget === undefined
       ? [...subject, ...details]
-      : [
-          ...asked.map((detail) => fitAskedDetail(detail, room, askedRows)),
-          ...subject,
-          ...details.filter((detail) => !isAskedDetail(detail)),
-        ];
+      : [...asked.map((detail) => fitAskedDetail(detail, room, askedBudget)), ...subject, ...after];
 
   const parts = formatRecoveryHeaderParts(issue);
   const rows: PromptRow[] = [
     { kind: 'headline', tone: 'attention', text: parts.map((part) => part.text).join(''), parts },
   ];
   if (facts.length > 0) {
-    rows.push({ kind: 'blank' }, { kind: 'facts', items: facts, grid: false });
+    if (!spendsBlank) rows.push({ kind: 'blank' });
+    rows.push({ kind: 'facts', items: facts, grid: false });
   }
   return rows;
 }

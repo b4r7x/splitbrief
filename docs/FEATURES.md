@@ -518,7 +518,7 @@ Sessions are execution records scoped to one workflow each. The plan card is sco
 
 **The Isolation row.** The Workflow section offers `Isolation` for every build seat. Space cycles `worktree` → `staged copy` → `your checkout` → `worktree`. Settings saves the YAML values `worktree`, `staged-copy` and `none`. Its help lists the three display labels.
 
-**The Review cadence row.** The Workflow section offers `Review cadence`. Space cycles `end` → `task` → `end`, and Settings saves `workflow.review`. While REVIEW is None, `Review cadence` and `End-of-run checks` are read-only, and the help reads `Read-only while REVIEW is None: no review runs.` The key hint of a read-only row offers no action. Enter, Space or a click on it changes nothing and shows the same reason as an error notice, also in a terminal too short for the help.
+**The Review cadence row.** The Workflow section offers `Review cadence`. Space cycles `end` → `task` → `end`, and Settings saves `workflow.review`. While REVIEW is None, `Review cadence` and `End-of-run checks` are read-only, and the help reads `Read-only while REVIEW is None: no review runs.` The key hint of a read-only row offers no action. Enter, Space or a click on it changes nothing. The same reason appears as an error notice only where the help is hidden, as in a terminal too short for it.
 
 ### Settings ∋ Crew
 

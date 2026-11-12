@@ -94,6 +94,29 @@ describe('promptBodyRows', () => {
     expect(countPromptBodyRows(trailingControlSummary, 20)).toBe(3);
   });
 
+  it('drops the blank row a cut asked row spent, so its text starts under the headline', () => {
+    const summary = recoveryPromptSummaryRows(
+      makeRecoveryIssue({
+        details: [`Question: ${'Which file holds the locales? '.repeat(4)}`.trimEnd()],
+        taskId: undefined,
+        taskTitle: undefined,
+        files: [],
+        affectedTaskIds: [],
+      }),
+      40,
+      1,
+    );
+    expect(summary[1]?.kind).toBe('facts');
+    const rows = promptBodyRows(summary, 40);
+
+    expect(rows[1]).toMatchObject({
+      kind: 'facts-line',
+      text: '  Question: Which file holds the ',
+    });
+    expect(rows.some((row) => row.kind === 'blank')).toBe(false);
+    expect(countPromptBodyRows(summary, 40)).toBe(rows.length);
+  });
+
   it('keeps first-line spans and hangs non-blank headline continuations as facts', () => {
     expect(
       promptBodyRows(
@@ -452,6 +475,70 @@ describe('promptBodyRows', () => {
     expect(clipped[2]).toEqual(
       expect.objectContaining({ text: expect.stringMatching(/^ {2}… \d+ more lines$/) }),
     );
+  });
+
+  it('keeps a cut asked fact whole with its … when facts follow it, and marks the rest', () => {
+    const summary = recoveryPromptSummaryRows(
+      makeRecoveryIssue({
+        details: [
+          `Question: ${'Which file holds the locales? '.repeat(4)}`.trimEnd(),
+          'Last error: blocked',
+        ],
+      }),
+      40,
+      1,
+    );
+    const clipped = clipPromptBodyRows(promptBodyRows(summary, 40), 3);
+
+    expect(clipped).toEqual([
+      expect.objectContaining({ kind: 'headline' }),
+      { kind: 'facts-line', text: '  Question: Which file holds the locale…' },
+      { kind: 'facts-line', text: '  … 3 more lines' },
+    ]);
+  });
+
+  it('keeps the rows of an asked fact that fits its recovered budget whole', () => {
+    const summary = recoveryPromptSummaryRows(
+      makeRecoveryIssue({
+        details: ['Question: Which file holds the locales?'],
+        taskId: undefined,
+        taskTitle: undefined,
+        files: [],
+        affectedTaskIds: [],
+      }),
+      40,
+      1,
+    );
+    const rows = promptBodyRows(summary, 40);
+
+    expect(rows).toHaveLength(3);
+    expect(rows.some((row) => row.kind === 'blank')).toBe(false);
+    expect(rows.at(-1)).toMatchObject({
+      kind: 'facts-line',
+      text: expect.stringMatching(/locales\?\s*$/),
+    });
+    expect(clipPromptBodyRows(rows, 3)).toEqual(rows);
+  });
+
+  it('gives way whole for a wrapped fact that ends on …', () => {
+    const prompt = [
+      'halt',
+      '',
+      'a short fact',
+      `Last error: ${'expected token 0 to equal refreshed '.repeat(6).trimEnd()}…`,
+    ].join('\n');
+    const rows = promptBodyRows(prompt, BODY_WIDTH);
+    const wrapped = rows.slice(3);
+    expect(wrapped.length).toBeGreaterThan(2);
+    expect(wrapped.at(-1)).toMatchObject({ kind: 'facts-line', text: expect.stringMatching(/…$/) });
+
+    expect(clipPromptBodyRows(rows, 5)).toEqual([
+      expect.objectContaining({ kind: 'headline' }),
+      { kind: 'facts-line', text: '  a short fact' },
+      { kind: 'facts-line', text: `  … ${wrapped.length} more lines` },
+      { kind: 'blank' },
+      { kind: 'blank' },
+    ]);
   });
 
   it('shows the first fact whole and then the mark at a height that fits it whole', () => {

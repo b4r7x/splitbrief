@@ -18,21 +18,28 @@ export interface RecordedCrewHeader {
 
 /**
  * The header of a run that names its recorded crew (`recordedCrew`) names that crew, not the crew
- * configured today; null for a run that names today's crew. The screen owns the rail form, so this
- * offers only the form the screen paints to the joint selector and takes the line that choice
- * names: the model words, the tool words, or an elided line beside the same rail. A line that only
- * names the crew by its tool words still leaves the Run block to state the names.
+ * configured today; null for a run that names today's crew. The screen owns the rail form and its
+ * label variant, so this offers only the rail the screen paints, measured at its actual width, to
+ * the joint selector and takes the line that choice names: the model words, the tool words, or an
+ * elided line beside the same rail. A line that only names the crew by its tool words still leaves
+ * the Run block to state the names.
  */
 export function recordedCrewHeader(
-  input: Readonly<{ record: RunRecord; form: RailForm; railCells: number; cols: number }>,
+  input: Readonly<{
+    record: RunRecord;
+    form: RailForm;
+    short: boolean;
+    railCells: number;
+    cols: number;
+  }>,
 ): RecordedCrewHeader | null {
-  const { record, form, railCells, cols } = input;
+  const { record, form, short, railCells, cols } = input;
   const seats = recordedCrew(record);
   if (seats === null) return null;
   const { model: modelLine, tool: toolLine } = recordedCrewSeatLines(seats);
   const choice = selectRailFormAndLine({
     cols,
-    railWidths: form === 'B' ? { B: railCells } : { C: railCells },
+    railWidths: form === 'C' ? { C: railCells } : short ? { BShort: railCells } : { B: railCells },
     modelLineCells: getTerminalCellWidth(seatLineText(modelLine)),
     toolLineCells: getTerminalCellWidth(seatLineText(toolLine)),
   });
