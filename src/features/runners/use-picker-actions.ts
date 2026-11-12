@@ -216,9 +216,9 @@ function writeSeatAuthChannel(
 }
 
 /**
- * Where a seat saved under a run this process drives takes over: at a brief boundary, where the
- * run re-prepares from the saved config. A start still checking its tools runs on the config it
- * read first, so its first boundary takes the seat.
+ * Where a seat saved under a run this process drives takes over: at a brief or review boundary,
+ * where the run re-prepares from the saved config. A start still checking its tools runs on the
+ * config it read first, so its first boundary takes the seat.
  */
 function runningSeatChangePoint(before: Config, after: Config): SeatChangePoint | undefined {
   if (

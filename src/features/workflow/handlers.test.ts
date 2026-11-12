@@ -16,6 +16,7 @@ import {
   activeApply,
   trackActiveApply,
 } from '../../engine/orchestrator/session-lifecycle/shutdown.js';
+import * as handlers from './handlers.js';
 import {
   abortTurn,
   cancelBoundaryPause,
@@ -216,6 +217,27 @@ describe('requestBoundaryPause', () => {
 
     expect(stopStore.get()).toMatchObject({ intent: 'none', phase: 'idle', seatChange: true });
     expect(landBoundaryPause()).toBe('continue');
+  });
+
+  it('a seat change waits for the engine until it is spent', () => {
+    expect(typeof handlers.seatChangeWaits).toBe('function');
+    expect(handlers.seatChangeWaits()).toBe(false);
+
+    requestSeatChangeAtBoundary();
+    expect(handlers.seatChangeWaits()).toBe(true);
+    expect(handlers.seatChangeWaits()).toBe(true);
+
+    spendSeatChange();
+    expect(handlers.seatChangeWaits()).toBe(false);
+  });
+
+  it('a pause of the user wins over a seat change that waits', () => {
+    expect(typeof handlers.seatChangeWaits).toBe('function');
+    requestBoundaryPause();
+    requestSeatChangeAtBoundary();
+
+    expect(handlers.seatChangeWaits()).toBe(false);
+    expect(consumeBoundaryPause()).toBe('pause');
   });
 
   it('lands the boundary pause as a park, a continue on the saved seats, or a stop the operator asked for', () => {

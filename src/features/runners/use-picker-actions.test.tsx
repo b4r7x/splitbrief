@@ -668,7 +668,7 @@ describe('usePickerActions', () => {
     );
   });
 
-  it('says a seat saved in the final review lands after a fix brief or at the next run', async () => {
+  it('says a seat saved in the final review lands at the next review or fix brief', async () => {
     const briefs: Partial<RunBriefs> = {
       tasks: [{ id: 'T001', title: 'first', status: 'done' }],
       currentTask: 1,
@@ -676,7 +676,7 @@ describe('usePickerActions', () => {
     };
 
     expect(await saveBuildSeatUnderRun('final-review', briefs)).toBe(
-      `${CREW_SEAT_LABELS.build} seat changes after a fix brief or at the next run`,
+      `${CREW_SEAT_LABELS.build} seat changes at the next review or fix brief`,
     );
   });
 

@@ -6014,9 +6014,9 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       viewports: WIDE_VIEWPORTS,
       checkpoint: {
         id: 'final-review-seat-change',
-        title: 'The review runs on and the legend names a fix brief or the next run',
+        title: 'The review runs on and the legend names the next review or fix brief',
         kind: 'implementation',
-        marker: 'Seat changes after a fix brief',
+        marker: 'Seat changes at the next review',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -6749,7 +6749,7 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'overlay-settings-seat-saved-final-review',
         title: 'Overlay · settings · a seat saved in the final review',
-        marker: 'seat changes after a fix brief',
+        marker: 'seat changes at the next review',
       },
       {
         id: 'overlay-settings-isolation-checkout',

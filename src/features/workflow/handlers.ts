@@ -160,14 +160,22 @@ export function consumeBoundaryPause(): BoundaryPark | undefined {
   return stopStore.get().seatChange ? 'seat-change' : undefined;
 }
 
+/**
+ * Whether a saved seat waits for the next review or fix brief. A pause the operator asked for
+ * wins: the seat then waits for the brief boundary of that pause. Reading it clears nothing.
+ */
+export function seatChangeWaits(): boolean {
+  return !pendingBoundaryPause && stopStore.get().seatChange;
+}
+
 export function cancelBoundaryPause(): void {
   pendingBoundaryPause = false;
   stopStore.cancelPause();
 }
 
 /**
- * A seat changed under the running run: the run stops at the next brief boundary and is
- * re-prepared from the saved config there, so the brief after it starts on the new seat.
+ * A seat changed under the running run: the run stops at the next brief or review boundary and is
+ * re-prepared from the saved config there, so the brief or review after it starts on the new seat.
  */
 export function requestSeatChangeAtBoundary(): void {
   stopStore.markSeatChange(true);
@@ -179,9 +187,10 @@ export function spendSeatChange() {
 }
 
 /**
- * The run reached a brief boundary it stops at. `park` when no seat changed: the run parks there
- * as the operator asked. With a seat change the run stops to be re-prepared on the saved seats:
- * it `continue`s at once, or `stop`s at rest when the operator asked for the pause too.
+ * The run reached a brief or review boundary it stops at. `park` when no seat changed: the run
+ * parks there as the operator asked. With a seat change the run stops to be re-prepared on the
+ * saved seats: it `continue`s at once, or `stop`s at rest when the operator asked for the pause
+ * too.
  */
 export function landBoundaryPause(): 'park' | 'continue' | 'stop' {
   const { intent, seatChange } = stopStore.get();

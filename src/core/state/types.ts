@@ -84,7 +84,7 @@ export type StateAction =
       type: 'INTERRUPT_STEP';
       step: StepRef;
       source: 'user' | 'watchdog' | 'seat';
-      /** Where the stop landed: inside the call, or on a boundary — between two briefs, or at a gate. */
+      /** Where the stop landed: inside the call, or on a boundary — between two briefs, before a review, or at a gate. */
       cut: StepCut;
       partialRef?: { kind: 'session-log'; index: number };
       /** The files the cut brief wrote that are still changed, its declared files first; recorded only when it kept any. */

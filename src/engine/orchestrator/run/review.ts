@@ -36,6 +36,7 @@ import { haltSeatProtocolError } from '../recovery/seat-protocol-halt.js';
 import { loadSeatSwapContext } from '../recovery/seat-swap-context.js';
 import { applyTriage, startFixCycle } from '../triage.js';
 import { askPlannerOnStuckReview } from './stuck-review.js';
+import { takeSeatChangeAtBoundary } from './boundary-park.js';
 import { stuckTarget } from '../../../core/review/stuck.js';
 import { sameFailure } from '../../../core/state/progress.js';
 import { runPreReview } from './pre-review-checks.js';
@@ -560,6 +561,9 @@ export async function runScheduledReview(args: {
     setTrackedState(state);
   }
   for (;;) {
+    const boundary = await takeSeatChangeAtBoundary({ wctx, state, setTrackedState });
+    state = boundary.state;
+    if (boundary.stopped) return { state, status: 'stopped' };
     const answered = await followPendingReview({
       wctx,
       state,
@@ -571,6 +575,7 @@ export async function runScheduledReview(args: {
       state = answered.state;
       if (answered.next === 'stop') return { state, status: 'stopped' };
       if (answered.next !== 'review') return { state, status: 'continue' };
+      continue;
     }
     const reviewAgain = reviewsAgain(state, 'task', anchor);
     const review = await runFinalReviewPhase({

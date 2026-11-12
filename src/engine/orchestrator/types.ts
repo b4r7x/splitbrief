@@ -71,7 +71,7 @@ export type QueueHandler = (
 ) => QueueSubmissionResult | Promise<QueueSubmissionResult>;
 export type ClearQueueHandler = () => QueueClearResult | Promise<QueueClearResult>;
 
-/** Why the engine stopped at a brief boundary: the operator's pause, or a seat change. */
+/** Why the engine stopped at a brief or review boundary: the operator's pause, or a seat change. */
 export type BoundaryPark = 'pause' | 'seat-change';
 
 export interface WorkflowSinks {
@@ -85,6 +85,8 @@ export interface WorkflowSinks {
    * pending pause.
    */
   consumeBoundaryPause?: () => BoundaryPark | undefined;
+  /** Whether a saved seat waits for the next review or fix brief. Reading it clears nothing. */
+  seatChangeWaits?: () => boolean;
   /** When the operator resumed the held continuation, before the engine saved its next state. */
   getContinuationResumedAt?: () => number | null | undefined;
 }

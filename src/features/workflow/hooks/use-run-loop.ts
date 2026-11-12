@@ -45,6 +45,7 @@ import {
   clearAllHandlers,
   consumeBoundaryInterrupt,
   consumeBoundaryPause,
+  seatChangeWaits,
   landBoundaryPause,
   requestSeatChangeAtBoundary,
   spendSeatChange,
@@ -133,8 +134,9 @@ interface UseRunLoopOptions {
   prepareExecution?: PrepareExecutionFn | undefined;
   /**
    * How a run at rest continues: it is re-prepared from the saved config and re-entered in place,
-   * with the words it was continued with. A run that stopped itself at a brief boundary to pick up
-   * a changed seat names that cause. A refusal comes back as its reason, and the caller shows it.
+   * with the words it was continued with. A run that stopped itself at a brief or review boundary
+   * to pick up a changed seat names that cause. A refusal comes back as its reason, and the caller
+   * shows it.
    */
   continueAtRest?:
     | ((
@@ -184,6 +186,7 @@ export function useRunLoop({
       setQueueHandler,
       consumeBoundaryInterrupt,
       consumeBoundaryPause,
+      seatChangeWaits,
       getContinuationResumedAt: () => lifecycleStore.get().resumedAt,
     };
     let stateForRun = inlineState;
@@ -282,7 +285,7 @@ export function useRunLoop({
       await settleRun(session.ref, true);
     };
 
-    // A seat saved under the running brief is picked up at the next brief boundary: the run
+    // A seat saved under the running run is picked up at the next brief or review boundary: the run
     // stops itself there instead of parking, and continues the way a run at rest does, re-prepared
     // from the saved config. A seat saved while the run waits parked is picked up when it continues.
     // A halt runs no brief, so a seat saved while it waits is read when the run re-enters. Both

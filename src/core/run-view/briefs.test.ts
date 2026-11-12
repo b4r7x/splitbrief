@@ -495,10 +495,8 @@ describe('selectSeatChangePoint', () => {
     });
   });
 
-  it('waits on a fix brief or the next run in the final review, past the last finished brief', () => {
-    expect(selectSeatChangePoint(focus('done'), 'final-review')).toEqual({
-      after: 'fix-brief-or-next-run',
-    });
+  it('waits on the next review or fix brief in the final review, past the last finished brief', () => {
+    expect(selectSeatChangePoint(focus('done'), 'final-review')).toEqual({ after: 'review' });
   });
 });
 

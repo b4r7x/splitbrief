@@ -286,13 +286,13 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   }),
   phaseEvent('turn_interrupted').extend({
     source: z.enum(['user', 'watchdog']).optional(),
-    /** Where the stop landed: inside the call, or on a boundary — between two briefs, or at a gate. */
+    /** Where the stop landed: inside the call, or on a boundary — between two briefs, before a review, or at a gate. */
     at: StepCutSchema.optional(),
     /** The step the stop parked, as the state records it; absent on logs written before the field. */
     step: StepRefSchema.optional(),
     /**
      * Set when a boundary park only changes a seat: no pause was asked for, the run stops so the
-     * next brief starts on the new seat. Absent for a pause the operator asked for.
+     * next brief or review starts on the new seat. Absent for a pause the operator asked for.
      */
     cause: z.literal('seat-change').optional(),
     /** The files a brief cut mid-step wrote that are still changed, its declared files first; absent when it kept none. */

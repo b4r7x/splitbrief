@@ -725,17 +725,19 @@ describe('a seat change', () => {
     ).toBe('Seat changes after the next brief');
   });
 
-  it('waits on a fix brief or the next run in the final review, with no brief left', () => {
-    expect(
+  it('names the next review or fix brief in the final review, with no brief left', () => {
+    const byline = () =>
       stopByline(
         input({
-          seatChange: { after: 'fix-brief-or-next-run' },
+          seatChange: { after: 'review' },
           workflowPhase: 'final-review',
           currentTaskId: null,
           nextTaskId: null,
         }),
-      )?.hint,
-    ).toBe('Seat changes after a fix brief or at the next run');
+      );
+
+    expect(byline).not.toThrow();
+    expect(byline()?.hint).toBe('Seat changes at the next review or fix brief');
   });
 
   it('gives way to the operator pause, whose words still say no next brief starts', () => {

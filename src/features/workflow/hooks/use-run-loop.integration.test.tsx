@@ -1782,6 +1782,30 @@ describe('useRunLoop', () => {
 
       inst.unmount();
     });
+
+    it('hands the engine the seat change that waits', async () => {
+      const prepared = savedRun('2026-11-11-seat-change-waits');
+      configStore.__testReset({ projectDir, config: prepared.config });
+      let waitsBeforeSave: boolean | undefined;
+      let waitsAfterSave: boolean | undefined;
+      const run = parkingEngine(async (options) => {
+        waitsBeforeSave = options.sinks.seatChangeWaits?.();
+        await options.callbacks.onContinuationNeeded?.('', 'mid-step', []);
+        waitsAfterSave = options.sinks.seatChangeWaits?.();
+      });
+      const { inst, resume } = await renderParked(prepared, run, []);
+
+      configStore.__testReset({ projectDir, config: CODEX_SEAT_SAVED });
+      resume();
+      await vi.waitFor(() => {
+        expect(settledRun()).not.toBeNull();
+      });
+
+      expect(waitsAfterSave).toBe(true);
+      expect(waitsBeforeSave).toBe(false);
+
+      inst.unmount();
+    });
   });
 
   describe('a save that changes no seat under a running brief', () => {

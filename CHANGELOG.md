@@ -547,7 +547,9 @@
 - The drift warning for a brief that changed none of its files names every file of that brief, not only the first.
 - A halt panel marks every shortened line with the same `…`.
 - In a narrow terminal, the row that shows a seat moving to another tool or model no longer leaves its arrow at the end of a line or alone on a line; when the old and the new seat do not fit on one line, the arrow and the new tool and model start their own line.
-- Saving a seat during a run no longer says the run is finishing or that no next brief will start, and the plan card keeps Waiting for your answer. Settings and the key legend now say the same thing about when the seat changes: after the running brief, after the next brief while the plan is made, or after a fix brief or at the next run during the final review.
+- Saving a seat during a run no longer says the run is finishing or that no next brief will start, and the plan card keeps Waiting for your answer. Settings and the key legend now say the same thing about when the seat changes: after the running brief, after the next brief while the plan is made, or at the next review or fix brief during the final review.
+- A seat you save during the final review is now used by the next review or fix brief of that run. Before, a review that ran again after your answer still used the seat you had replaced, and the first fix brief ran on the old BUILD seat.
+- With `review: task`, a REVIEW seat you save while a brief runs now reviews that brief. A task review that runs again after your answer also runs on the new seat. Before, both used the seat you had replaced.
 - Text you type on home and do not send is still there when you come back from a run, also when a command from the palette stood in front of it.
 - `splitbrief doctor` no longer says a seat is ready to start when its model has no sign-in. The seat reads ready with warnings, and the warning is counted once.
 - `splitbrief doctor` no longer says that a start without the TUI would be refused for an OpenCode that uses the providers set up in its own config.

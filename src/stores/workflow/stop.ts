@@ -34,7 +34,7 @@ export interface StopState {
   parked: StopParked | null;
   /**
    * A seat was saved under the running run and is not taken yet: the run is re-prepared on it at
-   * the next brief boundary and goes on. It is no stop, so it never sets the intent.
+   * the next brief or review boundary and goes on. It is no stop, so it never sets the intent.
    */
   seatChange: boolean;
   error?: string;
@@ -62,9 +62,9 @@ function request(intent: Exclude<StopIntent, 'none'>): void {
 }
 
 /**
- * Whether the run this process drives takes a seat saved now at a brief boundary: it runs, or it
- * waits parked and goes on at the boundary when it continues. A halt's own picker moves its seat
- * at once, so a halted run waits for no boundary.
+ * Whether the run this process drives takes a seat saved now at a brief or review boundary: it
+ * runs, or it waits parked and goes on at the boundary when it continues. A halt's own picker
+ * moves its seat at once, so a halted run waits for no boundary.
  */
 export function takesSeatAtBoundary(): boolean {
   const { status } = lifecycleStore.get();

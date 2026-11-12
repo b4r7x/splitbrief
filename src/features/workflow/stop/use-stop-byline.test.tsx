@@ -187,7 +187,7 @@ describe('useStopByline', () => {
     ui.unmount();
   });
 
-  it('a seat saved in the final review names a fix brief or the next run, with no brief left', () => {
+  it('a seat saved in the final review names the next review or fix brief, with no brief left', () => {
     runViewStore.__testReset({ phase: 'final-review' });
     lifecycleStore.__testReset({ status: 'running' });
     seedBriefs({
@@ -198,7 +198,7 @@ describe('useStopByline', () => {
     requestSeatChangeAtBoundary();
     const ui = renderFeature(<LeadAndHint />);
 
-    expect(ui.lastFrame().trim()).toBe('|Seat changes after a fix brief or at the next run');
+    expect(ui.lastFrame().trim()).toBe('|Seat changes at the next review or fix brief');
     ui.unmount();
   });
 

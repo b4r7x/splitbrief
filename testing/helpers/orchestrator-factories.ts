@@ -16,6 +16,7 @@ import { defaultContext, makeNoValidationConfig } from './factories/config.js';
 import { passingReviewVerdict, planFromTasks, typedCallPlanAndReview } from './typed-planner.js';
 import { loadState } from '../../src/core/state/persistence.js';
 import type { SessionRef } from '../../src/core/types/session-ref.js';
+import { plainUserMessage } from '../../src/core/types/user-input.js';
 
 export const TEST_METADATA = {
   planner: 'Claude Code CLI · auto',
@@ -27,6 +28,26 @@ export const TEST_SINKS: WorkflowSinks = {
   setAbortHandler: () => {},
   setQueueHandler: () => {},
 };
+
+/**
+ * The run screen while a saved seat may wait. The sink reports the change. A park ends the engine
+ * entry, as the screen does before it prepares the run again on the saved seats.
+ */
+export function seatChangeScreen(waits: () => boolean): {
+  sinks: WorkflowSinks;
+  signal: AbortSignal;
+  onContinuationNeeded: NonNullable<OrchestratorCallbacks['onContinuationNeeded']>;
+} {
+  const entry = new AbortController();
+  return {
+    sinks: { ...TEST_SINKS, seatChangeWaits: waits },
+    signal: entry.signal,
+    onContinuationNeeded: async () => {
+      entry.abort();
+      return plainUserMessage('');
+    },
+  };
+}
 
 export function makeCopyingIsolation(opts: {
   projectDir: string;

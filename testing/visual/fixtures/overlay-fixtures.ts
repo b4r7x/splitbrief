@@ -1267,13 +1267,13 @@ const createSettingsSavedRouteSignInFixture: FixtureFactory = () => ({
     );
   },
 });
-// A BUILD seat saved in the final review: no brief is left, so the notice names a fix brief or
-// the next run, in the words the composer legend uses.
+// A BUILD seat saved in the final review: no brief is left, so the notice names the next review
+// or fix brief, in the words the composer legend uses.
 const createSettingsSeatSavedFinalReviewFixture: FixtureFactory = () => ({
   ...createOverlayFixture({ overlay: 'settings', focus: 'seat:build' }),
   afterMount: () => {
     feedbackStore.setMessage(
-      seatChangeWords(`${CREW_SEAT_LABELS.build} seat`, { after: 'fix-brief-or-next-run' }),
+      seatChangeWords(`${CREW_SEAT_LABELS.build} seat`, { after: 'review' }),
     );
   },
 });
