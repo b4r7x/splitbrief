@@ -98,7 +98,7 @@ These rules apply everywhere. The linked doc holds the detail.
 
 When SPLITBRIEF runs you as its planner, implementer, reviewer or consult seat, the seat prompt is your contract. SPLITBRIEF runs the checks and collects the renders. The supervising session proves the red and gives the findings to a skeptic. Do not run a test or any other check, unless the seat prompt asks for it. A seat prompt that only lets you run a check does not ask for it. These sections then change for you:
 
-- "Reporting findings": report in the form that the seat prompt asks for. Do not start a skeptic or another agent for it.
+- "Reporting findings": report in the form that the seat prompt asks for. Do not write a kind label (`PRODUCT`, `TEST`, `ENV`) or a class number in a seat answer. Do not start a skeptic or another agent for it.
 - "Fixing a defect" and "Real red, then green": the implementer writes the tests that these rules ask for. The planner, the reviewer and the consult seat name these tests in the briefs that they write. For a change that a user can see, these tests include a replay e2e scenario.
 - "Look-and-logic verification": do not render. SPLITBRIEF renders through `validation.render`.
 

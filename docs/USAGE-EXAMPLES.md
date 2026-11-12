@@ -626,7 +626,7 @@ jq 'select(.type == "task_tokens") | {task: .taskId, method: .method, cost: .cos
 {"task":"T002","method":"escalation","cost":0.04}
 ```
 
-The same data lives in `.splitbrief/sessions/<id>/summary.json` once the run finishes. `method: local` on implementer rows means subscription-included or loopback backends with no metered API line item; see billing posture in [CONFIGURATION.md](./CONFIGURATION.md) and the [canonical CLI runner matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix).
+The same data lives in `.splitbrief/sessions/<id>/summary.json` once the run finishes. `method` names how the brief passed: `local` for the BUILD seat's own attempt.
 
 **Variations:** Filter for failures: `jq 'select(.type == "task_full_fail" or .type == "error")' events.ndjson`.
 

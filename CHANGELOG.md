@@ -110,6 +110,7 @@
 - When a run still runs in another window, every command now says the same thing: `Run <id> is still running. Stop it in the window that runs it, then run 'splitbrief continue <id>'.` Before, each command used its own words, and one told you to delete a file, which does not stop the run.
 - **A new project builds with a CLI tool.** On a first run with no config, the BUILD seat takes the first ready tool. It tries Claude Code, Codex and OpenCode first, then the other tools that SPLITBRIEF lists. A config with no `implementer` block builds with Claude Code.
 - The command list describes `/steer` as `Send a correction now; a running call stops first`.
+- The workflow guide says what happens when a stop ends while the composer holds text: no menu opens, and the keys stay in the composer.
 
 ### Removed
 

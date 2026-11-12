@@ -61,6 +61,7 @@ async function sentBack(opts: {
   config: Config;
   words?: boolean;
   stop?: boolean;
+  parkedAtApply?: boolean;
 }) {
   const { projectDir, sessionId } = setupGitSessionProject({
     prefix: 'review-next-pass',
@@ -88,7 +89,16 @@ async function sentBack(opts: {
       base: { snapshotId: base.manifest.id, head: opened.head },
     },
   };
-  const state = transition(finished, { type: opts.type, merged: MERGED });
+  const sent = transition(finished, { type: opts.type, merged: MERGED });
+  const atRest = opts.parkedAtApply
+    ? transition(sent, {
+        type: 'INTERRUPT_STEP',
+        step: { kind: 'apply' },
+        source: 'user',
+        cut: 'mid-step',
+      })
+    : sent;
+  const state = opts.parkedAtApply ? transition(atRest, { type: 'RESUME_STEP' }) : atRest;
   saveState(ref, state);
   const reviewNone = resolveReviewCadence(opts.config) === 'none';
   const controller = new AbortController();
@@ -121,7 +131,7 @@ async function sentBack(opts: {
     signal: controller.signal,
     continuation: await resumeContinuation({
       ref,
-      state,
+      state: atRest,
       reviewNone,
       steer: opts.words ? plainUserMessage(WORDS) : undefined,
     }),
@@ -170,6 +180,17 @@ describe('a pass Apply sent back runs on the REVIEW of its config', () => {
   it('hands words typed at rest to the seat review after a move from None to a seat', async () => {
     expect(
       await sentBack({ type: 'APPLY_RECHECK_START', config: SEAT(), words: true }),
+    ).toMatchObject({ reviewCalls: 1, wordsInReview: true });
+  });
+
+  it('hands words typed after a stop parked at Apply to the seat review after a move from None to a seat', async () => {
+    expect(
+      await sentBack({
+        type: 'APPLY_RECHECK_START',
+        config: SEAT(),
+        words: true,
+        parkedAtApply: true,
+      }),
     ).toMatchObject({ reviewCalls: 1, wordsInReview: true });
   });
 });

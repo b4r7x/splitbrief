@@ -167,6 +167,33 @@ it('logs the error row of the at-rest left-isolation halt as the product writes 
   expect(messages).toEqual([halt?.message]);
 });
 
+it('names one BUILD seat in the header and in the halt of the left-isolation frame', async () => {
+  const scenario = findVisualScenario('workflow-at-rest-left-isolation');
+  const checkpoint = scenario?.checkpoints[0];
+  if (scenario === undefined || checkpoint === undefined) {
+    throw new Error('Missing at-rest left-isolation scenario');
+  }
+  const ui = await mountGalleryScenario({
+    scenario,
+    checkpoint,
+    viewport: viewport({ cols: 120, rows: 40 }),
+  });
+  try {
+    const frame = stripTerminalControls(await ui.waitForCheckpoint(), {
+      preserveLineBreaks: true,
+    });
+    const header = frame.split('\n')[0] ?? '';
+    expect(header.split('BUILD')).toHaveLength(2);
+    expect(header).toContain('BUILD Gemini 3 Flash');
+    const transcript = workflowTranscriptText().replace(/\s+/g, ' ');
+    expect(transcript).toContain('left the isolation directory');
+    expect(transcript).toContain('Google Antigravity CLI wrote to');
+    expect(frame).not.toContain('Qwen2.5 Coder 7B');
+  } finally {
+    await ui.unmount();
+  }
+});
+
 it('counts the saved final review in the packet and the Review row of every closed run', () => {
   const disagreements: string[] = [];
   for (const projection of workflowFixtureProjections.values()) {

@@ -11,6 +11,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cliDetectionFor, cliDetectionsFor } from '#testing/helpers/factories/detection.js';
 import { writeConfigYaml } from '#testing/helpers/config-io.js';
 import { _resetMouseZones } from '../../../src/lib/terminal/mouse-zones.js';
+import { listRowLead } from '../../../src/components/list-row.js';
 import { configStore } from '../../../src/stores/project/config.js';
 import { detectionStore } from '../../../src/stores/project/detection.js';
 import { modelCacheStore } from '../../../src/stores/discovery/model-cache/state.js';
@@ -19,6 +20,7 @@ import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
 import { CREW_SEAT_LABELS } from '../../../src/core/crew/identity.js';
 import { loadConfig } from '../../../src/core/config/load/io.js';
+import { formatModelName } from '../../../src/core/model-display.js';
 import {
   CLI_READINESS_STATES,
   type CliToolDetection,
@@ -27,6 +29,7 @@ import {
 import { IMPLEMENTER_API_PROVIDER_IDS } from '../../../src/core/providers/api-provider-catalog.js';
 import { getProviderDisplayName } from '../../../src/core/providers/catalog.js';
 import {
+  CLI_TOOL_CATALOG,
   CLI_TOOL_IDS,
   isListedCliTool,
   PLANNER_CLI_TOOL_IDS,
@@ -168,6 +171,30 @@ async function renderPicker(role: 'planner' | 'implementer', viewport: Viewport 
 
 function frameText(ui: ReturnType<typeof renderFeature>): string {
   return stripAnsiStyles(ui.lastFrame() ?? '');
+}
+
+const RAPID_TOOL_MODEL = {
+  cursor: 'cursor-only-model',
+  codex: 'codex-only-model',
+} as const;
+
+type RapidTool = keyof typeof RAPID_TOOL_MODEL;
+
+function otherRapidTool(tool: RapidTool): RapidTool {
+  return tool === 'cursor' ? 'codex' : 'cursor';
+}
+
+function rapidToolModelLabel(tool: RapidTool): string {
+  return formatModelName(RAPID_TOOL_MODEL[tool]);
+}
+
+function activeLeftTool(frame: string): RapidTool | undefined {
+  const marker = listRowLead('active');
+  for (const line of stripAnsiStyles(frame).split('\n')) {
+    if (line.includes(`${marker}${CLI_TOOL_CATALOG.cursor.displayName}`)) return 'cursor';
+    if (line.includes(`${marker}${CLI_TOOL_CATALOG.codex.displayName}`)) return 'codex';
+  }
+  return undefined;
 }
 
 describe('runner picker semantics integration', () => {
@@ -718,14 +745,42 @@ describe('runner picker semantics integration', () => {
       });
 
       const ui = await renderPicker('implementer');
+      const seenTools = new Set<RapidTool>();
+      let consumedFrames = ui.frames.length;
       let query = '';
+
+      const checkKey = (): void => {
+        const frames = ui.frames.slice(consumedFrames);
+        consumedFrames = ui.frames.length;
+        for (const frame of frames) {
+          const tool = activeLeftTool(frame);
+          if (tool === undefined) continue;
+          seenTools.add(tool);
+          const text = stripAnsiStyles(frame);
+          expect(text, tool).toContain(rapidToolModelLabel(tool));
+          expect(text, tool).not.toContain(rapidToolModelLabel(otherRapidTool(tool)));
+        }
+        const latest = frames.at(-1);
+        const settledTool = latest === undefined ? undefined : activeLeftTool(latest);
+        if (settledTool === undefined) return;
+        const zoneIds = rightModelZoneIds();
+        expect(zoneIds, settledTool).toContain(`model:${RAPID_TOOL_MODEL[settledTool]}`);
+        expect(zoneIds, settledTool).not.toContain(
+          `model:${RAPID_TOOL_MODEL[otherRapidTool(settledTool)]}`,
+        );
+      };
+
       const selectById = async (id: string): Promise<void> => {
         for (let index = 0; index < query.length; index++) {
           ui.stdin.write(BACKSPACE);
           await flushEffects();
+          checkKey();
         }
-        ui.stdin.write(id);
-        await flushEffects();
+        for (const character of id) {
+          ui.stdin.write(character);
+          await flushEffects();
+          checkKey();
+        }
         query = id;
       };
 
@@ -738,6 +793,11 @@ describe('runner picker semantics integration', () => {
           expect(ids).not.toContain(`model:${other}-only-model`);
         });
       }
+
+      const finalFrame = frameText(ui);
+      expect(finalFrame).toContain(rapidToolModelLabel('codex'));
+      expect(finalFrame).not.toContain(rapidToolModelLabel('cursor'));
+      expect([...seenTools].toSorted()).toEqual(['codex', 'cursor']);
 
       ui.unmount();
     });

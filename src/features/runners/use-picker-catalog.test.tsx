@@ -263,9 +263,19 @@ function CurrentSelectionProbe({ role }: { role: ActiveRunnerRole }) {
   );
 }
 
-function ControlledCatalogPicker({ role }: { role: 'planner' | 'implementer' }) {
+function ControlledCatalogPicker({
+  role,
+  onFrame,
+}: {
+  role: 'planner' | 'implementer';
+  onFrame?: ((frame: string) => void) | undefined;
+}) {
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const catalog = usePickerCatalog(role, 'seat', 0, selectedItemId);
+  const modelIds = rowModels(catalog.rightRows)
+    .map((model) => model.id)
+    .join('|');
+  onFrame?.(`${catalog.currentItem?.id}:${modelIds}`);
 
   return (
     <TwoColumnPicker<PickerOption, ModelOption>
@@ -748,7 +758,10 @@ describe('usePickerCatalog', () => {
 
   it('mouse target changes update models without a previous-tool model frame', async () => {
     publishDisjointCliLists();
-    const ui = renderFeature(<ControlledCatalogPicker role="implementer" />);
+    const frames: string[] = [];
+    const ui = renderFeature(
+      <ControlledCatalogPicker role="implementer" onFrame={(frame) => frames.push(frame)} />,
+    );
     await flushEffects();
 
     const zones = collectClickableZones({ cols: 140, rows: 40 });
@@ -763,6 +776,19 @@ describe('usePickerCatalog', () => {
       expect(ui.lastFrame()).toContain('codex-only-model');
       expect(ui.lastFrame()).not.toContain('cursor-only-model');
     });
+
+    const cursorFrames = frames.filter((frame) => frame.startsWith('cursor:'));
+    const codexFrames = frames.filter((frame) => frame.startsWith('codex:'));
+    expect(cursorFrames.length).toBeGreaterThan(0);
+    expect(codexFrames.length).toBeGreaterThan(0);
+    for (const frame of cursorFrames) {
+      expect(frame).toContain('cursor-only-model');
+      expect(frame).not.toContain('codex-only-model');
+    }
+    for (const frame of codexFrames) {
+      expect(frame).toContain('codex-only-model');
+      expect(frame).not.toContain('cursor-only-model');
+    }
     ui.unmount();
   });
 
