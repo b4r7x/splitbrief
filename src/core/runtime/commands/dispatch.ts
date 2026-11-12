@@ -11,7 +11,7 @@ interface CommandExecutionOptions {
   openRunAtRest: boolean;
   applyUnfinished: boolean;
   applying: boolean;
-  /** Called once for a command that SPLITBRIEF refuses, with the reason and the line as typed. */
+  /** Called once for a command that does not run or that fails, with the reason (also the message of an error that the handler throws) and the line as typed. */
   onError: (msg: string, raw: string) => void;
 }
 
@@ -56,6 +56,10 @@ export async function executeRuntimeCommand(
   });
   if (blocked !== undefined) {
     options.onError(blocked, raw);
+    return;
+  }
+  if (cmd.kind === 'noarg' && typed !== '') {
+    options.onError(`${cmd.name} takes no argument. Usage: ${cmd.name}`, raw);
     return;
   }
   let refusal: unknown;

@@ -21,6 +21,8 @@ import { routerStore } from '../stores/navigation/router.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import type { EngineEventOf } from '../engine/events/types.js';
 import type { AcceptRunResult } from '../core/runtime/commands/types.js';
+import type { ApprovalReviewResult } from '../core/approval/types.js';
+import type { Phase } from '../core/schemas/enums.js';
 import type { WorkflowState } from '../core/schemas/workflow.js';
 import { STATE_FILE, sessionDir } from '../core/paths.js';
 import {
@@ -45,6 +47,8 @@ import {
 } from '../features/workflow/conversation-rows/read-row-actions.js';
 import { readConversationScrollSnapshot } from '../features/workflow/layout/snapshot.js';
 import { clearSessionScopedStores } from '../features/workflow/session-stores.js';
+import { buildPromptCallbacks } from '../features/workflow/prompt-callbacks.js';
+import { plainAnswer, type QuestionAnswer } from '../features/workflow/hooks/use-input-mode.js';
 import { configStore } from '../stores/project/config.js';
 import { composerDraftStore } from '../stores/ui/composer-draft.js';
 import { composerLiveStore } from '../stores/ui/composer-live.js';
@@ -551,8 +555,8 @@ function RuntimeCommandsHarness({
 }
 
 // The command list draws over the rows above the footer, so the frame keeps rows there for it.
-function CommandComposerHarness() {
-  const model = useRuntimeCommands({ exit: () => {}, phase: 'implementing' });
+function CommandComposerHarness({ phase = 'implementing' }: { phase?: Phase }) {
+  const model = useRuntimeCommands({ exit: () => {}, phase });
   return createElement(
     Box,
     { flexDirection: 'column' },
@@ -1083,6 +1087,52 @@ describe('useRuntimeCommands', () => {
       expect(frame).not.toContain('↑↓ select');
     },
   );
+
+  it('shows the usage of a bare /steer over the waiting plan card and sends no change request', async () => {
+    projectDir = createTempDir('command-composer-plan-card');
+    configStore.__testReset({ projectDir, config: makeConfig() });
+    terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
+    const held = Promise.withResolvers<ApprovalReviewResult>();
+    const resolve = vi.fn<(value: ApprovalReviewResult | QuestionAnswer) => void>((value) => {
+      if ('approved' in value) held.resolve(value);
+    });
+    const card = buildPromptCallbacks({
+      inputMode: {
+        mode: 'review',
+        hint: '',
+        questionEpoch: 0,
+        setReviewMode: () => held.promise,
+        setQuestionMode: async () => plainAnswer(''),
+        resolve,
+        resetMode: () => {},
+      },
+      abortedRef: { current: false },
+      controller: new AbortController(),
+    }).onApprovalNeeded('plan', '/tmp/plan.md', []);
+    const ui = renderFeature(createElement(CommandComposerHarness, { phase: 'reviewing-plan' }), {
+      cols: 120,
+      rows: 30,
+    });
+    onTestFinished(ui.unmount);
+    await flushEffects();
+    ui.stdin.write('/steer');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(feedbackStore.get()).toEqual({ message: 'Usage: /steer <correction>', isError: true });
+      expect(composerLiveStore.get().text).toBe('/steer');
+    });
+    await flushEffects();
+
+    const frame = stripAnsiStyles(ui.lastFrame());
+    expect(frame).toContain('Usage: /steer <correction>');
+    expect(frame).toContain('> /steer');
+    expect(frame).not.toContain('↑↓ select');
+    expect(resolve).not.toHaveBeenCalled();
+    await expect(Promise.race([card, Promise.resolve('pending')])).resolves.toBe('pending');
+  });
 
   it('shows the reason of a refused command filled in over a / draft, with the draft back and the menu closed until an edit', async () => {
     projectDir = createTempDir('command-composer-held-draft');

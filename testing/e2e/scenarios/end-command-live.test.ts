@@ -20,6 +20,10 @@ const PATIENCE = { timeout: 60_000 };
 const SCENARIO_TIMEOUT = { timeout: 200_000 };
 const END = '/end';
 const REFUSAL = 'No run to end in this phase';
+const WITH_WORDS_REFUSAL = '/end takes no argument. Usage: /end';
+const RESUME = '/resume';
+const RESUME_REFUSAL = 'Nothing to resume: the run has not stopped.';
+const NO_RESUME_REFUSAL = 'No run to resume in this phase';
 const PLAN_CARD = 'Approve plan and start the build';
 // The closed screen of each place is the one that its End run row gives.
 const ENDED_AT_CARD = ['× Ended  Plan 0/1 · nothing built', 'Run closed · '];
@@ -229,3 +233,74 @@ it('ends the run when /end runs while a brief check runs', SCENARIO_TIMEOUT, asy
     await expect.poll(screen, PATIENCE).toContain(`› ${END}`);
   });
 });
+
+it(
+  'refuses /end with words over the plan card, and the run stays open',
+  SCENARIO_TIMEOUT,
+  async () => {
+    const run = setup('plan-card');
+    try {
+      await inTui(run, trustHome.home, async ({ screen, write }) => {
+        await expect.poll(screen, PATIENCE).toContain('Describe your feature');
+        write('add a total helper');
+        await expect.poll(screen, PATIENCE).toContain('› add a total helper');
+        write(PTY_SUBMIT_INPUT);
+        await expect.poll(() => existsSync(run.planning), PATIENCE).toBe(true);
+        write('/end now');
+        await expect.poll(screen, PATIENCE).toContain('› /end now');
+        unlinkSync(run.hold);
+        await expect.poll(screen, PATIENCE).toContain(PLAN_CARD);
+
+        write(PTY_SUBMIT_INPUT);
+        await expect.poll(screen, PATIENCE).toContain(WITH_WORDS_REFUSAL);
+        await expect.poll(screen, PATIENCE).toContain('› /end now');
+        await expect.poll(screen, PATIENCE).toContain(PLAN_CARD);
+        const sessionId = readActive(run.target.projectDir);
+        if (sessionId === null) throw new Error('The run has no active session.');
+        expect(readState(run.target, sessionId).closed).toBeUndefined();
+      });
+    } finally {
+      cleanupTempDir(run.target.tmpDir);
+    }
+  },
+);
+
+it.each(['plan-card', 'brief-check'] as const)(
+  'refuses /resume with the true reason at %s, and the run waits on',
+  SCENARIO_TIMEOUT,
+  async (at) => {
+    const run = setup(at);
+    try {
+      await inTui(run, trustHome.home, async ({ screen, write }) => {
+        await expect.poll(screen, PATIENCE).toContain('Describe your feature');
+        write('add a total helper');
+        await expect.poll(screen, PATIENCE).toContain('› add a total helper');
+        write(PTY_SUBMIT_INPUT);
+        if (at === 'plan-card') {
+          await expect.poll(() => existsSync(run.planning), PATIENCE).toBe(true);
+          write(RESUME);
+          await expect.poll(screen, PATIENCE).toContain(`› ${RESUME}`);
+          unlinkSync(run.hold);
+          await expect.poll(screen, PATIENCE).toContain(PLAN_CARD);
+        } else {
+          await expect.poll(() => existsSync(run.checking), PATIENCE).toBe(true);
+          await expect.poll(screen, PATIENCE).toContain('Check T001-K1');
+          write(RESUME);
+          await expect.poll(screen, PATIENCE).toContain(`› ${RESUME}`);
+        }
+
+        write(PTY_SUBMIT_INPUT);
+        await expect.poll(screen, PATIENCE).toContain(RESUME_REFUSAL);
+        expect(screen()).not.toContain(NO_RESUME_REFUSAL);
+        await expect.poll(screen, PATIENCE).toContain(`› ${RESUME}`);
+        const waiting = at === 'plan-card' ? PLAN_CARD : 'Check T001-K1';
+        await expect.poll(screen, PATIENCE).toContain(waiting);
+        const sessionId = readActive(run.target.projectDir);
+        if (sessionId === null) throw new Error('The run has no active session.');
+        expect(readState(run.target, sessionId).closed).toBeUndefined();
+      });
+    } finally {
+      cleanupTempDir(run.target.tmpDir);
+    }
+  },
+);

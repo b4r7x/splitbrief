@@ -557,6 +557,14 @@ function ComposerInput({
     const trimmed = trimDraftDocument(document);
     // A command runs in every mode: typed under a question or a recovery menu, it is never the answer.
     if (isCommandDraft(trimmed)) {
+      if (trimmed.parts.some((part) => part.kind === 'image')) {
+        feedbackStore.setError(
+          onSendNow === undefined
+            ? 'A command sends no image. Remove the image.'
+            : 'A command sends no image. Remove the command, then press ctrl+⏎.',
+        );
+        return;
+      }
       inputHistoryStore.pushDocumentSubmission(trimmed, { currentScreen });
       clearDraft();
       onRuntimeCommand(draftDocumentText(trimmed));

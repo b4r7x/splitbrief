@@ -4105,6 +4105,11 @@ const steerRefusedRecoveryProjection: WorkflowFixtureProjection = {
   }),
 };
 
+const commandImageRefusedProjection: WorkflowFixtureProjection = {
+  ...implementationProjection,
+  scenarioId: scenarioId('workflow-command-image-refused'),
+};
+
 /** A halt with four actions, the longest menu a short terminal has to fit. */
 const shortRecoveryProjection: WorkflowFixtureProjection = {
   ...retryExhaustedRecoveryProjection,
@@ -9468,6 +9473,8 @@ const projections = [
   { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-short') },
   { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-commenting') },
   { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-typed-command') },
+  { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-usage-refused') },
+  { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-steer-row') },
   { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-request-empty') },
   { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-over-draft') },
   {
@@ -9575,6 +9582,7 @@ const projections = [
     scenarioId: scenarioId('workflow-recovery-slash-draft'),
   },
   steerRefusedRecoveryProjection,
+  commandImageRefusedProjection,
   {
     ...retryExhaustedRecoveryProjection,
     scenarioId: scenarioId('workflow-recovery-slash-list'),

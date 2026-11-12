@@ -265,6 +265,11 @@ async function steerAnswersQuestion(run: Run, { screen, write }: Tui) {
   expect(prompt).not.toContain('/steer');
   expect(prompt).not.toMatch(new RegExp(`^${DEFAULT_ANSWER}$`, 'm'));
 
+  await expect.poll(screen, PATIENCE).toContain('Answered · 1 question');
+  const answered = screen();
+  expect(answered).toContain('Answered · 1 question');
+  expect(answered).toContain(DRAFT);
+
   await expect.poll(screen, PATIENCE).toContain(PLAN_CARD);
   expect(screen()).not.toContain(STOPPED);
 }

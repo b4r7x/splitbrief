@@ -107,6 +107,7 @@
 - When you quit a run that is not closed, the shell now shows the command that continues it: `Continue this run with: splitbrief continue <id>`.
 - When a run still runs in another window, every command now says the same thing: `Run <id> is still running. Stop it in the window that runs it, then run 'splitbrief continue <id>'.` Before, each command used its own words, and one told you to delete a file, which does not stop the run.
 - **A new project builds with a CLI tool.** On a first run with no config, the BUILD seat takes the first ready tool. It tries Claude Code, Codex and OpenCode first, then the other tools that SPLITBRIEF lists. A config with no `implementer` block builds with Claude Code.
+- The command list describes `/steer` as `Send a correction now; a running call stops first`.
 
 ### Removed
 
@@ -658,6 +659,9 @@
 - `/resume` while a planner, build or review call runs no longer stops that call. It now says `Nothing to resume: the run has not stopped.`, and the call goes on.
 - While a stop is in progress, the notice after `⏎` no longer offers `ctrl+⏎`. That key waits until the run has stopped.
 - A confirmation prompt that opens on the run screen while you type no longer takes your keys. Your words stay in the composer, and `⏎` queues them while the prompt waits. Tab, or `⏎` on an empty composer, moves to the prompt. With an empty composer, the prompt takes the keys as before.
+- A command line that holds an image no longer runs without the image. SPLITBRIEF keeps the line and the image and says how to send them.
+- A command that takes no argument, such as `/resume` or `/end`, no longer runs when words follow it. SPLITBRIEF shows its usage and keeps the line.
+- `/resume` over a waiting plan card, or while the checks of a brief run, now says `Nothing to resume: the run has not stopped.`
 
 ## [0.1.0] - 2026-08-07
 

@@ -36,6 +36,7 @@ import {
   type FixtureRegistry,
   type FixtureWrite,
 } from '../common.js';
+import { VISUAL_FIXTURE_PROJECT_DIR } from '../screen-fixtures.js';
 import { markWorkflowPaused } from '../../../../src/stores/workflow/actions/pause.js';
 import { lifecycleStore } from '../../../../src/stores/workflow/lifecycle.js';
 import { glyph } from '../../../../src/lib/glyphs.js';
@@ -93,6 +94,14 @@ const PLAN_CARD_COMMENT_DRAFT = 'Split the CLI change into a separate task.';
 const PLAN_CARD_OVER_DRAFT = 'also print the greeting in uppercase';
 const TYPED_WORDS = 'keep the old lockfile';
 const STEER_REFUSED_LINE = '/steer use the old name';
+const COMMAND_IMAGE_TEXT = '/steer fix the layout ';
+const COMMAND_IMAGE_LINE = `${COMMAND_IMAGE_TEXT}[image #1]`;
+const COMMAND_IMAGE_REASON = 'A command sends no image. Remove the command, then press ctrl+⏎.';
+const PLAN_CARD_END_DRAFT = '/end now';
+const PLAN_CARD_STEER_DRAFT = '/st';
+const END_USAGE_REFUSAL = '/end takes no argument. Usage: /end';
+const STEER_ROW_DESCRIPTION = 'Send a correction now; a running call stops first';
+const STEER_ROW_START = 'Send a correction now';
 
 function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureFactory {
   const base = createWorkflowFixtureFactory(projection);
@@ -107,6 +116,37 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
   }
   if (projection.scenarioId === 'workflow-plan-card-typed-command') {
     return () => ({ ...base(), afterMount: () => composerDraftStore.request('e') });
+  }
+  // The restored line makes the card wait, so the keys stay in the composer and ⏎ runs it.
+  if (projection.scenarioId === 'workflow-plan-card-usage-refused') {
+    return () => {
+      const lifecycle = base();
+      return {
+        ...lifecycle,
+        setup: async (context) => {
+          await lifecycle.setup(context);
+          const route = routerStore.get();
+          if (route.screen !== 'workflow') throw new Error('The usage fixture needs a run');
+          saveSessionDraft(route.run.ref, createDraftDocument(PLAN_CARD_END_DRAFT));
+        },
+        afterMount: (write) => write.press('\r'),
+      };
+    };
+  }
+  // The same restored line keeps the card up while the command list explains what /steer does.
+  if (projection.scenarioId === 'workflow-plan-card-steer-row') {
+    return () => {
+      const lifecycle = base();
+      return {
+        ...lifecycle,
+        setup: async (context) => {
+          await lifecycle.setup(context);
+          const route = routerStore.get();
+          if (route.screen !== 'workflow') throw new Error('The steer row fixture needs a run');
+          saveSessionDraft(route.run.ref, createDraftDocument(PLAN_CARD_STEER_DRAFT));
+        },
+      };
+    };
   }
   if (projection.scenarioId === 'workflow-composer-long-draft') {
     return () => ({
@@ -490,6 +530,49 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
         feedbackStore.setError(NO_CORRECTION_MESSAGE);
       },
     });
+  }
+  // The line carries its image from the session draft, and the composer refuses it whole: the
+  // command never leaves for a handler, and the word and the image stay where they were typed.
+  if (projection.scenarioId === 'workflow-command-image-refused') {
+    return () => {
+      const lifecycle = base();
+      return {
+        ...lifecycle,
+        setup: async (context) => {
+          await lifecycle.setup(context);
+          const route = routerStore.get();
+          if (route.screen !== 'workflow') throw new Error('The image refusal needs a run');
+          saveSessionDraft(route.run.ref, {
+            version: 1,
+            parts: [
+              { kind: 'text', text: COMMAND_IMAGE_TEXT },
+              {
+                kind: 'image',
+                attachment: {
+                  id: 'att-command-refusal-1',
+                  kind: 'image',
+                  path: `${VISUAL_FIXTURE_PROJECT_DIR}/docs/usage-panel.png`,
+                  mimeType: 'image/png',
+                  sizeBytes: 48_120,
+                },
+              },
+            ],
+          });
+        },
+        afterMount: async (write) => {
+          const refused = Promise.withResolvers<void>();
+          const off = feedbackStore.subscribe(() => {
+            if (feedbackStore.get().message === COMMAND_IMAGE_REASON) refused.resolve();
+          });
+          try {
+            await write.press('\r');
+            await refused.promise;
+          } finally {
+            off();
+          }
+        },
+      };
+    };
   }
   if (projection.scenarioId === 'workflow-recovery-long-question-draft') {
     return () => ({
@@ -1141,6 +1224,25 @@ const checkpointPredicates = [
       excludesAll(`${listRowLead('active')}Approve plan`)(context),
   ],
   [
+    checkpointId('plan-card-usage-refused'),
+    (context) =>
+      planCardReady(context) && includesAll(END_USAGE_REFUSAL, PLAN_CARD_END_DRAFT)(context),
+  ],
+  [
+    checkpointId('plan-card-steer-row'),
+    (context) => {
+      const row = context.output.split('\n').find((line) => line.includes('/steer'));
+      if (row === undefined || !row.includes(STEER_ROW_START)) return false;
+      if (context.viewport.cols >= 120) {
+        return (
+          row.includes(STEER_ROW_DESCRIPTION) &&
+          context.output.includes('Approve plan and start the build')
+        );
+      }
+      return context.viewport.cols >= 80 || row.includes('…');
+    },
+  ],
+  [
     checkpointId('plan-repaired'),
     (context) => includesAll()(context) && excludesAll('Warning', 'The plan failed')(context),
   ],
@@ -1259,6 +1361,12 @@ const checkpointPredicates = [
         headerRow.includes('PLAN claude · BUILD claude · REVIEW = PLAN')
       );
     },
+  ],
+  [
+    checkpointId('command-image-refused'),
+    (context) =>
+      includesAll(COMMAND_IMAGE_LINE)(context) &&
+      (context.viewport.cols < 120 || context.output.includes(COMMAND_IMAGE_REASON)),
   ],
   [checkpointId('recovery-steer-refused'), includesAll(STEER_REFUSED_LINE)],
   [

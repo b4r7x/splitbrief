@@ -261,6 +261,7 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-plan-card-edited', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-plan-card-commenting', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-plan-card-typed-command', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-plan-card-steer-row', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-plan-card-request-empty', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-plan-card-render-note', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-plan-card-no-image-reviewer', ['120x40', '80x24', '60x18', '160x45']],
@@ -766,6 +767,93 @@ describe('visual catalog', () => {
     expect(scenario?.viewports.map(formatViewport)).toEqual(['120x40', '80x24', '60x18', '160x45']);
     expect(scenario?.elements.map((element) => element.id)).toContain('sidebar');
     expect(workflowFixtureRegistry.has(scenarioId(id))).toBe(true);
+  });
+
+  it.each([
+    [
+      'workflow-command-image-refused',
+      'command-image-refused',
+      'A command sends no image',
+      'failure',
+    ],
+    ['workflow-plan-card-usage-refused', 'plan-card-usage-refused', 'takes no argument', 'failure'],
+    ['workflow-plan-card-steer-row', 'plan-card-steer-row', 'Send a correction now', 'review'],
+  ] as const)('registers %s with its command checkpoint', (id, checkpoint, marker, kind) => {
+    const scenario = findVisualScenario(id);
+    expect(scenario?.checkpoints[0]).toMatchObject({ id: checkpoint, marker, kind });
+    expect(workflowFixtureRegistry.has(scenarioId(id))).toBe(true);
+    expect(workflowCheckpointPredicates.has(checkpointId(checkpoint))).toBe(true);
+  });
+
+  it('keeps the image reason and the command line with its image at 120 columns', async () => {
+    const scenario = findVisualScenario('workflow-command-image-refused');
+    const checkpoint = scenario?.checkpoints[0];
+    const size = scenario?.viewports.find((value) => value.cols === 120 && value.rows === 40);
+    if (!scenario || !checkpoint || !size) throw new Error('Missing image refusal scenario');
+    const handle = await mountGalleryScenario({ scenario, checkpoint, viewport: size });
+    try {
+      const frame = stripAnsiStyles(await handle.waitForCheckpoint());
+      expect(feedbackStore.get()).toEqual({
+        isError: true,
+        message: 'A command sends no image. Remove the command, then press ctrl+⏎.',
+      });
+      expect(frame).toContain('A command sends no image. Remove the command, then press ctrl+⏎.');
+      expect(frame).toContain('/steer fix the layout [image #1]');
+    } finally {
+      await handle.unmount();
+    }
+  });
+
+  it('gives /end with an argument back over the whole plan card at 120 columns', async () => {
+    const scenario = findVisualScenario('workflow-plan-card-usage-refused');
+    const checkpoint = scenario?.checkpoints[0];
+    const size = scenario?.viewports.find((value) => value.cols === 120 && value.rows === 40);
+    if (!scenario || !checkpoint || !size) throw new Error('Missing usage refusal scenario');
+    const handle = await mountGalleryScenario({ scenario, checkpoint, viewport: size });
+    try {
+      const frame = stripAnsiStyles(await handle.waitForCheckpoint());
+      expect(feedbackStore.get()).toEqual({
+        isError: true,
+        message: '/end takes no argument. Usage: /end',
+      });
+      expect(frame).toContain('/end takes no argument. Usage: /end');
+      expect(frame).toContain('› /end now');
+      expect(frame).toContain('Approve plan and start the build');
+    } finally {
+      await handle.unmount();
+    }
+  });
+
+  it.each([120, 160])('shows the whole /steer description at %s columns', async (cols) => {
+    const scenario = findVisualScenario('workflow-plan-card-steer-row');
+    const checkpoint = scenario?.checkpoints[0];
+    const size = scenario?.viewports.find((value) => value.cols === cols);
+    if (!scenario || !checkpoint || !size) throw new Error('Missing steer row scenario');
+    const handle = await mountGalleryScenario({ scenario, checkpoint, viewport: size });
+    try {
+      const frame = stripAnsiStyles(await handle.waitForCheckpoint());
+      const row = frame.split('\n').find((line) => line.includes('/steer'));
+      expect(row).toContain('Send a correction now; a running call stops first');
+      expect(frame).toContain('Approve plan and start the build');
+    } finally {
+      await handle.unmount();
+    }
+  });
+
+  it('keeps the /steer row and the start of its description at 60 columns', async () => {
+    const scenario = findVisualScenario('workflow-plan-card-steer-row');
+    const checkpoint = scenario?.checkpoints[0];
+    const size = scenario?.viewports.find((value) => value.cols === 60 && value.rows === 18);
+    if (!scenario || !checkpoint || !size) throw new Error('Missing steer row scenario');
+    const handle = await mountGalleryScenario({ scenario, checkpoint, viewport: size });
+    try {
+      const frame = stripAnsiStyles(await handle.waitForCheckpoint());
+      const row = frame.split('\n').find((line) => line.includes('/steer'));
+      expect(row).toContain('Send a correction now');
+      expect(row).toContain('…');
+    } finally {
+      await handle.unmount();
+    }
   });
 
   it('covers Form C with inserted fixes and status words with a sidebar', () => {

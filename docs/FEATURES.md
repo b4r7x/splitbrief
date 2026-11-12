@@ -442,7 +442,7 @@ The summary of a closed run shows a `Scope` row with the counts, such as `1 erro
 | `/queue [show\|clear]` | Show or clear the message queue |
 | `/run <accept\|reject>` | Accept or reject what this run wrote (rejection needs `/run reject confirm`) |
 | `/resume` | Continue a paused or stopped run |
-| `/steer <correction>` | Stop now and continue with your correction, including `@file` references. Over a waiting plan card, request changes with it. Over a waiting planner question, answer the round with it. Over a waiting recovery panel, send it as the typed correction. |
+| `/steer <correction>` | Send a correction now; a running call stops first. The correction takes `@file` references. Over a waiting plan card, request changes with it. Over a waiting planner question, answer the round with it. Over a waiting recovery panel, send it as the typed correction. |
 | `/end` | Close the run, saving unapplied changes |
 | `/stop` | Open the inline session-options menu (Stop now, Pause after this brief, End run) |
 

@@ -1272,6 +1272,159 @@ describe('Composer image attach gate', () => {
     ui.unmount();
   });
 
+  it.each<[boolean, string]>([
+    [true, 'A command sends no image. Remove the command, then press ctrl+⏎.'],
+    [false, 'A command sends no image. Remove the image.'],
+  ])(
+    'refuses a command line that holds an image and keeps the line and the image (onSendNow: %s)',
+    async (withSendNow, reason) => {
+      configStore.__testReset({
+        projectDir,
+        config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+      });
+      const dispatched: string[] = [];
+      const submissions: string[] = [];
+      const sends = vi.fn(() => true);
+      const ui = renderFeature(
+        <Composer
+          commands={[]}
+          currentScreen="home"
+          mode="normal"
+          hint=""
+          homeHint={HOME_HINT}
+          onSubmit={(submission) => submissions.push(submission.message.text)}
+          {...(withSendNow ? { onSendNow: sends } : {})}
+          onRuntimeCommand={(command) => dispatched.push(command)}
+        />,
+      );
+      await flushEffects();
+      ui.stdin.write('/steer fix the layout ');
+      await flushEffects();
+      await dropImage(ui);
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('/steer fix the layout [image #1]');
+
+      ui.stdin.write('\r');
+      await flushEffects();
+
+      expect(feedbackStore.get()).toEqual({ isError: true, message: reason });
+      expect(dispatched).toEqual([]);
+      expect(submissions).toEqual([]);
+      expect(sends).not.toHaveBeenCalled();
+      expect(getInputHistoryDocuments(inputHistoryStore.get(), { currentScreen: 'home' })).toEqual(
+        [],
+      );
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('/steer fix the layout [image #1]');
+      expect(composerLiveStore.get().document.parts).toEqual([
+        { kind: 'text', text: '/steer fix the layout ' },
+        {
+          kind: 'image',
+          attachment: expect.objectContaining({ path: realpathSync(imagePath) }),
+        },
+      ]);
+      expect(attachmentsStore.peek()).toEqual([]);
+      ui.unmount();
+    },
+  );
+
+  it('refuses the same line at ctrl+⏎', async () => {
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+    });
+    const dispatched: string[] = [];
+    const submissions = vi.fn();
+    const sends = vi.fn(() => true);
+    const ui = renderFeature(
+      <Composer
+        commands={[]}
+        currentScreen="workflow"
+        mode="normal"
+        hint=""
+        onSubmit={submissions}
+        onSendNow={sends}
+        onRuntimeCommand={(command) => dispatched.push(command)}
+      />,
+    );
+    await flushEffects();
+    ui.stdin.write('/steer fix the layout ');
+    await flushEffects();
+    await dropImage(ui);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('/steer fix the layout [image #1]');
+
+    ui.stdin.write('\x1b[13;5u');
+    await flushEffects();
+
+    expect(feedbackStore.get()).toEqual({
+      isError: true,
+      message: 'A command sends no image. Remove the command, then press ctrl+⏎.',
+    });
+    expect(sends).not.toHaveBeenCalled();
+    expect(submissions).not.toHaveBeenCalled();
+    expect(dispatched).toEqual([]);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('/steer fix the layout [image #1]');
+    ui.unmount();
+  });
+
+  it('refuses a command line with an image when argument completion could run it', async () => {
+    const SKILLS: RuntimeCommandDef = {
+      kind: 'arg',
+      name: '/skills',
+      label: 'Skills',
+      description: 'Skills for every seat',
+      category: 'navigate',
+      args: {
+        kind: 'closed',
+        options: ['alpha', 'bravo'],
+        optionDescriptions: { alpha: 'Reviews alpha conventions', bravo: 'Drafts bravo notes' },
+        optional: true,
+        multi: true,
+        match: 'fuzzy',
+      },
+      validScreens: ['home'],
+      handler: () => {},
+    };
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+    });
+    const dispatched: string[] = [];
+    const ui = renderDockedComposer({
+      commands: [SKILLS],
+      currentScreen: 'home',
+      mode: 'normal',
+      hint: '',
+      homeHint: HOME_HINT,
+      onSubmit: () => {},
+      onRuntimeCommand: (command) => dispatched.push(command),
+    });
+    await flushEffects();
+    ui.stdin.write('/skills alpha ');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Drafts bravo notes');
+    });
+
+    await dropImage(ui);
+    ui.stdin.write(' ');
+    await vi.waitFor(() => {
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame).toContain('/skills alpha [image #1]');
+      expect(frame).not.toContain('Drafts bravo notes');
+    });
+
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    expect(feedbackStore.get()).toEqual({
+      isError: true,
+      message: 'A command sends no image. Remove the image.',
+    });
+    expect(dispatched).toEqual([]);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('/skills alpha [image #1]');
+    ui.unmount();
+  });
+
   it('applies an /image insertion at the caret and preserves submission order', async () => {
     configStore.__testReset({
       projectDir,

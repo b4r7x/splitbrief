@@ -62,7 +62,7 @@ describe('/resume', () => {
   });
 
   it.each(['reviewing-plan', 'validating-task'] as const)(
-    'keeps its guard in %s, where a steer and an end are taken',
+    'allows /resume in %s, where a steer and an end are taken',
     (phase) => {
       expect(
         command('/resume').guard?.({
@@ -72,7 +72,7 @@ describe('/resume', () => {
           applyUnfinished: false,
           applying: false,
         }),
-      ).toBe('No run to resume in this phase');
+      ).toBeUndefined();
     },
   );
 

@@ -871,7 +871,7 @@ The registry holds 23 commands in five categories. A removed command, such as `/
 | `/queue [show\|clear]` | Show or clear the message queue |
 | `/stop` | Open stop and session options |
 | `/resume` | Continue a paused or stopped run |
-| `/steer <text>` | Stop now and continue with your correction |
+| `/steer <text>` | Send a correction now; a running call stops first |
 | `/end` | Close the run, saving unapplied changes |
 
 **View**

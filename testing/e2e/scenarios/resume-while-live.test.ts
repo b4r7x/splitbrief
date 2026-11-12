@@ -19,6 +19,7 @@ const VIEWPORT = { cols: 120, rows: 40 };
 const PAINT = { timeout: 15_000 };
 const RUN = { timeout: 120_000 };
 const REFUSAL = 'Nothing to resume: the run has not stopped.';
+const WITH_WORDS_REFUSAL = '/resume takes no argument. Usage: /resume';
 
 const TOTAL_FILE = 'src/total.mjs';
 const TOTAL_TEST_FILE = 'src/total.test.mjs';
@@ -222,3 +223,32 @@ it.each<[string, HeldCall]>([
     }
   },
 );
+
+it('refuses /resume with words by its usage, and the run goes on', {
+  timeout: 200_000,
+}, async () => {
+  const run = setup('build');
+  try {
+    await inTui(run, trustHome.home, async ({ screen, write }) => {
+      await expect.poll(screen, RUN).toContain('Describe your feature');
+      write('add a total helper');
+      await expect.poll(screen, PAINT).toContain('› add a total helper');
+      write(PTY_SUBMIT_INPUT);
+      await vi.waitFor(() => expect(callsMade(run)).toContain('implement'), RUN);
+
+      write('/resume use zod');
+      await expect.poll(screen, PAINT).toContain('› /resume use zod');
+      write(PTY_SUBMIT_INPUT);
+      await expect.poll(screen, PAINT).toContain(WITH_WORDS_REFUSAL);
+      await expect.poll(screen, PAINT).toContain('› /resume use zod');
+      expect(callsMade(run)).not.toContain('implement-sigterm');
+
+      unlinkSync(run.hold);
+      await vi.waitFor(() => expect(callsMade(run)).toContain('final-review'), RUN);
+      expect(callsMade(run)).toEqual(['plan', 'implement', 'final-review']);
+    });
+  } finally {
+    if (existsSync(run.hold)) unlinkSync(run.hold);
+    cleanupTempDir(run.target.tmpDir);
+  }
+});

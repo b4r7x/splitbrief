@@ -17,6 +17,7 @@ import {
   isOpenRunAtRest,
   routerStore,
 } from '../../../../stores/navigation/router.js';
+import { composerLiveStore } from '../../../../stores/ui/composer-live.js';
 import { inputHistoryStore } from '../../../../stores/ui/input-history.js';
 import { runViewStore } from '../../../../stores/workflow/run-view.js';
 import type { CommandCompletionRow } from './menu.js';
@@ -82,6 +83,8 @@ export function useCommandCompletion({
 }: UseCommandCompletionOptions): UseCommandCompletionResult {
   const phase = runViewStore.use((s) => s.phase);
   const config = configStore.use((s) => s.config);
+  const draft = composerLiveStore.use((s) => s.document);
+  const draftHasImage = draft.parts.some((part) => part.kind === 'image');
   const openRunAtRest = routerStore.use(isOpenRunAtRest);
   const applyUnfinished = routerStore.use(isApplyUnfinishedAtRest);
   const guardContext: CommandGuardContext = {
@@ -133,7 +136,8 @@ export function useCommandCompletion({
         )
       : null;
   const argRows = argOptions !== null && argOptions.length > 0 ? argOptions : null;
-  const showSuggestions = commandMode && !suppressed && !disabled && (!hasArgs || argRows !== null);
+  const showSuggestions =
+    commandMode && !suppressed && !disabled && !draftHasImage && (!hasArgs || argRows !== null);
   const argPrefix = argRows === null ? null : `${commandToken} ${argHead}`;
   const matchQuery = argRows === null ? query : argToken.toLowerCase();
   const filtered = showSuggestions

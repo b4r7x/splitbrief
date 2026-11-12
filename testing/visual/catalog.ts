@@ -2355,6 +2355,41 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-plan-card-usage-refused',
+      title: 'Workflow · /end given an argument at the waiting plan card',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'plan-card-usage-refused',
+        title: 'The reason, with the whole line back over the waiting card',
+        kind: 'failure',
+        marker: 'takes no argument',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Plan transcript' },
+        { id: 'approval-panel', title: 'Plan card panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-plan-card-steer-row',
+      title: 'Workflow · the /steer row at the waiting plan card',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'plan-card-steer-row',
+        title: 'The whole /steer description on the command list',
+        kind: 'review',
+        marker: 'Send a correction now',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Plan transcript' },
+        { id: 'approval-panel', title: 'Plan card panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-plan-card-request-empty',
       title: 'Workflow · plan card with an empty change request',
       surface: screenSurface('workflow'),
@@ -4926,6 +4961,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [
         { id: 'header', title: 'Workflow header' },
         { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-command-image-refused',
+      title: 'Workflow · a command line that holds an image',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'command-image-refused',
+        title: 'The reason, with the command line and its image kept',
+        kind: 'failure',
+        marker: 'A command sends no image',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),

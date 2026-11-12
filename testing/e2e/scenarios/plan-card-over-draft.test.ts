@@ -405,3 +405,19 @@ it(
     });
   },
 );
+
+it('shows a /steer row that is true over the waiting plan card', SCENARIO_TIMEOUT, async () => {
+  await scenario(async (run, tui) => {
+    const { screen, write } = tui;
+    await openCardOverDraft(run, tui, DRAFT);
+    for (let i = 0; i < DRAFT.length; i++) write('\x7f');
+    await expect.poll(screen, PATIENCE).not.toContain(DRAFT);
+
+    write('/st');
+    await expect
+      .poll(screen, PATIENCE)
+      .toContain('Send a correction now; a running call stops first');
+    expect(screen()).toContain('/steer');
+    expect(screen()).not.toContain('Stop now and continue');
+  });
+});

@@ -2029,11 +2029,53 @@ describe('WorkflowScreen showing a run at rest', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain(NO_CORRECTION);
     expect(frame).toContain(`${glyph('prompt')} /steer use the old name`);
-    expect(frame).not.toContain('Stop now and continue with your correction');
+    expect(frame).not.toContain('Send a correction now; a running call stops first');
     expect(frame).toContain('Skip task');
     expect(runWorkflow).not.toHaveBeenCalled();
     ui.unmount();
   });
+
+  it.each(['reviewing-plan', 'validating-task'] as const)(
+    'lists /steer and /resume with their descriptions in %s',
+    async (phase) => {
+      navigatePreparedWorkflow(projectDir, 'steer description');
+      runWorkflow.mockImplementation(async (opts) => {
+        publishEvent(opts, {
+          type: 'workflow_started',
+          ts: FIXED_TS,
+          phase,
+          feature: 'steer description',
+        });
+        return pendingWorkflow();
+      });
+      const ui = renderFeature(<HaltWithAppCommands deps={workflowDeps} />);
+      await vi.waitFor(() => {
+        expect(runViewStore.get().phase).toBe(phase);
+      });
+      await flushEffects();
+
+      for (const key of '/st') {
+        ui.stdin.write(key);
+        await flushEffects();
+      }
+      const steerFrame = stripAnsiStyles(ui.lastFrame() ?? '');
+      const steerRow = steerFrame.split('\n').find((line) => line.includes('/steer')) ?? '';
+      expect(steerRow).toContain('Send a correction now; a running call stops first');
+
+      for (const _ of '/st') {
+        ui.stdin.write('\b');
+        await flushEffects();
+      }
+      for (const key of '/res') {
+        ui.stdin.write(key);
+        await flushEffects();
+      }
+      const resumeFrame = stripAnsiStyles(ui.lastFrame() ?? '');
+      const resumeRow = resumeFrame.split('\n').find((line) => line.includes('/resume')) ?? '';
+      expect(resumeRow).toContain('Continue a paused or stopped run');
+      ui.unmount();
+    },
+  );
 
   it('gives back the words sent with ctrl+⏎ as typed, with the reason, on a halt that takes no typed correction', async () => {
     const ui = renderDependencyBlockedHalt();

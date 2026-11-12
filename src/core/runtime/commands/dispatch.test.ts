@@ -14,6 +14,15 @@ const steer: RuntimeCommandDef = {
   handler: (args) => (args === undefined ? 'Usage: /steer <correction>' : undefined),
 };
 
+const end: RuntimeCommandDef = {
+  kind: 'noarg',
+  name: '/end',
+  description: 'end',
+  category: 'workflow',
+  validScreens: ['workflow'],
+  handler: () => undefined,
+};
+
 describe('executeRuntimeCommand', () => {
   it.each([
     {
@@ -44,16 +53,60 @@ describe('executeRuntimeCommand', () => {
       phase: 'planning',
       refusal: 'Usage: /steer <correction>',
     },
+    {
+      refuser: 'a no-argument command with words',
+      raw: '/end now',
+      screen: 'workflow',
+      phase: 'planning',
+      refusal: '/end takes no argument. Usage: /end',
+    },
   ] as const)(
     'gives the typed line back with the refusal of $refuser',
     async ({ raw, screen, phase, refusal }) => {
       const onError = vi.fn();
 
-      await runCommandInTest({ commands: [steer], raw, screen, phase, onError });
+      await runCommandInTest({ commands: [steer, end], raw, screen, phase, onError });
 
       expect(onError).toHaveBeenCalledExactlyOnceWith(refusal, raw);
     },
   );
+
+  it('does not run a no-argument command that gets words', async () => {
+    const handler = vi.fn();
+    const commands: RuntimeCommandDef[] = [
+      {
+        kind: 'noarg',
+        name: '/end',
+        description: 'end',
+        category: 'workflow',
+        validScreens: ['workflow'],
+        handler,
+      },
+    ];
+
+    await runCommandInTest({ commands, raw: '/end now', screen: 'workflow', onError: noop });
+
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('runs a no-argument command with no words or only trailing spaces', async () => {
+    const handler = vi.fn();
+    const commands: RuntimeCommandDef[] = [
+      {
+        kind: 'noarg',
+        name: '/end',
+        description: 'end',
+        category: 'workflow',
+        validScreens: ['workflow'],
+        handler,
+      },
+    ];
+
+    await runCommandInTest({ commands, raw: '/end', screen: 'workflow', onError: noop });
+    await runCommandInTest({ commands, raw: '/end ', screen: 'workflow', onError: noop });
+
+    expect(handler).toHaveBeenCalledTimes(2);
+  });
 
   it('gives nothing back when the command runs', async () => {
     const onError = vi.fn();
