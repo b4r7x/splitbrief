@@ -230,7 +230,7 @@ Commands that change what the workflow screen shows without touching the run. `c
 - **Args**: none.
 - **Shortcut**: `Ctrl+A` (`src/core/keybindings/registry.ts`); `/activity` is the guaranteed command path.
 - **Example**: `/activity`
-- **Behavior**: Expands the lowest folded row of the transcript, or collapses it if it is already expanded. A folded row is an activity block with hidden rows or the summary of a closed run. Only the lowest folded row shows the key, such as `+3 earlier · ctrl+a`; a folded row above it shows only what it hides, such as `+3 earlier`. A click expands or collapses the row that you click. If the transcript has no folded row, the feedback line says so.
+- **Behavior**: Expands the lowest folded row of the transcript, or collapses it if it is already expanded. A folded row is an activity block with hidden rows, a group of checks in a review, or the summary of a closed run. Only the lowest folded row shows the key, such as `+3 earlier · ctrl+a`; a folded row above it shows only what it hides, such as `+3 earlier`. A click expands or collapses the row that you click. If the transcript has no folded row, the feedback line says so.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/view.ts`. The command context selects a target from `readConversationRowActions()` with `findLatestConversationRowAction()`, then calls `toggleFoldedRows()`.
 - **See also**: `/scroll`, `/diff`.
 

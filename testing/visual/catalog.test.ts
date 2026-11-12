@@ -202,6 +202,10 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-seat-crew-changed', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-seat-review-no-image', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-closed-summary', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-final-review-checks-fold', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-final-review-checks-failed', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-final-review-checks-running', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-final-review-checks-base', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-closed-ended', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-review-fix-cycles', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-review-stuck-planner', ['120x40', '80x24', '60x18', '160x45']],
@@ -715,6 +719,24 @@ describe('visual catalog', () => {
       await handle.unmount();
     }
   });
+
+  it.each(['120x40', '80x24', '60x18', '160x45'])(
+    'opens the check group of a passed final review with ctrl+a at %s',
+    async (size) => {
+      const scenario = findVisualScenario('workflow-final-review-checks-fold');
+      const checkpoint = scenario?.checkpoints.find(
+        (value) => value.id === 'final-review-checks-fold-expanded',
+      );
+      const view = scenario?.viewports.find((value) => formatViewport(value) === size);
+      if (!scenario || !checkpoint || !view) throw new Error(`Missing check group view ${size}`);
+      const handle = await mountGalleryScenario({ scenario, checkpoint, viewport: view });
+      try {
+        await handle.waitForCheckpoint();
+      } finally {
+        await handle.unmount();
+      }
+    },
+  );
 
   it.each([
     ['workflow-recovery-no-fallback', 'Change BUILD tool'],

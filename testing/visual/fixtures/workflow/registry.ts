@@ -36,7 +36,7 @@ import {
 } from '../common.js';
 import { markWorkflowPaused } from '../../../../src/stores/workflow/actions/pause.js';
 import { lifecycleStore } from '../../../../src/stores/workflow/lifecycle.js';
-import { glyph } from '../../../../src/lib/glyphs.js';
+import { glyph, type GlyphName } from '../../../../src/lib/glyphs.js';
 import { feedbackStore } from '../../../../src/stores/ui/feedback.js';
 import { composerDraftStore } from '../../../../src/stores/ui/composer-draft.js';
 import { saveSessionDraft } from '../../../../src/stores/ui/session-drafts.js';
@@ -146,14 +146,18 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
       };
     };
   }
-  if (projection.scenarioId === 'workflow-closed-summary') {
+  // The expanded checkpoint opens the lowest fold of the transcript with ctrl+a.
+  if (
+    projection.scenarioId === 'workflow-closed-summary' ||
+    projection.scenarioId === 'workflow-final-review-checks-fold'
+  ) {
     return () => {
       const lifecycle = base();
       let expand = false;
       return {
         ...lifecycle,
         setup: async (context) => {
-          expand = context.checkpoint.id === 'closed-summary-expanded';
+          expand = context.checkpoint.id.endsWith('-expanded');
           await lifecycle.setup(context);
         },
         afterMount: async (write) => {
@@ -611,6 +615,75 @@ function includesTranscript(...markers: readonly string[]): CheckpointPredicate 
   };
 }
 
+// A check row of a group leads with its label, at any width.
+const CHECK_ROW = /^(?:Plan check K\d+|Reviewer check V\d+|Base re-run V\d+|Render [\w-]+) · /u;
+
+/**
+ * One check group in the transcript: the header that counts it, the fold row, and the label of each
+ * check row it shows, in order. A header too narrow for its counts keeps the leading ones. The view
+ * sticks to the transcript's end, so the frame shows `screen.text`, after the mark when given, only
+ * once the view is `screen.fromRows` tall.
+ */
+function checkGroup(expected: {
+  readonly header: string;
+  readonly fold: string;
+  readonly rows: readonly string[];
+  readonly screen: { readonly fromRows: number; readonly mark?: GlyphName; readonly text: string };
+}): CheckpointPredicate {
+  return (context) => {
+    const lines = workflowTranscriptText().split('\n');
+    const header = lines.find((line) => line.startsWith('Checks  '));
+    const rows = lines.filter((line) => CHECK_ROW.test(line));
+    const { fromRows, mark, text } = expected.screen;
+    return (
+      includesTranscript()(context) &&
+      (context.viewport.rows < fromRows ||
+        context.output.includes(mark === undefined ? text : `${glyph(mark)} ${text}`)) &&
+      header !== undefined &&
+      (header === expected.header ||
+        (context.viewport.cols < 80 && expected.header.startsWith(`${header} · `))) &&
+      lines.includes(expected.fold) &&
+      rows.length === expected.rows.length &&
+      expected.rows.every((label, index) => rows[index]?.startsWith(label) === true)
+    );
+  };
+}
+
+const CHECKS_FOLD_HEADER = 'Checks  29 passed · 8 rendered · 6 reused · 2m 58s';
+
+// The 37 checks of the passed final review, in the order they ran.
+const CHECKS_FOLD_ROWS = [
+  ...Array.from({ length: 14 }, (_, index) => `Plan check K${index + 1} · `),
+  ...[
+    'signup-form-empty',
+    'signup-form-filled',
+    'signup-form-invalid-email',
+    'signup-form-weak-password',
+    'signup-form-submitting',
+    'signup-form-server-error',
+    'signup-success',
+    'signup-form-narrow',
+  ].map((scenario) => `Render ${scenario} · `),
+  ...Array.from({ length: 15 }, (_, index) => `Reviewer check V${index + 1} · `),
+];
+
+// The header facts of the group with the re-runs at the run base, then how many of them the header
+// keeps per viewport width: a narrower header drops whole counts from the right.
+const CHECKS_BASE_FACTS = [
+  'Checks  1 pre-existing',
+  '1 red at the run base',
+  '4 passed',
+  '1 passes at the run base',
+  '1 reused',
+  '1m 38s',
+];
+const CHECKS_BASE_KEPT = new Map([
+  [160, 6],
+  [120, 6],
+  [80, 3],
+  [60, 2],
+]);
+
 // One recovery reads as one row: each choice and its outcome on its own Recovery line, in order.
 function recoveryRows(...expected: readonly (readonly string[])[]): CheckpointPredicate {
   return (context) => {
@@ -956,6 +1029,84 @@ const checkpointPredicates = [
       'running 0:12',
       'Plan check K1 · npm test 0:12',
     ),
+  ],
+  [
+    checkpointId('final-review-checks-fold'),
+    checkGroup({
+      header: CHECKS_FOLD_HEADER,
+      fold: '+37 checks · ctrl+a',
+      rows: [],
+      screen: { fromRows: 24, mark: 'stageDone', text: 'Checks  29 passed' },
+    }),
+  ],
+  [
+    checkpointId('final-review-checks-fold-expanded'),
+    checkGroup({
+      header: CHECKS_FOLD_HEADER,
+      fold: 'collapse · ctrl+a',
+      rows: CHECKS_FOLD_ROWS,
+      screen: { fromRows: 24, text: 'Reviewer check V15 · ' },
+    }),
+  ],
+  [
+    checkpointId('final-review-checks-failed'),
+    (context) => {
+      const lines = workflowTranscriptText().split('\n');
+      // A wrapped row reads as one line.
+      const text = lines.map((line) => line.trim()).join(' ');
+      return (
+        checkGroup({
+          header: 'Checks  1 failed · 1 not\u00a0run · 27 passed · 8 rendered · 6 reused · 3m 2s',
+          fold: '+35 passed · ctrl+a',
+          rows: ['Plan check K4 · ', 'Reviewer check V13 · '],
+          screen: { fromRows: 40, mark: 'statusFailed', text: 'Checks  1 failed' },
+        })(context) &&
+        lines.some(
+          (line) => line.startsWith('Reviewer check V13 · ') && line.includes(' · not\u00a0run'),
+        ) &&
+        [
+          '2\u00a0new, 0\u00a0pre-existing',
+          'new · src/features/signup/signup-form.test.tsx > rejects an address without a domain',
+          'the command reached for the network, which a check cannot reach',
+        ].every((marker) => text.includes(marker))
+      );
+    },
+  ],
+  [
+    checkpointId('final-review-checks-running'),
+    (context) =>
+      checkGroup({
+        header: 'Checks  11 passed · 2 rendered · 1 running · 2 reused · 1m 8s',
+        fold: '+11 earlier · ctrl+a',
+        rows: ['Reviewer check V1 · ', 'Reviewer check V2 · ', 'Reviewer check V3 · '],
+        screen: { fromRows: 18, mark: 'statusInProgress', text: 'Checks  11 passed' },
+      })(context) && context.output.includes('running 0:12'),
+  ],
+  [
+    checkpointId('final-review-checks-base'),
+    (context) => {
+      const kept = CHECKS_BASE_KEPT.get(context.viewport.cols);
+      const header = CHECKS_BASE_FACTS.slice(0, kept).join(' · ');
+      const lines = workflowTranscriptText().split('\n');
+      // A wrapped row reads as one line.
+      const text = lines.map((line) => line.trim()).join(' ');
+      return (
+        kept !== undefined &&
+        // The header is exact at every width, also below 80 columns.
+        lines.includes(header) &&
+        checkGroup({
+          header,
+          fold: '+5 passed · ctrl+a',
+          rows: ['Reviewer check V2 · ', 'Base re-run V2 · '],
+          screen: { fromRows: 24, mark: 'statusWarning', text: 'Checks  1 pre-existing' },
+        })(context) &&
+        [
+          'Reviewer check V2 · npm test · pre-existing · 16.4s',
+          'pre-existing · src/legacy/report.test.ts > total matches the ledger',
+          'Base re-run V2 · npm test · red at the run base · 15.8s',
+        ].every((marker) => text.includes(marker))
+      );
+    },
   ],
   [
     checkpointId('review-answering-again'),

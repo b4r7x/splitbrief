@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Section } from '../../../core/sections/event-sections.js';
+import { groupEventsIntoSections, type Section } from '../../../core/sections/event-sections.js';
 import { taskId } from '../../../core/schemas/task.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
@@ -395,5 +395,90 @@ describe('buildConversationRowActions', () => {
     expect(
       findLatestConversationRowAction(buildConversationRowActions(inputs), 'toggle-activity-batch'),
     ).toEqual(batch);
+  });
+});
+
+describe('buildConversationRowActions check groups', () => {
+  const check = (id: string): EngineEventOf<'full_suite'> => ({
+    type: 'full_suite',
+    ts: 0,
+    phase: 'final-review',
+    status: 'done',
+    id,
+    command: `npm test -- ${id}`,
+    moment: 'pre-review',
+    passed: true,
+  });
+  const checks = (count: number) =>
+    Array.from({ length: count }, (_, index) => check(`V${index + 1}`));
+  const reads = (callId: string) =>
+    ['a', 'b', 'c', 'd'].map((name, index) =>
+      activity({
+        callId,
+        phase: 'final-review',
+        role: 'review',
+        sequence: index + 1,
+        activityId: `${callId}-${name}`,
+        kind: 'read',
+        label: `reading ${name}.ts`,
+      }),
+    );
+  const inputsFor = (events: EngineEvent[]) => ({
+    sections: groupEventsIntoSections(events),
+    cols: 88,
+    viewportHeight: 20,
+    streaming,
+    expandedDiffs: new Set<string>(),
+    expandedActivityBatches: new Set<string>(),
+  });
+  const groupAction = (firstIndex: number) =>
+    ({ type: 'toggle-activity-batch', key: `checks:${firstIndex}` }) as const;
+
+  it('maps the fold row of a check group to the toggle of its fold key', () => {
+    const inputs = inputsFor(checks(5));
+    const actions = buildConversationRowActions(inputs);
+    const foldRow = buildConversationRows(inputs).rows.find((row) => row.key === 'checks:0-hidden');
+
+    expect(foldRow?.kind).toBe('activity-more');
+    expect([...actions]).toEqual([['checks:0-hidden', groupAction(0)]]);
+  });
+
+  it('gives the key to an activity batch below a check group', () => {
+    const actions = buildConversationRowActions(inputsFor([...checks(4), ...reads('review')]));
+
+    expect(actions.get('checks:0-hidden')).toEqual(groupAction(0));
+    expect(findLatestConversationRowAction(actions, 'toggle-activity-batch')).toEqual({
+      type: 'toggle-activity-batch',
+      key: activityBatchKey(4, 'review'),
+    });
+  });
+
+  it('gives the key to a check group below an activity batch', () => {
+    const actions = buildConversationRowActions(inputsFor([...reads('review'), ...checks(4)]));
+
+    expect(actions.get(`${activityBatchKey(0, 'review')}-hidden`)).toEqual({
+      type: 'toggle-activity-batch',
+      key: activityBatchKey(0, 'review'),
+    });
+    expect(findLatestConversationRowAction(actions, 'toggle-activity-batch')).toEqual(
+      groupAction(4),
+    );
+  });
+
+  it('maps nothing for a check group with no fold row', () => {
+    const message: EngineEvent = {
+      type: 'user_message',
+      ts: 0,
+      phase: 'final-review',
+      text: 'Check this too.',
+    };
+    const inputs = inputsFor([...checks(4).map((event) => ({ ...event, passed: false })), message]);
+    const group = buildConversationRowsProjection(inputs).blocks.find(
+      (block) => block.key === 'checks:0',
+    );
+
+    expect(group?.rowCount).toBeGreaterThan(0);
+    expect(group?.foldRowKey).toBeUndefined();
+    expect(buildConversationRowActions(inputs).size).toBe(0);
   });
 });

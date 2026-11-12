@@ -127,14 +127,13 @@ export function fullSuiteSegments(
   const detail: ConversationRowSegment[] =
     event.detail === undefined ? [] : [{ text: firstLine(event.detail), tone: 'textDim' }];
   // A reused result shows when its command ran, in place of the clock of a run; a wrap keeps it whole.
+  const time = fullSuiteTime(event);
   const clock: ConversationRowSegment[] =
-    event.status !== 'done'
-      ? []
-      : event.reusedAt !== undefined
+    time !== undefined
+      ? [{ text: rowDuration(time), tone: 'textDim' }]
+      : event.status === 'done' && event.reusedAt !== undefined
         ? [{ text: reusedNote(event.reusedAt).replaceAll(' ', '\u00a0'), tone: 'textDim' }]
-        : event.duration === undefined
-          ? []
-          : [{ text: rowDuration(event.duration), tone: 'textDim' }];
+        : [];
   const outcome = fullSuiteOutcome(event, detail);
   const lead = suiteStageParts(
     { ...event, command: suiteCommandForRow(event, outcome.verdict, clock, width) },
@@ -168,20 +167,58 @@ function segmentCells(segments: readonly ConversationRowSegment[]): number {
   return segments.reduce((total, segment) => total + getTerminalCellWidth(segment.text), 0);
 }
 
+/** The time a check's row shows: the clock of a done run, not of a result reused from an earlier run. */
+export function fullSuiteTime(
+  event: Extract<EngineEvent, { type: 'full_suite' }>,
+): number | undefined {
+  return event.status === 'done' && event.reusedAt === undefined ? event.duration : undefined;
+}
+
+/**
+ * The word a check's outcome reads as, from the words of its row: its status while it is not done,
+ * then `passed`, `rendered`, `pre-existing`, `timed out` or `failed`. A re-run at the run base reads
+ * `passes at the run base`, `pre-existing`, `timed out at the run base` or `red at the run base`. A
+ * split or a fix check's counts say more on the row itself.
+ */
+export function fullSuiteOutcomeWord(event: Extract<EngineEvent, { type: 'full_suite' }>): string {
+  if (event.status === 'not-run') return NOT_RUN;
+  if (event.status !== 'done') return event.status;
+  if (event.passed === true) {
+    if (event.moment === 'base') return 'passes at the run base';
+    return event.scenario === undefined ? 'passed' : 'rendered';
+  }
+  if (fullSuiteSplit(event)?.verdict === 'pre-existing') return 'pre-existing';
+  if (event.moment === 'base')
+    return event.timedOut === true ? 'timed out at the run base' : 'red at the run base';
+  return event.timedOut === true ? 'timed out' : 'failed';
+}
+
+function fullSuiteSplit(event: Extract<EngineEvent, { type: 'full_suite' }>) {
+  return (event.moment === 'pre-review' ||
+    event.moment === 'base' ||
+    event.moment === 'verify' ||
+    event.moment === 'plan') &&
+    event.passed === false &&
+    event.newFailures !== undefined &&
+    event.preExisting !== undefined
+    ? baseSplit({
+        newFailures: event.newFailures,
+        preExisting: event.preExisting,
+        notVerified: event.notVerified,
+        reason: event.detail === undefined ? undefined : firstLine(event.detail),
+      })
+    : null;
+}
+
 function fullSuiteOutcome(
   event: Extract<EngineEvent, { type: 'full_suite' }>,
   detail: readonly ConversationRowSegment[],
 ): { verdict: ConversationRowSegment[]; trail: ConversationRowSegment[] } {
-  if (event.status === 'running')
-    return { verdict: [{ text: 'running', tone: fullSuiteTone(event) }], trail: [] };
-  if (event.status === 'stopped')
-    return { verdict: [{ text: 'stopped', tone: fullSuiteTone(event) }], trail: [] };
-  if (event.status === 'off')
-    return { verdict: [{ text: 'off', tone: fullSuiteTone(event) }], trail: [] };
-  if (event.status === 'not-run')
-    return { verdict: [{ text: NOT_RUN, tone: fullSuiteTone(event) }], trail: [...detail] };
-  if (event.status === 'refused')
-    return { verdict: [{ text: 'refused', tone: fullSuiteTone(event) }], trail: [...detail] };
+  if (event.status !== 'done')
+    return {
+      verdict: [{ text: fullSuiteOutcomeWord(event), tone: fullSuiteTone(event) }],
+      trail: event.status === 'not-run' || event.status === 'refused' ? [...detail] : [],
+    };
   if (
     event.moment === 'brief' &&
     event.own !== undefined &&
@@ -204,36 +241,8 @@ function fullSuiteOutcome(
       trail: [],
     };
   }
-  const split =
-    (event.moment === 'pre-review' ||
-      event.moment === 'base' ||
-      event.moment === 'verify' ||
-      event.moment === 'plan') &&
-    event.passed === false &&
-    event.newFailures !== undefined &&
-    event.preExisting !== undefined
-      ? baseSplit({
-          newFailures: event.newFailures,
-          preExisting: event.preExisting,
-          notVerified: event.notVerified,
-          reason: event.detail === undefined ? undefined : firstLine(event.detail),
-        })
-      : null;
-  const verdict =
-    split?.verdict ??
-    (event.moment === 'base'
-      ? event.passed === true
-        ? 'passes at the run base'
-        : event.timedOut === true
-          ? 'timed out at the run base'
-          : 'red at the run base'
-      : event.passed === true
-        ? event.scenario === undefined
-          ? 'passed'
-          : 'rendered'
-        : event.timedOut === true
-          ? 'timed out'
-          : 'failed');
+  const split = fullSuiteSplit(event);
+  const verdict = split?.verdict ?? fullSuiteOutcomeWord(event);
   // The clock follows the verdict, as on every other row; the reason a red is pre-existing, or not
   // verified at the run base, follows it.
   return {

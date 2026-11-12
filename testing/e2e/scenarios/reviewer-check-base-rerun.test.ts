@@ -119,6 +119,21 @@ test('total adds two numbers', () => {
 });
 `;
 
+/**
+ * A gate command that passes in both trees. In the run workspace, which alone holds the total
+ * helper, it writes `flag`; at the run base it waits for `flag`. So the next gate command starts at
+ * the run base only after the review ran this one, inside the review.
+ */
+const HOLD_FILE = 'legacy/hold-gate.mjs';
+function holdSource(flag: string): string {
+  return `import { existsSync, writeFileSync } from 'node:fs';
+import { setTimeout as delay } from 'node:timers/promises';
+
+if (existsSync(${JSON.stringify(TOTAL_FILE)})) writeFileSync(${JSON.stringify(flag)}, '');
+else while (!existsSync(${JSON.stringify(flag)})) await delay(20);
+`;
+}
+
 const brief = makeTaskSpec({
   id: 'T001',
   title: 'Add the total helper',
@@ -183,19 +198,20 @@ function readCalls(path: string): Call[] {
 const PENDING_INPUT = /^- \*\*(\S+)\*\* \(check · defect\)/gm;
 
 /**
- * Starts a run whose base holds `committed`, whose plan names `command` as the gate V1, whose
- * reviewer passes the review but asks a question on each pending red input and reports `finding`,
- * and whose implementer writes the total helper and, with `broken`, rewrites the ledger.
+ * Starts a run whose base holds the files that `committed` makes for the fixture's temporary folder,
+ * whose plan names `gate` as the gate V1, V2, …, whose reviewer passes the review but asks a
+ * question on each pending red input and reports `finding`, and whose implementer writes the total
+ * helper and, with `broken`, rewrites the ledger.
  */
 async function startRun(opts: {
-  committed: Record<string, string>;
-  command: string;
+  committed: (tmpDir: string) => Record<string, string>;
+  gate: string[];
   broken?: string | undefined;
   finding?: Finding | undefined;
 }) {
   fixture = createStopContinueFixture(() => '');
   const target = fixture;
-  commitOnBase(target.projectDir, opts.committed);
+  commitOnBase(target.projectDir, opts.committed(target.tmpDir));
   restorePath = activateSafeCliShimPath(target.tmpDir);
 
   const callsPath = join(target.tmpDir, 'calls.jsonl');
@@ -226,7 +242,7 @@ if (prompt.includes('# Final Implementation Review')) {
   ${opts.finding === undefined ? '' : `answer.findings = [${JSON.stringify(opts.finding)}];`}
 } else if (prompt.includes('# Plan the change')) {
   kind = 'plan';
-  answer = ${JSON.stringify({ result: { ...plan, gate: [opts.command] } })};
+  answer = ${JSON.stringify({ result: { ...plan, gate: opts.gate } })};
 } else {
   throw new Error('Unexpected prompt: ' + prompt);
 }
@@ -278,8 +294,8 @@ describe('e2e: reviewer check base re-run', { timeout: 240_000 }, () => {
     'marks $kind the run base already holds pre-existing and does not blame the run',
     async (red) => {
       const { target, run, sessionId, ref, events, calls } = await startRun({
-        committed: { [red.file]: red.source },
-        command: red.command,
+        committed: () => ({ [red.file]: red.source }),
+        gate: [red.command],
       });
       expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
 
@@ -433,17 +449,64 @@ describe('e2e: reviewer check base re-run', { timeout: 240_000 }, () => {
     },
   );
 
+  it('counts a base re-run inside the review checks as red at the run base, not as failed', async () => {
+    const red = REDS[0];
+    if (red === undefined) throw new Error('Missing the script red');
+    const { run, ref, events } = await startRun({
+      committed: (tmpDir) => ({
+        [HOLD_FILE]: holdSource(join(tmpDir, 'base-hold')),
+        [red.file]: red.source,
+      }),
+      gate: [`node ${HOLD_FILE}`, red.command],
+    });
+    expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
+
+    // V2 starts at the run base only after the review ran V1, and the review's red V2 waits on it.
+    const v2 = (moment: 'base' | 'pre-review') =>
+      events.flatMap((event) =>
+        event.type === 'full_suite' && event.id === 'V2' && event.moment === moment ? [event] : [],
+      );
+    expect(v2('base').map((row) => [row.phase, row.status, row.passed])).toEqual([
+      ['final-review', 'running', undefined],
+      ['final-review', 'done', false],
+    ]);
+    expect(v2('pre-review').map((row) => [row.status, row.waitsOnBase])).toEqual([
+      ['running', undefined],
+      ['running', true],
+      ['done', undefined],
+    ]);
+    expect(v2('pre-review')[2]).toMatchObject({ passed: false, newFailures: 0, preExisting: 1 });
+
+    // The two V2 rows start close together, so the order of their counts is not fixed.
+    const transcript = await transcriptRows(ref);
+    const headers = transcript.filter((row) => row.startsWith('Checks  '));
+    expect(headers).toHaveLength(1);
+    const header = headers[0] ?? '';
+    const counts = header.slice('Checks  '.length).split(' · ');
+    expect(counts).toEqual(expect.arrayContaining(['1 pre-existing', '1 red at the run base']));
+    expect(
+      counts.filter((count) => count.includes('failed')),
+      header,
+    ).toEqual([]);
+    const at = transcript.indexOf(header);
+    const baseAt = transcript.findIndex((row) =>
+      row.startsWith(`Base re-run V2 · ${red.command} · red at the run base · `),
+    );
+    expect(baseAt).toBeGreaterThan(at);
+    expect(transcript.slice(at, baseAt)).not.toContain('');
+  });
+
   it('counts a test file the run made fail to load as new beside a pre-existing red test', async () => {
     const red = REDS[1];
     if (red === undefined) throw new Error('Missing the node --test red');
     const command = `${red.command} ${LEDGER_SUITE_FILE}`;
     const { target, run, sessionId, events, calls } = await startRun({
-      committed: {
+      committed: () => ({
         [red.file]: red.source,
         [LEDGER_FILE]: LEDGER_SOURCE,
         [LEDGER_SUITE_FILE]: LEDGER_SUITE_SOURCE,
-      },
-      command,
+      }),
+      gate: [command],
       broken: BROKEN_LEDGER,
     });
     expect(run.exitCode, `${run.stdout}\n${run.stderr}`).not.toBe(0);
@@ -495,8 +558,8 @@ describe('e2e: reviewer check base re-run', { timeout: 240_000 }, () => {
       if (red === undefined) throw new Error('Missing the node --test red');
       const finding = noteOn(red.file, severity);
       const { target, run, sessionId, ref, events } = await startRun({
-        committed: { [red.file]: red.source },
-        command: red.command,
+        committed: () => ({ [red.file]: red.source }),
+        gate: [red.command],
         finding,
       });
       expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
@@ -565,12 +628,12 @@ describe('e2e: reviewer check base re-run', { timeout: 240_000 }, () => {
       const finding = noteOn(red.file, severity);
       const command = `${red.command} ${LEDGER_SUITE_FILE}`;
       const { target, run, sessionId, events } = await startRun({
-        committed: {
+        committed: () => ({
           [red.file]: red.source,
           [LEDGER_FILE]: LEDGER_SOURCE,
           [LEDGER_SUITE_FILE]: LEDGER_SUITE_SOURCE,
-        },
-        command,
+        }),
+        gate: [command],
         broken: BROKEN_LEDGER,
         finding,
       });

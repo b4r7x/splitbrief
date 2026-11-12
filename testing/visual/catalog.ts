@@ -1514,6 +1514,82 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-final-review-checks-fold',
+      title: 'Workflow · a passed final review whose 37 checks fold into one group',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: [
+        {
+          id: 'final-review-checks-fold',
+          title: 'Every check green: the group header counts them and the fold hides every row',
+          kind: 'ready',
+          marker: '+37 checks · ctrl+a',
+        },
+        {
+          id: 'final-review-checks-fold-expanded',
+          title: 'The group opened with ctrl+a: every check row under the header',
+          kind: 'ready',
+          marker: 'Ready to apply',
+        },
+      ],
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Review transcript with the check group' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-final-review-checks-failed',
+      title: 'Workflow · a failed final review whose check group keeps its red rows',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'final-review-checks-failed',
+        title: 'A failed plan check and a check not run stay under the folded passes',
+        kind: 'ready',
+        marker: '+35 passed · ctrl+a',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Review transcript with the check group' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-final-review-checks-running',
+      title: 'Workflow · a final review whose checks still run',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'final-review-checks-running',
+        title: 'The live group shows its last three rows under the earlier ones folded',
+        kind: 'review',
+        marker: '+11 earlier · ctrl+a',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Review transcript with the running check group' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-final-review-checks-base',
+      title: 'Workflow · a passed final review whose check group holds re-runs at the run base',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'final-review-checks-base',
+        title: 'A pre-existing red and its red re-run at the run base stay under the folded passes',
+        kind: 'ready',
+        marker: '+5 passed · ctrl+a',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Review transcript with the check group' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-review-answering-again',
       title: 'Workflow · reviewer asked again after an answer that broke its contract',
       surface: screenSurface('workflow'),

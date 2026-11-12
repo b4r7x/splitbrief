@@ -2760,6 +2760,148 @@ describe('buildConversationRowsProjection check lists', () => {
   });
 });
 
+describe('buildConversationRowsProjection check groups', () => {
+  const check = (id: string): EngineEventOf<'full_suite'> => ({
+    type: 'full_suite',
+    ts: 0,
+    phase: 'final-review',
+    status: 'done',
+    id,
+    command: `npm test -- ${id}`,
+    moment: 'pre-review',
+    passed: true,
+  });
+  const checks = (count: number) =>
+    Array.from({ length: count }, (_, index) => check(`V${index + 1}`));
+  const row = (id: string) => `Reviewer check ${id} · npm test -- ${id} · passed`;
+  const message: EngineEvent = {
+    type: 'user_message',
+    ts: 0,
+    phase: 'final-review',
+    text: 'Check this too.',
+  };
+  const review = { phase: 'final-review', scope: 'final', tool: 'claude-code' } as const;
+
+  function projectionFor(events: EngineEvent[], expandedActivityBatches = new Set<string>()) {
+    return buildConversationRowsProjection({
+      sections: groupEventsIntoSections(events),
+      expandedDiffs: new Set(),
+      expandedActivityBatches,
+      cols: 120,
+      viewportHeight: 20,
+      streaming,
+    });
+  }
+
+  function materialize(projection: ReturnType<typeof buildConversationRowsProjection>) {
+    return materializeConversationRowsWindow({
+      projection,
+      windowStart: 0,
+      windowEnd: projection.totalRows,
+    });
+  }
+
+  it('shows a run of more than three checks under the review heading as one group in progress', () => {
+    const projection = projectionFor(checks(5));
+    const rows = materialize(projection);
+
+    expect(rows.map(rowText)).toEqual([
+      'Final review',
+      'Checks  5 passed',
+      '+2 earlier · ctrl+a',
+      row('V3'),
+      row('V4'),
+      row('V5'),
+    ]);
+    expect(rows.map((candidate) => candidate.kind)).toEqual([
+      'section',
+      'activity',
+      'activity-more',
+      'activity-child',
+      'activity-child',
+      'activity-child-last',
+    ]);
+    expect(projection.blocks.find((block) => block.key === 'checks:0')?.activeRowKey).toBe(
+      'checks:0-header',
+    );
+    expect(projection.renderableCount).toBe(projectionFor(checks(3)).renderableCount + 2);
+  });
+
+  it('opens the group under its fold key', () => {
+    const rows = materialize(projectionFor(checks(5), new Set(['checks:0'])));
+
+    expect(rows.map(rowText)).toEqual([
+      'Final review',
+      'Checks  5 passed',
+      'collapse · ctrl+a',
+      ...['V1', 'V2', 'V3', 'V4', 'V5'].map(row),
+    ]);
+  });
+
+  it('keeps a blank row between a closed group and the next block', () => {
+    const projection = projectionFor([...checks(4), message]);
+
+    expect(materialize(projection).map(rowText)).toEqual([
+      'Final review',
+      'Checks  4 passed',
+      '+4 checks · ctrl+a',
+      '',
+      ...materialize(projectionFor([message])).map(rowText),
+    ]);
+  });
+
+  it('joins a group to the check-list header above it without a blank row', () => {
+    const header: EngineEventOf<'review_checks'> = {
+      type: 'review_checks',
+      ts: 0,
+      phase: 'final-review',
+      status: 'none',
+    };
+    const rows = materialize(projectionFor([header, ...checks(4)]));
+
+    expect(rows.map(rowText).slice(0, 3)).toEqual([
+      'Final review',
+      'End-of-run checks · none · the plan names no project gate',
+      'Checks  4 passed',
+    ]);
+    expect(rows.filter((candidate) => candidate.kind === 'spacer')).toEqual([]);
+  });
+
+  it('gives a group of a settled review no active row', () => {
+    const running: EngineEventOf<'full_suite'> = {
+      type: 'full_suite',
+      ts: 0,
+      phase: 'final-review',
+      status: 'running',
+      id: 'V4',
+      command: 'npm test -- V4',
+      moment: 'pre-review',
+    };
+    const projection = projectionFor([
+      { type: 'review_started', ts: 0, ...review },
+      ...checks(3),
+      running,
+      { type: 'review_completed', ts: 10, ...review, verdict: 'pass', duration: 10 },
+    ]);
+    const group = projection.blocks.find((block) => block.key === 'checks:1');
+
+    expect(group?.rowCount).toBeGreaterThan(0);
+    expect(group?.activeRowKey).toBeUndefined();
+  });
+
+  it('keeps a run of three checks in a review as three rows', () => {
+    const rows = materialize(projectionFor(checks(3)));
+
+    expect(rows.map(rowText)).toEqual(['Final review', row('V1'), row('V2'), row('V3')]);
+    expect(rows.map((candidate) => candidate.kind)).toEqual([
+      'section',
+      'message',
+      'message',
+      'message',
+    ]);
+  });
+});
+
 describe('buildConversationRowsProjection event block cache', () => {
   it('caches settled bodies and replaces live task and activity markers on settlement', () => {
     resetEventBlockCache();

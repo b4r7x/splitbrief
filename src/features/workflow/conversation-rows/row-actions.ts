@@ -9,6 +9,7 @@ import { activityBatchKey } from './activity-batch-key.js';
 import { buildActivityBatchViewModel } from './activity-batch-model.js';
 import { implementerFailureCard, eventRowBlock, recoveryRowBlock } from './event-rows/dispatch.js';
 import { runnerActivityBatchRowBlock } from './activity-rows.js';
+import { checkGroupKey, checkGroupRowBlock } from './check-group-rows.js';
 import { walkTranscript, type RunnerActivityBatch } from './transcript-walk.js';
 
 const MIN_ROW_WIDTH = 1;
@@ -26,10 +27,10 @@ export function findLatestConversationRowAction(
 
 // Maps each actionable transcript row key to its expand/collapse action so a click on the row can
 // trigger the same toggle as the keyboard. Only a fold row (`+N earlier` / `+N more` / `collapse`)
-// of an activity batch or of a block at the tail, diff rows and a failure card whose cause was cut
-// are actionable. Every other row key is absent and a click on it is inert. Shares walkTranscript
-// with the projection so its batch grouping matches the rendered rows exactly. The tail comes
-// last, so the latest fold is the lowest one on the screen.
+// of an activity batch, a check group or a block at the tail, diff rows and a failure card whose
+// cause was cut are actionable. Every other row key is absent and a click on it is inert. Shares
+// walkTranscript with the projection so its batch grouping matches the rendered rows exactly. The
+// tail comes last, so the latest fold is the lowest one on the screen.
 export function buildConversationRowActions(
   inputs: ConversationRowInputs & Pick<ConversationRowScrollInputs, 'tail'>,
 ): Map<string, ConversationRowAction> {
@@ -62,6 +63,17 @@ export function buildConversationRowActions(
       continue;
     if (step.kind === 'activity-batch') {
       flushActivityBatch(step.batch);
+      continue;
+    }
+    if (step.kind === 'check-group') {
+      const block = checkGroupRowBlock({
+        checks: step.checks,
+        firstIndex: step.firstIndex,
+        expanded: inputs.expandedActivityBatches.has(checkGroupKey(step.firstIndex)),
+        width: ctx.width,
+        open: step.open,
+      });
+      registerFoldRows(block, block.key);
       continue;
     }
     if (step.kind === 'recovery') {

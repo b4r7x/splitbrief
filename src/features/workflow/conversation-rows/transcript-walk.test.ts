@@ -5,6 +5,7 @@ import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js
 import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';
 import { makeTaskComplete, makeTaskSkipped, makeTaskStart } from '#testing/helpers/events/task.js';
 import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
+import { makePlannerHeartbeat } from '#testing/helpers/events/planner.js';
 import {
   WORKSPACE_KEPT_CODE,
   WORKSPACE_NOTICE_CATEGORY,
@@ -1360,5 +1361,147 @@ describe('a BUILD call that retries after a network or server failure', () => {
       buildFailed,
     ]);
     expect(eventSteps.filter((event) => event.type === 'seat_retry')).toEqual([reviewRetry]);
+  });
+});
+
+describe('walkTranscript check groups', () => {
+  const check = (id: string, ts: number): EngineEventOf<'full_suite'> => ({
+    type: 'full_suite',
+    ts,
+    phase: 'final-review',
+    status: 'done',
+    id,
+    command: `npm test -- ${id}`,
+    moment: 'pre-review',
+    passed: true,
+  });
+  const checks = (count: number, from = 1) =>
+    Array.from({ length: count }, (_, index) => check(`K${from + index}`, from + index));
+  const message: EngineEvent = {
+    type: 'user_message',
+    ts: 50,
+    phase: 'final-review',
+    text: 'Check this too.',
+  };
+  const heartbeat = (ts: number) => makePlannerHeartbeat({ ts, phase: 'final-review' });
+  const steps = (events: EngineEvent[]) => [...walkTranscript(groupEventsIntoSections(events))];
+  const kinds = (events: EngineEvent[]) => steps(events).map((step) => step.kind);
+
+  it('folds a run of more than three checks at the end of a running review into one open step', () => {
+    const run = checks(4);
+
+    expect(steps(run)).toEqual([
+      expect.objectContaining({ kind: 'review-heading' }),
+      { kind: 'check-group', firstIndex: 0, checks: run, open: true },
+    ]);
+  });
+
+  it('keeps a run of three checks as three rows', () => {
+    const run = checks(3);
+
+    expect(steps(run)).toEqual([
+      expect.objectContaining({ kind: 'review-heading' }),
+      ...run.map((event, globalIndex) => ({ kind: 'event', event, globalIndex })),
+    ]);
+  });
+
+  it('ends a run at a row between its checks', () => {
+    const first = checks(4);
+    const second = checks(4, 5);
+    const walked = steps([...first, message, ...second]);
+
+    expect(walked.map((step) => step.kind)).toEqual([
+      'review-heading',
+      'check-group',
+      'event',
+      'check-group',
+    ]);
+    expect(walked.filter((step) => step.kind === 'check-group')).toEqual([
+      { kind: 'check-group', firstIndex: 0, checks: first, open: false },
+      { kind: 'check-group', firstIndex: 5, checks: second, open: true },
+    ]);
+    expect(kinds([...checks(4), message, ...checks(3, 5)])).toEqual([
+      'review-heading',
+      'check-group',
+      'event',
+      'event',
+      'event',
+      'event',
+    ]);
+  });
+
+  it('ends a run at the activity of the reviewer call, which follows the group', () => {
+    const run = checks(4);
+    const read = makeRunnerCallActivity({
+      ts: 60,
+      phase: 'final-review',
+      role: 'review',
+      callId: 'review-call',
+      kind: 'read',
+      label: 'reading a.ts',
+    });
+    const walked = steps([...run, read]);
+
+    expect(walked.map((step) => step.kind)).toEqual([
+      'review-heading',
+      'check-group',
+      'activity-batch',
+    ]);
+    expect(walked[1]).toEqual({ kind: 'check-group', firstIndex: 0, checks: run, open: false });
+    expect(walked[2]).toMatchObject({ batch: { firstIndex: 4, events: [read] } });
+  });
+
+  it('keeps a run whole across rowless events and starts it at the index of its first check', () => {
+    const run = checks(4);
+    const [first, second, third, fourth] = run;
+    if (first === undefined || second === undefined || third === undefined || fourth === undefined)
+      throw new Error('Expected four checks');
+    const walked = steps([
+      heartbeat(0),
+      heartbeat(0),
+      first,
+      heartbeat(1),
+      second,
+      third,
+      heartbeat(3),
+      fourth,
+    ]);
+
+    expect(walked.map((step) => step.kind)).toEqual([
+      'review-heading',
+      'event',
+      'event',
+      'event',
+      'event',
+      'check-group',
+    ]);
+    expect(walked.at(-1)).toEqual({ kind: 'check-group', firstIndex: 2, checks: run, open: true });
+  });
+
+  it('closes a run of a settled review that is not open', () => {
+    const review = { phase: 'final-review', scope: 'final', tool: 'claude-code' } as const;
+    const run = checks(4);
+    const events: EngineEvent[] = [
+      { type: 'review_started', ts: 0, ...review },
+      ...run,
+      { type: 'review_completed', ts: 10, ...review, verdict: 'pass', duration: 10 },
+    ];
+    const sections = groupEventsIntoSections(events);
+    const [section] = sections;
+
+    expect(sections.map((candidate) => candidate.type)).toEqual(['settled-stage']);
+    expect([...walkTranscript(sections)].filter((step) => step.kind === 'check-group')).toEqual([
+      { kind: 'check-group', firstIndex: 1, checks: run, open: false, settledSection: section },
+    ]);
+  });
+
+  it('keeps the checks of a BUILD brief as rows', () => {
+    const briefChecks = checks(4).map(
+      (event): EngineEvent => ({ ...event, phase: 'implementing', moment: 'brief' }),
+    );
+
+    expect(steps(briefChecks)).toEqual(
+      briefChecks.map((event, globalIndex) => ({ kind: 'event', event, globalIndex })),
+    );
   });
 });

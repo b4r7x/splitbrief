@@ -573,6 +573,37 @@ describe('workflow pointer handling', () => {
     ]);
   });
 
+  it('click on the fold row of a check group above an activity batch toggles the group and nothing else', () => {
+    routerStore.init(WORKFLOW_ROUTE);
+    runViewStore.__testReset({ phase: 'final-review' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
+    const checks = ['V1', 'V2', 'V3', 'V4'].map(
+      (id): EngineEventOf<'full_suite'> => ({
+        type: 'full_suite',
+        ts: 0,
+        phase: 'final-review',
+        status: 'done',
+        id,
+        command: `npm test -- ${id}`,
+        moment: 'pre-review',
+        passed: true,
+      }),
+    );
+    const reads = [
+      activityEvent('a', 'reading a.ts', 1),
+      activityEvent('b', 'reading b.ts', 2),
+      activityEvent('c', 'reading c.ts', 3),
+      activityEvent('d', 'reading d.ts', 4),
+    ].map((event) => ({ ...event, phase: 'final-review' as const, role: 'review' as const }));
+    eventsStore.__testReset({ events: [...checks, ...reads] });
+    const batchFold = `${activityBatchKey(checks.length, 'call-1')}-hidden`;
+    expect(windowRowsWithTail().some((row) => row.key === batchFold)).toBe(true);
+
+    pressRow('checks:0-hidden');
+
+    expect([...conversationScrollStore.get().expandedActivityBatches]).toEqual(['checks:0']);
+  });
+
   it('click on the fold row of a tail block toggles that block and nothing else', () => {
     routerStore.init(WORKFLOW_ROUTE);
     runViewStore.__testReset({ phase: 'implementing' });

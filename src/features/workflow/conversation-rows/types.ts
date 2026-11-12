@@ -41,10 +41,10 @@ export interface ConversationRow {
   segments: ConversationRowSegment[];
   markerTone?: ConversationRowTone;
   /**
-   * A settled row that does not wear the done mark: a stop cut its call (`cancelled`), or its
-   * outcome needs the reader (`attention`).
+   * A settled row that does not wear the done mark: a stop cut its call (`cancelled`), its
+   * outcome needs the reader (`attention`), or it holds a failure (`failed`).
    */
-  doneAs?: 'cancelled' | 'attention';
+  doneAs?: 'cancelled' | 'attention' | 'failed';
   headerContinuation?: boolean;
   codeBg?: true;
   /**

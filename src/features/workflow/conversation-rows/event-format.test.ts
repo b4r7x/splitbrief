@@ -7,6 +7,7 @@ import { wrapHard } from '../../../utils/wrap.js';
 import {
   formatTaskStartedParts,
   fullSuiteNameRows,
+  fullSuiteOutcomeWord,
   fullSuiteSegments,
   fullSuiteTone,
   reviewChecksSegments,
@@ -847,6 +848,66 @@ describe('fullSuiteRow for a reviewer check', () => {
     expect(fullSuiteTone(reviewCheck({ status: 'running' }))).toBe('accent');
     expect(fullSuiteTone(reviewCheck({ status: 'not-run', detail: 'V1 failed' }))).toBe('warning');
   });
+});
+
+describe('fullSuiteOutcomeWord', () => {
+  it.each([
+    {
+      state: 'a base pass',
+      check: { moment: 'base', passed: true },
+      word: 'passes at the run base',
+    },
+    {
+      state: 'a base pass of a scenario',
+      check: { moment: 'base', passed: true, scenario: 'workflow-x' },
+      word: 'passes at the run base',
+    },
+    { state: 'a base red', check: { moment: 'base', passed: false }, word: 'red at the run base' },
+    {
+      state: 'a base red that timed out',
+      check: { moment: 'base', passed: false, timedOut: true },
+      word: 'timed out at the run base',
+    },
+    {
+      state: 'a base red of only pre-existing failures',
+      check: { moment: 'base', passed: false, newFailures: 0, preExisting: 2 },
+      word: 'pre-existing',
+    },
+    {
+      state: 'a base check that runs',
+      check: { moment: 'base', status: 'running' },
+      word: 'running',
+    },
+    {
+      state: 'a base check that did not run',
+      check: { moment: 'base', status: 'not-run', detail: 'V1 failed' },
+      word: 'not run',
+    },
+    { state: 'a plan pass', check: { moment: 'plan', passed: true }, word: 'passed' },
+    {
+      state: 'a reviewer pass of a scenario',
+      check: { moment: 'pre-review', passed: true, scenario: 'workflow-x' },
+      word: 'rendered',
+    },
+    {
+      state: 'a verify red of only pre-existing failures',
+      check: { moment: 'verify', passed: false, newFailures: 0, preExisting: 2 },
+      word: 'pre-existing',
+    },
+    {
+      state: 'a plan red that timed out',
+      check: { moment: 'plan', passed: false, timedOut: true },
+      word: 'timed out',
+    },
+    { state: 'a reviewer red', check: { moment: 'pre-review', passed: false }, word: 'failed' },
+  ] satisfies { state: string; check: Partial<ReviewCheckEvent>; word: string }[])(
+    'reads $state as $word',
+    ({ check, word }) => {
+      expect(fullSuiteOutcomeWord(reviewCheck({ status: 'done', duration: 1_000, ...check }))).toBe(
+        word,
+      );
+    },
+  );
 });
 
 describe('reviewChecksRow', () => {

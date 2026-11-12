@@ -196,6 +196,28 @@ Before review, every plan and task check gets its own `full_suite` row at `momen
 
 A check whose command already ran on the same files takes that result and does not run again. This covers one command under several check ids, a reviewer check after the checks before the review, the base re-run of a continued run, and every check after a stop and a continue. Its row shows when the command ran in place of its clock: `Reviewer check V2 · npm test · passed · reused, ran 11:53`, or `reused, ran Oct 27, 11:53` on another day. A changed file runs the command again. So does a check that timed out or was stopped, and a red check that a `verify` from the planner runs. A review that verifies its claims takes a stored red as it is.
 
+**Groups of checks.** In a review, more than three checks one after the other show as one group. A header row counts the outcomes. One fold row under the header counts the checks that the group hides:
+
+```text
+Final review
+● Checks  23 passed · 14 rendered · 9 reused · 4m 12s
+└ +37 checks · ctrl+a
+```
+
+```text
+Final review
+✗ Checks  1 failed · 22 passed · 14 rendered · 9 reused · 4m 24s
+├ +36 passed · ctrl+a
+└ Plan check K5 · npm test · failed · 12.1s
+```
+
+- The header counts each outcome word, then the reused results, then the sum of the times on the rows. A re-run at the run base counts under its own words, such as `red at the run base` or `passes at the run base`. Failures come first, then the counts in the warning colour, such as `not run`, `refused` or `stopped`, then the other counts. A header too wide for the terminal drops whole counts from the right.
+- The header mark shows one state for the whole group. A failure (`✗`) comes before a group in progress (`◉`). A group in progress comes before a check in the warning colour (`⚠`), and that comes before green (`●`).
+- When the checks are done, the group hides the checks that read `passed`, `rendered` or `passes at the run base`. Every other check keeps its row under the fold row, with its failing tests, and the fold row reads `+N passed`. When every check reads one of these words, only the header and the fold row `+N checks` stay. A group that hides no check has no fold row.
+- While the review still runs its checks, the group is in progress. It shows its last three checks, and the fold row reads `+N earlier`.
+- `ctrl+a` and `/activity` open the lowest fold row of the transcript. A click opens the fold row that you click. An open group shows every check, and its fold row reads `collapse`. The same key, command or click closes the group. Only the lowest fold row names the key.
+- Three checks or fewer keep one row each. A different row between two checks, such as a warning, ends the group. The checks of a brief during Build always keep one row each.
+
 **What it does.** After all tasks reach a terminal state, the review seat — the `reviewer` runner when one is configured, the planner when none is — reviews the entire diff against the Task Brief and any supporting spec. With `reviewer: none` no seat reviews. The deterministic drift report (see below) is rendered into the prompt under `## Deterministic Drift Report` so the reviewer sees both signals at once. A review seat on a CLI tool reads the diff from `.splitbrief/reviews/<id>.diff` in the run workspace, and its prompt names that file, so a large change does not have to fit in the prompt. Every other seat takes the diff in its prompt. When the seat accepts images, the review gets at most 4 PNGs of each render check, every `frame.png` first and then the other PNGs in path order; the prompt names the PNGs it does not attach. A render criterion stays unverified only when no image of its check reached the reviewer.
 
 **How to use.** Always runs at end cadence, except with REVIEW None, where no review runs; with `workflow.review: task`, one scoped review also runs after each task after its due checks pass. A task review runs no gate. The seat answers one typed `ReviewAnswer` with the verdict and fix work (`src/core/schemas/review.ts`), SPLITBRIEF derives `pass`, `pass-with-notes` or `fail` and writes the record to `.splitbrief/sessions/<id>/review.json` (rendered as `review.md`). The same review answer supplies fix tasks with fresh ids. Fix cycles run until the review passes. When a review answer fixes nothing, or a fix cycle leaves the same blockers, the run halts on `review-failed` and names them. It offers **Review again with a note** or end. Sometimes the only unverified criteria are render criteria that the review seat could not see, because it takes no images. Then the halt names the REVIEW seat and offers **Try again** in place of **Review again**. Change the review seat with `/crew review`, and the review runs again on that seat. A `--plain` or `--json` run prints `splitbrief continue <session> --reviewer <tool> --action retry`, with a tool that reads images in place of `<tool>`. A red check or Apply input permits no **accept as is**. The reviewer can set aside a red check input that needs no work: when it rejects the input with a reason, the input does not block the review. An Apply conflict cannot be set aside. Other failed final reviews also offer **accept as is**. The run fires `workflow_complete` only when it reaches `complete`, then writes `summary.json`.

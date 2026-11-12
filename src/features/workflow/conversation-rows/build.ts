@@ -17,6 +17,7 @@ import {
   type EventBlockCacheKey,
 } from './block-cache.js';
 import { eventRowBlock, recoveryRowBlock } from './event-rows/dispatch.js';
+import { checkGroupKey, checkGroupRowBlock } from './check-group-rows.js';
 import { joinsCheckList } from './check-list-spacing.js';
 import { isPlannerTextRenderedAsMarkdown } from './event-rows/planner-text.js';
 import { runnerActivityBatchRowBlock } from './activity-rows.js';
@@ -132,6 +133,20 @@ function buildConversationRowsProjectionWithContext(
     }
     if (step.kind === 'activity-batch') {
       flushActivityBatch(step.batch, step.settledSection !== undefined || step.callEnded);
+      continue;
+    }
+    if (step.kind === 'check-group') {
+      const block = checkGroupRowBlock({
+        checks: step.checks,
+        firstIndex: step.firstIndex,
+        expanded: inputs.expandedActivityBatches.has(checkGroupKey(step.firstIndex)),
+        width: ctx.width,
+        open: step.open,
+      });
+      appendBlock(
+        step.settledSection === undefined ? block : withoutActiveRow(block),
+        'full_suite',
+      );
       continue;
     }
     if (step.kind === 'recovery') {

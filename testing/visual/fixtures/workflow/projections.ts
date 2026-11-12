@@ -24,6 +24,12 @@ import type { RunRecord } from '../../../../src/core/sessions/run-record.js';
 import type { Summary } from '../../../../src/core/schemas/summary.js';
 import { retainedWorkspaceNotices, retainedWorkspaceProjection } from './retained-workspace.js';
 import { closedQueueProjection } from './closed-queue-projection.js';
+import {
+  checksBaseProjection,
+  checksFailedProjection,
+  checksFoldProjection,
+  checksRunningProjection,
+} from './check-fold-projections.js';
 import { cliStopContinuedProjection } from './cli-stop-continued.js';
 import { taskId, type Check, type Task } from '../../../../src/core/schemas/task.js';
 import { buildRepoChecks } from '../../../../src/core/readiness/checks/repo.js';
@@ -9002,6 +9008,7 @@ const crewWideProjection: WorkflowFixtureProjection = {
 const projections = [
   reviewResumeProjection,
   reviewCheckCrashProjection,
+  checksRunningProjection,
   idleProjection,
   planningProjection,
   startAttachedFilesProjection,
@@ -9555,6 +9562,9 @@ export const workflowFixtureProjections: ReadonlyMap<ScenarioId, WorkflowFixture
       retainedWorkspaceProjection,
       cliStopContinuedProjection,
       closedQueueProjection,
+      checksFoldProjection,
+      checksFailedProjection,
+      checksBaseProjection,
       ...atRestProjections,
     ].map((projection) => [projection.scenarioId, projection]),
   );

@@ -8,9 +8,11 @@ import { stripRecoveryResetClause } from '../../../core/recovery/reset-clock.js'
 import { SOFT_SEP } from '../../../core/separators.js';
 import { WORKSPACE_KEPT_CODE } from '../../../core/sessions/workspace-notice.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
+import { COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT } from './activity-batch-model.js';
 import { isTranscriptRowlessEvent } from './event-rows/visibility.js';
 
 type RunnerActivityEvent = EngineEventOf<'runner_call_activity'>;
+type CheckEvent = EngineEventOf<'full_suite'>;
 
 export interface RunnerActivityBatch {
   callId: string;
@@ -63,6 +65,7 @@ export type TranscriptWalkStep =
   | { kind: 'settled-end'; section: SettledTranscriptSection }
   | ((
       | { kind: 'activity-batch'; batch: RunnerActivityBatch; callEnded: boolean }
+      | { kind: 'check-group'; firstIndex: number; checks: CheckEvent[]; open: boolean }
       | { kind: 'recovery'; recovery: RecoveryFold }
       | {
           kind: 'event';
@@ -93,6 +96,8 @@ export type TranscriptWalkStep =
 // with its heading while it runs and keeps it once it settles, so no row appears above its rows.
 // A BUILD attempt that a network or server retry follows shows no failed row: the retry row says the call goes on.
 // A consult rewrite or split shows its row once the brief is replaced or split; the guard question replaces a held one.
+// In a review, a run of more than three check rows yields one check group. It closes where a batch
+// closes, row-less events never split it, and only a run that ends the transcript is open.
 export function* walkTranscript(
   sections: readonly Section<EngineEvent>[],
 ): Generator<TranscriptWalkStep> {
@@ -136,12 +141,13 @@ export function* walkTranscript(
   let activityBatch: RunnerActivityBatch | null = null;
   let recovery: RecoveryFold | null = null;
   let afterRecovery: Extract<TranscriptWalkStep, { kind: 'event' }>[] = [];
+  let checkRun: { event: CheckEvent; globalIndex: number }[] = [];
   let lastRowEvent: EngineEvent | null = null;
   let openHeader: EngineEventOf<'task_started'> | null = null;
   let restatedPrompt: EngineEventOf<'recovery_prompted'> | null = null;
   let settledContext: { settledSection?: SettledTranscriptSection } = {};
 
-  function* flush(): Generator<TranscriptWalkStep> {
+  function* flush(open = false): Generator<TranscriptWalkStep> {
     if (activityBatch !== null)
       yield {
         kind: 'activity-batch',
@@ -151,9 +157,22 @@ export function* walkTranscript(
       };
     if (recovery !== null) yield { kind: 'recovery', recovery, ...settledContext };
     yield* afterRecovery;
+    const [firstCheck] = checkRun;
+    if (firstCheck !== undefined && checkRun.length > COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT)
+      yield {
+        kind: 'check-group',
+        firstIndex: firstCheck.globalIndex,
+        checks: checkRun.map(({ event }) => event),
+        open,
+        ...settledContext,
+      };
+    else
+      for (const { event, globalIndex } of checkRun)
+        yield { kind: 'event', event, globalIndex, ...settledContext };
     activityBatch = null;
     recovery = null;
     afterRecovery = [];
+    checkRun = [];
   }
 
   for (const section of sections) {
@@ -265,6 +284,12 @@ export function* walkTranscript(
         continue;
       }
       if (recovery !== null && joinsRecovery(recovery, event)) continue;
+      if (event.type === 'full_suite' && review !== undefined) {
+        if (checkRun.length === 0) yield* flush();
+        checkRun.push({ event, globalIndex });
+        lastRowEvent = event;
+        continue;
+      }
       yield* flush();
       if (event.type === 'recovery_prompted' && restatesHalt(lastRowEvent, event)) {
         restatedPrompt = event;
@@ -308,7 +333,7 @@ export function* walkTranscript(
       openHeader = null;
     }
   }
-  yield* flush();
+  yield* flush(true);
 }
 
 function retriedImplementerAttempts(sections: readonly Section<EngineEvent>[]): Set<EngineEvent> {
