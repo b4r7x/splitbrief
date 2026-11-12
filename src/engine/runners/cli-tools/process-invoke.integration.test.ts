@@ -1420,7 +1420,7 @@ describe('invokeProcessCli', () => {
         try {
           const sandboxEnv = await createRunnerSandboxEnv(
             projectDir,
-            { kind: 'cli', tool: 'codex', authChannel: 'session' },
+            { kind: 'cli', tool: 'codex' },
             'implementer',
           );
           const events: RunnerCallEvent[] = [];

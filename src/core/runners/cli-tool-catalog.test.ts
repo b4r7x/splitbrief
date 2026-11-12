@@ -22,7 +22,6 @@ import {
   defaultCliAuthChannel,
   getCliModelPolicy,
   hasNativeCliCatalog,
-  selectCliAuthChannel,
   typedOutputCapability,
   type CliModelPolicy,
 } from './cli-tool-catalog.js';
@@ -278,7 +277,9 @@ describe('CLI tool catalog', () => {
     expect(Reflect.set(descriptor.roles, 0, 'implementer')).toBe(false);
     expect(Reflect.set(descriptor.modelPolicy, 'planner', 'required')).toBe(false);
     expect(Reflect.set(descriptor.auth.env, 0, 'CHANGED')).toBe(false);
-    expect(Reflect.set(descriptor.auth.channels, 0, descriptor.auth.channels[1])).toBe(false);
+    expect(
+      Reflect.set(descriptor.auth.channels, 0, CLI_TOOL_CATALOG.opencode.auth.channels[0]),
+    ).toBe(false);
     expect(Reflect.set(descriptor.auth.channels[0]?.env ?? [], 0, 'CHANGED')).toBe(false);
     expect(Reflect.set(descriptor.executableAliases, 0, 'changed')).toBe(false);
     expect(Reflect.set(descriptor.mandatoryPreflightFacts, 0, 'changed')).toBe(false);
@@ -382,23 +383,13 @@ describe('CLI tool catalog', () => {
     ]);
   });
 
-  it('selects auth and billing as one explicit channel', () => {
-    expect(selectCliAuthChannel('codex', { channel: 'session' })).toEqual({
+  it('keeps auth and billing as one explicit channel', () => {
+    expect(defaultCliAuthChannel('codex')).toEqual({
       id: 'session',
       env: [],
-      stateBridge: 'host-cli-state',
       billing: 'subscription-included',
       hostKeychainPlatforms: [],
     });
-    expect(selectCliAuthChannel('codex', { channel: 'api-key' })).toEqual({
-      id: 'api-key',
-      env: ['OPENAI_API_KEY'],
-      stateBridge: 'none',
-      billing: 'api-metered',
-      hostKeychainPlatforms: [],
-    });
-    expect(selectCliAuthChannel('codex', undefined)).toBeUndefined();
-    expect(selectCliAuthChannel('copilot', { channel: 'api-key' })).toBeUndefined();
     expect(CLI_TOOL_CATALOG['claude-code'].auth.env).toEqual([]);
     expect(CLI_TOOL_CATALOG.codex.auth.env).toEqual([]);
     expect(CLI_TOOL_CATALOG.copilot.auth.env).toEqual([
@@ -408,13 +399,36 @@ describe('CLI tool catalog', () => {
     ]);
   });
 
-  it('defaults an unset auth selection to the host session when the tool declares one', () => {
+  it('gives every tool one channel, and Claude Code, Codex and Cursor only their session', () => {
+    const auth = Object.fromEntries(
+      CLI_TOOL_IDS.map((tool) => [
+        tool,
+        {
+          kind: CLI_TOOL_CATALOG[tool].auth.kind,
+          channels: CLI_TOOL_CATALOG[tool].auth.channels.map((channel) => channel.id),
+        },
+      ]),
+    );
+
+    expect(auth).toEqual({
+      'claude-code': { kind: 'session', channels: ['session'] },
+      codex: { kind: 'session', channels: ['session'] },
+      opencode: { kind: 'provider-dependent', channels: ['provider-dependent'] },
+      copilot: { kind: 'session', channels: ['session'] },
+      'kilo-code': { kind: 'provider-dependent', channels: ['provider-dependent'] },
+      cursor: { kind: 'session', channels: ['session'] },
+      'command-code': { kind: 'session', channels: ['session'] },
+      antigravity: { kind: 'session', channels: ['session'] },
+    });
+  });
+
+  it('gives each tool that declares a host session its session channel', () => {
     expect(defaultCliAuthChannel('claude-code').id).toBe('session');
     expect(defaultCliAuthChannel('codex').id).toBe('session');
     expect(defaultCliAuthChannel('copilot').id).toBe('session');
   });
 
-  it('defaults a session-less tool to its declared bridge-free channel', () => {
+  it('defaults a session-less tool to its provider-dependent channel', () => {
     expect(defaultCliAuthChannel('opencode').id).toBe('provider-dependent');
     expect(defaultCliAuthChannel('kilo-code').id).toBe('provider-dependent');
   });
@@ -432,25 +446,19 @@ describe('CLI tool catalog', () => {
   });
 
   it('routes the Claude Code session channel through the host account only on macOS', () => {
-    const session = selectCliAuthChannel('claude-code', { channel: 'session' });
-    const apiKey = selectCliAuthChannel('claude-code', { channel: 'api-key' });
-    if (session === undefined || apiKey === undefined) throw new Error('missing Claude channel');
+    const [session] = CLI_TOOL_CATALOG['claude-code'].auth.channels;
 
     expect(cliAuthChannelHostStateAccess(session, 'darwin')).toBe('host-account');
     expect(cliAuthChannelHostStateAccess(session, 'linux')).toBe('bridged-files');
     expect(cliAuthChannelHostStateAccess(session, 'win32')).toBe('bridged-files');
-    expect(cliAuthChannelHostStateAccess(apiKey, 'darwin')).toBe('none');
   });
 
   it('routes the Cursor Agent CLI session channel through the host account only on macOS', () => {
-    const session = selectCliAuthChannel('cursor', { channel: 'session' });
-    const apiKey = selectCliAuthChannel('cursor', { channel: 'api-key' });
-    if (session === undefined || apiKey === undefined) throw new Error('missing Cursor channel');
+    const [session] = CLI_TOOL_CATALOG.cursor.auth.channels;
 
     expect(cliAuthChannelHostStateAccess(session, 'darwin')).toBe('host-account');
     expect(cliAuthChannelHostStateAccess(session, 'linux')).toBe('bridged-files');
     expect(cliAuthChannelHostStateAccess(session, 'win32')).toBe('bridged-files');
-    expect(cliAuthChannelHostStateAccess(apiKey, 'darwin')).toBe('none');
   });
 
   // Antigravity's only channel is a session in the macOS login keychain. On
@@ -485,7 +493,7 @@ describe('CLI tool catalog', () => {
         }).toEqual({
           tool,
           channel: channel.id,
-          access: channel.stateBridge === 'host-cli-state' ? 'bridged-files' : 'none',
+          access: 'bridged-files',
         });
       }
     }
@@ -524,7 +532,6 @@ describe('CLI tool catalog', () => {
   it('pins Command Code to the version its conformance transaction exercised', () => {
     const descriptor = CLI_TOOL_CATALOG['command-code'];
 
-    expect(descriptor.authDiscoveryMode).toBe('status-unverified');
     expect(descriptor.compatibility.testedVersion).toBe('1.39.2');
     expect(descriptor.compatibility.minimumAdmittedVersion).toBe('1.39.2');
     expect(

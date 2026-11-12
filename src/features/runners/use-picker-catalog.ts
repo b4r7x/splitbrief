@@ -43,12 +43,7 @@ import {
   type PickerOption,
 } from './model-catalog/options.js';
 import { routeDraftOf } from './model-catalog/option-axis.js';
-import {
-  authMethodOffer,
-  buildRightRows,
-  type CatalogLane,
-  type RightRow,
-} from './model-catalog/rows.js';
+import { buildRightRows, type CatalogLane, type RightRow } from './model-catalog/rows.js';
 import { usePickerProfile } from './picker-profile.js';
 import type { Config } from '../../core/schemas/config.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
@@ -211,7 +206,6 @@ export function usePickerCatalog(
   const expandedModelId = pickerViewStore.use((s) => s.expandedModelId);
   const optionDraftId = pickerViewStore.use((s) => s.optionDraftId);
   const effortDraft = pickerViewStore.use((s) => s.effortDraft);
-  const authDraft = pickerViewStore.use((s) => s.authDraft);
   const browseCatalog = pickerViewStore.use((s) => s.browseCatalog);
   const profile = usePickerProfile();
 
@@ -335,11 +329,6 @@ export function usePickerCatalog(
         browseCatalog,
         optionDraftId,
         effortDraft,
-        authMethod:
-          slot === 'seat' && runnerConfig !== undefined
-            ? authMethodOffer({ item, runner: runnerConfig })
-            : undefined,
-        authDraft,
       }),
     };
   };

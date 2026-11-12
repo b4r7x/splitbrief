@@ -124,7 +124,6 @@ describe('session-state presence readiness', () => {
           const result = await probeCliReadiness({
             tool,
             executable,
-            authChannel: 'session',
             // Nothing on disk says "authenticated" here, so a directory-reading
             // verdict could only be `missing`. Only the tool's own answer, given
             // the host account, produces this one.
@@ -153,7 +152,6 @@ describe('session-state presence readiness', () => {
           const result = await probeCliReadiness({
             tool,
             executable,
-            authChannel: 'session',
             probe: sessionProbe({ authScript: "console.log('missing')" }),
             classifyVersion: () => 'compatible',
           });
@@ -180,7 +178,6 @@ describe('session-state presence readiness', () => {
           const result = await probeCliReadiness({
             tool,
             executable,
-            authChannel: 'session',
             probe: sessionProbe({ authNotRun: true }),
             classifyVersion: () => 'compatible',
           });
@@ -205,7 +202,6 @@ describe('session-state presence readiness', () => {
           await probeCliReadiness({
             tool,
             executable,
-            authChannel: 'session',
             probe: sessionProbe({ authScript: hostAccountAuthScript(hostHome) }),
             classifyVersion: () => 'compatible',
           });
@@ -235,7 +231,6 @@ describe('session-state presence readiness', () => {
         const result = await probeCliReadiness({
           tool: 'cursor',
           executable: await nodeExecutable(),
-          authChannel: 'session',
           probe: sessionProbe({ authScript: childSignInScript }),
           classifyVersion: () => 'compatible',
         });
@@ -257,7 +252,6 @@ describe('session-state presence readiness', () => {
         const result = await probeCliReadiness({
           tool: 'cursor',
           executable: await nodeExecutable(),
-          authChannel: 'session',
           probe: sessionProbe({ authScript: childSignInScript }),
           classifyVersion: () => 'compatible',
         });
@@ -276,7 +270,6 @@ describe('session-state presence readiness', () => {
         const result = await probeCliReadiness({
           tool: 'cursor',
           executable: await nodeExecutable(),
-          authChannel: 'session',
           probe: sessionProbe({ authScript: "console.log('verified')" }),
           classifyVersion: () => 'compatible',
         });
@@ -301,7 +294,6 @@ describe('session-state presence readiness', () => {
       const result = await probeCliReadiness({
         tool: 'copilot',
         executable,
-        authChannel: 'session',
         probe: sessionProbe({ authScript: "console.log('logged out')" }),
         classifyVersion: () => 'compatible',
       });
@@ -324,7 +316,6 @@ describe('session-state presence readiness', () => {
       const result = await probeCliReadiness({
         tool: 'copilot',
         executable,
-        authChannel: 'session',
         probe: sessionProbe({ authNotRun: true }),
         classifyVersion: () => 'compatible',
       });
@@ -345,7 +336,6 @@ describe('session-state presence readiness', () => {
       const result = await probeCliReadiness({
         tool: 'copilot',
         executable,
-        authChannel: 'session',
         // The version probe writes a file into the sandbox HOME, exactly as the
         // real Claude Code binary does during a readiness run. Reading that as
         // a credential is what certified a dead configuration as authenticated.
@@ -373,7 +363,6 @@ describe('session-state presence readiness', () => {
       const result = await probeCliReadiness({
         tool: 'copilot',
         executable,
-        authChannel: 'session',
         probe: sessionProbe({ authNotRun: true }),
         classifyVersion: () => 'compatible',
       });
@@ -398,14 +387,13 @@ describe('session-state presence readiness', () => {
         const result = await probeCliReadiness({
           tool: 'codex',
           executable,
-          authChannel: 'session',
           probe: sessionProbe(),
           classifyVersion: () => 'compatible',
         });
 
         expect(result).toMatchObject({ auth: 'keyring', status: 'unauthenticated' });
         expect(result.remediation).toBe(
-          'Set cli_auth_credentials_store = "file" in config.toml and run codex login again, or use OPENAI_API_KEY, then run `splitbrief doctor` again.',
+          'Set cli_auth_credentials_store = "file" in config.toml and run codex login again, then run `splitbrief doctor` again.',
         );
       });
     },
@@ -443,33 +431,6 @@ describe('session-state presence readiness', () => {
     },
   );
 
-  it('asks for the API key on the Codex api-key channel when the session store is the keyring', async () => {
-    await withTempDir('readiness-codex-keyring-api-key', async (hostHome) => {
-      const executable = await nodeExecutable();
-      await mkdir(join(hostHome, '.codex'), { recursive: true });
-      await writeFile(
-        join(hostHome, '.codex', 'config.toml'),
-        'cli_auth_credentials_store = "keyring"\n',
-      );
-      vi.stubEnv('HOME', hostHome);
-      vi.stubEnv('CODEX_HOME', '');
-      vi.stubEnv('OPENAI_API_KEY', '');
-
-      const result = await probeCliReadiness({
-        tool: 'codex',
-        executable,
-        authChannel: 'api-key',
-        probe: sessionProbe(),
-        classifyVersion: () => 'compatible',
-      });
-
-      expect(result).toMatchObject({ auth: 'unauthenticated', status: 'unauthenticated' });
-      expect(result.remediation).toBe(
-        'Export OPENAI_API_KEY for OpenAI Codex CLI, then run `splitbrief doctor` again.',
-      );
-    });
-  });
-
   it('reads the keyring store from the config under a set CODEX_HOME', async () => {
     await withTempDir('readiness-codex-home-keyring', async (hostHome) => {
       const executable = await nodeExecutable();
@@ -487,7 +448,6 @@ describe('session-state presence readiness', () => {
       const result = await probeCliReadiness({
         tool: 'codex',
         executable,
-        authChannel: 'session',
         probe: sessionProbe(),
         classifyVersion: () => 'compatible',
       });
@@ -513,7 +473,6 @@ describe('session-state presence readiness', () => {
         const result = await probeCliReadiness({
           tool: 'codex',
           executable,
-          authChannel: 'session',
           probe: sessionProbe(),
           classifyVersion: () => 'compatible',
         });
@@ -539,28 +498,12 @@ describe('session-state presence readiness', () => {
       const result = await probeCliReadiness({
         tool: 'codex',
         executable,
-        authChannel: 'session',
         probe: sessionProbe(),
         classifyVersion: () => 'compatible',
       });
 
       expect(result).toMatchObject({ auth: 'unauthenticated', status: 'unauthenticated' });
     });
-  });
-
-  it('keeps probe-less bridge-free channels out of presence promotion', async () => {
-    const executable = await nodeExecutable();
-    vi.stubEnv('OPENAI_API_KEY', 'ambient-key');
-
-    const result = await probeCliReadiness({
-      tool: 'codex',
-      executable,
-      authChannel: 'api-key',
-      probe: sessionProbe({ authNotRun: true }),
-      classifyVersion: () => 'compatible',
-    });
-
-    expect(result.auth).toBe('not-checked');
   });
 
   it('does not verify a macOS Copilot sign-in from its config file', async () => {
@@ -579,7 +522,6 @@ describe('session-state presence readiness', () => {
       const result = await probeCliReadiness({
         tool: 'copilot',
         executable,
-        authChannel: 'session',
         probe: sessionProbe({ authNotRun: true }),
         classifyVersion: () => 'compatible',
       });
@@ -600,7 +542,6 @@ describe('session-state presence readiness', () => {
       const result = await probeCliReadiness({
         tool: 'copilot',
         executable,
-        authChannel: 'session',
         probe: sessionProbe({ authNotRun: true }),
         classifyVersion: () => 'compatible',
       });
@@ -627,7 +568,6 @@ describe('session-state presence readiness', () => {
       const result = await probeCliReadiness({
         tool: 'copilot',
         executable,
-        authChannel: 'session',
         probe: sessionProbe({ authNotRun: true }),
         classifyVersion: () => 'compatible',
       });
@@ -754,7 +694,6 @@ describe.runIf(process.platform !== 'win32')('provider oracle three-way readines
         const result = await probeCliReadiness({
           tool,
           executable,
-          authChannel: 'provider-dependent',
           probe: oracleContract(tool),
           classifyVersion: () => 'compatible',
         });
@@ -780,7 +719,6 @@ describe.runIf(process.platform !== 'win32')('provider oracle three-way readines
         const result = await probeCliReadiness({
           tool,
           executable,
-          authChannel: 'provider-dependent',
           probe: oracleContract(tool),
           classifyVersion: () => 'compatible',
         });
@@ -802,7 +740,6 @@ describe.runIf(process.platform !== 'win32')('provider oracle three-way readines
         const result = await probeCliReadiness({
           tool,
           executable,
-          authChannel: 'provider-dependent',
           probe: oracleContract(tool),
           classifyVersion: () => 'compatible',
         });
@@ -828,7 +765,6 @@ describe.runIf(process.platform !== 'win32')('provider oracle three-way readines
         const result = await probeCliReadiness({
           tool,
           executable,
-          authChannel: 'provider-dependent',
           probe: oracleContract(tool),
           classifyVersion: () => 'compatible',
         });
@@ -855,7 +791,6 @@ describe.runIf(process.platform !== 'win32')('provider oracle three-way readines
       const result = await probeCliReadiness({
         tool: 'opencode',
         executable,
-        authChannel: 'provider-dependent',
         probe: oracleContract('opencode'),
         classifyVersion: () => 'compatible',
       });

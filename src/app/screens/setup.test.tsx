@@ -1624,7 +1624,7 @@ describe('SetupScreen', () => {
       await flushEffects();
       expect(overlayStore.get().active).toBe('settings');
       const settingsConfig = makeConfig({
-        planner: { kind: 'cli', tool: 'codex', authChannel: 'session' },
+        planner: { kind: 'cli', tool: 'codex' },
       });
       await expect(configStore.save(settingsConfig)).resolves.toMatchObject({ kind: 'saved' });
       overlayStore.close();

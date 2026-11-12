@@ -102,7 +102,6 @@ describe('Claude invoke process diagnostics', () => {
         prompt: 'prompt',
         projectDir,
         executable,
-        authChannel: 'api-key',
         env: { PATH: process.env.PATH ?? '', ANTHROPIC_API_KEY: credential },
         onOutput: () => {},
         onCallEvent: (event) => events.push(event),

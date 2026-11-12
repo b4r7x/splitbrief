@@ -674,9 +674,6 @@ function cliReviewer(tool: CliToolId, extra: Record<string, unknown> = {}): CliP
   return {
     kind: 'cli',
     tool,
-    ...(CLI_TOOL_CATALOG[tool].auth.kind === 'provider-dependent' && {
-      authChannel: 'provider-dependent',
-    }),
     ...extra,
   } as CliPlannerConfig;
 }

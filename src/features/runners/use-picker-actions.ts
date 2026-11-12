@@ -52,9 +52,8 @@ import {
   type LocalConnectionSave,
   type LocalConnectionSeat,
 } from './local-connection-form.js';
-import { applyCliAuthChoice } from '../../core/runners/cli-auth-selection.js';
 import { seatConfiguredEffort } from '../../core/runners/capabilities.js';
-import { CLI_TOOL_IDS, type CliAuthMethod } from '../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_IDS } from '../../core/runners/cli-tool-catalog.js';
 import {
   PICKER_ROLE_SEAT_IDS,
   seatPickerLane,
@@ -71,7 +70,7 @@ import type { ModelOption } from './model-catalog/recency.js';
 import { formatNeedsSignInSaveFeedback } from './picker-format.js';
 import { refreshPickerDetection } from './refresh-detection.js';
 import type { PickerCatalog } from './use-picker-catalog.js';
-import { AUTH_METHOD_WORDS, effortLadderFor, type RightRow } from './model-catalog/rows.js';
+import { effortLadderFor, type RightRow } from './model-catalog/rows.js';
 import {
   commitPlannerTierSelection,
   commitImplementerSelection,
@@ -87,8 +86,6 @@ import { pickerViewStore, type PickerSubView } from '../../stores/ui/picker-view
 export interface PickerActions {
   confirm(selection: PickerOption, model: ModelOption | null): Promise<void>;
   confirmProviderSelection(fullId: string, effort?: string | null | undefined): Promise<void>;
-  /** Binds the seat's own invocations to one method, or hands them back to the tool's login. */
-  confirmAuthMethod(method: CliAuthMethod | 'host-configured'): Promise<void>;
   leftChange(item: PickerOption): void;
   browseCatalog(): void;
   deleteRight(item: ModelOption): Promise<void>;
@@ -174,45 +171,6 @@ function dropClearedImplementerToken(
   if (apiKey !== undefined || runner.kind !== 'api' || runner.apiKey === undefined) return runner;
   const { apiKey: _cleared, ...rest } = runner;
   return rest;
-}
-
-/**
- * The seat's own channel, written through the core choice so host configuration
- * removes the field rather than persisting the tool's default as a user's choice.
- * A seat that runs no CLI has no invocation to bind a method to.
- */
-function writeSeatAuthChannel(
-  config: Config,
-  role: ActiveRunnerRole,
-  method: CliAuthMethod | 'host-configured',
-  profile: string | undefined,
-): Config {
-  switch (role) {
-    case 'planner':
-      return updateActiveRunner({
-        config,
-        role: 'planner',
-        updater: (existing) =>
-          existing.kind === 'cli' ? applyCliAuthChoice(existing, method) : existing,
-      });
-    case 'reviewer':
-      return updateActiveRunner({
-        config,
-        role: 'reviewer',
-        updater: (existing) =>
-          existing.kind === 'cli' ? applyCliAuthChoice(existing, method) : existing,
-      });
-    case 'implementer':
-      return updateActiveRunner({
-        config,
-        role: 'implementer',
-        profile,
-        updater: (existing) =>
-          existing.kind === 'cli' ? applyCliAuthChoice(existing, method) : existing,
-      });
-    default:
-      return assertNever(role);
-  }
 }
 
 /**
@@ -310,7 +268,7 @@ type RowEffortLadder = Readonly<{
 /** The ladder the row published for this id; an empty one is unknown, never a reason to clear. */
 function rowEffortLadder(rows: readonly RightRow[], fullId: string): RowEffortLadder | undefined {
   for (const row of rows) {
-    if (row.kind === 'action' || row.kind === 'auth') continue;
+    if (row.kind === 'action') continue;
     const owns =
       row.model.id === fullId ||
       (row.model.variants ?? []).some((variant) => variant.fullId === fullId);
@@ -511,17 +469,9 @@ export function usePickerActions(opts: {
         await saveModelSelection(item, fullId, effort, rowEffortLadder(catalog.rightRows, fullId));
       });
     },
-    confirmAuthMethod(method: CliAuthMethod | 'host-configured') {
-      return reportFailure(async () => {
-        await commit(
-          writeSeatAuthChannel(config, seatRole, method, profile),
-          `${catalog.roleLabel} auth${SOFT_SEP}${AUTH_METHOD_WORDS[method]}`,
-        );
-      });
-    },
     leftChange(item: PickerOption) {
       // A catalog opened for one tool must not follow the cursor onto the next, and
-      // neither may a preset or a method drafted from the tool the cursor left. The
+      // neither may a preset drafted from the tool the cursor left. The
       // column's mount notice names the tool already current, which the cursor never
       // left, so the level a crew row opened the picker on survives the first paint.
       // Back on the current tool, the ladder reads the saved level again.
@@ -536,7 +486,6 @@ export function usePickerActions(opts: {
               })
             : null,
         );
-        pickerViewStore.setAuthDraft(null);
       }
       catalog.setCurrentItem(item);
     },

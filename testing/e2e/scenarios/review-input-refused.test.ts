@@ -114,7 +114,6 @@ describe('e2e: the review tool refuses its input as too long', { timeout: 240_00
     const tools = await detectAvailableCliTools({
       projectDir: target.projectDir,
       tools: ['claude-code'],
-      authChannels: { 'claude-code': 'session' },
     });
     expect(tools[0]?.diagnostic.state, JSON.stringify(tools[0]?.diagnostic)).toBe('ready');
     await rememberDetectedTools(target.projectDir, tools);

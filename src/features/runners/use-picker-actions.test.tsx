@@ -29,7 +29,6 @@ import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
 import { seedBriefs } from '#testing/helpers/stores.js';
 import { CREW_SEAT_LABELS, PLANNER_INHERITANCE } from '../../core/crew/identity.js';
-import type { CliAuthMethod } from '../../core/runners/cli-tool-catalog.js';
 import type { PickerSlot, SeatPickerRole } from '../../core/runners/seat-roles.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { Phase } from '../../core/schemas/enums.js';
@@ -154,25 +153,6 @@ function LocalConnectionProbe({
   });
 
   return <Text>{seat.apiBase}</Text>;
-}
-
-/** Confirms one authentication method for the seat; `c` leaves the picker instead. */
-function ConfirmAuthProbe({
-  role,
-  method,
-}: {
-  role: SeatPickerRole;
-  method: CliAuthMethod | 'host-configured';
-}) {
-  const catalog = usePickerCatalog(role, 'seat', 0);
-  const actions = usePickerActions({ role, slot: 'seat', catalog });
-
-  useInput((input) => {
-    if (input === 'c') actions.closeOverlay();
-    else void actions.confirmAuthMethod(method);
-  });
-
-  return <Text>{catalog.roleLabel}</Text>;
 }
 
 function CustomCommandProbe({ role, command }: { role: SeatPickerRole; command: string }) {
@@ -961,7 +941,6 @@ describe('usePickerActions', () => {
     seed(makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'auto' } }));
     pickerViewStore.setBrowseCatalog(true);
     pickerViewStore.setEffortDraft('max');
-    pickerViewStore.setAuthDraft('api-key');
 
     const ui = renderFeature(
       <LeftChangeOnKeyProbe role="planner" selection={realPickerOption('planner', 'codex')} />,
@@ -973,7 +952,6 @@ describe('usePickerActions', () => {
       expect(pickerViewStore.get()).toMatchObject({
         browseCatalog: false,
         effortDraft: null,
-        authDraft: null,
       });
     });
     ui.unmount();
@@ -985,7 +963,6 @@ describe('usePickerActions', () => {
     seed(makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'auto' } }));
     pickerViewStore.setBrowseCatalog(true);
     pickerViewStore.setEffortDraft('max');
-    pickerViewStore.setAuthDraft('api-key');
 
     const ui = renderFeature(
       <LeftChangeOnKeyProbe
@@ -1000,7 +977,6 @@ describe('usePickerActions', () => {
     expect(pickerViewStore.get()).toMatchObject({
       browseCatalog: true,
       effortDraft: 'max',
-      authDraft: 'api-key',
     });
     ui.unmount();
   });
@@ -1630,55 +1606,6 @@ describe('usePickerActions', () => {
     expect(feedbackStore.get().message).toContain('max');
     ui.unmount();
   });
-  it('stores the confirmed method on the seat and changes nothing else', async () => {
-    const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'auto' } });
-    seed(config);
-    const detectionBefore = JSON.stringify(detectionStore.get());
-
-    const ui = renderFeature(<ConfirmAuthProbe role="planner" method="api-key" />);
-    await flushEffects();
-    ui.stdin.write('\r');
-
-    await vi.waitFor(() => {
-      expect(configStore.get().config?.planner).toMatchObject({ authChannel: 'api-key' });
-    });
-    // The method binds the invocation; it is not a second way to choose a tool or a
-    // model, and it reaches nothing outside this seat's own block.
-    expect(configStore.get().config?.planner).toMatchObject({
-      kind: 'cli',
-      tool: 'claude-code',
-      model: 'auto',
-    });
-    expect(configStore.get().config?.reviewer).toBeUndefined();
-    expect(JSON.stringify(configStore.get().config?.implementer)).toBe(
-      JSON.stringify(config.implementer),
-    );
-    // Nothing probes, signs in or switches an account: the whole action is one
-    // config write, so the detection the host login is read through is untouched.
-    expect(JSON.stringify(detectionStore.get())).toBe(detectionBefore);
-    expect(feedbackStore.get().isError).toBe(false);
-    expect(feedbackStore.get().message).toContain('api key');
-    ui.unmount();
-  });
-
-  it('confirms a saved method in Setup with the seat and config path', async () => {
-    routerStore.init({ screen: 'setup' });
-    seed(makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'auto' } }));
-
-    const ui = renderFeature(<ConfirmAuthProbe role="planner" method="api-key" />);
-    await flushEffects();
-    ui.stdin.write('\r');
-
-    await vi.waitFor(() => {
-      expect(feedbackStore.get()).toMatchObject({
-        message:
-          'Saved PLAN auth · api key to .splitbrief/config.yaml · Added .splitbrief/ to .gitignore',
-        isError: false,
-      });
-    });
-    ui.unmount();
-  });
-
   it('confirms a saved custom command with the seat words the crew row shows', async () => {
     routerStore.init({ screen: 'setup' });
     seed(makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'auto' } }));
@@ -1699,91 +1626,6 @@ describe('usePickerActions', () => {
         'Saved PLAN · Custom Shell · auto to .splitbrief/config.yaml · Added .splitbrief/ to .gitignore',
       isError: false,
     });
-    ui.unmount();
-  });
-
-  it('removes the explicit field when host configuration is confirmed', async () => {
-    seed(
-      makeConfig({
-        planner: { kind: 'cli', tool: 'claude-code', model: 'auto', authChannel: 'session' },
-      }),
-    );
-
-    const ui = renderFeature(<ConfirmAuthProbe role="planner" method="host-configured" />);
-    await flushEffects();
-    ui.stdin.write('\r');
-
-    await vi.waitFor(() => {
-      expect(configStore.get().config?.planner).not.toHaveProperty('authChannel');
-    });
-    // Removed, not overwritten with the tool's default: a resolver's answer must
-    // never be persisted as the user's choice.
-    expect(configStore.get().config?.planner).toMatchObject({
-      kind: 'cli',
-      tool: 'claude-code',
-      model: 'auto',
-    });
-    ui.unmount();
-  });
-
-  it('leaves the seat alone when the picker is closed without confirming', async () => {
-    const config = makeConfig({
-      planner: { kind: 'cli', tool: 'claude-code', model: 'auto', authChannel: 'session' },
-    });
-    seed(config);
-    const before = JSON.stringify(configStore.get().config);
-
-    const ui = renderFeature(<ConfirmAuthProbe role="planner" method="api-key" />);
-    await flushEffects();
-    ui.stdin.write('c');
-    await flushEffects();
-
-    expect(JSON.stringify(configStore.get().config)).toBe(before);
-    expect(feedbackStore.get().message).toBe(null);
-    ui.unmount();
-  });
-
-  it('writes the review seat its own channel and leaves the planner unchanged', async () => {
-    const config = makeConfig({
-      planner: { kind: 'cli', tool: 'claude-code', model: 'auto' },
-      reviewer: { kind: 'cli', tool: 'codex' },
-    });
-    seed(config);
-    const plannerBefore = JSON.stringify(config.planner);
-
-    const ui = renderFeature(<ConfirmAuthProbe role="reviewer" method="session" />);
-    await flushEffects();
-    ui.stdin.write('\r');
-
-    await vi.waitFor(() => {
-      expect(configStore.get().config?.reviewer).toMatchObject({
-        tool: 'codex',
-        authChannel: 'session',
-      });
-    });
-    expect(JSON.stringify(configStore.get().config?.planner)).toBe(plannerBefore);
-    ui.unmount();
-  });
-
-  it('writes the build seat its own channel', async () => {
-    seed(
-      makeConfig({
-        planner: { kind: 'cli', tool: 'claude-code', model: 'auto' },
-        implementer: { kind: 'cli', tool: 'codex' },
-      }),
-    );
-
-    const ui = renderFeature(<ConfirmAuthProbe role="implementer" method="api-key" />);
-    await flushEffects();
-    ui.stdin.write('\r');
-
-    await vi.waitFor(() => {
-      expect(configStore.get().config?.implementer).toMatchObject({
-        tool: 'codex',
-        authChannel: 'api-key',
-      });
-    });
-    expect(configStore.get().config?.planner).not.toHaveProperty('authChannel');
     ui.unmount();
   });
 });

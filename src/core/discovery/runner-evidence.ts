@@ -64,7 +64,6 @@ export type CompatibilityFact =
 
 export const AUTH_FACT_KINDS = [
   'not-required',
-  'not-selected',
   'verified',
   'unknown',
   'missing',

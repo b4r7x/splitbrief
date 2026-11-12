@@ -470,9 +470,7 @@ describe('PickerView previews', () => {
 
   describe('a signed-out tool whose model listing failed', () => {
     const status = deriveCliStatus(CLI_TOOL_CATALOG.opencode, {
-      cliTools: [
-        cliDetectionFor('unauthenticated', 'opencode', { authChannel: 'provider-dependent' }),
-      ],
+      cliTools: [cliDetectionFor('unauthenticated', 'opencode')],
       providers: [],
     });
     const opencode = pickerItem({
@@ -590,7 +588,7 @@ describe('PickerView previews', () => {
 
     function statusFor(state: 'unauthenticated' | 'unavailable'): PickerOption['status'] {
       return deriveCliStatus(descriptor, {
-        cliTools: [cliDetectionFor(state, 'codex', { authChannel: 'session' })],
+        cliTools: [cliDetectionFor(state, 'codex')],
         providers: [],
       });
     }

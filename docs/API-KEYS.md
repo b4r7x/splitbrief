@@ -2,9 +2,7 @@
 
 SPLITBRIEF connects to AI providers (planner + implementer) that may require API keys. This guide covers how keys are handled and best practices for keeping them secure.
 
-An explicit session or api-key method requires current invocation-enforcement evidence; otherwise remove the selection to use the host CLI configuration.
-
-The current enforcement matrix is empty. No admitted installed CLI version has a proven selectable authentication method, and an explicit unproven choice is refused before dispatch. Provider/model choice does not prove subscription or API billing. Configure authentication in the host CLI, omit `authChannel`, and inspect its own account state. SPLITBRIEF never logs in or switches that account.
+A CLI tool runs with the sign-in that the tool already has. Sign in with the tool's own command, and check its account state there. SPLITBRIEF never signs in, signs out or switches that account. A provider or model choice does not change how the tool signs in.
 
 For local API connections, Settings → Crew opens the seat picker and connection editor. Set the address and exact model there, and use Retry after starting the server externally. The dedicated credential control accepts an environment reference such as `env:YOUR_VAR`, not a raw token. Export the value in your shell; never paste it into the composer, screenshots or versioned files. Known local endpoints retain their loopback policy; a connection editor does not grant trust to arbitrary remote origins.
 
@@ -24,15 +22,10 @@ Environment variables are not committed to git, are not stored on disk in projec
 
 ### Admitted credential reference
 
-Every credential environment variable SPLITBRIEF reads. The first four describe credentials understood by host CLIs, not API providers or proven method switches. An environment variable alone does not establish the authentication or billing method actually used.
-
-The `api-key` channel rows describe what that channel stages. Selecting it explicitly (`auth_channel: api-key`) is refused at readiness, because no CLI tool has an enforceable method ([AUTH-METHOD-MATRIX.md](./AUTH-METHOD-MATRIX.md)); the host CLI's own login decides.
+Every credential that an `api` runner reads. A session tool gets none of these: it uses its own sign-in. OpenCode and Kilo Code get every `*_API_KEY` variable of your shell; the full list is in [Child environment](#child-environment).
 
 | Credential | Environment variable | Prefix validation | Notes |
 |----------|---------------------|-------------------|-------|
-| Claude Code CLI (`api-key` channel) | `ANTHROPIC_API_KEY` | — | Passed to the `claude` subprocess; nothing else in the environment is copied |
-| Codex CLI (`api-key` channel) | `OPENAI_API_KEY` | — | Passed to the `codex` subprocess |
-| Cursor Agent CLI (`api-key` channel) | `CURSOR_API_KEY` | — | Passed to the `cursor-agent` subprocess |
 | Local Ollama | `OLLAMA_LOCAL_API_KEY` | — | Optional only for a secured loopback daemon; configure `apiKey: env:OLLAMA_LOCAL_API_KEY`. `OLLAMA_API_KEY` is never accepted or sent locally. |
 | LM Studio | Not inferred | — | Local provider; no key required. A daemon you put behind one takes it inline or as `apiKey: env:YOUR_VAR` |
 | llama.cpp | Not inferred | — | Local provider; no key required. A server you put behind one takes it inline or as `apiKey: env:YOUR_VAR` |
@@ -100,15 +93,13 @@ SPLITBRIEF takes several steps to protect your API keys:
 - **Header-only transport** — keys are only used in HTTP `Authorization` headers, never embedded in URLs or query parameters
 - **Boolean detection flags** — provider detection returns `hasKey: true/false`, never the actual key value
 - **Key format validation** — a provider that declares a credential prefix has its key checked against it; prefix mismatches fail closed before any network request
-- **Bridged CLI session state** — a CLI runner on a host-state channel whose credential is a file (`session` for Codex and Command Code, `provider-dependent` for OpenCode and Kilo Code, and `session` for Claude Code and Cursor Agent CLI on Linux and Windows) cannot read your real `HOME`. SPLITBRIEF gives it only that tool's own sign-in, in one of two ways. Claude Code and Command Code get a copy of their credential file (for example `~/.claude/.credentials.json`) in `<project>/.splitbrief/sandbox/`, owner-only and read-only. The copy is replaced when your own file changes and deleted when the run finishes. Codex, Cursor Agent CLI, OpenCode and Kilo Code renew their sign-in during a run, and a copy would lose the new token. So SPLITBRIEF links Codex's `~/.codex/auth.json` and Cursor's `${XDG_CONFIG_HOME:-~/.config}/cursor/auth.json` into the sandbox, and links the whole state folder of OpenCode and Kilo Code. Through that link the runner reads **and writes** your own sign-in, and SPLITBRIEF removes the link when the run finishes. When you set `CLAUDE_CONFIG_DIR` or `CODEX_HOME`, SPLITBRIEF takes that tool's sign-in from the folder you set, and the runner still gets its private home. Codex can keep its sign-in in the system keyring (`cli_auth_credentials_store = "keyring"` or `"auto"` in `config.toml`). A run cannot reach the keyring, so readiness names that sign-in and tells you to set `cli_auth_credentials_store = "file"` and run `codex login` again, or to use `OPENAI_API_KEY`. `.splitbrief/` must stay in `.gitignore`. Omit `authChannel` to use the host CLI configuration; a private environment alone does not prove method enforcement.
+- **Bridged CLI session state** — a CLI runner on a host-state channel whose credential is a file (`session` for Codex and Command Code, `provider-dependent` for OpenCode and Kilo Code, and `session` for Claude Code and Cursor Agent CLI on Linux and Windows) cannot read your real `HOME`. SPLITBRIEF gives it only that tool's own sign-in, in one of two ways. Claude Code and Command Code get a copy of their credential file (for example `~/.claude/.credentials.json`) in `<project>/.splitbrief/sandbox/`, owner-only and read-only. The copy is replaced when your own file changes and deleted when the run finishes. Codex, Cursor Agent CLI, OpenCode and Kilo Code renew their sign-in during a run, and a copy would lose the new token. So SPLITBRIEF links Codex's `~/.codex/auth.json` and Cursor's `${XDG_CONFIG_HOME:-~/.config}/cursor/auth.json` into the sandbox, and links the whole state folder of OpenCode and Kilo Code. Through that link the runner reads **and writes** your own sign-in, and SPLITBRIEF removes the link when the run finishes. When you set `CLAUDE_CONFIG_DIR` or `CODEX_HOME`, SPLITBRIEF takes that tool's sign-in from the folder you set, and the runner still gets its private home. Codex can keep its sign-in in the system keyring (`cli_auth_credentials_store = "keyring"` or `"auto"` in `config.toml`). A run cannot reach the keyring, so readiness names that sign-in and tells you to set `cli_auth_credentials_store = "file"` and run `codex login` again. `.splitbrief/` must stay in `.gitignore`.
 
 ### Claude Code on macOS
 
-Claude Code stores its subscription session in the macOS login keychain, not in a file, so there is nothing for the file bridge to copy. The keychain's default search list resolves through `HOME`, and the item is keyed on the account name in `USER`. SPLITBRIEF therefore hands a macOS Claude Code `session` runner **your real `HOME` and `USER`** instead of a sandbox home, and copies nothing. That is the only way the subscription you already pay for can plan; the declared host-state staging policy remains distinct from a selected authentication method, and `splitbrief doctor` reports `authenticated` only when `claude auth status`, run inside that staged environment, says so.
+Claude Code stores its subscription session in the macOS login keychain, not in a file, so there is nothing for the file bridge to copy. The keychain's default search list resolves through `HOME`, and the item is keyed on the account name in `USER`. SPLITBRIEF therefore hands a macOS Claude Code `session` runner **your real `HOME` and `USER`** instead of a sandbox home, and copies nothing. That is the only way the subscription you already pay for can plan. `splitbrief doctor` reports `authenticated` only when `claude auth status`, run inside that staged environment, says so.
 
 The cost is stated plainly: on that one channel the planner child resolves `~` to your real home and writes Claude Code's own state (`~/.claude.json`, history) there, exactly as it does when you run `claude` yourself. Everything else the sandbox redirects — `XDG_*`, `npm_config_cache`, `PIP_CACHE_DIR`, `CARGO_HOME` — still points inside `<project>/.splitbrief/sandbox/`, and `TMPDIR` still points at the sandbox's private temp directory (see below). The full accounting of what that child can and cannot reach is below.
-
-The historical `api-key` staging alternative is not an available method switch today. Explicit method selection requires invocation-enforcement evidence; omit the field and configure the host CLI.
 
 ### Cursor Agent CLI on macOS
 
@@ -118,13 +109,11 @@ The cost is the same as Claude Code's `session` channel on macOS: `~` resolves t
 
 On Linux, Cursor Agent CLI keeps its sign-in in `${XDG_CONFIG_HOME:-~/.config}/cursor/auth.json`. SPLITBRIEF links that one file into the sandbox, so a token that Cursor refreshes during a run lands in your own file. Only that file counts as a Cursor sign-in.
 
-The historical `api-key` staging alternative is not an available method switch today. Explicit method selection requires invocation-enforcement evidence; omit the field and configure the host CLI.
-
 ### Antigravity on macOS
 
-The admitted Antigravity adapter uses the host-configured session channel and has no credential file to bridge. SPLITBRIEF hands a macOS Antigravity `session` runner **your real `HOME` and `USER`** (`host-account`) and copies nothing. Being able to reach the keychain is not treated as being signed in: readiness reports `authenticated`, and the picker lists models, only when `agy models` run in that staged environment exits `0`. A non-zero exit is `unauthenticated`, and SPLITBRIEF never runs a sign-in command for you.
+The admitted Antigravity adapter uses the sign-in that `agy` already has, and has no credential file to bridge. SPLITBRIEF hands a macOS Antigravity `session` runner **your real `HOME` and `USER`** (`host-account`) and copies nothing. Being able to reach the keychain is not treated as being signed in: readiness reports `authenticated`, and the picker lists models, only when `agy models` run in that staged environment exits `0`. A non-zero exit is `unauthenticated`, and SPLITBRIEF never runs a sign-in command for you.
 
-The cost is the same as Claude Code's: `~` resolves to your real home, and `agy` may write its own state there. Everything else the sandbox redirects still points inside `<project>/.splitbrief/sandbox/`, except the private `TMPDIR` in the system temp directory. SPLITBRIEF has no Antigravity `api-key` channel and no per-invocation method switch for it. [Upstream Antigravity documentation](https://antigravity.google/docs/cli/install/#using-a-gemini-api-key) describes a Gemini API-key mode configured through settings and `GEMINI_API_KEY`; that upstream capability is not an authentication method this adapter can select or enforce.
+The cost is the same as Claude Code's: `~` resolves to your real home, and `agy` may write its own state there. Everything else the sandbox redirects still points inside `<project>/.splitbrief/sandbox/`, except the private `TMPDIR` in the system temp directory. SPLITBRIEF passes no credential variable of your shell to `agy`, and `GEMINI_API_KEY` stays out too.
 
 SPLITBRIEF has no admitted Antigravity credential bridge on Linux or Windows. No host credential is handed over and `agy models` is not run. Authentication stays unknown, catalog access is unsupported, and readiness explains that signing in again cannot enable the bridge on those platforms.
 
@@ -132,7 +121,7 @@ SPLITBRIEF has no admitted Antigravity credential bridge on Linux or Windows. No
 
 ### What a `host-account` child can and cannot reach
 
-The discriminants are declared, not scattered through the engine as platform checks: a channel declares `hostKeychainPlatforms` (`src/core/runners/cli-tool-catalog.ts`), and the Claude Code, Cursor Agent CLI and Antigravity `session` channels declare `['darwin']`; `cliAuthChannelHostStateAccess()` maps that to `host-account`, everything else to `bridged-files` or `none`. Within `bridged-files`, `CLI_CREDENTIAL_MODELS` (`src/engine/runners/sandbox-state-paths.ts`) declares per tool whether the credential is a `static-secret` (sealed snapshot copy) or `rotating-oauth` (live passthrough).
+The discriminants are declared, not scattered through the engine as platform checks: a channel declares `hostKeychainPlatforms` (`src/core/runners/cli-tool-catalog.ts`), and the Claude Code, Cursor Agent CLI and Antigravity `session` channels declare `['darwin']`; `cliAuthChannelHostStateAccess()` maps that to `host-account`, everything else to `bridged-files`. Within `bridged-files`, `CLI_CREDENTIAL_MODELS` (`src/engine/runners/sandbox-state-paths.ts`) declares per tool whether the credential is a `static-secret` (sealed snapshot copy) or `rotating-oauth` (live passthrough).
 
 Which runners keep a private HOME, and which do not:
 
@@ -146,10 +135,9 @@ Which runners keep a private HOME, and which do not:
 | Antigravity, `session` channel, Linux / Windows | private | none — unsupported credential bridge; authentication remains unknown |
 | Codex, `session` channel, every platform | private, with Codex's sessions and history in it | your real `~/.codex/auth.json`, or `auth.json` in `CODEX_HOME` when you set it, live — reads **and writes** |
 | OpenCode and Kilo Code, `provider-dependent` channel | private, but that tool's own state directory is a link to the real one | that tool's real state directory, live — reads **and writes** |
-| Any runner on an `api-key` channel | private | none — the credential arrives as an environment variable |
 | Every `api`, `shell`, or `agent` runner | private | none |
 
-OpenCode 2's model listing, `opencode api GET /api/model --standalone`, is staged as an OpenCode run is. The picker therefore lists a provider only when a run can sign in to it: through a `*_API_KEY` variable of your shell, through OpenCode's own `auth.json`, or with no credential, as OpenCode's `opencode` provider does. When OpenCode is on a seat or a fallback, the listing also names the project directory, and OpenCode then loads the project's OpenCode config with its plugins and its local MCP servers. The details are in the model listing staging of [AUTH-METHOD-MATRIX.md](./AUTH-METHOD-MATRIX.md).
+OpenCode 2's model listing, `opencode api GET /api/model --standalone`, is staged as an OpenCode run is. The picker therefore lists a provider only when a run can sign in to it: through a `*_API_KEY` variable of your shell, through OpenCode's own `auth.json`, or with no credential, as OpenCode's `opencode` provider does. When OpenCode is on a seat or a fallback, the listing also names the project directory, and OpenCode then loads the project's OpenCode config with its plugins and its local MCP servers. The listing runs in a neutral temporary directory, and the project directory goes in the `x-opencode-directory` header. A project whose crew does not use OpenCode is never named to the listing. A provider that signs in without an API key, such as Amazon Bedrock through an AWS profile or Google Vertex through `GOOGLE_APPLICATION_CREDENTIALS`, is not listed.
 
 What the `host-account` child gains:
 
@@ -166,7 +154,50 @@ And what it does **not** gain, so the accounting is not overstated:
 
 One consequence of never holding the token: the parent-side redactor that strips a *bridged* credential value out of runner output has no value to strip on this channel, because SPLITBRIEF never learns one. Pattern-based secret redaction still applies to everything a runner emits.
 
-If that host-state access is unacceptable, do not use that CLI connection. A manually selected `api-key` method cannot bypass the enforcement gate.
+If that host-state access is unacceptable, do not use that CLI connection.
+
+## Child environment
+
+SPLITBRIEF builds a separate environment for each kind of child. Seats, readiness probes and catalog probes keep only named variables. Commands SPLITBRIEF runs itself inherit the defined variables and drop credential names, selectors and helpers. Workflow hooks and the `git` commands SPLITBRIEF runs itself keep the full SPLITBRIEF environment.
+
+| Child | What the child gets |
+|---|---|
+| Planner, reviewer and implementer of kind `cli`, `shell` or `agent`; readiness probe; catalog probe | The runtime keys (`LANG`, `LC_*`, `TZ`, `TERM`, `COLORTERM`, `TERM_PROGRAM*`, `NO_COLOR`, `FORCE_COLOR`, `COLUMNS`, `LINES`), a `PATH` with the project's own directories removed, the staged `HOME`, `XDG_*` and caches, a private `TMPDIR` outside the project (`<system tmp>/sb-<hash>`), and the credential variables of the runner (next table). |
+| `customCommands` runner | The runtime keys and the names in the command's `env` list. |
+| Plan check, reviewer check, base re-run, the checks of a fix task, `render` check, the formatter | All defined environment variables except credential names, selectors and helpers. Project settings such as `NODE_OPTIONS`, `DATABASE_URL`, `DISPLAY`, `XDG_RUNTIME_DIR` and `RAILS_ENV` stay. The real `HOME` and `USERPROFILE` stay; `PATH` keeps only absolute entries. Provider API keys, cloud credentials, tokens, AWS profiles, credential files, SSH sockets, Git helpers and npm userconfig selectors stay out. See [CONFIGURATION.md §What a check can reach](./CONFIGURATION.md#what-a-check-can-reach). |
+| `api` runner | nothing: the HTTP call runs in process |
+| Agent-skill recipe spawn (`skills/*/references/tool-recipes.md`) | The full environment of the agent session that runs the skill. |
+| Workflow hook | The full SPLITBRIEF environment. The hook trust prompt discloses this, and you accept it per checkout ([HOOKS-CONFIG.md](./HOOKS-CONFIG.md)). |
+
+The credential variables of a runner:
+
+| Runner | Credential variables |
+|---|---|
+| `claude-code`, `codex`, `cursor`, `command-code`, `antigravity` | none: the tool uses the sign-in that it already has |
+| `opencode`, `kilo-code` | every `*_API_KEY` of the parent |
+| `shell`, `agent` (inline or in `customCommands`) | the names in the runner's `env` list |
+| `api` | the `apiKey: env:VAR` reference, or the provider's own variable |
+
+A seat or probe child gets no session variable of the parent agent (`CLAUDECODE`, `CLAUDE_CODE_*`) unless its `env` list names one, and it never gets `SSH_AUTH_SOCK`. A declared `env` list cannot name `SSH_AUTH_SOCK`, `HOME`, `PATH` or a code-loading variable.
+
+OpenCode and Kilo Code route to many providers. Besides their own sign-in state, they can use the provider keys of your shell, and their model listing reads the same keys. So they get every `*_API_KEY`. The cost: a model on one provider can read the keys of every other provider.
+
+No adapter adds an authentication flag to the command line. SPLITBRIEF blocks `--api-key` in a Cursor seat's `invocationArgs`. The `claude-code` implementer gets `--settings <JSON>`, and that JSON holds only `sandbox` and `permissions` keys ([the Claude Code implementer sandbox](./PLANNERS-AND-IMPLEMENTERS.md#posture-trust-and-auth)).
+
+A tool can set variables of its own for its own shell. What the shell of each seat sees:
+
+- `antigravity`: no parent secret and no parent session variable. `agy` adds its own `ANTIGRAVITY_*` variables, `ANTIGRAVITY_CSRF_TOKEN` among them. The shell does not read `~/.zshrc`, so the keys that file exports stay out.
+- `claude-code`: no parent secret. The `CLAUDE_CODE_*` and `CLAUDECODE` variables in its Bash tool belong to the child `claude` itself, not to the parent. On macOS the child keeps your real home, so it also applies the `env` block of your `~/.claude/settings.json`. Its sandbox adds the proxy variables.
+- `command-code`: no parent secret and no session variable.
+- `opencode`: every `*_API_KEY` of the parent, as stated above.
+
+### Competing and shared credentials
+
+**Competing credentials.** A child can hold a credential variable and a stored sign-in at the same time. The installed build of the tool then decides which one it uses.
+
+**Shared sign-in state.** SPLITBRIEF never runs a sign-in, sign-out or account-switch command. Codex, OpenCode and Kilo Code use live links to your own sign-in, and Cursor Agent CLI does so on Linux. Claude Code and Command Code get a sealed copy where a file is bridged. On macOS, Claude Code, Cursor Agent CLI and Antigravity keep your real `HOME` and `USER`, so the OS keychain is reachable, and these children can update their own state in your home. Antigravity has no file bridge on Linux.
+
+**Same staging for readiness and the run.** The readiness probe and the runner build their environment from the same rules. Only the sandbox root differs: it changes which directory the child gets, not which credential. A tool that readiness reports as signed in is staged the same way for the run. The model listing is staged the same way too.
 
 ## Best practices
 

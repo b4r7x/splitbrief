@@ -200,43 +200,6 @@ describe('createCliPlanner', () => {
     expect(checks).toEqual([]);
   });
 
-  it('refuses an explicitly selected unproven API-key channel before spawning a planner process', async () => {
-    const envFile = join(shimDir, 'env.txt');
-    const shimPath = join(shimDir, 'codex');
-    writeFileSync(
-      shimPath,
-      [
-        '#!/bin/bash',
-        `printf '%s|%s|%s' "$OPENAI_API_KEY" "$ANTHROPIC_API_KEY" "$HOME" > '${envFile}'`,
-        `printf '%s\n' '${JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'done' } })}'`,
-        `printf '%s\\n' '${CODEX_TURN_COMPLETED.replace(/'/g, "'\\''")}'`,
-      ].join('\n'),
-      'utf8',
-    );
-    chmodSync(shimPath, 0o755);
-    const originalOpenAi = process.env.OPENAI_API_KEY;
-    const originalAnthropic = process.env.ANTHROPIC_API_KEY;
-    process.env.OPENAI_API_KEY = 'sk-openai';
-    process.env.ANTHROPIC_API_KEY = 'sk-anthropic';
-    try {
-      const planner = createCliPlanner(
-        makeConfig({
-          planner: { kind: 'cli', tool: 'codex', authChannel: 'api-key' },
-        }),
-      );
-
-      await expect(
-        planner.review('prompt', projectDir, { onOutput: vi.fn() }),
-      ).rejects.toMatchObject({ kind: 'runner-auth-channel-unenforced' });
-      expect(existsSync(envFile)).toBe(false);
-    } finally {
-      if (originalOpenAi === undefined) delete process.env.OPENAI_API_KEY;
-      else process.env.OPENAI_API_KEY = originalOpenAi;
-      if (originalAnthropic === undefined) delete process.env.ANTHROPIC_API_KEY;
-      else process.env.ANTHROPIC_API_KEY = originalAnthropic;
-    }
-  });
-
   it('streams every known-CLI text event as output', async () => {
     const chunks = ['Which ', 'scope?', ' Which scope?'];
     installShim(

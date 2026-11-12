@@ -143,7 +143,7 @@ describe('configForProfile', () => {
 describe('createTaskImplementer configured profile admission', () => {
   it('routes every current runner kind and named profile with its matching prepared gate', async () => {
     const runners: ImplementerConfig[] = [
-      { kind: 'cli', tool: 'codex', authChannel: 'session' },
+      { kind: 'cli', tool: 'codex' },
       makeNoValidationConfig().implementer,
       { kind: 'shell', command: process.execPath, model: 'shell-model' },
       { kind: 'agent', command: process.execPath, model: 'agent-model' },

@@ -40,6 +40,11 @@ const CMD_LISTING = [
   'Docs:  https://commandcode.ai/docs/reference/cli/models',
   '',
 ].join('\n');
+// `cursor-agent --list-models` on 2026.09.18, from its first line of output.
+const CURSOR_LISTING = readFileSync(
+  fileURLToPath(new URL('../../fixtures/cursor/list-models-2026.09.18.txt', import.meta.url)),
+  'utf8',
+).replace(/^[\s\S]*?(?=Available models)/, '');
 
 type Screen = Readonly<{
   text: () => string;
@@ -287,23 +292,64 @@ describe('e2e: a key burst on the seat picker saves what slow keys save', {
     return { skipped, saved };
   }
 
-  it('saves the model when ⏎ ↓ ⏎ reach the picker in one read, as the same keys pressed slowly do', async (context) => {
+  it('saves the model when ⏎ ↑ ⏎ reach the picker in one read, as the same keys pressed slowly do', async (context) => {
     const slow = await saveFromLuna('picker-burst-slow', async (screen) => {
       screen.write('\r');
-      await screen.shows('▌ ├─ auth');
-      screen.write('\x1b[B');
+      await screen.shows(/GPT-6-Luna[^\n]*▴[^\n]*\n[^\n]*─ /);
+      expect(screen.text()).not.toMatch(/[├└]─ auth/);
       await screen.shows('▌ └─ effort');
+      screen.write('\x1b[A');
+      await screen.shows(/▌ GPT-6-Luna[^\n]*▴/);
       screen.write('\r');
     });
     if (slow.skipped !== undefined) context.skip(slow.skipped);
     // A picker that drops the last two keys leaves the expansion open, and a sound one shows
     // that same screen on its way to the save, so the wait ends on the save line alone.
     const burst = await saveFromLuna('picker-burst-one-read', async (screen) => {
-      screen.write('\r\x1b[B\r');
+      screen.write('\r\x1b[A\r');
     });
     if (burst.skipped !== undefined) context.skip(burst.skipped);
 
     expect(burst.saved).toEqual(slow.saved);
+  });
+});
+
+describe('e2e: a saved custom model with nothing to open confirms from the crew row', {
+  timeout: 120_000,
+}, () => {
+  it('shows the Cursor row closed and saves it on one ⏎', async (context) => {
+    const skipped = await inBuildSeatPicker({
+      prefix: 'picker-custom-no-children',
+      tool: 'cursor',
+      model: 'zz-custom-model',
+      prepareHome: () => {},
+      fakeBody: `const args = process.argv.slice(2);
+if (args.includes('--version')) {
+  console.log(${JSON.stringify(CLI_TOOL_CATALOG.cursor.compatibility.testedVersion)});
+  process.exit(0);
+}
+if (args[0] === 'status') {
+  console.log('Logged in as e2e@example.com');
+  process.exit(0);
+}
+if (args.includes('--list-models')) {
+  process.stdout.write(${JSON.stringify(CURSOR_LISTING)});
+  process.exit(0);
+}
+process.exit(1);`,
+      steps: async (screen) => {
+        await screen.shows(/▌ Zz Custom Model/, 30_000);
+        const row = screen
+          .text()
+          .split('\n')
+          .find((line) => line.includes('Zz Custom Model'));
+        expect(row).not.toContain('▴');
+        expect(screen.text()).toContain('⏎ confirm · esc cancel');
+        screen.write('\r');
+        await screen.shows(SAVED_BUILD);
+      },
+    });
+    if (skipped !== undefined) context.skip(skipped);
   });
 });
 

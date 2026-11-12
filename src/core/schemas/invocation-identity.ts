@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { RunnerBillingPostureSchema } from '../runners/runner-billing.js';
 
 /**
- * A static adapter or matrix entry id (`CliAuthEnforcementEvidence.id`), never
+ * A static adapter id, or a CLI matrix entry id in an older record, never
  * text lifted from tool output: no whitespace, slashes, `@`, `?` or `:`.
  */
 const EvidenceIdSchema = z

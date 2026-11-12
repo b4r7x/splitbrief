@@ -13,7 +13,6 @@ import { runCommand } from '#testing/helpers/commander.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createDefaultConfig } from '../../../src/core/config/load/defaults.js';
-import { defaultCliAuthChannel } from '../../../src/core/runners/cli-tool-catalog.js';
 import { toYaml } from '../../../src/core/config/load/transform.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { saveState, loadState } from '../../../src/core/state/persistence.js';
@@ -57,9 +56,7 @@ beforeEach(() => {
     installCompatibleCliShim({
       directory: shimDir,
       tool: 'claude-code',
-      authChannel: defaultCliAuthChannel('claude-code').id,
     }),
-    'test-only-resume-interrupted-key',
   );
 });
 

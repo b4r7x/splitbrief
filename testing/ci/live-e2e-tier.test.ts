@@ -22,7 +22,7 @@ import {
   resolveReleaseMatrixRun,
   resolveReleaseMatrixSeat,
 } from '../e2e/live/matrix.js';
-import { CLI_TOOL_IDS, defaultCliAuthChannel } from '../../src/core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_IDS } from '../../src/core/runners/cli-tool-catalog.js';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 
@@ -177,20 +177,6 @@ describe('live e2e tier gating', () => {
     await expect(
       runLiveToolRow({ tool: 'not-a-cli-tool', timeoutMs: 300_000, run: async () => failIfRun() }),
     ).resolves.toEqual({ kind: 'skip', reason: 'not-a-cli-tool is not in the CLI tool catalog' });
-  });
-
-  it("names the tool's own declared auth channel so detection does not withhold it", async () => {
-    detectAvailableCliToolsMock.mockResolvedValue([cliDetectionFor('ready', 'command-code')]);
-
-    await runLiveToolRow({ tool: 'command-code', timeoutMs: 300_000, run: async () => {} });
-
-    expect(detectAvailableCliToolsMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        tools: ['command-code'],
-        authChannels: { 'command-code': defaultCliAuthChannel('command-code').id },
-      }),
-    );
-    expect(defaultCliAuthChannel('command-code').id).toBe('session');
   });
 
   it('clears an installed, authenticated tool with no blocker', async () => {
@@ -453,7 +439,7 @@ describe('release matrix readiness gate', () => {
     );
   });
 
-  it('probes every seat tool with its declared auth channel', async () => {
+  it('probes every seat tool', async () => {
     const signal = new AbortController().signal;
     detectAvailableCliToolsMock.mockResolvedValue([
       cliDetectionFor('ready', 'codex'),
@@ -466,10 +452,6 @@ describe('release matrix readiness gate', () => {
       expect.objectContaining({
         tools: ['codex', 'cursor'],
         signal,
-        authChannels: {
-          codex: defaultCliAuthChannel('codex').id,
-          cursor: defaultCliAuthChannel('cursor').id,
-        },
       }),
     );
   });

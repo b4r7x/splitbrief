@@ -104,7 +104,6 @@ it('lists a BUILD seat changed between stop and continue in the review packet wi
   const tools = await detectAvailableCliTools({
     projectDir: target.projectDir,
     tools: ['codex'],
-    authChannels: { codex: 'session' },
     role: 'implementer',
   });
   expect(tools[0]?.diagnostic.state).toBe('ready');

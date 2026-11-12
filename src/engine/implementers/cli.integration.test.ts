@@ -214,7 +214,6 @@ it('steers OpenCode through the implementer sandbox with bridged credentials and
   const runner: CliImplementerConfig = {
     kind: 'cli',
     tool: 'opencode',
-    authChannel: 'provider-dependent',
     contextLength: 8192,
     temperature: 0.3,
   };
@@ -304,74 +303,6 @@ describe('createCliImplementer (claude-code)', () => {
 
     expect(result.success).toBe(true);
     expect(readFileSync(join(projectDir, 'src/hello.ts'), 'utf8')).toBe('generated');
-  });
-
-  it('constructs and runs a legacy config that selects no auth channel', async () => {
-    installRecordingClaudeShim('src/hello.ts');
-    const legacyConfig: CliImplementerConfig = {
-      kind: 'cli',
-      tool: 'claude-code',
-      contextLength: 8192,
-      temperature: 0.3,
-    };
-
-    const implementer = createCliImplementer(legacyConfig);
-    const result = await implementer.implement({
-      task: makeTask(),
-      projectDir,
-      config: makeConfig({ implementer: legacyConfig }),
-      context: { ...defaultContext, dir: projectDir },
-      onOutput: () => {},
-    });
-
-    expect(result.success).toBe(true);
-    expect(readFileSync(join(projectDir, 'src/hello.ts'), 'utf8')).toBe('generated');
-  });
-
-  it('refuses an explicit unproven API-key channel before spawning the implementer process', async () => {
-    const envFile = join(shimDir, 'env.txt');
-    const target = join(projectDir, 'src/hello.ts');
-    const shimPath = join(shimDir, 'claude');
-    writeFileSync(
-      shimPath,
-      [
-        '#!/bin/bash',
-        `printf '%s|%s|%s' "$ANTHROPIC_API_KEY" "$OPENAI_API_KEY" "$HOME" > '${envFile}'`,
-        'cat > /dev/null',
-        `mkdir -p "$(dirname '${target}')"`,
-        `printf generated > '${target}'`,
-        `printf '%s\n' '{"type":"result","result":"done"}'`,
-      ].join('\n'),
-      'utf8',
-    );
-    chmodSync(shimPath, 0o755);
-    const originalAnthropic = process.env.ANTHROPIC_API_KEY;
-    const originalOpenAi = process.env.OPENAI_API_KEY;
-    process.env.ANTHROPIC_API_KEY = 'sk-anthropic';
-    process.env.OPENAI_API_KEY = 'sk-openai';
-    try {
-      const apiKeyConfig: CliImplementerConfig = {
-        ...cliClaudeImplementer,
-        authChannel: 'api-key',
-      };
-      const implementer = createCliImplementer(apiKeyConfig);
-      const result = await implementer.implement({
-        task: makeTask(),
-        projectDir,
-        config: makeConfig({ implementer: apiKeyConfig }),
-        context: { ...defaultContext, dir: projectDir },
-        onOutput: () => {},
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('Remove authChannel from this runner');
-      expect(existsSync(envFile)).toBe(false);
-    } finally {
-      if (originalAnthropic === undefined) delete process.env.ANTHROPIC_API_KEY;
-      else process.env.ANTHROPIC_API_KEY = originalAnthropic;
-      if (originalOpenAi === undefined) delete process.env.OPENAI_API_KEY;
-      else process.env.OPENAI_API_KEY = originalOpenAi;
-    }
   });
 
   it('nothing changed is no-staged-change', async () => {
@@ -1166,7 +1097,6 @@ describe('createCliImplementer (opencode arg vector)', () => {
   const opencodeImplementer: CliImplementerConfig = {
     kind: 'cli',
     tool: 'opencode',
-    authChannel: 'provider-dependent',
     contextLength: 8192,
     temperature: 0.3,
   };
@@ -1432,7 +1362,6 @@ describe('createCliImplementer (timeout surfacing)', () => {
   const opencodeImplementer: CliImplementerConfig = {
     kind: 'cli',
     tool: 'opencode',
-    authChannel: 'provider-dependent',
     contextLength: 8192,
     temperature: 0.3,
     timeout: 50,

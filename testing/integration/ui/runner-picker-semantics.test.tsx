@@ -10,6 +10,7 @@ import { createTempDir, withTempDir } from '#testing/helpers/temp-dir.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cliDetectionFor, cliDetectionsFor } from '#testing/helpers/factories/detection.js';
 import { writeConfigYaml } from '#testing/helpers/config-io.js';
+import { glyph } from '../../../src/lib/glyphs.js';
 import { _resetMouseZones } from '../../../src/lib/terminal/mouse-zones.js';
 import { configStore } from '../../../src/stores/project/config.js';
 import { detectionStore } from '../../../src/stores/project/detection.js';
@@ -73,7 +74,6 @@ function makeActions(overrides: Partial<PickerActions> = {}): PickerActions {
   return {
     confirm: async () => {},
     confirmProviderSelection: async () => {},
-    confirmAuthMethod: async () => {},
     leftChange: () => {},
     deleteRight: async () => {},
     chooseContract: () => {},
@@ -843,14 +843,18 @@ describe('runner picker semantics integration', () => {
           // after the walk pins the model those axes belonged to.
           expect(frameText(ui)).toContain('GPT-5.4');
           ui.stdin.write(ENTER);
+          // The picker title names `effort` in every frame; only the child row hangs off a branch.
           await vi.waitFor(() => {
-            expect(frameText(ui)).toContain('effort');
+            const frame = frameText(ui);
+            expect(
+              [glyph('treeBranch'), glyph('treeLast')].some((lead) =>
+                frame.includes(`${lead}${glyph('divider')} effort`),
+              ),
+            ).toBe(true);
           });
           // Selecting the already-configured tool saved nothing; the receipt below belongs to
           // the confirmation walk, not to the filter's tool select.
           expect(feedbackStore.get().message).toBeNull();
-          ui.stdin.write(ARROW_DOWN);
-          await flushEffects();
           ui.stdin.write(ENTER);
           await flushEffects();
           ui.unmount();

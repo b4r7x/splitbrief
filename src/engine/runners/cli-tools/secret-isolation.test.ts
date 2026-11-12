@@ -157,7 +157,7 @@ describe('ambient secret stripping canary matrix', () => {
     expect(Object.values(env)).not.toContain('canary-secret-isolation-ambient-gh-1a2b');
   });
 
-  it('preserves only the selected runner auth channel', async () => {
+  it("keeps every API key out of a CLI runner's session env", async () => {
     const projectDir = createTempDir('secret-isolation-auth-channel');
     dirs.push(projectDir);
     setEnv('OPENAI_API_KEY', 'canary-secret-isolation-openai-5e6f');
@@ -165,58 +165,12 @@ describe('ambient secret stripping canary matrix', () => {
 
     const session = await createRunnerSandboxEnv(
       projectDir,
-      { kind: 'cli', tool: 'codex', authChannel: 'session' },
-      'implementer',
-    );
-    const apiKey = await createRunnerSandboxEnv(
-      projectDir,
-      { kind: 'cli', tool: 'codex', authChannel: 'api-key' },
+      { kind: 'cli', tool: 'codex' },
       'implementer',
     );
 
     expect(session.OPENAI_API_KEY).toBeUndefined();
     expect(session.ANTHROPIC_API_KEY).toBeUndefined();
-    expect(apiKey.OPENAI_API_KEY).toBe('canary-secret-isolation-openai-5e6f');
-    expect(apiKey.ANTHROPIC_API_KEY).toBeUndefined();
-  });
-
-  it('does not expose a previous session bridge to an API-key child process', async () => {
-    const hostHome = createTempDir('secret-isolation-channel-reset-host');
-    const projectDir = createTempDir('secret-isolation-channel-reset-project');
-    dirs.push(hostHome, projectDir);
-    mkdirSync(join(hostHome, '.codex'), { recursive: true });
-    writeFileSync(
-      join(hostHome, '.codex', 'auth.json'),
-      JSON.stringify({ token: 'canary-secret-isolation-session-bridge-7e8f' }),
-    );
-    setEnv('HOME', hostHome);
-    setEnv('OPENAI_API_KEY', 'canary-secret-isolation-api-key-8f9a');
-
-    // Both acquisitions name the same role on purpose: a shared root is what
-    // makes the api-key channel responsible for clearing the session snapshot.
-    // Split them across roles and the assertion below passes vacuously.
-    const session = await createRunnerSandboxEnv(
-      projectDir,
-      { kind: 'cli', tool: 'codex', authChannel: 'session' },
-      'implementer',
-    );
-    expect(existsSync(join(session.HOME as string, '.codex', 'auth.json'))).toBe(true);
-
-    const apiKey = await createRunnerSandboxEnv(
-      projectDir,
-      { kind: 'cli', tool: 'codex', authChannel: 'api-key' },
-      'implementer',
-    );
-    const result = await run(
-      invocation({
-        environment: toCliEnvironment(apiKey),
-        script:
-          "const fs=require('node:fs');const path=require('node:path');const hasSession=fs.existsSync(path.join(process.env.HOME,'.codex','auth.json'));if(hasSession||process.env.OPENAI_API_KEY!=='canary-secret-isolation-api-key-8f9a')process.exit(23);process.stdout.write('RESULT\\n')",
-      }),
-    );
-
-    expect(result.status).toBe('completed');
-    expect(existsSync(join(apiKey.HOME as string, '.codex', 'auth.json'))).toBe(false);
   });
 });
 
@@ -287,7 +241,7 @@ describe('readonly provider bridge canary matrix', () => {
 
     const env = await createRunnerSandboxEnv(
       projectDir,
-      { kind: 'cli', tool: 'copilot', authChannel: 'session' },
+      { kind: 'cli', tool: 'copilot' },
       'implementer',
     );
     const bridgedConfig = join(env.HOME as string, '.copilot', 'config.json');
@@ -310,7 +264,7 @@ describe('readonly provider bridge canary matrix', () => {
 
     const sandboxEnv = await createRunnerSandboxEnv(
       projectDir,
-      { kind: 'cli', tool: 'codex', authChannel: 'session' },
+      { kind: 'cli', tool: 'codex' },
       'implementer',
     );
     const events: RunnerCallEvent[] = [];
@@ -348,7 +302,7 @@ describe('readonly provider bridge canary matrix', () => {
 
     const env = await createRunnerSandboxEnv(
       projectDir,
-      { kind: 'cli', tool: 'codex', authChannel: 'session' },
+      { kind: 'cli', tool: 'codex' },
       'implementer',
     );
 
@@ -448,7 +402,7 @@ describe('artifact log and snapshot redaction canary matrix', () => {
 
     const sandboxEnv = await createRunnerSandboxEnv(
       projectDir,
-      { kind: 'cli', tool: 'codex', authChannel: 'session' },
+      { kind: 'cli', tool: 'codex' },
       'implementer',
     );
     const events: RunnerCallEvent[] = [];

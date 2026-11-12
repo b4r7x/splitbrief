@@ -271,7 +271,7 @@ describe('buildPlannerCallFailedRecoveryIssue', () => {
 
   it('handles a too-large prompt diagnosis with no retry, offering fallback first or end-run only', () => {
     const opencodeRunner = makeConfig({
-      planner: { kind: 'cli', tool: 'opencode', authChannel: 'provider-dependent' },
+      planner: { kind: 'cli', tool: 'opencode' },
     }).planner;
     const diagnosis = {
       failure: 'input-too-large' as const,

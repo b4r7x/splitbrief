@@ -2,7 +2,7 @@ import { CLI_TOOL_CATALOG } from '../runners/cli-tool-catalog.js';
 import type { ReadinessCheck, RunnerReadinessCause } from './types.js';
 
 export function runnerCauseKey(cause: RunnerReadinessCause): string {
-  return JSON.stringify([cause.tool, cause.authChannel ?? null, cause.cause]);
+  return JSON.stringify([cause.tool, cause.cause]);
 }
 
 export function sameRunnerCause(left: RunnerReadinessCause, right: RunnerReadinessCause): boolean {

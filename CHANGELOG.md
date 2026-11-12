@@ -122,6 +122,7 @@
 - **Breaking.** The `aider` CLI tool; choose another `cli` tool, or run Aider as a `shell` runner.
 - **Breaking — subsystems.** Each is removed with its command, flags and config keys: the Task Brief compiler, brief recovery, detached runs (`splitbrief attach`, `detach`, `ps` and `--detach`), the RPC server (`--rpc`), the MCP server (`splitbrief mcp`), `splitbrief worktree` and `--worktree`, `splitbrief explain`, `splitbrief handoff`, `splitbrief export`, `splitbrief stats` and `status --history`, `splitbrief snapshot` and automatic snapshots, the planner estimate review, automatic splitting of an overflowing task, the session tree, the OpenTelemetry sink and `--otel-exporter`, and module hooks. A retired CLI name prints what replaced it.
 - **Breaking — config keys.** These are load errors, and one load names every offending path: `workflow.persistTranscript`, `workflow.briefReview: rich`, `hooks.builtin`, `hooks.pre_compact`, a hook's `kind: module`, `approval.headless`, `approval.tiers.network`, `approval.tiers.validation`, `codebase.cacheDir`, `sessions.scope: global`, and the top-level `otel`, `snapshots`, `trust`, `plannerEstimateReview` and `autoSplitOverflow`. See [Removed config keys](./docs/CONFIGURATION.md#removed-config-keys). Without `approval.headless`, a run that has a reply channel is always asked.
+- **Breaking — config keys.** The `auth_channel` key of a `cli` runner in `planner`, `reviewer`, `implementer` or an implementer profile. A config that still holds it fails the load and names the key; delete the line. SPLITBRIEF runs each tool with the sign-in that the tool already has.
 - **Breaking — `--json` stream.** The `planner_heartbeat` event no longer carries `accumulatedTokens`.
 - `workflow.git.create_branch` and the *Create branch* setting. `false` still loads and changes nothing. `true` fails the load with a message to delete the key.
 - The `required` key on a check. Every check must pass. A plan or a saved run that still holds the key loads, and SPLITBRIEF ignores the key.
@@ -224,7 +225,7 @@
 - Cursor model names no longer end in a stray word.
 - Command Code activity shows the file or the command, and a write outside the run stops the brief.
 - The model picker lists an OpenCode provider only when a run can sign in to it. Providers that sign in without an API key, such as Amazon Bedrock or Google Vertex, are no longer offered and then fail at the first call.
-- Claude Code and Codex sign-ins kept in a folder set by `CLAUDE_CONFIG_DIR` or `CODEX_HOME` now work in runs, and a Codex sign-in kept in the system keyring is named as such, with the fix.
+- Claude Code and Codex sign-ins kept in a folder set by `CLAUDE_CONFIG_DIR` or `CODEX_HOME` now work in runs, and a Codex sign-in kept in the system keyring is named as such, with the fix: set `cli_auth_credentials_store = "file"` and run `codex login` again.
 - A reopened run that another process drives now shows when a seat waits for its usage limit to reset, and a wait whose reset has passed no longer shows on the run screen or in `--plain` output.
 - When one field of the implementer's closing report has the wrong shape, SPLITBRIEF keeps the other fields, such as the files it changed and its decisions, and shows one warning that names the field. Before, the whole report was lost and its narration showed as raw JSON.
 - The screen shows the checks the review runs to verify its findings, each on its own row with its clock.
@@ -444,7 +445,6 @@
 - A closed run lists each brief once, with every attempt's retries.
 - Hook trust covers what a hook actually runs: npm aliases and short forms, `pre` and `post` scripts, project files given to an interpreter, any letter case or version suffix of an interpreter, and a repository binary named by path. An affected hook asks for trust once more.
 - A validation command that the planner suggests can no longer choose which repository code runs, and each refusal states its true reason.
-- An explicit `auth_channel` that SPLITBRIEF cannot guarantee blocks at readiness instead of failing during the run.
 - The Cursor Agent CLI `session` channel works on macOS, where the credential is a keychain item.
 - OpenCode 2 lists its models in the picker again.
 - A custom API provider whose name is also a CLI tool id keeps its own name, model, credential rules and context budget.
@@ -553,7 +553,7 @@
 - Text you type on home and do not send is still there when you come back from a run, also when a command from the palette stood in front of it.
 - `splitbrief doctor` no longer says a seat is ready to start when its model has no sign-in. The seat reads ready with warnings, and the warning is counted once.
 - `splitbrief doctor` no longer says that a start without the TUI would be refused for an OpenCode that uses the providers set up in its own config.
-- A seat switch after a Seat down halt, automatic or chosen by you, keeps the seat's time limit. A switch to another model of the same tool also keeps the tool's idle limits, context length, temperature, arguments, output format, sign-in method and custom models. A custom model you add in the seat picker during the halt stays in `config.yaml` after the switch.
+- A seat switch after a Seat down halt, automatic or chosen by you, keeps the seat's time limit. A switch to another model of the same tool also keeps the tool's idle limits, context length, temperature, arguments, output format and custom models. A custom model you add in the seat picker during the halt stays in `config.yaml` after the switch.
 - After the planner rewrote or split a brief, the Ready line, the closed run and its Files list count every file the run changed, including the files of the earlier attempts, also when you end the run before the brief finishes or between the parts of a split brief; the review sees those files too.
 - The model picker no longer lists a custom model you added for one tool under another tool, so picking, adding or deleting a custom model acts only on the tool it belongs to.
 - In the model picker, Esc on an expanded row now collapses it and keeps what you typed in the filter.

@@ -19,17 +19,13 @@ import {
 import type { RunnerCallContext } from '../calls/types.js';
 import { createRunnerAttemptCallbackBuffer } from '../calls/callback-buffer.js';
 import type { TypedSchemaInput } from '../runners/typed-output.js';
-import {
-  type CliAuthChannelId,
-  typedOutputCapability,
-} from '../../core/runners/cli-tool-catalog.js';
-import { createRunnerSandboxEnv, resolveCliRunnerAuth } from '../runners/sandbox-env.js';
+import { typedOutputCapability } from '../../core/runners/cli-tool-catalog.js';
+import { createRunnerSandboxEnv } from '../runners/sandbox-env.js';
 import type { CliSeat } from '../runners/start-gate.js';
 
 const CLAUDE_TOOL = 'claude-code' as const;
 
 export function createClaudeCodePlanner(opts: {
-  authChannel: CliAuthChannelId | undefined;
   cliSeat?: CliSeat | undefined;
   model?: string | undefined;
   initialSessionId?: string | null | undefined;
@@ -54,16 +50,7 @@ export function createClaudeCodePlanner(opts: {
     maxToolCalls,
     skillRoots,
   } = opts;
-  // The resolved channel — not the configured one — decides which credential the
-  // child receives, so the stream invocations must see the same identity the
-  // sandbox environment was built from. Only the configured one is admitted at
-  // dispatch, so a resolved default never poses as an explicit choice.
-  const authChannel = resolveCliRunnerAuth({
-    kind: 'cli',
-    tool: CLAUDE_TOOL,
-    authChannel: opts.authChannel,
-  }).id;
-  const runnerConfig = { kind: 'cli' as const, tool: CLAUDE_TOOL, authChannel, model, effort };
+  const runnerConfig = { kind: 'cli' as const, tool: CLAUDE_TOOL, model, effort };
   const resolvedModel = resolveCliModel(model, CLAUDE_TOOL);
   const identityConfig = {
     backendKind: 'cli' as const,
@@ -77,8 +64,6 @@ export function createClaudeCodePlanner(opts: {
   function claudeRunnerPrep(input: { env: NodeJS.ProcessEnv; signal?: AbortSignal | undefined }) {
     return {
       model: resolvedModel,
-      authChannel,
-      configuredAuthChannel: opts.authChannel,
       env: input.env,
       cliSeat,
       ...(effort !== undefined && { effort }),

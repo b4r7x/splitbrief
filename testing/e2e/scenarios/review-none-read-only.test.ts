@@ -57,7 +57,6 @@ async function underReviewNone(
     const claude = installCompatibleCliShim({
       directory: binDir,
       tool: 'claude-code',
-      authChannel: 'session',
     });
     const offlinePath = join(dir, 'offline.mjs');
     writeFileSync(
@@ -68,7 +67,7 @@ async function underReviewNone(
     const restorePath = activateSafeCliShimPath(binDir);
     let environment: Readonly<Record<string, string>>;
     try {
-      environment = safeChildEnvironment(claude.sessionStateHome ?? join(dir, 'home'), [binDir]);
+      environment = safeChildEnvironment(claude.sessionStateHome, [binDir]);
     } finally {
       restorePath();
     }

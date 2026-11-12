@@ -10,7 +10,6 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { SPLITBRIEF_DIR } from '../../core/paths.js';
-import { defaultCliAuthChannel } from '../../core/runners/cli-tool-catalog.js';
 import {
   createPlannerArtifactAttemptId,
   PlannerArtifactSemanticIdSchema,
@@ -46,9 +45,7 @@ beforeEach(() => {
     installCompatibleCliShim({
       directory: shimDir,
       tool: 'claude-code',
-      authChannel: defaultCliAuthChannel('claude-code').id,
     }),
-    'test-only-spec-runtime-shim-key',
   );
   consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
   originalIsTTY = process.stdin.isTTY;

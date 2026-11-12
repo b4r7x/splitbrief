@@ -8,6 +8,7 @@ import type { CliReadinessResult } from '../../../core/schemas/readiness.js';
 import { expireDeadlineAfterFile, freezeProbeDeadlines } from '#testing/helpers/fake-timers.js';
 import { itUnix } from '#testing/helpers/planner-command-invoke.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
+import { stubSignInHome } from '#testing/helpers/sign-in-home.js';
 import type { AuthFact } from '../../../core/discovery/runner-evidence.js';
 import {
   isDeclaredCliProbeContract,
@@ -44,6 +45,15 @@ async function nodeExecutable(): Promise<CliExecutableIdentity> {
       mtimeMs: info.mtimeMs,
     },
   };
+}
+
+/** A HOME that holds a Codex sign-in file, so the session status command runs on every platform. */
+async function stubCodexSessionHome(directory: string): Promise<void> {
+  const home = join(directory, 'home');
+  await mkdir(join(home, '.codex'), { recursive: true });
+  await writeFile(join(home, '.codex', 'auth.json'), '{"session":"fixture"}');
+  vi.stubEnv('HOME', home);
+  vi.stubEnv('CODEX_HOME', '');
 }
 
 function probe(versionScript = "console.log('codex 0.40.0')"): CliProbeContract {
@@ -202,7 +212,6 @@ async function probeOpencode(
     return probeCliReadiness({
       tool: 'opencode',
       executable,
-      authChannel: 'provider-dependent',
       probe: opencodeProbe(
         options.authNotRun === undefined ? {} : { authNotRun: options.authNotRun },
       ),
@@ -240,7 +249,6 @@ async function probeOpencodeWithoutBridgedState(
     return probeCliReadiness({
       tool: 'opencode',
       executable,
-      authChannel: 'provider-dependent',
       probe: opencodeProbe(),
     });
   });
@@ -272,26 +280,29 @@ describe('CLI readiness probe', () => {
   });
 
   itUnix('lets a Copilot probe read the host package cache the launcher execs from', async () => {
-    const executable = await nodeExecutable();
-    const hostCache = '/host-copilot-cache';
-    vi.stubEnv('COPILOT_CACHE_HOME', hostCache);
-    const versionScript = `console.log(process.env.COPILOT_CACHE_HOME === ${JSON.stringify(hostCache)} ? 'copilot 0.40.0' : 'copilot unseen')`;
+    await withTempDir('readiness-probe-copilot-cache', async (directory) => {
+      const executable = await nodeExecutable();
+      await stubSignInHome(join(directory, 'home'), ['copilot', 'codex']);
+      const hostCache = '/host-copilot-cache';
+      vi.stubEnv('COPILOT_CACHE_HOME', hostCache);
+      const versionScript = `console.log(process.env.COPILOT_CACHE_HOME === ${JSON.stringify(hostCache)} ? 'copilot 0.40.0' : 'copilot unseen')`;
 
-    const copilot = await probeCliReadiness({
-      tool: 'copilot',
-      executable,
-      probe: declaredProbe({ versionScript }),
-    });
-    const codex = await probeCliReadiness({
-      tool: 'codex',
-      executable,
-      probe: declaredProbe({ versionScript }),
-    });
+      const copilot = await probeCliReadiness({
+        tool: 'copilot',
+        executable,
+        probe: declaredProbe({ versionScript }),
+      });
+      const codex = await probeCliReadiness({
+        tool: 'codex',
+        executable,
+        probe: declaredProbe({ versionScript }),
+      });
 
-    // Without it the probe reports the build embedded in the launcher, not the
-    // one the user installed — a version and a model list nothing else agrees with.
-    expect(copilot.installedVersion).toBe('0.40.0');
-    expect(codex.installedVersion).toBeNull();
+      // Without it the probe reports the build embedded in the launcher, not the
+      // one the user installed — a version and a model list nothing else agrees with.
+      expect(copilot.installedVersion).toBe('0.40.0');
+      expect(codex.installedVersion).toBeNull();
+    });
   });
 
   it('fails closed on Windows before spawning a probe or its descendants', async () => {
@@ -337,23 +348,68 @@ describe('CLI readiness probe', () => {
   });
 
   it('does not infer authentication from a version command or credential presence', async () => {
-    const executable = await nodeExecutable();
-    vi.stubEnv('OPENAI_API_KEY', 'readiness-test-key');
-    const legacyOptions = {
-      tool: 'codex',
-      executable,
-      probe: probe(),
-      authChannel: 'api-key',
-    } as const;
+    await withTempDir('readiness-probe-inference', async (directory) => {
+      const executable = await nodeExecutable();
+      await stubCodexSessionHome(directory);
+      const legacyOptions = {
+        tool: 'codex',
+        executable,
+        probe: probe(),
+      } as const;
 
-    const legacy = await probeCliReadiness(legacyOptions);
-    const declared = await probeCliReadiness({
-      ...legacyOptions,
-      probe: declaredProbe(),
+      const legacy = await probeCliReadiness(legacyOptions);
+      const declared = await probeCliReadiness({
+        ...legacyOptions,
+        probe: declaredProbe(),
+      });
+
+      expect(legacy).toMatchObject({ auth: 'unknown', status: 'unverified' });
+      expect(declared).toMatchObject({ auth: 'authenticated', status: 'ready' });
     });
+  });
 
-    expect(legacy).toMatchObject({ auth: 'unknown', status: 'unverified' });
-    expect(declared).toMatchObject({ auth: 'authenticated', status: 'ready' });
+  it('runs the sign-in check of the catalog channel of the tool', async () => {
+    await withTempDir('readiness-probe-catalog-channel', async (directory) => {
+      const executable = await nodeExecutable();
+      const authMarker = join(directory, 'auth-ran');
+      await stubCodexSessionHome(directory);
+
+      const result = await probeCliReadiness({
+        tool: 'codex',
+        executable,
+        probe: declaredProbe({
+          authScript: `require('node:fs').writeFileSync(${JSON.stringify(authMarker)}, ''); process.stdout.write('verified');`,
+        }),
+      });
+
+      expect(result).toMatchObject({
+        auth: 'authenticated',
+        status: 'ready',
+      });
+      expect(existsSync(authMarker)).toBe(true);
+    });
+  });
+
+  it('reports a tool signed out on its catalog channel without running its sign-in check', async () => {
+    await withTempDir('readiness-probe-catalog-channel-signed-out', async (directory) => {
+      const executable = await nodeExecutable();
+      const authMarker = join(directory, 'auth-ran');
+      vi.stubEnv('HOME', join(directory, 'home'));
+      vi.stubEnv('CODEX_HOME', '');
+      const probe = declaredProbe({
+        authScript: `require('node:fs').writeFileSync(${JSON.stringify(authMarker)}, ''); process.stdout.write('verified');`,
+      });
+      if (!isDeclaredCliProbeContract(probe)) throw new Error('expected a declared probe');
+
+      const evidence = await probeDeclaredCliReadinessEvidence({
+        tool: 'codex',
+        executable,
+        probe: probe.declared,
+      });
+
+      expect(evidence).toEqual({ version: { kind: 'success', value: '0.40.0' }, auth: 'missing' });
+      expect(existsSync(authMarker)).toBe(false);
+    });
   });
 
   it.runIf(process.platform !== 'win32')(
@@ -362,7 +418,6 @@ describe('CLI readiness probe', () => {
       await withTempDir('readiness-only-direct', async (directory) => {
         const authMarker = join(directory, 'auth-ran');
         const catalogMarker = join(directory, 'catalog-ran');
-        const secret = 'readiness-only-selected-key';
         const executable = await resolveCliExecutable({
           command: process.execPath,
           projectDir: directory,
@@ -370,23 +425,22 @@ describe('CLI readiness probe', () => {
         const probe = declaredProbe({
           authScript: [
             'const fs = require("node:fs");',
-            `fs.writeFileSync(${JSON.stringify(authMarker)}, process.env.OPENAI_API_KEY === ${JSON.stringify(secret)} ? "selected" : "wrong");`,
+            `fs.writeFileSync(${JSON.stringify(authMarker)}, "ran");`,
             'process.stdout.write("verified");',
           ].join(' '),
           catalogScript: [
             'const fs = require("node:fs");',
-            `fs.writeFileSync(${JSON.stringify(catalogMarker)}, process.env.OPENAI_API_KEY ?? "missing");`,
+            `fs.writeFileSync(${JSON.stringify(catalogMarker)}, "ran");`,
             'process.stdout.write("model-must-not-run");',
           ].join(' '),
         });
         if (!isDeclaredCliProbeContract(probe)) return;
-        vi.stubEnv('OPENAI_API_KEY', secret);
+        await stubCodexSessionHome(directory);
 
         const direct = {
           tool: 'codex' as const,
           executable,
           probe: probe.declared,
-          authChannel: 'api-key' as const,
           includeCatalog: true,
           catalogRefresh: 'manual',
         };
@@ -397,7 +451,7 @@ describe('CLI readiness probe', () => {
           auth: 'verified',
         });
         expect(existsSync(authMarker)).toBe(true);
-        expect(readFileSync(authMarker, 'utf8')).toBe('selected');
+        expect(readFileSync(authMarker, 'utf8')).toBe('ran');
         expect(existsSync(catalogMarker)).toBe(false);
         expect(result).not.toHaveProperty('catalog');
       });
@@ -436,12 +490,11 @@ describe('CLI readiness probe', () => {
             mtimeMs: info.mtimeMs,
           },
         };
-        vi.stubEnv('OPENAI_API_KEY', 'readiness-test-key');
+        await stubCodexSessionHome(directory);
 
         const exact = await probeCliReadiness({
           tool: 'codex',
           executable,
-          authChannel: 'api-key',
           probe: declaredProbe({ authCommand: ['codex', 'login', 'status'] }),
         });
         expect(exact).toMatchObject({ auth: 'authenticated', status: 'ready' });
@@ -454,10 +507,9 @@ describe('CLI readiness probe', () => {
           const rejected = await probeCliReadiness({
             tool: 'codex',
             executable,
-            authChannel: 'api-key',
             probe: declaredProbe({ authCommand }),
           });
-          expect(rejected.auth).toBe('not-checked');
+          expect(rejected.auth).toBe('authenticated');
         }
         expect(existsSync(rejectedMarker)).toBe(false);
       });
@@ -617,7 +669,7 @@ describe('CLI readiness probe', () => {
       await withTempDir('readiness-probe-descendant', async (directory) => {
         const executable = await nodeExecutable();
         const pidFile = join(directory, 'descendant.pid');
-        vi.stubEnv('OPENAI_API_KEY', 'readiness-test-key');
+        await stubCodexSessionHome(directory);
         // Long enough for the grandchild to record its pid before the reap, on a machine
         // running the whole suite at once; the elapsed assertion below still holds.
         probeLimit.ms = 8_000;
@@ -625,7 +677,6 @@ describe('CLI readiness probe', () => {
         const result = await probeCliReadiness({
           tool: 'codex',
           executable,
-          authChannel: 'api-key',
           probe: declaredProbe({
             authScript: [
               'const { spawn } = require("node:child_process");',
@@ -647,7 +698,7 @@ describe('CLI readiness probe', () => {
     },
   );
 
-  it('does not promote ambient credentials without a selected auth channel', async () => {
+  it('does not promote an ambient API key from a version-only probe', async () => {
     const executable = await nodeExecutable();
     vi.stubEnv('OPENAI_API_KEY', 'ambient-key');
 
@@ -658,30 +709,6 @@ describe('CLI readiness probe', () => {
     });
 
     expect(result).toMatchObject({ auth: 'unknown', status: 'unverified' });
-  });
-
-  it('passes only the selected API-key channel and blocks when its credential is missing', async () => {
-    const executable = await nodeExecutable();
-    const authScript =
-      "process.stdout.write(process.env.OPENAI_API_KEY === 'readiness-key' ? 'verified' : 'invalid')";
-    vi.stubEnv('OPENAI_API_KEY', 'readiness-key');
-
-    const authenticated = await probeCliReadiness({
-      tool: 'codex',
-      executable,
-      authChannel: 'api-key',
-      probe: declaredProbe({ authScript }),
-    });
-    expect(authenticated.status).toBe('ready');
-
-    vi.stubEnv('OPENAI_API_KEY', '');
-    const missing = await probeCliReadiness({
-      tool: 'codex',
-      executable,
-      authChannel: 'api-key',
-      probe: declaredProbe({ authScript }),
-    });
-    expect(missing).toMatchObject({ auth: 'unauthenticated', status: 'unauthenticated' });
   });
 
   it('bridges only an allowlisted session snapshot and never exposes the host home', async () => {
@@ -705,7 +732,6 @@ describe('CLI readiness probe', () => {
       const result = await probeCliReadiness({
         tool: 'codex',
         executable,
-        authChannel: 'session',
         probe: declaredProbe({ authScript }),
       });
 
@@ -713,7 +739,7 @@ describe('CLI readiness probe', () => {
     });
   });
 
-  it('does not promote a selected session channel when no allowlisted state exists', async () => {
+  it('does not promote a session channel when no allowlisted state exists', async () => {
     await withTempDir('readiness-session-empty', async (hostHome) => {
       const executable = await nodeExecutable();
       vi.stubEnv('HOME', hostHome);
@@ -721,7 +747,6 @@ describe('CLI readiness probe', () => {
       const result = await probeCliReadiness({
         tool: 'codex',
         executable,
-        authChannel: 'session',
         probe: declaredProbe(),
       });
 
@@ -730,48 +755,40 @@ describe('CLI readiness probe', () => {
   });
 
   it('does not promote a failed declared auth command when its parser claims verification', async () => {
-    const executable = await nodeExecutable();
-    vi.stubEnv('OPENAI_API_KEY', 'readiness-key');
+    await withTempDir('readiness-probe-failed-auth', async (directory) => {
+      const executable = await nodeExecutable();
+      await stubCodexSessionHome(directory);
 
-    const result = await probeCliReadiness({
-      tool: 'codex',
-      executable,
-      authChannel: 'api-key',
-      probe: declaredProbe({
-        authScript: 'process.exit(1)',
-        parseAuth: () => 'verified',
-      }),
+      const result = await probeCliReadiness({
+        tool: 'codex',
+        executable,
+        probe: declaredProbe({
+          authScript: 'process.exit(1)',
+          parseAuth: () => 'verified',
+        }),
+      });
+
+      expect(result).toMatchObject({ auth: 'unknown', status: 'unverified' });
     });
-
-    expect(result).toMatchObject({ auth: 'unknown', status: 'unverified' });
   });
 
   it('a help-only binary is readiness-unverified', async () => {
-    const executable = await nodeExecutable();
-    const result = await probeCliReadiness({
-      tool: 'codex',
-      executable,
-      probe: declaredProbe({
-        versionScript: "console.log('Usage: codex exec [OPTIONS]\\n  --json  Emit JSON output')",
-        authNotRun: true,
-      }),
-    });
+    await withTempDir('readiness-probe-help-only', async (directory) => {
+      const executable = await nodeExecutable();
+      await stubCodexSessionHome(directory);
+      const result = await probeCliReadiness({
+        tool: 'codex',
+        executable,
+        probe: declaredProbe({
+          versionScript: "console.log('Usage: codex exec [OPTIONS]\\n  --json  Emit JSON output')",
+          authNotRun: true,
+        }),
+      });
 
-    expect(result.status).toBe('unverified');
+      expect(result.status).toBe('unverified');
+    });
   });
 
-  it('an api-key auth channel on a compatible version is readiness-ready', async () => {
-    const executable = await nodeExecutable();
-    vi.stubEnv('OPENAI_API_KEY', 'readiness-key');
-    const result = await probeCliReadiness({
-      tool: 'codex',
-      executable,
-      authChannel: 'api-key',
-      probe: declaredProbe(),
-      classifyVersion: () => 'compatible',
-    });
-    expect(result.status).toBe('ready');
-  });
   describe('provider credential oracle', () => {
     itUnix('reads the listed provider credentials', async () => {
       const result = await probeOpencode({
@@ -908,6 +925,7 @@ describe('CLI readiness probe', () => {
           command: script,
           projectDir: '/neutral/project',
         });
+        await stubSignInHome(join(directory, 'home'), []);
         vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
         const armedAt = Date.now();
 
@@ -980,14 +998,13 @@ describe('CLI readiness probe', () => {
 
   it('keeps a sign-in check that timed out as a timeout', async () => {
     await withTempDir('readiness-probe-auth-timeout', async (directory) => {
-      vi.stubEnv('OPENAI_API_KEY', 'readiness-test-key');
+      await stubCodexSessionHome(directory);
       const authStarted = join(directory, 'auth-started');
       const executable = await nodeExecutable();
 
       const pending = probeCliReadiness({
         tool: 'codex',
         executable,
-        authChannel: 'api-key',
         classifyVersion: () => 'compatible',
         probe: declaredProbe({
           authScript: `require('node:fs').writeFileSync(${JSON.stringify(authStarted)}, ''); setInterval(() => {}, 1_000)`,
@@ -1064,7 +1081,6 @@ async function probeOpencodeRelease(release: Readonly<{ versionLine: string; maj
       tool: 'opencode',
       executable,
       probe: probe.declared,
-      authChannel: 'provider-dependent',
     });
     return { evidence, argv: readFileSync(log, 'utf8').trim().split('\n') };
   });

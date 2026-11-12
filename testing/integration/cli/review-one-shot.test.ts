@@ -157,7 +157,6 @@ function installFakeClaude(): void {
   const shim = installCompatibleCliShim({
     directory: binDir,
     tool: 'claude-code',
-    authChannel: 'session',
   });
   const version = CLI_TOOL_CATALOG['claude-code'].compatibility.testedVersion;
   const script = [
@@ -192,7 +191,6 @@ function installFakeCodex(): void {
   const shim = installCompatibleCliShim({
     directory: binDir,
     tool: 'codex',
-    authChannel: 'session',
   });
   const descriptor = CLI_TOOL_CATALOG.codex;
   const script = [

@@ -95,7 +95,6 @@ emit({type: 'result', is_error: false, result: '', structured_output: {result: a
     chmodSync(shim, 0o755);
     restorePath = prependPath(projectDir);
     const planner = createClaudeCodePlanner({
-      authChannel: undefined,
       cliSeat: admittedCliSeat(trustedShimGate({ dir: projectDir, tool: 'claude-code' })),
     });
     const finished = Promise.withResolvers<void>();
@@ -913,7 +912,6 @@ emit({type: 'result', is_error: false, result: '', structured_output: {result: a
     chmodSync(shim, 0o755);
     restorePath = prependPath(projectDir);
     const planner = createClaudeCodePlanner({
-      authChannel: undefined,
       cliSeat: admittedCliSeat(trustedShimGate({ dir: projectDir, tool: 'claude-code' })),
     });
     const finished = Promise.withResolvers<string>();

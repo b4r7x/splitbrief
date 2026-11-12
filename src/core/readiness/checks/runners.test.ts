@@ -193,7 +193,7 @@ describe('buildRunnerChecks availability guidance', () => {
     const check = buildRunnerChecks({
       seatImageFact: NO_IMAGE_FACT,
       config,
-      cliReadiness: [cliReadiness({ auth: 'unauthenticated', authChannel: 'session' })],
+      cliReadiness: [cliReadiness({ auth: 'unauthenticated' })],
     }).find((candidate) => candidate.id === 'runners.cli.claude-code.readiness');
 
     expect(check).toMatchObject({
@@ -226,7 +226,6 @@ describe('buildRunnerChecks availability guidance', () => {
             fingerprint: { dev: 1, ino: 2, size: 3, mtimeMs: 4 },
           },
           auth: 'keyring',
-          authChannel: 'session',
         }),
       ],
     }).find((candidate) => candidate.id === 'runners.cli.codex.readiness');
@@ -235,7 +234,7 @@ describe('buildRunnerChecks availability guidance', () => {
       severity: 'blocker',
       summary:
         'OpenAI Codex CLI keeps its sign-in in the system keyring, which a run cannot reach.',
-      fix: 'Set cli_auth_credentials_store = "file" in config.toml and run codex login again, or use OPENAI_API_KEY, then run `splitbrief doctor` again.',
+      fix: 'Set cli_auth_credentials_store = "file" in config.toml and run codex login again, then run `splitbrief doctor` again.',
     });
   });
 
@@ -246,7 +245,6 @@ describe('buildRunnerChecks availability guidance', () => {
     const opencode = (providerAuth: CliReadinessFacts['providerAuth']) =>
       cliReadiness({
         tool: 'opencode',
-        authChannel: 'provider-dependent',
         auth: 'authenticated',
         providerAuth,
       });
@@ -276,7 +274,6 @@ describe('buildRunnerChecks availability guidance', () => {
 
     const storesNoCredential = cliReadiness({
       tool: 'opencode',
-      authChannel: 'provider-dependent',
       auth: 'unauthenticated',
       providerAuth: { kind: 'empty' },
     });
@@ -402,7 +399,6 @@ describe('buildRunnerChecks availability guidance', () => {
     const signedIn = (tool: (typeof routes)[number]['tool']) =>
       cliReadiness({
         tool,
-        authChannel: 'provider-dependent',
         auth: 'authenticated',
         providerAuth: { kind: 'read', facts: [DEEPSEEK] },
       });
@@ -534,7 +530,7 @@ describe('buildRunnerChecks availability guidance', () => {
     const check = buildRunnerChecks({
       seatImageFact: NO_IMAGE_FACT,
       config,
-      cliReadiness: [cliReadiness({ auth: 'timeout', authChannel: 'session' })],
+      cliReadiness: [cliReadiness({ auth: 'timeout' })],
     }).find((candidate) => candidate.id === 'runners.cli.claude-code.readiness');
 
     expect(check).toMatchObject({
@@ -546,7 +542,6 @@ describe('buildRunnerChecks availability guidance', () => {
       runnerCause: {
         tool: 'claude-code',
         cause: 'auth-timeout',
-        authChannel: 'session',
         seats: ['PLAN'],
       },
     });
@@ -573,11 +568,7 @@ describe('buildRunnerChecks availability guidance', () => {
     ],
     ['untrusted-path', { trust: 'untrusted' }, 'Install Claude Code CLI outside the project'],
     ['incompatible-version', { compatibility: 'incompatible' }, 'Install the tested'],
-    [
-      'unauthenticated',
-      { auth: 'unauthenticated', authChannel: 'api-key' },
-      'Export ANTHROPIC_API_KEY',
-    ],
+    ['unauthenticated', { auth: 'unauthenticated' }, 'Sign in to Claude Code CLI'],
     ['auth-unknown', { auth: 'unknown' }, 'Stored credentials do not prove a session'],
   ] as const)('publishes %s as a structured diagnostic state', (stateId, overrides, fix) => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });

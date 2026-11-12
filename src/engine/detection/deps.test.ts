@@ -1,5 +1,5 @@
 import http from 'node:http';
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -287,7 +287,6 @@ async function withAdmittedCliHost(
   input: Readonly<{
     shims: readonly CliToolId[];
     sessionState: readonly string[];
-    credentialEnv?: Readonly<Record<string, string>> | undefined;
     argvLogTool?: CliToolId | undefined;
     run: (host: Readonly<{ argvLog: string }>) => Promise<void>;
   }>,
@@ -309,9 +308,6 @@ async function withAdmittedCliHost(
     for (const name of HOST_DETECTION_ENV) delete process.env[name];
     process.env.PATH = shimDir;
     process.env.HOME = stateHome;
-    for (const [name, value] of Object.entries(input.credentialEnv ?? {})) {
-      process.env[name] = value;
-    }
     await input.run({ argvLog });
   } finally {
     for (const [name, value] of saved) {
@@ -350,10 +346,6 @@ describe('all-admitted-tools auth channels', () => {
       await withAdmittedCliHost({
         shims: [...CLI_TOOL_IDS],
         sessionState: SEEDED_SESSION_STATE_PATHS,
-        // Claude Code's default channel is `api-key` where its session
-        // credential is not a bridgeable file, so both credential shapes have
-        // to be present for every tool to report on the channel it defaults to.
-        credentialEnv: { ANTHROPIC_API_KEY: 'sk-ant-fixture-not-a-real-key' },
         run: async () => {
           const result = await createProductionDetectionDeps({
             config: copilotFallbackConfig(),
@@ -445,32 +437,52 @@ describe('all-admitted-tools auth channels', () => {
     30_000,
   );
 
-  it.runIf(process.platform !== 'win32')(
-    'honors an explicit config auth channel over the session default for the active CLI',
-    async () => {
-      await withAdmittedCliHost({
-        shims: ['codex'],
-        sessionState: ['.codex/auth.json'],
-        argvLogTool: 'codex',
-        run: async ({ argvLog }) => {
-          const config = makeConfig({
-            planner: { kind: 'cli', tool: 'codex', authChannel: 'api-key' },
-            implementer: { kind: 'shell', command: 'printf implementer', model: 'shell-model' },
-          });
-          const result = await createProductionDetectionDeps({
-            config,
-            projectDir: '/projects/override-auth-channel',
-          }).detectAll({ signal: new AbortController().signal });
+  it('keeps the detection context keys of a config whose seats run CLI tools', () => {
+    const hostPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+    onTestFinished(() => {
+      Object.defineProperty(process, 'platform', { value: hostPlatform, configurable: true });
+    });
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'codex' },
+      implementer: { kind: 'cli', tool: 'claude-code' },
+      reviewer: { kind: 'cli', tool: 'opencode' },
+    });
 
-          const codex = result.cliTools.find((detection) => detection.tool === 'codex');
-          expect(codex).toMatchObject({
-            auth: 'unauthenticated',
-            diagnostic: { state: 'unauthenticated' },
-          });
-          expect(readFileSync(argvLog, 'utf8').trim().split('\n')).toEqual(['--version']);
-        },
-      });
-    },
-    30_000,
-  );
+    const { sourceContexts } = createProductionDetectionDeps({
+      config,
+      projectDir: '/projects/context-key-pin',
+    });
+
+    const seats =
+      'cli%3Acodex%3Acli%3Aclaude-code%3Acli%3Aopencode|no-executable-fingerprint|no-executable-version|session%3Asession%3Aprovider-dependent|none%3Anone%3Anone|runner-evidence-v2%7Cplanner%7Cplanner%7Ccli%7Ccodex%7Cunselected%7Csession%7Cnone%7Cnone%7Ccredential-absent%7Ccredential-domain%7Cabsent%7Cconfig-d4471361cc9f6473%3Arunner-evidence-v2%7Cimplementer%7Cimplementer%7Ccli%7Cclaude-code%7Cunselected%7Csession%7Cnone%7Cnone%7Ccredential-absent%7Ccredential-domain%7Cabsent%7Cconfig-d4471361cc9f6473%3Arunner-evidence-v2%7Cplanner%7Creviewer%7Ccli%7Copencode%7Cunselected%7Cprovider-dependent%7Cnone%7Cnone%7Ccredential-absent%7Ccredential-domain%7Cabsent%7Cconfig-d4471361cc9f6473|project-f1ec92c43bc305c0%3Aconfig-d4471361cc9f6473%3Aconfig-d4471361cc9f6473%3Aconfig-d4471361cc9f6473';
+    expect(sourceContexts).toEqual({
+      readiness: `detection-context-v1|linux|readiness%3Aall-tools%3A${seats}`,
+      modelsDev: `detection-context-v1|linux|modelsDev%3A${seats}`,
+      cliModels: `detection-context-v1|linux|cliModels%3Aper-tool%3A${seats}`,
+      configuredProviders: [],
+    });
+  });
+
+  it('keeps the detection context keys of a config whose seats run shell commands', () => {
+    const hostPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+    onTestFinished(() => {
+      Object.defineProperty(process, 'platform', { value: hostPlatform, configurable: true });
+    });
+
+    const { sourceContexts } = createProductionDetectionDeps({
+      config: shellRolesConfig(),
+      projectDir: '/projects/context-key-pin',
+    });
+
+    const seats =
+      'shell%3Ashell%3Ashell%3Ashell%3Ashell%3Ashell|no-executable-fingerprint|no-executable-version|none%3Anone%3Anone|none%3Anone%3Anone|runner-evidence-v2%7Cplanner%7Cplanner%7Cshell%7Cshell%7Cunselected%7Cnot-selected%7Cnone%7Cnone%7Ccredential-absent%7Ccredential-domain%7Cabsent%7Cconfig-5c56cad80fbe9343%3Arunner-evidence-v2%7Cimplementer%7Cimplementer%7Cshell%7Cshell%7Cshell-model%7Cnot-selected%7Cnone%7Cnone%7Ccredential-absent%7Ccredential-domain%7Cabsent%7Cconfig-5c56cad80fbe9343%3Arunner-evidence-v2%7Cplanner%7Creviewer%7Cshell%7Cshell%7Cunselected%7Cnot-selected%7Cnone%7Cnone%7Ccredential-absent%7Ccredential-domain%7Cabsent%7Cconfig-5c56cad80fbe9343|project-f1ec92c43bc305c0%3Aconfig-5c56cad80fbe9343%3Aconfig-5c56cad80fbe9343%3Aconfig-5c56cad80fbe9343';
+    expect(sourceContexts).toEqual({
+      readiness: `detection-context-v1|linux|readiness%3Aall-tools%3A${seats}`,
+      modelsDev: `detection-context-v1|linux|modelsDev%3A${seats}`,
+      cliModels: `detection-context-v1|linux|cliModels%3Aper-tool%3A${seats}`,
+      configuredProviders: [],
+    });
+  });
 });

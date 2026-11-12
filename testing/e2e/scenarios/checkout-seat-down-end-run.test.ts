@@ -84,7 +84,6 @@ describe('e2e: End run after a Seat down halt in a checkout run', { timeout: 240
     const cliTools = await detectAvailableCliTools({
       projectDir: target.projectDir,
       tools: ['codex'],
-      authChannels: { codex: 'session' },
       role: 'implementer',
     });
     expect(cliTools.map((tool) => [tool.tool, tool.diagnostic.state])).toEqual([

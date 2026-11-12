@@ -1,7 +1,6 @@
 import { createStore, storeBase } from '../create-store.js';
 import type { CustomCommandRunnerKind } from '../../core/config/custom-commands.js';
 import type { ApiProviderId } from '../../core/providers/api-provider-catalog.js';
-import type { CliAuthMethod } from '../../core/runners/cli-tool-catalog.js';
 
 export type PickerSubView =
   | { kind: 'picker' }
@@ -18,8 +17,6 @@ export interface PickerViewState {
   optionDraftId: string | null;
   /** The drafted axis value, whichever field the seat's channel will store it in. */
   effortDraft: string | null;
-  /** The drafted authentication method; `host-configured` unsets the seat's own field. */
-  authDraft: CliAuthMethod | 'host-configured' | null;
   draft: string | null;
   browseCatalog: boolean;
   /** Set when the picker takes a row: it saved the seat and closes. Escape and Ctrl+D never set it. */
@@ -32,7 +29,6 @@ const initial: PickerViewState = {
   expandedModelId: null,
   optionDraftId: null,
   effortDraft: null,
-  authDraft: null,
   draft: null,
   browseCatalog: false,
   committed: false,
@@ -73,18 +69,9 @@ function expand(modelId: string, optionDraftId?: string, effortDraft?: string | 
 
 function collapse() {
   store.set((s) =>
-    s.expandedModelId === null &&
-    s.optionDraftId === null &&
-    s.effortDraft === null &&
-    s.authDraft === null
+    s.expandedModelId === null && s.optionDraftId === null && s.effortDraft === null
       ? s
-      : {
-          ...s,
-          expandedModelId: null,
-          optionDraftId: null,
-          effortDraft: null,
-          authDraft: null,
-        },
+      : { ...s, expandedModelId: null, optionDraftId: null, effortDraft: null },
   );
 }
 
@@ -94,10 +81,6 @@ function setOptionDraftId(optionDraftId: string) {
 
 function setEffortDraft(effortDraft: string | null) {
   store.set((s) => (s.effortDraft === effortDraft ? s : { ...s, effortDraft }));
-}
-
-function setAuthDraft(authDraft: CliAuthMethod | 'host-configured' | null) {
-  store.set((s) => (s.authDraft === authDraft ? s : { ...s, authDraft }));
 }
 
 function setDraft(draft: string) {
@@ -120,7 +103,6 @@ export const pickerViewStore = {
   collapse,
   setOptionDraftId,
   setEffortDraft,
-  setAuthDraft,
   setDraft,
   setBrowseCatalog,
   setCommitted,

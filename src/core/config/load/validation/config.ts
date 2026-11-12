@@ -23,6 +23,24 @@ function issueErrors(issue: z.core.$ZodIssue): ConfigError[] {
       message: UNKNOWN_KEY_MESSAGE,
     }));
   }
+  // A union reports one issue that holds the issues of each branch, at paths relative to the
+  // union. A branch that refuses the value itself is not the one the config wrote; when exactly
+  // one branch is left, its issues name the key to change.
+  if (issue.code === 'invalid_union') {
+    const written = issue.errors.filter(
+      (branch) =>
+        !branch.some(
+          (nested) =>
+            nested.path.length === 0 &&
+            (nested.code === 'invalid_type' || nested.code === 'invalid_value'),
+        ),
+    );
+    if (written.length === 1) {
+      return written
+        .flat()
+        .flatMap((nested) => issueErrors({ ...nested, path: [...issue.path, ...nested.path] }));
+    }
+  }
   const path = issue.path.join('.');
   const message =
     issue.code === 'invalid_type' && issue.input === undefined

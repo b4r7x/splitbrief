@@ -510,6 +510,34 @@ describe('buildRightRows', () => {
     expect(rows.map((row) => row.kind)).toEqual(['model']);
   });
 
+  it('leaves a model with no child row closed under its drafted id', () => {
+    const model: ModelOption = { id: 'zz-custom-model', isCustom: true };
+
+    const rows = buildRightRows({
+      ...BASE,
+      models: [model],
+      expandedModelId: model.id,
+      persistedModel: model.id,
+    });
+
+    expect(rows).toEqual([expect.objectContaining({ kind: 'model', expanded: false })]);
+  });
+
+  it('keeps a model with an effort ladder open over its effort row', () => {
+    const model: ModelOption = {
+      id: 'opus',
+      membership: 'confirmed',
+      effortChoices: ['low', 'high'],
+    };
+
+    const rows = buildRightRows({ ...BASE, models: [model], expandedModelId: model.id });
+
+    expect(rows).toEqual([
+      expect.objectContaining({ kind: 'model', expanded: true }),
+      expect.objectContaining({ kind: 'axis', axis: 'effort' }),
+    ]);
+  });
+
   it('replaces an id-spelled effort with the ladder the route publishes', () => {
     const variants: ModelVariant[] = [
       {

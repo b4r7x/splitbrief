@@ -214,7 +214,7 @@ describe('configured custom workflow runtime', () => {
           };
           const baseConfig = ConfigSchema.parse(
             makeConfig({
-              implementer: { kind: 'cli', tool: 'codex', authChannel: 'session' },
+              implementer: { kind: 'cli', tool: 'codex' },
               validation: { endChecks: false, testCommand: 'noop' },
               workflow: {},
               approval: { feedRejectionsToPlanner: true },

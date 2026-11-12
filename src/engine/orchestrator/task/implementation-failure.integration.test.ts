@@ -663,7 +663,6 @@ describe('runTaskLoop — a seat that times out twice on one brief is a seat-dow
     const seat: CliImplementerConfig = {
       kind: 'cli',
       tool: 'opencode',
-      authChannel: 'provider-dependent',
       contextLength: 8192,
       timeout: 300,
     };

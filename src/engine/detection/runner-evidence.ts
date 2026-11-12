@@ -267,7 +267,7 @@ function nonCliRunnerEvidence(context: RunnerDiscoveryContext, observedAt: numbe
           testedVersion: 'unknown',
         },
         credential: 'unknown',
-        auth: context.authChannel === undefined ? 'not-selected' : 'unknown',
+        auth: 'unknown',
       };
     default:
       return assertNever(context.kind);
@@ -322,7 +322,6 @@ function credentialFromCliAuth(
     case 'invalid':
       return 'present';
     case 'not-required':
-    case 'not-selected':
     case 'unknown':
     case 'policy-denied':
     case 'offline':
@@ -451,7 +450,7 @@ function unresolvedCliEvidence(
         testedVersion: CLI_TOOL_CATALOG[context.id].compatibility.testedVersion,
       },
       credential: 'unknown',
-      auth: context.authChannel === undefined ? 'not-selected' : 'not-run',
+      auth: 'not-run',
     };
   }
   if (matches('cli-executable-identity-drift')(cause)) {
@@ -479,7 +478,7 @@ function unresolvedCliEvidence(
         testedVersion: CLI_TOOL_CATALOG[context.id].compatibility.testedVersion,
       },
       credential: 'unknown',
-      auth: context.authChannel === undefined ? 'not-selected' : 'not-run',
+      auth: 'not-run',
     };
   }
   return {
@@ -492,7 +491,7 @@ function unresolvedCliEvidence(
       testedVersion: CLI_TOOL_CATALOG[context.id].compatibility.testedVersion,
     },
     credential: 'unknown',
-    auth: context.authChannel === undefined ? 'not-selected' : 'unknown',
+    auth: 'unknown',
   };
 }
 
@@ -512,7 +511,7 @@ function probeFailureEvidence(
       testedVersion: CLI_TOOL_CATALOG[context.id].compatibility.testedVersion,
     },
     credential: context.credentialPresent ? 'present' : 'unknown',
-    auth: context.authChannel === undefined ? 'not-selected' : 'unknown',
+    auth: 'unknown',
   };
 }
 
@@ -532,7 +531,7 @@ function unsupportedCatalogEvidence(
       testedVersion: CLI_TOOL_CATALOG[context.id].compatibility.testedVersion,
     },
     credential: context.credentialPresent ? 'present' : 'unknown',
-    auth: context.authChannel === undefined ? 'not-selected' : 'not-run',
+    auth: 'not-run',
     catalog: { kind: 'unsupported' },
   };
 }
@@ -577,7 +576,6 @@ async function probeResolvedCliEvidence(
         tool: context.id,
         executable,
         probe,
-        ...(context.authChannel !== undefined ? { authChannel: context.authChannel } : {}),
         ...(signal !== undefined ? { signal } : {}),
         now: () => observedAt,
         classifyVersion: ({ installedVersion }) =>
@@ -600,7 +598,6 @@ async function probeResolvedCliEvidence(
     tool: context.id,
     executable,
     probe: probe.declared,
-    ...(context.authChannel !== undefined ? { authChannel: context.authChannel } : {}),
     ...(signal !== undefined ? { signal } : {}),
     versionProbes: options.versionProbes,
     // A tool whose auth oracle is its model listing (`agy models`) is spawned once per pass.
@@ -733,7 +730,7 @@ export async function detectRunnerEvidence(
   options.onResolvedCliExecutable?.(executable);
 
   return cliEvidenceProbes.share({
-    // Selecting a native auth channel does not identify the account/session
+    // A tool's native auth channel does not identify the account/session
     // currently behind it. Keep its cancellation boundary, but never reuse it.
     key: undefined,
     signal: options.signal,

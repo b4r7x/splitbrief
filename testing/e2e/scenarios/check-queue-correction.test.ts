@@ -166,7 +166,6 @@ process.stdout.write(${JSON.stringify(JSON.stringify(passingVerdict({ kind: 'tas
       const tools = await detectAvailableCliTools({
         projectDir: target.projectDir,
         tools: ['codex'],
-        authChannels: { codex: 'session' },
         role: 'implementer',
       });
       expect(tools[0]?.diagnostic.state).toBe('ready');

@@ -808,26 +808,6 @@ describe('detection cache', () => {
     });
   });
 
-  it('caches a context naming the api-key channel without reading it as credential material', async () => {
-    const contextKey = detectionContextsForCurrentConfig({
-      config: {
-        ...createDefaultConfig(),
-        planner: { kind: 'cli', tool: 'claude-code', authChannel: 'api-key' },
-      },
-      projectDir: tempDir,
-    }).readiness;
-    expect(contextKey).toContain('api-key');
-
-    await saveDetectionCache({
-      projectDir: tempDir,
-      snapshot: cacheSnapshot({ contextKey, cliTools: [cliDetectionFor('ready', 'claude-code')] }),
-    });
-
-    await expect(
-      loadDetectionCacheSnapshot({ projectDir: tempDir, contextKey }),
-    ).resolves.toMatchObject({ contextKey });
-  });
-
   it('caches a context naming the CUSTOM_ENDPOINT_API_KEY environment variable', async () => {
     const contextKey = detectionContextsForCurrentConfig({
       config: {

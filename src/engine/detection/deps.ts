@@ -9,10 +9,8 @@ import {
 } from '../../core/config/accessors/runner-discovery-context.js';
 import { isApiProviderId, type ApiProviderId } from '../../core/providers/api-provider-catalog.js';
 import {
-  CLI_TOOL_IDS,
   defaultCliAuthChannel,
   NATIVE_CLI_CATALOG_TOOL_IDS,
-  type CliAuthChannelId,
   type CliToolId,
 } from '../../core/runners/cli-tool-catalog.js';
 import type { ActiveRunnerRole } from '../../core/runners/seat-roles.js';
@@ -140,31 +138,6 @@ function configuredProviderDetection(
 }
 
 /**
- * Every probed CLI is probed on the channel a fresh config would name for it,
- * so the status a not-yet-selected tool shows is the status of the selection the
- * picker would actually write; an active runner context overrides only its own
- * tool with the channel the config resolved for it. Only defined channels are
- * inserted — an explicitly undefined entry would withhold auth probing.
- */
-function admittedCliAuthChannels(
-  contexts: ActiveRunnerContexts,
-  tools: readonly CliToolId[],
-): Partial<Record<CliToolId, CliAuthChannelId>> {
-  const channels: Partial<Record<CliToolId, CliAuthChannelId>> = {};
-  for (const id of tools) channels[id] = defaultCliAuthChannel(id).id;
-  for (const context of [contexts.planner, contexts.implementer]) {
-    if (
-      context.kind === 'cli' &&
-      context.authChannel !== undefined &&
-      includes(CLI_TOOL_IDS, context.id)
-    ) {
-      channels[context.id] = context.authChannel;
-    }
-  }
-  return channels;
-}
-
-/**
  * One context per probed catalog-capable tool: a model listing belongs to the
  * executable and the user's credentials, not to the seat that will use it. A
  * tool an active runner already uses contributes that runner's real context
@@ -240,7 +213,6 @@ export function createProductionDetectionDeps(
     detectAll: ({ signal }) =>
       detectAll({
         tools,
-        authChannels: admittedCliAuthChannels(contexts, tools),
         detectConfiguredProviderOutcomes: configuredProviderDetection(providerProbes),
         signal,
       }),

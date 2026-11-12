@@ -37,7 +37,6 @@ export type CliAuthChannelId = (typeof CLI_AUTH_CHANNEL_IDS)[number];
 export type CliAuthChannel = Readonly<{
   id: CliAuthChannelId;
   env: readonly string[];
-  stateBridge: 'host-cli-state' | 'none';
   billing: RunnerBillingPosture;
   /**
    * Platforms where this channel's credential is an OS keychain item rather
@@ -56,8 +55,7 @@ export type CliAuthChannel = Readonly<{
 /**
  * How a channel's host credential reaches a staged child.
  *
- * - `none` — the channel carries no host state; an API-key channel passes an
- *   environment variable instead.
+ * - `none` — no channel: an API runner or a version probe carries no host state.
  * - `bridged-files` — a read-only snapshot of this tool's own credential files
  *   is copied into the sandbox, whose `HOME` the child keeps.
  * - `host-account` — the credential is an OS keychain item, so nothing is
@@ -68,8 +66,7 @@ export type CliHostStateAccess = 'none' | 'bridged-files' | 'host-account';
 export function cliAuthChannelHostStateAccess(
   channel: CliAuthChannel,
   platform: NodeJS.Platform = process.platform,
-): CliHostStateAccess {
-  if (channel.stateBridge !== 'host-cli-state') return 'none';
+): Exclude<CliHostStateAccess, 'none'> {
   return channel.hostKeychainPlatforms.includes(platform) ? 'host-account' : 'bridged-files';
 }
 
@@ -80,39 +77,11 @@ export function cliAuthChannelPlatformSupported(
   return channel.supportedPlatforms?.includes(platform) ?? true;
 }
 
-/** A channel that names an authentication method; `provider-dependent` is a route, not a method. */
-export type CliAuthMethod = Exclude<CliAuthChannelId, 'provider-dependent'>;
-
-/**
- * A positive row of `docs/AUTH-METHOD-MATRIX.md`: on this exact platform and
- * installed version the adapter forces each listed method for one invocation,
- * and the invocation fails rather than falling back when that method's
- * credential is absent. `id` is the bounded matrix identifier a receipt cites.
- */
-export type CliAuthEnforcementEvidence = Readonly<{
-  id: string;
-  tool: CliToolId;
-  platform: NodeJS.Platform;
-  installedVersion: string;
-  channels: readonly CliAuthMethod[];
-}>;
-
-/**
- * Empty because the matrix proves no admitted CLI enforceable: every one is
- * host-configured, so no surface may offer a method as enforced.
- */
-export const CLI_AUTH_ENFORCEMENT_EVIDENCE: readonly CliAuthEnforcementEvidence[] = Object.freeze(
-  [],
-);
-
-export type CliAuthSelection = Readonly<{ channel: CliAuthChannelId }>;
-
 export type CliAuthChannels = readonly [CliAuthChannel, ...CliAuthChannel[]];
 
 export type CliAuthPolicy = Readonly<{
-  kind: 'api-key' | 'api-key-or-session' | 'session' | 'provider-dependent';
+  kind: 'session' | 'provider-dependent';
   env: readonly string[];
-  stateBridge: 'host-cli-state' | 'none';
   channels: CliAuthChannels;
 }>;
 
@@ -123,15 +92,6 @@ export type CliCompatibility = Readonly<{
   versionScheme: CliVersionScheme;
   evidence: Readonly<{ asOf: string }>;
 }>;
-
-export const CLI_AUTH_DISCOVERY_MODES = Object.freeze([
-  'selected-channel',
-  'provider-dependent-unverified',
-  'static-unverified',
-  'status-unverified',
-] as const);
-
-export type CliAuthDiscoveryMode = (typeof CLI_AUTH_DISCOVERY_MODES)[number];
 
 export const CLI_MODEL_DISCOVERY_MODES = Object.freeze([
   'native-aliases-and-custom',
@@ -218,7 +178,6 @@ export type CliToolDeclarationBase<Id extends string = string> = Readonly<{
    */
   internalStatePaths: readonly string[];
   compatibility: CliCompatibility;
-  authDiscoveryMode: CliAuthDiscoveryMode;
   modelDiscoveryMode: CliModelDiscoveryMode;
   mandatoryPreflightFacts: readonly CliPreflightFact[];
 }>;
@@ -296,7 +255,6 @@ function authChannel(
   input: Readonly<{
     id: CliAuthChannelId;
     env: readonly string[];
-    stateBridge: CliAuthChannel['stateBridge'];
     billing: RunnerBillingPosture;
     hostKeychainPlatforms?: readonly NodeJS.Platform[];
     supportedPlatforms?: readonly NodeJS.Platform[];
@@ -305,7 +263,6 @@ function authChannel(
   return Object.freeze({
     id: input.id,
     env: Object.freeze([...input.env]),
-    stateBridge: input.stateBridge,
     billing: input.billing,
     hostKeychainPlatforms: Object.freeze([...(input.hostKeychainPlatforms ?? [])]),
     ...(input.supportedPlatforms === undefined
@@ -315,20 +272,10 @@ function authChannel(
 }
 
 function authPolicy(kind: CliAuthPolicy['kind'], channels: CliAuthChannels): CliAuthPolicy {
-  const env = [
-    ...new Set(
-      channels
-        .filter((channel) => channel.billing !== 'api-metered')
-        .flatMap((channel) => channel.env),
-    ),
-  ];
-  const stateBridge = channels.some((channel) => channel.stateBridge === 'host-cli-state')
-    ? 'host-cli-state'
-    : 'none';
+  const env = [...new Set(channels.flatMap((channel) => channel.env))];
   return Object.freeze({
     kind,
     env: Object.freeze(env),
-    stateBridge,
     channels: Object.freeze(channels),
   });
 }
@@ -377,19 +324,12 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     effortChannel: 'effort-flag',
     typedOutput: { kind: 'native', since: '2.1.287' },
     imageInput: 'stdin',
-    auth: authPolicy('api-key-or-session', [
+    auth: authPolicy('session', [
       authChannel({
         id: 'session',
         env: [],
-        stateBridge: 'host-cli-state',
         billing: 'subscription-included',
         hostKeychainPlatforms: ['darwin'],
-      }),
-      authChannel({
-        id: 'api-key',
-        env: ['ANTHROPIC_API_KEY'],
-        stateBridge: 'none',
-        billing: 'api-metered',
       }),
     ]),
     billing: 'subscription-included',
@@ -403,7 +343,6 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
       versionScheme: 'semver',
       asOf: '2026-07-31',
     }),
-    authDiscoveryMode: 'selected-channel',
     modelDiscoveryMode: 'native-aliases-and-custom',
     mandatoryPreflightFacts: CLI_REQUIRED_PREFLIGHT_FACTS,
   }),
@@ -419,18 +358,11 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     effortChannel: 'effort-flag',
     typedOutput: { kind: 'strict-native', since: '0.157.1' },
     imageInput: 'flag',
-    auth: authPolicy('api-key-or-session', [
+    auth: authPolicy('session', [
       authChannel({
         id: 'session',
         env: [],
-        stateBridge: 'host-cli-state',
         billing: 'subscription-included',
-      }),
-      authChannel({
-        id: 'api-key',
-        env: ['OPENAI_API_KEY'],
-        stateBridge: 'none',
-        billing: 'api-metered',
       }),
     ]),
     billing: 'subscription-included',
@@ -444,7 +376,6 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
       versionScheme: 'semver',
       asOf: '2026-07-31',
     }),
-    authDiscoveryMode: 'selected-channel',
     modelDiscoveryMode: 'capability-gated-native',
     mandatoryPreflightFacts: CLI_REQUIRED_PREFLIGHT_FACTS,
   }),
@@ -464,7 +395,6 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
       authChannel({
         id: 'provider-dependent',
         env: [],
-        stateBridge: 'host-cli-state',
         billing: 'provider-dependent',
       }),
     ]),
@@ -483,7 +413,6 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
       versionScheme: 'semver',
       asOf: '2026-09-22',
     }),
-    authDiscoveryMode: 'provider-dependent-unverified',
     modelDiscoveryMode: 'native-cli',
     mandatoryPreflightFacts: CLI_REQUIRED_PREFLIGHT_FACTS,
   }),
@@ -503,7 +432,6 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
       authChannel({
         id: 'session',
         env: ['COPILOT_GITHUB_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN'],
-        stateBridge: 'host-cli-state',
         billing: 'subscription-included',
         hostKeychainPlatforms: ['darwin'],
       }),
@@ -519,7 +447,6 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
       versionScheme: 'semver',
       asOf: '2026-09-02',
     }),
-    authDiscoveryMode: 'static-unverified',
     modelDiscoveryMode: 'native-cli',
     mandatoryPreflightFacts: CLI_REQUIRED_PREFLIGHT_FACTS,
   }),
@@ -539,7 +466,6 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
       authChannel({
         id: 'provider-dependent',
         env: [],
-        stateBridge: 'host-cli-state',
         billing: 'provider-dependent',
       }),
     ]),
@@ -554,7 +480,6 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
       versionScheme: 'semver',
       asOf: '2026-07-31',
     }),
-    authDiscoveryMode: 'provider-dependent-unverified',
     modelDiscoveryMode: 'native-cli',
     mandatoryPreflightFacts: CLI_REQUIRED_PREFLIGHT_FACTS,
   }),
@@ -570,19 +495,12 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     effortChannel: 'model-id',
     typedOutput: { kind: 'fallback' },
     imageInput: 'none',
-    auth: authPolicy('api-key-or-session', [
+    auth: authPolicy('session', [
       authChannel({
         id: 'session',
         env: [],
-        stateBridge: 'host-cli-state',
         billing: 'subscription-included',
         hostKeychainPlatforms: ['darwin'],
-      }),
-      authChannel({
-        id: 'api-key',
-        env: ['CURSOR_API_KEY'],
-        stateBridge: 'none',
-        billing: 'api-metered',
       }),
     ]),
     billing: 'subscription-included',
@@ -596,7 +514,6 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
       versionScheme: 'calver',
       asOf: '2026-08-27',
     }),
-    authDiscoveryMode: 'selected-channel',
     modelDiscoveryMode: 'native-cli',
     mandatoryPreflightFacts: CLI_REQUIRED_PREFLIGHT_FACTS,
   }),
@@ -612,14 +529,10 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     effortChannel: 'effort-flag',
     typedOutput: { kind: 'fallback' },
     imageInput: 'none',
-    // `cmd --help` names no API-key environment variable — only `CMD_LOCAL_ONLY`,
-    // a BYOK routing switch and not a credential — so declaring an api-key
-    // channel would fabricate a credential channel that does not exist.
     auth: authPolicy('session', [
       authChannel({
         id: 'session',
         env: [],
-        stateBridge: 'host-cli-state',
         billing: 'subscription-included',
       }),
     ]),
@@ -634,7 +547,6 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
       versionScheme: 'semver',
       asOf: '2026-09-01',
     }),
-    authDiscoveryMode: 'status-unverified',
     modelDiscoveryMode: 'native-cli',
     mandatoryPreflightFacts: CLI_REQUIRED_PREFLIGHT_FACTS,
   }),
@@ -663,7 +575,6 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
       authChannel({
         id: 'session',
         env: [],
-        stateBridge: 'host-cli-state',
         billing: 'subscription-included',
         hostKeychainPlatforms: ['darwin'],
         supportedPlatforms: ['darwin'],
@@ -682,7 +593,6 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
       versionScheme: 'semver',
       asOf: '2026-10-24',
     }),
-    authDiscoveryMode: 'status-unverified',
     modelDiscoveryMode: 'native-cli',
     mandatoryPreflightFacts: CLI_REQUIRED_PREFLIGHT_FACTS,
   }),
@@ -921,31 +831,14 @@ export function getCliModelPolicy(id: CliToolId, role: RunnerRole): CliModelPoli
   return CLI_TOOL_CATALOG[id].modelPolicy[role];
 }
 
-export function selectCliAuthChannel(
-  id: CliToolId,
-  selection: CliAuthSelection | undefined,
-): CliAuthChannel | undefined {
-  if (selection === undefined) return undefined;
-  return CLI_TOOL_CATALOG[id].auth.channels.find((channel) => channel.id === selection.channel);
-}
-
 /**
- * The channel a runner takes when its configuration names none, and the one a
- * freshly written config declares: the tool's declared session channel when it
- * has one (a host login is the tool's primary auth), otherwise its first
- * bridge-free channel, otherwise its first declared channel. It is
- * platform-independent — every declared session channel reaches a staged child
- * on every platform SPLITBRIEF runs on, as files or as the host account, so a
- * config keeps its meaning wherever it is opened. An explicit `authChannel`
- * always overrides it.
+ * The channel every CLI runner of the tool runs on: the one channel the tool declares, the
+ * sign-in the tool already has. It is platform-independent — every declared channel reaches a
+ * staged child on every platform SPLITBRIEF runs on, as files or as the host account, so a
+ * config keeps its meaning wherever it is opened.
  */
 export function defaultCliAuthChannel(id: CliToolId): CliAuthChannel {
-  const channels = CLI_TOOL_CATALOG[id].auth.channels;
-  return (
-    channels.find((channel) => channel.id === 'session') ??
-    channels.find((channel) => channel.stateBridge === 'none') ??
-    channels[0]
-  );
+  return CLI_TOOL_CATALOG[id].auth.channels[0];
 }
 
 function cliToolIdsForRole(role: RunnerRole): readonly CliToolId[] {

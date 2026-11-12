@@ -3,8 +3,6 @@ import {
   CLI_TOOL_CATALOG,
   LISTED_CLI_TOOL_IDS,
   PROVIDER_ORACLE_TOOL_IDS,
-  selectCliAuthChannel,
-  type CliAuthChannelId,
   type CliToolId,
 } from '../../core/runners/cli-tool-catalog.js';
 import { classifyCliAdmittedVersion } from '../../core/runners/cli-version.js';
@@ -46,8 +44,6 @@ export interface DetectCliToolsOptions {
   probeReadiness?: ProbeCliReadiness | undefined;
   /** Readiness-only declaration seam; native catalog work is not reachable through this API. */
   lookupProbe?: LookupCliReadinessProbe | undefined;
-  authChannel?: CliAuthChannelId | undefined;
-  authChannels?: Partial<Record<CliToolId, CliAuthChannelId | undefined>> | undefined;
   now?: (() => number) | undefined;
   signal?: AbortSignal | undefined;
 }
@@ -75,33 +71,14 @@ export function cliDetectionFromReadiness(result: CliReadinessResult): CliToolDe
   };
 }
 
-type AuthChannelSelection =
-  | Readonly<{ state: 'selected'; channel: CliAuthChannelId }>
-  | Readonly<{ state: 'withheld' }>;
-
 interface DetectCliToolDependencies {
   projectDir: string;
   resolveExecutable: ResolveCliExecutable;
   probeReadiness: ProbeCliReadiness;
   lookupProbe: LookupCliReadinessProbe;
   role: RunnerRole;
-  authChannel: AuthChannelSelection;
   now: () => number;
   signal: AbortSignal | undefined;
-}
-
-function selectedAuthChannel(
-  options: DetectCliToolsOptions,
-  tool: CliToolId,
-): AuthChannelSelection {
-  if (options.authChannels && Object.hasOwn(options.authChannels, tool)) {
-    const channel = options.authChannels[tool];
-    return channel === undefined ? { state: 'withheld' } : { state: 'selected', channel };
-  }
-  if (options.authChannel !== undefined) {
-    return { state: 'selected', channel: options.authChannel };
-  }
-  return { state: 'withheld' };
 }
 
 function unresolvedReadiness(
@@ -169,15 +146,10 @@ async function detectCliToolReadiness(
 
   return trackToolCheck(tool, async () => {
     try {
-      const selectedChannel =
-        options.authChannel.state === 'withheld'
-          ? undefined
-          : selectCliAuthChannel(tool, { channel: options.authChannel.channel });
       const result = await options.probeReadiness({
         tool,
         executable,
         probe: options.lookupProbe({ tool, role: options.role }),
-        authChannel: selectedChannel?.id,
         now: options.now,
         signal: options.signal,
         classifyVersion: ({ installedVersion }) =>
@@ -196,8 +168,7 @@ async function detectCliToolReadiness(
         installedVersion: result.installedVersion,
         testedVersion: result.testedVersion,
         compatibility: result.compatibility,
-        auth: selectedChannel === undefined ? 'unknown' : result.auth,
-        ...(selectedChannel === undefined ? {} : { authChannel: selectedChannel.id }),
+        auth: result.auth,
         ...(result.providerAuth === undefined ? {} : { providerAuth: result.providerAuth }),
         probedAt: result.probedAt,
       });
@@ -252,14 +223,7 @@ export async function detectAvailableCliReadiness(
     signal: options.signal,
   };
   const tools = options.tools ?? LISTED_CLI_TOOL_IDS;
-  return Promise.all(
-    tools.map((tool) =>
-      detectCliToolReadiness(tool, {
-        ...dependencies,
-        authChannel: selectedAuthChannel(options, tool),
-      }),
-    ),
-  );
+  return Promise.all(tools.map((tool) => detectCliToolReadiness(tool, dependencies)));
 }
 
 export async function detectAvailableCliTools(
@@ -275,14 +239,7 @@ export async function detectAvailableCliTools(
     signal: options.signal,
   };
   const tools = options.tools ?? LISTED_CLI_TOOL_IDS;
-  return Promise.all(
-    tools.map((tool) =>
-      detectCliTool(tool, {
-        ...dependencies,
-        authChannel: selectedAuthChannel(options, tool),
-      }),
-    ),
-  );
+  return Promise.all(tools.map((tool) => detectCliTool(tool, dependencies)));
 }
 
 export interface DetectAllResult {
@@ -308,8 +265,6 @@ export interface DetectAllOptions {
     | undefined;
   detectCliTools?: ((input: DetectCliToolsOptions) => Promise<CliToolDetection[]>) | undefined;
   tools?: readonly CliToolId[] | undefined;
-  authChannel?: CliAuthChannelId | undefined;
-  authChannels?: Partial<Record<CliToolId, CliAuthChannelId | undefined>> | undefined;
   signal?: AbortSignal | undefined;
 }
 
@@ -322,8 +277,6 @@ export async function detectAll(options: DetectAllOptions = {}): Promise<DetectA
       : Promise.resolve([]),
     (options.detectCliTools ?? detectAvailableCliTools)({
       tools: options.tools,
-      authChannel: options.authChannel,
-      authChannels: options.authChannels,
       signal: options.signal,
     }),
     configuredProviderOutcomes === undefined

@@ -1,11 +1,7 @@
 import { runnerSlotId, type RunnerConfigSlot } from '../../config/accessors/runner-config.js';
 import { formatSlotLabel } from '../../crew/identity.js';
 import type { SavedCatalog } from '../../discovery/catalog-read-merge.js';
-import {
-  CLI_TOOL_CATALOG,
-  type CliToolId,
-  type CliAuthChannelId,
-} from '../../runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG, type CliToolId } from '../../runners/cli-tool-catalog.js';
 import {
   routeAuthState,
   routeNoCredential,
@@ -45,7 +41,6 @@ export type CliRouteInputs = Readonly<{
 /** One seat of a configured CLI, as readiness reads it. */
 export type ConfiguredCliSeat = Readonly<{
   slot: RunnerConfigSlot;
-  authChannel: CliAuthChannelId;
   model: string | undefined;
 }>;
 
@@ -121,20 +116,7 @@ function cliToolReadinessCheck(
   const check = cliReadinessCheck(result, routeChecked);
   const cause = cliReadinessCause(result, check.diagnosticState);
   if (cause === undefined) return check;
-  // Only a sign-in fact depends on the seat's authentication selection; a
-  // missing, untrusted or unproven executable blocks every seat of the tool.
-  const authentication =
-    cause === 'unauthenticated' || cause === 'auth-unknown' || cause === 'auth-timeout';
-  const authChannel = authentication ? result.authChannel : undefined;
-  if (authentication && authChannel === undefined) return check;
-  check.runnerCause = {
-    tool,
-    cause,
-    ...(authChannel !== undefined && { authChannel }),
-    seats: seats
-      .filter((seat) => authChannel === undefined || seat.authChannel === authChannel)
-      .map((seat) => formatSlotLabel(seat.slot)),
-  };
+  check.runnerCause = { tool, cause, seats: seats.map((seat) => formatSlotLabel(seat.slot)) };
   return check;
 }
 

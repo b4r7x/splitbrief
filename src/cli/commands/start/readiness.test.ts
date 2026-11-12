@@ -326,7 +326,6 @@ describe('readConfiguredCliRoutes', () => {
       testedVersion,
       compatibility: 'compatible',
       auth: 'unauthenticated',
-      authChannel: 'provider-dependent',
       providerAuth,
       probedAt: 1,
       ...facts,

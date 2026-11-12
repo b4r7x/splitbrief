@@ -122,7 +122,6 @@ describe('live typed-output probe', () => {
               const planner =
                 tool === 'claude-code'
                   ? createClaudeCodePlanner({
-                      authChannel: undefined,
                       cliSeat: admittedCliSeat(gate),
                     })
                   : createCliPlanner({

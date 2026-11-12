@@ -50,7 +50,7 @@ const ENTER = '\r';
 
 const ON_EFFORT = '▌ └─ effort max';
 const ON_SONNET = '▌ Sonnet 5.5 1M · claude-sonnet-5-5 ▾';
-const TO_SONNET = [UP, UP, UP];
+const TO_SONNET = [UP, UP];
 
 interface Case {
   id: string;
@@ -76,8 +76,8 @@ const cursorLines = (ui: RenderFeatureResult) =>
     .map((line) => line.replace(/\s+/g, ' ').trim());
 
 function savedSeat({ planner }: Config) {
-  const { tool, model, effort, authChannel } = expectCli(planner);
-  return { tool, model, effort, authChannel };
+  const { tool, model, effort } = expectCli(planner);
+  return { tool, model, effort };
 }
 
 async function run(row: Case, delivery: 'steady' | 'burst') {
@@ -139,10 +139,10 @@ const MODEL_WHEEL = { wheel: 'runner-right:model:auto' };
 const TWINS: Case[] = [
   {
     id: 'RA01',
-    name: '⏎ ↓ ⏎ on the collapsed sonnet row',
+    name: '⏎ ⏎ on the collapsed sonnet row',
     setup: TO_SONNET,
     start: ON_SONNET,
-    steps: [ENTER, DOWN, ENTER],
+    steps: [ENTER, ENTER],
   },
   {
     id: 'RA02',
@@ -171,7 +171,7 @@ const TWINS: Case[] = [
   {
     id: 'RA09',
     name: 'Esc ⏎ on the effort row of sonnet expanded by ⏎',
-    setup: [...TO_SONNET, ENTER, DOWN],
+    setup: [...TO_SONNET, ENTER],
     start: '▌ └─ effort auto',
     steps: [ESC, ENTER],
   },
@@ -179,7 +179,7 @@ const TWINS: Case[] = [
     id: 'RA11',
     name: '⏎ Esc on a collapsed row with no expansion open',
     setup: [ESC],
-    start: '▌ Haiku 5.5 1M · claude-haiku-5-5 ▾',
+    start: '▌ Fable 5.1 1M · claude-fable-5-1 ▾',
     steps: [ENTER, ESC],
   },
   {
@@ -250,7 +250,7 @@ const CLICKS: Array<
     start: ON_EFFORT,
     steps: [rowClick('model:auto'), toolClick('codex')],
     expected: {
-      saves: [{ tool: 'claude-code', model: 'auto', effort: 'max', authChannel: undefined }],
+      saves: [{ tool: 'claude-code', model: 'auto', effort: 'max' }],
       overlay: 'none',
     },
   },
@@ -275,7 +275,7 @@ const CLICKS: Array<
     start: ON_EFFORT,
     steps: [ENTER, MODEL_WHEEL, MODEL_WHEEL],
     expected: {
-      saves: [{ tool: 'claude-code', model: 'opus', effort: 'max', authChannel: undefined }],
+      saves: [{ tool: 'claude-code', model: 'opus', effort: 'max' }],
       overlay: 'none',
     },
   },

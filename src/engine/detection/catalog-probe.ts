@@ -11,7 +11,7 @@ import type { ProbeOutcome } from '../../core/discovery/runner-evidence.js';
 import {
   CLI_TOOL_CATALOG,
   cliAuthChannelPlatformSupported,
-  selectCliAuthChannel,
+  defaultCliAuthChannel,
   type CliAuthChannel,
   type CliToolId,
 } from '../../core/runners/cli-tool-catalog.js';
@@ -28,10 +28,7 @@ import {
 } from '../runners/sandbox-env.js';
 import { removeSandboxTempDirs } from '../runners/sandbox-state-paths.js';
 import { bridgedCliStatePresent } from '../runners/sandbox-state-bridge.js';
-import {
-  authChannelRequiresCredential,
-  type AuthProbeRun,
-} from '../runners/cli-tools/readiness-probe.js';
+import type { AuthProbeRun } from '../runners/cli-tools/readiness-probe.js';
 import { spawnProbe, type ProbeOutputBudget } from '../runners/cli-tools/cli-probe-process.js';
 import { providerOracleCommand } from '../runners/cli-tools/provider-oracle.js';
 import { isCanonicalCliDeclaredProbe } from '../runners/cli-tools/registry.js';
@@ -94,7 +91,7 @@ type AdmittedCatalogOperation = Readonly<{
   probe: Exclude<CliCatalogProbe, { kind: 'not-run' }>;
   installedVersion: string;
   refresh: 'automatic' | 'manual';
-  authChannel: CliAuthChannel | undefined;
+  authChannel: CliAuthChannel;
   issuedAt: number;
 }>;
 
@@ -171,8 +168,7 @@ function immutableProbeCommand(
   return Object.freeze([first, ...rest]);
 }
 
-function immutableAuthChannel(channel: CliAuthChannel | undefined): CliAuthChannel | undefined {
-  if (channel === undefined) return undefined;
+function immutableAuthChannel(channel: CliAuthChannel): CliAuthChannel {
   return Object.freeze({ ...channel, env: Object.freeze([...channel.env]) });
 }
 
@@ -226,13 +222,6 @@ function selectedCatalogProbe(
   return Object.freeze({ ...probe, command: immutableProbeCommand(probe.manualCommand) });
 }
 
-function selectedCatalogAuthChannel(
-  context: CliRunnerDiscoveryContext,
-): CliAuthChannel | undefined | null {
-  if (context.authChannel === undefined) return undefined;
-  return selectCliAuthChannel(context.id, { channel: context.authChannel }) ?? null;
-}
-
 function admitCatalogOperation(
   input: Readonly<{
     context: CliRunnerDiscoveryContext;
@@ -244,10 +233,8 @@ function admitCatalogOperation(
   }>,
 ): AdmittedCatalogOperation | undefined {
   const executable = richCliExecutable(input.executable);
-  const authChannel = selectedCatalogAuthChannel(input.context);
   if (
     executable === undefined ||
-    authChannel === null ||
     input.version.kind !== 'success' ||
     !isCredentialFreeCliContext(input.context) ||
     !isCanonicalCliDeclaredProbe({
@@ -275,7 +262,7 @@ function admitCatalogOperation(
     probe: immutableCatalogProbe(input.probe.catalog),
     installedVersion: input.version.value,
     refresh: input.refresh,
-    authChannel: immutableAuthChannel(authChannel),
+    authChannel: immutableAuthChannel(defaultCliAuthChannel(input.context.id)),
     issuedAt: input.issuedAt,
   });
 }
@@ -461,12 +448,7 @@ export async function probeContextCatalog(
     issuedAt: input.now(),
   });
   if (operation === undefined) return { kind: 'unsupported' };
-  if (
-    operation.authChannel !== undefined &&
-    !cliAuthChannelPlatformSupported(operation.authChannel)
-  ) {
-    return { kind: 'unsupported' };
-  }
+  if (!cliAuthChannelPlatformSupported(operation.authChannel)) return { kind: 'unsupported' };
   if (
     !catalogOperationIsFresh(operation, input.now()) ||
     classifyCliAdmittedVersion({
@@ -501,9 +483,7 @@ export async function probeContextCatalog(
     // listing runs and names exactly the providers a run can reach.
     if (
       providerOracleCommand(operation.context.id) === undefined &&
-      !environment.credentialMayBePresent &&
-      operation.authChannel !== undefined &&
-      authChannelRequiresCredential(operation.authChannel)
+      !environment.credentialMayBePresent
     ) {
       return { kind: 'missing-credential' };
     }

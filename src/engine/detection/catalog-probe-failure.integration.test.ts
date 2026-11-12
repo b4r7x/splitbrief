@@ -1,8 +1,9 @@
 import { chmod, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { expireDeadlineAfterFile, freezeProbeDeadlines } from '#testing/helpers/fake-timers.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
+import { stubSignInHome } from '#testing/helpers/sign-in-home.js';
 import type { RunnerDiscoveryContext } from '../../core/config/accessors/runner-discovery-context.js';
 import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
 import { detectRunnerEvidence } from './runner-evidence.js';
@@ -56,6 +57,7 @@ async function catalogOutcomeFor(
 ) {
   return withTempDir(label, async (directory) => {
     const shim = await installFailingCodex(directory, input);
+    await stubSignInHome(join(directory, 'home'), ['codex']);
     const evidence = await detectRunnerEvidence({
       context: codexContext(),
       resolveExecutable: async () => shim,
@@ -67,6 +69,10 @@ async function catalogOutcomeFor(
 }
 
 freezeProbeDeadlines();
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe('a catalog listing that exits non-zero', () => {
   it.runIf(process.platform !== 'win32')(
@@ -211,6 +217,7 @@ describe('a catalog listing that never answers', () => {
           command: script,
           projectDir: '/neutral/project',
         });
+        await stubSignInHome(join(directory, 'home'), ['codex']);
         vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
         const armedAt = Date.now();
 

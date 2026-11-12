@@ -504,7 +504,7 @@ describe('spawnAndCollect', () => {
         try {
           const env = await createRunnerSandboxEnv(
             projectDir,
-            { kind: 'cli', tool: 'codex', authChannel: 'session' },
+            { kind: 'cli', tool: 'codex' },
             'implementer',
           );
           const events: RunnerCallEvent[] = [];

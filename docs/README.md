@@ -67,7 +67,6 @@ Specialized subsystem docs linked from the main chapters above.
 - [TASK-CONTRACT.md](./TASK-CONTRACT.md) — Plan contract, Task Brief schema, plan checks, evidence
 - [BOOTSTRAP.md](./BOOTSTRAP.md) — Startup steps and ordering
 - [API-KEYS.md](./API-KEYS.md) — Provider keys and secret hygiene
-- [AUTH-METHOD-MATRIX.md](./AUTH-METHOD-MATRIX.md) — Which authentication method SPLITBRIEF can enforce, per CLI tool
 - [WORKFLOW-CONVERSATION-SCROLL.md](./WORKFLOW-CONVERSATION-SCROLL.md) — Row-based scroll model for the workflow conversation
 
 ## Direction and history

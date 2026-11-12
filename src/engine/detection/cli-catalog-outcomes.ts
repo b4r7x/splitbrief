@@ -1,7 +1,7 @@
 import { cloneDetectedModel } from '../../core/discovery/clone-model.js';
 import { CliExecutableReceiptSchema, type DetectedModel } from '../../core/discovery/detection.js';
 import type { ProbeOutcome, ProbeOutcomeKind } from '../../core/discovery/runner-evidence.js';
-import type { CliAuthChannelId, CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import { defaultCliAuthChannel, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
 
 /**
  * A catalog belongs to one CLI executable, not to a seat.
@@ -67,7 +67,6 @@ function opaqueExecutableToken(executable: unknown): string | null {
 export function scopedCliCatalogConnection(
   input: Readonly<{
     tool: CliToolId;
-    authChannel: CliAuthChannelId | undefined;
     /** Parsed as a rich receipt at this privacy boundary; legacy identities never qualify. */
     executable?: unknown;
   }>,
@@ -79,7 +78,7 @@ export function scopedCliCatalogConnection(
     contextKey: [
       'cli-catalog-v1',
       input.tool,
-      input.authChannel ?? 'not-selected',
+      defaultCliAuthChannel(input.tool).id,
       executableToken ?? 'cli-executable-unresolved',
     ].join('|'),
   };

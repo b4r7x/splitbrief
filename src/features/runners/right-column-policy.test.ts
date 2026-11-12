@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { cliTool, makeActions } from '#testing/helpers/runner-picker.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import type { ModelOption, ModelVariant } from './model-catalog/recency.js';
-import type { AuthMethodChoice, RightRow } from './model-catalog/rows.js';
+import type { RightRow } from './model-catalog/rows.js';
 import { buildRightRows } from './model-catalog/rows.js';
 import { mergeOptionFamilies } from './model-catalog/option-merge.js';
 import {
@@ -34,25 +34,6 @@ function optionAxisRow(input: {
     choices: input.choices ?? [],
     steps: input.steps ?? true,
     last: input.last ?? false,
-    tree: { depth: 1, parentContinues: false },
-  };
-}
-
-function authRow(input: {
-  method?: AuthMethodChoice;
-  choices?: readonly AuthMethodChoice[];
-  unproven?: boolean;
-}): RightRow {
-  const method = input.method ?? 'host-configured';
-  const choices = input.choices ?? [];
-  return {
-    kind: 'auth',
-    model: { id: 'sonnet', effortChoices: ['low', 'high'] },
-    method,
-    choices,
-    steps: choices.length > 1 || (choices.length === 1 && choices[0] !== method),
-    unproven: input.unproven ?? false,
-    last: false,
     tree: { depth: 1, parentContinues: false },
   };
 }
@@ -476,105 +457,5 @@ describe('cycleRightRow', () => {
     expect(cycleRightRow(row)).toBe('stepped');
     expect(pickerViewStore.get().optionDraftId).toBe('gpt-5.6-luna-xhigh');
     expect(pickerViewStore.get().effortDraft).toBe(null);
-  });
-});
-
-describe('authentication method rows', () => {
-  const unchecked = { tool: undefined, providerAuth: undefined, catalog: undefined };
-  const enforceable: readonly AuthMethodChoice[] = ['session', 'api-key', 'host-configured'];
-
-  beforeEach(() => {
-    pickerViewStore.reset();
-  });
-
-  it('confirms from every auth row, including a method owned by the CLI', () => {
-    expect(rightRowActivation(authRow({}), undefined)).toBe('confirm');
-    expect(rightRowActivation(authRow({ choices: enforceable }), undefined)).toBe('confirm');
-    // A seat carrying a method no adapter can enforce keeps the way back out.
-    expect(
-      rightRowActivation(
-        authRow({ method: 'session', choices: ['host-configured'], unproven: true }),
-        undefined,
-      ),
-    ).toBe('confirm');
-  });
-
-  it('confirms the expanded model and its drafted effort from a CLI-owned auth row', () => {
-    const selected: { model: string; effort: string | null | undefined }[] = [];
-    const actions = makeActions();
-    actions.confirmProviderSelection = async (model, effort) => {
-      selected.push({ model, effort });
-    };
-    pickerViewStore.expand('sonnet', undefined, 'high');
-    confirmRow(cliTool({ id: 'claude-code', displayName: 'Claude Code CLI' }), authRow({}), {
-      actions,
-      auth: unchecked,
-    });
-    expect(selected).toEqual([{ model: 'sonnet', effort: 'high' }]);
-  });
-
-  it('never draws a disclosure, so nothing on the row reads as an expansion', () => {
-    expect(isExpandableRow(authRow({}), unchecked)).toBe(false);
-    expect(isExpandableRow(authRow({ choices: enforceable }), unchecked)).toBe(false);
-  });
-
-  it('names confirmation with nothing to cycle, and names the step when it can move', () => {
-    expect(rowEnterHint(authRow({}), unchecked)).toBe('⏎ confirm');
-    const hint = rowEnterHint(authRow({ choices: enforceable }), unchecked) ?? '';
-    expect(hint).toContain('space');
-    expect(hint).toContain('⏎');
-    // Stepped onto the only rung it has, the row still confirms but promises no step.
-    const settled = rowEnterHint(
-      authRow({ method: 'host-configured', choices: ['host-configured'] }),
-      unchecked,
-    );
-    expect(settled).toBe('⏎ confirm');
-  });
-
-  it('steps the drafted method through the ladder and wraps', () => {
-    const row = authRow({ method: 'session', choices: enforceable });
-    expect(cycleRightRow(row)).toBe('stepped');
-    expect(pickerViewStore.get().authDraft).toBe('api-key');
-
-    expect(cycleRightRow(authRow({ method: 'api-key', choices: enforceable }))).toBe('stepped');
-    expect(pickerViewStore.get().authDraft).toBe('host-configured');
-
-    expect(cycleRightRow(authRow({ method: 'host-configured', choices: enforceable }))).toBe(
-      'stepped',
-    );
-    expect(pickerViewStore.get().authDraft).toBe('session');
-  });
-
-  it('holds the space key rather than closing the expansion when it cannot move', () => {
-    expect(cycleRightRow(authRow({}))).toBe('held');
-    expect(pickerViewStore.get().authDraft).toBe(null);
-    expect(
-      cycleRightRow(authRow({ method: 'host-configured', choices: ['host-configured'] })),
-    ).toBe('held');
-    expect(pickerViewStore.get().authDraft).toBe(null);
-  });
-
-  it('confirms the exact method the row reads, and confirms nothing with no choice', () => {
-    const chosen: AuthMethodChoice[] = [];
-    const models: Array<string | null> = [];
-    const actions = {
-      ...makeActions(),
-      confirmAuthMethod: async (method: AuthMethodChoice) => {
-        chosen.push(method);
-      },
-      confirm: async (_left: unknown, model: ModelOption | null) => {
-        models.push(model?.id ?? null);
-      },
-    };
-    const left = cliTool({ id: 'claude-code', displayName: 'Claude Code' });
-    const deps = { actions, auth: unchecked };
-
-    confirmRow(left, authRow({ method: 'api-key', choices: enforceable }), deps);
-    confirmRow(left, authRow({ method: 'host-configured', choices: enforceable }), deps);
-    confirmRow(left, authRow({}), deps);
-
-    expect(chosen).toEqual(['api-key', 'host-configured']);
-    // The method is saved on its own: confirming it never writes a model as well.
-    expect(models).toEqual([]);
   });
 });

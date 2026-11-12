@@ -17,7 +17,7 @@ import {
 const KEYRING =
   'OpenAI Codex CLI keeps its sign-in in the system keyring, which a run cannot reach.';
 const KEYRING_FIX =
-  'Set cli_auth_credentials_store = "file" in config.toml and run codex login again, or use OPENAI_API_KEY';
+  'Set cli_auth_credentials_store = "file" in config.toml and run codex login again, then run `splitbrief doctor` again.';
 
 let fixture: StopContinueFixture | undefined;
 let restorePath: (() => void) | undefined;
@@ -90,6 +90,7 @@ describe('e2e: a Codex seat on a host that keeps the sign-in in the keyring', ()
       const report = stripVTControlCharacters(doctor.stdout);
       expect(report, doctor.stderr).toContain(KEYRING);
       expect(report).toContain(KEYRING_FIX);
+      expect(report).not.toContain('OPENAI_API_KEY');
       expect(report).not.toContain('REDACTED');
 
       const start = await cli(target, ['start', 'smoke']);
@@ -97,6 +98,7 @@ describe('e2e: a Codex seat on a host that keeps the sign-in in the keyring', ()
       const blocked = stripVTControlCharacters(`${start.stdout}${start.stderr}`);
       expect(blocked).toContain(KEYRING);
       expect(blocked).toContain(KEYRING_FIX);
+      expect(blocked).not.toContain('OPENAI_API_KEY');
       expect(blocked).not.toContain('REDACTED');
       expect(existsSync(ran) ? readFileSync(ran, 'utf8') : null).toBeNull();
     },

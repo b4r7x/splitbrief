@@ -60,7 +60,6 @@ const CODEX_STATE = JSON.stringify({ token: CODEX_TOKEN });
 const COPILOT_STATE = JSON.stringify({ token: COPILOT_TOKEN });
 const REAL_HOME = process.env.HOME;
 const REAL_XDG_STATE_HOME = process.env.XDG_STATE_HOME;
-const REAL_OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 let testStateHome: string;
 
 function acquireDirect(handle: ReturnType<typeof createRunIsolation>) {
@@ -106,12 +105,6 @@ const API_PLANNER: Config['planner'] = {
   temperature: 0.2,
 };
 
-/** The pair both flagship CLIs ship: one tool, one channel per role. */
-const SAME_TOOL_SPLIT_CHANNELS = withRunners(
-  { kind: 'cli', tool: 'codex', authChannel: 'api-key' },
-  { kind: 'cli', tool: 'codex', authChannel: 'session' },
-);
-
 beforeEach(() => {
   testStateHome = createTempDir('isolation-state-home');
   process.env.XDG_STATE_HOME = testStateHome;
@@ -123,8 +116,6 @@ afterEach(() => {
   else process.env.HOME = REAL_HOME;
   if (REAL_XDG_STATE_HOME === undefined) delete process.env.XDG_STATE_HOME;
   else process.env.XDG_STATE_HOME = REAL_XDG_STATE_HOME;
-  if (REAL_OPENAI_API_KEY === undefined) delete process.env.OPENAI_API_KEY;
-  else process.env.OPENAI_API_KEY = REAL_OPENAI_API_KEY;
 });
 
 describe('createRunIsolation', () => {
@@ -418,8 +409,8 @@ describe('createRunIsolation', () => {
       try {
         createTestGitRepo(dir, { 'README.md': '# test\n' });
         const twoCli = withRunners(
-          { kind: 'cli', tool: 'copilot', authChannel: 'session' },
-          { kind: 'cli', tool: 'codex', authChannel: 'session' },
+          { kind: 'cli', tool: 'copilot' },
+          { kind: 'cli', tool: 'codex' },
         );
         const handle = createRunIsolation({
           projectDir: dir,
@@ -470,7 +461,6 @@ describe('createRunIsolation', () => {
         const apiPlanner = withRunners(API_PLANNER, {
           kind: 'cli',
           tool: 'codex',
-          authChannel: 'session',
         });
         const handle = createRunIsolation({
           projectDir: dir,
@@ -490,87 +480,6 @@ describe('createRunIsolation', () => {
         await handle.acquire({ role: 'planner', config: apiPlanner, brief: makeAttemptBrief() });
 
         expect(readFileSync(codexAuth, 'utf8')).toBe(CODEX_STATE);
-      } finally {
-        cleanupTempDir(hostHome);
-        cleanupTempDir(dir);
-      }
-    },
-  );
-
-  itUnix(
-    'keeps a same-tool api-key planner acquisition off the session implementer snapshot',
-    { timeout: 60_000 },
-    async () => {
-      const dir = createTempDir('isolation-split-channel-session-first');
-      const hostHome = useHostHome();
-      process.env.OPENAI_API_KEY = 'sk-openai-split-channel';
-      try {
-        createTestGitRepo(dir, { 'README.md': '# test\n' });
-        const handle = createRunIsolation({
-          projectDir: dir,
-          sessionId: SESSION_ID,
-          strategy: 'worktree',
-          onFallback: () => {},
-        });
-
-        const implementer = await handle.acquire({
-          role: 'implementer',
-          config: SAME_TOOL_SPLIT_CHANNELS,
-          brief: makeAttemptBrief(),
-        });
-        const codexAuth = join(implementer.sandboxEnv.HOME as string, '.codex', 'auth.json');
-        expect(existsSync(codexAuth)).toBe(true);
-
-        const planner = await handle.acquire({
-          role: 'planner',
-          config: SAME_TOOL_SPLIT_CHANNELS,
-          brief: makeAttemptBrief(),
-        });
-
-        expect(readFileSync(codexAuth, 'utf8')).toBe(CODEX_STATE);
-        expect(planner.sandboxEnv.HOME).not.toBe(implementer.sandboxEnv.HOME);
-        expect(planner.sandboxEnv.OPENAI_API_KEY).toBe('sk-openai-split-channel');
-      } finally {
-        cleanupTempDir(hostHome);
-        cleanupTempDir(dir);
-      }
-    },
-  );
-
-  itUnix(
-    'never bridges a session implementer snapshot into a same-tool api-key planner HOME',
-    { timeout: 60_000 },
-    async () => {
-      const dir = createTempDir('isolation-split-channel-api-key-first');
-      const hostHome = useHostHome();
-      process.env.OPENAI_API_KEY = 'sk-openai-split-channel';
-      try {
-        createTestGitRepo(dir, { 'README.md': '# test\n' });
-        const handle = createRunIsolation({
-          projectDir: dir,
-          sessionId: SESSION_ID,
-          strategy: 'worktree',
-          onFallback: () => {},
-        });
-
-        const planner = await handle.acquire({
-          role: 'planner',
-          config: SAME_TOOL_SPLIT_CHANNELS,
-          brief: makeAttemptBrief(),
-        });
-        const implementer = await handle.acquire({
-          role: 'implementer',
-          config: SAME_TOOL_SPLIT_CHANNELS,
-          brief: makeAttemptBrief(),
-        });
-
-        expect(existsSync(join(planner.sandboxEnv.HOME as string, '.codex', 'auth.json'))).toBe(
-          false,
-        );
-        expect(sandboxCredentialValues(planner.sandboxEnv)).toEqual([]);
-        expect(
-          readFileSync(join(implementer.sandboxEnv.HOME as string, '.codex', 'auth.json'), 'utf8'),
-        ).toBe(CODEX_STATE);
       } finally {
         cleanupTempDir(hostHome);
         cleanupTempDir(dir);
@@ -604,7 +513,6 @@ describe('createRunIsolation', () => {
           config: withRunners(config.planner, {
             kind: 'cli',
             tool: 'codex',
-            authChannel: 'session',
           }),
           brief: makeAttemptBrief(),
         });
@@ -613,7 +521,6 @@ describe('createRunIsolation', () => {
           config: withRunners(config.planner, {
             kind: 'cli',
             tool: 'copilot',
-            authChannel: 'session',
           }),
           brief: makeAttemptBrief(),
         });

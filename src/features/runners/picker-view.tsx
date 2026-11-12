@@ -26,7 +26,7 @@ import { isCustomModel, type ModelVariant } from './model-catalog/recency.js';
 import { formatModelName } from '../../core/model-display.js';
 import { isAutomaticModel } from '../../core/providers/automatic-model.js';
 import { routeDraftOf } from './model-catalog/option-axis.js';
-import { AUTH_METHOD_WORDS, rightRowKey, sectionOf, type RightRow } from './model-catalog/rows.js';
+import { rightRowKey, sectionOf, type RightRow } from './model-catalog/rows.js';
 import type { RouteAuthState } from '../../core/runners/route-auth.js';
 import {
   activationOfRightRow,
@@ -301,9 +301,6 @@ export function PickerView({
       });
     };
     const row = ctx.rightItem;
-    if (row?.kind === 'auth') {
-      return `Auth: ${AUTH_METHOD_WORDS[row.method]}${row.unproven ? `${SOFT_SEP}unproven; select a supported auth method` : ''}`;
-    }
     if (row?.kind === 'route') {
       const remedy = remedyFor(row.auth, row.variant);
       if (remedy !== undefined) return remedy;

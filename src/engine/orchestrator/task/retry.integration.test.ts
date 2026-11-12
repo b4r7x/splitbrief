@@ -31,7 +31,6 @@ import { handleRetryAndEscalation } from '../escalation/handle.js';
 import { failedRetry, type RetryResult } from '../escalation/types.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
-import { defaultCliAuthChannel } from '../../../core/runners/cli-tool-catalog.js';
 import { error } from '../../../utils/error.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
 import { requestConsult } from '../consult/request.js';
@@ -615,7 +614,7 @@ describe('retryAndRecord — a planner out of quota on the consult', () => {
   const config = makeConfig({
     workflow: { review: 'task' },
 
-    planner: { kind: 'cli', tool: 'codex', authChannel: defaultCliAuthChannel('codex').id },
+    planner: { kind: 'cli', tool: 'codex' },
     validation: { endChecks: false, testCommand: 'noop' },
   });
 
@@ -757,7 +756,6 @@ describe('retryAndRecord — a planner out of quota on the consult', () => {
         reviewer: {
           kind: 'cli',
           tool: 'claude-code',
-          authChannel: defaultCliAuthChannel('claude-code').id,
         },
       },
       makeTask({

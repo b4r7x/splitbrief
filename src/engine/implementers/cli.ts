@@ -11,7 +11,7 @@ import { invokeCliAdapter, toCliEnvironment } from '../runners/invoke-cli-adapte
 import { createCommandExistsAvailability } from '../availability.js';
 import { resolveCliModel } from '../../core/providers/automatic-model.js';
 import { callAdmittedCli, requireCliSeat } from '../runners/start-gate.js';
-import { createRunnerSandboxEnv, resolveCliRunnerAuth } from '../runners/sandbox-env.js';
+import { createRunnerSandboxEnv } from '../runners/sandbox-env.js';
 import { withOutputFormat } from '../runners/cli-tools/output-format.js';
 import { withCliInvocationIdentity } from '../runners/invocation-identity.js';
 import { lookupCliImplementerAdapter } from '../runners/cli-tools/registry.js';
@@ -94,7 +94,6 @@ export function createCliImplementer(
   options?: ImplementerFactoryOptions,
 ): Implementer {
   const toolName = config.tool;
-  resolveCliRunnerAuth(config);
   const cliSeat = options?.cliSeat;
   const registryAdapter = lookupCliImplementerAdapter(toolName);
   const descriptor = registryAdapter.descriptor;
@@ -157,7 +156,7 @@ export function createCliImplementer(
             prompt,
             steering: opts.steering,
             installedVersion: gate.installedVersion,
-            callContext: withCliInvocationIdentity({ runner: config, callContext, executable }),
+            callContext: withCliInvocationIdentity({ tool: config.tool, callContext }),
             onOutput,
             onCallEvent: opts.onCallEvent,
             idle: {

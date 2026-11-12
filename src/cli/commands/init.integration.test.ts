@@ -34,7 +34,6 @@ describe('init --yes detected crew', () => {
         installCompatibleCliShim({
           directory: shimDir,
           tool: 'codex',
-          authChannel: 'session',
         }),
       );
       vi.stubGlobal(
@@ -115,7 +114,7 @@ describe('init --yes diagnostics', () => {
       mkdirSync(subdir);
       const shimDir = createTempDir('init-yes-subdir-shim');
       const restore = activateCompatibleCliShim(
-        installCompatibleCliShim({ directory: shimDir, tool: 'codex', authChannel: 'session' }),
+        installCompatibleCliShim({ directory: shimDir, tool: 'codex' }),
       );
       vi.stubGlobal(
         'fetch',

@@ -19,7 +19,6 @@ const userGuides = [
   'APPROVAL-AND-RECOVERY',
   'TASK-CONTRACT',
   'MIGRATION',
-  'AUTH-METHOD-MATRIX',
 ];
 
 describe('repository documentation', () => {

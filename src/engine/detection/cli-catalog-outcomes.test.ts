@@ -20,14 +20,9 @@ const executable = {
 
 describe('scoped CLI catalog outcomes', () => {
   it('binds an opaque public context token to the full digest-bound executable receipt', () => {
-    const first = scopedCliCatalogConnection({
-      tool: 'codex',
-      authChannel: 'api-key',
-      executable,
-    });
+    const first = scopedCliCatalogConnection({ tool: 'codex', executable });
     const replacement = scopedCliCatalogConnection({
       tool: 'codex',
-      authChannel: 'api-key',
       executable: {
         path: '/trusted/codex',
         fingerprint: { dev: 1, ino: 2, size: 3, mtimeMs: 4 },
@@ -48,28 +43,20 @@ describe('scoped CLI catalog outcomes', () => {
   });
 
   it.each(NATIVE_CLI_CATALOG_TOOL_IDS)(
-    'keeps the %s identity stable while separating executables and auth channels',
+    'keeps the %s identity stable while separating executables',
     (tool) => {
-      const first = scopedCliCatalogConnection({ tool, authChannel: 'api-key', executable });
+      const first = scopedCliCatalogConnection({ tool, executable });
       const repeated = scopedCliCatalogConnection({
         tool,
-        authChannel: 'api-key',
         executable: {
           ...executable,
           executableIdentity: { ...executable.executableIdentity, resolvedAt: 2 },
         },
       });
       expect(repeated).toEqual(first);
-      expect(scopedCliCatalogConnection({ tool, authChannel: 'session', executable })).not.toEqual(
-        first,
-      );
-      expect(scopedCliCatalogConnection({ tool, authChannel: undefined, executable })).not.toEqual(
-        first,
-      );
       expect(
         scopedCliCatalogConnection({
           tool,
-          authChannel: 'api-key',
           executable: {
             ...executable,
             executableIdentity: { ...executable.executableIdentity, platformFileId: '1:3' },
@@ -78,6 +65,20 @@ describe('scoped CLI catalog outcomes', () => {
       ).not.toEqual(first);
     },
   );
+
+  it('keeps the connection key of each tool on its catalog channel', () => {
+    expect(
+      NATIVE_CLI_CATALOG_TOOL_IDS.map((tool) => scopedCliCatalogConnection({ tool }).contextKey),
+    ).toEqual([
+      'cli-catalog-v1|codex|session|cli-executable-unresolved',
+      'cli-catalog-v1|opencode|provider-dependent|cli-executable-unresolved',
+      'cli-catalog-v1|copilot|session|cli-executable-unresolved',
+      'cli-catalog-v1|kilo-code|provider-dependent|cli-executable-unresolved',
+      'cli-catalog-v1|cursor|session|cli-executable-unresolved',
+      'cli-catalog-v1|command-code|session|cli-executable-unresolved',
+      'cli-catalog-v1|antigravity|session|cli-executable-unresolved',
+    ]);
+  });
 
   it('carries a failed listing command and its cause through a clone', () => {
     const cause =

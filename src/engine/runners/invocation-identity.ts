@@ -1,118 +1,39 @@
-import { isDeepStrictEqual } from 'node:util';
-import type { CliExecutableIdentity } from '../../core/discovery/detection.js';
 import { getApiProviderDescriptor } from '../../core/providers/api-provider-catalog.js';
+import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
 import {
   InvocationIdentitySchema,
   type InvocationIdentity,
 } from '../../core/schemas/invocation-identity.js';
-import { error } from '../../utils/error.js';
 import { sha256Hex } from '../../utils/sha256.js';
 import { isRemoteBackedOllamaModel } from '../providers/ollama.js';
 import type { ApiDispatchAuthentication, ProviderDef } from '../providers/types.js';
 import type { RunnerCallContext } from '../calls/types.js';
-import {
-  enforceCliAuthInvocation,
-  type CliInvocation,
-  type CliInvocationAuthEvidence,
-} from './cli-auth-enforcement.js';
-
-type CliRunner = Parameters<typeof enforceCliAuthInvocation>[0]['runner'];
-
-function receiptMismatch(runner: CliRunner, invocation: CliInvocation): never {
-  throw error(
-    'runner-auth-evidence-mismatch',
-    `The authentication receipt for CLI tool "${runner.tool}" was issued for another invocation, binary or channel, so it is not reused.`,
-    { tool: runner.tool, callId: invocation.callId },
-  );
-}
 
 /**
- * The durable identity of one CLI invocation, taken once its executable, env
- * and argv are final and its auth evidence was admitted for it. The runner
- * contributes only its raw configured channel, which proves nothing; method and
- * billing facts come solely from a receipt bound to this call, this binary and
- * that channel. A receipt issued for anything else is refused, never reused.
+ * The durable identity of one CLI invocation. The tool's own sign-in decides
+ * how the call authenticates and what it bills to, so the record names only
+ * the tool, and its billing is unknown.
  */
 export function snapshotCliInvocationIdentity({
-  runner,
-  invocation,
-  authEvidence,
+  tool,
   now,
-}: Readonly<{
-  runner: CliRunner;
-  invocation: CliInvocation;
-  authEvidence: CliInvocationAuthEvidence;
-  now: number;
-}>): InvocationIdentity {
-  const base = {
+}: Readonly<{ tool: CliToolId; now: number }>): InvocationIdentity {
+  return {
     version: 1,
     capturedAt: now,
-    runner: { kind: 'cli', id: runner.tool },
-    ...(runner.authChannel !== undefined && { configuredChannel: runner.authChannel }),
-  } as const;
-  if (authEvidence.kind === 'host-configured') {
-    return { ...base, billing: { posture: 'unknown', basis: 'unknown' } };
-  }
-
-  if (
-    authEvidence.invocationId !== invocation.callId ||
-    !isDeepStrictEqual(authEvidence.executableFingerprint, invocation.executable.fingerprint) ||
-    authEvidence.channel !== runner.authChannel ||
-    (authEvidence.kind === 'enforced' &&
-      (authEvidence.platform !== invocation.platform ||
-        authEvidence.installedVersion !== invocation.installedVersion))
-  ) {
-    return receiptMismatch(runner, invocation);
-  }
-
-  const channel = { channel: authEvidence.channel, evidenceId: authEvidence.evidenceId };
-  const billing =
-    authEvidence.billingPosture === 'unknown'
-      ? ({ posture: 'unknown', basis: 'unknown' } as const)
-      : {
-          posture: authEvidence.billingPosture,
-          basis:
-            authEvidence.kind === 'enforced'
-              ? ('enforced-channel' as const)
-              : ('observed-invocation' as const),
-          evidenceId: authEvidence.evidenceId,
-        };
-  return authEvidence.kind === 'enforced'
-    ? { ...base, enforcedChannel: channel, billing }
-    : { ...base, observedChannel: channel, billing };
+    runner: { kind: 'cli', id: tool },
+    billing: { posture: 'unknown', basis: 'unknown' },
+  };
 }
 
-/**
- * Admits one CLI call's raw auth channel and fixes its identity on the call
- * context before the recorder emits `call_started`. An explicit method without
- * current proof throws here, so nothing is spawned or recorded.
- */
+/** Fixes one CLI call's identity on its call context before the recorder emits `call_started`. */
 export function withCliInvocationIdentity({
-  runner,
+  tool,
   callContext,
-  executable,
-}: Readonly<{
-  runner: CliRunner;
-  callContext: RunnerCallContext;
-  executable: CliExecutableIdentity;
-}>): RunnerCallContext {
-  // No admitted installed version reaches dispatch, so an explicit method is
-  // refused rather than bound to a version nobody checked.
-  const invocation: CliInvocation = {
-    callId: callContext.callId,
-    executable,
-    installedVersion: undefined,
-    platform: process.platform,
-  };
-  const authEvidence = enforceCliAuthInvocation({ runner, invocation });
+}: Readonly<{ tool: CliToolId; callContext: RunnerCallContext }>): RunnerCallContext {
   return {
     ...callContext,
-    invocationIdentity: snapshotCliInvocationIdentity({
-      runner,
-      invocation,
-      authEvidence,
-      now: Date.now(),
-    }),
+    invocationIdentity: snapshotCliInvocationIdentity({ tool, now: Date.now() }),
   };
 }
 

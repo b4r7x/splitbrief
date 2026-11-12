@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { projectRunnerDiscoveryContext } from '../../core/config/accessors/runner-discovery-context.js';
 import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection.js';
 import type { CliReadinessFacts } from '../../core/schemas/readiness.js';
 import type { DetectedModel } from '../../core/discovery/detection.js';
@@ -384,7 +383,7 @@ describe('createDetectionService', () => {
     }).toThrow(TypeError);
   });
 
-  it('keeps private readiness separate when project, channel, endpoint, and configuration context change', async () => {
+  it('keeps private readiness separate when project, endpoint, and configuration context change', async () => {
     let observations = 0;
     let contexts = projectSourceContexts({
       projectDir: '/projects/alpha',
@@ -411,7 +410,7 @@ describe('createDetectionService', () => {
     const first = await service.loadDetection({ deps, projectDir: '/projects/alpha' });
     contexts = projectSourceContexts({
       projectDir: '/projects/bravo',
-      authChannel: 'api-key',
+      authChannel: 'session',
       endpointOrigin: 'https://gateway.bravo.example',
       credentialDomain: 'env:BRAVO_API_KEY',
       configGeneration: 'bravo-config',
@@ -548,7 +547,7 @@ describe('createDetectionService', () => {
     try {
       const oldContexts = projectSourceContexts({
         projectDir: tempDir,
-        authChannel: 'api-key',
+        authChannel: 'session',
         endpointOrigin: 'https://old.example',
         credentialDomain: 'env:OLD_KEY',
         configGeneration: 'old-generation',
@@ -749,22 +748,12 @@ describe('createDetectionService', () => {
     expect(changedContexts.cliModels).not.toBe(initialContexts.cliModels);
 
     const steps = [
-      {
-        config: initialConfig,
-        contexts: initialContexts,
-        role: 'planner',
-        ids: ['model-a', 'model-b'],
-      },
-      { config: changedConfig, contexts: changedContexts, role: 'reviewer', ids: ['model-a'] },
-      { config: changedConfig, contexts: changedContexts, role: 'planner', ids: ['model-a'] },
+      { contexts: initialContexts, ids: ['model-a', 'model-b'] },
+      { contexts: changedContexts, ids: ['model-a'] },
+      { contexts: changedContexts, ids: ['model-a'] },
     ] as const;
     for (const [index, step] of steps.entries()) {
-      const context = projectRunnerDiscoveryContext({ config: step.config, role: step.role });
-      const connection = scopedCliCatalogConnection({
-        tool: 'opencode',
-        authChannel: context.authChannel,
-        executable,
-      });
+      const connection = scopedCliCatalogConnection({ tool: 'opencode', executable });
       const deps = makeDeps({
         now: clock.now,
         sourceContexts: step.contexts,
@@ -1376,5 +1365,19 @@ describe('createDetectionService', () => {
       modelsDev: { kind: 'not-run', reason: 'uninitialized' },
       cliModels: { kind: 'not-run', reason: 'uninitialized' },
     });
+  });
+});
+
+describe('detectionContextKey', () => {
+  it('keeps the key of an unconfigured source, whose identity names no auth channel', () => {
+    expect(
+      detectionContextKey({
+        platform: 'linux',
+        runner: 'unconfigured-readiness',
+        configGeneration: 'unconfigured-deps-1:process',
+      }),
+    ).toBe(
+      'detection-context-v1|linux|unconfigured-readiness|no-executable-fingerprint|no-executable-version|no-auth-channel|no-endpoint|no-credential-domain|unconfigured-deps-1%3Aprocess',
+    );
   });
 });

@@ -159,7 +159,7 @@ function credentialDomain({
 }
 
 function contextAuthChannel(runner: ActiveRunnerConfig): CliAuthChannelId | undefined {
-  if (runner.kind === 'cli') return runner.authChannel ?? defaultCliAuthChannel(runner.tool).id;
+  if (runner.kind === 'cli') return defaultCliAuthChannel(runner.tool).id;
   if (runner.kind === 'api') return 'api-key';
   return undefined;
 }

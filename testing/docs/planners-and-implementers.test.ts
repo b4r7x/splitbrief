@@ -72,10 +72,7 @@ function implementerAutoApproval(id: CliToolId): string {
 }
 
 function credentialEnv(id: CliToolId): string {
-  const channels = CLI_TOOL_CATALOG[id].auth.channels;
-  const env = [
-    ...new Set(channels.flatMap((channel) => (channel.id === 'api-key' ? channel.env : []))),
-  ];
+  const { channels, env } = CLI_TOOL_CATALOG[id].auth;
   if (env.length === 0) {
     const providerDependent = channels.some((channel) => channel.id === 'provider-dependent');
     return providerDependent ? 'every `*_API_KEY` of the parent' : '—';
@@ -85,6 +82,15 @@ function credentialEnv(id: CliToolId): string {
 
 function authChannelLabels(id: CliToolId): string {
   return CLI_TOOL_CATALOG[id].auth.channels.map((channel) => channel.id).join(', ');
+}
+
+function postureCells(posture: string, id: CliToolId): string[] {
+  const row = posture.split('\n').find((line) => line.startsWith(`| \`${id}\` |`));
+  expect(row, `missing posture row for ${id}`).toBeDefined();
+  return (row ?? '')
+    .split('|')
+    .slice(1, -1)
+    .map((cell) => cell.trim());
 }
 
 describe('canonical CLI runner matrix docs', () => {
@@ -136,8 +142,11 @@ describe('canonical CLI runner matrix docs', () => {
       expect(posture).toContain(formatDirectWrite(id));
       expect(posture).toContain(formatSandbox(id));
       expect(posture).toContain(implementerAutoApproval(id));
-      expect(posture).toContain(authChannelLabels(id));
-      expect(posture).toContain(credentialEnv(id));
+      const cells = postureCells(posture, id);
+      expect(cells.at(-2)?.replace(/ \([^)]*\)/g, ''), `auth channels of ${id}`).toBe(
+        authChannelLabels(id),
+      );
+      expect(cells.at(-1), `credential env of ${id}`).toBe(credentialEnv(id));
       expect(posture).toContain(
         `${descriptor.shell.planner ? 'yes' : 'no'} / ${descriptor.shell.implementer ? 'yes' : 'no'}`,
       );

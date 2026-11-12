@@ -20,7 +20,7 @@ import { usePickerCatalog } from './use-picker-catalog.js';
 import { CREW_SEAT_LABELS } from '../../core/crew/identity.js';
 import { PICKER_ROLE_SEAT_IDS, type ActiveRunnerRole } from '../../core/runners/seat-roles.js';
 import type { PickerOption } from './model-catalog/options.js';
-import type { RightRow } from './model-catalog/rows.js';
+import { rightRowKey, type RightRow } from './model-catalog/rows.js';
 import type { ModelOption } from './model-catalog/recency.js';
 import type { ConfiguredProviderRuntime } from '../../engine/detection/provider-outcomes.js';
 import { CATALOG_SUGGESTION_MEMBERSHIP } from '../../engine/providers/model/catalog.js';
@@ -105,7 +105,7 @@ describe('usePickerCatalog fallback slot', () => {
     ui.unmount();
   });
 
-  it('reads the fallback tool and model and offers no auth-method row', () => {
+  it('reads the fallback tool and model', () => {
     configStore.__testReset({
       projectDir: '/tmp/project',
       config: makeConfig({
@@ -131,7 +131,6 @@ describe('usePickerCatalog fallback slot', () => {
     });
     expect(catalog?.persistedModel).toBe('gpt-5-codex');
     expect(catalog?.customModels).toEqual([]);
-    expect(catalog?.rightRows.some((row) => row.kind === 'auth')).toBe(false);
     expect(rowModels(catalog?.rightRows ?? []).map((model) => model.id)).toContain('gpt-5-codex');
     ui.unmount();
   });
@@ -467,6 +466,56 @@ describe('usePickerCatalog', () => {
       }
     },
   );
+
+  it("draws only the effort child under the open model of the seat's own tool", async () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code', model: 'opus', effort: 'max' },
+      }),
+    });
+    seedDetections();
+    pickerViewStore.expand('opus');
+    function SeatProbe() {
+      const catalog = usePickerCatalog('planner', 'seat', 0, 'claude-code');
+      return (
+        <Box flexDirection="column">
+          {catalog.rightRows.map((row) => (
+            <Box key={rightRowKey(row)}>
+              {renderModelRow({
+                row,
+                isCursor: false,
+                maxWidth: 80,
+                currentModel: catalog.currentModel,
+                auth: {
+                  providerAuth: catalog.providerAuth,
+                  catalog: catalog.toolCatalog,
+                  tool: undefined,
+                },
+              })}
+            </Box>
+          ))}
+        </Box>
+      );
+    }
+
+    const ui = renderFeature(<SeatProbe />);
+    try {
+      await flushEffects();
+      const leads = [glyph('treeBranch'), glyph('treeLast')].map(
+        (mark) => `${mark}${glyph('divider')} `,
+      );
+      const childLabels = ui
+        .lastFrame()
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => leads.some((lead) => line.startsWith(lead)))
+        .map((line) => line.split(/\s+/).slice(0, 2).join(' '));
+      expect(childLabels).toEqual([`${glyph('treeLast')}${glyph('divider')} effort`]);
+    } finally {
+      ui.unmount();
+    }
+  });
 
   it('shows each planner-tier seat its own selection when the reviewer differs from the planner', async () => {
     configStore.__testReset({

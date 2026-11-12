@@ -6,36 +6,23 @@ import { admittedCliSeat } from './runner-gate.js';
 type Invocation = Parameters<typeof invokeClaudePlanner>[0];
 
 export async function invokeTestClaude(
-  opts: Omit<
-    Invocation,
-    | 'callbacks'
-    | 'callContext'
-    | 'env'
-    | 'authChannel'
-    | 'configuredAuthChannel'
-    | 'cliSeat'
-    | 'sessionId'
-  > &
+  opts: Omit<Invocation, 'callbacks' | 'callContext' | 'env' | 'cliSeat' | 'sessionId'> &
     Invocation['callbacks'] & {
       env?: NodeJS.ProcessEnv;
-      authChannel?: Invocation['authChannel'];
       executable?: CliStartGate['executable'];
       sessionId?: string | null;
     },
 ): ReturnType<typeof invokeClaudePlanner> {
-  const authChannel = opts.authChannel ?? 'session';
   const env =
     opts.env ??
     (await createRunnerSandboxEnv(
       opts.projectDir,
-      { kind: 'cli', tool: 'claude-code', authChannel },
+      { kind: 'cli', tool: 'claude-code' },
       'planner',
     ));
   return invokeClaudePlanner({
     ...opts,
     env,
-    authChannel,
-    configuredAuthChannel: undefined,
     sessionId: opts.sessionId ?? null,
     cliSeat:
       opts.executable === undefined

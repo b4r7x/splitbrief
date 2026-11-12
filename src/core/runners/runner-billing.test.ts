@@ -1,17 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PlannerConfig } from '../schemas/planner-config.js';
-import {
-  CLI_AUTH_CHANNEL_IDS,
-  CLI_AUTH_ENFORCEMENT_EVIDENCE,
-  CLI_TOOL_IDS,
-  type CliAuthEnforcementEvidence,
-} from './cli-tool-catalog.js';
-import {
-  RUNNER_BILLING_POSTURES,
-  billingWord,
-  cliBillingPosture,
-  runnerBillingPosture,
-} from './runner-billing.js';
+import { CLI_TOOL_IDS } from './cli-tool-catalog.js';
+import { RUNNER_BILLING_POSTURES, billingWord, runnerBillingPosture } from './runner-billing.js';
 
 describe('runner billing posture', () => {
   it('lists the billing postures in canonical presentation order', () => {
@@ -56,13 +46,6 @@ describe('runnerBillingPosture', () => {
     }
   });
 
-  it('states no posture for a configured method no adapter can enforce', () => {
-    for (const authChannel of CLI_AUTH_CHANNEL_IDS) {
-      const planner: PlannerConfig = { kind: 'cli', tool: 'opencode', authChannel };
-      expect(runnerBillingPosture(planner)).toBe('unknown');
-    }
-  });
-
   it('bills an API runner on the provider whose connection it opens', () => {
     const local: PlannerConfig = {
       kind: 'api',
@@ -91,57 +74,5 @@ describe('runnerBillingPosture', () => {
 
     expect(runnerBillingPosture(shell)).toBe('unknown');
     expect(runnerBillingPosture(agent)).toBe('unknown');
-  });
-});
-
-describe('cliBillingPosture', () => {
-  const proof: CliAuthEnforcementEvidence = {
-    id: 'cli.claude-code.api-key',
-    tool: 'claude-code',
-    platform: process.platform,
-    installedVersion: '2.1.273',
-    channels: ['api-key'],
-  };
-
-  it('keeps the posture of a method proven for this exact adapter', () => {
-    expect(
-      cliBillingPosture({
-        tool: 'claude-code',
-        authChannel: 'api-key',
-        installedVersion: '2.1.273',
-        evidence: [proof],
-      }),
-    ).toBe('api-metered');
-  });
-
-  it('states no posture once the proof no longer names the installed version', () => {
-    expect(
-      cliBillingPosture({
-        tool: 'claude-code',
-        authChannel: 'api-key',
-        installedVersion: '2.2.0',
-        evidence: [proof],
-      }),
-    ).toBe('unknown');
-  });
-
-  it('states no posture when the proof covers a method the seat does not name', () => {
-    expect(
-      cliBillingPosture({
-        tool: 'claude-code',
-        authChannel: undefined,
-        installedVersion: '2.1.273',
-        evidence: [proof],
-      }),
-    ).toBe('unknown');
-  });
-
-  it('proves nothing for any admitted CLI on the shipped evidence', () => {
-    expect(CLI_AUTH_ENFORCEMENT_EVIDENCE).toEqual([]);
-    for (const tool of CLI_TOOL_IDS) {
-      expect(cliBillingPosture({ tool, authChannel: undefined, installedVersion: '1.0.0' })).toBe(
-        'unknown',
-      );
-    }
   });
 });

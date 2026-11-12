@@ -8,6 +8,7 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import type { RunnerCallEvent } from '../../calls/types.js';
 import { projectRunnerCallEvents } from '../../calls/event-projection.js';
 import { RUNNER_CALL_OUTPUT_MAX_BYTES } from '../../calls/output-limit.js';
+import { SANDBOX_CREDENTIAL_VALUES } from '../sandbox-credential-values.js';
 
 let shimDir: string;
 let projectDir: string;
@@ -60,7 +61,6 @@ describe('Claude stream credential redaction', () => {
         JSON.stringify({ type: 'result', result: `answer ${credential}` }),
       ],
       {
-        authChannel: 'api-key',
         env: { PATH: process.env.PATH, ANTHROPIC_API_KEY: credential },
         onOutput: (text) => output.push(text),
         onCallEvent: (event) => events.push(event),
@@ -78,7 +78,6 @@ describe('Claude stream credential redaction', () => {
     const events: RunnerCallEvent[] = [];
     await expect(
       invokeReply([JSON.stringify({ type: 'result', is_error: true, result: credential })], {
-        authChannel: 'api-key',
         env: { PATH: process.env.PATH, ANTHROPIC_API_KEY: credential },
         onOutput: () => {},
         onCallEvent: (event) => events.push(event),
@@ -120,11 +119,13 @@ describe('Claude stream credential redaction', () => {
     const credential = 'opaque-claude-interrupt-credential-canary-7d93c612';
     const controller = new AbortController();
     controller.abort(new DOMException(`cancelled with ${credential}`, 'TimeoutError'));
+    // A Claude child holds its sign-in as a sandbox credential value, never as an env key.
+    const env: NodeJS.ProcessEnv = { PATH: process.env.PATH };
+    Object.defineProperty(env, SANDBOX_CREDENTIAL_VALUES, { value: [credential] });
 
     const interrupted = await invokeReply([], {
       signal: controller.signal,
-      authChannel: 'api-key',
-      env: { PATH: process.env.PATH, ANTHROPIC_API_KEY: credential },
+      env,
       onOutput: () => {},
     }).catch((cause: unknown) => cause);
 

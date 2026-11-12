@@ -15,10 +15,7 @@ import type { SavedCatalog } from '../../../core/discovery/catalog-read-merge.js
 import type { CliProviderAuth } from '../../../core/discovery/detection.js';
 import { classifyHaltSignature } from '../../../core/pipeline-spec/halts.js';
 import { seatRouteModel } from '../../../core/providers/automatic-model.js';
-import {
-  defaultCliAuthChannel,
-  PROVIDER_ORACLE_TOOL_IDS,
-} from '../../../core/runners/cli-tool-catalog.js';
+import { PROVIDER_ORACLE_TOOL_IDS } from '../../../core/runners/cli-tool-catalog.js';
 import { routeAuthState, type RouteAuthState } from '../../../core/runners/route-auth.js';
 import { runnerRoleForActiveRole } from '../../../core/runners/seat-roles.js';
 import { includes } from '../../../utils/type-guards.js';
@@ -132,7 +129,7 @@ async function haltRouteAuth(
 /**
  * Why the halt would not take the declared fallback, or `undefined` when it would. The remembered
  * row decides when it takes the fallback or saw the tool ready. A missing or not-ready row that
- * refuses it is checked live once, on the channel a fresh config names: the pass may be absent (a
+ * refuses it is checked live once, on the tool's catalog channel: the pass may be absent (a
  * headless project, a fresh clone) or older than the tool's install or sign-in. A route that then
  * waits on the tool's model list reads it fresh once, as the switch's own preparation does.
  */
@@ -161,7 +158,6 @@ async function fallbackDecision(
   const [live] = await detectAvailableCliTools({
     projectDir: input.projectDir,
     tools: [runner.tool],
-    authChannels: { [runner.tool]: defaultCliAuthChannel(runner.tool).id },
     signal: input.signal,
   });
   const state = live?.diagnostic.state;

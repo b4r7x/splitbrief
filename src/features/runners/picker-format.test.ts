@@ -199,7 +199,7 @@ describe('notReadyPane', () => {
       status: {
         state: 'unauthenticated',
         remediation: cliReadinessRemediation(
-          { ...codexFacts, auth: 'unauthenticated', authChannel: 'session' },
+          { ...codexFacts, auth: 'unauthenticated' },
           'unauthenticated',
           'picker',
         ),

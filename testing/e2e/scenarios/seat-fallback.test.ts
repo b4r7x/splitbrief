@@ -88,7 +88,6 @@ async function runFixture(
     const cliTools = await detectAvailableCliTools({
       projectDir: target.projectDir,
       tools: ['codex'],
-      authChannels: { codex: 'session' },
       role: 'implementer',
     });
     expect(cliTools[0]?.diagnostic.state).toBe('ready');

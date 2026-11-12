@@ -131,7 +131,7 @@ describe('evaluateCandidate on a Codex host that keeps its sign-in in the keyrin
         details: expect.arrayContaining([
           'OpenAI Codex CLI keeps its sign-in in the system keyring, which a run cannot reach.',
         ]),
-        fix: 'Set cli_auth_credentials_store = "file" in config.toml and run codex login again, or use OPENAI_API_KEY, then run `splitbrief doctor` again.',
+        fix: 'Set cli_auth_credentials_store = "file" in config.toml and run codex login again, then run `splitbrief doctor` again.',
         runnerCause: { tool: 'codex', cause: 'unauthenticated' },
       });
     },

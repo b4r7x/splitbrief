@@ -113,7 +113,6 @@ describe('e2e: the resumed consult names the decision ledger', { timeout: 240_00
     const tools = await detectAvailableCliTools({
       projectDir: target.projectDir,
       tools: ['claude-code'],
-      authChannels: { 'claude-code': 'session' },
       role: 'planner',
     });
     expect(tools[0]?.diagnostic.state, JSON.stringify(tools[0]?.diagnostic)).toBe('ready');

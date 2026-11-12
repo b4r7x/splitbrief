@@ -38,7 +38,6 @@ beforeEach(() => {
     installCompatibleCliShim({
       directory: join(tmp, 'bin'),
       tool: 'claude-code',
-      authChannel: 'session',
     }),
   );
 });

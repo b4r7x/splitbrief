@@ -54,9 +54,6 @@ function makeActions(log?: string[]): PickerActions {
     confirmProviderSelection: async () => {
       record('confirmProviderSelection');
     },
-    confirmAuthMethod: async () => {
-      record('confirmAuthMethod');
-    },
     leftChange: () => {},
     deleteRight: async () => {
       record('deleteRight');

@@ -230,12 +230,11 @@ describe('config defaults', () => {
       expect(loadConfig(dir).config).toEqual(createDefaultConfig());
     });
 
-    it('leaves the Claude auth channel to the host configuration in a new default config', async () => {
-      const dir = join(TMP, 'default-claude-auth-channel');
+    it('writes the Claude Code planner of a new default config with kind and tool only', async () => {
+      const dir = join(TMP, 'default-claude-planner');
       mkdirSync(dir, { recursive: true });
       await initConfig(dir, createDefaultConfig());
-      // No admitted CLI can enforce a method (docs/AUTH-METHOD-MATRIX.md), so a
-      // persisted default `session` would read as a user choice and be refused.
+      // A CLI runner block has no auth key: the tool runs with the sign-in that it already has.
 
       const written = YAML.parse(
         readFileSync(join(dir, SPLITBRIEF_DIR, 'config.yaml'), 'utf-8'),

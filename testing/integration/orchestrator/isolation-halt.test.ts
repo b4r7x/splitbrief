@@ -89,7 +89,6 @@ function opencodeConfig(): CliImplementerConfig {
   return {
     kind: 'cli',
     tool: 'opencode',
-    authChannel: 'provider-dependent',
     model: 'opencode/test-isolation',
     contextLength: 4096,
   };

@@ -5,7 +5,6 @@ import type { ReadinessCheck, RunnerReadinessCause } from './types.js';
 const sharedCause: RunnerReadinessCause = {
   tool: 'codex',
   cause: 'auth-unknown',
-  authChannel: 'session',
   seats: ['PLAN', 'BUILD', 'REVIEW'],
 };
 
@@ -29,26 +28,18 @@ describe('runner readiness causes', () => {
     ]);
   });
 
-  it('keeps tools, authentication selections, causes and affected seats distinct', () => {
+  it('keeps tools, causes and affected seats distinct', () => {
     expect(
       sameRunnerCause(sharedCause, { ...sharedCause, seats: ['REVIEW', 'BUILD', 'PLAN'] }),
     ).toBe(true);
     for (const cause of [
       { ...sharedCause, tool: 'claude-code' as const },
-      { ...sharedCause, authChannel: 'api-key' as const },
       { ...sharedCause, cause: 'unauthenticated' as const },
       { ...sharedCause, seats: ['PLAN', 'REVIEW'] },
       { ...sharedCause, seats: ['PLAN', 'BUILD (other)', 'REVIEW'] },
     ]) {
       expect(sameRunnerCause(sharedCause, cause)).toBe(false);
     }
-    const checks: ReadinessCheck[] = ['session', 'api-key'].map((channel) => ({
-      id: channel,
-      severity: 'blocker',
-      summary: channel,
-      runnerCause: { ...sharedCause, authChannel: channel === 'session' ? 'session' : 'api-key' },
-    }));
-    expect(buildRunnerAdmissionChecks(checks)).toHaveLength(2);
   });
 
   it('groups a cause that has no public diagnostic state', () => {

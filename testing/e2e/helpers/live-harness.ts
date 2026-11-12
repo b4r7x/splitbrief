@@ -34,11 +34,7 @@ import {
   SUMMARY_FILE,
   TASKS_FILE,
 } from '../../../src/core/paths.js';
-import {
-  CLI_TOOL_IDS,
-  type CliToolId,
-  defaultCliAuthChannel,
-} from '../../../src/core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_IDS, type CliToolId } from '../../../src/core/runners/cli-tool-catalog.js';
 import { detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
 import { includes } from '../../../src/utils/type-guards.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
@@ -95,7 +91,6 @@ async function liveToolBlocker(tool: string, signal: AbortSignal): Promise<strin
   const [detection] = await detectAvailableCliTools({
     tools: [tool],
     projectDir: process.cwd(),
-    authChannels: { [tool]: defaultCliAuthChannel(tool).id },
     signal,
   });
   if (detection === undefined) return `${tool} produced no detection record`;
@@ -153,9 +148,6 @@ export async function gateLiveMatrixRow(
   const records = await detectAvailableCliTools({
     tools: catalogTools,
     projectDir: process.cwd(),
-    authChannels: Object.fromEntries(
-      catalogTools.map((tool) => [tool, defaultCliAuthChannel(tool).id]),
-    ),
     signal,
   });
   signal.throwIfAborted();

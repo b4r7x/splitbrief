@@ -24,7 +24,7 @@ vi.mock('../../../src/engine/runners/probe-availability.js', () => ({
   ) => (await import('#testing/helpers/start-command.js')).probeRunnerAvailabilityMock(...args),
 }));
 
-const API_KEY = 'legacy-claude-api-key-canary-6f21';
+const API_KEY = 'claude-api-key-canary-6f21';
 
 let projectDir: string;
 let binDir: string;
@@ -39,7 +39,7 @@ function configFilePath(): string {
   return join(projectDir, SPLITBRIEF_DIR, CONFIG_FILE);
 }
 
-function writeLegacyConfig(): void {
+function writeClaudeConfig(): void {
   const config = {
     ...createDefaultConfig(),
     planner: {
@@ -51,7 +51,7 @@ function writeLegacyConfig(): void {
   mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
   writeFileSync(
     configFilePath(),
-    `# Keep this legacy Claude selection byte-for-byte.\n${YAML.stringify(toYaml(config))}`,
+    `# Keep this Claude selection byte-for-byte.\n${YAML.stringify(toYaml(config))}`,
     'utf-8',
   );
 }
@@ -85,13 +85,13 @@ function writeClaudeShim(): void {
 
 beforeEach(() => {
   resetAllStores();
-  projectDir = createTempDir('legacy-cli-auth-channel');
-  binDir = createTempDir('legacy-cli-auth-channel-bin');
+  projectDir = createTempDir('claude-session-channel');
+  binDir = createTempDir('claude-session-channel-bin');
   authMarkerPath = join(binDir, 'auth-channel.txt');
   createTestGitRepo(projectDir);
-  writeLegacyConfig();
+  writeClaudeConfig();
   writeClaudeShim();
-  homeDir = createTempDir('legacy-cli-auth-channel-home');
+  homeDir = createTempDir('claude-session-channel-home');
   mkdirSync(join(homeDir, '.claude'), { recursive: true });
   writeFileSync(join(homeDir, '.claude', '.credentials.json'), '{"session":"stub"}\n', 'utf-8');
   stdoutWrites = [];
@@ -120,7 +120,7 @@ afterEach(() => {
   cleanupTempDir(homeDir);
 });
 
-describe('CLI integration: legacy Claude auth-channel start', () => {
+describe('CLI integration: Claude Code start on its session channel', () => {
   it('projects the session default channel without rewriting the loaded YAML', async () => {
     const path = configFilePath();
     const before = readFileSync(path, 'utf-8');
@@ -139,7 +139,7 @@ describe('CLI integration: legacy Claude auth-channel start', () => {
 
     let gates: readonly RunnerGate[] | undefined;
     const result = await runCommand(
-      ['start', '--project', projectDir, '--json', 'verify legacy auth'],
+      ['start', '--project', projectDir, '--json', 'verify session auth'],
       {
         initStores: async () => {},
         runHeadless: async ({ prepared }) => {

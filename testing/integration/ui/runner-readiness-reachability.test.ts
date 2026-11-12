@@ -9,8 +9,6 @@ import {
 } from '../../../src/core/discovery/detection.js';
 import {
   CLI_TOOL_CATALOG,
-  CLI_TOOL_IDS,
-  defaultCliAuthChannel,
   LISTED_CLI_TOOL_IDS,
 } from '../../../src/core/runners/cli-tool-catalog.js';
 import {
@@ -44,14 +42,10 @@ async function cliPickerOptions(
 ): Promise<PickerOption[]> {
   const state = overrides.state ?? 'ready';
   const resolveExecutable = overrides.resolveExecutable ?? (async () => PROBE_EXECUTABLE);
-  const authChannels = Object.fromEntries(
-    CLI_TOOL_IDS.map((tool) => [tool, defaultCliAuthChannel(tool).id]),
-  );
   const detectCliTools = () =>
     detectAvailableCliTools({
       resolveExecutable,
       probeReadiness: async ({ tool }) => deriveCliReadiness(cliReadinessFactsFor(state, tool)),
-      authChannels,
     });
 
   const detection = await detectAll({

@@ -126,7 +126,6 @@ if (call === 1) {
     const tools = await detectAvailableCliTools({
       projectDir: target.projectDir,
       tools: ['codex'],
-      authChannels: { codex: 'session' },
       role: 'planner',
     });
     if (tools[0]?.diagnostic.state !== 'ready') {

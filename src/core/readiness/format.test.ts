@@ -276,7 +276,6 @@ describe('readiness formatting', () => {
       },
       {
         ...cliReadinessFactsFor('unauthenticated', 'opencode'),
-        authChannel: 'provider-dependent',
         providerAuth: { kind: 'empty' },
       },
     );

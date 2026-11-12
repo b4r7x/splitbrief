@@ -107,7 +107,6 @@ Press ⏎ on a Fallback row to open the tool/model picker in its fallback slot.
 Its title is `<SEAT> fallback · tool, model, effort`.
 The first row, None, clears the fallback. The other rows offer only CLI tools that the seat can host.
 Model, effort and variant choices work as they do for the seat. Model-id axes stay in `fallback.model`.
-The fallback slot has no auth-method row.
 Choosing an automatic model saves no `fallback.model` field.
 The picker refuses the seat's own identity and stays open with `<SEAT> runs <identity> now · choose another tool or model`.
 On the same tool, no model or the seat's resolved model counts as the same identity. Changing only `effort` or `variant` keeps the same identity. Changing an effort token inside the model ID changes the identity.
@@ -188,7 +187,6 @@ CLI model pickers can show stale cached rows after a shorter successful read. Th
 | `tool` | enum | yes | `claude-code` \| `codex` \| `opencode` \| `kilo-code` \| `cursor` \| `command-code` \| `antigravity` |
 | `model` | string | no | A model ID, or `auto`. Omitting `model` and writing `model: auto` are equivalent: both mean the model the tool itself has selected on this machine, which SPLITBRIEF reads at preparation and passes as `--model`. |
 | `args` | string[] | no | Extra argv appended to the tool invocation. Every token is validated against the adapter-owned authority set: a flag that would override role, permissions, sandbox, cwd or added roots, config sources, tools, hooks/plugins/MCP, session selection, prompt transport, output format, terminal protocol, final-output path, updates, or approval behavior is refused before spawn. Command Code has a turn cap of its own; SPLITBRIEF sends `--max-turns 2147483647`, so a call does not stop at it. To set a cap, add `--max-turns <n>` to `args`, with digits only, for example `args: ['--max-turns', '300']`; your value wins. |
-| `authChannel` | enum | no | `api-key` \| `session` \| `provider-dependent`. The value must be a channel the tool declares, else the load fails: `claude-code`, `codex` and `cursor` declare `session` and `api-key`; `command-code` and `antigravity` declare `session`; `opencode` and `kilo-code` declare `provider-dependent` (`CLI_TOOL_CATALOG`, `src/core/runners/cli-tool-catalog.ts`). Omitted or `provider-dependent`: the host CLI's own configuration and login decide. An explicit `session` or `api-key` is refused before dispatch, because no tool has enforcement evidence for a method choice. Omit the field and the host CLI's own login decides. See [Provider authentication](#provider-authentication) and [AUTH-METHOD-MATRIX.md](./AUTH-METHOD-MATRIX.md#per-channel-facts). |
 | `outputFormat` | enum | no | `stream-json` \| `jsonl` \| `text` \| `opencode`. Selects the parser for the configured-command and legacy command paths. An admitted CLI's parser and terminal protocol are adapter-owned: the backend's native parser stays authoritative, and an implementer `outputFormat` that would replace a structured terminal contract refuses before spawn. |
 
 **What `model: auto` resolves to.** At preparation SPLITBRIEF reads the model the tool itself has selected on this host and starts the seat on it explicitly (`readHostModelSelection`, `src/engine/runners/host-model-selection.ts`), passing it as `--model`. The YAML is never rewritten: it keeps `auto`, which is the operator's intent, while the run's own record — `workflow_config`, `seats.json` and each task start — names the model that was resolved. A missing or unparseable file is not an error: the seat keeps automatic selection, no `--model` flag is passed, and readiness carries a warning saying the tool's own default applies.
@@ -297,7 +295,7 @@ When the command exits non-zero, SPLITBRIEF reads its stderr and the last line i
 | `command` | non-empty string | yes | Executable path (relative to project or absolute). Availability is an existence/executability check (`fs.access` with `X_OK`, or a `$PATH` lookup for bare names) — SPLITBRIEF never runs your command with `--version`, so the script is not invoked until planning starts. |
 | `args` | string[] | no | Argv. An argument that contains `{prompt}` fails the load: SPLITBRIEF sends the prompt on stdin. |
 | `outputFormat` | enum | no | Same values as `cli` |
-| `env` | string[] | no | Uppercase names of the environment variables the command needs, for example `['MY_AGENT_TOKEN']`. The command runs in its staged runner environment: a private `HOME` and `TMPDIR`, your `PATH` without the project's own directories, the locale and terminal keys, and these names. No other variable of your shell reaches it ([AUTH-METHOD-MATRIX.md](./AUTH-METHOD-MATRIX.md#child-environment)). |
+| `env` | string[] | no | Uppercase names of the environment variables the command needs, for example `['MY_AGENT_TOKEN']`. The command runs in its staged runner environment: a private `HOME` and `TMPDIR`, your `PATH` without the project's own directories, the locale and terminal keys, and these names. No other variable of your shell reaches it ([API-KEYS.md §Child environment](./API-KEYS.md#child-environment)). |
 | `capabilities` | partial object | no | **Planner and reviewer only.** Declares optional planner features such as `supportsConversationalPlanning`, `supportsSessionResume`, and `supportsSelfSummarisation` so the orchestrator skips features the wrapper cannot provide. `supportsSessionResume: true`, `supportsEffort: true` and `supportsImages: true` are rejected on `shell`/`agent` planners and reviewers — the command-based adapter has no session-handle contract and no channel to deliver an effort hint or image attachments to the subprocess (use a `cli`/`api` planner or reviewer instead). The value `false` is accepted for each of them. Ignored (and rejected) on `implementer` — implementer write behavior is set via profile `capabilities.writesFiles`. |
 
 ```yaml
@@ -1188,13 +1186,10 @@ Source: `src/core/providers/catalog.ts`, `src/cli/setup.ts`, `src/engine/provide
 
 ### Provider authentication
 
-CLI method selection requires exact tool/platform/version invocation-enforcement evidence. The current matrix is empty: an explicit `session` or `api-key` selection is refused; omit `authChannel` and configure authentication through the host CLI. Provider and model routes do not select or prove a billing method.
+A `cli` runner uses the sign-in that the tool already has; sign in with the tool's own command. A session tool gets no API key of your shell. OpenCode and Kilo Code get every `*_API_KEY` of your shell ([API-KEYS.md §Child environment](./API-KEYS.md#child-environment)). Provider and model routes do not change how a tool signs in.
 
 | Variable | Provider | Notes |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | `cli` `claude-code` | A credential the host CLI may use. Its own configuration determines the method; this does not prove API billing. |
-| `OPENAI_API_KEY` | `cli` `codex` | A credential the host CLI may use; SPLITBRIEF offers no enforced method switch today. |
-| `CURSOR_API_KEY` | `cli` `cursor` | A credential the host CLI may use; SPLITBRIEF offers no enforced method switch today. |
 | `OLLAMA_LOCAL_API_KEY` | local `ollama` daemon | Optional. Only use it through `apiKey: env:OLLAMA_LOCAL_API_KEY` when your loopback daemon requires authentication. |
 
 The three admitted local providers have no default credential environment variable; they are loopback connections with optional explicit authentication. A custom provider has no inferable env var name either, so it must set `service`, `offering`, `apiBase`, and an inline `apiKey` in YAML — an `apiKey: env:VAR` reference is refused for a provider the catalog does not know. `cli` `command-code` has no credential environment variable — its published CLI documentation names none, so it authenticates only through its own `cmd login` session, which the sandbox bridges as files.
@@ -1374,6 +1369,7 @@ key.
 | `workflow.costGate` (`cost_gate`) | rejected — `workflow.costGate: Unknown config key …` | None. The cost-approval gate is gone; the plan card (§5 `approve`) is the remaining stop before implementation. |
 | `implementerProfiles.profiles.*.costTier` (`cost_tier`) | rejected — `cost_tier: Unknown config key …` | None. Routing is by capability — context window, then name — never by price. |
 | `implementerProfiles.profiles.*.pricePer1M` (`price_per1_m`) | rejected — `price_per1_m: Unknown config key …` | None. Profiles carry no price. |
+| `authChannel` (`auth_channel`) in a `cli` runner block: `planner`, `reviewer`, `implementer` or `implementerProfiles.profiles.*` | rejected — `planner.authChannel: Unknown config key …` | None. Remove the line. SPLITBRIEF runs each tool with the sign-in that the tool already has. |
 
 `implementer.model: auto:cheapest` does not fail the load. Nothing parses the marker any more, so the loader keeps `auto:cheapest` as a literal model id. The run then asks the tool or the endpoint for a model with that id. Name a concrete model, or write `auto` to use the tool's own selection.
 
@@ -1387,7 +1383,7 @@ A representative config: Claude Code subscription as planner, a small local LM S
 ```yaml
 version: 3
 
-# ---------- Planner: host-configured Claude Code ----------
+# ---------- Planner: Claude Code on its own sign-in ----------
 planner:
   kind: cli
   tool: claude-code
@@ -1477,7 +1473,7 @@ sessions:
 
 What this run needs locally (never commit credential values):
 - A running LM Studio daemon on `localhost:1234` for the implementer — it takes no credential
-- CLI credentials according to the host tool’s configuration; explicit unproven method selection is refused
+- A signed-in CLI tool for each CLI seat; each tool runs with the sign-in that it already has
 
 Then:
 

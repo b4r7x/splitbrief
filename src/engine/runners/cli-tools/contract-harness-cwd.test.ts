@@ -3,6 +3,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { stubSignInHome } from '#testing/helpers/sign-in-home.js';
 import { CLI_CONFORMANCE_EXIT_CODES } from './contract-harness.js';
 import { cwdProbePrompt, runCwdCliConformance } from './contract-harness-cwd.js';
 
@@ -41,6 +42,7 @@ async function scenario() {
   const scratchDir = join(root, 'scratch');
   await mkdir(toolsDir, { recursive: true });
   await mkdir(scratchDir, { recursive: true });
+  await stubSignInHome(join(root, 'home'), []);
   vi.stubEnv('PATH', `${toolsDir}${delimiter}${process.env.PATH ?? ''}`);
   return {
     toolsDir,

@@ -129,10 +129,4 @@ describe('the test config factory tracks the product writer', () => {
   it('builds the default planner the product writer emits, field for field', () => {
     expect(makeConfig().planner).toStrictEqual(createDefaultConfig().planner);
   });
-
-  it('names no Claude Code channel and preserves unset channels in fixtures', () => {
-    const cliImplementer = makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }).implementer;
-    expect(Object.hasOwn(makeConfig().planner, 'authChannel')).toBe(false);
-    expect(Object.hasOwn(cliImplementer, 'authChannel')).toBe(false);
-  });
 });

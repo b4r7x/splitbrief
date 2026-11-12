@@ -25,8 +25,7 @@ const CODEX_VERSION_ARGS = Object.freeze(['--version'] as const);
 
 // The refreshed call may refresh over the network when stale; the probe timeout and remembered
 // catalog cover a cold miss. With no `auth.json` it exits 0 with the bundled list, which parses the
-// same; a credential-less session channel stops first as `missing-credential`, so only an
-// `authChannel: undefined` context gets it.
+// same; a credential-less session channel stops first as `missing-credential`.
 export const CODEX_NATIVE_MODEL_CATALOG_PROBE = Object.freeze({
   capability: 'debug-models-v2',
   command: Object.freeze([CODEX_COMMAND, 'debug', 'models'] as const),

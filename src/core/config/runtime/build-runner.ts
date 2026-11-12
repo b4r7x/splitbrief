@@ -10,7 +10,6 @@ import {
   cliModelPolicyViolations,
   getCliModelPolicy,
   LISTED_CLI_TOOL_IDS,
-  type CliAuthChannelId,
 } from '../../runners/cli-tool-catalog.js';
 import {
   runnerRoleForActiveRole,
@@ -30,7 +29,6 @@ import type { OutputFormat } from '../../schemas/enums.js';
 export interface BuildRunnerOpts {
   kind?: RunnerKind | undefined;
   tool?: string | undefined; // cli: tool id; api: provider name
-  authChannel?: CliAuthChannelId | undefined;
   model?: string | undefined;
   apiBase?: string | undefined;
   apiKey?: string | undefined;
@@ -100,7 +98,6 @@ export interface CarriedSeatSettings {
   maxToolCalls?: number;
   args?: string[];
   outputFormat?: OutputFormat;
-  authChannel?: CliAuthChannelId;
 }
 
 type TargetState = 'new' | 'same' | 'changed';
@@ -166,8 +163,6 @@ export function carriedSeatSettings(
     ...(subprocess?.maxToolCalls !== undefined && { maxToolCalls: subprocess.maxToolCalls }),
     ...(subprocess?.args !== undefined && { args: subprocess.args }),
     ...(subprocess?.outputFormat !== undefined && { outputFormat: subprocess.outputFormat }),
-    ...(same?.kind === 'cli' &&
-      same.authChannel !== undefined && { authChannel: same.authChannel }),
   };
 }
 
@@ -338,11 +333,9 @@ function buildCliConfig(
   }
   const args = opts.args ?? carried.args;
   const outputFormat = opts.outputFormat ?? carried.outputFormat;
-  const authChannel = opts.authChannel ?? carried.authChannel;
   const config: Record<string, unknown> = {
     kind: 'cli',
     tool,
-    ...(authChannel !== undefined && { authChannel }),
     ...(args !== undefined && { args }),
     ...(outputFormat !== undefined && { outputFormat }),
     ...spreadWatchdogs(resolveWatchdogs(opts, carried)),

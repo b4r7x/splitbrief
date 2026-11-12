@@ -32,7 +32,7 @@ describe('startup discovery shutdown', () => {
       const launches = join(bin, 'launches');
       for (const path of [projectDir, home, bin]) mkdirSync(path);
       writeConfigYaml(projectDir, {
-        planner: { kind: 'cli', tool: 'claude-code', authChannel: 'api-key' },
+        planner: { kind: 'cli', tool: 'claude-code' },
         implementer: { kind: 'shell', command: 'unused-implementer', model: 'fixture' },
       });
       writeFakeNodeCli(
@@ -58,6 +58,11 @@ describe('startup discovery shutdown', () => {
           'setTimeout(() => process.exit(0), 30000);',
         ].join('\n'),
       );
+      // A Claude Code sign-in file in the test's own HOME: on Linux the session is read from it,
+      // so `claude auth status` runs there as it does on macOS, where the keychain holds it.
+      mkdirSync(join(home, '.claude'));
+      writeFileSync(join(home, '.claude', '.credentials.json'), '{"claudeAiOauth":"fixture"}');
+      vi.stubEnv('CLAUDE_CONFIG_DIR', undefined);
       vi.stubEnv('HOME', home);
       vi.stubEnv('XDG_CONFIG_HOME', join(home, 'config'));
       vi.stubEnv('XDG_CACHE_HOME', join(home, 'cache'));
@@ -65,7 +70,6 @@ describe('startup discovery shutdown', () => {
       vi.stubEnv('PATH', bin);
       vi.stubEnv('GH_TOKEN', 'ghp_discovery_shutdown_fixture');
       vi.stubEnv('GITHUB_TOKEN', 'ghp_discovery_shutdown_fixture');
-      vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-discovery-shutdown-fixture');
       vi.mocked(globalThis.fetch).mockImplementation(async () => new Response('{}'));
       resetAllStores();
       const restored = vi.fn();

@@ -1,14 +1,8 @@
-import type { ActiveRunnerConfig } from '../../../core/config/accessors/active-runner.js';
 import { isAutomaticModel } from '../../../core/providers/automatic-model.js';
 import type { ProvenanceWord } from '../../../core/providers/provenance.js';
 import type { SavedCatalog } from '../../../core/discovery/catalog-read-merge.js';
 import type { CliProviderAuth } from '../../../core/discovery/detection.js';
-import { deriveCliAuthSelection } from '../../../core/runners/cli-auth-selection.js';
-import type {
-  CliAuthEnforcementEvidence,
-  CliAuthMethod,
-  CliToolId,
-} from '../../../core/runners/cli-tool-catalog.js';
+import type { CliToolId } from '../../../core/runners/cli-tool-catalog.js';
 import { UNSET_EFFORT_WORD } from '../../../core/runners/effort-channel.js';
 import { routeAuthState, type RouteAuthState } from '../../../core/runners/route-auth.js';
 import { CATALOG_SUGGESTION_MEMBERSHIP } from '../../../engine/providers/model/catalog.js';
@@ -23,7 +17,6 @@ import {
   stepOptionAxis,
   type OptionAxisName,
 } from './option-axis.js';
-import type { PickerOption } from './options.js';
 import type { ModelOption, ModelVariant } from './recency.js';
 
 /**
@@ -72,69 +65,9 @@ export type RightRow =
       last: boolean;
       tree: TreeLead;
     }
-  | {
-      kind: 'auth';
-      model: ModelOption;
-      /** The method the row reads: the drafted one, else the one the seat runs today. */
-      method: CliAuthMethod | 'host-configured';
-      /** The ladder space steps through; empty where there is nothing to choose. */
-      choices: readonly AuthMethodChoice[];
-      /** Whether the ladder has anywhere to step, so no surface promises a key that cannot move. */
-      steps: boolean;
-      /** The seat carries a method no adapter can enforce, so dispatch would refuse the run. */
-      unproven: boolean;
-      /** Picks the tree glyph that closes the model's child block. */
-      last: boolean;
-      tree: TreeLead;
-    }
   | { kind: 'action'; action: 'browse-catalog'; text: string };
 
 type AxisRow = Omit<Extract<RightRow, { kind: 'axis' }>, 'tree'>;
-type AuthRow = Omit<Extract<RightRow, { kind: 'auth' }>, 'tree'>;
-
-/** A method the seat can be bound to, or the tool's own login and configuration. */
-export type AuthMethodChoice = CliAuthMethod | 'host-configured';
-
-/**
- * Whether this seat may choose an authentication method for one invocation, and
- * what it runs today. `methods` is empty unless the matrix proves this exact
- * adapter, platform and installed version forces the method it is handed.
- */
-export type AuthMethodOffer = Readonly<{
-  methods: readonly CliAuthMethod[];
-  selected: AuthMethodChoice;
-}>;
-
-/**
- * The offer belongs to the runner the seat actually runs: a tool the cursor is
- * merely visiting has no seat to bind a method to, and an API or custom-command
- * seat authenticates through its own connection rather than a CLI's login.
- */
-export function authMethodOffer(input: {
-  item: PickerOption | undefined;
-  runner: ActiveRunnerConfig;
-  platform?: NodeJS.Platform;
-  /** The matrix to read; production's is the default, so no fixture can label a tool supported. */
-  evidence?: readonly CliAuthEnforcementEvidence[];
-}): AuthMethodOffer | undefined {
-  const { item, runner } = input;
-  if (item?.kind !== 'cli' || item.isCurrent !== true) return undefined;
-  if (runner.kind !== 'cli' || runner.tool !== item.id) return undefined;
-  const selection = deriveCliAuthSelection({
-    tool: runner.tool,
-    platform: input.platform ?? process.platform,
-    installedVersion: item.version,
-    ...(input.evidence === undefined ? {} : { evidence: input.evidence }),
-  });
-  const channel = runner.authChannel;
-  return {
-    methods: selection.kind === 'enforceable' ? selection.channels : [],
-    // A configured `provider-dependent` names a route, not a method, and an
-    // omitted channel is the tool's own login — neither is a user's choice.
-    selected:
-      channel === undefined || channel === 'provider-dependent' ? 'host-configured' : channel,
-  };
-}
 
 /** Whether the catalog fetch that feeds suggestion rows has landed. */
 export type CatalogLane = 'ready' | 'pending' | 'failed';
@@ -153,25 +86,6 @@ export const AUTO_ROW_METADATA = 'tool decides';
 
 /** One wording for the escape row that opens the unfiltered catalog. */
 export const BROWSE_CATALOG_TEXT = 'Browse the full catalog…';
-
-/** The label the authentication row carries; the method itself is its value. */
-export const AUTH_ROW_LABEL = 'auth';
-
-/**
- * The words the row spells. A method is how the call authenticates, never what it
- * costs, so no billing posture is spoken here. `host-configured` keeps one wording
- * whether it is the only answer or one rung of a ladder, and it is short enough to
- * survive the Models column — a cut sentence would leave the one row that answers
- * this question saying nothing.
- */
-export const AUTH_METHOD_WORDS: Readonly<Record<AuthMethodChoice, string>> = {
-  session: 'session',
-  'api-key': 'api key',
-  'host-configured': 'CLI decides',
-};
-
-/** What a configured method no adapter can enforce reads as: the run would be refused. */
-export const AUTH_UNPROVEN_WORD = 'unproven';
 
 /** True when any route of the row, or the row itself, carries the tool's own preset ladder. */
 export function offersEffortLadder(model: ModelOption): boolean {
@@ -246,43 +160,6 @@ function axisRowsFor(input: {
   return rows.map((row, index) => ({ ...row, last: index === rows.length - 1 }));
 }
 
-/**
- * The ladder the row steps: the enforceable methods, then the host configuration
- * that unsets them. Where nothing is enforceable there is nothing to choose — except
- * for a seat that already carries a method, whose only rung is the way back out,
- * because dispatch refuses that run and this row is where the field is removed.
- */
-function authMethodChoices(offer: AuthMethodOffer): readonly AuthMethodChoice[] {
-  if (offer.methods.length > 0) return [...offer.methods, 'host-configured'];
-  return offer.selected === 'host-configured' ? [] : ['host-configured'];
-}
-
-/**
- * The one row that answers how the seat's calls authenticate. A method drafted
- * before this ladder existed is not a rung of it, so the row reads what the seat
- * runs until the draft lands on something this ladder spells.
- */
-function authRowFor(
-  model: ModelOption,
-  offer: AuthMethodOffer,
-  draft: AuthMethodChoice | null | undefined,
-): AuthRow {
-  const choices = authMethodChoices(offer);
-  const method = draft != null && choices.includes(draft) ? draft : offer.selected;
-  return {
-    kind: 'auth',
-    model,
-    method,
-    choices,
-    // The one rung the row already reads is not a step; the byline must not promise it.
-    steps: choices.some((choice) => choice !== method),
-    // A method outside the proven set is refused at dispatch, whether the matrix
-    // proves nothing at all or proves a different method for this adapter.
-    unproven: method !== 'host-configured' && !offer.methods.includes(method),
-    last: false,
-  };
-}
-
 function provenanceFor(model: ModelOption, customModels: readonly string[]): ProvenanceWord {
   if (model.isCustom === true || customModels.includes(model.id)) return 'Custom';
   switch (model.membership) {
@@ -341,9 +218,6 @@ export function buildRightRows(input: {
   browseCatalog: boolean;
   optionDraftId?: string | null;
   effortDraft?: string | null;
-  /** The seat's own method offer; absent where no CLI invocation is being configured. */
-  authMethod?: AuthMethodOffer | undefined;
-  authDraft?: AuthMethodChoice | null;
 }): RightRow[] {
   const sectioned = input.models.length > SECTION_THRESHOLD;
   const automatic: ModelOption[] = [];
@@ -388,18 +262,7 @@ export function buildRightRows(input: {
   }
   order.sort((a, b) => groupRank(a) - groupRank(b));
 
-  const rows: RightRow[] = [];
-  const pushModel = (placement: Placement, section: string): void => {
-    const model = placement.model;
-    const expanded = model.id === input.expandedModelId;
-    rows.push({
-      kind: 'model',
-      model,
-      provenance: placement.provenance,
-      section,
-      expanded,
-    });
-    if (!expanded) return;
+  const childRowsOf = (model: ModelOption): RightRow[] => {
     const variants = model.variants ?? [];
     const axesOf = (providerPrefix: string): AxisRow[] =>
       axisRowsFor({
@@ -410,34 +273,21 @@ export function buildRightRows(input: {
       });
     // An option family and a variant-less row both hold one route: their axes hang
     // off the model itself rather than off a route row.
-    const flat = isOptionFamily(model) || variants.length === 0;
+    if (isOptionFamily(model) || variants.length === 0) {
+      return axesOf('').map((row) => ({
+        ...row,
+        tree: { depth: 1, parentContinues: false } as const,
+      }));
+    }
     // Each route carries its own axes: a row that spans two providers offers
     // every spelling of both, not just the drafted one's.
-    const routes = flat ? [] : routePrefixesOf(variants);
-    const flatAxes = flat ? axesOf('') : [];
-    // How the call authenticates is answered once, above the routes and axes it
-    // applies to, so each of those keeps the glyph it already draws.
-    if (input.authMethod !== undefined) {
-      rows.push({
-        ...authRowFor(model, input.authMethod, input.authDraft),
-        last: routes.length === 0 && flatAxes.length === 0,
-        tree: { depth: 1, parentContinues: false },
-      });
-    }
-    if (flat) {
-      rows.push(
-        ...flatAxes.map((row) => ({
-          ...row,
-          tree: { depth: 1, parentContinues: false } as const,
-        })),
-      );
-      return;
-    }
+    const children: RightRow[] = [];
+    const routes = routePrefixesOf(variants);
     for (const prefix of routes) {
       const variant = variants.find((entry) => entry.providerPrefix === prefix);
       if (variant === undefined) continue;
       const isLastRoute = prefix === routes[routes.length - 1];
-      rows.push({
+      children.push({
         kind: 'route',
         model,
         variant,
@@ -450,13 +300,29 @@ export function buildRightRows(input: {
           catalog: input.catalog,
         }),
       });
-      rows.push(
+      children.push(
         ...axesOf(prefix).map((row) => ({
           ...row,
           tree: { depth: 2, parentContinues: !isLastRoute } as const,
         })),
       );
     }
+    return children;
+  };
+
+  const rows: RightRow[] = [];
+  const pushModel = (placement: Placement, section: string): void => {
+    const model = placement.model;
+    const children = model.id === input.expandedModelId ? childRowsOf(model) : [];
+    // A row with nothing under it confirms like any closed row, whatever id the store drafted.
+    rows.push({
+      kind: 'model',
+      model,
+      provenance: placement.provenance,
+      section,
+      expanded: children.length > 0,
+    });
+    rows.push(...children);
   };
 
   for (const model of automatic) {
@@ -492,8 +358,6 @@ export function rightRowKey(row: RightRow): string {
       return `route:${row.model.id}:${row.variant.fullId}`;
     case 'axis':
       return `axis:${row.model.id}:${row.providerPrefix}:${row.axis}`;
-    case 'auth':
-      return 'auth';
     case 'action':
       return 'action:browse-catalog';
     default:

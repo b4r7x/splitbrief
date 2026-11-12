@@ -21,7 +21,6 @@ const ARTIFACTS = join(import.meta.dirname, '../../../.test-artifacts');
 const opencode: CliImplementerConfig = {
   kind: 'cli',
   tool: 'opencode',
-  authChannel: 'provider-dependent',
   model: 'opencode/test-isolation',
   contextLength: 4096,
 };

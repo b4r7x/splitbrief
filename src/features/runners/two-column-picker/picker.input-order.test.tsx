@@ -464,6 +464,14 @@ const TWINS: Case[] = [
     start: '>custom:mine',
     steps: ['3', CTRL_D],
   },
+  {
+    id: 'A51',
+    name: 'a tool query from delta that leaves one tool with a model list, ⏎',
+    column: L,
+    setup: [DOWN, DOWN],
+    start: '>Delta',
+    steps: ['g', ENTER],
+  },
 ];
 
 const CLICKS: Array<

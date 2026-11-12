@@ -11,7 +11,6 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../core/paths.js';
-import { defaultCliAuthChannel } from '../../core/runners/cli-tool-catalog.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { Planner } from '../../engine/planners/types.js';
 import { registerSpecCommand } from './spec.js';
@@ -34,9 +33,7 @@ beforeEach(() => {
     installCompatibleCliShim({
       directory: shimDir,
       tool: 'claude-code',
-      authChannel: defaultCliAuthChannel('claude-code').id,
     }),
-    'test-only-spec-options-shim-key',
   );
   consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
   createPlannerMock.mockReset();

@@ -11,7 +11,6 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { defaultCliAuthChannel } from '../../../core/runners/cli-tool-catalog.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
@@ -369,7 +368,7 @@ describe('handlePlanningFailure', () => {
         sessionId,
         bus,
         config: makeConfig({
-          planner: { kind: 'cli', tool: 'codex', authChannel: defaultCliAuthChannel('codex').id },
+          planner: { kind: 'cli', tool: 'codex' },
         }),
       }),
     });
@@ -405,7 +404,7 @@ describe('handlePlanningFailure', () => {
         sessionId,
         bus,
         config: makeConfig({
-          planner: { kind: 'cli', tool: 'codex', authChannel: defaultCliAuthChannel('codex').id },
+          planner: { kind: 'cli', tool: 'codex' },
         }),
       }),
     });

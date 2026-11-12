@@ -3,13 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { freezeProbeDeadlines } from '#testing/helpers/fake-timers.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import {
-  CLI_TOOL_CATALOG,
-  LISTED_CLI_TOOL_IDS,
-  defaultCliAuthChannel,
-  type CliAuthChannelId,
-  type CliToolId,
-} from '../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG, LISTED_CLI_TOOL_IDS } from '../../core/runners/cli-tool-catalog.js';
 import { error } from '../../utils/error.js';
 import { probeCliReadiness } from '../runners/cli-tools/readiness-probe.js';
 import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
@@ -24,12 +18,6 @@ const HOST_STATE_ENV = [
   'LOCALAPPDATA',
 ] as const;
 
-function defaultAuthChannels(): Partial<Record<CliToolId, CliAuthChannelId>> {
-  const channels: Partial<Record<CliToolId, CliAuthChannelId>> = {};
-  for (const id of LISTED_CLI_TOOL_IDS) channels[id] = defaultCliAuthChannel(id).id;
-  return channels;
-}
-
 freezeProbeDeadlines();
 
 describe('all-admitted-tools auth detection', () => {
@@ -37,7 +25,6 @@ describe('all-admitted-tools auth detection', () => {
     const probedTools: string[] = [];
 
     const results = await detectAvailableCliTools({
-      authChannels: defaultAuthChannels(),
       resolveExecutable: async () => {
         throw error('cli-executable-unavailable', 'not installed');
       },
@@ -103,7 +90,6 @@ describe('all-admitted-tools auth detection', () => {
 
         const [result] = await detectAvailableCliTools({
           tools: ['kilo-code'],
-          authChannels: { 'kilo-code': 'provider-dependent' },
           resolveExecutable: async () => executable,
         });
 
@@ -164,7 +150,6 @@ describe('all-admitted-tools auth detection', () => {
 
         const [result] = await detectAvailableCliTools({
           tools: ['claude-code'],
-          authChannels: { 'claude-code': 'session' },
           resolveExecutable: async () => executable,
           probeReadiness: probeCliReadiness,
         });

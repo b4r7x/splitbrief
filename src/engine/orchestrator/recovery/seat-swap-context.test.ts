@@ -832,7 +832,7 @@ describe('loadSeatSwapContext', () => {
       expect(switchSeatOffer(context)?.candidates).toEqual([{ tool: 'claude-code' }]);
     });
 
-    it('checks only the fallback tool, on the default sign-in channel, and calls a missing one not installed', async () => {
+    it('checks only the fallback tool, and calls a missing one not installed', async () => {
       const projectDir = createTempDir('seat-swap-fallback-live-missing');
       dirs.push(projectDir);
       live.detectAvailableCliTools.mockResolvedValue([
@@ -845,7 +845,6 @@ describe('loadSeatSwapContext', () => {
       expect(live.detectAvailableCliTools).toHaveBeenCalledWith({
         projectDir,
         tools: ['claude-code'],
-        authChannels: { 'claude-code': 'session' },
       });
       expect(context?.fallbackBlockedReason).toBe('not installed');
       expect(switchSeatOffer(context)).toBeUndefined();

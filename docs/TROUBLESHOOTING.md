@@ -415,7 +415,6 @@ Files can be inside or outside the project. Relative paths use the project root.
 **Fix:**
 1. `claude /login` (or `claude setup-token`), then `claude auth status` to confirm `"loggedIn": true`.
 2. Re-run `splitbrief doctor`.
-3. Do not set an explicit `auth_channel` to work around it: readiness refuses any explicit method, because no CLI tool has an enforceable method ([AUTH-METHOD-MATRIX.md](./AUTH-METHOD-MATRIX.md)), so the child runs on the login `claude` itself holds.
 
 **Prevention:** Trust `splitbrief doctor` — including its refusals to overclaim. Readiness never reads a login off directory contents alone. For session-channel tools such as Codex, a positive `codex login status` proves a credential is present, not that the token is still live — the first real call settles liveness, and a dead token fails there with its own remediation (a host whose refresh token was rotated away server-side can still print `Logged in using ChatGPT` while every real call returns 401). A definitive negative — no credential, or the tool answering signed-out — still blocks, because that run really would have failed.
 
@@ -1362,7 +1361,7 @@ Copied images remain in `~/.splitbrief/clipboard/` so history and runs retain re
 
 **Prevention:** Refresh detection after you upgrade OpenCode across 2.0.0.
 
-**See also:** [docs/SUBSYSTEMS.md](./SUBSYSTEMS.md) (detection), [docs/AUTH-METHOD-MATRIX.md](./AUTH-METHOD-MATRIX.md) (why the listing runs with the host account).
+**See also:** [docs/SUBSYSTEMS.md](./SUBSYSTEMS.md) (detection), [docs/API-KEYS.md](./API-KEYS.md#child-environment) (what the listing can reach).
 
 ---
 

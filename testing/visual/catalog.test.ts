@@ -378,6 +378,23 @@ describe('visual catalog', () => {
     }
   });
 
+  it('shows the saved custom model the crew row opened as a closed row that confirms', async () => {
+    const scenario = findVisualScenario('overlay-picker-custom-model-no-children');
+    const checkpoint = scenario?.checkpoints[0];
+    const viewport = scenario?.viewports.find((size) => size.cols === 120);
+    if (!scenario || !checkpoint || !viewport) throw new Error('Missing custom model scenario');
+    const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
+    try {
+      const frame = stripAnsiStyles(await handle.waitForCheckpoint());
+      const row = rightCardRows(frame).find((line) => line.includes('Zz Custom Model'));
+      expect(row).toContain('▌');
+      expect(row).not.toContain('▴');
+      expect(frame).toContain('⏎ confirm · esc cancel');
+    } finally {
+      await handle.unmount();
+    }
+  });
+
   it.each([
     ['overlay-picker-version-timeout-signed-out', 'Auth required', 'Sign in to OpenAI Codex CLI'],
     ['overlay-picker-version-timeout-signed-in', 'Unverified', 'Verify OpenAI Codex CLI against'],
@@ -1106,8 +1123,6 @@ describe('visual catalog', () => {
       'overlay-local-connection-ollama',
       'overlay-local-connection-lmstudio',
       'overlay-local-connection-llamacpp',
-      'overlay-picker-auth-config-owned',
-      'overlay-picker-auth-unsupported',
     ]) {
       expect(findVisualScenario(id), id).toBeDefined();
     }

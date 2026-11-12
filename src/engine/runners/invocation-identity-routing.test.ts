@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CliAuthChannelId } from '../../core/runners/cli-tool-catalog.js';
 import type { CliImplementerConfig } from '../../core/schemas/implementer-config.js';
 import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -116,21 +115,16 @@ afterEach(() => {
   cleanupTempDir(projectDir);
 });
 
-type Channel = CliAuthChannelId | undefined;
-
 const callbacks = () => ({ onOutput: () => {}, signal: dispatch.controller.signal });
 
-const codexPlanner = (authChannel: Channel) =>
+const codexPlanner = () =>
   createCliPlanner({
-    config: makeConfig({
-      planner: { kind: 'cli', tool: 'codex', ...(authChannel !== undefined && { authChannel }) },
-    }),
+    config: makeConfig({ planner: { kind: 'cli', tool: 'codex' } }),
     cliSeat: admittedCliSeat(trustedShimGate({ dir: shimDir, tool: 'codex' })),
   });
 
-const claudePlanner = (authChannel: Channel) =>
+const claudePlanner = () =>
   createClaudeCodePlanner({
-    authChannel,
     cliSeat: admittedCliSeat(trustedShimGate({ dir: shimDir, tool: 'claude-code' })),
   });
 
@@ -149,39 +143,38 @@ function build(implementer: CliImplementerConfig) {
 const ROUTES: ReadonlyArray<{
   name: string;
   tool: string;
-  run: (ch: Channel) => Promise<unknown>;
+  run: () => Promise<unknown>;
 }> = [
   {
     name: 'generic PLAN',
     tool: 'codex',
-    run: (ch) => callPlanner(codexPlanner(ch), { projectDir, callbacks: callbacks() }),
+    run: () => callPlanner(codexPlanner(), { projectDir, callbacks: callbacks() }),
   },
   {
     name: 'generic REVIEW',
     tool: 'codex',
-    run: (ch) => codexPlanner(ch).review('prompt', projectDir, callbacks()),
+    run: () => codexPlanner().review('prompt', projectDir, callbacks()),
   },
   {
     name: 'generic BUILD',
     tool: 'codex',
-    run: (ch) =>
+    run: () =>
       build({
         kind: 'cli',
         tool: 'codex',
         contextLength: 8192,
         temperature: 0.3,
-        ...(ch !== undefined && { authChannel: ch }),
       }),
   },
   {
     name: 'Claude stream',
     tool: 'claude-code',
-    run: (ch) => callPlanner(claudePlanner(ch), { projectDir, callbacks: callbacks() }),
+    run: () => callPlanner(claudePlanner(), { projectDir, callbacks: callbacks() }),
   },
   {
     name: 'Claude one-shot',
     tool: 'claude-code',
-    run: (ch) => claudePlanner(ch).review('prompt', projectDir, callbacks()),
+    run: () => claudePlanner().review('prompt', projectDir, callbacks()),
   },
 ];
 
@@ -193,7 +186,7 @@ async function settle(run: () => Promise<unknown>): Promise<unknown> {
   }
 }
 
-function expectHostConfiguredIdentity(tool: string, configuredChannel?: CliAuthChannelId): void {
+function expectHostConfiguredIdentity(tool: string): void {
   expect(dispatch.recorders.length).toBeGreaterThan(0);
   for (const { context, events } of dispatch.recorders) {
     const identity = context.invocationIdentity;
@@ -201,7 +194,6 @@ function expectHostConfiguredIdentity(tool: string, configuredChannel?: CliAuthC
       version: 1,
       capturedAt: expect.any(Number),
       runner: { kind: 'cli', id: tool },
-      ...(configuredChannel !== undefined && { configuredChannel }),
       billing: { posture: 'unknown', basis: 'unknown' },
     });
     expect(events[0]).toMatchObject({ type: 'call_started', invocationIdentity: identity });
@@ -217,29 +209,12 @@ describe('CLI invocation identity at dispatch', () => {
       async (outcome) => {
         dispatch.outcome = outcome;
 
-        await settle(() => run(undefined));
+        await settle(() => run());
 
         expect(dispatch.spawns).toBe(1);
         expectHostConfiguredIdentity(tool);
         const terminal = dispatch.recorders.at(-1)?.events.at(-1);
         expect(terminal?.type).toBe(outcome === 'completed' ? 'call_completed' : 'call_error');
-      },
-    );
-
-    it.each(['session', 'api-key'] as const)(
-      'refuses an explicit unproven %s channel before dispatch and records no call',
-      async (authChannel) => {
-        const settled = await settle(() => run(authChannel));
-
-        // The build pipeline reports the thrown refusal as a failed result; the others rethrow it.
-        if (settled instanceof Error) {
-          expect(settled).toMatchObject({ kind: 'runner-auth-channel-unenforced' });
-        }
-        expect(
-          settled instanceof Error ? settled.message : (settled as { error?: string }).error,
-        ).toContain('Remove authChannel from this runner');
-        expect(dispatch.spawns).toBe(0);
-        expect(dispatch.recorders).toEqual([]);
       },
     );
   });
@@ -249,7 +224,6 @@ describe('CLI invocation identity at dispatch', () => {
       build({
         kind: 'cli',
         tool: 'opencode',
-        authChannel: 'provider-dependent',
         model: 'anthropic/claude-sonnet-4-5',
         contextLength: 8192,
         temperature: 0.3,
@@ -257,6 +231,6 @@ describe('CLI invocation identity at dispatch', () => {
     );
 
     expect(dispatch.spawns).toBe(1);
-    expectHostConfiguredIdentity('opencode', 'provider-dependent');
+    expectHostConfiguredIdentity('opencode');
   });
 });

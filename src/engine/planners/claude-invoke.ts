@@ -1,5 +1,4 @@
 import type { Attachment } from '../../core/schemas/attachment.js';
-import type { CliAuthChannelId } from '../../core/runners/cli-tool-catalog.js';
 import type { EffortLevel } from '../../core/schemas/enums.js';
 import type { RunnerAttemptCallbacks } from '../calls/callback-buffer.js';
 import type { SteeringPort } from '../calls/steering.js';
@@ -11,10 +10,10 @@ import {
 } from '../calls/status.js';
 import { parseStreamLine } from '../streaming/parse-stream-json.js';
 import { buildClaudeArgs } from '../runners/claude/args.js';
-import { claudeCredentialValues } from '../runners/claude/child-env.js';
 import { claudeCodePlannerAdapter } from '../runners/cli-tools/claude-code.js';
 import type { CliProtocolEvent, CliSchemaInput } from '../runners/cli-tools/contract.js';
 import { invokeCliAdapter, toCliEnvironment } from '../runners/invoke-cli-adapter.js';
+import { sandboxCredentialValues } from '../runners/sandbox-credential-values.js';
 import { withCliInvocationIdentity } from '../runners/invocation-identity.js';
 import { callAdmittedCli, requireCliSeat, type CliSeat } from '../runners/start-gate.js';
 import { error } from '../../utils/error.js';
@@ -32,8 +31,6 @@ export async function invokeClaudePlanner(opts: {
   env: NodeJS.ProcessEnv;
   cliSeat?: CliSeat | undefined;
   model?: string | undefined;
-  authChannel: CliAuthChannelId;
-  configuredAuthChannel: CliAuthChannelId | undefined;
   effort?: EffortLevel | undefined;
   configuredArgs?: readonly string[] | undefined;
   skillRoots?: readonly string[] | undefined;
@@ -46,9 +43,7 @@ export async function invokeClaudePlanner(opts: {
   schema?: CliSchemaInput | undefined;
 }): Promise<RunnerCallResult> {
   const args = buildClaudeArgs(opts);
-  const redact = createRunnerCallCredentialRedactor(
-    claudeCredentialValues(opts.authChannel, opts.env),
-  );
+  const redact = createRunnerCallCredentialRedactor(sandboxCredentialValues(opts.env));
   const observeInit = (parse: (line: string) => readonly CliProtocolEvent[]) => (line: string) => {
     const parsed = parseStreamLine(line);
     if (parsed.isSessionInit && parsed.sessionId !== undefined)
@@ -91,9 +86,8 @@ export async function invokeClaudePlanner(opts: {
         steering: opts.callbacks.steering,
         installedVersion: gate.installedVersion,
         callContext: withCliInvocationIdentity({
-          runner: { kind: 'cli', tool: 'claude-code', authChannel: opts.configuredAuthChannel },
+          tool: 'claude-code',
           callContext: opts.callContext,
-          executable,
         }),
         onOutput: opts.callbacks.onOutput,
         onSessionId: opts.callbacks.onSessionId,

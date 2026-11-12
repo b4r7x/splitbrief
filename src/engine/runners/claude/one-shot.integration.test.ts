@@ -98,7 +98,6 @@ process.stdout.write(JSON.stringify({ type: 'result', result: 'ok' }) + '\\n');`
     await invokeTrustedClaude({
       prompt: 'p',
       projectDir,
-      authChannel: 'session',
       onOutput: () => {},
     });
 

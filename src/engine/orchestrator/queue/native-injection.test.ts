@@ -114,7 +114,6 @@ describe('dispatchNativeInjection', () => {
     let state: WorkflowState = { ...makeResearchingState(), messageQueue: [correction] };
     const planner = withPlannerCallPublishing(
       createClaudeCodePlanner({
-        authChannel: 'session',
         cliSeat: admittedCliSeat(trustedShimGate({ dir: shimDir, tool: 'claude-code' })),
       }),
       { bus, getPhase: () => state.phase },

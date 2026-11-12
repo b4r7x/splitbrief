@@ -110,7 +110,7 @@ beforeEach(() => {
   // OpenCode and Kilo seats read their own config, so they read an empty one, never the tester's.
   vi.stubEnv('XDG_CONFIG_HOME', join(tmp, 'xdg-config'));
   restoreCliShim = activateCompatibleCliShim(
-    installCompatibleCliShim({ directory: shimDir, tool: 'claude-code', authChannel: 'session' }),
+    installCompatibleCliShim({ directory: shimDir, tool: 'claude-code' }),
   );
 });
 
@@ -294,7 +294,7 @@ async function expireEachHang(log: string, run: () => Promise<void>): Promise<vo
 async function saveCodexCrew(): Promise<void> {
   initGitRepo(tmp);
   configStore.load(tmp);
-  const seat = { kind: 'cli', tool: 'codex', authChannel: 'session' } as const;
+  const seat = { kind: 'cli', tool: 'codex' } as const;
   expect(
     (await configStore.save(makeConfig({ planner: seat, reviewer: seat, implementer: seat }))).ok,
   ).toBe(true);
@@ -582,17 +582,9 @@ describe('doctor command', () => {
       const detect = async () => [
         deriveCliReadiness({
           ...cliReadinessFactsFor('ready', 'codex'),
-          authChannel: 'session',
           auth: 'unknown',
         }),
-        ...(mixed
-          ? [
-              deriveCliReadiness({
-                ...cliReadinessFactsFor('unavailable', 'claude-code'),
-                authChannel: 'session',
-              }),
-            ]
-          : []),
+        ...(mixed ? [deriveCliReadiness(cliReadinessFactsFor('unavailable', 'claude-code'))] : []),
       ];
       const admission: typeof collectRunnerAdmissionChecks = async (input) =>
         collectRunnerAdmissionChecks({
@@ -800,7 +792,6 @@ describe('doctor command', () => {
           testedVersion: CLI_TOOL_CATALOG.opencode.compatibility.testedVersion,
           compatibility: 'compatible',
           auth: 'unauthenticated',
-          authChannel: 'provider-dependent',
           providerAuth: { kind: 'empty' },
           probedAt: 1,
         });
@@ -864,7 +855,6 @@ describe('doctor command', () => {
         testedVersion: CLI_TOOL_CATALOG.opencode.compatibility.testedVersion,
         compatibility: 'compatible',
         auth: 'unauthenticated',
-        authChannel: 'provider-dependent',
         providerAuth: { kind: 'empty' },
         probedAt: 1,
       });
@@ -910,10 +900,7 @@ describe('doctor command', () => {
 
   it('doctor readiness for a config denied headless admission contains a `runners.preparation.` check whose remediation names `--allow-unverified-auth`', async () => {
     initGitRepo(tmp);
-    writeConfig(
-      tmp,
-      validConfigYaml().replace('  tool: claude-code', '  tool: codex\n  authChannel: session'),
-    );
+    writeConfig(tmp, validConfigYaml().replace('  tool: claude-code', '  tool: codex'));
     const writes = captureStdout();
 
     await runDoctor(
@@ -1039,17 +1026,13 @@ describe('doctor command', () => {
   ] as const)('preserves the cause and remedy for $label in text and JSON', async (scenario) => {
     initGitRepo(tmp);
     configStore.load(tmp);
-    const seat = { kind: 'cli', tool: 'codex', authChannel: 'session' } as const;
+    const seat = { kind: 'cli', tool: 'codex' } as const;
     expect(
       (await configStore.save(makeConfig({ planner: seat, reviewer: seat, implementer: seat }))).ok,
     ).toBe(true);
-    // Detection records the authentication selection only for a resolved
-    // executable, so a missing or untrusted CLI result carries none.
     const readiness = deriveCliReadiness({
       ...cliReadinessFactsFor(scenario.status, 'codex'),
       ...('facts' in scenario && scenario.facts),
-      ...(scenario.status !== 'untrusted' &&
-        scenario.status !== 'unavailable' && { authChannel: 'session' }),
     });
     const remedy = 'remedy' in scenario ? scenario.remedy : readiness.remediation;
     const admissionChecks: typeof collectRunnerAdmissionChecks = (input) =>
@@ -1102,10 +1085,7 @@ describe('doctor command', () => {
   it('gives the Linux platform remedy for Antigravity session authentication in text and JSON', async () => {
     Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
     writeConfig(tmp, validConfigYaml().replace('  tool: claude-code', '  tool: antigravity'));
-    const readiness = deriveCliReadiness({
-      ...cliReadinessFactsFor('unverified', 'antigravity'),
-      authChannel: 'session',
-    });
+    const readiness = deriveCliReadiness(cliReadinessFactsFor('unverified', 'antigravity'));
     const admissionChecks: typeof collectRunnerAdmissionChecks = (input) =>
       collectRunnerAdmissionChecks({
         ...input,
@@ -1133,7 +1113,7 @@ describe('doctor command', () => {
     );
     const { report } = JSON.parse(writes.join('')) as { report: ReadinessReportJson };
     const checks = report.checks.filter((check) => check.stateId === 'auth-policy-denied');
-    const remedy = cliAuthRemediation({ tool: 'antigravity', authChannel: 'session' }, 'doctor');
+    const remedy = cliAuthRemediation('antigravity', 'doctor');
     expect(checks).toHaveLength(1);
     expect(checks[0]).toMatchObject({ severity: 'blocker', remediation: remedy });
     expect(text).toContain(`Fix: ${remedy}`);

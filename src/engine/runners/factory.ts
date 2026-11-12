@@ -52,7 +52,6 @@ async function loadPlanner(
       if (config.planner.tool === 'claude-code') {
         const mod = await loadClaudeCodePlanner();
         return mod.createClaudeCodePlanner({
-          authChannel: config.planner.authChannel,
           cliSeat: options?.cliSeat,
           model: config.planner.model,
           initialSessionId,

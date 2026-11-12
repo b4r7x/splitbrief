@@ -25,7 +25,6 @@ const published = [
   'APPROVAL-AND-RECOVERY',
   'TASK-CONTRACT',
   'MIGRATION',
-  'AUTH-METHOD-MATRIX',
 ];
 export const sources = [
   'docs/README.md',

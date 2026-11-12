@@ -217,7 +217,6 @@ describe('a CLI tool written over in place during a run', () => {
     return installCompatibleCliShim({
       directory,
       tool: 'codex',
-      authChannel: 'session',
       version,
       invocation: {
         stdoutLines: [

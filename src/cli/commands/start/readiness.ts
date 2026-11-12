@@ -7,15 +7,9 @@ import type {
 import type { Config } from '../../../core/schemas/config.js';
 import type { AttachedInput } from '../../../core/schemas/attachment.js';
 import type { CliReadinessResult } from '../../../core/schemas/readiness.js';
-import type { ImplementerConfig } from '../../../core/schemas/implementer-config.js';
-import type { PlannerConfig } from '../../../core/schemas/planner-config.js';
 import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import { routeAuthState } from '../../../core/runners/route-auth.js';
-import {
-  CLI_TOOL_IDS,
-  type CliAuthChannelId,
-  type CliToolId,
-} from '../../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_IDS, type CliToolId } from '../../../core/runners/cli-tool-catalog.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 import {
   formatReadinessBlockers,
@@ -48,7 +42,6 @@ import type {
   PreparedExecution,
 } from '../../../engine/runners/prepared-execution.js';
 import { rollbackPreparedExecutionOwnership } from '../../../engine/runners/prepared-execution.js';
-import { resolveCliRunnerAuth } from '../../../engine/runners/sandbox-env.js';
 import type { CustomRunnerAdmissionPolicy } from '../../../engine/runners/types.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import type { WorkflowOpts } from '../../../core/types/config-options.js';
@@ -63,38 +56,27 @@ export type DetectCliReadiness = (input: {
   opts: WorkflowOpts;
 }) => Promise<readonly CliReadinessResult[]>;
 
-function configuredCliAuthChannels(
-  config: Config,
-): Partial<Record<CliToolId, CliAuthChannelId | undefined>> {
-  const selections = new Map<CliToolId, CliAuthChannelId | undefined>();
-  const add = (runner: Extract<PlannerConfig | ImplementerConfig, { kind: 'cli' }>): void => {
-    const channel = resolveCliRunnerAuth(runner).id;
-    if (!selections.has(runner.tool)) {
-      selections.set(runner.tool, channel);
-      return;
-    }
-    if (selections.get(runner.tool) !== channel) selections.set(runner.tool, undefined);
-  };
-
-  if (config.planner.kind === 'cli') add(config.planner);
+function configuredCliTools(config: Config): CliToolId[] {
+  const tools = new Set<CliToolId>();
+  if (config.planner.kind === 'cli') tools.add(config.planner.tool);
   const reviewer = resolveReviewerRunner(config);
-  if (reviewer.source === 'configured' && reviewer.runner.kind === 'cli') add(reviewer.runner);
+  if (reviewer.source === 'configured' && reviewer.runner.kind === 'cli') {
+    tools.add(reviewer.runner.tool);
+  }
   try {
     for (const profile of resolveImplementerProfiles(config).profiles) {
-      if (profile.config.kind === 'cli') add(profile.config);
+      if (profile.config.kind === 'cli') tools.add(profile.config.tool);
     }
   } catch {
     // Config readiness reports the invalid profile, so doctor does not guess a context here.
   }
-
-  return Object.fromEntries(selections);
+  return CLI_TOOL_IDS.filter((tool) => tools.has(tool));
 }
 
 export const detectConfiguredCliReadiness: DetectCliReadiness = async ({ projectDir, config }) => {
-  const authChannels = configuredCliAuthChannels(config);
-  const tools = CLI_TOOL_IDS.filter((tool) => Object.hasOwn(authChannels, tool));
+  const tools = configuredCliTools(config);
   if (tools.length === 0) return [];
-  return detectAvailableCliReadiness({ projectDir, tools, authChannels });
+  return detectAvailableCliReadiness({ projectDir, tools });
 };
 
 /**

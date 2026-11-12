@@ -11,14 +11,7 @@ import {
 } from '../../utils/display-text.js';
 import { isOptionFamily, routePrefixesOf } from './model-catalog/option-axis.js';
 import { modelIdUnderProvider } from './model-catalog/provider-axis.js';
-import {
-  AUTH_METHOD_WORDS,
-  AUTH_ROW_LABEL,
-  AUTH_UNPROVEN_WORD,
-  AUTO_ROW_METADATA,
-  sectionOf,
-  type RightRow,
-} from './model-catalog/rows.js';
+import { AUTO_ROW_METADATA, sectionOf, type RightRow } from './model-catalog/rows.js';
 
 type ModelRow = Extract<RightRow, { kind: 'model' }>;
 
@@ -328,17 +321,10 @@ export function planModelRows(input: {
   providerId: string | undefined;
 }): ModelRowPlan {
   const childRoom = input.rows.reduce((room, row) => {
-    if (row.kind !== 'auth' && row.kind !== 'axis') return room;
-    const label = row.kind === 'auth' ? AUTH_ROW_LABEL : row.axis;
-    const value =
-      row.kind === 'auth'
-        ? row.unproven
-          ? AUTH_UNPROVEN_WORD
-          : AUTH_METHOD_WORDS[row.method]
-        : row.value;
+    if (row.kind !== 'axis') return room;
     return Math.max(
       room,
-      2 + row.tree.depth * 3 + getTerminalCellWidth(label) + 1 + getTerminalCellWidth(value),
+      2 + row.tree.depth * 3 + getTerminalCellWidth(row.axis) + 1 + getTerminalCellWidth(row.value),
     );
   }, 0);
   const childWidth =

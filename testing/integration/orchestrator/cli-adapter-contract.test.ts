@@ -129,17 +129,6 @@ const SHIM_PROFILES: Record<ImplementerCliToolId, ContractShimProfile> = {
   },
 };
 
-const AUTH_CHANNELS: Record<ImplementerCliToolId, CliImplementerConfig['authChannel']> = {
-  'claude-code': 'session',
-  codex: 'session',
-  opencode: 'provider-dependent',
-  copilot: 'session',
-  'kilo-code': 'provider-dependent',
-  cursor: 'session',
-  'command-code': 'session',
-  antigravity: 'session',
-};
-
 // With session state seeded, every probe-bearing adapter runs its declared
 // status command; the shim's exit-1 failure maps to the adapter-declared
 // 'unknown', never to an authenticated fallback. Copilot declares no
@@ -657,13 +646,14 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
       ),
     });
     const incompatibleExecutable = await resolveFixtureExecutable(fixture);
-    const incompatible = await probeCliReadiness({
-      tool: toolId,
-      executable: incompatibleExecutable,
-      probe: CLI_IMPLEMENTER_ADAPTERS[toolId].probe,
-      authChannel: AUTH_CHANNELS[toolId],
-      classifyVersion: () => 'incompatible',
-    });
+    const incompatible = await withSeededSessionStateHome(toolId, () =>
+      probeCliReadiness({
+        tool: toolId,
+        executable: incompatibleExecutable,
+        probe: CLI_IMPLEMENTER_ADAPTERS[toolId].probe,
+        classifyVersion: () => 'incompatible',
+      }),
+    );
     expect(incompatible.compatibility).toBe('incompatible');
 
     installShim(fixture, 'success-direct', { authExitCode: 1 });
@@ -673,7 +663,6 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
         tool: toolId,
         executable: unauthenticatedExecutable,
         probe: CLI_IMPLEMENTER_ADAPTERS[toolId].probe,
-        authChannel: AUTH_CHANNELS[toolId],
       }),
     );
     // Readiness projects the adapter-declared fact: no generic version or

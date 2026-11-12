@@ -103,7 +103,7 @@ describe('createClaudeCodePlanner availability', () => {
       checks.push(...probeActivitySnapshot().probes.map((probe) => probe.check));
     });
 
-    const planner = createClaudeCodePlanner({ authChannel: undefined });
+    const planner = createClaudeCodePlanner({});
     const available = await planner.isAvailable();
     unsubscribe();
 
@@ -114,7 +114,7 @@ describe('createClaudeCodePlanner availability', () => {
 });
 
 describe('createClaudeCodePlanner planning', () => {
-  it('defaults the omitted auth channel to the session channel', async () => {
+  it('gives the planner child its session sign-in and no shell API key', async () => {
     const envFile = installAuthRecordingShim();
     process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
     process.env['ANTHROPIC_API_KEY'] = 'anthropic-canary';
@@ -124,7 +124,7 @@ describe('createClaudeCodePlanner planning', () => {
     writeFileSync(join(home.dir, '.claude', '.credentials.json'), '{"session":"stub"}\n', 'utf8');
 
     try {
-      const planner = await createTrustedClaudeCodePlanner({ authChannel: undefined });
+      const planner = await createTrustedClaudeCodePlanner({});
       await planner.review('prompt', projectDir, { onOutput: () => {} });
 
       expect(readFileSync(envFile, 'utf8').trim()).toBe('|');
@@ -144,23 +144,6 @@ describe('createClaudeCodePlanner planning', () => {
       home.restore();
     }
   });
-
-  it.each(['api-key', 'session'] as const)(
-    'refuses an explicit unproven %s auth channel before spawning',
-    async (authChannel) => {
-      const envFile = installAuthRecordingShim();
-      process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
-      process.env['ANTHROPIC_API_KEY'] = 'anthropic-canary';
-      process.env['OPENAI_API_KEY'] = 'openai-canary';
-
-      const planner = await createTrustedClaudeCodePlanner({ authChannel });
-
-      await expect(
-        planner.review('prompt', projectDir, { onOutput: () => {} }),
-      ).rejects.toMatchObject({ kind: 'runner-auth-channel-unenforced' });
-      expect(existsSync(envFile)).toBe(false);
-    },
-  );
 
   // Claude Code 2.1.284 answers `--resume` of a session it no longer has with exactly this
   // (captured live 2026-09-29): an error result on stdout, the same line on stderr, exit 1.
@@ -190,7 +173,6 @@ describe('createClaudeCodePlanner planning', () => {
     const expiredSessionIds: string[] = [];
     const reportedSessionIds: string[] = [];
     const planner = await createTrustedClaudeCodePlanner({
-      authChannel: undefined,
       initialSessionId: 'sess-old',
     });
     const callbacks = {
@@ -240,7 +222,6 @@ describe('createClaudeCodePlanner planning', () => {
     chmodSync(shimPath, 0o755);
     process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
     const planner = await createTrustedClaudeCodePlanner({
-      authChannel: undefined,
       initialSessionId: 'sess-old',
     });
     const callbacks = { onOutput: () => {} };
@@ -284,7 +265,6 @@ describe('createClaudeCodePlanner planning', () => {
     const expiredSessionIds: string[] = [];
     const output: string[] = [];
     const planner = await createTrustedClaudeCodePlanner({
-      authChannel: undefined,
       initialSessionId: 'sess-old',
     });
 
@@ -345,7 +325,7 @@ Create the stream capture file.
     chmodSync(shimPath, 0o755);
     process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
 
-    const planner = await createTrustedClaudeCodePlanner({ authChannel: undefined });
+    const planner = await createTrustedClaudeCodePlanner({});
     await expect(
       callPlanner(planner, {
         prompt: 'first call dies after the id',
@@ -402,7 +382,7 @@ Create the Claude retry file.
     chmodSync(shimPath, 0o755);
     process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
 
-    const planner = await createTrustedClaudeCodePlanner({ authChannel: undefined });
+    const planner = await createTrustedClaudeCodePlanner({});
     await callPlanner(planner, {
       prompt: 'first call',
       projectDir,
@@ -444,7 +424,6 @@ Create the Claude retry file.
 
     const events: RunnerCallEvent[] = [];
     const planner = await createTrustedClaudeCodePlanner({
-      authChannel: undefined,
       initialSessionId: 'sess-old',
     });
 
@@ -472,7 +451,7 @@ Create the Claude retry file.
     process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
 
     const events: RunnerCallEvent[] = [];
-    const planner = await createTrustedClaudeCodePlanner({ authChannel: undefined });
+    const planner = await createTrustedClaudeCodePlanner({});
 
     await expect(
       planner.injectUserTurn?.({
@@ -495,7 +474,6 @@ Create the Claude retry file.
     process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
 
     const planner = await createTrustedClaudeCodePlanner({
-      authChannel: undefined,
       initialSessionId: 'sess-old',
     });
 
@@ -509,7 +487,6 @@ Create the Claude retry file.
     writeCommandShim({ dir: shimDir, command: 'claude', lines: [], sleepSeconds: 5 });
     process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
     const planner = await createTrustedClaudeCodePlanner({
-      authChannel: undefined,
       timeout: 1_000,
     });
 
@@ -541,7 +518,6 @@ Create the Claude retry file.
 
     const events: RunnerCallEvent[] = [];
     const planner = await createTrustedClaudeCodePlanner({
-      authChannel: undefined,
       idleWarnMs: 30,
     });
 
@@ -576,7 +552,7 @@ Create the Claude retry file.
     });
     process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
 
-    const planner = await createTrustedClaudeCodePlanner({ authChannel: undefined });
+    const planner = await createTrustedClaudeCodePlanner({});
     const result = await planner.review('prompt', projectDir, { onOutput: () => {} });
 
     // REQ-013: only the authoritative final assistant response is content; the
@@ -603,7 +579,7 @@ Create the Claude retry file.
     chmodSync(shimPath, 0o755);
     process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
 
-    const planner = await createTrustedClaudeCodePlanner({ authChannel: undefined });
+    const planner = await createTrustedClaudeCodePlanner({});
     await planner.review('REPO-INSTRUCTIONS-MARKER\n\nproceed', projectDir, {
       onOutput: () => {},
     });
@@ -633,7 +609,6 @@ Create the Claude retry file.
 
     try {
       const planner = await createTrustedClaudeCodePlanner({
-        authChannel: undefined,
         args: ['--add-dir', '/srv/shared-context'],
       });
 
@@ -662,7 +637,6 @@ Create the Claude retry file.
 
     try {
       const planner = await createTrustedClaudeCodePlanner({
-        authChannel: undefined,
         args: ['--permission-mode', 'bypassPermissions'],
       });
 
@@ -693,7 +667,7 @@ describe('createClaudeCodePlanner on a versioned install', () => {
     cli.write('b', release('b'));
     cli.pointTo('a');
     process.env['PATH'] = `${cli.binDir}:${originalPath ?? ''}`;
-    const planner = await createTrustedClaudeCodePlanner({ authChannel: undefined });
+    const planner = await createTrustedClaudeCodePlanner({});
 
     cli.pointTo('b');
 
@@ -740,7 +714,6 @@ const wait = setInterval(() => {
     chmodSync(shim, 0o755);
     process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
     const planner = await createTrustedClaudeCodePlanner({
-      authChannel: undefined,
       initialSessionId: 'sess-old',
       model: 'sonnet',
       effort: 'high',
@@ -809,7 +782,6 @@ const wait = setInterval(() => {
       chmodSync(shim, 0o755);
       process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
       const planner = await createTrustedClaudeCodePlanner({
-        authChannel: undefined,
         initialSessionId: 'sess-old',
       });
       const events: RunnerCallEvent[] = [];
@@ -864,7 +836,7 @@ describe('createClaudeCodePlanner typed calls', () => {
       chmodSync(shimPath, 0o755);
       process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
 
-      const planner = await createTrustedClaudeCodePlanner({ authChannel: undefined });
+      const planner = await createTrustedClaudeCodePlanner({});
       const result = await planner
         .typedCall({ projectDir, callbacks: { onOutput: () => {} }, seat })
         .invoke({ prompt: 'q', schema: { json: { type: 'object' }, name: 'probe' } });
@@ -885,7 +857,7 @@ describe('createClaudeCodePlanner typed calls', () => {
     writeCommandShim({ dir: shimDir, command: 'claude', lines: [] });
     process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
 
-    const planner = await createTrustedClaudeCodePlanner({ authChannel: undefined });
+    const planner = await createTrustedClaudeCodePlanner({});
 
     expect(
       planner.typedCall({ projectDir, callbacks: { onOutput: () => {} }, seat: 'planner' })

@@ -80,8 +80,8 @@ against the binary rather than inferred from documentation.
 `conformance-record.json` records raw PASS and production OMIT
 (`implementer produced no staged-project change`). The cause is the harness, not the
 adapter: `sandboxEnvironment` builds the child's environment with `createSandboxEnv`
-without a `selectedCli`, so the child gets a fresh sandbox `HOME` and the session
-channel's declared `stateBridge: 'host-cli-state'` never runs. Any `session`-auth CLI
+without a `selectedCli`, so the child gets a fresh sandbox `HOME` and the sign-in of the
+session channel is not bridged there. Any `session`-auth CLI
 reaches its binary unauthenticated and cannot complete the credentialed leg.
 
 Bridging host credentials into the conformance sandbox is a deliberate security boundary,

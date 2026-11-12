@@ -3,7 +3,6 @@ planner:
   kind: cli
   tool: claude-code
   model: opus
-  auth_channel: session
 implementer:
   kind: cli
   tool: claude-code

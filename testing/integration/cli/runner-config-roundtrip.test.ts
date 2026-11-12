@@ -57,7 +57,6 @@ const sameTargetCases: readonly (
     existing: {
       kind: 'cli',
       tool: 'claude-code',
-      authChannel: 'session',
       model: 'claude-opus-4-6',
       args: ['--permission-mode', 'plan'],
       ...watchdogs,
@@ -70,7 +69,6 @@ const sameTargetCases: readonly (
     existing: {
       kind: 'cli',
       tool: 'codex',
-      authChannel: 'api-key',
       args: ['--sandbox', 'workspace-write'],
       ...watchdogs,
       ...commonGeneration,

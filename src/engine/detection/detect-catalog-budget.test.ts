@@ -1,8 +1,9 @@
 import { chmod, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { freezeProbeDeadlines } from '#testing/helpers/fake-timers.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
+import { stubSignInHome } from '#testing/helpers/sign-in-home.js';
 import type { RunnerDiscoveryContext } from '../../core/config/accessors/runner-discovery-context.js';
 import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
 import { detectRunnerEvidence } from './runner-evidence.js';
@@ -83,6 +84,10 @@ function bundledCatalogFixture(): string {
 freezeProbeDeadlines();
 
 describe('catalog probe output budget', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it.runIf(process.platform !== 'win32')(
     'parses a catalog larger than the old 64KiB ceiling',
     async () => {
@@ -95,6 +100,7 @@ describe('catalog probe output budget', () => {
         const catalogFile = join(directory, 'catalog.json');
         await writeFile(catalogFile, stdout);
         const shim = await installCodexShim(directory, catalogFile);
+        await stubSignInHome(join(directory, 'home'), ['codex']);
 
         const evidence = await detectRunnerEvidence({
           context: codexContext(),
@@ -119,6 +125,7 @@ describe('catalog probe output budget', () => {
         const catalogFile = join(directory, 'catalog.json');
         await writeFile(catalogFile, 'x'.repeat(CODEX_CATALOG_BUDGET_BYTES + 4_096));
         const shim = await installCodexShim(directory, catalogFile);
+        await stubSignInHome(join(directory, 'home'), ['codex']);
 
         const evidence = await detectRunnerEvidence({
           context: codexContext(),
@@ -143,6 +150,7 @@ describe('catalog probe output budget', () => {
         const catalogFile = join(directory, 'catalog.json');
         await writeFile(catalogFile, stdout);
         const shim = await installCodexShim(directory, catalogFile);
+        await stubSignInHome(join(directory, 'home'), ['codex']);
 
         const evidence = await detectRunnerEvidence({
           context: codexContext('gpt-5.2-codex'),

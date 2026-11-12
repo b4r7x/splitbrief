@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { HALT_SIGNATURES } from '../../core/pipeline-spec/halts.js';
-import { defaultCliAuthChannel } from '../../core/runners/cli-tool-catalog.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import {
   isAuthFailureDiagnostic,
@@ -62,7 +61,7 @@ describe('isAuthFailureDiagnostic', () => {
 describe('runnerLoginInstruction', () => {
   function cliImplementer(tool: 'codex' | 'claude-code' | 'copilot') {
     return makeConfig({
-      implementer: { kind: 'cli', tool, authChannel: defaultCliAuthChannel(tool).id },
+      implementer: { kind: 'cli', tool },
     }).implementer;
   }
 

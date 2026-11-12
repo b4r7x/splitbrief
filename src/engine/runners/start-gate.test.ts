@@ -532,9 +532,9 @@ describe('start-gate receipt recheck against disk', () => {
         await expect(callAdmittedCli(seat, undefined, async () => exited)).resolves.toBe(exited);
         await expect(
           callAdmittedCli(seat, undefined, async () => {
-            throw error('runner-auth-channel-unenforced', 'not proven');
+            throw error('cli-tool-check-failed', 'not admitted');
           }),
-        ).rejects.toMatchObject({ kind: 'runner-auth-channel-unenforced' });
+        ).rejects.toMatchObject({ kind: 'cli-tool-check-failed' });
         expect(recheck).not.toHaveBeenCalled();
       });
     });

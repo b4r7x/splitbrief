@@ -133,6 +133,14 @@ function isolateHostHome(): string {
   return home;
 }
 
+/** An isolated host home that holds a Codex sign-in file, so the session listing runs on every platform. */
+function isolateCodexSessionHome(): void {
+  const home = isolateHostHome();
+  mkdirSync(join(home, '.codex'));
+  writeFileSync(join(home, '.codex', 'auth.json'), '{"session":"fixture"}');
+  vi.stubEnv('CODEX_HOME', '');
+}
+
 function nativeContexts(): readonly RunnerDiscoveryContext[] {
   return [context('codex'), context('opencode'), context('kilo-code')];
 }
@@ -185,14 +193,14 @@ afterEach(() => {
 
 describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
   it('shares one catalog connection across seats, model selections, and config generations', async () => {
-    process.env.OPENAI_API_KEY = 'discovery-test-key';
+    isolateCodexSessionHome();
     const logPath = join(shimDir, 'codex.args');
     installCatalogShim('codex', {
       logPath,
       catalog: JSON.stringify({ models: [{ id: 'model-a' }, { id: 'model-b' }] }),
     });
     const planner: RunnerDiscoveryContext = {
-      ...context('codex', 'planner', 'api-key'),
+      ...context('codex', 'planner', 'session'),
       seatRole: 'planner',
       model: 'model-a',
     };
@@ -224,6 +232,7 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
   });
 
   it('uses the canonical exact-executable path and preserves native parser metadata', async () => {
+    isolateCodexSessionHome();
     const codexLog = join(shimDir, 'codex.args');
     const opencodeLog = join(shimDir, 'opencode.args');
     const kiloLog = join(shimDir, 'kilo.args');
@@ -280,9 +289,9 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
       'kilo/anthropic/claude-3-5-sonnet',
       'kilo/openai/gpt-4o',
     ]);
-    expect(loggedArgs(codexLog)).toEqual(['--version|', 'debug|models|']);
-    expect(loggedArgs(opencodeLog)).toEqual(['--version|', 'models|--verbose|']);
-    expect(loggedArgs(kiloLog)).toEqual(['--version|', 'models|--verbose|']);
+    expect(loggedArgs(codexLog)).toEqual(['--version|', 'login|status|', 'debug|models|']);
+    expect(loggedArgs(opencodeLog)).toEqual(['--version|', 'auth|list|', 'models|--verbose|']);
+    expect(loggedArgs(kiloLog)).toEqual(['--version|', 'auth|list|', 'models|--verbose|']);
     const catalogCwd = readFileSync(opencodeCwdLog, 'utf8').trim();
     expect(catalogCwd).not.toBe(shimDir);
     expect(existsSync(catalogCwd)).toBe(false);
@@ -296,6 +305,8 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
   ] as const)(
     'does not spawn a %s catalog outside canonical compatibility',
     async (tool, version) => {
+      if (tool === 'codex') isolateCodexSessionHome();
+      else isolateHostHome();
       const command = tool === 'kilo-code' ? 'kilo' : tool;
       const logPath = join(shimDir, `${command}.args`);
       installCatalogShim(command, {
@@ -311,11 +322,15 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
       });
 
       expect(attemptFor(attempts, tool)?.outcome).toEqual({ kind: 'not-run' });
-      expect(loggedArgs(logPath)).toEqual(['--version|']);
+      expect(loggedArgs(logPath)).toEqual([
+        '--version|',
+        tool === 'codex' ? 'login|status|' : 'auth|list|',
+      ]);
     },
   );
 
   it('admits a codex catalog for a version newer than the tested release', async () => {
+    isolateCodexSessionHome();
     const logPath = join(shimDir, 'codex.args');
     installCatalogShim('codex', {
       logPath,
@@ -330,7 +345,7 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
     });
 
     expect(attemptFor(attempts, 'codex')?.outcome.kind).not.toBe('unsupported');
-    expect(loggedArgs(logPath)).toEqual(['--version|', 'debug|models|']);
+    expect(loggedArgs(logPath)).toEqual(['--version|', 'login|status|', 'debug|models|']);
   });
 
   for (const tool of ['codex', 'opencode', 'kilo-code'] as const) {
@@ -340,6 +355,13 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
       versionLabel === undefined ? version : `${versionLabel} ${version}`;
     const admittedVersion = tool === 'codex' ? '0.40.0' : tool === 'opencode' ? '0.5.0' : '0.1.0';
     const catalogArgv = tool === 'codex' ? 'debug|models|' : 'models|--verbose|';
+    // OpenCode below 2.0.0 lists its sign-ins with the legacy command; an unread version takes the declared one.
+    const signInArgv = (admitted: boolean) => {
+      if (tool === 'codex') return 'login|status|';
+      return tool === 'opencode' && !admitted
+        ? 'auth|list|--standalone|--format|json|'
+        : 'auth|list|';
+    };
     const catalog =
       tool === 'codex'
         ? JSON.stringify({ models: [{ id: 'admitted-model' }] })
@@ -386,6 +408,8 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
       },
     ] as const) {
       it(`${tool} spawns its catalog only for ${versionCase.name}`, async () => {
+        if (tool === 'codex') isolateCodexSessionHome();
+        else isolateHostHome();
         const logPath = join(shimDir, `${command}.${versionCase.name.replaceAll(' ', '-')}.args`);
         installCatalogShim(command, {
           logPath,
@@ -404,6 +428,7 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
         );
         expect(loggedArgs(logPath)).toEqual([
           '--version|',
+          signInArgv(versionCase.admitted),
           ...(versionCase.admitted ? [catalogArgv] : []),
         ]);
       });
@@ -411,6 +436,7 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
   }
 
   it('reports a malformed catalog without inventing an empty success', async () => {
+    isolateCodexSessionHome();
     const logPath = join(shimDir, 'codex.args');
     installCatalogShim('codex', { logPath, catalog: 'Usage: codex debug models [OPTIONS]' });
 
@@ -421,10 +447,11 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
     });
 
     expect(attemptFor(attempts, 'codex')?.outcome).toEqual({ kind: 'malformed' });
-    expect(loggedArgs(logPath)).toEqual(['--version|', 'debug|models|']);
+    expect(loggedArgs(logPath)).toEqual(['--version|', 'login|status|', 'debug|models|']);
   });
 
   it('allows fixed refresh argv only on manual OpenCode and Kilo discovery', async () => {
+    isolateCodexSessionHome();
     const codexLog = join(shimDir, 'codex.args');
     const opencodeLog = join(shimDir, 'opencode.args');
     const kiloLog = join(shimDir, 'kilo.args');
@@ -439,12 +466,21 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
       resolveExecutable: exactResolver,
     });
 
-    expect(loggedArgs(codexLog)).toEqual(['--version|', 'debug|models|']);
-    expect(loggedArgs(opencodeLog)).toEqual(['--version|', 'models|--verbose|--refresh|']);
-    expect(loggedArgs(kiloLog)).toEqual(['--version|', 'models|--verbose|--refresh|']);
+    expect(loggedArgs(codexLog)).toEqual(['--version|', 'login|status|', 'debug|models|']);
+    expect(loggedArgs(opencodeLog)).toEqual([
+      '--version|',
+      'auth|list|',
+      'models|--verbose|--refresh|',
+    ]);
+    expect(loggedArgs(kiloLog)).toEqual([
+      '--version|',
+      'auth|list|',
+      'models|--verbose|--refresh|',
+    ]);
   });
 
   it('takes the OpenCode 2 api listing above the legacy threshold', async () => {
+    isolateHostHome();
     const opencodeLog = join(shimDir, 'opencode.args');
     installCatalogShim('opencode', {
       logPath: opencodeLog,
@@ -469,10 +505,15 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
       'openai/gpt-5.6-luna-fast',
     ]);
     expect(attempts.map((attempt) => attempt.namesProject)).toEqual([false]);
-    expect(loggedArgs(opencodeLog)).toEqual(['--version|', 'api|GET|/api/model|--standalone|']);
+    expect(loggedArgs(opencodeLog)).toEqual([
+      '--version|',
+      'auth|list|--standalone|--format|json|',
+      'api|GET|/api/model|--standalone|',
+    ]);
   });
 
   it('names the project directory to an OpenCode 2 listing in the crew, from a neutral cwd', async () => {
+    isolateHostHome();
     const opencodeLog = join(shimDir, 'opencode.args');
     const opencodeCwdLog = join(shimDir, 'opencode.cwd');
     installCatalogShim('opencode', {
@@ -498,6 +539,7 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
     expect(attempts.map((attempt) => attempt.namesProject)).toEqual([true]);
     expect(loggedArgs(opencodeLog)).toEqual([
       '--version|',
+      'auth|list|--standalone|--format|json|',
       `api|GET|/api/model|--standalone|-H|x-opencode-directory:${encodeURIComponent(runDir)}|`,
     ]);
     const catalogCwd = readFileSync(opencodeCwdLog, 'utf8').trim();
@@ -509,6 +551,7 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
     { name: 'an OpenCode 2 listing the crew does not use', version: '2.0.14', crew: [] },
     { name: 'the legacy OpenCode listing in the crew', version: '1.4.0', crew: ['opencode'] },
   ])('names no project directory to $name', async ({ version, crew }) => {
+    isolateHostHome();
     const opencodeLog = join(shimDir, 'opencode.args');
     installCatalogShim('opencode', { logPath: opencodeLog, version, catalog: '' });
 
@@ -519,13 +562,19 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
       resolveExecutable: exactResolver,
     });
 
-    expect(loggedArgs(opencodeLog)).toEqual([
-      '--version|',
-      version === '1.4.0' ? 'models|--verbose|' : 'api|GET|/api/model|--standalone|',
-    ]);
+    expect(loggedArgs(opencodeLog)).toEqual(
+      version === '1.4.0'
+        ? ['--version|', 'auth|list|', 'models|--verbose|']
+        : [
+            '--version|',
+            'auth|list|--standalone|--format|json|',
+            'api|GET|/api/model|--standalone|',
+          ],
+    );
   });
 
   it('sends no refresh argv on manual OpenCode 2 discovery, which has no refresh flag', async () => {
+    isolateHostHome();
     const opencodeLog = join(shimDir, 'opencode.args');
     installCatalogShim('opencode', { logPath: opencodeLog, version: '2.0.14', catalog: '' });
 
@@ -536,7 +585,11 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
       resolveExecutable: exactResolver,
     });
 
-    expect(loggedArgs(opencodeLog)).toEqual(['--version|', 'api|GET|/api/model|--standalone|']);
+    expect(loggedArgs(opencodeLog)).toEqual([
+      '--version|',
+      'auth|list|--standalone|--format|json|',
+      'api|GET|/api/model|--standalone|',
+    ]);
   });
 
   it('runs an OpenCode 2 listing in the staging a run gets, so a provider without an API key is not reached', async () => {
@@ -601,7 +654,7 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
     ]);
   });
 
-  it('uses only the selected channel while keeping ambient secrets and PATH shadows out', async () => {
+  it('keeps ambient secrets, shell API keys and PATH shadows out of the catalog listing', async () => {
     const hostileDir = createTempDir('discovery-hostile-shadow');
     const hostileMarker = join(hostileDir, 'executed');
     const environmentLog = join(shimDir, 'environment');
@@ -615,7 +668,8 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
       chmodSync(join(hostileDir, 'codex'), 0o755);
       process.env.PATH = `${hostileDir}:${originalPath ?? ''}`;
       process.env.DISCOVERY_SECRET = 'ambient-secret-must-not-reach-cli';
-      process.env.OPENAI_API_KEY = 'selected-channel-secret-canary';
+      process.env.OPENAI_API_KEY = 'shell-api-key-must-not-reach-cli';
+      isolateCodexSessionHome();
       installCatalogShim('codex', {
         logPath: exactLog,
         catalog: JSON.stringify({ models: [] }),
@@ -623,24 +677,26 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
       });
 
       await discoverAllCliTools({
-        contexts: [context('codex', 'planner', 'api-key')],
+        contexts: [context('codex', 'planner', 'session')],
         projectDir,
         resolveExecutable: exactResolver,
       });
 
-      const [path, ambientSecret, selectedSecret] = readFileSync(environmentLog, 'utf8')
+      const [path, ambientSecret, apiKey] = readFileSync(environmentLog, 'utf8')
         .trimEnd()
         .split('\n');
+      expect(loggedArgs(exactLog).at(-1)).toBe('debug|models|');
       expect(existsSync(hostileMarker)).toBe(false);
       expect(path?.split(':')).not.toContain(hostileDir);
       expect(ambientSecret).toBe('unset');
-      expect(selectedSecret).toBe('selected-channel-secret-canary');
+      expect(apiKey).toBe('unset');
     } finally {
       cleanupTempDir(hostileDir);
     }
   });
 
   it('does not publish a catalog when the exact executable drifts during its probe', async () => {
+    isolateCodexSessionHome();
     const logPath = join(shimDir, 'codex.args');
     installCatalogShim('codex', {
       logPath,
@@ -655,11 +711,12 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
     });
 
     expect(attemptFor(attempts, 'codex')?.outcome).toEqual({ kind: 'cancelled' });
-    expect(loggedArgs(logPath)).toEqual(['--version|', 'debug|models|']);
+    expect(loggedArgs(logPath)).toEqual(['--version|', 'login|status|', 'debug|models|']);
     expect(JSON.stringify(attempts)).not.toContain('must-not-publish');
   });
 
   it('reaps a cancelled catalog process group', async () => {
+    isolateHostHome();
     const pidFile = join(shimDir, 'opencode.pid');
     installHangingShim('opencode', pidFile);
     const controller = new AbortController();

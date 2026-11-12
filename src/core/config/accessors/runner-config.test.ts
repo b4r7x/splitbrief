@@ -136,32 +136,18 @@ describe('projectRunnerDiscoveryContext', () => {
     expect(projectRunnerDiscoveryContext({ config, role: 'reviewer' }).role).toBe('planner');
   });
 
-  it('projects the effective CLI channel without changing legacy or explicit selections', () => {
-    const legacyConfig: Config = {
+  it("projects the tool's own CLI channel without changing the config", () => {
+    const config: Config = {
       ...createDefaultConfig(),
       planner: { kind: 'cli', tool: 'claude-code' },
     };
-    const sessionConfig: Config = {
-      ...legacyConfig,
-      planner: { kind: 'cli', tool: 'claude-code', authChannel: 'session' },
-    };
-    const apiKeyConfig: Config = {
-      ...legacyConfig,
-      planner: { kind: 'cli', tool: 'claude-code', authChannel: 'api-key' },
-    };
 
-    const legacy = projectRunnerDiscoveryContext({ config: legacyConfig, role: 'planner' });
-    const legacyAgain = projectRunnerDiscoveryContext({ config: legacyConfig, role: 'planner' });
+    const context = projectRunnerDiscoveryContext({ config, role: 'planner' });
+    const contextAgain = projectRunnerDiscoveryContext({ config, role: 'planner' });
 
-    expect(legacyConfig.planner).toEqual({ kind: 'cli', tool: 'claude-code' });
-    expect(legacy.authChannel).toBe('session');
-    expect(legacyAgain.configGeneration).toBe(legacy.configGeneration);
-    expect(
-      projectRunnerDiscoveryContext({ config: sessionConfig, role: 'planner' }).authChannel,
-    ).toBe('session');
-    expect(
-      projectRunnerDiscoveryContext({ config: apiKeyConfig, role: 'planner' }).authChannel,
-    ).toBe('api-key');
+    expect(config.planner).toEqual({ kind: 'cli', tool: 'claude-code' });
+    expect(context.authChannel).toBe('session');
+    expect(contextAgain.configGeneration).toBe(context.configGeneration);
   });
 
   it('projects custom endpoints and credentials without serializing their raw values', () => {
@@ -255,7 +241,7 @@ describe('projectRunnerDiscoveryContext', () => {
 
     const sessionConfig: Config = {
       ...config,
-      planner: { kind: 'cli', tool: 'claude-code', authChannel: 'session' },
+      planner: { kind: 'cli', tool: 'claude-code' },
     };
     // A session-authenticated CLI seat carries no credential domain at all, so
     // it can never share one with the keyed implementer beside it.

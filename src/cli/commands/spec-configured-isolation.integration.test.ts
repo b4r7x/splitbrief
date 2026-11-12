@@ -77,7 +77,7 @@ describe('spec command', () => {
       process.env.R2_STANDALONE_EVIDENCE = evidencePath;
 
       const baseConfig = makeConfig({
-        planner: { kind: 'cli', tool: 'codex', authChannel: 'session' },
+        planner: { kind: 'cli', tool: 'codex' },
         validation: { endChecks: false, testCommand: 'noop' },
       });
 

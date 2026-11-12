@@ -109,7 +109,6 @@ describe('shared Claude planner invocation', () => {
     const output: string[] = [];
     const events: RunnerCallEvent[] = [];
     const planner = createClaudeCodePlanner({
-      authChannel: undefined,
       cliSeat: admittedCliSeat({ tool: 'claude-code', executable: trustedClaudeExecutable() }),
     });
     const result = await planner
@@ -166,7 +165,6 @@ describe('shared Claude planner invocation', () => {
         'utf8',
       );
       const planner = createClaudeCodePlanner({
-        authChannel: undefined,
         cliSeat: admittedCliSeat({ tool: 'claude-code', executable: trustedClaudeExecutable() }),
       });
       const result = await planner
@@ -211,7 +209,6 @@ describe('shared Claude planner invocation', () => {
         JSON.stringify({ type: 'result', result: terminal }),
       ]);
       const planner = createClaudeCodePlanner({
-        authChannel: undefined,
         cliSeat: admittedCliSeat({ tool: 'claude-code', executable: trustedClaudeExecutable() }),
       });
       const result = await planner
@@ -240,7 +237,6 @@ describe('shared Claude planner invocation', () => {
     installClaudeShim(shimDir, lines);
     const chunks: string[] = [];
     const planner = createClaudeCodePlanner({
-      authChannel: undefined,
       cliSeat: admittedCliSeat({ tool: 'claude-code', executable: trustedClaudeExecutable() }),
     });
     const result = await planner

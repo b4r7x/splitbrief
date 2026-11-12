@@ -1634,7 +1634,6 @@ describe('runHeadless — the seat-down policy and the record', () => {
     const seat = {
       kind: 'cli',
       tool: 'opencode',
-      authChannel: 'provider-dependent',
       contextLength: 8192,
       timeout: 300,
       fallback: { tool: 'claude-code' },

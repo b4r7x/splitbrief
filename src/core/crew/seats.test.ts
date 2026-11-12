@@ -71,15 +71,6 @@ describe('deriveCrewSeats', () => {
     expect(build).toEqual(seatOf(deriveCrewSeats({ config: makeConfig() }), 'build'));
   });
 
-  it('states no posture for an auth channel no adapter can enforce', () => {
-    const config = makeConfig({
-      reviewer: { kind: 'cli', tool: 'claude-code', authChannel: 'api-key' },
-    });
-    const review = seatOf(deriveCrewSeats({ config }), 'review');
-
-    expect(review.posture).toBe('unknown');
-  });
-
   it('says the automatic word when the runner names no model', () => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
     const plan = seatOf(deriveCrewSeats({ config }), 'plan');

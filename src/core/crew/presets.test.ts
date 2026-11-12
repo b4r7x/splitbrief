@@ -54,7 +54,7 @@ describe('computeCrewPresets', () => {
   it('keeps a seat runner intact when the preset names the tool it already uses', () => {
     const [preset] = computeCrewPresets({
       config: makeConfig({
-        planner: { kind: 'cli', tool: 'claude-code', authChannel: 'api-key', model: 'opus' },
+        planner: { kind: 'cli', tool: 'claude-code', model: 'opus' },
         reviewer: { kind: 'cli', tool: 'codex', effort: 'high' },
       }),
       detection: readyDetection(['claude-code', 'codex']),
@@ -63,7 +63,6 @@ describe('computeCrewPresets', () => {
     expect(preset?.seats.planner).toEqual({
       kind: 'cli',
       tool: 'claude-code',
-      authChannel: 'api-key',
       model: 'opus',
     });
     expect(preset?.seats.reviewer).toEqual({ kind: 'cli', tool: 'codex', effort: 'high' });
@@ -182,7 +181,7 @@ describe('computeCrewPresets', () => {
   it('replaces a seat runner whose tool the preset changes', () => {
     const [preset] = computeCrewPresets({
       config: makeConfig({
-        planner: { kind: 'cli', tool: 'codex', authChannel: 'api-key', model: 'gpt-5' },
+        planner: { kind: 'cli', tool: 'codex', model: 'gpt-5' },
       }),
       detection: readyDetection(['claude-code', 'codex']),
     });

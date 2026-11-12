@@ -27,7 +27,6 @@ import {
   SPLITBRIEF_DIR,
   TASKS_FILE,
 } from '../../core/paths.js';
-import { defaultCliAuthChannel } from '../../core/runners/cli-tool-catalog.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { Planner } from '../../engine/planners/types.js';
 import { DIRECT_WRITER_TASK_RULE } from '../../engine/spec/prompts/plan-session.js';
@@ -59,9 +58,7 @@ beforeEach(() => {
     installCompatibleCliShim({
       directory: shimDir,
       tool: 'claude-code',
-      authChannel: defaultCliAuthChannel('claude-code').id,
     }),
-    'test-only-spec-command-shim-key',
   );
   // A repo-local planner command is only admissible with --allow-repo-runners,
   // and admission resolves the executable, so the fixture ships a real one.

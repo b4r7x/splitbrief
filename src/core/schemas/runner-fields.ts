@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { API_OFFERINGS, API_PROVIDER_CATALOG } from '../providers/api-provider-catalog.js';
 import {
-  CLI_AUTH_CHANNEL_IDS,
   CLI_TOOL_CATALOG,
   CLI_TOOL_IDS,
   IMPLEMENTER_CLI_TOOL_IDS,
@@ -125,7 +124,6 @@ const IDLE_THRESHOLD_ORDER = {
 const CliRunnerFields = {
   kind: z.literal('cli'),
   tool: removedCliToolGuard(CLI_TOOL_IDS).pipe(CliToolIdSchema),
-  authChannel: z.enum(CLI_AUTH_CHANNEL_IDS).optional(),
   args: z.array(z.string()).optional(),
   outputFormat: OutputFormatSchema.optional(),
   ...WatchdogFields,
@@ -308,25 +306,6 @@ function validateCliModelPolicy(role: RunnerRole, input: unknown, ctx: z.Refinem
   }
 }
 
-function validateCliAuthChannel(input: unknown, ctx: z.RefinementCtx): void {
-  const runner = narrowRecord(input);
-  if (
-    runner?.kind !== 'cli' ||
-    typeof runner.tool !== 'string' ||
-    typeof runner.authChannel !== 'string'
-  ) {
-    return;
-  }
-
-  const descriptor = Object.values(CLI_TOOL_CATALOG).find(({ id }) => id === runner.tool);
-  if (descriptor?.auth.channels.some(({ id }) => id === runner.authChannel)) return;
-  ctx.addIssue({
-    code: 'custom',
-    path: ['authChannel'],
-    message: `CLI tool "${runner.tool}" does not support auth channel "${runner.authChannel}"`,
-  });
-}
-
 function cliToolTakesEffortAsVariant(tool: unknown): boolean {
   if (typeof tool !== 'string' || !isCliToolId(tool)) return false;
   return CLI_TOOL_CATALOG[tool].effortChannel === 'variant';
@@ -435,7 +414,6 @@ export function createRunnerConfigSchema<C extends z.ZodRawShape>(commonFields: 
     .superRefine((input, ctx) => {
       validateAutomaticModelResolvable(input, ctx);
       validateCliModelPolicy('implementer', input, ctx);
-      validateCliAuthChannel(input, ctx);
     })
     .refine(idleThresholdsOrdered, IDLE_THRESHOLD_ORDER);
   return z
@@ -451,7 +429,6 @@ export function createRunnerConfigSchema<C extends z.ZodRawShape>(commonFields: 
       validateOllamaLocalCredential(input, ctx);
       validateAutomaticModelResolvable(input, ctx);
       validateCliModelPolicy('implementer', input, ctx);
-      validateCliAuthChannel(input, ctx);
       validateFallback(cliSeat, input, ctx);
     })
     .refine(idleThresholdsOrdered, IDLE_THRESHOLD_ORDER);
@@ -472,7 +449,6 @@ export function createPlannerConfigSchema<C extends z.ZodRawShape>(
     .superRefine((input, ctx) => {
       validateAutomaticModelResolvable(input, ctx);
       validateCliModelPolicy('planner', input, ctx);
-      validateCliAuthChannel(input, ctx);
     })
     .refine(idleThresholdsOrdered, IDLE_THRESHOLD_ORDER);
   return z
@@ -503,7 +479,6 @@ export function createPlannerConfigSchema<C extends z.ZodRawShape>(
       validateOllamaLocalCredential(input, ctx);
       validateAutomaticModelResolvable(input, ctx);
       validateCliModelPolicy('planner', input, ctx);
-      validateCliAuthChannel(input, ctx);
       validateFallback(cliSeat, input, ctx);
     })
     .refine(idleThresholdsOrdered, IDLE_THRESHOLD_ORDER);

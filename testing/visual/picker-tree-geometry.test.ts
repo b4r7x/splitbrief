@@ -15,14 +15,16 @@ interface GeometryCase {
   readonly viewport: Viewport;
   /** Whether the list keeps the size cell at this width; it keeps it for every row or for none. */
   readonly sizeCell: 'kept' | 'dropped';
+  /** The route rows the list window shows under the open model. */
+  readonly routes: number;
 }
 
 const SCENARIO_ID = 'overlay-picker-opencode-expanded';
 
 const CASES: readonly GeometryCase[] = [
-  { viewport: viewport({ cols: 120, rows: 40 }), sizeCell: 'kept' },
-  { viewport: viewport({ cols: 80, rows: 24 }), sizeCell: 'kept' },
-  { viewport: viewport({ cols: 60, rows: 18 }), sizeCell: 'dropped' },
+  { viewport: viewport({ cols: 120, rows: 40 }), sizeCell: 'kept', routes: 2 },
+  { viewport: viewport({ cols: 80, rows: 24 }), sizeCell: 'kept', routes: 2 },
+  { viewport: viewport({ cols: 60, rows: 18 }), sizeCell: 'dropped', routes: 1 },
 ];
 
 afterEach(() => {
@@ -30,35 +32,6 @@ afterEach(() => {
 });
 
 describe('picker tree geometry', () => {
-  it.each(
-    ['overlay-picker-claude-effort-set', 'overlay-picker-opencode-expanded'].flatMap((scenarioId) =>
-      CASES.map(({ viewport }) => ({ scenarioId, viewport })),
-    ),
-  )(
-    'aligns auth and effort value edges in $scenarioId at $viewport.cols columns',
-    async ({ scenarioId, viewport }) => {
-      const scenario = requireScenario(scenarioId);
-      const checkpoint = requireCheckpoint(scenario);
-      const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
-      try {
-        const frame = await handle.waitForCheckpoint();
-        const lines = stripVTControlCharacters(frame).split('\n');
-        const auth = lines.find((line) => line.includes('─ auth '));
-        const effort = lines.find((line) => line.includes('─ effort '));
-        expect(auth).toBeDefined();
-        expect(effort).toBeDefined();
-        const authValue = auth?.indexOf('CLI decides');
-        const effortValue = effort?.match(/\b(auto|high)\b/);
-        expect(authValue).toBeGreaterThan(-1);
-        expect(effortValue, effort).not.toBeNull();
-        expect((authValue ?? -1) + 'CLI decides'.length).toBe(
-          (effortValue?.index ?? -1) + (effortValue?.[0].length ?? 0),
-        );
-      } finally {
-        await handle.unmount();
-      }
-    },
-  );
   it.each(CASES)(
     'pins OpenCode tree columns at $viewport.cols x $viewport.rows, size cell $sizeCell',
     async (geometryCase) => {
@@ -152,7 +125,7 @@ describe('picker tree geometry', () => {
         });
 
         expect(new Set(level1Columns).size).toBeLessThanOrEqual(1);
-        expect(level1Columns.length).toBeGreaterThanOrEqual(2);
+        expect(level1Columns).toHaveLength(geometryCase.routes);
 
         expect(level2Columns.length).toBeGreaterThanOrEqual(1);
         if (level2Columns.length >= 2) {
@@ -174,10 +147,8 @@ describe('picker tree geometry', () => {
           throw new Error('trailing column missing');
         }
 
-        const authRows = classified.filter((entry) => lineOf(entry.row).includes('─ auth '));
-        expect(authRows).toHaveLength(1);
         const valueRows = classified.filter((entry) =>
-          /─ (?:auth|effort|thinking|speed) /.test(lineOf(entry.row)),
+          /─ (?:effort|fast|thinking) /.test(lineOf(entry.row)),
         );
         const valueEdges = valueRows.map((entry) =>
           lastInkColumnBefore(entry.row, trailingColumn + 3),
@@ -185,10 +156,6 @@ describe('picker tree geometry', () => {
         expect(valueEdges.length).toBeGreaterThanOrEqual(2);
         expect(new Set(valueEdges).size).toBe(1);
         for (const entry of classified) {
-          if (authRows.includes(entry)) {
-            expect(lineOf(entry.row)).toContain('CLI decides');
-            expect(disclosureEntries.some((item) => item.rowIndex === entry.rowIndex)).toBe(false);
-          }
           if (valueRows.includes(entry)) {
             expect(lineOf(entry.row.slice(entry.column))).not.toContain(ELLIPSIS);
             continue;

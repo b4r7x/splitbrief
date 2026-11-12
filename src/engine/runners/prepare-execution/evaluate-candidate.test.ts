@@ -161,7 +161,7 @@ describe('evaluateCandidate policy denial remediation', () => {
       severity: 'blocker',
       diagnosticState: 'auth-policy-denied',
       fix: scenario.unsupported
-        ? cliAuthRemediation({ tool: scenario.tool, authChannel: 'session' }, 'doctor')
+        ? cliAuthRemediation(scenario.tool, 'doctor')
         : READINESS_DIAGNOSTIC_REMEDIATION['auth-policy-denied'],
     });
   });
@@ -187,7 +187,7 @@ describe('evaluateCandidate on a sign-in check that timed out', () => {
       details: ['OpenAI Codex CLI sign-in check timed out.'],
       diagnosticState: 'auth-timeout',
       fix: 'Run SPLITBRIEF in a terminal to review the sign-in warning, or pass --allow-unverified-auth to start without confirming sign-in.',
-      runnerCause: { tool: 'codex', cause: 'auth-timeout', authChannel: 'session' },
+      runnerCause: { tool: 'codex', cause: 'auth-timeout' },
     });
   });
 });
@@ -215,7 +215,6 @@ describe('evaluateCandidate on a version check that timed out', () => {
       fix: 'Run `codex --version` in a terminal and wait for it to finish, then run `splitbrief doctor` again.',
       runnerCause: { tool: 'codex', cause: 'version-timeout', seats: ['PLAN'] },
     });
-    expect(result.check).not.toHaveProperty('runnerCause.authChannel');
   });
 });
 
@@ -375,7 +374,7 @@ describe('evaluateCandidate retries a transient session denial', () => {
       details: expect.arrayContaining([
         'OpenAI Codex CLI keeps its sign-in in the system keyring, which a run cannot reach.',
       ]),
-      fix: 'Set cli_auth_credentials_store = "file" in config.toml and run codex login again, or use OPENAI_API_KEY, then run `splitbrief doctor` again.',
+      fix: 'Set cli_auth_credentials_store = "file" in config.toml and run codex login again, then run `splitbrief doctor` again.',
       runnerCause: { tool: 'codex', cause: 'unauthenticated' },
     });
   });

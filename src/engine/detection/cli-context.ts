@@ -4,13 +4,12 @@ import type { RunnerRole } from '../../core/runners/seat-roles.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { ImplementerConfig } from '../../core/schemas/implementer-config.js';
 import type { PlannerConfig } from '../../core/schemas/planner-config.js';
-import { resolveCliRunnerAuth } from '../runners/sandbox-env.js';
 import type {
   CliExecutableIdentity,
   CliExecutableReceipt,
 } from '../../core/discovery/detection.js';
 import { CliExecutableReceiptSchema } from '../../core/discovery/detection.js';
-import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import { defaultCliAuthChannel, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
 
 export type CliRunnerDiscoveryContext = RunnerDiscoveryContext &
   Readonly<{ kind: 'cli'; id: CliToolId }>;
@@ -31,7 +30,7 @@ export function cliSeatDiscoveryContext(
     kind: 'cli',
     id: input.runner.tool,
     ...(input.runner.model !== undefined && { model: input.runner.model }),
-    authChannel: resolveCliRunnerAuth(input.runner).id,
+    authChannel: defaultCliAuthChannel(input.runner.tool).id,
     credentialPresent: false,
     configGeneration: contentIdentityId('config', input.config),
   };

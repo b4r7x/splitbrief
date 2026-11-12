@@ -169,9 +169,7 @@ describe('deriveCliStatus for a tool that stores no credential', () => {
 
 describe('deriveCliStatus remediation inside the picker', () => {
   it('ends a signed-out tool on the picker refresh, never on doctor', () => {
-    const detection = cliDetectionFor('unauthenticated', 'opencode', {
-      authChannel: 'provider-dependent',
-    });
+    const detection = cliDetectionFor('unauthenticated', 'opencode');
 
     const status = deriveCliStatus(CLI_TOOL_CATALOG.opencode, snapshot(detection));
 

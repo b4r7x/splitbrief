@@ -22,6 +22,7 @@ vi.mock('node:fs', async (original) => ({
 const roots: string[] = [];
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   for (const root of roots.splice(0)) syncFs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -33,10 +34,15 @@ async function fixture(input: { cli?: boolean } = {}) {
   execFileSync('git', ['init', '--quiet'], { cwd: projectDir });
   const sessionId = 'preserved';
   ensureSessionDir(projectDir, sessionId);
+  if (input.cli === true) {
+    // The Codex session channel bridges the host login, so the host is an empty home here.
+    const home = join(parent, 'host-home');
+    syncFs.mkdirSync(home);
+    vi.stubEnv('HOME', home);
+    vi.stubEnv('CODEX_HOME', undefined);
+  }
   const config = makeNoValidationConfig(
-    input.cli === true
-      ? { implementer: { kind: 'cli', tool: 'codex', authChannel: 'api-key' } }
-      : undefined,
+    input.cli === true ? { implementer: { kind: 'cli', tool: 'codex' } } : undefined,
   );
   const warnings: string[] = [];
   const ref = { projectDir, sessionId };

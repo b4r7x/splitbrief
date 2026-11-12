@@ -20,7 +20,7 @@ describe('the slow tool check line', { timeout: 90_000 }, () => {
       const release = join(dir, 'release-version');
       for (const path of [projectDir, home, bin]) mkdirSync(path);
       writeConfigYaml(projectDir, {
-        planner: { kind: 'cli', tool: 'claude-code', authChannel: 'session' },
+        planner: { kind: 'cli', tool: 'claude-code' },
         implementer: { kind: 'shell', command: 'unused-implementer', model: 'fixture' },
       });
       writeFakeNodeCli(

@@ -343,7 +343,7 @@ Wraps a backend-specific `invoke()` with:
 
 1. **Build prompt** -- `formatTaskPrompt()` (`src/engine/spec/prompt-formatter.ts`) assembles the task sections and takes the write mode, so the closing instruction matches how the model is expected to answer. When the workspace holds the task's first file, `currentCode` is resolved through a tiered context strategy, whatever the task's action. A direct writer gets only the read-only code of the task's `contextFiles`: it edits the files where they live and reads them itself, so only `extracted-code` writers and the `file-bundle-v1` contract carry the bodies of the files they write.
 2. **Prepend system preamble** -- `formatImplementerSystemPreamble(languageContext, writesFiles, projectDir, outputContract)`; the mode-specific preamble described above, naming the call's `projectDir` (the isolation directory for a direct writer, never `context.dir`). API backends send it as a separate system message instead of prepending (`prependSystemPreamble: false`).
-3. **Call backend `invoke()`** -- the actual model call. `InvokeOpts.callContext` identifies the runner call for adapters that can emit typed events directly. `InvokeOpts.sandboxEnv` carries the isolation directory's environment when the run is isolated. Without it, every backend that starts a process builds `createRunnerSandboxEnv` for the directory it runs in, so no runner inherits the SPLITBRIEF environment ([AUTH-METHOD-MATRIX.md](./AUTH-METHOD-MATRIX.md#child-environment)).
+3. **Call backend `invoke()`** -- the actual model call. `InvokeOpts.callContext` identifies the runner call for adapters that can emit typed events directly. `InvokeOpts.sandboxEnv` carries the isolation directory's environment when the run is isolated. Without it, every backend that starts a process builds `createRunnerSandboxEnv` for the directory it runs in, so no runner inherits the SPLITBRIEF environment ([API-KEYS.md §Child environment](./API-KEYS.md#child-environment)).
 4. **Process output:**
    - API `file-bundle-v1`: parse the entire completed response, approve and baseline-check declared candidates, apply text files, then publish aggregate metrics only after whole-bundle success. Partial application retains its exact effects in task evidence and fails the attempt.
    - Legacy `extracted-code` for shell/command backends: extract code from response via `extractCode()`, run through the write gate (`approveWrite`), apply to disk via `applyCode()`, compute diff. Between approval and apply, a plausibility guard (`src/engine/implementers/pipeline/extracted-code.ts`) refuses a marker-less response that would keep less than half of a baseline file of at least five non-empty lines, whatever the task's action: the file is left untouched and the task fails with the kept-of-had line counts plus a literal SEARCH/REPLACE template, so the retry has an exact-patch escape hatch.
@@ -504,7 +504,7 @@ When you adjust a tool's adapter to track an upstream CLI change, bump that tool
 
 **Command Code's row was captured from the real binary on 2026-09-01 against `cmd` 1.39.2**, replacing the hand-authored fixtures that stood in for it. The raw `cli-conformance` leg passes; the production leg records `OMIT` because the conformance sandbox gives the child a fresh `HOME` and never bridges host CLI session state, so a `session`-auth tool reaches the CLI unauthenticated. That gap is the harness's, not the adapter's — the adapter's own argv was replayed against the authenticated binary and its terminal `result` frame parses. See `testing/fixtures/command-code/README.md` for the recorded evidence and the remaining gap.
 
-`cursor` executable aliases are `cursor-agent` / `agent`. Command Code's binary is `cmd` with no alternate alias, and its credentials come from `cmd login`; there is no API-key environment channel. Every `cmd` start checks for a new release and installs it in the background unless the argv names `--no-auto-update`, so both of its probes, `cmd status --json` and `cmd --list-models`, carry that flag. Antigravity's binary is `agy`, `agy --version` prints a bare semver (`1.2.9`, captured 2026-09-23 — `agy --help` prints no version at all), and `agy models` is both its auth probe and its model listing: one `<id>\t<display name>` row per effort variant (`gemini-3.8-flash-high`), merged into one picker row per model. Both runs of `agy models` wait up to 60 seconds, as every CLI tool check does: `agy` waits on Google's `loadCodeAssist` and `fetchAvailableModels` calls before it lists. The model id is the effort (`effortChannel: 'model-id'`): `agy --effort` only selects one of those ids, so the seat sends `--model <id>` and no `--effort`, and the picker's effort row steps between the ids. The crew rows and the run record state the level the id spells: `Google Antigravity CLI · Gemini 3.8 Flash · high`. The reviewer seat uses planner backends (the same admission set).
+`cursor` executable aliases are `cursor-agent` / `agent`. Command Code's binary is `cmd` with no alternate alias, and its credentials come from `cmd login`. Every `cmd` start checks for a new release and installs it in the background unless the argv names `--no-auto-update`, so both of its probes, `cmd status --json` and `cmd --list-models`, carry that flag. Antigravity's binary is `agy`, `agy --version` prints a bare semver (`1.2.9`, captured 2026-09-23 — `agy --help` prints no version at all), and `agy models` is both its auth probe and its model listing: one `<id>\t<display name>` row per effort variant (`gemini-3.8-flash-high`), merged into one picker row per model. Both runs of `agy models` wait up to 60 seconds, as every CLI tool check does: `agy` waits on Google's `loadCodeAssist` and `fetchAvailableModels` calls before it lists. The model id is the effort (`effortChannel: 'model-id'`): `agy --effort` only selects one of those ids, so the seat sends `--model <id>` and no `--effort`, and the picker's effort row steps between the ids. The crew rows and the run record state the level the id spells: `Google Antigravity CLI · Gemini 3.8 Flash · high`. The reviewer seat uses planner backends (the same admission set).
 
 ##### Typed seat output
 
@@ -524,20 +524,20 @@ When you adjust a tool's adapter to track an upstream CLI change, bump that tool
 
 ##### Posture, trust, and auth
 
-The auth-channel column describes catalog staging capabilities, not selectable methods proven for an installed invocation. The enforcement matrix is currently empty: explicit `session` or `api-key` is refused, while an omitted selection uses host CLI configuration. See [AUTH-METHOD-MATRIX.md](./AUTH-METHOD-MATRIX.md).
+Each tool has one auth channel, and SPLITBRIEF runs the tool with the sign-in that the tool already has. The credential env column names the variables of your shell that the child gets ([API-KEYS.md §Child environment](./API-KEYS.md#child-environment)).
 
 | `tool` | direct write (planner / implementer) | shell | network | automatic approval (implementer) | sandbox (planner / implementer) | auth channels | credential env |
 |---|---|---|---|---|---|---|---|
-| `claude-code` | no / yes | yes / yes | yes / yes | `--permission-mode acceptEdits` | none / cli-managed (see below) | session (host account on macOS, see below), api-key | `ANTHROPIC_API_KEY` (api-key channel) |
-| `codex` | no / yes | yes / yes | yes / yes | `--sandbox workspace-write` | mode-dependent / cli-managed | session, api-key | `OPENAI_API_KEY` (api-key channel) |
+| `claude-code` | no / yes | yes / yes | yes / yes | `--permission-mode acceptEdits` | none / cli-managed (see below) | session (host account on macOS, see below) | — |
+| `codex` | no / yes | yes / yes | yes / yes | `--sandbox workspace-write` | mode-dependent / cli-managed | session | — |
 | `opencode` | no / yes | yes / yes | yes / yes | — | none / none | provider-dependent | every `*_API_KEY` of the parent |
 | `copilot` | no / yes | yes / yes | yes / yes | `--allow-all` | none / none | session (host account on macOS, see below) | `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN` |
 | `kilo-code` | no / yes | yes / yes | yes / yes | `--auto` | none / none | provider-dependent | every `*_API_KEY` of the parent |
-| `cursor` | no / yes | yes / yes | yes / yes | `--force` | none / none | `api-key-or-session`: session (host-cli-state), api-key | `CURSOR_API_KEY` (api-key channel) |
+| `cursor` | no / yes | yes / yes | yes / yes | `--force` | none / none | session (host account on macOS, see below) | — |
 | `command-code` | no / yes | yes / yes | yes / yes | `--yolo` | none / none | session | — |
-| `antigravity` | no / yes | yes / yes | yes / yes | `--dangerously-skip-permissions` | none / none | session | — |
+| `antigravity` | no / yes | yes / yes | yes / yes | `--dangerously-skip-permissions` | none / none | session (host account on macOS, see below) | — |
 
-Session channels use `host-cli-state` bridging where noted in the catalog. SPLITBRIEF never copies credentials into argv. Subscription-included tools bill through the vendor login; provider-dependent tools inherit the upstream model provider's billing posture.
+A session channel gives a staged runner the tool's own host sign-in: the state bridge brings a sign-in file into the sandbox, and a keychain sign-in stays with the host account (see below). SPLITBRIEF never copies credentials into argv. Subscription-included tools bill through the vendor login; provider-dependent tools inherit the upstream model provider's billing posture.
 
 The bridge copies files, so a channel whose credential is an OS keychain item reaches a staged runner another way. A channel declares those platforms in `hostKeychainPlatforms` (`src/core/runners/cli-tool-catalog.ts`), which today names macOS for the Claude Code, Cursor Agent CLI, Antigravity and Copilot `session` channels: the subscription session lives in the login keychain, whose search list resolves through `HOME` and whose item is keyed on `USER`. `cliAuthChannelHostStateAccess()` maps that to `host-account`, and `createSandboxEnv()` then leaves `HOME`/`USER` at their host values and bridges no file — every other redirect stays, except that a Claude Code or Copilot child also keeps a set `CLAUDE_CONFIG_DIR` or `COPILOT_HOME`, the folder the tool reads its config from (`CLI_TOOL_HOME_ENV`, `src/engine/runners/host-model-selection.ts`). On bridged files the bridge reads a tool's sign-in from that same folder (`cliToolHome`), and the child keeps its private home. Readiness never infers such a credential from files: it runs the tool's own status command and reports what the child answers. Copilot has no status command, so its keychain sign-in reads as unknown unless a token variable of its channel is set. See [docs/API-KEYS.md](./API-KEYS.md).
 
@@ -825,72 +825,6 @@ The check and skill rules live in `tasks.ts` as `GATES_ARE_SPLITBRIEFS` and `SKI
 **`buildPlanSessionPrompt({ feature, projectContext, languageContext, build, skillsContext?, codebaseContext?, earlierPlanning? })`** -- the first turn of the planning session. `projectContext` includes the repo map. `build` names the implementer model and the context it was measured at, so the planner sizes tasks for it. `earlierPlanning` carries the documents an older run's planning chain wrote. The prompt asks for `{ result }` against `PlanAnswerSchema`: up to 3 questions with defaults, or a plan.
 
 **Turn builders** -- `planAnswersTurn` (the user's answers), `planRepairTurn` (the failed check messages and codes, with the plan that failed), `planRevisedTurn` (a correction from the plan card or a saved rewind, with the reviewed `plan.json`), and `planFullTurn` (the whole prompt plus the conversation so far, for a planner without a native session).
-
----
-
-## Auth method research
-
-The research record behind [AUTH-METHOD-MATRIX.md](./AUTH-METHOD-MATRIX.md). That user doc states the result; this section keeps the measurements, the unused controls and the open design.
-
-### Enforcement evidence
-
-The runtime enforcement matrix `CLI_AUTH_ENFORCEMENT_EVIDENCE` is empty. No real session/API method switch is proven. `enforceCliAuthInvocation` requires positive evidence for the exact tool, platform and installed version before dispatching an explicit `session` or `api-key` choice. Without it the invocation is refused; omit the selection to use the host CLI configuration. The picker offers no method switch for these rows. A stored login, staged environment or model listing does not establish which billing method a call used.
-
-The measurements below record the staging behavior researched before that enforcement gate was added. They explain why no method was admitted; they are not instructions to configure an explicit method today.
-
-### Measurement environment
-
-macOS (`darwin`), Node 22.22.2, repository baseline `e6ffb1bc`. Every capture is a `--version` or `--help`/help-topic invocation with no prompt and no subcommand that reads or writes credentials. No generation was run, no secret file was read, no login state was touched. Where a control is documented only in a tool's help text and was not exercised, this document says so rather than assuming the text.
-
-Versions are the build on this host; the parenthesised value is `compatibility.testedVersion` in `src/core/runners/cli-tool-catalog.ts`. A control observed on a newer build is not evidence for `minimumAdmittedVersion`.
-
-#### Installed builds measured
-
-| Tool | Executable (installed / catalog tested) | Declared channels | Current method choice offered | Verdict |
-|---|---|---|---|---|
-| `claude-code` | `~/.local/bin/claude` — 2.1.273 (2.0.0) | `session`, `api-key` | no | host-configured |
-| `codex` | `…/node/v22.22.2/bin/codex` — 0.154.0 (0.40.0) | `session`, `api-key` | no | host-configured |
-| `cursor` | `~/.local/bin/cursor-agent` — 2026.09.08-6caf4ff (2026.08.25-3e8eec8) | `session`, `api-key` | no | host-configured |
-| `opencode` | `~/.opencode/bin/opencode` — 2.0.4 (0.5.0) | `provider-dependent` | no | host-configured |
-| `kilo-code` | `/opt/homebrew/bin/kilo` — 7.0.49 (0.1.0) | `provider-dependent` | no | host-configured |
-| `copilot` | `~/.local/bin/copilot` — 1.0.83 (1.0.77) | `session` | no | host-configured |
-| `command-code` | `…/node/v22.22.2/bin/cmd` — 1.54.1 (1.39.2) | `session` | no | host-configured |
-| `antigravity` | `~/.local/bin/agy` — 1.4.7 (1.3.2) | `session` | no | host-configured |
-
-Every tool declares `roles: ['planner', 'implementer']`; the reviewer seat reuses the planner runner (`resolveReviewerRunner`). The channel set is the tool's `auth.channels` in `cli-tool-catalog.ts`; "method choice offered" requires invocation-enforcement evidence, not merely multiple declared channels. The custom-only tools (`kiro`, `gemini`, `cline`, `qwen`) and the other excluded candidates (`auggie`, `junie`) are not admitted and have no row.
-
-### Follow-up: per-provider key narrowing for OpenCode 2
-
-This is a named follow-up. It is not built. Today an OpenCode or Kilo seat gets every `*_API_KEY` of the parent, so a model on one provider can read the keys of every other provider.
-
-The design:
-
-1. SPLITBRIEF cannot map a model's provider to its key variable by itself. The model id names the provider (`providerID`, for example `kimi-code-plan-global` in `kimi-code-plan-global/<model>`). Only the tool knows which variable that provider reads.
-2. `opencode auth list --standalone --format json` (OpenCode 2, measured 0.6 s on 2.0.14) prints one object per provider: `id`, `name` and `connections`. An `env` connection names its variable, for example `KIMI_API_KEY`, and never its value. The listing names an `env` connection only while that variable is set, so the oracle runs with the staged environment that carries every `*_API_KEY`.
-3. At dispatch, after the CLI start-trust gate has admitted the executable, SPLITBRIEF runs the oracle once with that trusted executable. It keeps the variables of the configured model's provider id and removes every other `*_API_KEY` from the prebuilt environment. `createRunnerSandboxEnv` cannot do this, because the trust gate lives at dispatch, not in the environment builder.
-4. If the oracle fails or times out, the dispatch fails closed with a named reason. It does not fall back to every key in silence.
-5. The cost is one extra trusted spawn per OpenCode dispatch.
-
-The limits, where the current rule stays:
-
-- **Kilo Code:** `kilo auth list` (7.0.49) prints provider display names, not provider ids, so no model maps to a variable.
-- **OpenCode 1.x:** it rejects `--standalone` and prints the boxed listing, which has no provider ids either.
-- **A seat with no model:** OpenCode then picks its own default model, so the provider is unknown.
-
-### Controls that exist in the installed builds but are not used
-
-These are the only per-invocation method controls found in any installed tool's help. None is emitted today, and none is proven; each is recorded so a later card can evaluate it instead of rediscovering it.
-
-- **`claude --bare`** (2.1.273) is the one documented native enforcement in the whole set: "Anthropic auth is strictly `ANTHROPIC_API_KEY` or `apiKeyHelper` via `--settings` (OAuth and keychain are never read)." It would make the `claude-code` `api-key` channel enforceable — but it also disables hooks, LSP, plugin sync, auto-memory and `CLAUDE.md` auto-discovery, so adopting it is a behavior change to the planner seat, not a flag flip. It is absent from `CLAUDE_BASE_ARGS`, and its presence in `minimumAdmittedVersion` 2.0.0 is unknown.
-- **`cursor-agent --api-key <key>`** supplies a key for the invocation and is documented as equivalent to `CURSOR_API_KEY`. The help says nothing about what happens when it is absent or rejected, so it is an input, not proof of precedence.
-- **`codex -c <key=value>` with `--strict-config`** can override any `~/.codex/config.toml` key for one invocation and error on keys this build does not recognise. Whether a method-selecting key exists under that mechanism was not established: settling it means running Codex against a staged config, which is more than a help capture.
-- **`copilot`'s `COPILOT_GITHUB_TOKEN`/`GH_TOKEN`/`GITHUB_TOKEN` precedence** proves the environment beats the stored login when the environment holds a token. It says nothing about the reverse case — an empty environment falls back to the stored login by design — so it cannot enforce a *selected* method.
-- **`cmd --local-only`** and **`codex --oss` / `--local-provider`** are route switches. `cli-tool-catalog.ts` already records that `cmd --help` names no API-key environment variable, which is why Command Code declares a `session` channel only.
-- **`agy --help`** (1.2.4, historical capture) exposed no authentication flag, variable or login subcommand. Current [upstream authentication docs](https://antigravity.google/docs/cli/install/#using-a-gemini-api-key), checked 2026-09-17, describe a Gemini API-key mode using a settings change plus `GEMINI_API_KEY`. SPLITBRIEF still admits only the host-configured session channel; no per-invocation method switch or fallback behavior has been proven for this adapter.
-
-### Limits of the measurements
-
-Single host, macOS only. Linux and Windows file-staging postures are read from declarations, not measured here. Antigravity is the exception: its credential bridge is admitted only on macOS, and other platforms remain unsupported with unknown authentication. Every row reflects the installed build named in the table; the catalog's `minimumAdmittedVersion` is older than every one of them, and no claim here extends downward to it. Nothing was proven by generation, by reading a credential file, or by changing a login.
 
 ---
 

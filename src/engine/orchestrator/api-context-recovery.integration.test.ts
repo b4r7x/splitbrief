@@ -34,7 +34,6 @@ import type { Config } from '../../core/schemas/config.js';
 import type { ReviewVerdict } from '../../core/schemas/review.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
-import { defaultCliAuthChannel } from '../../core/runners/cli-tool-catalog.js';
 import { error } from '../../utils/error.js';
 import type { EngineEvent } from '../events/types.js';
 import type { ApiContextDiagnostic } from '../providers/api-context-diagnostic.js';
@@ -735,7 +734,6 @@ const CODEX_LIMIT =
 const CODEX_SEAT = {
   kind: 'cli',
   tool: 'codex',
-  authChannel: defaultCliAuthChannel('codex').id,
 } as const;
 
 describe('a REVIEW seat out of quota', () => {

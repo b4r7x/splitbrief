@@ -74,11 +74,10 @@ function activateCodexShim(version: string, authProbe?: 'verified' | 'unverified
   const shim = installCompatibleCliShim({
     directory: binDir,
     tool: 'codex',
-    authChannel: 'session',
     version,
     ...(authProbe === undefined ? {} : { authProbe }),
   });
-  restoreCompatibleCliShim = activateCompatibleCliShim(shim, 'test-only-start-gate-key');
+  restoreCompatibleCliShim = activateCompatibleCliShim(shim);
   return shim;
 }
 

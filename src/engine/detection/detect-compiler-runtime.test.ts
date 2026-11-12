@@ -2,9 +2,10 @@ import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { chmod, realpath, stat, utimes, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { freezeProbeDeadlines } from '#testing/helpers/fake-timers.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
+import { stubSignInHome } from '#testing/helpers/sign-in-home.js';
 import type { RunnerDiscoveryContext } from '../../core/config/accessors/runner-discovery-context.js';
 import {
   CliExecutableReceiptSchema,
@@ -122,6 +123,10 @@ async function staleDigestReceipt(
 
 freezeProbeDeadlines();
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 describe('detection runtime binding', () => {
   it('derives the same namespace for the same receipt and none for a metadata-only identity', async () => {
     await withTempDir('detect-runtime-namespace', async (directory) => {
@@ -156,6 +161,7 @@ describe('detection runtime binding', () => {
         catalogShimScript({ version: ADMITTED_VERSION, marker, record: true }),
       );
       const receipt = await resolveCliExecutable({ command: shim, projectDir: '/neutral/project' });
+      await stubSignInHome(join(directory, 'home'), ['codex']);
 
       const evidence = await detectRunnerEvidence({
         context: cliContext(),
@@ -181,6 +187,7 @@ describe('detection runtime binding', () => {
         catalogShimScript({ version: '0.39.9', marker, record: true }),
       );
       const receipt = await resolveCliExecutable({ command: shim, projectDir: '/neutral/project' });
+      await stubSignInHome(join(directory, 'home'), ['codex']);
 
       const evidence = await detectRunnerEvidence({
         context: cliContext(),
@@ -208,6 +215,7 @@ describe('detection runtime binding', () => {
           command: shim,
           projectDir: '/neutral/project',
         });
+        await stubSignInHome(join(directory, 'home'), ['codex']);
 
         const evidence = await detectRunnerEvidence({
           context: cliContext(),
@@ -250,6 +258,7 @@ describe('fake loader and different-cache zero-dispatch', () => {
         // stat but carrying the stale content digest: stat-only revalidation
         // cannot distinguish the binary.
         const fake = await staleDigestReceipt({ path: shimPath, claimedContent: original });
+        await stubSignInHome(join(directory, 'home'), ['codex']);
 
         const evidence = await detectRunnerEvidence({
           context: cliContext(),
@@ -290,6 +299,7 @@ describe('fake loader and different-cache zero-dispatch', () => {
         });
         const namespace = detectionRuntimeNamespace(receipt);
         expect(namespace).toBeDefined();
+        await stubSignInHome(join(directory, 'home'), ['codex']);
 
         const firstEvidence = await detectRunnerEvidence({
           context: cliContext(),
@@ -337,6 +347,7 @@ describe('fake loader and different-cache zero-dispatch', () => {
       const fake = { path: receipt.path, fingerprint: { ...receipt.fingerprint } };
 
       expect(detectionRuntimeNamespace(fake)).toBeUndefined();
+      await stubSignInHome(join(directory, 'home'), ['codex']);
 
       const evidence = await detectRunnerEvidence({
         context: cliContext(),

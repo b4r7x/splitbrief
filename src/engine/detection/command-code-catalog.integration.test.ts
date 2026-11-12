@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { expireDeadlineAfterFile, freezeProbeDeadlines } from '#testing/helpers/fake-timers.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
+import { stubSignInHome } from '#testing/helpers/sign-in-home.js';
 import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
 import { detectRunnerEvidence } from './runner-evidence.js';
 
@@ -18,6 +19,9 @@ const listing = [
 
 describe.runIf(process.platform !== 'win32')('Command Code catalog completion', () => {
   freezeProbeDeadlines();
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
 
   it.each([
     {
@@ -95,6 +99,7 @@ describe.runIf(process.platform !== 'win32')('Command Code catalog completion', 
           command: shim,
           projectDir: '/neutral/project',
         });
+        await stubSignInHome(join(directory, 'home'), ['command-code']);
         const pending = detectRunnerEvidence({
           context: {
             role: 'planner',
@@ -142,6 +147,7 @@ describe.runIf(process.platform !== 'win32')('Command Code catalog completion', 
         command: shim,
         projectDir: '/neutral/project',
       });
+      await stubSignInHome(join(directory, 'home'), ['command-code']);
       const evidence = await detectRunnerEvidence({
         context: {
           role: 'planner',
@@ -192,6 +198,7 @@ describe.runIf(process.platform !== 'win32')('Command Code catalog cache', () =>
 
   async function stageHostHome(directory: string): Promise<void> {
     const hostHome = join(directory, 'host-home');
+    await stubSignInHome(hostHome, ['command-code']);
     await mkdir(join(hostHome, ...cacheFolder), { recursive: true });
     const hostCache = JSON.parse(cache);
     hostCache.body.data = [
@@ -202,7 +209,6 @@ describe.runIf(process.platform !== 'win32')('Command Code catalog cache', () =>
       },
     ];
     await writeFile(join(hostHome, ...cacheFolder, 'catalog-host.json'), JSON.stringify(hostCache));
-    vi.stubEnv('HOME', hostHome);
   }
 
   async function writeFakeCmd(

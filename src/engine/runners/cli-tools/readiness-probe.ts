@@ -11,9 +11,7 @@ import { classifyCliAdmittedVersion } from '../../../core/runners/cli-version.js
 import {
   CLI_TOOL_CATALOG,
   cliAuthChannelPlatformSupported,
-  selectCliAuthChannel,
-  type CliAuthChannel,
-  type CliAuthChannelId,
+  defaultCliAuthChannel,
   type CliToolId,
 } from '../../../core/runners/cli-tool-catalog.js';
 import { deriveCliReadiness, type CliReadinessResult } from '../../../core/schemas/readiness.js';
@@ -52,7 +50,6 @@ export interface ProbeCliReadinessOptions {
   tool: CliToolId;
   executable: CliExecutableIdentity | null;
   probe: CliProbeContract;
-  authChannel?: CliAuthChannelId | undefined;
   enabled?: boolean | undefined;
   now?: (() => number) | undefined;
   signal?: AbortSignal | undefined;
@@ -68,7 +65,6 @@ export type ProbeDeclaredCliReadinessEvidenceOptions = Readonly<{
   tool: CliToolId;
   executable: CliExecutableIdentity | null;
   probe: CliDeclaredProbeContract;
-  authChannel?: CliAuthChannelId | undefined;
   enabled?: boolean | undefined;
   signal?: AbortSignal | undefined;
   /** Receives the auth status run, so a catalog probe with the same argv can reuse its output. */
@@ -100,22 +96,10 @@ function authProbeCommandForVersion(
   return below ? { ...probe, command: probe.legacy.command } : probe;
 }
 
-/** `null` is an invalid requested channel; `undefined` is intentionally unselected. */
-function selectedAuthChannel(
-  tool: CliToolId,
-  authChannel: CliAuthChannelId | undefined,
-): CliAuthChannel | undefined | null {
-  if (authChannel === undefined) return undefined;
-  return selectCliAuthChannel(tool, { channel: authChannel }) ?? null;
-}
-
 // Codex keeps its session sign-in in the system keyring under the `keyring` store, and under
 // `auto` when the host has a keyring; neither leaves the file a run reads.
-async function absentCredentialAuth(
-  tool: CliToolId,
-  channel: CliAuthChannel,
-): Promise<'keyring' | 'missing'> {
-  if (tool !== 'codex' || channel.stateBridge !== 'host-cli-state') return 'missing';
+async function absentCredentialAuth(tool: CliToolId): Promise<'keyring' | 'missing'> {
+  if (tool !== 'codex') return 'missing';
   const store = await readCodexCredentialStore(process.env);
   return store === 'keyring' || store === 'auto' ? 'keyring' : 'missing';
 }
@@ -125,7 +109,6 @@ async function declaredReadinessEvidence({
   neutralDir,
   tool,
   probe,
-  authChannel,
   signal,
   onAuthProbeRun,
   versionProbes,
@@ -134,7 +117,6 @@ async function declaredReadinessEvidence({
   neutralDir: string;
   tool: CliToolId;
   probe: CliDeclaredProbeContract;
-  authChannel: CliAuthChannel | undefined;
   signal: AbortSignal | undefined;
   onAuthProbeRun: ((run: AuthProbeRun) => void) | undefined;
   versionProbes: VersionProbeReads | undefined;
@@ -166,17 +148,13 @@ async function declaredReadinessEvidence({
   if ((await revalidateCliExecutableIdentity(executable)) !== 'match') {
     return { version: { kind: 'cancelled' }, auth: 'cancelled' };
   }
-  if (authChannel === undefined) return { version, auth: 'not-selected' };
+  const authChannel = defaultCliAuthChannel(tool);
   if (!cliAuthChannelPlatformSupported(authChannel)) return { version, auth: 'policy-denied' };
   const authProbe =
     probe.auth.kind === 'not-run' ||
     !declaredAuthProbeIsSafe({ tool, auth: probe.auth, version: probe.version })
       ? null
       : probe.auth;
-  if (authProbe === null && authChannel.stateBridge !== 'host-cli-state') {
-    return { version, auth: 'not-run' };
-  }
-
   const authEnvironment = await probeEnvironment({
     executable,
     neutralDir,
@@ -194,9 +172,7 @@ async function declaredReadinessEvidence({
     return {
       version,
       auth:
-        authEnvironment.credential === 'present'
-          ? 'verified'
-          : await absentCredentialAuth(tool, authChannel),
+        authEnvironment.credential === 'present' ? 'verified' : await absentCredentialAuth(tool),
     };
   }
   const oracleProbe = isProviderOracleProbe({ tool, command: authProbe });
@@ -205,12 +181,8 @@ async function declaredReadinessEvidence({
   // provider listing always runs: OpenCode 2 keeps its sign-ins in `opencode.db`,
   // which the presence check does not read, so only the listing can say. An
   // unobservable credential also goes to the status command below.
-  if (
-    !oracleProbe &&
-    authEnvironment.credential === 'absent' &&
-    authChannelRequiresCredential(authChannel)
-  ) {
-    return { version, auth: await absentCredentialAuth(tool, authChannel) };
+  if (!oracleProbe && authEnvironment.credential === 'absent') {
+    return { version, auth: await absentCredentialAuth(tool) };
   }
   const authCommand = authProbeCommandForVersion(tool, authProbe, version);
   const output = await trackProbe({ tool, check: 'sign-in' }, () =>
@@ -240,7 +212,6 @@ async function declaredReadinessEvidence({
     auth: authFactFromDeclaredProbe({
       probe: authProbe,
       output,
-      requiresCredential: authChannelRequiresCredential(authChannel),
     }),
   };
 }
@@ -256,8 +227,6 @@ export async function probeDeclaredCliReadinessEvidence(
   if ((await revalidateCliExecutableIdentity(options.executable)) !== 'match') {
     return { version: { kind: 'cancelled' }, auth: 'cancelled' };
   }
-  const selectedChannel = selectedAuthChannel(options.tool, options.authChannel);
-  const authChannel = selectedChannel === null ? undefined : selectedChannel;
   const neutralDir = await mkdtemp(join(tmpdir(), 'splitbrief-readiness-'));
   try {
     return await declaredReadinessEvidence({
@@ -265,7 +234,6 @@ export async function probeDeclaredCliReadinessEvidence(
       neutralDir,
       tool: options.tool,
       probe: options.probe,
-      authChannel,
       signal: options.signal,
       onAuthProbeRun: options.onAuthProbeRun,
       versionProbes: options.versionProbes,
@@ -287,7 +255,6 @@ export async function probeCliReadiness(
     enabled: options.enabled ?? true,
     testedVersion: descriptor.compatibility.testedVersion,
     probedAt,
-    ...(options.authChannel === undefined ? {} : { authChannel: options.authChannel }),
   } as const;
   if (!base.enabled || options.executable === null) {
     return deriveCliReadiness({
@@ -313,7 +280,6 @@ export async function probeCliReadiness(
       tool: options.tool,
       executable: options.executable,
       probe: options.probe.declared,
-      ...(options.authChannel !== undefined ? { authChannel: options.authChannel } : {}),
       enabled: base.enabled,
       ...(options.signal !== undefined ? { signal: options.signal } : {}),
     });
@@ -397,8 +363,4 @@ export async function probeCliReadiness(
     auth: compatibility === 'compatible' ? auth : 'not-checked',
     ...(resolvedProviderAuth === undefined ? {} : { providerAuth: resolvedProviderAuth }),
   });
-}
-
-export function authChannelRequiresCredential(channel: CliAuthChannel): boolean {
-  return channel.env.length > 0 || channel.stateBridge === 'host-cli-state';
 }

@@ -23,12 +23,11 @@ describe('buildRunnerConfig', () => {
     });
   });
 
-  describe('Claude Code onboarding channel', () => {
-    it('persists no default channel for a newly selected Claude Code runner', () => {
+  describe('Claude Code runner build', () => {
+    it('builds a newly selected Claude Code runner with kind and tool only', () => {
       const existing = {
         kind: 'cli' as const,
         tool: 'codex' as const,
-        authChannel: 'session' as const,
       };
       const result = buildRunnerConfig('planner', {
         kind: 'cli',
@@ -36,33 +35,11 @@ describe('buildRunnerConfig', () => {
         existing,
       });
 
-      // The host CLI's own login decides; a written default would pose as a user choice.
+      // A new runner gets no written default: it would pose as a user choice.
       expect(result).toEqual({ kind: 'cli', tool: 'claude-code' });
     });
 
-    it('keeps an explicit API-key choice for Claude Code', () => {
-      const existing = {
-        kind: 'cli' as const,
-        tool: 'codex' as const,
-        authChannel: 'api-key' as const,
-      };
-      const selected = buildRunnerConfig('planner', {
-        kind: 'cli',
-        tool: 'claude-code',
-        authChannel: 'api-key',
-        existing,
-      });
-      const rebuilt = buildRunnerConfig('planner', {
-        kind: 'cli',
-        tool: 'claude-code',
-        existing: selected,
-      });
-
-      expect(expectCli(selected).authChannel).toBe('api-key');
-      expect(expectCli(rebuilt).authChannel).toBe('api-key');
-    });
-
-    it('does not add a channel while rebuilding a legacy Claude Code runner', () => {
+    it('keeps every field of a Claude Code runner that it rebuilds', () => {
       const legacy = { kind: 'cli' as const, tool: 'claude-code' as const, model: 'opus' };
       const rebuilt = buildRunnerConfig('planner', {
         kind: 'cli',
@@ -536,11 +513,10 @@ describe('buildRunnerConfig', () => {
       expect(result).toEqual({ kind: 'shell', command: 'destination-planner' });
     });
 
-    it('resets inherited CLI auth channel when switching CLI targets', () => {
+    it('drops the source model when switching CLI targets', () => {
       const source = {
         kind: 'cli' as const,
         tool: 'codex' as const,
-        authChannel: 'session' as const,
         model: 'source-model',
       };
 

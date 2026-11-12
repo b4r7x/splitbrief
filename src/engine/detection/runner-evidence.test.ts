@@ -92,7 +92,7 @@ async function settle(): Promise<void> {
 }
 
 describe('detectRunnerEvidence in-flight sharing', () => {
-  it.each(['session', 'api-key', 'provider-dependent', undefined] as const)(
+  it.each(['session', 'provider-dependent', undefined] as const)(
     'does not reuse native auth observations for %s without account freshness',
     async (authChannel) => {
       const fixture = gatedProbe();

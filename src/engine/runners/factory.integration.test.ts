@@ -567,10 +567,7 @@ describe("claude-code seats and the run's global skills", () => {
 
 describe('createImplementer', () => {
   it.each([
-    [
-      'CLI implementer',
-      withImplementer({ kind: 'cli', tool: 'codex', authChannel: 'session', model: 'test' }),
-    ],
+    ['CLI implementer', withImplementer({ kind: 'cli', tool: 'codex', model: 'test' })],
     [
       'API implementer',
       withImplementer({
@@ -629,7 +626,6 @@ describe('createImplementer', () => {
     const config = withImplementer({
       kind: 'cli',
       tool: 'codex',
-      authChannel: 'session',
       model: 'test',
       temperature: 0.3,
     });
@@ -736,7 +732,6 @@ describe('CLI role enforcement', () => {
       const config = withPlanner({
         kind: 'cli',
         tool: tool as Config['planner'] extends { kind: 'cli'; tool: infer T } ? T : never,
-        authChannel: 'session',
         model: 'test',
       });
 
@@ -748,7 +743,6 @@ describe('CLI role enforcement', () => {
     const config = withImplementer({
       kind: 'cli',
       tool: 'kiro' as Config['implementer'] extends { kind: 'cli'; tool: infer T } ? T : never,
-      authChannel: 'session',
       model: 'test',
     });
 
@@ -759,7 +753,7 @@ describe('CLI role enforcement', () => {
 describe('prepared generic gate enforcement', () => {
   it('requires matching generic gates for planner and implementer construction across every runner kind', async () => {
     const plannerConfigs = [
-      withPlanner({ kind: 'cli', tool: 'claude-code', authChannel: 'session', model: 'test' }),
+      withPlanner({ kind: 'cli', tool: 'claude-code', model: 'test' }),
       withPlanner({
         kind: 'api',
         provider: 'ollama',
@@ -772,7 +766,7 @@ describe('prepared generic gate enforcement', () => {
       withPlanner({ kind: 'agent', command: 'cat', outputFormat: 'text' }),
     ];
     const implementerConfigs = [
-      withImplementer({ kind: 'cli', tool: 'codex', authChannel: 'session', model: 'test' }),
+      withImplementer({ kind: 'cli', tool: 'codex', model: 'test' }),
       withImplementer({
         kind: 'api',
         provider: 'ollama',
@@ -857,8 +851,8 @@ describe('prepared generic gate enforcement', () => {
     ],
     [
       'CLI',
-      withPlanner({ kind: 'cli', tool: 'codex', authChannel: 'session', model: 'model-a' }),
-      withPlanner({ kind: 'cli', tool: 'codex', authChannel: 'session', model: 'model-b' }),
+      withPlanner({ kind: 'cli', tool: 'codex', model: 'model-a' }),
+      withPlanner({ kind: 'cli', tool: 'codex', model: 'model-b' }),
     ],
     [
       'shell',

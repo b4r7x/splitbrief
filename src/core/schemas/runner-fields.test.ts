@@ -350,40 +350,6 @@ describe('createRunnerConfigSchema', () => {
     ).toBe(false);
   });
 
-  it('accepts legacy CLI configs without authChannel but rejects channels unsupported by the tool', () => {
-    const schema = createRunnerConfigSchema(GenerationCommonFields);
-
-    expect(schema.safeParse({ kind: 'cli', tool: 'codex' }).success).toBe(true);
-    expect(schema.safeParse({ kind: 'cli', tool: 'codex', authChannel: 'session' }).success).toBe(
-      true,
-    );
-    const unsupported = schema.safeParse({
-      kind: 'cli',
-      tool: 'copilot',
-      authChannel: 'api-key',
-    });
-    expect(unsupported.success).toBe(false);
-    expect(unsupported.error?.issues[0]?.path).toEqual(['authChannel']);
-  });
-
-  it('keeps a historical authChannel editable without injecting a default one', () => {
-    const schema = createPlannerConfigSchema(GenerationCommonFields);
-
-    expect(schema.parse({ kind: 'cli', tool: 'claude-code' })).not.toHaveProperty('authChannel');
-    expect(schema.parse({ kind: 'cli', tool: 'claude-code', authChannel: 'session' })).toEqual({
-      kind: 'cli',
-      tool: 'claude-code',
-      authChannel: 'session',
-    });
-    for (const tool of ['opencode', 'kilo-code']) {
-      expect(
-        schema.safeParse({ kind: 'cli', tool, authChannel: 'provider-dependent' }).success,
-      ).toBe(true);
-      expect(schema.safeParse({ kind: 'cli', tool, authChannel: 'api-key' }).success).toBe(false);
-      expect(schema.safeParse({ kind: 'cli', tool, authChannel: 'session' }).success).toBe(false);
-    }
-  });
-
   it('accepts the automatic model sentinel for a backend-default CLI tool', () => {
     expect(
       createRunnerConfigSchema(GenerationCommonFields).safeParse({

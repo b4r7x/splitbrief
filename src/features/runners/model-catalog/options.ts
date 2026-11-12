@@ -21,10 +21,7 @@ import {
   type ActiveRunnerRole,
   type SeatPickerRole,
 } from '../../../core/runners/seat-roles.js';
-import {
-  cliBillingPosture,
-  type RunnerBillingPosture,
-} from '../../../core/runners/runner-billing.js';
+import type { RunnerBillingPosture } from '../../../core/runners/runner-billing.js';
 import type { RunnerKind } from '../../../core/schemas/enums.js';
 import type { ImplementerConfig } from '../../../core/schemas/implementer-config.js';
 import type { PlannerConfig } from '../../../core/schemas/planner-config.js';
@@ -197,14 +194,8 @@ function projectCliOption(
     roles: descriptor.roles,
     modelPolicy: descriptor.modelPolicy[policyRole],
     modelCapability: deriveModelCatalogCapability(descriptor.modelPolicy[policyRole], true),
-    // A tool row states what the tool's own login decides, which is nothing a
-    // list can prove: the descriptor's default channel is a product fact, not
-    // this seat's invocation.
-    billing: cliBillingPosture({
-      tool: descriptor.id,
-      authChannel: undefined,
-      installedVersion: version,
-    }),
+    // A tool's calls bill to whatever its own login uses, which no list can prove.
+    billing: 'unknown',
     permissions: cliPermissions(descriptor, policyRole),
     status,
     available: isSelectable(status, 'cli'),

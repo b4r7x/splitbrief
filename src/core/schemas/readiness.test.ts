@@ -53,13 +53,51 @@ describe('CLI runner readiness', () => {
         deriveCliReadiness(
           readyFacts({
             tool: 'claude-code',
-            authChannel: 'session',
             auth: 'unauthenticated',
           }),
         ).remediation,
       ).toBe(remediation);
     },
   );
+
+  const keychain = (name: string) =>
+    `SPLITBRIEF looks for the ${name} session in the macOS keychain. Sign in to ${name}, then run \`splitbrief doctor\` again.`;
+  const sessionFiles = (name: string) =>
+    `SPLITBRIEF looks for the ${name} session in its session files. Sign in to ${name}, then run \`splitbrief doctor\` again.`;
+  const copilotExport =
+    'Export COPILOT_GITHUB_TOKEN for GitHub Copilot CLI, then run `splitbrief doctor` again.';
+
+  it.each([
+    ['darwin', 'claude-code', keychain('Claude Code CLI')],
+    ['linux', 'claude-code', sessionFiles('Claude Code CLI')],
+    ['darwin', 'codex', sessionFiles('OpenAI Codex CLI')],
+    ['linux', 'codex', sessionFiles('OpenAI Codex CLI')],
+    ['darwin', 'opencode', sessionFiles('OpenCode CLI')],
+    ['linux', 'opencode', sessionFiles('OpenCode CLI')],
+    ['darwin', 'copilot', copilotExport],
+    ['linux', 'copilot', copilotExport],
+    ['darwin', 'kilo-code', sessionFiles('Kilo Code CLI')],
+    ['linux', 'kilo-code', sessionFiles('Kilo Code CLI')],
+    ['darwin', 'cursor', keychain('Cursor Agent CLI')],
+    ['linux', 'cursor', sessionFiles('Cursor Agent CLI')],
+    ['darwin', 'command-code', sessionFiles('Command Code CLI')],
+    ['linux', 'command-code', sessionFiles('Command Code CLI')],
+    ['darwin', 'antigravity', keychain('Google Antigravity CLI')],
+    [
+      'linux',
+      'antigravity',
+      'Google Antigravity CLI session authentication is not supported on Linux. Choose another tool in Settings > Crew, or use macOS.',
+    ],
+  ] as const)(
+    'on %s gives a signed-out %s the step of its catalog channel',
+    (platform, tool, remediation) => {
+      setPlatform(platform);
+      expect(deriveCliReadiness(readyFacts({ tool, auth: 'unauthenticated' })).remediation).toBe(
+        remediation,
+      );
+    },
+  );
+
   it('keeps installation state explicit and closed', () => {
     const states: readonly CliInstallationState[] = CliInstallationStateSchema.options;
     expect(states).toEqual(['installed', 'unavailable']);
@@ -196,6 +234,35 @@ describe('CLI runner readiness', () => {
   });
 
   it.each([
+    [
+      'linux',
+      'Google Antigravity CLI session authentication is not supported on Linux. Choose another tool in Settings > Crew, or use macOS.',
+    ],
+    [
+      'darwin',
+      'If a call to Google Antigravity CLI fails to authenticate, sign in again. Stored credentials do not prove a session; only a real call does.',
+    ],
+  ] as const)(
+    'on %s gives an unverified Antigravity sign-in the remedy of its catalog channel',
+    (platform, remediation) => {
+      setPlatform(platform);
+      expect(
+        cliReadinessRemediation(
+          {
+            tool: 'antigravity',
+            installedVersion: '1.3.5',
+            testedVersion: '1.3.5',
+            compatibility: 'compatible',
+            auth: 'unknown',
+          },
+          'unverified',
+          'doctor',
+        ),
+      ).toBe(remediation);
+    },
+  );
+
+  it.each([
     ['doctor', 'then run `splitbrief doctor` again'],
     ['picker', 'then ctrl+r'],
     ['setup', 'then ⏎ on a seat and ctrl+r'],
@@ -214,6 +281,31 @@ describe('CLI runner readiness', () => {
           recheck,
         ),
       ).toBe(`Run \`codex --version\` in a terminal and wait for it to finish, ${then}.`);
+    },
+  );
+
+  it.each([
+    ['doctor', 'then run `splitbrief doctor` again'],
+    ['picker', 'then ctrl+r'],
+    ['setup', 'then ⏎ on a seat and ctrl+r'],
+  ] as const)(
+    'tells the %s user to move a Codex keyring sign-in to the file a run reads',
+    (recheck, then) => {
+      expect(
+        cliReadinessRemediation(
+          {
+            tool: 'codex',
+            installedVersion: '0.40.0',
+            testedVersion: '0.40.0',
+            compatibility: 'compatible',
+            auth: 'keyring',
+          },
+          'unauthenticated',
+          recheck,
+        ),
+      ).toBe(
+        `Set cli_auth_credentials_store = "file" in config.toml and run codex login again, ${then}.`,
+      );
     },
   );
 

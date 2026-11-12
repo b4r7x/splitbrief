@@ -32,7 +32,6 @@ beforeEach(() => {
     installCompatibleCliShim({
       directory: shimDir,
       tool: 'codex',
-      authChannel: 'session',
     }),
   );
   vi.stubEnv('PATH', `${shimDir}:/usr/bin:/bin`);

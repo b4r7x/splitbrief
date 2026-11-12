@@ -8,7 +8,6 @@ import type { Config } from '../../../schemas/config.js';
 import type { PlannerConfig } from '../../../schemas/planner-config.js';
 import type { ImplementerConfig } from '../../../schemas/implementer-config.js';
 import type { EffortLevel } from '../../../schemas/enums.js';
-import type { CliAuthChannelId } from '../../../runners/cli-tool-catalog.js';
 import type { ActiveRunnerRole } from '../../../runners/seat-roles.js';
 import {
   mergeImplementerProfileMetadata,
@@ -42,9 +41,6 @@ export function existingToOpts(existing: PlannerConfig | ImplementerConfig): Bui
       ...common,
       kind: 'cli',
       tool: existing.tool,
-      ...(existing.authChannel !== undefined && {
-        authChannel: existing.authChannel satisfies CliAuthChannelId,
-      }),
       ...('args' in existing && { args: existing.args }),
       ...('outputFormat' in existing && { outputFormat: existing.outputFormat }),
     };

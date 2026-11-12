@@ -482,6 +482,15 @@ function activateFallbackSeat(id: CrewSeatId): void {
   fallbackActivate({ row, config });
 }
 
+/** The Settings crew row's ⏎, so the frame is the picker that row opens. */
+function activateCrewSeat(id: CrewSeatId): void {
+  const config = configStore.get().config;
+  if (config === null) throw new Error('Visual overlay fixture requires project config');
+  const row = deriveCrewRows({ config }).find((row) => row.id === id);
+  if (row === undefined) throw new Error(`Visual overlay fixture requires a ${id} seat`);
+  crewActivate({ target: { kind: 'crew', row }, config });
+}
+
 /** OpenCode detected ready, with every route its own listing serves and nothing else. */
 function seedOpencodeReady(): void {
   // OpenCode's routes are one fact: its own listing. The probe reads it, so the
@@ -739,12 +748,7 @@ function seedAntigravityNativeListing(level: 'low' | 'medium' | 'high' = 'medium
 // `agy models` 1.4.0 signed out: a progress line, then the error that says how to sign in.
 function seedAntigravitySignedOut(): void {
   publishVisualDiscovery({
-    cliTools: [
-      cliDetectionFor('unauthenticated', 'antigravity', {
-        installedVersion: '1.4.0',
-        authChannel: 'session',
-      }),
-    ],
+    cliTools: [cliDetectionFor('unauthenticated', 'antigravity', { installedVersion: '1.4.0' })],
     cliModels: [
       catalogAttempt({
         tool: 'antigravity',
@@ -816,19 +820,13 @@ function seedOpencodeSignedOutProbeTimeout(): void {
     planner: { kind: 'cli', tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash' },
   })();
   publishVisualDiscovery({
-    cliTools: [
-      cliDetectionFor('unauthenticated', 'opencode', {
-        installedVersion: '2.0.26',
-        authChannel: 'provider-dependent',
-      }),
-    ],
+    cliTools: [cliDetectionFor('unauthenticated', 'opencode', { installedVersion: '2.0.26' })],
     cliModels: [catalogAttempt({ tool: 'opencode', outcome: { kind: 'timeout' } })],
   });
 }
 
 function seedCodexVersionTimeout(signedIn: boolean): void {
   const unreadVersion = {
-    authChannel: 'session',
     installedVersion: null,
     compatibility: 'unverified',
   } as const;
@@ -1503,12 +1501,7 @@ const createClaudeEffortSetFixture: FixtureFactory = () =>
         planner: { kind: 'cli', tool: 'claude-code', model: 'opus', effort: 'high' },
       })();
       seedClaudeCodeUnsupported();
-      const config = configStore.get().config;
-      if (config === null) throw new Error('Visual overlay fixture requires project config');
-      const plan = deriveCrewRows({ config }).find((row) => row.id === 'plan');
-      if (plan === undefined) throw new Error('Visual overlay fixture requires a plan seat');
-      // The Settings crew row's ⏎, so the frame is the picker that row opens.
-      crewActivate({ target: { kind: 'crew', row: plan }, config });
+      activateCrewSeat('plan');
     },
     // The token the hook reads for the seat-axis landing — NOT 'tool:claude-code'. The left column
     // still lands on claude-code through the configured item, and the cursor lands on the effort axis.
@@ -1583,12 +1576,7 @@ const createPickerSignedOutStaleFixture: FixtureFactory = () =>
     seed: () => {
       seedCodexNativeListing();
       publishVisualDiscovery({
-        cliTools: [
-          cliDetectionFor('unauthenticated', 'codex', {
-            authChannel: 'session',
-            installedVersion: '0.155.1',
-          }),
-        ],
+        cliTools: [cliDetectionFor('unauthenticated', 'codex', { installedVersion: '0.155.1' })],
         cliModels: [catalogAttempt({ tool: 'codex', outcome: { kind: 'missing-credential' } })],
       });
     },
@@ -1639,11 +1627,7 @@ const createPickerUnreadVersionFixture: FixtureFactory = () =>
     seed: () => {
       seedConfig({ planner: { kind: 'cli', tool: 'codex', model: 'gpt-6-astra' } })();
       publishCodexListingNotRun(
-        cliDetectionFor('unverified', 'codex', {
-          authChannel: 'session',
-          installedVersion: null,
-          auth: 'authenticated',
-        }),
+        cliDetectionFor('unverified', 'codex', { installedVersion: null, auth: 'authenticated' }),
       );
     },
     focus: 'tool:codex',
@@ -1749,6 +1733,16 @@ const createCursorHaikuExpandedFixture: FixtureFactory = () =>
       pickerViewStore.expand(CURSOR_HAIKU_MODEL, CURSOR_HAIKU_MODEL);
     },
     focus: 'tool:cursor',
+  });
+// A saved id the listing does not name has no route, axis or ladder: its row reads closed.
+const createPickerCustomModelNoChildrenFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      seedCursorConfirmed('zz-custom-model');
+      activateCrewSeat('plan');
+    },
+    focus: seatAxisFocus('plan'),
   });
 const createPlannerPickerClaudeFixture: FixtureFactory = () =>
   createOverlayFixture({
@@ -1969,7 +1963,7 @@ const createSignedOutToolFixture: FixtureFactory = () =>
       publishVisualDiscovery({
         cliTools: [
           cliDetectionFor('ready', 'codex'),
-          cliDetectionFor('unauthenticated', 'claude-code', { authChannel: 'session' }),
+          cliDetectionFor('unauthenticated', 'claude-code'),
         ],
       });
     },
@@ -2079,37 +2073,6 @@ function localConnectionSlowFixture(): FixtureLifecycle {
   };
 }
 
-// The cursor opens on the expanded model row; one step down lands it on the auth row, whose
-// byline is the frame's subject.
-const createAuthConfigOwnedFixture: FixtureFactory = () => ({
-  ...createOverlayFixture({
-    overlay: 'planner-picker',
-    focus: OPENCODE_FOCUS,
-    seed: () => {
-      seedProviderAuth('read');
-      pickerViewStore.expand(OPENCODE_ROUTED_MODEL);
-    },
-  }),
-  afterMount: (write) => write('\x1b[B'),
-});
-
-const createAuthUnsupportedFixture: FixtureFactory = () =>
-  createOverlayFixture({
-    overlay: 'planner-picker',
-    focus: 'tool:claude-code',
-    seed: () => {
-      seedClaudeAliasRows();
-      seedVisualConfig({
-        planner: {
-          kind: 'cli',
-          tool: 'claude-code',
-          model: 'opus',
-          authChannel: 'api-key',
-        },
-      });
-      pickerViewStore.expand('opus');
-    },
-  });
 const createContractChoiceFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'planner-picker',
@@ -3236,6 +3199,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-planner-picker-cursor'), createPlannerPickerCursorFixture],
   [scenarioId('overlay-picker-cursor-expanded'), createCursorExpandedFixture],
   [scenarioId('overlay-picker-cursor-haiku-expanded'), createCursorHaikuExpandedFixture],
+  [scenarioId('overlay-picker-custom-model-no-children'), createPickerCustomModelNoChildrenFixture],
   [scenarioId('overlay-picker-custom-launcher'), createCustomCommandLauncherFixture],
   [scenarioId('overlay-picker-tool-order'), createToolOrderFixture],
   [scenarioId('overlay-picker-tool-order-filter'), createToolOrderFilterFixture],
@@ -3333,8 +3297,6 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
     scenarioId('overlay-local-connection-listed'),
     () => localConnectionFixture({ models: [{ id: 'qwen2.5-coder:7b' }] }),
   ],
-  [scenarioId('overlay-picker-auth-config-owned'), createAuthConfigOwnedFixture],
-  [scenarioId('overlay-picker-auth-unsupported'), createAuthUnsupportedFixture],
   [scenarioId('overlay-picker-contract-choice'), createContractChoiceFixture],
   [scenarioId('overlay-picker-custom-command'), createCustomCommandFixture],
   [scenarioId('overlay-picker-custom-model'), createCustomModelFixture],

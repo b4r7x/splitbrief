@@ -253,7 +253,6 @@ async function routeFixture({
   const cliTools = await detectAvailableCliTools({
     projectDir: target.projectDir,
     tools: ['opencode', 'claude-code'],
-    authChannels: { opencode: 'provider-dependent', 'claude-code': 'session' },
     role: 'implementer',
   });
   expect(Object.fromEntries(cliTools.map((tool) => [tool.tool, tool.diagnostic.state]))).toEqual({

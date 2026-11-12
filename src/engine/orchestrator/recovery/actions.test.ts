@@ -814,7 +814,7 @@ describe('applyRecoveryAction: switch-seat', () => {
   it('records the refused prompt and its tool as the cause of a BUILD tool change', async () => {
     const ref = setupSession('prompt-too-large-switch');
     const task = makeTask({ id: 'T400', status: 'in_progress' });
-    const runner = { kind: 'cli', tool: 'opencode', authChannel: 'provider-dependent' } as const;
+    const runner = { kind: 'cli', tool: 'opencode' } as const;
     const issue = buildRunnerInputTooLargeRecoveryIssue({
       task,
       phase: 'implementing',

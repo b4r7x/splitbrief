@@ -7,10 +7,9 @@ import { inlineRunnerCommand } from '../../../core/config/custom-commands.js';
 import {
   CLI_TOOL_CATALOG,
   cliAuthChannelPlatformSupported,
-  type CliAuthChannelId,
+  defaultCliAuthChannel,
   type CliToolId,
 } from '../../../core/runners/cli-tool-catalog.js';
-import { admitCliAuthChannel } from '../../../core/runners/cli-auth-selection.js';
 import {
   CODEX_KEYRING_SIGN_IN,
   UNVERIFIED_AUTH_FIX,
@@ -44,7 +43,6 @@ import {
   type ConfiguredCustomRunner,
 } from '../custom-trust.js';
 import { resolveSeatModel } from '../host-model-selection.js';
-import { resolveCliRunnerAuth } from '../sandbox-env.js';
 import { admitFreshCliStart, type FreshCliStartGateResult } from '../start-gate.js';
 import { throwIfPreparationAborted } from './abort-guard.js';
 import {
@@ -75,18 +73,15 @@ function wait(ms: number, signal: AbortSignal): Promise<void> {
 function cliAdmissionProblem({
   reason,
   tool,
-  authChannel,
   compatibility,
 }: {
   reason: Extract<FreshCliStartGateResult, { kind: 'denied' }>['reason'];
   tool: CliToolId;
-  authChannel: CliAuthChannelId;
   compatibility: RunnerEvidence['compatibility'];
 }): { message: string; fix: string; cause: RunnerReadinessCauseId } {
   const name = CLI_TOOL_CATALOG[tool].displayName;
   const facts: Parameters<typeof cliReadinessRemediation>[0] = {
     tool,
-    authChannel,
     installedVersion: 'installedVersion' in compatibility ? compatibility.installedVersion : null,
     testedVersion:
       'testedVersion' in compatibility
@@ -104,7 +99,7 @@ function cliAdmissionProblem({
           return {
             message: `${name} is not signed in.`,
             cause: 'unauthenticated',
-            fix: cliAuthRemediation({ tool, authChannel }, 'doctor'),
+            fix: cliAuthRemediation(tool, 'doctor'),
           };
         case 'keyring':
           return {
@@ -116,7 +111,7 @@ function cliAdmissionProblem({
           return {
             message: `${name} credentials are invalid.`,
             cause: 'unauthenticated',
-            fix: cliAuthRemediation({ tool, authChannel }, 'doctor'),
+            fix: cliAuthRemediation(tool, 'doctor'),
           };
         case 'offline':
           return {
@@ -134,17 +129,9 @@ function cliAdmissionProblem({
           return {
             message: `${name} sign-in check was denied by a policy.`,
             cause: 'auth-policy-denied',
-            fix: CLI_TOOL_CATALOG[tool].auth.channels.some(
-              (channel) => channel.id === authChannel && !cliAuthChannelPlatformSupported(channel),
-            )
-              ? cliAuthRemediation({ tool, authChannel }, 'doctor')
+            fix: !cliAuthChannelPlatformSupported(defaultCliAuthChannel(tool))
+              ? cliAuthRemediation(tool, 'doctor')
               : READINESS_DIAGNOSTIC_REMEDIATION['auth-policy-denied'],
-          };
-        case 'not-selected':
-          return {
-            message: `${name} has no authentication channel selected.`,
-            cause: 'auth-not-selected',
-            fix: cliAuthRemediation({ tool }, 'doctor'),
           };
         case 'cancelled':
           return {
@@ -254,7 +241,6 @@ async function evaluateCli(
     runner: candidate.runner,
     config: context.config,
   });
-  const authChannel = resolveCliRunnerAuth(candidate.runner).id;
   const expectedContextKey = runnerDiscoveryContextKey(discoveryContext);
   const detect = (): Promise<RunnerEvidence> =>
     context.deps.detectRunnerEvidence({
@@ -316,7 +302,7 @@ async function evaluateCli(
   if (
     admission.kind === 'denied' &&
     admission.reason.kind === 'authentication' &&
-    authChannel === 'session'
+    defaultCliAuthChannel(candidate.runner.tool).id === 'session'
   ) {
     await wait(READINESS_RETRY_DELAY_MS, context.signal);
     throwIfAborted(context.signal);
@@ -362,7 +348,6 @@ async function evaluateCli(
     const problem = cliAdmissionProblem({
       reason: admission.reason,
       tool: candidate.runner.tool,
-      authChannel,
       compatibility: evidence.compatibility,
     });
     return {
@@ -376,30 +361,9 @@ async function evaluateCli(
         runnerCause: {
           tool: candidate.runner.tool,
           cause: problem.cause,
-          ...((admission.reason.kind === 'authentication' ||
-            admission.reason.kind === 'authentication-unverified') && { authChannel }),
           seats: [formatSlotLabel(candidate.slot)],
         },
       },
-    };
-  }
-  // The invocation gate binds no installed version yet, so an explicit method
-  // the matrix cannot enforce is refused here, before the planner spends a token.
-  const authAdmission = admitCliAuthChannel({
-    tool: candidate.runner.tool,
-    platform: process.platform,
-    installedVersion: undefined,
-    authChannel: candidate.runner.authChannel,
-  });
-  if (authAdmission.kind === 'refused') {
-    return {
-      kind: 'blocked',
-      check: blockedCheck(
-        candidate.slot,
-        candidate.runner.kind,
-        authAdmission.message,
-        'Remove auth_channel from this runner in .splitbrief/config.yaml, then retry.',
-      ),
     };
   }
   // The seat starts, but every call on a route with no credential is refused: the seat reads

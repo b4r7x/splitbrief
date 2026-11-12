@@ -6935,6 +6935,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: PICKER_TITLE_MARKER,
       },
       {
+        id: 'overlay-picker-custom-model-no-children',
+        title: 'Overlay · planner picker · Cursor saved custom model from the crew row',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
         id: 'overlay-picker-opencode-expanded',
         title: 'Overlay · planner picker · OpenCode routes and axes expanded',
         marker: PICKER_TITLE_MARKER,
@@ -7071,16 +7076,6 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         title: `Overlay · local connection · ${title}`,
         marker,
       })),
-      {
-        id: 'overlay-picker-auth-config-owned',
-        title: 'Overlay · authentication owned by CLI configuration',
-        marker: 'CLI decides',
-      },
-      {
-        id: 'overlay-picker-auth-unsupported',
-        title: 'Overlay · configured authentication method without enforcement proof',
-        marker: 'unproven',
-      },
       {
         id: 'overlay-picker-contract-choice',
         title: 'Overlay · planner picker · custom command contract',

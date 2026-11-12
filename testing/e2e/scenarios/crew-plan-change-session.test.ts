@@ -163,7 +163,6 @@ describe('e2e: a PLAN seat moved with /crew before a killed run continues', {
     const tools = await detectAvailableCliTools({
       projectDir: target.projectDir,
       tools: ['codex', 'claude-code'],
-      authChannels: { codex: 'session', 'claude-code': 'session' },
       role: 'planner',
     });
     expect(Object.fromEntries(tools.map((tool) => [tool.tool, tool.diagnostic.state]))).toEqual({

@@ -7,7 +7,7 @@ import type {
 } from '../schemas/readiness.js';
 import type { RunnerConfig } from '../config/accessors/runner-config.js';
 import type { ActiveRunnerRole } from '../runners/seat-roles.js';
-import type { CliAuthChannelId, CliToolId } from '../runners/cli-tool-catalog.js';
+import type { CliToolId } from '../runners/cli-tool-catalog.js';
 
 export type RunnerReadinessCauseId =
   | ReadinessDiagnosticStateId
@@ -17,15 +17,13 @@ export type RunnerReadinessCauseId =
   | 'stale-checks'
   | 'probe-failed'
   | 'model-unconfirmed'
-  | 'auth-not-selected'
   | 'auth-check-cancelled'
   | 'auth-check-not-run';
 
-/** One refusal fact of a CLI. `authChannel` is set only for an authentication cause. */
+/** One refusal fact of a CLI. */
 export interface RunnerReadinessCause {
   tool: CliToolId;
   cause: RunnerReadinessCauseId;
-  authChannel?: CliAuthChannelId | undefined;
   seats: string[];
 }
 

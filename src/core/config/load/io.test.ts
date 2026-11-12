@@ -336,6 +336,25 @@ describe('config loading', () => {
       expect(() => loadConfig(dir)).toThrow('workflow.git.autoPush: Unknown config key');
     });
 
+    const sessionClaude = { kind: 'cli', tool: 'claude-code', auth_channel: 'session' };
+    const unknownKey =
+      'Unknown config key — remove it or use the current spelling from docs/CONFIGURATION.md.';
+    it.each([
+      ['planner', { planner: sessionClaude }, `planner.authChannel: ${unknownKey}`],
+      ['reviewer', { reviewer: sessionClaude }, `reviewer.authChannel: ${unknownKey}`],
+      ['implementer', { implementer: sessionClaude }, `implementer.authChannel: ${unknownKey}`],
+      [
+        'implementerProfiles.profiles.fast',
+        { implementer_profiles: { default: 'fast', profiles: { fast: sessionClaude } } },
+        `implementerProfiles.profiles.fast.authChannel: ${unknownKey}`,
+      ],
+    ] as const)('refuses to load auth_channel on a CLI runner in %s', (place, yaml, message) => {
+      const dir = join(TMP, `removed-auth-channel-${place}`);
+      writeConfigYaml(dir, yaml);
+
+      expect(() => loadConfig(dir)).toThrow(message);
+    });
+
     it('accepts every current workflow field', () => {
       const dir = join(TMP, 'workflow-full-surface');
       writeConfigYaml(dir, {

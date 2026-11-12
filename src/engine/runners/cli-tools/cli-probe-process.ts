@@ -81,8 +81,6 @@ async function credentialPresence(
       return (await bridgedCliStatePresent(env, tool)) ? 'present' : 'absent';
     case 'host-account':
       return 'unobservable';
-    case 'none':
-      return 'absent';
   }
 }
 

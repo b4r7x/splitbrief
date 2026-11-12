@@ -239,9 +239,8 @@ export function sandboxRootCandidates(
  * Each role gets its own sandbox root; each CLI tool on that role gets a root
  * beneath it so one tool's live credential link never lands in another tool's
  * HOME. A run's roles share one worktree, so a single root would make one
- * role's bridged-credential destination the other's, and two runners of the
- * same tool on different auth channels would clear and re-bridge over each
- * other. The unscoped root is left only for a caller that has no role to name —
+ * role's bridged-credential destination the other's. The unscoped root is left
+ * only for a caller that has no role to name —
  * a detection probe, a readiness probe, a conformance harness, each of which
  * works in its own fresh temporary directory — and no role-scoped acquisition
  * ever writes into it. Every runner acquisition names its role, which

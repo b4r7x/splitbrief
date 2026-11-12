@@ -13,8 +13,9 @@ import { loadConfig, writeConfig } from '../../core/config/load/io.js';
 import { createDefaultConfig } from '../../core/config/load/defaults.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { CliToolDetection } from '../../core/discovery/detection.js';
+import { deriveFallbackRows } from '../../core/crew/fallback.js';
 import { deriveCrewRows } from '../../core/crew/rows.js';
-import { crewActivate } from '../../features/crew/rows.js';
+import { crewActivate, fallbackActivate } from '../../features/crew/rows.js';
 import {
   defaultPickerEffectDeps,
   type PickerEffectDeps,
@@ -920,6 +921,99 @@ describe('ToolModelPicker model catalog', () => {
         model: 'opus',
         effort: 'max',
       });
+    });
+    ui.unmount();
+  });
+});
+
+describe('ToolModelPicker on a saved model with nothing to open', () => {
+  const CUSTOM = 'zz-custom-model';
+
+  beforeEach(() => {
+    forceUnicodeGlyphs();
+    resetPickerStores();
+    terminalSizeStore.__testReset({ cols: 120, rows: 36, isSmall: false });
+    detectionStore.setDetection({
+      providers: [],
+      cliTools: [cliDetectionFor('ready', 'claude-code'), cliDetectionFor('ready', 'cursor')],
+    });
+  });
+
+  const customRowLine = (frame: string) =>
+    modelColumnLines(frame).find((line) => line.includes('Zz Custom Model'));
+  const footerLine = (frame: string) =>
+    frame.split('\n').find((line) => line.includes('↑↓ select'));
+
+  /** The row reads closed, the keys read as on any row that confirms, and one ⏎ saves. */
+  async function expectOneEnterSaves(
+    ui: ReturnType<typeof renderFeature>,
+    saveConfig: Mock<PickerEffectDeps['saveConfig']>,
+  ) {
+    await vi.waitFor(() => {
+      expect(customRowLine(frameText(ui))).toContain(glyph('liveBar'));
+    });
+    const frame = frameText(ui);
+    expect(customRowLine(frame)).not.toContain(glyph('disclosureOpen'));
+    expect(footerLine(frame)).toContain('⏎ confirm');
+    expect(footerLine(frame)).toContain('esc cancel');
+
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(saveConfig).toHaveBeenCalledTimes(1);
+    });
+  }
+
+  it('saves the seat on one ⏎ from the crew row', async () => {
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'cursor', model: CUSTOM } });
+    configStore.__testReset({ projectDir: '/tmp/project', config });
+    const plan = deriveCrewRows({ config }).find((row) => row.id === 'plan');
+    if (plan === undefined) throw new Error('No plan seat row.');
+    crewActivate({ target: { kind: 'crew', row: plan }, config });
+    const saveConfig = vi.fn<PickerEffectDeps['saveConfig']>(async () => SAVED);
+    const ui = renderFeature(
+      <ToolModelPicker
+        slot="seat"
+        role="planner"
+        deps={{ ...defaultPickerEffectDeps, saveConfig }}
+      />,
+    );
+
+    await expectOneEnterSaves(ui, saveConfig);
+    expect(saveConfig.mock.calls[0]?.[0].planner).toMatchObject({
+      kind: 'cli',
+      tool: 'cursor',
+      model: CUSTOM,
+    });
+    ui.unmount();
+  });
+
+  it('saves the fallback on one ⏎ from the fallback row', async () => {
+    const config = makeConfig({
+      planner: {
+        kind: 'cli',
+        tool: 'claude-code',
+        model: 'opus',
+        fallback: { tool: 'cursor', model: CUSTOM },
+      },
+    });
+    configStore.__testReset({ projectDir: '/tmp/project', config });
+    const plan = deriveFallbackRows({ config, cliTools: detectionStore.get().cliTools }).find(
+      (row) => row.id === 'plan',
+    );
+    if (plan === undefined) throw new Error('No plan fallback row.');
+    fallbackActivate({ row: plan, config });
+    const saveConfig = vi.fn<PickerEffectDeps['saveConfig']>(async () => SAVED);
+    const ui = renderFeature(
+      <ToolModelPicker
+        slot="fallback"
+        role="planner"
+        deps={{ ...defaultPickerEffectDeps, saveConfig }}
+      />,
+    );
+
+    await expectOneEnterSaves(ui, saveConfig);
+    expect(saveConfig.mock.calls[0]?.[0].planner).toMatchObject({
+      fallback: { tool: 'cursor', model: CUSTOM },
     });
     ui.unmount();
   });

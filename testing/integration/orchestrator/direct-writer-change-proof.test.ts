@@ -114,7 +114,6 @@ function implementerConfig(): CliImplementerConfig {
   return {
     kind: 'cli',
     tool: 'opencode',
-    authChannel: 'provider-dependent',
     model: 'opencode/test-direct-writer',
     contextLength: 4096,
     temperature: 0.1,

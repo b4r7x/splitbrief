@@ -45,9 +45,6 @@ function cliSeat(
   return {
     kind: 'cli',
     tool,
-    ...(CLI_TOOL_CATALOG[tool].auth.kind === 'provider-dependent' && {
-      authChannel: 'provider-dependent',
-    }),
     contextLength: 2_000_000,
     ...(fallback !== undefined && { fallback }),
   } as CliImplementerConfig;

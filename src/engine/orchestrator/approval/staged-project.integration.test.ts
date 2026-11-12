@@ -669,7 +669,7 @@ describe('createStagedProject — sensitive file exclusion', () => {
     }
   });
 
-  it('uses only the selected CLI auth channel in a staged implementer', async () => {
+  it('keeps every API key out of a staged CLI implementer on its session channel', async () => {
     const dir = createTempDir('staged-cli-auth-test');
     const hostHome = createTempDir('staged-cli-host-home');
     const originalHome = process.env.HOME;
@@ -683,13 +683,7 @@ describe('createStagedProject — sensitive file exclusion', () => {
       const session = await createStagedProject({
         projectDir: dir,
         config: makeConfig({
-          implementer: { kind: 'cli', tool: 'codex', authChannel: 'session' },
-        }),
-      });
-      const apiKey = await createStagedProject({
-        projectDir: dir,
-        config: makeConfig({
-          implementer: { kind: 'cli', tool: 'codex', authChannel: 'api-key' },
+          implementer: { kind: 'cli', tool: 'codex' },
         }),
       });
       try {
@@ -698,14 +692,8 @@ describe('createStagedProject — sensitive file exclusion', () => {
         );
         expect(session.sandboxEnv.OPENAI_API_KEY).toBeUndefined();
         expect(session.sandboxEnv.ANTHROPIC_API_KEY).toBeUndefined();
-        expect(apiKey.sandboxEnv.HOME).toBe(
-          join(apiKey.projectDir, SANDBOX_DIR, 'implementer', 'codex', 'home'),
-        );
-        expect(apiKey.sandboxEnv.OPENAI_API_KEY).toBe('sk-openai');
-        expect(apiKey.sandboxEnv.ANTHROPIC_API_KEY).toBeUndefined();
       } finally {
         session.cleanup();
-        apiKey.cleanup();
       }
     } finally {
       if (originalHome === undefined) delete process.env.HOME;

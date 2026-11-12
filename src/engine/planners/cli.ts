@@ -28,7 +28,7 @@ import {
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
 import { seatAxisWords } from '../../core/runners/effort-channel.js';
 import { callAdmittedCli, requireCliSeat } from '../runners/start-gate.js';
-import { createRunnerSandboxEnv, resolveCliRunnerAuth } from '../runners/sandbox-env.js';
+import { createRunnerSandboxEnv } from '../runners/sandbox-env.js';
 import { withCliInvocationIdentity } from '../runners/invocation-identity.js';
 
 function isRecoverableResumeNoise(event: RunnerCallEvent, resumeId: string): boolean {
@@ -47,7 +47,6 @@ export function createCliPlanner(
 ): Planner {
   const { config, initialSessionId, cliSeat, modelCache } = opts;
   const plannerCfg = assertPlannerKind(config, 'cli');
-  resolveCliRunnerAuth(plannerCfg);
   const resolvedModel = resolveCliModel(plannerCfg.model, plannerCfg.tool);
   const adapter = lookupCliPlannerAdapter(plannerCfg.tool);
   const { supportsSessionResume, supportsEffort } = adapter;
@@ -129,7 +128,7 @@ export function createCliPlanner(
           prompt,
           steering: callbacks.steering,
           installedVersion: gate.installedVersion,
-          callContext: withCliInvocationIdentity({ runner: plannerCfg, callContext, executable }),
+          callContext: withCliInvocationIdentity({ tool: plannerCfg.tool, callContext }),
           onOutput: (text: string) => callbacks.onOutput(text),
           onCallEvent,
           onSessionId: threaded

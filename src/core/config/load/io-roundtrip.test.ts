@@ -7,7 +7,6 @@ import { loadConfig, writeConfig } from './io.js';
 import { configPath } from './document.js';
 import { createDefaultConfig } from './defaults.js';
 import { SPLITBRIEF_DIR } from '../../paths.js';
-import { defaultCliAuthChannel } from '../../runners/cli-tool-catalog.js';
 import { configStore } from '../../../stores/project/config.js';
 import {
   commitCustomCommand,
@@ -29,7 +28,7 @@ function yamlBlock(rawYaml: string, key: string): string | undefined {
   return rawYaml.match(new RegExp(`^${key}:\\n(?:^[ \\t].*\\n)*`, 'm'))?.[0];
 }
 
-function legacyClaudeConfigYaml(comment: string): string {
+function claudePlannerConfigYaml(comment: string): string {
   return [
     `# ${comment}`,
     'version: 3',
@@ -70,7 +69,7 @@ describe('config roundtrip', () => {
       mkdirSync(dir, { recursive: true });
       writeConfigYamlText(
         dir,
-        `${legacyClaudeConfigYaml('The review seat is None.')}reviewer: none\n`,
+        `${claudePlannerConfigYaml('The review seat is None.')}reviewer: none\n`,
       );
 
       const { config } = loadConfig(dir);
@@ -121,10 +120,12 @@ describe('config roundtrip', () => {
       expect(reloaded.config.workflow.approve).toBe('none');
     });
 
-    it('keeps a legacy Claude channel omission read-only', () => {
-      const dir = join(TMP, 'legacy-claude-channel');
+    it('loads a Claude Code planner config without writing the file', () => {
+      const dir = join(TMP, 'claude-planner-load-read-only');
       const path = join(dir, SPLITBRIEF_DIR, 'config.yaml');
-      const yaml = legacyClaudeConfigYaml('Keep this comment and every key in its original order.');
+      const yaml = claudePlannerConfigYaml(
+        'Keep this comment and every key in its original order.',
+      );
       writeConfigYamlText(dir, yaml);
 
       const before = readFileSync(path, 'utf-8');
@@ -139,16 +140,15 @@ describe('config roundtrip', () => {
         tool: 'claude-code',
         model: 'claude-opus-4-6',
       });
-      expect(defaultCliAuthChannel('claude-code').id).toBe('session');
       expect(after).toBe(before);
       expect(createHash('sha256').update(after).digest('hex')).toBe(beforeHash);
       expect(afterStat.mtimeNs).toBe(beforeStat.mtimeNs);
     });
 
-    it('preserves legacy comments and unrelated YAML when a later save changes another field', async () => {
-      const dir = join(TMP, 'legacy-claude-channel-save');
+    it('preserves comments and unrelated YAML when a later save changes another field', async () => {
+      const dir = join(TMP, 'claude-planner-save-keeps-comments');
       const path = join(dir, SPLITBRIEF_DIR, 'config.yaml');
-      writeConfigYamlText(dir, legacyClaudeConfigYaml('Keep this comment.'));
+      writeConfigYamlText(dir, claudePlannerConfigYaml('Keep this comment.'));
 
       configStore.load(dir);
       const config = loadConfig(dir).config;
@@ -161,7 +161,6 @@ describe('config roundtrip', () => {
       expect(saved).toContain('# Keep this comment.');
       expect(saved).toContain('model: claude-opus-4-6');
       expect(saved).toContain('exact_runner_id: vendor/model@2026-08-01');
-      expect(saved).not.toContain('auth_channel:');
       expect(saved.indexOf('planner:')).toBeLessThan(saved.indexOf('implementer:'));
       expect(saved.indexOf('implementer:')).toBeLessThan(saved.indexOf('unrelated_extension:'));
       expect(loadConfig(dir).config.planner).toEqual({

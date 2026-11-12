@@ -376,7 +376,6 @@ describe('configWithSwitchedSeat', () => {
         tool: 'claude-code',
         model: 'opus',
         effort: 'high',
-        authChannel: 'session',
         args: ['--verbose'],
         outputFormat: 'stream-json',
         customModels: ['opus-preview'],

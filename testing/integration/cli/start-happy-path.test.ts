@@ -12,7 +12,6 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { runCommand } from '#testing/helpers/commander.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { createDefaultConfig } from '../../../src/core/config/load/defaults.js';
-import { defaultCliAuthChannel } from '../../../src/core/runners/cli-tool-catalog.js';
 import { toYaml } from '../../../src/core/config/load/transform.js';
 import { SPLITBRIEF_DIR, CONFIG_FILE } from '../../../src/core/paths.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
@@ -45,16 +44,11 @@ beforeEach(() => {
     YAML.stringify(toYaml(createDefaultConfig())),
     'utf-8',
   );
-  // The shim must satisfy the channel the product's own default config names,
-  // which is not `session` on a platform whose credential store the sandbox
-  // cannot read.
   restoreCompatibleCliShim = activateCompatibleCliShim(
     installCompatibleCliShim({
       directory: shimDir,
       tool: 'claude-code',
-      authChannel: defaultCliAuthChannel('claude-code').id,
     }),
-    'test-only-start-happy-path-key',
   );
 });
 

@@ -5,7 +5,6 @@ import { getApiProviderDescriptor } from '../../core/providers/api-provider-cata
 import {
   cliAuthChannelHostStateAccess,
   defaultCliAuthChannel,
-  selectCliAuthChannel,
   type CliAuthChannel,
   type CliHostStateAccess,
   type CliToolId,
@@ -86,19 +85,6 @@ export async function pruneSandboxNpmCache(projectDir: string): Promise<void> {
   );
 }
 
-export function resolveCliRunnerAuth(runner: Extract<RunnerLike, { kind: 'cli' }>): CliAuthChannel {
-  if (runner.authChannel === undefined) return defaultCliAuthChannel(runner.tool);
-  const channel = selectCliAuthChannel(runner.tool, { channel: runner.authChannel });
-  if (channel === undefined) {
-    throw error(
-      'runner-auth-channel-invalid',
-      `CLI runner "${runner.tool}" does not support authChannel "${runner.authChannel}"`,
-      { tool: runner.tool, authChannel: runner.authChannel },
-    );
-  }
-  return channel;
-}
-
 const PROVIDER_API_KEY_ENV_RE = /_API_KEY$/;
 
 /**
@@ -128,12 +114,11 @@ export type CliChannelStaging = Readonly<{
 }>;
 
 /**
- * How a child of `tool` is staged for an auth channel — the single selection
- * readiness, the catalog probe and dispatch all build their environment from,
- * so what a probe verified is what the runner is handed. A channel keeps only
+ * How a child of `tool` is staged for its auth channel. Readiness, the catalog
+ * probe and dispatch all build their environment from this one staging, so
+ * what a probe verified is what the runner is handed. A channel keeps only
  * its own credential path: the environment variables it declares and the host
- * state it reaches, so an API-key channel gets a private `HOME` with no bridged
- * session. No channel (the version probe) stages no tool state at all.
+ * state it reaches. No channel (the version probe) stages no tool state at all.
  */
 export function cliChannelStaging(
   tool: CliToolId,
@@ -162,7 +147,8 @@ export function runnerAuthEnvKeys(runner: RunnerLike): string[] {
       break;
     }
     case 'cli': {
-      for (const envVar of cliAuthChannelEnvKeys(resolveCliRunnerAuth(runner))) keys.add(envVar);
+      for (const envVar of cliAuthChannelEnvKeys(defaultCliAuthChannel(runner.tool)))
+        keys.add(envVar);
       break;
     }
     case 'shell':
@@ -182,7 +168,7 @@ export function runnerAuthEnvKeys(runner: RunnerLike): string[] {
  */
 export function runnerSandboxIdentity(runner: RunnerLike): string {
   const parts: string[] = [runner.kind];
-  if (runner.kind === 'cli') parts.push(runner.tool, resolveCliRunnerAuth(runner).id);
+  if (runner.kind === 'cli') parts.push(runner.tool, defaultCliAuthChannel(runner.tool).id);
   if (runner.kind === 'api') parts.push(runner.provider);
   return [...parts, ...runnerAuthEnvKeys(runner).toSorted()].join('\u0000');
 }
@@ -315,11 +301,10 @@ export async function createSandboxEnv(options: {
           mkdir(dir, { recursive: true, mode: SECURE_DIR_MODE }),
         ),
       );
-      // A new child must never inherit a previous run's selected session state,
-      // including when this invocation selects an API-key channel instead. The clear
-      // is confined to this role's own root, so it can only reach a snapshot this
-      // role bridged. A runner with no CLI identity has no snapshot of its own to
-      // drop and must not touch another runner's. Teardown sweeps what is left.
+      // A new child must never inherit a previous run's selected session state.
+      // The clear is confined to this role's own root, so it can only reach a
+      // snapshot this role bridged. A runner with no CLI identity has no snapshot of
+      // its own to drop and must not touch another runner's. Teardown sweeps what is left.
       if (selectedCli !== undefined) await clearBridgedStateUnder(root, selectedCli);
       const env = createSanitizedChildEnv(process.env, preserveEnvKeys);
       const sandboxState = {
@@ -377,7 +362,7 @@ export async function createRunnerSandboxEnv(
   }
   return createSandboxEnv({
     projectDir,
-    ...cliChannelStaging(runner.tool, resolveCliRunnerAuth(runner)),
+    ...cliChannelStaging(runner.tool, defaultCliAuthChannel(runner.tool)),
     role,
   });
 }

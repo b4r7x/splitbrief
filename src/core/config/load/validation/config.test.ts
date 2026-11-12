@@ -46,13 +46,12 @@ describe('validateConfig', () => {
         [block]: { kind: 'agent-sdk', model: 'claude-sonnet-4-6' },
       };
 
-      const { errors } = validateConfig(config);
-
-      expect(errors).toContainEqual({
-        path: `${block}.kind`,
-        message: 'Runner kind "agent-sdk" was removed; use kind cli, api, shell, or agent.',
-      });
-      expect(errors.filter((e) => e.path === `${block}.kind`)).toHaveLength(1);
+      expect(validateConfig(config).errors).toEqual([
+        {
+          path: `${block}.kind`,
+          message: 'Runner kind "agent-sdk" was removed; use kind cli, api, shell, or agent.',
+        },
+      ]);
     },
   );
 
@@ -669,5 +668,41 @@ describe('validateConfig', () => {
       path: 'planner.tool',
       message,
     });
+  });
+
+  it.each([
+    [
+      'an unknown key',
+      { kind: 'cli', tool: 'claude-code', authChannel: 'session' },
+      'authChannel: Unknown config key — remove it or use the current spelling from docs/CONFIGURATION.md.',
+    ],
+    [
+      'a missing value',
+      { kind: 'cli' },
+      'tool: Missing — add it as shown in docs/CONFIGURATION.md.',
+    ],
+    [
+      'a wrong value',
+      { kind: 'cli', tool: 1 },
+      'tool: Invalid input: expected string, received number',
+    ],
+  ] as const)('reports %s in the reviewer block as in the planner block', (_case, block, line) => {
+    const lines = (seat: string) =>
+      validateConfig({ ...makeConfig(), [seat]: block }).errors.map(
+        ({ path, message }) => `${path}: ${message}`,
+      );
+
+    expect(lines('planner')).toEqual([`planner.${line}`]);
+    expect(lines('reviewer')).toEqual([`reviewer.${line}`]);
+  });
+
+  it('loads reviewer: none with no error', () => {
+    expect(validateConfig({ ...makeConfig(), reviewer: 'none' }).errors).toEqual([]);
+  });
+
+  it('keeps one error at reviewer for a value that is neither none nor a block', () => {
+    expect(validateConfig({ ...makeConfig(), reviewer: 'off' }).errors).toEqual([
+      { path: 'reviewer', message: 'Invalid input' },
+    ]);
   });
 });

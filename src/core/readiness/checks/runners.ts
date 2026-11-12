@@ -15,11 +15,7 @@ import {
   formatSlotLabel,
   type SeatDisplayName,
 } from '../../crew/identity.js';
-import {
-  CLI_TOOL_CATALOG,
-  defaultCliAuthChannel,
-  type CliToolId,
-} from '../../runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG, type CliToolId } from '../../runners/cli-tool-catalog.js';
 import { getIsolationStrategy } from '../../config/accessors/values.js';
 import type { Config } from '../../schemas/config.js';
 import {
@@ -74,7 +70,6 @@ export function buildRunnerChecks({
     const seats = configuredCliTools.get(runner.tool) ?? [];
     seats.push({
       slot,
-      authChannel: runner.authChannel ?? defaultCliAuthChannel(runner.tool).id,
       model: cliSeatModels?.get(runnerSlotId(slot)) ?? runner.model,
     });
     configuredCliTools.set(runner.tool, seats);

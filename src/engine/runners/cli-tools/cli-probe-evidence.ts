@@ -4,7 +4,7 @@ import type {
   CliProviderAuth,
 } from '../../../core/discovery/detection.js';
 import type { AuthFact, ProbeOutcome } from '../../../core/discovery/runner-evidence.js';
-import type { CliAuthChannelId, CliToolId } from '../../../core/runners/cli-tool-catalog.js';
+import type { CliToolId } from '../../../core/runners/cli-tool-catalog.js';
 import { deriveCliReadiness, type CliReadinessResult } from '../../../core/schemas/readiness.js';
 import type { CliAuthProbe, CliProbeOutput, CliVersionProbe } from './contract.js';
 import { parseProviderOracleOutput } from './provider-oracle.js';
@@ -40,11 +40,9 @@ export function versionOutcomeFromProbe({
 export function authFactFromDeclaredProbe({
   probe,
   output,
-  requiresCredential,
 }: Readonly<{
   probe: Exclude<CliAuthProbe, { kind: 'not-run' }>;
   output: CliProbeOutput;
-  requiresCredential: boolean;
 }>): AuthFact {
   if (output.timedOut) return 'timeout';
   if (output.outputExceeded) return 'malformed';
@@ -52,7 +50,7 @@ export function authFactFromDeclaredProbe({
   try {
     const auth = probe.parse(output);
     if (auth === 'verified' && output.exitCode !== 0) return 'unknown';
-    if (auth === 'not-required' && requiresCredential) return 'unknown';
+    if (auth === 'not-required') return 'unknown';
     return auth;
   } catch {
     return 'malformed';
@@ -104,7 +102,6 @@ export function legacyAuthState(auth: AuthFact): CliAuthState {
       return 'not-checked';
     case 'timeout':
       return 'timeout';
-    case 'not-selected':
     case 'unknown':
     case 'invalid':
     case 'policy-denied':
@@ -144,7 +141,6 @@ export function untrustedResult({
     enabled: boolean;
     testedVersion: string;
     probedAt: number;
-    authChannel?: CliAuthChannelId | undefined;
   }>;
   executable: CliExecutableIdentity;
   installedVersion: string | null;

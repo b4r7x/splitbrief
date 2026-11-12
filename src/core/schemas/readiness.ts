@@ -9,10 +9,10 @@ import {
   NON_READY_CLI_READINESS_STATES,
 } from '../discovery/detection.js';
 import {
-  CLI_AUTH_CHANNEL_IDS,
   CLI_TOOL_CATALOG,
   cliAuthChannelHostStateAccess,
   cliAuthChannelPlatformSupported,
+  defaultCliAuthChannel,
   signInOutranksUnreadVersion,
 } from '../runners/cli-tool-catalog.js';
 import { CliToolIdSchema } from './enums.js';
@@ -111,12 +111,6 @@ export const CliReadinessFactsSchema = z
     testedVersion: z.string().min(1),
     compatibility: CliCompatibilityStateSchema,
     auth: CliAuthStateSchema,
-    /**
-     * The channel `auth` is a fact about. Absent when no channel was selected,
-     * which is also the only case where the remedy cannot name the credential
-     * the runner needs.
-     */
-    authChannel: z.enum(CLI_AUTH_CHANNEL_IDS).optional(),
     /** What the tool's credential oracle said; absent when it has none. */
     providerAuth: CliProviderAuthSchema.optional(),
     probedAt: z.number().int().nonnegative(),
@@ -223,19 +217,9 @@ export function cliSignInStep(names: string, recheck: CliRecheck): string {
   return `Sign in to ${names}, ${thenRecheck(recheck)}.`;
 }
 
-export function cliAuthRemediation(
-  runner: Readonly<{
-    tool: CliReadinessFacts['tool'];
-    authChannel?: CliReadinessFacts['authChannel'];
-  }>,
-  recheck: CliRecheck,
-): string {
-  const channels = CLI_TOOL_CATALOG[runner.tool].auth.channels;
-  const name = CLI_TOOL_CATALOG[runner.tool].displayName;
-  const channel = channels.find((entry) => entry.id === runner.authChannel);
-  if (channel === undefined) {
-    return `Select an authentication channel for ${name}, ${thenRecheck(recheck)}.`;
-  }
+export function cliAuthRemediation(tool: CliReadinessFacts['tool'], recheck: CliRecheck): string {
+  const name = CLI_TOOL_CATALOG[tool].displayName;
+  const channel = defaultCliAuthChannel(tool);
   if (!cliAuthChannelPlatformSupported(channel)) {
     const supported = channel.supportedPlatforms?.map(platformName).join(', ');
     return `${name} ${channel.id} authentication is not supported on ${platformName(process.platform)}. Choose another tool in Settings > Crew, or use ${supported}.`;
@@ -253,8 +237,6 @@ export function cliAuthRemediation(
       return `SPLITBRIEF looks for the ${name} session in the ${platformName(process.platform)} keychain. ${signIn}`;
     case 'bridged-files':
       return `SPLITBRIEF looks for the ${name} session in its session files. ${signIn}`;
-    case 'none':
-      return signIn;
   }
 }
 
@@ -266,7 +248,7 @@ export const CODEX_KEYRING_SIGN_IN = `${CLI_TOOL_CATALOG.codex.displayName} keep
 
 /** The step that moves a Codex keyring sign-in to the file a run reads. */
 export function codexKeyringSignInFix(recheck: CliRecheck): string {
-  return `Set cli_auth_credentials_store = "file" in config.toml and run codex login again, or use OPENAI_API_KEY, ${thenRecheck(recheck)}.`;
+  return `Set cli_auth_credentials_store = "file" in config.toml and run codex login again, ${thenRecheck(recheck)}.`;
 }
 
 export function cliExecutableTrustRemediation(name: string, recheck: CliRecheck): string {
@@ -274,10 +256,7 @@ export function cliExecutableTrustRemediation(name: string, recheck: CliRecheck)
 }
 
 export function cliReadinessRemediation(
-  facts: Pick<
-    CliReadinessFacts,
-    'tool' | 'authChannel' | 'installedVersion' | 'testedVersion' | 'compatibility'
-  > &
+  facts: Pick<CliReadinessFacts, 'tool' | 'installedVersion' | 'testedVersion' | 'compatibility'> &
     Partial<Pick<CliReadinessFacts, 'auth'>>,
   status: Exclude<z.infer<typeof CliReadinessStateSchema>, 'ready'>,
   recheck: CliRecheck,
@@ -299,20 +278,15 @@ export function cliReadinessRemediation(
       if (facts.installedVersion === null || facts.compatibility !== 'compatible') {
         return `Verify ${name} against tested version ${facts.testedVersion}, ${thenRecheck(recheck)}.`;
       }
-      if (
-        CLI_TOOL_CATALOG[facts.tool].auth.channels.some(
-          (channel) =>
-            channel.id === facts.authChannel && !cliAuthChannelPlatformSupported(channel),
-        )
-      )
-        return cliAuthRemediation(facts, recheck);
+      if (!cliAuthChannelPlatformSupported(defaultCliAuthChannel(facts.tool)))
+        return cliAuthRemediation(facts.tool, recheck);
       // Honest about the ceiling of a cheap check: stored credentials prove
       // presence, never a working session, and re-running readiness cannot
       // change that — only a real call can.
       return `If a call to ${name} fails to authenticate, sign in again. Stored credentials do not prove a session; only a real call does.`;
     case 'unauthenticated':
       if (facts.auth === 'keyring') return codexKeyringSignInFix(recheck);
-      return cliAuthRemediation(facts, recheck);
+      return cliAuthRemediation(facts.tool, recheck);
   }
 }
 

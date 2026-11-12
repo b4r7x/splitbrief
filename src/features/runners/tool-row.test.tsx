@@ -99,61 +99,6 @@ const readyPermissions = {
 };
 
 describe('runner row grammar', () => {
-  it('aligns authentication and effort values in the same column', async () => {
-    const model = { id: 'sonnet' };
-    const auth = await rowLine(
-      {
-        kind: 'auth',
-        model,
-        method: 'host-configured',
-        choices: [],
-        steps: false,
-        unproven: false,
-        last: false,
-        tree: { depth: 1, parentContinues: false },
-      },
-      40,
-    );
-    const effort = await rowLine(
-      {
-        kind: 'axis',
-        model,
-        axis: 'effort',
-        providerPrefix: '',
-        value: 'auto',
-        choices: [],
-        steps: false,
-        last: true,
-        tree: { depth: 1, parentContinues: false },
-      },
-      40,
-    );
-    expect(auth.indexOf('CLI decides') + 'CLI decides'.length).toBe(
-      effort.indexOf('auto') + 'auto'.length,
-    );
-    expect(auth.indexOf('auth')).toBe(effort.indexOf('effort'));
-  });
-  it.each([false, true])(
-    'keeps auth semantics whole at 23 cells, unproven=%s',
-    async (unproven) => {
-      const line = await rowLine(
-        {
-          kind: 'auth',
-          model: { id: 'sonnet' },
-          method: 'host-configured',
-          choices: [],
-          steps: false,
-          unproven,
-          last: true,
-          tree: { depth: 1, parentContinues: false },
-        },
-        23,
-      );
-      expect(line).toMatch(unproven ? /auth +unproven/ : /auth +CLI decides/);
-      expect(line).not.toContain(ELLIPSIS);
-    },
-  );
-
   it('renders dim status suffixes without parens badges', async () => {
     const unavailable = pickerItem({
       id: 'deepseek',

@@ -220,7 +220,6 @@ describe.runIf(process.platform === 'darwin')(
       const tools = await detectAvailableCliTools({
         projectDir: target.projectDir,
         tools: ['antigravity'],
-        authChannels: { antigravity: 'session' },
         role: 'planner',
       });
       expect(tools[0]?.diagnostic.state, JSON.stringify(tools[0]?.diagnostic)).toBe('ready');

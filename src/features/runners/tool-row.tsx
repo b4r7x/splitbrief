@@ -4,13 +4,7 @@ import { glyph } from '../../lib/glyphs.js';
 import { getTerminalCellWidth, sanitizeTerminalDisplayText } from '../../utils/display-text.js';
 import { modelRowMatchesId } from './model-catalog/catalog.js';
 import type { PickerOption } from './model-catalog/options.js';
-import {
-  AUTH_METHOD_WORDS,
-  AUTH_ROW_LABEL,
-  AUTH_UNPROVEN_WORD,
-  type RightRow,
-  type TreeLead,
-} from './model-catalog/rows.js';
+import type { RightRow, TreeLead } from './model-catalog/rows.js';
 import { planModelRows, type ModelRowPlan } from './model-row-plan.js';
 import { formatPickerStatusLabel, formatRouteAuth } from './picker-format.js';
 import { isExpandableRow, type RouteAuthContext } from './right-column-policy.js';
@@ -144,21 +138,6 @@ export function renderModelRow({
     );
   }
   const rowPlan = plan ?? planModelRows({ rows: [row], width: maxWidth, providerId: undefined });
-  if (row.kind === 'auth') {
-    // The value is the state, so the row carries no check; a row with nothing to
-    // choose also carries no disclosure, and so says nothing about being steerable.
-    const word = AUTH_METHOD_WORDS[row.method];
-    return (
-      <ListRow
-        treeLead={treeLead(row.tree, row.last)}
-        label={AUTH_ROW_LABEL}
-        metadata={row.unproven ? AUTH_UNPROVEN_WORD : word}
-        state={isCursor ? 'active' : 'default'}
-        width={rowPlan.childWidth}
-        keepWhole="metadata"
-      />
-    );
-  }
   if (row.kind === 'axis') {
     return (
       <ListRow

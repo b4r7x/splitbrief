@@ -479,42 +479,6 @@ describe('prepareExecution', () => {
     }
   });
 
-  it('blocks an explicit auth channel the enforcement matrix cannot guarantee', async () => {
-    const project = projectDir();
-    const config = makeConfig({
-      planner: { kind: 'cli', tool: 'codex', authChannel: 'api-key' },
-    });
-    const prepareSession = vi.fn();
-
-    const outcome = await prepareExecution({
-      projectDir: project,
-      feature: 'explicit auth channel',
-      effectiveConfig: config,
-      signal: new AbortController().signal,
-      policy: policy('new-workflow'),
-      deps: {
-        collectArgVectorPreflightChecks: async () => [],
-        collectReadiness: async () => ({ report: readyReport(project), config }),
-        detectRunnerEvidence: async ({ context }) => freshCliEvidence(context),
-        resolveCliExecutableAliases: async () => ({
-          command: 'codex',
-          executable,
-          usedFallback: false,
-        }),
-        prepareNewSession: prepareSession,
-      },
-    });
-
-    expect(outcome.kind).toBe('blocked');
-    if (outcome.kind !== 'blocked') return;
-    const check = outcome.report.sections
-      .find((section) => section.id === 'runners')
-      ?.checks.find((entry) => entry.id === 'runners.preparation.planner');
-    expect(check?.severity).toBe('blocker');
-    expect(check?.fix).toContain('auth_channel');
-    expect(prepareSession).not.toHaveBeenCalled();
-  });
-
   it('leaves the arg-vector preflight unrun when the trust ladder refuses the executable', async () => {
     const project = projectDir();
     const config = makeConfig({ planner: { kind: 'cli', tool: 'codex' } });
@@ -1032,7 +996,7 @@ describe('prepareExecution', () => {
   it('names the credential the runner is missing when the start gate denies authentication', async () => {
     const project = projectDir();
     const config = makeConfig({
-      planner: { kind: 'cli', tool: 'codex', authChannel: 'session' },
+      planner: { kind: 'cli', tool: 'codex' },
     });
     const detectRunnerEvidence = vi.fn<PrepareExecutionDependencies['detectRunnerEvidence']>(
       async ({ context }) => ({
@@ -1168,7 +1132,6 @@ describe('prepareExecution', () => {
       runnerCause: { tool: 'codex', cause: 'unknown-version' },
     });
     expect(checks[0]?.diagnosticState).toBeUndefined();
-    expect(checks[0]?.runnerCause?.authChannel).toBeUndefined();
   });
 
   it.each([
@@ -1215,13 +1178,6 @@ describe('prepareExecution', () => {
       'Check the account and access policy',
     ],
     [
-      'not-selected',
-      undefined,
-      'auth-not-selected',
-      'OpenAI Codex CLI has no authentication channel selected.',
-      'Select an authentication channel',
-    ],
-    [
       'cancelled',
       undefined,
       'auth-check-cancelled',
@@ -1242,7 +1198,7 @@ describe('prepareExecution', () => {
       const pending = collectRunnerAdmissionChecks({
         routeCatalogs: new Map(),
         projectDir: projectDir(),
-        config: makeConfig({ planner: { kind: 'cli', tool: 'codex', authChannel: 'session' } }),
+        config: makeConfig({ planner: { kind: 'cli', tool: 'codex' } }),
         purpose: 'spec',
         interaction: 'headless',
         deps: {
@@ -1256,7 +1212,7 @@ describe('prepareExecution', () => {
         fix: expect.stringContaining(remedy),
       });
       expect(checks[0]?.diagnosticState).toBe(state);
-      expect(checks[0]?.runnerCause).toMatchObject({ cause, authChannel: 'session' });
+      expect(checks[0]?.runnerCause).toMatchObject({ cause });
       if (auth !== 'missing' && auth !== 'invalid') {
         expect(checks[0]?.fix).not.toContain('Sign in to');
       }
@@ -1265,7 +1221,7 @@ describe('prepareExecution', () => {
 
   it('keeps an unknown session separate from a policy denial on another seat', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    const seat = { kind: 'cli', tool: 'codex', authChannel: 'session' } as const;
+    const seat = { kind: 'cli', tool: 'codex' } as const;
     const pending = collectRunnerAdmissionChecks({
       routeCatalogs: new Map(),
       projectDir: projectDir(),
@@ -1293,7 +1249,7 @@ describe('prepareExecution', () => {
   it('names --allow-unverified-auth when headless admission fail-closes on unverified auth', async () => {
     const project = projectDir();
     const config = makeConfig({
-      planner: { kind: 'cli', tool: 'codex', authChannel: 'session' },
+      planner: { kind: 'cli', tool: 'codex' },
     });
 
     const outcome = await prepareExecution({
