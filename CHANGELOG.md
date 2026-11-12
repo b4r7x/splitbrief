@@ -675,6 +675,12 @@
 - The help of a read-only Settings row shows only why the row is read-only. Before, its last word was cut at 80x24.
 - ⏎ on a read-only Settings row no longer shows the reason twice.
 - A message that the queue refuses shows its reason once. Before, a second copy stayed in the conversation as a warning, and one reason named an internal phase.
+- Under an empty composer, the legend of a waiting confirmation prompt or plan card reads `tab/⏎ back to the actions`. Before, it named Tab only.
+- In a narrow terminal, the legend under typed words keeps `tab back to the actions`, with a shorter ⏎ label: `⏎ queues the correction` or `⏎ request changes`.
+- A draft of only spaces shows the legend of an empty composer, as ⏎ treats it.
+- The plan card keeps its highlighted row after the help or the stop options close.
+- After a halt refuses typed words, the keys stay in the composer with the words. Before, the panel took the keys, and a typed letter chose one of its rows.
+- With the run stopped and Session options open, the composer shows two lines of a typed draft. Before, it showed one line.
 
 ## [0.1.0] - 2026-08-07
 

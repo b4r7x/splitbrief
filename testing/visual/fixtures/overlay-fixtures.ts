@@ -82,6 +82,8 @@ import {
 import { configError } from '../../../src/core/config/errors.js';
 import { tokensStore } from '../../../src/stores/workflow/tokens.js';
 import { routerStore, type RouteData } from '../../../src/stores/navigation/router.js';
+import { saveSessionDraft } from '../../../src/stores/ui/session-drafts.js';
+import { createDraftDocument } from '../../../src/core/composer/document.js';
 import { prepareWorkflowExecution } from '../../helpers/workflow-screen.js';
 import { flushEffects } from '../../helpers/ink.js';
 import { makeRunRecord } from '../../helpers/factories/run-record.js';
@@ -3174,6 +3176,25 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [
     scenarioId('workflow-stop-menu-quit-hint'),
     () => ({ ...createParkedStopMenuFixture(), afterMount: (write) => write('\x03') }),
+  ],
+  // The draft was typed before the run stopped, so the composer restores it as the screen mounts.
+  [
+    scenarioId('workflow-stop-menu-parked-over-draft'),
+    () => {
+      const lifecycle = createParkedStopMenuFixture();
+      return {
+        ...lifecycle,
+        setup: async (context) => {
+          await lifecycle.setup(context);
+          const route = routerStore.get();
+          if (route.screen !== 'workflow') throw new Error('The parked fixture needs a run');
+          saveSessionDraft(
+            route.run.ref,
+            createDraftDocument('First draft line\nSecond draft line'),
+          );
+        },
+      };
+    },
   ],
   [
     scenarioId('workflow-stop-menu-failed'),

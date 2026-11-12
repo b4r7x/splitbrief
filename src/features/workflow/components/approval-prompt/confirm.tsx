@@ -27,6 +27,7 @@ import {
   getApprovalConfirmLabel,
   getConfirmOptions,
   isIrreversibleActionClass,
+  unfocusedPromptLegend,
   type ConfirmFrame,
 } from '../../prompt-rows/approval.js';
 import { CONFIRM_PHRASE } from '../../../../core/approval/types.js';
@@ -35,8 +36,8 @@ import { navigateIndex } from '../../../../utils/indexing.js';
 import { fitKeyLegend } from '../../../../core/key-legend.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
 import { isCommandDraft } from '../../../../core/composer/submission.js';
+import { isBlankDraft } from '../../../../components/composer/use-paste-drafts.js';
 import { composerLiveStore } from '../../../../stores/ui/composer-live.js';
-import { RESULT_MENU_UNFOCUSED_LEGEND } from '../../result/options.js';
 import { ELLIPSIS } from '../../../../utils/display-text.js';
 import { countNoun } from '../../../../utils/pluralize.js';
 
@@ -106,12 +107,16 @@ export function ConfirmApprovalPrompt({
       : undefined;
   // Without the keys the panel says what ⏎ does with the draft below and how to reach its rows.
   // Plain words that no seat takes in this phase stay in the composer, so ⏎ promises nothing.
+  const blankDraft = composerLiveStore.use((draft) => isBlankDraft(draft.document));
   const commandDraft = composerLiveStore.use((draft) => isCommandDraft(draft.document));
-  const composerEmpty = composerLiveStore.use((draft) => draft.empty);
-  const unfocusedLegend =
-    composerEmpty || (!commandDraft && !queues)
-      ? RESULT_MENU_UNFOCUSED_LEGEND
-      : `${commandDraft ? '⏎ runs the command' : '⏎ queues the typed correction'}${SOFT_SEP}${RESULT_MENU_UNFOCUSED_LEGEND}`;
+  const unfocusedLegend = unfocusedPromptLegend({
+    blank: blankDraft,
+    command: commandDraft,
+    words: queues
+      ? { long: '⏎ queues the typed correction', short: '⏎ queues the correction' }
+      : null,
+    width: frame.width,
+  });
 
   const moveTo = (index: number): void => {
     selectedIndexRef.current = index;

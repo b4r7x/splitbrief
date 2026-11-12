@@ -142,6 +142,11 @@ export function trimDraftDocument(document: DraftDocument): DraftDocument {
   return normalizeDraftDocument({ version: 1, parts });
 }
 
+/** A draft of spaces is as blank as an empty one: what the submission would carry is nothing. */
+export function isBlankDraft(document: DraftDocument): boolean {
+  return trimDraftDocument(document).parts.length === 0;
+}
+
 function shiftFolds(
   folds: readonly DraftFold[],
   range: { start: number; end: number },

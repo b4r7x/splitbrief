@@ -25,6 +25,8 @@ import type { Summary } from '../../../../src/core/schemas/summary.js';
 import { retainedWorkspaceNotices, retainedWorkspaceProjection } from './retained-workspace.js';
 import { closedQueueProjection } from './closed-queue-projection.js';
 import { cliStopContinuedProjection } from './cli-stop-continued.js';
+import { approvalDraftDeletedProjection } from './approval-draft-deleted-projection.js';
+import { approvalWordsStayProjection } from './approval-words-stay-projection.js';
 import { taskId, type Check, type Task } from '../../../../src/core/schemas/task.js';
 import { buildRepoChecks } from '../../../../src/core/readiness/checks/repo.js';
 import {
@@ -277,6 +279,11 @@ export interface WorkflowFixtureProjection {
   readonly question?: FixtureQuestion;
   readonly questionPreview?: 'overflow-back' | 'write' | 'closed';
   readonly approval?: FixtureApproval;
+  /**
+   * A gate the fixture opens after its first frame, once the draft is typed: the crop still measures
+   * the panel from these facts, while setup leaves the composer the keys until the gate opens.
+   */
+  readonly approvalAfterMount?: Pick<FixtureApproval, 'actionClass' | 'actionDescription'>;
   readonly review?: FixtureReview;
   /** The artifact the document review panel names, when the projection opens that gate. */
   readonly reviewArtifact?: ReviewArtifact;
@@ -9525,7 +9532,9 @@ const projections = [
   reviewProjection,
   reviewSubagentRowProjection,
   approvalConfirmProjection,
+  approvalDraftDeletedProjection,
   approvalConfirmOverDraftProjection,
+  approvalWordsStayProjection,
   approvalConfirmSecretProjection,
   { ...approvalConfirmProjection, scenarioId: scenarioId('workflow-approval-confirm-short') },
   approvalConfirmLongPathProjection,
@@ -9777,15 +9786,16 @@ export function getWorkflowFixturePromptRows(
   projection: WorkflowFixtureProjection,
   cols: number,
 ): number {
+  const approval = projection.approval ?? projection.approvalAfterMount;
   const approvalState: ApprovalPromptState =
-    projection.approval === undefined
+    approval === undefined
       ? { status: 'idle' }
       : {
           status: 'pending',
           request: {
             tier: 'confirm',
-            actionClass: projection.approval.actionClass ?? 'package_change',
-            actionDescription: projection.approval.actionDescription,
+            actionClass: approval.actionClass ?? 'package_change',
+            actionDescription: approval.actionDescription,
             taskId: WORKFLOW_FIXTURE_TASK_ID,
             phase: 'reviewing-plan',
           },

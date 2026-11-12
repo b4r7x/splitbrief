@@ -26,6 +26,7 @@ import {
 import { requestSteer } from '../handlers.js';
 import { composerDraftStore } from '../../../stores/ui/composer-draft.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
+import { overlayStore } from '../../../stores/ui/overlay.js';
 import { settleSlashHandoff, startSlashHandoff } from '../slash-handoff.js';
 
 export function WorkflowHeader({
@@ -145,6 +146,9 @@ export function WorkflowFooter({
     (view) => selectBuildMessageBrief(view.briefs)?.status === 'pending',
   );
   const stopping = stopStore.use((state) => state.intent !== 'none');
+  const parked = stopStore.use((state) => state.phase === 'parked');
+  const stopSheetOpen = overlayStore.use((state) => state.active === 'stop-sheet');
+  const compactRows = parked && stopSheetOpen ? 2 : 1;
   const reviewing = operationsStore.use(selectScheduledReview);
   const reviewNone = runViewStore.use((view) => view.reviewNone);
   const placeholder = queuePlaceholder({
@@ -177,7 +181,7 @@ export function WorkflowFooter({
       />
       {beforeComposer}
       <Composer
-        maxRows={compactInput ? 1 : 6}
+        maxRows={compactInput ? compactRows : 6}
         key={composerSession}
         width={composerWidth}
         onSubmit={handleInput}

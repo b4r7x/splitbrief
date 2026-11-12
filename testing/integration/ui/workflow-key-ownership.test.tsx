@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { flushEffects, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import {
   CONFIRM_PHRASE,
   type TieredApprovalRequest,
@@ -10,17 +12,26 @@ import {
 } from '../../../src/core/approval/types.js';
 import {
   CONFIRM_REASON_UNSTATED,
+  PROMPT_COMMAND_LEGEND,
   formatApprovalActionDescription,
 } from '../../../src/features/workflow/prompt-rows/approval.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
 import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
 import type { ReviewInputEffects } from '../../../src/features/workflow/review-parser.js';
+import type { WorkflowScreenDeps } from '../../../src/features/workflow/hooks/workflow-screen/use-model.js';
+import type { RuntimeCommandDef } from '../../../src/core/runtime/commands/types.js';
+import { WorkflowScreen } from '../../../src/app/screens/workflow.js';
 import { composerLiveStore } from '../../../src/stores/ui/composer-live.js';
 import { draftDocumentText, inputHistoryStore } from '../../../src/stores/ui/input-history.js';
+import { configStore } from '../../../src/stores/project/config.js';
+import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import type { Phase } from '../../../src/core/schemas/enums.js';
+import { taskId } from '../../../src/core/schemas/task.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
 import { glyph } from '../../../src/lib/glyphs.js';
-import { mountWorkflowScreen } from '#testing/helpers/workflow-screen.js';
+import { listRowLead } from '../../../src/components/list-row.js';
+import { setStopHandler } from '../../../src/features/workflow/handlers.js';
+import { mountWorkflowScreen, prepareWorkflowExecution } from '#testing/helpers/workflow-screen.js';
 import { createMockFilteredStdin, pointerEvent } from '#testing/helpers/mouse-zones.js';
 import { wireAppMouse } from '../../../src/app/mouse.js';
 
@@ -52,6 +63,13 @@ function confirmRequest(): TieredApprovalRequest {
 
 function mountWorkflow(rows = 60) {
   return mountWorkflowScreen({ deps: workflowDeps, projectDir, rows });
+}
+
+function legendRows(frame: string): string[] {
+  return stripAnsiStyles(frame)
+    .split('\n')
+    .filter((line) => line.includes('back to the actions'))
+    .map((line) => line.trim().slice(1, -1).trim());
 }
 
 describe('WorkflowScreen key ownership', () => {
@@ -182,19 +200,44 @@ describe('WorkflowScreen key ownership', () => {
     const DRAFT = 'also fix the typo';
     const enqueue = vi.fn<ReviewInputEffects['enqueue']>();
 
+    function mountCommandScreen(
+      deps: WorkflowScreenDeps,
+      commands: RuntimeCommandDef[],
+      onRuntimeCommand: (command: string) => void,
+    ) {
+      const config = makeConfig();
+      const feature = 'screen test feature';
+      const prepared = prepareWorkflowExecution({ projectDir, feature, config });
+      configStore.__testReset({ config, projectDir });
+      terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
+      routerStore.navigate({
+        to: 'workflow',
+        run: makeRunRecord({ ref: prepared.session.ref, feature }),
+        execution: { kind: 'local', prepared },
+      });
+      return renderFeature(
+        <WorkflowScreen commands={commands} onRuntimeCommand={onRuntimeCommand} deps={deps} />,
+        { cols: 120, rows: 60 },
+      );
+    }
+
+    type GateMount = (deps: WorkflowScreenDeps) => ReturnType<typeof renderFeature>;
+
     // The clock stops at the open and then moves past the grace, so every key after that is one
     // the user typed with the gate on screen.
     async function openGate(
       draft: string,
       phase: Phase = 'implementing',
       request = confirmRequest(),
+      mount: GateMount = (deps) => mountWorkflowScreen({ deps, projectDir }),
     ) {
       enqueue.mockReset();
       enqueue.mockResolvedValue({ status: 'accepted', messageId: 'queued-1' });
-      const ui = mountWorkflowScreen({
-        deps: { runWorkflow, reviewInput: { openExternalEditor: async () => {}, enqueue } },
-        projectDir,
-      });
+      const deps: WorkflowScreenDeps = {
+        runWorkflow,
+        reviewInput: { openExternalEditor: async () => {}, enqueue },
+      };
+      const ui = mount(deps);
       await vi.waitFor(() => expect(runWorkflow).toHaveBeenCalled());
       runViewStore.__testReset({ phase });
       lifecycleStore.__testReset({ status: 'running' });
@@ -300,6 +343,128 @@ describe('WorkflowScreen key ownership', () => {
       gate.ui.stdin.write('\r');
       await vi.waitFor(() => expect(gate.settled()).toEqual(CONFIRMED));
       expect(enqueue).not.toHaveBeenCalled();
+      gate.ui.unmount();
+    });
+
+    it('gives the prompt the keys on ⏎ once the draft is deleted', async () => {
+      const gate = await openGate(DRAFT);
+      let remaining = DRAFT;
+      for (const _ of DRAFT) {
+        remaining = remaining.slice(0, -1);
+        gate.ui.stdin.write('\b');
+        await flushEffects();
+        await vi.waitFor(() => expect(composerLiveStore.get().text).toBe(remaining));
+      }
+      await vi.waitFor(() =>
+        expect(legendRows(gate.ui.lastFrame() ?? '')).toEqual(['tab/⏎ back to the actions']),
+      );
+      expect(stripAnsiStyles(gate.ui.lastFrame() ?? '')).not.toContain(
+        `${listRowLead('active')}y   Confirm`,
+      );
+
+      gate.ui.stdin.write('\r');
+      await vi.waitFor(() =>
+        expect(stripAnsiStyles(gate.ui.lastFrame() ?? '')).toContain(
+          `${listRowLead('active')}y   Confirm`,
+        ),
+      );
+      expect(gate.settled()).toBeUndefined();
+      expect(enqueue).not.toHaveBeenCalled();
+      gate.ui.unmount();
+    });
+
+    it('names the command for a slash draft, runs it on ⏎, and keeps the prompt open', async () => {
+      const dispatched: string[] = [];
+      const commands: RuntimeCommandDef[] = [
+        {
+          kind: 'noarg',
+          name: '/help',
+          label: 'Help',
+          description: 'Show help',
+          category: 'navigate',
+          validScreens: ['workflow'],
+          handler: () => {},
+        },
+      ];
+      const gate = await openGate('/help ', 'implementing', confirmRequest(), (deps) =>
+        mountCommandScreen(deps, commands, (command) => dispatched.push(command)),
+      );
+
+      await vi.waitFor(() =>
+        expect(legendRows(gate.ui.lastFrame() ?? '')).toEqual([
+          `${PROMPT_COMMAND_LEGEND} · tab back to the actions`,
+        ]),
+      );
+
+      gate.ui.stdin.write('\r');
+      await vi.waitFor(() =>
+        expect({ dispatched, settled: gate.settled() }).toEqual({
+          dispatched: ['/help'],
+          settled: undefined,
+        }),
+      );
+      expect(enqueue).not.toHaveBeenCalled();
+      expect(stripAnsiStyles(gate.ui.lastFrame() ?? '')).toContain('Change a package manifest:');
+      gate.ui.unmount();
+    });
+
+    it('reads the composer again when a second prompt with the same task and action opens', async () => {
+      const request: TieredApprovalRequest = { ...confirmRequest(), taskId: taskId('T001') };
+      const gate = await openGate('', 'implementing', request);
+
+      gate.ui.stdin.write('x');
+      await vi.waitFor(() =>
+        expect(gate.settled()).toEqual({ decision: 'deny', reason: 'user_denied' }),
+      );
+      await vi.waitFor(() =>
+        expect(stripAnsiStyles(gate.ui.lastFrame() ?? '')).not.toContain('Deny'),
+      );
+      await flushEffects();
+
+      gate.ui.stdin.write(DRAFT);
+      await vi.waitFor(() => expect(composerLiveStore.get().text).toBe(DRAFT));
+      await flushEffects();
+
+      let second: TieredApprovalResponse | undefined;
+      void openApprovalPrompt(request).then((response) => {
+        second = response;
+      });
+      await vi.waitFor(() =>
+        expect(stripAnsiStyles(gate.ui.lastFrame() ?? '')).toContain('Change a package manifest:'),
+      );
+
+      const frame = stripAnsiStyles(gate.ui.lastFrame() ?? '');
+      expect(frame).not.toContain(`${listRowLead('active')}y   Confirm`);
+      expect(legendRows(frame)).toEqual([
+        '⏎ queues the typed correction · tab back to the actions',
+      ]);
+
+      gate.ui.stdin.write('\r');
+      await vi.waitFor(() =>
+        expect({
+          sent: enqueue.mock.calls.map(([message]) => message.displayText),
+          settled: second,
+        }).toEqual({ sent: [DRAFT], settled: undefined }),
+      );
+      gate.ui.unmount();
+    });
+
+    it('sends the draft now on ctrl+⏎ and keeps the prompt open', async () => {
+      const gate = await openGate(DRAFT);
+      const stopped = vi.fn();
+      setStopHandler(stopped);
+
+      gate.ui.stdin.write('\x1b[13;5u');
+      await vi.waitFor(() => expect(stopped).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() =>
+        expect({
+          sent: enqueue.mock.calls.map(([message]) => message.displayText),
+          settled: gate.settled(),
+          text: composerLiveStore.get().text,
+        }).toEqual({ sent: [], settled: undefined, text: '' }),
+      );
+      expect(inputHistoryStore.get().entries.map(draftDocumentText)).toContain(DRAFT);
+      expect(stripAnsiStyles(gate.ui.lastFrame() ?? '')).toContain('Change a package manifest:');
       gate.ui.unmount();
     });
   });

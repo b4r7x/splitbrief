@@ -6,6 +6,7 @@ import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionDir } from '../../../src/core/paths.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
 import { resolveTheme } from '../../../src/core/theme/resolve.js';
+import { STOP_SHEET_PARKED_LEGEND } from '../../../src/features/workflow/stop/options.js';
 import { reapOrphanRunners } from '../../../src/engine/orchestrator/run/orphan-reaper.js';
 import { glyph } from '../../../src/lib/glyphs.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
@@ -25,11 +26,13 @@ const VIEWPORT = { cols: 120, rows: 40 };
 const PAINT = { timeout: 15_000 };
 const RUN = { timeout: 120_000 };
 const ENTER = '\r';
+const SHIFT_ENTER = '\x1b[13;2u';
 const STOPPED = '○ Stopped at the review';
 const WORDS = 'also fix the typo';
 // The child runs with FORCE_COLOR=3 and no answer to the background query, so its screen paints the
 // dark palette in truecolor.
 const SCREEN_THEME = resolveTheme({ variant: 'dark', level: 3, terminalBackground: undefined });
+const TWO_LINE_DRAFT = [WORDS, 'and add the missing test'] as const;
 
 const TOTAL_FILE = 'src/total.mjs';
 const TOTAL_TEST_FILE = 'src/total.test.mjs';
@@ -208,7 +211,7 @@ async function inTui(run: Run, home: string, drive: (tui: Tui) => Promise<void>)
 async function whileReviewStops(
   home: string,
   drive: (tui: Tui, run: Run) => Promise<void>,
-  draft?: string,
+  draft?: readonly string[],
 ): Promise<void> {
   const run = prepareRun();
   try {
@@ -220,8 +223,11 @@ async function whileReviewStops(
       write(PTY_SUBMIT_INPUT);
       await vi.waitFor(() => expect(run.reviewCalls()).toBe(1), RUN);
       if (draft !== undefined) {
-        write(draft);
-        await expect.poll(screen, PAINT).toContain(`› ${draft}`);
+        for (const [index, line] of draft.entries()) {
+          if (index > 0) write(SHIFT_ENTER);
+          write(line);
+          await expect.poll(screen, PAINT).toContain(index === 0 ? `› ${line}` : line);
+        }
       }
       write('\x1b');
       await expect.poll(screen, PAINT).toContain('Stop now');
@@ -263,7 +269,7 @@ describe('e2e: a stop that settles under text typed in the composer', {
         await vi.waitFor(() => expect(run.reviewCalls()).toBe(2), RUN);
         expect(run.reviewPrompts()).toContain(WORDS);
       },
-      WORDS,
+      [WORDS],
     );
   });
 
@@ -301,7 +307,39 @@ describe('e2e: a stop that settles under text typed in the composer', {
           chmodSync(dir, 0o755);
         }
       },
-      WORDS,
+      [WORDS],
+    );
+  });
+
+  it('shows both draft lines on their own rows under the parked session options', async () => {
+    await whileReviewStops(
+      trustHome.home,
+      async ({ screen, write }, run) => {
+        run.release();
+        await expect.poll(screen, PAINT).toContain(STOPPED);
+        write('\x0b');
+        await expect.poll(screen, PAINT).toContain('Type a command…');
+        write('stop');
+        await expect.poll(screen, PAINT).toMatch(/▌ \/stop/);
+        write(ENTER);
+        await expect.poll(screen, PAINT).toContain('Session options');
+        await expect.poll(screen, PAINT).toContain(TWO_LINE_DRAFT[1]);
+
+        const parked = screen();
+        expect(parked).toContain('Session options');
+        expect(parked).toContain('Resume');
+        expect(parked).toContain('End run');
+        expect(parked).toContain('Back to sessions');
+        expect(parked).toContain(STOP_SHEET_PARKED_LEGEND);
+        const rows = parked.split('\n').map((row) => row.trimEnd());
+        const first = rows.find((row) => row.includes(TWO_LINE_DRAFT[0])) ?? '';
+        const second = rows.find((row) => row.includes(TWO_LINE_DRAFT[1])) ?? '';
+        expect(first).toContain(`› ${TWO_LINE_DRAFT[0]}`);
+        expect(first).not.toContain(TWO_LINE_DRAFT[1]);
+        expect(second).toContain(TWO_LINE_DRAFT[1]);
+        expect(second).not.toContain(TWO_LINE_DRAFT[0]);
+      },
+      TWO_LINE_DRAFT,
     );
   });
 

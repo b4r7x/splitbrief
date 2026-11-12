@@ -136,7 +136,12 @@ const queuedTexts = (run: Run) =>
       : [],
   );
 
-async function inTui(run: Run, home: string, drive: (tui: Tui) => Promise<void>): Promise<void> {
+async function inTui(
+  run: Run,
+  home: string,
+  drive: (tui: Tui) => Promise<void>,
+  viewport: Readonly<{ cols: number; rows: number }> = VIEWPORT,
+): Promise<void> {
   const { target, offlinePath } = run;
   const env: Readonly<Record<string, string>> = {
     ...safeChildEnvironment(home),
@@ -162,7 +167,7 @@ async function inTui(run: Run, home: string, drive: (tui: Tui) => Promise<void>)
       ],
       spawnOptions: {
         name: 'xterm-256color',
-        ...VIEWPORT,
+        ...viewport,
         cwd: resolve(import.meta.dirname, '../../..'),
         env,
       },
@@ -171,7 +176,7 @@ async function inTui(run: Run, home: string, drive: (tui: Tui) => Promise<void>)
       const exit = Promise.withResolvers<PtyExitEvent>();
       let outcome: PtyExitEvent | undefined;
       const terminal = new XtermHeadless.Terminal({
-        ...VIEWPORT,
+        ...viewport,
         allowProposedApi: true,
         convertEol: true,
         scrollback: 0,
@@ -179,7 +184,7 @@ async function inTui(run: Run, home: string, drive: (tui: Tui) => Promise<void>)
       });
       const screen = () =>
         Array.from(
-          { length: VIEWPORT.rows },
+          { length: viewport.rows },
           (_, row) => terminal.buffer.active.getLine(row)?.translateToString(true) ?? '',
         ).join('\n');
       const dataListener = child.onData((data) => terminal.write(data));
@@ -211,22 +216,30 @@ afterEach(() => {
 });
 
 // BUILD holds while the user types a correction; the gate opens over it when the call ends.
-async function gateOverDraft(drive: (run: Run, tui: Tui) => Promise<void>) {
+async function gateOverDraft(
+  drive: (run: Run, tui: Tui) => Promise<void>,
+  viewport: Readonly<{ cols: number; rows: number }> = VIEWPORT,
+) {
   const run = setup();
   try {
-    await inTui(run, trustHome.home, async (tui) => {
-      const { screen, write } = tui;
-      await expect.poll(screen, PATIENCE).toContain('Describe your feature');
-      write('add a total helper');
-      await expect.poll(screen, PATIENCE).toContain('› add a total helper');
-      write(PTY_SUBMIT_INPUT);
-      await vi.waitFor(() => expect(implementerCalls(run)).toBe(1), PATIENCE);
-      write(DRAFT);
-      await expect.poll(screen, PATIENCE).toContain(`› ${DRAFT}`);
-      unlinkSync(run.hold);
-      await expect.poll(screen, PATIENCE).toContain(GATE_TITLE);
-      await drive(run, tui);
-    });
+    await inTui(
+      run,
+      trustHome.home,
+      async (tui) => {
+        const { screen, write } = tui;
+        await expect.poll(screen, PATIENCE).toContain('Describe your feature');
+        write('add a total helper');
+        await expect.poll(screen, PATIENCE).toContain('› add a total helper');
+        write(PTY_SUBMIT_INPUT);
+        await vi.waitFor(() => expect(implementerCalls(run)).toBe(1), PATIENCE);
+        write(DRAFT);
+        await expect.poll(screen, PATIENCE).toContain(`› ${DRAFT}`);
+        unlinkSync(run.hold);
+        await expect.poll(screen, PATIENCE).toContain(GATE_TITLE);
+        await drive(run, tui);
+      },
+      viewport,
+    );
   } finally {
     cleanupTempDir(run.target.tmpDir);
   }
@@ -286,3 +299,55 @@ it('gives the gate the keys on Tab, and y confirms', SCENARIO_TIMEOUT, async () 
     await vi.waitFor(() => expect(approvalEvents(run)).toContain('approval_granted'), PATIENCE);
   });
 });
+
+it(
+  'names tab and ⏎ once the draft is deleted, and ⏎ gives the prompt the keys',
+  SCENARIO_TIMEOUT,
+  async () => {
+    await gateOverDraft(async (_run, { screen, write }) => {
+      await expect.poll(screen, PATIENCE).toContain('tab back to the actions');
+      for (const _ of DRAFT) write('\x7f');
+      await expect.poll(() => screen().includes(`› ${DRAFT}`), PATIENCE).toBe(false);
+      await expect.poll(screen, PATIENCE).toContain('tab/⏎ back to the actions');
+      write(PTY_SUBMIT_INPUT);
+      await expect.poll(screen, PATIENCE).toContain('▌ y   Confirm');
+    });
+  },
+);
+
+it('keeps tab back to the actions at 60 columns', SCENARIO_TIMEOUT, async () => {
+  await gateOverDraft(
+    async (_run, { screen }) => {
+      await expect
+        .poll(screen, PATIENCE)
+        .toContain('⏎ queues the correction · tab back to the actions');
+    },
+    { cols: 60, rows: 40 },
+  );
+});
+
+it(
+  'names the command for a slash draft over the prompt, and ⏎ runs it',
+  SCENARIO_TIMEOUT,
+  async () => {
+    await gateOverDraft(async (run, { screen, write }) => {
+      await expect.poll(screen, PATIENCE).toContain('tab back to the actions');
+      for (const _ of DRAFT) write('\x7f');
+      await expect.poll(() => screen().includes(`› ${DRAFT}`), PATIENCE).toBe(false);
+
+      write('/help');
+      await expect.poll(screen, PATIENCE).toContain('› /help');
+      write(' ');
+      await expect.poll(screen, PATIENCE).toContain('⏎ runs the command · tab back to the actions');
+
+      write(PTY_SUBMIT_INPUT);
+      await expect.poll(screen, PATIENCE).toContain('Help · commands & shortcuts');
+      write('\x1b');
+      await expect.poll(screen, PATIENCE).toContain(GATE_TITLE);
+      await expect.poll(screen, PATIENCE).toContain('tab/⏎ back to the actions');
+
+      expect(screen()).toContain('Deny');
+      expect(approvalEvents(run)).toEqual(['approval_prompted']);
+    });
+  },
+);

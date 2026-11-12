@@ -12,6 +12,7 @@ import {
   reviewDocumentForm,
   reviewDocumentOptions,
   reviewDocumentRowLines,
+  unfocusedPromptLegend,
   type ReviewArtifact,
 } from '../../prompt-rows/approval.js';
 import type { ReviewDraftTarget } from '../../review-commands.js';
@@ -20,9 +21,9 @@ import { fitKeyLegend } from '../../../../core/key-legend.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
 import { MARK_SLOT_CELLS } from '../../../../components/row-leading.js';
 import { MenuRows } from '../../stop/menu-rows.js';
-import { RESULT_MENU_UNFOCUSED_LEGEND } from '../../result/options.js';
 import { isCommandDraft } from '../../../../core/composer/submission.js';
 import { composerLiveStore } from '../../../../stores/ui/composer-live.js';
+import { isBlankDraft } from '../../../../components/composer/use-paste-drafts.js';
 
 export interface DocumentReviewPromptProps {
   artifact: ReviewArtifact;
@@ -61,18 +62,25 @@ export function DocumentReviewPrompt({
   // The card opened over a draft, so the keys stay in the composer and the legend says what ⏎
   // does there.
   const commandDraft = composerLiveStore.use((state) => isCommandDraft(state.document));
-  const composerEmpty = composerLiveStore.use((state) => state.empty);
-  const draftLegend = !focused
-    ? commandDraft
-      ? `⏎ runs the command${SOFT_SEP}${RESULT_MENU_UNFOCUSED_LEGEND}`
-      : composerEmpty
-        ? RESULT_MENU_UNFOCUSED_LEGEND
-        : `⏎ request changes with the typed correction${SOFT_SEP}${RESULT_MENU_UNFOCUSED_LEGEND}`
-    : draft === null
-      ? REVIEW_DOCUMENT_HINTS
-      : draft === 'send'
-        ? REVIEW_COMMENT_HINTS
-        : REVIEW_TYPED_ROW_HINTS;
+  const blankDraft = composerLiveStore.use((state) => isBlankDraft(state.document));
+  const legendAt = (available: number): string =>
+    !focused
+      ? unfocusedPromptLegend({
+          blank: blankDraft,
+          command: commandDraft,
+          words: {
+            long: '⏎ request changes with the typed correction',
+            short: '⏎ request changes',
+          },
+          width: available,
+        })
+      : draft === null
+        ? REVIEW_DOCUMENT_HINTS
+        : draft === 'send'
+          ? REVIEW_COMMENT_HINTS
+          : REVIEW_TYPED_ROW_HINTS;
+  const confirmsLegendWidth = width - REVIEW_CONFIRMS_INDENT;
+  const legendWidth = form.framed ? width : Math.max(1, width - MARK_SLOT_CELLS);
   // A typed row approves nothing, and neither does ⏎ while the composer holds the keys, so where
   // the legend was shed the confirms rows teach its keys instead. Approve keeps the line: ⏎ still
   // grants what it lists.
@@ -100,7 +108,7 @@ export function DocumentReviewPrompt({
         >
           {draftLegendInConfirms ? (
             <Text color={t.textDim}>
-              {fitKeyLegend(draftLegend, width - REVIEW_CONFIRMS_INDENT)}
+              {fitKeyLegend(legendAt(confirmsLegendWidth), confirmsLegendWidth)}
             </Text>
           ) : (
             <Text color={t.warning}>{form.confirmsText}</Text>
@@ -132,9 +140,7 @@ export function DocumentReviewPrompt({
           in the column the option cursors above it take. */}
       {form.legend ? (
         <Box paddingLeft={form.framed ? 0 : MARK_SLOT_CELLS}>
-          <Text color={t.textDim}>
-            {fitKeyLegend(draftLegend, form.framed ? width : Math.max(1, width - MARK_SLOT_CELLS))}
-          </Text>
+          <Text color={t.textDim}>{fitKeyLegend(legendAt(legendWidth), legendWidth)}</Text>
         </Box>
       ) : null}
     </Box>

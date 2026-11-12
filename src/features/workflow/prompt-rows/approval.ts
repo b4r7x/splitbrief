@@ -16,6 +16,7 @@ import { REVIEW_DECORATION_ROWS } from '../layout/rect.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { OVERLAY_FRAME_ROWS } from '../../../core/navigation/overlay-rect.js';
 import type { OverlayCard } from '../../../components/overlays/overlay-panel.js';
+import { RESULT_MENU_UNFOCUSED_LEGEND } from '../result/options.js';
 import {
   MIN_TEXT_WIDTH,
   approvalBoxTextWidth,
@@ -76,6 +77,25 @@ export const IRREVERSIBLE_NOTE = 'this cannot be undone';
 export const CONFIRM_NUDGE = `⏎ confirms this write${SOFT_SEP}${formatKeyHints([DENY_HINT])}`;
 /** The legends of the choose step: too narrow a row sheds their trailing keys. */
 const CHOOSE_LEGENDS = [CHOOSE_HINTS, CONFIRM_NUDGE];
+
+// A prompt that leaves the keys in the composer names what ⏎ does down there. A slash command
+// runs; plain words only queue where the phase takes them; a blank draft takes ⏎ back to the
+// panel, so it names both keys. The long token is kept whole where the width holds it.
+export const PROMPT_COMMAND_LEGEND = '⏎ runs the command';
+
+export function unfocusedPromptLegend(input: {
+  blank: boolean;
+  command: boolean;
+  words: Readonly<{ long: string; short: string }> | null;
+  width: number;
+}): string {
+  if (input.blank) return 'tab/⏎ back to the actions';
+  if (input.command) return `${PROMPT_COMMAND_LEGEND}${SOFT_SEP}${RESULT_MENU_UNFOCUSED_LEGEND}`;
+  if (input.words === null) return RESULT_MENU_UNFOCUSED_LEGEND;
+  const long = `${input.words.long}${SOFT_SEP}${RESULT_MENU_UNFOCUSED_LEGEND}`;
+  if (getTerminalCellWidth(long) <= input.width) return long;
+  return `${input.words.short}${SOFT_SEP}${RESULT_MENU_UNFOCUSED_LEGEND}`;
+}
 
 // The engine rejects a confirm response with an empty reason, so a keyed confirm still
 // carries one — worded so the evidence trail cannot be mistaken for a stated reason.

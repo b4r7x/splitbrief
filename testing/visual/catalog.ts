@@ -2219,6 +2219,38 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-approval-confirm-draft-deleted',
+      title: 'Workflow · confirm gate after the correction is deleted',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'approval-confirm-draft-deleted',
+        title: 'Confirm gate back over a blank composer',
+        kind: 'review',
+        marker: 'tab/⏎ back to the actions',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'approval-panel', title: 'Confirm panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-approval-confirm-words-stay',
+      title: 'Workflow · trust gate over words no seat can queue',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'approval-confirm-words-stay',
+        title: 'Runner trust gate with the words left in the composer',
+        kind: 'review',
+        marker: 'tab back to the actions',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'approval-panel', title: 'Trust panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-approval-confirm-short',
       title: 'Workflow · destructive confirm gate in a short terminal',
       surface: screenSurface('workflow'),
@@ -2431,7 +2463,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'plan-card-over-draft',
         title: 'Plan card while the draft keeps the keys',
         kind: 'review',
-        marker: '⏎ request changes with the typed correction',
+        marker: 'tab back to the actions',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -7458,6 +7490,18 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         title: 'Stop sheet ready',
         kind: 'ready',
         marker: 'Stop options',
+      },
+      elements: [{ id: 'overlay-panel', title: 'Stop options panel' }],
+    }),
+    defineScenario({
+      id: 'workflow-stop-menu-parked-over-draft',
+      title: 'Workflow · parked options over a two-line draft',
+      surface: overlaySurface('stop-sheet', 'workflow'),
+      checkpoint: {
+        id: 'stop-menu-parked-over-draft',
+        title: 'Parked options with both draft lines in the composer',
+        kind: 'ready',
+        marker: 'Back to sessions',
       },
       elements: [{ id: 'overlay-panel', title: 'Stop options panel' }],
     }),

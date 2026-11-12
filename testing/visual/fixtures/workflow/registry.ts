@@ -49,6 +49,7 @@ import { lifecycleStore } from '../../../../src/stores/workflow/lifecycle.js';
 import { glyph } from '../../../../src/lib/glyphs.js';
 import { feedbackStore } from '../../../../src/stores/ui/feedback.js';
 import { composerDraftStore } from '../../../../src/stores/ui/composer-draft.js';
+import { composerLiveStore } from '../../../../src/stores/ui/composer-live.js';
 import { saveSessionDraft } from '../../../../src/stores/ui/session-drafts.js';
 import { routerStore } from '../../../../src/stores/navigation/router.js';
 import { createDraftDocument } from '../../../../src/core/composer/document.js';
@@ -166,6 +167,47 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
   }
   if (projection.scenarioId === 'workflow-plan-card-request-empty') {
     return () => ({ ...base(), afterMount: () => reviewKeysStore.requestComment() });
+  }
+  // The correction is deleted again, so the composer is empty and the gate is back in charge.
+  if (projection.scenarioId === 'workflow-approval-confirm-draft-deleted') {
+    return () => ({
+      ...base(),
+      afterMount: async (write) => {
+        const approval = projection.approvalAfterMount;
+        if (approval === undefined) {
+          throw new Error('The draft-deleted gate needs its after-mount approval');
+        }
+        await write.press(TYPED_WORDS);
+        void openApprovalPrompt({
+          tier: 'confirm',
+          actionClass: approval.actionClass ?? 'package_change',
+          actionDescription: approval.actionDescription,
+          taskId: WORKFLOW_FIXTURE_TASK_ID,
+          phase: 'implementing',
+        });
+        for (const _ of TYPED_WORDS) await write.press('\b');
+      },
+    });
+  }
+  // Words typed while a plan is in review stay put: that phase takes no queued correction.
+  if (projection.scenarioId === 'workflow-approval-confirm-words-stay') {
+    return () => ({
+      ...base(),
+      afterMount: async (write) => {
+        const approval = projection.approvalAfterMount;
+        if (approval === undefined) {
+          throw new Error('The words-stay gate needs its after-mount approval');
+        }
+        await write.press(TYPED_WORDS);
+        void openApprovalPrompt({
+          tier: 'confirm',
+          actionClass: approval.actionClass ?? 'package_change',
+          actionDescription: approval.actionDescription,
+          taskId: WORKFLOW_FIXTURE_TASK_ID,
+          phase: 'reviewing-plan',
+        });
+      },
+    });
   }
   // The words go through the composer first, so the gate opens over a real draft.
   if (projection.scenarioId === 'workflow-approval-confirm-over-draft') {
@@ -1257,7 +1299,33 @@ const checkpointPredicates = [
   [checkpointId('approval-confirm'), includesAll('Confirm with a reason')],
   [
     checkpointId('approval-confirm-over-draft'),
-    includesAll(TYPED_WORDS, 'queues the typed correction'),
+    includesAll(TYPED_WORDS, 'tab back to the actions'),
+  ],
+  [
+    checkpointId('approval-confirm-draft-deleted'),
+    (context) =>
+      includesAll(
+        'Destructive action:',
+        'Confirm with a reason',
+        'tab/⏎ back to the actions',
+      )(context) &&
+      composerLiveStore.get().empty &&
+      excludesAll(
+        `${listRowLead('active')}    Confirm`,
+        `${listRowLead('active')}r   Confirm with a reason`,
+        `${listRowLead('active')}x   Deny`,
+      )(context),
+  ],
+  [
+    checkpointId('approval-confirm-words-stay'),
+    (context) =>
+      includesAll(
+        'Trust and run a configured runner:',
+        TYPED_WORDS,
+        'tab back to the actions',
+      )(context) &&
+      composerLiveStore.get().text === TYPED_WORDS &&
+      excludesAll('queues the typed correction', 'queues the correction')(context),
   ],
   [checkpointId('approval-confirm-secret'), includesAll('Confirm with a reason')],
   [checkpointId('approval-confirm-short'), includesAll('Confirm')],

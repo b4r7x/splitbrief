@@ -44,7 +44,7 @@ import {
   noVisionFeedbackMessage,
 } from './home-hint.js';
 import { useProjectFiles } from './use-project-files.js';
-import { trimDraftDocument, usePasteDrafts } from './use-paste-drafts.js';
+import { isBlankDraft, trimDraftDocument, usePasteDrafts } from './use-paste-drafts.js';
 import {
   computeComposerHintBudget,
   computeComposerInputColumns,
@@ -572,7 +572,7 @@ function ComposerInput({
     }
 
     if (mode !== 'normal') {
-      if (emptyAnswerNotice !== undefined && trimmed.parts.length === 0) {
+      if (emptyAnswerNotice !== undefined && isBlankDraft(document)) {
         feedbackStore.setError(emptyAnswerNotice);
         return;
       }
@@ -580,7 +580,7 @@ function ComposerInput({
       return;
     }
 
-    if (trimmed.parts.length === 0) {
+    if (isBlankDraft(document)) {
       if (deliverNow === undefined) onEmptySubmit?.();
       return;
     }

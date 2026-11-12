@@ -173,7 +173,7 @@ export function WorkflowScreen({
   useLayoutEffect(() => {
     reviewSelectedRef.current = 0;
     setReviewSelected(0);
-  }, [reviewArtifact, reviewOwnerToken]);
+  }, [planCardArtifact, reviewOwnerToken]);
   const { focused: planCardFocused, setMenu: setPlanCardFocused } = usePanelFocus(
     String(reviewOwnerToken),
     planCardOpen,

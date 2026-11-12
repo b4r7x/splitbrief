@@ -1356,6 +1356,25 @@ describe('visual catalog', () => {
     }
   });
 
+  it.each([
+    [
+      'workflow-approval-confirm-draft-deleted',
+      'approval-confirm-draft-deleted',
+      'tab/⏎ back to the actions',
+    ],
+    [
+      'workflow-approval-confirm-words-stay',
+      'approval-confirm-words-stay',
+      'tab back to the actions',
+    ],
+  ])('registers %s with its checkpoint at every required viewport', (id, checkpoint, marker) => {
+    const scenario = findVisualScenario(id);
+    expect(scenario?.checkpoints[0]).toMatchObject({ id: checkpoint, kind: 'review', marker });
+    expect(scenario?.viewports).toEqual(REQUIRED_VIEWPORTS);
+    expect(workflowFixtureRegistry.has(scenarioId(id))).toBe(true);
+    expect(workflowCheckpointPredicates.has(checkpointId(checkpoint))).toBe(true);
+  });
+
   it('pairs every scenario with a fixture and leaves no fixture unreferenced', () => {
     const registered = [
       ...workflowFixtureRegistry.keys(),
