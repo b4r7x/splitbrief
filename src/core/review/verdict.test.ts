@@ -854,6 +854,53 @@ describe('what an Accept as is leaves open', () => {
     ]);
   });
 
+  it('turns red inputs into one red check per check, in the order of the inputs, as an accept records them', () => {
+    const red = blockingRedInputs(inputs, fixWork);
+    const { review, state } = judged([]);
+
+    expect(red.map((input) => input.id)).toEqual(['V1.1', 'V1.2', 'P1']);
+    expect(verdictModule.redChecksOf).toBeTypeOf('function');
+    expect(verdictModule.redChecksOf(red)).toStrictEqual([
+      { id: 'V1', command: 'npm test', lastLine: 'Error: 2 specs failed' },
+      { id: 'K004', lastLine: 'src/a.ts(3,1): TS2322' },
+    ]);
+    expect(verdictModule.acceptedOpen(review, state).redChecks).toStrictEqual(
+      verdictModule.redChecksOf(red),
+    );
+  });
+
+  it.each([
+    {
+      part: 'no command',
+      extra: { output: 'RUN v4\nError: 2 specs failed\n' },
+      redCheck: { id: 'V1', lastLine: 'Error: 2 specs failed' },
+    },
+    {
+      part: 'an empty output',
+      extra: { command: 'npm test', output: '' },
+      redCheck: { id: 'V1', command: 'npm test' },
+    },
+    {
+      part: 'an output that ends in lines with no text',
+      extra: { command: 'npm test', output: 'FAIL src/a.test.ts\n\u001b[0m\n   \n' },
+      redCheck: { id: 'V1', command: 'npm test', lastLine: 'FAIL src/a.test.ts' },
+    },
+  ])(
+    'gives the red check of an input with $part only the parts it holds',
+    ({ extra, redCheck }) => {
+      expect(verdictModule.redChecksOf).toBeTypeOf('function');
+      expect(
+        verdictModule.redChecksOf([check('V1.1', { checkIds: ['V1'], ...extra })]),
+      ).toStrictEqual([redCheck]);
+    },
+  );
+
+  it('names the red check of an input with no check id by the input id, and gives none for no input', () => {
+    expect(verdictModule.redChecksOf).toBeTypeOf('function');
+    expect(verdictModule.redChecksOf([check('P2')])).toStrictEqual([{ id: 'P2' }]);
+    expect(verdictModule.redChecksOf([])).toStrictEqual([]);
+  });
+
   it('counts no red input among the open findings: an accept names it as a red check', () => {
     const outcome = deriveReviewOutcome(
       makeVerdict({

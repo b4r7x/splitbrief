@@ -206,6 +206,7 @@ it('e2e: Accept as is at a final review that a red check blocks records the red 
           await expect.poll(screen).toMatch(/▌.*Review again/);
           halted = screen();
           expect(halted).toContain('Accept as is');
+          expect(halted).toContain(RED_CHECK);
 
           await moveCursorTo(screen, write, '\x1b[B', /▌.*Accept as is/);
           write('\r');

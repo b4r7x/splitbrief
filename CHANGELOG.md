@@ -122,6 +122,7 @@
 - A refusal on the recovery panel, in the composer, at the review prompt, on the setup screen, in settings and in the model picker shows as a plain note, not as an error. Nothing failed: the line says what to do next.
 - When the plan card opened while you typed, `⏎` on a composer that holds only the word `approve` approves the plan and starts the build, and the card highlights its Approve row before you press it. Any other text still goes to the planner as the change request. Before, `approve` also went to the planner, and the planner planned again.
 - A run that halts on a failed final review with a red check now prints the closing `done:` line under `--plain` and runs the `on_complete` hook, as every other run that halts on a failed final review does. Before, it stopped at the halt without them.
+- The halt of a failed review now names each red check on one line, for example `V1 failed · npm test · Error: 2 specs failed`. The line holds the check, its command and its last output line, as in the Apply as is confirmation and `review.md`. Before, the halt showed a long paragraph for each red check, with the tail of its output.
 
 ### Removed
 

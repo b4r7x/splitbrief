@@ -22,6 +22,7 @@ import type { RecoveryIssue } from '../../../../src/core/schemas/recovery/schema
 import type { StepRef } from '../../../../src/core/schemas/run-step.js';
 import type { RunRecord } from '../../../../src/core/sessions/run-record.js';
 import type { Summary } from '../../../../src/core/schemas/summary.js';
+import { redCheckLine, redChecksOf } from '../../../../src/core/review/verdict.js';
 import { RED_CHECK_INPUT } from './at-rest-projections.js';
 import { retainedWorkspaceNotices, retainedWorkspaceProjection } from './retained-workspace.js';
 import { closedQueueProjection } from './closed-queue-projection.js';
@@ -4411,7 +4412,7 @@ const reviewRedCheckRecoveryIssue = buildReviewFailedRecoveryIssue({
   blocking: 1,
   noProgress: [RED_CHECK_INPUT.id],
   cannot: 'The two specs pin the old signup rules; the plan does not say which rule is right.',
-  details: [`${RED_CHECK_INPUT.id}: ${RED_CHECK_INPUT.text}`],
+  details: redChecksOf([RED_CHECK_INPUT]).map(redCheckLine),
   phase: 'complete',
   acceptAsIs: true,
   scope: 'final',
@@ -10135,7 +10136,6 @@ export function assertProjectionBounds(projection: WorkflowFixtureProjection): v
     cursorRefusalRecoveryIssue(),
     runnerCheckFailedDriftRecoveryIssue,
     attemptRevertedCheckoutIssue,
-    reviewRedCheckRecoveryIssue,
   ];
   const engineHaltText = [
     ...halts.flatMap((issue) => [issue.message, ...issue.details]),

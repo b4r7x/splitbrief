@@ -5,6 +5,8 @@ import {
   blockingRedInputs,
   openFindings,
   recordedFixWork,
+  redCheckLine,
+  redChecksOf,
   reviewOutcomeOf,
   reviewsAgain,
 } from '../../../core/review/verdict.js';
@@ -124,9 +126,14 @@ async function haltFailedReview(args: {
       blocking: args.blocking,
       completedTasks: state.tasks.filter((task) => isTaskCompleted(task.status)).length,
     });
+  // A red check has one line, in the words of the screens that follow an Accept as is. An Apply
+  // conflict is no check: its own text names the file.
   const details = [
     ...(args.details ?? []),
-    ...args.redInputs.map((input) => `${input.id}: ${input.text}`),
+    ...redChecksOf(args.redInputs.filter((input) => input.source === 'check')).map(redCheckLine),
+    ...args.redInputs
+      .filter((input) => input.source !== 'check')
+      .map((input) => `${input.id}: ${input.text}`),
   ];
   const issue = buildReviewFailedRecoveryIssue({
     phase: state.phase,

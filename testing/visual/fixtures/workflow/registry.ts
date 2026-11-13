@@ -2298,7 +2298,7 @@ const checkpointPredicates = [
   ],
   [
     checkpointId('review-red-check'),
-    // The headline names the red input. A view too short for the facts folds the check's own row.
+    // The headline names the red input; the red check has one row, in the words of the next screens.
     (context) =>
       includesAll(
         'found no fix for V1.1',
@@ -2306,10 +2306,8 @@ const checkpointPredicates = [
         'Decide for me',
         'End run',
       )(context) &&
-      (context.viewport.rows < 24 ||
-        panelText(context.output).includes(
-          'V1.1: Reviewer check V1 (npm test) failed with new failures.',
-        )),
+      stripAnsiStyles(context.output).includes('V1 failed · npm test · Error: 2 specs failed') &&
+      !panelText(context.output).includes('Output tail:'),
   ],
   [
     checkpointId('task-review-no-progress'),

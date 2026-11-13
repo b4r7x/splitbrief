@@ -196,6 +196,25 @@ function lastOutputLine(output: string | undefined): string | undefined {
 }
 
 /**
+ * The red checks behind `inputs`, once per check and in the order of the inputs: the check's id,
+ * else the input's own id, with the command and the last output line of its first input.
+ */
+export function redChecksOf(inputs: readonly TriageInput[]): RedCheck[] {
+  const redChecks = new Map<string, RedCheck>();
+  for (const input of inputs) {
+    const id = input.checkIds?.[0] ?? input.id;
+    if (redChecks.has(id)) continue;
+    const lastLine = lastOutputLine(input.output);
+    redChecks.set(id, {
+      id,
+      ...(input.command !== undefined && { command: input.command }),
+      ...(lastLine !== undefined && { lastLine }),
+    });
+  }
+  return [...redChecks.values()];
+}
+
+/**
  * What your Accept as is leaves open: each red check that still blocks `review`, once per check,
  * then the open findings. A finding under a red input's id is that check, so it is no finding here.
  */
@@ -208,24 +227,13 @@ export function acceptedOpen(
     recordedFixWork(state, review.at),
   );
   const redIds = new Set(red.map((input) => input.id));
-  const redChecks = new Map<string, RedCheck>();
-  for (const input of red) {
-    const id = input.checkIds?.[0] ?? input.id;
-    if (redChecks.has(id)) continue;
-    const lastLine = lastOutputLine(input.output);
-    redChecks.set(id, {
-      id,
-      ...(input.command !== undefined && { command: input.command }),
-      ...(lastLine !== undefined && { lastLine }),
-    });
-  }
   const outcome = reviewOutcomeOf(review);
   return {
     findings: openFindings({
       ...outcome,
       blocking: outcome.blocking.filter((finding) => !redIds.has(finding.id)),
     }),
-    redChecks: [...redChecks.values()],
+    redChecks: redChecksOf(red),
   };
 }
 

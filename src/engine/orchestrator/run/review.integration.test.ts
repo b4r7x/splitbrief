@@ -660,7 +660,11 @@ describe('review answer follower', () => {
       'decide-for-me',
       'end-run',
     ]);
-    expect(result.state.pendingRecovery?.details?.join('\n')).toContain('P1: Typecheck failed');
+    expect(result.state.pendingRecovery?.details).toEqual([
+      'The review asked a question this run has no way to answer.',
+      'Question: Change the API?',
+      'P1 failed',
+    ]);
     expect(result.state.pendingRecovery?.facts?.blocking).toBe(2);
     expect(events.filter((event) => event.type === 'workflow_complete')).toMatchObject([
       { review: 'failed', blocking: 2 },
@@ -748,6 +752,64 @@ describe('review answer follower', () => {
     expect(result.state.pendingRecovery?.facts?.blocking).toBe(1);
   });
 
+  it('names each red check on one line of the halt, once per check, without the text the reviewer reads', async () => {
+    const ref = setupProject();
+    const output = [
+      '> app@1.4.0 test',
+      '> node tools/run-specs.mjs',
+      '',
+      'signup form: expected 1 message, got 0',
+      'Error: 2 specs failed',
+      '',
+    ].join('\n');
+    const reviewerCheck = (id: string, file: string): TriageInput => ({
+      id,
+      kind: 'defect',
+      source: 'check',
+      file,
+      text: `Reviewer check V1 (npm test) failed with new failures.\ncheck V1 did not pass (fail): exited with code 1: Error: 2 specs failed\nOutput tail:\n${output}`,
+      checkIds: ['V1'],
+      command: 'npm test',
+      output,
+    });
+    const planCheck: TriageInput = {
+      ...input,
+      text: 'Check K004 did not pass (fail): src/a.ts(3,1): TS2322',
+      checkIds: ['K004'],
+      output: 'src/a.ts(3,1): TS2322\n',
+    };
+    const state = {
+      ...pendingReview(),
+      phase: 'final-review' as const,
+      pendingTriage: {
+        inputs: [
+          reviewerCheck('V1.1', 'src/a.test.ts'),
+          reviewerCheck('V1.2', 'src/b.test.ts'),
+          planCheck,
+        ],
+      },
+    };
+    saveState(ref, state);
+    const callbacks = makeCallbacks().callbacks;
+    const { planner } = consultPlanner([cannotFix]);
+    const result = await followReviewAnswer({
+      wctx: makeWctx({ ...ref, bus: makeBusRecorder().bus, callbacks, planner }),
+      state,
+      callbacks,
+      setTrackedState: vi.fn(),
+      candidate: undefined,
+      fixWork,
+    });
+    expect(result.next).toBe('stop');
+    expect(result.state.pendingRecovery?.availableActions).toContain('accept-as-is');
+    expect(result.state.pendingRecovery?.details).toEqual([
+      'Planner said: The plan keeps the old error type',
+      'V1 failed · npm test · Error: 2 specs failed',
+      'K004 failed · src/a.ts(3,1): TS2322',
+    ]);
+    expect(result.state.pendingRecovery?.details?.join('\n')).not.toContain('Output tail:');
+  });
+
   it.each([
     ['a red the run base could not verify', notVerifiedInput],
     ['a red plan check', input],
@@ -777,7 +839,9 @@ describe('review answer follower', () => {
     expect(result.state.phase).toBe('complete');
     expect(result.state.reviewStatus).toBe('failed');
     expect(result.state.pendingRecovery?.availableActions).toContain('accept-as-is');
-    expect(result.state.pendingRecovery?.details?.join('\n') ?? '').not.toContain(`${red.id}:`);
+    expect(result.state.pendingRecovery?.details).toEqual([
+      'Planner said: The plan keeps the old error type',
+    ]);
     expect(result.state.pendingRecovery?.facts?.blocking).toBe(1);
     expect(events.filter((event) => event.type === 'workflow_complete')).toMatchObject([
       { review: 'failed', blocking: 1 },
@@ -1289,6 +1353,27 @@ describe('the review that judges a fix cycle', () => {
         'revise',
         'decide-for-me',
         'end-run',
+      ]);
+    });
+
+    it('names a red check on its one line and an Apply conflict in its own words on the halt', async () => {
+      const state = transition(runState('complete'), {
+        type: 'APPLY_REVIEW_START',
+        merged: [],
+        triage: [
+          conflict,
+          { ...redCheck, checkIds: ['K1'], output: 'src/a.ts(3,1): TS2322\n' },
+          { ...conflict, id: 'A2', text: 'Apply merge conflict in src/b.ts', file: 'src/b.ts' },
+        ],
+      });
+      const { planner } = consultPlanner([cannotFix]);
+      const result = await follow(reviewed(state, 'fail'), fixWorkNone, { planner });
+      expect(result).toMatchObject({ next: 'stop' });
+      expect(result.state.pendingRecovery?.details).toEqual([
+        'Planner said: The plan keeps the old error type',
+        'K1 failed · src/a.ts(3,1): TS2322',
+        'A1: Apply merge conflict in src/a.ts: resolve the conflict markers',
+        'A2: Apply merge conflict in src/b.ts',
       ]);
     });
 
