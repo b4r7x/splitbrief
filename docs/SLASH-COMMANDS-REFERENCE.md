@@ -22,7 +22,7 @@ A typed command that SPLITBRIEF refuses stays in the composer. SPLITBRIEF refuse
 
 Handlers reach the engine and stores through the `RuntimeCommandContext` interface in `src/core/runtime/commands/types.ts`, assembled by `createCommandContext` in `src/core/runtime/commands/context-factory.ts`; the TUI (`src/app/command-context.ts`) only supplies the callbacks. The registry itself never imports stores directly; this keeps the command list testable in isolation (see `src/core/runtime/commands/dispatch.test.ts`).
 
-The slash commands — enumerated by [`src/core/runtime/commands/defs/`](https://github.com/b4r7x/splitbrief/blob/main/src/core/runtime/commands/defs), the single source of truth — are 23 commands. Every one declares a `category` from the closed set in `src/core/runtime/commands/types.ts` — `navigate`, `crew`, `workflow`, `view`, `io` — and is in exactly one; the command palette and the sections below group by it.
+The slash commands — enumerated by [`src/core/runtime/commands/defs/`](https://github.com/b4r7x/splitbrief/blob/main/src/core/runtime/commands/defs), the single source of truth — are 22 commands. Every one declares a `category` from the closed set in `src/core/runtime/commands/types.ts` — `navigate`, `crew`, `workflow`, `view`, `io` — and is in exactly one; the command palette and the sections below group by it.
 
 A composer line is a slash command only when its first word is `/name` without another `/`; `/Users/me/notes.md` goes to the planner as text. A slash command runs in every composer mode, also while a question or a recovery menu waits for an answer; no seat ever reads it as a message. The command list opens there too; only a comment on an approval card gets no list. While the list is open, Tab fills in the highlighted row.
 
@@ -39,7 +39,7 @@ Commands that open an overlay or change which screen is active. `category: 'navi
 - **Args**: none.
 - **Shortcut**: `Ctrl+/` (`src/core/keybindings/registry.ts`).
 - **Example**: `/help`
-- **Behavior**: Opens the `help` overlay. Help uses the same filter as the command palette (`buildCommandItems`, `src/features/palette/sources.ts`). It leaves out `hidden` commands, commands for another screen and commands that a `guard` blocks now. Command rows follow the five categories, and a **Keyboard shortcuts** section follows them. That section leaves out the key of a command that a `guard` blocks now, such as `ctrl+d` while `/diff` has no target. Category headers appear when the panel has room for at least 12 rows (`SECTION_HEADER_MIN_ROWS`, `src/app/overlays/help.tsx`); a smaller panel keeps the order without headers. Press `Esc` to close.
+- **Behavior**: Opens the `help` overlay. Help uses the same filter as the command palette (`buildCommandItems`, `src/features/palette/sources.ts`). It leaves out `hidden` commands, commands for another screen and commands that a `guard` blocks now. Command rows follow the five categories, and a **Keyboard shortcuts** section follows them. That section leaves out `ctrl+d` while no row of the conversation has details to show or hide (`readLatestDiffKey`, `src/features/workflow/conversation-rows/read-row-actions.ts`). Category headers appear when the panel has room for at least 12 rows (`SECTION_HEADER_MIN_ROWS`, `src/app/overlays/help.tsx`); a smaller panel keeps the order without headers. Press `Esc` to close.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/navigate.ts`; opens overlay via `overlayStore.open`.
 - **See also**: `/palette`.
 
@@ -181,7 +181,7 @@ Commands that act on the active run: stop, resume or end the run, manage the que
 - **Example**: `/steer Keep the current files and add the missing check.`
 - **Phase guard**: a phase where the run is live (`isRunLivePhase`, `src/core/phases.ts`): a call in progress, a waiting plan card (`reviewing-plan`) or a brief's checks (`validating-task`). An open run at rest on the screen passes in any phase. Elsewhere the feedback line reads `"No run to steer in this phase"`.
 - **Shortcut**: `ctrl+⏎` with text in the composer, also called `ctrl+enter`. The key and the command take one path (`requestSteer`).
-- **Behavior**: `requestSteer` keeps the text until the stop completes, then continues with the text as the step's steer. While a brief's checks run, it stops the checks and continues the run with the text. While the plan card waits, it sends the text as the change request, as Enter on a draft does, and stops nothing. While a planner question waits, it sends the text as the answer to the round, as Enter on a composer draft does, and stops nothing. While a recovery panel (`Needs you`, `Seat down`) waits, it sends the text as the typed correction, as Enter on a composer draft does, and stops nothing. A refusal shows its one reason on the feedback line, and the line stays in the composer: `Finish stopping before steering.` while a stop is in progress, `This halt takes no typed correction. Choose an action.` on a recovery panel that takes no typed correction, or the reason why the run cannot continue, such as `Cannot continue: this run is ready to apply; choose Apply or Discard (/run accept, /run reject confirm).`. A line that holds an image is refused before any correction is sent, and the line and the image stay: `A command sends no image. Remove the command, then press ctrl+⏎.` where the composer can send the image once `/steer` and its text are gone, and `A command sends no image. Remove the image.` where it cannot. A terminal without extended keys reports `ctrl+⏎` as Enter, which queues the message. `/steer` works in every terminal.
+- **Behavior**: `requestSteer` keeps the text until the stop completes, then continues with the text as the step's steer. While a brief's checks run, it stops the checks and continues the run with the text. While the plan card waits, it sends the text as the change request and stops nothing. Enter on a draft does the same, except that a draft of only `approve` approves the plan. While a planner question waits, it sends the text as the answer to the round, as Enter on a composer draft does, and stops nothing. While a recovery panel (`Needs you`, `Seat down`) waits, it sends the text as the typed correction, as Enter on a composer draft does, and stops nothing. A refusal shows its one reason on the feedback line, and the line stays in the composer: `Finish stopping before steering.` while a stop is in progress, `This halt takes no typed correction. Choose an action.` on a recovery panel that takes no typed correction, or the reason why the run cannot continue, such as `Cannot continue: this run is ready to apply; choose Apply or Discard (/run accept, /run reject confirm).`. A line that holds an image is refused before any correction is sent, and the line and the image stay: `A command sends no image. Remove the command, then press ctrl+⏎.` where the composer can send the image once `/steer` and its text are gone, and `A command sends no image. Remove the image.` where it cannot. A terminal without extended keys reports `ctrl+⏎` as Enter, which queues the message. `/steer` works in every terminal.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/workflow.ts`; `requestSteer` in `src/features/workflow/handlers.ts`.
 - **See also**: `/queue`, `/resume`, `/stop`.
 
@@ -232,7 +232,7 @@ Commands that change what the workflow screen shows without touching the run. `c
 - **Example**: `/activity`
 - **Behavior**: Expands the lowest folded row of the transcript, or collapses it if it is already expanded. A folded row is an activity block with hidden rows, a group of checks in a review, or the summary of a closed run. Only the lowest folded row shows the key, such as `+3 earlier · ctrl+a`; a folded row above it shows only what it hides, such as `+3 earlier`. A click expands or collapses the row that you click. If the transcript has no folded row, the feedback line says so.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/view.ts`. The command context selects a target from `readConversationRowActions()` with `findLatestConversationRowAction()`, then calls `toggleFoldedRows()`.
-- **See also**: `/scroll`, `/diff`.
+- **See also**: `/scroll`, `/sidebar`.
 
 ### `/sidebar`
 
@@ -263,18 +263,6 @@ Commands that change what the workflow screen shows without touching the run. `c
 - **Behavior**: Opens the `usage-details` overlay for the current run. Missing or partial usage remains labelled; unknown pricing is not zero cost. Closing the details returns to a workflow without token or cost counters. The Rates rows and the Billing rows name each tool or endpoint with the same words.
 - **Implementation**: `src/core/runtime/commands/defs/view.ts`, `src/app/overlays/usage.tsx`.
 - **See also**: `/sessions`, `/copy`.
-
-### `/diff`
-
-- **Purpose**: Expand or collapse the latest diff block in the workflow conversation — the command mirror of `Ctrl+D`.
-- **Screens**: `workflow`.
-- **Args**: none.
-- **Shortcut**: `Ctrl+D` (`src/core/keybindings/registry.ts`).
-- **Guard**: a row of the transcript must take the diff toggle (`hasLatestDiff`, `src/app/command-context.ts`). With no expandable target, the palette, `/help` and `/` completion do not list `/diff`, `/help` does not show `ctrl+d`, and a typed `/diff` reads `"No diff is available to expand."`. `Ctrl+D` then does nothing.
-- **Example**: `/diff`
-- **Behavior**: Prints `"Expanded latest diff"` or `"Collapsed latest diff"`. Targets include diffs, cut failure causes, and automatic Recovery details. The keyboard, palette, and slash command select the same row across the whole transcript.
-- **Implementation**: catalog at `src/core/runtime/commands/defs/view.ts`. The command context reads the key of the latest diff row from the row model with `readLatestDiffKey()`, then calls `conversationScrollStore.toggleDiff()`.
-- **See also**: `/activity`, `/copy` (`/copy cost`).
 
 ---
 
@@ -367,8 +355,8 @@ macOS terminals do not always forward physical `PageUp`, `PageDown`, `Home`, or 
 | Key | Action | Source |
 |---|---|---|
 | `Enter` with text | Queue a message for the active stage's seat while the run is live | composer submit handler |
-| `ctrl+⏎` with text | The same as `/steer <text>`: stop now and continue with the text; over a waiting plan card, request changes with the text, over a waiting planner question, answer the round with the text, and over a waiting recovery panel, send the text as the typed correction, as `Enter` does; a refusal shows its reason and keeps the text in the composer | composer submit handler, `requestSteer` |
-| `Ctrl+D` | Toggle the most recent diff in the conversation | `keyboard.ts` `handleWorkflowCtrlChords` |
+| `ctrl+⏎` with text | The same as `/steer <text>`: stop now and continue with the text; over a waiting plan card, request changes with the text (also with `approve`, which `Enter` takes as the approval), over a waiting planner question, answer the round with the text, and over a waiting recovery panel, send the text as the typed correction, as `Enter` does; a refusal shows its reason and keeps the text in the composer | composer submit handler, `requestSteer` |
+| `Ctrl+D` | Show or hide the details of the latest row that has them: a diff, a cut failure cause or Recovery details | `keyboard.ts` `handleWorkflowCtrlChords` |
 | `Esc` | Open the stop menu while a run is live; go home once the run is stopping or parked, and on a run at rest | `src/app/keys.ts` |
 | `Shift+↑` | Scroll conversation up by one line | `keyboard.ts` `handleConversationScroll` |
 | `Shift+↓` | Scroll conversation down by one line | `keyboard.ts` `handleConversationScroll` |
@@ -461,7 +449,7 @@ The `SHORTCUTS` table in `src/core/keybindings/registry.ts` is the single source
 | `skills` | `ctrl+s` | Skills picker | home |
 | `settings` | `ctrl+,` | Settings | all |
 | `close-overlay` | `esc` | Close overlay | home, setup |
-| `toggle-diff` | `ctrl+d` | Toggle diff | workflow |
+| `toggle-diff` | `ctrl+d` | Show or hide details | workflow |
 | `scroll` | `shift+↑/↓, pgup/pgdn, home/end` | Scroll; PageUp/PageDown; /scroll top\|bottom | workflow |
 | `review-edit` | `ctrl+e` | Open editor in review mode only | workflow |
 | `activity` | `ctrl+a` | Expand the last folded rows | workflow |
@@ -475,7 +463,6 @@ Alphabetical, for fast lookup.
 - [`/activity`](#activity) — expand or collapse the last folded rows.
 - [`/copy`](#copy-messagebriefpathcommandcost) — copy a reviewed value to the system clipboard.
 - [`/crew`](#crew-planbuildreview) — change who fills the `PLAN`, `BUILD`, or `REVIEW` seat.
-- [`/diff`](#diff) — expand or collapse the latest diff.
 - [`/end`](#end) — close the run, saving unapplied changes.
 - [`/help`](#help) — open the help overlay.
 - [`/home`](#home) — navigate to the home screen.

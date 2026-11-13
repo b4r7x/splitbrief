@@ -10,7 +10,6 @@ import type { TaskStatus } from '../../../schemas/enums.js';
 import { includes } from '../../../../utils/type-guards.js';
 
 const SCROLL_COMMAND_USAGE = `/scroll <${SCROLL_COMMAND_TARGETS.join('|')}>`;
-const NO_DIFF_REFUSAL = 'No diff is available to expand.';
 const SCROLL_FEEDBACK = {
   top: 'to top',
   bottom: 'to bottom',
@@ -113,22 +112,6 @@ export function viewCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
         // The only sidebar primitive is a toggle, so a toggle that hid it is undone.
         if (!result.visible) ctx.toggleSidebar();
         ctx.setFeedbackMessage('Brief list shown');
-      },
-    },
-    {
-      kind: 'noarg',
-      name: '/diff',
-      label: 'diff',
-      description: 'Expand or collapse the latest diff',
-      shortcut: getShortcutKey('toggle-diff'),
-      category: 'view',
-      validScreens: ['workflow'],
-      guard: () => (ctx.hasLatestDiff() ? undefined : NO_DIFF_REFUSAL),
-      handler: () => {
-        const result = ctx.toggleLatestDiff();
-        if (result.status === 'unavailable') return undefined;
-        ctx.setFeedbackMessage(result.expanded ? 'Expanded latest diff' : 'Collapsed latest diff');
-        return undefined;
       },
     },
     {

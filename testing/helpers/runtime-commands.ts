@@ -53,8 +53,6 @@ export function makeCtx(overrides: Partial<RuntimeCommandContext> = {}): Runtime
     }),
     scrollConversation: () => ({ status: 'scrolled' }),
     toggleLatestActivityBatch: () => ({ status: 'toggled', expanded: true }),
-    toggleLatestDiff: () => ({ status: 'toggled', expanded: true }),
-    hasLatestDiff: noopTrue,
     listBriefs: () => [],
     toggleSidebar: () => ({ status: 'toggled', visible: true }),
     copyTarget: async () => 'empty',

@@ -436,7 +436,7 @@ The summary of a closed run shows a `Scope` row with the counts, such as `1 erro
 
 ### Slash commands palette
 
-**What it does.** Runtime commands use slash names (`/help`, `/usage`, etc.), but the same registry backs composer `/` input and the command palette. Type `/` to open the inline picker. It lists the commands whose names start with the typed word, and `⏎` runs the highlighted row. A typed line runs only on an exact command name, ignoring case; there are no aliases. An unknown name runs nothing: the error suggests a close name (`Did you mean /usage?`). The command palette ranks commands by fuzzy match. Every one of the 23 commands carries exactly one of five categories — Navigate, Crew, Workflow, View, Input & output. The palette and the help overlay group their rows by category and show the category headers when the panel has room for at least 12 rows. Commands that take an argument prefill `/<name> ` in the composer instead of running bare, so no row errors on Enter. A draft you had typed stays: it comes back in the composer once you send or clear that command.
+**What it does.** Runtime commands use slash names (`/help`, `/usage`, etc.), but the same registry backs composer `/` input and the command palette. Type `/` to open the inline picker. It lists the commands whose names start with the typed word, and `⏎` runs the highlighted row. A typed line runs only on an exact command name, ignoring case; there are no aliases. An unknown name runs nothing: the error suggests a close name (`Did you mean /usage?`). The command palette ranks commands by fuzzy match. Every one of the 22 commands carries exactly one of five categories — Navigate, Crew, Workflow, View, Input & output. The palette and the help overlay group their rows by category and show the category headers when the panel has room for at least 12 rows. Commands that take an argument prefill `/<name> ` in the composer instead of running bare, so no row errors on Enter. A draft you had typed stays: it comes back in the composer once you send or clear that command.
 
 **Navigate**
 
@@ -474,7 +474,6 @@ The summary of a closed run shows a `Scope` row with the counts, such as `1 erro
 |---|---|
 | `/scroll <top\|bottom\|page-up\|page-down>` | Scroll the conversation |
 | `/activity` | Expand or collapse the last folded rows |
-| `/diff` | Expand or collapse the latest diff (Ctrl+D). Offered only while the conversation has a diff, a cut failure cause or Recovery details to expand |
 | `/sidebar` | Show or hide the workflow sidebar |
 | `/tasks` | Show the brief list — opens the sidebar and leaves it open (at or below 120 columns there is no sidebar, so the command answers with the list itself) |
 | `/usage` | Open token and monetary details for the run |
@@ -640,7 +639,7 @@ The byline stays `1 queued for BUILD on T003` until the first delivery event rem
 
 `message_queued` and `queue_drained` supply the transcript's optional `seat` and `taskId`. A mid-call delivery adds `via: 'mid-call'` to `queue_drained`. Older events without these fields still render. `/queue show` reports the queued count. `/queue clear` removes only messages awaiting first delivery. See [Queued count](./ENGINE.md#queued-count) and [Delivery to a running call](./ENGINE.md#delivery-to-a-running-call) for state fields and delivery outcomes.
 
-`ctrl+⏎` with text stops now and continues with the text and attachments, like `/steer <text>`, also while a brief's checks run. While the plan card waits, `ctrl+⏎` with text and `/steer <text>` send the text as the change request, as Enter on a draft does, and stop nothing. While a planner question waits, both send the text as the answer to the round, as Enter on a composer draft does, and stop nothing. While a recovery panel (`Needs you`, `Seat down`) waits, both send the text as the typed correction, as Enter on a composer draft does, and stop nothing. Suggestions and runtime commands keep their own Enter behavior. A terminal without extended keys reports this key as Enter, which queues the message. `/steer` works in every terminal.
+`ctrl+⏎` with text stops now and continues with the text and attachments, like `/steer <text>`, also while a brief's checks run. While the plan card waits, `ctrl+⏎` with text and `/steer <text>` send the text as the change request and stop nothing. Enter on a draft does the same, except that a draft of only `approve` approves the plan. While a planner question waits, both send the text as the answer to the round, as Enter on a composer draft does, and stop nothing. While a recovery panel (`Needs you`, `Seat down`) waits, both send the text as the typed correction, as Enter on a composer draft does, and stop nothing. Suggestions and runtime commands keep their own Enter behavior. A terminal without extended keys reports this key as Enter, which queues the message. `/steer` works in every terminal.
 
 **Steer, queue, interrupt.** The composer means a different thing in each state, and its placeholder says which:
 

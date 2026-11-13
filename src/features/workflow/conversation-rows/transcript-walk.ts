@@ -6,6 +6,10 @@ import {
 import { isProcessWentAwayMark } from '../../../core/event-phase.js';
 import { stripRecoveryResetClause } from '../../../core/recovery/reset-clock.js';
 import { SOFT_SEP } from '../../../core/separators.js';
+import {
+  PLANNER_SESSION_EXPIRED_CODE,
+  PLANNER_SESSION_REFUSED_CODE,
+} from '../../../core/sessions/planner-reissue.js';
 import { WORKSPACE_KEPT_CODE } from '../../../core/sessions/workspace-notice.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import { COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT } from './activity-batch-model.js';
@@ -95,6 +99,7 @@ export type TranscriptWalkStep =
 // has ended says so, so no batch of a stopped or finished call carries the live mark. A review opens
 // with its heading while it runs and keeps it once it settles, so no row appears above its rows.
 // A BUILD attempt that a network or server retry follows shows no failed row: the status line says the call goes on.
+// A planner call that the run issues again on a fresh session shows no error and no warning: the session log keeps them.
 // A consult rewrite or split shows its row once the brief is replaced or split; the guard question replaces a held one.
 // In a review, a run of more than three check rows yields one check group. It closes where a batch
 // closes, row-less events never split it, and only a run that ends the transcript is open.
@@ -137,6 +142,7 @@ export function* walkTranscript(
   const endedAttempts = endedImplementerAttempts(sections);
   const endedActivity = endedCallActivity(sections);
   const retriedAttempts = retriedImplementerAttempts(sections);
+  const reissuedCalls = reissuedPlannerCallDiagnostics(sections);
   const heldAnswers = heldConsultAnswers(sections);
   let activityBatch: RunnerActivityBatch | null = null;
   let recovery: RecoveryFold | null = null;
@@ -221,6 +227,7 @@ export function* walkTranscript(
         carriedOn.has(event) ||
         answeredResumes.has(event) ||
         retriedAttempts.has(event) ||
+        reissuedCalls.has(event) ||
         heldAnswers.has(event)
       )
         continue;
@@ -350,6 +357,39 @@ function retriedImplementerAttempts(sections: readonly Section<EngineEvent>[]): 
           hidden.add(pendingFailure);
           pendingFailure = undefined;
         }
+      }
+    }
+  }
+  return hidden;
+}
+
+/**
+ * The error and the warnings of each planner call that the run issued again on a fresh session:
+ * an expired thread or one the tool refused as too long. The debug event of the reissue follows the
+ * error of the call it reissues, before the next call reports.
+ */
+function reissuedPlannerCallDiagnostics(
+  sections: readonly Section<EngineEvent>[],
+): Set<EngineEvent> {
+  const hidden = new Set<EngineEvent>();
+  const warnings = new Map<string, RunnerActivityEvent[]>();
+  let failed: RunnerActivityEvent | undefined;
+  for (const section of sections) {
+    for (const event of section.items) {
+      if (event.type === 'runner_call_activity') {
+        if (event.stage === 'warning')
+          warnings.set(event.callId, [...(warnings.get(event.callId) ?? []), event]);
+        if (isCallError(event)) failed = event;
+        else if (event.callId !== failed?.callId) failed = undefined;
+      } else if (
+        event.type === 'debug' &&
+        (event.code === PLANNER_SESSION_EXPIRED_CODE || event.code === PLANNER_SESSION_REFUSED_CODE)
+      ) {
+        if (failed !== undefined) {
+          hidden.add(failed);
+          for (const warning of warnings.get(failed.callId) ?? []) hidden.add(warning);
+        }
+        failed = undefined;
       }
     }
   }

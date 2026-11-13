@@ -57,6 +57,7 @@ import { sessionsStore } from '../../../src/stores/project/sessions.js';
 import { skillsStore } from '../../../src/stores/project/skills.js';
 import { modelCacheStore } from '../../../src/stores/discovery/model-cache/state.js';
 import { addEvent } from '../../../src/stores/workflow/actions/event.js';
+import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';
 import { createEventBus } from '../../../src/engine/events/bus.js';
 import {
   publishError,
@@ -980,6 +981,21 @@ const BUILD_COMMAND_CODE_SEAT = {
 
 const createHelpFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'help', underlyingScreen: 'workflow' });
+const HELP_DETAILS_TS = 1_783_958_400_000;
+/** Help over a run whose done brief holds a diff, at the end of the list: `ctrl+d` has details. */
+const createHelpDetailsFixture: FixtureFactory = () => ({
+  ...createOverlayFixture({ overlay: 'help', underlyingScreen: 'workflow' }),
+  afterMount: async (write) => {
+    addEvent({
+      type: 'workflow_started',
+      ts: HELP_DETAILS_TS - 1_000,
+      phase: 'implementing',
+      feature: 'Add a total helper',
+    });
+    addEvent(makeImplementerGenerate({ ts: HELP_DETAILS_TS, diff: '+ export const total = 1;' }));
+    await write('\u001b[F');
+  },
+});
 const createPaletteFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'command-palette',
@@ -2953,6 +2969,7 @@ const createEditorNotSavedFixture: FixtureFactory = () => ({
 
 export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-help'), createHelpFixture],
+  [scenarioId('overlay-help-details'), createHelpDetailsFixture],
   [scenarioId('overlay-command-palette'), createPaletteFixture],
   [scenarioId('overlay-command-palette-session-task'), createPaletteSessionTaskFixture],
   [scenarioId('overlay-command-palette-typed-name'), createPaletteTypedNameFixture],

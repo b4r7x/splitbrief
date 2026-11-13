@@ -34,7 +34,7 @@
 - **Cursor Agent CLI (`cursor`), Command Code (`command-code`) and Antigravity (`agy`)** are supported CLI tools.
 - **Skills for every seat.** `--skills <ids>` on `start`, `resume` and `continue`, or `/skills`, attaches project or global skills. Every seat call carries them.
 - **An `on_halt` hook event**, fired when a run stops for recovery; `${event.resumeCommand}` substitutes into a hook's arguments.
-- **Runtime commands** `/tasks`, `/resume`, `/end`, `/diff`, `/run accept|reject` and `/image`.
+- **Runtime commands** `/tasks`, `/resume`, `/end`, `/run accept|reject` and `/image`.
 - **`@file` inputs may name a file anywhere:** an absolute path, a path relative to the project, or `~/…`. A missing, oversized or unreadable input stops `start` with one error that names every refused input and its fix.
 - **Stack detection** for TypeScript, JavaScript, Python, Go and Rust. `validation.stack` pins a stack.
 - **Typed seat answers.** Plans, reviews, consults and implementer reports are JSON answers that SPLITBRIEF validates, through each tool's native schema flag where it has one.
@@ -101,7 +101,7 @@
 - The model list in the picker, the provider scan on home and setup, the Check of a local server and the check of an API seat wait up to one minute instead of two or five seconds. A provider that answers after six seconds is now found, not failed. After ten seconds the screen names the provider and the check, also while a run checks its seat at its start or before a brief. Esc stops the check; during a run, the run's stop ends it.
 - The workflow sidebar shows no waiting row. Before the plan names its briefs, the Tasks panel shows only `No tasks yet`. The header and the line under the composer show the stage.
 - **Fewer warning rows.** A plan that goes back to the planner once, an output limit of a tool call, and a format pass that rewrote files no longer show a warning row. With `SPLITBRIEF_DEBUG` set, the [debug log](./docs/TROUBLESHOOTING.md#debug-environment-variables) records them; for a format pass it names the files.
-- **No warning for a state that the run handles by itself.** Examples are a planner thread that runs again on a fresh session and a compaction that saved a plain summary. These no longer show a Warning row or a stderr line under `--plain`. The session log keeps them. A brief that continues where a stop left it, and a queued message that waits for the next call, now show as a plain SPLITBRIEF row.
+- **No warning for a state that the run handles by itself.** Examples are a planner thread that runs again on a fresh session and a compaction that saved a plain summary. These no longer show a Warning row or a stderr line under `--plain`. The session log keeps them. The PLAN activity of a planner call that runs again on a fresh session no longer shows the warning or the red error of the first call, and its header counts no `warn` or `err` for them. A brief that continues where a stop left it, and a queued message that waits for the next call, now show as a plain SPLITBRIEF row.
 - The activity list no longer shows a warning for an unknown upstream record or for the live-update limit of a call.
 - A retry after a network or server failure shows on the status line and leaves no row in the transcript.
 - **No warnings that you cannot act on.** An optional file that SPLITBRIEF cannot read, such as a remembered model list or a saved session summary, and a cleanup that did not finish no longer show a warning row. They also no longer show a count line such as `2 warnings, all shown when you quit` when the screen opens, or print a line on the terminal after you quit or in a headless command such as `start --plain` or `status`. With `SPLITBRIEF_DEBUG` set, the [debug log](./docs/TROUBLESHOOTING.md#debug-environment-variables) records them. A warning that asks you to act, such as a tool process that may keep running, still shows.
@@ -120,6 +120,7 @@
 - A failure on the run screen shows `✗` in front of its sentence, in place of a red first word.
 - Settings and the setup screen show a saved change or the reason of a refused command in dim text, not in green.
 - A refusal on the recovery panel, in the composer, at the review prompt, on the setup screen, in settings and in the model picker shows as a plain note, not as an error. Nothing failed: the line says what to do next.
+- When the plan card opened while you typed, `⏎` on a composer that holds only the word `approve` approves the plan and starts the build, and the card highlights its Approve row before you press it. Any other text still goes to the planner as the change request. Before, `approve` also went to the planner, and the planner planned again.
 
 ### Removed
 
@@ -144,6 +145,7 @@
 
 ### Fixed
 
+- `splitbrief review --reviewer opencode:<model>@high` gives `high` to OpenCode as its variant, as `continue --action switch-seat:` does, and no longer says that the word is ignored. The same holds for Kilo Code.
 - A runner flag that its seat does not use, such as `--planner-api-base` for a CLI planner, is told one time.
 - The Command Code picker offers each model's own effort levels and shows each model's own name, such as `DeepSeek V4.1 Flash Fast (latest)` with `off`, `low`, `high` and `max`. When you choose a model, an effort level that it does not offer is cleared.
 - `off` and `ultra` are effort levels. Config, `--planner-effort` and `--reviewer-effort` accept them, and the Codex picker offers `ultra` on a model that has it.
@@ -672,7 +674,7 @@
 - `/steer <text>` at the result menu of a run that is ready to apply now shows the one reason why the run cannot continue. While a stop is in progress, `/steer <text>` shows only `Finish stopping before steering.`
 - `/skills` with only unknown or unavailable ids now shows the reason and keeps the line in the composer.
 - `/end` now closes the run over a waiting plan card and while a brief's checks run.
-- `/diff` no longer shows in the command list, the command palette or help while the conversation has no diff to expand, and help no longer shows `ctrl+d` then. A typed `/diff` still says `No diff is available to expand.` and stays in the composer.
+- Help names `ctrl+d` **Show or hide details** and shows it only while a row of the conversation has details to show or hide: a diff, a cut failure cause or Recovery details.
 - `/resume` while a planner, build or review call runs no longer stops that call. It now says `Nothing to resume: the run has not stopped.`, and the call goes on.
 - While a stop is in progress, the notice after `⏎` no longer offers `ctrl+⏎`. That key waits until the run has stopped.
 - A confirmation prompt that opens on the run screen while you type no longer takes your keys. Your words stay in the composer, and `⏎` queues them while the prompt waits. Tab, or `⏎` on an empty composer, moves to the prompt. With an empty composer, the prompt takes the keys as before.

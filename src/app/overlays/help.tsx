@@ -6,6 +6,7 @@ import { commandLabelWidth, descriptionColumn } from '../../components/list-colu
 import { ListViewport } from '../../components/pickers/list-viewport.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { buildCommandItems } from '../../features/palette/sources.js';
+import { readLatestDiffKey } from '../../features/workflow/conversation-rows/read-row-actions.js';
 import { getShortcutsForScreen } from '../../core/keybindings/registry.js';
 import { resolveScrollKey, type ScrollKeyAction } from '../../core/keybindings/scroll.js';
 import {
@@ -26,6 +27,7 @@ import {
 import { configStore } from '../../stores/project/config.js';
 import { controlsStore } from '../../stores/ui/controls.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
+import { eventsStore } from '../../stores/workflow/events.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { clamp } from '../../utils/math.js';
@@ -103,14 +105,10 @@ export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
     onRuntimeCommand: () => {},
     guardContext,
   });
-  // A key that runs a command is taught only while the guard of that command lets it run.
-  const blockedKeys = new Set(
-    commands
-      .filter((command) => command.guard?.(guardContext) !== undefined)
-      .map((command) => command.shortcut),
-  );
+  // `ctrl+d` is taught only while a row of the transcript has details to show or hide.
+  const hasDetails = eventsStore.use(() => readLatestDiffKey() !== null);
   const shortcuts = getShortcutsForScreen(currentScreen, { inputMode }).filter(
-    (shortcut) => !blockedKeys.has(shortcut.key),
+    (shortcut) => shortcut.id !== 'toggle-diff' || hasDetails,
   );
 
   const helpRows: HelpRow[] = [

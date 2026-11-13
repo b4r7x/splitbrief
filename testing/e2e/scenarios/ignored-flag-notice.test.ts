@@ -502,10 +502,11 @@ child.on('exit', code => process.exit(code ?? 1));
     expect(linesWith(run.stderr, 'Delete effort from planner')).toEqual([]);
   });
 
-  it('names the @effort of --reviewer that the review tool does not take, and how to remove it', async () => {
+  it('gives the @ word of --reviewer to OpenCode as its variant, with no notice', async () => {
     fixture = createStopContinueFixture(() => '', { isolation: 'none' });
     const bin = join(fixture.tmpDir, 'bin');
     mkdirSync(bin);
+    const argsLog = join(fixture.tmpDir, 'opencode-args.json');
     const verdict = JSON.stringify({ tasks: [], criteria: [], findings: [] });
     writeFakeNodeCli(
       bin,
@@ -520,6 +521,7 @@ if (args[0] === 'auth' && args[1] === 'list') {
   process.exit(0);
 }
 if (args[0] !== 'run') process.exit(1);
+require('node:fs').writeFileSync(${JSON.stringify(argsLog)}, JSON.stringify(args));
 require('node:fs').readFileSync(0, 'utf8');
 console.log(JSON.stringify({ type: 'text', part: { type: 'text', text: ${JSON.stringify(verdict)} } }));
 console.log(JSON.stringify({ type: 'step_finish', part: { type: 'step-finish', tokens: { input: 40, output: 20 } } }));`,
@@ -529,14 +531,17 @@ console.log(JSON.stringify({ type: 'step_finish', part: { type: 'step-finish', t
     try {
       vi.stubEnv('HOME', join(fixture.tmpDir, 'home'));
 
-      const review = await cli(fixture, ['review', '--reviewer', 'opencode@high']);
+      const review = await cli(fixture, [
+        'review',
+        '--reviewer',
+        'opencode:opencode-go/kimi-k3@high',
+      ]);
 
       expect(review.exitCode, review.stderr).toBe(0);
-      expect(linesWith(review.stderr, 'is ignored')).toEqual([
-        '@high in --reviewer is ignored: the OpenCode CLI variant sets the effort.',
-      ]);
-      expect(linesWith(review.stderr, 'Fix:')).toEqual(['Fix: Remove @high from --reviewer.']);
-      expect(linesWith(review.stderr, '--reviewer-effort')).toEqual([]);
+      expect(linesWith(review.stderr, 'is ignored')).toEqual([]);
+      expect(linesWith(review.stderr, 'Fix:')).toEqual([]);
+      const args: string[] = JSON.parse(readFileSync(argsLog, 'utf8'));
+      expect(args[args.indexOf('--model') + 1]).toBe('opencode-go/kimi-k3#high');
     } finally {
       restorePath();
     }

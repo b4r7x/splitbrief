@@ -31,7 +31,6 @@ import {
 } from '../engine/orchestrator/session-lifecycle/shutdown.js';
 import { departureStore } from '../stores/workflow/departure.js';
 import { overlayStore } from '../stores/ui/overlay.js';
-import { taskId } from '../core/schemas/task.js';
 import {
   setClearQueueHandler,
   clearAllHandlers,
@@ -41,12 +40,8 @@ import {
 import { executeRuntimeCommand } from '../core/runtime/commands/dispatch.js';
 import { workflowCommands } from '../core/runtime/commands/defs/workflow.js';
 import { activityBatchKey } from '../features/workflow/conversation-rows/activity-batch-key.js';
-import {
-  readConversationRowActions,
-  readLatestDiffKey,
-} from '../features/workflow/conversation-rows/read-row-actions.js';
+import { readConversationRowActions } from '../features/workflow/conversation-rows/read-row-actions.js';
 import { readConversationScrollSnapshot } from '../features/workflow/layout/snapshot.js';
-import { clearSessionScopedStores } from '../features/workflow/session-stores.js';
 import { buildPromptCallbacks } from '../features/workflow/prompt-callbacks.js';
 import { plainAnswer, type QuestionAnswer } from '../features/workflow/hooks/use-input-mode.js';
 import { configStore } from '../stores/project/config.js';
@@ -86,7 +81,6 @@ const originalPlatform = process.platform;
 const workflowPorts: WorkflowCommandPorts = {
   requestClearQueue,
   getRowActions: readConversationRowActions,
-  getLatestDiffKey: readLatestDiffKey,
   readScrollMetrics: readConversationScrollSnapshot,
   resolveCopyValue: (target) => (target === 'message' ? 'port-value' : null),
 };
@@ -610,228 +604,24 @@ describe('useRuntimeCommands', () => {
     vi.restoreAllMocks();
   });
 
-  it('the palette diff command expands automatic Recovery details and /diff collapses them', async () => {
-    const words = 'provider.quota: Insufficient Balance (request_id: spent-b2)';
-    addEvent(
-      makeRunnerCallActivity({
-        callId: 'spent-build',
-        phase: 'implementing',
-        taskId: taskId('T001'),
-        runnerName: 'opencode',
-        model: 'deepseek/deepseek-flash',
-        kind: 'error',
-        diagnosticPartial: words,
-      }),
-    );
-    addEvent(
-      makeImplementerGenerate({ status: 'failed', model: 'deepseek/deepseek-flash', error: words }),
-    );
-    addEvent({
-      type: 'recovery_prompted',
-      ts: 2,
-      phase: 'implementing',
-      taskId: taskId('T001'),
-      issueId: 'spent-b2',
-      reason: 'runner-usage-limit',
-      headline: 'Balance spent on OpenCode CLI',
-      files: [],
-      affectedTaskIds: [taskId('T001')],
-      availableActions: ['switch-seat'],
-      recommendedAction: 'switch-seat',
-      resumeCommand: 'splitbrief continue',
-    });
-    addEvent({
-      type: 'recovery_action_selected',
-      ts: 3,
-      phase: 'implementing',
-      issueId: 'spent-b2',
-      reason: 'runner-usage-limit',
-      action: 'switch-seat',
-      seat: 'build',
-    });
-    addEvent({
-      type: 'seat_switched',
-      ts: 4,
-      phase: 'implementing',
-      seat: 'build',
-      from: { tool: 'opencode', model: 'deepseek/deepseek-flash' },
-      to: { tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash', variant: 'high' },
-      cause: 'runner-usage-limit',
-      auto: true,
-      configRevision: 'spent-b2',
-    });
-    addEvent({
-      type: 'recovery_resolved',
-      ts: 5,
-      phase: 'implementing',
-      issueId: 'spent-b2',
-      reason: 'runner-usage-limit',
-      action: 'switch-seat',
-      seat: 'build',
-      outcome: 'retry-current-task',
-    });
-    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
-    let runtime: ReturnType<typeof useRuntimeCommands> | undefined;
-    const ui = renderFeature(
-      createElement(RuntimeCommandsHarness, {
-        onModel: (model) => {
-          runtime = model;
-        },
-      }),
-      { cols: 120, rows: 40 },
-    );
-    onTestFinished(ui.unmount);
-    await flushEffects();
-    if (runtime === undefined) throw new Error('Expected runtime commands');
-    const command = runtime.commands.find((command) => command.name === '/diff');
-    if (command?.kind !== 'noarg') throw new Error('Expected palette diff command');
-    expect(stripAnsiStyles(ui.lastFrame())).toContain('continued on fallback');
-    expect(stripAnsiStyles(ui.lastFrame())).not.toContain(words);
-
-    await command.handler();
-    await expect.poll(() => stripAnsiStyles(ui.lastFrame())).toContain(words);
-    expect(conversationScrollStore.get().expandedDiffs).toEqual(new Set(['recovery_prompted:2']));
-    expect(feedbackStore.get()).toEqual({ message: 'Expanded latest diff', isError: false });
-
-    runtime.handleRuntimeCommand('/diff', 'workflow');
-    await expect.poll(() => conversationScrollStore.get().expandedDiffs.size).toBe(0);
-    await expect.poll(() => stripAnsiStyles(ui.lastFrame())).not.toContain(words);
-    expect(feedbackStore.get()).toEqual({ message: 'Collapsed latest diff', isError: false });
-  });
-
-  it('the palette and runtime diff command toggle a cut failure card after the context was created', async () => {
-    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
-    let runtime: ReturnType<typeof useRuntimeCommands> | undefined;
-    const ui = renderFeature(
-      createElement(RuntimeCommandsHarness, {
-        onModel: (model) => {
-          runtime = model;
-        },
-      }),
-      { cols: 120, rows: 40 },
-    );
-    onTestFinished(ui.unmount);
-    await flushEffects();
-    if (runtime === undefined) throw new Error('Expected runtime commands');
-    const command = runtime.commands.find((command) => command.name === '/diff');
-    if (command?.kind !== 'noarg') throw new Error('Expected palette diff command');
-    expect(build().toggleLatestDiff().status).toBe('unavailable');
-    addEvent(makeImplementerGenerate({ status: 'done', diff: '+ earlier' }));
-    const words = `Runner failed ${'while applying the brief '.repeat(8)}raw-end`;
-    addEvent(makeImplementerGenerate({ status: 'failed', error: words }));
-    await flushEffects();
-    expect(stripAnsiStyles(ui.lastFrame())).not.toContain('raw-end');
-
-    await command.handler();
-    await expect.poll(() => stripAnsiStyles(ui.lastFrame())).toContain('raw-end');
-    expect(conversationScrollStore.get().expandedDiffs).toEqual(
-      new Set(['implementer_generate_failed:1']),
-    );
-
-    runtime.handleRuntimeCommand('/diff', 'workflow');
-    await expect.poll(() => conversationScrollStore.get().expandedDiffs.size).toBe(0);
-    await expect.poll(() => stripAnsiStyles(ui.lastFrame())).not.toContain('raw-end');
-  });
-
-  async function commandListUnderDraft(done: EngineEventOf<'implementer_generate_done'>) {
+  it('lists no /diff for a /di draft after a brief whose done row holds a diff', async () => {
     projectDir = createTempDir('command-composer-diff-list');
     configStore.__testReset({ projectDir, config: makeConfig() });
     terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
-    addEvent(done);
-    const ui = renderFeature(createElement(CommandComposerHarness), { cols: 120, rows: 30 });
-    onTestFinished(ui.unmount);
-    await flushEffects();
-    ui.stdin.write('/di');
-    await vi.waitFor(() => {
-      const frame = stripAnsiStyles(ui.lastFrame());
-      expect(frame).toContain('> /di');
-      expect(frame).toContain('↑↓ select');
-    });
-    await flushEffects();
-    return stripAnsiStyles(ui.lastFrame());
-  }
-
-  it('lists no /diff for a /di draft after a brief whose done row holds no diff', async () => {
-    const frame = await commandListUnderDraft(makeImplementerGenerate());
-
-    expect(frame.split('\n').filter((line) => line.includes('/diff'))).toEqual([]);
-  });
-
-  it('lists /diff for a /di draft after a brief whose done row holds a diff', async () => {
-    const frame = await commandListUnderDraft(
-      makeImplementerGenerate({ diff: '+ export const total = 1;' }),
-    );
-
-    expect(frame).toContain('/diff');
-  });
-
-  it('adds /diff to the open list of a /di draft when a done row with a diff arrives, and takes it out when a new run clears the transcript', async () => {
-    projectDir = createTempDir('command-composer-diff-follow');
-    configStore.__testReset({ projectDir, config: makeConfig() });
-    terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
-    addEvent(makeImplementerGenerate());
-    const ui = renderFeature(createElement(CommandComposerHarness), { cols: 120, rows: 30 });
-    onTestFinished(ui.unmount);
-    await flushEffects();
-    ui.stdin.write('/di');
-    await vi.waitFor(() => {
-      const frame = stripAnsiStyles(ui.lastFrame());
-      expect(frame).toContain('> /di');
-      expect(frame).toContain('↑↓ select');
-    });
-    const diffLines = () =>
-      stripAnsiStyles(ui.lastFrame())
-        .split('\n')
-        .filter((line) => line.includes('/diff'));
-    expect(diffLines()).toEqual([]);
-
     addEvent(makeImplementerGenerate({ diff: '+ export const total = 1;' }));
-    await vi.waitFor(() => {
-      expect(diffLines()).toHaveLength(1);
-    });
-
-    clearSessionScopedStores();
-    await vi.waitFor(() => {
-      expect(diffLines()).toEqual([]);
-    });
-    const frame = stripAnsiStyles(ui.lastFrame());
-    expect(frame).toContain('> /di');
-    expect(frame).toContain('↑↓ select');
-  });
-
-  it('takes /diff out of the open list of a /di draft when a BUILD retry hides the cut failure card that was the only diff row', async () => {
-    projectDir = createTempDir('command-composer-diff-retry');
-    configStore.__testReset({ projectDir, config: makeConfig() });
-    terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
-    addEvent(makeImplementerGenerate({ status: 'running', ts: 1_000 }));
-    const cause = `Runner failed ${'while applying the brief '.repeat(8)}raw-end`;
-    addEvent(makeImplementerGenerate({ status: 'failed', error: cause, ts: 1_100 }));
-    expect(readLatestDiffKey()).not.toBeNull();
     const ui = renderFeature(createElement(CommandComposerHarness), { cols: 120, rows: 30 });
     onTestFinished(ui.unmount);
     await flushEffects();
     ui.stdin.write('/di');
-    const diffLines = () =>
-      stripAnsiStyles(ui.lastFrame())
-        .split('\n')
-        .filter((line) => line.includes('/diff'));
     await vi.waitFor(() => {
-      expect(stripAnsiStyles(ui.lastFrame())).toContain('↑↓ select');
-      expect(diffLines()).toHaveLength(1);
+      const frame = stripAnsiStyles(ui.lastFrame());
+      expect(frame).toContain('> /di');
+      expect(frame).toContain('↑↓ select');
     });
+    await flushEffects();
 
-    addEvent({
-      type: 'seat_retry',
-      ts: 1_200,
-      phase: 'implementing',
-      seat: 'build',
-      attempt: 1,
-      delayMs: 2_000,
-    });
-    expect(readLatestDiffKey()).toBeNull();
-    await vi.waitFor(() => {
-      expect(diffLines()).toEqual([]);
-    });
+    const frame = stripAnsiStyles(ui.lastFrame());
+    expect(frame.split('\n').filter((line) => line.includes('/diff'))).toEqual([]);
   });
 
   it('the palette activity command and /activity toggle the latest batch after the context was created', async () => {
@@ -1130,7 +920,7 @@ describe('useRuntimeCommands', () => {
     ['/zzzz', 'Unknown command: /zzzz. Type /help for available commands.'],
     ['/steer', 'Usage: /steer <correction>'],
     ['/run reject', 'Usage: /run reject confirm'],
-    ['/diff', 'No diff is available to expand.'],
+    ['/diff', 'Unknown command: /diff. Type /help for available commands.'],
   ])(
     'shows the reason of a refused %s and keeps the line, with the menu closed',
     async (line, reason) => {

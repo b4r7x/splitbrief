@@ -63,20 +63,20 @@ console.log('Implemented');
 `;
 }
 
-describe('e2e: the command list after a brief that changed files without a diff', {
+describe('e2e: /diff after a brief that changed files', {
   timeout: 180_000,
 }, () => {
   let trustHome: ReturnType<typeof useTrustHome>;
 
   beforeEach(() => {
-    trustHome = useTrustHome('diff-command-no-diff');
+    trustHome = useTrustHome('diff-command-unknown');
   });
 
   afterEach(() => {
     trustHome.restore();
   });
 
-  it('shows no /diff row for a /di draft', async () => {
+  it('lists no /diff for a /di draft and answers a typed /diff as an unknown command', async () => {
     const target = createStopContinueFixture(() => '', { isolation: 'none' });
     try {
       const reviewCalls = join(target.tmpDir, 'review-calls.txt');
@@ -170,6 +170,13 @@ describe('e2e: the command list after a brief that changed files without a diff'
                 .split('\n')
                 .filter((line) => line.includes('/diff')),
             ).toEqual([]);
+
+            child.write('ff');
+            await expect.poll(screen, PAINT).toContain('› /diff');
+            child.write(PTY_SUBMIT_INPUT);
+            await expect
+              .poll(screen, PAINT)
+              .toContain('Unknown command: /diff. Type /help for available commands.');
           } finally {
             if (outcome === undefined) await terminatePtyProcessGroup(child, exit.promise);
             await reapOrphanRunners(target.projectDir);

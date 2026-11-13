@@ -263,7 +263,7 @@ The composer lives in `src/components/composer/`. Do not recreate `input-bar` mo
 
 ### Runtime commands
 
-Runtime commands live in `src/core/runtime/commands/`. They use slash names, and the registry backs both composer `/` input and the command palette. There are 23 commands in five categories; `/crew <seat>` is the only seat command; `/stop` reopens the inline session-options menu; `/usage` opens token and monetary details on a workflow. Main workflow screens have no cost counter, Show spend control or Commit strategy setting. Each command is described in [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
+Runtime commands live in `src/core/runtime/commands/`. They use slash names, and the registry backs both composer `/` input and the command palette. There are 22 commands in five categories; `/crew <seat>` is the only seat command; `/stop` reopens the inline session-options menu; `/usage` opens token and monetary details on a workflow. Main workflow screens have no cost counter, Show spend control or Commit strategy setting. Each command is described in [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
 
 ### Seat identity
 
@@ -328,7 +328,7 @@ Done brief rows in the transcript and in the record of a closed run share `taskS
 
 A brief that a recovery restarted stays one section. When `task_started` opens a brief whose latest range is an abandoned range of the same brief, `groupEventsIntoSections` reopens that range instead of a new one (`src/core/sections/event-sections.ts`). The earlier attempt and its `Recovery` row stay in the brief's own section under the one header the brief opened with. A header of an earlier attempt that the run stopped or redid shows the stop mark `×`; only the brief the run is on shows the live mark. Other recoveries fold their prompt, selection, task reset and outcome into `Recovery  <action> → <outcome>` (`recoveryRowBlock`, `src/features/workflow/conversation-rows/event-rows/dispatch.ts`); a resume between the choice and the outcome, as Apply logs it, does not split that row and shows no row of its own; a correction typed with the choice follows the row, and the brief the choice ends or resets keeps its outcome (`groupEventsIntoSections`); a reset that no recovery covers reads `Task reset  T002 back to pending`. The transcript's pending block, `Pending n`, spells each brief as its id and title, such as `T002 Publish and render`. It does not list the brief the run is on, even while a recovery has set it back to `pending`. When the block has fewer rows than pending briefs, its last row reads `+n more` inside the same row budget.
 
-`ConversationFlow` batches safe `runner_call_activity` events by model call and builds one canonical activity batch view model whose render-facing fields are `visibleItems`, `hiddenCount`, `headerCount`, `renderableUnits`, `expandableKey`, `severityCounts`, `groups`, and `rawMarkers`, alongside identity/state fields `batchKey`, `expanded`, `headerSegments`, `headerRunner`, `tone`, and `markerTone`. Header text, hidden-row affordance, scroll math, and activity target discovery all use that model, whose item identity is the normalized visible label/value rather than raw event count. The compact block keeps its header and the newest three distinct items in event order. A `+N earlier` row under the header counts the older hidden items, and an expanded block shows `collapse` in the same place. `/activity` and `Ctrl+A` toggle the lowest folded row of the whole transcript, settled sections and the summary of a closed run included, and only that row adds ` · ctrl+a` (see [Folded rows](#folded-rows)). Older folded rows stay clickable. `Ctrl+D` toggles the latest expandable diff in the whole transcript. Older diff disclosures stay clickable. Historical `kind: 'session'` activity records still parse, but produce no rows, update counts or disclosure entries. Assistant/result text from runner streams is transcript/output content only. The input footer shows the queued count beside the composer.
+`ConversationFlow` batches safe `runner_call_activity` events by model call and builds one canonical activity batch view model whose render-facing fields are `visibleItems`, `hiddenCount`, `headerCount`, `renderableUnits`, `expandableKey`, `severityCounts`, `groups`, and `rawMarkers`, alongside identity/state fields `batchKey`, `expanded`, `headerSegments`, `headerRunner`, `tone`, and `markerTone`. Header text, hidden-row affordance, scroll math, and activity target discovery all use that model, whose item identity is the normalized visible label/value rather than raw event count. The compact block keeps its header and the newest three distinct items in event order. A `+N earlier` row under the header counts the older hidden items, and an expanded block shows `collapse` in the same place. `/activity` and `Ctrl+A` toggle the lowest folded row of the whole transcript, settled sections and the summary of a closed run included, and only that row adds ` · ctrl+a` (see [Folded rows](#folded-rows)). Older folded rows stay clickable. `Ctrl+D` shows or hides the details of the latest row in the whole transcript that has them: a diff, a cut failure cause or Recovery details. Older diff disclosures stay clickable. Historical `kind: 'session'` activity records still parse, but produce no rows, update counts or disclosure entries. Assistant/result text from runner streams is transcript/output content only. The input footer shows the queued count beside the composer.
 
 The placeholder, byline, transcript, and `/queue` output use `queueCopy` for the receiving seat. The function also supplies feedback, delivery timing, and clear confirmations. See [Input footer](./FEATURES.md#input-footer) for all seat copy, including `read after this tool` when a matching call is attached.
 
@@ -682,9 +682,15 @@ interface ReviewState {
 // src/stores/project/config.ts
 interface ConfigState {
   config: Config | null;       // full resolved config (disk + CLI overrides)
+  configWarnings: readonly EffectiveConfigWarning[]; // loader diagnostics and ignored flags of `config`
   diskConfig: Config | null;   // config as persisted on disk, without overrides
+  rawYaml: string;
+  revision: ExpectedConfigRevision;
   projectDir: string;
   overrides: CLIOverrides;
+  detectedContextLength: number | undefined;
+  discovery: Discovery | undefined; // the context window boot discovery found, and its implementer
+  refusedEdit: string | undefined;  // the line that named a hand edit that did not load
 }
 
 // src/stores/ui/picker-view.ts

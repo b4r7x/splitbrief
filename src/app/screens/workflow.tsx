@@ -82,7 +82,7 @@ import {
   reviewArtifactForPhase,
   reviewDocumentOptions,
 } from '../../features/workflow/prompt-rows/approval.js';
-import { reviewDraftTarget } from '../../features/workflow/review-commands.js';
+import { draftApprovesPlan, reviewDraftTarget } from '../../features/workflow/review-commands.js';
 import { reviewKeysStore } from '../../stores/ui/review-keys.js';
 import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
@@ -142,6 +142,7 @@ export function WorkflowScreen({
   const reviewKeysCommenting = reviewKeysStore.use((state) => state.commenting);
   const reviewKeysRequested = reviewKeysStore.use((state) => state.requested);
   const composerDraftText = composerLiveStore.use((state) => state.text);
+  const composerApproves = composerLiveStore.use((state) => draftApprovesPlan(state.document));
   const reviewOwnerToken = reviewStore.use((state) => state.ownerToken);
   const reviewConfirms = reviewStore.use((state) => state.confirms);
   const recoveryIssue = runViewStore.use((view) => view.halt?.issue ?? null);
@@ -163,13 +164,6 @@ export function WorkflowScreen({
   // An overlay takes the paint of the plan card. The card stays open below it, with its focus.
   const planCardOpen = planCardArtifact !== null;
   const reviewArtifact = model.hasOverlay ? null : planCardArtifact;
-  // A draft in the composer is what turns the letters back into text, so the flag the composer
-  // publishes decides whether the panel follows the draft or the row ↓ moved to.
-  const reviewDraft =
-    reviewArtifact !== null && reviewKeysCommenting
-      ? reviewDraftTarget(composerDraftText, reviewKeysRequested)
-      : null;
-
   useLayoutEffect(() => {
     reviewSelectedRef.current = 0;
     setReviewSelected(0);
@@ -179,6 +173,19 @@ export function WorkflowScreen({
     planCardOpen,
   );
   const planCardWaits = planCardOpen && !planCardFocused;
+  // A draft in the composer is what turns the letters back into text, so the flag the composer
+  // publishes decides whether the panel follows the draft or the row ↓ moved to. Over a waiting
+  // card the draft takes a row only when it is the word approve.
+  const reviewDraft =
+    reviewArtifact === null
+      ? null
+      : planCardWaits
+        ? composerApproves
+          ? 'approve'
+          : null
+        : reviewKeysCommenting
+          ? reviewDraftTarget(composerDraftText, reviewKeysRequested)
+          : null;
 
   const handleReviewBoundaryNavigate = (direction: 'up' | 'down'): boolean => {
     if (reviewArtifact === null) return false;
@@ -244,8 +251,12 @@ export function WorkflowScreen({
       return;
     }
     // The card opened over the draft, so the whole draft is the change request, whatever word it
-    // opens with.
+    // opens with. A draft of only approve takes the Approve row.
     if (planCardWaits) {
+      if (draftApprovesPlan(submission.document)) {
+        void model.handleInput(plainUserMessage('approve'));
+        return;
+      }
       model.inputMode.resolve({ approved: false, action: 'revise', message });
       return;
     }
@@ -270,7 +281,7 @@ export function WorkflowScreen({
   const showSidebar = sidebarWidth > 0;
   const questionHint = model.inputMode.mode === 'question' ? model.inputMode.hint : null;
   const recoveryPromptOpen = recoveryIssue !== null && recoveryAsking && questionHint !== null;
-  const recoveryFocusKey = `${recoveryIssue?.id ?? ''}:${model.inputMode.questionEpoch}`;
+  const recoveryFocusKey = recoveryIssue?.id ?? '';
   const { focused: recoveryMenuFocused, setMenu: setRecoveryMenu } = usePanelFocus(
     recoveryFocusKey,
     recoveryPromptOpen,

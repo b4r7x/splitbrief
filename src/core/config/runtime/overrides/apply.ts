@@ -2,6 +2,7 @@ import type { z } from 'zod';
 import { EFFORT_LEVELS, EffortLevelSchema } from '../../../schemas/enums.js';
 import { configError } from '../../errors.js';
 import type { Config } from '../../../schemas/config.js';
+import { readActiveRunner } from '../../accessors/active-runner.js';
 import {
   applyImplementerOverrides,
   applyPlannerEffort,
@@ -78,6 +79,10 @@ export function applyCLIOverrides(config: Config, overrides: CLIOverrides): Appl
     const input = { name: `@${level} in --reviewer`, fix: `Remove @${level} from --reviewer.` };
     const effort = parseOverrideOrThrow(EffortLevelSchema, level, input.name, EFFORT_LEVELS);
     take(applyReviewerEffort(next, effort, input));
+  }
+  if (overrides.reviewerSpecVariant !== undefined) {
+    const reviewer = readActiveRunner({ config: next, role: 'reviewer' });
+    next = { ...next, reviewer: { ...reviewer, variant: overrides.reviewerSpecVariant } };
   }
   return { config: next, ignoredFlags };
 }

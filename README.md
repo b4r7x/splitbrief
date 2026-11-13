@@ -170,7 +170,7 @@ With `workflow.approve: plan` (the default) the plan card waits for your approva
 | `/queue show` | Show the count awaiting first delivery |
 | `/queue clear` | Remove messages awaiting first delivery |
 
-Those are the ones you reach for mid-run. The full set — `/crew`, `/diff`, `/usage`, `/stop` — is in [docs/SLASH-COMMANDS-REFERENCE.md](./docs/SLASH-COMMANDS-REFERENCE.md).
+Those are the ones you reach for mid-run. The full set — `/crew`, `/usage`, `/stop` — is in [docs/SLASH-COMMANDS-REFERENCE.md](./docs/SLASH-COMMANDS-REFERENCE.md).
 
 ## Configuration
 

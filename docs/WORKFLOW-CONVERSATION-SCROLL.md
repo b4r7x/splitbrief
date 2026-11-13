@@ -86,7 +86,7 @@ Conversation scrolling uses one semantic set of actions over the row window:
 - `Home` / `End` jump to the top or bottom.
 - `/scroll top`, `/scroll bottom`, `/scroll page-up`, and `/scroll page-down` provide the same actions through the runtime command path.
 
-Conversation shortcuts do not claim `Ctrl+B` or `Ctrl+F` while the composer owns normal-mode text focus; use physical page keys or `/scroll` for conversation paging. Review panes use the same line, page, top, and bottom semantics while a review file is open, including `Ctrl+B` and `Ctrl+F` as review-page fallbacks. `/activity` and `Ctrl+A` toggle the lowest folded row of the whole transcript: an activity batch or a check group, settled sections included, or the summary of a closed run. A click toggles the folded row that the pointer is on, so every other fold stays clickable. The rule and its code are in [STORES-AND-UI.md › Folded rows](./STORES-AND-UI.md#folded-rows). `Ctrl+D` toggles the latest expandable diff in the whole transcript. Older diff disclosures stay clickable. Compact rows show the lowercase key affordance, such as `ctrl+a` or `ctrl+d`.
+Conversation shortcuts do not claim `Ctrl+B` or `Ctrl+F` while the composer owns normal-mode text focus; use physical page keys or `/scroll` for conversation paging. Review panes use the same line, page, top, and bottom semantics while a review file is open, including `Ctrl+B` and `Ctrl+F` as review-page fallbacks. `/activity` and `Ctrl+A` toggle the lowest folded row of the whole transcript: an activity batch or a check group, settled sections included, or the summary of a closed run. A click toggles the folded row that the pointer is on, so every other fold stays clickable. The rule and its code are in [STORES-AND-UI.md › Folded rows](./STORES-AND-UI.md#folded-rows). `Ctrl+D` shows or hides the details of the latest row in the whole transcript that has them: a diff, a cut failure cause or Recovery details. Older rows with details stay clickable. Compact rows show the lowercase key affordance, such as `ctrl+a` or `ctrl+d`.
 
 An older run parked at `reviewing-briefs` displays its review document as markdown.
 Keyboard and wheel scrolling use the markdown frame and overflow rows, as for every other review document.
@@ -102,7 +102,7 @@ or the summary of a closed run occupies the transcript tail. The snapshot reads 
 
 Row projection is split from row materialization:
 
-- `getConversationRowsProjection()` computes total row count, renderable count and the latest diff toggle key once for the current input identity. The `/diff` guard and the `/diff` toggle read that key (`readLatestDiffKey()`), so a key press or a text chunk does not walk the transcript again.
+- `getConversationRowsProjection()` computes total row count, renderable count and the latest diff toggle key once for the current input identity. Help reads that key (`readLatestDiffKey()`) to show `ctrl+d` only while a row has details, so a key press or a text chunk does not walk the transcript again.
 - `getConversationRowsWindowProjection()` materializes only the visible window returned by `getScrollWindowState()`.
 - Activity batches keep one row per activity identity with `Map`. Tool start, input and completion updates replace that tool use's row; two tool uses with the same displayed text stay distinct. Collapsed mode shows the newest three entries in event order, and pins no warning or error: the header counts the warnings and errors. Expanded mode allocates all activity rows. Session and protocol activities contribute no rows, update counts or disclosure entries. A shell tool call that names no command contributes no row or count either; the row of the same call that names its command stays.
 - Activity producers preserve sanitized text up to the payload limits (512 characters for labels, 2048 for targets and partials). The row formatter fits that text to the current terminal width, so widening the terminal reveals more of a command or path.
@@ -193,7 +193,7 @@ The key regression coverage is observable Ink output, not implementation wiring:
   - conversation panes support Shift+arrow, PageUp/PageDown, Home/End, and `/scroll`
   - review panes support Shift+arrow, PageUp/PageDown, Home/End, and Ctrl+B/Ctrl+F
   - `/activity` and `Ctrl+A` toggle the lowest folded row of the whole transcript; a click toggles the row under the pointer
-  - `Ctrl+D` toggles the latest expandable diff in the whole transcript
+  - `Ctrl+D` shows or hides the details of the latest row in the whole transcript that has them
 - `src/features/workflow/layout/scroll-window.test.ts`
   - the window spans the full visible height; banners ride the chrome dividers
 - `src/features/workflow/layout/rect.test.ts`

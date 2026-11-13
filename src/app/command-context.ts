@@ -13,10 +13,7 @@ import {
   findLatestConversationRowAction,
   type ConversationRowAction,
 } from '../features/workflow/conversation-rows/row-actions.js';
-import {
-  readConversationRowActions,
-  readLatestDiffKey,
-} from '../features/workflow/conversation-rows/read-row-actions.js';
+import { readConversationRowActions } from '../features/workflow/conversation-rows/read-row-actions.js';
 import { toggleFoldedRows } from '../features/workflow/conversation-rows/toggle-folded-rows.js';
 import { readConversationScrollSnapshot } from '../features/workflow/layout/snapshot.js';
 import { getWorkflowSidebarWidth } from '../features/workflow/layout/rect.js';
@@ -48,7 +45,6 @@ import { refreshSkills } from './refresh-skills.js';
 import { attachImage, detachImage, listAttachments } from '../stores/workflow/attachments.js';
 import { resolveAttachment } from '../core/attachments/resolve.js';
 import { conversationScrollStore } from '../stores/workflow/conversation-scroll.js';
-import { eventsStore } from '../stores/workflow/events.js';
 import { getDefaultDetectionService } from '../engine/detection/service.js';
 import { refreshDetectionForCurrentConfig } from '../engine/detection/store-publication.js';
 import { detectionStore } from '../stores/project/detection.js';
@@ -66,7 +62,6 @@ import type {
   SkillCommandOption,
   SkillToggleResult,
   ToggleLatestActivityBatchResult,
-  ToggleLatestDiffResult,
 } from '../core/runtime/commands/types.js';
 import { plannerSupportsImages } from '../engine/providers/capabilities.js';
 import { modelCacheStore } from '../stores/discovery/model-cache/state.js';
@@ -107,7 +102,6 @@ export interface ConversationScrollMetrics {
 export interface WorkflowCommandPorts {
   requestClearQueue: () => QueueClearCommandResult | Promise<QueueClearCommandResult>;
   getRowActions: () => ReadonlyMap<string, ConversationRowAction>;
-  getLatestDiffKey: () => string | null;
   readScrollMetrics: () => ConversationScrollMetrics;
   resolveCopyValue: (target: CopyTarget) => string | null;
 }
@@ -308,17 +302,6 @@ function toggleLatestActivityBatch(
   return { status: 'toggled', expanded };
 }
 
-function toggleLatestDiff(
-  getLatestDiffKey: WorkflowCommandPorts['getLatestDiffKey'],
-): ToggleLatestDiffResult {
-  const key = getLatestDiffKey();
-  if (key === null) return { status: 'unavailable' };
-
-  const expanded = !conversationScrollStore.get().expandedDiffs.has(key);
-  conversationScrollStore.toggleDiff(key);
-  return { status: 'toggled', expanded };
-}
-
 // Project skills first, then the ones already selected this session — the in-session selection set
 // is what "recently used" means here; there is no persisted recency store.
 function listSkills(): readonly SkillCommandOption[] {
@@ -420,8 +403,6 @@ export function buildCommandContext({
     },
     scrollConversation: (target) => scrollConversation(target, workflow.readScrollMetrics),
     toggleLatestActivityBatch: () => toggleLatestActivityBatch(workflow.getRowActions),
-    toggleLatestDiff: () => toggleLatestDiff(workflow.getLatestDiffKey),
-    hasLatestDiff: () => workflow.getLatestDiffKey() !== null,
     listBriefs: () => runViewStore.get().briefs.tasks.map(({ id, status }) => ({ id, status })),
     copyTarget: (target) => copyTarget(target, workflow.resolveCopyValue),
     toggleSidebar: () => {
@@ -458,7 +439,6 @@ export function useRuntimeCommands({
           workflow: {
             requestClearQueue,
             getRowActions: readConversationRowActions,
-            getLatestDiffKey: readLatestDiffKey,
             readScrollMetrics: readConversationScrollSnapshot,
             resolveCopyValue,
           },
@@ -467,9 +447,6 @@ export function useRuntimeCommands({
   // The command list embeds the skill id set as `/skills`'s closed options, so it has to be
   // rebuilt whenever that store changes.
   skillsStore.use((s) => s);
-  // The guard of `/diff` reads the transcript, so the list is rebuilt when a row starts or stops
-  // taking the diff toggle.
-  eventsStore.use(() => ctx.hasLatestDiff());
   const commands = createRuntimeCommands(ctx);
   const runtimeChainRef = useRef(Promise.resolve());
   // A typed line left its field at submit: the composer, or the answer field of a question. A

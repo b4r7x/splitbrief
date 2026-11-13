@@ -92,6 +92,36 @@ describe('applyCLIOverrides — the reviewer seat', () => {
     ).toThrow(/inherits the planner; pass --reviewer/);
   });
 
+  it('gives the @ word of --reviewer to a variant tool as its variant, with no notice', () => {
+    const { config: result, ignoredFlags } = applyCLIOverrides(baseConfig, {
+      reviewer: { tool: 'opencode', model: 'opencode-go/kimi-k3' },
+      reviewerSpecVariant: 'high',
+    });
+
+    expect(configuredReviewerRunner(result)).toMatchObject({
+      kind: 'cli',
+      tool: 'opencode',
+      model: 'opencode-go/kimi-k3',
+      variant: 'high',
+    });
+    expect(ignoredFlags).toEqual([]);
+  });
+
+  it('names the @ word of --reviewer that a model-id tool does not take, and how to remove it', () => {
+    const { config: result, ignoredFlags } = applyCLIOverrides(baseConfig, {
+      reviewer: { tool: 'cursor' },
+      reviewerSpecEffort: 'high',
+    });
+
+    expect(ignoredFlags).toEqual([
+      {
+        notice: '@high in --reviewer is ignored: the Cursor Agent CLI model id sets the effort.',
+        fix: 'Remove @high from --reviewer.',
+      },
+    ]);
+    expect(configuredReviewerRunner(result)?.effort).toBeUndefined();
+  });
+
   it('refuses --reviewer-effort alone while REVIEW is None', () => {
     expect(() =>
       applyCLIOverrides(

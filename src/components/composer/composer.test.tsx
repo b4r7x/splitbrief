@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import { mkdirSync, realpathSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Box } from 'ink';
-import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -39,6 +39,29 @@ vi.mock('node:fs', async (original) => ({
   ...(await original<typeof import('node:fs')>()),
 }));
 
+const mounted: Array<() => void> = [];
+
+/** Unmounts each composer this file mounted, also after a failed assert, so none reaches the next test. */
+function unmountMounted(): void {
+  for (const unmount of mounted.splice(0)) unmount();
+}
+
+afterEach(unmountMounted);
+
+function unmountedAfterTest<A extends unknown[], T extends { unmount: () => void }>(
+  render: (...args: A) => T,
+): (...args: A) => T {
+  return (...args) => {
+    const ui = render(...args);
+    mounted.push(ui.unmount);
+    return ui;
+  };
+}
+
+const mountFeature = unmountedAfterTest(renderFeature);
+const mountDockedComposer = unmountedAfterTest(renderDockedComposer);
+const mountThroughFilteredStdin = unmountedAfterTest(renderThroughFilteredStdin);
+
 describe('Composer send now', () => {
   beforeEach(() => {
     resetAllStores();
@@ -53,7 +76,7 @@ describe('Composer send now', () => {
       if (status === 'parked') stopStore.__testReset({ phase: 'parked' });
       const queued: string[] = [];
       const sent: string[] = [];
-      const ui = renderFeature(
+      const ui = mountFeature(
         <Composer
           commands={[]}
           currentScreen="workflow"
@@ -75,7 +98,6 @@ describe('Composer send now', () => {
       expect(sent).toEqual(['smaller diffs']);
       expect(queued).toEqual([]);
       expect(ui.lastFrame()).not.toContain('smaller diffs');
-      ui.unmount();
     },
   );
 
@@ -85,7 +107,7 @@ describe('Composer send now', () => {
     const queued: string[] = [];
     const sent: string[] = [];
     let accepted = false;
-    const ui = renderFeature(
+    const ui = mountFeature(
       <Composer
         commands={[]}
         currentScreen="workflow"
@@ -122,7 +144,6 @@ describe('Composer send now', () => {
     expect(
       getInputHistoryDocuments(inputHistoryStore.get(), { currentScreen: 'workflow' }),
     ).toHaveLength(1);
-    ui.unmount();
   });
 
   it('keeps plain Enter on onSubmit when onSendNow exists', async () => {
@@ -130,7 +151,7 @@ describe('Composer send now', () => {
     lifecycleStore.__testReset({ status: 'running' });
     const queued: string[] = [];
     const sent: string[] = [];
-    const ui = renderFeature(
+    const ui = mountFeature(
       <Composer
         commands={[]}
         currentScreen="workflow"
@@ -151,12 +172,11 @@ describe('Composer send now', () => {
     await flushEffects();
     expect(queued).toEqual(['smaller diffs']);
     expect(sent).toEqual([]);
-    ui.unmount();
   });
 
   it('treats ctrl+enter as Enter without onSendNow', async () => {
     const submissions: string[] = [];
-    const ui = renderFeature(
+    const ui = mountFeature(
       <Composer
         commands={[]}
         currentScreen="home"
@@ -172,7 +192,6 @@ describe('Composer send now', () => {
     ui.stdin.write('\x1b[13;5u');
     await flushEffects();
     expect(submissions).toEqual(['new change']);
-    ui.unmount();
   });
 
   it('ignores ctrl+enter on an empty draft while running', async () => {
@@ -180,7 +199,7 @@ describe('Composer send now', () => {
     lifecycleStore.__testReset({ status: 'running' });
     const submissions: string[] = [];
     const empty: string[] = [];
-    const ui = renderFeature(
+    const ui = mountFeature(
       <Composer
         commands={[]}
         currentScreen="workflow"
@@ -200,7 +219,6 @@ describe('Composer send now', () => {
     await flushEffects();
     expect(submissions).toEqual([]);
     expect(empty).toEqual([]);
-    ui.unmount();
   });
 
   it.each(['command', 'reference'] as const)(
@@ -212,7 +230,7 @@ describe('Composer send now', () => {
       const sent: string[] = [];
       const queued: string[] = [];
       const dispatched: string[] = [];
-      const ui = renderDockedComposer({
+      const ui = mountDockedComposer({
         commands: [
           {
             kind: 'noarg',
@@ -245,7 +263,6 @@ describe('Composer send now', () => {
       expect(queued).toEqual([]);
       expect(dispatched).toEqual(suggestions === 'command' ? ['/usage'] : []);
       if (suggestions === 'reference') expect(ui.lastFrame()).toContain('@src/parser.ts');
-      ui.unmount();
     },
   );
 
@@ -255,7 +272,7 @@ describe('Composer send now', () => {
     const sent: string[] = [];
     const queued: string[] = [];
     const dispatched: string[] = [];
-    const ui = renderFeature(
+    const ui = mountFeature(
       <Composer
         commands={[]}
         currentScreen="workflow"
@@ -281,14 +298,12 @@ describe('Composer send now', () => {
     expect(
       getInputHistoryDocuments(inputHistoryStore.get(), { currentScreen: 'workflow' }),
     ).toHaveLength(1);
-    ui.unmount();
   });
 });
 
 describe('Composer file submission', () => {
   let projectDir: string;
   let externalDir: string;
-  let unmount: (() => void) | undefined;
 
   beforeEach(() => {
     resetAllStores();
@@ -302,8 +317,7 @@ describe('Composer file submission', () => {
   });
 
   afterEach(() => {
-    unmount?.();
-    unmount = undefined;
+    unmountMounted();
     vi.restoreAllMocks();
     cleanupTempDir(projectDir);
     cleanupTempDir(externalDir);
@@ -318,7 +332,7 @@ describe('Composer file submission', () => {
         getInputHistoryDocuments(inputHistoryStore.get(), { currentScreen: 'home' }),
       ).toHaveLength(1);
     });
-    const ui = renderFeature(
+    const ui = mountFeature(
       <Composer
         commands={[]}
         currentScreen="home"
@@ -329,7 +343,6 @@ describe('Composer file submission', () => {
         listProjectFiles={async () => []}
       />,
     );
-    unmount = ui.unmount;
     await flushEffects();
     ui.stdin.write(`read @${file}`);
     await flushEffects();
@@ -348,7 +361,7 @@ describe('Composer file submission', () => {
       const onSubmit = vi.fn();
       let accepted = false;
       const onSendNow = vi.fn(() => accepted);
-      const ui = renderFeature(
+      const ui = mountFeature(
         <Composer
           commands={[]}
           currentScreen="workflow"
@@ -360,7 +373,6 @@ describe('Composer file submission', () => {
           listProjectFiles={async () => []}
         />,
       );
-      unmount = ui.unmount;
       await flushEffects();
       ui.stdin.write(`correct this @${file}`);
       await flushEffects();
@@ -431,7 +443,7 @@ describe('Composer file submission', () => {
       const history = inputHistoryStore.get();
       const pending = attachmentsStore.get();
       const onSubmit = vi.fn();
-      const ui = renderFeature(
+      const ui = mountFeature(
         <Composer
           commands={[]}
           currentScreen="home"
@@ -444,7 +456,6 @@ describe('Composer file submission', () => {
         />,
         { cols: 160, rows: 24 },
       );
-      unmount = ui.unmount;
       await flushEffects();
       composerDraftStore.requestDocument(document);
       await flushEffects();
@@ -465,7 +476,6 @@ describe('Composer file submission', () => {
       expect(inputHistoryStore.get()).toBe(history);
       expect(attachmentsStore.get()).toBe(pending);
       expect(onSubmit).not.toHaveBeenCalled();
-      ui.unmount();
     },
   );
 
@@ -474,7 +484,7 @@ describe('Composer file submission', () => {
     async (text) => {
       symlinkSync('loop', join(projectDir, 'loop'));
       const onSubmit = vi.fn();
-      const ui = renderFeature(
+      const ui = mountFeature(
         <Composer
           commands={[]}
           currentScreen="home"
@@ -485,7 +495,6 @@ describe('Composer file submission', () => {
           listProjectFiles={async () => []}
         />,
       );
-      unmount = ui.unmount;
       await flushEffects();
       composerDraftStore.request(text);
       await flushEffects();
@@ -509,7 +518,7 @@ describe('Composer file submission', () => {
   it('refuses an explicit symlink loop without sending or changing the draft', async () => {
     symlinkSync('loop', join(projectDir, 'loop'));
     const onSubmit = vi.fn();
-    const ui = renderFeature(
+    const ui = mountFeature(
       <Composer
         commands={[]}
         currentScreen="home"
@@ -520,7 +529,6 @@ describe('Composer file submission', () => {
         listProjectFiles={async () => []}
       />,
     );
-    unmount = ui.unmount;
     await flushEffects();
     composerDraftStore.request('see @./loop');
     await flushEffects();
@@ -541,7 +549,7 @@ describe('Composer file submission', () => {
     writeFileSync(join(projectDir, 'notes.md'), 'File body\n');
     writeFileSync(join(projectDir, 'shot.png'), 'image');
     const submissions: Array<Extract<DraftSubmission, { ok: true }>> = [];
-    const ui = renderFeature(
+    const ui = mountFeature(
       <Composer
         commands={[]}
         currentScreen="home"
@@ -552,7 +560,6 @@ describe('Composer file submission', () => {
         listProjectFiles={async () => []}
       />,
     );
-    unmount = ui.unmount;
     await flushEffects();
     composerDraftStore.request('look @shot.png @notes.md');
     await flushEffects();
@@ -576,7 +583,6 @@ describe('Composer file submission', () => {
       getInputHistoryDocuments(inputHistoryStore.get(), { currentScreen: 'home' }).at(-1),
     ).toEqual(submission.document);
     expect(composerLiveStore.get().document).toEqual(createDraftDocument(''));
-    ui.unmount();
   });
 
   it.each(['@shot.png', 'read @outside'])(
@@ -587,7 +593,7 @@ describe('Composer file submission', () => {
       const text = reference === '@shot.png' ? reference : `read @${path}`;
       writeFileSync(path, 'image');
       const onSubmit = vi.fn();
-      const ui = renderFeature(
+      const ui = mountFeature(
         <Composer
           commands={[]}
           currentScreen="home"
@@ -598,7 +604,6 @@ describe('Composer file submission', () => {
           listProjectFiles={async () => []}
         />,
       );
-      unmount = ui.unmount;
       await flushEffects();
       ui.stdin.write(text);
       await flushEffects();
@@ -637,7 +642,7 @@ describe('Composer file submission', () => {
     const history = inputHistoryStore.get();
     const pending = attachmentsStore.get();
     const onSubmit = vi.fn();
-    const ui = renderFeature(
+    const ui = mountFeature(
       <Composer
         commands={[]}
         currentScreen="home"
@@ -648,7 +653,6 @@ describe('Composer file submission', () => {
         listProjectFiles={async () => []}
       />,
     );
-    unmount = ui.unmount;
     await flushEffects();
     ui.stdin.write(text);
     await flushEffects();
@@ -673,7 +677,7 @@ describe('Composer file submission', () => {
     const path = join(projectDir, file);
     writeFileSync(path, 'image');
     const onSubmit = vi.fn();
-    const ui = renderFeature(
+    const ui = mountFeature(
       <Composer
         commands={[]}
         currentScreen="home"
@@ -683,7 +687,6 @@ describe('Composer file submission', () => {
         onRuntimeCommand={() => {}}
       />,
     );
-    unmount = ui.unmount;
     await flushEffects();
     ui.stdin.write(quoted ? `"${path}"` : path.replaceAll(' ', '\\ '));
     await flushEffects();
@@ -703,7 +706,6 @@ describe('Composer file submission', () => {
         }),
       }),
     );
-    ui.unmount();
   });
 });
 
@@ -716,7 +718,7 @@ describe('Composer blocking-question isolation', () => {
   it('never loads normal composer history into a blocking question', async () => {
     inputHistoryStore.hydrate(['NORMAL_HISTORY_SENTINEL']);
     const submissions: string[] = [];
-    const ui = renderFeature(
+    const ui = mountFeature(
       <Composer
         commands={[]}
         currentScreen="workflow"
@@ -738,7 +740,6 @@ describe('Composer blocking-question isolation', () => {
     ui.stdin.write('\r');
     await flushEffects();
     expect(submissions).toEqual(['']);
-    ui.unmount();
   });
 
   it('keeps an unfinished answer as the unsent draft when the mode flips back to normal', async () => {
@@ -753,7 +754,7 @@ describe('Composer blocking-question isolation', () => {
         onRuntimeCommand={() => {}}
       />
     );
-    const ui = renderFeature(composer('question'));
+    const ui = mountFeature(composer('question'));
     await flushEffects();
     ui.stdin.write('unfinished answer');
     await flushEffects();
@@ -770,7 +771,6 @@ describe('Composer blocking-question isolation', () => {
     await flushEffects();
     expect(submissions).toEqual(['unfinished answer']);
     expect(ui.lastFrame()).not.toContain('unfinished answer');
-    ui.unmount();
   });
 
   const SCROLL: RuntimeCommandDef = {
@@ -786,7 +786,7 @@ describe('Composer blocking-question isolation', () => {
 
   it('refuses an empty answer with its notice when the mode names one, and keeps the answer unsent', async () => {
     const onSubmit = vi.fn();
-    const ui = renderDockedComposer({
+    const ui = mountDockedComposer({
       commands: [],
       currentScreen: 'workflow',
       mode: 'question',
@@ -800,12 +800,11 @@ describe('Composer blocking-question isolation', () => {
     await flushEffects();
     expect(onSubmit).not.toHaveBeenCalled();
     expect(feedbackStore.get().message).toBe('Tab to choose an action.');
-    ui.unmount();
   });
 
   it('sends an empty answer in question mode when no notice is named', async () => {
     const onSubmit = vi.fn();
-    const ui = renderDockedComposer({
+    const ui = mountDockedComposer({
       commands: [],
       currentScreen: 'workflow',
       mode: 'question',
@@ -817,11 +816,10 @@ describe('Composer blocking-question isolation', () => {
     ui.stdin.write('\r');
     await flushEffects();
     expect(onSubmit).toHaveBeenCalledTimes(1);
-    ui.unmount();
   });
 
   it('opens the command list for a slash typed as an answer', async () => {
-    const ui = renderDockedComposer({
+    const ui = mountDockedComposer({
       commands: [SCROLL],
       currentScreen: 'workflow',
       mode: 'question',
@@ -833,7 +831,6 @@ describe('Composer blocking-question isolation', () => {
     ui.stdin.write('/scr');
     await flushEffects();
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Scroll conversation');
-    ui.unmount();
   });
 
   it('paints no command list while the composer cannot take keys', async () => {
@@ -850,7 +847,7 @@ describe('Composer blocking-question isolation', () => {
         />
       </Box>
     );
-    const ui = renderFeature(composer(false));
+    const ui = mountFeature(composer(false));
     await flushEffects();
     ui.stdin.write('/scr');
     await flushEffects();
@@ -865,12 +862,11 @@ describe('Composer blocking-question isolation', () => {
     await flushEffects();
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Scroll conversation');
     expect(completionStore.get().open).toBe(true);
-    ui.unmount();
   });
 
   it('lets Tab complete the open command list and hands focus away only once it is closed', async () => {
     const onTab = vi.fn();
-    const ui = renderDockedComposer({
+    const ui = mountDockedComposer({
       commands: [SCROLL],
       currentScreen: 'workflow',
       mode: 'question',
@@ -892,13 +888,12 @@ describe('Composer blocking-question isolation', () => {
     ui.stdin.write('\t');
     await flushEffects();
     expect(onTab).toHaveBeenCalledTimes(1);
-    ui.unmount();
   });
 
   it('sends an answer that opens with a path as the answer', async () => {
     const submissions: string[] = [];
     const commands: string[] = [];
-    const ui = renderDockedComposer({
+    const ui = mountDockedComposer({
       commands: [SCROLL],
       currentScreen: 'workflow',
       mode: 'question',
@@ -913,7 +908,6 @@ describe('Composer blocking-question isolation', () => {
     await flushEffects();
     expect(submissions).toEqual(['/etc/app/config.yaml']);
     expect(commands).toEqual([]);
-    ui.unmount();
   });
 });
 
@@ -947,8 +941,7 @@ describe('Composer input history on each send path', () => {
   });
 
   async function sendThenRecall(mode: InputMode, words: string, key: string) {
-    const ui = renderFeature(docked(mode));
-    onTestFinished(ui.unmount);
+    const ui = mountFeature(docked(mode));
     await flushEffects();
     ui.stdin.write(words);
     await vi.waitFor(() => {
@@ -980,7 +973,7 @@ describe('Composer input history on each send path', () => {
 
   it('recalls first with ↑ a command run from the open list after a sent line on the run screen', async () => {
     const dispatched: string[] = [];
-    const ui = renderDockedComposer({
+    const ui = mountDockedComposer({
       commands: [SIDEBAR],
       currentScreen: 'workflow',
       mode: 'normal',
@@ -988,7 +981,6 @@ describe('Composer input history on each send path', () => {
       onSubmit: () => {},
       onRuntimeCommand: (line) => dispatched.push(line),
     });
-    onTestFinished(ui.unmount);
     await flushEffects();
     ui.stdin.write('fix the typo');
     await vi.waitFor(() => {
@@ -1036,7 +1028,7 @@ describe('Composer submit draft retention', () => {
 
   it('preserves a burst of separate character events before submitting', async () => {
     const submissions: string[] = [];
-    const ui = renderFeature(
+    const ui = mountFeature(
       <Composer
         commands={[]}
         currentScreen="home"
@@ -1054,12 +1046,11 @@ describe('Composer submit draft retention', () => {
     ui.stdin.write('\r');
     await flushEffects();
     expect(submissions).toEqual([text]);
-    ui.unmount();
   });
 
   it('clears the submitted draft by default', async () => {
     const submissions: string[] = [];
-    const ui = renderFeature(
+    const ui = mountFeature(
       <Composer
         commands={[]}
         currentScreen="home"
@@ -1077,12 +1068,11 @@ describe('Composer submit draft retention', () => {
 
     expect(submissions).toEqual(['cleared feature']);
     expect(ui.lastFrame()).not.toContain('cleared feature');
-    ui.unmount();
   });
 
   it('keeps the submitted draft when submitKeepsDraft is set', async () => {
     const submissions: string[] = [];
-    const ui = renderFeature(
+    const ui = mountFeature(
       <Composer
         commands={[]}
         currentScreen="home"
@@ -1101,12 +1091,11 @@ describe('Composer submit draft retention', () => {
 
     expect(submissions).toEqual(['kept feature']);
     expect(ui.lastFrame()).toContain('kept feature');
-    ui.unmount();
   });
 
   it('still clears a runtime command when submitKeepsDraft is set', async () => {
     const dispatched: string[] = [];
-    const ui = renderFeature(
+    const ui = mountFeature(
       <Composer
         commands={COMMANDS}
         currentScreen="home"
@@ -1125,14 +1114,13 @@ describe('Composer submit draft retention', () => {
 
     expect(dispatched).toEqual(['/sample quick']);
     expect(ui.lastFrame()).not.toContain('/sample quick');
-    ui.unmount();
   });
 
   it('clears before dispatch, handles Enter once per press, and retains edits during a pending command', async () => {
     const pending = Promise.withResolvers<void>();
     const dispatched = vi.fn(async () => pending.promise);
     const onEmptySubmit = vi.fn();
-    const ui = renderFeature(
+    const ui = mountFeature(
       <Composer
         commands={COMMANDS}
         currentScreen="home"
@@ -1166,12 +1154,11 @@ describe('Composer submit draft retention', () => {
       expect(ui.lastFrame()).toContain('newer edits');
     } finally {
       pending.resolve();
-      ui.unmount();
     }
   });
 
   it('renders the supplied prompt glyph in place of the default marker', async () => {
-    const ui = renderFeature(
+    const ui = mountFeature(
       <Composer
         commands={[]}
         currentScreen="home"
@@ -1185,7 +1172,6 @@ describe('Composer submit draft retention', () => {
     await flushEffects();
 
     expect(ui.lastFrame()).toContain('⠋');
-    ui.unmount();
   });
 });
 
@@ -1197,7 +1183,7 @@ describe('Composer submit trimming', () => {
 
   it('trims leading and trailing whitespace from a submitted draft', async () => {
     const submissions: string[] = [];
-    const ui = renderFeature(
+    const ui = mountFeature(
       <Composer
         commands={[]}
         currentScreen="home"
@@ -1217,12 +1203,11 @@ describe('Composer submit trimming', () => {
     expect(getInputHistoryDocuments(inputHistoryStore.get(), { currentScreen: 'home' })).toEqual([
       createDraftDocument('padded feature'),
     ]);
-    ui.unmount();
   });
 
   it('trims a question answer at the submit boundary', async () => {
     const submissions: string[] = [];
-    const ui = renderFeature(
+    const ui = mountFeature(
       <Composer
         commands={[]}
         currentScreen="workflow"
@@ -1239,12 +1224,11 @@ describe('Composer submit trimming', () => {
     await flushEffects();
 
     expect(submissions).toEqual(['spaced answer']);
-    ui.unmount();
   });
 
   it('keeps interior blank lines while trimming the ends', async () => {
     const submissions: string[] = [];
-    const ui = renderFeature(
+    const ui = mountFeature(
       <Composer
         commands={[]}
         currentScreen="home"
@@ -1263,7 +1247,6 @@ describe('Composer submit trimming', () => {
     await flushEffects();
 
     expect(submissions).toEqual(['fix the parser\n\nthen the tests']);
-    ui.unmount();
   });
 });
 
@@ -1281,11 +1264,12 @@ describe('Composer image attach gate', () => {
   });
 
   afterEach(() => {
+    unmountMounted();
     cleanupTempDir(projectDir);
   });
 
   function renderComposer() {
-    return renderFeature(
+    return mountFeature(
       <Composer
         commands={[]}
         currentScreen="home"
@@ -1316,7 +1300,6 @@ describe('Composer image attach gate', () => {
     expect(frame).toContain('/crew plan');
     expect(feedbackStore.get().isError).toBe(false);
     expect(attachmentsStore.peek()).toEqual([]);
-    ui.unmount();
   });
 
   it('keeps the /crew plan remedy visible when the refusal is ellipsized at 60x18', async () => {
@@ -1334,7 +1317,7 @@ describe('Composer image attach gate', () => {
       }),
     });
     terminalSizeStore.__testReset({ cols: 60, rows: 18 });
-    const ui = renderFeature(
+    const ui = mountFeature(
       <Composer
         commands={[]}
         currentScreen="home"
@@ -1354,7 +1337,6 @@ describe('Composer image attach gate', () => {
     expect(remedyRow).toBeDefined();
     expect(getTerminalCellWidth(remedyRow ?? '')).toBeLessThanOrEqual(60);
     expect(attachmentsStore.peek()).toEqual([]);
-    ui.unmount();
   });
 
   it('puts the dropped image in the draft as an atom the plan seat can see', async () => {
@@ -1369,7 +1351,6 @@ describe('Composer image attach gate', () => {
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('[image #1]');
     // Nothing is pending until the draft is sent: the document is where the image lives.
     expect(attachmentsStore.peek()).toEqual([]);
-    ui.unmount();
   });
 
   it.each<[boolean, string]>([
@@ -1385,7 +1366,7 @@ describe('Composer image attach gate', () => {
       const dispatched: string[] = [];
       const submissions: string[] = [];
       const sends = vi.fn(() => true);
-      const ui = renderFeature(
+      const ui = mountFeature(
         <Composer
           commands={[]}
           currentScreen="home"
@@ -1422,7 +1403,6 @@ describe('Composer image attach gate', () => {
         },
       ]);
       expect(attachmentsStore.peek()).toEqual([]);
-      ui.unmount();
     },
   );
 
@@ -1436,7 +1416,7 @@ describe('Composer image attach gate', () => {
     const dispatched: string[] = [];
     const submissions = vi.fn();
     const sends = vi.fn(() => true);
-    const ui = renderFeature(
+    const ui = mountFeature(
       <Composer
         commands={[]}
         currentScreen="workflow"
@@ -1464,7 +1444,6 @@ describe('Composer image attach gate', () => {
     expect(submissions).not.toHaveBeenCalled();
     expect(dispatched).toEqual([]);
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('/steer fix the layout [image #1]');
-    ui.unmount();
   });
 
   it('refuses a command line with an image when argument completion could run it, in the neutral voice', async () => {
@@ -1490,7 +1469,7 @@ describe('Composer image attach gate', () => {
       config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
     });
     const dispatched: string[] = [];
-    const ui = renderDockedComposer({
+    const ui = mountDockedComposer({
       commands: [SKILLS],
       currentScreen: 'home',
       mode: 'normal',
@@ -1522,7 +1501,6 @@ describe('Composer image attach gate', () => {
     });
     expect(dispatched).toEqual([]);
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('/skills alpha [image #1]');
-    ui.unmount();
   });
 
   it('applies an /image insertion at the caret and preserves submission order', async () => {
@@ -1531,7 +1509,7 @@ describe('Composer image attach gate', () => {
       config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
     });
     const submissions: string[] = [];
-    const ui = renderFeature(
+    const ui = mountFeature(
       <Composer
         commands={[]}
         currentScreen="home"
@@ -1564,7 +1542,6 @@ describe('Composer image attach gate', () => {
 
     expect(attachmentsStore.peek().map((attachment) => attachment.id)).toEqual(['command-image']);
     expect(submissions[0]).toMatch(/^A\[image:command-image\]B/);
-    ui.unmount();
   });
 
   it('submits a draft starting with an image before /help instead of running a command', async () => {
@@ -1574,7 +1551,7 @@ describe('Composer image attach gate', () => {
     });
     const submissions: string[] = [];
     const dispatched: string[] = [];
-    const ui = renderFeature(
+    const ui = mountFeature(
       <Composer
         commands={[]}
         currentScreen="home"
@@ -1609,7 +1586,6 @@ describe('Composer image attach gate', () => {
     expect(submissions).toEqual([expect.stringMatching(/^\[image:command-image\]\/help\n\n/)]);
     expect(dispatched).toEqual([]);
     expect(attachmentsStore.peek().map((attachment) => attachment.id)).toEqual(['command-image']);
-    ui.unmount();
   });
 
   it('sends the images of the draft in document order, around their text', async () => {
@@ -1620,7 +1596,7 @@ describe('Composer image attach gate', () => {
     const second = join(projectDir, 'second.png');
     writeFileSync(second, 'png-bytes');
     const submissions: string[] = [];
-    const ui = renderFeature(
+    const ui = mountFeature(
       <Composer
         commands={[]}
         currentScreen="home"
@@ -1656,7 +1632,6 @@ describe('Composer image attach gate', () => {
     expect(sent.startsWith(`A${firstRef}B${secondRef}C`)).toBe(true);
     expect(sent).toContain(`${firstRef} = attached image 1`);
     expect(sent).toContain(`${secondRef} = attached image 2`);
-    ui.unmount();
   });
 
   it('drops the image where the caret is, not at the end of the draft', async () => {
@@ -1679,7 +1654,6 @@ describe('Composer image attach gate', () => {
     const line = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(line).toContain('A[image #1]X');
     expect(line).toMatch(/A\[image #1\]X\s?B/);
-    ui.unmount();
   });
 
   it('does not reuse the drop caret when history recalls the next draft', async () => {
@@ -1702,7 +1676,6 @@ describe('Composer image attach gate', () => {
     await vi.waitFor(() => {
       expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('an earlier prompt!');
     });
-    ui.unmount();
   });
 
   it('removes exactly the image whose atom backspace took, and keeps the other', async () => {
@@ -1731,7 +1704,6 @@ describe('Composer image attach gate', () => {
     expect(attachmentsStore.peek().map((a) => normalizeMacTmpPath(a.path))).toEqual([
       normalizeMacTmpPath(imagePath),
     ]);
-    ui.unmount();
   });
 
   it('recalls the pasted text and its image after the screen has come and gone', async () => {
@@ -1752,7 +1724,7 @@ describe('Composer image attach gate', () => {
       />
     );
 
-    const first = renderFeature(home());
+    const first = mountFeature(home());
     await flushEffects();
     first.stdin.write('line 1\nline 2\nline 3\nline 4\nline 5');
     await flushEffects();
@@ -1765,7 +1737,7 @@ describe('Composer image attach gate', () => {
     first.unmount();
 
     // The workflow screen takes over and the home composer is unmounted with it.
-    const away = renderFeature(
+    const away = mountFeature(
       <Composer
         commands={[]}
         currentScreen="workflow"
@@ -1778,7 +1750,7 @@ describe('Composer image attach gate', () => {
     await flushEffects();
     away.unmount();
 
-    const second = renderFeature(home());
+    const second = mountFeature(home());
     await flushEffects();
     second.stdin.write('\x1b[A');
     await flushEffects();
@@ -1794,7 +1766,6 @@ describe('Composer image attach gate', () => {
     expect(submissions[1]).toBe(submissions[0]);
     expect(submissions[1]).toContain('line 1\nline 2\nline 3\nline 4\nline 5');
     expect(submissions[1]).not.toContain('[paste');
-    second.unmount();
   });
 
   it('leaves no collapsed-paste marker over the draft history recalls next', async () => {
@@ -1813,7 +1784,6 @@ describe('Composer image attach gate', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain('rewrite the brief compiler');
     expect(frame).not.toContain('[paste');
-    ui.unmount();
   });
 
   it('carries an image dropped into an answer through with that answer', async () => {
@@ -1822,7 +1792,7 @@ describe('Composer image attach gate', () => {
       config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
     });
     const submissions: string[] = [];
-    const ui = renderFeature(
+    const ui = mountFeature(
       <Composer
         commands={[]}
         currentScreen="workflow"
@@ -1844,7 +1814,6 @@ describe('Composer image attach gate', () => {
       normalizeMacTmpPath(imagePath),
     ]);
     expect(submissions[0]).toContain(`this one[image:${parked[0]?.id}]`);
-    ui.unmount();
   });
 
   it('leaves an image the /image command parked for the run on a text-only send', async () => {
@@ -1867,7 +1836,6 @@ describe('Composer image attach gate', () => {
     await flushEffects();
 
     expect(attachmentsStore.peek().map((a) => a.id)).toEqual(['from-command']);
-    ui.unmount();
   });
 
   it('keeps the draft and its images when the seat refuses them at submit', async () => {
@@ -1876,7 +1844,7 @@ describe('Composer image attach gate', () => {
       config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
     });
     const submissions: string[] = [];
-    const ui = renderFeature(
+    const ui = mountFeature(
       <Composer
         commands={[]}
         currentScreen="home"
@@ -1904,7 +1872,6 @@ describe('Composer image attach gate', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain('look at this[image #1]');
     expect(frame).toContain('/crew plan');
-    ui.unmount();
   });
 
   it('refuses the drop when the only image-capable fact belongs to another provider', async () => {
@@ -1939,7 +1906,6 @@ describe('Composer image attach gate', () => {
     await dropImage(ui);
 
     expect(attachmentsStore.peek()).toEqual([]);
-    ui.unmount();
   });
 
   it('keeps a hint wider than the 60x18 floor on one row', async () => {
@@ -1950,7 +1916,7 @@ describe('Composer image attach gate', () => {
     terminalSizeStore.__testReset({ cols: 60, rows: 18 });
     // 12 repeats of a 12-cell segment is 144 cells — well past the 60-cell floor,
     // so an untruncated hint would spill onto further rows.
-    const ui = renderFeature(
+    const ui = mountFeature(
       <Composer
         commands={[]}
         currentScreen="home"
@@ -1966,7 +1932,6 @@ describe('Composer image attach gate', () => {
 
     const rows = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
     expect(rows.filter((row) => row.includes('/settings')).length).toBe(1);
-    ui.unmount();
   });
 });
 
@@ -1985,7 +1950,7 @@ describe('Composer attachment affordances', () => {
   }
 
   function renderComposer(mode: 'normal' | 'review') {
-    return renderFeature(
+    return mountFeature(
       <Composer
         commands={[]}
         currentScreen="home"
@@ -2000,7 +1965,7 @@ describe('Composer attachment affordances', () => {
   // Home's own prop shape: a live box whose `hint` is always set, so nothing about the
   // placeholder is observable here — the hint line is what the screen actually paints.
   function renderHomeComposer({ disabled }: { disabled: boolean }) {
-    return renderFeature(
+    return mountFeature(
       <Composer
         commands={[]}
         currentScreen="home"
@@ -2028,7 +1993,6 @@ describe('Composer attachment affordances', () => {
 
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain(`${HOME_LEGEND} · drop an image`);
-    ui.unmount();
   });
 
   it('keeps the plain hint line when the plan seat cannot see images', async () => {
@@ -2041,7 +2005,6 @@ describe('Composer attachment affordances', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain(HOME_LEGEND);
     expect(frame).not.toContain('drop an image');
-    ui.unmount();
   });
 
   it('drops the affordance whole rather than clipping the legend it rides', async () => {
@@ -2049,7 +2012,7 @@ describe('Composer attachment affordances', () => {
       config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
     });
     terminalSizeStore.__testReset({ cols: 50, rows: 18 });
-    const ui = renderFeature(
+    const ui = mountFeature(
       <Composer
         commands={[]}
         currentScreen="home"
@@ -2067,7 +2030,6 @@ describe('Composer attachment affordances', () => {
       .split('\n')
       .find((row) => row.includes('/help'));
     expect(hintRow?.trim()).toBe(HOME_LEGEND);
-    ui.unmount();
   });
 
   it('drops the affordance while the box is disabled and cannot take a drop', async () => {
@@ -2078,7 +2040,6 @@ describe('Composer attachment affordances', () => {
     await flushEffects();
 
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('drop an image');
-    ui.unmount();
   });
 
   it('paints no attachment row above the box for images the run already holds', async () => {
@@ -2090,7 +2051,6 @@ describe('Composer attachment affordances', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).not.toContain('first.png');
     expect(frame).not.toContain('📎');
-    ui.unmount();
   });
 
   it('leaves the run images alone when backspace edits a non-empty draft', async () => {
@@ -2108,7 +2068,6 @@ describe('Composer attachment affordances', () => {
     expect(frame).toContain('sentine');
     expect(frame).not.toContain('sentinel');
     expect(attachmentsStore.get().pending.map((a) => a.id)).toEqual(['first', 'second']);
-    ui.unmount();
   });
 
   it('takes no image off the run on backspace into an empty draft', async () => {
@@ -2121,7 +2080,6 @@ describe('Composer attachment affordances', () => {
     await flushEffects();
 
     expect(attachmentsStore.get().pending.map((a) => a.id)).toEqual(['first', 'second']);
-    ui.unmount();
   });
 });
 
@@ -2137,7 +2095,7 @@ describe('Composer home message', () => {
 
   // Home is 76 cells wide at 80 columns.
   function renderHome() {
-    return renderFeature(
+    return mountFeature(
       <Composer
         commands={[]}
         currentScreen="home"
@@ -2167,7 +2125,6 @@ describe('Composer home message', () => {
         .join(' '),
     ).toBe(SAVE_MESSAGE);
     expect(rows[boxTop + 1]).toContain('›');
-    ui.unmount();
   });
 
   it('gives the rows back to the hint when the message clears', async () => {
@@ -2181,7 +2138,6 @@ describe('Composer home message', () => {
     const rows = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
     const boxTop = rows.findIndex((row) => row.includes('╭'));
     expect(rows.slice(0, boxTop).map((row) => row.trim())).toEqual(['/help · /crew']);
-    ui.unmount();
   });
 });
 
@@ -2203,7 +2159,7 @@ describe('Composer draft requests', () => {
   });
 
   it('prefills a requested draft and opens the completion menu for its arguments', async () => {
-    const ui = renderDockedComposer({
+    const ui = mountDockedComposer({
       commands: [COPY],
       currentScreen: 'workflow',
       mode: 'normal',
@@ -2220,13 +2176,12 @@ describe('Composer draft requests', () => {
     expect(frame).toContain('/copy ');
     expect(frame).toContain('brief');
     expect(frame).toContain('transcript');
-    ui.unmount();
   });
 
   it('applies a request published before the composer mounts and consumes it', async () => {
     composerDraftStore.request('/copy ');
 
-    const first = renderDockedComposer({
+    const first = mountDockedComposer({
       commands: [COPY],
       currentScreen: 'workflow',
       mode: 'normal',
@@ -2240,7 +2195,7 @@ describe('Composer draft requests', () => {
     expect(composerDraftStore.get().request).toBeNull();
     first.unmount();
 
-    const second = renderDockedComposer({
+    const second = mountDockedComposer({
       commands: [COPY],
       currentScreen: 'workflow',
       mode: 'normal',
@@ -2251,7 +2206,6 @@ describe('Composer draft requests', () => {
     await flushEffects();
 
     expect(stripAnsiStyles(second.lastFrame() ?? '')).not.toContain('/copy');
-    second.unmount();
   });
 
   const HELP: RuntimeCommandDef = {
@@ -2281,7 +2235,7 @@ describe('Composer draft requests', () => {
     'brings the held / draft back with the command list closed when the filled-in %s %s runs',
     async (command, arg) => {
       const dispatched: string[] = [];
-      const ui = renderDockedComposer({
+      const ui = mountDockedComposer({
         commands: [COPY, HELP, STEER],
         currentScreen: 'workflow',
         mode: 'normal',
@@ -2289,7 +2243,6 @@ describe('Composer draft requests', () => {
         onSubmit: () => {},
         onRuntimeCommand: (line) => dispatched.push(line),
       });
-      onTestFinished(ui.unmount);
       await flushEffects();
       ui.stdin.write('/he');
       await vi.waitFor(() => {
@@ -2319,7 +2272,7 @@ describe('Composer draft requests', () => {
   );
 
   it('brings the held / draft back with the command list closed when esc closes the list of the filled-in command', async () => {
-    const ui = renderDockedComposer({
+    const ui = mountDockedComposer({
       commands: [COPY, HELP],
       currentScreen: 'workflow',
       mode: 'normal',
@@ -2327,7 +2280,6 @@ describe('Composer draft requests', () => {
       onSubmit: () => {},
       onRuntimeCommand: () => {},
     });
-    onTestFinished(ui.unmount);
     await flushEffects();
     ui.stdin.write('/he');
     await vi.waitFor(() => {
@@ -2356,7 +2308,7 @@ describe('Composer draft requests', () => {
   });
 
   it('opens the command list over the held / draft that Backspace brings back', async () => {
-    const ui = renderDockedComposer({
+    const ui = mountDockedComposer({
       commands: [COPY, HELP],
       currentScreen: 'workflow',
       mode: 'normal',
@@ -2364,7 +2316,6 @@ describe('Composer draft requests', () => {
       onSubmit: () => {},
       onRuntimeCommand: () => {},
     });
-    onTestFinished(ui.unmount);
     await flushEffects();
     ui.stdin.write('/he');
     await vi.waitFor(() => {
@@ -2390,7 +2341,7 @@ describe('Composer draft requests', () => {
   });
 
   it('keeps the lists closed over the held / draft that an empty draft request brings back, until an edit', async () => {
-    const ui = renderDockedComposer({
+    const ui = mountDockedComposer({
       commands: [COPY, HELP],
       currentScreen: 'workflow',
       mode: 'normal',
@@ -2398,7 +2349,6 @@ describe('Composer draft requests', () => {
       onSubmit: () => {},
       onRuntimeCommand: () => {},
     });
-    onTestFinished(ui.unmount);
     await flushEffects();
     ui.stdin.write('/he');
     await vi.waitFor(() => {
@@ -2437,12 +2387,11 @@ describe('Composer draft requests', () => {
         onRuntimeCommand={() => {}}
       />
     );
-    const ui = renderFeature(
+    const ui = mountFeature(
       <Box flexDirection="column" height={20} justifyContent="flex-end">
         {composer(1)}
       </Box>,
     );
-    onTestFinished(ui.unmount);
     await flushEffects();
     ui.stdin.write('/he');
     await vi.waitFor(() => {
@@ -2475,7 +2424,7 @@ describe('Composer draft requests', () => {
 
   it('keeps the @ list closed over a line given back, until an edit', async () => {
     configStore.__testReset({ config: makeConfig(), projectDir: '/tmp/composer-project' });
-    const ui = renderDockedComposer({
+    const ui = mountDockedComposer({
       commands: [],
       currentScreen: 'workflow',
       mode: 'normal',
@@ -2484,7 +2433,6 @@ describe('Composer draft requests', () => {
       onRuntimeCommand: () => {},
       listProjectFiles: async () => ['notes.md'],
     });
-    onTestFinished(ui.unmount);
     await flushEffects();
     ui.stdin.write('@');
     await vi.waitFor(() => {
@@ -2529,7 +2477,7 @@ describe('Composer workflow width', () => {
           onRuntimeCommand={() => {}}
         />
       );
-      const ui = renderFeature(composer('normal'), { cols, rows: 24 });
+      const ui = mountFeature(composer('normal'), { cols, rows: 24 });
       await flushEffects();
       const normalWidth = Math.max(
         ...(ui.lastFrame() ?? '').split('\n').map((line) => getTerminalCellWidth(line)),
@@ -2543,7 +2491,6 @@ describe('Composer workflow width', () => {
 
       expect(normalWidth).toBe(cols);
       expect(reviewWidth).toBe(cols);
-      ui.unmount();
     },
   );
 });
@@ -2560,11 +2507,12 @@ describe('Composer commands-only input', () => {
   });
 
   afterEach(() => {
+    unmountMounted();
     cleanupTempDir(projectDir);
   });
 
   function renderCommandsOnly() {
-    return renderDockedComposer({
+    return mountDockedComposer({
       commands: [],
       currentScreen: 'home',
       mode: 'normal',
@@ -2583,7 +2531,6 @@ describe('Composer commands-only input', () => {
     expect(feedbackStore.get().message).toBe('Only /commands here');
     expect(feedbackStore.get().isError).toBe(false);
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('z');
-    ui.unmount();
   });
 
   it('takes a slash and every letter typed after it', async () => {
@@ -2598,7 +2545,6 @@ describe('Composer commands-only input', () => {
 
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('/seat');
     expect(feedbackStore.get().message).toBeNull();
-    ui.unmount();
   });
 
   it('swallows a pasted line that does not open with a slash', async () => {
@@ -2609,7 +2555,6 @@ describe('Composer commands-only input', () => {
 
     expect(feedbackStore.get().message).toBe(COMMANDS_ONLY_NOTICE);
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('zebra');
-    ui.unmount();
   });
 
   it('refuses a prefilled draft that is not a command and keeps it for editing', async () => {
@@ -2624,7 +2569,6 @@ describe('Composer commands-only input', () => {
 
     expect(feedbackStore.get().message).toBe(COMMANDS_ONLY_NOTICE);
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('rewrite the validator');
-    ui.unmount();
   });
 
   it('attaches nothing from a dropped image while it takes commands only', async () => {
@@ -2638,7 +2582,6 @@ describe('Composer commands-only input', () => {
     await flushEffects();
 
     expect(attachmentsStore.peek()).toEqual([]);
-    ui.unmount();
   });
 
   it('keeps the drop affordance off the hint line while it takes commands only', async () => {
@@ -2646,7 +2589,7 @@ describe('Composer commands-only input', () => {
       projectDir,
       config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
     });
-    const ui = renderFeature(
+    const ui = mountFeature(
       <Composer
         commands={[]}
         currentScreen="home"
@@ -2662,7 +2605,6 @@ describe('Composer commands-only input', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain('/help · /settings');
     expect(frame).not.toContain('drop an image');
-    ui.unmount();
   });
 });
 
@@ -2707,11 +2649,12 @@ describe('Composer in-box hints', () => {
   });
 
   afterEach(() => {
+    unmountMounted();
     resetAllStores();
   });
 
   it('paints the keys hint and no money or token total beside the caret', async () => {
-    const ui = renderFeature(
+    const ui = mountFeature(
       <Composer
         commands={[]}
         currentScreen="workflow"
@@ -2730,12 +2673,11 @@ describe('Composer in-box hints', () => {
     expect(frame).not.toContain('3.00');
     expect(frame).not.toContain('1,000,000');
     expect(frame).not.toMatch(/\btokens?\b/i);
-    ui.unmount();
   });
 
   it('leaves the hint zone unclaimed when the box carries no keys', async () => {
     async function promptRowFor(boxHints: { keys: string } | undefined): Promise<string> {
-      const ui = renderFeature(
+      const ui = mountFeature(
         <Composer
           commands={[]}
           currentScreen="workflow"
@@ -2793,7 +2735,7 @@ describe('Composer long draft wrap', () => {
 
   async function renderDraft(cols: number, draft: string, keys?: string) {
     terminalSizeStore.__testReset({ cols, rows: 30 });
-    const ui = renderFeature(
+    const ui = mountFeature(
       <Composer
         commands={[]}
         currentScreen="workflow"
@@ -2822,7 +2764,6 @@ describe('Composer long draft wrap', () => {
     for (const row of rows) expect(row.trimEnd().endsWith(' │'), row).toBe(true);
     const start = textStart(rows[0] ?? '', true);
     for (const row of rows.slice(1)) expect(textStart(row, false), row).toBe(start);
-    ui.unmount();
   });
 
   it.each([
@@ -2839,7 +2780,6 @@ describe('Composer long draft wrap', () => {
     const last = rows.at(-1) ?? '';
     expect(last.slice(textStart(last, rows.length === 1)).startsWith('X'), last).toBe(true);
     for (const row of rows) expect(row.trimEnd().endsWith(' │'), row).toBe(true);
-    ui.unmount();
   });
 
   // At 40 columns the pasted draft paints 'Run    make build first then' / 'check every single
@@ -2847,7 +2787,7 @@ describe('Composer long draft wrap', () => {
   async function pasteTabDraft() {
     terminalSizeStore.__testReset({ cols: 40, rows: 30 });
     const submitted: string[] = [];
-    const ui = renderThroughFilteredStdin(
+    const ui = mountThroughFilteredStdin(
       <Composer
         commands={[]}
         currentScreen="workflow"
@@ -2876,7 +2816,6 @@ describe('Composer long draft wrap', () => {
       '│ › Run    make build first then       │',
       '│   check every single output file     │',
     ]);
-    ui.unmount();
   });
 
   it('ctrl+a on the last row of a pasted draft with a tab lands on that row and keeps the tab', async () => {
@@ -2887,6 +2826,5 @@ describe('Composer long draft wrap', () => {
     }
 
     expect(submitted).toEqual(['Run\tmake build first then check every single output file Xnow']);
-    ui.unmount();
   });
 });

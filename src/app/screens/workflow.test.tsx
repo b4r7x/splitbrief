@@ -996,7 +996,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     ui.unmount();
   });
 
-  it('gives the /diff guard the row model that the screen built beside the sidebar, before and after a typed key', async () => {
+  it('gives the ctrl+d row of help the row model that the screen built beside the sidebar, before and after a typed key', async () => {
     openRun();
     const diff = '+ export const total = 1;';
     const diffReads = makeDiffReadCounter();
@@ -3847,6 +3847,49 @@ describe('WorkflowScreen when a menu opens over a draft', () => {
     ui.unmount();
   });
 
+  it('gives the composer the keys when the same halt asks again after Accept as is refused the words', async () => {
+    const issue = buildReviewFailedRecoveryIssue({
+      blocking: 1,
+      acceptAsIs: true,
+      phase: 'final-review',
+      createdAt: '2026-09-24T00:00:00.000Z',
+    });
+    const { ui, release } = await haltLiveRun(
+      makeWorkflowState({
+        phase: 'final-review',
+        reviewStatus: 'failed',
+        tasks: [makeTask({ id: 'T001', title: 'Ready brief', status: 'done' })],
+        currentTaskIndex: 1,
+        pendingRecovery: issue,
+      }),
+    );
+
+    release();
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame())).toContain('Accept as is');
+    });
+    ui.stdin.write('\t');
+    await flushEffects();
+    await typeLetters(ui, 'the lockfile is generated');
+    ui.stdin.write('\t');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame())).not.toContain('tab back to the actions');
+    });
+    await flushEffects();
+    ui.stdin.write('k');
+    await vi.waitFor(() => {
+      expect(feedbackStore.get().message).toBe('Cannot send words with Accept as is. Clear them.');
+    });
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame())).toContain('tab back to the actions');
+    });
+
+    await typeLetters(ui, ' k');
+    expect(composerLiveStore.get().text).toBe('the lockfile is generated k');
+    expect(runWorkflow).toHaveBeenCalledTimes(1);
+    ui.unmount();
+  });
+
   const APPROVE_ROW = 'Approve plan and start the build';
 
   // The planner holds while the test types, then the plan card opens over what the composer holds.
@@ -3917,13 +3960,27 @@ describe('WorkflowScreen when a menu opens over a draft', () => {
     ui.unmount();
   });
 
-  it.each(['ok', 'end', 'no'])(
+  it.each(['ok', 'end', 'no', 'edit', 'approve it'])(
     'sends a draft "%s" over the plan card as a change request, not as a command',
     async (word) => {
       const { ui, outcomes } = await openPlanCardAfter(word);
       ui.stdin.write('\r');
       await vi.waitFor(() => {
         expect(outcomes).toEqual([changeRequest(word)]);
+      });
+      ui.unmount();
+    },
+  );
+
+  it.each(['approve', 'Approve', '  APPROVE  '])(
+    'approves the plan on ⏎ when the draft over the waiting plan card is only "%s"',
+    async (word) => {
+      const { ui, outcomes, first } = await openPlanCardAfter(word);
+      expect(first).toContain(`${listRowLead('active')}Approve plan`);
+      expect(first).toContain('⏎ confirm · tab back to the actions');
+      ui.stdin.write('\r');
+      await vi.waitFor(() => {
+        expect(outcomes).toEqual([{ approved: true }]);
       });
       ui.unmount();
     },

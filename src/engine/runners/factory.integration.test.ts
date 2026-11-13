@@ -367,39 +367,6 @@ describe('createPlanner', () => {
     });
   });
 
-  it('writes an effort warning to stderr when the backend does not support it', async () => {
-    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    const config = withPlanner({
-      kind: 'api',
-      provider: 'ollama',
-      service: 'ollama',
-      offering: 'local',
-      apiBase: 'http://localhost:11434/v1',
-      model: 'test',
-      effort: 'high',
-    });
-
-    await createPlanner(config);
-
-    const written = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
-    expect(written).toContain('The planner effort setting');
-  });
-
-  it('writes a variant warning to stderr when the backend has no named effort preset', async () => {
-    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    const config = withPlanner({
-      kind: 'shell',
-      command: 'cat',
-      outputFormat: 'text',
-      variant: 'xhigh',
-    });
-
-    await createPlanner(config);
-
-    const written = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
-    expect(written).toContain('The planner variant setting');
-  });
-
   it('keeps the variant when the planner backend takes it as a named effort preset', async () => {
     const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     const config = withPlanner({ kind: 'cli', tool: 'opencode', variant: 'xhigh' });
@@ -418,21 +385,6 @@ describe('createPlanner', () => {
 
     const written = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
     expect(written).not.toContain('The planner variant setting');
-  });
-
-  it('writes a temperature warning to stderr when the backend cannot deliver it', async () => {
-    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    const config = withPlanner({
-      kind: 'shell',
-      command: 'cat',
-      outputFormat: 'text',
-      temperature: 0.7,
-    });
-
-    await createPlanner(config);
-
-    const written = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
-    expect(written).toContain('The planner temperature setting');
   });
 
   it('does not warn about temperature for the api planner kind', async () => {
@@ -595,22 +547,6 @@ describe('createImplementer', () => {
     expect(implementer.capabilities?.writesFiles).toMatch(/^(direct|extracted-code)$/);
   });
 
-  it('writes a variant warning to stderr when the backend has no named effort preset', async () => {
-    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    const config = withImplementer({
-      kind: 'shell',
-      command: 'cat',
-      outputFormat: 'text',
-      model: 'test',
-      variant: 'xhigh',
-    });
-
-    await createImplementer(config);
-
-    const written = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
-    expect(written).toContain('The implementer variant setting');
-  });
-
   it('keeps the variant when the implementer backend takes it as a named effort preset', async () => {
     const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     const config = withImplementer({ kind: 'cli', tool: 'opencode', variant: 'xhigh' });
@@ -619,21 +555,6 @@ describe('createImplementer', () => {
 
     const written = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
     expect(written).not.toContain('The implementer variant setting');
-  });
-
-  it('writes a temperature warning to stderr when the backend cannot deliver it', async () => {
-    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    const config = withImplementer({
-      kind: 'cli',
-      tool: 'codex',
-      model: 'test',
-      temperature: 0.3,
-    });
-
-    await createImplementer(config);
-
-    const written = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
-    expect(written).toContain('The implementer temperature setting');
   });
 
   it('does not warn about temperature for the api implementer kind', async () => {
@@ -981,25 +902,6 @@ describe('createReviewer', () => {
     await expect(createPreparedReviewer(config, reviewerAuthority(config))).rejects.toMatchObject({
       kind: 'planner-configured-args-rejected',
     });
-  });
-
-  it('writes a variant warning to stderr when the reviewer backend has no named effort preset', async () => {
-    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    const config = makeConfig({
-      reviewer: {
-        kind: 'api',
-        provider: 'reviewer-endpoint',
-        apiBase: 'https://reviewer.example.test/v1',
-        apiKey: 'sk-reviewer',
-        model: 'reviewer-model',
-        variant: 'xhigh',
-      },
-    });
-
-    await createPreparedReviewer(config, reviewerAuthority(config));
-
-    const written = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
-    expect(written).toContain('The reviewer variant setting');
   });
 
   it('keeps the variant when the reviewer backend takes it as a named effort preset', async () => {

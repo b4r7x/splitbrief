@@ -585,17 +585,17 @@ splitbrief start --json --allow-hooks "regenerate API client from openapi.yaml" 
   | tee events.ndjson
 ```
 
-**You'll see (NDJSON, one event per line):**
+**You'll see (NDJSON, one record per line):**
 
 ```
-{"type":"workflow_started","ts":1745692800000,"phase":"planning","feature":"regenerate API client from openapi.yaml"}
-{"type":"plan_approved","ts":1745692840100,"phase":"reviewing-plan"}
-{"type":"task_completed","ts":1745692902300,"phase":"implementing","taskId":"T001"}
+{"type":"event","data":{"type":"workflow_started","ts":1745692800000,"phase":"planning","feature":"regenerate API client from openapi.yaml"}}
+{"type":"event","data":{"type":"plan_approved","ts":1745692840100,"phase":"reviewing-plan"}}
+{"type":"event","data":{"type":"task_completed","ts":1745692902300,"phase":"implementing","taskId":"T001"}}
 …
-{"type":"workflow_complete","ts":1745692980000,"phase":"complete"}
+{"type":"event","data":{"type":"workflow_complete","ts":1745692980000,"phase":"complete"}}
 ```
 
-`--json` requires a feature argument and replaces the TUI sink with NDJSON-on-stdout. The on-disk JSONL log is still written. `--allow-hooks` skips the interactive trust prompt. The plan card is approved unattended; set `workflow.approve: none` in the CI config to skip it. A planner question stops the run with an `input_required` record and exit code 1. A seat call has no default end. Set the CI job's own timeout, or set `idleKillMs` or `timeout` on each seat. SIGINT and SIGTERM stop the run resumably, print `Run <id> stopped. Continue with: splitbrief continue <id>` on stderr, and exit `130` or `143`.
+Each event comes wrapped as `{"type":"event","data":<event>}`. The other records, such as `input_required`, `recovery_required` and `error`, carry their own `type` at the top. `--json` requires a feature argument and replaces the TUI sink with NDJSON-on-stdout. The on-disk JSONL log is still written. `--allow-hooks` skips the interactive trust prompt. The plan card is approved unattended; set `workflow.approve: none` in the CI config to skip it. A planner question stops the run with an `input_required` record and exit code 1. A seat call has no default end. Set the CI job's own timeout, or set `idleKillMs` or `timeout` on each seat. SIGINT and SIGTERM stop the run resumably, print `Run <id> stopped. Continue with: splitbrief continue <id>` on stderr, and exit `130` or `143`.
 
 **Variations:** `CI=1` env var auto-disables fullscreen mode even without `--json`.
 
@@ -612,25 +612,37 @@ splitbrief start --json --allow-hooks "regenerate API client from openapi.yaml" 
 ```bash
 splitbrief start --json "..." 2>/dev/null > events.ndjson
 
-# Total spend at end of run
-jq -s 'map(select(.type == "cost_update")) | last | {planner: .plannerCost, implementer: .implementerCost, total: .totalCost}' \
+# Tokens per seat at the end of the run
+jq -s -c 'map(select(.type == "event" and .data.type == "cost_update")) | last | .data.tokenUsage
+  | {planner: (.plannerInput + .plannerOutput), implementer: (.implementerInput + .implementerOutput),
+     escalation: (.escalationInput + .escalationOutput), reviewer: (.reviewerInput + .reviewerOutput)}' \
   events.ndjson
 
-# Per-task cost
-jq 'select(.type == "task_tokens") | {task: .taskId, method: .method, cost: .cost}' events.ndjson
+# Tokens per task
+jq -c 'select(.type == "event" and .data.type == "task_tokens") | .data
+  | {task: .taskId, method, implementer: .implementerTokens, escalation: .escalationTokens}' \
+  events.ndjson
+
+# Dollars, from the summary of the run
+jq -c '.summary.costBreakdown | {planner: .actualPlannerCost, implementer: .actualImplementerCost,
+  reviewer: .actualReviewerCost, total: .totalActualCost, complete: .isTotalActualCostKnown}' \
+  .splitbrief/sessions/<id>/summary.json
+jq -c '.summary.taskBreakdown[] | {task: .taskId, method, cost}' \
+  .splitbrief/sessions/<id>/summary.json
 ```
 
 **You'll see:**
 
 ```json
-{"planner":0.41,"implementer":0,"total":0.41}
-{"task":"T001","method":"local","cost":0}
-{"task":"T002","method":"escalation","cost":0.04}
+{"planner":1040,"implementer":1132,"escalation":0,"reviewer":324}
+{"task":"T001","method":"consulted","implementer":1132,"escalation":0}
+{"planner":0,"implementer":0,"reviewer":0,"total":0,"complete":false}
+{"task":"T001","method":"consulted","cost":null}
 ```
 
-The same data lives in `.splitbrief/sessions/<id>/summary.json` once the run finishes. `method` names how the brief passed: `local` for the BUILD seat's own attempt.
+The event stream carries token counts only. The dollar figures are in `.splitbrief/sessions/<id>/summary.json`, which SPLITBRIEF writes when the run finishes or stops. In this sample the seats ran a model with no price: `complete` is `false`, the totals count only the usage that has a price, and a task with no price has no `cost`, so `jq` prints `null`. A run whose seats report no usage writes no `cost_update` event, and the first command then prints `null` for each seat. `method` names how the brief passed: `local` for the BUILD seat's own attempt, `consulted` when it passed after a consult with the planner.
 
-**Variations:** Filter for failures: `jq 'select(.type == "task_full_fail" or .type == "error")' events.ndjson`.
+**Variations:** Filter for failures: `jq -c 'select(.type == "recovery_required" or .type == "final_review_failed" or .type == "error" or .data.type == "error")' events.ndjson`.
 
 **See also:** [docs/TROUBLESHOOTING.md](./TROUBLESHOOTING.md#event-log-jsonl-sink) §Event log, [docs/CONFIGURATION.md](./CONFIGURATION.md), recipe 7.
 
@@ -679,7 +691,7 @@ splitbrief start --plain "..." | grep -c '^task .*: failed' # tasks that did not
 splitbrief start --plain "..." | tail -1                    # the closing line
 ```
 
-Cost is reported in tokens, not dollars: the event stream carries token counts, and the price catalog lives outside the run. For dollars, use `--json` (recipe 18) or read `summary.json` after the run.
+Cost is reported in tokens, not dollars: the event stream carries token counts, and the price catalog lives outside the run. For dollars, read `summary.json` after the run (recipe 18).
 
 `--plain` and `--json` are two renderings of one stream and cannot share stdout — passing both exits `2` with `--plain and --json cannot be combined; choose one output mode.`
 

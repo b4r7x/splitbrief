@@ -88,12 +88,18 @@ export function parseSeatDownPolicyOption(value: string): SeatDownPolicy {
   return policy;
 }
 
-export type SeatSpec = Readonly<{ tool: string; model?: string; effort?: string }>;
+export type SeatSpec = Readonly<{
+  tool: string;
+  model?: string;
+  effort?: string;
+  variant?: string;
+}>;
 
 /**
  * The seat grammar `<tool>[:<model>][@<effort>]` the skills already document for
  * `impl=` / `review=`: split on the first `:` and the last `@`, so a model id
- * may carry colons and the effort word is always the tail.
+ * may carry colons and the `@` word is always the tail. The word is the variant
+ * on a tool that takes its effort as a variant, else the effort.
  */
 export function parseSeatSpecOption(value: string): SeatSpec {
   const spec = value.trim();
@@ -112,7 +118,13 @@ export function parseSeatSpecOption(value: string): SeatSpec {
   if (effort === '') {
     throw new InvalidArgumentError(`'${value}' names an empty effort after '@'.`);
   }
-  return { tool, ...(model !== undefined && { model }), ...(effort !== undefined && { effort }) };
+  const axis =
+    effort === undefined
+      ? {}
+      : effortChannelOfTool(tool) === 'variant'
+        ? { variant: effort }
+        : { effort };
+  return { tool, ...(model !== undefined && { model }), ...axis };
 }
 
 export type RecoveryActionOption = Readonly<{
@@ -143,17 +155,15 @@ export function parseContinueActionOption(value: string): ContinueActionOption {
   if (spec === 'discard') return { action: 'discard' };
   if (spec.startsWith('switch-seat:')) {
     const seat = parseSeatSpecOption(spec.slice('switch-seat:'.length));
-    const model = seat.model === undefined ? {} : { model: seat.model };
-    if (seat.effort !== undefined && effortChannelOfTool(seat.tool) === 'variant') {
-      return {
-        action: 'switch-seat',
-        candidate: { tool: seat.tool, ...model, variant: seat.effort },
-      };
-    }
     const effort = seat.effort === undefined ? undefined : parseEffortLevel(seat.effort, value);
     return {
       action: 'switch-seat',
-      candidate: { tool: seat.tool, ...model, ...(effort !== undefined && { effort }) },
+      candidate: {
+        tool: seat.tool,
+        ...(seat.model !== undefined && { model: seat.model }),
+        ...(seat.variant !== undefined && { variant: seat.variant }),
+        ...(effort !== undefined && { effort }),
+      },
     };
   }
   throw cliError(

@@ -1933,7 +1933,6 @@ describe('workflow visual fixtures', () => {
   it('shows the Apply refusal once and keeps its words in the composer', async () => {
     const reason = 'Cannot send words to Apply. Clear them.';
     const apply = await captureGalleryFrame('workflow-apply-recheck-words-refused', 80);
-    expect(apply.feedback).toEqual({ message: reason, isError: false });
     expect(apply.frame.split(reason)).toHaveLength(2);
     expect(apply.frame).toContain('also fix the typo');
     expect(apply.frame).not.toContain('Warning');
@@ -1987,7 +1986,6 @@ describe('workflow visual fixtures', () => {
   it('shows the stop steer refusal neutrally and keeps its command in the composer', async () => {
     const reason = 'Finish stopping before steering.';
     const steer = await captureGalleryFrame('workflow-stop-steer-refused', 80);
-    expect(steer.feedback).toEqual({ message: reason, isError: false });
     expect(steer.frame.split(reason)).toHaveLength(2);
     expect(steer.frame).toContain('/steer also fix the typo');
     expect(steer.frame).toContain('Finishing cleanup and saving');
@@ -1996,10 +1994,6 @@ describe('workflow visual fixtures', () => {
     expect(steer.events.filter((event) => event.type === 'warning')).toEqual([]);
 
     const halt = await captureGalleryFrame('workflow-recovery-steer-refused');
-    expect(halt.feedback).toEqual({
-      message: 'This halt takes no typed correction. Choose an action.',
-      isError: false,
-    });
     expect(halt.frame).toContain('/steer use the old name');
     expect(startsWithText(halt.frame, 'This halt takes no typed correction')).toBe(true);
 

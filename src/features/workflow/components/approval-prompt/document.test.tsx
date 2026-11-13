@@ -142,6 +142,34 @@ describe('DocumentReviewPrompt', () => {
     expect(frame).not.toContain(REVIEW_DOCUMENT_HINTS);
   });
 
+  it.each([60, 80])(
+    'marks the Approve row and names ⏎ confirm over a waiting card at %i columns',
+    (cols) => {
+      terminalSizeStore.__testReset({ cols, rows: 40, isSmall: false });
+      composerLiveStore.setDraft(createDraftDocument('approve'));
+      const frame = frameOf(
+        <DocumentReviewPrompt
+          artifact="plan"
+          confirms={[]}
+          budgetRows={40}
+          selectedIndex={2}
+          draft="approve"
+          focused={false}
+        />,
+      );
+
+      expect(frame).toContain(`${listRowLead('active')}Approve plan and start the build`);
+      expect(frame.split(listRowLead('active')).length - 1).toBe(1);
+      expect(
+        frame
+          .split('\n')
+          .find((line) => line.includes('back to the actions'))
+          ?.replace(/[│┃]/g, '')
+          .trim(),
+      ).toBe('⏎ confirm · tab back to the actions');
+    },
+  );
+
   // The composer holds the keyboard at the plan card, so a letter types into the draft: a row that
   // advertised one would teach a key that does not exist.
   it('advertises no letter on any row', () => {
@@ -295,6 +323,38 @@ describe('DocumentReviewPrompt', () => {
       const frame = shortFrame(['write package.json'], 'edit-file');
 
       expect(frame).toContain(REVIEW_TYPED_ROW_HINTS);
+      expect(frame).not.toContain('Approving also confirms');
+      expect(frame.split('\n').length).toBe(budgetRows);
+    });
+
+    function waitingFrame(text: string, draft: ReviewDraftTarget | null): string {
+      terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: false });
+      composerLiveStore.setDraft(createDraftDocument(text));
+      return frameOf(
+        <DocumentReviewPrompt
+          artifact="plan"
+          confirms={['write package.json']}
+          budgetRows={budgetRows}
+          selectedIndex={0}
+          draft={draft}
+          focused={false}
+        />,
+      );
+    }
+
+    it('keeps what approving confirms in view over a waiting card when the composer holds approve', () => {
+      const frame = waitingFrame('approve', 'approve');
+
+      expect(frame).toContain('Approving also confirms: write package.json');
+      expect(frame).toContain(`${listRowLead('active')}Approve plan and start the build`);
+      expect(frame).not.toContain('back to the actions');
+      expect(frame.split('\n').length).toBe(budgetRows);
+    });
+
+    it('teaches the composer keys in that row over a waiting card when the composer holds words', () => {
+      const frame = waitingFrame('also fix the typo', null);
+
+      expect(frame).toContain('⏎ request changes · tab back to the actions');
       expect(frame).not.toContain('Approving also confirms');
       expect(frame.split('\n').length).toBe(budgetRows);
     });

@@ -267,8 +267,6 @@ function createPreviewCommandContext(): RuntimeCommandContext {
     // production context's arithmetic, so they say so instead.
     scrollConversation: () => unavailable,
     toggleLatestActivityBatch: () => unavailable,
-    toggleLatestDiff: () => unavailable,
-    hasLatestDiff: () => false,
     listBriefs: () => runViewStore.get().briefs.tasks.map(({ id, status }) => ({ id, status })),
     toggleSidebar: togglePreviewSidebar,
     copyTarget: unavailableInPreview,

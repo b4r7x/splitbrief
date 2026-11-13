@@ -49,8 +49,6 @@ interface CommandContextFactoryOptions {
   ) => ReturnType<RuntimeCommandContext['rejectRun']>;
   scrollConversation: RuntimeCommandContext['scrollConversation'];
   toggleLatestActivityBatch: RuntimeCommandContext['toggleLatestActivityBatch'];
-  toggleLatestDiff: RuntimeCommandContext['toggleLatestDiff'];
-  hasLatestDiff: RuntimeCommandContext['hasLatestDiff'];
   listBriefs: RuntimeCommandContext['listBriefs'];
   toggleSidebar: RuntimeCommandContext['toggleSidebar'];
   copyTarget: RuntimeCommandContext['copyTarget'];
@@ -96,8 +94,6 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
     refreshRun: opts.refreshRun,
     scrollConversation: opts.scrollConversation,
     toggleLatestActivityBatch: opts.toggleLatestActivityBatch,
-    toggleLatestDiff: opts.toggleLatestDiff,
-    hasLatestDiff: opts.hasLatestDiff,
     listBriefs: opts.listBriefs,
     toggleSidebar: opts.toggleSidebar,
     copyTarget: opts.copyTarget,

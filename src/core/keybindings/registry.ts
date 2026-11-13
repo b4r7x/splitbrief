@@ -47,7 +47,7 @@ const SHORTCUTS: ShortcutInfo[] = [
     description: 'Close overlay',
     screens: ['home', 'setup'],
   },
-  { id: 'toggle-diff', key: 'ctrl+d', description: 'Toggle diff', screens: ['workflow'] },
+  { id: 'toggle-diff', key: 'ctrl+d', description: 'Show or hide details', screens: ['workflow'] },
   {
     id: 'scroll',
     key: 'shift+↑/↓, pgup/pgdn, home/end',

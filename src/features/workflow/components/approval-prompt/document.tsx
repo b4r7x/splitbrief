@@ -3,6 +3,8 @@ import { Box } from 'ink';
 import { borderStyleFor } from '../../../../lib/glyphs.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import {
+  CONFIRM_HINT,
+  formatKeyHints,
   REVIEW_COMMENT_HINTS,
   REVIEW_DOCUMENT_HINTS,
   REVIEW_CONFIRMS_INDENT,
@@ -24,6 +26,9 @@ import { MenuRows } from '../../stop/menu-rows.js';
 import { isCommandDraft } from '../../../../core/composer/submission.js';
 import { composerLiveStore } from '../../../../stores/ui/composer-live.js';
 import { isBlankDraft } from '../../../../components/composer/use-paste-drafts.js';
+
+// The word approve marks the Approve row over a waiting card, so ⏎ confirms that row.
+const CONFIRM_ROW_LEGEND = formatKeyHints([CONFIRM_HINT]);
 
 export interface DocumentReviewPromptProps {
   artifact: ReviewArtifact;
@@ -68,10 +73,10 @@ export function DocumentReviewPrompt({
       ? unfocusedPromptLegend({
           blank: blankDraft,
           command: commandDraft,
-          words: {
-            long: '⏎ request changes with the typed correction',
-            short: '⏎ request changes',
-          },
+          words:
+            draft === 'approve'
+              ? { long: CONFIRM_ROW_LEGEND, short: CONFIRM_ROW_LEGEND }
+              : { long: '⏎ request changes with the typed correction', short: '⏎ request changes' },
           width: available,
         })
       : draft === null
@@ -81,11 +86,10 @@ export function DocumentReviewPrompt({
           : REVIEW_TYPED_ROW_HINTS;
   const confirmsLegendWidth = width - REVIEW_CONFIRMS_INDENT;
   const legendWidth = form.framed ? width : Math.max(1, width - MARK_SLOT_CELLS);
-  // A typed row approves nothing, and neither does ⏎ while the composer holds the keys, so where
-  // the legend was shed the confirms rows teach its keys instead. Approve keeps the line: ⏎ still
-  // grants what it lists.
-  const draftLegendInConfirms =
-    (!focused || (draft !== null && draft !== 'approve')) && !form.legend;
+  // A typed row approves nothing, and neither does ⏎ while the composer holds words that take no
+  // row, so where the legend was shed the confirms rows teach its keys instead. Approve keeps the
+  // line: ⏎ still grants what it lists.
+  const draftLegendInConfirms = (draft === null ? !focused : draft !== 'approve') && !form.legend;
   // A panel with no row for the confirms line says it on the row that approves.
   const confirmsOnRow = form.confirmsText !== null && !fit.confirms;
 
@@ -131,7 +135,7 @@ export function DocumentReviewPrompt({
                 (option) => option.command === (draft === 'send' ? 'comment' : draft),
               )
         }
-        marked={focused}
+        marked={focused || draft !== null}
         rowBudget={fit.listRows}
         width={width}
       />

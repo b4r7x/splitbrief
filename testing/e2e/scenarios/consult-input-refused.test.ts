@@ -3,9 +3,11 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
+import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
 import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
 import { detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
+import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
@@ -88,7 +90,81 @@ if (attempt > 1) writeFileSync(${JSON.stringify(GREET)}, ${JSON.stringify(FILES[
 `;
 }
 
-async function runWithPlannerClaude(refusal: PlanSeatRefusal) {
+const answers = {
+  plan,
+  review: passingVerdict({ kind: 'final', taskIds: [greeting.id], criterionIds: ['C1'] }),
+  consult: guidanceConsult('Write the greeting as the brief says.'),
+};
+
+/** The thread the plan call opens. Codex no longer has it when the consult resumes it. */
+const EXPIRED_THREAD = 'expired-plan-thread';
+
+/**
+ * Codex as the PLAN seat: the plan call opens `EXPIRED_THREAD`, and every other call that resumes
+ * nothing opens `fresh-thread`. A call that resumes `EXPIRED_THREAD` fails the way codex-cli
+ * failed live on a lost thread: the error line on stderr, and exit 1. Each call is logged to
+ * `calls` in the shape of `PlanSeatCall`.
+ */
+function installPlannerCodex(binDir: string, calls: string): void {
+  writeFakeNodeCli(
+    binDir,
+    'codex',
+    `const { appendFileSync, readFileSync } = require('node:fs');
+const args = process.argv.slice(2);
+if (args[0] === '--version') {
+  console.log('codex ${CLI_TOOL_CATALOG.codex.compatibility.testedVersion}');
+  process.exit(0);
+}
+if (args[0] === 'login' && args[1] === 'status') {
+  console.log('Logged in using ChatGPT');
+  process.exit(0);
+}
+if (!args.includes('exec')) throw new Error('Unexpected codex invocation: ' + args.join(' '));
+const prompt = readFileSync(0, 'utf8');
+const resumed = args.includes('resume') ? args[args.length - 2] : null;
+const kind = /^# (Final|Task) Implementation Review$/m.test(prompt)
+  ? 'review'
+  : /^# Consult (on a failing task|continued)$/m.test(prompt)
+    ? 'consult'
+    : /^(Summarize this conversation|You have a previous structured summary)/.test(prompt)
+      ? 'summary'
+      : 'plan';
+appendFileSync(${JSON.stringify(calls)}, JSON.stringify({ kind, args, resumed, length: prompt.length, prompt }) + '\\n');
+if (resumed === ${JSON.stringify(EXPIRED_THREAD)}) {
+  console.error('Error: thread/resume: thread/resume failed: no rollout found for thread id ' + resumed + ' (code -32600)');
+  process.exit(1);
+}
+const answers = ${JSON.stringify(answers)};
+const emit = (entry) => console.log(JSON.stringify(entry));
+emit({ type: 'thread.started', thread_id: resumed ?? (kind === 'plan' ? ${JSON.stringify(EXPIRED_THREAD)} : 'fresh-thread') });
+emit({ type: 'item.completed', item: { type: 'agent_message', text: kind === 'summary' ? 'Summary complete' : JSON.stringify(answers[kind]) } });
+emit({ type: 'turn.completed', usage: { input_tokens: 10, output_tokens: 5 } });`,
+  );
+}
+
+/** The PLAN seat of a run: its tool, its sign-in file and the fake tool that answers it. */
+type PlanSeat = {
+  tool: 'claude-code' | 'codex';
+  model: string;
+  signIn: readonly [folder: string, file: string];
+  install: (binDir: string, calls: string) => void;
+};
+
+const claudeSeat = (refusal: PlanSeatRefusal): PlanSeat => ({
+  tool: 'claude-code',
+  model: 'sonnet',
+  signIn: ['.claude', '.credentials.json'],
+  install: (binDir, calls) => installPlannerClaude(binDir, calls, { ...answers, refusal }),
+});
+
+const codexSeat: PlanSeat = {
+  tool: 'codex',
+  model: 'gpt-5-codex',
+  signIn: ['.codex', 'auth.json'],
+  install: installPlannerCodex,
+};
+
+async function runWithPlanner(seat: PlanSeat) {
   fixture = createStopContinueFixture(
     (projectDir) => implementerScript(join(projectDir, '..', 'attempts')),
     { isolation: 'worktree' },
@@ -96,30 +172,26 @@ async function runWithPlannerClaude(refusal: PlanSeatRefusal) {
   const target = fixture;
   const home = trustHome?.home;
   if (home === undefined) throw new Error('the trust home is not set up');
-  mkdirSync(join(home, '.claude'), { recursive: true });
-  writeFileSync(join(home, '.claude', '.credentials.json'), '{"fixture":true}\n');
+  const [signInFolder, signInFile] = seat.signIn;
+  mkdirSync(join(home, signInFolder), { recursive: true });
+  writeFileSync(join(home, signInFolder, signInFile), '{"fixture":true}\n');
   const binDir = join(target.tmpDir, 'bin');
   mkdirSync(binDir);
   const callsPath = join(target.tmpDir, 'planner-calls.jsonl');
-  installPlannerClaude(binDir, callsPath, {
-    plan,
-    review: passingVerdict({ kind: 'final', taskIds: [greeting.id], criterionIds: ['C1'] }),
-    consult: guidanceConsult('Write the greeting as the brief says.'),
-    refusal,
-  });
+  seat.install(binDir, callsPath);
   restorePath = activateSafeCliShimPath(binDir);
 
   const config = loadConfig(target.projectDir).config;
   writeConfig(target.projectDir, {
     ...config,
-    planner: { kind: 'cli', tool: 'claude-code', model: 'sonnet' },
+    planner: { kind: 'cli', tool: seat.tool, model: seat.model },
     validation: { ...config.validation, testCommand: 'node --test' },
     // The brief's own checks run after each attempt only on the per-task review cadence.
     workflow: { ...config.workflow, review: 'task' },
   });
   const tools = await detectAvailableCliTools({
     projectDir: target.projectDir,
-    tools: ['claude-code'],
+    tools: [seat.tool],
     role: 'planner',
   });
   expect(tools[0]?.diagnostic.state, JSON.stringify(tools[0]?.diagnostic)).toBe('ready');
@@ -153,7 +225,7 @@ async function runWithPlannerClaude(refusal: PlanSeatRefusal) {
 
 describe('e2e: the planner tool refuses a consult as too long', { timeout: 240_000 }, () => {
   it('sends a consult after a 3 MB change under the limit, names the generated file, and the run becomes ready to apply', async () => {
-    const { run, state, calls } = await runWithPlannerClaude('oversized');
+    const { run, state, calls } = await runWithPlanner(claudeSeat('oversized'));
 
     const consults = calls.filter((call) => call.kind === 'consult');
     expect(consults.length, JSON.stringify(calls)).toBeGreaterThan(0);
@@ -169,7 +241,7 @@ describe('e2e: the planner tool refuses a consult as too long', { timeout: 240_0
   });
 
   it('asks again on a fresh session when the tool refuses the resumed planning thread, and the run continues', async () => {
-    const { run, state, calls, ref } = await runWithPlannerClaude('planner-session');
+    const { run, state, calls, ref } = await runWithPlanner(claudeSeat('planner-session'));
 
     const refusedAt = calls.findIndex(
       (call) => call.kind === 'consult' && call.resumed === 'planner-session',
@@ -189,16 +261,47 @@ describe('e2e: the planner tool refuses a consult as too long', { timeout: 240_0
         .filter((event) => 'code' in event && event.code === 'planner_session_refused')
         .map((event) => event.type),
     ).toEqual(['debug']);
-    expect(transcriptText(events)).not.toContain('refused the session as too long');
+    const transcript = transcriptText(events);
+    expect(transcript).not.toContain('refused the session as too long');
+    // The refused first call leaves no red Err row and no err count: the run asked again.
+    expect(transcript).not.toContain('Prompt is too long');
+    expect(transcript).not.toMatch(/PLAN activity.*\d+ err/);
   });
 
   it('halts without Try again when the tool refuses every consult', async () => {
-    const { run, state, calls } = await runWithPlannerClaude('every-consult');
+    const { run, state, calls } = await runWithPlanner(claudeSeat('every-consult'));
 
     expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(1);
     const issue = state.pendingRecovery;
     expect(issue?.reason, JSON.stringify({ issue, calls })).toBe('planner-call-failed');
     expect(issue?.availableActions).not.toContain('retry-same-worker');
     expect(issue?.details).toContainEqual(expect.stringContaining('A retry sends the same prompt'));
+  });
+});
+
+describe('e2e: the planner thread expired before a consult', { timeout: 240_000 }, () => {
+  it('asks again on a fresh thread, and the PLAN activity shows no warning and no error of the first call', async () => {
+    const { run, state, calls, ref } = await runWithPlanner(codexSeat);
+
+    const expiredAt = calls.findIndex(
+      (call) => call.kind === 'consult' && call.resumed === EXPIRED_THREAD,
+    );
+    expect(expiredAt, JSON.stringify(calls)).toBeGreaterThan(-1);
+    expect(calls[expiredAt + 1]).toMatchObject({ kind: 'consult', resumed: null });
+    expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
+    expect(deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' })).toEqual({
+      kind: 'ready-to-apply',
+      override: false,
+    });
+    const { events } = await readRunEvents(ref);
+    expect(
+      events
+        .filter((event) => 'code' in event && event.code === 'planner_session_expired')
+        .map((event) => event.type),
+    ).toEqual(['debug']);
+    const transcript = transcriptText(events);
+    // The run asked again: the lost thread leaves no Warn row, no Err row and no count of them.
+    expect(transcript).not.toContain('no rollout found');
+    expect(transcript).not.toMatch(/PLAN activity.*\d+ (warn|err)/);
   });
 });

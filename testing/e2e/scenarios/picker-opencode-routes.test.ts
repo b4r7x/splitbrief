@@ -266,8 +266,14 @@ describe('e2e: the BUILD picker on an OpenCode seat', { timeout: 120_000 }, () =
         screen.write('antigravity');
         await screen.shows(/▌ Google Antigravity CLI/);
         await screen.shows('Its models show here when it is ready.');
-        expect(screen.text()).not.toContain('Claude Haiku 4.5');
-        expect(screen.text()).not.toContain('Custom');
+        // The byline under the picker may still hold the note of the save; the columns may not.
+        const columns = screen
+          .text()
+          .split('\n')
+          .filter((line) => line.includes('│'))
+          .join('\n');
+        expect(columns).not.toContain('Claude Haiku 4.5');
+        expect(columns).not.toContain('Custom');
       },
       (reason) => context.skip(reason),
     );

@@ -10,6 +10,10 @@ import { buildResumeContext } from './transcript/rebuild.js';
 import { compactResumeTranscript, keepRecentCountForThreshold } from './transcript/compaction.js';
 import { addUsageAndSave } from './state-ops.js';
 import { resolveCompactionFormat } from '../../core/schemas/compaction.js';
+import {
+  PLANNER_SESSION_EXPIRED_CODE,
+  PLANNER_SESSION_REFUSED_CODE,
+} from '../../core/sessions/planner-reissue.js';
 import { publishRunnerCallEvent } from './events.js';
 import { isAbortError } from '../../utils/abort.js';
 import { labelError } from '../../utils/format-errors.js';
@@ -135,7 +139,7 @@ export async function withFreshSessionReissue<T>(opts: {
         : 'Planner tool refused the session as too long; the call runs again on a fresh session with the conversation so far.',
       safety: {
         category: 'planner',
-        code: expired ? 'planner_session_expired' : 'planner_session_refused',
+        code: expired ? PLANNER_SESSION_EXPIRED_CODE : PLANNER_SESSION_REFUSED_CODE,
       },
     });
     const rebuilt: ResumeContextHolder = { messages: [] };

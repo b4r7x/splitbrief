@@ -4,9 +4,7 @@ import { beforeEach, afterEach, describe, it, expect, onTestFinished, vi } from 
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import type { EngineEventOf } from '../../engine/events/types.js';
 import { addEvent } from '../../stores/workflow/actions/event.js';
-import { clearSessionScopedStores } from '../../features/workflow/session-stores.js';
 import { useRuntimeCommands } from '../command-context.js';
 import { Box } from 'ink';
 import { render } from 'ink-testing-library';
@@ -92,8 +90,6 @@ function createTestCommands(): RuntimeCommandDef[] {
     rejectRun: async () => ({ status: 'empty' }),
     scrollConversation: () => ({ status: 'scrolled' }),
     toggleLatestActivityBatch: () => ({ status: 'toggled', expanded: true }),
-    toggleLatestDiff: () => ({ status: 'toggled', expanded: true }),
-    hasLatestDiff: () => true,
     listBriefs: () => [],
     toggleSidebar: () => ({ status: 'toggled', visible: true }),
     copyTarget: async () => 'empty',
@@ -972,11 +968,11 @@ describe('CommandPaletteOverlay', () => {
     }
   });
 
-  async function openRunScreenPaletteOnDiff(done: EngineEventOf<'implementer_generate_done'>) {
+  it('offers no /diff on the run screen after a brief whose done row holds a diff', async () => {
     onTestFinished(resetAllStores);
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
     enterWorkflowScreen();
-    addEvent(done);
+    addEvent(makeImplementerGenerate({ diff: '+ export const total = 1;' }));
     const instance = render(<RunScreenPalette />);
     onTestFinished(instance.unmount);
     await vi.waitFor(() => {
@@ -986,44 +982,9 @@ describe('CommandPaletteOverlay', () => {
     await vi.waitFor(() => {
       expect(promptLine(instance.lastFrame() ?? '')).toContain('diff');
     });
-    return instance;
-  }
 
-  async function runScreenDiffRows(done: EngineEventOf<'implementer_generate_done'>) {
-    const instance = await openRunScreenPaletteOnDiff(done);
-    return commandRows(instance.lastFrame() ?? '');
-  }
-
-  it('offers no /diff on the run screen after a brief whose done row holds no diff', async () => {
-    const rows = await runScreenDiffRows(makeImplementerGenerate());
-
+    const rows = commandRows(instance.lastFrame() ?? '');
     expect(rows.filter((row) => row.includes('/diff'))).toEqual([]);
-  });
-
-  it('offers /diff on the run screen after a brief whose done row holds a diff', async () => {
-    const rows = await runScreenDiffRows(
-      makeImplementerGenerate({ diff: '+ export const total = 1;' }),
-    );
-
-    expect(rows.some((row) => row.includes('/diff'))).toBe(true);
-  });
-
-  it('adds /diff to the open palette when a done row with a diff arrives, and takes it out when a new run clears the transcript', async () => {
-    const instance = await openRunScreenPaletteOnDiff(makeImplementerGenerate());
-    const diffRows = () =>
-      commandRows(instance.lastFrame() ?? '').filter((row) => row.includes('/diff'));
-    expect(diffRows()).toEqual([]);
-
-    addEvent(makeImplementerGenerate({ diff: '+ export const total = 1;' }));
-    await vi.waitFor(() => {
-      expect(diffRows()).toHaveLength(1);
-    });
-
-    clearSessionScopedStores();
-    await vi.waitFor(() => {
-      expect(diffRows()).toEqual([]);
-    });
-    expect(promptLine(instance.lastFrame() ?? '')).toContain('diff');
   });
 
   it('gives a long session title the full row instead of the command-name column', async () => {

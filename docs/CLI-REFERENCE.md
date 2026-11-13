@@ -293,7 +293,7 @@ splitbrief review [--reviewer <tool>[:<model>][@<effort>]] [--base <ref>] [--pro
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--reviewer <spec>` | seat | the configured reviewer, else the planner; required while REVIEW is None | The review seat in the same grammar the skills use for `impl=` / `review=`: `<tool>[:<model>][@<effort>]`, split on the first `:` and the last `@`. `codex`, `codex@high`, `opencode:opencode-go/kimi-k3@high` are all valid. A seat whose tool takes no effort flag does not get the `@<effort>`: stderr names it, for example `@high in --reviewer is ignored: the OpenCode CLI variant sets the effort.`, with the fix `Remove @high from --reviewer.` |
+| `--reviewer <spec>` | seat | the configured reviewer, else the planner; required while REVIEW is None | The review seat in the same grammar the skills use for `impl=` / `review=`: `<tool>[:<model>][@<effort>]`, split on the first `:` and the last `@`. `codex`, `codex@high`, `opencode:opencode-go/kimi-k3@high` are all valid. The `@` word is the variant on a variant-channel tool (opencode, kilo-code) and the effort on every other tool, as in `continue --action switch-seat:`. A seat whose tool takes neither does not get the word: stderr names it, for example `@high in --reviewer is ignored: the Cursor Agent CLI model id sets the effort.`, with the fix `Remove @high from --reviewer.` |
 | `--base <ref>` | git ref | working tree | Diff against this ref (`git diff <ref>` plus untracked files) instead of the uncommitted working tree. |
 | `--project <dir>` | path | cwd | Project directory. |
 | `--allow-repo-runners` | boolean | `false` | Grant this run the shell/agent runner commands the project config declares. |

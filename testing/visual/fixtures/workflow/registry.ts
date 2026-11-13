@@ -267,7 +267,12 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
   }
   // The draft was typed before the plan arrived, so the composer restores it when the screen mounts
   // and the card opens over it.
-  if (projection.scenarioId === 'workflow-plan-card-over-draft') {
+  if (
+    projection.scenarioId === 'workflow-plan-card-over-draft' ||
+    projection.scenarioId === 'workflow-plan-card-over-approve'
+  ) {
+    const draft =
+      projection.scenarioId === 'workflow-plan-card-over-draft' ? PLAN_CARD_OVER_DRAFT : 'approve';
     return () => {
       const lifecycle = base();
       return {
@@ -276,7 +281,7 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
           await lifecycle.setup(context);
           const route = routerStore.get();
           if (route.screen !== 'workflow') throw new Error('The plan card fixture needs a run');
-          saveSessionDraft(route.run.ref, createDraftDocument(PLAN_CARD_OVER_DRAFT));
+          saveSessionDraft(route.run.ref, createDraftDocument(draft));
         },
       };
     };
@@ -1590,6 +1595,12 @@ const checkpointPredicates = [
       includesAll(PLAN_CARD_OVER_DRAFT)(context) &&
       excludesAll(`${listRowLead('active')}Approve plan`)(context),
   ],
+  [
+    checkpointId('plan-card-over-approve'),
+    (context) =>
+      planCardReady(context) &&
+      includesAll(`${listRowLead('active')}Approve plan`, `${glyph('prompt')} approve`)(context),
+  ],
   [checkpointId('plan-card-confirm-words'), includesAll('Confirm with a reason', TYPED_WORDS)],
   [
     checkpointId('plan-card-usage-refused'),
@@ -2524,9 +2535,18 @@ const checkpointPredicates = [
   ],
   [
     checkpointId('planner-session-expired'),
-    // The session log keeps the expired thread; the transcript has no row for it.
-    (context) =>
-      includesAll()(context) && !workflowTranscriptText().includes('Planner session expired'),
+    // The session log keeps the expired thread and the warning and the error of the call it ended;
+    // the transcript has no row and no warn or err count for any of them.
+    (context) => {
+      const transcript = workflowTranscriptText();
+      return (
+        includesAll()(context) &&
+        !transcript.includes('Planner session expired') &&
+        !transcript.includes('no rollout found') &&
+        !transcript.includes('CLI exited with code 1') &&
+        !/\d+ (warn|err)\b/.test(transcript)
+      );
+    },
   ],
   [
     checkpointId('plan-usage-limit'),

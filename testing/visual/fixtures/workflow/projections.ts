@@ -9778,6 +9778,7 @@ const projections = [
   { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-steer-row') },
   { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-request-empty') },
   { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-over-draft') },
+  { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-over-approve') },
   planCardConfirmWordsProjection,
   {
     ...planCompiledProjection,

@@ -93,7 +93,7 @@ describe('buildConfigChecks', () => {
   });
 
   it('states the fix that the ignored input carries', () => {
-    const notice = '@high in --reviewer is ignored: the OpenCode CLI variant sets the effort.';
+    const notice = '@high in --reviewer is ignored: the Cursor Agent CLI model id sets the effort.';
     const warning: EffectiveConfigWarning = {
       kind: 'ignored-flag',
       notice,

@@ -302,7 +302,7 @@ describe('the workflow screen showing a closed run', () => {
     narrow.unmount();
   });
 
-  it('gives the /diff guard the row model that the screen built beside the sidebar, before and after a typed key', async () => {
+  it('gives the ctrl+d row of help the row model that the screen built beside the sidebar, before and after a typed key', async () => {
     // A session of its own: the screen keeps the typed key as the draft of the session, and the next
     // mount of that session shows the draft.
     showClosedRun({ summary: makeSummary(), sessionId: '2026-09-14-diff-guard' });

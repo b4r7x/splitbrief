@@ -576,7 +576,7 @@ describe('CLI integration: splitbrief review', () => {
     expect(stdout).toContain('pass_with_notes');
   });
 
-  it('names the @effort of --reviewer that the tool does not take, and how to remove it', async () => {
+  it('gives the @ word of --reviewer to OpenCode as its variant, with no notice', async () => {
     writeConfig(tmp);
     writeFileSync(join(tmp, 'init.txt'), `init\n${CHANGED_LINE}\n`, 'utf-8');
     installFakeOpencode();
@@ -586,17 +586,19 @@ describe('CLI integration: splitbrief review', () => {
       return true;
     });
 
-    const { stdout, exitCode } = await runReview(['--project', tmp, '--reviewer', 'opencode@high']);
+    const { stdout, exitCode } = await runReview([
+      '--project',
+      tmp,
+      '--reviewer',
+      'opencode:opencode-go/kimi-k3@high',
+    ]);
 
     expect(exitCode, stdout).toBe(0);
     const lines = stderr.join('').split('\n');
-    expect(lines.filter((line) => line.includes('is ignored'))).toEqual([
-      '@high in --reviewer is ignored: the OpenCode CLI variant sets the effort.',
-    ]);
-    expect(lines.filter((line) => line.startsWith('Fix:'))).toEqual([
-      'Fix: Remove @high from --reviewer.',
-    ]);
-    expect(lines.filter((line) => line.includes('--reviewer-effort'))).toEqual([]);
+    expect(lines.filter((line) => line.includes('is ignored'))).toEqual([]);
+    expect(lines.filter((line) => line.startsWith('Fix:'))).toEqual([]);
+    const args = readRunLog()[0]?.args ?? [];
+    expect(args[args.indexOf('--model') + 1]).toBe('opencode-go/kimi-k3#high');
   });
 
   it('gives the @effort of --reviewer to a tool that takes an effort flag, with no notice', async () => {

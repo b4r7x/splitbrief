@@ -2595,6 +2595,23 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
+    defineScenario({
+      id: 'workflow-plan-card-over-approve',
+      title: 'Workflow · plan card that opened over the word approve',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'plan-card-over-approve',
+        title: 'Plan card while ⏎ on the draft approves the plan',
+        kind: 'review',
+        marker: 'Approve plan and start the build',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Plan transcript' },
+        { id: 'approval-panel', title: 'Plan card panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
     // The confirmation the plan card raises waits over the words typed during its review phase.
     defineScenario({
       id: 'workflow-plan-card-confirm-words',
@@ -6814,6 +6831,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
     checkpointTitle: 'Help ready',
     scenarios: [
       { id: 'overlay-help', title: 'Overlay · help', marker: 'Help · commands & shortcuts' },
+      {
+        id: 'overlay-help-details',
+        title: 'Overlay · help over a brief with a diff, at the end of the list',
+        marker: 'Show or hide details',
+      },
     ],
   }),
   'command-palette': overlayGroup({

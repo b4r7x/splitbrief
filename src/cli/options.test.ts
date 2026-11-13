@@ -87,8 +87,10 @@ describe('parseSeatSpecOption', () => {
     },
     {
       spec: 'opencode:opencode-go/kimi-k3@high',
-      expected: { tool: 'opencode', model: 'opencode-go/kimi-k3', effort: 'high' },
+      expected: { tool: 'opencode', model: 'opencode-go/kimi-k3', variant: 'high' },
     },
+    { spec: 'kilo-code@max', expected: { tool: 'kilo-code', variant: 'max' } },
+    { spec: 'cursor@high', expected: { tool: 'cursor', effort: 'high' } },
     {
       spec: 'cursor:gpt-5.3-codex-high',
       expected: { tool: 'cursor', model: 'gpt-5.3-codex-high' },

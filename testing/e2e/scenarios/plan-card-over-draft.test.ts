@@ -335,6 +335,34 @@ it(
   },
 );
 
+// The card opened over a draft, so the keys stay in the composer through the refused command.
+it(
+  'approves the plan when ⏎ sends only approve after a refused command over the waiting card',
+  SCENARIO_TIMEOUT,
+  async () => {
+    await scenario(async (run, tui) => {
+      const { screen, write } = tui;
+      const command = '/nosuch';
+      await openCardOverDraft(run, tui, command);
+
+      write(PTY_SUBMIT_INPUT);
+      await expect.poll(screen, PATIENCE).toContain(`Unknown command: ${command}`);
+      await expect.poll(screen, PATIENCE).toContain(`› ${command}`);
+      for (const _ of command) write('\x7f');
+      await expect.poll(screen, PATIENCE).toContain('tab/⏎ back to the actions');
+      write('approve');
+      await expect.poll(screen, PATIENCE).toContain('› approve');
+      await expect.poll(screen, PATIENCE).toContain('⏎ confirm · tab back to the actions');
+      expect(screen()).toContain(APPROVE_ACTIVE);
+
+      write(PTY_SUBMIT_INPUT);
+      await vi.waitFor(() => expect(replanned(run)).toBe(true), PATIENCE);
+      expect(callsMade(run)).not.toContain('plan 2');
+      expect(callsMade(run)).toContain('implement');
+    });
+  },
+);
+
 it(
   'names tab and ⏎ once the draft is deleted, and ⏎ gives the plan card the keys',
   SCENARIO_TIMEOUT,

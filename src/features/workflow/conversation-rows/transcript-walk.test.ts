@@ -11,6 +11,8 @@ import {
   WORKSPACE_NOTICE_CATEGORY,
 } from '../../../core/sessions/workspace-notice.js';
 import { retainedWorkspaceNotice } from '../../../engine/orchestrator/isolation/retention.js';
+import { projectRunnerCallEvents } from '../../../engine/calls/event-projection.js';
+import type { RunnerCallEvent } from '../../../engine/calls/types.js';
 import { walkTranscript } from './transcript-walk.js';
 
 describe('walkTranscript', () => {
@@ -1503,5 +1505,123 @@ describe('walkTranscript check groups', () => {
     expect(steps(briefChecks)).toEqual(
       briefChecks.map((event, globalIndex) => ({ kind: 'event', event, globalIndex })),
     );
+  });
+});
+
+describe('a planner call that the run issues again on a fresh session', () => {
+  const planCall = (callId: string, attempt: number) =>
+    ({
+      callId,
+      role: 'planner',
+      backendKind: 'cli',
+      runnerName: 'codex',
+      model: 'gpt-5-codex',
+      attempt,
+    }) as const;
+  /** Call events as the workflow bus receives them: the typed event dropped, its activity kept. */
+  const callActivity = (ts: number, events: readonly RunnerCallEvent[]): EngineEvent[] =>
+    events
+      .flatMap((event, index) =>
+        projectRunnerCallEvents(
+          { ...event, ts: ts + index },
+          { rootDir: '/repo', phase: 'planning', sequence: index },
+        ),
+      )
+      .filter((event) => event.type === 'runner_call_activity');
+  const callWarning = (callId: string, ts: number): RunnerCallEvent => ({
+    type: 'call_warning',
+    ts,
+    ...planCall(callId, 1),
+    warning: {
+      code: 'stderr_diagnostic',
+      severity: 'warning',
+      source: 'stderr',
+      surface: 'status',
+      channel: 'stderr',
+      fingerprint: `rw:${callId}`,
+      message:
+        'Error: thread/resume: thread/resume failed: no rollout found for thread id 019a8c3e',
+    },
+  });
+  const failedCall = (callId: string, ts: number, words: string): EngineEvent[] =>
+    callActivity(ts, [
+      callWarning(callId, ts),
+      {
+        type: 'call_error',
+        ts,
+        ...planCall(callId, 1),
+        status: 'failed',
+        error: { code: 'non-zero-exit', message: words },
+        partial: true,
+        startedAt: ts - 10,
+        endedAt: ts,
+        durationMs: 10,
+        usage: null,
+        nativeSessionId: null,
+      },
+    ]);
+  const reissued = (code: string, ts: number): EngineEventOf<'debug'> => ({
+    type: 'debug',
+    ts,
+    phase: 'planning',
+    message: 'The call runs again on a fresh session with the conversation so far.',
+    category: 'planner',
+    code,
+  });
+  const freshRead = (ts: number) =>
+    makeRunnerCallActivity('planner-read', { ts, phase: 'planning', callId: 'fresh' });
+  const batchKinds = (events: EngineEvent[]) =>
+    [...walkTranscript(groupEventsIntoSections(events))].flatMap((step) =>
+      step.kind === 'activity-batch' ? [step.batch.events.map((event) => event.kind)] : [],
+    );
+
+  it.each(['planner_session_expired', 'planner_session_refused'])(
+    'drops the warning and the error of the first call, when %s says the run asked again',
+    (code) => {
+      const events = [
+        ...failedCall('first', 100, 'CLI exited with code 1'),
+        reissued(code, 200),
+        freshRead(300),
+      ];
+
+      expect(batchKinds(events)).toEqual([['read']]);
+    },
+  );
+
+  it('keeps the warning and the error of the call issued again when that call fails too', () => {
+    const events = [
+      ...failedCall('first', 100, 'CLI exited with code 1'),
+      reissued('planner_session_expired', 200),
+      ...failedCall('fresh', 300, 'Prompt is too long'),
+    ];
+
+    expect(batchKinds(events)).toEqual([['warning', 'error']]);
+  });
+
+  it('keeps the warning of an earlier call when the run issues a later call again', () => {
+    const events = [
+      ...callActivity(50, [callWarning('earlier', 50)]),
+      ...failedCall('first', 100, 'CLI exited with code 1'),
+      reissued('planner_session_expired', 200),
+      freshRead(300),
+    ];
+
+    expect(batchKinds(events)).toEqual([['warning'], ['read']]);
+  });
+
+  it('keeps the warning and the error of a planner call that the run did not issue again', () => {
+    const events = [...failedCall('first', 100, 'CLI exited with code 1'), freshRead(300)];
+
+    expect(batchKinds(events)).toEqual([['warning', 'error'], ['read']]);
+  });
+
+  it('keeps the error of an earlier call when the call that the run issued again left no error', () => {
+    const events = [
+      ...failedCall('first', 100, 'CLI exited with code 1'),
+      freshRead(200),
+      reissued('planner_session_expired', 300),
+    ];
+
+    expect(batchKinds(events)).toEqual([['warning', 'error'], ['read']]);
   });
 });

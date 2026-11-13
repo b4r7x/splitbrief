@@ -21,6 +21,8 @@ export const CLIOverridesSchema = z.object({
   reviewerEffort: z.string().optional(),
   /** The `@<effort>` of a `--reviewer <tool>[:<model>][@<effort>]` seat spec. */
   reviewerSpecEffort: z.string().optional(),
+  /** The same `@` word when the review tool takes its effort as a variant. */
+  reviewerSpecVariant: z.string().optional(),
 });
 
 export type CLIOverrides = z.infer<typeof CLIOverridesSchema>;

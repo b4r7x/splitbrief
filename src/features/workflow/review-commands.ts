@@ -1,5 +1,7 @@
 import type { ApprovalReviewResult } from '../../core/approval/types.js';
+import type { DraftDocument } from '../../core/schemas/draft-document.js';
 import { SOFT_SEP } from '../../core/separators.js';
+import { trimDraftDocument } from '../../components/composer/use-paste-drafts.js';
 import { assertNever } from '../../utils/type-guards.js';
 import type { ReviewDocumentCommand } from './prompt-rows/approval.js';
 
@@ -49,6 +51,13 @@ export function parseReviewCommand(text: string): ReviewAction {
       : null;
   }
   return null;
+}
+
+// Over a plan card that waits under the composer, ⏎ sends the draft as the change request, whatever
+// word it opens with. A draft of only the word approve is the one exception: it takes the Approve row.
+export function draftApprovesPlan(document: DraftDocument): boolean {
+  const [only, ...rest] = trimDraftDocument(document).parts;
+  return rest.length === 0 && only?.kind === 'text' && only.text.toLowerCase() === 'approve';
 }
 
 export function reviewDraftTarget(text: string, requested: boolean): ReviewDraftTarget {

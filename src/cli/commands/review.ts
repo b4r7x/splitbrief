@@ -92,6 +92,7 @@ function seatOverrides(seat: SeatSpec | undefined): CLIOverrides {
   return {
     reviewer: { tool: seat.tool, ...(seat.model !== undefined && { model: seat.model }) },
     ...(seat.effort !== undefined && { reviewerSpecEffort: seat.effort }),
+    ...(seat.variant !== undefined && { reviewerSpecVariant: seat.variant }),
   };
 }
 

@@ -148,7 +148,7 @@ it.each([
   // The run sets the feedback and the put-back request in one step. A consumed request then means
   // that the words are back.
   await vi.waitFor(() => {
-    expect(feedbackStore.get()).toEqual({ message: NO_CORRECTION, isError: true });
+    expect(feedbackStore.get()).toEqual({ message: NO_CORRECTION, isError: false });
     expect(composerDraftStore.get().request).toBeNull();
     expect(composerLiveStore.get().text).toBe(REFUSED_WORDS);
   });
