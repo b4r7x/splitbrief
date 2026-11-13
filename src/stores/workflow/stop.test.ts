@@ -1,6 +1,7 @@
 import { plainUserMessage } from '../../core/types/user-input.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { stopInProgress, stopStore, type StopIntent, type StopPhase } from './stop.js';
+import * as stopModule from './stop.js';
+import { stopStore, type StopIntent, type StopPhase } from './stop.js';
 
 describe('stopStore', () => {
   beforeEach(() => {
@@ -115,8 +116,15 @@ describe('stopInProgress', () => {
     (_case, intent, phase) => {
       const stopping = STOP_INTENTS.includes(intent) && !SETTLED_PHASES.includes(phase);
 
+      expect(stopModule.stopInProgress).toBeTypeOf('function');
       expect(
-        stopInProgress({ intent, phase, requestedAt: null, parked: null, seatChange: false }),
+        stopModule.stopInProgress({
+          intent,
+          phase,
+          requestedAt: null,
+          parked: null,
+          seatChange: false,
+        }),
       ).toBe(stopping);
     },
   );
