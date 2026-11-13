@@ -421,6 +421,9 @@ describe('WorkflowScreen lifecycle', () => {
       await flushEffects();
       ui.stdin.write(ENTER);
 
+      await vi.waitFor(() => {
+        expect(runWorkflow).toHaveBeenCalledTimes(2);
+      });
       const next = await nextPass.promise;
       const resumable = loadOwnerWorkflowState(prepared.session.ref);
       if (resumable.kind !== 'loaded') {

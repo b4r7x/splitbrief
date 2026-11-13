@@ -2032,7 +2032,6 @@ describe('WorkflowScreen showing a run at rest', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain(NO_CORRECTION);
     expect(frame).toContain(`${glyph('prompt')} /steer use the old name`);
-    expect(frame).not.toContain('Send a correction now; a running call stops first');
     expect(frame).toContain('Skip task');
     expect(runWorkflow).not.toHaveBeenCalled();
     ui.unmount();

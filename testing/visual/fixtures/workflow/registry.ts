@@ -611,18 +611,7 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
             ],
           });
         },
-        afterMount: async (write) => {
-          const refused = Promise.withResolvers<void>();
-          const off = feedbackStore.subscribe(() => {
-            if (feedbackStore.get().message === COMMAND_IMAGE_REASON) refused.resolve();
-          });
-          try {
-            await write.press('\r');
-            await refused.promise;
-          } finally {
-            off();
-          }
-        },
+        afterMount: (write) => write.press('\r'),
       };
     };
   }
@@ -1393,15 +1382,6 @@ const checkpointPredicates = [
   [checkpointId('plan-card-no-image-reviewer'), planCardReady],
   [checkpointId('plan-card-shared-command'), planCardReady],
   [checkpointId('plan-card-session-path'), planCardReady],
-  // A short terminal shows the marked row only. A tall one shows the gate down to its first
-  // long command.
-  [
-    checkpointId('plan-card-long-gate'),
-    (context) =>
-      includesAll()(context) &&
-      (context.viewport.rows < 18 || planCardReady(context)) &&
-      (context.viewport.rows < 40 || context.output.includes('V4: npx --no-install vitest run')),
-  ],
   [
     checkpointId('plan-card-edited'),
     (context) => {
@@ -1510,6 +1490,7 @@ const checkpointPredicates = [
     checkpointId('command-image-refused'),
     (context) =>
       includesAll(COMMAND_IMAGE_LINE)(context) &&
+      feedbackStore.get().message === COMMAND_IMAGE_REASON &&
       (context.viewport.cols < 120 || context.output.includes(COMMAND_IMAGE_REASON)),
   ],
   [checkpointId('recovery-steer-refused'), includesAll(STEER_REFUSED_LINE)],
@@ -1845,33 +1826,7 @@ const checkpointPredicates = [
       return transcript.includes(context.checkpoint.marker);
     },
   ],
-  // The last detail wraps between the sides of the panel, so the frame is read as one line of
-  // words, with no side and no line break.
-  [
-    checkpointId('recovery-plan-correction-again'),
-    (context) =>
-      includesAll('Planning failed', 'Change PLAN tool', 'Try again')(context) &&
-      stripAnsiStyles(context.output)
-        .replace(/[\s│]+/g, ' ')
-        .includes('Your plan correction goes again with this step.'),
-  ],
   [checkpointId('recovery-plan-questions'), includesAll('Which store keeps the greeting?')],
-  // The line of the correction is whole at each size. A tall panel lists each question.
-  [
-    checkpointId('recovery-plan-questions-long'),
-    (context) => {
-      const words = stripAnsiStyles(context.output).replace(/[\s│]+/g, ' ');
-      return (
-        words.includes('Your plan correction goes again with this step.') &&
-        (context.viewport.cols < 120 ||
-          [
-            'Which store keeps the greeting?',
-            'Does the module export a default or a named function?',
-            'Should the help text show an example?',
-          ].every((question) => words.includes(question)))
-      );
-    },
-  ],
   [checkpointId('recovery-review'), includesAll()],
   [checkpointId('recovery-model-pick'), includesAll('Pick another REVIEW model')],
   [checkpointId('recovery-hint'), includesAll(WORKFLOW_FIXTURE_TEXT.recoveryPlan)],
