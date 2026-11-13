@@ -271,6 +271,7 @@ export async function executeLiveWorkflow(opts: {
     projectDir: opts.projectDir,
     feature: opts.feature,
     effectiveConfig: opts.effectiveConfig,
+    configWarnings: [],
     policy: {
       purpose: 'new-workflow',
       interaction: 'headless',

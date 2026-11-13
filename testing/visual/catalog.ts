@@ -416,6 +416,20 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       },
       elements: [{ id: 'preparation-panel', title: 'Preparation problem panel' }],
     }),
+    // The same blocked start with a PLAN effort that OpenCode does not apply: the warning and its
+    // fix line come from `buildRunnerChecks`, not from this catalog.
+    defineScenario({
+      id: 'home-preparation-setting-not-applied',
+      title: 'Home · preparation names a setting that is not applied',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'failure',
+        title: 'Blocked start lists the effort warning',
+        kind: 'failure',
+        marker: 'the effort setting is not applied',
+      },
+      elements: [{ id: 'preparation-panel', title: 'Preparation problem panel' }],
+    }),
     // The readiness blocker that recommends the checkout: its summary and fix line come from
     // `buildIsolationChecks`, not from this catalog.
     defineScenario({
@@ -548,58 +562,6 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         elements: [{ id: 'composer', title: 'Draft and attachment feedback' }],
       }),
     ),
-    // Warnings raised before the screen opened: the count leads, then the first of them.
-    defineScenario({
-      id: 'home-startup-warnings',
-      title: 'Home · warnings raised while it opened',
-      surface: screenSurface('home'),
-      checkpoint: {
-        id: 'ready',
-        title: 'Warning count above the composer',
-        kind: 'ready',
-        marker: '2 warnings, all shown when you quit',
-      },
-      elements: [{ id: 'composer', title: 'Warning count and feature composer' }],
-    }),
-    // One warning raised before the screen opened shows as is: a config file its group or other users can change.
-    defineScenario({
-      id: 'home-startup-permission-warning',
-      title: 'Home · config file its group or other users can change',
-      surface: screenSurface('home'),
-      checkpoint: {
-        id: 'ready',
-        title: 'Permission warning above the composer',
-        kind: 'ready',
-        marker: "The file's group or other users",
-      },
-      elements: [{ id: 'composer', title: 'Permission warning and feature composer' }],
-    }),
-    // The same warnings while the first tool check runs: the check keeps a sign on screen.
-    defineScenario({
-      id: 'home-cold-detecting-startup-warnings',
-      title: 'Home · warnings raised while the tools are checked',
-      surface: screenSurface('home'),
-      checkpoint: {
-        id: 'ready',
-        title: 'Warning count and the tool check above the composer',
-        kind: 'ready',
-        marker: '2 warnings, all shown when you quit',
-      },
-      elements: [{ id: 'header', title: 'Home header' }],
-    }),
-    // The same warnings while a submitted feature waits on its tool check: the status stays.
-    defineScenario({
-      id: 'home-preparing-startup-warnings',
-      title: 'Home · warnings raised while a feature waits on its tool check',
-      surface: screenSurface('home'),
-      checkpoint: {
-        id: 'ready',
-        title: 'Warning count and the check status above the composer',
-        kind: 'ready',
-        marker: 'Checking tools',
-      },
-      elements: [{ id: 'header', title: 'Home header' }],
-    }),
     // A save message longer than one row wraps whole above the composer, sign-in command included.
     defineScenario({
       id: 'home-save-sign-in',
@@ -615,6 +577,19 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'hero', title: 'Home hero' },
         { id: 'composer', title: 'Save message and feature composer' },
       ],
+    }),
+    // The same save message while the first tool check runs: the check keeps its sign on screen.
+    defineScenario({
+      id: 'home-cold-detecting-save-sign-in',
+      title: 'Home · a save message while the tools are checked',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Whole save message and the tool check above the composer',
+        kind: 'ready',
+        marker: 'opencode auth login',
+      },
+      elements: [{ id: 'header', title: 'Home header' }],
     }),
     // A quit that a draft left on a run could not be saved for: the cause and the whole file wrap
     // above the composer, and the line says a second quit leaves without it.
@@ -6457,30 +6432,6 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'header', title: 'Setup header' },
         { id: 'setup-panel', title: 'Setup panel' },
       ],
-    }),
-    defineScenario({
-      id: 'setup-detecting-startup-warnings',
-      title: 'Setup · warnings raised while the tools are checked',
-      surface: screenSurface('setup'),
-      checkpoint: {
-        id: 'ready',
-        title: 'Warning count on the tool check',
-        kind: 'ready',
-        marker: '2 warnings, all shown when you quit',
-      },
-      elements: [{ id: 'setup-panel', title: 'Setup panel' }],
-    }),
-    defineScenario({
-      id: 'setup-saved-detecting-startup-warnings',
-      title: 'Setup · warnings raised while a saved crew is checked',
-      surface: screenSurface('setup'),
-      checkpoint: {
-        id: 'ready',
-        title: 'Warning count in place of the tool check note',
-        kind: 'ready',
-        marker: '2 warnings, all shown when you quit',
-      },
-      elements: [{ id: 'setup-panel', title: 'Setup panel' }],
     }),
     defineScenario({
       id: 'setup-starting-slow-provider',

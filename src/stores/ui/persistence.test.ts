@@ -76,21 +76,18 @@ describe('loadHistoryFromDisk', () => {
     expect(loadHistoryFromDisk()).toEqual([]);
   });
 
-  it('warns and returns empty array when the history path cannot be read as a file', async () => {
+  it('returns empty array and writes the cause to the debug log when the history path cannot be read as a file', async () => {
     mkdirSync(historyFile, { recursive: true });
-    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const { loadHistoryFromDisk } = await loadModules();
+    const { enableDebugLog, loggedDiagnostics } = await import('#testing/helpers/debug-log.js');
+    enableDebugLog(tmpHome);
 
-    try {
-      const { loadHistoryFromDisk } = await loadModules();
-      expect(loadHistoryFromDisk()).toEqual([]);
-      expect(stderr).toHaveBeenCalledWith(
-        expect.stringContaining(
-          'Could not read ~/.splitbrief/history, so earlier prompts are not available: ',
-        ),
-      );
-    } finally {
-      stderr.mockRestore();
-    }
+    expect(loadHistoryFromDisk()).toEqual([]);
+    expect(loggedDiagnostics(tmpHome)).toContainEqual(
+      expect.stringContaining(
+        'Could not read ~/.splitbrief/history, so earlier prompts are not available: ',
+      ),
+    );
   });
 
   it('ignores blank lines', async () => {
@@ -368,22 +365,22 @@ describe('installHistoryPersistence', () => {
   it.each([
     ['truncated JSON', '{"version":1,"entries":[{"version":1,'],
     ['an invalid entry', '{"version":1,"entries":[{"version":2,"parts":"$(touch pwned)"}]}'],
-  ])('warns and starts empty when the versioned envelope holds %s', async (_name, content) => {
-    seedHistoryFile(content);
-    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-
-    try {
+  ])(
+    'starts empty and writes the cause to the debug log when the versioned envelope holds %s',
+    async (_name, content) => {
+      seedHistoryFile(content);
       const { loadHistoryFromDisk } = await loadModules();
+      const { enableDebugLog, loggedDiagnostics } = await import('#testing/helpers/debug-log.js');
+      enableDebugLog(tmpHome);
+
       expect(loadHistoryFromDisk()).toEqual([]);
-      expect(stderr).toHaveBeenCalledWith(
+      expect(loggedDiagnostics(tmpHome)).toContainEqual(
         expect.stringContaining(
           'Could not read ~/.splitbrief/history, so earlier prompts are not available: ',
         ),
       );
       expect(readFileSync(historyFile, 'utf-8')).toBe(content);
       expect(existsSync(join(tmpHome, 'pwned'))).toBe(false);
-    } finally {
-      stderr.mockRestore();
-    }
-  });
+    },
+  );
 });

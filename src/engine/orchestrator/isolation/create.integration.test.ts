@@ -27,6 +27,7 @@ import {
 } from '../../../core/paths.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { createGitClient } from '../../../lib/git/client.js';
+import { resetLoggerForTests } from '../../../lib/logger.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import { denialMessage, gateAttemptChanges } from '../task/attempt-gate.js';
 import { withAttemptRestoreScope } from '../task/restore-scope.js';
@@ -38,6 +39,7 @@ import { makeAttemptBrief } from '#testing/helpers/factories/attempt-brief.js';
 import { makeCallbacks, makeWctx } from '#testing/helpers/orchestrator-factories.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { cleanupTempDir as removeTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
 import { createSnapshot } from '../../snapshots/create.js';
 import { reconcileWorkspaceToBase } from './acquisition.js';
 import { createRunIsolation } from './create.js';
@@ -857,12 +859,17 @@ describe('createRunIsolation', () => {
 
         const ws = await acquireDirect(handle);
         apply(ws.projectDir);
+        const logDir = createTempDir('isolation-link-unpromoted-log');
+        enableDebugLog(logDir);
         const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
         try {
           await handle.dispose();
           expect(stderrSpy.mock.calls.map((call) => String(call[0]))).toEqual([]);
+          expect(loggedDiagnostics(logDir)).toEqual([]);
         } finally {
           stderrSpy.mockRestore();
+          resetLoggerForTests();
+          removeTempDir(logDir);
         }
 
         expect(
@@ -1030,6 +1037,8 @@ describe('createRunIsolation', () => {
       symlinkSync('app.ts', join(ws.projectDir, 'src', 'alias.ts'));
       rmSync(join(ws.projectDir, 'src', 'app.ts'));
       symlinkSync('other.ts', join(ws.projectDir, 'src', 'app.ts'));
+      const logDir = createTempDir('isolation-worker-links-log');
+      enableDebugLog(logDir);
       const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
       try {
         expectCleanSources(dir);
@@ -1043,8 +1052,11 @@ describe('createRunIsolation', () => {
         expectCleanSources(next.projectDir);
         await handle.dispose();
         expect(stderrSpy.mock.calls.map((call) => String(call[0]))).toEqual([]);
+        expect(loggedDiagnostics(logDir)).toEqual([]);
       } finally {
         stderrSpy.mockRestore();
+        resetLoggerForTests();
+        removeTempDir(logDir);
       }
 
       expect(

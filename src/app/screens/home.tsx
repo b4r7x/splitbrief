@@ -206,6 +206,7 @@ export function HomeScreen({
           attachedInputs: submission.message.attachedInputs,
         }),
         effectiveConfig: current.config,
+        configWarnings: current.configWarnings,
         policy: {
           ...interactivePreparationPolicy,
           purpose: 'new-workflow',

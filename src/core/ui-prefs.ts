@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { getSplitbriefPath, UI_PREFS_FILE } from './paths.js';
-import { readValidatedJson, writeSecureFile } from '../lib/fs.js';
+import { readValidatedJsonResult, writeSecureFile } from '../lib/fs.js';
 import { warnError } from '../lib/warn.js';
 import { projectRelativePathLabel } from '../utils/path-links.js';
 
@@ -30,12 +30,15 @@ function parseUiPrefs(value: unknown): UiPrefs | null {
 }
 
 export function readUiPrefs(projectDir: string): UiPrefs {
-  return readValidatedJson(
-    uiPrefsPath(projectDir),
-    parseUiPrefs,
-    DEFAULT_UI_PREFS,
-    `Could not read ${uiPrefsLabel(projectDir)}, so the default layout is used`,
-  );
+  const result = readValidatedJsonResult(uiPrefsPath(projectDir), parseUiPrefs);
+  if (result.kind === 'value') return result.value;
+  if (result.kind === 'unreadable') {
+    warnError(
+      `Could not read ${uiPrefsLabel(projectDir)}, so the default layout is used`,
+      result.cause,
+    );
+  }
+  return DEFAULT_UI_PREFS;
 }
 
 export function writeUiPrefs(projectDir: string, prefs: UiPrefs): void {

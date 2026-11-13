@@ -65,7 +65,9 @@ import { loadConfig, writeConfig } from '../../../core/config/load/io.js';
 import { configWithSwitchedSeat } from '../recovery/switch-seat.js';
 import { switchSeatAndPrepareResume } from '../recovery/switch-seat-resume.js';
 import { createRecoveryBus } from '../recovery/bus.js';
+import { buildConfigChecks } from '../../../core/readiness/checks/config.js';
 import { buildRepoChecks } from '../../../core/readiness/checks/repo.js';
+import { buildRunnerChecks } from '../../../core/readiness/checks/runners.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 
 vi.mock('./init-seats.js', async (importOriginal) => {
@@ -453,6 +455,123 @@ describe('initializeWorkflow', () => {
         expect(events.filter((event) => event.type === 'warning')).toEqual([]);
       });
     });
+
+    const IGNORED_FLAG =
+      "--planner-api-key-env is ignored: the planner 'cli' runner does not use it.";
+    const FLAG_WARNING = `${IGNORED_FLAG}\nFix: Remove the flag from the command.`;
+    const PLAN_EFFORT_WARNING = [
+      'PLAN: the effort setting is not applied: the OpenCode CLI variant sets the effort.',
+      'Fix: Delete effort from planner in .splitbrief/config.yaml, or choose a tool that takes an effort in Settings > Crew > PLAN.',
+    ].join('\n');
+    const REVIEW_TEMPERATURE_WARNING = [
+      'REVIEW: the temperature setting is not applied: Claude Code CLI takes no temperature.',
+      'Fix: Delete temperature from reviewer in .splitbrief/config.yaml.',
+    ].join('\n');
+    const opencodePlanner = { kind: 'cli', tool: 'opencode', effort: 'high' } as const;
+
+    function settingsReport(projectDir: string, config: Config): ReadinessReport {
+      const checkout = dirtyCheckoutReport(projectDir);
+      return {
+        ...checkout,
+        sections: [
+          {
+            id: 'config',
+            title: 'Config',
+            checks: buildConfigChecks({
+              state: 'loaded',
+              path: join(projectDir, '.splitbrief', 'config.yaml'),
+              warnings: [
+                {
+                  kind: 'ignored-flag',
+                  notice: IGNORED_FLAG,
+                  fix: 'Remove the flag from the command.',
+                },
+              ],
+            }),
+          },
+          {
+            id: 'runners',
+            title: 'Runners',
+            checks: buildRunnerChecks({ config, seatImageFact: () => undefined }),
+          },
+          ...checkout.sections,
+        ],
+      };
+    }
+
+    it('tells the flags and settings a continued run does not apply below the resume, not the working tree', async () => {
+      await withTempDir('splitbrief-init-resume-not-applied', async (projectDir) => {
+        const feature = 'fix the readme';
+        const events: EngineEvent[] = [];
+        const { init } = await initializeTestWorkflow({
+          projectDir,
+          sessionId: 'session-init-resume-not-applied',
+          feature,
+          report: settingsReport(projectDir, makeConfig({ planner: opencodePlanner })),
+          savedState: { ...createInitialState(feature), phase: 'planning' },
+          eventSink: (event) => events.push(event),
+        });
+
+        expect(init.ok).toBe(true);
+        const warnings = events.filter((event) => event.type === 'warning');
+        expect(warnings.map((event) => event.message)).toEqual([FLAG_WARNING, PLAN_EFFORT_WARNING]);
+        const resumed = events.findIndex((event) => event.type === 'workflow_resumed');
+        expect(resumed).toBeGreaterThanOrEqual(0);
+        expect(events.indexOf(warnings[0] as EngineEvent)).toBeGreaterThan(resumed);
+      });
+    });
+
+    it.each([
+      { first: 'a new run', savedState: false },
+      { first: 'a continue', savedState: true },
+    ])(
+      'tells each warning once per loop after $first, and a later seat setting only',
+      async ({ savedState }) => {
+        await withTempDir('splitbrief-init-resume-told-once', async (projectDir) => {
+          const sessionId = 'session-init-resume-told-once';
+          const feature = 'fix the readme';
+          const events: EngineEvent[] = [];
+          const input = {
+            projectDir,
+            sessionId,
+            feature,
+            signal: new AbortController().signal,
+            report: settingsReport(projectDir, makeConfig({ planner: opencodePlanner })),
+            eventSink: (event: EngineEvent) => events.push(event),
+          };
+          const told = () =>
+            events.filter((event) => event.type === 'warning').map((event) => event.message);
+          const parked = { ...createInitialState(feature), phase: 'planning' } as const;
+
+          const first = await initializeTestWorkflow({
+            ...input,
+            ...(savedState && { savedState: parked }),
+          });
+          if (!first.init.ok) throw new Error('Expected the first entry to initialize');
+          expect(told()).toEqual(expect.arrayContaining([FLAG_WARNING, PLAN_EFFORT_WARNING]));
+          const firstCount = told().length;
+          const saved = first.init.state;
+
+          const reentered = await initializeTestWorkflow({ ...input, savedState: saved });
+          expect(reentered.init.ok).toBe(true);
+          expect(told()).toHaveLength(firstCount);
+
+          const swapped = await initializeTestWorkflow({
+            ...input,
+            savedState: saved,
+            report: settingsReport(
+              projectDir,
+              makeConfig({
+                planner: opencodePlanner,
+                reviewer: { kind: 'cli', tool: 'claude-code', temperature: 0.2 },
+              }),
+            ),
+          });
+          expect(swapped.init.ok).toBe(true);
+          expect(told().slice(firstCount)).toEqual([REVIEW_TEMPERATURE_WARNING]);
+        });
+      },
+    );
   });
 
   it('does not attach the start inputs to a continuation message', async () => {

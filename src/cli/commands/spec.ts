@@ -43,10 +43,7 @@ import { questionsText } from '../../core/state/planning-conversation.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { loadRememberedCatalog } from '../bootstrap/discovery.js';
 import { resolveSpecMetadata } from '../../engine/providers/model/display-names.js';
-import {
-  emitEffectiveConfigWarnings,
-  resolveEffectiveConfig,
-} from '../../core/config/runtime/effective-config.js';
+import { resolveEffectiveConfig } from '../../core/config/runtime/effective-config.js';
 import { workflowOptsToCLIOverrides } from '../../core/config/runtime/overrides/from-options.js';
 import type { ArtifactApprovalReview } from '../../engine/runners/types.js';
 import { createCustomRunnerRuntime } from '../../engine/runners/custom-runner-runtime.js';
@@ -127,11 +124,10 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
         allowHooks: opts.allowHooks,
       });
       const { config, warnings } = resolveEffectiveConfig({
-        base: initialInvocation ?? loaded.config,
+        base: initialInvocation?.config ?? loaded.config,
         ...(initialInvocation === undefined && { overrides: workflowOptsToCLIOverrides(opts) }),
         loaderDiagnostics: loaded.loaderDiagnostics,
       });
-      emitEffectiveConfigWarnings(projectDir, warnings);
       await loadRememberedCatalog(projectDir);
 
       const interaction = process.stdin.isTTY ? 'interactive' : 'headless';
@@ -140,6 +136,7 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
           projectDir,
           feature,
           effectiveConfig: config,
+          configWarnings: warnings,
           policy: cliPreparationPolicy({
             purpose: 'spec',
             interaction,
@@ -151,6 +148,7 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
           signal: new AbortController().signal,
         }),
         'prose',
+        'planner',
       );
       const sessionId = execution.session.ref.sessionId;
       const customRuntime = createCustomRunnerRuntime({

@@ -12,7 +12,6 @@ import {
   implementerConfigForAuthority,
   requireFactoryAuthority,
   resolveConfiguredCustomGate,
-  warnDroppedRunnerFields,
   type RunnerFactoryAuthority,
 } from './factory-gates.js';
 import { requireReviewSeat } from '../../core/config/accessors/reviewer-runner.js';
@@ -112,11 +111,6 @@ export async function createPlanner(
     });
   }
 
-  warnDroppedRunnerFields({
-    runner: config.planner,
-    seat: 'planner',
-    supportsEffort: planner.capabilities.supportsEffort,
-  });
   return planner;
 }
 
@@ -158,11 +152,6 @@ export async function createReviewer(
     });
   }
 
-  warnDroppedRunnerFields({
-    runner,
-    seat: 'reviewer',
-    supportsEffort: reviewer.capabilities.supportsEffort,
-  });
   return reviewer;
 }
 
@@ -173,7 +162,6 @@ export async function createImplementer(
   const authority = requireFactoryAuthority(config, options, 'implementer');
   const effectiveConfig = implementerConfigForAuthority(options);
   const configured = resolveConfiguredCustomRunner(effectiveConfig, 'implementer');
-  warnDroppedRunnerFields({ runner: effectiveConfig.implementer, seat: 'implementer' });
   if (configured !== null) {
     const { runtime, invocation } = resolveConfiguredCustomGate({
       authority,

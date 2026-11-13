@@ -166,6 +166,7 @@ async function runSingleEval(
           projectDir,
           feature: scenario.feature,
           effectiveConfig: config,
+          configWarnings: [],
           policy: {
             purpose: 'new-workflow',
             interaction: 'headless',

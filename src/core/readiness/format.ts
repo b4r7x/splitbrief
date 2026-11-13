@@ -12,7 +12,9 @@ import {
 import { ungatedCliReadinessChecks } from './status.js';
 import type { ReadinessCheck, ReadinessReport, ReadinessSection } from './types.js';
 import type { SessionRef } from '../types/session-ref.js';
+import { CONFIG_WARNING_CHECK_ID } from './checks/config.js';
 import { withRunFolder } from './checks/repo.js';
+import { isSettingNotAppliedCheck } from './checks/runners.js';
 
 export const READINESS_DIAGNOSTIC_REMEDIATION: Readonly<
   Record<ReadinessDiagnosticStateId, string>
@@ -291,6 +293,26 @@ export function createStartReadinessRecord(
     warningCount: report.counts.warning,
     checks,
   });
+}
+
+/**
+ * The warnings that name a flag or a setting SPLITBRIEF does not apply, each as its lines. A `seat`
+ * keeps the settings of that seat only; a flag or a config notice holds for every seat.
+ */
+export function notAppliedWarnings(
+  report: ReadinessReport,
+  seat?: 'planner' | 'reviewer' | undefined,
+): string[][] {
+  return report.sections
+    .flatMap((section) => section.checks)
+    .filter(
+      (check) =>
+        check.severity === 'warning' &&
+        (check.id === CONFIG_WARNING_CHECK_ID || isSettingNotAppliedCheck(check, seat)),
+    )
+    .map((check) =>
+      readinessCheckLines({ ...check, remediation: readinessCheckRemediation(check) }),
+    );
 }
 
 /** A recorded start warning as the run states it: what readiness found, its details, then what to do. */

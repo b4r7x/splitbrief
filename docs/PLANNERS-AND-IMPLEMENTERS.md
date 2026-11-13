@@ -85,7 +85,7 @@ It is deliberately narrower than `Planner` — a reviewer cannot run the plannin
 
 The port carries no identity fields on purpose. No runner backend knows its own tool or model, so the identity in a failed-review message comes from the config accessor that resolved the seat (`resolveReviewerRunner`), not from the runner object.
 
-`createReviewer()` builds the seat on the planner backends: it resolves the runner, then hands `loadPlanner()` a config whose planner slot holds the reviewer. A configured `effort`, `variant`, or `temperature` a backend cannot deliver is dropped with the same stderr warning the planner gets.
+`createReviewer()` builds the seat on the planner backends: it resolves the runner, then hands `loadPlanner()` a config whose planner slot holds the reviewer. A configured `effort`, `variant`, or `temperature` a backend cannot deliver is dropped, with the same readiness warning the planner gets (`runners.reviewer.effort-not-applied`, `.variant-not-applied`, `.temperature-not-applied`; `buildRunnerChecks`, `src/core/readiness/checks/runners.ts`).
 
 ### Which calls the reviewer makes
 

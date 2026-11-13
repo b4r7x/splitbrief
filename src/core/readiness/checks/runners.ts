@@ -1,5 +1,6 @@
 import { resolveImplementerProfiles } from '../../config/accessors/implementer-profiles.js';
 import {
+  getRunnerCatalogDisplayName,
   getRunnerDisplayName,
   getRunnerModelName,
   runnerSlotId,
@@ -20,6 +21,7 @@ import {
   defaultCliAuthChannel,
   type CliToolId,
 } from '../../runners/cli-tool-catalog.js';
+import { runnerEffortChannel, unusedEffortReason } from '../../runners/effort-channel.js';
 import { getIsolationStrategy } from '../../config/accessors/values.js';
 import type { Config } from '../../schemas/config.js';
 import {
@@ -82,6 +84,7 @@ export function buildRunnerChecks({
   addCliSeat({ role: 'planner' }, config.planner);
   checks.push(seatConfiguredCheck('planner', config.planner, nameSeat, []));
   checks.push(...typedOutputFallbackCheck('planner', config.planner));
+  checks.push(...droppedRunnerFieldChecks(config, { role: 'planner' }, config.planner));
 
   let resolved: ReturnType<typeof resolveImplementerProfiles> | null = null;
   try {
@@ -125,7 +128,9 @@ export function buildRunnerChecks({
     });
     checks.push(...buildImplementerProfileMetadataChecks(config, resolved.profiles));
     for (const profile of resolved.profiles) {
-      addCliSeat({ role: 'implementer', profile: profile.name }, profile.config);
+      const slot = { role: 'implementer', profile: profile.name } as const;
+      addCliSeat(slot, profile.config);
+      checks.push(...droppedRunnerFieldChecks(config, slot, profile.config));
     }
   }
 
@@ -138,6 +143,7 @@ export function buildRunnerChecks({
       addCliSeat({ role: 'reviewer' }, reviewer.runner);
       checks.push(seatConfiguredCheck('reviewer', reviewer.runner, nameSeat, renderDetails));
       checks.push(...typedOutputFallbackCheck('reviewer', reviewer.runner));
+      checks.push(...droppedRunnerFieldChecks(config, { role: 'reviewer' }, reviewer.runner));
     } else {
       checks.push(inheritedReviewerCheck(reviewer.runner, nameSeat, renderDetails));
     }
@@ -182,6 +188,88 @@ function typedOutputFallbackCheck(
       metadata: { role: seat, tool },
     },
   ];
+}
+
+/**
+ * `variant` is a named effort preset the tool takes on its own command line, so
+ * only a backend whose declared effort channel IS that flag can deliver one.
+ */
+function deliversVariant(runner: RunnerConfig): boolean {
+  return runnerEffortChannel(runner) === 'variant';
+}
+
+const NOT_APPLIED_SUFFIX = '-not-applied';
+
+/** A warning of `droppedRunnerFieldChecks`; with a role, only one that seat's setting gives. */
+export function isSettingNotAppliedCheck(
+  check: ReadinessCheck,
+  role?: RunnerConfigSlot['role'] | undefined,
+): boolean {
+  return (
+    check.id.endsWith(NOT_APPLIED_SUFFIX) && (role === undefined || check.metadata?.role === role)
+  );
+}
+
+/** One warning for each generation setting the seat's tool does not apply. BUILD gets no effort warning. */
+function droppedRunnerFieldChecks(
+  config: Config,
+  slot: RunnerConfigSlot,
+  runner: RunnerConfig,
+): ReadinessCheck[] {
+  const seat = formatSlotLabel(slot);
+  const key =
+    slot.role === 'implementer' && config.implementerProfiles?.profiles[slot.profile] !== undefined
+      ? `implementerProfiles.profiles.${slot.profile}`
+      : slot.role;
+  const tool = getRunnerCatalogDisplayName(runner);
+  const checks: ReadinessCheck[] = [];
+  const notApplied = (setting: string, summary: string, fix: string): void => {
+    checks.push({
+      id: `runners.${slot.role}.${setting}${NOT_APPLIED_SUFFIX}`,
+      severity: 'warning',
+      summary: `${seat}: ${summary}.`,
+      fix,
+      metadata: { ...slot },
+    });
+  };
+
+  if (
+    slot.role !== 'implementer' &&
+    runner.effort !== undefined &&
+    runnerEffortChannel(runner) !== 'effort-flag'
+  ) {
+    notApplied(
+      'effort',
+      `the effort setting is not applied: ${unusedEffortReason(runner)}`,
+      `Delete effort from ${key} in .splitbrief/config.yaml, or choose a tool that takes an effort in Settings > Crew > ${seat}.`,
+    );
+  }
+  if (runner.variant !== undefined && !deliversVariant(runner)) {
+    notApplied(
+      'variant',
+      `the variant setting is not applied: ${tool} has no variant`,
+      `Delete variant from ${key} in .splitbrief/config.yaml.`,
+    );
+  }
+  if (runner.temperature !== undefined && runner.kind !== 'api') {
+    notApplied(
+      'temperature',
+      `the temperature setting is not applied: ${tool} takes no temperature`,
+      `Delete temperature from ${key} in .splitbrief/config.yaml.`,
+    );
+  }
+  if (
+    (runner.kind === 'shell' || runner.kind === 'agent') &&
+    runner.maxToolCalls !== undefined &&
+    (runner.outputFormat ?? 'text') === 'text'
+  ) {
+    notApplied(
+      'tool-call-limit',
+      'the tool-call limit is not applied: text output reports no tool calls',
+      `Set the output format of ${key} to stream-json, or delete the limit, in .splitbrief/config.yaml.`,
+    );
+  }
+  return checks;
 }
 
 function availabilityCheck(): ReadinessCheck {

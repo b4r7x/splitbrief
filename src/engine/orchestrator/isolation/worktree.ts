@@ -285,7 +285,7 @@ export async function ensureIsolationWorktree(opts: {
   try {
     await linkProjectNodeModules(projectDir, wtPath);
   } catch (err) {
-    warnError(`Could not link node_modules in run workspace ${wtPath}`, err);
+    warnError(`Could not link node_modules in run workspace ${wtPath}`, err, 'feedback');
   }
   if (await untrackedNodeModulesIn(wtPath)) {
     const excludeFile = await excludeNodeModulesLink(projectDir, gitCommonDir, sessionId);

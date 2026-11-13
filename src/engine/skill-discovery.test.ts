@@ -3,8 +3,9 @@ import { chmodSync, mkdirSync, realpathSync, writeFileSync, rmSync, symlinkSync 
 import { join } from 'node:path';
 import type { SkillMeta } from '../core/skills/types.js';
 import { SPLITBRIEF_DIR } from '../core/paths.js';
-import { installDiagnosticSink } from '../lib/warn.js';
+import { resetLoggerForTests } from '../lib/logger.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
 
 let ROOT: string;
 let TMP: string;
@@ -32,6 +33,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  resetLoggerForTests();
   rmSync(TMP, { recursive: true, force: true });
 });
 
@@ -223,38 +225,26 @@ describe('discoverSkills', () => {
   });
 
   it('keeps a skill whose frontmatter is not valid YAML and logs the fallback once, only when it is loaded', async () => {
-    const diagnostics: { message: string; presentation: string }[] = [];
-    const release = installDiagnosticSink((message, presentation) => {
-      diagnostics.push({ message, presentation });
-    });
-    try {
-      writeSkillDir(
-        projectRoot('.claude'),
-        'jargon-leak',
-        'name: Jargon Leak\ndescription: Use when auditing prose. Triggers: "jargon", "buzzword"',
-      );
-      writeSkillDir(projectRoot('.claude'), 'canary', 'name: Canary\ndescription: d');
+    enableDebugLog(TMP);
+    writeSkillDir(
+      projectRoot('.claude'),
+      'jargon-leak',
+      'name: Jargon Leak\ndescription: Use when auditing prose. Triggers: "jargon", "buzzword"',
+    );
+    writeSkillDir(projectRoot('.claude'), 'canary', 'name: Canary\ndescription: d');
 
-      const skills = await discoverSkills(TMP);
-      const jargon = skills.find((s: SkillMeta) => s.id === 'jargon-leak');
-      const canary = skills.find((s: SkillMeta) => s.id === 'canary');
-      if (jargon === undefined || canary === undefined) throw new Error('expected both skills');
-      expect(jargon.name).toBe('Jargon Leak');
-      expect(jargon.description).toBe('Use when auditing prose. Triggers: "jargon", "buzzword"');
-      await loadSkillContent([canary]);
-      expect(diagnostics).toEqual([]);
+    const skills = await discoverSkills(TMP);
+    const jargon = skills.find((s: SkillMeta) => s.id === 'jargon-leak');
+    const canary = skills.find((s: SkillMeta) => s.id === 'canary');
+    if (jargon === undefined || canary === undefined) throw new Error('expected both skills');
+    expect(jargon.name).toBe('Jargon Leak');
+    expect(jargon.description).toBe('Use when auditing prose. Triggers: "jargon", "buzzword"');
+    await loadSkillContent([canary]);
+    expect(loggedDiagnostics(TMP)).toEqual([]);
 
-      await loadSkillContent([jargon]);
-      await loadSkillContent([jargon]);
-      expect(diagnostics).toEqual([
-        {
-          message: expect.stringContaining('recovered by line scan'),
-          presentation: 'log-only',
-        },
-      ]);
-    } finally {
-      release();
-    }
+    await loadSkillContent([jargon]);
+    await loadSkillContent([jargon]);
+    expect(loggedDiagnostics(TMP)).toEqual([expect.stringContaining('recovered by line scan')]);
   });
 
   it('finds a nested plugin-style skill', async () => {
@@ -670,10 +660,7 @@ describe('loadSkillContent — base directory and references', () => {
   });
 
   it("warns when a skill's references cannot be listed, and loads the skill", async () => {
-    const diagnostics: string[] = [];
-    const release = installDiagnosticSink((message) => {
-      diagnostics.push(message);
-    });
+    enableDebugLog(TMP);
     const dir = writeSkillDir(projectRoot('.claude'), 'auth', 'name: AuthSkill', 'AUTH-BODY');
     writeReference(dir, 'a.md', 'A-REFERENCE');
     chmodSync(join(dir, 'references'), 0o000);
@@ -681,12 +668,11 @@ describe('loadSkillContent — base directory and references', () => {
       const { content } = await loadSkillContent([projectSkill('auth', 'AuthSkill')]);
 
       expect(content).toContain('AUTH-BODY');
-      expect(diagnostics).toEqual([
+      expect(loggedDiagnostics(TMP)).toEqual([
         expect.stringContaining(`Failed to list skill references ${join(dir, 'references')}`),
       ]);
     } finally {
       chmodSync(join(dir, 'references'), 0o700);
-      release();
     }
   });
 

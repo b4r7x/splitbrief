@@ -1,12 +1,10 @@
 import type { Config } from '../../core/schemas/config.js';
 import {
-  CLI_TOOL_CATALOG,
   IMPLEMENTER_CLI_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
 } from '../../core/runners/cli-tool-catalog.js';
 import type { PlannerTierRole, ActiveRunnerRole } from '../../core/runners/seat-roles.js';
 import { semanticConfiguredArgViolations } from './arg-vector-preflight.js';
-import { warnStderr } from '../../lib/warn.js';
 import { error } from '../../utils/error.js';
 import { assertNever, includes } from '../../utils/type-guards.js';
 import type { ConfiguredCustomRunner } from './custom-trust.js';
@@ -20,13 +18,8 @@ import type {
   RunnerGateExpectation,
   RunnerSlot,
 } from './prepared-execution.js';
-import {
-  getRunnerCatalogDisplayName,
-  runnerRoleForSlot,
-  type RunnerConfig,
-} from '../../core/config/accessors/runner-config.js';
+import { runnerRoleForSlot, type RunnerConfig } from '../../core/config/accessors/runner-config.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
-import { unusedEffortReason } from '../../core/runners/effort-channel.js';
 
 export type RunnerFactoryAuthority = Readonly<{
   preparedConfig: PreparedConfig;
@@ -218,44 +211,4 @@ export function admitPlannerBackend(
   return gate.kind === 'cli'
     ? { cliSeat: input.authority.cliSeats.seat(input.authority.slot) }
     : {};
-}
-
-/**
- * `variant` is a named effort preset the tool takes on its own command line, so
- * only a backend whose declared effort channel IS that flag can deliver one.
- */
-function deliversVariant(runner: RunnerConfig): boolean {
-  return runner.kind === 'cli' && CLI_TOOL_CATALOG[runner.tool].effortChannel === 'variant';
-}
-
-/**
- * Generation fields the schema accepts on every runner but only some backends
- * can carry. `supportsEffort` is the constructed adapter's own answer; the
- * implementer seat passes none, so it reports no effort drop.
- */
-export function warnDroppedRunnerFields(
-  input: Readonly<{
-    runner: RunnerConfig;
-    seat: ActiveRunnerRole;
-    supportsEffort?: boolean | undefined;
-  }>,
-): void {
-  const { runner, seat } = input;
-  const tool = getRunnerCatalogDisplayName(runner);
-  if (runner.effort && input.supportsEffort === false) {
-    warnStderr(`The ${seat} effort setting is not used: ${unusedEffortReason(runner)}`);
-  }
-  if (runner.variant !== undefined && !deliversVariant(runner)) {
-    warnStderr(`The ${seat} variant setting is not used: ${tool} has no variant channel`);
-  }
-  if (runner.temperature !== undefined && runner.kind !== 'api') {
-    warnStderr(`The ${seat} temperature setting is not used: ${tool} takes no temperature`);
-  }
-  if (
-    (runner.kind === 'shell' || runner.kind === 'agent') &&
-    runner.maxToolCalls !== undefined &&
-    (runner.outputFormat ?? 'text') === 'text'
-  ) {
-    warnStderr(`The ${seat} tool-call limit is not used: text output reports no tool calls`);
-  }
 }

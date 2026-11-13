@@ -15,6 +15,7 @@ import { SPLITBRIEF_DIR, SESSIONS_DIR, LOCKFILE, sessionDir } from '../paths.js'
 import { HEARTBEAT_STALENESS_MS } from './lockfile-status.js';
 import { saveState } from '../state/persistence.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
@@ -23,12 +24,13 @@ import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeSessionLockfile } from '#testing/helpers/factories/session-lockfile.js';
 import { writeConfigYamlText } from '#testing/helpers/config-io.js';
 import { taskId } from '../schemas/task.js';
-import { installDiagnosticSink } from '../../lib/warn.js';
+import { resetLoggerForTests } from '../../lib/logger.js';
 
 let tmp: string;
 
 afterEach(() => {
   vi.useRealTimers();
+  resetLoggerForTests();
   if (tmp) cleanupTempDir(tmp);
 });
 
@@ -92,44 +94,32 @@ describe('listSessions', () => {
 
   it('warns once about a folder with an invalid name, and again when it comes back', () => {
     tmp = createTempDir('sessions-io-test');
-    const diagnostics: string[] = [];
-    const release = installDiagnosticSink((message) => {
-      diagnostics.push(message);
-    });
-    try {
-      mkdirSync(join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, 'old runs'), { recursive: true });
-      listSessions(tmp);
-      listSessions(tmp);
-      expect(diagnostics).toEqual(["Skipping session directory 'old runs': invalid session id"]);
+    enableDebugLog(tmp);
+    mkdirSync(join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, 'old runs'), { recursive: true });
+    listSessions(tmp);
+    listSessions(tmp);
+    expect(loggedDiagnostics(tmp)).toEqual([
+      "Skipping session directory 'old runs': invalid session id",
+    ]);
 
-      rmSync(join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, 'old runs'), { recursive: true });
-      listSessions(tmp);
-      mkdirSync(join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, 'old runs'));
-      listSessions(tmp);
-      expect(diagnostics).toHaveLength(2);
-    } finally {
-      release();
-    }
+    rmSync(join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, 'old runs'), { recursive: true });
+    listSessions(tmp);
+    mkdirSync(join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, 'old runs'));
+    listSessions(tmp);
+    expect(loggedDiagnostics(tmp)).toHaveLength(2);
   });
 
   it('warns again about a folder with an invalid name once the sessions folder was made again', () => {
     tmp = createTempDir('sessions-io-test');
-    const diagnostics: string[] = [];
-    const release = installDiagnosticSink((message) => {
-      diagnostics.push(message);
-    });
-    try {
-      const root = join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR);
-      mkdirSync(join(root, 'old runs'), { recursive: true });
-      listSessions(tmp);
-      rmSync(root, { recursive: true });
-      listSessions(tmp);
-      mkdirSync(join(root, 'old runs'), { recursive: true });
-      listSessions(tmp);
-      expect(diagnostics).toHaveLength(2);
-    } finally {
-      release();
-    }
+    enableDebugLog(tmp);
+    const root = join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR);
+    mkdirSync(join(root, 'old runs'), { recursive: true });
+    listSessions(tmp);
+    rmSync(root, { recursive: true });
+    listSessions(tmp);
+    mkdirSync(join(root, 'old runs'), { recursive: true });
+    listSessions(tmp);
+    expect(loggedDiagnostics(tmp)).toHaveLength(2);
   });
 
   it('sorts sessions by startedAt descending', () => {

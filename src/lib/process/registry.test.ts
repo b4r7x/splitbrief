@@ -1,6 +1,9 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { describe, it, expect, afterEach, vi } from 'vitest';
+import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { resetLoggerForTests } from '../logger.js';
 import {
   abortProcess,
   clearProcessLedger,
@@ -533,21 +536,16 @@ describe('setProcessLedger', () => {
     const proc = spawn('sleep', ['60'], { detached: true, stdio: 'ignore' });
     procs.push(proc);
 
-    const warnings: string[] = [];
-    const originalStderrWrite = process.stderr.write.bind(process.stderr);
-    process.stderr.write = ((chunk: string) => {
-      warnings.push(chunk);
-      return true;
-    }) as typeof process.stderr.write;
-
+    const logDir = createTempDir('registry-ledger-log-');
+    enableDebugLog(logDir);
     try {
       expect(() => registerProcess(proc, { group: true })).not.toThrow();
       expect(() => unregisterProcess(proc)).not.toThrow();
+      expect(loggedDiagnostics(logDir).join('\n')).toContain('ledger disk full');
     } finally {
-      process.stderr.write = originalStderrWrite;
+      resetLoggerForTests();
+      cleanupTempDir(logDir);
     }
-
-    expect(warnings.join('')).toContain('ledger disk full');
   });
 });
 

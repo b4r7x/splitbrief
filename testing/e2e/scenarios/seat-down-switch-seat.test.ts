@@ -365,6 +365,7 @@ async function preparedResume(ref: SessionRef, state: WorkflowState): Promise<Pr
     existingSession: ref,
     feature: state.feature,
     effectiveConfig: loadConfig(ref.projectDir).config,
+    configWarnings: [],
     resumeState: state,
     signal: new AbortController().signal,
     policy: {

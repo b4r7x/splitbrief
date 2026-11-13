@@ -761,17 +761,17 @@ describe('SetupScreen', () => {
 
   it('shows a warning raised while the tools are checked on the tool check panel', async () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 30 });
-    feedbackStore.setError('2 warnings, all shown when you quit · ⚠ workflow.mode was retired.');
+    feedbackStore.setError('⚠ workflow.mode was retired.');
     const ui = renderFeature(<SetupScreen prepare={async (input) => preparedOutcome(input)} />);
     await flushEffects();
 
     const cold = ui.lastFrame() ?? '';
     expect(cold).toContain('Checking your tools…');
-    expect(cold).toContain('2 warnings, all shown when you quit · ⚠ workflow.mode was retired.');
+    expect(cold).toContain('⚠ workflow.mode was retired.');
 
     failedDiscovery(beginDiscovery(), 1);
     await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('Tool check failed'));
-    expect(ui.lastFrame() ?? '').toContain('2 warnings, all shown when you quit');
+    expect(ui.lastFrame() ?? '').toContain('⚠ workflow.mode was retired.');
     ui.unmount();
   });
 
@@ -788,7 +788,7 @@ describe('SetupScreen', () => {
         fileIdentity: { dev: 0n, ino: 0n, size: 0n, mtimeNs: 0n },
       },
     });
-    feedbackStore.setError('2 warnings, all shown when you quit · ⚠ workflow.mode was retired.');
+    feedbackStore.setError('⚠ workflow.mode was retired.');
     const ui = renderFeature(
       <SetupScreen prepare={async (input) => preparedOutcome(input)} />,
       size,
@@ -798,7 +798,7 @@ describe('SetupScreen', () => {
     const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
     expect(lines.length).toBeLessThanOrEqual(size.rows);
     expect(lines.join('\n')).toContain('PLAN');
-    expect(lines.join('\n')).toContain('2 warnings');
+    expect(lines.join('\n')).toContain('workflow.mode');
     expect(lines.join('\n')).toContain('esc quit');
     const framed = lines.filter((line) => line.trim() !== '');
     expect(framed[0]).toMatch(/^\s*\+-+\+\s*$/);

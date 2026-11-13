@@ -2,6 +2,7 @@ import { buildRunnerConfig, inferKindFromTool, type BuildRunnerOpts } from '../b
 import { assertNever } from '../../../../utils/type-guards.js';
 import { getProviderDisplayName } from '../../../providers/catalog.js';
 import { isCliToolId } from '../../../runners/cli-tool-catalog.js';
+import { runnerEffortChannel, unusedEffortReason } from '../../../runners/effort-channel.js';
 import type { RunnerKind } from '../../../schemas/enums.js';
 import type { Config } from '../../../schemas/config.js';
 import type { PlannerConfig } from '../../../schemas/planner-config.js';
@@ -15,6 +16,7 @@ import {
   stripProfileMetadata,
 } from '../../accessors/implementer-profiles.js';
 import type { ReviewerConfig } from '../../../schemas/reviewer-config.js';
+import type { RunnerConfig } from '../../accessors/runner-config.js';
 import { readActiveRunner } from '../../accessors/active-runner.js';
 import { resolveReviewerRunner } from '../../accessors/reviewer-runner.js';
 import { configError } from '../../errors.js';
@@ -72,10 +74,18 @@ export function existingToOpts(existing: PlannerConfig | ImplementerConfig): Bui
   return assertNever(existing);
 }
 
-/** The config the flags give, and the line for each flag that its seat does not use. */
-export type AppliedOverrides = { config: Config; ignoredFlags: string[] };
+export const REMOVE_FLAG_FIX = 'Remove the flag from the command.';
 
-type BuiltRunner<T> = { runner: T | undefined; ignoredFlags: string[] };
+/** An input that its seat does not use: the notice, and the fix that removes the input. */
+export type IgnoredFlag = Readonly<{ notice: string; fix: string }>;
+
+/** An effort input as the user typed it: the name that its notice starts with, and its fix. */
+export type EffortInput = Readonly<{ name: string; fix: string }>;
+
+/** The config the flags give, and each flag that its seat does not use. */
+export type AppliedOverrides = { config: Config; ignoredFlags: IgnoredFlag[] };
+
+type BuiltRunner<T> = { runner: T | undefined; ignoredFlags: IgnoredFlag[] };
 
 export function applyRunnerOverrides(
   role: ActiveRunnerRole,
@@ -127,7 +137,7 @@ function unusableProviderFlags(input: {
   tool: string | undefined;
   apiBase: string | undefined;
   apiKey: string | undefined;
-}): string[] {
+}): IgnoredFlag[] {
   const { role, kind, tool, apiBase, apiKey } = input;
   if (kind === 'api') return [];
   // A CLI tool id always selects the CLI in flags, so an API-only flag is
@@ -140,7 +150,7 @@ function unusableProviderFlags(input: {
   return [
     ...(apiKey !== undefined ? [`--${role}-api-key-env is ignored: ${reason}.`] : []),
     ...(apiBase !== undefined ? [`--${role}-api-base is ignored: ${reason}.`] : []),
-  ];
+  ].map((notice) => ({ notice, fix: REMOVE_FLAG_FIX }));
 }
 
 function buildRunnerFromOverrides(
@@ -239,25 +249,49 @@ export function applyImplementerOverrides(
   };
 }
 
-export function applyPlannerEffort(config: Config, effort: EffortLevel): Config {
-  return { ...config, planner: { ...config.planner, effort } };
+/** A seat whose tool takes no effort flag keeps its config, and the input is named as ignored. */
+function ignoredEffortFlags(input: EffortInput, runner: RunnerConfig): IgnoredFlag[] {
+  return runnerEffortChannel(runner) === 'effort-flag'
+    ? []
+    : [{ notice: `${input.name} is ignored: ${unusedEffortReason(runner)}.`, fix: input.fix }];
 }
 
-export function applyReviewerEffort(config: Config, effort: EffortLevel): Config {
+export function applyPlannerEffort(
+  config: Config,
+  effort: EffortLevel,
+  input: EffortInput,
+): AppliedOverrides {
+  const ignoredFlags = ignoredEffortFlags(input, config.planner);
+  return {
+    config:
+      ignoredFlags.length > 0 ? config : { ...config, planner: { ...config.planner, effort } },
+    ignoredFlags,
+  };
+}
+
+export function applyReviewerEffort(
+  config: Config,
+  effort: EffortLevel,
+  input: EffortInput,
+): AppliedOverrides {
   const seat = resolveReviewerRunner(config);
   if (seat.source === 'none') {
     throw configError.invalidOverride(
-      '--reviewer-effort',
+      input.name,
       effort,
       'REVIEW is set to None; pass --reviewer to give it a runner first.',
     );
   }
   if (seat.source === 'planner') {
     throw configError.invalidOverride(
-      '--reviewer-effort',
+      input.name,
       effort,
       'The review seat inherits the planner; pass --reviewer to give it its own runner first.',
     );
   }
-  return { ...config, reviewer: { ...seat.runner, effort } };
+  const ignoredFlags = ignoredEffortFlags(input, seat.runner);
+  return {
+    config: ignoredFlags.length > 0 ? config : { ...config, reviewer: { ...seat.runner, effort } },
+    ignoredFlags,
+  };
 }

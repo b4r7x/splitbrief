@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { formatConfigLoaderDiagnostic } from '../../config/load/io.js';
 import type { ConfigLoaderDiagnostic } from '../../config/load/io.js';
+import type { EffectiveConfigWarning } from '../../config/runtime/effective-config.js';
 import { buildConfigChecks } from './config.js';
 
 describe('buildConfigChecks', () => {
@@ -65,5 +66,48 @@ describe('buildConfigChecks', () => {
     expect(warning?.summary).toBe(message);
     expect(warning?.nextAction).toBeUndefined();
     expect(warning?.fix).toBeUndefined();
+  });
+
+  it('states an ignored flag as a config warning with its fix', () => {
+    const notice = "--planner-api-key-env is ignored: the planner 'cli' runner does not use it.";
+    const warning: EffectiveConfigWarning = {
+      kind: 'ignored-flag',
+      notice,
+      fix: 'Remove the flag from the command.',
+    };
+
+    const checks = buildConfigChecks({
+      state: 'loaded',
+      path: '/tmp/.splitbrief/config.yaml',
+      warnings: [warning],
+    });
+
+    expect(checks.filter((check) => check.id === 'config.warning')).toEqual([
+      expect.objectContaining({
+        id: 'config.warning',
+        severity: 'warning',
+        summary: notice,
+        fix: 'Remove the flag from the command.',
+      }),
+    ]);
+  });
+
+  it('states the fix that the ignored input carries', () => {
+    const notice = '@high in --reviewer is ignored: the OpenCode CLI variant sets the effort.';
+    const warning: EffectiveConfigWarning = {
+      kind: 'ignored-flag',
+      notice,
+      fix: 'Remove @high from --reviewer.',
+    };
+
+    const checks = buildConfigChecks({
+      state: 'loaded',
+      path: '/tmp/.splitbrief/config.yaml',
+      warnings: [warning],
+    });
+
+    expect(checks.filter((check) => check.id === 'config.warning')).toEqual([
+      expect.objectContaining({ summary: notice, fix: 'Remove @high from --reviewer.' }),
+    ]);
   });
 });

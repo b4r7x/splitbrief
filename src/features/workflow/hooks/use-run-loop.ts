@@ -460,6 +460,7 @@ export function useRunLoop({
             existingSession: session.ref,
             feature: stateForRun.feature,
             effectiveConfig: entry.config,
+            configWarnings: [],
             policy: runResumePolicy(preparedForRun.runtime),
             signal: controller.signal,
             resumeState: stateForRun,

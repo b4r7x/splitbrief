@@ -9,7 +9,7 @@ import type { ConfigRevision, ExpectedConfigRevision } from '../../lib/confined-
 import { toYaml } from '../../core/config/load/transform.js';
 import type { CLIOverrides } from '../../core/config/runtime/overrides/schema.js';
 import {
-  emitEffectiveConfigWarnings,
+  type EffectiveConfigWarning,
   resolveEffectiveConfig,
 } from '../../core/config/runtime/effective-config.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
@@ -32,6 +32,8 @@ import {
 
 interface ConfigState {
   config: Config | null;
+  /** The loader diagnostics and the ignored flags of `config`; a run start reports them. */
+  configWarnings: readonly EffectiveConfigWarning[];
   diskConfig: Config | null;
   rawYaml: string;
   revision: ExpectedConfigRevision;
@@ -48,6 +50,7 @@ type Discovery = Readonly<{ contextLength: number; seat: SeatIds }>;
 
 const initial: ConfigState = {
   config: null,
+  configWarnings: [],
   diskConfig: null,
   rawYaml: '',
   revision: null,
@@ -89,9 +92,9 @@ function loadedState(
     overrides,
     loaderDiagnostics,
   });
-  emitEffectiveConfigWarnings(projectDir, warnings);
   return withDiscovery({
     config,
+    configWarnings: warnings,
     diskConfig: cloneConfig(
       revision === null ? selectInitialCrew({ detected: null, overrides }).persisted : loaded,
     ),
@@ -180,7 +183,16 @@ async function saveOnce(
   expectedRevision: ExpectedConfigRevision,
   expectedProjectDir: string,
 ): Promise<ConfigSaveResult> {
-  const { config, diskConfig, projectDir, overrides, revision, rawYaml, discovery } = store.get();
+  const {
+    config,
+    configWarnings,
+    diskConfig,
+    projectDir,
+    overrides,
+    revision,
+    rawYaml,
+    discovery,
+  } = store.get();
   if (!projectDir) throw configError.loadNotCalled('save');
   if (!config || !diskConfig) throw configError.loadNotCalled('save');
   if (projectDir !== expectedProjectDir || !configRevisionsMatch(expectedRevision, revision)) {
@@ -209,6 +221,7 @@ async function saveOnce(
       ...loadedState(projectDir, revision === null ? {} : overrides, discovery),
       ...(revision === null && {
         config: cloneConfig(updated),
+        configWarnings,
         overrides: cloneValue(overrides),
       }),
     };
@@ -221,6 +234,7 @@ async function saveOnce(
         withDiscovery({
           ...state,
           config: cloneConfig(updated),
+          configWarnings: next.configWarnings,
           diskConfig: cloneConfig(persisted),
           rawYaml: next.rawYaml,
           revision: next.revision,

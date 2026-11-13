@@ -1,9 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
+import { resetLoggerForTests } from '../../lib/logger.js';
 import { cliDetectionFor, PROBE_EXECUTABLE } from '#testing/helpers/factories/detection.js';
 import { SPLITBRIEF_DIR } from '../../core/paths.js';
 import { createDefaultConfig } from '../../core/config/load/defaults.js';
@@ -85,6 +87,7 @@ describe('detection cache', () => {
   });
 
   afterEach(async () => {
+    resetLoggerForTests();
     await rm(tempDir, { recursive: true, force: true });
   });
 
@@ -103,18 +106,13 @@ describe('detection cache', () => {
   });
 
   it('warns and writes nothing when the snapshot fails schema validation', async () => {
-    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
-    let written = '';
-    try {
-      // ':' is outside the accepted context-key alphabet.
-      await saveDetectionCache({
-        projectDir: tempDir,
-        snapshot: cacheSnapshot({ contextKey: 'readiness:not-a-persistable-key' }),
-      });
-      written = stderr.mock.calls.map(([chunk]) => String(chunk)).join('');
-    } finally {
-      stderr.mockRestore();
-    }
+    enableDebugLog(tempDir);
+    // ':' is outside the accepted context-key alphabet.
+    await saveDetectionCache({
+      projectDir: tempDir,
+      snapshot: cacheSnapshot({ contextKey: 'readiness:not-a-persistable-key' }),
+    });
+    const written = loggedDiagnostics(tempDir).join('\n');
 
     expect(written).toContain(
       'Could not save the tool check to .splitbrief/detection-cache.json, so the next start shows an older tool check, or none, until it checks your tools again.',

@@ -1,6 +1,5 @@
 import { configStore } from '../../stores/project/config.js';
 import { skillsStore } from '../../stores/project/skills.js';
-import { feedbackStore } from '../../stores/ui/feedback.js';
 import { detectionStore } from '../../stores/project/detection.js';
 import { warnError } from '../../lib/warn.js';
 import { detectCapabilities } from '../../engine/providers/capabilities.js';
@@ -73,7 +72,7 @@ export async function loadDiscovery(projectDir: string): Promise<void> {
       current,
     })
       .catch((err: unknown) => {
-        warnError('Could not check your tools', err);
+        warnError('Could not check your tools', err, 'feedback');
       })
       .then(async () => {
         if (watchCancelled) return;
@@ -98,7 +97,6 @@ async function storeContextLength(config: Config): Promise<void> {
       configStore.setDetectedContextLength(caps.contextLength);
   } catch (err) {
     warnError('Could not detect provider capabilities', err);
-    feedbackStore.setMessage('Provider detection failed — using defaults');
   }
 }
 
@@ -135,7 +133,7 @@ function watchCrewForProjectListing(loadedConfig: Config): () => void {
       }).then(
         () => undefined,
         (err: unknown) => {
-          warnError('Could not check your tools', err);
+          warnError('Could not check your tools', err, 'feedback');
         },
       ),
     );

@@ -13,7 +13,7 @@ export function trackMidCallDelivery(ref: SessionRef, id: string, promise: Promi
   const tracked = promise
     .then(
       () => {},
-      (err: unknown) => warnError('Could not deliver your queued message', err),
+      (err: unknown) => warnError('Could not deliver your queued message', err, 'feedback'),
     )
     .finally(() => {
       if (pending.get(id) === tracked) pending.delete(id);

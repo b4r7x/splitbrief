@@ -415,7 +415,7 @@ async function runScopedWorkflow(
               // A failure raised before the run has a bus has no event to carry
               // it; without this the run returns an empty summary and says
               // nothing about why.
-              warnError('Could not start the run', err);
+              warnError('Could not start the run', err, 'feedback');
             }
             if (trackedState) trackedState = recordFailure(trackedState, message);
           }
@@ -467,7 +467,7 @@ async function runScopedWorkflow(
         });
       } catch (err) {
         if (!sessionError.isSummaryNotSaved(err)) throw err;
-        warnStderr(toErrorMessage(err));
+        warnStderr(toErrorMessage(err), 'feedback');
       }
     };
     if (!result) {

@@ -140,6 +140,7 @@ export async function switchSeatAndPrepareResume(
       existingSession: { projectDir: input.projectDir, sessionId: input.sessionId },
       feature: input.state.feature,
       effectiveConfig: config,
+      configWarnings: [],
       policy: input.policy,
       signal: input.signal,
       resumeState: input.state,

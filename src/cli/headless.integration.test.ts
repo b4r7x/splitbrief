@@ -47,7 +47,8 @@ import { readWorkspaceRecord } from '../engine/orchestrator/isolation/retention.
 import { createRunIsolation } from '../engine/orchestrator/isolation/create.js';
 import { createSnapshot } from '../engine/snapshots/create.js';
 import { buildRetryExhaustedRecoveryIssue } from '../engine/orchestrator/recovery/builders/task.js';
-import { sessionDir } from '../core/paths.js';
+import { sessionDir, SPLITBRIEF_DIR } from '../core/paths.js';
+import { loggedDiagnostics } from '#testing/helpers/debug-log.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import { makeAttemptBrief } from '#testing/helpers/factories/attempt-brief.js';
@@ -1006,6 +1007,8 @@ describe('runHeadless — a failure in a session folder that takes no new file',
       sessionId,
       cause,
       stateCause,
+      // The run sets the debug log up itself, at .splitbrief/logs/debug.log of the project.
+      logged: loggedDiagnostics(join(projectDir, SPLITBRIEF_DIR, 'logs')),
       stderr: stderrChunks.join(''),
       stdout: stdoutChunks.join(''),
     };
@@ -1023,7 +1026,9 @@ describe('runHeadless — a failure in a session folder that takes no new file',
         message: 'Workflow failed \u2014 see the error output above.',
       });
       expect(run.stderr.split('\n')).toContain(run.cause);
-      expect(run.stderr).toContain(`Could not record why the run failed: ${run.stateCause}`);
+      expect(run.logged).toContainEqual(
+        expect.stringContaining(`Could not record why the run failed: ${run.stateCause}`),
+      );
       expect(run.stderr).toContain(
         `Could not save the run summary: permission denied · .splitbrief/sessions/${run.sessionId}/summary.json`,
       );

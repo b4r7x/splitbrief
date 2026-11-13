@@ -10,7 +10,10 @@ import {
 } from '../config/load/document.js';
 import { getIsolationStrategy } from '../config/accessors/values.js';
 import { workflowOptsToCLIOverrides } from '../config/runtime/overrides/from-options.js';
-import { resolveEffectiveConfig } from '../config/runtime/effective-config.js';
+import {
+  resolveEffectiveConfig,
+  type EffectiveConfigWarning,
+} from '../config/runtime/effective-config.js';
 import { readActive } from '../sessions/active-pointer.js';
 import { isSessionLive } from '../sessions/liveness.js';
 import { isInternalGitStatusPath } from '../paths.js';
@@ -58,6 +61,8 @@ export interface CollectReadinessOptions {
   projectDir: string;
   opts?: WorkflowOpts | undefined;
   config?: Config | undefined;
+  /** The warnings of the resolution that gave `config`. */
+  configWarnings?: readonly EffectiveConfigWarning[] | undefined;
   cliReadiness?: readonly CliReadinessResult[] | undefined;
   /**
    * Optional for doctor-style diagnostics: what each CLI seat's route is read against, the model
@@ -291,7 +296,7 @@ function loadReadinessConfig(
       configLoad: {
         state: configExists ? 'loaded' : 'missing',
         path: filePath,
-        warnings: [],
+        warnings: options.configWarnings ?? [],
       },
     };
   }
@@ -309,10 +314,14 @@ function loadReadinessConfig(
   try {
     const loaded = loadConfig(options.projectDir);
     const cliOverrides = workflowOptsToCLIOverrides(options.opts ?? {});
-    const { config } = resolveEffectiveConfig({ base: loaded.config, overrides: cliOverrides });
+    const { config, warnings } = resolveEffectiveConfig({
+      base: loaded.config,
+      overrides: cliOverrides,
+      loaderDiagnostics: loaded.loaderDiagnostics,
+    });
     return {
       config,
-      configLoad: { state: 'loaded', path: filePath, warnings: loaded.loaderDiagnostics },
+      configLoad: { state: 'loaded', path: filePath, warnings },
       isolation: configuredIsolation(config, loaded.document),
     };
   } catch (err) {

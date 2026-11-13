@@ -8,6 +8,8 @@ import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeLegacyV3State } from '#testing/helpers/factories/workflow-state.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
+import { resetLoggerForTests } from '../../lib/logger.js';
 import { SPLITBRIEF_DIR, SESSIONS_DIR } from '../paths.js';
 
 const fsControl = vi.hoisted(() => ({ throwEnoentOnStatOnce: false }));
@@ -33,6 +35,7 @@ const SESSION_ID = '2024-01-01-test-feature';
 
 afterEach(() => {
   fsControl.throwEnoentOnStatOnce = false;
+  resetLoggerForTests();
   if (tmp) cleanupTempDir(tmp);
 });
 
@@ -410,18 +413,14 @@ describe('loadState', () => {
     mkdirSync(stateDir, { recursive: true });
     writeFileSync(join(stateDir, 'state.json'), JSON.stringify(build()));
 
-    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    try {
-      expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toBeNull();
-      const output = stderrSpy.mock.calls.map((c) => String(c[0])).join('');
-      expect(output).toContain(
-        `Warning: skipped .splitbrief/sessions/${SESSION_ID}/state.json: its content is not valid`,
-      );
-      expect(output).not.toContain('schema');
-      expect(output).not.toContain('is incompatible');
-    } finally {
-      stderrSpy.mockRestore();
-    }
+    enableDebugLog(dir);
+    expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toBeNull();
+    const output = loggedDiagnostics(dir).join('\n');
+    expect(output).toContain(
+      `Warning: skipped .splitbrief/sessions/${SESSION_ID}/state.json: its content is not valid`,
+    );
+    expect(output).not.toContain('schema');
+    expect(output).not.toContain('is incompatible');
   });
 
   it('returns null when state file contains invalid JSON', () => {
@@ -439,14 +438,9 @@ describe('loadState', () => {
     const older = { ...createInitialState('legacy'), stateVersion: 2 };
     writeFileSync(join(stateDir, 'state.json'), JSON.stringify(older));
 
-    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    try {
-      expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toBeNull();
-      const output = stderrSpy.mock.calls.map((c) => String(c[0])).join('');
-      expect(output).toContain('version 2 is incompatible');
-    } finally {
-      stderrSpy.mockRestore();
-    }
+    enableDebugLog(dir);
+    expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toBeNull();
+    expect(loggedDiagnostics(dir).join('\n')).toContain('version 2 is incompatible');
   });
 
   it('returns null without throwing when the file disappears after the existence check', () => {
@@ -457,12 +451,7 @@ describe('loadState', () => {
     // raises ENOENT because the file was removed before loadState stats it.
     // loadState must swallow that into null rather than propagating the throw.
     fsControl.throwEnoentOnStatOnce = true;
-    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    try {
-      expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toBeNull();
-    } finally {
-      stderrSpy.mockRestore();
-    }
+    expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toBeNull();
   });
 });
 

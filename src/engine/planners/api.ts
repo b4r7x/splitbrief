@@ -264,8 +264,6 @@ export function createApiPlanner(
       return model;
     },
 
-    // The API seat carries no effort channel, so a configured `planner.effort`
-    // never reaches the wire; `warnDroppedRunnerFields` reports the drop.
     capabilities: ONE_SHOT_API_CAPS,
   });
 }

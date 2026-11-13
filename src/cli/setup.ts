@@ -4,8 +4,7 @@ import { loadConfig, initConfig } from '../core/config/load/io.js';
 import { configPath, IGNORE_RULE_ADDED, readConfigDocument } from '../core/config/load/document.js';
 import { selectDefaultCrew, selectInitialCrew } from '../core/crew/default.js';
 import type { CLIOverrides } from '../core/config/runtime/overrides/schema.js';
-import { emitEffectiveConfigWarnings } from '../core/config/runtime/effective-config.js';
-import type { Config } from '../core/schemas/config.js';
+import type { EffectiveConfigResult } from '../core/config/runtime/effective-config.js';
 import { defaultCliAuthChannel, LISTED_CLI_TOOL_IDS } from '../core/runners/cli-tool-catalog.js';
 import { detectAll, detectAvailableCliTools } from '../engine/detection/detect.js';
 import { checkCrewAvailability } from '../engine/detection/crew.js';
@@ -15,6 +14,7 @@ import { reapOrphanRunners } from '../engine/orchestrator/run/orphan-reaper.js';
 import { removeClosedRunWorkspaces } from '../engine/orchestrator/run/close.js';
 import { cliError } from './errors.js';
 import { setProjectRoot, toErrorMessage } from '../utils/format-errors.js';
+import { initLogger } from '../core/logger.js';
 import { warnStderr } from '../lib/warn.js';
 import type { WorkflowOpts } from '../core/types/config-options.js';
 
@@ -44,11 +44,13 @@ export async function canonicalizeProjectDir(opts: {
   }
 
   setProjectRoot(toplevel);
+  initLogger(toplevel);
   if (toplevel === canonical) return toplevel;
 
   if (opts.project !== undefined) {
     warnStderr(
-      `Warning: --project ${resolved} is inside git repository ${toplevel}; using repository root.`,
+      `--project ${resolved} is inside git repository ${toplevel}; using repository root.`,
+      'feedback',
     );
   }
   return toplevel;
@@ -85,7 +87,7 @@ export async function ensureHeadlessConfig(input: {
   projectDir: string;
   overrides?: CLIOverrides | undefined;
   reconfigure?: boolean | undefined;
-}): Promise<Config | undefined> {
+}): Promise<EffectiveConfigResult | undefined> {
   const { projectDir, overrides = {} } = input;
   const snapshot = readConfigDocument(projectDir);
   if (snapshot.revision !== null && !input.reconfigure) return undefined;
@@ -98,7 +100,6 @@ export async function ensureHeadlessConfig(input: {
   });
   const detected = selectDefaultCrew(detection);
   const { persisted, effective, warnings } = selectInitialCrew({ detected, overrides });
-  emitEffectiveConfigWarnings(projectDir, warnings);
   // A tool that stores no credential is ready on a route its model list serves, read as start reads it.
   const { catalogs } = await readConfiguredCliRoutes({
     projectDir,
@@ -143,7 +144,7 @@ export async function ensureHeadlessConfig(input: {
       : 'Saved a ready crew to .splitbrief/config.yaml.',
   );
   if (saved.ignoreRuleAdded) console.error(`${IGNORE_RULE_ADDED}.`);
-  return effective;
+  return { config: effective, warnings };
 }
 
 export interface SetupResult {

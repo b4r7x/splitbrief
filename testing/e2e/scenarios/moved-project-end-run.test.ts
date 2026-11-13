@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, realpathSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { sessionDir } from '../../../src/core/paths.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -20,6 +20,7 @@ const STARTED_IN = 'This run started in';
 let fixture: StopContinueFixture | undefined;
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   if (fixture !== undefined) {
     await endImplementerHold(fixture);
     cleanupTempDir(fixture.tmpDir);
@@ -96,8 +97,15 @@ describe('a run continued from a moved project folder', { timeout: 240_000 }, ()
       infoEvents.filter((event) => event.message?.includes('belongs to another project folder')),
     ).toHaveLength(1);
 
-    const start = await cli(moved, ['start', 'smoke']);
-    expect(start.stderr).not.toContain('Could not remove the run workspace');
+    vi.stubEnv('SPLITBRIEF_DEBUG', '1');
+    await cli(moved, ['start', 'smoke']);
+    const debugLog = readFileSync(
+      join(moved.projectDir, '.splitbrief', 'logs', 'debug.log'),
+      'utf8',
+    );
+    expect(
+      debugLog.split('\n').filter((line) => line.includes('Could not remove the run workspace')),
+    ).toEqual([]);
     expect(existsSync(oldWorktreePath)).toBe(true);
   });
 

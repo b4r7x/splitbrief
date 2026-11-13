@@ -41,7 +41,6 @@ import { readyToApplyMessage } from '../../sessions/resolve.js';
 import { readLockfile } from '../../../core/sessions/lockfile.js';
 import { forgetExitInMemory } from '../../../core/sessions/lockfile-status.js';
 import { currentProcessStartTimeMs } from '../../../lib/process/start-time.js';
-import { installDiagnosticSink } from '../../../lib/warn.js';
 import { Command } from 'commander';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { setupWorkflow } from '../../setup.js';
@@ -217,7 +216,7 @@ function createDeps(overrides: Partial<ContinueDeps> = {}): ContinueDeps {
   };
 }
 
-const RETIRED_NOTICE = '⚠ workflow.mode was retired and is ignored';
+const RETIRED_NOTICE = 'workflow.mode was retired and is ignored';
 
 /** A stopped run whose config still carries the retired `workflow.mode` key. */
 function sessionWithRetiredKey(sessionId: string): string {
@@ -1023,63 +1022,75 @@ describe('continueCommand', () => {
       return stderrSpy.mock.calls.filter(([chunk]) => String(chunk).includes(text)).length;
     }
 
-    it('shows a notice its own config raises on the screen once the screen mounts', async () => {
+    const RETIRED_WARNING = [
+      expect.arrayContaining([
+        { kind: 'retired-value', notice: expect.stringContaining(RETIRED_NOTICE) },
+      ]),
+    ];
+
+    it('hands a notice its own config raises to the run preparation and writes none to stderr when the continue mounts the screen', async () => {
       const projectDir = sessionWithRetiredKey('2025-04-01-config-notice');
-      const shown: string[] = [];
+      const preparations: PrepareExecutionInput[] = [];
 
       await continueFromCli(
         ['2025-04-01-config-notice', '--project', projectDir],
         createDeps({
-          renderApp: async () => {
-            const release = installDiagnosticSink((message) => shown.push(message));
-            try {
-              expect(onStderr(RETIRED_NOTICE)).toBe(0);
-            } finally {
-              release();
-            }
+          prepareExecution: async (input) => {
+            preparations.push(input);
+            return prepareResume(input);
           },
         }),
       );
 
-      expect(shown).toEqual([expect.stringContaining(RETIRED_NOTICE)]);
-      expect(onStderr(RETIRED_NOTICE)).toBe(1);
+      expect(renderRuns).toHaveLength(1);
+      expect(onStderr(RETIRED_NOTICE)).toBe(0);
+      expect(preparations.map((input) => input.configWarnings)).toEqual(RETIRED_WARNING);
     });
 
-    it('writes a notice its own config raises once when the continue fails before the screen mounts', async () => {
+    it('hands a notice its own config raises to the run preparation and writes none to stderr when the continue fails before the screen mounts', async () => {
       const projectDir = sessionWithRetiredKey('2025-04-01-config-notice-refused');
+      const preparations: PrepareExecutionInput[] = [];
 
       await expect(
         continueFromCli(
           ['2025-04-01-config-notice-refused', '--project', projectDir],
           createDeps({
-            prepareExecution: async () => {
+            prepareExecution: async (input) => {
+              preparations.push(input);
               throw new Error('refused');
             },
           }),
         ),
       ).rejects.toThrow('refused');
 
-      expect(onStderr(RETIRED_NOTICE)).toBe(1);
+      expect(onStderr(RETIRED_NOTICE)).toBe(0);
+      expect(preparations.map((input) => input.configWarnings)).toEqual(RETIRED_WARNING);
     });
 
-    it('writes a notice its own config raises as it comes when the continue has no screen', async () => {
+    it('hands a notice its own config raises to the run preparation and writes none to stderr when the continue has no screen', async () => {
       const projectDir = sessionWithRetiredKey('2025-04-01-config-notice-headless');
-      let writtenAtOnce = 0;
+      const preparations: PrepareExecutionInput[] = [];
+      let writtenAtOnce = -1;
 
       await continueFromCli(
         ['2025-04-01-config-notice-headless', '--json', '--project', projectDir],
         createDeps({
+          prepareExecution: async (input) => {
+            preparations.push(input);
+            return prepareResume(input);
+          },
           runHeadless: async () => {
             writtenAtOnce = onStderr(RETIRED_NOTICE);
           },
         }),
       );
 
-      expect(writtenAtOnce).toBe(1);
-      expect(onStderr(RETIRED_NOTICE)).toBe(1);
+      expect(writtenAtOnce).toBe(0);
+      expect(onStderr(RETIRED_NOTICE)).toBe(0);
+      expect(preparations.map((input) => input.configWarnings)).toEqual(RETIRED_WARNING);
     });
 
-    it('shows a --project warning for a folder inside the repository once, on the screen', async () => {
+    it('writes a --project warning for a folder inside the repository to stderr once', async () => {
       const projectDir = realpathSync(makeTmpProject());
       createTestGitRepo(projectDir);
       const subdir = join(projectDir, 'pkg');
@@ -1088,25 +1099,13 @@ describe('continueCommand', () => {
       writeLockfile(sessDir, { exitedAt: Date.now(), sessionId: '2025-04-01-project-subdir' });
       writeState(sessDir, 'implementing');
       writeConfig(projectDir, makeConfig());
-      const warning = `Warning: --project ${subdir} is inside git repository ${projectDir}; using repository root.`;
-      const shown: string[] = [];
+      const warning = `--project ${subdir} is inside git repository ${projectDir}; using repository root.`;
 
       await continueFromCli(
         ['2025-04-01-project-subdir', '--project', subdir],
-        createDeps({
-          setupWorkflow,
-          renderApp: async () => {
-            const release = installDiagnosticSink((message) => shown.push(message));
-            try {
-              expect(onStderr(warning)).toBe(0);
-            } finally {
-              release();
-            }
-          },
-        }),
+        createDeps({ setupWorkflow }),
       );
 
-      expect(shown).toEqual([warning]);
       expect(onStderr(warning)).toBe(1);
     });
   });

@@ -1,8 +1,14 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { installDiagnosticSink, warnError, warnStderr, withHeldDiagnostics } from './warn.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { resetLoggerForTests } from './logger.js';
+import * as warn from './warn.js';
+import { installDiagnosticSink, warnError, warnStderr } from './warn.js';
 
 const HOSTILE = 'AUDIT_SYNTHETIC_DIAGNOSTIC \x1b[2Jcleared\x1b]0;title\x07';
 const SANITIZED = 'AUDIT_SYNTHETIC_DIAGNOSTIC cleared';
+
+let projectDir: string;
 
 function captureStderr(): string[] {
   const writes: string[] = [];
@@ -13,17 +19,23 @@ function captureStderr(): string[] {
   return writes;
 }
 
+beforeEach(() => {
+  projectDir = createTempDir('warn-test');
+});
+
 afterEach(() => {
   vi.restoreAllMocks();
+  resetLoggerForTests();
+  cleanupTempDir(projectDir);
 });
 
 describe('warn diagnostics ownership', () => {
   it('writes sanitized stderr when no sink owns diagnostics', () => {
     const stderr = captureStderr();
 
-    warnError(HOSTILE, new Error('\x1b[31mboom'));
-    warnStderr(HOSTILE);
-    warnStderr(HOSTILE, 'log-only');
+    warnError(HOSTILE, new Error('\x1b[31mboom'), 'feedback');
+    warnStderr(HOSTILE, 'feedback');
+    warnStderr(HOSTILE, 'at-exit');
 
     expect(stderr).toEqual([`${SANITIZED}: boom\n`, `${SANITIZED}\n`, `${SANITIZED}\n`]);
   });
@@ -33,14 +45,14 @@ describe('warn diagnostics ownership', () => {
     const received: string[] = [];
     const release = installDiagnosticSink((message) => received.push(message));
 
-    warnError(HOSTILE, new Error('boom'));
-    warnStderr(HOSTILE);
+    warnError(HOSTILE, new Error('boom'), 'feedback');
+    warnStderr(HOSTILE, 'feedback');
     release();
 
     expect(received).toEqual([`${SANITIZED}: boom`, SANITIZED]);
     expect(stderr).toEqual([]);
 
-    warnStderr('after teardown');
+    warnStderr('after teardown', 'feedback');
     expect(stderr).toEqual(['after teardown\n']);
     expect(received).toHaveLength(2);
   });
@@ -52,77 +64,89 @@ describe('warn diagnostics ownership', () => {
     const releaseOuter = installDiagnosticSink((message) => outer.push(message));
     const releaseInner = installDiagnosticSink((message) => inner.push(message));
 
-    warnStderr('to inner');
+    warnStderr('to inner', 'feedback');
     releaseInner();
     releaseInner();
-    warnStderr('to outer');
+    warnStderr('to outer', 'feedback');
 
     const releaseLate = installDiagnosticSink((message) => inner.push(message));
     releaseOuter();
     releaseOuter();
-    warnStderr('to late');
+    warnStderr('to late', 'feedback');
     releaseLate();
-    warnStderr('to stderr');
+    warnStderr('to stderr', 'feedback');
 
     expect(inner).toEqual(['to inner', 'to late']);
     expect(outer).toEqual(['to outer']);
     expect(stderr).toEqual(['to stderr\n']);
   });
 
-  it('hands the diagnostics raised before a sink to the sink once it is installed', async () => {
+  it('writes a diagnostic with no presentation to the debug log only', () => {
+    enableDebugLog(projectDir);
     const stderr = captureStderr();
     const received: [string, string][] = [];
+    const release = installDiagnosticSink((message, presentation) =>
+      received.push([message, presentation]),
+    );
 
-    await withHeldDiagnostics(async () => {
-      warnStderr(HOSTILE);
-      warnStderr('only for the log', 'log-only');
-      warnError('second', new Error('boom'));
-      expect(stderr).toEqual([]);
+    warnStderr('a');
+    warnError('b', new Error('c'));
+    release();
 
-      const releaseSink = installDiagnosticSink((message, presentation) =>
-        received.push([message, presentation]),
-      );
-      warnStderr('after mount');
-      expect(stderr).toEqual([]);
-      releaseSink();
-      releaseSink();
-    });
-
-    expect(received).toEqual([
-      ['only for the log', 'log-only'],
-      [`2 warnings, all shown when you quit · ${SANITIZED}`, 'feedback'],
-      ['after mount', 'feedback'],
-    ]);
-    // The screen showed them for a moment; the restored terminal keeps them, once, in order.
-    expect(stderr).toEqual([`${SANITIZED}\n`, 'only for the log\n', 'second: boom\n']);
+    expect(received).toEqual([]);
+    expect(stderr).toEqual([]);
+    expect(loggedDiagnostics(projectDir)).toEqual(['a', 'b: c']);
   });
 
-  it('hands a single held warning to the sink as it is', async () => {
-    captureStderr();
-    const received: string[] = [];
-
-    await withHeldDiagnostics(async () => {
-      warnStderr('only one');
-      const releaseSink = installDiagnosticSink((message) => received.push(message));
-      releaseSink();
-    });
-
-    expect(received).toEqual(['only one']);
-  });
-
-  it('writes the held diagnostics to stderr when the run fails before a sink is installed', async () => {
+  it('writes no stderr line for a diagnostic when no sink is installed', () => {
     const stderr = captureStderr();
 
-    await expect(
-      withHeldDiagnostics(async () => {
-        warnStderr(HOSTILE);
-        warnStderr('only for the log', 'log-only');
-        throw new Error('refused');
-      }),
-    ).rejects.toThrow('refused');
-    warnStderr('after release');
+    warnStderr('a');
 
-    expect(stderr).toEqual([`${SANITIZED}\n`, 'only for the log\n', 'after release\n']);
+    expect(stderr).toEqual([]);
+  });
+
+  it('hands a diagnostic that names its presentation to the sink, and to stderr with no sink', () => {
+    const stderr = captureStderr();
+    const received: [string, string][] = [];
+    const release = installDiagnosticSink((message, presentation) =>
+      received.push([message, presentation]),
+    );
+
+    warnStderr('a', 'feedback');
+    warnStderr('b', 'at-exit');
+    release();
+
+    expect(received).toEqual([
+      ['a', 'feedback'],
+      ['b', 'at-exit'],
+    ]);
+    expect(stderr).toEqual([]);
+
+    warnStderr('a', 'feedback');
+
+    expect(stderr).toEqual(['a\n']);
+    expect(received).toHaveLength(2);
+  });
+
+  it('has no hold of early diagnostics', () => {
+    expect('withHeldDiagnostics' in warn).toBe(false);
+  });
+
+  it('prints nothing when the sink is released', () => {
+    const stderr = captureStderr();
+    const release = installDiagnosticSink(() => {});
+
+    warnStderr('a');
+    warnStderr('b', 'feedback');
+    release();
+
+    const second: string[] = [];
+    const releaseSecond = installDiagnosticSink((message) => second.push(message));
+    releaseSecond();
+
+    expect(stderr).toEqual([]);
+    expect(second).toEqual([]);
   });
 });
 
@@ -136,7 +160,7 @@ describe('a line break in a warning', () => {
       parseError = err;
     }
 
-    warnError('could not read the saved layout', parseError);
+    warnError('could not read the saved layout', parseError, 'feedback');
 
     expect(stderr).toEqual([
       `could not read the saved layout: Unexpected token ' ', "{"visible": tru " is not valid JSON\n`,

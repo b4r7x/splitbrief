@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
+import { resetLoggerForTests } from '../../../lib/logger.js';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -56,6 +58,7 @@ const note = plainUserMessage('split the first brief');
 let dirs: string[] = [];
 
 afterEach(() => {
+  resetLoggerForTests();
   stateWrites.stopAt = 0;
   stateWrites.kind = 'stop';
   stateWrites.beforeConflict = undefined;
@@ -383,8 +386,8 @@ describe('the user row of a note action follows its saved state', () => {
     },
   );
 
-  // The one window left: the state is saved and the log append fails. The append reports the
-  // failure on stderr and does not throw, so the note is delivered with no transcript row.
+  // The one window left: the state is saved and the log append fails. The append writes the
+  // failure to the debug log and does not throw, so the note is delivered with no transcript row.
   it.each([NOTE_CASES[0], NOTE_CASES[1], NOTE_CASES[5]])(
     'keeps $name delivered once when its row cannot be written',
     async (testCase) => {
@@ -392,11 +395,10 @@ describe('the user row of a note action follows its saved state', () => {
       const ref = setupSession(`row-fails-${testCase.action}`);
       const state = testCase.setup(ref);
       mkdirSync(join(sessionDir(ref.projectDir, ref.sessionId), SESSION_LOG_FILE));
-      const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      enableDebugLog(ref.projectDir);
 
       const result = await runCase(ref, testCase, state);
-      const warned = stderr.mock.calls.flat().join('');
-      stderr.mockRestore();
+      const warned = loggedDiagnostics(ref.projectDir).join('\n');
 
       expect(result.ok).toBe(true);
       expectNothingOrAll(testCase, saved(ref));

@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { chmodSync, mkdirSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
+import { resetLoggerForTests } from '../../lib/logger.js';
 
 const control = vi.hoisted(() => ({ perturbReads: false, reads: 0 }));
 
@@ -46,6 +48,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  resetLoggerForTests();
   if (existsSync(testDir)) rmSync(testDir, { recursive: true, force: true });
 });
 
@@ -103,18 +106,15 @@ describe('updateHeartbeat', () => {
     // Every second read returns different bytes, so an out-of-process writer appears to
     // rewrite the lockfile under every attempt and the non-mustWin update gives up.
     control.perturbReads = true;
-    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    enableDebugLog(testDir);
     await updateHeartbeat(testDir);
     control.perturbReads = false;
 
-    const warnings = stderrSpy.mock.calls.filter(
-      (call) =>
-        String(call[0]).includes(`Could not update the run lock: `) &&
-        String(call[0]).includes(
-          `· .splitbrief/sessions/${sessionIdFor(testDir)}/lockfile.json · `,
-        ),
+    const warnings = loggedDiagnostics(testDir).filter(
+      (line) =>
+        line.includes(`Could not update the run lock: `) &&
+        line.includes(`· .splitbrief/sessions/${sessionIdFor(testDir)}/lockfile.json · `),
     );
-    stderrSpy.mockRestore();
     expect(warnings.length).toBe(1);
     expect(readLockfile(testDir)!.lastAliveMs).toBe(1000);
   });

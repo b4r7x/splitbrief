@@ -454,6 +454,8 @@ workflow.approve "all" was retired; using "plan": the plan waits for your approv
 workflow.task_review was retired and is ignored: the build no longer stops for your review after each brief. Delete workflow.task_review.
 ```
 
+Each notice is a `warning` line in the `Config` section of the report. `splitbrief start` shows the same notices as Warning rows under your request when the run starts.
+
 The config still loads: each retired key is ignored, and a retired `approve` value loads as `plan`. Delete the keys (or set `approve: plan`, the default) and the notices stop.
 
 **Variations:** The full list of retired keys and their notices is in [docs/CONFIGURATION.md](./CONFIGURATION.md#retired-keys-that-still-load).

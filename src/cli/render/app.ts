@@ -1,8 +1,7 @@
 import { type Instance, render } from 'ink';
 import { withFullScreen } from 'fullscreen-ink';
 import type { createElement } from 'react';
-import { installDiagnosticSink, warnError, warnStderr } from '../../lib/warn.js';
-import { createLogger } from '../../lib/logger.js';
+import { installDiagnosticSink, warnError } from '../../lib/warn.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { copyToClipboard } from '../../lib/clipboard/clipboard.js';
 import { installTerminalSelection } from '../../lib/terminal/selection.js';
@@ -58,7 +57,6 @@ interface RenderOptions {
   unmountSignal?: AbortSignal | undefined;
 }
 
-const diagnosticLog = createLogger('diagnostics');
 const BACKGROUND_QUERY_TIMEOUT_MS = 300;
 
 function createSettledProcessListener<T>(deps: {
@@ -180,14 +178,12 @@ export async function renderApp(
     filteredStdin.disable();
   };
 
-  // While the TUI owns the terminal a recoverable diagnostic goes to the debug log and the
-  // feedback line unless marked log-only, never as raw stderr into the frame. A feedback
-  // diagnostic raised during teardown or rejected is written after the terminal is restored.
+  // While the TUI owns the terminal a diagnostic that names a presentation goes to the feedback
+  // line, never as raw stderr into the frame. An at-exit note, and a feedback diagnostic raised
+  // during teardown or rejected, is written after the terminal is restored.
   const deferredDiagnostics: string[] = [];
   let tearingDown = false;
   const releaseDiagnosticSink = installDiagnosticSink((message, presentation) => {
-    diagnosticLog.warn(message);
-    if (presentation === 'log-only') return;
     if (tearingDown || presentation === 'at-exit') {
       deferredDiagnostics.push(message);
       return;
@@ -214,7 +210,7 @@ export async function renderApp(
       restoreTerminal({ fullscreen, stdin: process.stdin });
     } finally {
       releaseDiagnosticSink();
-      for (const message of deferredDiagnostics.splice(0)) warnStderr(message);
+      for (const message of deferredDiagnostics.splice(0)) process.stderr.write(`${message}\n`);
     }
   };
 
@@ -233,6 +229,7 @@ export async function renderApp(
     warnError(
       'Could not stop every tool process while SPLITBRIEF stopped, so one may keep running',
       error,
+      'feedback',
     );
   const onTerminationSignal = createTerminationHandler({
     cleanup,
@@ -254,7 +251,11 @@ export async function renderApp(
     process.stderr.write(`SPLITBRIEF crashed: ${toErrorMessage(reason)}\n`);
   };
   const reportCrashCleanupFailure = (error: unknown) =>
-    warnError('Could not stop every tool process after the crash, so one may keep running', error);
+    warnError(
+      'Could not stop every tool process after the crash, so one may keep running',
+      error,
+      'feedback',
+    );
   const onCrash = createCrashHandler({
     cleanup,
     report: reportCrash,

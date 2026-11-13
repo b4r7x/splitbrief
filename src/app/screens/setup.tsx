@@ -535,7 +535,7 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
 
   const preparation = useStartPreparation<SetupPreparationInput>({
     prepare: async (input, signal) => {
-      const currentConfig = configStore.get().config;
+      const { config: currentConfig, configWarnings } = configStore.get();
       if (currentConfig === null) {
         return { kind: 'failed', error: appPreparationError.configNotLoaded() };
       }
@@ -543,6 +543,7 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
         projectDir: input.projectDir,
         feature: input.feature,
         effectiveConfig: currentConfig,
+        configWarnings,
         signal,
         policy: {
           ...interactivePreparationPolicy,

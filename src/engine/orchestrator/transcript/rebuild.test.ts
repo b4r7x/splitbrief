@@ -1,7 +1,9 @@
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
+import { resetLoggerForTests } from '../../../lib/logger.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { sessionDir, SESSION_LOG_FILE } from '../../../core/paths.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
@@ -422,16 +424,12 @@ describe('a user message over the session log limit', () => {
     return ref;
   }
 
-  function capture<T>(act: () => T): { value: T; stderr: string } {
-    const chunks: string[] = [];
-    const spy = vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
-      chunks.push(String(chunk));
-      return true;
-    });
+  function capture<T>(ref: SessionRef, act: () => T): { value: T; diagnostics: string[] } {
+    enableDebugLog(ref.projectDir);
     try {
-      return { value: act(), stderr: chunks.join('') };
+      return { value: act(), diagnostics: loggedDiagnostics(ref.projectDir) };
     } finally {
-      spy.mockRestore();
+      resetLoggerForTests();
     }
   }
 
@@ -454,11 +452,11 @@ describe('a user message over the session log limit', () => {
 
   it('a steer is logged bounded, reopens as one row and resumes with the whole text', async () => {
     const ref = startPlanning();
-    const { stderr } = capture(() =>
+    const { diagnostics } = capture(ref, () =>
       recordSteer({ ...ref, bus: liveBus(ref) }, 'planning', plainUserMessage(big)),
     );
 
-    expect(stderr).toBe('');
+    expect(diagnostics).toEqual([]);
     const logged = await loggedUserTexts(ref);
     expect(logged).toHaveLength(1);
     expectBounded(logged[0]);
@@ -496,7 +494,7 @@ describe('a user message over the session log limit', () => {
     const ref = startPlanning();
     const state = loadState(ref);
     if (state === null) throw new Error('expected the saved state');
-    const { value: queued, stderr } = capture(() =>
+    const { value: queued, diagnostics } = capture(ref, () =>
       enqueueUserMessage({
         ...ref,
         state,
@@ -509,7 +507,7 @@ describe('a user message over the session log limit', () => {
     const id = queued.message?.id ?? '';
     transitionAndSave(ref, queued.state, { type: 'MARK_DELIVERED_NATIVE', id });
 
-    expect(stderr).toBe('');
+    expect(diagnostics).toEqual([]);
     expectBounded((await loggedUserTexts(ref))[0]);
     expect((await buildResumeContext({ ref })).messages).toEqual([{ role: 'user', content: big }]);
   });
@@ -521,14 +519,14 @@ describe('a user message over the session log limit', () => {
       phase: 'planning',
       userAnswers: [{ reply: 'Which log?', answer: big }],
     });
-    const { stderr } = capture(() =>
+    const { diagnostics } = capture(ref, () =>
       recordUserMessage({ ...ref, bus: liveBus(ref), phase: 'planning' }, plainUserMessage(big), {
         qa: [{ question: 'Which log?', answer: big }],
         answerIndex: 0,
       }),
     );
 
-    expect(stderr).toBe('');
+    expect(diagnostics).toEqual([]);
     expectBounded((await loggedUserTexts(ref))[0]);
     expect((await buildResumeContext({ ref })).messages).toEqual([{ role: 'user', content: big }]);
   });
@@ -541,11 +539,11 @@ describe('a user message over the session log limit', () => {
       displayText: `${big}${attached.displayText}`,
       text: `${big}${attached.text}`,
     };
-    const { stderr } = capture(() =>
+    const { diagnostics } = capture(ref, () =>
       recordSteer({ ...ref, bus: liveBus(ref) }, 'planning', message),
     );
 
-    expect(stderr).toBe('');
+    expect(diagnostics).toEqual([]);
     const logged = await loggedUserTexts(ref);
     expectBounded(logged[0]);
     expect(logged[0]).not.toContain('PELICAN-42');

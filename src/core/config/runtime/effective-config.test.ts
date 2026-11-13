@@ -1,9 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { formatConfigLoaderDiagnostic } from '../load/io.js';
+import { buildRunnerChecks } from '../../readiness/checks/runners.js';
+import type { Config } from '../../schemas/config.js';
 import { createDefaultConfig } from '../load/defaults.js';
-import type { ConfigLoaderDiagnostic } from '../load/io.js';
-import { emitEffectiveConfigWarnings, resolveEffectiveConfig } from './effective-config.js';
+import { resolveEffectiveConfig } from './effective-config.js';
 
 describe('resolveEffectiveConfig', () => {
   it('rejects {prompt} in a command runner argument', () => {
@@ -58,63 +58,46 @@ describe('resolveEffectiveConfig', () => {
 
     expect(config.implementer).toMatchObject({ model: 'deepseek-chat' });
   });
-});
 
-describe('emitEffectiveConfigWarnings', () => {
-  let stderrChunks: string[];
-
-  beforeEach(() => {
-    stderrChunks = [];
-    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
-      stderrChunks.push(String(chunk));
-      return true;
-    });
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it('writes each effective-config warning to stderr so the detached server log surfaces it', () => {
-    emitEffectiveConfigWarnings('/work/each', [
-      { kind: 'config-file-permissions' },
-      { kind: 'retired-value', notice: 'workflow.task_review was retired.' },
-    ]);
-
-    const written = stderrChunks.join('');
-    expect(written).toContain(
-      "⚠ The file's group or other users can change .splitbrief/config.yaml.",
+  const notApplied = (config: Config) =>
+    buildRunnerChecks({ config, seatImageFact: () => undefined }).filter((check) =>
+      check.id.endsWith('-not-applied'),
     );
-    expect(written).toContain('⚠ workflow.task_review was retired.');
-  });
 
-  it('prints a repeated notice once', () => {
-    const diagnostic = { kind: 'config-file-permissions' } satisfies ConfigLoaderDiagnostic;
-    const message = formatConfigLoaderDiagnostic(diagnostic);
+  it('names an effort flag that the seat does not apply as ignored and keeps it out of the config', () => {
+    const { config, warnings } = resolveEffectiveConfig({
+      base: makeConfig({
+        planner: { kind: 'cli', tool: 'opencode' },
+        reviewer: { kind: 'shell', command: 'node', model: 'test' },
+      }),
+      overrides: { plannerEffort: 'high', reviewerEffort: 'low' },
+    });
 
-    emitEffectiveConfigWarnings('/work/matching', [diagnostic, diagnostic]);
-
-    expect(stderrChunks.filter((chunk) => chunk.includes(message))).toHaveLength(1);
-  });
-
-  it("tells a project's notice once a process and another project's notice again", () => {
-    const warnings = [
-      { kind: 'retired-value', notice: 'workflow.mode was retired.' },
-    ] satisfies ConfigLoaderDiagnostic[];
-
-    emitEffectiveConfigWarnings('/work/one', warnings);
-    emitEffectiveConfigWarnings('/work/one', warnings);
-    emitEffectiveConfigWarnings('/work/two', warnings);
-
-    expect(stderrChunks.filter((chunk) => chunk.includes('workflow.mode was retired.'))).toEqual([
-      '⚠ workflow.mode was retired.\n',
-      '⚠ workflow.mode was retired.\n',
+    expect(warnings).toEqual([
+      {
+        kind: 'ignored-flag',
+        notice: '--planner-effort is ignored: the OpenCode CLI variant sets the effort.',
+        fix: 'Remove the flag from the command.',
+      },
+      {
+        kind: 'ignored-flag',
+        notice: '--reviewer-effort is ignored: Custom Shell has no effort channel.',
+        fix: 'Remove the flag from the command.',
+      },
     ]);
+    expect(config.planner.effort).toBeUndefined();
+    expect(config.reviewer).not.toHaveProperty('effort');
+    expect(notApplied(config)).toEqual([]);
   });
 
-  it('writes nothing when there are no warnings', () => {
-    emitEffectiveConfigWarnings('/work/none', []);
+  it('applies an effort flag to a seat whose tool takes an effort, with no notice', () => {
+    const { config, warnings } = resolveEffectiveConfig({
+      base: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+      overrides: { plannerEffort: 'high' },
+    });
 
-    expect(stderrChunks.join('')).toBe('');
+    expect(warnings).toEqual([]);
+    expect(config.planner.effort).toBe('high');
+    expect(notApplied(config)).toEqual([]);
   });
 });

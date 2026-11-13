@@ -4,6 +4,7 @@ import { stepReadsNoWords } from '../../../core/recovery/typed-words.js';
 import { isImplementerPhase, isLivePhase } from '../../../core/phases.js';
 import {
   createStartReadinessRecord,
+  notAppliedWarnings,
   startReadinessWarnings,
 } from '../../../core/readiness/format.js';
 import type { ProjectContext } from '../../../core/state/types.js';
@@ -89,8 +90,9 @@ import { resumeSeatWait } from '../escalation/seat-wait.js';
 import { runCodeDir } from '../kept-work.js';
 import { sessionDir } from '../../../core/paths.js';
 
-// TUI and headless recovery turns share their loop's signal; a restart owns a new one.
-const initializedSessionsBySignal = new WeakMap<AbortSignal, Set<string>>();
+// TUI and headless recovery turns share their loop's signal; a restart owns a new one. Each session
+// the loop initialized keeps the warnings it told, so one loop tells one warning of a run once.
+const toldWarningsBySignal = new WeakMap<AbortSignal, Map<string, Set<string>>>();
 
 function plannerUnavailableMessage(plannerConfig: Config['planner'], planner: Planner): string {
   const name = getRunnerCatalogDisplayName(plannerConfig);
@@ -443,7 +445,8 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
 
   const sessionPath = sessionDir(projectDir, sessionId);
   const initializedSessions =
-    opts.signal === undefined ? undefined : initializedSessionsBySignal.get(opts.signal);
+    opts.signal === undefined ? undefined : toldWarningsBySignal.get(opts.signal);
+  const toldWarnings = initializedSessions?.get(sessionPath) ?? new Set<string>();
   let state: WorkflowState;
 
   if (savedState) {
@@ -456,6 +459,12 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
       ...(initializedSessions?.has(sessionPath) && { inProcess: true }),
       ...(opts.resumeCause !== undefined && { cause: opts.resumeCause }),
     });
+    for (const lines of notAppliedWarnings(prepared.report)) {
+      const message = lines.join('\n');
+      if (toldWarnings.has(message)) continue;
+      toldWarnings.add(message);
+      publishWarning({ bus, phase: state.phase, message });
+    }
     if (shouldPublishResumePlannerStatus(state)) {
       publishPlannerStatus(bus, state, 'running');
     }
@@ -502,14 +511,15 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     for (const message of startReadinessWarnings(
       createStartReadinessRecord(prepared.report, { projectDir, sessionId }),
     )) {
+      toldWarnings.add(message);
       publishWarning({ bus, phase: state.phase, message });
     }
   }
 
   if (opts.signal !== undefined) {
-    const sessions = initializedSessions ?? new Set<string>();
-    sessions.add(sessionPath);
-    initializedSessionsBySignal.set(opts.signal, sessions);
+    const sessions = initializedSessions ?? new Map<string, Set<string>>();
+    sessions.set(sessionPath, toldWarnings);
+    toldWarningsBySignal.set(opts.signal, sessions);
   }
 
   publishWorkflowConfig(

@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
+import { resetLoggerForTests } from '../lib/logger.js';
 import { readUiPrefs, writeUiPrefs, DEFAULT_UI_PREFS } from './ui-prefs.js';
 import { SPLITBRIEF_DIR } from './paths.js';
 
@@ -13,6 +15,7 @@ describe('ui-prefs', () => {
   });
 
   afterEach(() => {
+    resetLoggerForTests();
     try {
       chmodSync(join(testDir, SPLITBRIEF_DIR), 0o700);
     } catch {}
@@ -49,38 +52,32 @@ describe('ui-prefs', () => {
     }
   });
 
-  it('names the file and the default layout when ui-prefs.json is malformed', () => {
+  it('returns the fallback for a file that it cannot parse and writes the cause to the debug log', () => {
     const splitbriefDir = join(testDir, SPLITBRIEF_DIR);
     mkdirSync(splitbriefDir, { recursive: true });
     writeFileSync(join(splitbriefDir, 'ui-prefs.json'), '{ not valid json');
-    const warn = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    enableDebugLog(testDir);
 
-    try {
-      readUiPrefs(testDir);
-      const output = warn.mock.calls.map(([chunk]) => String(chunk)).join('');
-      expect(output).toContain(
-        'Could not read .splitbrief/ui-prefs.json, so the default layout is used: ',
-      );
-      expect(output).not.toContain('ui-prefs:');
-    } finally {
-      warn.mockRestore();
-    }
+    expect(readUiPrefs(testDir)).toEqual(DEFAULT_UI_PREFS);
+
+    expect(loggedDiagnostics(testDir)).toEqual([
+      expect.stringMatching(
+        /^Could not read \.splitbrief\/ui-prefs\.json, so the default layout is used: \S/,
+      ),
+    ]);
   });
 
-  it('does not throw and warns when the state dir is unwritable', () => {
+  it('does not throw when the state dir is unwritable and writes the cause to the debug log', () => {
     const splitbriefDir = join(testDir, SPLITBRIEF_DIR);
     mkdirSync(splitbriefDir, { recursive: true });
     chmodSync(splitbriefDir, 0o400);
+    enableDebugLog(testDir);
 
-    const warn = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
-    try {
-      writeUiPrefs(testDir, { sidebarVisible: false });
-      expect(warn).toHaveBeenCalledWith(
-        expect.stringContaining('Could not save .splitbrief/ui-prefs.json'),
-      );
-    } finally {
-      warn.mockRestore();
-    }
+    writeUiPrefs(testDir, { sidebarVisible: false });
+
+    expect(loggedDiagnostics(testDir)).toEqual([
+      expect.stringContaining('Could not save .splitbrief/ui-prefs.json'),
+    ]);
   });
 
   it('ignores unknown keys in ui-prefs.json', () => {

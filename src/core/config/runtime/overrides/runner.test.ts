@@ -186,7 +186,10 @@ describe('applyCLIOverrides — unusable provider overrides', () => {
 
       expect(result.config).toBe(config);
       expect(result.ignoredFlags).toEqual([
-        `--${role}-api-base is ignored: the ${role} '${existing.kind}' runner does not use it.`,
+        {
+          notice: `--${role}-api-base is ignored: the ${role} '${existing.kind}' runner does not use it.`,
+          fix: 'Remove the flag from the command.',
+        },
       ]);
       expect(stderr).not.toHaveBeenCalled();
     },
@@ -224,7 +227,12 @@ describe('applyCLIOverrides — unusable provider overrides', () => {
         apiKey: 'env:FOO',
       },
     });
-    expect(ignoredFlags).toEqual([expect.stringMatching(/^--implementer-api-key-env is ignored/)]);
+    expect(ignoredFlags).toEqual([
+      {
+        notice: expect.stringMatching(/^--implementer-api-key-env is ignored/),
+        fix: 'Remove the flag from the command.',
+      },
+    ]);
   });
 
   it('warns when --planner-api-base is supplied for a CLI runner', () => {
@@ -234,7 +242,12 @@ describe('applyCLIOverrides — unusable provider overrides', () => {
         apiBase: 'https://example.com/v1',
       },
     });
-    expect(ignoredFlags).toEqual([expect.stringMatching(/^--planner-api-base is ignored/)]);
+    expect(ignoredFlags).toEqual([
+      {
+        notice: expect.stringMatching(/^--planner-api-base is ignored/),
+        fix: 'Remove the flag from the command.',
+      },
+    ]);
   });
 
   it('names the CLI identity and the YAML route when API flags collide with a CLI tool id', () => {
@@ -246,7 +259,7 @@ describe('applyCLIOverrides — unusable provider overrides', () => {
         apiKey: 'env:MY_KEY',
       },
     });
-    const output = result.ignoredFlags.join('\n');
+    const output = result.ignoredFlags.map((flag) => flag.notice).join('\n');
 
     expect(result.config.implementer).toEqual({
       kind: 'cli',

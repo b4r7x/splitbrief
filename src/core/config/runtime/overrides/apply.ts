@@ -7,7 +7,9 @@ import {
   applyPlannerEffort,
   applyReviewerEffort,
   applyRunnerOverrides,
+  REMOVE_FLAG_FIX,
   type AppliedOverrides,
+  type IgnoredFlag,
 } from './runner.js';
 import type { CLIOverrides } from './schema.js';
 
@@ -26,7 +28,7 @@ function parseOverrideOrThrow<T>(
 
 export function applyCLIOverrides(config: Config, overrides: CLIOverrides): AppliedOverrides {
   let next = config;
-  const ignoredFlags: string[] = [];
+  const ignoredFlags: IgnoredFlag[] = [];
   const take = (applied: AppliedOverrides) => {
     ignoredFlags.push(...applied.ignoredFlags);
     next = applied.config;
@@ -52,22 +54,30 @@ export function applyCLIOverrides(config: Config, overrides: CLIOverrides): Appl
     take(applyRunnerOverrides('reviewer', overrides.reviewer, next));
   }
   if (overrides.plannerEffort !== undefined) {
+    const input = { name: '--planner-effort', fix: REMOVE_FLAG_FIX };
     const effort = parseOverrideOrThrow(
       EffortLevelSchema,
       overrides.plannerEffort,
-      '--planner-effort',
+      input.name,
       EFFORT_LEVELS,
     );
-    next = applyPlannerEffort(next, effort);
+    take(applyPlannerEffort(next, effort, input));
   }
   if (overrides.reviewerEffort !== undefined) {
+    const input = { name: '--reviewer-effort', fix: REMOVE_FLAG_FIX };
     const effort = parseOverrideOrThrow(
       EffortLevelSchema,
       overrides.reviewerEffort,
-      '--reviewer-effort',
+      input.name,
       EFFORT_LEVELS,
     );
-    next = applyReviewerEffort(next, effort);
+    take(applyReviewerEffort(next, effort, input));
+  }
+  if (overrides.reviewerSpecEffort !== undefined) {
+    const level = overrides.reviewerSpecEffort;
+    const input = { name: `@${level} in --reviewer`, fix: `Remove @${level} from --reviewer.` };
+    const effort = parseOverrideOrThrow(EffortLevelSchema, level, input.name, EFFORT_LEVELS);
+    take(applyReviewerEffort(next, effort, input));
   }
   return { config: next, ignoredFlags };
 }

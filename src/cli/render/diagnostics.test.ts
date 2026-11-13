@@ -1,14 +1,15 @@
-import { chmodSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { chmodSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createElement, Fragment } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
 import { sessionDir } from '../../core/paths.js';
 import { acquireLiveness } from '../../engine/orchestrator/run/liveness.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { withShutdownHandlers } from '../../engine/orchestrator/session-lifecycle/shutdown.js';
-import { configureLogger, resetLoggerForTests } from '../../lib/logger.js';
+import { resetLoggerForTests } from '../../lib/logger.js';
 import { terminalSequences } from '../../lib/terminal/control.js';
 import { installDiagnosticSink, warnError, warnStderr } from '../../lib/warn.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
@@ -83,12 +84,8 @@ let terminalWrites: string[];
 let feedbackDuringMount: (string | null)[];
 
 function emitDiagnosticWhileMounted(): void {
-  warnError(DIAGNOSTIC, new Error('\x1b[2Jrecoverable'));
+  warnError(DIAGNOSTIC, new Error('\x1b[2Jrecoverable'), 'feedback');
   feedbackDuringMount.push(feedbackStore.get().message);
-}
-
-function debugLog(): string {
-  return readFileSync(join(projectDir, 'debug.log'), 'utf8');
 }
 
 function rawDiagnosticWrites(): string[] {
@@ -100,7 +97,7 @@ async function expectPriorOwnerRestored(settle: () => Promise<void>): Promise<vo
   const releaseOuter = installDiagnosticSink((message) => outer.push(message));
   try {
     await settle();
-    warnError('after teardown');
+    warnError('after teardown', undefined, 'feedback');
   } finally {
     releaseOuter();
   }
@@ -109,7 +106,7 @@ async function expectPriorOwnerRestored(settle: () => Promise<void>): Promise<vo
 
 beforeEach(() => {
   projectDir = realpathSync(mkdtempSync(join(tmpdir(), 'splitbrief-diagnostics-')));
-  configureLogger({ projectDir, relativePath: 'debug.log', enabled: true });
+  enableDebugLog(projectDir);
   terminalWrites = [];
   feedbackDuringMount = [];
   const record = (chunk: string | Uint8Array) => {
@@ -139,10 +136,10 @@ describe('renderApp diagnostics ownership', () => {
     ink.script.fullscreen = {
       start: async () => {},
       waitUntilExit: async () => {
-        warnStderr(notice, 'log-only');
+        warnStderr(notice);
         expect(feedbackStore.get().message).toBeNull();
         emitDiagnosticWhileMounted();
-        warnStderr(notice, 'log-only');
+        warnStderr(notice);
         expect(feedbackStore.get().message).toBe(`${DIAGNOSTIC}: recoverable`);
         expect(feedbackStore.get().isError).toBe(true);
       },
@@ -150,7 +147,7 @@ describe('renderApp diagnostics ownership', () => {
 
     await renderApp(createElement(Fragment), { fullscreen: true, projectDir }, { exit: vi.fn() });
 
-    expect(debugLog()).toContain(`[diagnostics] ${notice}`);
+    expect(loggedDiagnostics(projectDir)).toContain(notice);
     expect(rawDiagnosticWrites()).toEqual([]);
   });
 
@@ -165,8 +162,38 @@ describe('renderApp diagnostics ownership', () => {
     );
 
     expect(feedbackDuringMount).toEqual([`${DIAGNOSTIC}: recoverable`]);
-    expect(debugLog()).toContain(`[diagnostics] ${DIAGNOSTIC}: recoverable`);
+    expect(loggedDiagnostics(projectDir)).toContain(`${DIAGNOSTIC}: recoverable`);
     expect(rawDiagnosticWrites()).toEqual([]);
+  });
+
+  it('writes a feedback diagnostic of a mounted app to the debug log exactly one time', async () => {
+    ink.script.fullscreen = {
+      start: async () => {},
+      waitUntilExit: async () => emitDiagnosticWhileMounted(),
+    };
+
+    await renderApp(createElement(Fragment), { fullscreen: true, projectDir }, { exit: vi.fn() });
+
+    expect(feedbackDuringMount).toEqual([`${DIAGNOSTIC}: recoverable`]);
+    expect(loggedDiagnostics(projectDir).filter((line) => line.includes(DIAGNOSTIC))).toEqual([
+      `${DIAGNOSTIC}: recoverable`,
+    ]);
+  });
+
+  it('keeps a mounted diagnostic off the feedback line and off the terminal', async () => {
+    ink.script.fullscreen = {
+      start: async () => {},
+      waitUntilExit: async () => {
+        warnStderr(DIAGNOSTIC);
+        feedbackDuringMount.push(feedbackStore.get().message);
+      },
+    };
+
+    await renderApp(createElement(Fragment), { fullscreen: true, projectDir }, { exit: vi.fn() });
+
+    expect(feedbackDuringMount).toEqual([null]);
+    expect(rawDiagnosticWrites()).toEqual([]);
+    expect(loggedDiagnostics(projectDir)).toContain(DIAGNOSTIC);
   });
 
   it('keeps the fullscreen fallback warning and inline diagnostics off the terminal', async () => {
@@ -178,15 +205,19 @@ describe('renderApp diagnostics ownership', () => {
     };
     ink.script.inline = {
       start: async () => {},
-      waitUntilExit: async () => emitDiagnosticWhileMounted(),
+      waitUntilExit: async () => warnError(DIAGNOSTIC, new Error('\x1b[2Jrecoverable')),
     };
 
     await expectPriorOwnerRestored(() =>
       renderApp(createElement(Fragment), { fullscreen: true, projectDir }, { exit: vi.fn() }),
     );
 
-    expect(debugLog()).toContain('Fullscreen init failed, falling back to inline mode');
-    expect(feedbackDuringMount).toEqual([`${DIAGNOSTIC}: recoverable`]);
+    expect(loggedDiagnostics(projectDir)).toEqual(
+      expect.arrayContaining([
+        'Fullscreen init failed, falling back to inline mode: no alternate screen',
+        `${DIAGNOSTIC}: recoverable`,
+      ]),
+    );
     expect(terminalWrites.filter((write) => write.includes('Fullscreen init failed'))).toEqual([]);
     expect(rawDiagnosticWrites()).toEqual([]);
   });
@@ -260,7 +291,7 @@ describe('renderApp diagnostics ownership', () => {
     expect(restoredAt).toBeGreaterThanOrEqual(0);
     expect(reportedAt).toBeGreaterThan(restoredAt);
     expect(rawDiagnosticWrites()).toHaveLength(1);
-    expect(debugLog()).toContain(`${DIAGNOSTIC}: recoverable`);
+    expect(loggedDiagnostics(projectDir)).toContain(`${DIAGNOSTIC}: recoverable`);
   });
   it('writes an at-exit note to stderr only after the terminal is restored, never to the feedback line', async () => {
     let writesWhileMounted: string[] = [];
@@ -318,7 +349,7 @@ describe('renderApp diagnostics ownership', () => {
     expect(terminalWrites.indexOf(line)).toBeGreaterThan(restoredAt);
   });
 
-  it('writes the run lock a quit could not release to stderr once, whole, after the terminal is restored', async () => {
+  it('writes the run lock a quit could not release to the debug log one time and not to the terminal', async () => {
     const sessionId = '2026-10-23-create-src-kebab-js-commonjs-exporting-kebab-text-';
     let release: () => Promise<void> = async () => {};
     ink.script.fullscreen = {
@@ -337,10 +368,9 @@ describe('renderApp diagnostics ownership', () => {
       chmodSync(dir, 0o755);
     }
 
-    const line = `Could not release the run lock: permission denied · .splitbrief/sessions/${sessionId}/lockfile.json · other SPLITBRIEF processes can see the run as running for a few more seconds\n`;
-    expect(terminalWrites.filter((write) => write.includes('run lock'))).toEqual([line]);
-    const restoredAt = terminalWrites.indexOf(terminalSequences.exitAltBuffer);
-    expect(restoredAt).toBeGreaterThanOrEqual(0);
-    expect(terminalWrites.indexOf(line)).toBeGreaterThan(restoredAt);
+    expect(loggedDiagnostics(projectDir).filter((line) => line.includes('run lock'))).toEqual([
+      `Could not release the run lock: permission denied · .splitbrief/sessions/${sessionId}/lockfile.json · other SPLITBRIEF processes can see the run as running for a few more seconds`,
+    ]);
+    expect(terminalWrites.filter((write) => write.includes('run lock'))).toEqual([]);
   });
 });

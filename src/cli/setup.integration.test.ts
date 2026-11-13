@@ -30,6 +30,9 @@ import type { WorkflowState } from '../core/schemas/workflow.js';
 import { createInitialState, transition } from '../core/state/machine.js';
 import { saveState } from '../core/state/persistence.js';
 import { ensureSessionDir } from '../core/paths-io.js';
+import { loggedDiagnostics } from '#testing/helpers/debug-log.js';
+import { createLogger, resetLoggerForTests } from '../lib/logger.js';
+import { warnStderr } from '../lib/warn.js';
 import { readWorkspaceRecord } from '../engine/orchestrator/isolation/retention.js';
 import { closeRunIfOpen } from '../engine/orchestrator/run/close.js';
 import { RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
@@ -169,8 +172,9 @@ describe('setupWorkflow', () => {
   });
 
   const runId = '2026-10-25-leftover-run';
-  const kept = { workspace: true, worktrees: 1, record: true, stderr: '' };
-  const gone = { workspace: false, worktrees: 0, record: false, stderr: '' };
+  const noSkip: string[] = [];
+  const kept = { workspace: true, worktrees: 1, record: true, stderr: '', skipped: noSkip };
+  const gone = { workspace: false, worktrees: 0, record: false, stderr: '', skipped: noSkip };
 
   async function workspaceRun(
     dirs: string[],
@@ -225,8 +229,9 @@ describe('setupWorkflow', () => {
       },
       expected: {
         ...gone,
-        stderr:
-          'Warning: skipped .splitbrief/sessions/2026-10-25-broken-run/state.json: it could not be read\n',
+        skipped: [
+          'Warning: skipped .splitbrief/sessions/2026-10-25-broken-run/state.json: it could not be read',
+        ],
       },
     },
     {
@@ -266,6 +271,7 @@ describe('setupWorkflow', () => {
   ])('$label', { timeout: 60_000 }, async ({ arrange, expected }) => {
     const dirs: string[] = [];
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    vi.stubEnv('SPLITBRIEF_DEBUG', '1');
     try {
       const { projectDir, workspaceDir } = await arrange(dirs);
       stderrSpy.mockClear();
@@ -282,8 +288,13 @@ describe('setupWorkflow', () => {
             .filter((line) => line.startsWith('worktree ')).length - 1,
         record: (await readWorkspaceRecord({ projectDir, sessionId: runId })) !== null,
         stderr: stderrSpy.mock.calls.map((call) => String(call[0])).join(''),
+        skipped: loggedDiagnostics(join(projectDir, SPLITBRIEF_DIR, 'logs')).filter((line) =>
+          line.startsWith('Warning: skipped '),
+        ),
       }).toEqual(expected);
     } finally {
+      resetLoggerForTests();
+      vi.unstubAllEnvs();
       stderrSpy.mockRestore();
       for (const dir of dirs) cleanupTempDir(dir);
     }
@@ -640,6 +651,47 @@ describe('canonicalizeProjectDir', () => {
     } finally {
       process.chdir(previousCwd);
       cleanupTempDir(link);
+    }
+  });
+
+  it('starts the debug log at the repository root before the --project warning', async () => {
+    const real = realpathSync(tmp);
+    createTestGitRepo(real);
+    const subdir = join(real, 'packages', 'web');
+    mkdirSync(subdir, { recursive: true });
+    vi.stubEnv('SPLITBRIEF_DEBUG', '1');
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    try {
+      await canonicalizeProjectDir({ project: subdir });
+      warnStderr('a diagnostic after the start');
+
+      expect({
+        root: loggedDiagnostics(join(real, SPLITBRIEF_DIR, 'logs')),
+        nested: existsSync(join(subdir, SPLITBRIEF_DIR)),
+      }).toEqual({
+        root: [expect.stringContaining('using repository root.'), 'a diagnostic after the start'],
+        nested: false,
+      });
+    } finally {
+      resetLoggerForTests();
+      vi.unstubAllEnvs();
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('starts no debug log in a folder that is not a git repository', async () => {
+    const real = realpathSync(tmp);
+    vi.stubEnv('SPLITBRIEF_DEBUG', '1');
+
+    try {
+      await canonicalizeProjectDir({ project: real });
+      createLogger('cli').error('fatal', { message: 'not a git repository' });
+
+      expect(existsSync(join(real, SPLITBRIEF_DIR))).toBe(false);
+    } finally {
+      resetLoggerForTests();
+      vi.unstubAllEnvs();
     }
   });
 });

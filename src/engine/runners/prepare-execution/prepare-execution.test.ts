@@ -29,6 +29,7 @@ import {
   type PrepareExecutionInput,
 } from './prepare-execution.js';
 import type { PreparationPolicy, PrepareExecutionDependencies } from './types.js';
+import type { EffectiveConfigWarning } from '../../../core/config/runtime/effective-config.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 import { buildReadinessReport } from '../../../core/readiness/checks/build.js';
 import { abortError } from '../../../utils/abort.js';
@@ -254,6 +255,7 @@ async function resumeActivation(prior: 'absent' | 'legacy' | 'v1' | 'different' 
   const outcome = await prepareExecution({
     feature: 'resume activation contract',
     effectiveConfig: config,
+    configWarnings: [],
     signal: new AbortController().signal,
     policy: {
       purpose: 'resume',
@@ -286,6 +288,7 @@ describe('prepareExecution', () => {
       projectDir: project,
       feature: 'catalog report',
       effectiveConfig: config,
+      configWarnings: [],
       signal: new AbortController().signal,
       policy: {
         ...policy(),
@@ -330,6 +333,7 @@ describe('prepareExecution', () => {
       projectDir: project,
       feature: 'catalog image fact',
       effectiveConfig: config,
+      configWarnings: [],
       signal: new AbortController().signal,
       policy: {
         ...policy(),
@@ -359,6 +363,43 @@ describe('prepareExecution', () => {
     expect(fact).toEqual({ supportsImages: true });
   });
 
+  it('hands the config warnings to the readiness check', async () => {
+    const project = projectDir();
+    const config = makeConfig();
+    const configWarnings: EffectiveConfigWarning[] = [
+      {
+        kind: 'ignored-flag',
+        notice: "--planner-api-key-env is ignored: the planner 'cli' runner does not use it.",
+        fix: 'Remove the flag from the command.',
+      },
+      { kind: 'config-file-permissions' },
+    ];
+    let received: readonly EffectiveConfigWarning[] | undefined;
+
+    const outcome = await prepareExecution({
+      projectDir: project,
+      feature: 'config warnings',
+      effectiveConfig: config,
+      configWarnings,
+      signal: new AbortController().signal,
+      policy: policy(),
+      deps: {
+        collectReadiness: async (input) => {
+          received = input.configWarnings;
+          return {
+            config,
+            report: readyReport(project, [
+              { id: 'runners.configured', severity: 'blocker', summary: 'Blocked' },
+            ]),
+          };
+        },
+      },
+    });
+
+    expect(outcome.kind).toBe('blocked');
+    expect(received).toEqual(configWarnings);
+  });
+
   it('checks planner and every configured profile and derives report and gates from each result', async () => {
     const project = projectDir();
     const config = makeConfig({
@@ -384,6 +425,7 @@ describe('prepareExecution', () => {
       projectDir: project,
       feature: 'prepare every runner',
       effectiveConfig: config,
+      configWarnings: [],
       signal: new AbortController().signal,
       policy: policy('new-workflow'),
       deps: {
@@ -446,6 +488,7 @@ describe('prepareExecution', () => {
         projectDir: project,
         feature: 'machine-independent preparation',
         effectiveConfig: config,
+        configWarnings: [],
         signal: new AbortController().signal,
         policy: policy('new-workflow'),
         deps: {
@@ -490,6 +533,7 @@ describe('prepareExecution', () => {
       projectDir: project,
       feature: 'explicit auth channel',
       effectiveConfig: config,
+      configWarnings: [],
       signal: new AbortController().signal,
       policy: policy('new-workflow'),
       deps: {
@@ -524,6 +568,7 @@ describe('prepareExecution', () => {
       projectDir: project,
       feature: 'no preflight before admission',
       effectiveConfig: config,
+      configWarnings: [],
       signal: new AbortController().signal,
       policy: policy('new-workflow'),
       deps: {
@@ -548,6 +593,7 @@ describe('prepareExecution', () => {
       projectDir: project,
       feature: 'preflight blocker after admission',
       effectiveConfig: config,
+      configWarnings: [],
       signal: new AbortController().signal,
       policy: policy('new-workflow'),
       deps: {
@@ -594,6 +640,7 @@ describe('prepareExecution', () => {
       projectDir: project,
       feature: 'preflight signal',
       effectiveConfig: config,
+      configWarnings: [],
       signal: controller.signal,
       policy: policy('new-workflow'),
       deps: {
@@ -643,6 +690,7 @@ describe('prepareExecution', () => {
       projectDir: project,
       feature: 'abort the preflight after trust publication',
       effectiveConfig: config,
+      configWarnings: [],
       signal: controller.signal,
       policy: policy('new-workflow'),
       deps: {
@@ -701,6 +749,7 @@ describe('prepareExecution', () => {
       projectDir: project,
       feature: 'fresh denial wins',
       effectiveConfig: config,
+      configWarnings: [],
       signal: new AbortController().signal,
       policy: policy('new-workflow'),
       deps: {
@@ -760,6 +809,7 @@ describe('prepareExecution', () => {
     const input = {
       feature: 'resume exact session',
       effectiveConfig: config,
+      configWarnings: [],
       signal: new AbortController().signal,
       policy: {
         purpose: 'resume',
@@ -887,6 +937,7 @@ describe('prepareExecution', () => {
       projectDir: project,
       feature: 'planner-only spec',
       effectiveConfig: config,
+      configWarnings: [],
       signal: new AbortController().signal,
       policy: policy('spec'),
       deps: {
@@ -915,6 +966,7 @@ describe('prepareExecution', () => {
         projectDir: project,
         feature: `abort after ${abortAt}`,
         effectiveConfig: config,
+        configWarnings: [],
         signal: controller.signal,
         policy: policy('new-workflow'),
         deps: {
@@ -950,6 +1002,7 @@ describe('prepareExecution', () => {
       projectDir: project,
       feature: 'abort configured runner approval',
       effectiveConfig: config,
+      configWarnings: [],
       signal: controller.signal,
       policy: {
         purpose: 'new-workflow',
@@ -993,6 +1046,7 @@ describe('prepareExecution', () => {
       projectDir: project,
       feature: 'abort after configured runner trust publication',
       effectiveConfig: config,
+      configWarnings: [],
       signal: controller.signal,
       policy: {
         purpose: 'new-workflow',
@@ -1049,6 +1103,7 @@ describe('prepareExecution', () => {
       projectDir: project,
       feature: 'unauthenticated planner',
       effectiveConfig: config,
+      configWarnings: [],
       signal: new AbortController().signal,
       policy: policy('spec'),
       deps: {
@@ -1300,6 +1355,7 @@ describe('prepareExecution', () => {
       projectDir: project,
       feature: 'unverified planner',
       effectiveConfig: config,
+      configWarnings: [],
       signal: new AbortController().signal,
       policy: policy('spec'),
       deps: {
@@ -1338,6 +1394,7 @@ describe('prepareExecution', () => {
       projectDir: project,
       feature: 'changed executable identity',
       effectiveConfig: config,
+      configWarnings: [],
       signal: new AbortController().signal,
       policy: policy('new-workflow'),
       deps: {
@@ -1407,6 +1464,7 @@ describe('prepareExecution', () => {
       projectDir: project,
       feature: 'prepare configured command',
       effectiveConfig: config,
+      configWarnings: [],
       signal: new AbortController().signal,
       policy: policy('new-workflow'),
       deps: {
@@ -1464,6 +1522,7 @@ describe('prepareExecution', () => {
         projectDir: project,
         feature: 'prepare the reviewer seat',
         effectiveConfig: config,
+        configWarnings: [],
         signal: new AbortController().signal,
         policy: policy('new-workflow'),
         deps: {
@@ -1540,6 +1599,7 @@ describe('prepareExecution', () => {
       projectDir: project,
       feature: 'prepare a configured shell reviewer',
       effectiveConfig: config,
+      configWarnings: [],
       signal: new AbortController().signal,
       policy: policy('new-workflow'),
       deps: {
@@ -1567,6 +1627,7 @@ describe('prepareExecution', () => {
       projectDir: project,
       feature: 'blocked without artifacts',
       effectiveConfig: config,
+      configWarnings: [],
       signal: new AbortController().signal,
       policy: policy('new-workflow'),
       deps: {
@@ -1592,6 +1653,7 @@ describe('prepareExecution', () => {
       projectDir: project,
       feature: 'failed without artifacts',
       effectiveConfig: config,
+      configWarnings: [],
       signal: new AbortController().signal,
       policy: policy('new-workflow'),
       deps: {
@@ -1620,6 +1682,7 @@ describe('prepareExecution', () => {
       projectDir: project,
       feature: 'aborted without artifacts',
       effectiveConfig: config,
+      configWarnings: [],
       signal: controller.signal,
       policy: policy('new-workflow'),
       deps: {
@@ -1684,6 +1747,7 @@ describe('inline command runner admission', () => {
       projectDir: input.project,
       feature: 'inline runner admission',
       effectiveConfig: input.config,
+      configWarnings: [],
       signal: new AbortController().signal,
       policy: {
         purpose: 'new-workflow',
@@ -1838,6 +1902,7 @@ describe('prepareExecution availability probe scope', () => {
       projectDir: project,
       feature: 'probe scope',
       effectiveConfig: config,
+      configWarnings: [],
       signal: new AbortController().signal,
       policy: policy(purpose),
       deps: {
@@ -1942,6 +2007,7 @@ describe('prepareReviewExecution', () => {
     const outcome = await prepareReviewExecution({
       projectDir: project,
       effectiveConfig: reviewConfig(),
+      configWarnings: [],
       signal: new AbortController().signal,
       policy: reviewPolicy(),
       deps: { ...reviewDeps(readyReport(project)), prepareNewSession: prepareSession },
@@ -1962,6 +2028,7 @@ describe('prepareReviewExecution', () => {
     const outcome = await prepareReviewExecution({
       projectDir: project,
       effectiveConfig: reviewConfig(),
+      configWarnings: [],
       signal: new AbortController().signal,
       policy: reviewPolicy(),
       deps: reviewDeps(liveSessionReport(project)),
@@ -1984,6 +2051,7 @@ describe('prepareReviewExecution', () => {
       projectDir: project,
       feature: 'start beside a live session',
       effectiveConfig: config,
+      configWarnings: [],
       signal: new AbortController().signal,
       policy: policy('new-workflow'),
       deps: {
@@ -2018,6 +2086,7 @@ describe('a seat left on auto', () => {
       projectDir: project,
       feature: 'resolve the host model selection',
       effectiveConfig: config,
+      configWarnings: [],
       signal: new AbortController().signal,
       policy: policy('new-workflow'),
       deps: {

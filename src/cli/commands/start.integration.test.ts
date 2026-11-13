@@ -11,7 +11,6 @@ import type { StartDeps } from './start/types.js';
 import { initStores } from '../bootstrap/init.js';
 import { configStore } from '../../stores/project/config.js';
 import { routerStore } from '../../stores/navigation/router.js';
-import { installDiagnosticSink } from '../../lib/warn.js';
 import {
   prepareExecutionMock,
   setupRunnerTrustIsolation,
@@ -57,7 +56,7 @@ describe('start command — shorthand invocation', () => {
     vi.restoreAllMocks();
   });
 
-  it('shows a --project warning for a folder inside the repository once, on the screen', async () => {
+  it('writes a --project warning for a folder inside the repository to stderr once', async () => {
     writeConfigMarker(tmp);
     const subdir = join(tmp, 'pkg');
     mkdirSync(subdir);
@@ -66,25 +65,13 @@ describe('start command — shorthand invocation', () => {
       writes.push(String(chunk));
       return true;
     });
-    const shown: string[] = [];
-    const warning = `Warning: --project ${subdir} is inside git repository ${tmp}; using repository root.`;
+    const warning = `--project ${subdir} is inside git repository ${tmp}; using repository root.`;
 
     const program = new Command();
     program.exitOverride();
-    registerStartCommand(program, {
-      ...fakeDeps,
-      renderApp: async () => {
-        const release = installDiagnosticSink((message) => shown.push(message));
-        try {
-          expect(writes).toEqual([]);
-        } finally {
-          release();
-        }
-      },
-    });
+    registerStartCommand(program, fakeDeps);
     await program.parseAsync(['node', 'splitbrief', '--project', subdir]);
 
-    expect(shown).toEqual([warning]);
     expect(writes).toEqual([`${warning}\n`]);
   });
 

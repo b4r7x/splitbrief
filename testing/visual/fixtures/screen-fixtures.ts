@@ -5,7 +5,7 @@ import type { RouteData } from '../../../src/stores/navigation/router.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { configStore } from '../../../src/stores/project/config.js';
 import { resolveEffectiveConfig } from '../../../src/core/config/runtime/effective-config.js';
-import { formatConfigLoaderDiagnostic, writeConfig } from '../../../src/core/config/load/io.js';
+import { writeConfig } from '../../../src/core/config/load/io.js';
 import { configPath, readConfigDocument } from '../../../src/core/config/load/document.js';
 import type { CLIOverrides } from '../../../src/core/config/runtime/overrides/schema.js';
 import { createProductionDetectionDeps } from '../../../src/engine/detection/deps.js';
@@ -41,6 +41,7 @@ import { resetWorkflow } from '../../../src/stores/workflow/actions/reset.js';
 import type { ReadinessCheck, ReadinessReport } from '../../../src/core/readiness/types.js';
 import { buildIsolationChecks } from '../../../src/core/readiness/checks/isolation.js';
 import { buildRepoChecks } from '../../../src/core/readiness/checks/repo.js';
+import { buildRunnerChecks } from '../../../src/core/readiness/checks/runners.js';
 import { selectNextAction } from '../../../src/core/readiness/status.js';
 import { formatSeatIdentity } from '../../../src/core/crew/identity.js';
 import type { PreparationOutcome } from '../../../src/engine/runners/prepared-execution.js';
@@ -501,7 +502,6 @@ export function createSetupFixture(
     | 'signed-out'
     | 'config-only'
     | 'detecting'
-    | 'saved-detecting'
     | 'cached-refresh'
     | 'cached-failure'
     | 'api-override'
@@ -536,7 +536,6 @@ export function createSetupFixture(
       if (state !== 'unavailable' && state !== 'signed-out' && state !== 'config-only') {
         loadVisualProjectWithoutConfig();
       }
-      if (state === 'saved-detecting') seedVisualConfig();
       if (state === 'config-only') {
         seedVisualConfig({
           implementer: { kind: 'cli', tool: 'opencode', model: 'ollama-cloud/glm-5.3' },
@@ -614,7 +613,7 @@ export function createSetupFixture(
             },
           });
         }
-      } else if (state === 'detecting' || state === 'saved-detecting')
+      } else if (state === 'detecting')
         detectionStore.beginRefresh({ contexts: VISUAL_DETECTION_CONTEXTS });
       // A new machine: three tools installed but not signed in, one ready.
       else if (state === 'signed-out')
@@ -1017,7 +1016,9 @@ function createHomePreparationCheckoutWarningFixture(): FixtureLifecycle {
   };
 }
 
-function createHomePreparationBlockedFixture(): FixtureLifecycle {
+function createHomePreparationBlockedFixture(
+  warnings: readonly ReadinessCheck[],
+): FixtureLifecycle {
   const home = createHomeFixture();
   return {
     setup: async (context) => {
@@ -1031,6 +1032,7 @@ function createHomePreparationBlockedFixture(): FixtureLifecycle {
             summary: 'Ollama is not reachable at http://localhost:11434/v1',
             details: ['Start Ollama with: ollama serve', 'Then retry this connection.'],
           },
+          ...warnings,
         ]),
       });
     },
@@ -1387,26 +1389,6 @@ const SAVE_SIGN_IN_MESSAGE = [
   formatNeedsSignInSaveFeedback({ tool: 'opencode', provider: 'anthropic' }),
 ].join(SOFT_SEP);
 
-// The line the screen shows for two retired config keys raised before it opened.
-const STARTUP_WARNINGS_MESSAGE =
-  '2 warnings, all shown when you quit · ⚠ workflow.mode was retired and is ignored: every run plans in one session. Delete workflow.mode.';
-
-// The line the screen shows for a config file its group or other users can change, the one warning raised.
-const STARTUP_PERMISSION_WARNING_MESSAGE = `⚠ ${formatConfigLoaderDiagnostic({ kind: 'config-file-permissions' })}`;
-
-function withStartupWarnings(
-  fixture: FixtureLifecycle,
-  message: string = STARTUP_WARNINGS_MESSAGE,
-): FixtureLifecycle {
-  return {
-    ...fixture,
-    setup: async (context) => {
-      await fixture.setup(context);
-      feedbackStore.setError(message);
-    },
-  };
-}
-
 /** A session id of the length most real ones have, so the file names a path that has to wrap. */
 export const LONG_SESSION_ID = '2026-10-22-add-a-greeting-helper-to-the-cli-entry-point-docs';
 
@@ -1513,15 +1495,13 @@ export const homeFixtureFeedback: ReadonlyMap<string, string> = new Map([
   ['home-attachment-not-text', attachmentFailureMessage('not-text')],
   ['home-save-sign-in', SAVE_SIGN_IN_MESSAGE],
   ['home-save-long-draft', SAVE_SIGN_IN_MESSAGE],
-  ['home-startup-warnings', STARTUP_WARNINGS_MESSAGE],
-  ['home-startup-permission-warning', STARTUP_PERMISSION_WARNING_MESSAGE],
   ['home-draft-not-saved', DRAFT_NOT_SAVED_MESSAGE],
   ['home-draft-not-removed', DRAFT_NOT_REMOVED_MESSAGE],
   ['home-config-edit-refused', CONFIG_EDIT_REFUSED_MESSAGE],
 ]);
 
-function createSaveSignInFixture(): FixtureLifecycle {
-  const home = createHomeFixture({ config: SAVE_SIGN_IN_CONFIG });
+function createSaveSignInFixture(options: HomeFixtureOptions = {}): FixtureLifecycle {
+  const home = createHomeFixture({ ...options, config: SAVE_SIGN_IN_CONFIG });
   return {
     setup: async (context) => {
       await home.setup(context);
@@ -1736,7 +1716,24 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   ],
   [scenarioId('home-preparation-failed'), createHomePreparationFailedFixture],
   [scenarioId('home-preparation-checkout-warning'), createHomePreparationCheckoutWarningFixture],
-  [scenarioId('home-preparation-blocked'), createHomePreparationBlockedFixture],
+  [scenarioId('home-preparation-blocked'), () => createHomePreparationBlockedFixture([])],
+  [
+    scenarioId('home-preparation-setting-not-applied'),
+    () =>
+      createHomePreparationBlockedFixture(
+        buildRunnerChecks({
+          config: visualConfig({
+            reviewer: {
+              kind: 'cli',
+              tool: 'opencode',
+              model: 'opencode-go/deepseek-v4.1-flash',
+              effort: 'high',
+            },
+          }),
+          seatImageFact: () => undefined,
+        }).filter((check) => check.id === 'runners.reviewer.effort-not-applied'),
+      ),
+  ],
   [scenarioId('home-preparation-isolation-blocked'), createHomePreparationIsolationBlockedFixture],
   [scenarioId('home-preparation-no-commits'), createHomePreparationNoCommitsFixture],
   [scenarioId('home-preparation-run-still-running'), createHomePreparationRunStillRunningFixture],
@@ -1785,18 +1782,9 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   ],
   [scenarioId('home-attachment-not-text'), () => createOutsideAttachmentFailureFixture('not-text')],
   [scenarioId('home-save-sign-in'), createSaveSignInFixture],
-  [scenarioId('home-startup-warnings'), () => withStartupWarnings(createHomeFixture())],
   [
-    scenarioId('home-startup-permission-warning'),
-    () => withStartupWarnings(createHomeFixture(), STARTUP_PERMISSION_WARNING_MESSAGE),
-  ],
-  [
-    scenarioId('home-cold-detecting-startup-warnings'),
-    () => withStartupWarnings(createHomeFixture({ cold: true, detecting: true })),
-  ],
-  [
-    scenarioId('home-preparing-startup-warnings'),
-    () => withStartupWarnings(createHomePreparingFixture()),
+    scenarioId('home-cold-detecting-save-sign-in'),
+    () => createSaveSignInFixture({ cold: true, detecting: true }),
   ],
   [scenarioId('home-draft-not-saved'), createDraftNotSavedFixture],
   [scenarioId('home-draft-not-removed'), createDraftNotRemovedFixture],
@@ -1837,14 +1825,6 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
     () => createSetupFixture('persisted-api-override'),
   ],
   [scenarioId('setup-no-config-detecting'), () => createSetupFixture('detecting')],
-  [
-    scenarioId('setup-detecting-startup-warnings'),
-    () => withStartupWarnings(createSetupFixture('detecting')),
-  ],
-  [
-    scenarioId('setup-saved-detecting-startup-warnings'),
-    () => withStartupWarnings(createSetupFixture('saved-detecting')),
-  ],
   [
     scenarioId('setup-starting-slow-long'),
     () => withSlowToolCheck(createSetupStartingFixture(), { slowModelList: 'antigravity' }),

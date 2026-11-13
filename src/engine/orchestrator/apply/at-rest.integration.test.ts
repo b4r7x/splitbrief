@@ -2,6 +2,8 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type ApplyRun, withApplyRun } from '#testing/helpers/apply-run.js';
+import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeWorkflowState, RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { SESSION_LOG_FILE, sessionDir } from '../../../core/paths.js';
@@ -12,6 +14,7 @@ import { activeApply, awaitActiveWorkflowShutdown } from '../session-lifecycle/s
 import { runApplyAtRest } from './at-rest.js';
 import * as backup from './backup.js';
 import * as lockfile from '../../../core/sessions/lockfile.js';
+import { resetLoggerForTests } from '../../../lib/logger.js';
 
 vi.mock('../approval/staged-project.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../approval/staged-project.js')>();
@@ -160,21 +163,18 @@ describe('runApplyAtRest', { timeout: 60_000 }, () => {
             code: 'EACCES',
           }),
         );
-        const writes: string[] = [];
-        const stderr = vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
-          writes.push(String(chunk));
-          return true;
-        });
+        const logDir = createTempDir('apply-at-rest-log');
+        enableDebugLog(logDir);
 
         try {
           expect((await applyAtRest(run)()).outcome).toBe('applied');
+          expect(loggedDiagnostics(logDir)).toEqual([
+            `Could not release the run lock: permission denied · .splitbrief/sessions/${SESSION_ID}/lockfile.json · other SPLITBRIEF processes can see the run as running for a few more seconds`,
+          ]);
         } finally {
-          stderr.mockRestore();
+          resetLoggerForTests();
+          cleanupTempDir(logDir);
         }
-
-        expect(writes).toEqual([
-          `Could not release the run lock: permission denied · .splitbrief/sessions/${SESSION_ID}/lockfile.json · other SPLITBRIEF processes can see the run as running for a few more seconds\n`,
-        ]);
         expect(
           readRunRecord({ projectDir: run.dir, sessionId: run.sessionId }, false).status,
         ).toEqual({

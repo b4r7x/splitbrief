@@ -13,6 +13,7 @@ import {
 } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
+import { loggedDiagnostics } from '#testing/helpers/debug-log.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import {
@@ -803,6 +804,9 @@ describe('runWorkflow — smoke', () => {
       const ref = { projectDir, sessionId };
 
       expect(run.stderr).not.toMatch(/persist|oversized/);
+      expect(loggedDiagnostics(join(projectDir, SPLITBRIEF_DIR, 'logs')).join('\n')).not.toMatch(
+        /persist|oversized/,
+      );
       const logged: string[] = [];
       for await (const entry of readMessages(ref))
         if (entry.role === 'user') logged.push(entry.text);
@@ -1014,6 +1018,8 @@ describe('runWorkflow — smoke', () => {
           ...run,
           ref,
           dir,
+          // The run sets the debug log up itself, at .splitbrief/logs/debug.log of the project.
+          logged: loggedDiagnostics(join(projectDir, SPLITBRIEF_DIR, 'logs')),
           record: readRunRecord(ref, false),
           row: listSessions(projectDir).find((session) => session.id === sessionId),
         };
@@ -1042,9 +1048,9 @@ describe('runWorkflow — smoke', () => {
           vi.useFakeTimers({ now: Date.now() + 60_000, toFake: ['Date'] });
           expect(readRunRecord(run.ref, false)).toMatchObject(recordFailedWith(cause));
           vi.useRealTimers();
-          // The stderr line says the failure did not reach the disk.
-          expect(run.stderr).toContain(
-            `Could not record why the run failed: ${notSaved(sessionId)}`,
+          // The debug log line says the failure did not reach the disk.
+          expect(run.logged).toContainEqual(
+            expect.stringContaining(`Could not record why the run failed: ${notSaved(sessionId)}`),
           );
           // A new process reads only the disk (`run.status`): the run stopped where it was.
           expect(run.status).toMatchObject({
@@ -1939,6 +1945,7 @@ describe('runWorkflow — smoke', () => {
       }
 
       expect(stderr.join('')).toBe('');
+      expect(loggedDiagnostics(join(projectDir, SPLITBRIEF_DIR, 'logs'))).toEqual([]);
       expect(events.filter((event) => event.type === 'error')).toEqual([]);
       expect(typed.prompts[0]).toContain('PELICAN-42');
       const saved = JSON.parse(readFileSync(stateFile(ref), 'utf8'));
@@ -2760,11 +2767,9 @@ describe('runWorkflow — smoke', () => {
         sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       });
 
-      expect(
-        stderrWrite.mock.calls.some(([chunk]) =>
-          String(chunk).includes('Could not remove the run workspace'),
-        ),
-      ).toBe(true);
+      expect(loggedDiagnostics(join(projectDir, SPLITBRIEF_DIR, 'logs'))).toContainEqual(
+        expect.stringContaining('Could not remove the run workspace'),
+      );
     } finally {
       createSpy.mockRestore();
       stderrWrite.mockRestore();

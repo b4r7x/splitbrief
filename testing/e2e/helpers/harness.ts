@@ -129,6 +129,7 @@ export async function runE2eWorkflow(
     projectDir: ctx.projectDir,
     feature: scenario.feature,
     effectiveConfig: config,
+    configWarnings: [],
     policy: {
       purpose: 'new-workflow',
       interaction: 'headless',

@@ -2,6 +2,8 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import * as os from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
+import { resetLoggerForTests } from '../../lib/logger.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -32,6 +34,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  resetLoggerForTests();
   resetAllStores();
   cleanupTempDir(projectDir);
 });
@@ -93,10 +96,11 @@ it('loads the remembered models.dev catalog when there is no tool snapshot', asy
 it('reports a configuration failure when catalog loading cannot continue', async () => {
   mkdirSync(join(projectDir, '.splitbrief'), { recursive: true });
   writeFileSync(join(projectDir, '.splitbrief', 'config.yaml'), 'version: invalid');
-  const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+  enableDebugLog(projectDir);
   await expect(loadRememberedCatalog(projectDir)).resolves.toBeUndefined();
-  expect(stderr.mock.calls.flat().join('')).toContain('Could not load model names');
-  expect(stderr.mock.calls.flat().join('')).toContain('Unsupported config version');
+  const logged = loggedDiagnostics(projectDir).join('\n');
+  expect(logged).toContain('Could not load model names');
+  expect(logged).toContain('Unsupported config version');
   expect(modelCacheStore.getProviderModels('codex')).toBeNull();
   expect(globalThis.fetch).not.toHaveBeenCalled();
 });

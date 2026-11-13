@@ -273,7 +273,6 @@ describe('a state write that fails', () => {
     const ref = setupProject();
     const saved = transitionAndSave(ref, createInitialState('feature'), { type: 'START' });
     writeFileSync(join(sessionDir(ref.projectDir, ref.sessionId), 'state.json'), '{"tru');
-    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {
       expect(() =>
         transitionAndSave(ref, saved, {
@@ -286,7 +285,6 @@ describe('a state write that fails', () => {
         'Could not read the run state: it could not be read, or its content is not valid · .splitbrief/sessions/sess-state-ops/state.json',
       );
     } finally {
-      stderr.mockRestore();
       cleanupTempDir(ref.projectDir);
     }
   });

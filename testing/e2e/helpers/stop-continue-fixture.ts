@@ -390,6 +390,7 @@ export async function continueWithCorrection(
       existingSession: ref,
       feature: state.feature,
       effectiveConfig: config,
+      configWarnings: [],
       policy: {
         purpose: 'resume',
         interaction: 'headless',

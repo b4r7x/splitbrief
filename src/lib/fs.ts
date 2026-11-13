@@ -19,7 +19,6 @@ import { basename, dirname, join, resolve, sep } from 'node:path';
 import { error, matches } from '../utils/error.js';
 import { assertWritablePathConfined } from './path-confinement.js';
 import { isNodeError } from './process/errors.js';
-import { warnError } from './warn.js';
 
 export function readJsonSafe(path: string): unknown | null {
   if (!existsSync(path)) return null;
@@ -166,21 +165,6 @@ export function readValidatedJsonResult<T>(
   const parsed = parse(value);
   if (parsed === null) return { kind: 'unreadable', cause: undefined };
   return { kind: 'value', value: parsed };
-}
-
-export function readValidatedJson<T>(
-  filePath: string,
-  parse: (value: unknown) => T | null,
-  fallback: T,
-  label: string,
-): T {
-  const result = readValidatedJsonResult(filePath, parse);
-  if (result.kind === 'missing') return fallback;
-  if (result.kind === 'unreadable') {
-    warnError(label, result.cause);
-    return fallback;
-  }
-  return result.value;
 }
 
 /**

@@ -13,6 +13,7 @@ import { Command } from 'commander';
 import YAML from 'yaml';
 import {
   activateCompatibleCliShim,
+  activateSafeCliShimPath,
   installCompatibleCliShim,
 } from '#testing/helpers/compatible-cli-shim.js';
 import { makeOpenAiSseResponse } from '#testing/helpers/faux/openai-sse.js';
@@ -219,6 +220,34 @@ function installFakeCodex(): void {
   ].join('\n');
   writeFileSync(shim.path, script + '\n', 'utf-8');
   restoreCliShim = activateCompatibleCliShim(shim);
+}
+
+/** A physical `opencode` that answers the admission probes and records the review call. */
+function installFakeOpencode(): void {
+  const path = join(binDir, 'opencode');
+  const script = [
+    '#!/usr/bin/env node',
+    "const { appendFileSync, readFileSync } = require('node:fs');",
+    `const runLogPath = ${JSON.stringify(runLogPath)};`,
+    `const reviewText = ${JSON.stringify(REVIEW_TEXT)};`,
+    `const version = ${JSON.stringify(CLI_TOOL_CATALOG.opencode.compatibility.testedVersion)};`,
+    'const args = process.argv.slice(2);',
+    'if (args.length === 1 && args[0] === "--version") {',
+    '  console.log(version);',
+    '  process.exit(0);',
+    '}',
+    'if (args[0] === "auth" && args[1] === "list") {',
+    '  console.log(JSON.stringify([{ id: "opencode-go", name: "OpenCode Go", connections: [{ type: "credential" }] }]));',
+    '  process.exit(0);',
+    '}',
+    'if (args[0] !== "run") process.exit(0);',
+    'const prompt = readFileSync(0, "utf-8");',
+    'appendFileSync(runLogPath, JSON.stringify({ args, prompt }) + "\\n");',
+    'console.log(JSON.stringify({ type: "text", part: { type: "text", text: reviewText } }));',
+    'console.log(JSON.stringify({ type: "step_finish", part: { type: "step-finish", tokens: { input: 40, output: 20 } } }));',
+  ].join('\n');
+  writeFileSync(path, script + '\n', { encoding: 'utf-8', mode: 0o755 });
+  restoreCliShim = activateSafeCliShimPath(binDir);
 }
 
 function readRunLog(): Array<{ args: string[]; prompt: string; cwd?: string }> {
@@ -525,6 +554,97 @@ describe('CLI integration: splitbrief review', () => {
     expect(stdout).toContain('pass_with_notes');
     expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'sessions'))).toBe(false);
     expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'active'))).toBe(false);
+  });
+
+  it('tells the effort an inherited REVIEW does not apply once, under the PLAN key that holds it', async () => {
+    writeConfig(tmp, { planner: { ...inlineShellReviewer(), effort: 'high' } });
+    writeFileSync(join(tmp, 'init.txt'), `init\n${CHANGED_LINE}\n`, 'utf-8');
+    const stderr: string[] = [];
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      stderr.push(String(chunk));
+      return true;
+    });
+
+    const { stdout, exitCode } = await runReview(['--project', tmp, '--allow-repo-runners']);
+
+    expect(exitCode, stdout).toBe(0);
+    const lines = stderr.join('').split('\n');
+    const effort = lines.filter((line) => line.includes('the effort setting is not applied'));
+    expect(effort).toHaveLength(1);
+    expect(effort[0]).toMatch(/^PLAN: the effort setting is not applied: /);
+    expect(lines.filter((line) => line.startsWith('Fix: Delete effort from '))).toEqual([
+      'Fix: Delete effort from planner in .splitbrief/config.yaml, or choose a tool that takes an effort in Settings > Crew > PLAN.',
+    ]);
+    expect(stdout).toContain('pass_with_notes');
+  });
+
+  it('names the @effort of --reviewer that the tool does not take, and how to remove it', async () => {
+    writeConfig(tmp);
+    writeFileSync(join(tmp, 'init.txt'), `init\n${CHANGED_LINE}\n`, 'utf-8');
+    installFakeOpencode();
+    const stderr: string[] = [];
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      stderr.push(String(chunk));
+      return true;
+    });
+
+    const { stdout, exitCode } = await runReview(['--project', tmp, '--reviewer', 'opencode@high']);
+
+    expect(exitCode, stdout).toBe(0);
+    const lines = stderr.join('').split('\n');
+    expect(lines.filter((line) => line.includes('is ignored'))).toEqual([
+      '@high in --reviewer is ignored: the OpenCode CLI variant sets the effort.',
+    ]);
+    expect(lines.filter((line) => line.startsWith('Fix:'))).toEqual([
+      'Fix: Remove @high from --reviewer.',
+    ]);
+    expect(lines.filter((line) => line.includes('--reviewer-effort'))).toEqual([]);
+  });
+
+  it('gives the @effort of --reviewer to a tool that takes an effort flag, with no notice', async () => {
+    writeConfig(tmp);
+    writeFileSync(join(tmp, 'init.txt'), `init\n${CHANGED_LINE}\n`, 'utf-8');
+    installFakeClaude();
+    const stderr: string[] = [];
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      stderr.push(String(chunk));
+      return true;
+    });
+
+    const { stdout, exitCode } = await runReview([
+      '--project',
+      tmp,
+      '--reviewer',
+      'claude-code@high',
+    ]);
+
+    expect(exitCode, stdout).toBe(0);
+    expect(
+      stderr
+        .join('')
+        .split('\n')
+        .filter((line) => line.includes('is ignored')),
+    ).toEqual([]);
+    const args = readRunLog()[0]?.args ?? [];
+    expect(args[args.indexOf('--effort') + 1]).toBe('high');
+  });
+
+  it('names the @effort of --reviewer when it is no effort level', async () => {
+    writeConfig(tmp);
+    writeFileSync(join(tmp, 'init.txt'), `init\n${CHANGED_LINE}\n`, 'utf-8');
+    installFakeClaude();
+
+    const { stdout, exitCode } = await runReview([
+      '--project',
+      tmp,
+      '--reviewer',
+      'claude-code@bogus',
+    ]);
+
+    expect(exitCode).not.toBe(0);
+    expect(stdout).toContain('Invalid @bogus in --reviewer: bogus. Must be one of: ');
+    expect(stdout).not.toContain('--reviewer-effort');
+    expect(readRunLog()).toHaveLength(0);
   });
 
   it('reviews on Linux without bwrap and socat while claude-code is the default implementer', async () => {

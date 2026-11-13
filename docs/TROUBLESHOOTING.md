@@ -83,15 +83,17 @@ These variables control the diagnostics of SPLITBRIEF:
 
 | Variable | Effect | Source |
 |---|---|---|
-| `SPLITBRIEF_DEBUG` | `1` writes the debug log to `.splitbrief/logs/debug.log` in the project; `0` or `false` turns it off. An installed SPLITBRIEF writes no debug log unless you set it. | `src/core/logger.ts` |
+| `SPLITBRIEF_DEBUG` | `1` writes the debug log to `.splitbrief/logs/debug.log` at the root of the git repository of the project; `0` or `false` turns it off. An installed SPLITBRIEF writes no debug log unless you set it. | `src/core/logger.ts` |
 | `SPLITBRIEF_CONTEXT_LENGTH` | Sets a Prompt budget for the default implementer profile (integer): a brief whose estimate does not fit it stops. See [CONFIGURATION.md](./CONFIGURATION.md#runtime-overrides) | `src/core/config/runtime/overrides/from-options.ts` |
 | `CI` | Suppresses fullscreen TUI (`--no-fullscreen` is equivalent) | `src/cli/setup.ts` |
 
-For finer-grained traces, use the event log. The debug log also holds the notices that the screen does not show. Examples are a plan that went back to the planner once and a format pass that changed files. The API-key-bearing env vars SPLITBRIEF reads are listed in [CONFIGURATION.md §Provider authentication](./CONFIGURATION.md#provider-authentication) — a missing credential fails config load for an API seat and shows as a readiness blocker for a CLI seat.
+For finer-grained traces, use the event log. The debug log also holds the notices that the screen does not show. Examples are a plan that went back to the planner once and a format pass that changed files. It also holds the diagnostics that you cannot act on, for example an optional file that SPLITBRIEF could not read or a cleanup that did not finish. These show no warning row and print no line to the terminal. The API-key-bearing env vars SPLITBRIEF reads are listed in [CONFIGURATION.md §Provider authentication](./CONFIGURATION.md#provider-authentication) — a missing credential fails config load for an API seat and shows as a readiness blocker for a CLI seat.
 
 ### Terminal diagnostics
 
-Direct terminal diagnostics are sanitized before printing. `warnStderr`, `warnError`, process-output errors, and generic CLI error formatting strip ANSI/OSC/control sequences, redact shared secret patterns including JWT-like tokens, and bound diagnostic text before writing to stderr. First-party styling may wrap the sanitized text after that; untrusted subprocess/provider text should not be styled before sanitization.
+Each diagnostic goes to the debug log when the log is on (`SPLITBRIEF_DEBUG` above), through `warnStderr` and `warnError` in `src/lib/warn.ts`. Only a diagnostic that you must act on also shows: on the feedback line while the TUI is open, else as a line on stderr. An example is a tool process that SPLITBRIEF could not stop. A note for the quit, for example the command that continues the run, prints on stderr after the terminal is restored.
+
+Diagnostics are sanitized before they are written. `warnStderr` and `warnError` sanitize the text before they write it to the debug log or to stderr. Process-output errors and generic CLI error formatting sanitize it before they write it to stderr. Each strips ANSI/OSC/control sequences, redacts shared secret patterns including JWT-like tokens, and bounds the text. First-party styling may wrap the sanitized text after that; untrusted subprocess/provider text should not be styled before sanitization.
 
 ---
 

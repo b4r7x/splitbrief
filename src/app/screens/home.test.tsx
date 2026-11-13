@@ -2163,10 +2163,14 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
 
   const RETIRED_MODE =
     '⚠ workflow.mode was retired and is ignored: every run plans in one session. Delete workflow.mode.';
+  const UNUSED_TEMPERATURE =
+    'The planner temperature setting is not used: Codex CLI takes no temperature';
+  const UNUSED_VARIANT =
+    'The planner variant setting is not used: Codex CLI has no variant channel';
   const STARTUP_WARNINGS: Record<number, string> = {
-    2: `2 warnings, all shown when you quit · ${RETIRED_MODE}`,
-    3: `3 warnings, all shown when you quit · ${RETIRED_MODE} · ⚠ Skipping session directory 'old runs': invalid session id`,
-    4: `3 warnings, all shown when you quit · ${RETIRED_MODE} · ${RETIRED_MODE}`,
+    2: RETIRED_MODE,
+    3: `${RETIRED_MODE} · ${UNUSED_TEMPERATURE}`,
+    4: `${RETIRED_MODE} · ${UNUSED_TEMPERATURE} · ${UNUSED_VARIANT}`,
   };
 
   async function renderColdCheckUnder(message: string, sessions: number) {
