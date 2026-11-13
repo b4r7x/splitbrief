@@ -681,6 +681,12 @@
 - The plan card keeps its highlighted row after the help or the stop options close.
 - After a halt refuses typed words, the keys stay in the composer with the words. Before, the panel took the keys, and a typed letter chose one of its rows.
 - With the run stopped and Session options open, the composer shows two lines of a typed draft. Before, it showed one line.
+- Three halt and resume warnings now say what happened and what to do, in plain words.
+- `End-of-run checks · none` is no longer coloured as a warning.
+- A failed brief check that ran no command, such as a missing test file, now names why it failed.
+- A `tight` brief row names the context window only when it is known.
+- A run with REVIEW set to None ends on `Review · none · no seat reviewed this run`, which fits a narrow terminal.
+- `splitbrief continue` after a move to REVIEW None says that no seat reviews the rest of the run.
 
 ## [0.1.0] - 2026-08-07
 

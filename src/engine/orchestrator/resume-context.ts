@@ -92,7 +92,7 @@ export async function applyRebuiltContext(opts: ApplyRebuiltContextOpts): Promis
       bus,
       phase: 'researching',
       message:
-        'Saved workflow state was unavailable, so pending queued messages were not replayed into planner context.',
+        'Your queued messages were not sent to the planner: the saved run state could not be read. Send them again.',
     });
     return;
   }

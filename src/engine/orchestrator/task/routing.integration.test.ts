@@ -232,6 +232,7 @@ function routingDecision(overrides: Partial<RoutingDecision>): RoutingDecision {
     estimatedTokens: 5000,
     untruncatedEstimatedTokens: 5000,
     contextLength: undefined,
+    usedConservativeContextLength: false,
     currentCodeTruncated: false,
     currentCodeContextMode: 'whole-file',
     reason: 'too large',

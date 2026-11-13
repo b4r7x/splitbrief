@@ -27,7 +27,7 @@ import {
 import { readForegroundAtText, type TerminalForeground } from '../helpers/terminal-cells.js';
 
 const VIEWPORT = { cols: 120, rows: 40 };
-const NONE_ROW = 'Review · none · REVIEW is None, so no seat reviewed this run';
+const NONE_ROW = 'Review · none · no seat reviewed this run';
 const SCREEN_THEME = resolveTheme({ variant: 'dark', level: 3, terminalBackground: undefined });
 
 const TOTAL_FILE = 'src/total.mjs';
@@ -204,7 +204,7 @@ async function moveReview(
   write('/crew');
   await expect.poll(screen).toContain('▌ /crew  Who fills each seat');
   write('\r');
-  await expect.poll(screen).toContain('Settings');
+  await expect.poll(screen).toMatch(/^\W*Settings\W*$/m);
   await moveCursorTo(screen, write, '\x1b[B', /▌ REVIEW/);
   write('\r');
   await expect.poll(screen).toContain('REVIEW · tool, model, effort');

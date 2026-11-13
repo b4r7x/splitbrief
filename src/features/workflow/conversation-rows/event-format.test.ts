@@ -10,6 +10,7 @@ import {
   fullSuiteSegments,
   fullSuiteTone,
   reviewChecksSegments,
+  reviewNoneSegments,
   validationStageNotes,
   validationSummarySegments,
 } from './event-format.js';
@@ -856,7 +857,7 @@ describe('reviewChecksRow', () => {
     expect(reviewChecksSegments(event)).toContainEqual({ text: 'off', tone: 'warning' });
   });
 
-  it('says, as a warning, that the plan names no project gate', () => {
+  it('says, in the dim tone, that the plan names no project gate', () => {
     const event = { type: 'review_checks', ts: 0, phase: 'final-review', status: 'none' } as const;
     expect(reviewChecksRow(event)).toBe(
       'End-of-run checks · none · the plan names no project gate',
@@ -864,10 +865,18 @@ describe('reviewChecksRow', () => {
     expect(reviewChecksSegments(event)).toEqual([
       { text: 'End-of-run checks', tone: 'textDim' },
       { text: ' · ', tone: 'textDim' },
-      { text: 'none', tone: 'warning' },
+      { text: 'none', tone: 'textDim' },
       { text: ' · ', tone: 'textDim' },
       { text: 'the plan names no project gate', tone: 'textDim' },
     ]);
+  });
+});
+
+describe('reviewNoneSegments', () => {
+  it('fits the REVIEW None row in 60 cells', () => {
+    const text = segmentText(reviewNoneSegments());
+    expect(text).toBe('Review · none · no seat reviewed this run');
+    expect(getTerminalCellWidth(text)).toBeLessThanOrEqual(60);
   });
 });
 

@@ -2000,6 +2000,29 @@ describe('workflow visual fixtures', () => {
     expect(queued.frame.split('1 queued for BUILD on T003')).toHaveLength(2);
   }, 60_000);
 
+  it('shows the short None row in the completed wide-crew checkpoint', async () => {
+    const scenario = findVisualScenario('workflow-crew-wide-review-none');
+    const checkpoint = scenario?.checkpoints.find(
+      (candidate) => candidate.id === 'crew-wide-review-none-end',
+    );
+    const renderViewport = scenario?.viewports.find(
+      (value) => value.cols === 120 && value.rows === 40,
+    );
+    if (scenario === undefined || checkpoint === undefined || renderViewport === undefined) {
+      throw new Error('Missing completed wide-crew REVIEW None checkpoint');
+    }
+    const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: renderViewport });
+    try {
+      const frame = stripTerminalControls(await ui.waitForCheckpoint(), {
+        preserveLineBreaks: true,
+      });
+      expect(frame.split('Review · none · no seat reviewed this run')).toHaveLength(2);
+      expect(frame).not.toContain('Inspecting deterministic fixture contract');
+    } finally {
+      await ui.unmount();
+    }
+  });
+
   it('projects prompt rows from the same state rendered by the workflow fixture', async () => {
     const review = workflowFixtureProjections.get(scenarioId('workflow-review'));
     const question = workflowFixtureProjections.get(scenarioId('workflow-question'));

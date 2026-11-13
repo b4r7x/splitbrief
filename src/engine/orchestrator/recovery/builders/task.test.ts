@@ -112,6 +112,7 @@ function overflowRoutingDecision(overrides: Partial<RoutingDecision> = {}): Rout
     estimatedTokens: 45_000,
     untruncatedEstimatedTokens: 48_000,
     contextLength: 32_768,
+    usedConservativeContextLength: true,
     currentCodeTruncated: false,
     currentCodeContextMode: 'whole-file',
     reason: 'No capable implementer profile can fit this task prompt',

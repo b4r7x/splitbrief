@@ -1499,7 +1499,7 @@ Copied images remain in `~/.splitbrief/clipboard/` so history and runs retain re
 
 ### Symptom: Headless run exits 0 having done nothing
 
-**Likely cause (fixed):** A resume over a state with a **paused** or **applying** `pendingRecovery` used to exit 0 silently — the headless driver only failed on `awaiting-user`. The task loop now publishes a transcript-safe `warning` with `code: 'recovery_pending_unresolved'` naming the reason, status, and available actions, and headless fails with exit code 1 for every recovery status.
+**Likely cause (fixed):** A resume over a state with a **paused** or **applying** `pendingRecovery` used to exit 0 silently — the headless driver only failed on `awaiting-user`. The task loop now publishes a transcript-safe `warning` with `code: 'recovery_pending_unresolved'` that reads `The run still waits at its halt, so the brief did not start. Choose an action in the halt panel.`, and headless fails with exit code 1 for every recovery status.
 
 **Fix:**
 1. Inspect the `recovery_required` record in the NDJSON stream — it now carries `status` (`awaiting-user` | `applying`).

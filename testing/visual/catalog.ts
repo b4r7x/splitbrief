@@ -1001,12 +1001,20 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       title: 'Workflow · a wide crew with REVIEW set to None',
       surface: screenSurface('workflow'),
       viewports: WIDE_VIEWPORTS,
-      checkpoint: {
-        id: 'crew-wide-review-none',
-        title: 'Implementation with REVIEW None',
-        kind: 'implementation',
-        marker: 'Inspecting deterministic fixture contract',
-      },
+      checkpoint: [
+        {
+          id: 'crew-wide-review-none',
+          title: 'Implementation with REVIEW None',
+          kind: 'implementation',
+          marker: 'Inspecting deterministic fixture contract',
+        },
+        {
+          id: 'crew-wide-review-none-end',
+          title: 'The None row after the last brief',
+          kind: 'success',
+          marker: 'Review · none · no seat reviewed this run',
+        },
+      ],
       elements: [
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Implementation transcript' },
@@ -2026,6 +2034,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-brief-check-unran-red',
+      title: 'Workflow · a brief check that failed because its test file is missing',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'brief-check-unran-red',
+        title: 'A failed brief check row shows the reason after failed',
+        kind: 'implementation',
+        marker: 'the workspace has no test file',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-plan-check-pre-existing',
       title: 'Workflow · a plan check red only for a failure already red at the run base',
       surface: screenSurface('workflow'),
@@ -2059,11 +2083,12 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-task-rows-context-fit',
-      title: 'Workflow · brief rows with a tight and an over-window context estimate',
+      title: 'Workflow · brief rows with known, assumed and over-window context estimates',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'task-rows-context-fit',
-        title: 'The tight row names the window; the over-window row shows the estimate alone',
+        title:
+          'The known-window tight row names its window; the assumed-window and over-window rows show the estimate alone',
         kind: 'implementation',
         marker: '~31,012 context tokens',
       },

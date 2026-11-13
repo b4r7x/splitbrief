@@ -70,6 +70,7 @@ import {
   MOVED_PROJECT_MESSAGE,
   WORKFLOW_FIXTURE_TASK_ID,
   WORKFLOW_FIXTURE_TEXT,
+  crewWideReviewNoneEndProjection,
   workflowFixtureProjections,
   type FixtureStopState,
   type WorkflowFixtureProjection,
@@ -116,6 +117,24 @@ const STEER_ROW_START = 'Send a correction now';
 
 function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureFactory {
   const base = createWorkflowFixtureFactory(projection);
+  if (projection.scenarioId === 'workflow-crew-wide-review-none') {
+    return () => {
+      const live = base();
+      let chosen = live;
+      return {
+        ...live,
+        setup: async (context) => {
+          const selected = workflowFixtureProjectionFor(context.scenario.id, context.checkpoint.id);
+          chosen =
+            selected === undefined || selected === projection
+              ? live
+              : createWorkflowFixtureFactory(selected)();
+          await chosen.setup(context);
+        },
+        teardown: () => chosen.teardown(),
+      };
+    };
+  }
   if (projection.scenarioId === 'workflow-plan-card-commenting') {
     return () => ({
       ...base(),
@@ -733,6 +752,19 @@ export const workflowProjectionRegistry: ReadonlyMap<ScenarioId, WorkflowFixture
     ]),
   );
 
+export function workflowFixtureProjectionFor(
+  scenario: ScenarioId,
+  checkpoint: CheckpointId,
+): WorkflowFixtureProjection | undefined {
+  if (
+    scenario === crewWideReviewNoneEndProjection.scenarioId &&
+    checkpoint === 'crew-wide-review-none-end'
+  ) {
+    return crewWideReviewNoneEndProjection;
+  }
+  return workflowProjectionRegistry.get(scenario);
+}
+
 export const workflowFixtureRegistry: FixtureRegistry = new Map(
   [...workflowProjectionRegistry.values()].map((projection) => [
     projection.scenarioId,
@@ -830,7 +862,7 @@ const planCardReady = includesAll(
   'Add a greeting module and expose it from the CLI.',
 );
 
-const REVIEW_NONE_ROW = 'Review · none · REVIEW is None, so no seat reviewed this run';
+const REVIEW_NONE_ROW = 'Review · none · no seat reviewed this run';
 
 function reviewNoneRowOnce(): boolean {
   return workflowTranscriptText().replace(/\s+/g, ' ').split(REVIEW_NONE_ROW).length === 2;
@@ -957,6 +989,11 @@ const checkpointPredicates = [
     (context) =>
       includesAll(WORKFLOW_FIXTURE_TEXT.implementation, 'briefs passed', 'REVIEW None')(context) &&
       noReviewClaimed(context),
+  ],
+  [
+    checkpointId('crew-wide-review-none-end'),
+    (context) =>
+      includesAll('REVIEW None')(context) && reviewNoneRowOnce() && noReviewClaimed(context),
   ],
   [
     checkpointId('implementation-extracted-code'),
@@ -1249,6 +1286,10 @@ const checkpointPredicates = [
   [checkpointId('plan-check-missing-program'), includesAll('T901 check K4 · npm test', 'mocha')],
   [checkpointId('plan-check-no-test-file'), includesAll('T901 check K4 · failed', 'loud.test.mjs')],
   [
+    checkpointId('brief-check-unran-red'),
+    includesAll('T901 check K1 · failed · the workspace has no test file'),
+  ],
+  [
     checkpointId('plan-check-pre-existing'),
     includesTranscript('T901 check K1', 'src/legacy/report.test.ts'),
   ],
@@ -1263,7 +1304,7 @@ const checkpointPredicates = [
   ],
   [
     checkpointId('task-rows-context-fit'),
-    includesTranscript('~24,310 of 32K context tokens (tight)'),
+    includesTranscript('~24,310 of 32K context tokens (tight)', '~7,000 context tokens (tight)'),
   ],
   // The tiered gate owns this checkpoint: it takes the prompt zone from the document panel, so the
   // panel's own words are never on this frame.
@@ -1382,6 +1423,15 @@ const checkpointPredicates = [
   [checkpointId('plan-card-no-image-reviewer'), planCardReady],
   [checkpointId('plan-card-shared-command'), planCardReady],
   [checkpointId('plan-card-session-path'), planCardReady],
+  // A short terminal shows the marked row only. A tall one shows the gate down to its first
+  // long command.
+  [
+    checkpointId('plan-card-long-gate'),
+    (context) =>
+      includesAll()(context) &&
+      (context.viewport.rows < 18 || planCardReady(context)) &&
+      (context.viewport.rows < 40 || context.output.includes('V4: npx --no-install vitest run')),
+  ],
   [
     checkpointId('plan-card-edited'),
     (context) => {
@@ -1826,7 +1876,33 @@ const checkpointPredicates = [
       return transcript.includes(context.checkpoint.marker);
     },
   ],
+  // The last detail wraps between the sides of the panel, so the frame is read as one line of
+  // words, with no side and no line break.
+  [
+    checkpointId('recovery-plan-correction-again'),
+    (context) =>
+      includesAll('Planning failed', 'Change PLAN tool', 'Try again')(context) &&
+      stripAnsiStyles(context.output)
+        .replace(/[\s│]+/g, ' ')
+        .includes('Your plan correction goes again with this step.'),
+  ],
   [checkpointId('recovery-plan-questions'), includesAll('Which store keeps the greeting?')],
+  // The line of the correction is whole at each size. A tall panel lists each question.
+  [
+    checkpointId('recovery-plan-questions-long'),
+    (context) => {
+      const words = stripAnsiStyles(context.output).replace(/[\s│]+/g, ' ');
+      return (
+        words.includes('Your plan correction goes again with this step.') &&
+        (context.viewport.cols < 120 ||
+          [
+            'Which store keeps the greeting?',
+            'Does the module export a default or a named function?',
+            'Should the help text show an example?',
+          ].every((question) => words.includes(question)))
+      );
+    },
+  ],
   [checkpointId('recovery-review'), includesAll()],
   [checkpointId('recovery-model-pick'), includesAll('Pick another REVIEW model')],
   [checkpointId('recovery-hint'), includesAll(WORKFLOW_FIXTURE_TEXT.recoveryPlan)],

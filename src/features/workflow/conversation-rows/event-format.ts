@@ -313,7 +313,7 @@ export function reviewChecksSegments(
             { text: 'no reviewer check ran', tone: 'textDim' },
           ]
         : [
-            { text: 'none', tone: stateTone('attention') },
+            { text: 'none', tone: 'textDim' },
             { text: 'the plan names no project gate', tone: 'textDim' },
           ],
     ),
@@ -325,7 +325,7 @@ export function reviewNoneSegments(): ConversationRowSegment[] {
     { text: 'Review', tone: 'textDim' },
     ...separatedSegments([
       { text: 'none', tone: 'textDim' },
-      { text: 'REVIEW is None, so no seat reviewed this run', tone: 'textDim' },
+      { text: 'no seat reviewed this run', tone: 'textDim' },
     ]),
   ];
 }

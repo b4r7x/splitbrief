@@ -22,7 +22,7 @@ import {
   type WorkflowFixtureProjection,
 } from '../fixtures/workflow/projections.js';
 import { projectionChromeFacts } from '../fixtures/workflow/projection-chrome.js';
-import { workflowProjectionRegistry } from '../fixtures/workflow/registry.js';
+import { workflowFixtureProjectionFor } from '../fixtures/workflow/registry.js';
 import { homeFixtureFeedback } from '../fixtures/screen-fixtures.js';
 import type { Cell, CellGrid } from '../contracts/cells.js';
 import { CellRectSchema, type CellRect } from '../contracts/geometry.js';
@@ -165,7 +165,7 @@ function cellAt(grid: CellGrid, x: number, y: number): string | undefined {
 }
 
 function projectionFor(context: LocatorContext): WorkflowFixtureProjection {
-  const projection = workflowProjectionRegistry.get(context.scenario.id);
+  const projection = workflowFixtureProjectionFor(context.scenario.id, context.checkpoint.id);
   if (projection === undefined) {
     throw new Error(`Missing workflow fixture projection ${context.scenario.id}`);
   }

@@ -7,7 +7,11 @@ import { PLAN_FILE, REVIEW_FILE, TASKS_FILE, sessionDir } from '../../../src/cor
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { loadState, saveState } from '../../../src/core/state/persistence.js';
-import { readSeatIdentities, writeSeatIdentities } from '../../../src/core/state/seats.js';
+import {
+  readSeatIdentities,
+  seatIdentitiesFromConfig,
+  writeSeatIdentities,
+} from '../../../src/core/state/seats.js';
 import { saveDetectionCache } from '../../../src/engine/detection/cache.js';
 import { detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
@@ -187,4 +191,31 @@ it('resumes a session recorded without the level its id spells without a seat no
   const moved = await cli(target, ['continue', ref.sessionId], { timeoutMs: 60_000 });
   expect(moved.stderr).toContain('BUILD seat changed');
   expect(moved.stderr).not.toContain('PLAN seat changed');
+});
+
+it('says that no seat reviews the rest of the run when continue finds REVIEW moved to None', async () => {
+  fixture = createStopContinueFixture(() => '', { isolation: 'none' });
+  const target = fixture;
+  const binDir = join(target.tmpDir, 'bin');
+  mkdirSync(binDir);
+  restorePath = activateSafeCliShimPath(binDir);
+  const reviewer = { kind: 'cli', tool: 'antigravity', model: 'gemini-3.8-flash-high' } as const;
+  const config = loadConfig(target.projectDir).config;
+  writeConfig(target.projectDir, { ...config, reviewer });
+  const ref = { projectDir: target.projectDir, sessionId: '2026-11-12-review-moved-to-none' };
+  ensureSessionDir(ref.projectDir, ref.sessionId);
+  saveState(ref, {
+    ...createInitialState('smoke'),
+    phase: 'implementing',
+    plannerSessionId: 'native-session-of-the-same-reviewer',
+  });
+  const recorded = seatIdentitiesFromConfig(loadConfig(target.projectDir).config);
+  writeSeatIdentities(ref, recorded);
+
+  writeConfig(target.projectDir, { ...loadConfig(target.projectDir).config, reviewer: 'none' });
+  const moved = await cli(target, ['continue', ref.sessionId], { timeoutMs: 60_000 });
+  expect(moved.stderr).toContain(
+    `REVIEW seat changed ${recorded.review} → None; no seat reviews the rest of the run`,
+  );
+  expect(moved.stderr).not.toContain('the rest of the run uses the new seat');
 });

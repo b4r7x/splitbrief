@@ -12,6 +12,7 @@ import { APPLICATION_DEFAULT_CONTEXT_TOKENS } from '../../providers/runtime-cont
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { routeTaskToImplementerProfile } from './route.js';
+import type { RouteTaskOptions } from './types.js';
 
 const context: ProjectContext = {
   name: 'test-project',
@@ -484,6 +485,59 @@ describe('routeTaskToImplementerProfile', () => {
     expect(decision.reason).toContain('No capable implementer profile');
     expect(decision.rejected.map((rejected) => rejected.fit)).toEqual(['overflow', 'overflow']);
   });
+
+  it.each<[string, Omit<RouteTaskOptions, 'context'>, boolean, boolean]>([
+    [
+      'selects a profile whose window the user set',
+      { task: makeTask(), profiles: [profile('known-window', 20_000)] },
+      true,
+      false,
+    ],
+    [
+      'selects a profile whose window falls back to the application budget',
+      { task: makeTask(), profiles: [profile('assumed-window')] },
+      true,
+      true,
+    ],
+    [
+      'selects an overflowing profile when no Prompt budget is set and its window is a guess',
+      {
+        task: makeTask({ action: 'modify', currentCode: SHELL_MODIFY_120_KB }),
+        profiles: [shellProfile('assumed-shell')],
+      },
+      true,
+      true,
+    ],
+    [
+      'reports the representative profile when every profile overflows its Prompt budget',
+      {
+        task: makeTask({ action: 'modify', currentCode: SHELL_MODIFY_120_KB }),
+        profiles: [shellProfile('budget-shell', 4096)],
+      },
+      false,
+      false,
+    ],
+    [
+      'reports the representative profile whose known window has a missing credential',
+      { task: makeTask(), profiles: [customEndpointProfile('known-cloud', 20_000)] },
+      false,
+      false,
+    ],
+    [
+      'reports the representative profile whose guessed window has a missing credential',
+      { task: makeTask(), profiles: [customApiProfile('assumed-custom')] },
+      false,
+      true,
+    ],
+  ])(
+    'says whether the window of the decision is a guess when it %s',
+    (_scenario, options, selectsProfile, expectedGuess) => {
+      const decision = routeTaskToImplementerProfile({ ...options, context });
+
+      expect(decision.selectedProfile !== undefined).toBe(selectsProfile);
+      expect(decision.usedConservativeContextLength).toBe(expectedGuess);
+    },
+  );
 
   it('falls an unobserved api profile back to the application budget, not the routing fallback', () => {
     const task = makeTask();

@@ -7,6 +7,7 @@ export type RoutingEventFields = Pick<
   | 'estimatedTokens'
   | 'untruncatedEstimatedTokens'
   | 'contextLength'
+  | 'usedConservativeContextLength'
   | 'currentCodeTruncated'
   | 'currentCodeContextMode'
   | 'reason'
@@ -31,7 +32,8 @@ export function buildRoutingEventFields(decision: RoutingEventFields | undefined
     contextFit: decision.fit,
     estimatedTokens: decision.estimatedTokens,
     untruncatedEstimatedTokens: decision.untruncatedEstimatedTokens,
-    ...(decision.contextLength !== undefined && { contextLength: decision.contextLength }),
+    ...(decision.contextLength !== undefined &&
+      !decision.usedConservativeContextLength && { contextLength: decision.contextLength }),
     currentCodeTruncated: decision.currentCodeTruncated,
     currentCodeContextMode: decision.currentCodeContextMode,
     routingReason: decision.reason,

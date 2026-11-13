@@ -91,11 +91,11 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
   const resolvedProfiles = resolveImplementerProfiles(config);
   const singleImplementerMode = config.implementerProfiles === undefined;
   if (state.pendingRecovery) {
-    const recovery = state.pendingRecovery;
     publishWarning({
       bus: wctx.bus,
       phase: state.phase,
-      message: `Recovery is still pending (reason: ${recovery.reason}, status: ${recovery.status}); no task work was started. Available actions: ${recovery.availableActions.join(', ')}.`,
+      message:
+        'The run still waits at its halt, so the brief did not start. Choose an action in the halt panel.',
       safety: { category: 'recovery', code: 'recovery_pending_unresolved' },
     });
     return { state, status: 'stopped' };

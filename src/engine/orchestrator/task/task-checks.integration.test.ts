@@ -287,6 +287,64 @@ describe('runTaskChecks', () => {
     ]);
   });
 
+  it.each([
+    {
+      reason: 'a test file the workspace does not hold',
+      check: { id: 'K1', kind: 'test', value: 'src/missing.test.mjs' } as Check,
+      detail: 'the workspace has no test file for src/missing.test.mjs',
+    },
+    {
+      reason: 'an npm script package.json does not define',
+      check: { id: 'K2', kind: 'cmd', value: 'npm run typecheck' } as Check,
+      detail: 'runs the npm script typecheck, which package.json does not define',
+    },
+  ])('names why a brief check that ran no command failed: $reason', async ({ check, detail }) => {
+    const { projectDir, sessionId } = setupGitSessionProject({
+      prefix: 'task-checks-unran-red',
+      sessionId: 'sess-task-checks-unran-red',
+      files: {
+        'package.json': JSON.stringify({ scripts: { test: 'vitest run' } }),
+        'tsconfig.json': '{}',
+      },
+    });
+    dirs.push(projectDir);
+    const task = makeTask({ id: 'T001', checks: [check] });
+    const state = makeImplState([task], { approve: 'plan' });
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runTaskChecks({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        bus,
+        config: makeConfig({
+          validation: { testCommand: undefined },
+          workflow: { approve: 'plan' },
+        }),
+      }),
+      state,
+      task,
+      checkIds: [check.id],
+    });
+
+    expect(result.runs).toEqual([expect.objectContaining({ checkId: check.id, status: 'fail' })]);
+    expect(result.runs[0]?.command).toBeUndefined();
+    expect(events.filter((event) => event.type === 'full_suite')).toEqual([
+      {
+        type: 'full_suite',
+        ts: expect.any(Number),
+        phase: state.phase,
+        status: 'done',
+        id: check.id,
+        taskId: 'T001',
+        command: '',
+        moment: 'plan',
+        passed: false,
+        detail,
+      },
+    ]);
+  });
+
   it('never settles a red fix check that names no failure, and runs nothing at the run base', {
     timeout: 60_000,
   }, async () => {

@@ -1,10 +1,10 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
-import { sessionDir, SESSION_LOG_FILE } from '../../core/paths.js';
+import { sessionDir, SESSION_LOG_FILE, STATE_FILE } from '../../core/paths.js';
 import { createInitialState } from '../../core/state/machine.js';
 import type { ResumeContextHolder } from './types.js';
 import type { RunnerCallContext } from '../calls/types.js';
@@ -160,6 +160,32 @@ describe('applyRebuiltContext', () => {
     });
 
     expect(events.some((e) => e.type === 'warning')).toBe(false);
+  });
+
+  it('tells the user to send the queued messages again when the saved state cannot be read', async () => {
+    const { projectDir, sessionId } = setupSession();
+    const outside = createTempDir('resume-context-outside');
+    dirs.push(outside);
+    const outsideSession = join(outside, sessionId);
+    mkdirSync(outsideSession, { recursive: true });
+    writeFileSync(join(outsideSession, STATE_FILE), '{}');
+    writeFileSync(join(outsideSession, SESSION_LOG_FILE), `${messageEntry('user', 'add auth')}\n`);
+    const sessionPath = sessionDir(projectDir, sessionId);
+    rmSync(sessionPath, { recursive: true, force: true });
+    symlinkSync(outsideSession, sessionPath, 'dir');
+
+    const { bus, events } = makeBusRecorder();
+    const resumeHolder: ResumeContextHolder = {
+      messages: [{ role: 'user', content: 'keep me' }],
+    };
+
+    await applyRebuiltContext({ projectDir, sessionId, bus, resumeHolder });
+
+    const warnings = events.flatMap((event) => (event.type === 'warning' ? [event.message] : []));
+    expect(warnings).toEqual([
+      'Your queued messages were not sent to the planner: the saved run state could not be read. Send them again.',
+    ]);
+    expect(resumeHolder.messages).toEqual([{ role: 'user', content: 'keep me' }]);
   });
 });
 

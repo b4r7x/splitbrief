@@ -403,7 +403,7 @@ Each brief still runs its own checks, except a render check, and a red brief goe
 
 The plan card names the checks that do not run: `Checks K1, K2 do not run: REVIEW is None, so only the checks of a brief run, and no render check runs. Request changes to move or drop them.`
 
-The run ends on one row, `Review · none · REVIEW is None, so no seat reviewed this run`, and `--plain` prints `review: none (REVIEW is None)`. A worktree or staged-copy run is then ready to apply, with no override. A checkout run closes as `complete`. The closed run's `Review` row reads `no review`. A run that ends this way exits `0`.
+The run ends on one row, `Review · none · no seat reviewed this run`, and `--plain` prints `review: none (REVIEW is None)`. A worktree or staged-copy run is then ready to apply, with no override. A checkout run closes as `complete`. The closed run's `Review` row reads `no review`. A run that ends this way exits `0`.
 
 An Apply text conflict raises the [`apply-conflict` halt](./APPROVAL-AND-RECOVERY.md#apply-conflicts), because no review can answer conflict markers. Apply reads REVIEW from `.splitbrief/config.yaml`, or from `--reviewer` when the command passes it, each time it runs. These rules follow the REVIEW that Apply reads, not the REVIEW that the run ended with.
 
@@ -563,7 +563,7 @@ implementerProfiles:
 
 If `implementerProfiles.default` is omitted, SPLITBRIEF resolves the default profile deterministically from the first profile name in sorted order. If `default` is set, it must name an existing profile.
 
-Task-start rows name the tool and model of the selected profile and, when the brief is `tight`, its estimate against the context window (`~24,310 of 32K context tokens (tight)`). A brief over its window shows its estimate alone (`~31,012 context tokens`): with Prompt budget `auto`, the tool handles its own context. The full routing reason, which names the selected profile (`Selected profile default (fits, estimated 5075/1000000 tokens)`), stays in the run log, and the run's recorded per-task metadata carries richer routing and context data for post-run inspection.
+Task-start rows name the tool and model of the selected profile and, when the brief is `tight`, its estimate against the context window (`~24,310 of 32K context tokens (tight)`). A tight brief on a window SPLITBRIEF only assumes shows its estimate alone (`~7,000 context tokens (tight)`), and so does a brief over its window (`~31,012 context tokens`): with Prompt budget `auto`, the tool handles its own context. The full routing reason, which names the selected profile (`Selected profile default (fits, estimated 5075/1000000 tokens)`), stays in the run log, and the run's recorded per-task metadata carries richer routing and context data for post-run inspection.
 
 ---
 

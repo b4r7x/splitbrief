@@ -203,7 +203,9 @@ describe('applyOfferedSeatSwap', () => {
 
     expect(outcome?.prepared).toBe(prepared);
     expect(outcome?.state.pendingRecovery).toBeDefined();
-    expect(warningMessages(events)[0]).toContain('preparing it failed: hook trust refused');
+    expect(warningMessages(events)).toEqual([
+      'The build seat was not switched to Claude Code CLI: preparing it failed: hook trust refused; the halt stays.',
+    ]);
   });
 
   it('warns about nothing when the operator cancelled the re-preparation', async () => {
@@ -255,6 +257,8 @@ describe('applyOfferedSeatSwap', () => {
 
     expect(outcome?.prepared).toBe(prepared);
     expect(outcome?.state.pendingRecovery).toBeDefined();
-    expect(warningMessages(events)).toEqual(['config changed meanwhile · the halt stays']);
+    expect(warningMessages(events)).toEqual([
+      'The build seat was not switched to Claude Code CLI: the config changed during the switch; the halt stays.',
+    ]);
   });
 });

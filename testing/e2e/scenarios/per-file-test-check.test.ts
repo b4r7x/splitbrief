@@ -16,6 +16,7 @@ import {
   readState,
   type StopContinueFixture,
 } from '../helpers/stop-continue-fixture.js';
+import { transcriptText } from '../helpers/transcript-text.js';
 
 let fixture: StopContinueFixture | undefined;
 let restorePath: (() => void) | undefined;
@@ -35,13 +36,14 @@ function git(cwd: string, args: readonly string[]): void {
 /**
  * One task writes `src/alpha.mjs` and its test, checked by the given checks. The planner answers
  * the plan, which names the given project gate, and both reviews; a plan repair is recorded, never
- * answered.
+ * answered. `omitTestFile` leaves the test file out of what the implementer writes.
  */
 async function runAlpha(opts: {
   checks: readonly Check[];
   gate?: string[];
   testCommand?: string;
   projectFiles?: Readonly<Record<string, string>>;
+  omitTestFile?: boolean;
 }) {
   fixture = createStopContinueFixture(() => '', { isolation: 'none' });
   const target = fixture;
@@ -110,17 +112,21 @@ appendFileSync(${JSON.stringify(callsPath)}, JSON.stringify({ kind }) + '\\n');
 process.stdout.write(JSON.stringify(answer));
 `,
   );
+  const implementerTestFile =
+    opts.omitTestFile === true
+      ? ''
+      : `writeFileSync(
+  'src/alpha.test.mjs',
+  "import { strict as assert } from 'node:assert';\\nimport { alpha } from './alpha.mjs';\\nassert.equal(alpha, 'alpha');\\n",
+);
+`;
   writeFileSync(
     implementerPath,
     `import { mkdirSync, writeFileSync } from 'node:fs';
 for await (const chunk of process.stdin) void chunk;
 mkdirSync('src', { recursive: true });
 writeFileSync('src/alpha.mjs', "export const alpha = 'alpha';\\n");
-writeFileSync(
-  'src/alpha.test.mjs',
-  "import { strict as assert } from 'node:assert';\\nimport { alpha } from './alpha.mjs';\\nassert.equal(alpha, 'alpha');\\n",
-);
-console.log('Implemented T001');
+${implementerTestFile}console.log('Implemented T001');
 `,
   );
   const config = loadConfig(target.projectDir).config;
@@ -276,5 +282,30 @@ describe('e2e: a plan with a per-file test check', () => {
     expect(state.pendingRecovery?.details).toContain(
       'Install what is missing, then run the checks again.',
     );
+  });
+
+  it('names the missing test file on the failed row of a brief check', async () => {
+    const { events } = await runAlpha({
+      omitTestFile: true,
+      projectFiles: {
+        'package.json': `${JSON.stringify({
+          name: 'alpha',
+          private: true,
+          scripts: { test: 'node --test' },
+        })}\n`,
+      },
+      checks: [{ id: 'K1', kind: 'test', value: 'src/alpha.test.mjs' }],
+    });
+
+    const transcript = transcriptText(events, 80);
+    const lines = transcript.split('\n');
+    const failed = lines.findIndex((line) => line.includes('T001 check K1 · failed'));
+    expect(failed, transcript).toBeGreaterThanOrEqual(0);
+    expect(
+      lines
+        .slice(failed, failed + 2)
+        .join(' ')
+        .replace(/\s+/g, ' '),
+    ).toContain('the workspace has no test file for src/alpha.test.mjs');
   });
 });

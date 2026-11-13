@@ -1359,6 +1359,40 @@ const planCheckNoTestFileProjection: WorkflowFixtureProjection = {
   }),
 };
 
+// The brief's own test check names a test file the workspace does not hold, so it failed without a command.
+const briefCheckUnranRedProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-brief-check-unran-red'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  events: [
+    ...touchedNotSuggestedProjection.events.filter(
+      (event) => event.type === 'workflow_started' || event.type === 'tasks_planned',
+    ),
+    ...touchedNotSuggestedProjection.events.filter((event) => event.type === 'task_started'),
+    {
+      type: 'full_suite',
+      ts: FIXED_TS + 390,
+      phase: 'validating-task',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      moment: 'plan',
+      id: 'K1',
+      command: '',
+      status: 'done',
+      passed: false,
+      detail: 'the workspace has no test file for src/loud.test.mjs',
+    },
+    {
+      type: 'checks_run',
+      ts: FIXED_TS + 400,
+      phase: 'validating-task',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      results: [{ id: 'K1', status: 'fail' }],
+    },
+    ...touchedNotSuggestedProjection.events.filter((event) => event.type === 'task_completed'),
+  ],
+};
+
 // The suite was red before the run: the project gate finds `npm test` red at the run base, and the
 // brief's plan check runs the same command with only that failure, so the brief completes.
 const planCheckPreExistingProjection: WorkflowFixtureProjection = {
@@ -1584,8 +1618,9 @@ const completedOrphanRowsProjection: WorkflowFixtureProjection = {
   ],
 };
 
-// Two briefs on a 32K window: the first ran tight, and the live one is over the window, so its row
-// shows the estimate alone. A two-brief plan keeps both rows on the 60x18 frame.
+// Three briefs: the first ran tight on a known 32K window, the second ran tight on a seat whose
+// window SPLITBRIEF only assumed, so its row shows the estimate alone, and the live one is over its
+// window, so its row shows the estimate alone too.
 const taskRowsContextFitProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-task-rows-context-fit'),
   feature: WORKFLOW_FEATURE,
@@ -1593,10 +1628,9 @@ const taskRowsContextFitProjection: WorkflowFixtureProjection = {
   sidebarVisible: false,
   events: [
     { type: 'workflow_started', ts: FIXED_TS, phase: 'implementing', feature: WORKFLOW_FEATURE },
-    { ...FIXTURE_TASKS_PLANNED, total: 2, tasks: FIXTURE_TASKS_PLANNED.tasks.slice(0, 2) },
+    FIXTURE_TASKS_PLANNED,
     {
       ...orphanBriefStarted(FIXTURE_PLANNED_BRIEFS[0], FIXED_TS + 100),
-      total: 2,
       contextFit: 'tight',
       estimatedTokens: 24_310,
       contextLength: 32_768,
@@ -1607,7 +1641,15 @@ const taskRowsContextFitProjection: WorkflowFixtureProjection = {
         { ...FIXTURE_PLANNED_BRIEFS[1], file: WORKFLOW_FIXTURE_SECOND_FILE },
         FIXED_TS + 300,
       ),
-      total: 2,
+      contextFit: 'tight',
+      estimatedTokens: 7_000,
+    },
+    fixtureBriefPassed(FIXTURE_PLANNED_BRIEFS[1], FIXED_TS + 400),
+    {
+      ...orphanBriefStarted(
+        { ...FIXTURE_PLANNED_BRIEFS[2], file: WORKFLOW_FIXTURE_REVIEW_PANEL_FILE },
+        FIXED_TS + 500,
+      ),
       contextFit: 'overflow',
       estimatedTokens: 31_012,
       contextLength: 32_768,
@@ -9198,6 +9240,34 @@ const applyRecheckWordsRefusedProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-apply-recheck-words-refused'),
 };
 
+export const crewWideReviewNoneEndProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-crew-wide-review-none'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  config: { ...VISUAL_WIDE_CREW, reviewer: 'none' },
+  get events(): EngineEvent[] {
+    return [
+      ...everyBriefPassed().map((event): EngineEvent => {
+        switch (event.type) {
+          case 'task_started':
+            return {
+              ...event,
+              tool: 'antigravity',
+              model: AGY_BUILD_SEAT.model,
+              axes: seatAxisWords(AGY_BUILD_SEAT),
+            };
+          case 'task_completed':
+            return { ...event, tool: 'antigravity', model: AGY_BUILD_SEAT.model };
+          default:
+            return event;
+        }
+      }),
+      { type: 'workflow_complete', ts: FIXED_TS + 450, phase: 'complete', review: 'none' },
+    ];
+  },
+};
+
 const projections = [
   reviewResumeProjection,
   reviewCheckCrashProjection,
@@ -9626,6 +9696,7 @@ const projections = [
     ),
   },
   planCheckNoTestFileProjection,
+  briefCheckUnranRedProjection,
   planCheckPreExistingProjection,
 
   completedOrphanRowsProjection,
