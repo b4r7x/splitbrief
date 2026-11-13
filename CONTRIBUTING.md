@@ -98,7 +98,7 @@ No commit-message format is enforced. Keep the first line concise; reference iss
 
 ## Adding a runner kind
 
-Planner and implementer both dispatch on a required `kind` discriminant across four variants: `cli`, `api`, `shell`, `agent`. The factory lives at `src/engine/runners/factory.ts` — `createPlanner(config, options)` / `createImplementer(config, options)`. New integrations plug in here.
+Planner and implementer both dispatch on a required `kind` discriminant across four variants: `cli`, `api`, `shell`, `agent`. The runner factory — `createPlanner(config, options)` / `createImplementer(config, options)` — is where new integrations plug in.
 
 Full config schemas and YAML examples: [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
 
@@ -127,22 +127,22 @@ Contributor docs (`docs/RELEASING.md`, `TESTING.md`, `DOGFOODING.md`, `INVARIANT
 
 Each skill step follows the engine contract in this table.
 
-| Skill step | Engine contract or path |
+| Skill step | Engine contract |
 |---|---|
-| One planning session, defaults and typed plan | `src/core/schemas/plan.ts`; `src/engine/orchestrator/planning/session.ts` and `plan-session.ts` |
-| Plan admission and Markdown renderings | `src/engine/spec/plan-checks.ts`, `plan-tasks.ts`, `prompts/task-format-example.ts` |
-| One behaviour with its tests and callers | TaskSpec intent/criteria; `src/core/pipeline-spec/brief.ts` |
-| Ordinary files as guidance; protected confirmation | `src/core/pipeline-spec/scope.ts` |
-| Consult first, with no local retry | `src/core/pipeline-spec/ladder.ts`; `src/core/schemas/consult.ts`; `src/engine/orchestrator/consult/` |
-| Code refresh before dispatch and persistent lineage bounds | `src/engine/orchestrator/task/refresh-code.ts`; `src/core/pipeline-spec/bounds.ts` |
+| One planning session, defaults and typed plan | The plan schemas; the planning session and its question, plan and repair loop |
+| Plan admission and Markdown renderings | `checkPlan` and the plan renderings, with the task-format example prompt |
+| One behaviour with its tests and callers | TaskSpec intent/criteria; `sliceRuleText()` |
+| Ordinary files as guidance; protected confirmation | `SCOPE_RULE` and `PROTECTED_PATHS_TEXT` |
+| Consult first, with no local retry | The retry ladder; `ConsultAnswerSchema`; `requestConsult` and `applyConsultAnswer` |
+| Code refresh before dispatch and persistent lineage bounds | `refreshCurrentCode`; `BOUNDS` |
 | Proposed decisions and confirmed Plan context | ImplementerReport decisions and `plan.decisions` |
-| End/task cadence and completed-task coverage | `workflow.review` (`src/core/schemas/config.ts`) |
-| Typed review, derived pass and appended fixes | `src/core/schemas/review.ts`, `src/core/review/verdict.ts`; review answer with fix work |
-| Reviewer checks, base re-run and stop rule | `src/engine/orchestrator/review-checks.ts`; `src/engine/orchestrator/base-gate.ts`; `src/engine/orchestrator/validation/changed-script.ts`; `src/core/schemas/review.ts` |
-| Test check command, narrowing and capture | `src/core/pipeline-spec/gates.ts`; `src/core/validation/stage-command.ts` and `stacks/` |
-| Registered checks at each cadence | Plan and TaskSpec checks; `src/engine/orchestrator/task/brief-gate.ts`, `src/engine/orchestrator/run/pre-review-checks.ts` |
-| Spawn recipes, halts and deadlines | `src/engine/runners/cli-tools/`; `src/core/pipeline-spec/halts.ts`, `timeouts.ts` |
-| Plain CLI output | `src/engine/events/sinks/stdout-text.ts` |
+| End/task cadence and completed-task coverage | `workflow.review` (the config schema) |
+| Typed review, derived pass and appended fixes | `ReviewVerdictSchema` and the review verdict helpers; review answer with fix work |
+| Reviewer checks, base re-run and stop rule | `runReviewChecks`; the base gate; the changed-script refusal; `ReviewVerdictSchema` |
+| Test check command, narrowing and capture | `NARROWING_RULE` and `CAPTURE_LIMITS`; `resolveTestCommand` and the validation stacks |
+| Registered checks at each cadence | Plan and TaskSpec checks; `runBriefGate`, `runPreReviewChecks` |
+| Spawn recipes, halts and deadlines | The CLI tool adapters; `HALT_SIGNATURES`, `TIMEOUTS` |
+| Plain CLI output | The plain-text stdout sink (`createStdoutTextSink`) |
 
 ### Reference library and ownership
 

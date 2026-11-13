@@ -112,7 +112,7 @@ describe('forbidden-abstraction', () => {
   it('requires one OpenAI transport through openai-stream only', () => {
     const constraints = sectionSlice('### Architectural constraints');
     expect(constraints).toMatch(/one openai transport/i);
-    expect(constraints).toContain('src/engine/providers/openai-stream/');
+    expect(constraints).toContain('hosted API providers use the `openai-stream` transport only');
     expect(constraints).toMatch(
       /do not add a second generic openai-compatible streaming transport/i,
     );

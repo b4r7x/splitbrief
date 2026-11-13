@@ -1,6 +1,6 @@
 # SPLITBRIEF Cookbook — Usage Examples
 
-A task-oriented reference for "how do I do X?". Every recipe is copy-paste ready against the current CLI surface and slash-command catalog. Where a recipe references a config field, the field name matches the zod schema in `src/core/schemas/config.ts`.
+A task-oriented reference for "how do I do X?". Every recipe is copy-paste ready against the current CLI surface and slash-command catalog. Where a recipe references a config field, the field name matches the config schema.
 
 If you're new to SPLITBRIEF, read this in order: recipes 1–5 cover the basic workflow, 6–9 cover cost, 10–11 cover safety, then jump to whatever you need.
 
@@ -927,7 +927,6 @@ Captured at 80x24 on the workflow screen, in a project with two skills. Their `S
 - With an empty query the commands are grouped under the five command categories — `Navigate`, `Crew`, `Workflow`, `View`, `Input & output`. Skills have their own `Skills` section after the commands, the tasks and the sessions. The headers collapse when the panel has fewer than 12 list slots (60x18), and the panel itself grows with the terminal instead of sitting at a fixed width.
 - `/crew` opens Settings on the Crew section with `plan` focused; `/crew plan`, `/crew build` and `/crew review` skip Settings and open that seat's picker; the seat's tool and model are changed from there, and its effort travels with the model.
 - Effort is no longer its own command — it is chosen with the model in the seat picker, and the crew row mirrors it read-only. Which backends can spend a level: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) and [CONFIGURATION.md](./CONFIGURATION.md).
-- `Ctrl+K` is handled by `src/app/keys.ts`.
 
 **See also:** [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md), [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
 

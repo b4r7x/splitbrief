@@ -22,18 +22,18 @@ The user-visible symptom was block jumps: scrolling by one offset could reveal o
 
 The current path first turns the conversation into row-counted blocks:
 
-- `src/features/workflow/conversation-rows/types.ts` defines `ConversationRow`, row segments, tones, and scroll inputs.
-- `src/features/workflow/conversation-rows/row-format/` owns width-aware wrapping and compact card rows (`text.ts`, `rows.ts`, `label-card.ts`, `card-block.ts`).
-- `src/features/workflow/conversation-rows/event-rows/dispatch.ts` maps `EngineEvent` values to row blocks (`visibility.ts` for silent types, `planner-text.ts` and `execution.ts` for specialized row builders).
-- `src/features/workflow/conversation-rows/build.ts` builds a projection with total row count and window materializers.
-- `src/features/workflow/conversation-rows/projection-cache.ts` reuses that projection while the source identity, width, streaming state, and expansion state are unchanged.
-- `src/features/workflow/conversation-rows/scroll.ts` computes scroll state from the projection's `totalRows`.
+- The row types define `ConversationRow`, row segments, tones, and scroll inputs.
+- The row formatter owns width-aware wrapping and compact card rows.
+- `eventRowBlock()` maps `EngineEvent` values to row blocks (`isTranscriptRowlessEvent()` for silent types, and specialized row builders for planner text and execution).
+- `buildConversationRowsProjection()` builds a projection with total row count and window materializers.
+- The projection cache reuses that projection while the source identity, width, streaming state, and expansion state are unchanged.
+- `computeConversationRowScroll()` computes scroll state from the projection's `totalRows`.
 
 The invariant is simple: `totalDynamicHeight === projection.totalRows`. The scroll math and the renderer use the same unit: a rendered terminal row, but only the visible row window is materialized.
 
 ## Rendering Path
 
-`src/features/workflow/components/conversation-flow/flow.tsx` reads scroll state and streaming output, then calls `computeConversationRowScroll()`. That helper builds a cached row projection, asks `getScrollWindowState()` for the visible row window, and materializes only that window.
+`ConversationFlow` reads scroll state and streaming output, then calls `computeConversationRowScroll()`. That helper builds a cached row projection, asks `getScrollWindowState()` for the visible row window, and materializes only that window.
 
 The current projection path is:
 
@@ -42,10 +42,10 @@ const projection = getConversationRowsProjection(input);
 const rows = getConversationRowsWindowProjection({ projection, windowStart, windowEnd }).rows;
 ```
 
-`src/features/workflow/conversation-rows/projection-cache.ts` caches projections by width, viewport height, expansion state, streaming state, and event content. `src/features/workflow/conversation-rows/build.ts` returns `ConversationRowBlock` records with `rowCount`, `renderableUnits`, and `createRows(windowStart, windowEnd)`, so scrolling by one row does not allocate every row in a large session. Each materialized row is rendered by `ConversationRowView` in `src/features/workflow/components/conversation-flow/row-view.tsx`. The row view has `height={1}`, `overflow="hidden"`, and `Text wrap="truncate-end"` so a row descriptor cannot expand the viewport.
+The projection cache caches projections by width, viewport height, expansion state, streaming state, and event content. `buildConversationRowsProjection()` returns `ConversationRowBlock` records with `rowCount`, `renderableUnits`, and `createRows(windowStart, windowEnd)`, so scrolling by one row does not allocate every row in a large session. Each materialized row is rendered by `ConversationRowView`. The row view has `height={1}`, `overflow="hidden"`, and `Text wrap="truncate-end"` so a row descriptor cannot expand the viewport.
 
 A closed run's summary is part of this transcript, not a second scroller: `closedTranscriptBlock`
-(`src/features/workflow/closed/block.ts`) is appended to the projection's block list after the run's
+is appended to the projection's block list after the run's
 own events (`tail`, `computeConversationRowScroll`), so the summary scrolls with the events above it
 under one offset. Its rows are plain segment rows in the grammar of an activity batch (`activity`,
 `activity-child`, `callout-body`, `activity-more`, `activity-child-last`), and each is one line, so
@@ -64,13 +64,13 @@ A settled Plan keeps the request, questions and answers, narration, activity, pl
 
 The scroller shows settled sections before the live stage and running brief. Pending briefs keep their existing `Pending n` block below the scroller. When only one pending row fits, the heading includes `+N more` for the hidden briefs. A skipped brief settles on `task_skipped`, even when a pre-hook denied it before `task_started`. Build rows between two briefs join the earlier brief up to the first `consult_answered` event for the next brief. When the next brief is skipped before it starts, its first `recovery_prompted` event also ends the earlier brief, whichever of the two comes first. Rows from that event join the next brief. Run-level build rows join the first brief and stay in its body. The operator's consult answer uses a `user_message` event with `qa`. The shared answered-questions row block renders `You → <answer>` beneath the question. A bare Enter records and renders the default answer.
 
-Done brief rows in both the transcript and the record of a closed run use `taskSummarySpans` and its shared `fitDetailRun`. The record uses the same target label as the brief heading. The method and duration stay whole while space permits. If metadata leaves no room for the task id and a title fragment, the row drops metadata first. The count keeps its room while the path shortens. A path shortened to a bare `…` drops with its count. A stopped brief in the record of a closed run fits the same way, and its `stopped` word keeps its room. Retries go before the path shortens by whole middle directory segments (`testing/…/projections.ts`), then to `…/projections.ts` and the bare filename. Only a filename that cannot fit loses characters. Path elision lives with the picker label rule in `src/utils/display-text.ts`.
+Done brief rows in both the transcript and the record of a closed run use `taskSummarySpans` and its shared `fitDetailRun`. The record uses the same target label as the brief heading. The method and duration stay whole while space permits. If metadata leaves no room for the task id and a title fragment, the row drops metadata first. The count keeps its room while the path shortens. A path shortened to a bare `…` drops with its count. A stopped brief in the record of a closed run fits the same way, and its `stopped` word keeps its room. Retries go before the path shortens by whole middle directory segments (`testing/…/projections.ts`), then to `…/projections.ts` and the bare filename. Only a filename that cannot fit loses characters. Path elision (`elidePathMiddle`) reuses the picker label rule (`elidePathLabel`).
 
 The check-row status `not run` joins its words with a non-breaking space (`\u00a0`), so wrapping at 60 columns keeps each phrase whole. Running checks use `formatElapsedClock` in the build block and byline (`running 10:02`, `running 0:35` in the block). Finished-row durations keep `2m 0s` or `14.0s`.
 
 ## Scroll Window
 
-`src/features/workflow/layout/scroll-window.ts` owns row-window math:
+The scroll-window helpers own row-window math:
 
 - `computeScrollMaxOffset()` computes the maximum offset from content height and viewport height.
 - `getScrollWindowState()` returns `windowStart`, `windowEnd`, and the visible above/below line counts.
@@ -92,7 +92,7 @@ An older run parked at `reviewing-briefs` displays its review document as markdo
 Keyboard and wheel scrolling use the markdown frame and overflow rows, as for every other review document.
 Saved brief-load errors reserve no rows in this pane.
 
-`queuedBriefs` in `src/features/workflow/conversation-rows/queued-briefs.ts` supplies the queued tasks
+`queuedBriefs` supplies the queued tasks
 to both `ConversationFlow` and the keyboard and mouse snapshot. It excludes the running brief,
 even when recovery resets it to `pending`. It returns no queued tasks while the sidebar shows tasks
 or the summary of a closed run occupies the transcript tail. The snapshot reads the tail blocks with
@@ -114,8 +114,8 @@ The performance regression harness is documented in [`TESTING.md`](./TESTING.md#
 
 Terminal size flows through `terminalSizeStore`. When `cols`, `rows`, or `isSmall` change:
 
-- `src/app/screens/workflow.tsx` recomputes content width, prompt rows, and content height.
-- `src/features/workflow/layout/snapshot.ts` and `src/features/workflow/layout/rect.ts` recompute snapshot geometry for keyboard and mouse scroll.
+- `WorkflowScreen` recomputes content width, prompt rows, and content height.
+- The scroll snapshot and the workflow content rect recompute snapshot geometry for keyboard and mouse scroll.
 - `buildConversationRowsProjection()` wraps text using the current `cols`.
 - `computeConversationRowScroll()` clamps the offset to the new row count.
 
@@ -123,30 +123,28 @@ Width changes are not cosmetic here. They can change the number of rows in `task
 
 ## Prompt Rows
 
-Prompt row budgeting lives in `src/features/workflow/prompt-rows/workflow.ts`.
+`getWorkflowPromptRows()` owns prompt row budgeting.
 
 Approval and cost prompts declare the same measured row heights that the workflow layout subtracts. The rendered prompt components use fixed heights, `overflow="hidden"`, and `flexShrink={0}`.
 
 The screen measures the ready result menu with `resultMenuHeight`. It publishes that measurement through `resultMenuStore`, including Apply confirmation rows. The scroll snapshot reads the same measurement. The screen clears it when the menu closes or the screen unmounts.
 
-`src/features/workflow/layout/rect.ts` caps prompt rows to the available middle area. `WorkflowScreen` renders prompts inside a fixed-height clipped container, so a very long action description or a narrow terminal can clip the prompt instead of pushing the conversation and footer out of the screen.
+`clampWorkflowPromptRows()` caps prompt rows to the available middle area. `WorkflowScreen` renders prompts inside a fixed-height clipped container, so a very long action description or a narrow terminal can clip the prompt instead of pushing the conversation and footer out of the screen.
 
 ## Removed Legacy Path
 
 The old estimator-based pipeline was removed:
 
-- `src/core/layout/conversation-scroll.ts`
-- `src/core/layout/renderable-conversation.ts`
-- `src/core/layout/viewport-trimming.ts`
+- the core layout modules for conversation scroll, renderable conversation and viewport trimming
 - the obsolete `EventCard` renderer and deleted workflow chrome modules (`event-cards/`, `agent-status-row`, `config-line`, `pipeline-bar`, and related cost status-line cards)
 
-Workflow chrome (header, rail, feedback, footer) now lives in `src/features/workflow/components/{chrome,header,rail,input-footer}.tsx`. Dynamic conversation output is rendered exclusively through `conversation-flow/` and `conversation-rows/`.
+Dynamic conversation output is rendered exclusively through `ConversationFlow` and the conversation row projection.
 
 ## Tests
 
 The key regression coverage is observable Ink output, not implementation wiring:
 
-- `src/features/workflow/components/conversation-flow/flow.test.tsx`
+- The conversation flow tests
   - fixed viewport never expands
   - adjacent scroll offsets move by one rendered row
   - wrapped `task_started` rows do not jump by card
@@ -155,50 +153,50 @@ The key regression coverage is observable Ink output, not implementation wiring:
   - completed briefs keep metadata, activity, validation, reports, warnings and recovery
   - settled Plan and Review sections keep plan-check and reviewer-check rows
   - new-event counts surface through the chrome label, not viewport rows
-- `src/features/workflow/conversation-rows/projection-cache.test.ts`
+- The projection cache tests
   - unchanged source identity reuses projections
   - mutable event and streaming content invalidates projections
   - requested windows materialize only requested rows
-- `src/features/workflow/conversation-rows/build.test.ts`
+- The row projection build tests
   - render blocks are materialized only when they intersect the requested row window
   - compact activity rows dedupe and expose the key affordance
   - settled brief bodies drop transient hints and duplicate terminal labels
   - settled headings show the file once, followed directly by the crew row and then one blank row
   - settled activity headers use `textDim`; live activity headers keep their seat tone
   - a run of more than three checks under a review heading is one check group; a run of three stays three rows
-- `src/features/workflow/conversation-rows/check-group-rows.test.ts`
+- The check group row tests
   - a done group hides its green rows and keeps every other row with its failing tests; a group in progress shows its last three rows
   - an open group shows `collapse` under its header, then every row
   - the header counts each outcome word, the reused results and the time, and a narrow header drops whole counts from the right
-- `src/features/workflow/conversation-rows/event-rows/planner-text.test.ts`
+- The planner text row tests
   - marked direct-writer narration renders dim markdown with styled inline code and file links
   - extracted-code output and unmarked implementer narration stay plain dim text
   - unmarked hand-backs retain plain narration and one report row when older runs replay
   - marked hand-backs retain dim markdown narration and one report row
-- `src/features/workflow/layout/snapshot.test.ts`
+- The scroll snapshot tests
   - rendered scroll ends and mouse rows agree after a recovery resets the running brief to pending
   - closed runs below the sidebar breakpoint reserve no queued rows
   - ready result menus and Apply confirmations reduce the snapshot and screen transcript by the same row count
-- `src/features/workflow/hooks/use-keys.test.tsx`
+- The workflow key handler tests
   - keyboard and wheel scrolling ignore stale brief-load errors and reach the last markdown row in an older brief review
-- `src/features/workflow/conversation-rows/markdown-rows.test.ts`
+- The markdown row tests
   - markdown layout is cached by identity and width
   - active cache entries survive cache-cap pressure
   - appended metadata and paragraphs match cold renders
-- `src/features/workflow/conversation-rows/activity-batch-model.test.ts`
+- The activity batch model tests
   - collapsed activity rows stay bounded
   - collapsed rows are the newest entries in event order
   - expanded mode materializes all deduped rows
-- `src/features/workflow/keyboard.test.ts`
+- The workflow keyboard tests
   - conversation panes support Shift+arrow, PageUp/PageDown, Home/End, and `/scroll`
   - review panes support Shift+arrow, PageUp/PageDown, Home/End, and Ctrl+B/Ctrl+F
   - `/activity` and `Ctrl+A` toggle the lowest folded row of the whole transcript; a click toggles the row under the pointer
   - `Ctrl+D` shows or hides the details of the latest row in the whole transcript that has them
-- `src/features/workflow/layout/scroll-window.test.ts`
+- The scroll window tests
   - the window spans the full visible height; banners ride the chrome dividers
-- `src/features/workflow/layout/rect.test.ts`
+- The workflow content rect tests
   - prompt rows are capped to the available middle area
-- `src/features/workflow/conversation-rows/transcript-walk.test.ts`
+- The transcript walk tests
   - settled sections yield their heading and retained body in event order
   - in a review, more than three consecutive checks yield one `check-group` step; only a run that ends the transcript in a review that is not settled is `open`
   - a run of three checks and the checks of a BUILD brief stay `event` steps

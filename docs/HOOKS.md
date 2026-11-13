@@ -20,7 +20,7 @@ This is the same rule [bulletproof-react](https://github.com/alan2207/bulletproo
 | Module named `use-*` that has no React dependency (pure function disguised as a hook) | Not a hook. Move to `src/utils/`, `src/core/`, or the feature that owns it. |
 | State that needs to cross multiple components or survive unmounts | Not a hook. Use a store (`src/stores/`). See [`STORES-AND-UI.md`](./STORES-AND-UI.md). |
 
-**Single-consumer hooks colocated with their component are acceptable** when the hook's sole job is to decompose that component's internals (e.g. `src/features/runners/two-column-picker/use-nav-state.ts`). They are private implementation details of the component, not part of any public surface.
+**Single-consumer hooks colocated with their component are acceptable** when the hook's sole job is to decompose that component's internals (e.g. the nav-state hook of the two-column runner picker). They are private implementation details of the component, not part of any public surface.
 
 ## Shallow-hook policy
 
@@ -48,7 +48,7 @@ Cross-feature primitives only. Flat directory — no subfolders, no barrels.
 | `use-shared-clock.ts` | `useSharedClock({ active })` — one shared ticking `now` for the workflow build progress block, the at-rest byline's seat wait and Apply clock, the running tool checks, and every session row's age on home and `/sessions`, so no two surfaces sample a different second. `active` is a rule of the clock's own sample, `(now) => boolean`: the frame that takes a surface off the clock reads the same sample as the rule, and that sample stays. |
 | `use-slow-probe-text.ts` | `useProbeActivity()` — the running tool checks and the shared clock, which ticks while a check runs. `useSlowProbeText(provider?)` — the check that has run 10 seconds or more, as its tool or API provider and its check (`{ name: 'OpenCode CLI', check: 'sign-in 12s' }`, `{ name: 'Ollama', check: 'model list 12s' }`), or null. With a provider id it reads that provider's checks only; the local-server form passes the provider it checks. `fitCheckingRow` cuts the name first on a short row. Used by home, the workflow footer (in preparation and while a live run checks its API seat), the crew step, the first-run tool list and the local-server form. |
 
-App-wide keyboard dispatch (`useAppKeys`) lives at `src/app/keys.ts` rather than under `src/hooks/`. App-wide mouse dispatch (`useAppMouse`) lives next to it at `src/app/mouse.ts`. These bind to app-shell concerns (`useApp().exit`, the global router, overlay stack, lifecycle abort, and terminal mouse subscription) and are composed once by `src/app/root.tsx`, so they sit next to the shell they serve.
+App-wide keyboard dispatch (`useAppKeys`) lives in the `src/app/` shell rather than under `src/hooks/`. App-wide mouse dispatch (`useAppMouse`) lives next to it. These bind to app-shell concerns (`useApp().exit`, the global router, overlay stack, lifecycle abort, and terminal mouse subscription) and are composed once by the composition root, so they sit next to the shell they serve.
 
 ### Feature-scoped (`src/features/{feature}/hooks/`)
 
@@ -130,7 +130,7 @@ When a hook would wrap another hook and add only trivial logic, inline instead. 
 1. **Trivial hooks do not need direct tests.** A 20-LOC hook with no branching that wraps an Ink API is covered transitively through its consumer's integration test. Writing a direct test for it asserts implementation.
 2. **Behavior lives in the hook, not the pure helper.** If you split a hook into `use-foo.ts` + `foo-helpers.ts`, the hook orchestrates, the helpers stay pure. Test the pure helpers directly; test the hook at the behavior level.
 3. **Hooks do not import from other features.** `features/home/hooks/*` must not import from `features/workflow/*`. Cross-feature needs go through a shared hook in `src/hooks/` or a store.
-4. **One `useInput` per concern.** Splitting `use-global-keys` into `useAppKeys` (now at `src/app/keys.ts`) + `use-keys` was a direct application of this: global keybindings stay always-on, workflow keybindings mount conditionally under `screen === 'workflow'`. Mouse follows the same boundary: `src/app/mouse.ts` owns the terminal subscription and global dispatch, while workflow hit testing stays under `features/workflow/hooks/use-mouse-*`.
+4. **One `useInput` per concern.** Splitting `use-global-keys` into `useAppKeys` (now in the `src/app/` shell) + `use-keys` was a direct application of this: global keybindings stay always-on, workflow keybindings mount conditionally under `screen === 'workflow'`. Mouse follows the same boundary: `useAppMouse` in the app shell owns the terminal subscription and global dispatch, while workflow hit testing stays under `features/workflow/hooks/use-mouse-*`.
 5. **Prefer `AbortController` over ad-hoc `cancelled` flags for async cancellation.** When a hook races a promise against unmount, use `new AbortController()` + `controller.signal` and return `() => controller.abort()` from the effect. Node's `fs.readFile`, `fetch`, and most async APIs accept `{ signal }` natively. Closure booleans (`let cancelled = false`) work but signal the wrong intent — `AbortController.abort()` is self-documenting and the Node-native SOTA. Canonical example: `use-review-content.ts`.
 
 ## Design decisions
@@ -141,8 +141,8 @@ Once the shared directory only contains hooks used across ≥2 features, it stay
 **Why keep `use-filterable-list` shared when it powers feature-level pickers?**
 It is a keyboard/filter primitive, not a business hook. Every feature picker composes it — the primitive has its own lifecycle independent of any feature.
 
-**Why split `use-global-keys` into `useAppKeys` (`src/app/keys.ts`) + `use-keys` (`src/features/workflow/hooks/use-keys.ts`)?**
-Three reasons: (1) `use-keys` reads from workflow-scoped stores (`conversationScrollStore`, `reviewStore`, `lifecycleStore`) and belongs in the workflow feature; (2) mounting the workflow listeners only on the workflow screen eliminates edge cases where a workflow chord fires on the home screen; (3) feature-local keyboard logic is discoverable from the feature folder, not from a 130-LOC shared hook with 9 store dependencies. `useAppKeys` lives at `src/app/keys.ts`, next to the `app/` shell it serves (`app/root.tsx`) (exit, overlay stack, lifecycle abort).
+**Why split `use-global-keys` into `useAppKeys` + `use-keys`?**
+Three reasons: (1) `use-keys` reads from workflow-scoped stores (`conversationScrollStore`, `reviewStore`, `lifecycleStore`) and belongs in the workflow feature; (2) mounting the workflow listeners only on the workflow screen eliminates edge cases where a workflow chord fires on the home screen; (3) feature-local keyboard logic is discoverable from the feature folder, not from a 130-LOC shared hook with 9 store dependencies. `useAppKeys` lives in `src/app/`, next to the shell it serves (exit, overlay stack, lifecycle abort).
 
 **Why not put `keyboard.ts` under `features/workflow/hooks/`?**
 It is a pure function, not a hook. Hooks imply React lifecycle. Keeping pure helpers at the feature root (`features/workflow/keyboard.ts`) signals "this is feature logic, consumable by both React and non-React code".

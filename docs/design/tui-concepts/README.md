@@ -35,7 +35,7 @@ See the complete set in [`overview.png`](overview.png).
 - Review layout: `src/features/workflow/components/review-view.tsx` and the approval prompt
   components under `src/features/workflow/components/approval-prompt/`.
 - Home: `src/app/screens/home.tsx` and `src/features/home/`.
-- Summary: the summary screen (`src/app/screens/summary.tsx`, `src/features/summary/`) is removed;
+- Summary: the summary screen is removed;
   the closed-run block replaced it. A closed run now states its outcome at the tail of its own
   transcript: `src/features/workflow/closed/block.ts` (`closedTranscriptBlock`),
   `src/features/workflow/closed/view-model.ts` (`deriveSummaryView`), and

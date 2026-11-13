@@ -31,7 +31,7 @@ Every run writes its full `EngineEvent` stream to:
 .splitbrief/sessions/<session-id>/session.jsonl
 ```
 
-One JSON object per line. Written by `src/engine/events/sinks/jsonl.ts` through the protected session-log appender in `src/core/sessions/log-writer.ts`. See `src/engine/events/schema.ts` (`EngineEventSchema`) for the full event union -- `workflow_*`, `planner_*`, `task_*`, `validate`, `escalate`, `cost_update`, `error`, `warning`, and more.
+One JSON object per line, written by the JSONL sink through the protected session-log appender. See `EngineEventSchema` for the full event union -- `workflow_*`, `planner_*`, `task_*`, `validate`, `escalate`, `cost_update`, `error`, `warning`, and more.
 
 Inspect with `jq`:
 
@@ -73,7 +73,7 @@ For CI or programmatic inspection, bypass the Ink TUI entirely and emit NDJSON `
 splitbrief start --json "feature description" 2>/dev/null | jq .
 ```
 
-Implementation: `src/cli/headless.ts` wires a `createStdoutJsonSink()` (`src/engine/events/sinks/stdout-json.ts`) in place of the TUI. The JSONL sink still writes the on-disk session log.
+The headless driver wires a `createStdoutJsonSink()` in place of the TUI. The JSONL sink still writes the on-disk session log.
 
 `--json` requires a feature argument on `start`. `resume` and `continue` pick an open run up from its saved state.
 
@@ -81,17 +81,17 @@ Implementation: `src/cli/headless.ts` wires a `createStdoutJsonSink()` (`src/eng
 
 These variables control the diagnostics of SPLITBRIEF:
 
-| Variable | Effect | Source |
-|---|---|---|
-| `SPLITBRIEF_DEBUG` | `1` writes the debug log to `.splitbrief/logs/debug.log` at the root of the git repository of the project; `0` or `false` turns it off. An installed SPLITBRIEF writes no debug log unless you set it. | `src/core/logger.ts` |
-| `SPLITBRIEF_CONTEXT_LENGTH` | Sets a Prompt budget for the default implementer profile (integer): a brief whose estimate does not fit it stops. See [CONFIGURATION.md](./CONFIGURATION.md#runtime-overrides) | `src/core/config/runtime/overrides/from-options.ts` |
-| `CI` | Suppresses fullscreen TUI (`--no-fullscreen` is equivalent) | `src/cli/setup.ts` |
+| Variable | Effect |
+|---|---|
+| `SPLITBRIEF_DEBUG` | `1` writes the debug log to `.splitbrief/logs/debug.log` at the root of the git repository of the project; `0` or `false` turns it off. An installed SPLITBRIEF writes no debug log unless you set it. |
+| `SPLITBRIEF_CONTEXT_LENGTH` | Sets a Prompt budget for the default implementer profile (integer): a brief whose estimate does not fit it stops. See [CONFIGURATION.md](./CONFIGURATION.md#runtime-overrides) |
+| `CI` | Suppresses fullscreen TUI (`--no-fullscreen` is equivalent) |
 
 For finer-grained traces, use the event log. The debug log also holds the notices that the screen does not show. Examples are a plan that went back to the planner once and a format pass that changed files. It also holds the diagnostics that you cannot act on, for example an optional file that SPLITBRIEF could not read or a cleanup that did not finish. These show no warning row and print no line to the terminal. The session log holds each state that the run handled by itself, such as an expired planner thread that ran again on a fresh session. The API-key-bearing env vars SPLITBRIEF reads are listed in [CONFIGURATION.md §Provider authentication](./CONFIGURATION.md#provider-authentication) — a missing credential fails config load for an API seat and shows as a readiness blocker for a CLI seat.
 
 ### Terminal diagnostics
 
-Each diagnostic goes to the debug log when the log is on (`SPLITBRIEF_DEBUG` above), through `warnStderr` and `warnError` in `src/lib/warn.ts`. Only a diagnostic that you must act on also shows: on the feedback line while the TUI is open, else as a line on stderr. An example is a tool process that SPLITBRIEF could not stop. A note for the quit, for example the command that continues the run, prints on stderr after the terminal is restored.
+Each diagnostic goes to the debug log when the log is on (`SPLITBRIEF_DEBUG` above), through `warnStderr` and `warnError`. Only a diagnostic that you must act on also shows: on the feedback line while the TUI is open, else as a line on stderr. An example is a tool process that SPLITBRIEF could not stop. A note for the quit, for example the command that continues the run, prints on stderr after the terminal is restored.
 
 Diagnostics are sanitized before they are written. `warnStderr` and `warnError` sanitize the text before they write it to the debug log or to stderr. Process-output errors and generic CLI error formatting sanitize it before they write it to stderr. Each strips ANSI/OSC/control sequences, redacts shared secret patterns including JWT-like tokens, and bounds the text. First-party styling may wrap the sanitized text after that; untrusted subprocess/provider text should not be styled before sanitization.
 
@@ -125,7 +125,7 @@ Exit `0` when ready or ready-with-warnings; exit `1` when blocked (the JSON repo
 
 ### Readiness `stateId` index
 
-Prefer these stable identifiers in automation and log correlation. Remediation strings match `src/core/readiness/format.ts`.
+Prefer these stable identifiers in automation and log correlation. Remediation strings match the runtime output.
 
 | Symptom (what you see) | `stateId` | Copyable remediation |
 |---|---|---|
@@ -157,7 +157,7 @@ After an automatic switch, Settings › Fallback shows the old CLI seat as the f
 
 ### Runner `state` outcomes (workflow commands)
 
-During `start`, `spec`, `resume`, and other planner/implementer invocations, distinguishable subprocess outcomes use `state` (not readiness `stateId`). Remediation strings match `src/engine/runners/errors.ts`.
+During `start`, `spec`, `resume`, and other planner/implementer invocations, distinguishable subprocess outcomes use `state` (not readiness `stateId`). Remediation strings match the runtime output.
 
 | Symptom (what you see) | `state` | Copyable remediation |
 |---|---|---|
@@ -176,8 +176,6 @@ Other runner outcomes (`spawn-not-found`, `protocol-failure`, `incompatible-vers
 | Endpoint policy, runner args, conflicting-flag validation | [CONFIGURATION.md](./CONFIGURATION.md) |
 | Credential resolution and provider families | [API-KEYS.md](./API-KEYS.md) |
 | `doctor --json` fields, exit codes, CLI flag reference | [CLI-REFERENCE.md](./CLI-REFERENCE.md#splitbrief-doctor) |
-
-Parity with runtime output is enforced by `testing/docs/troubleshooting.test.ts`.
 
 ---
 
@@ -205,7 +203,7 @@ Parity with runtime output is enforced by `testing/docs/troubleshooting.test.ts`
 
 **Fix:**
 1. Run `npm install` if `node_modules/` is missing or `package-lock.json` changed.
-2. If the missing module is an internal path (e.g. `./config`), edit the import to include the `.js` extension (`./config.js`), even though the source file is `.ts`. This is required by ESM and enforced across `src/`.
+2. If the missing module is an internal path (e.g. `./config`), edit the import to include the `.js` extension (`./config.js`), even though the source file is `.ts`. This is required by ESM and enforced across the source code.
 3. Run `npm run typecheck` and `npm run lint` — Biome and `tsc` both flag extensionless imports.
 
 **Prevention:** The CLAUDE.md core conventions require `.js` on every internal import. Configure your editor's TypeScript "auto import" feature to add `.js` automatically (VS Code: `"typescript.preferences.importModuleSpecifierEnding": "js"`).
@@ -342,16 +340,16 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 
 ### Symptom: Pricing column shows `n/a` and totals do not include a USD figure
 
-**Likely cause:** The model identifier returned by the runner is not in the bundled pricing catalog (`src/core/providers/known-models.ts`). SPLITBRIEF refuses to invent prices, so any unknown model defaults to `n/a`.
+**Likely cause:** The model identifier returned by the runner is not in the bundled pricing catalog. SPLITBRIEF refuses to invent prices, so any unknown model defaults to `n/a`.
 
 **Fix:**
 1. Check the exact model string in `summary.json` under `runs[].model`.
 2. Check whether the provider returns pricing metadata during model discovery; runtime metadata can supply rates for models that are not bundled.
-3. If the model is widely used and missing upstream, open a PR adding it to `src/core/providers/known-models.ts`.
+3. If the model is widely used and missing upstream, open a PR adding it to the bundled model catalog.
 
-**Prevention:** Audit `summary.json` for any `n/a` row after introducing a new model. Treat USD totals as incomplete until pricing comes from models.dev, runtime provider metadata, or `known-models.ts`.
+**Prevention:** Audit `summary.json` for any `n/a` row after introducing a new model. Treat USD totals as incomplete until pricing comes from models.dev, runtime provider metadata, or the bundled model catalog.
 
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), `src/core/providers/known-models.ts`.
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md).
 
 ---
 
@@ -361,12 +359,12 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 
 **Fix:**
 1. Read the warning in the transcript, `session.jsonl`, or `review-packet.json` (`escalations.warnings`) — it names the runner and the task.
-2. If the runner normally reports usage (check its protocol terminal in `src/engine/runners/cli-tools/`), upgrade or reconfigure the binary — the warning is the early sign of a version whose usage channel changed.
+2. If the runner normally reports usage, upgrade or reconfigure the binary — the warning is the early sign of a version whose usage channel changed.
 3. If the runner genuinely has no usage channel, accept the zero and the warning per task; the run's cost posture is unknowable for that runner.
 
 **Prevention:** Check the review packet's warnings list after a run. One `implementer_usage_not_reported` warning per unpriced task is expected; a warning for a runner that used to report usage means the binary drifted.
 
-**See also:** [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) (token accounting), [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md) (review-packet warnings list), `src/engine/orchestrator/tokens.ts`.
+**See also:** [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) (token accounting), [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md) (review-packet warnings list).
 
 ---
 
@@ -604,7 +602,7 @@ SPLITBRIEF tries to fix it before it tells you. The reviewer answers the blockin
 
 **Prevention:** Always check the drift report before accepting a task or making any manual commit. Treat unexpected out-of-bounds files as a planning bug, not implementation noise.
 
-**See also:** [docs/TASK-CONTRACT.md](./TASK-CONTRACT.md), [docs/WORKFLOW.md](./WORKFLOW.md), `src/engine/orchestrator/final-review.ts`.
+**See also:** [docs/TASK-CONTRACT.md](./TASK-CONTRACT.md), [docs/WORKFLOW.md](./WORKFLOW.md).
 
 ---
 
@@ -622,7 +620,7 @@ A read, list or search outside the isolation directory does not halt. The tripwi
 
 **Prevention:** Prefer tools whose shell runs in the directory SPLITBRIEF gives them. The halt is a check SPLITBRIEF makes on what the tool reports and on what the checkout shows afterwards — not a sandbox: a write to a path no tool call names, into a directory outside the checkout, or into a gitignored file of the checkout goes unseen.
 
-**See also:** [APPROVAL-AND-RECOVERY.md §Recovery](./APPROVAL-AND-RECOVERY.md#recovery), `src/engine/implementers/isolation/`.
+**See also:** [APPROVAL-AND-RECOVERY.md §Recovery](./APPROVAL-AND-RECOVERY.md#recovery).
 
 ---
 
@@ -640,13 +638,13 @@ A commit, a branch switch or a pull in your checkout does not halt the brief: a 
 
 **Prevention:** Do not stage or commit inside the run worktree. While a brief runs, do not create tags or other branches, stash, or change hooks or the git config, and do not start agents that create or move branches in the same repository. Commits and branch switches in your checkout are safe; Apply merges them.
 
-**See also:** [APPROVAL-AND-RECOVERY.md §Recovery](./APPROVAL-AND-RECOVERY.md#recovery), `src/engine/implementers/isolation/checkout-audit.ts`.
+**See also:** [APPROVAL-AND-RECOVERY.md §Recovery](./APPROVAL-AND-RECOVERY.md#recovery).
 
 ---
 
 ### Symptom: The implementer says it finished but nothing changed
 
-**Likely cause:** The runner completed its call without writing any file. Change detection (`detectChanges()`, `src/engine/change-detection.ts`) reports the distinct `no-files-changed` reason, the task fails with the `no-staged-change` outcome, and SPLITBRIEF publishes one coded warning — `category: implementer`, `code: implementer_wrote_nothing` — naming the runner and the task. The warning lands in `session.jsonl` and in the review packet's warnings list (`review-packet.json` → `escalations.warnings`). Two calls are the exception, and each may verify and change nothing: a fix attempt for an appended review fix task, whose code is already on disk, and the first call of a brief continued after a stop or a *Seat down* halt, with or without a correction, when the brief already changed its declared files before it was cut. A fix attempt's done row reads `verified · no change needed`. A continued brief's done row names the files it kept and reads `verified · kept the interrupted attempt's work · no further change`.
+**Likely cause:** The runner completed its call without writing any file. Change detection (`detectChanges()`) reports the distinct `no-files-changed` reason, the task fails with the `no-staged-change` outcome, and SPLITBRIEF publishes one coded warning — `category: implementer`, `code: implementer_wrote_nothing` — naming the runner and the task. The warning lands in `session.jsonl` and in the review packet's warnings list (`review-packet.json` → `escalations.warnings`). Two calls are the exception, and each may verify and change nothing: a fix attempt for an appended review fix task, whose code is already on disk, and the first call of a brief continued after a stop or a *Seat down* halt, with or without a correction, when the brief already changed its declared files before it was cut. A fix attempt's done row reads `verified · no change needed`. A continued brief's done row names the files it kept and reads `verified · kept the interrupted attempt's work · no further change`.
 
 **Fix:**
 1. Read the warning in the transcript or `review-packet.json`. A "finished but wrote nothing" response is a model behaviour problem, not a SPLITBRIEF failure — the retry ladder runs exactly as it would for any other failure.
@@ -655,7 +653,7 @@ A commit, a branch switch or a pull in your checkout does not halt the brief: a 
 
 **Prevention:** Prefer a `direct`-write runner verified against the task file, and check the review packet's warnings list after a run — the `implementer_wrote_nothing` warning is the signal that the model reported success without touching the tree.
 
-**See also:** [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md), [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md), `src/engine/change-detection.ts`, `src/engine/implementers/pipeline/run.ts`.
+**See also:** [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md), [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md).
 
 ---
 
@@ -672,24 +670,24 @@ A commit, a branch switch or a pull in your checkout does not halt the brief: a 
 
 **Prevention:** Give the implementer a model that matches the brief's difficulty. There is no retry count or intermediate model to configure: `workflow.max_retries` and the `escalation` block are retired.
 
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md), `src/engine/orchestrator/task/loop.ts`.
+**See also:** [docs/WORKFLOW.md](./WORKFLOW.md).
 
 ---
 
 ### Symptom: Implementer fails repeatedly against a local model that is not running
 
-**Likely cause:** An `api`-kind implementer probes its provider's model list instead of assuming a local endpoint is up (`createProviderAvailability`, `src/engine/providers/client/availability.ts`). A dead daemon fails the probe, and the availability gate raises the unavailable-implementer recovery immediately — no local retry and no consult is burned against the dead endpoint, so a stopped daemon cannot cost you a planner call.
+**Likely cause:** An `api`-kind implementer probes its provider's model list instead of assuming a local endpoint is up (`createProviderAvailability`). A dead daemon fails the probe, and the availability gate raises the unavailable-implementer recovery immediately — no local retry and no consult is burned against the dead endpoint, so a stopped daemon cannot cost you a planner call.
 
 **Fix:**
 1. Read the recovery issue's detail — it carries the runner's own reason (e.g. "the endpoint is unreachable") when one exists.
 2. Start the daemon behind the endpoint.
 3. Pick `retry-same-worker` — the next availability probe runs once per task iteration and the verdict is never cached, so the running daemon is detected on the next task.
 
-**Prevention:** Readiness probes the endpoint before the run starts, so a stopped daemon is a blocker at `doctor` and at `start` rather than a mid-run surprise after the planning phase has been paid for (`runners.availability.implementer.<profile>`, `src/core/readiness/checks/availability.ts`). To draft a spec while the daemon is down, use `splitbrief spec` — it never calls the implementer, so its readiness does not gate on one.
+**Prevention:** Readiness probes the endpoint before the run starts, so a stopped daemon is a blocker at `doctor` and at `start` rather than a mid-run surprise after the planning phase has been paid for (`runners.availability.implementer.<profile>`). To draft a spec while the daemon is down, use `splitbrief spec` — it never calls the implementer, so its readiness does not gate on one.
 
 A provider that `did not answer in time` did not send its model list in one minute. Each check of the model list waits up to one minute: before the start, at the start and before each brief. The provider scan of home, setup and the model picker waits up to one minute too. A provider that answers after six seconds is found, not failed. After ten seconds the screen names the provider and the check, for example `Checking tools · custom-endpoint model list 10s`, and Esc stops the check. A stop during the check is not reported as an unavailable provider.
 
-**See also:** [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md), `src/engine/implementers/api.ts`.
+**See also:** [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md).
 
 ---
 
@@ -704,7 +702,7 @@ A provider that `did not answer in time` did not send its model list in one minu
 
 **Prevention:** None needed for correct model output — a whole-file rewrite that keeps most of its lines, or any patch carrying SEARCH/REPLACE markers, passes the guard unchanged.
 
-**See also:** [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md), `src/engine/implementers/pipeline/extracted-code.ts`.
+**See also:** [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
 
 ---
 
@@ -720,7 +718,7 @@ A provider that `did not answer in time` did not send its model list in one minu
 
 **Prevention:** Keep the installed CLI tools on versions matching the support matrix in [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md). The preflight cannot detect adapter/binary drift for a help text it cannot read; that case reports ok rather than blocking.
 
-**See also:** [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md), `src/engine/runners/arg-vector-preflight.ts`.
+**See also:** [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
 
 ---
 
@@ -750,7 +748,7 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 
 **Prevention:** Run `splitbrief doctor` before the first run: on Linux the `runners.sandbox.claude-code` check names a missing `bwrap` or `socat`. Run `claude` once in the project and open `/sandbox`: its panel also names a missing package.
 
-**See also:** [PLANNERS-AND-IMPLEMENTERS.md §Posture, trust, and auth](./PLANNERS-AND-IMPLEMENTERS.md#posture-trust-and-auth), `src/engine/runners/cli-tools/claude-code.ts`, `src/core/readiness/checks/claude-sandbox.ts`, `src/core/pipeline-spec/halts.ts`.
+**See also:** [PLANNERS-AND-IMPLEMENTERS.md §Posture, trust, and auth](./PLANNERS-AND-IMPLEMENTERS.md#posture-trust-and-auth).
 
 ---
 
@@ -784,7 +782,7 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 
 **Prevention:** None needed — the legend row states the live keys (`esc stop options · ctrl+c stop now · ctrl+k commands · /help`), and a cancelled call still never spends an attempt or a consult: an aborted implementer call stops the retry loop, and the attempt counter rolls back to the value it had before it.
 
-**See also:** [docs/FEATURES.md](./FEATURES.md#stopping-a-run), [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md), `src/engine/orchestrator/escalation/handle.ts`.
+**See also:** [docs/FEATURES.md](./FEATURES.md#stopping-a-run), [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md).
 
 ---
 
@@ -867,7 +865,7 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 
 **Prevention:** Keep the tests that need a secret or a live service out of the commands the reviewer can choose, or give them a local default.
 
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md#what-a-check-can-reach), `src/lib/process/spawn/child-env.ts`.
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md#what-a-check-can-reach).
 
 ---
 
@@ -882,7 +880,7 @@ A refused check did not run. SPLITBRIEF records it as refused, not as failed, an
 2. For the next run, to run package scripts as plan checks, set `workflow.approve: plan` and approve the plan card. A halted run keeps the approve level it recorded at planning.
 3. Or end the run and start it again, so the planner names an allowed command, such as `npm test` or a `test` check.
 
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md#reviewer-checks), `src/engine/orchestrator/planning/sanitize-discovered-validation.ts`.
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md#reviewer-checks).
 
 ---
 
@@ -916,7 +914,7 @@ The policy does not catch database-drop tasks: `rails db:drop`, `rake db:drop`, 
 3. When a setup step is missing, run it yourself in the run workspace; SPLITBRIEF never runs a setup command as a check.
 4. When an admitted `./gradlew` or `./mvnw` check times out on its first run, the wrapper downloads its distribution. Run `./gradlew --version` once yourself, or raise `validation.timeout_ms`.
 
-**See also:** [CONFIGURATION.md §Reviewer checks](./CONFIGURATION.md#reviewer-checks), `src/engine/orchestrator/validation/reviewer-command-policy.ts`.
+**See also:** [CONFIGURATION.md §Reviewer checks](./CONFIGURATION.md#reviewer-checks).
 
 ---
 
@@ -979,7 +977,7 @@ To measure the project before a run, run its own commands directly. `doctor` run
 
 ### Symptom: The base re-run is red although the same commit passes in your checkout
 
-**Likely cause:** The run base copy differs from your checkout. A run that started from a commit gets a detached Git worktree at that commit with the run's starting snapshot on top (`withRunBaseTree`, `src/engine/orchestrator/isolation/base-tree.ts`). The checkout supplies Git history and committed file modes and symlinks. Reconciliation keeps an existing regular file's checked-out mode when replacing its contents. The snapshot does not carry uncommitted mode changes or recreate symlinks, and new regular files get default permissions. The copy does not have ignored files that only your checkout holds, such as `.env` or a build output. A run that recorded no base commit (a staged-copy run, or a repository with no commit) gets only the snapshot copy, without Git history or committed modes and symlinks. There a red reviewer check that is red at the run base too reads `not verified at the run base · the run recorded no base commit, …`, and the reviewer decides. In a worktree or staged-copy run, the base tree path has as many characters as the run workspace path, which is usually longer than your checkout path. A test whose result depends on the length of its folder path can then be red in both and pass in your checkout. In a run that started from a commit it then reads as pre-existing; in a run with no base commit it reads `not verified at the run base`.
+**Likely cause:** The run base copy differs from your checkout. A run that started from a commit gets a detached Git worktree at that commit with the run's starting snapshot on top (`withRunBaseTree`). The checkout supplies Git history and committed file modes and symlinks. Reconciliation keeps an existing regular file's checked-out mode when replacing its contents. The snapshot does not carry uncommitted mode changes or recreate symlinks, and new regular files get default permissions. The copy does not have ignored files that only your checkout holds, such as `.env` or a build output. A run that recorded no base commit (a staged-copy run, or a repository with no commit) gets only the snapshot copy, without Git history or committed modes and symlinks. There a red reviewer check that is red at the run base too reads `not verified at the run base · the run recorded no base commit, …`, and the reviewer decides. In a worktree or staged-copy run, the base tree path has as many characters as the run workspace path, which is usually longer than your checkout path. A test whose result depends on the length of its folder path can then be red in both and pass in your checkout. In a run that started from a commit it then reads as pre-existing; in a run with no base commit it reads `not verified at the run base`.
 
 Any base-tree preparation failure, including listing stale trees, Git checkout, submodule initialization, snapshot reconciliation or dependency-link failure, settles each base row as `not run` with the error, and a red reviewer check reads `not verified at the run base` with that error. No base command runs. If cleanup also fails, the detail includes both errors. Cleanup failure after the base commands completed is a warning that names the tree; their stored results stay, and the review compares with them. If the callback itself failed, its error propagates unchanged and cleanup failure appears as a warning naming the tree.
 
@@ -1038,7 +1036,7 @@ A killed process's `base-<pid>-*` tree under `$XDG_STATE_HOME/splitbrief/bases/`
 2. A state written by a newer SPLITBRIEF cannot be read by an older one. Upgrade, or start a fresh run.
 3. The session's artifacts are independent of its state: `plan.json`, `plan.md`, `tasks.md` and `review.md` (and `spec.md` on older runs) are still readable and can seed a new run.
 
-**Prevention:** Do not hand-edit `state.json`. Every legitimate mutation goes through the compare-and-swap in `state-ops.ts`; an edited file loses that guarantee.
+**Prevention:** Do not hand-edit `state.json`. Every legitimate mutation goes through the state compare-and-swap; an edited file loses that guarantee.
 
 **See also:** [docs/TASK-CONTRACT.md](./TASK-CONTRACT.md) §v4 contract boundary.
 
@@ -1136,7 +1134,7 @@ A killed process's `base-<pid>-*` tree under `$XDG_STATE_HOME/splitbrief/bases/`
 
 ### Symptom: the run halts with `plan-checks-failed` instead of opening the plan card
 
-**Likely cause:** The planner's plan failed `checkPlan` (`src/engine/spec/plan-checks.ts`) or the context fit (`estimatePlanContextFits`) — for example a criterion with no check, a task with no check, a dependency cycle, or, with a Prompt budget, a task over it. A failing plan goes back to the planner once with the failed checks; a second failure halts the run with `plan-checks-failed` and the plan card never opens.
+**Likely cause:** The planner's plan failed `checkPlan` or the context fit (`estimatePlanContextFits`) — for example a criterion with no check, a task with no check, a dependency cycle, or, with a Prompt budget, a task over it. A failing plan goes back to the planner once with the failed checks; a second failure halts the run with `plan-checks-failed` and the plan card never opens.
 
 **Fix:**
 1. Read the failed checks: the recovery panel lists each one.
@@ -1169,7 +1167,7 @@ A killed process's `base-<pid>-*` tree under `$XDG_STATE_HOME/splitbrief/bases/`
 1. In the TUI, press Enter (destructive class) or `y` (every other protected class). On a protected write, press `r` first if you want to record a reason. Escape denies.
 2. In a custom callback, return `{ decision: 'confirm', phrase: CONFIRM_PHRASE, reason }` with `reason` non-empty.
 
-**Prevention:** Import `CONFIRM_PHRASE` from `src/core/approval/types.ts` rather than retyping the literal.
+**Prevention:** Import `CONFIRM_PHRASE` rather than retyping the literal.
 
 **See also:** [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md).
 
@@ -1188,8 +1186,6 @@ A killed process's `base-<pid>-*` tree under `$XDG_STATE_HOME/splitbrief/bases/`
 4. Re-run the operation that needed the snapshot.
 
 **Prevention:** Avoid running multiple `splitbrief start` invocations against the same workspace simultaneously.
-
-**See also:** `src/engine/snapshots/` (lock implementation).
 
 ---
 
@@ -1227,9 +1223,9 @@ A killed process's `base-<pid>-*` tree under `$XDG_STATE_HOME/splitbrief/bases/`
 2. If the file was intentionally in scope, name it in the brief's `suggestedFiles`, `scope.inBounds` or `scope.approvedOutOfBounds`; those are the accepted change patterns.
 3. Leave the finding when the change is real: the final reviewer reads the files the run touched that no brief suggested.
 
-**Prevention:** Write brief scope sections with full project-relative paths (`src/engine/orchestrator/run/workflow.ts`), never bare names (`workflow.ts`).
+**Prevention:** Write brief scope sections with full project-relative paths, never bare names (`workflow.ts`).
 
-**See also:** [docs/TASK-CONTRACT.md](./TASK-CONTRACT.md), `src/engine/orchestrator/final-review.ts`.
+**See also:** [docs/TASK-CONTRACT.md](./TASK-CONTRACT.md).
 
 ---
 
@@ -1242,22 +1238,22 @@ A killed process's `base-<pid>-*` tree under `$XDG_STATE_HOME/splitbrief/bases/`
 
 **Prevention:** Read the retired-key table in [CONFIGURATION.md](./CONFIGURATION.md) after an upgrade.
 
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), `src/core/config/load/validation/config.ts`.
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md).
 
 ---
 
 ### Symptom: Edits to `drift.ts` do not change behavior
 
-**Likely cause:** Drift logic lives in one place. The final deterministic drift report runs from `src/engine/orchestrator/final-review.ts` through `src/engine/orchestrator/drift/analyze.ts`, persists to `drift-report.json`, and is summarized in `summary.json`. There is no per-task chain analysis.
+**Likely cause:** Drift logic lives in one place. The final deterministic drift report runs from the final review through the drift analysis, persists to `drift-report.json`, and is summarized in `summary.json`. There is no per-task chain analysis.
 
 **Fix:**
-1. For final review drift findings, inspect `drift-report.json` and `src/engine/orchestrator/drift/analyze.ts`.
+1. For final review drift findings, inspect `drift-report.json`.
 2. Use `summary.json` only for the aggregate drift summary.
-3. Edit `analyze.ts`, re-run, and re-verify in `drift-report.json` or the drift summary in `summary.json`.
+3. Edit the drift analysis, re-run, and re-verify in `drift-report.json` or the drift summary in `summary.json`.
 
 **Prevention:** Before editing drift code, grep for the symptom string and confirm which file emits it.
 
-**See also:** [docs/ARCHITECTURE.md](./ARCHITECTURE.md), `src/engine/orchestrator/`.
+**See also:** [docs/ARCHITECTURE.md](./ARCHITECTURE.md).
 
 ---
 
@@ -1373,13 +1369,13 @@ Copied images remain in `~/.splitbrief/clipboard/` so history and runs retain re
 
 **Fix:**
 1. Inspect the screen indicator in the TUI status bar.
-2. Open the command's `src/core/runtime/commands/defs/<category>.ts` module and check its `validScreens` array.
+2. Check the command's **Screens** entry in [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
 3. Navigate to a screen where the command is valid.
 4. If you authored the command, add the missing screen to its `validScreens`.
 
 **Prevention:** When adding a new slash command, list every screen it should be available on — defaulting to too few is more common than too many.
 
-**See also:** [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md), `src/core/runtime/commands/defs/`.
+**See also:** [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
 
 ---
 
@@ -1538,7 +1534,7 @@ Copied images remain in `~/.splitbrief/clipboard/` so history and runs retain re
 
 **Prevention:** Wire drift checks into your CI script explicitly; do not assume SPLITBRIEF will fail the build for you.
 
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md), `src/engine/orchestrator/final-review.ts`.
+**See also:** [docs/WORKFLOW.md](./WORKFLOW.md).
 
 ---
 
@@ -1563,7 +1559,7 @@ Copied images remain in `~/.splitbrief/clipboard/` so history and runs retain re
 
 ### Symptom: `Configuration errors in .splitbrief/config.yaml:`
 
-**Likely cause:** The YAML failed schema validation. The message lists each failing path. The loader throws `ConfigError` (`src/core/config/errors.ts`), and `loadConfigOrExit` in `src/cli/setup.ts` exits with code 1.
+**Likely cause:** The YAML failed schema validation. The message lists each failing path. The loader throws `ConfigError`, and `loadConfigOrExit` exits with code 1.
 
 **Fix:**
 1. Check that `version: 3` is present. No other version loads (see the next entry).
@@ -1618,7 +1614,7 @@ Copied images remain in `~/.splitbrief/clipboard/` so history and runs retain re
 1. For a custom or unknown `provider`, give the seat an inline `apiKey: sk-...`. An `env:` reference is never accepted there, whatever the `apiBase`.
 2. For a known provider pointed at a foreign `apiBase`, set an inline `apiKey` for that endpoint. Or drop the `apiBase` override, so the provider's official endpoint and its env var apply.
 
-**Prevention:** Use env-held keys only with the official endpoints of known providers. Source: `src/core/config/credentials.ts`.
+**Prevention:** Use env-held keys only with the official endpoints of known providers.
 
 **See also:** [docs/API-KEYS.md](./API-KEYS.md), [docs/CONFIGURATION.md](./CONFIGURATION.md#13-environment-variables).
 
@@ -1626,7 +1622,7 @@ Copied images remain in `~/.splitbrief/clipboard/` so history and runs retain re
 
 ### Symptom: `The file's group or other users can change .splitbrief/config.yaml`
 
-**Likely cause:** The group or other users can write the config file (mode & 0o022). SPLITBRIEF still loads it. Source: `src/core/config/load/io.ts`.
+**Likely cause:** The group or other users can write the config file (mode & 0o022). SPLITBRIEF still loads it.
 
 **Fix:**
 

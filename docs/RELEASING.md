@@ -62,7 +62,7 @@ The first dispatch of every release is a dry run. The `dry_run` input defaults t
 
 Any failed check or non-zero exit fails the gate. On success the script prints the Node version and the platform it proved, for example `ok — splitbrief-0.2.0.tgz installs and runs splitbrief 0.2.0 on node v22.22.0 linux-x64 (native better-sqlite3 loads)`.
 
-The supported runtimes are Node 22 and Node 24 (`engines.node` is `^22.0.0 || ^24.0.0`) on `darwin` and `linux` (`os`). The CLI refuses a Node older than 22 at start-up (`src/cli/node-guard.ts`). For any other unsupported major, npm warns at install, and the smoke's `--engine-strict` install fails. `release.yml` proves Node 24 on Linux. The maintainer proves Node 22, and macOS, with `npm run release:smoke` in procedure step 7. A change to `engines.node` needs a smoke on each new major before release.
+The supported runtimes are Node 22 and Node 24 (`engines.node` is `^22.0.0 || ^24.0.0`) on `darwin` and `linux` (`os`). The CLI refuses a Node older than 22 at start-up. For any other unsupported major, npm warns at install, and the smoke's `--engine-strict` install fails. `release.yml` proves Node 24 on Linux. The maintainer proves Node 22, and macOS, with `npm run release:smoke` in procedure step 7. A change to `engines.node` needs a smoke on each new major before release.
 
 The `files` allowlist in `package.json` includes `dist/`, 19 explicitly named user docs, `README.md`, `CHANGELOG.md`, and `LICENSE`. It excludes developer docs and `docs/design/`. `docs/CONFIGURATION.md` stays because CLI errors name it.
 

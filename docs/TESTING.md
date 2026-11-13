@@ -113,7 +113,7 @@ SPLITBRIEF_PERF=1 node --expose-gc ./node_modules/vitest/vitest.mjs run testing/
 - `testing/helpers/factories/<domain>.ts` = pure **TypeScript constructors** returning typed objects with overrides. No I/O.
 - **Rule of two:** data stays inline inside one test file until a second test needs it. Promotion happens on the second consumer, not the first.
 
-**Feature sub-components get a colocated test when they carry behaviour.** A sub-component that renders a visible affordance off branching state — an approval prompt, the plan card, a pipeline bar — is tested next to its `*.tsx` against `lastFrame()` and observable store state, the same way `src/features/workflow/components/` already is. Styling-only or pure-passthrough sub-components stay covered transitively through the page seam (`app/screens/<x>.tsx` / `app/overlays/<x>.tsx`); do not add a "does not crash" test for them. Shared primitives in `src/components/` (`MultilineInput` → `input/multiline-input.test.tsx`, `ScrollWindow` → `pickers/scroll-window.test.ts`, `SessionRow` → `session-row.test.tsx`) carry their own colocated tests — their cost amortises across consumers. A primitive whose behaviour lives in a backing hook is covered through that hook's test instead (`FilterableList` via `src/hooks/use-filterable-list.test.tsx`).
+**Feature sub-components get a colocated test when they carry behaviour.** A sub-component that renders a visible affordance off branching state — an approval prompt, the plan card, a pipeline bar — is tested next to its `*.tsx` against `lastFrame()` and observable store state, the same way the workflow feature's components already are. Styling-only or pure-passthrough sub-components stay covered transitively through the page seam (`app/screens/<x>.tsx` / `app/overlays/<x>.tsx`); do not add a "does not crash" test for them. Shared primitives in `src/components/` (`MultilineInput` → `input/multiline-input.test.tsx`, `ScrollWindow` → `pickers/scroll-window.test.ts`, `SessionRow` → `session-row.test.tsx`) carry their own colocated tests — their cost amortises across consumers. A primitive whose behaviour lives in a backing hook is covered through that hook's test instead (`FilterableList` via the test of `useFilterableList`).
 
 **Decision-bearing orchestrator modules get a colocated test.** A module in `src/engine/orchestrator/` that makes a decision or owns observable control-flow behaviour — escalation tiers, queue drain order, signal-handler cleanup, planning-phase routing, recovery actions, the task loop and step — has a colocated test against its returned decision and the events it emits. Tests that use integration helpers have the `.integration.test.ts` suffix. This is why `escalation/step.integration.test.ts`, `queue/submit.test.ts`, `signals.test.ts`, `planning/*.test.ts`, `recovery/*.test.ts`, `task/loop-*.integration.test.ts`, `task/step.integration.test.ts`, and `run/workflow.integration.test.ts` (the same files the Recovery flow section below tells you to run) all exist. The `runWorkflow()` integration seam under `testing/integration/orchestrator/` covers the composition of these modules across a full multi-phase run, not the per-module decision. Reserve it for behaviour that only emerges from wiring several modules together (a phase progressing, a run reaching ready to apply, a workflow completing). Trivial glue with no branch of its own — a function that only forwards to an already-tested helper — stays covered transitively at that seam.
 
@@ -155,7 +155,7 @@ npm test -- src/core/schemas/workflow.test.ts
 npm test -- src/core/schemas/enums.test.ts
 npm test -- src/core/state/machine.test.ts
 npm test -- src/core/state/persistence.test.ts src/core/sessions/log-writer.test.ts src/core/payload-bounds.test.ts
-npm test -- src/engine/orchestrator/recovery/actions.test.ts src/engine/orchestrator/recovery/actions-persistence.test.ts src/engine/orchestrator/recovery/builders/task.test.ts src/engine/orchestrator/recovery/builders/workflow.test.ts
+npm test -- src/engine/orchestrator/recovery/actions.test.ts src/engine/orchestrator/recovery/actions-persistence.test.ts src/engine/orchestrator/recovery/builders/task.test.ts
 npm run test:integration -- src/engine/orchestrator/task/loop-happy-path.integration.test.ts
 npm run test:integration -- src/engine/orchestrator/task/step.integration.test.ts
 npm run test:integration -- src/engine/orchestrator/run/workflow.integration.test.ts
@@ -351,7 +351,7 @@ it('start --json emits NDJSON and exits 0', async () => {
   });
 });
 ```
-The headless driver (`src/cli/headless.ts`) wires `createStdoutJsonSink` to the bus and stubs workflow host callbacks so integration tests can drive `splitbrief start --json` end-to-end and assert on the event sequence plus exit code. The plan card is approved unattended; a write to a protected path has no one to confirm it headlessly, so it fails closed. No Ink mount, no TTY detection.
+The headless driver wires `createStdoutJsonSink` to the bus and stubs workflow host callbacks so integration tests can drive `splitbrief start --json` end-to-end and assert on the event sequence plus exit code. The plan card is approved unattended; a write to a protected path has no one to confirm it headlessly, so it fails closed. No Ink mount, no TTY detection.
 
 **UI flow — render a feature + drive engine events through stores** (`testing/helpers/ink.ts`):
 
@@ -404,7 +404,6 @@ Real adapter boundaries (`Planner`, `Implementer`, `ProviderClient`) are the onl
 CLI command handlers accept an optional `deps` parameter for dependency injection. This is the standard pattern for testing commands without `vi.mock`:
 
 ```ts
-// src/cli/commands/start/types.ts
 export interface StartDeps {
   runHeadless: typeof runHeadless;
   initStores: typeof initStores;
@@ -412,7 +411,6 @@ export interface StartDeps {
   prepareExecution?: typeof prepareExecution | undefined;
 }
 
-// src/cli/commands/start/register.ts
 export const defaultStartDeps: StartDeps = { runHeadless, initStores, renderApp, prepareExecution };
 
 export function registerStartCommand(program: Command, deps: StartDeps = defaultStartDeps): void { ... }
@@ -477,7 +475,7 @@ L1 faux (`planner.ts`, `implementer.ts`) is the default for new orchestrator tes
 
 ## Test shape
 
-**Pure function tests.** No mocks. Inputs → outputs. Cover edges: empty, null, boundary values, unicode, negative numbers, NaN/Infinity where relevant. Use `it.each(...)` when 5+ tests differ only by parameter. Models: `src/utils/diff.test.ts`, `src/core/state/machine.test.ts`, `src/engine/orchestrator/summary/build.test.ts` and `src/engine/orchestrator/summary/costs.test.ts` (aggregate pricing cases also live in `src/engine/providers/cost/breakdown.test.ts` and `src/engine/providers/cost/task-usage.test.ts`).
+**Pure function tests.** No mocks. Inputs → outputs. Cover edges: empty, null, boundary values, unicode, negative numbers, NaN/Infinity where relevant. Use `it.each(...)` when 5+ tests differ only by parameter.
 
 **Schema tests.** Only invariants and error paths. Do not write "parse a valid literal returns that literal" — `tsc` proves it. Zod `.strict()` only needs one repo-wide rejection test; don't duplicate per schema.
 
@@ -487,7 +485,7 @@ L1 faux (`planner.ts`, `implementer.ts`) is the default for new orchestrator tes
 
 **Component / feature tests.** Use `ink-testing-library`. Render with real stores (reset in `beforeEach`). Drive by setting store state or simulating input. Assert on `lastFrame()` text or observable store state. Never mock `ink`, `FilterableList`, or any internal component.
 
-**CLI command tests.** Invoke the real commander handler. Use a real `tmpDir` with scripted `.splitbrief/` contents (pattern: `src/cli/commands/status.integration.test.ts`; config load and version admission are unit-tested in `src/core/config/load/io.test.ts`). Config load/write roundtrip (default shape, optional sections, snake_case conversion) belongs in `src/core/config/load/io-roundtrip.test.ts`, not a CLI integration file. `init` without a TTY fails before any config write — `testing/integration/cli/init-non-tty.test.ts`. Treat stdin / stdout / exit code as the boundary. Assert on exit code and output *shape* (non-empty, contains command name) — never exact user-facing wording.
+**CLI command tests.** Invoke the real commander handler. Use a real `tmpDir` with scripted `.splitbrief/` contents (config load and version admission are unit-tested in `src/core/config/load/io.test.ts`). Config load/write roundtrip (default shape, optional sections, snake_case conversion) belongs in `src/core/config/load/io-roundtrip.test.ts`, not a CLI integration file. `init` without a TTY fails before any config write — `testing/integration/cli/init-non-tty.test.ts`. Treat stdin / stdout / exit code as the boundary. Assert on exit code and output *shape* (non-empty, contains command name) — never exact user-facing wording.
 
 ## Forbidden patterns
 
@@ -572,7 +570,7 @@ Why: real stores, real Ink render, observable output + observable store state.
 - Real subprocess via `spawn(...)` against `/bin/echo`, `node -e '...'`, or a canned script. Do not mock `node:child_process`. The login-shell fallback in agent tests has a 30 s timeout for a reason; do not lower it.
 - Real git binary via `createTestGitRepo` (`testing/helpers/git.ts`). Do not stub `simple-git`.
 - Real HTTP via `http.createServer` for provider tests.
-- Data factories are TypeScript functions under `testing/helpers/factories/` — one file per domain (`factories/task.ts:makeTask`, `factories/config.ts:makeConfig`, `factories/session.ts:makeSession`, `factories/summary.ts:makeSummary`). On-disk artefacts live in `testing/fixtures/`; consumers reach them via a repo-root-relative path resolved from `import.meta.dirname` (`src/engine/providers/cli-model-catalog.test.ts`, `src/engine/codebase/parse.test.ts`, `src/engine/codebase/repomap.test.ts`), not from `process.cwd()`.
+- Data factories are TypeScript functions under `testing/helpers/factories/` — one file per domain (`factories/task.ts:makeTask`, `factories/config.ts:makeConfig`, `factories/session.ts:makeSession`, `factories/summary.ts:makeSummary`). On-disk artefacts live in `testing/fixtures/`; consumers reach them via a repo-root-relative path resolved from `import.meta.dirname`, not from `process.cwd()`.
 - Every config artefact this repository ships is loaded by the real `loadConfig` in `testing/ci/shipped-configs.test.ts`: the committed `evals/fixtures/*/.splitbrief/config.yaml` projects, the committed examples under `testing/fixtures/configs/`, and the caller-supplied configs that `initConfig` / `writeConfig` write. `initConfig` preserves an existing config unless `force` is set and returns the transaction result kind. Add a new example by dropping a `.yaml` file into `testing/fixtures/configs/` — the glob picks it up.
 - Every ```` ```yaml ```` fence in `README.md` or any `docs/*.md` that names a top-level `ConfigSchema` key is loaded by the real `loadConfig` in `testing/docs/configuration.test.ts` — whole configs as written, section fragments under a `version: 3` header, which is how a reader pastes them. The doc tree is enumerated, so a new doc is covered the moment it exists. The same gate asserts every documented `kind: api` block spells out `service` and `offering`, because the loader's default merge would otherwise let an `ollama` example pass while omitting them. Pseudo-YAML opts out with `<!-- config-shape-sketch -->` and nothing else does.
 - Sanctioned `vi.mock` targets (whole repo): `node:fs/promises` (write-failure and `mkdtemp` interception — `engine/orchestrator/run/heartbeat.test.ts`, `engine/orchestrator/approval/staged-project-failure.integration.test.ts`), `node:fs` (`statSync` ENOENT simulation — `core/state/persistence.test.ts`), `ink` + `fullscreen-ink` (CLI integration tests only — suppresses `waitUntilExit()` / `withFullScreen` so commander handlers run to completion without a TTY; all other exports preserved). Anything else is a bug.
@@ -894,7 +892,7 @@ Verify: install completes, `npm run test-ci` (format:check → typecheck → lin
 
 ## Import-integrity audit
 
-`node scripts/dangling-imports.mjs` resolves every relative `import`/`export … from` and dynamic `import()` in `src/`, `testing/` and `scripts/` — tracked and untracked alike — against the filesystem, accounting for the ESM `.js`-for-`.ts` suffix. String and template-literal example imports (fixtures, prompt templates) are skipped. It prints `clean — <n> files scanned` and exits `0` when nothing dangles; otherwise it lists each `file:line -> specifier` and exits `1`.
+`node scripts/dangling-imports.mjs` resolves every relative `import`/`export … from` and dynamic `import()` in `src/`, `testing/` and `scripts/` — tracked and untracked alike — against the filesystem, accounting for the ESM `.js`-for-`.ts` suffix. It also resolves the path of each `vi.mock` and `vi.doMock` call, and checks that each key of a mock factory is an export of the mocked file. String and template-literal example imports (fixtures, prompt templates) are skipped. It prints `clean — <n> files scanned` and exits `0` when nothing dangles; otherwise it lists each `file:line -> specifier` and exits `1`.
 
 Run it after a move, rename or deletion pass: `tsc` reports the same breakage, but this audit is safe to run when the typecheck gate itself is unavailable, and it covers files no tsconfig includes.
 

@@ -46,7 +46,6 @@ For any TS-only type (not a Zod schema), the placement depends on who uses it.
 **Inline into that file.**
 
 ```ts
-// src/core/navigation/types.ts
 export const ALL_SCREENS = ['home', 'workflow', 'setup'] as const;
 export type Screen = (typeof ALL_SCREENS)[number];
 export type InputMode = 'normal' | 'review' | 'question';
@@ -111,64 +110,42 @@ Everything else moves to Case A/B/C.
 
 Types should live where their domain meaning is created — not in a central `types/` grab-bag.
 
-| Type | Old home | New home | Why |
-|---|---|---|---|
-| `EngineEventSchema` (type-dispatched union) | n/a (new) | `engine/events/schema.ts` | The type-indexed schema contract is the source of truth for every engine event; persisted to `session.jsonl` and validated by `parseEngineEvent` |
-| `EngineEvent` (alias) | n/a (new) | `engine/events/types.ts` | `z.infer<typeof EngineEventSchema>`, carved out next to the event ports (see the colocation carve-out above); workflow sub-stores and all sinks consume it directly |
-| `EventBus`, `EventSink` | n/a (new) | `engine/events/types.ts` | Declared alongside the `EngineEvent` alias; schema-less ports for `createEventBus()` and sink subscribers |
-| `WorkflowCancelReason`, `WORKFLOW_CANCEL_REASONS` | `engine/orchestrator/types.ts` | `engine/events/workflow-cancel.ts` | Workflow cancellation is an engine event contract used by both schema validation and orchestrator abort handling; keeping it with events avoids schema → orchestrator ownership imports |
-| `RunnerCallEventSchema`, `RunnerCallResultSchema` | n/a (new) | `engine/calls/schema.ts` | Source of truth for normalized runner/backend call values crossing parser, provider, persistence, replay, hooks, and explicit `InvokeResult` projections |
-| `RunnerRuntime`, `ToolUseInfo`, `ParsedLine`, `InvokeResult` | `core/types/runner.ts` | `engine/runners/types.ts` | Created by the runner factory — runner-domain |
-| `SkillMeta` | `core/types/app.ts` | `core/skills/types.ts` | Produced by `engine/skill-discovery.ts`, consumed by stores/features without importing `engine/` |
-| `Screen`, `InputMode`, `OverlayType` | `core/types/app.ts` | `core/navigation/types.ts` | Cross-cutting: many consumers across `app/` + `components/` + `core/` + `features/` + `stores/`. Also exports the runtime values `ALL_SCREENS` and `ACTIVE_OVERLAYS` (tolerated under Case B — a folder `types.ts` co-located with the screaming type) |
-| `RuntimeCommandDef`, `RuntimeCommandContext` | `core/types/app.ts` | `core/runtime/commands/types.ts` | Multiple files in one folder |
-| `PaletteCommandItem` (formerly `CommandPaletteItem`) | `core/types/app.ts` | `features/palette/results.ts` | Produced and ranked by the palette feature |
+| Type | Home | Why |
+|---|---|---|
+| `EngineEventSchema` (type-dispatched union) | `engine/events/schema.ts` | The type-indexed schema contract is the source of truth for every engine event; persisted to `session.jsonl` and validated by `parseEngineEvent` |
+| `EngineEvent` (alias) | `engine/events/types.ts` | `z.infer<typeof EngineEventSchema>`, carved out next to the event ports (see the colocation carve-out above); workflow sub-stores and all sinks consume it directly |
+| `EventBus`, `EventSink` | `engine/events/types.ts` | Declared alongside the `EngineEvent` alias; schema-less ports for `createEventBus()` and sink subscribers |
+| `WorkflowCancelReason`, `WORKFLOW_CANCEL_REASONS` | `engine/events/workflow-cancel.ts` | Workflow cancellation is an engine event contract used by both schema validation and orchestrator abort handling; keeping it with events avoids schema → orchestrator ownership imports |
+| `RunnerCallEventSchema`, `RunnerCallResultSchema` | `engine/calls/schema.ts` | Source of truth for normalized runner/backend call values crossing parser, provider, persistence, replay, hooks, and explicit `InvokeResult` projections |
+| `RunnerRuntime`, `ToolUseInfo`, `ParsedLine`, `InvokeResult` | `engine/runners/types.ts` | Created by the runner factory — runner-domain |
+| `SkillMeta` | `core/skills/types.ts` | Produced by `engine/skill-discovery.ts`, consumed by stores/features without importing `engine/` |
+| `Screen`, `InputMode`, `OverlayType` | `core/navigation/types.ts` | Cross-cutting: many consumers across `app/` + `components/` + `core/` + `features/` + `stores/`. Also exports the runtime values `ALL_SCREENS` and `ACTIVE_OVERLAYS` (tolerated under Case B — a folder `types.ts` co-located with the screaming type) |
+| `RuntimeCommandDef`, `RuntimeCommandContext` | `core/runtime/commands/types.ts` | Multiple files in one folder |
+| `PaletteCommandItem` (formerly `CommandPaletteItem`) | `features/palette/results.ts` | Produced and ranked by the palette feature |
 
 **Banned anti-patterns:**
 
-- ❌ `src/types.ts` or `src/types/` as a top-level dumping ground — the ban targets first-party `.ts` type buckets, not `.d.ts` ambient declarations (a `.d.ts` that augments a third-party module with no shipped types is fine)
+- ❌ A `types.ts` file or a `types/` folder at the `src/` root as a dumping ground — the ban targets first-party `.ts` type buckets, not `.d.ts` ambient declarations (a `.d.ts` that augments a third-party module with no shipped types is fine)
 - ❌ Feature-scoped types in `src/core/types/`
 - ❌ `*-types.ts` suffix when the folder name already implies the domain
-- ❌ A `core/types/app.ts` kitchen-sink grouping unrelated types
+- ❌ A kitchen-sink file in `core/types/` grouping unrelated types
 
 **Removed in the 2026-04-19 release:**
 
 | Type | Status |
 |---|---|
-| `TuiEvent` (formerly `features/workflow/types.ts`) | Removed. The workflow store consumes `EngineEvent` directly. Use `EngineEvent` from `engine/events/types.ts`. |
-| `OrchestratorEvent`, `OrchestratorEventPayloadMap` (formerly `engine/orchestrator/events.ts` / `core/types/orchestrator-events.ts`) | Removed. Replaced by `EngineEvent`. |
+| `TuiEvent` | Removed. The workflow store consumes `EngineEvent` directly. Use `EngineEvent` from `engine/events/types.ts`. |
+| `OrchestratorEvent`, `OrchestratorEventPayloadMap` | Removed. Replaced by `EngineEvent`. |
 
 ---
 
 ## Schemas — `src/core/schemas/`
 
-`core/schemas/` is the home for **cross-cutting** boundary shapes — the validators that many folders consume (`Config`, `Task`, `Session`, `WorkflowState`, and friends). Its root is intentionally mostly flat because the folder is itself cohesive: "runtime data shapes." The sole current folder exception is `src/core/schemas/recovery/`, which keeps the coupled recovery schemas and fact helpers together. The recovery action policy (`allowedActionsForHalt`, `haltOf`) lives in `src/core/recovery/halt.ts`. A narrowly-scoped schema used by exactly one folder may instead colocate with that folder (e.g. `core/config/runtime/overrides/schema.ts`) rather than being hoisted here.
-
-```
-src/core/schemas/          # flat leaves plus the intentional recovery/ exception
-├── config.ts              # ConfigSchema + Config type
-├── enums.ts               # Phase, ApproveLevel, recovery enums; WorkflowMode (older runs only)
-├── implementer-config.ts
-├── planner-config.ts
-├── runner-fields.ts
-├── task.ts                # TaskSchema + Task type + TaskIdSchema (branded)
-├── tokens.ts
-├── workflow.ts
-├── session.ts
-├── session-log.ts         # SessionLog entries (JSONL)
-├── summary.ts
-├── question.ts
-├── models-dev.ts          # models.dev catalog — remote JSON boundary
-├── recovery/              # recovery's cohesive multi-module boundary; no recovery.ts facade
-│   ├── facts.ts           # RecoveryFact accessors
-│   └── schemas.ts         # recovery Zod schemas + inferred types
-└── …                      # plan, drift, evidence, snapshot, hooks, … (flat leaves)
-```
+`core/schemas/` is the home for **cross-cutting** boundary shapes — the validators that many folders consume (`Config`, `Task`, `Session`, `WorkflowState`, and friends). Its root is intentionally mostly flat because the folder is itself cohesive: "runtime data shapes." The sole current folder exception is `src/core/schemas/recovery/`, which keeps the coupled recovery schemas and fact helpers together. A narrowly-scoped schema used by exactly one folder may instead colocate with that folder (e.g. `core/config/runtime/overrides/schema.ts`) rather than being hoisted here.
 
 **Inferred types co-locate with their schema.** Each file exports the schema *and* the inferred type:
 
 ```ts
-// src/core/schemas/task.ts
 import { z } from 'zod';
 
 export const TaskSchema = z.object({
@@ -235,7 +212,7 @@ If it turns out a type or value from `features/workflow/` is needed in `engine/`
 | `<folder>/types.ts` with `z.infer`d schema types | ❌ | Inferred schema types must live beside their schema owner |
 | `<folder>/<name>-types.ts` | ❌ | Suffix duplicates the folder's domain |
 | `<folder>/<name>.types.ts` | ❌ | Same as above, different punctuation |
-| `src/types.ts` | ❌ | Top-level dumping ground |
+| `types.ts` at the `src/` root | ❌ | Top-level dumping ground |
 | `src/types/<name>.ts` | ❌ | Outside `src/core/types/` (which is reserved for truly cross-cutting types) |
 | `src/types/<name>.d.ts` (ambient module declaration) | ✅ | Augments a third-party module with no shipped types |
 | Inline into consumer file | ✅ | Case A — one consumer |
@@ -262,7 +239,7 @@ A: Is it persisted (written to the session log, etc.)? → schema, with its `z.i
 **Q: Can I put `type Foo` and `type Bar` (unrelated) in the same `types.ts` because they are both used across my folder?**
 A: Yes — that is what `types.ts` is for. The folder is the naming context.
 
-**Q: Should I create `src/types/` for types used by many places?**
+**Q: Should I create a top-level `types/` folder for types used by many places?**
 A: No. Use `src/core/types/` only for types that clear the exception rule (the cross-cutting bar or a documented carve-out — see "Exception — genuinely cross-cutting types"). Most "shared types" actually have a producer and should live there.
 
 ---
@@ -272,7 +249,7 @@ A: No. Use `src/core/types/` only for types that clear the exception rule (the c
 ### Central `types/` grab-bag
 
 ```ts
-// ❌ src/core/types/app.ts before the 2026-04 restructure
+// ❌ a kitchen-sink file in core/types/ before the 2026-04 restructure
 export type Screen = 'home' | 'workflow' | ...;
 export interface RuntimeCommandDef { ... }
 export interface SidebarTask { ... }
@@ -303,7 +280,7 @@ src/stores/navigation/
 // src/core/schemas/task.ts
 export const TaskSchema = z.object({ ... });
 
-// src/core/types/task.ts
+// core/types/task.ts
 import type { TaskSchema } from '../schemas/task.js';
 export type Task = z.infer<typeof TaskSchema>;
 ```
@@ -313,7 +290,7 @@ Fix: both in `src/core/schemas/task.ts`.
 ### Mixing Zod and TS-only in one file
 
 ```ts
-// ❌ src/core/types/app.ts
+// ❌ one file in core/types/
 export type Screen = 'home' | 'workflow';          // TS-only
 export const ScreenSchema = z.enum(['home', ...]); // Zod
 export interface SkillMeta { ... }                 // TS-only

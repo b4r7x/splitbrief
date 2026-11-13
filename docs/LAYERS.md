@@ -31,15 +31,15 @@ Import direction is one-way, top to bottom. For the cross-check table and blocke
 - Pure function or small stateless module — you could publish it to npm under a different name without touching the code (the format-errors path roots are the one stateful exception)
 - Reusable across unrelated projects
 
-**What lives here (`src/utils/`):**
-- `type-guards.ts` — `assertNever`, `isRecord`, `typedEntries`
-- `error.ts` / `format-errors.ts` — `error(kind, msg, …)` factory + `toErrorMessage(unknown)` → string (holds module-scoped path roots set by the CLI and run isolation, the one stateful exception in `utils/`)
-- `redact.ts` — strip API keys from strings
-- `truncate.ts` — `truncateByChars`, `truncateByTailLines`
-- `format-time.ts` — `formatDuration`, `formatTime`
-- `with-timeout.ts` — `startDeadline`: a `setTimeout` deadline joined to an abort signal
-- `frontmatter.ts` — generic YAML frontmatter parser
-- `diff.ts` — LCS diff algorithm
+**What lives here:**
+- type guards — `assertNever`, `isRecord`, `typedEntries`
+- the `error(kind, msg, …)` factory + `toErrorMessage(unknown)` → string (holds module-scoped path roots set by the CLI and run isolation, the one stateful exception in `utils/`)
+- API key redaction — strip API keys from strings
+- truncation — `truncateByChars`, `truncateByTailLines`
+- time formatting — `formatDuration`, `formatTime`
+- `startDeadline`: a `setTimeout` deadline joined to an abort signal
+- a generic YAML frontmatter parser
+- the LCS diff algorithm
 
 **Prohibited imports:** `core/`, `engine/`, `stores/`, `features/`, `components/`, `hooks/`, `lib/`, `cli/`.
 
@@ -51,12 +51,11 @@ Import direction is one-way, top to bottom. For the cross-check table and blocke
 
 **Pure validators live in `utils/`, even when a related error kind lives in `lib/`:**
 
-`validateSafeIdentifier` (`src/utils/validate-identifier.ts`) is a pure string check — no `..`, no `/`, no `\`, non-empty. It has zero I/O, zero Node API, and takes/returns plain data: `(id: string) => { ok: true } | { ok: false; reason: string }`. That's the `utils/` contract.
+`validateSafeIdentifier` is a pure string check — no `..`, no `/`, no `\`, non-empty. It has zero I/O, zero Node API, and takes/returns plain data: `(id: string) => { ok: true } | { ok: false; reason: string }`. That's the `utils/` contract.
 
-The matching `fsError.invalidId` factory stays in `src/lib/fs.ts` because it is a filesystem-domain error — it describes a rejection surfaced at a fs boundary. Callers compose the two: validate with `utils`, throw the `lib` error on failure.
+The matching `fsError.invalidId` factory stays in `lib/` because it is a filesystem-domain error — it describes a rejection surfaced at a fs boundary. Callers compose the two: validate with `utils`, throw the `lib` error on failure.
 
 ```ts
-// src/core/paths-io.ts
 const result = validateSafeIdentifier(filename);
 if (!result.ok) throw fsError.invalidId('filename', filename, result.reason);
 ```
@@ -78,10 +77,10 @@ Moral: validators (pure) split from error factories (domain). If a "validator" a
 **What lives here:**
 - `lib/git/` — `simple-git` boundary in `client.ts` (diff, file, ref, repository and entry-merge helpers in sibling modules)
 - `lib/fs.ts` — security-aware filesystem helpers (`ensureSecureDir`, `writeSecureFile`)
-- `lib/warn.ts` — diagnostic writer: each diagnostic to the debug log, one the user must act on also to the installed sink or `stderr`
+- the diagnostic writer: each diagnostic to the debug log, one the user must act on also to the installed sink or `stderr`
 - `lib/process/` — subprocess lifecycle (`spawn`, `errors`, `registry`, `line-buffer`, `command-path`)
 - `lib/terminal/` — terminal I/O (`filtered-stdin/`, `mouse-zones`, `kitty-keyboard` protocol, `hyperlinks`, `background`)
-- `lib/http/policy-fetch.ts` — manual-redirect `fetch` transport; the caller supplies the initial endpoint and the rejection factory, so the module carries no provider knowledge
+- `lib/http/` — manual-redirect `fetch` transport; the caller supplies the initial endpoint and the rejection factory, so the module carries no provider knowledge
 
 **Prohibited imports:** `core/`, `engine/`, `stores/`, `features/`, `components/`, `hooks/`, `cli/`. `lib/` may import other `lib/` siblings and `utils/`.
 
@@ -116,8 +115,8 @@ export async function diffTaskResult(taskId: TaskId) { ... }
 **Acceptance criteria:**
 - Knows SPLITBRIEF concepts: config shape, workflow state machine, task entities, cost/token math, session metadata, path conventions
 - No React, no Ink, no DOM — pure TypeScript
-- No workflow orchestration — `core/` does not run planners, implementers, retries, or commits (that's `engine/`). `core/` spawns no subprocess: readiness (`core/readiness/checks/validation.ts`) only resolves and reports commands, it runs none
-- Domain persistence is allowed: `core/` writes its own state to disk (sessions, state machine, config, evidence ledger). It prefers the secure `lib/fs.ts` / `lib/confined-fs.ts` helpers (`writeSecureFile`, `readJsonSafe`, `ensureSecureDir`, confined writes) and `lib/file-lock.ts` for whole-file payloads (e.g. `evidence/ledger-storage.ts`), but also writes directly with raw `node:fs` for appends, lockfiles, and atomic renames (e.g. `sessions/compaction.ts`) — always with inline secure-mode (`SECURE_FILE_MODE`, `0o700`) and symlink/confinement guards
+- No workflow orchestration — `core/` does not run planners, implementers, retries, or commits (that's `engine/`). `core/` spawns no subprocess: readiness only resolves and reports commands, it runs none
+- Domain persistence is allowed: `core/` writes its own state to disk (sessions, state machine, config, evidence ledger). It prefers the secure `lib/` helpers (`writeSecureFile`, `readJsonSafe`, `ensureSecureDir`, confined writes) and the `lib/` file lock for whole-file payloads (e.g. the evidence ledger storage), but also writes directly with raw `node:fs` for appends, lockfiles, and atomic renames (e.g. session compaction) — always with inline secure-mode (`SECURE_FILE_MODE`, `0o700`) and symlink/confinement guards
 - Typed data structures, pure transformations, and schema validation live here
 
 **What lives here:**
@@ -126,20 +125,20 @@ export async function diffTaskResult(taskId: TaskId) { ... }
 - `core/types/` — cross-cutting TS-only types that have no runtime schema (`WorkflowOpts`, `SessionRef`, `UserMessageInput`). `z.infer` is forbidden here — inferred types live in `core/schemas/`. See [`docs/TYPES.md`](./TYPES.md).
 - `core/state/` — workflow state machine, transitions, persistence shape
 - `core/sessions/` — session metadata, analytics, ID generation
-- `core/formatting.ts` — LLM-specific formatters (`formatCost`, `formatContextLength`)
-- `core/paths.ts`, `core/paths-io.ts` — `.splitbrief/` path derivation and validation
+- the LLM-specific formatters (`formatCost`, `formatContextLength`)
+- the `.splitbrief/` path derivation and validation
 - `core/runtime/commands/` — runtime command definitions (pure data + handlers; see also `core/keybindings/`)
 - `core/providers/` — provider catalog, known-models, model-selection logic
-- `core/hooks/` — workflow hook trust grant (`trust.ts`) + sha256 config/file digest (`trust-digest.ts`)
-- `core/tokens/` — pure token accounting helpers (`estimate.ts`) used by the repo-map budget and the planner base
+- `core/hooks/` — workflow hook trust grant + sha256 config/file digest
+- `core/tokens/` — pure token accounting helpers used by the repo-map budget and the planner base
 - `core/pipeline-spec/` — the typed pipeline contract: retry ladder, test check narrowing rule, capture limits, halt signatures, brief body order and the brief grouping rule, scope and baseline rules, timeouts. Pure data read by the engine and rendered into `skills/` by `scripts/skill-blocks.ts`
-- `core/scope/` — `declared-set.ts`, the one matcher that decides whether a changed path is inside a brief's declared set
+- `core/scope/` — the one matcher that decides whether a changed path is inside a brief's declared set
 - `core/validation/stacks/` — the five validation stacks (TypeScript, JavaScript, Python, Go, Rust) and their registry: markers, the test command a planner `test` check runs, test patterns, narrowing, allowed commands
-- `core/recovery/` — how a pending recovery reads and what it offers: the halt of each reason and the actions it allows (`halt.ts`), the headline, the action labels, the pasteable resume command, the reset clock, the account cause, and the words a saved user-edit conflict from an older run still reads with
+- `core/recovery/` — how a pending recovery reads and what it offers: the halt of each reason and the actions it allows, the headline, the action labels, the pasteable resume command, the reset clock, the account cause, and the words a saved user-edit conflict from an older run still reads with
 
 **Prohibited imports:** `engine/`, `stores/`, `features/`, `components/`, `hooks/`, `cli/`. `core/` may import `utils/`, `lib/`, and other `core/` siblings.
 
-**Why `core/` is not `engine/`:** `engine/` runs the workflow (spawns agent subprocesses, streams tokens, retries tasks). `core/` describes it — the types, the transitions, the derived formatters — and persists its own domain state (sessions, state machine, config, evidence ledger), preferring the secure `lib/fs.ts` / `lib/confined-fs.ts` helpers but also writing directly via raw `node:fs` (with inline secure-mode and symlink guards) where it needs appends, lockfiles, or atomic renames. It never runs the workflow loop and spawns no subprocess. Every validation command runs in the engine (`engine/orchestrator/validation/run-checks.ts`, `engine/orchestrator/review-checks.ts`). You could delete `engine/` and rewrite it in a different runtime; `core/` stays.
+**Why `core/` is not `engine/`:** `engine/` runs the workflow (spawns agent subprocesses, streams tokens, retries tasks). `core/` describes it — the types, the transitions, the derived formatters — and persists its own domain state (sessions, state machine, config, evidence ledger), preferring the secure `lib/` helpers but also writing directly via raw `node:fs` (with inline secure-mode and symlink guards) where it needs appends, lockfiles, or atomic renames. It never runs the workflow loop and spawns no subprocess. Every validation command runs in the engine. You could delete `engine/` and rewrite it in a different runtime; `core/` stays.
 
 **Why `core/` is not `features/`:** `core/` is UI-agnostic domain logic. A feature uses it, but the same logic could drive a CLI-only mode, a JSON output mode, or a different TUI framework. Coupling domain to one UI is how codebases die.
 
@@ -164,21 +163,16 @@ export async function diffTaskResult(taskId: TaskId) { ... }
 - `engine/calls/` — normalized runner-call events and results
 - `engine/providers/` — HTTP clients, pricing, streaming
 - `engine/snapshots/` — content-addressed run snapshots
-- `engine/spec/` — plan checks, plan rendering (`plan-markdown.ts`, `plan-tasks.ts`), prompt templates
+- `engine/spec/` — plan checks, plan rendering, prompt templates
 - `engine/parsers/` — response parsers (code extraction, scope extraction, final-review verdict)
 - `engine/streaming/` — streaming transport layer
 - `engine/detection/` — auto-detect installed tools
-- `engine/skill-discovery.ts` — skill source discovery over the roots in `core/skills/scan-paths.ts`
-- `engine/availability.ts` — command availability probing
-- `engine/error-hints.ts` — engine-scoped error diagnosis (provider hints, etc.)
-- `engine/events/` — event bus subsystem: `schema.ts` (`EngineEventSchema` type-dispatched schema + `parseEngineEvent`), `types.ts` (the `EngineEvent` alias inferred from that schema, plus the `EventBus`/`EventSink` ports), `bus.ts` (`createEventBus()` factory with crash isolation per sink), and `sinks/` holding headless/persistence/telemetry subscribers:
-  - `features/workflow/tui-sink.ts` — pass-through sink forwarding `EngineEvent` to `workflow/actions/event.addEvent` (workflow sub-stores consume `EngineEvent` directly)
-  - `sinks/jsonl.ts` — appends every event to `.splitbrief/sessions/<id>/session.jsonl` via `appendEngineEvent`
-  - `sinks/logger.ts` — always-on sink writing every event through the process logger
-  - `sinks/stdout-json.ts` — public NDJSON emitter for `splitbrief start --json` / headless mode (`event` envelope plus bounded/redacted payload policy)
-  - `sinks/stdout-text.ts` — plain-line emitter for `splitbrief start --plain`
-- `engine/hooks/` — workflow hook runtime: `dispatch.ts` (subprocess `command` hooks; inserts a `--` end-of-options guard before any arg whose leading characters come from an interpolated `${event.*}` value, so untrusted event fields cannot inject flags into the trusted command's argv), `substitute.ts` (safe `${event.*}` regex substitution — values are emitted verbatim as distinct argv elements, never shell-evaluated), `run-pre.ts` (sequential `pre_*` runner with deny short-circuit), `sink.ts` (bus sink for `post_*`/`on_*` fire-and-forget), `types.ts`
-- `engine/codebase/` — repo-map pipeline (`discover-files`, `languages`, `parse`, `cache`, `cache-path`, `graph`, `pagerank`, `format`, `budget`, `extract-mentioned-filenames`, `repomap.ts` entry, `types.ts`) — produces the token-budgeted codebase summary injected into the planner prompt. See [SUBSYSTEMS.md §Repo-map](./SUBSYSTEMS.md#3-repo-map).
+- skill source discovery over the scan roots in `core/skills/`
+- command availability probing
+- engine-scoped error diagnosis (provider hints, etc.)
+- `engine/events/` — event bus subsystem: the `EngineEventSchema` type-dispatched schema + `parseEngineEvent`, the `EngineEvent` alias inferred from that schema plus the `EventBus`/`EventSink` ports, the `createEventBus()` factory with crash isolation per sink, and `sinks/` holding headless/persistence/telemetry subscribers
+- `engine/hooks/` — workflow hook runtime: the subprocess `command` hook dispatch (inserts a `--` end-of-options guard before any arg whose leading characters come from an interpolated `${event.*}` value, so untrusted event fields cannot inject flags into the trusted command's argv), the safe `${event.*}` regex substitution (values are emitted verbatim as distinct argv elements, never shell-evaluated), the sequential `pre_*` runner with deny short-circuit, and the bus sink for `post_*`/`on_*` fire-and-forget
+- `engine/codebase/` — repo-map pipeline — produces the token-budgeted codebase summary injected into the planner prompt. See [SUBSYSTEMS.md §Repo-map](./SUBSYSTEMS.md#3-repo-map).
 
 **Prohibited imports:** `features/`, `components/`, `hooks/`, `cli/`, `react`, `ink`. Grep gate in [`INVARIANTS.md`](./INVARIANTS.md).
 
@@ -188,7 +182,7 @@ export async function diffTaskResult(taskId: TaskId) { ... }
 
 See [`STORES-AND-UI.md`](./STORES-AND-UI.md) for full architecture. In layer terms: stores are the sanctioned cross-boundary channel between `engine/` (writes) and `features/` (reads). They depend on `utils/`, `core/`, and optionally `lib/`. They never import React (only `use-stores.ts` consumers do, and those are hook-level).
 
-Stores may import engine **types only** (`import type`) — for example `EngineEvent` from `engine/events/types.ts`, the detection types under `engine/detection/`, and the prepared-execution types from `engine/runners/prepared-execution.ts`. No engine values cross into `stores/`.
+Stores may import engine **types only** (`import type`) — for example `EngineEvent` from `engine/events/`, the detection types under `engine/detection/`, and the prepared-execution types from `engine/runners/`. No engine values cross into `stores/`.
 
 ---
 
@@ -202,23 +196,19 @@ Top-level `src/components/` and `src/hooks/` hold:
 
 Single-feature code stays under `src/features/{f}/`. See [`STRUCTURE.md`](./STRUCTURE.md).
 
-Sectioned picker display belongs to the picker display-window stack: `src/components/pickers/scroll-window.ts` computes header/gap/item slots, and `src/components/pickers/list-viewport.tsx` renders them.
+Sectioned picker display belongs to the picker display-window stack in `src/components/pickers/`: the scroll window computes header/gap/item slots, and the list viewport renders them.
 
 ### Promoting a shared component — the 2-consumer rule
 
 A component earns its place in `src/components/` only when a **second** feature imports it. The first feature keeps it locally; the second consumer triggers the promotion.
 
-**Canonical promotion — `SessionRow`:** originally lived at `src/features/sessions/session-row.tsx` while only `src/app/overlays/sessions.tsx` consumed it. When `features/home/components/recent-sessions.tsx` added a second consumer, the file moved to `src/components/session-row.tsx` (a cross-feature import would otherwise have been required).
+**Canonical promotion — `SessionRow`:** originally lived in the `sessions` feature while only the sessions overlay page consumed it. When the home feature's recent-sessions list became a second consumer, the file moved to `src/components/` (a cross-feature import would otherwise have been required).
 
 ### Demoting a misplaced shared component — the 1-consumer reversal
 
 If a file in `src/components/` turns out to have a single feature consumer, demote it back into that feature. Pretending shared ownership when none exists is a lie.
 
-**Canonical demotions (Batch 1B):**
-
-| File (old home in `components/`) | Real consumer | New home |
-|---|---|---|
-| `components/composer/feedback-row.tsx` | `src/app/screens/workflow.tsx`; reads `lifecycleStore` (workflow domain) | `features/workflow/components/feedback-row.tsx` |
+**Canonical demotions (Batch 1B):** the composer feedback row lived in `components/`, but its one real consumer is the workflow screen page, and it reads `lifecycleStore` (the workflow domain). It moved into the components of the workflow feature.
 
 The demotions cost one import-path rewrite each; the benefit is that `src/components/` stops advertising false sharing.
 
@@ -265,7 +255,7 @@ src/cli/setup.ts
   ensureHeadlessConfig(input) # detected crew init and explicit reconfiguration
 ```
 
-Only the CLI subcommands call this. An API server, SDK bootstrap, or programmatic entry point would be a second consumer — at which point `setupWorkflow` promotes to `src/core/config/setup.ts` and the CLI keeps a thin adapter.
+Only the CLI subcommands call this. An API server, SDK bootstrap, or programmatic entry point would be a second consumer — at which point `setupWorkflow` promotes to `src/core/config/` and the CLI keeps a thin adapter.
 
 **Starts in `core/`** — domain concern, not CLI-specific:
 
@@ -274,7 +264,7 @@ src/core/sessions/guards.ts
   clearStaleSession(projectDir)   # session-state predicate + cleanup
 ```
 
-Session lifecycle is a domain concern. Even though today only the CLI start path (`cli/commands/start/readiness.ts`) calls it, putting it in `cli/` would mean moving it later when (not if) another code path needs the same predicate. When the producer naturally belongs to a domain, start in that domain.
+Session lifecycle is a domain concern. Even though today only the CLI start path calls it, putting it in `cli/` would mean moving it later when (not if) another code path needs the same predicate. When the producer naturally belongs to a domain, start in that domain.
 
 **Decision heuristic:**
 
@@ -288,7 +278,7 @@ Session lifecycle is a domain concern. Even though today only the CLI start path
 
 A second placement rule: **bootstrap / persistence logic for a store lives next to the store, not next to its CLI caller.**
 
-The `input-history` store in `src/stores/ui/input-history.ts` holds in-memory state. Its disk I/O (hydrate on startup, debounced save on change) lives in `src/stores/ui/persistence.ts`, **not** in `src/cli/`. `cli/bootstrap/project.ts` calls `installHistoryPersistence()` at boot — the CLI layer triggers the wiring, but the logic is a store concern.
+The `input-history` store in `src/stores/ui/` holds in-memory state. Its disk I/O (hydrate on startup, debounced save on change) lives in a persistence module next to it in `src/stores/ui/`, **not** in `src/cli/`. The CLI bootstrap calls `installHistoryPersistence()` at boot — the CLI layer triggers the wiring, but the logic is a store concern.
 
 This mirrors the folder-colocation rule in [`STRUCTURE.md`](./STRUCTURE.md#deep-modules-and-folder-colocation): helpers live with the module they support, not with the caller that happens to drive them.
 
@@ -312,7 +302,7 @@ engine/implementers/   # mirror of planners/ — same port+adapter pattern
 
 `types.ts` in these folders is a port file — it **declares** types, it does not re-export them. It is not a barrel (see [NO-BARRELS.md](./NO-BARRELS.md)).
 
-**Rule**: if you are tempted to create `src/ports/`, `src/interfaces/`, or `src/contracts/`, stop — the interface belongs with its implementations. See [Sandor Dargo's deep-module case for port colocation](https://www.sandordargo.com/blog/2023/01/25/deep-vs-shallow-modules).
+**Rule**: if you are tempted to create a `ports/`, `interfaces/`, or `contracts/` folder, stop — the interface belongs with its implementations. See [Sandor Dargo's deep-module case for port colocation](https://www.sandordargo.com/blog/2023/01/25/deep-vs-shallow-modules).
 
 ## References
 

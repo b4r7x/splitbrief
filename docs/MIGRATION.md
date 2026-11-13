@@ -46,7 +46,7 @@ New actions: `CLOSE_RUN`, `INTERRUPT_STEP`, `RESUME_STEP`, `BEGIN_PLANNING`. New
 
 ### Removed UI surface
 
-The summary screen is gone, and with it the `summary` route, `loadSummaryContext` and `resume-verdict.ts`. A run that stops stays on the run screen; a closed run ends its own transcript with a summary of the run. The cost drilldown overlay, its `Ctrl+G` binding and the `/cost` command are also gone.
+The summary screen is gone, and with it the `summary` route, `loadSummaryContext` and the resume verdict module. A run that stops stays on the run screen; a closed run ends its own transcript with a summary of the run. The cost drilldown overlay, its `Ctrl+G` binding and the `/cost` command are also gone.
 
 ### Removed commands and flags
 
@@ -119,9 +119,9 @@ If you wrap SPLITBRIEF programmatically (not as CLI):
 
 - **Event subscription replaced `callbacks.onEvent(event)`.** There are two supported paths:
   1. Pass `_eventSink: (event: EngineEvent) => void` in the `runWorkflow` config — the sink is subscribed to the internal bus at workflow init and receives every event.
-  2. Add a custom sink module under `src/engine/events/sinks/` alongside `jsonl.ts`, `logger.ts`, and `stdout-json.ts`, then wire it from `orchestrator/run/init-sinks.ts`. UI-facing sinks belong outside `engine/`; the shipped TUI sink is `src/features/workflow/tui-sink.ts`.
-  The existing on-disk append remains available via `sinks/jsonl.ts` and `core/sessions/log-writer.ts` (`appendEngineEvent(ref, event)`). The JSONL sink is unchanged by the 2026-04-20 release.
-- **`TuiEvent` and `OrchestratorEvent` are removed.** Import the `EngineEvent` alias from `src/engine/events/types.ts`; its discriminated-union schema (`EngineEventSchema`, the single source of truth) lives in `src/engine/events/schema.ts`. Workflow sub-stores consume `EngineEvent` directly; the workflow-TUI sink (`tuiSink`) is a pass-through, not a mapper.
+  2. Add a custom sink module next to the shipped JSONL, logger and stdout JSON sinks, then wire it where the run sets up its sinks. UI-facing sinks belong outside the engine; the shipped TUI sink is part of the workflow UI.
+  The existing on-disk append remains available via the JSONL sink and `appendEngineEvent(ref, event)`. The JSONL sink is unchanged by the 2026-04-20 release.
+- **`TuiEvent` and `OrchestratorEvent` are removed.** Use the `EngineEvent` alias; its discriminated-union schema (`EngineEventSchema`) is the single source of truth. Workflow sub-stores consume `EngineEvent` directly; the workflow-TUI sink (`tuiSink`) is a pass-through, not a mapper.
 - Update `Planner` adapter signatures to accept the new `codebaseContext` parameter.
 - `EngineEvent` variant names are snake_case (e.g. `task_started`, not `task-start`).
 
@@ -130,7 +130,7 @@ If you query session JSONL files programmatically:
 
 ## New CLI surface
 
-- `splitbrief start --json "..."` runs the workflow without the Ink TUI and streams `EngineEvent` as NDJSON on stdout. `resume` and `continue` support the same headless mode for interrupted sessions. Driver: `src/cli/headless.ts`.
+- `splitbrief start --json "..."` runs the workflow without the Ink TUI and streams `EngineEvent` as NDJSON on stdout. `resume` and `continue` support the same headless mode for interrupted sessions.
 - `--allow-hooks` bypasses the interactive hook-trust prompt — required in CI / non-TTY.
 
 ## Headless mode (--json flag)
@@ -150,5 +150,3 @@ splitbrief start --json "feature-name" | jq .
 splitbrief start --json --allow-hooks "feature-name" > run.ndjson
 splitbrief resume --json
 ```
-
-Driver: `src/cli/headless.ts`. NDJSON sink: `src/engine/events/sinks/stdout-json.ts`.

@@ -14,7 +14,7 @@ SPLITBRIEF is a CLI tool. CLI tools are loved when they respect the developer's 
 
 ### 2. Heartbeat over silence
 
-Any wait > 5 seconds must show proof of life: token count incrementing, current phase name, or truncated excerpt. The 60-second spinner is where trust dies. Users alt-tab, forget, and the session completes without them. Each reviewer check and each gate command at the run base publish `full_suite` running rows naming the check id and command. A reviewer check's byline and build block show its command and its clock. A gate command at the run base shows its id and clock at the end of the build block's counts line. While a reviewer check waits on the run of the same id at the run base, the byline and the activity line name that base command and its clock instead. The 60 seconds this principle names are now a threshold in the code: the Build progress block prints `last event 8s ago`, counting every second. Once a seat on a call has sent no output for 60 seconds (`UI_IDLE_WARN_MS`, `src/features/workflow/display/build-progress.ts`), the line names what the seat is doing: `No output for m:ss · running <command>` for a tool still open, `No output for m:ss · tools report when done` for a runner that reports tools only when they end, otherwise `No output for m:ss`. The watchdog's warn is `RUNNER_IDLE_WARN_MS` (five minutes by default, tunable per runner as `idleWarnMs`). It never ends the call.
+Any wait > 5 seconds must show proof of life: token count incrementing, current phase name, or truncated excerpt. The 60-second spinner is where trust dies. Users alt-tab, forget, and the session completes without them. Each reviewer check and each gate command at the run base publish `full_suite` running rows naming the check id and command. A reviewer check's byline and build block show its command and its clock. A gate command at the run base shows its id and clock at the end of the build block's counts line. While a reviewer check waits on the run of the same id at the run base, the byline and the activity line name that base command and its clock instead. The 60 seconds this principle names are now a threshold in the code: the Build progress block prints `last event 8s ago`, counting every second. Once a seat on a call has sent no output for 60 seconds (`UI_IDLE_WARN_MS`), the line names what the seat is doing: `No output for m:ss · running <command>` for a tool still open, `No output for m:ss · tools report when done` for a runner that reports tools only when they end, otherwise `No output for m:ss`. The watchdog's warn is `RUNNER_IDLE_WARN_MS` (five minutes by default, tunable per runner as `idleWarnMs`). It never ends the call.
 
 ### 3. One command for session continuity
 
@@ -88,7 +88,7 @@ Design goals:
 
 Any function exceeding ~300 lines with 5+ responsibilities must be decomposed. Extract named helpers at the responsibility boundary. The orchestrator is the most-changed code; readability > compactness.
 
-Canonical example: `src/engine/orchestrator/task/step.ts` was decomposed into focused modules: `pre-task.ts` (pre-hook dispatch, task-start event, snapshot), `run-implementation.ts` (continuation loop, streaming, staging), `attempt-gate.ts` (the protected-write gate over an attempt's changes in the run workspace), `rollback.ts` (snapshot restore in the run workspace after hook denial, retry exhaustion or an interrupted attempt), and `resolve-deps.ts` (dependency resolution). Colocated tests split across `step.integration.test.ts` (completion/abort/evidence), `step-approval.integration.test.ts`, `step-user-edit.integration.test.ts`, and `step-recovery.integration.test.ts`.
+Canonical example: the orchestrator's task step was decomposed into focused modules: `pre-task.ts` (pre-hook dispatch, task-start event, snapshot), `run-implementation.ts` (continuation loop, streaming, staging), `attempt-gate.ts` (the protected-write gate over an attempt's changes in the run workspace), `rollback.ts` (snapshot restore in the run workspace after hook denial, retry exhaustion or an interrupted attempt), and `resolve-deps.ts` (dependency resolution). Colocated tests split across `step.integration.test.ts` (completion/abort/evidence), `step-approval.integration.test.ts`, `step-user-edit.integration.test.ts`, and `step-recovery.integration.test.ts`.
 
 ### AD-3: Selector narrowness is performance
 
@@ -204,7 +204,7 @@ Two transports are first-class and supported equally:
 
 SPLITBRIEF does not favour a transport. The user picks; both paths get the same prompt quality, the same isolation, and the same validation. Shell and agent subprocesses remain supported as the escape hatch for custom executors.
 
-The write mode is not a free choice — it follows the runner kind, enforced in `src/core/schemas/implementer-config.ts`: `api` and `shell` return code, `cli` and `agent` write files.
+The write mode is not a free choice — it follows the runner kind, enforced by the implementer config schema: `api` and `shell` return code, `cli` and `agent` write files.
 
 The important point is that this is still one role: implementer. A pool means SPLITBRIEF can choose the capable executor whose context window best fits each Task Brief — it is profile selection, not the swarm/multi-agent behavior ruled out in [VISION.md](./VISION.md).
 
@@ -216,10 +216,10 @@ The implementer is by definition the weaker side. If its own assessment decided 
 
 Correctness is owned by two things:
 
-- SPLITBRIEF's deterministic validation pipeline — the plan's checks, then the reviewer checks: SPLITBRIEF runs the project gate that the plan names in the run workspace under the reviewer command policy, before each final review (`src/engine/orchestrator/review-checks.ts`),
+- SPLITBRIEF's deterministic validation pipeline — the plan's checks, then the reviewer checks: SPLITBRIEF runs the project gate that the plan names in the run workspace under the reviewer command policy, before each final review,
 - the planner's review of the finished change.
 
-An implementer implements; it does not run the project gates. The direct-writer preamble (`src/engine/spec/prompts/system.ts`) tells it: "SPLITBRIEF runs the checks after you hand back, and its verdict is the authority. Run no test, typecheck, lint, format, screenshot, render or other check command, not even the tests you write or a command the brief names." The brief's Tests section names the tests SPLITBRIEF runs, and the implementer writes or changes the ones in the files the brief lists. The P01 run showed why: one brief spent 13% of its tool calls on edits and 87% on reads, gates and renders. Whatever an implementer reports about its own validation lands in the evidence trail as a claim by the agent, never as a verdict.
+An implementer implements; it does not run the project gates. The direct-writer preamble tells it: "SPLITBRIEF runs the checks after you hand back, and its verdict is the authority. Run no test, typecheck, lint, format, screenshot, render or other check command, not even the tests you write or a command the brief names." The brief's Tests section names the tests SPLITBRIEF runs, and the implementer writes or changes the ones in the files the brief lists. The P01 run showed why: one brief spent 13% of its tool calls on edits and 87% on reads, gates and renders. Whatever an implementer reports about its own validation lands in the evidence trail as a claim by the agent, never as a verdict.
 
 The brief's files are suggestions. The implementer starts from them, edits another ordinary project file the change needs, and names it in its report as `Also changed (not suggested): <file> — <reason>`. Only a protected path (dependency manifests and lockfiles, CI configuration, env and key files, `.git`, `.splitbrief`) is off limits unless the brief asks for that operation.
 
@@ -261,7 +261,7 @@ Large prompts are a planning failure, not a reason to make every worker remember
 
 A brief is one coherent, reviewable outcome, not a file: every path it writes is listed under `files`, with `file` as the anchor. A brief that creates `src/health.ts` and its `src/health.test.ts` is one outcome, because splitting it would hand the implementer a test with nothing to test.
 
-The grouping rule is `sliceRuleText()` (`src/core/pipeline-spec/brief.ts`). The planner prompts and the portable skills render it; they do not restate it. The rule keeps tests, callers, wiring, fixtures and necessary documentation with their behavior, and it combines related corrections that share a contract, mechanism or code context. It splits independent outcomes, or a complex mechanism, when separate validation, context or recovery makes the work easier to execute correctly.
+The grouping rule is `sliceRuleText()`. The planner prompts and the portable skills render it; they do not restate it. The rule keeps tests, callers, wiring, fixtures and necessary documentation with their behavior, and it combines related corrections that share a contract, mechanism or code context. It splits independent outcomes, or a complex mechanism, when separate validation, context or recovery makes the work easier to execute correctly.
 
 No brief count, file count or changed-line count decides a boundary, and no mode caps the number of briefs in a run. What bounds one brief is the real limit of its runner: the model context and the prompt transport, with the system text, skills and retry feedback included. With a Prompt budget, a brief that does not fit follows the refusal path above; with `auto`, the tool handles its own context. The brief is never truncated.
 
@@ -324,7 +324,7 @@ The implemented behavior is:
 
 An implementer with `writesFiles: direct` needs somewhere to write that is not the user's working tree. That somewhere is a **git worktree, created once per run** — not a copy of the project per task.
 
-- One worktree per run, at `$XDG_STATE_HOME/splitbrief/trees/<hash>/<slug>/` (default `~/.local/state/...`), detached at the project `HEAD` with no branch (`src/engine/orchestrator/isolation/create-worktree.ts`). Tasks share it. Outside `.git/` (direct-writing CLIs refuse paths there) and outside the project tree: it is a second copy of the source that survives every per-task validation, and a project-rooted test glob that reaches it counts every test twice.
+- One worktree per run, at `$XDG_STATE_HOME/splitbrief/trees/<hash>/<slug>/` (default `~/.local/state/...`), detached at the project `HEAD` with no branch. Tasks share it. Outside `.git/` (direct-writing CLIs refuse paths there) and outside the project tree: it is a second copy of the source that survives every per-task validation, and a project-rooted test glob that reaches it counts every test twice.
 - Project dependencies are reachable inside the worktree. A checkout without `node_modules` is a checkout where nothing runs: no typecheck, no tests, no useful self-check by the implementer.
 - The worktree carries `.splitbrief/config.yaml` and `.splitbrief/hooks/` over from the real project, so hook and config behaviour matches.
 - Worktree is the default, not the only option. A user may configure a different isolation strategy.
@@ -500,4 +500,4 @@ These are conscious anti-goals, not TODO items:
 - **Model registry** — We delegate model management to the providers (ollama, LM Studio). No model catalog, no download management.
 - **OAuth/login flows** — Authentication belongs to the child agents (claude-code, codex). We pass API keys in config.
 - **Parallel same-checkout writes** — Git doesn't support this safely. Worktrees or sequential execution only.
-- **Confinement for checks and seats, and per-action approval** — no OS sandbox or network proxy around checks or seats, no `workflow.approve: each` or `yolo`, and no per-action approval inside a seat (the Agent Client Protocol, a bridge to Claude Code's permission prompts, the Codex app-server). A check sandbox must keep every language's toolchain, cache and registry working, so it needs its own design; it would wrap the spawn in `runCommand` (`src/lib/process/spawn/run-command.ts`). What a check can reach today: [CONFIGURATION.md](./CONFIGURATION.md#what-a-check-can-reach).
+- **Confinement for checks and seats, and per-action approval** — no OS sandbox or network proxy around checks or seats, no `workflow.approve: each` or `yolo`, and no per-action approval inside a seat (the Agent Client Protocol, a bridge to Claude Code's permission prompts, the Codex app-server). A check sandbox must keep every language's toolchain, cache and registry working, so it needs its own design; it would wrap the spawn in `runCommand`. What a check can reach today: [CONFIGURATION.md](./CONFIGURATION.md#what-a-check-can-reach).

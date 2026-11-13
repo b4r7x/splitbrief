@@ -122,7 +122,7 @@ $SB continue $ID                     # picks up at the step its saved state name
 $SB continue $ID --action retry      # when the run stopped on a recovery: retry | skip | switch-seat:<tool>[:<model>] | end-run
 ```
 
-What `continue` does with the saved state (`src/engine/orchestrator/run/init.ts`, `src/core/sessions/run-status.ts`):
+What `continue` does with the saved state:
 
 | Stopped where | On continue |
 |---|---|

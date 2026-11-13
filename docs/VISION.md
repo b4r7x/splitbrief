@@ -96,7 +96,7 @@ The TUI visual language uses opencode as a reference point. Key principles:
 
 Previous: tangled `orchestrator/` with 25+ files and a flat TUI component layer.
 
-Current: `src/engine/` owns orchestration with zero React dependencies; `src/features/` owns TUI feature slices; `src/components/` and `src/hooks/` hold cross-feature UI primitives and hooks. Runtime commands live in `src/core/runtime/commands/`, and the command palette lives in `src/features/palette/`.
+Current: `src/engine/` owns orchestration with zero React dependencies; `src/features/` owns TUI feature slices; `src/components/` and `src/hooks/` hold cross-feature UI primitives and hooks.
 
 ### 8. Stay on Ink 6.x
 

@@ -58,7 +58,7 @@ initStores(projectDir, opts)
 | `ensureHooksTrusted` | reads `config.hooks` from `configStore` → prompts for hook trust before any subprocess discovery | async |
 | `loadDiscovery` | `detectCapabilities()` → `configStore.setDetectedContextLength()`, the remembered detection snapshot, then the model-catalog seed and the live detection refresh in the background while skill discovery is awaited | async |
 
-`detectCapabilities → setDetectedContextLength` is the canonical example of **cross-store orchestration**: reads from `configStore`, awaits a provider probe (`src/engine/providers/capabilities.ts`), writes back to `configStore`. This wiring has no natural home inside any single store — it lives in `initStores()`.
+`detectCapabilities → setDetectedContextLength` is the canonical example of **cross-store orchestration**: reads from `configStore`, awaits a provider probe, writes back to `configStore`. This wiring has no natural home inside any single store — it lives in `initStores()`.
 
 ---
 
@@ -66,9 +66,9 @@ initStores(projectDir, opts)
 
 The draft remains editable during preparation; start and continue wait for current admission and ownership checks.
 
-`preparationStore.submit()` in `src/stores/navigation/preparation.ts` owns explicit starts and continuations. A newer attempt supersedes the earlier one; stale success or failure cannot replace the new route. Failure preserves the current draft and reports the actual preparation problem. A user-action problem may open a panel; ordinary checking stays beside the editable input.
+`preparationStore.submit()` owns explicit starts and continuations. A newer attempt supersedes the earlier one; stale success or failure cannot replace the new route. Failure preserves the current draft and reports the actual preparation problem. A user-action problem may open a panel; ordinary checking stays beside the editable input.
 
-`prepareExecution()` rechecks execution admission and session ownership for each attempt. A zero-blocker discovery report cannot authorize takeover of a live or unknown session owner. `createInFlightProbeSharing()` in `src/engine/detection/runner-evidence.ts` shares only compatible observations while they are pending, keyed by current config, executable and authentication context. It retains no completed readiness result; unspecified CLI auth context is not shared. Remembered discovery is presentation data, never authority to execute.
+`prepareExecution()` rechecks execution admission and session ownership for each attempt. A zero-blocker discovery report cannot authorize takeover of a live or unknown session owner. `createInFlightProbeSharing()` shares only compatible observations while they are pending, keyed by current config, executable and authentication context. It retains no completed readiness result; unspecified CLI auth context is not shared. Remembered discovery is presentation data, never authority to execute.
 
 `awaitDiscovery` covers the discovery promise returned at mount. Model-catalog and live detection work also have separately tracked background promises. `awaitBackgroundDiscovery()` settles these promises for tests that remove temporary cache directories. Initial render does not wait for them.
 
@@ -156,7 +156,7 @@ A bootstrap step that reaches detection after shutdown cannot start a refresh la
 
 ## What `setupWorkflow()` does (and doesn't)
 
-`setupWorkflow()` (in `src/cli/setup.ts`) runs **before** `initStores()`. It is prep logic:
+`setupWorkflow()` runs **before** `initStores()`. It is prep logic:
 
 - Resolves `projectDir` from the `--project` flag through `canonicalizeProjectDir()` (a path inside a git repository resolves to the repository root)
 - Asserts the directory is a git repo (hard exit otherwise)
@@ -171,7 +171,7 @@ It does **not** touch stores. Stores know nothing about TTY flags or the git che
 
 ## Render handoff
 
-After `initStoresForTuiMount()` returns, the interactive handler calls `renderApp()` (from `src/cli/render/app.ts`) while `awaitDiscovery` is still pending. `renderApp()` queries the terminal background before Ink takes stdin in fullscreen.
+After `initStoresForTuiMount()` returns, the interactive handler calls `renderApp()` while `awaitDiscovery` is still pending. `renderApp()` queries the terminal background before Ink takes stdin in fullscreen.
 It stores the detected background in `terminalBackgroundStore` for the first frame.
 The query stops at the device attributes reply or after 300 ms.
 The filtered stdin skips late terminal replies.

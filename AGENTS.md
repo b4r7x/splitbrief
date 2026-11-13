@@ -12,7 +12,7 @@ The one exception is the orchestrating session, at an agreed checkpoint: after t
 
 SPLITBRIEF is an open-source CLI that orchestrates two AI coding tools: the stronger one plans, compiles Task Briefs, and reviews; the weaker one executes them. SPLITBRIEF holds the contract between them — the brief, validation, retry, escalation, and the evidence trail.
 
-**`CLAUDE.md` is the single source of truth.** It carries the tech stack, commands, the full documentation map, and the core conventions (zero classes, ESM `.js` import suffixes, zero memoization, no `forwardRef`, external stores over Context, etc.). Read `CLAUDE.md` first; this file only exists as the root agent entry point that the skill-discovery layer (`src/engine/skill-discovery.ts`) picks up.
+**`CLAUDE.md` is the single source of truth.** It carries the tech stack, commands, the full documentation map, and the core conventions (zero classes, ESM `.js` import suffixes, zero memoization, no `forwardRef`, external stores over Context, etc.). Read `CLAUDE.md` first; this file only exists as the root agent entry point that the skill-discovery layer picks up.
 
 Always use the `change-discipline` skill when you implement, fix or review code. Fix the root cause at the shared function, reuse existing code, delete the path you replace, and add nothing speculative.
 

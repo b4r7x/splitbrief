@@ -116,7 +116,7 @@ SPLITBRIEF has no admitted Antigravity credential bridge on Linux or Windows. No
 
 ### What a `host-account` child can and cannot reach
 
-The discriminants are declared, not scattered through the engine as platform checks: a channel declares `hostKeychainPlatforms` (`src/core/runners/cli-tool-catalog.ts`), and the Claude Code, Cursor Agent CLI and Antigravity `session` channels declare `['darwin']`; `cliAuthChannelHostStateAccess()` maps that to `host-account`, everything else to `bridged-files`. Within `bridged-files`, `CLI_CREDENTIAL_MODELS` (`src/engine/runners/sandbox-state-paths.ts`) declares per tool whether the credential is a `static-secret` (sealed snapshot copy) or `rotating-oauth` (live passthrough).
+The discriminants are declared, not scattered through the engine as platform checks: a channel declares `hostKeychainPlatforms`, and the Claude Code, Cursor Agent CLI and Antigravity `session` channels declare `['darwin']`; `cliAuthChannelHostStateAccess()` maps that to `host-account`, everything else to `bridged-files`. Within `bridged-files`, `CLI_CREDENTIAL_MODELS` declares per tool whether the credential is a `static-secret` (sealed snapshot copy) or `rotating-oauth` (live passthrough).
 
 Which runners keep a private HOME, and which do not:
 
@@ -143,7 +143,7 @@ What the `host-account` child gains:
 And what it does **not** gain, so the accounting is not overstated:
 
 - Nothing beyond `HOME`, `USERPROFILE` and `USER` is handed back, plus `CLAUDE_CONFIG_DIR` for Claude Code when you set it. `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME`, `APPDATA`, `LOCALAPPDATA`, `npm_config_cache`, `PIP_CACHE_DIR` and `CARGO_HOME` still point inside `<project>/.splitbrief/sandbox/`, `TMPDIR`, `TMP` and `TEMP` still point at the sandbox's private temp directory, and the environment allowlist still strips every credential variable it strips today.
-- The temp directory is the one redirect outside the project: `<system tmp>/sb-<hash>`, owner-only (`0700`), one per sandbox root (the hash is the first 12 hex digits of the SHA-256 of the root path), and removed when the run, probe or staged copy that created it is torn down. Under a worktree's ignored `.splitbrief/` a temporary git repository sees the enclosing one, and the worktree path is long enough to push a unix socket bound in it (tsx's IPC pipe) past the 104-byte macOS limit, which fails with `EADDRINUSE` (`sandboxTempDir`, `src/engine/runners/sandbox-state-paths.ts`).
+- The temp directory is the one redirect outside the project: `<system tmp>/sb-<hash>`, owner-only (`0700`), one per sandbox root (the hash is the first 12 hex digits of the SHA-256 of the root path), and removed when the run, probe or staged copy that created it is torn down. Under a worktree's ignored `.splitbrief/` a temporary git repository sees the enclosing one, and the worktree path is long enough to push a unix socket bound in it (tsx's IPC pipe) past the 104-byte macOS limit, which fails with `EADDRINUSE`.
 - No new *filesystem* reach. The sandbox is env redirection, not confinement: a child in a sandbox HOME could already read `/Users/you/.ssh/` by absolute path, and could already open the login keychain by naming `~/Library/Keychains/login.keychain-db` explicitly. What changes is which paths the child finds *by default*, not which paths it is permitted to open.
 - No credential is copied anywhere. The session token stays in the keychain; nothing is written to disk, so nothing can outlive the run or be committed by accident.
 

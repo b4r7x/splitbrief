@@ -50,8 +50,6 @@ throw processError.notFound(cmd);
 
 ## The primitive
 
-**File:** `src/utils/error.ts`
-
 ```ts
 export type AppError<K extends string = string, D = unknown> =
   Error & { readonly kind: K; readonly data: D };
@@ -83,7 +81,7 @@ Two exports: `error()` builds, `matches(kind)` returns a typed predicate. No sub
 A domain bag is a single `as const` object colocated with the module that produces the errors. It lives in the file that owns the domain — not in a central registry.
 
 ```ts
-// src/lib/process/errors.ts (simplified: the real bag also sanitizes terminal text and carries
+// processError (simplified: the real bag also sanitizes terminal text and carries
 // idleTimeout, platformLimitation and isIdleTimeout)
 import { error, matches } from '../../utils/error.js';
 import { redactSecrets } from '../../utils/redact.js';
@@ -195,7 +193,7 @@ Inside each branch, `err.data` is typed — `err.data.command` on the `isNotFoun
 
 ## Exhaustive matching with `switch`
 
-When a function needs to handle every kind of a domain's errors exhaustively, use `switch(err.kind)` plus `assertNever` from `src/utils/type-guards.ts`:
+When a function needs to handle every kind of a domain's errors exhaustively, use `switch(err.kind)` plus `assertNever`:
 
 ```ts
 import { assertNever } from '../utils/type-guards.js';
@@ -240,8 +238,6 @@ try {
 
 CLI subcommands need to map errors to process exit codes. `CliError` is a narrow specialization of the factory pattern — it is built by `error()` like every other domain error, carries `kind: 'cli-error'`, and adds an `exitCode` field (mirrored into `data`) plus a `name` for stack-trace readability.
 
-**File:** `src/cli/errors.ts`
-
 ```ts
 export type CliError = AppError<'cli-error', { exitCode: number }> & {
   readonly name: 'CliError';
@@ -268,7 +264,7 @@ if (!(await isGitRepo(projectDir))) {
 }
 ```
 
-The top-level catch in `src/cli.ts` checks `isCliError(err)` and calls `process.exit(err.exitCode)`. Every other error becomes exit code 1 with a formatted message.
+The CLI's top-level catch checks `isCliError(err)` and calls `process.exit(err.exitCode)`. Every other error becomes exit code 1 with a formatted message.
 
 `CliError` does not differ from the domain-bag shape — `cliError` goes through `error('cli-error', …)`, so `isCliError` narrows on the `kind` discriminator via `matches('cli-error')` and then confirms the numeric `exitCode`. The `exitCode` is the only extra field a CLI needs over a plain domain error.
 
@@ -300,7 +296,7 @@ export async function withCliErrors<T>(fn: () => Promise<T> | T): Promise<T> {
 1. **New code uses the factory + bag.** No new `Error` subclasses.
 2. **When touching old `Error` subclass code**, migrate it in the same change. Do not leave a half-migrated file.
 
-Old `Error` subclasses migrate to domain bags such as `processError` in `src/lib/process/errors.ts` and `timeoutError` in `src/utils/with-timeout.ts`. `instanceof` call sites become bag predicates such as `processError.isNotFound(err)` or `processError.isIdleTimeout(err)`.
+Old `Error` subclasses migrate to domain bags such as `processError` and `timeoutError`. `instanceof` call sites become bag predicates such as `processError.isNotFound(err)` or `processError.isIdleTimeout(err)`.
 
 ---
 

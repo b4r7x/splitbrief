@@ -16,7 +16,7 @@ Read these to learn how SPLITBRIEF works. Each doc builds on the previous one.
 | Doc | What it covers |
 |-----|---------------|
 | [MENTAL-MODEL.md](./MENTAL-MODEL.md) | The concept: two roles, Task Brief contract, four layers, one planning session, runs. No code. |
-| [CONCEPTS.md](./CONCEPTS.md) | Concepts & glossary: shared vocabulary used throughout `src/` and the other docs. |
+| [CONCEPTS.md](./CONCEPTS.md) | Concepts & glossary: shared vocabulary used throughout the code and the other docs. |
 | [HOW-IT-WORKS.md](./HOW-IT-WORKS.md) | The same flow with file paths and function names. CLI entry → stores → TUI → engine → planning → tasks → review. |
 | [WORKFLOW.md](./WORKFLOW.md) | The state machine: every phase, every transition, the run contract, stopping and continuing, rewind. |
 | [ENGINE.md](./ENGINE.md) | The orchestrator, EventBus, sinks, callbacks vs events, abort handling, message queue. |

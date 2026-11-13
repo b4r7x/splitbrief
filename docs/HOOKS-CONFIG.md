@@ -62,7 +62,7 @@ hooks:
       args: ["prettier", "--write", "${event.file}"]
 ```
 
-Schema: `src/core/schemas/hooks.ts`. Strict — unknown keys rejected.
+The schema is strict: it rejects unknown keys.
 
 ### `kind` field
 
@@ -297,24 +297,6 @@ splitbrief start --allow-hooks "add login form"
 3. SPLITBRIEF runs the workflow. After each task succeeds, Prettier reformats the touched file.
 
 For a custom hook, write a script that returns exit 0 on success or non-zero on failure. Optional: write JSON to stdout (`{"decision":"deny","message":"..."}`) for explicit denials with a message.
-
-## Implementation
-
-Module: `src/engine/hooks/`
-
-- `types.ts` — `HookOutcome` (allow/deny/warn/crash), `HookContext`
-- `dispatch.ts` — `runHook(entry, event, ctx)` — spawns subprocess via `lib/process/spawn/progress.ts`
-- `substitute.ts` — `${event.field}` regex substitution (no eval)
-- `sink.ts` — `EventBus` sink for post_*/on_* events (fire-and-forget)
-- `run-pre.ts` — sequential pre_* runner; deny short-circuits
-
-Trust:
-- `src/core/hooks/trust.ts` — receipts in your machine's trust store
-- `src/core/hooks/trust-digest.ts` — sha256 + canonical JSON over the config and the hook files it reaches
-- `src/core/trust/receipt-store.ts` — the machine-scoped receipt store shared with custom runner trust (`~/.splitbrief/trust/`, canonical-checkout identity, owner-only read)
-- `src/cli/hook-trust-prompt.ts` — `ensureHooksTrusted()` disclosure + prompt + non-TTY refusal
-
-Schema: `src/core/schemas/hooks.ts`.
 
 ## Design decisions
 

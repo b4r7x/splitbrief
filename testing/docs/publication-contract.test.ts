@@ -45,7 +45,11 @@ const claims = [
     'cli',
     'The command fails with exit code 1 for **every** pending recovery status',
   ],
-  ['stores-review-path', 'stores', '`src/stores/workflow/review.ts`'],
+  [
+    'stores-review-store',
+    'stores',
+    '`reviewStore` is the UI projection store for the review surface.',
+  ],
   [
     'stores-sidebar-breakpoint',
     'stores',

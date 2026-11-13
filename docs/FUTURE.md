@@ -104,7 +104,7 @@ Labels are opinions, not contracts. Contributors can argue for re-labeling via P
 
 ## **[Could]** Session browser UI
 
-**Current baseline.** The `/sessions` runtime command opens an in-TUI picker (`SessionsPicker`, `src/app/overlays/sessions.tsx`) that lists past sessions, filters by feature, and resumes or views the selected one on Enter. The home screen also shows a recent-sessions list. Each `.splitbrief/sessions/<id>/` folder is self-contained with a `summary.json` at a glance.
+**Current baseline.** The `/sessions` runtime command opens an in-TUI picker (`SessionsPicker`) that lists past sessions, filters by feature, and resumes or views the selected one on Enter. The home screen also shows a recent-sessions list. Each `.splitbrief/sessions/<id>/` folder is self-contained with a `summary.json` at a glance.
 
 **What remains.**
 
@@ -118,7 +118,7 @@ Labels are opinions, not contracts. Contributors can argue for re-labeling via P
 
 **Where to start when we do it.**
 
-- New command at `src/cli/commands/sessions.ts`.
+- New command under `src/cli/commands/`.
 
 ---
 
@@ -150,9 +150,9 @@ Not yet designed. The interaction semantics are clear (see `docs/WORKFLOW.md` §
 
 **Where to start when we do it.**
 
-- Extend the `EngineEventSchema` union with an `injection_separator` variant (`src/engine/events/schema.ts`).
-- Publish it from the mid-stream dispatch path in `src/engine/orchestrator/` when a queued message is folded into a live session.
-- Add the row in `src/features/workflow/components/conversation-flow/row-view.tsx`.
+- Extend the `EngineEventSchema` union with an `injection_separator` variant.
+- Publish it from the orchestrator's mid-stream dispatch path when a queued message is folded into a live session.
+- Add the row in `ConversationRowView`.
 
 ---
 

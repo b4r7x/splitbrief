@@ -54,7 +54,7 @@ utils/  →  lib/  →  core/  →  engine/  →  (stores/)  →  features/
 
 Blockers (also gated by [INVARIANTS.md](./INVARIANTS.md) #9, #12, #12b, #12c): `utils/→core/`, `lib/→engine/`, `core/→features/`, `features/A→features/B`, any `engine/→react|ink|features|components|hooks|cli`.
 
-**Shared-helper reachability is part of layer discipline.** A helper that a lower layer needs must live where that layer can import it. A formatter buried in `engine/orchestrator/recovery/builders/shared.ts` cannot be reused by `core/layout` or `features/` — so those layers re-implement it and drift (the `formatCost` family, `clamp`, `pluralize`, `escapeRegExp`, the regex-escape and extract-JSON helpers all hit this). **Before duplicating, check whether the existing copy is simply in the wrong layer.** The fix for "I can't reuse it" is usually "move it down to `core/` or `utils/`", not "copy it".
+**Shared-helper reachability is part of layer discipline.** A helper that a lower layer needs must live where that layer can import it. A formatter buried in an engine recovery builder cannot be reused by `core/` or `features/` — so those layers re-implement it and drift (the `formatCost` family, `clamp`, `pluralize`, `escapeRegExp`, the regex-escape and extract-JSON helpers all hit this). **Before duplicating, check whether the existing copy is simply in the wrong layer.** The fix for "I can't reuse it" is usually "move it down to `core/` or `utils/`", not "copy it".
 
 **`app/` and `cli/` are peers**, not stacked — neither may import the other's internals. Shared top-of-stack wiring goes to a neutral home both can import (`stores/`, or `core/runtime/`), never sideways.
 
@@ -77,7 +77,7 @@ The audit explicitly **did not flag** several cohesive 400–650-LOC files ("siz
 
 ### Split recipe (worked example)
 
-When a file trips the trigger **and** carries >1 responsibility, create a folder named after the file and move each concern into an intent-named kebab-case sibling. Real case: `engine/snapshots/store.ts` (362 LOC, five concerns) splits into —
+When a file trips the trigger **and** carries >1 responsibility, create a folder named after the file and move each concern into an intent-named kebab-case sibling. Real case: the old snapshot store (362 LOC, five concerns) split into —
 
 ```
 engine/snapshots/
@@ -137,7 +137,7 @@ When a function immediately fans its positional args into an options object for 
 - **No `dir/dir.ts` stutter.** A folder's entry file names its responsibility, not the folder: `run/workflow.ts`, `escalation/handle.ts`, `commands/dispatch.ts`/`registry.ts` — never `run/run.ts`, `escalation/escalation.ts`, or `commands/commands.ts`.
 - **No two sibling exports sharing a name with different signatures.** Two `formatContextFit` / two `buildSelectionKey` in one feature force readers to disambiguate by file — rename to distinct intent names.
 - **No misleading directory placement.** Terminal-display helpers (theme colors, glyphs) do not belong in `core/` (React-free domain) just because one feature consumes them; move to the feature.
-- **Banned type-file names:** `*-types.ts` suffix, top-level `src/types.ts`, kitchen-sink `core/types/app.ts`. See [TYPES.md §Banned file names](./TYPES.md#banned-file-names-for-types).
+- **Banned type-file names:** `*-types.ts` suffix, top-level `types.ts`, a kitchen-sink file in `core/types/`. See [TYPES.md §Banned file names](./TYPES.md#banned-file-names-for-types).
 - **Single-quote strings** project-wide (Biome `quoteStyle: single`); JSX attributes are double-quoted. The Biome formatter is enabled (2-space indent), and `npm run format:check` gates it in `release-check`; run `npm run format` before you hand back.
 
 ---
@@ -169,7 +169,7 @@ These are non-negotiable and (where noted) gated automatically. Do not re-derive
 | Test behavior, not implementation — no tests of trivial helpers, trivial hooks, mocks being called, or TS types; a behavior-bearing hook may get a colocated test, a trivial hook is covered by the consuming integration test; test at meaningful consumer boundaries | [STRUCTURE.md](./STRUCTURE.md#test-strategy), [HOOKS.md](./HOOKS.md), [TESTING.md](./TESTING.md) | review |
 | No backwards-compatibility shims — a refactor updates every import site in the same change; no re-export shim to smooth a migration (that would create a barrel) | [NO-BARRELS.md](./NO-BARRELS.md) | review |
 | DRY at the third occurrence — two copies of a pattern may stay local; a third triggers an extraction (§7) | this doc | review |
-| EventBus port — the engine emits all events through `src/engine/events/bus.ts`; UI, persistence, observability and hooks attach as sinks. `EngineEvent` is the single source of truth; `TuiEvent`, `OrchestratorEvent` and `callbacks.onEvent` are gone. **Event sinks are synchronous** (registered in order, throw isolated per sink) and **hook dispatch is sequential per event** (`pre_*` runs one hook at a time, deny short-circuits; `post_*`/`on_*` runs without awaiting) | [ENGINE.md](./ENGINE.md#eventbus) | INVARIANTS #10, #11, #13, #52 |
+| EventBus port — the engine emits all events through the `EventBus`; UI, persistence, observability and hooks attach as sinks. `EngineEvent` is the single source of truth; `TuiEvent`, `OrchestratorEvent` and `callbacks.onEvent` are gone. **Event sinks are synchronous** (registered in order, throw isolated per sink) and **hook dispatch is sequential per event** (`pre_*` runs one hook at a time, deny short-circuits; `post_*`/`on_*` runs without awaiting) | [ENGINE.md](./ENGINE.md#eventbus) | INVARIANTS #10, #11, #13, #52 |
 | Repo-map context — the planner sees a token-budgeted symbol summary of the codebase per workflow: PageRank ranking, SQLite cache, opt-out via `codebase.enabled: false` | [CONFIGURATION.md §7](./CONFIGURATION.md#7-codebase) | none |
 | Hook system — user-extensible workflow lifecycle commands (unrelated to React hooks) fire at workflow events (`pre_task`, `post_commit`, etc.); a trust prompt prevents RCE | [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) | none |
 | One run contract — a run is a durable record whose status is derived once by `deriveRunStatus`; an open run stays continuable, `idle` is the pre-`START` phase and nothing resets to it, gates never reject, and continuing is one path (`continueRun`). Spend is a reported fact, never a gate or a routing input | [WORKFLOW.md](./WORKFLOW.md), [CONCEPTS.md](./CONCEPTS.md) | INVARIANTS #49–#51 |
@@ -178,7 +178,7 @@ These are non-negotiable and (where noted) gated automatically. Do not re-derive
 **Type-safety judgment items (not fully gated):**
 - **Single-source every closed set.** A union/enum (conflict kinds, context-fit, hook-event names, recovery outcomes) defined once — as a Zod `z.enum` over an `as const` tuple in `core/schemas/`, with the TS type via `z.infer`. Re-spelling the same literals in a second file (TS union ↔ Zod ↔ `Set`) is a drift hazard. Engine/UI copies must derive *from* the core schema, never the reverse.
 - **Exhaustive `switch` over a closed union ends in `assertNever`.** A value-returning switch with a pass-through `default: return x` silently degrades when the union grows. (`noImplicitReturns` is enabled in `tsconfig.json`; void switches still need an explicit exhaustiveness arm.)
-- **Narrow, don't assert.** Use the existing `isRecord` type guard instead of `as Record<string, unknown>`; re-validate hand-rebuilt shapes through their Zod schema instead of `as Config`. Reuse `BackendTokenUsageSchema` from its canonical owner, `src/engine/calls/usage.ts`, or `TaskIdSchema` rather than re-typing a token-usage shape or using a bare `string` for a branded ID.
+- **Narrow, don't assert.** Use the existing `isRecord` type guard instead of `as Record<string, unknown>`; re-validate hand-rebuilt shapes through their Zod schema instead of `as Config`. Reuse `BackendTokenUsageSchema` from its canonical owner, or `TaskIdSchema` rather than re-typing a token-usage shape or using a bare `string` for a branded ID.
 - **No config object built from fake data to satisfy a type.** Fabricating `{ name: 'unknown', runtime: 'node' }` just to call an engine function means the function's parameter is too wide — narrow it or thread the real value.
 
 ---

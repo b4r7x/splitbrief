@@ -95,7 +95,7 @@ function postureCells(posture: string, id: CliToolId): string[] {
 
 describe('canonical CLI runner matrix docs', () => {
   it('anchors the matrix to the runtime catalog module', () => {
-    expect(DOC).toContain('src/core/runners/cli-tool-catalog.ts');
+    expect(DOC).toContain('Runtime source of truth: `CLI_TOOL_CATALOG` and `CLI_TOOL_TRUST`.');
     expect(DOC).toContain('testing/docs/planners-and-implementers.test.ts');
     expect(DOC).toContain('#### Canonical CLI runner matrix');
   });
