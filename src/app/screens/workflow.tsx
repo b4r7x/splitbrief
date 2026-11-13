@@ -311,6 +311,7 @@ export function WorkflowScreen({
       ? ready.hydration.state.acceptedAsIs
       : undefined;
   const findings = accepted?.findings ?? [];
+  const redChecks = accepted?.redChecks;
   const acceptNote = accepted === undefined ? undefined : acceptedNote(accepted);
   const changedFiles = ready === undefined ? null : changedFileCount(ready.summary);
   const reviewBudgetRows = getReviewPanelBudget({ rows, inputRows });
@@ -318,7 +319,7 @@ export function WorkflowScreen({
     ? stopMenuLayout(readStopMenuRows(), cols).height
     : resultMenuOpen
       ? resultMenuHeight(
-          { override, findings, note: acceptNote, confirming, files: changedFiles },
+          { override, findings, redChecks, note: acceptNote, confirming, files: changedFiles },
           cols,
         )
       : getWorkflowPromptRows({
@@ -603,6 +604,7 @@ export function WorkflowScreen({
                   height={promptBoxRows}
                   override={override}
                   findings={findings}
+                  redChecks={redChecks}
                   note={acceptNote}
                   files={changedFiles}
                   confirming={confirming}

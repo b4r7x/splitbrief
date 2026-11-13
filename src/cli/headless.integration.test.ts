@@ -814,6 +814,41 @@ describe('runHeadless — the run\u2019s terminal outcome sets the exit code', (
     },
   );
 
+  it('a run accepted as is with red checks names each red check in its failed review record', async () => {
+    const redChecks = [
+      { id: 'V1', command: 'npm test', lastLine: 'Error: 2 specs failed' },
+      { id: 'K004', lastLine: 'src/a.ts(3,1): TS2322' },
+    ];
+    const { projectDir, sessionId } = seedFinishedSession('accepted-red-checks', {
+      reviewStatus: 'failed',
+      acceptedAsIs: { at: '2026-09-01T00:00:00.000Z', findings: ['F1'], redChecks },
+      workspace: {
+        kind: 'worktree',
+        path: '/nonexistent/splitbrief-ready-workspace',
+        base: { snapshotId: 'workspace-base', head: null },
+      },
+    });
+
+    const error = await runAndCatch(projectDir, sessionId);
+
+    expect(error).toMatchObject({ exitCode: 1 });
+    expect(records()).toEqual([
+      {
+        type: 'ready_to_apply',
+        sessionId,
+        override: true,
+        applyCommand: `splitbrief continue ${sessionId} --action apply`,
+        discardCommand: `splitbrief continue ${sessionId} --action discard`,
+      },
+      {
+        type: 'final_review_failed',
+        sessionId,
+        blocking: 0,
+        accepted: { by: 'user', redChecks },
+      },
+    ]);
+  });
+
   it('a run whose state recorded a failure exits 1, whatever its session row says', async () => {
     const { projectDir, sessionId } = seedFinishedSession('failed', {
       phase: 'implementing',

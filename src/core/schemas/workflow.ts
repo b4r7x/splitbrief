@@ -271,6 +271,14 @@ export const TriageRecordSchema = z.object({
 });
 export type TriageRecord = z.infer<typeof TriageRecordSchema>;
 
+/** A check that was red at an Accept as is: its id, its command and the last line of its output. */
+export const RedCheckSchema = z.object({
+  id: z.string(),
+  command: z.string().optional(),
+  lastLine: z.string().optional(),
+});
+export type RedCheck = z.infer<typeof RedCheckSchema>;
+
 export const PendingTriageSchema = z.object({
   inputs: z.array(TriageInputSchema),
   question: TriageResultSchema.shape.ask.optional(),
@@ -463,6 +471,8 @@ const WorkflowStateFields = {
     .object({
       at: z.string(),
       findings: z.array(z.string()),
+      /** The red checks your accept left red. Absent when it left none, and on an older run. */
+      redChecks: z.array(RedCheckSchema).optional(),
       note: z.string().optional(),
       /** The planner accepted a stuck review's blockers; without it, you did. */
       by: z.literal('planner').optional(),

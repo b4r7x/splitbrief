@@ -22,6 +22,7 @@ import type { RecoveryIssue } from '../../../../src/core/schemas/recovery/schema
 import type { StepRef } from '../../../../src/core/schemas/run-step.js';
 import type { RunRecord } from '../../../../src/core/sessions/run-record.js';
 import type { Summary } from '../../../../src/core/schemas/summary.js';
+import { RED_CHECK_INPUT } from './at-rest-projections.js';
 import { retainedWorkspaceNotices, retainedWorkspaceProjection } from './retained-workspace.js';
 import { closedQueueProjection } from './closed-queue-projection.js';
 import {
@@ -4402,6 +4403,40 @@ const reviewQuestionRecoveryProjection: WorkflowFixtureProjection = {
       acceptAsIs: true,
       createdAt: new Date(FIXED_TS).toISOString(),
     }),
+  }),
+};
+
+const reviewRedCheckRecoveryIssue = buildReviewFailedRecoveryIssue({
+  id: 'rec_visual_review_red_check',
+  blocking: 1,
+  noProgress: [RED_CHECK_INPUT.id],
+  cannot: 'The two specs pin the old signup rules; the plan does not say which rule is right.',
+  details: [`${RED_CHECK_INPUT.id}: ${RED_CHECK_INPUT.text}`],
+  phase: 'complete',
+  acceptAsIs: true,
+  scope: 'final',
+  createdAt: new Date(FIXED_TS).toISOString(),
+});
+
+/**
+ * The final review fails on a red reviewer check that the planner cannot fix: the halt names the
+ * check and offers Accept as is.
+ */
+const reviewRedCheckRecoveryProjection: WorkflowFixtureProjection = {
+  ...reviewFailedRecoveryProjection,
+  scenarioId: scenarioId('workflow-recovery-review-red-check'),
+  resumeState: makeImplState([{ ...HALTED_TASK, status: 'done' }], {
+    feature: WORKFLOW_FEATURE,
+    startedAt: RESUMED_RUN_STARTED_AT,
+    phase: 'complete',
+    reviewStatus: 'failed',
+    workspace: {
+      kind: 'checkout',
+      path: VISUAL_FIXTURE_PROJECT_DIR,
+      base: { snapshotId: 'visual-base', head: null },
+    },
+    pendingTriage: { inputs: [RED_CHECK_INPUT], plannerConsult: true },
+    pendingRecovery: reviewRedCheckRecoveryIssue,
   }),
 };
 
@@ -9899,6 +9934,7 @@ const projections = [
   reviewUnverifiedRecoveryProjection,
   reviewNoImagesRecoveryProjection,
   reviewQuestionRecoveryProjection,
+  reviewRedCheckRecoveryProjection,
   taskReviewNoProgressRecoveryProjection,
   checksMissingProgramRecoveryProjection,
   checksUnrunnableRecoveryProjection,
@@ -10099,6 +10135,7 @@ export function assertProjectionBounds(projection: WorkflowFixtureProjection): v
     cursorRefusalRecoveryIssue(),
     runnerCheckFailedDriftRecoveryIssue,
     attemptRevertedCheckoutIssue,
+    reviewRedCheckRecoveryIssue,
   ];
   const engineHaltText = [
     ...halts.flatMap((issue) => [issue.message, ...issue.details]),
@@ -10126,7 +10163,8 @@ export function assertProjectionBounds(projection: WorkflowFixtureProjection): v
     // implementer's JSON report, which the transcript reads as one summary line, or a start
     // warning, which readiness words as its summary, its details and its fix, or a fix check's
     // failure text, which lists its bounded failure keys under the verdict, or the review seat
-    // note the run composes whole after a seat change, or the question written long to be cut.
+    // note the run composes whole after a seat change, or the question written long to be cut, or
+    // a red reviewer check's input, which the run composes from the check's failure text.
     (value) =>
       value !== planCardProjection.review?.source &&
       value !== planCardProjection.review?.planJson &&
@@ -10146,6 +10184,7 @@ export function assertProjectionBounds(projection: WorkflowFixtureProjection): v
       value !== BASE_RERUN_LONG_COMMAND &&
       !value.includes(LONG_QUESTION) &&
       !value.includes(LONG_PLANNER_REASON) &&
+      value !== RED_CHECK_INPUT.text &&
       !retainedWorkspaceNotices.includes(value) &&
       !engineHaltText.includes(value) &&
       !startReadinessWarningText.includes(value) &&

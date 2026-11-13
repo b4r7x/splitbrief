@@ -1,5 +1,5 @@
-import { readReviewRecord } from '../../../core/review/store.js';
-import { openFindings, reviewOutcomeOf } from '../../../core/review/verdict.js';
+import { readReviewRecord, writeAcceptedReview } from '../../../core/review/store.js';
+import { acceptedOpen } from '../../../core/review/verdict.js';
 import { randomUUID } from 'node:crypto';
 import { phaseRole } from '../../../core/phases.js';
 import type { RecoveryAction } from '../../../core/schemas/enums.js';
@@ -317,42 +317,47 @@ function applyReviseRecoveryAction(
   return { ok: true, action: opts.action, issue, state, status: 'continued', correctionRecorded };
 }
 
-function readCriticalFindings(
-  ref: { projectDir: string; sessionId: string },
-  state: WorkflowState,
-): string[] {
-  const review = state.review ?? readReviewRecord(ref);
-  if (review !== null && review !== undefined) return openFindings(reviewOutcomeOf(review));
-  return state.applyReview?.failures ?? [];
-}
-
-/** Record the open findings as accepted as is and resolve the recovery halt. */
+/**
+ * Records what your accept leaves open and resolves the recovery halt. On a failed review these
+ * are its open findings and each red check that still blocks, and `review.md` names the accept. A
+ * review too large to send judged nothing: its accept records the halt and leaves `review.md`.
+ */
 function applyAcceptAsIsRecoveryAction(
   opts: ApplyRecoveryActionOptions,
   issue: RecoveryIssue,
 ): ApplyRecoveryActionResult {
+  const ref = { projectDir: opts.projectDir, sessionId: opts.sessionId };
   const note = opts.comment?.displayText.trim() ?? '';
-  const findings =
-    issue.reason === 'review-input-too-large'
-      ? [issue.message]
-      : readCriticalFindings(
-          { projectDir: opts.projectDir, sessionId: opts.sessionId },
-          opts.state,
-        );
+  const tooLarge = issue.reason === 'review-input-too-large';
+  const review = tooLarge ? null : (opts.state.review ?? readReviewRecord(ref));
+  // Read before the save: ACCEPT_AS_IS clears the pending inputs that name the red checks. A run
+  // stored before reviews were recorded holds no review; its Apply re-check failures stay open.
+  const open =
+    review !== null
+      ? acceptedOpen(review, opts.state)
+      : {
+          findings: tooLarge ? [issue.message] : (opts.state.applyReview?.failures ?? []),
+          redChecks: [],
+        };
   // A scheduled task review is skipped on its own: the run stays implementing,
   // the note is recorded and the pending marker clears so the next brief starts.
   // The final review has no such marker and its accept-as-is closes the run.
-  const scheduledTaskReview =
-    issue.reason === 'review-input-too-large' && opts.state.phase === 'implementing';
+  const scheduledTaskReview = tooLarge && opts.state.phase === 'implementing';
   const reviewSteps: StateStep[] = scheduledTaskReview
     ? [{ type: 'CLEAR_SCHEDULED_REVIEW' }]
-    : issue.reason === 'review-input-too-large'
+    : tooLarge
       ? [{ type: 'REVIEW_DONE', reviewStatus: 'failed' }]
       : [];
   const state = saveRecoveryAnswer(opts, issue, [
     ...reviewSteps,
-    { type: 'ACCEPT_AS_IS', findings, ...(note !== '' && { note }) },
+    { type: 'ACCEPT_AS_IS', ...open, ...(note !== '' && { note }) },
   ]);
+  if (review !== null) {
+    writeAcceptedReview(ref, opts.state, review, {
+      redChecks: open.redChecks,
+      ...(note !== '' && { note }),
+    });
+  }
   publishRecoveryResolved({
     bus: opts.bus,
     phase: state.phase,

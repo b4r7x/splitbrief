@@ -3940,6 +3940,38 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-ready-red-check',
+      title: 'Workflow · a reviewed workspace accepted as is with red checks',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'ready-red-check',
+        title: 'Ready to apply as is, the red checks counted first',
+        kind: 'ready',
+        marker: 'Ready to apply as is · 2 red checks · 2 open findings',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-ready-red-check-confirm',
+      title: 'Workflow · Apply as is asks once and names the red checks first',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'ready-red-check-confirm',
+        title: 'Apply as is confirmation with the red checks',
+        kind: 'ready',
+        marker: 'Apply with 2 red checks and 2 open findings?',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-ready-planner-accept-confirm',
       title: 'Workflow · Apply as is after the planner accepted a review without progress',
       surface: screenSurface('workflow'),
@@ -4171,6 +4203,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: "The closed ledger names the accept and the planner's note under the review",
         kind: 'success',
         marker: 'visual-closed-planner-accept',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Closed run ledger' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-closed-red-check-accept',
+      title: 'Workflow · closed after you accepted a run with a red check',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'closed-red-check-accept',
+        title: 'The closed ledger names the accept and its red check under the review',
+        kind: 'success',
+        marker: 'visual-closed-red-check-accept',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -5436,6 +5484,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Review-question recovery menu',
         kind: 'question',
         marker: 'Decide for me',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-review-red-check',
+      title: 'Workflow · a final review that fails on a red reviewer check',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-red-check',
+        title: 'Review-failed recovery menu with Accept as is beside a red check',
+        kind: 'question',
+        marker: 'Accept as is',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

@@ -1,8 +1,10 @@
 import { error } from '../../utils/error.js';
-import { REVIEW_JSON_FILE } from '../paths.js';
-import { readSpecFile } from '../paths-io.js';
-import { ReviewRecordSchema, type ReviewRecord } from '../schemas/workflow.js';
+import { REVIEW_FILE, REVIEW_JSON_FILE } from '../paths.js';
+import { readSpecFile, rewriteSpecFile } from '../paths-io.js';
+import { ReviewRecordSchema, type ReviewRecord, type WorkflowState } from '../schemas/workflow.js';
 import type { SessionRef } from '../types/session-ref.js';
+import { renderReviewMarkdown, type AcceptedReview } from './render.js';
+import { recordedFixWork, reviewOutcomeOf, setAsideInputs } from './verdict.js';
 
 export function parseReviewRecord(text: string): ReviewRecord {
   try {
@@ -26,4 +28,29 @@ export function readFinalReviewRecord(
   const record = readReviewRecord(ref);
   if (record === null) return { kind: 'none' };
   return record.scope === 'task' ? { kind: 'task-only' } : { kind: 'final', record };
+}
+
+/**
+ * The one writer of `review.md` after an Accept as is, yours or the planner's: the page of
+ * `review` with the accept under its findings, below the frontmatter the file has. `state` is the
+ * state before the accept, which still holds the inputs the reviewer set aside.
+ */
+export function writeAcceptedReview(
+  ref: SessionRef,
+  state: WorkflowState,
+  review: ReviewRecord,
+  accepted: AcceptedReview,
+): void {
+  rewriteSpecFile(
+    ref,
+    REVIEW_FILE,
+    renderReviewMarkdown(
+      review.verdict,
+      state.tasks,
+      reviewOutcomeOf(review),
+      review.preExistingChecks ?? [],
+      setAsideInputs(state.pendingTriage?.inputs ?? [], recordedFixWork(state, review.at)),
+      accepted,
+    ),
+  );
 }

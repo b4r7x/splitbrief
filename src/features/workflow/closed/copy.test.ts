@@ -77,7 +77,7 @@ describe('runRows and recordRows', () => {
     ],
     [null, 'Accepted as is'],
   ])('names an accept as is under the review, with its note %s', (note, text) => {
-    const rows = runRows(makeView({ accepted: { note } }));
+    const rows = runRows(makeView({ accepted: { redChecks: null, note } }));
     const review = rows.findIndex((row) => row.label === 'Review');
     expect(rows[review + 1]).toEqual({ label: '', segments: [{ text, tone: 'text' }], hang: 0 });
     expect(
@@ -85,6 +85,22 @@ describe('runRows and recordRows', () => {
         row.segments.some((s) => 'text' in s && s.text.includes('Accepted')),
       ),
     ).toBe(false);
+  });
+
+  it.each([
+    [null, 'Accepted as is · 1 red check: V1'],
+    [
+      'Your note: The suite is red at the run base too',
+      'Accepted as is · 1 red check: V1 · Your note: The suite is red at the run base too',
+    ],
+  ])('names the red checks of an accept as is before its note %s', (note, text) => {
+    const view = makeView({ accepted: { redChecks: '1 red check: V1', note } });
+    const accepted = { label: '', segments: [{ text, tone: 'text' }], hang: 0 };
+
+    const rows = runRows(view);
+    expect(rows[rows.findIndex((row) => row.label === 'Review') + 1]).toEqual(accepted);
+    const record = recordProse(view);
+    expect(record[record.findIndex((row) => row.label === 'Review') + 1]).toEqual(accepted);
   });
 
   it('states each kind of finding as its own fact, and no fact for a kind with none', () => {

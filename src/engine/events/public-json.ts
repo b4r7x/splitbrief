@@ -6,6 +6,7 @@ import {
   RecoveryReasonSchema,
   RecoveryStatusSchema,
 } from '../../core/schemas/enums.js';
+import { RedCheckSchema } from '../../core/schemas/workflow.js';
 import { boundConsumerPayload, type CallConsumerContext } from '../../core/payload-bounds.js';
 import { EngineEventSchema } from './schema.js';
 import { boundEngineEventForConsumer } from './bound.js';
@@ -54,7 +55,10 @@ export const HeadlessJsonRecordSchema = z.discriminatedUnion('type', [
   z.strictObject({
     type: z.literal('ready_to_apply'),
     sessionId: z.string(),
-    /** The run was accepted as is after a failed review; Apply confirms its open findings. */
+    /**
+     * The run was accepted as is after a failed review; Apply confirms its red checks and open
+     * findings.
+     */
     override: z.boolean(),
     applyCommand: z.string(),
     discardCommand: z.string(),
@@ -63,9 +67,16 @@ export const HeadlessJsonRecordSchema = z.discriminatedUnion('type', [
     type: z.literal('final_review_failed'),
     sessionId: z.string(),
     blocking: z.number().int().nonnegative(),
-    /** Who accepted the failed review as is, with their note; the verdict stays failed. */
+    /**
+     * Who accepted the failed review as is, with their note and the red checks the accept left
+     * red; the verdict stays failed.
+     */
     accepted: z
-      .strictObject({ by: z.enum(['planner', 'user']), note: z.string().optional() })
+      .strictObject({
+        by: z.enum(['planner', 'user']),
+        note: z.string().optional(),
+        redChecks: z.array(RedCheckSchema).optional(),
+      })
       .optional(),
   }),
   z.strictObject({

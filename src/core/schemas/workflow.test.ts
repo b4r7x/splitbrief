@@ -448,6 +448,42 @@ describe('WorkflowStateSchema v4', () => {
     expect(older.fixCycles).not.toHaveProperty('briefed');
   });
 
+  it('keeps the red checks of an Accept as is, with or without a command and a last line', () => {
+    const accepted = { at: '2026-11-13T10:00:00.000Z', findings: ['F1'] };
+    const redChecks = [
+      { id: 'V1', command: 'npm test', lastLine: 'Error: 2 specs failed' },
+      { id: 'K004', lastLine: 'src/a.ts(3,1): TS2322' },
+      { id: 'V2', command: 'npm run lint' },
+    ];
+    const parsed = WorkflowStateSchema.parse({
+      ...state({ phase: 'complete' }),
+      acceptedAsIs: { ...accepted, redChecks },
+    });
+    const noId = WorkflowStateSchema.safeParse({
+      ...state({ phase: 'complete' }),
+      acceptedAsIs: { ...accepted, redChecks: [{ command: 'npm test' }] },
+    });
+
+    expect(parsed.acceptedAsIs?.redChecks).toEqual(redChecks);
+    expect(noId.success).toBe(false);
+  });
+
+  it('loads an Accept as is that a run stored with no red checks', () => {
+    const accepted = {
+      at: '2026-11-13T10:00:00.000Z',
+      findings: ['F1'],
+      note: 'Checked by hand.',
+    };
+    const parsed = WorkflowStateSchema.safeParse({
+      ...state({ phase: 'complete' }),
+      acceptedAsIs: accepted,
+    });
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.acceptedAsIs).toEqual(accepted);
+    expect(parsed.data?.acceptedAsIs).not.toHaveProperty('redChecks');
+  });
+
   it('refuses a negative briefed fix-cycle count', () => {
     const parsed = WorkflowStateSchema.safeParse({
       ...state({ phase: 'final-review' }),

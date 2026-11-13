@@ -8,6 +8,7 @@ import {
   getSplitbriefVersion,
   type SpecMetadata,
 } from './paths-io.js';
+import * as pathsIo from './paths-io.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { extractFrontmatter } from '../utils/frontmatter.js';
 
@@ -114,5 +115,33 @@ describe('writeSpecFile with metadata', () => {
     expect(readSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'spec.md')).toBe(
       '# Plain Spec',
     );
+  });
+});
+
+describe('rewriteSpecFile', () => {
+  const frontmatter =
+    '---\ngenerated_by: splitbrief v0.1.0\nplanner: Claude Code CLI · auto\ncreated_at: 2026-01-01T00:00:00.000Z\n---\n';
+
+  it('replaces the content and keeps the frontmatter that the file has on disk', () => {
+    const ref = { projectDir: makeTmp(), sessionId: SESSION_ID };
+    writeSpecFile(ref, 'review.md', `${frontmatter}### Verdict\n\nfail\n`);
+    expect(pathsIo.rewriteSpecFile).toBeTypeOf('function');
+    pathsIo.rewriteSpecFile(ref, 'review.md', '### Verdict\n\npass\n');
+    expect(readSpecFile(ref, 'review.md')).toBe(`${frontmatter}### Verdict\n\npass\n`);
+  });
+
+  it.each([
+    ['no file', null],
+    ['a file with no frontmatter', '### Verdict\n\nfail\n'],
+    [
+      'a file whose first block is not the frontmatter of SPLITBRIEF',
+      '---\ntitle: Mine\n---\nfail\n',
+    ],
+  ])('writes the content alone over %s', (_name, onDisk) => {
+    const ref = { projectDir: makeTmp(), sessionId: SESSION_ID };
+    if (onDisk !== null) writeSpecFile(ref, 'review.md', onDisk);
+    expect(pathsIo.rewriteSpecFile).toBeTypeOf('function');
+    pathsIo.rewriteSpecFile(ref, 'review.md', '### Verdict\n\npass\n');
+    expect(readSpecFile(ref, 'review.md')).toBe('### Verdict\n\npass\n');
   });
 });

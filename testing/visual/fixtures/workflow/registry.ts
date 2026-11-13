@@ -400,6 +400,7 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
   }
   if (
     projection.scenarioId === 'workflow-ready-override-confirm' ||
+    projection.scenarioId === 'workflow-ready-red-check-confirm' ||
     projection.scenarioId === 'workflow-ready-planner-accept-confirm' ||
     projection.scenarioId === 'workflow-ready-planner-accept-long-note' ||
     projection.scenarioId === 'workflow-ready-planner-accept-short'
@@ -806,6 +807,11 @@ function includesAll(...markers: readonly string[]): CheckpointPredicate {
   return ({ output, checkpoint }) => {
     return output.includes(checkpoint.marker) && markers.every((marker) => output.includes(marker));
   };
+}
+
+// A panel row that wraps keeps its words: the frame on one line, without the panel's border.
+function panelText(output: string): string {
+  return stripAnsiStyles(output).replace(/[│▌]/gu, ' ').replace(/\s+/gu, ' ');
 }
 
 function excludesAll(...markers: readonly string[]): CheckpointPredicate {
@@ -1993,6 +1999,34 @@ const checkpointPredicates = [
     includesAll('Apply with 2 open findings?', '- Edge case missing src/'),
   ],
   [
+    checkpointId('ready-red-check'),
+    (context) =>
+      includesAll()(context) &&
+      panelText(context.output).includes(
+        'Apply as is · write the changes with the red checks and the open findings; asks once',
+      ),
+  ],
+  [
+    checkpointId('ready-red-check-confirm'),
+    // The red checks come before the findings. A view too short for the whole list counts the
+    // findings on its last row.
+    (context) => {
+      const text = panelText(context.output);
+      const at = [
+        '- V1 failed · npm test · Error: 2 specs failed',
+        '- K004 failed · src/a.ts(3,1): TS2322',
+        context.viewport.rows < 24
+          ? '+2 more open findings'
+          : '- src/form.ts re-validates on every keystroke',
+        'Apply as is · write the changes; the red checks and these findings stay open',
+      ].map((row) => text.indexOf(row));
+      return (
+        includesAll()(context) &&
+        at.every((index, row) => index >= 0 && index > (at[row - 1] ?? -1))
+      );
+    },
+  ],
+  [
     checkpointId('ready-planner-accept-confirm'),
     includesAll('Apply with 2 open findings?', "Planner's note:"),
   ],
@@ -2018,6 +2052,10 @@ const checkpointPredicates = [
   [
     checkpointId('closed-planner-accept'),
     aboveSummaryFold(40, 'Accepted as is', "Planner's note:"),
+  ],
+  [
+    checkpointId('closed-red-check-accept'),
+    aboveSummaryFold(40, 'Accepted as is · 1 red check: V1'),
   ],
   [checkpointId('closed-decided-skip'), aboveSummaryFold(0, '1 skipped')],
   [checkpointId('closed-ended'), includesAll()],
@@ -2257,6 +2295,21 @@ const checkpointPredicates = [
   [
     checkpointId('review-question'),
     includesAll(WORKFLOW_FIXTURE_TEXT.reviewFailed, 'Decide for me'),
+  ],
+  [
+    checkpointId('review-red-check'),
+    // The headline names the red input. A view too short for the facts folds the check's own row.
+    (context) =>
+      includesAll(
+        'found no fix for V1.1',
+        WORKFLOW_FIXTURE_TEXT.reviewFailed,
+        'Decide for me',
+        'End run',
+      )(context) &&
+      (context.viewport.rows < 24 ||
+        panelText(context.output).includes(
+          'V1.1: Reviewer check V1 (npm test) failed with new failures.',
+        )),
   ],
   [
     checkpointId('task-review-no-progress'),

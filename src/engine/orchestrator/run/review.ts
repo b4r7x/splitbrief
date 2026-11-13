@@ -4,12 +4,11 @@ import {
   blockingKeys,
   blockingRedInputs,
   openFindings,
+  recordedFixWork,
   reviewOutcomeOf,
   reviewsAgain,
-  setAsideInputs,
 } from '../../../core/review/verdict.js';
-import { renderReviewMarkdown } from '../../../core/review/render.js';
-import { writeSpecFile } from '../../../core/paths-io.js';
+import { writeAcceptedReview } from '../../../core/review/store.js';
 import { requireReviewSeat } from '../../../core/config/accessors/reviewer-runner.js';
 import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
 import { getRunnerCatalogDisplayName } from '../../../core/config/accessors/runner-config.js';
@@ -108,18 +107,15 @@ async function haltFailedReview(args: {
 }): Promise<WorkflowState> {
   const ref = { projectDir: args.wctx.projectDir, sessionId: args.wctx.sessionId };
   const scheduled = args.state.review?.scope === 'task' && args.state.phase === 'implementing';
-  const redPending = args.redInputs.length > 0;
   const state = scheduled
     ? queueScheduledTriage(ref, args.state)
-    : redPending
-      ? args.state
-      : transitionAndSave(ref, args.state, {
-          type: 'REVIEW_DONE',
-          reviewStatus: 'failed',
-          ...(args.candidate !== undefined && { candidate: args.candidate }),
-        });
+    : transitionAndSave(ref, args.state, {
+        type: 'REVIEW_DONE',
+        reviewStatus: 'failed',
+        ...(args.candidate !== undefined && { candidate: args.candidate }),
+      });
   args.setTrackedState(state);
-  if (!scheduled && !redPending)
+  if (!scheduled)
     args.wctx.bus.publish({
       type: 'workflow_complete',
       ts: Date.now(),
@@ -143,7 +139,7 @@ async function haltFailedReview(args: {
     ...(args.cannot !== undefined && { cannot: args.cannot }),
     ...(args.question !== undefined && { question: args.question }),
     details,
-    acceptAsIs: !scheduled && !redPending,
+    acceptAsIs: !scheduled && !args.redInputs.some((input) => input.source === 'apply'),
     scope: scheduled ? 'task' : 'final',
     ...(scheduled && { afterTaskId: args.state.review?.afterTaskId }),
   });
@@ -251,9 +247,10 @@ export type FollowedReview = Readonly<{
 }>;
 
 /**
- * The planner's Accept as is of a stuck review, as yours at a halt: the blockers stay open with
- * the planner's note, a final review closes as failed and a scheduled review clears, so the next
- * brief starts. `review.md` names the note.
+ * The planner's Accept as is of a stuck review: the blockers stay open with the planner's note, a
+ * final review closes as failed and a scheduled review clears, so the next brief starts. No red
+ * check blocks here, because the contract refuses this accept while one does; your accept at a halt
+ * is the one that records red checks. `review.md` names the planner and the note.
  */
 function acceptStuckReview(args: {
   wctx: WorkflowContext;
@@ -261,26 +258,12 @@ function acceptStuckReview(args: {
   setTrackedState: (s: WorkflowState) => void;
   candidate: Record<string, string> | undefined;
   judged: ReviewRecord;
-  fixWork: TriageResult;
-  inputs: readonly TriageInput[];
   note: string;
 }): WorkflowState {
   const { wctx, judged } = args;
   const ref = { projectDir: wctx.projectDir, sessionId: wctx.sessionId };
   const outcome = reviewOutcomeOf(judged);
-  writeSpecFile(
-    ref,
-    REVIEW_FILE,
-    renderReviewMarkdown(
-      judged.verdict,
-      args.state.tasks,
-      outcome,
-      judged.preExistingChecks ?? [],
-      setAsideInputs(args.inputs, args.fixWork),
-      args.note,
-    ),
-    wctx.metadata,
-  );
+  writeAcceptedReview(ref, args.state, judged, { by: 'planner', note: args.note });
   const scheduled = judged.scope === 'task' && args.state.phase === 'implementing';
   let state = transitionAndSave(
     ref,
@@ -462,8 +445,6 @@ export async function followReviewAnswer(args: {
           setTrackedState,
           candidate: args.candidate,
           judged,
-          fixWork,
-          inputs,
           note: asked.note,
         });
         return { state, next: 'accepted' };
@@ -497,27 +478,19 @@ export type ScheduledReviewResult = Readonly<{
 }>;
 
 /**
- * Follows the review answer a stopped run left pending: the question it asked the user, or the
- * planner call on a stuck review, which runs again on the reviewer's recorded answer.
+ * Follows the review answer a stopped run left pending, on the reviewer's recorded answer: the
+ * question it asked the user is asked again, or the planner call on a stuck review runs again.
  */
 export async function followPendingReview(
   args: Omit<Parameters<typeof followReviewAnswer>[0], 'fixWork'>,
 ): Promise<Awaited<ReturnType<typeof followReviewAnswer>> | undefined> {
   const pending = args.state.pendingTriage;
+  const fixWork = recordedFixWork(args.state, args.state.review?.at);
   if (pending?.question !== undefined) {
-    return followReviewAnswer({
-      ...args,
-      fixWork: { fixTasks: [], rejected: [], ask: pending.question },
-    });
+    return followReviewAnswer({ ...args, fixWork: { ...fixWork, ask: pending.question } });
   }
   if (pending?.plannerConsult !== true) return undefined;
-  // An answer that fixes, rejects and asks nothing records no triage.
-  const reviewAt = args.state.review?.at;
-  const fixWork = args.state.triage?.findLast((record) => record.reviewAt === reviewAt)?.result;
-  return followReviewAnswer({
-    ...args,
-    fixWork: fixWork ?? { fixTasks: [], rejected: [], ask: null },
-  });
+  return followReviewAnswer({ ...args, fixWork });
 }
 
 export async function runScheduledReview(args: {

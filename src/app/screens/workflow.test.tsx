@@ -3126,6 +3126,52 @@ describe('WorkflowScreen showing a run at rest', () => {
     ui.unmount();
   });
 
+  it('names the red check of a run accepted as is first, on the result menu and in its confirmation', async () => {
+    openRun({
+      status: { kind: 'ready-to-apply', override: true },
+      summary: makeSummary({ changedFiles: ['src/form.ts', 'src/form.test.ts'] }),
+      hydration: {
+        kind: 'loaded',
+        state: makeWorkflowState({
+          phase: 'complete',
+          reviewStatus: 'failed',
+          workspace: {
+            kind: 'worktree',
+            path: join(projectDir, 'run-workspace'),
+            base: { snapshotId: 'workspace-base', head: null },
+          },
+          acceptedAsIs: {
+            at: '2026-09-14T00:00:00.000Z',
+            findings: [],
+            redChecks: [{ id: 'V1', command: 'npm test', lastLine: 'Error: 2 specs failed' }],
+          },
+        }),
+      },
+    });
+    const onRuntimeCommand = vi.fn();
+
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={onRuntimeCommand} />, {
+      cols: 120,
+      rows: 40,
+    });
+    const frame = () => stripAnsiStyles(ui.lastFrame() ?? '');
+    await flushEffects();
+    await vi.waitFor(() =>
+      expect(frame()).toContain('Ready to apply as is · 1 red check · 2 files changed'),
+    );
+    expect(frame()).toContain('Apply as is · write the changes with the red checks; asks once');
+    expect(frame()).not.toContain('open finding');
+
+    ui.stdin.write('\r');
+    await vi.waitFor(() => expect(frame()).toContain('Apply with 1 red check?'));
+    const rows = frame().split('\n');
+    const title = rows.findIndex((row) => row.includes('Apply with 1 red check?'));
+    expect(rows[title + 1]).toContain('- V1 failed · npm test · Error: 2 specs failed');
+    expect(rows[title + 2]).toContain('Apply as is · write the changes; the red checks stay red');
+    expect(onRuntimeCommand).not.toHaveBeenCalled();
+    ui.unmount();
+  });
+
   it('runs a slash command typed while the result menu holds the keys, never Apply', async () => {
     readyRun();
     const onRuntimeCommand = vi.fn();

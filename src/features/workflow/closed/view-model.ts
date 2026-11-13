@@ -5,9 +5,9 @@ import type { TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { RunCheckpoint, RunRecord } from '../../../core/sessions/run-record.js';
 import { awaitsApply, canUndoApply, type RunStatus } from '../../../core/sessions/run-status.js';
-import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
+import { oneLineDisplayText, sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import type { RailStageState } from '../../../core/rail-stages.js';
-import { acceptedNote } from '../../../core/review/verdict.js';
+import { acceptedCounts, acceptedNote } from '../../../core/review/verdict.js';
 import { atRestRailStages } from '../at-rest.js';
 import {
   briefRows,
@@ -137,8 +137,11 @@ export interface SummaryView {
   review: ReviewView;
   /** The reviews that failed before the review of record, so a fix cycle leaves its trace. */
   failedReviews: readonly FailedReviewView[];
-  /** The failed review the user or the planner accepted as is, with the owner's note. */
-  accepted: Readonly<{ note: string | null }> | null;
+  /**
+   * The failed review the user or the planner accepted as is: the red checks it recorded, by id
+   * (`1 red check: V1`), and the owner's note.
+   */
+  accepted: Readonly<{ redChecks: string | null; note: string | null }> | null;
   scope: ScopeView;
   quality: BriefQualitySummary | null;
   files: Readonly<{
@@ -199,8 +202,7 @@ export function deriveSummaryView(input: DeriveSummaryViewInput): SummaryView | 
     },
     review: reviewView(summary, state?.review?.preExistingChecks ?? [], ledger),
     failedReviews: failedReviewViews(ledger),
-    accepted:
-      state?.acceptedAsIs === undefined ? null : { note: acceptedNote(state.acceptedAsIs) ?? null },
+    accepted: acceptedView(state?.acceptedAsIs),
     scope: scopeView(summary),
     quality: summary.briefQuality ?? null,
     files: { ...files, patch: savedPatch(state, files.changed) },
@@ -274,6 +276,16 @@ function outcomeKindFor(
     packet.driftPassed === true &&
     summary.failed === 0;
   return agreed ? 'complete' : 'needs-attention';
+}
+
+/** The accept as is the run's state holds, as its row spells it: the red checks by id, the note. */
+function acceptedView(accepted: WorkflowState['acceptedAsIs']): SummaryView['accepted'] {
+  if (accepted === undefined) return null;
+  const redChecks = acceptedCounts(accepted).redCheckIds;
+  return {
+    redChecks: redChecks === undefined ? null : oneLineDisplayText(redChecks),
+    note: acceptedNote(accepted) ?? null,
+  };
 }
 
 /** The run.patch the close recorded; a run that changed no file left nothing in it. */

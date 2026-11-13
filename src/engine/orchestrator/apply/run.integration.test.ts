@@ -1459,8 +1459,36 @@ describe('runApply integration review', { timeout: 60_000 }, () => {
       warning:
         'Run accepted as is with 1 open finding: Edge case missing Unicode input is not covered. Your note: Checked by hand. No review checked them;',
     },
+    {
+      acceptedAsIs: {
+        findings: ['a'],
+        redChecks: [{ id: 'V1', command: 'npm test', lastLine: 'Error: 2 specs failed' }],
+      },
+      warning:
+        'Run accepted as is with 1 red check and 1 open finding: V1 failed · npm test · Error: 2 specs failed; a. The red checks still fail; Apply needs one confirmation (/run accept confirm).',
+    },
+    {
+      acceptedAsIs: {
+        findings: [],
+        redChecks: [{ id: 'V1', command: 'npm test', lastLine: 'Error: 2 specs failed' }],
+      },
+      warning:
+        'Run accepted as is with 1 red check: V1 failed · npm test · Error: 2 specs failed. The red checks still fail; Apply needs one confirmation (/run accept confirm).',
+    },
+    {
+      acceptedAsIs: {
+        findings: ['Missing test.'],
+        redChecks: [
+          { id: 'K004', lastLine: 'src/a.ts(3,1): TS2322.' },
+          { id: 'V1', command: 'npm run lint &&\n  npm test' },
+        ],
+        note: 'Checked by hand',
+      },
+      warning:
+        'Run accepted as is with 2 red checks and 1 open finding: K004 failed · src/a.ts(3,1): TS2322; V1 failed · npm run lint && npm test; Missing test. Your note: Checked by hand. The red checks still fail; Apply needs one confirmation (/run accept confirm).',
+    },
   ])(
-    'the override warning counts findings only and shows the note once: $warning',
+    'the override warning counts the red checks and the findings, and shows the note once: $warning',
     async ({ acceptedAsIs, warning }) => {
       await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
         writeFileSync(join(run.ws, 'a.txt'), lines('ONE', 'two', 'three', 'four', 'five'));

@@ -1850,6 +1850,37 @@ describe('fix cycles, review and triage records', () => {
     );
   });
 
+  it('REVIEW_CORRECTION takes a failed final review that an older run halted in final-review', () => {
+    const halted: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'final-review',
+      pendingRecovery: makeRecoveryIssue({
+        reason: 'review-failed',
+        phase: 'final-review',
+        taskId: undefined,
+        affectedTaskIds: [],
+      }),
+      pendingTriage: {
+        inputs: [
+          {
+            id: 'V1.1',
+            kind: 'defect',
+            source: 'check',
+            text: 'Reviewer check V1 (npm test) failed with new failures.',
+            file: null,
+          },
+        ],
+      },
+    };
+    const correct = () =>
+      transition(halted, { type: 'REVIEW_CORRECTION', text: 'The spec moved; judge it again' });
+
+    expect(correct).not.toThrow();
+    const next = correct();
+    expect(next.phase).toBe('final-review');
+    expect(next.pendingTriage?.inputs.map((input) => input.id)).toEqual(['V1.1', 'U1']);
+  });
+
   it('RECORD_REVIEW stores the review and RECORD_TRIAGE appends to the log', () => {
     const state: WorkflowState = { ...createInitialState('feat'), phase: 'final-review' };
     const review: NonNullable<WorkflowState['review']> = {
@@ -2039,6 +2070,27 @@ describe('the run workspace and Apply', () => {
       findings: ['F1'],
       note: 'Checked by hand.',
     });
+  });
+
+  it('ACCEPT_AS_IS stores the red checks beside the findings', () => {
+    const failed = { ...ready(), reviewStatus: 'failed' as const };
+    const redChecks = [
+      { id: 'V1', command: 'npm test', lastLine: 'Error: 2 specs failed' },
+      { id: 'K004', lastLine: 'src/a.ts(3,1): TS2322' },
+    ];
+    const next = transition(failed, { type: 'ACCEPT_AS_IS', findings: ['F1'], redChecks }, NOW);
+    expect(next.acceptedAsIs).toEqual({
+      at: '2026-10-03T10:00:00.000Z',
+      findings: ['F1'],
+      redChecks,
+    });
+  });
+
+  it('ACCEPT_AS_IS with an empty list of red checks stores no red check', () => {
+    const failed = { ...ready(), reviewStatus: 'failed' as const };
+    const next = transition(failed, { type: 'ACCEPT_AS_IS', findings: ['F1'], redChecks: [] }, NOW);
+    expect(next.acceptedAsIs).toEqual({ at: '2026-10-03T10:00:00.000Z', findings: ['F1'] });
+    expect(next.acceptedAsIs).not.toHaveProperty('redChecks');
   });
 
   it.each(['passed', 'failed'] as const)(

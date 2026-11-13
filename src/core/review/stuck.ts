@@ -74,7 +74,8 @@ export function plannerFixWork(
 /**
  * Why the contract refuses a planner's answer to a stuck review: guidance with no reviewer fix
  * brief to carry it, a re-run of no check or of a check the run does not know, or an accept while
- * a red check or an Apply conflict blocks, which the user's Accept as is refuses too.
+ * a red check or an Apply conflict blocks. The user's Accept as is takes a red check; only an
+ * Apply conflict keeps it off the halt.
  */
 export function stuckAnswerErrors(
   answer: ConsultAnswer['answer'],

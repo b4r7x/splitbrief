@@ -341,7 +341,7 @@ describe('review answer follower', () => {
     });
     expect(halted.state.pendingRecovery).toMatchObject({
       reason: 'review-failed',
-      availableActions: ['revise', 'decide-for-me', 'end-run'],
+      availableActions: ['revise', 'accept-as-is', 'decide-for-me', 'end-run'],
       facts: { question: 'Change the API?' },
     });
 
@@ -393,9 +393,9 @@ describe('review answer follower', () => {
     expect(prompts).toHaveLength(1);
     expect(prompts[0]).toContain('F1: Preserve the error');
     expect(result.next).toBe('stop');
-    expect(result.state.phase).toBe('final-review');
-    expect(result.state.completedAt).toBeUndefined();
-    expect(result.state.reviewStatus).toBeUndefined();
+    expect(result.state.phase).toBe('complete');
+    expect(result.state.completedAt).toEqual(expect.any(String));
+    expect(result.state.reviewStatus).toBe('failed');
     expect(result.state.pendingRecovery?.message).toBe('Final review found no fix for F1');
     expect(result.state.pendingRecovery?.facts).toMatchObject({
       noProgress: 'F1',
@@ -406,9 +406,16 @@ describe('review answer follower', () => {
       'Planner said: The plan keeps the old error type',
     );
     expect(result.state.pendingRecovery?.facts).not.toHaveProperty('fixCycle');
-    expect(result.state.pendingRecovery?.availableActions).not.toContain('accept-as-is');
+    expect(result.state.pendingRecovery?.availableActions).toEqual([
+      'revise',
+      'accept-as-is',
+      'decide-for-me',
+      'end-run',
+    ]);
     expect(result.state.pendingRecovery?.details?.join('\n')).toContain('P1');
-    expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
+    expect(events.filter((event) => event.type === 'workflow_complete')).toMatchObject([
+      { review: 'failed', blocking: 1 },
+    ]);
     const corrected = await applyRecoveryAction({
       ...ref,
       state: result.state,
@@ -644,13 +651,70 @@ describe('review answer follower', () => {
       },
     });
     expect(result.next).toBe('stop');
-    expect(result.state.phase).toBe('final-review');
-    expect(result.state.reviewStatus).toBeUndefined();
-    expect(result.state.completedAt).toBeUndefined();
-    expect(result.state.pendingRecovery?.availableActions).not.toContain('accept-as-is');
+    expect(result.state.phase).toBe('complete');
+    expect(result.state.reviewStatus).toBe('failed');
+    expect(result.state.completedAt).toEqual(expect.any(String));
+    expect(result.state.pendingRecovery?.availableActions).toEqual([
+      'revise',
+      'accept-as-is',
+      'decide-for-me',
+      'end-run',
+    ]);
     expect(result.state.pendingRecovery?.details?.join('\n')).toContain('P1: Typecheck failed');
     expect(result.state.pendingRecovery?.facts?.blocking).toBe(2);
-    expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
+    expect(events.filter((event) => event.type === 'workflow_complete')).toMatchObject([
+      { review: 'failed', blocking: 2 },
+    ]);
+  });
+
+  it("keeps the reviewer's rejection when the question is asked again", async () => {
+    const ref = setupProject();
+    const review = pendingReview().review;
+    if (review === undefined) throw new Error('pendingReview holds a review');
+    const asking = {
+      ...rejecting(input.id),
+      ask: { question: 'Change the API?', whyOnlyUserCanAnswer: 'The API is public.' },
+    };
+    const state: WorkflowState = {
+      ...pendingReview(),
+      phase: 'final-review',
+      triage: [
+        {
+          cycle: 3,
+          at: '2026-10-04T00:00:01Z',
+          reviewAt: review.at,
+          inputIds: ['F1', input.id],
+          result: asking,
+          blocking: ['finding:F1'],
+          scope: 'final',
+        },
+      ],
+      pendingTriage: { inputs: [input] },
+    };
+    saveState(ref, state);
+    const { bus } = makeBusRecorder();
+    const callbacks = makeCallbacks().callbacks;
+    const args = {
+      wctx: makeWctx({ ...ref, bus, callbacks }),
+      callbacks,
+      setTrackedState: vi.fn(),
+      candidate: undefined,
+    };
+    const halted = await followReviewAnswer({ ...args, state, fixWork: asking });
+    const revised = await applyRecoveryAction({
+      ...ref,
+      state: halted.state,
+      action: 'revise',
+      bus,
+    });
+    if (!revised.ok) throw new Error(revised.message);
+
+    const again = await followPendingReview({ ...args, state: revised.state });
+    expect(again).toMatchObject({ next: 'stop' });
+    expect(again?.state.pendingRecovery?.details).toEqual([
+      'The review asked a question this run has no way to answer.',
+      'Question: Change the API?',
+    ]);
   });
 
   it('counts a blocking finding that restates a red input once on the halt', async () => {
@@ -1199,14 +1263,36 @@ describe('the review that judges a fix cycle', () => {
       expect(result.state.acceptedAsIs).toBeUndefined();
     });
 
-    it('refuses an accept while a red check blocks, as Accept as is does', async () => {
-      const redCheck: TriageInput = {
-        id: 'K1.1',
-        kind: 'defect',
-        source: 'check',
-        text: 'Check K1 failed',
-        file: null,
-      };
+    const redCheck: TriageInput = {
+      id: 'K1.1',
+      kind: 'defect',
+      source: 'check',
+      text: 'Check K1 failed',
+      file: null,
+    };
+
+    it.each([
+      ['the conflict alone', [conflict]],
+      ['a red check and the conflict', [redCheck, conflict]],
+    ])('offers no Accept as is while an Apply input blocks: %s', async (_name, inputs) => {
+      const state = transition(runState('complete'), {
+        type: 'APPLY_REVIEW_START',
+        merged: [],
+        triage: inputs,
+      });
+      const { planner } = consultPlanner([cannotFix]);
+      const result = await follow(reviewed(state, 'fail'), fixWorkNone, { planner });
+      expect(result).toMatchObject({ next: 'stop' });
+      expect(result.state.phase).toBe('complete');
+      expect(result.state.reviewStatus).toBe('failed');
+      expect(result.state.pendingRecovery?.availableActions).toEqual([
+        'revise',
+        'decide-for-me',
+        'end-run',
+      ]);
+    });
+
+    it("refuses the planner's accept while a red check blocks, and offers you Accept as is on the halt", async () => {
       let state = transition(runState('final-review'), {
         type: 'QUEUE_TRIAGE',
         inputs: [redCheck],
@@ -1229,6 +1315,7 @@ describe('the review that judges a fix cycle', () => {
       expect(prompts[1]).toContain('accept cannot take K1.1 while it blocks');
       expect(result).toMatchObject({ next: 'stop' });
       expect(result.state.acceptedAsIs).toBeUndefined();
+      expect(result.state.pendingRecovery?.availableActions).toContain('accept-as-is');
     });
 
     it('re-runs the check the planner names past its stored red, then starts a cycle with no brief that the next review judges against the reviewer blockers', async () => {

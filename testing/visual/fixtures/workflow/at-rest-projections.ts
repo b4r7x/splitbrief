@@ -21,6 +21,7 @@ import {
   reviewOutcomeWord,
 } from '../../../../src/core/review/verdict.js';
 import type { RecoveryIssue } from '../../../../src/core/schemas/recovery/schemas.js';
+import type { TriageInput } from '../../../../src/core/schemas/review.js';
 import type { EngineEvent, EngineEventOf } from '../../../../src/engine/events/types.js';
 import {
   FIX_CYCLE_RUN_FEATURE,
@@ -1432,6 +1433,66 @@ const READY_OVERRIDE_MULTILINE = record({
   ledger: READY_LEDGER,
 });
 
+const RED_CHECK_COMMAND = 'npm test';
+const RED_CHECK_LAST_LINE = 'Error: 2 specs failed';
+const RED_CHECK_OUTPUT = [
+  '> app@1.4.0 test',
+  '> node tools/run-specs.mjs',
+  '',
+  'signup form: expected 1 message, got 0',
+  'signup route: expected status 400, got 200',
+  RED_CHECK_LAST_LINE,
+].join('\n');
+const RED_CHECK_KEY = 'exited with code 1';
+
+/** The red reviewer check as the run queues it for the review: its command and its whole output. */
+export const RED_CHECK_INPUT: TriageInput = {
+  id: 'V1.1',
+  kind: 'defect',
+  source: 'check',
+  file: null,
+  text: `Reviewer check V1 (${RED_CHECK_COMMAND}) failed with new failures.\n${checkFailureText({
+    checkId: 'V1',
+    status: 'fail',
+    command: RED_CHECK_COMMAND,
+    exitCode: 1,
+    output: RED_CHECK_OUTPUT,
+    failure: { keys: [RED_CHECK_KEY], placeholder: `${RED_CHECK_KEY}: ${RED_CHECK_LAST_LINE}` },
+    preExisting: [],
+  })}`,
+  checkIds: ['V1'],
+  command: RED_CHECK_COMMAND,
+  output: RED_CHECK_OUTPUT,
+  redKeys: [RED_CHECK_KEY],
+};
+
+/** The same check as an Accept as is records it: its id, its command, the last line it printed. */
+const RED_REVIEWER_CHECK = { id: 'V1', command: RED_CHECK_COMMAND, lastLine: RED_CHECK_LAST_LINE };
+/** A plan check that ran no command, as the same accept records it. */
+const RED_PLAN_CHECK = { id: 'K004', lastLine: 'src/a.ts(3,1): TS2322' };
+
+/** You accepted a run with two red checks and two open findings: Apply as is names the checks first. */
+const READY_RED_CHECK = record({
+  sessionId: 'visual-ready-red-check',
+  status: READY_OVERRIDE.status,
+  state: savedState({
+    phase: 'complete',
+    briefs: WORKSPACE_BRIEFS,
+    reviewStatus: 'failed',
+    acceptedAsIs: {
+      at: GENERATED_AT,
+      findings: [
+        'src/form.ts re-validates on every keystroke',
+        'docs/validation-errors.md names a retired code',
+      ],
+      redChecks: [RED_REVIEWER_CHECK, RED_PLAN_CHECK],
+    },
+    workspace: RUN_WORKSPACE,
+  }),
+  summary: workspaceSummary('visual-ready-red-check'),
+  ledger: READY_LEDGER,
+});
+
 const PLANNER_ACCEPT_NOTE =
   'Re-validating on each keystroke is the documented form behaviour; the retired code is kept for old clients.';
 
@@ -1734,6 +1795,53 @@ const READY_OVERRIDE_LOG: readonly EngineEvent[] = READY_LOG.map((event) =>
     : event.type === 'workflow_complete'
       ? { ...event, review: 'failed', blocking: 2 }
       : event,
+);
+
+/** The row of the red reviewer check: all its failures are new, and it settles before the review. */
+function redReviewerCheckRow(ts: number): EngineEvent {
+  return {
+    type: 'full_suite',
+    ts,
+    phase: 'final-review',
+    moment: 'pre-review',
+    status: 'done',
+    id: RED_REVIEWER_CHECK.id,
+    command: RED_CHECK_COMMAND,
+    passed: false,
+    newFailures: 1,
+    preExisting: 0,
+    newKeys: [RED_CHECK_KEY],
+    preExistingKeys: [],
+    duration: 12_400,
+  };
+}
+
+/** Both red checks stand before the failed review, which counts each one as blocking. */
+const READY_RED_CHECK_LOG: readonly EngineEvent[] = READY_OVERRIDE_LOG.flatMap(
+  (event): EngineEvent[] => {
+    if (event.type === 'review_started') {
+      return [
+        {
+          type: 'full_suite',
+          ts: event.ts,
+          phase: 'final-review',
+          moment: 'plan',
+          status: 'done',
+          id: RED_PLAN_CHECK.id,
+          command: '',
+          passed: false,
+          detail: RED_PLAN_CHECK.lastLine,
+          duration: 3_100,
+        },
+        redReviewerCheckRow(event.ts),
+        event,
+      ];
+    }
+    if (event.type === 'review_completed') {
+      return [{ ...event, findings: { blocking: 4, minor: 0, outOfScope: 0 } }];
+    }
+    return [event.type === 'workflow_complete' ? { ...event, blocking: 4 } : event];
+  },
 );
 
 /** The planner's accept stands in the transcript between the failed review and the run's end. */
@@ -2285,6 +2393,59 @@ const CLOSED_PLANNER_ACCEPT_LOG: readonly EngineEvent[] = recordedRunLog(
         event,
       ]
     : [event],
+);
+
+/** The failed review of a run whose reviewer check stays red: the check blocks it beside the findings. */
+const RED_CHECK_REVIEW: ReviewRecord = {
+  ...FAILED_REVIEW,
+  redInputs: [{ id: RED_CHECK_INPUT.id, text: RED_CHECK_INPUT.text }],
+};
+
+const RED_CHECK_ACCEPT_PACKET = reviewPacket({
+  sessionId: 'visual-closed-red-check-accept',
+  review: RED_CHECK_REVIEW,
+  driftPassed: false,
+  tasks: 3,
+});
+
+/** A checkout run you accepted as is while a reviewer check was red: it closed with that check named. */
+const CLOSED_RED_CHECK_ACCEPT = record({
+  sessionId: 'visual-closed-red-check-accept',
+  status: { kind: 'closed', as: 'complete' },
+  state: savedState({
+    phase: 'complete',
+    briefs: [
+      { id: BRIEFS.validator.id, status: 'done' },
+      { id: BRIEFS.wire.id, status: 'escalated' },
+      { id: BRIEFS.routeTests.id, status: 'done' },
+    ],
+    reviewStatus: 'failed',
+    review: RED_CHECK_REVIEW,
+    completedAt: READY_COMPLETED_AT,
+    acceptedAsIs: {
+      at: GENERATED_AT,
+      findings: [
+        'src/form.ts re-validates on every keystroke',
+        'docs/validation-errors.md names a retired code',
+      ],
+      redChecks: [RED_REVIEWER_CHECK],
+    },
+  }),
+  summary: {
+    ...NEEDS_ATTENTION_SUMMARY,
+    reviewPacket: RED_CHECK_ACCEPT_PACKET,
+    review: legacyReview(RED_CHECK_ACCEPT_PACKET),
+  },
+  ledger: {
+    ...NEEDS_ATTENTION_LEDGER,
+    sessionId: 'visual-closed-red-check-accept',
+    finalReview: { path: packetMarkdownPath('visual-closed-red-check-accept'), status: 'written' },
+  },
+});
+const CLOSED_RED_CHECK_ACCEPT_LOG: readonly EngineEvent[] = recordedRunLog(
+  CLOSED_RED_CHECK_ACCEPT,
+).flatMap((event): EngineEvent[] =>
+  event.type === 'review_started' ? [redReviewerCheckRow(event.ts), event] : [event],
 );
 
 /**
@@ -3609,6 +3770,14 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
     route: { record: READY_OVERRIDE_MULTILINE, log: READY_OVERRIDE_LOG },
   }),
   atRestProjection({
+    id: 'workflow-ready-red-check',
+    route: { record: READY_RED_CHECK, log: READY_RED_CHECK_LOG },
+  }),
+  atRestProjection({
+    id: 'workflow-ready-red-check-confirm',
+    route: { record: READY_RED_CHECK, log: READY_RED_CHECK_LOG },
+  }),
+  atRestProjection({
     id: 'workflow-ready-planner-accept-confirm',
     route: { record: READY_PLANNER_ACCEPT, log: READY_PLANNER_ACCEPT_LOG },
   }),
@@ -3662,6 +3831,10 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   atRestProjection({
     id: 'workflow-closed-planner-accept',
     route: { record: CLOSED_PLANNER_ACCEPT, log: CLOSED_PLANNER_ACCEPT_LOG },
+  }),
+  atRestProjection({
+    id: 'workflow-closed-red-check-accept',
+    route: { record: CLOSED_RED_CHECK_ACCEPT, log: CLOSED_RED_CHECK_ACCEPT_LOG },
   }),
   atRestProjection({
     id: 'workflow-closed-decided-skip',

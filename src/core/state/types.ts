@@ -3,6 +3,7 @@ import type {
   QueuedMessage,
   WorkflowState,
   PlannerConversation,
+  RedCheck,
   SeatSwitchRecord,
   SeatWait,
 } from '../schemas/workflow.js';
@@ -65,7 +66,13 @@ export type StateAction =
       plannerConsult?: true;
     }
   | { type: 'RECORD_WORKSPACE'; workspace: NonNullable<WorkflowState['workspace']> }
-  | { type: 'ACCEPT_AS_IS'; findings: string[]; note?: string; by?: 'planner' }
+  | {
+      type: 'ACCEPT_AS_IS';
+      findings: string[];
+      redChecks?: RedCheck[];
+      note?: string;
+      by?: 'planner';
+    }
   | {
       type: 'APPLY_REVIEW_START';
       merged: { path: string; checkoutHunks: string }[];

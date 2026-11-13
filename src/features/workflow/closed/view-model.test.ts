@@ -306,11 +306,68 @@ describe('a run with a workspace', () => {
       status: { kind: 'closed', as: 'applied' },
       hydration: { kind: 'loaded', state },
     });
-    expect(view.accepted).toEqual({ note: "Planner's note: The old error type is public API" });
+    expect(view.accepted).toEqual({
+      redChecks: null,
+      note: "Planner's note: The old error type is public API",
+    });
     expect(
       derive(readySummary(), { hydration: workspaceHydration('complete') }).accepted,
     ).toBeNull();
   });
+
+  it.each([
+    {
+      redChecks: [{ id: 'V1', command: 'npm test', lastLine: 'Error: 2 specs failed' }],
+      note: undefined,
+      accepted: { redChecks: '1 red check: V1', note: null },
+      row: 'Accepted as is · 1 red check: V1',
+    },
+    {
+      redChecks: [
+        { id: 'V1', command: 'npm test', lastLine: 'Error: 2 specs failed' },
+        { id: 'K004', lastLine: 'src/a.ts(3,1): TS2322' },
+      ],
+      note: 'The suite is red at the run base too',
+      accepted: {
+        redChecks: '2 red checks: V1, K004',
+        note: 'Your note: The suite is red at the run base too',
+      },
+      row: 'Accepted as is · 2 red checks: V1, K004 · Your note: The suite is red at the run base too',
+    },
+    {
+      redChecks: [{ id: 'V1\u001b[31m\nnext' }],
+      note: undefined,
+      accepted: { redChecks: '1 red check: V1 next', note: null },
+      row: 'Accepted as is · 1 red check: V1 next',
+    },
+  ])(
+    'carries the red checks of an accept as is by id, before its note: $row',
+    ({ redChecks, note, accepted, row }) => {
+      const state = makeWorkflowState({
+        phase: 'complete',
+        reviewStatus: 'failed',
+        acceptedAsIs: {
+          at: CLOSED_AT,
+          findings: [],
+          redChecks,
+          ...(note !== undefined && { note }),
+        },
+      });
+      const view = derive(readySummary({ changedFiles: CHANGED }), {
+        status: { kind: 'closed', as: 'complete' },
+        hydration: { kind: 'loaded', state },
+      });
+
+      expect(view.accepted).toEqual(accepted);
+      const rows = runRows(view);
+      const review = rows.findIndex((candidate) => candidate.label === 'Review');
+      expect(rows[review + 1]).toEqual({
+        label: '',
+        segments: [{ text: row, tone: 'text' }],
+        hang: 0,
+      });
+    },
+  );
 
   function undoneRecord(conflicts: string[]): Partial<Omit<RunRecord, 'summary'>> {
     const state = makeWorkflowState({

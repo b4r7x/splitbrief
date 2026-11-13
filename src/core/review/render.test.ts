@@ -142,6 +142,119 @@ describe('renderReviewMarkdown', () => {
     expect(renderReviewMarkdown(verdict, [], outcome, [], [])).not.toContain('Set aside');
   });
 
+  it('names your accept and the red check that still blocks, between Set aside and Note', () => {
+    const verdict = makeVerdict();
+    const outcome = deriveReviewOutcome(verdict, scope, new Map(), [
+      { id: 'V1.1', text: 'npm test failed: 2 specs failed' },
+    ]);
+    const markdown = renderReviewMarkdown(
+      verdict,
+      [],
+      outcome,
+      [],
+      [{ id: 'V2.1', reason: 'Lint is red at the run base too' }],
+      { redChecks: [{ id: 'V1', command: 'npm test', lastLine: 'Error: 2 specs failed' }] },
+    );
+    expect(markdown).toContain(
+      [
+        '- Set aside V2.1: Lint is red at the run base too',
+        '',
+        '**Accepted as is by you**',
+        '',
+        'The planner did not accept this result. You accepted it as is, with 1 red check:',
+        '',
+        '- V1 failed · npm test · Error: 2 specs failed',
+        '',
+        '**Note**',
+      ].join('\n'),
+    );
+  });
+
+  it('lists each red check of your accept on one line, without the part it lacks', () => {
+    const verdict = makeVerdict();
+    const outcome = deriveReviewOutcome(verdict, scope, new Map());
+    const markdown = renderReviewMarkdown(verdict, [], outcome, [], [], {
+      redChecks: [
+        { id: 'V1', command: 'npm test &&\n  npm run lint', lastLine: 'Error: 2 specs failed' },
+        { id: 'K004', lastLine: 'src/a.ts(3,1): TS2322' },
+        { id: 'V3', command: 'npm run build' },
+      ],
+    });
+    expect(markdown).toContain(
+      [
+        'The planner did not accept this result. You accepted it as is, with 3 red checks:',
+        '',
+        '- V1 failed · npm test && npm run lint · Error: 2 specs failed',
+        '- K004 failed · src/a.ts(3,1): TS2322',
+        '- V3 failed · npm run build',
+        '',
+        '**Note**',
+      ].join('\n'),
+    );
+  });
+
+  it('ends the sentence of your accept after "as is." when no red check blocks', () => {
+    const verdict = makeVerdict({
+      findings: [makeFinding({ severity: 'blocking', taskId: 'T001' })],
+    });
+    const outcome = deriveReviewOutcome(verdict, scope, new Map());
+    expect(renderReviewMarkdown(verdict, [], outcome, [], [], { redChecks: [] })).toContain(
+      [
+        '- The greeting drops an empty name',
+        '',
+        '**Accepted as is by you**',
+        '',
+        'The planner did not accept this result. You accepted it as is.',
+        '',
+        '**Note**',
+      ].join('\n'),
+    );
+  });
+
+  it('puts your note under your accept, on one line', () => {
+    const verdict = makeVerdict();
+    const outcome = deriveReviewOutcome(verdict, scope, new Map());
+    const markdown = renderReviewMarkdown(verdict, [], outcome, [], [], {
+      redChecks: [{ id: 'V1', command: 'npm test' }],
+      note: 'Proof is in\nthe PR.',
+    });
+    expect(markdown).toContain(
+      [
+        'The planner did not accept this result. You accepted it as is, with 1 red check:',
+        '',
+        '- V1 failed · npm test',
+        '',
+        'Your note: Proof is in the PR.',
+        '',
+        '**Note**',
+      ].join('\n'),
+    );
+  });
+
+  it("names the planner's accept with its note, between Set aside and Note", () => {
+    const verdict = makeVerdict();
+    const outcome = deriveReviewOutcome(verdict, scope, new Map());
+    const markdown = renderReviewMarkdown(
+      verdict,
+      [],
+      outcome,
+      [],
+      [{ id: 'V2.1', reason: 'Lint is red at the run base too' }],
+      { by: 'planner', note: '  The old error type is part of the public API.\n' },
+    );
+    expect(markdown).toContain(
+      [
+        '- Set aside V2.1: Lint is red at the run base too',
+        '',
+        '**Accepted by the planner**',
+        '',
+        'The old error type is part of the public API.',
+        '',
+        '**Note**',
+      ].join('\n'),
+    );
+  });
+
   it('renders the tasks, the criteria marks and the findings under their labels', () => {
     const verdict = makeVerdict({
       criteria: [

@@ -544,7 +544,9 @@ describe('e2e: reviewer check base re-run', { timeout: 240_000 }, () => {
     expect(
       events.filter((event) => event.type === 'review_completed' && event.scope === 'final'),
     ).toMatchObject([{ verdict: 'fail', findings: { blocking: 1 } }]);
-    expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
+    expect(events.filter((event) => event.type === 'workflow_complete')).toMatchObject([
+      { review: 'failed', blocking: 1 },
+    ]);
     const state = readState(target, sessionId);
     expect(state.pendingTriage?.inputs.map((input) => input.id)).toEqual(['V1.1']);
     expect(state.pendingRecovery).toMatchObject({ reason: 'review-failed' });
@@ -649,7 +651,9 @@ describe('e2e: reviewer check base re-run', { timeout: 240_000 }, () => {
           findings: { blocking, minor: 2 - blocking },
         });
       }
-      expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
+      expect(events.filter((event) => event.type === 'workflow_complete')).toMatchObject([
+        { review: 'failed', blocking },
+      ]);
 
       const state = readState(target, sessionId);
       expect(state.pendingRecovery).toMatchObject({ reason: 'review-failed' });

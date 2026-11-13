@@ -1,16 +1,33 @@
 import type { ReviewVerdict, SetAside } from '../schemas/review.js';
-import type { ReviewRecord } from '../schemas/workflow.js';
+import type { RedCheck, ReviewRecord } from '../schemas/workflow.js';
+import { oneLineDisplayText } from '../../utils/display-text.js';
 import { namedFailures } from './base-split.js';
-import { reviewOutcomeWord, setAsideLine, type ReviewOutcome } from './verdict.js';
+import {
+  acceptedCounts,
+  acceptedNote,
+  redCheckLine,
+  reviewOutcomeWord,
+  setAsideLine,
+  type ReviewOutcome,
+} from './verdict.js';
 
 const PRE_EXISTING_LEAD =
   "These reviewer checks failed at the run base too. Their failures below also fail before this run's changes, so they raise no finding.";
 
+const YOUR_ACCEPT = 'The planner did not accept this result. You accepted it as is';
+
+/**
+ * Who accepted a failed review as is: the planner with its note, or you with each red check that
+ * still blocked and the note you gave.
+ */
+export type AcceptedReview =
+  | Readonly<{ by: 'planner'; note: string }>
+  | Readonly<{ by?: undefined; redChecks: readonly RedCheck[]; note?: string | undefined }>;
+
 /**
  * `tasks` are the plan's tasks, whose titles name the task lines; `preExistingChecks` are the
  * reviewer checks that were red at the run base too; `setAside` are the red inputs the reviewer
- * rejected with a reason; `plannerNote` is the note the planner accepted a stuck review's blockers
- * with.
+ * rejected with a reason; `accepted` names who accepted the failed review as is.
  */
 export function renderReviewMarkdown(
   verdict: ReviewVerdict,
@@ -18,7 +35,7 @@ export function renderReviewMarkdown(
   outcome: ReviewOutcome,
   preExistingChecks: NonNullable<ReviewRecord['preExistingChecks']>,
   setAside: readonly SetAside[],
-  plannerNote?: string,
+  accepted?: AcceptedReview,
 ): string {
   const word = reviewOutcomeWord(outcome);
   const lines = ['### Verdict', '', word, '', '### Tasks', ''];
@@ -58,8 +75,24 @@ export function renderReviewMarkdown(
     lines.push('', '**Set aside**', '');
     for (const entry of setAside) lines.push(`- ${setAsideLine(entry)}`);
   }
-  if (plannerNote !== undefined) {
-    lines.push('', '**Accepted by the planner**', '', plannerNote.trim());
+  if (accepted?.by === 'planner') {
+    lines.push('', '**Accepted by the planner**', '', accepted.note.trim());
+  } else if (accepted !== undefined) {
+    const red = acceptedCounts(accepted).redChecks;
+    lines.push(
+      '',
+      '**Accepted as is by you**',
+      '',
+      red === undefined ? `${YOUR_ACCEPT}.` : `${YOUR_ACCEPT}, with ${red}:`,
+    );
+    if (red !== undefined) {
+      lines.push('');
+      for (const check of accepted.redChecks) {
+        lines.push(`- ${oneLineDisplayText(redCheckLine(check))}`);
+      }
+    }
+    const note = acceptedNote(accepted);
+    if (note !== undefined) lines.push('', note);
   }
   lines.push('', '**Note**', '');
   if (outcome.minor.length === 0 && outcome.outOfScope.length === 0) {

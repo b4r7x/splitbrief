@@ -12,18 +12,21 @@ import { TextSpans } from '../../../components/text-spans.js';
 import {
   RESULT_MENU_LEGEND,
   RESULT_MENU_UNFOCUSED_LEGEND,
-  resultMenuFindingLines,
   resultMenuHeight,
   resultMenuNoteLines,
+  resultMenuOpenCount,
+  resultMenuOpenLines,
   resultMenuRows,
   resultMenuTitle,
   resultRowCommand,
+  type ResultMenuInput,
   type ResultRow,
 } from './options.js';
 
 export interface ResultMenuProps {
   override: boolean;
   findings: readonly string[];
+  redChecks?: ResultMenuInput['redChecks'];
   note?: string | undefined;
   files: number | null;
   focused: boolean;
@@ -42,6 +45,7 @@ export function ResultMenu(props: ResultMenuProps) {
 function ResultMenuBody({
   override,
   findings,
+  redChecks,
   note,
   files,
   focused,
@@ -54,7 +58,7 @@ function ResultMenuBody({
 }: ResultMenuProps) {
   const t = useTheme();
   const cols = terminalSizeStore.use((state) => state.cols);
-  const input = { override, findings, note, confirming, files };
+  const input = { override, findings, redChecks, note, confirming, files };
   const rows = resultMenuRows(input);
   const layout = stopMenuLayout(rows, cols);
   const boxHeight = height ?? resultMenuHeight(input, cols);
@@ -96,20 +100,20 @@ function ResultMenuBody({
     focused ? RESULT_MENU_LEGEND : RESULT_MENU_UNFOCUSED_LEGEND,
     Math.max(1, layout.width - 4),
   );
-  // The findings take up to half of the rows the chrome leaves, and the note the other rows; a note
-  // taller than that ends on an ellipsis.
+  // The red checks and the findings take up to half of the rows the chrome leaves, and the note the
+  // other rows; a note taller than that ends on an ellipsis.
   const bodyRows = chrome.extraRows;
   const noteRows = Math.max(
     Math.min(1, bodyRows),
-    bodyRows - Math.min(findings.length, Math.ceil(bodyRows / 2)),
+    bodyRows - Math.min(resultMenuOpenCount(input), Math.ceil(bodyRows / 2)),
   );
   const wrappedNote = confirming && noteRows > 0 ? resultMenuNoteLines(note, cols) : [];
   const noteLines =
     wrappedNote.length <= noteRows
       ? wrappedNote
       : [...wrappedNote.slice(0, noteRows - 1), `${wrappedNote[noteRows - 1]}…`];
-  const findingLines = confirming
-    ? [...noteLines, ...resultMenuFindingLines(findings, bodyRows - noteLines.length)]
+  const bodyLines = confirming
+    ? [...noteLines, ...resultMenuOpenLines(input, bodyRows - noteLines.length)]
     : [];
   const titleParts = resultMenuTitle(input);
   const title = fitKeyLegend(
@@ -135,7 +139,7 @@ function ResultMenuBody({
           <TextSpans parts={segmentsForRowText(titleParts, title)} />
         </Text>
       )}
-      {findingLines.map((line, index) => (
+      {bodyLines.map((line, index) => (
         <Text key={index} color={t.text} wrap="truncate-end">
           {line}
         </Text>

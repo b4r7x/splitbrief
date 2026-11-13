@@ -267,7 +267,7 @@ describe('e2e: the reviewer decides a red reviewer check', { timeout: 300_000 },
     expect(readFileSync(join(target.projectDir, TOTAL_FILE), 'utf8')).toBe(TOTAL_SOURCE);
   });
 
-  it('keeps a red input the reviewer does not reject blocking when it asks a question, with Review again and no Accept as is', async () => {
+  it('keeps a red input the reviewer does not reject blocking when it asks a question, and offers Review again and Accept as is', async () => {
     const { target, run, sessionId, events, calls } = await startRun('ask');
     expect(run.exitCode, `${run.stdout}\n${run.stderr}`).not.toBe(0);
 
@@ -279,10 +279,12 @@ describe('e2e: the reviewer decides a red reviewer check', { timeout: 300_000 },
     const errors = events.flatMap((event) => (event.type === 'error' ? [event.message] : []));
     expect(errors).toHaveLength(1);
     expect(errors[0]).toMatch(/; see review\.md$/);
-    expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
+    expect(events.filter((event) => event.type === 'workflow_complete')).toMatchObject([
+      { review: 'failed', blocking: 1 },
+    ]);
 
     const state = readState(target, sessionId);
-    expect(state.reviewStatus).toBeUndefined();
+    expect(state.reviewStatus).toBe('failed');
     expect(state.pendingTriage?.inputs.map((input) => input.id)).toEqual(['V1.1']);
     const dir = sessionDir(target.projectDir, sessionId);
     expect(JSON.parse(readFileSync(join(dir, REVIEW_JSON_FILE), 'utf8'))).toMatchObject({
@@ -296,7 +298,7 @@ describe('e2e: the reviewer decides a red reviewer check', { timeout: 300_000 },
     );
     expect(state.pendingRecovery).toMatchObject({
       reason: 'review-failed',
-      availableActions: ['revise', 'decide-for-me', 'end-run'],
+      availableActions: ['revise', 'accept-as-is', 'decide-for-me', 'end-run'],
     });
     expect(state.pendingRecovery?.details?.[0]).toBe(
       'The review asked a question this run has no way to answer.',

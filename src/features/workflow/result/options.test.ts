@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import type { RedCheck } from '../../../core/schemas/workflow.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { stopMenuLayout } from '../stop/options.js';
+import * as options from './options.js';
 import {
   RESULT_MENU_LEGEND,
-  resultMenuFindingLines,
   resultMenuHeight,
   resultMenuNoteLines,
   resultMenuRows,
@@ -11,10 +12,18 @@ import {
   resultRowCommand,
 } from './options.js';
 
+const V1: RedCheck = { id: 'V1', command: 'npm test', lastLine: 'Error: 2 specs failed' };
+const K004: RedCheck = { id: 'K004', lastLine: 'src/a.ts(3,1): TS2322' };
+
 function resultMenuTitle(input: Parameters<typeof titleParts>[0]): string {
   return titleParts(input)
     .map((part) => part.text)
     .join('');
+}
+
+function openLines(open: { redChecks?: RedCheck[]; findings: string[] }, budget: number): string[] {
+  expect(options.resultMenuOpenLines).toBeTypeOf('function');
+  return options.resultMenuOpenLines(open, budget);
 }
 
 it('keeps the ready state, facts and separators in distinct title parts', () => {
@@ -128,11 +137,51 @@ describe('resultMenuRows', () => {
     expect(rows.map((row) => row.id)).toEqual(['confirm-apply', 'back']);
     expect(rows[0]?.consequence).toBe('write the changes; these findings stay open');
   });
+
+  it.each([
+    {
+      files: 4,
+      findings: ['missing null check'],
+      apply: 'write the changes with the red checks and the open findings; asks once',
+      confirm: 'write the changes; the red checks and these findings stay open',
+    },
+    {
+      files: null,
+      findings: [],
+      apply: 'write the changes with the red checks; asks once',
+      confirm: 'write the changes; the red checks stay red',
+    },
+    {
+      files: 0,
+      findings: ['missing null check'],
+      apply: 'close the run with the red checks and the open findings; asks once',
+      confirm: 'close the run; the red checks and these findings stay open',
+    },
+    {
+      files: 0,
+      findings: [],
+      apply: 'close the run with the red checks; asks once',
+      confirm: 'close the run; the red checks stay red',
+    },
+  ])(
+    'names the red checks first on the rows of an override: $apply',
+    ({ files, findings, apply, confirm }) => {
+      const input = { override: true, redChecks: [V1], findings, confirming: false, files };
+
+      expect(resultMenuRows(input).find((row) => row.id === 'apply')?.consequence).toBe(apply);
+      expect(
+        resultMenuRows({ ...input, confirming: true }).find((row) => row.id === 'confirm-apply')
+          ?.consequence,
+      ).toBe(confirm);
+    },
+  );
 });
 
-describe('resultMenuFindingLines', () => {
+describe('resultMenuOpenLines', () => {
+  const sixFindings = Array.from({ length: 6 }, (_, index) => `finding ${index + 1}`);
+
   it('lists every open finding that fits', () => {
-    expect(resultMenuFindingLines(['missing null check', 'stale doc'], 3)).toEqual([
+    expect(openLines({ findings: ['missing null check', 'stale doc'] }, 3)).toEqual([
       '- missing null check',
       '- stale doc',
     ]);
@@ -140,7 +189,7 @@ describe('resultMenuFindingLines', () => {
 
   it('counts the findings the rows cannot hold instead of dropping them silently', () => {
     const findings = Array.from({ length: 8 }, (_, index) => `finding ${index + 1}`);
-    expect(resultMenuFindingLines(findings, 3)).toEqual([
+    expect(openLines({ findings }, 3)).toEqual([
       '- finding 1',
       '- finding 2',
       '+6 more open findings',
@@ -148,11 +197,69 @@ describe('resultMenuFindingLines', () => {
   });
 
   it('gives each finding one row, its line breaks read as spaces', () => {
-    expect(resultMenuFindingLines(['a\nb'], 5)).toEqual(['- a b']);
+    expect(openLines({ findings: ['a\nb'] }, 5)).toEqual(['- a b']);
   });
 
   it('gives no line when there is no room', () => {
-    expect(resultMenuFindingLines(['missing null check'], 0)).toEqual([]);
+    expect(openLines({ findings: ['missing null check'] }, 0)).toEqual([]);
+    expect(openLines({ redChecks: [V1], findings: ['missing null check'] }, 0)).toEqual([]);
+  });
+
+  it('lists the red checks first, one row each, then the open findings', () => {
+    expect(
+      openLines({ redChecks: [V1, K004], findings: ['missing null check', 'stale doc'] }, 4),
+    ).toEqual([
+      '- V1 failed · npm test · Error: 2 specs failed',
+      '- K004 failed · src/a.ts(3,1): TS2322',
+      '- missing null check',
+      '- stale doc',
+    ]);
+    expect(openLines({ redChecks: [V1], findings: [] }, 4)).toEqual([
+      '- V1 failed · npm test · Error: 2 specs failed',
+    ]);
+  });
+
+  it('gives each red check one row, the line breaks of its command read as spaces', () => {
+    expect(
+      openLines(
+        { redChecks: [{ id: 'V2', command: 'npm run lint\n  -- --quiet' }], findings: [] },
+        4,
+      ),
+    ).toEqual(['- V2 failed · npm run lint -- --quiet']);
+  });
+
+  it('counts only open findings on the last line while every red check has its row', () => {
+    expect(openLines({ redChecks: [V1, K004], findings: sixFindings }, 4)).toEqual([
+      '- V1 failed · npm test · Error: 2 specs failed',
+      '- K004 failed · src/a.ts(3,1): TS2322',
+      '- finding 1',
+      '+5 more open findings',
+    ]);
+    expect(openLines({ redChecks: [V1, K004], findings: sixFindings }, 3)).toEqual([
+      '- V1 failed · npm test · Error: 2 specs failed',
+      '- K004 failed · src/a.ts(3,1): TS2322',
+      '+6 more open findings',
+    ]);
+  });
+
+  it('names the red checks on the last line when it hides one of them', () => {
+    expect(openLines({ redChecks: [V1, K004], findings: sixFindings }, 2)).toEqual([
+      '- V1 failed · npm test · Error: 2 specs failed',
+      '+7 more red checks and open findings',
+    ]);
+    expect(openLines({ redChecks: [V1, K004], findings: ['stale doc'] }, 1)).toEqual([
+      '+3 more red checks and open findings',
+    ]);
+  });
+
+  it('names no open finding on the last line of an accept that holds none', () => {
+    expect(
+      openLines({ redChecks: [V1, K004, { id: 'V2' }, { id: 'V3' }], findings: [] }, 3),
+    ).toEqual([
+      '- V1 failed · npm test · Error: 2 specs failed',
+      '- K004 failed · src/a.ts(3,1): TS2322',
+      '+2 more red checks',
+    ]);
   });
 });
 
@@ -170,6 +277,27 @@ describe('resultMenuHeight', () => {
     );
     expect(resultMenuHeight(input, 120)).toBe(stopMenuLayout(resultMenuRows(input), 120).height);
   });
+
+  it.each([
+    { findings: ['missing null check', 'stale doc'], rows: 4 },
+    { findings: [], rows: 2 },
+  ])(
+    'adds one row per red check and one per open finding while it asks: $rows rows',
+    ({ findings, rows }) => {
+      const input = {
+        override: true,
+        redChecks: [V1, K004],
+        findings,
+        confirming: false,
+        files: 4,
+      };
+      const asking = { ...input, confirming: true };
+      expect(resultMenuHeight(asking, 120)).toBe(
+        stopMenuLayout(resultMenuRows(asking), 120).height + rows,
+      );
+      expect(resultMenuHeight(input, 120)).toBe(stopMenuLayout(resultMenuRows(input), 120).height);
+    },
+  );
 
   it('adds the row of a one-row note while it asks', () => {
     const asking = {
@@ -228,6 +356,47 @@ describe('resultMenuTitle', () => {
     });
     expect(title).toBe('Ready to apply as is · 2 open findings · 4 files changed');
     expect(title).not.toContain('passed');
+  });
+
+  it.each([
+    {
+      redChecks: [V1],
+      findings: ['missing null check', 'stale doc'],
+      files: 4,
+      title: 'Ready to apply as is · 1 red check · 2 open findings · 4 files changed',
+    },
+    {
+      redChecks: [V1],
+      findings: [],
+      files: 4,
+      title: 'Ready to apply as is · 1 red check · 4 files changed',
+    },
+    {
+      redChecks: [V1, K004],
+      findings: ['missing null check'],
+      files: null,
+      title: 'Ready to apply as is · 2 red checks · 1 open finding',
+    },
+  ])('counts the red checks of an override first: $title', ({ title, ...input }) => {
+    expect(resultMenuTitle({ override: true, confirming: false, ...input })).toBe(title);
+  });
+
+  it.each([
+    {
+      redChecks: [V1],
+      findings: ['missing null check', 'stale doc'],
+      title: 'Apply with 1 red check and 2 open findings?',
+    },
+    { redChecks: [V1], findings: [], title: 'Apply with 1 red check?' },
+    {
+      redChecks: [V1, K004],
+      findings: ['missing null check'],
+      title: 'Apply with 2 red checks and 1 open finding?',
+    },
+  ])('asks the confirmation with the red checks first: $title', ({ title, ...input }) => {
+    expect(titleParts({ override: true, confirming: true, files: 4, ...input })).toEqual([
+      { text: title, tone: 'warning' },
+    ]);
   });
 
   it('asks the confirmation as a question', () => {

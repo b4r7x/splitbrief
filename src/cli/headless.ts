@@ -193,6 +193,7 @@ function failIfFinalReviewFailed(
       accepted: {
         by: accepted.by ?? 'user',
         ...(accepted.note !== undefined && { note: accepted.note }),
+        ...(accepted.redChecks !== undefined && { redChecks: accepted.redChecks }),
       },
     }),
   });

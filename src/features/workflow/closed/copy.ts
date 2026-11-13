@@ -404,11 +404,15 @@ function reviewSegments(
   return segments;
 }
 
-/** The accept as is under the failed review, with the owner's note wrapped under its text. */
+/**
+ * The accept as is under the failed review: its red checks first, then the owner's note, wrapped
+ * under its text.
+ */
 function acceptedRows(accepted: SummaryView['accepted']): RunRow[] {
   if (accepted === null) return [];
-  const text =
-    accepted.note === null ? 'Accepted as is' : `Accepted as is${SOFT_SEP}${accepted.note}`;
+  const text = ['Accepted as is', accepted.redChecks, accepted.note]
+    .filter((part) => part !== null)
+    .join(SOFT_SEP);
   return [{ label: '', segments: [{ text, tone: 'text' }], hang: 0 }];
 }
 

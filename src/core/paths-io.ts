@@ -62,9 +62,10 @@ export type SpecMetadata = {
 
 const FRONTMATTER_FILES = new Set([SPEC_FILE, PLAN_FILE, TASKS_FILE, REVIEW_FILE]);
 
-function hasFileFrontmatter(content: string): boolean {
+/** The frontmatter that SPLITBRIEF wrote at the head of `content`; empty when it has none. */
+function fileFrontmatter(content: string): string {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
-  return match?.[1]?.includes('generated_by:') ?? false;
+  return match?.[1]?.includes('generated_by:') === true ? match[0] : '';
 }
 
 export function buildSpecFrontmatter(opts: SpecMetadata): string {
@@ -111,7 +112,7 @@ export function writeSpecFile(
   validateFilename(filename);
   ensureSessionDir(ref.projectDir, ref.sessionId);
   let finalContent = content;
-  if (metadata && FRONTMATTER_FILES.has(filename) && !hasFileFrontmatter(content)) {
+  if (metadata && FRONTMATTER_FILES.has(filename) && fileFrontmatter(content) === '') {
     finalContent = buildSpecFrontmatter(metadata) + content;
   }
   const relativePath = specFileRelativePath(ref.sessionId, filename);
@@ -138,6 +139,14 @@ export function readSpecFile(ref: SpecFileRef, filename: string): string | null 
 
 export function readSpecFileOrEmpty(ref: SpecFileRef, filename: string): string {
   return readSpecFile(ref, filename) ?? '';
+}
+
+/**
+ * Replaces the content of a file and keeps the frontmatter that the file has on disk, for a
+ * writer that holds no seat identities.
+ */
+export function rewriteSpecFile(ref: SpecFileRef, filename: string, content: string): void {
+  writeSpecFile(ref, filename, fileFrontmatter(readSpecFileOrEmpty(ref, filename)) + content);
 }
 
 export function validateTaskPath(projectDir: string, filePath: string): string {

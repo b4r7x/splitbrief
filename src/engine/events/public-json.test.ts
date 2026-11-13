@@ -65,6 +65,46 @@ describe('boundHeadlessJsonRecord', () => {
     ).toEqual({ type: 'warning', message: 'Omitted invalid final_review_failed record' });
   });
 
+  it('carries the red checks of an accepted failed review, with or without a command and a last line', () => {
+    const record = {
+      type: 'final_review_failed' as const,
+      sessionId: 'sess-1',
+      blocking: 0,
+      accepted: {
+        by: 'user' as const,
+        redChecks: [
+          { id: 'V1', command: 'npm test', lastLine: 'Error: 2 specs failed' },
+          { id: 'K004', lastLine: 'src/a.ts(3,1): TS2322' },
+          { id: 'V2', command: 'npm run lint' },
+        ],
+      },
+    };
+
+    expect(boundHeadlessJsonRecord(record)).toEqual(record);
+  });
+
+  it('redacts a secret in the command of a red check', () => {
+    expect(
+      boundHeadlessJsonRecord({
+        type: 'final_review_failed',
+        sessionId: 'sess-1',
+        blocking: 0,
+        accepted: {
+          by: 'user',
+          redChecks: [{ id: 'V1', command: 'node check.mjs token sk-abcdefghijklmnopqrst' }],
+        },
+      }),
+    ).toEqual({
+      type: 'final_review_failed',
+      sessionId: 'sess-1',
+      blocking: 0,
+      accepted: {
+        by: 'user',
+        redChecks: [{ id: 'V1', command: 'node check.mjs token sk-***REDACTED***' }],
+      },
+    });
+  });
+
   it('keeps the halt on an oversized recovery_required record and leaves out its files', () => {
     const halt = {
       type: 'recovery_required' as const,

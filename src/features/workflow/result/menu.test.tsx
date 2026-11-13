@@ -7,17 +7,24 @@ import { useState } from 'react';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import type { RedCheck } from '../../../core/schemas/workflow.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
+import { stopMenuLayout } from '../stop/options.js';
 import { ResultMenu } from './menu.js';
+import { resultMenuRows } from './options.js';
 
 const originalColorLevel = chalk.level;
 
 const DOWN = '\x1b[B';
 
+const V1: RedCheck = { id: 'V1', command: 'npm test', lastLine: 'Error: 2 specs failed' };
+const K004: RedCheck = { id: 'K004', lastLine: 'src/a.ts(3,1): TS2322' };
+
 function renderMenu(
   input: {
     override?: boolean;
     findings?: string[];
+    redChecks?: RedCheck[];
     note?: string;
     focused?: boolean;
     height?: number;
@@ -32,6 +39,7 @@ function renderMenu(
       <ResultMenu
         override={input.override ?? false}
         findings={input.findings ?? []}
+        redChecks={input.redChecks}
         note={input.note}
         files={4}
         focused={input.focused ?? true}
@@ -281,6 +289,104 @@ describe('ResultMenu', () => {
     expect(rows[title + 3]).toContain('Apply as is · write the changes');
     ui.unmount();
   });
+
+  it.each([
+    {
+      findings: ['missing null check'],
+      ready: 'Ready to apply as is · 1 red check · 1 open finding · 4 files changed',
+      apply: 'Apply as is · write the changes with the red checks and the open findings; asks once',
+      title: 'Apply with 1 red check and 1 open finding?',
+      list: ['- V1 failed · npm test · Error: 2 specs failed', '- missing null check'],
+      confirm: 'Apply as is · write the changes; the red checks and these findings stay open',
+    },
+    {
+      findings: [],
+      ready: 'Ready to apply as is · 1 red check · 4 files changed',
+      apply: 'Apply as is · write the changes with the red checks; asks once',
+      title: 'Apply with 1 red check?',
+      list: ['- V1 failed · npm test · Error: 2 specs failed'],
+      confirm: 'Apply as is · write the changes; the red checks stay red',
+    },
+  ])(
+    'shows the red check of an override first, then its open findings: $title',
+    async ({ findings, ready, apply, title, list, confirm }) => {
+      const { ui, onCommand } = renderMenu({ override: true, redChecks: [V1], findings });
+      const frame = () => stripAnsiStyles(ui.lastFrame() ?? '');
+      await flushEffects();
+      await vi.waitFor(() => expect(frame()).toContain(ready));
+      expect(frame()).toContain(apply);
+
+      ui.stdin.write('\r');
+      await vi.waitFor(() => expect(frame()).toContain(title));
+      const rows = frame().split('\n');
+      const titleRow = rows.findIndex((row) => row.includes(title));
+      for (const [index, line] of list.entries()) {
+        expect(rows[titleRow + 1 + index]).toContain(line);
+      }
+      expect(rows[titleRow + 1 + list.length]).toContain(confirm);
+      expect(onCommand).not.toHaveBeenCalled();
+      ui.unmount();
+    },
+  );
+
+  it.each([
+    {
+      redChecks: [V1, K004],
+      findings: [],
+      spareRows: 3,
+      noteRows: 1,
+      title: 'Apply with 2 red checks?',
+      list: [
+        '- V1 failed · npm test · Error: 2 specs failed',
+        '- K004 failed · src/a.ts(3,1): TS2322',
+      ],
+    },
+    {
+      redChecks: [V1, K004, { id: 'V2', command: 'npm run lint' }],
+      findings: Array.from({ length: 5 }, (_, index) => `Open finding ${index + 1} needs a fix`),
+      spareRows: 4,
+      noteRows: 2,
+      title: 'Apply with 3 red checks and 5 open findings?',
+      list: [
+        '- V1 failed · npm test · Error: 2 specs failed',
+        '+7 more red checks and open findings',
+      ],
+    },
+  ])(
+    'shares $spareRows spare rows between a long note, the red checks and the open findings: $title',
+    async ({ redChecks, findings, spareRows, noteRows, title, list }) => {
+      const note = Array.from(
+        { length: 12 },
+        (_, index) => `Reason ${index + 1}: the documented form behaviour stays as it is.`,
+      ).join(' ');
+      terminalSizeStore.__testReset({ cols: 80, rows: 24 });
+      const asking = { override: true, redChecks, findings, note, confirming: true, files: 4 };
+      const { ui } = renderMenu({
+        override: true,
+        redChecks,
+        findings,
+        note,
+        height: stopMenuLayout(resultMenuRows(asking), 80).height + spareRows,
+      });
+      const frame = () => stripAnsiStyles(ui.lastFrame() ?? '');
+      await flushEffects();
+      ui.stdin.write('\r');
+      await vi.waitFor(() => expect(frame()).toContain(title));
+      const rows = frame().split('\n');
+      const titleRow = rows.findIndex((row) => row.includes(title));
+      const firstOpen = rows.findIndex((row) => row.includes(list[0] ?? ''));
+
+      expect(firstOpen - titleRow - 1).toBe(noteRows);
+      expect(rows[firstOpen - 1]).toContain('…');
+      for (const [index, line] of list.entries()) {
+        expect(rows[firstOpen + index]).toContain(line);
+      }
+      expect(rows[firstOpen + list.length]).toContain('Apply as is · write the changes');
+      expect(frame()).toContain('Back · return to the result menu');
+      expect(frame()).toContain('tab type a command');
+      ui.unmount();
+    },
+  );
 
   it('asks once before applying an override, and goes back without applying', async () => {
     const { ui, onCommand } = renderMenu({ override: true, findings: ['missing null check'] });

@@ -572,6 +572,8 @@ export function transition(
         acceptedAsIs: {
           at: now.toISOString(),
           findings: action.findings,
+          ...(action.redChecks !== undefined &&
+            action.redChecks.length > 0 && { redChecks: action.redChecks }),
           ...(action.note !== undefined && { note: action.note }),
           ...(action.by !== undefined && { by: action.by }),
         },

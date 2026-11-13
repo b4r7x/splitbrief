@@ -1,4 +1,4 @@
-import { plainUserMessage } from '../../../core/types/user-input.js';
+import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { writeFileSync } from 'node:fs';
 import { configPath } from '../../../core/config/load/document.js';
@@ -11,10 +11,10 @@ import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { ensureSessionDir, writeSpecFile } from '../../../core/paths-io.js';
+import { ensureSessionDir, readSpecFile, writeSpecFile } from '../../../core/paths-io.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import type { Task } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { ReviewRecord, WorkflowState } from '../../../core/schemas/workflow.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { writeSeatIdentities } from '../../../core/state/seats.js';
 import { seatWaitToolWord } from '../../../core/sessions/seat-wait-line.js';
@@ -26,6 +26,7 @@ import {
   buildRunnerInputTooLargeRecoveryIssue,
   buildSeatDownIssue,
 } from './builders/task.js';
+import { buildReviewInputTooLargeRecoveryIssue } from './builders/review-input.js';
 import { inputTooLargeRefusal } from '../../runners/input-limit.js';
 import { EngineEventSchema } from '../../events/schema.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
@@ -147,6 +148,246 @@ describe('typed review overrides', () => {
       bus: makeBusRecorder().bus,
     });
     expect(result.state.acceptedAsIs?.findings).toEqual(['The greeting drops an empty name']);
+  });
+});
+
+describe('Accept as is while a red check blocks', () => {
+  const reviewAt = '2026-11-13T10:00:00.000Z';
+  const frontmatter =
+    '---\ngenerated_by: splitbrief v0.1.0\nplanner: Claude Code CLI · auto\ncreated_at: 2026-11-13T10:00:01.000Z\n---\n';
+  const staleReview = `${frontmatter}### Verdict\n\nfail\n`;
+  const finding = (id: string, text: string): ReviewRecord['verdict']['findings'][number] => ({
+    id,
+    kind: 'defect',
+    severity: 'blocking',
+    taskId: null,
+    file: null,
+    line: null,
+    text,
+    acceptance: null,
+    checkIds: null,
+    criterionId: null,
+  });
+  /**
+   * The review of a red halt: V1 is red in two files and K004 is red, the reviewer set V2.1 aside,
+   * and its finding under the id V1.1 says more than that input.
+   */
+  const review: ReviewRecord = {
+    cycle: 0,
+    at: reviewAt,
+    outcome: 'fail',
+    verification: [],
+    redInputs: [
+      { id: 'V1.2', text: 'npm test failed in src/bye.test.ts' },
+      { id: 'P1', text: 'Last changed by T001.\nRequired check K004 failed in src/a.ts' },
+    ],
+    verdict: {
+      tasks: [{ id: makeTask().id, plan: 'met', note: '' }],
+      criteria: [],
+      findings: [
+        finding('V1.1', 'The hello test fails because the greeting drops an empty name'),
+        finding('F1', 'The greeting drops an empty name'),
+      ],
+    },
+  };
+  const redHalt = (workspace: WorkflowState['workspace']): WorkflowState => ({
+    ...makeImplState([makeTask({ title: 'Add the hello export', status: 'done' })]),
+    ...(workspace !== undefined && { workspace }),
+    review,
+    pendingTriage: {
+      inputs: [
+        {
+          id: 'V1.1',
+          kind: 'defect',
+          source: 'check',
+          text: 'npm test failed in src/hello.test.ts',
+          file: 'src/hello.test.ts',
+          checkIds: ['V1'],
+          command: 'npm test',
+          output: 'RUN v4\nError: 2 specs failed\n',
+        },
+        {
+          id: 'V1.2',
+          kind: 'defect',
+          source: 'check',
+          text: 'npm test failed in src/bye.test.ts',
+          file: 'src/bye.test.ts',
+          checkIds: ['V1'],
+          command: 'npm test',
+          output: 'RUN v4\nError: 2 specs failed\n',
+        },
+        {
+          id: 'P1',
+          kind: 'defect',
+          source: 'check',
+          text: 'Last changed by T001.\nRequired check K004 failed in src/a.ts',
+          file: 'src/a.ts',
+          checkIds: ['K004'],
+          output: 'src/a.ts(3,1): TS2322\n',
+        },
+        {
+          id: 'V2.1',
+          kind: 'defect',
+          source: 'check',
+          text: 'npm run lint failed: 1 error',
+          file: null,
+          checkIds: ['V2'],
+          command: 'npm run lint',
+          output: '1 error\n',
+        },
+      ],
+    },
+    triage: [
+      {
+        reviewAt,
+        cycle: 1,
+        at: reviewAt,
+        inputIds: ['V1.1', 'F1', 'V1.2', 'P1', 'V2.1'],
+        result: {
+          fixTasks: [],
+          rejected: [{ findingId: 'V2.1', reason: 'Lint is red at the run base too' }],
+          ask: null,
+        },
+      },
+    ],
+  });
+
+  const acceptRedHalt = (
+    ref: { projectDir: string; sessionId: string },
+    workspace: WorkflowState['workspace'],
+    comment?: UserMessageInput,
+  ) => {
+    const state: WorkflowState = {
+      ...redHalt(workspace),
+      phase: 'complete',
+      reviewStatus: 'failed',
+      pendingRecovery: buildReviewFailedRecoveryIssue({
+        blocking: 4,
+        phase: 'complete',
+        createdAt,
+        acceptAsIs: true,
+      }),
+    };
+    saveState(ref, state);
+    writeSpecFile(ref, 'review.md', staleReview);
+    return applyRecoveryAction({
+      ...ref,
+      state,
+      action: 'accept-as-is',
+      bus: makeBusRecorder().bus,
+      ...(comment !== undefined && { comment }),
+    });
+  };
+
+  it.each<{ run: string; workspace: WorkflowState['workspace'] }>([
+    { run: 'checkout', workspace: undefined },
+    {
+      run: 'worktree',
+      workspace: { kind: 'worktree', path: '/work/run', base: { snapshotId: 'base', head: null } },
+    },
+  ])(
+    'records each red check that still blocks, once per check: a $run run',
+    async ({ run, workspace }) => {
+      const ref = setupSession(`red-accept-${run}`);
+      const result = await acceptRedHalt(ref, workspace);
+      expect(result.ok).toBe(true);
+      expect.soft(result.state.acceptedAsIs?.redChecks).toEqual([
+        { id: 'V1', command: 'npm test', lastLine: 'Error: 2 specs failed' },
+        { id: 'K004', lastLine: 'src/a.ts(3,1): TS2322' },
+      ]);
+      expect
+        .soft(result.state.acceptedAsIs?.findings)
+        .toEqual(['The greeting drops an empty name']);
+      expect
+        .soft(readSpecFile(ref, 'review.md'))
+        .toBe(
+          frontmatter +
+            [
+              '### Verdict',
+              '',
+              'fail',
+              '',
+              '### Tasks',
+              '',
+              '- [met] T001 Add the hello export',
+              '',
+              '### Criteria Results',
+              '',
+              'None.',
+              '',
+              '### Findings',
+              '',
+              '**Critical**',
+              '',
+              '- The hello test fails because the greeting drops an empty name',
+              '- The greeting drops an empty name',
+              '- V1.2: npm test failed in src/bye.test.ts',
+              '- P1: Last changed by T001.',
+              '  Required check K004 failed in src/a.ts',
+              '',
+              '**Set aside**',
+              '',
+              '- Set aside V2.1: Lint is red at the run base too',
+              '',
+              '**Accepted as is by you**',
+              '',
+              'The planner did not accept this result. You accepted it as is, with 2 red checks:',
+              '',
+              '- V1 failed · npm test · Error: 2 specs failed',
+              '- K004 failed · src/a.ts(3,1): TS2322',
+              '',
+              '**Note**',
+              '',
+              'None.',
+              '',
+            ].join('\n'),
+        );
+    },
+  );
+
+  it('writes a note given with your accept under the red checks', async () => {
+    const ref = setupSession('red-accept-note');
+    const result = await acceptRedHalt(ref, undefined, plainUserMessage('  Proof is in the PR.  '));
+    expect(result.state.acceptedAsIs?.note).toBe('Proof is in the PR.');
+    expect(readSpecFile(ref, 'review.md')).toContain(
+      '- K004 failed · src/a.ts(3,1): TS2322\n\nYour note: Proof is in the PR.\n\n**Note**',
+    );
+  });
+
+  it('keeps one finding and no red check on a review too large to send, and leaves review.md as it is', async () => {
+    const ref = setupSession('red-too-large');
+    const issue = buildReviewInputTooLargeRecoveryIssue({
+      phase: 'final-review',
+      failure: {
+        kind: 'input-too-large',
+        figures: { unit: 'characters', size: 900_000, limit: 400_000 },
+        promptSize: { characters: 900_000 },
+        changeFile: '.splitbrief/reviews/run-1.diff',
+        workspaceDir: '/work',
+      },
+      tool: 'codex',
+      acceptAsIs: true,
+      createdAt,
+    });
+    const state: WorkflowState = {
+      ...redHalt(undefined),
+      phase: 'final-review',
+      pendingRecovery: issue,
+    };
+    saveState(ref, state);
+    writeSpecFile(ref, 'review.md', staleReview);
+    const result = await applyRecoveryAction({
+      ...ref,
+      state,
+      action: 'accept-as-is',
+      bus: makeBusRecorder().bus,
+    });
+    expect(result.ok).toBe(true);
+    expect.soft(result.state.acceptedAsIs).toEqual({
+      at: expect.any(String),
+      findings: [issue.message],
+    });
+    expect.soft(readSpecFile(ref, 'review.md')).toBe(staleReview);
   });
 });
 
