@@ -200,9 +200,7 @@ export function createQueueHandler(
           );
         if (call === null) {
           if (seat === 'plan')
-            void inject().catch((err) =>
-              warnError('Could not deliver your queued message', err, 'feedback'),
-            );
+            void inject().catch((err) => warnError('Could not deliver your queued message', err));
         } else if (pendingDelivery !== undefined) {
           const delivery = Promise.resolve()
             .then(() => {
@@ -288,7 +286,7 @@ export function createQueueHandler(
               });
               if (outcome === 'deferred' && seat === 'plan')
                 void inject().catch((err) =>
-                  warnError('Could not deliver your queued message', err, 'feedback'),
+                  warnError('Could not deliver your queued message', err),
                 );
             })
             .finally(() => releaseQueuedMessage(ref, enqueuedMessage.id, 'mid-call'));
@@ -298,7 +296,7 @@ export function createQueueHandler(
       return submitted.result;
     } catch (err) {
       pendingDelivery?.resolve();
-      warnError('Could not queue your message', err, 'feedback');
+      warnError('Could not queue your message', err);
       return {
         status: 'rejected',
         reason: 'failed',

@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { settleMidCallDeliveries, trackMidCallDelivery } from './mid-call.js';
+import { resetLoggerForTests } from '../../../lib/logger.js';
 import { installDiagnosticSink } from '../../../lib/warn.js';
 
 describe('settleMidCallDeliveries', () => {
@@ -37,20 +40,25 @@ describe('settleMidCallDeliveries', () => {
     const pending = Promise.withResolvers<void>();
     trackMidCallDelivery(other, 'other', pending.promise);
     const failure = new Error('outcome persistence failed');
+    const logDir = createTempDir('mid-call-log');
+    enableDebugLog(logDir);
+    const logged = () => loggedDiagnostics(logDir).filter((line) => line.includes(failure.message));
     const warnings: string[] = [];
     const removeSink = installDiagnosticSink((message) => warnings.push(message));
     try {
       trackMidCallDelivery(ref, 'failed', Promise.reject(failure));
-      await Promise.resolve();
-      await Promise.resolve();
-      expect(warnings).toEqual([expect.stringContaining(failure.message)]);
+      await vi.waitFor(() => expect(logged()).toHaveLength(1));
+      expect(warnings).toEqual([]);
       trackMidCallDelivery(ref, 'continued', Promise.resolve());
       await expect(settleMidCallDeliveries(ref)).resolves.toBeUndefined();
-      expect(warnings).toHaveLength(1);
+      expect(logged()).toHaveLength(1);
+      expect(warnings).toEqual([]);
     } finally {
       removeSink();
       pending.resolve();
       await settleMidCallDeliveries(other);
+      resetLoggerForTests();
+      cleanupTempDir(logDir);
     }
   });
 });

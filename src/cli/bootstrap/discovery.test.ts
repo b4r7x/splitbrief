@@ -16,7 +16,15 @@ import {
   resolveModelsDevCatalogCachePath,
 } from '../../engine/providers/models-dev-cache/store.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
-import { loadRememberedCatalog } from './discovery.js';
+import { configStore } from '../../stores/project/config.js';
+import { detectionStore } from '../../stores/project/detection.js';
+import { installDiagnosticSink } from '../../lib/warn.js';
+import {
+  awaitBackgroundDiscovery,
+  loadDiscovery,
+  loadRememberedCatalog,
+  teardownDiscovery,
+} from './discovery.js';
 
 vi.mock('node:os', async (original) => ({
   ...(await original<typeof os>()),
@@ -103,4 +111,57 @@ it('reports a configuration failure when catalog loading cannot continue', async
   expect(logged).toContain('Unsupported config version');
   expect(modelCacheStore.getProviderModels('codex')).toBeNull();
   expect(globalThis.fetch).not.toHaveBeenCalled();
+});
+
+it('shows a failed tool check on the feedback line', async () => {
+  writeConfig(projectDir, makeConfig());
+  configStore.load(projectDir);
+  const beginRefresh = vi.spyOn(detectionStore, 'beginRefresh').mockImplementation(() => {
+    throw new Error('probe defect');
+  });
+  const shown: [string, string][] = [];
+  const release = installDiagnosticSink((message, presentation) =>
+    shown.push([message, presentation]),
+  );
+  try {
+    await loadDiscovery(projectDir);
+    await awaitBackgroundDiscovery();
+  } finally {
+    release();
+    teardownDiscovery();
+  }
+
+  expect(beginRefresh).toHaveBeenCalledOnce();
+  expect(shown).toEqual([['Could not check your tools: probe defect', 'feedback']]);
+});
+
+it('shows a failed tool check after a crew change on the feedback line', async () => {
+  writeConfig(projectDir, makeConfig());
+  configStore.load(projectDir);
+  const beginRefresh = vi.spyOn(detectionStore, 'beginRefresh').mockImplementation(() => {
+    throw new Error('probe defect');
+  });
+  const shown: [string, string][] = [];
+  const release = installDiagnosticSink((message, presentation) =>
+    shown.push([message, presentation]),
+  );
+  try {
+    await loadDiscovery(projectDir);
+    await awaitBackgroundDiscovery();
+    const shownAtLoad = shown.length;
+    writeConfig(
+      projectDir,
+      makeConfig({ implementer: { kind: 'cli', tool: 'opencode', model: 'openai/gpt-5' } }),
+    );
+    configStore.load(projectDir);
+    await awaitBackgroundDiscovery();
+
+    expect(beginRefresh).toHaveBeenCalledTimes(2);
+    expect(shown.slice(shownAtLoad)).toEqual([
+      ['Could not check your tools: probe defect', 'feedback'],
+    ]);
+  } finally {
+    release();
+    teardownDiscovery();
+  }
 });

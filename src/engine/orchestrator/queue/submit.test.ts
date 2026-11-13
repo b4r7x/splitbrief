@@ -10,6 +10,8 @@ import { briefCorrections, createInitialState } from '../../../core/state/machin
 import { loadState } from '../../../core/state/persistence.js';
 import { STATE_FILE, sessionDir } from '../../../core/paths.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
+import { resetLoggerForTests } from '../../../lib/logger.js';
 import { makeBusRecorder, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { setupProject, makeResearchingState } from '#testing/helpers/queue.js';
 import { createWriteSequencer } from '../serial-executor.js';
@@ -37,6 +39,7 @@ import { MAX_QUEUE_SIZE } from './types.js';
 let dirs: string[] = [];
 
 afterEach(() => {
+  resetLoggerForTests();
   for (const d of dirs) cleanupTempDir(d);
   dirs = [];
 });
@@ -918,6 +921,7 @@ describe('enqueue', () => {
     const { projectDir, sessionId } = setupProject(dirs);
     let state: WorkflowState | undefined = makeResearchingState();
     const { bus, events } = makeBusRecorder();
+    enableDebugLog(projectDir);
     writeFileSync(join(sessionDir(projectDir, sessionId), STATE_FILE), '{"tru');
     const writes: string[] = [];
     const stderr = vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
@@ -950,9 +954,63 @@ describe('enqueue', () => {
       stderr.mockRestore();
     }
 
-    expect(writes.join('')).toContain('Could not queue your message');
+    expect(writes.join('')).not.toContain('Could not queue your message');
+    expect(loggedDiagnostics(projectDir)).toContainEqual(
+      expect.stringContaining('Could not queue your message'),
+    );
     expect(events.filter((event) => event.type === 'warning')).toEqual([]);
     expect(state?.messageQueue).toHaveLength(0);
+  });
+
+  it.each([
+    ['that cannot save the queue', false],
+    ['after a deferred mid-call send', true],
+  ] as const)('writes a plan injection %s to the debug log only', async (_when, deferred) => {
+    const ref = setupProject(dirs);
+    enableDebugLog(ref.projectDir);
+    let state = makeResearchingState();
+    const { bus } = makeBusRecorder();
+    const steering = createSteeringPort();
+    const send = vi.fn(async () => 'deferred' as const);
+    if (deferred) steering.attach({ callId: 'deferred-plan', role: 'planner', taskId: null, send });
+    const handler = createQueueHandler({
+      config: makeConfig(),
+      ...ref,
+      getState: () => state,
+      setState: (next) => {
+        state = next;
+      },
+      bus,
+      steering,
+      planner: makePlanner({
+        injectUserTurn: async () => {
+          writeFileSync(join(sessionDir(ref.projectDir, ref.sessionId), STATE_FILE), '{"tru');
+          throw new Error('planner turn failed');
+        },
+      }),
+      serialize: createWriteSequencer(),
+    });
+    const writes: string[] = [];
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      writes.push(String(chunk));
+      return true;
+    });
+
+    try {
+      expect(await handler(plainUserMessage('reach the planner'), 'researching')).toMatchObject({
+        status: 'accepted',
+      });
+      await vi.waitFor(() =>
+        expect(loggedDiagnostics(ref.projectDir)).toContainEqual(
+          expect.stringContaining('Could not deliver your queued message'),
+        ),
+      );
+    } finally {
+      stderr.mockRestore();
+    }
+
+    expect(send).toHaveBeenCalledTimes(deferred ? 1 : 0);
+    expect(writes.join('')).not.toContain('Could not deliver your queued message');
   });
 
   it('accepts input during a brief and queues it durably for the boundary', async () => {
