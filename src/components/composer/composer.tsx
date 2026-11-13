@@ -336,13 +336,19 @@ function ComposerInput({
   });
   const projectFiles = useProjectFiles(projectDir, listProjectFiles);
 
+  // The one exit of a command, typed or run from the list; `send` is the one exit of a text.
+  const runCommand = (line: string): void => {
+    inputHistoryStore.pushDocumentSubmission(createDraftDocument(line), { currentScreen });
+    onRuntimeCommand(line);
+  };
+
   // A command runs from an answer too, so its list opens there.
   const command = useCommandCompletion({
     commands,
     currentScreen,
     value: mode === 'review' ? '' : view.text,
     setValue: setText,
-    onRuntimeCommand,
+    onRuntimeCommand: runCommand,
     disabled,
     suppressed: menusHeld,
   });
@@ -509,11 +515,7 @@ function ComposerInput({
 
   // One send path for every mode: the serializer decides what the runner reads, and the images it
   // validated are the ones parked for the call. Only the gates in front of it differ.
-  const send = (
-    candidate: DraftDocument,
-    record: boolean,
-    deliverNow?: ComposerProps['onSendNow'],
-  ): boolean => {
+  const send = (candidate: DraftDocument, deliverNow?: ComposerProps['onSendNow']): boolean => {
     // Submitted text crosses this boundary exactly once, so this is where typing residue comes
     // off; the draft itself keeps what was typed, whitespace included.
     const submission = prepareDraftSubmission(trimDraftDocument(candidate), {
@@ -541,7 +543,7 @@ function ComposerInput({
       }
     }
     submittedImageIdsRef.current = submission.message.images.map((image) => image.id);
-    if (record) inputHistoryStore.pushDocumentSubmission(submission.document, { currentScreen });
+    inputHistoryStore.pushDocumentSubmission(submission.document, { currentScreen });
     if (deliverNow === undefined) onSubmit?.(submission);
     return true;
   };
@@ -565,9 +567,8 @@ function ComposerInput({
         );
         return;
       }
-      inputHistoryStore.pushDocumentSubmission(trimmed, { currentScreen });
       clearDraft();
-      onRuntimeCommand(draftDocumentText(trimmed));
+      runCommand(draftDocumentText(trimmed));
       return;
     }
 
@@ -576,7 +577,7 @@ function ComposerInput({
         feedbackStore.setMessage(emptyAnswerNotice);
         return;
       }
-      if (send(document, false) && !submitKeepsDraft) clearDraft();
+      if (send(document) && !submitKeepsDraft) clearDraft();
       return;
     }
 
@@ -590,7 +591,7 @@ function ComposerInput({
       return;
     }
 
-    if (send(document, true, deliverNow) && !submitKeepsDraft) clearDraft();
+    if (send(document, deliverNow) && !submitKeepsDraft) clearDraft();
   };
 
   const textDraftEmpty = draftLength(document) === 0;

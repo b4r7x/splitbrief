@@ -1758,6 +1758,16 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
       },
     }),
   ],
+  // Enter on the open command list sends the mistyped /setings, and the refused line comes back.
+  [
+    scenarioId('home-command-typo-refused'),
+    () => ({
+      ...createHomeFixture(),
+      afterMount: async (write) => {
+        for (const key of ['/setings', '\r']) await write.press(key);
+      },
+    }),
+  ],
   [scenarioId('home-draft-path'), createDraftPathFixture],
   [scenarioId('home-draft-long'), createLongDraftFixture],
   [scenarioId('home-reference-completion'), createReferenceCompletionFixture],

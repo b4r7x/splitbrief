@@ -35,6 +35,7 @@ import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { inputHistoryStore } from '../../stores/ui/input-history.js';
+import { createDraftDocument } from '../../core/composer/document.js';
 import { composerDraftStore } from '../../stores/ui/composer-draft.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
@@ -2120,7 +2121,9 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
 
   it('plain Up still recalls input history instead of focusing the list', async () => {
     seedSessions(3);
-    inputHistoryStore.push('recalled prompt');
+    inputHistoryStore.pushDocumentSubmission(createDraftDocument('recalled prompt'), {
+      currentScreen: 'home',
+    });
 
     const ui = renderHome();
     await flushEffects();

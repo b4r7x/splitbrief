@@ -256,6 +256,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'home-command-typo-refused',
+      title: 'Home · a mistyped command comes back with its reason',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'ready',
+        title: 'The reason, with the typed line back and the command list closed',
+        kind: 'ready',
+        marker: 'Did you mean /settings?',
+      },
+      elements: [
+        { id: 'header', title: 'Home header' },
+        { id: 'composer', title: 'Feature composer' },
+      ],
+    }),
+    defineScenario({
       id: 'home-draft-long',
       title: 'Home · a draft longer than one row',
       surface: screenSurface('home'),

@@ -692,6 +692,7 @@
 - A run with REVIEW set to None ends on `Review · none · no seat reviewed this run`, which fits a narrow terminal.
 - `splitbrief continue` after a move to REVIEW None says that no seat reviews the rest of the run.
 - Words sent during a spec, plan or brief review while a confirmation prompt waits now show `Confirm or deny the prompt first. Tab back to the actions.`, not a note that a review prompt is opening.
+- ↑ in the composer brings back each line that you sent from it, newest first: also an answer that you typed in the composer under a question or a recovery menu, a change request from the comment box of the plan card, and a command that you ran from the command list. Before, ↑ skipped answers and comments, and on a run it showed older lines before a command from the list.
 
 ## [0.1.0] - 2026-08-07
 

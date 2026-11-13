@@ -18,7 +18,6 @@ import {
   routerStore,
 } from '../../../../stores/navigation/router.js';
 import { composerLiveStore } from '../../../../stores/ui/composer-live.js';
-import { inputHistoryStore } from '../../../../stores/ui/input-history.js';
 import { runViewStore } from '../../../../stores/workflow/run-view.js';
 import type { CommandCompletionRow } from './menu.js';
 import { useCompletionSelection } from '../use-completion-selection.js';
@@ -191,7 +190,6 @@ export function useCommandCompletion({
       // A highlighted command runs; otherwise submit the raw slash line so the dispatcher decides
       // (unknown-command feedback, fuzzy suggestion) instead of silently running the fuzzy guess.
       const command = selected ? `${l.argPrefix ?? ''}${selected.name}` : l.value;
-      inputHistoryStore.push(command);
       setValue('');
       onRuntimeCommand(command);
     },

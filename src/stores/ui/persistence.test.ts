@@ -171,7 +171,9 @@ describe('installHistoryPersistence', () => {
     const { installHistoryPersistence, inputHistoryStore } = await loadModules();
     teardown = installHistoryPersistence();
 
-    inputHistoryStore.push('hello');
+    inputHistoryStore.pushDocumentSubmission(createDraftDocument('hello'), {
+      currentScreen: 'home',
+    });
     expect(existsSync(historyFile)).toBe(false);
 
     vi.advanceTimersByTime(300);
@@ -199,11 +201,17 @@ describe('installHistoryPersistence', () => {
     const { installHistoryPersistence, inputHistoryStore } = await loadModules();
     teardown = installHistoryPersistence();
 
-    inputHistoryStore.push('first');
+    inputHistoryStore.pushDocumentSubmission(createDraftDocument('first'), {
+      currentScreen: 'home',
+    });
     vi.advanceTimersByTime(100);
-    inputHistoryStore.push('second');
+    inputHistoryStore.pushDocumentSubmission(createDraftDocument('second'), {
+      currentScreen: 'home',
+    });
     vi.advanceTimersByTime(100);
-    inputHistoryStore.push('third');
+    inputHistoryStore.pushDocumentSubmission(createDraftDocument('third'), {
+      currentScreen: 'home',
+    });
     vi.advanceTimersByTime(300);
 
     // File holds the most-recent store state (newest-first, deduped).
@@ -214,7 +222,9 @@ describe('installHistoryPersistence', () => {
     const { installHistoryPersistence, inputHistoryStore } = await loadModules();
     teardown = installHistoryPersistence();
 
-    inputHistoryStore.push('token sk-abcdefghijklmnopqrst');
+    inputHistoryStore.pushDocumentSubmission(createDraftDocument('token sk-abcdefghijklmnopqrst'), {
+      currentScreen: 'home',
+    });
     teardown();
     teardown = null;
 
@@ -231,7 +241,9 @@ describe('installHistoryPersistence', () => {
     // real module, not a mock.
     mkdirSync(historyFile, { recursive: true });
 
-    inputHistoryStore.push('hello');
+    inputHistoryStore.pushDocumentSubmission(createDraftDocument('hello'), {
+      currentScreen: 'home',
+    });
     expect(() => vi.advanceTimersByTime(300)).not.toThrow();
   });
 
@@ -239,14 +251,18 @@ describe('installHistoryPersistence', () => {
     const { installHistoryPersistence, inputHistoryStore } = await loadModules();
     const stop = installHistoryPersistence();
 
-    inputHistoryStore.push('pending');
+    inputHistoryStore.pushDocumentSubmission(createDraftDocument('pending'), {
+      currentScreen: 'home',
+    });
     stop();
     vi.advanceTimersByTime(300);
 
     expect(savedTexts()).toEqual(['pending']);
 
     // Further pushes post-teardown do not trigger writes either.
-    inputHistoryStore.push('after-teardown');
+    inputHistoryStore.pushDocumentSubmission(createDraftDocument('after-teardown'), {
+      currentScreen: 'home',
+    });
     vi.advanceTimersByTime(300);
     expect(savedTexts()).toEqual(['pending']);
   });
@@ -255,14 +271,18 @@ describe('installHistoryPersistence', () => {
     const { installHistoryPersistence, inputHistoryStore } = await loadModules();
     const firstStop = installHistoryPersistence();
 
-    inputHistoryStore.push('stale pending');
+    inputHistoryStore.pushDocumentSubmission(createDraftDocument('stale pending'), {
+      currentScreen: 'home',
+    });
     teardown = installHistoryPersistence();
     vi.advanceTimersByTime(300);
 
     expect(savedTexts()).toEqual(['stale pending']);
 
     firstStop();
-    inputHistoryStore.push('active install');
+    inputHistoryStore.pushDocumentSubmission(createDraftDocument('active install'), {
+      currentScreen: 'home',
+    });
     vi.advanceTimersByTime(300);
 
     expect(savedTexts()).toEqual(['active install', 'stale pending']);

@@ -13,6 +13,7 @@ import { renderDockedComposer } from '#testing/helpers/composer.js';
 import { renderThroughFilteredStdin } from '#testing/helpers/filtered-stdin-harness.js';
 import { cleanupTempDir, createTempDir, normalizeMacTmpPath } from '#testing/helpers/temp-dir.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
+import type { InputMode } from '../../core/navigation/types.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { glyph } from '../../lib/glyphs.js';
 import { configStore } from '../../stores/project/config.js';
@@ -913,6 +914,104 @@ describe('Composer blocking-question isolation', () => {
     expect(submissions).toEqual(['/etc/app/config.yaml']);
     expect(commands).toEqual([]);
     ui.unmount();
+  });
+});
+
+describe('Composer input history on each send path', () => {
+  const SIDEBAR: RuntimeCommandDef = {
+    kind: 'noarg',
+    name: '/sidebar',
+    label: 'sidebar',
+    description: 'Toggle the sidebar',
+    category: 'navigate',
+    validScreens: ['workflow'],
+    handler: () => {},
+  };
+  const docked = (mode: InputMode) => (
+    <Box flexDirection="column" height={20} justifyContent="flex-end">
+      <Composer
+        commands={[]}
+        currentScreen="workflow"
+        mode={mode}
+        hint=""
+        questionEpoch={mode === 'question' ? 1 : undefined}
+        onSubmit={() => {}}
+        onRuntimeCommand={() => {}}
+      />
+    </Box>
+  );
+
+  beforeEach(() => {
+    resetAllStores();
+    terminalSizeStore.__testReset({ cols: 100, rows: 24 });
+  });
+
+  async function sendThenRecall(mode: InputMode, words: string, key: string) {
+    const ui = renderFeature(docked(mode));
+    onTestFinished(ui.unmount);
+    await flushEffects();
+    ui.stdin.write(words);
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(words);
+    });
+    ui.stdin.write(key);
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain(words);
+    });
+
+    ui.rerender(docked('normal'));
+    await flushEffects();
+    ui.stdin.write('\x1b[A');
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().text).toBe(words);
+    });
+  }
+
+  it.each([
+    ['⏎', '\r'],
+    ['ctrl+⏎', '\x1b[13;5u'],
+  ])('recalls with ↑ an answer sent by %s in mode question', async (_, key) => {
+    await sendThenRecall('question', 'use integers only', key);
+  });
+
+  it('recalls with ↑ a change request sent from the comment box', async () => {
+    await sendThenRecall('review', 'split the CLI change', '\r');
+  });
+
+  it('recalls first with ↑ a command run from the open list after a sent line on the run screen', async () => {
+    const dispatched: string[] = [];
+    const ui = renderDockedComposer({
+      commands: [SIDEBAR],
+      currentScreen: 'workflow',
+      mode: 'normal',
+      hint: '',
+      onSubmit: () => {},
+      onRuntimeCommand: (line) => dispatched.push(line),
+    });
+    onTestFinished(ui.unmount);
+    await flushEffects();
+    ui.stdin.write('fix the typo');
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().text).toBe('fix the typo');
+    });
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().empty).toBe(true);
+    });
+    ui.stdin.write('/side');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Toggle the sidebar');
+    });
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(dispatched).toEqual(['/sidebar']);
+      expect(composerLiveStore.get().empty).toBe(true);
+    });
+
+    ui.stdin.write('\x1b[A');
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().text).toBe('/sidebar');
+    });
   });
 });
 
@@ -2371,6 +2470,42 @@ describe('Composer draft requests', () => {
     await vi.waitFor(() => {
       expect(composerLiveStore.get().text).toBe('/hel');
       expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('↑↓ select');
+    });
+  });
+
+  it('keeps the @ list closed over a line given back, until an edit', async () => {
+    configStore.__testReset({ config: makeConfig(), projectDir: '/tmp/composer-project' });
+    const ui = renderDockedComposer({
+      commands: [],
+      currentScreen: 'workflow',
+      mode: 'normal',
+      hint: '',
+      onSubmit: () => {},
+      onRuntimeCommand: () => {},
+      listProjectFiles: async () => ['notes.md'],
+    });
+    onTestFinished(ui.unmount);
+    await flushEffects();
+    ui.stdin.write('@');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('notes.md');
+    });
+    ui.stdin.write('\b');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('notes.md');
+    });
+
+    composerDraftStore.requestPrepend(createDraftDocument('see @'));
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().text).toBe('see @');
+    });
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('notes.md');
+
+    ui.stdin.write('n');
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().text).toBe('see @n');
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('notes.md');
     });
   });
 });

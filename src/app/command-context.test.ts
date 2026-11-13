@@ -54,6 +54,7 @@ import { composerDraftStore } from '../stores/ui/composer-draft.js';
 import { composerLiveStore } from '../stores/ui/composer-live.js';
 import { inputHistoryStore } from '../stores/ui/input-history.js';
 import { WorkflowFooter } from '../features/workflow/components/chrome.js';
+import { Composer } from '../components/composer/composer.js';
 import { createDraftDocument } from '../core/composer/document.js';
 import { attachmentsStore } from '../stores/workflow/attachments.js';
 import { skillsStore } from '../stores/project/skills.js';
@@ -576,6 +577,25 @@ function CommandComposerHarness({ phase = 'implementing' }: { phase?: Phase }) {
       handleInput: () => {},
       disabled: false,
       onRuntimeCommand: (raw) => model.handleRuntimeCommand(raw, 'workflow'),
+      listProjectFiles: async () => [],
+    }),
+  );
+}
+
+// Home names its keys in the home hint row, and a reason replaces that row.
+function HomeCommandComposerHarness() {
+  const model = useRuntimeCommands({ exit: () => {}, phase: 'idle' });
+  return createElement(
+    Box,
+    { flexDirection: 'column' },
+    createElement(Box, { height: 14 }),
+    createElement(Composer, {
+      commands: model.commands,
+      currentScreen: 'home',
+      mode: 'normal',
+      hint: '',
+      homeHint: '/help · /settings',
+      onRuntimeCommand: (raw) => model.handleRuntimeCommand(raw, 'home'),
       listProjectFiles: async () => [],
     }),
   );
@@ -1245,6 +1265,37 @@ describe('useRuntimeCommands', () => {
     ui.stdin.write('x');
     await vi.waitFor(() => {
       expect(composerLiveStore.get().text).toBe('/zzzzx');
+      expect(stripAnsiStyles(ui.lastFrame())).toContain('↑↓ select');
+    });
+  });
+
+  it('shows the reason of a command refused on Home and keeps the line, with the menu closed until an edit', async () => {
+    const reason = 'Unknown command: /setings. Did you mean /settings?';
+    projectDir = createTempDir('command-composer-home-refused');
+    configStore.__testReset({ projectDir, config: makeConfig() });
+    terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
+    const ui = renderFeature(createElement(HomeCommandComposerHarness), { cols: 120, rows: 30 });
+    onTestFinished(ui.unmount);
+    await flushEffects();
+    ui.stdin.write('/setings');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame())).toContain('↑↓ select');
+    });
+
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(feedbackStore.get()).toEqual({ message: reason, isError: false });
+      expect(composerLiveStore.get().text).toBe('/setings');
+    });
+    await flushEffects();
+    const frame = stripAnsiStyles(ui.lastFrame());
+    expect(frame).toContain(reason);
+    expect(frame).toContain('> /setings');
+    expect(frame).not.toContain('↑↓ select');
+
+    ui.stdin.write('x');
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().text).toBe('/setingsx');
       expect(stripAnsiStyles(ui.lastFrame())).toContain('↑↓ select');
     });
   });

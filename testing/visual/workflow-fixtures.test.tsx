@@ -1974,6 +1974,16 @@ describe('workflow visual fixtures', () => {
     ).toBe(true);
   }, 60_000);
 
+  it('shows a mistyped command refused on Home with its line back and the command list closed', async () => {
+    const reason = 'Unknown command: /setings. Did you mean /settings?';
+    const typo = await captureGalleryFrame('home-command-typo-refused');
+    expect(typo.feedback).toEqual({ message: reason, isError: false });
+    expect(typo.frame.split(reason)).toHaveLength(2);
+    expect(startsWithText(typo.frame, 'Unknown command: /setings')).toBe(true);
+    expect(typo.frame).toContain(`${glyph('prompt')} /setings`);
+    expect(typo.frame).not.toContain('↑↓ select');
+  });
+
   it('shows the stop steer refusal neutrally and keeps its command in the composer', async () => {
     const reason = 'Finish stopping before steering.';
     const steer = await captureGalleryFrame('workflow-stop-steer-refused', 80);

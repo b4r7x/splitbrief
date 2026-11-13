@@ -17,6 +17,7 @@ import { sessionsStore } from '../../../src/stores/project/sessions.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { inputHistoryStore } from '../../../src/stores/ui/input-history.js';
+import { createDraftDocument } from '../../../src/core/composer/document.js';
 import { sessionSelectStore } from '../../../src/stores/navigation/session-select.js';
 import { App } from '../../../src/app/root.js';
 
@@ -238,7 +239,9 @@ describe('home navigation flow (through real App)', () => {
     for (let i = 0; i < 3; i++) {
       seedInterruptedSession(projectDir, `focus-${i}`, `focus feature ${i}`, 1_700_000_000 + i);
     }
-    inputHistoryStore.push('recalled prompt');
+    inputHistoryStore.pushDocumentSubmission(createDraftDocument('recalled prompt'), {
+      currentScreen: 'home',
+    });
 
     sessionsStore.load(projectDir);
     const ui = renderFeature(<App workflowDeps={workflowDeps} />, seededViewport());

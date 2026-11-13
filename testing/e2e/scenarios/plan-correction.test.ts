@@ -20,6 +20,7 @@ const VIEWPORT = { cols: 120, rows: 40 };
 const PATIENCE = { timeout: 60_000 };
 const SCENARIO_TIMEOUT = { timeout: 200_000 };
 const DOWN = '\x1b[B';
+const UP = '\x1b[A';
 const APPROVE_ACTIVE = '▌ Approve plan and start the build';
 const REQUEST_ACTIVE = '▌ Request changes (type what to change)';
 const CORRECTION_GOES_AGAIN = 'Your plan correction goes again with this step.';
@@ -65,10 +66,16 @@ const renamedPlan: PlanProposal = {
 
 type Tui = Readonly<{ screen: () => string; write: (keys: string) => void }>;
 
-// The first plan call answers with the first plan. A later plan call fails while the fail file
-// exists, and answers with the revised plan when it does not. Each call saves its prompt before it
-// is counted, so a counted call always has its prompt on disk.
-function plannerScript(calls: string, dir: string, fail: string, revised: PlanProposal): string {
+// The first plan call answers with the first plan. A later plan call holds while the hold file
+// exists, fails while the fail file exists, and answers with the revised plan when it does not.
+// Each call saves its prompt before it is counted, so a counted call always has its prompt on disk.
+function plannerScript(
+  calls: string,
+  dir: string,
+  fail: string,
+  revised: PlanProposal,
+  hold: string,
+): string {
   return `import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 const chunks = [];
 for await (const chunk of process.stdin) chunks.push(chunk);
@@ -76,6 +83,10 @@ const prompt = Buffer.concat(chunks).toString('utf8');
 const n = readFileSync(${JSON.stringify(calls)}, 'utf8').split('\\n').filter(Boolean).length + 1;
 writeFileSync(${JSON.stringify(dir)} + '/plan-prompt-' + n + '.txt', prompt);
 appendFileSync(${JSON.stringify(calls)}, 'plan ' + n + '\\n');
+if (n > 1) {
+  const deadline = Date.now() + 150000;
+  while (existsSync(${JSON.stringify(hold)}) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 25));
+}
 if (n > 1 && existsSync(${JSON.stringify(fail)})) {
   process.stderr.write('The planner process crashed.\\n');
   process.exit(1);
@@ -88,11 +99,12 @@ function setup(revised: PlanProposal) {
   const target = createStopContinueFixture(() => '');
   const calls = join(target.tmpDir, 'calls.txt');
   const fail = join(target.tmpDir, 'fail');
+  const hold = join(target.tmpDir, 'hold');
   const plannerPath = join(target.tmpDir, 'planner.mjs');
   const implementerPath = join(target.tmpDir, 'implementer.mjs');
   const offlinePath = join(target.tmpDir, 'offline.mjs');
   writeFileSync(calls, '');
-  writeFileSync(plannerPath, plannerScript(calls, target.tmpDir, fail, revised));
+  writeFileSync(plannerPath, plannerScript(calls, target.tmpDir, fail, revised, hold));
   // No plan is approved here, so the build tool never runs.
   writeFileSync(implementerPath, 'for await (const chunk of process.stdin) void chunk;\n');
   writeFileSync(offlinePath, "globalThis.fetch = async () => { throw new Error('offline'); };\n");
@@ -106,7 +118,7 @@ function setup(revised: PlanProposal) {
     implementer: { ...config.implementer, args: [implementerPath] },
     workflow: { ...config.workflow, approve: 'plan' },
   });
-  return { target, fail, offlinePath, calls };
+  return { target, fail, hold, offlinePath, calls };
 }
 
 type Run = ReturnType<typeof setup>;
@@ -280,6 +292,38 @@ it(
       expect(screen()).not.toContain('Seat down');
       expect(savedRun(run).rewindPending).toBeUndefined();
       expect(savedRun(run).phase).toBe('reviewing-plan');
+    });
+  },
+);
+
+it(
+  'recalls the plan correction with ↑ while the planner revises the plan',
+  SCENARIO_TIMEOUT,
+  async () => {
+    await scenario(renamedPlan, async (run, tui) => {
+      const { screen, write } = tui;
+      writeFileSync(run.hold, '');
+      await requestChanges(tui, RENAME_CORRECTION);
+      await vi.waitFor(() => expect(plannerCalls(run)).toBe(2), PATIENCE);
+      await expect.poll(screen, PATIENCE).not.toContain('⏎ send');
+
+      write(UP);
+      const composerRow = () =>
+        screen()
+          .split('\n')
+          .filter((line) => line.includes('› '))
+          .at(-1) ?? '';
+      await expect
+        .poll(
+          () =>
+            [RENAME_CORRECTION, 'add a total helper'].some((line) => composerRow().includes(line)),
+          PATIENCE,
+        )
+        .toBe(true);
+      expect(composerRow()).toContain(RENAME_CORRECTION);
+
+      unlinkSync(run.hold);
+      await expect.poll(screen, PATIENCE).toContain('Add a sum helper with its test.');
     });
   },
 );

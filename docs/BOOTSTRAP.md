@@ -132,7 +132,7 @@ I/O for a store's state (hydrate from disk + debounced save) lives **next to the
 
 ```
 src/stores/ui/
-├── input-history.ts       # store — in-memory state + hydrate()/push() actions
+├── input-history.ts       # store — in-memory state + hydrate()/pushDocumentSubmission() actions
 └── persistence.ts         # installHistoryPersistence() — fs I/O, debounced write
 ```
 
