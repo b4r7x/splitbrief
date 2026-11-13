@@ -682,15 +682,15 @@ describe('the workflow screen at an Apply halt', () => {
   }
 
   it("selects the Apply rail for the recorded crew rather than today's crew", () => {
-    for (const { cols, rows } of [
-      { cols: 80, rows: 24 },
-      { cols: 60, rows: 18 },
+    for (const { cols, rows, rail } of [
+      { cols: 80, rows: 24, rail: [`${glyph('stageDone')} Rvw`, `${glyph('statusFailed')} Apl `] },
+      { cols: 60, rows: 18, rail: [`${glyph('statusFailed')} Apply`] },
     ]) {
       showApplyHaltRun();
       const ui = mount(cols, rows);
       const header = stripAnsiStyles(ui.lastFrame() ?? '').split('\n')[0] ?? '';
 
-      expect(header, `at ${cols}`).toContain(`${glyph('statusFailed')} Apply`);
+      for (const label of rail) expect(header, `at ${cols}`).toContain(label);
       expect(header, `at ${cols}`).toContain('PLAN claude · BUILD claude · REVIEW = PLAN');
       expect(header, `at ${cols}`).not.toContain('Plan');
       expect(header, `at ${cols}`).not.toContain('Build');
