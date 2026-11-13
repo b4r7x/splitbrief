@@ -5,7 +5,7 @@ import {
   type RuntimeCommandContext,
 } from '../types.js';
 import { assertNever, includes } from '../../../../utils/type-guards.js';
-import { isLivePhase, isRunLivePhase } from '../../../phases.js';
+import { isRunLivePhase } from '../../../phases.js';
 import { toErrorMessage } from '../../../../utils/format-errors.js';
 import { countNoun } from '../../../../utils/pluralize.js';
 import {
@@ -37,7 +37,7 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
       validScreens: ['workflow'],
       guard: (c) => {
         if (c.applying) return APPLY_RUNNING_REFUSAL;
-        return c.openRunAtRest || isLivePhase(c.phase)
+        return c.openRunAtRest || isRunLivePhase(c.phase)
           ? undefined
           : 'No run to resume in this phase';
       },
@@ -47,7 +47,7 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
       kind: 'arg',
       name: '/steer',
       label: 'steer',
-      description: 'Stop now and continue with your correction',
+      description: 'Send a correction now; a running call stops first',
       category: 'workflow',
       args: { kind: 'free', hint: 'correction' },
       validScreens: ['workflow'],

@@ -7,7 +7,7 @@ import { createDefaultConfig, mergeWithDefaults } from './defaults.js';
 import { SPLITBRIEF_DIR } from '../../paths.js';
 import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../schemas/runner-fields.js';
 import { expectApi } from '#testing/helpers/config-narrowing.js';
-import { writeConfigYaml } from '#testing/helpers/config-io.js';
+import { writeConfigYaml, writeConfigYamlText } from '#testing/helpers/config-io.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 vi.mock('../../../lib/git/files.js', async (importOriginal) => ({
@@ -34,6 +34,13 @@ describe('config defaults', () => {
     it('turns the End-of-run checks on and sets no retired validation key', () => {
       expect(createDefaultConfig().validation).toEqual({ endChecks: true });
     });
+
+    it('gives Claude Code CLI to the BUILD seat and keeps the Claude Code planner', () => {
+      const config = createDefaultConfig();
+      expect(config.implementer).toEqual({ kind: 'cli', tool: 'claude-code' });
+      expect(config.planner).toEqual({ kind: 'cli', tool: 'claude-code' });
+      expect(config).not.toHaveProperty('implementerProfiles');
+    });
   });
 
   describe('mergeWithDefaults', () => {
@@ -51,13 +58,49 @@ describe('config defaults', () => {
       mkdirSync(dir, { recursive: true });
 
       const { config } = loadConfig(dir);
-      const defaults = createDefaultConfig();
-      expect(config).toEqual(defaults);
-      expect(defaults.implementer).not.toHaveProperty('contextLength');
-      expect(expectApi(defaults.implementer).model).toBe('qwen3-coder:30b');
-      expect(expectApi(defaults.implementer).temperature).toBe(DEFAULT_IMPLEMENTER_TEMPERATURE);
+      expect(config).toEqual(createDefaultConfig());
+      expect(config.implementer).toEqual({ kind: 'cli', tool: 'claude-code' });
       expect(config.workflow).not.toHaveProperty('taskReview');
     });
+
+    it('gives the Claude Code CLI default to a config with no implementer block', () => {
+      const dir = join(TMP, 'no-implementer-block');
+      writeConfigYaml(dir, { planner: { kind: 'cli', tool: 'codex' } });
+
+      const { config } = loadConfig(dir);
+      expect(config.implementer).toEqual({ kind: 'cli', tool: 'claude-code' });
+      expect(config.planner).toEqual({ kind: 'cli', tool: 'codex' });
+    });
+
+    it('gives the Claude Code CLI default to an implementer key with no value', () => {
+      const dir = join(TMP, 'null-implementer');
+      writeConfigYamlText(dir, 'version: 3\nimplementer:\n');
+
+      expect(loadConfig(dir).config.implementer).toEqual({ kind: 'cli', tool: 'claude-code' });
+    });
+
+    it.each([
+      ['no field', {}, 'qwen3-coder:30b'],
+      ['a model only', { model: 'codellama:13b' }, 'codellama:13b'],
+      ['kind api only', { kind: 'api' }, 'qwen3-coder:30b'],
+      ['provider ollama only', { provider: 'ollama' }, 'qwen3-coder:30b'],
+    ])(
+      'loads an implementer block with %s as the Ollama seat it was',
+      (_case, implementer, model) => {
+        const dir = join(TMP, `partial-implementer-${Object.keys(implementer).join('-')}`);
+        writeConfigYaml(dir, { implementer });
+
+        expect(loadConfig(dir).config.implementer).toEqual({
+          kind: 'api',
+          provider: 'ollama',
+          service: 'ollama',
+          offering: 'local',
+          model,
+          apiBase: 'http://localhost:11434/v1',
+          temperature: DEFAULT_IMPLEMENTER_TEMPERATURE,
+        });
+      },
+    );
 
     it('leaves the reviewer seat unset when the config has no reviewer block', () => {
       const dir = join(TMP, 'no-reviewer');
@@ -214,19 +257,15 @@ describe('config defaults', () => {
       expect(loadConfig(dir).config).toEqual(config);
     });
 
-    it('serializes the default API identity and loads it unchanged', async () => {
-      const dir = join(TMP, 'default-api-identity');
+    it('serializes the default CLI implementer and loads it unchanged', async () => {
+      const dir = join(TMP, 'default-cli-implementer');
       mkdirSync(dir, { recursive: true });
       await initConfig(dir, createDefaultConfig());
 
       const written = YAML.parse(
         readFileSync(join(dir, SPLITBRIEF_DIR, 'config.yaml'), 'utf-8'),
       ) as Record<string, unknown>;
-      expect(written.implementer).toMatchObject({
-        provider: 'ollama',
-        service: 'ollama',
-        offering: 'local',
-      });
+      expect(written.implementer).toEqual({ kind: 'cli', tool: 'claude-code' });
       expect(loadConfig(dir).config).toEqual(createDefaultConfig());
     });
 
@@ -306,10 +345,8 @@ describe('config defaults', () => {
       expect(config.planner).toEqual(defaults.planner);
       expect(config.validation).toEqual(defaults.validation);
       expect(config.workflow).toEqual(defaults.workflow);
-      const defaultImpl = expectApi(defaults.implementer);
       const configImpl = expectApi(config.implementer);
-      expect(configImpl.provider).toBe(defaultImpl.provider);
-      expect(defaultImpl.contextLength).toBeUndefined();
+      expect(configImpl.provider).toBe('ollama');
       expect(configImpl.contextLength).toBeUndefined();
     });
 

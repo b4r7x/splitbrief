@@ -14,8 +14,8 @@ Examples:
     $ splitbrief spec "add caching layer"
 
   Provider overrides:
-    $ splitbrief "add tests" --planner claude-code --implementer ollama
-    $ splitbrief "refactor models" --model qwen2.5-coder:32b
+    $ splitbrief "add tests" --planner claude-code --implementer codex
+    $ splitbrief "refactor models" --model sonnet
     $ splitbrief "complex migration" --planner-effort xhigh
 
   Headless:

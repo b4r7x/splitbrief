@@ -4,6 +4,8 @@ import * as fs from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { withApplyRun, type ApplyRun } from '#testing/helpers/apply-run.js';
+import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
@@ -16,7 +18,7 @@ import type { Task } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { saveState } from '../../core/state/persistence.js';
 import { processError } from '../../lib/process/errors.js';
-import { installDiagnosticSink } from '../../lib/warn.js';
+import { resetLoggerForTests } from '../../lib/logger.js';
 import * as commandRunner from '../../lib/process/spawn/run-command.js';
 import type { EngineEvent, EngineEventOf } from '../events/types.js';
 import { recordLocalTaskEvidence } from './evidence/task.js';
@@ -35,6 +37,7 @@ vi.mock('node:fs/promises', async (importOriginal) => ({
 
 afterEach(() => {
   vi.restoreAllMocks();
+  resetLoggerForTests();
 });
 
 const FILES = {
@@ -921,8 +924,8 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         stdio: 'pipe',
       });
       execFileSync('git', ['worktree', 'lock', stale], { cwd: run.dir, stdio: 'pipe' });
-      const warnings: string[] = [];
-      const restore = installDiagnosticSink((message) => warnings.push(message));
+      const logDir = createTempDir('review-checks-log');
+      enableDebugLog(logDir);
       try {
         for (let attempt = 0; attempt < 2; attempt++) {
           const { outcome, events, commands } = await reviewChecks(run, {
@@ -951,11 +954,12 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
           expect(existsSync(stale)).toBe(true);
           expect(existsSync(join(run.dir, '.git/worktrees', basename(stale)))).toBe(true);
         }
+        const warnings = loggedDiagnostics(logDir);
         expect(warnings).toHaveLength(1);
         expect(warnings.every((warning) => warning.includes(stale))).toBe(true);
         expect(warnings.every((warning) => warning.includes('locked'))).toBe(true);
       } finally {
-        restore();
+        cleanupTempDir(logDir);
         execFileSync('git', ['worktree', 'unlock', stale], { cwd: run.dir, stdio: 'pipe' });
         execFileSync('git', ['worktree', 'remove', '--force', stale], {
           cwd: run.dir,

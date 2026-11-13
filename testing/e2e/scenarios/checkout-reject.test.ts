@@ -345,6 +345,7 @@ function openRun(target: StopContinueFixture) {
     workflow: {
       requestClearQueue: () => ({ status: 'cleared', count: 0 }),
       getRowActions: () => new Map(),
+      getLatestDiffKey: () => null,
       readScrollMetrics: () => ({
         renderableCount: 0,
         totalHeight: 0,

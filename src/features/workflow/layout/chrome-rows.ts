@@ -134,17 +134,6 @@ export function measureFormB(
   }, 0);
 }
 
-// Full labels when they fit, otherwise the short three-letter labels. The connector glyphs are
-// semantic and never shrink, so only the labels collapse on the way down to the Form-C floor.
-export function chooseFormBVariant(
-  stages: RailStageState[],
-  contentWidth: number,
-  tier: GlyphTier = resolveGlyphTier(),
-): { short: boolean } {
-  if (measureFormB(stages, { short: false }, tier) <= contentWidth) return { short: false };
-  return { short: true };
-}
-
 /** The gap the header keeps between the rail and the seat line pinned right of it. */
 export const HEADER_RAIL_SEAT_GAP = 2;
 
@@ -153,17 +142,21 @@ export type HeaderLineKind = 'model' | 'tool' | 'elided';
 
 export interface RailFormChoice {
   form: RailForm;
+  /** Form B's short three-letter labels, chosen with the form so paint and measure agree. */
+  short: boolean;
   line: HeaderLineKind;
 }
 
 export interface RailFormChoiceInput {
   cols: number;
   /**
-   * The cells each rail form the caller can paint takes; a form left out is not a candidate.
-   * The one-stage rail's painted width follows the stage and fraction it shows, so the caller
-   * measures the form it would paint instead of letting the selector guess it.
+   * The cells each rail variant the caller can paint takes; a variant left out is not a candidate.
+   * `B` is the three-stage line with its full stage labels, `BShort` the same line with the short
+   * three-letter ones, and `C` the one-stage rail. The one-stage rail's painted width follows the
+   * stage and fraction it shows, so the caller measures the variant it would paint instead of
+   * letting the selector guess it.
    */
-  railWidths: Readonly<Partial<Record<RailForm, number>>>;
+  railWidths: Readonly<{ B?: number; BShort?: number; C?: number }>;
   /** The cells the whole crew line takes when every seat is named by its model. */
   modelLineCells: number;
   /** The cells the whole crew line takes when every seat is named by its tool word. */
@@ -171,37 +164,55 @@ export interface RailFormChoiceInput {
 }
 
 /**
- * The rail form and the crew line, chosen together. A narrow terminal names the tools first,
- * because the tool words are the shorter line; a wide one keeps the model names while they fit.
- * A candidate counts only when its whole line fits the room the rail leaves, and only when no
- * form can seat a whole line does the header elide seats beside the form the width allows.
+ * The rail form, its label variant and the crew line, chosen together. A narrow terminal names the
+ * tools first, because the tool words are the shorter line; a wide one keeps the model names while
+ * they fit. A candidate counts only when its whole line fits the room its rail leaves, and a
+ * three-stage line is tried with its full labels before its short ones, so the rail never gives up
+ * a stage label it has room for. Only when no variant can seat a whole line does the header elide
+ * seats beside the form the width allows, and then the long labels give way to the short ones once
+ * they exceed the content width.
  */
 export function selectRailFormAndLine(input: RailFormChoiceInput): RailFormChoice {
   const contentWidth = getChromeContentWidth(input.cols);
-  const candidates: readonly Readonly<{ form: RailForm; line: 'model' | 'tool' }>[] =
+  const candidates: readonly Readonly<{
+    form: RailForm;
+    short: boolean;
+    line: 'model' | 'tool';
+  }>[] =
     input.cols <= 80
       ? [
-          { form: 'B', line: 'tool' },
-          { form: 'C', line: 'tool' },
+          { form: 'B', short: false, line: 'tool' },
+          { form: 'B', short: true, line: 'tool' },
+          { form: 'C', short: false, line: 'tool' },
         ]
       : [
-          { form: 'B', line: 'model' },
-          { form: 'B', line: 'tool' },
-          { form: 'C', line: 'tool' },
+          { form: 'B', short: false, line: 'model' },
+          { form: 'B', short: true, line: 'model' },
+          { form: 'B', short: false, line: 'tool' },
+          { form: 'B', short: true, line: 'tool' },
+          { form: 'C', short: false, line: 'model' },
+          { form: 'C', short: false, line: 'tool' },
         ];
   for (const candidate of candidates) {
-    const railWidth = input.railWidths[candidate.form];
+    const railWidth =
+      candidate.form === 'C'
+        ? input.railWidths.C
+        : candidate.short
+          ? input.railWidths.BShort
+          : input.railWidths.B;
     if (railWidth === undefined) continue;
     const lineCells = candidate.line === 'model' ? input.modelLineCells : input.toolLineCells;
     if (lineCells === 0) continue;
     const seatRoom = Math.max(0, contentWidth - railWidth - HEADER_RAIL_SEAT_GAP);
-    if (lineCells <= seatRoom) return { form: candidate.form, line: candidate.line };
+    if (lineCells <= seatRoom) return candidate;
   }
-  const form: RailForm =
-    input.railWidths.B !== undefined && contentWidth >= input.railWidths.B
-      ? 'B'
-      : input.railWidths.C !== undefined
-        ? 'C'
-        : 'B';
-  return { form, line: 'elided' };
+  const fitsFormB =
+    (input.railWidths.B !== undefined || input.railWidths.BShort !== undefined) &&
+    contentWidth >= (input.railWidths.BShort ?? input.railWidths.B ?? 0);
+  const form: RailForm = fitsFormB ? 'B' : input.railWidths.C !== undefined ? 'C' : 'B';
+  const short =
+    form === 'B' &&
+    (input.railWidths.B === undefined ||
+      (input.railWidths.BShort !== undefined && contentWidth < input.railWidths.B));
+  return { form, short, line: 'elided' };
 }

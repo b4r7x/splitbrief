@@ -1140,3 +1140,113 @@ describe('buildRunnerChecks typed-output fallback', () => {
     expect(checks).toEqual([]);
   });
 });
+
+describe('buildRunnerChecks settings that a seat does not apply', () => {
+  const notApplied = (config: ReturnType<typeof makeConfig>) =>
+    buildRunnerChecks({ seatImageFact: NO_IMAGE_FACT, config }).filter((check) =>
+      check.id.endsWith('-not-applied'),
+    );
+  const EFFORT_FIX =
+    'Delete effort from planner in .splitbrief/config.yaml, or choose a tool that takes an effort in Settings > Crew > PLAN.';
+
+  it('warns that the PLAN effort is not applied when the tool takes no effort', () => {
+    expect(
+      notApplied(makeConfig({ planner: { kind: 'cli', tool: 'opencode', effort: 'high' } })),
+    ).toEqual([
+      expect.objectContaining({
+        id: 'runners.planner.effort-not-applied',
+        severity: 'warning',
+        summary:
+          'PLAN: the effort setting is not applied: the OpenCode CLI variant sets the effort.',
+        fix: EFFORT_FIX,
+      }),
+    ]);
+
+    const local = { provider: 'ollama', apiBase: 'http://localhost:11434/v1' } as const;
+    const kinds = [
+      { runner: { kind: 'api', ...local, model: 'test', effort: 'high' }, tool: 'Ollama' },
+      {
+        runner: { kind: 'shell', command: 'node', model: 'test', effort: 'high' },
+        tool: 'Custom Shell',
+      },
+      { runner: { kind: 'agent', command: 'node', model: 'test', effort: 'high' }, tool: 'Agent' },
+    ] as const;
+    for (const { runner, tool } of kinds) {
+      expect(notApplied(makeConfig({ planner: runner }))).toEqual([
+        expect.objectContaining({
+          id: 'runners.planner.effort-not-applied',
+          severity: 'warning',
+          summary: `PLAN: the effort setting is not applied: ${tool} has no effort channel.`,
+          fix: EFFORT_FIX,
+        }),
+      ]);
+    }
+    expect(
+      notApplied(makeConfig({ planner: { kind: 'cli', tool: 'claude-code', effort: 'high' } })),
+    ).toEqual([]);
+  });
+
+  it('warns for a variant, a temperature and a tool-call limit that the seat does not apply', () => {
+    expect(
+      notApplied(makeConfig({ planner: { kind: 'cli', tool: 'claude-code', variant: 'max' } })),
+    ).toEqual([
+      expect.objectContaining({
+        id: 'runners.planner.variant-not-applied',
+        severity: 'warning',
+        summary: 'PLAN: the variant setting is not applied: Claude Code CLI has no variant.',
+        fix: 'Delete variant from planner in .splitbrief/config.yaml.',
+      }),
+    ]);
+    expect(
+      notApplied(makeConfig({ planner: { kind: 'cli', tool: 'claude-code', temperature: 0.2 } })),
+    ).toEqual([
+      expect.objectContaining({
+        id: 'runners.planner.temperature-not-applied',
+        severity: 'warning',
+        summary:
+          'PLAN: the temperature setting is not applied: Claude Code CLI takes no temperature.',
+        fix: 'Delete temperature from planner in .splitbrief/config.yaml.',
+      }),
+    ]);
+    expect(
+      notApplied(
+        makeConfig({
+          implementer: { kind: 'shell', command: 'node', model: 'test', maxToolCalls: 40 },
+        }),
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        id: 'runners.implementer.tool-call-limit-not-applied',
+        severity: 'warning',
+        summary: 'BUILD: the tool-call limit is not applied: text output reports no tool calls.',
+        fix: 'Set the output format of implementer to stream-json, or delete the limit, in .splitbrief/config.yaml.',
+      }),
+    ]);
+    expect(
+      notApplied(
+        makeConfig({
+          implementer: {
+            kind: 'agent',
+            command: 'node',
+            model: 'test',
+            outputFormat: 'stream-json',
+            maxToolCalls: 40,
+          },
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('gives one warning for one setting: none for an inherited REVIEW, no effort warning for BUILD', () => {
+    const opencode = { kind: 'cli', tool: 'opencode', effort: 'high' } as const;
+
+    expect(
+      notApplied(makeConfig({ planner: opencode, implementer: opencode })).map((check) => check.id),
+    ).toEqual(['runners.planner.effort-not-applied']);
+    expect(
+      notApplied(makeConfig({ planner: opencode, implementer: opencode, reviewer: opencode })).map(
+        (check) => check.id,
+      ),
+    ).toEqual(['runners.planner.effort-not-applied', 'runners.reviewer.effort-not-applied']);
+  });
+});

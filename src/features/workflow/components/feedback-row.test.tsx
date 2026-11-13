@@ -1,8 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Text } from 'ink';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { resetAllStores, seedBriefs } from '#testing/helpers/stores.js';
+import { defaultTheme } from '../../../components/theme.js';
+import { paint } from '../../../core/theme/paint.js';
+import { glyph } from '../../../lib/glyphs.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
@@ -17,6 +20,29 @@ import { formatCopyResult } from '../../../core/runtime/commands/types.js';
 import { clearAllHandlers, requestSeatChangeAtBoundary } from '../handlers.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { FeedbackRow, RUNNING_LEGEND } from './feedback-row.js';
+
+// The frames carry their SGR escapes only when chalk emits colour at all; a silent terminal would
+// make every colour comparison agree by accident.
+const originalForceColor = vi.hoisted(() => {
+  const saved = process.env['FORCE_COLOR'];
+  process.env['FORCE_COLOR'] = '3';
+  return saved;
+});
+
+afterAll(() => {
+  if (originalForceColor === undefined) delete process.env['FORCE_COLOR'];
+  else process.env['FORCE_COLOR'] = originalForceColor;
+});
+
+/** The SGR parameters a run of text is painted with, read from the escape that opens it. */
+function colorOf(frame: string, text: string): string | undefined {
+  const before = frame.split(text)[0];
+  return before?.split('\u001B[').at(-1)?.split('m')[0];
+}
+
+function inkOf(color: string | undefined): string | undefined {
+  return colorOf(paint(color, 'x'), 'x');
+}
 
 describe('FeedbackRow', () => {
   beforeEach(() => {
@@ -153,16 +179,52 @@ describe('FeedbackRow', () => {
     ui.unmount();
   });
 
-  it('renders an error as a leading state word plus a dim cause', () => {
-    feedbackStore.setError('Failed planner timed out — press r to retry');
+  it('renders a failure with the failed mark and the sentence in the text colour', () => {
+    feedbackStore.setError('Draft not saved');
 
     const ui = renderFeature(<FeedbackRow />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('Failed');
-    expect(frame).toContain('planner timed out — press r to retry');
+    expect(stripAnsiStyles(frame)).toBe(`${glyph('statusFailed')} Draft not saved`);
+    expect(colorOf(frame, glyph('statusFailed'))).toBe(inkOf(defaultTheme.error));
+    expect(colorOf(frame, 'Draft not saved')).toBe(inkOf(defaultTheme.text));
+    expect(colorOf(frame, 'saved')).toBe(inkOf(defaultTheme.text));
+    expect(colorOf(frame, 'Draft not saved')).not.toBe(inkOf(defaultTheme.error));
 
     ui.unmount();
+  });
+
+  it('renders a refusal with an empty mark slot and dim text', () => {
+    feedbackStore.setMessage('Nothing to steer.');
+
+    const ui = renderFeature(<FeedbackRow />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(stripAnsiStyles(frame)).toBe(`${' '.repeat(MARK_SLOT_CELLS)}Nothing to steer.`);
+    expect(colorOf(frame, 'Nothing to steer.')).toBe(inkOf(defaultTheme.textDim));
+
+    ui.unmount();
+  });
+
+  it('keeps a neutral refusal visible while a panel owns the keys', () => {
+    feedbackStore.setMessage('Nothing to steer.');
+
+    controlsStore.setInputMode('review');
+    const review = renderFeature(<FeedbackRow inputHint={REVIEW_HINT} />);
+    const reviewFrame = stripAnsiStyles(review.lastFrame() ?? '');
+    expect(reviewFrame).toBe(`${' '.repeat(MARK_SLOT_CELLS)}Nothing to steer.`);
+    expect(reviewFrame).not.toContain('approve');
+    review.unmount();
+
+    controlsStore.setInputMode('question');
+    questionPromptStore.setQuestions([
+      { id: 'module', type: 'choice', text: 'Which module?', options: ['a', 'b'] },
+    ]);
+    const question = renderFeature(<FeedbackRow inputHint="Type your answer…" />);
+    const questionFrame = stripAnsiStyles(question.lastFrame() ?? '');
+    expect(questionFrame).toBe(`${' '.repeat(MARK_SLOT_CELLS)}Nothing to steer.`);
+    expect(questionFrame).not.toContain('Type your answer');
+    question.unmount();
   });
 
   it('summarizes and sanitizes multiline prompt hints', () => {
@@ -302,13 +364,13 @@ describe('FeedbackRow', () => {
     [80, 'denied · …/lockfile.json …'],
   ])('keeps the file name of a long run lock path on one row at %i columns', (cols, tail) => {
     expect(renderRunLockRelease(cols)).toBe(
-      `${' '.repeat(MARK_SLOT_CELLS)}Could not release the run lock: permission ${tail}`,
+      `${glyph('statusFailed')} Could not release the run lock: permission ${tail}`,
     );
   });
 
   it('keeps the file name at 60 columns by shortening the cause', () => {
     expect(renderRunLockRelease(60)).toBe(
-      `${' '.repeat(MARK_SLOT_CELLS)}Could not … lock: permission denied · …/lockfile.json …`,
+      `${glyph('statusFailed')} Could not … lock: permission denied · …/lockfile.json …`,
     );
   });
 

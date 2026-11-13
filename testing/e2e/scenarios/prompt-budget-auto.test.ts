@@ -26,6 +26,7 @@ import { transcriptText } from '../helpers/transcript-text.js';
 
 const BIG_FILE = 'src/big.ts';
 const BIG_SOURCE = 'export const v = 1;\n'.repeat(1500);
+const TIGHT_SOURCE = 'export const v = 1;\n'.repeat(585);
 const DONE_LINE = 'export const DONE = true;\n';
 const MODEL = 'fixture/build-model';
 const FIT_ERROR = 'Task T001 does not fit the BUILD model’s context';
@@ -67,9 +68,13 @@ afterEach(async () => {
 
 /**
  * An OpenAI-compatible endpoint on loopback that lists MODEL and answers each BUILD call with one
- * bundle. With `refuse`, it records each BUILD call and refuses its prompt as too long.
+ * bundle that rewrites `source`. With `refuse`, it records each BUILD call and refuses its prompt
+ * as too long.
  */
-async function startEndpoint(refuse: boolean): Promise<{
+async function startEndpoint(
+  refuse: boolean,
+  source: string,
+): Promise<{
   apiBase: string;
   completions: z.infer<typeof RequestSchema>[];
 }> {
@@ -110,7 +115,7 @@ async function startEndpoint(refuse: boolean): Promise<{
       }
       const bundle = {
         version: 1,
-        files: [{ path: BIG_FILE, action: 'modify', content: BIG_SOURCE + DONE_LINE }],
+        files: [{ path: BIG_FILE, action: 'modify', content: source + DONE_LINE }],
       };
       const reply = makeOpenAiSseResponse([
         { content: JSON.stringify(bundle) },
@@ -138,19 +143,22 @@ async function startEndpoint(refuse: boolean): Promise<{
 }
 
 /**
- * A project with a 30 KB module, a shell planner that plans one brief on it, and an API BUILD
- * seat on the fixture endpoint. `contextLength` is the Prompt budget the user set, if any.
+ * A project with one module of `source`, a shell planner that plans one brief on it, and an API
+ * BUILD seat on the fixture endpoint. `contextLength` is the Prompt budget the user set, if any.
  */
-async function prepareRun(contextLength: number | undefined, { refuse = false } = {}) {
+async function prepareRun(
+  contextLength: number | undefined,
+  { refuse = false, source = BIG_SOURCE } = {},
+) {
   fixture = createStopContinueFixture(() => '', { isolation: 'none' });
   const target = fixture;
   mkdirSync(join(target.projectDir, 'src'), { recursive: true });
-  writeFileSync(join(target.projectDir, BIG_FILE), BIG_SOURCE);
+  writeFileSync(join(target.projectDir, BIG_FILE), source);
   execFileSync('git', ['add', BIG_FILE], { cwd: target.projectDir });
   execFileSync('git', ['commit', '--quiet', '-m', 'add the big module'], {
     cwd: target.projectDir,
   });
-  const endpoint = await startEndpoint(refuse);
+  const endpoint = await startEndpoint(refuse, source);
 
   const callsPath = join(target.tmpDir, 'calls.jsonl');
   const plannerPath = join(target.tmpDir, 'planner.mjs');
@@ -261,6 +269,26 @@ describe('e2e: the Prompt budget of an API BUILD seat', () => {
     expect(started?.routingReason).toMatch(
       /^Selected profile default \(overflow, estimated \d+\/8192 tokens using conservative context-length fallback; no Prompt budget is set\)$/,
     );
+  });
+
+  it('shows a tight brief with its estimate and no guessed window', async () => {
+    const { target, completions } = await prepareRun(undefined, { source: TIGHT_SOURCE });
+
+    const run = await cli(target, ['start', 'mark the big module done']);
+
+    expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
+    expect(serverFailure).toBeUndefined();
+    expect(completions).toHaveLength(1);
+    const [sessionId] = readdirSync(sessionsRoot(target.projectDir));
+    if (sessionId === undefined) throw new Error('The run saved no session');
+    const { events } = await readRunEvents({ projectDir: target.projectDir, sessionId });
+    const started = events.find((event) => event.type === 'task_started');
+    expect(started).toMatchObject({ contextFit: 'tight' });
+    expect(started).not.toHaveProperty('contextLength');
+    // Ink paints the transcript 80 columns wide, so the rows wrap at 80 too.
+    const transcript = transcriptText(events, 80);
+    expect(transcript).toMatch(/~[\d,]+ context tokens \(tight\)/);
+    expect(transcript).not.toContain(' of 8K');
   });
 
   it('stops the brief at the plan check when it does not fit the Prompt budget the user set', async () => {

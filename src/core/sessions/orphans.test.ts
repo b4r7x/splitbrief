@@ -24,6 +24,8 @@ vi.mock('./ownership-marker.js', async (importOriginal) => {
 });
 
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
+import { resetLoggerForTests } from '../../lib/logger.js';
 import { activeFile, READINESS_FILE, sessionDir, sessionsRoot } from '../paths.js';
 import { writeActive } from './active-pointer.js';
 import {
@@ -37,6 +39,7 @@ const tempDirs: string[] = [];
 const NOW_MS = 1_800_000_000_000;
 
 afterEach(() => {
+  resetLoggerForTests();
   for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
 });
 
@@ -158,7 +161,7 @@ describe('pruneOrphanSessions', () => {
     const project = projectDir();
     const root = sessionsRoot(project);
     mkdirSync(root, { recursive: true });
-    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    enableDebugLog(project);
     chmodSync(root, 0o000);
     let result: ReturnType<typeof pruneOrphanSessions>;
     try {
@@ -166,11 +169,9 @@ describe('pruneOrphanSessions', () => {
     } finally {
       chmodSync(root, 0o700);
     }
-    const written = stderr.mock.calls.map(([chunk]) => String(chunk));
-    stderr.mockRestore();
 
     expect(result).toEqual({ scanned: 0, removed: [] });
-    expect(written).toEqual([
+    expect(loggedDiagnostics(project)).toEqual([
       expect.stringContaining(
         'Could not list .splitbrief/sessions, so unused run folders stay in it: ',
       ),
@@ -200,7 +201,7 @@ describe('pruneOrphanSessions', () => {
     if (realIdentity === undefined)
       throw new Error('directoryIdentity mock lost its implementation');
 
-    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    enableDebugLog(project);
     try {
       identityMock.mockImplementation((ref, relativeDirectory, expected) => {
         if (ref.sessionId === '2026-08-03-prune-blocked') {
@@ -215,14 +216,13 @@ describe('pruneOrphanSessions', () => {
       expect(result.removed).toEqual(['2026-08-03-prune-clean']);
       expect(existsSync(blocked)).toBe(true);
       expect(existsSync(clean)).toBe(false);
-      expect(stderr.mock.calls.map(([chunk]) => String(chunk))).toEqual([
+      expect(loggedDiagnostics(project)).toEqual([
         expect.stringContaining(
           'Kept .splitbrief/sessions/2026-08-03-prune-blocked: could not check or remove it as an unused run folder: ',
         ),
       ]);
     } finally {
       identityMock.mockImplementation(realIdentity);
-      stderr.mockRestore();
     }
   });
 });

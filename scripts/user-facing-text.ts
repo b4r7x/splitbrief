@@ -95,13 +95,10 @@ export function findUserFacingTextViolations(root: string = process.cwd()): stri
   );
 }
 
-// A warning shows on the feedback line and on stderr, so its label is user-facing text too: the
-// argument that holds it, by the function that shows it.
-const WARNING_LABEL_ARGUMENT: Readonly<Record<string, number>> = {
-  warnError: 0,
-  warnStderr: 0,
-  readValidatedJson: 3,
-};
+// A warning goes to the debug log, and one that the user must act on also shows on the feedback
+// line or on stderr, so its label is user-facing text too: the first argument of each function
+// that writes a warning.
+const WARNING_FUNCTIONS: ReadonlySet<string> = new Set(['warnError', 'warnStderr']);
 
 const WARNING_LABEL_MARKERS: readonly Readonly<{ label: string; pattern: RegExp }>[] = [
   { label: 'module tag', pattern: /^[a-z][\w -]*: / },
@@ -127,9 +124,12 @@ export function findWarningLabelViolations(root: string = process.cwd()): string
     });
     const violations: string[] = [];
     const visit = (node: ts.Node): void => {
-      if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
-        const index = WARNING_LABEL_ARGUMENT[node.expression.text];
-        const argument = index === undefined ? undefined : node.arguments[index];
+      if (
+        ts.isCallExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        WARNING_FUNCTIONS.has(node.expression.text)
+      ) {
+        const argument = node.arguments[0];
         const text = argument === undefined ? null : labelText(argument);
         if (text !== null) {
           const line = source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;

@@ -73,7 +73,7 @@ const CONSULT_CONTRACT_BODY = `SPLITBRIEF asks you, not the user, for the decisi
 Answer with exactly one JSON object \`{ "answer": { "diagnosis": …, "action": … } }\`. \`answer.diagnosis\` states what actually went wrong, in one or two sentences, and is always present. Exactly one action follows it:
 - \`guidance\` — \`instructions\` the implementer retries with, and \`context\`: the project file or fact the retry needs attached, or null. The brief is kept.
 - \`rewrite-task\` — \`task\`: one complete replacement TaskSpec that fixes the brief itself.
-- \`split-task\` — \`tasks\`: 2 to 4 complete TaskSpecs that together replace the task.
+- \`split-task\` — \`tasks\`: 2 or more complete TaskSpecs that together replace the task.
 - \`verify\` — \`checkIds\` and \`reason\`: re-run exactly those checks before any retry, for when the failure may predate this task's own edits.
 - \`ask-user\` — \`question\`, \`whyOnlyUserCanAnswer\`, \`choices\` (or null) and \`default\` (or null): only when no other action can unblock the task and the user alone holds the missing decision.
 - \`cannot\` — \`reason\` and \`next\`: the task cannot be done as asked, and no guidance, rewrite, split or answer of the user can change that. \`next\` is the step for a user who chose Decide for me: \`skip-brief\` when the run can go on without this task, \`end-run\` when the rest of the run depends on it; null on a stuck review. SPLITBRIEF stops the brief and asks the user, or takes \`next\` after Decide for me.

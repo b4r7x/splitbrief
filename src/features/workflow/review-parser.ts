@@ -2,10 +2,12 @@ import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
 import { reviewStore } from '../../stores/workflow/review.js';
+import { approvalPromptStore } from '../../stores/approval-prompt/prompt.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
-import { requestEnqueue, stopInProgress } from './handlers.js';
+import { stopInProgress, stopStore } from '../../stores/workflow/stop.js';
+import { requestEnqueue } from './handlers.js';
 import { openReviewEditor, reviewEditPath } from './review-editor.js';
 import {
   editorDisplayLabel,
@@ -42,6 +44,9 @@ import {
 // Ink paints at most every ~33ms (maxFps 30), so the "Opening …" byline needs one frame
 // on screen before the terminal handover freezes the TUI.
 const OPENING_SIGNAL_PAINT_MS = 60;
+
+// Words typed in a review phase belong to the confirmation that waits there, not to a seat.
+const CONFIRM_WAITING_MESSAGE = 'Confirm or deny the prompt first. Tab back to the actions.';
 
 interface EditorExit {
   code: number | null;
@@ -303,15 +308,21 @@ export function createReviewInputHandler(
           const result = await effects.enqueue(message, phase);
           if (!result) {
             composerDraftStore.requestPrepend(document);
-            feedbackStore.setError('Cannot queue message: no active workflow.');
+            feedbackStore.setMessage('Cannot queue message: no active workflow.');
           } else if (result.status === 'rejected') {
             // The submission was refused: it comes back in front of whatever the composer holds
             // now, so a rejection loses neither what was sent nor what was typed since.
             composerDraftStore.requestPrepend(document);
-            feedbackStore.setError(result.message);
+            if (result.reason === 'failed') feedbackStore.setError(result.message);
+            else feedbackStore.setMessage(result.message);
           } else if (seat !== null) {
             feedbackStore.setMessage(
-              queueCopy({ seat, taskId, steerable, stopping: stopInProgress() }).feedback,
+              queueCopy({
+                seat,
+                taskId,
+                steerable,
+                stopping: stopInProgress(stopStore.get()),
+              }).feedback,
             );
           }
         }
@@ -323,7 +334,11 @@ export function createReviewInputHandler(
           phase === 'reviewing-plan' ||
           phase === 'reviewing-briefs'
         ) {
-          feedbackStore.setError(reviewOpeningPromptMessage());
+          feedbackStore.setMessage(
+            approvalPromptStore.get().status === 'pending'
+              ? CONFIRM_WAITING_MESSAGE
+              : reviewOpeningPromptMessage(),
+          );
         }
       }
       return;
@@ -343,7 +358,7 @@ export function createReviewInputHandler(
           inputMode.resolve({ approved: false, action: 'revise', message });
           return;
         }
-        feedbackStore.setError(REVIEW_UNKNOWN_COMMAND_MESSAGE);
+        feedbackStore.setMessage(REVIEW_UNKNOWN_COMMAND_MESSAGE);
         return;
       }
       if (parsed.kind === 'brief-review-command') {

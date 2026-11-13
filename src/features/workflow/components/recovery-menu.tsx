@@ -12,7 +12,8 @@ import { ListViewport } from '../../../components/pickers/list-viewport.js';
 import { isItemIndexVisible } from '../../../components/pickers/scroll-window.js';
 import { useStaticSelector } from '../../../hooks/use-static-selector.js';
 import { slashHandoffPending } from '../slash-handoff.js';
-import { formatKeyHints, SELECT_HINT } from '../prompt-rows/approval.js';
+import { formatKeyHints, PROMPT_COMMAND_LEGEND, SELECT_HINT } from '../prompt-rows/approval.js';
+import { RESULT_MENU_UNFOCUSED_LEGEND } from '../result/options.js';
 import { PromptBody } from './prompt-body.js';
 import {
   correctionActionFor,
@@ -201,7 +202,7 @@ export function RecoveryMenu({
   const commandDraft = composerLiveStore.use((draft) => isCommandDraft(draft.document));
   const composerEmpty = composerLiveStore.use((draft) => draft.empty);
   const composerLegend = commandDraft
-    ? '⏎ runs the command'
+    ? PROMPT_COMMAND_LEGEND
     : correctionAction === undefined
       ? 'typing goes to the composer'
       : `⏎ ${recoveryMenuActionLabel(correctionAction, issue, reviewNone)} with the typed correction`;
@@ -216,7 +217,7 @@ export function RecoveryMenu({
               ? []
               : [{ key: 'tab', verb: 'edit the words' }]),
         ])
-      : `${composerLegend}${SOFT_SEP}tab back to the actions`,
+      : `${composerLegend}${SOFT_SEP}${RESULT_MENU_UNFOCUSED_LEGEND}`,
     innerWidth,
   );
   return (

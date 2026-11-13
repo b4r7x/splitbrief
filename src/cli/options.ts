@@ -1,6 +1,9 @@
 import { InvalidArgumentError, type Command } from 'commander';
 import { cliError } from './errors.js';
-import { IMPLEMENTER_API_PROVIDER_IDS } from '../core/providers/api-provider-catalog.js';
+import {
+  IMPLEMENTER_API_PROVIDER_IDS,
+  isListedApiProvider,
+} from '../core/providers/api-provider-catalog.js';
 import {
   CLI_TOOL_CATALOG,
   IMPLEMENTER_CLI_TOOL_IDS,
@@ -19,13 +22,17 @@ import type { EffortLevel, RecoveryAction } from '../core/schemas/enums.js';
 import type { SeatSwapCandidate } from '../core/schemas/recovery/schemas.js';
 import { SEAT_DOWN_POLICIES, type SeatDownPolicy } from '../core/types/config-options.js';
 
-const LISTED_PLANNER_TOOL_IDS = PLANNER_TOOL_IDS.filter(isListedCliTool);
+function isListedRunnerId(id: string): boolean {
+  return isListedCliTool(id) && isListedApiProvider(id);
+}
+
+const LISTED_PLANNER_TOOL_IDS = PLANNER_TOOL_IDS.filter(isListedRunnerId);
 
 const LISTED_IMPLEMENTER_TOOL_IDS = [
   ...IMPLEMENTER_CLI_TOOL_IDS,
   ...IMPLEMENTER_API_PROVIDER_IDS,
   ...META_PROVIDER_IDS,
-].filter(isListedCliTool);
+].filter(isListedRunnerId);
 
 export const ALLOW_REPO_RUNNERS_HELP =
   'Grant this run the shell/agent runner commands the project config declares (headless use)';

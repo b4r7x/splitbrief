@@ -82,7 +82,7 @@ export type ToggleLatestActivityBatchResult =
 
 export type ToggleLatestDiffResult =
   | { status: 'toggled'; expanded: boolean }
-  | { status: 'unavailable'; message: string };
+  | { status: 'unavailable' };
 
 export type ToggleSidebarResult =
   | { status: 'toggled'; visible: boolean }
@@ -288,6 +288,8 @@ export interface RuntimeCommandContext {
   scrollConversation: (target: ScrollCommandTarget) => ScrollConversationResult;
   toggleLatestActivityBatch: () => ToggleLatestActivityBatchResult;
   toggleLatestDiff: () => ToggleLatestDiffResult;
+  /** A row of the transcript takes the diff toggle now. */
+  hasLatestDiff: () => boolean;
   listBriefs: () => readonly BriefListEntry[];
   toggleSidebar: () => ToggleSidebarResult;
   copyTarget: (target: CopyTarget) => Promise<CopyResult>;

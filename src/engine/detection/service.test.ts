@@ -1,4 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
+import { resetLoggerForTests } from '../../lib/logger.js';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import http from 'node:http';
 import { join } from 'node:path';
@@ -313,6 +315,7 @@ describe('createDetectionService', () => {
 
   afterEach(async () => {
     await service.getPendingSave();
+    resetLoggerForTests();
     await rm(tempDir, { recursive: true, force: true });
     modelCacheStore.reset();
   });
@@ -1233,7 +1236,7 @@ describe('createDetectionService', () => {
 
   it('persists the detection cache even when a lane listener throws', async () => {
     const deps = makeDeps({ sourceContexts: sourceContexts() });
-    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    enableDebugLog(tempDir);
 
     const result = await service.loadDetection({
       deps,
@@ -1251,10 +1254,9 @@ describe('createDetectionService', () => {
       await readFile(join(tempDir, SPLITBRIEF_DIR, 'detection-cache.json'), 'utf8'),
     );
     expect(cache.cliTools).toHaveLength(1);
-    expect(stderr).toHaveBeenCalledWith(
+    expect(loggedDiagnostics(tempDir)).toContainEqual(
       expect.stringContaining('Could not show a tool check result'),
     );
-    stderr.mockRestore();
   });
 
   it('replays already-settled lanes to a listener that joins a load in flight', async () => {

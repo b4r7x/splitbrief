@@ -27,7 +27,7 @@ describe('getErrorHint', () => {
     ['API error 429 from custom-endpoint: Too Many Requests', 'Rate limited by provider', 'Wait'],
     ['rate_limit_exceeded', 'Rate limited by provider', undefined],
     ['getaddrinfo ENOTFOUND api.example.com', 'Cannot reach host', 'network'],
-    ['model "llama3" not found', 'Model not available', 'ollama pull'],
+    ['model "llama3" not found', 'Model not available', 'Check the model name of this seat'],
     ['Error: model_not_found', 'Model not available', undefined],
     [
       "context_length_exceeded: model's max context length is 8192",

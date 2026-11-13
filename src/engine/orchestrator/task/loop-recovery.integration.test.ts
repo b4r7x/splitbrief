@@ -409,18 +409,10 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
           type: 'warning',
           code: 'recovery_pending_unresolved',
           category: 'recovery',
-          message: expect.stringContaining('context-overflow'),
+          message:
+            'The run still waits at its halt, so the brief did not start. Choose an action in the halt panel.',
         }),
       );
-      const warning = events.find((event) => event.type === 'warning');
-      expect(warning).toMatchObject({
-        message: expect.stringContaining(`status: ${status}`),
-      });
-      expect(warning).toMatchObject({
-        message: expect.stringContaining(
-          'Available actions: retry-same-worker, skip-current-task, end-run.',
-        ),
-      });
       expect(result.state.pendingRecovery).toEqual(issue);
       expect(result.state.pendingRecovery?.status).toBe(status);
     },

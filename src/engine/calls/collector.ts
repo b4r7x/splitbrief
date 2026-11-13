@@ -25,6 +25,7 @@ import type {
   RunnerCallStatus,
   RunnerCallUsage,
   RunnerCallWarning,
+  RunnerCallWarningInput,
 } from './types.js';
 
 interface RunnerCallCollectionState {
@@ -222,6 +223,21 @@ function assertSameInvocationIdentity(context: RunnerCallContext, event: RunnerC
   );
 }
 
+export function unknownUpstreamWarningInput(
+  event: Extract<RunnerCallEvent, { type: 'call_unknown_upstream' }>,
+): RunnerCallWarningInput {
+  return {
+    code: 'unknown_upstream',
+    severity: 'warning',
+    source: event.backendMetadata.source ?? 'upstream',
+    surface: 'debug',
+    parser: event.backendMetadata.parser,
+    upstreamType: event.backendMetadata.upstreamType,
+    channel: event.backendMetadata.channel,
+    message: sanitizeRunnerCallRawPreview(event.rawPreview),
+  };
+}
+
 function applyRunnerCallEvent(state: RunnerCallCollectionState, event: RunnerCallEvent): void {
   switch (event.type) {
     case 'call_started':
@@ -316,16 +332,7 @@ function applyRunnerCallEvent(state: RunnerCallCollectionState, event: RunnerCal
         return;
       }
       state.unknownUpstreamCount += 1;
-      appendWarning(state, {
-        code: 'unknown_upstream',
-        severity: 'warning',
-        source: event.backendMetadata.source ?? 'upstream',
-        surface: 'activity',
-        parser: event.backendMetadata.parser,
-        upstreamType: event.backendMetadata.upstreamType,
-        channel: event.backendMetadata.channel,
-        message: sanitizeRunnerCallRawPreview(event.rawPreview),
-      });
+      appendWarning(state, unknownUpstreamWarningInput(event));
       return;
     case 'call_tool_use_delta':
     case 'call_runtime_status':

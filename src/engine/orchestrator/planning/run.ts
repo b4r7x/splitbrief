@@ -2,6 +2,7 @@ import { resolveApproveLevel } from '../../../core/config/runtime/resolve.js';
 import { PLAN_JSON_FILE } from '../../../core/paths.js';
 import { readSpecFileOrEmpty } from '../../../core/paths-io.js';
 import { planRevisedTurn } from '../../spec/prompts/plan-session.js';
+import { standingPlanCorrection } from './halt.js';
 import { runPlanApproval, runPlanningSession } from './session.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
 
@@ -34,11 +35,7 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<Plan
     ...(attachments.length > 0 ? { attachments } : {}),
   };
 
-  const lead =
-    optsWithContext.rewindPending === undefined
-      ? undefined
-      : rewindLead(optsWithContext, optsWithContext.rewindPending.comment);
-  const session = await runPlanningSession(optsWithContext, lead);
+  const session = await runPlanningSession(optsWithContext, rewindLead(optsWithContext));
   if (session.disposition === 'terminal') return session;
   return runPlanApproval(optsWithContext, session.state);
 }
@@ -48,9 +45,9 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<Plan
  * the rewind a state saved by an older version carries. A run that continues before then opens
  * its planning session with that correction and the plan it corrects.
  */
-function rewindLead(opts: PlanningPhaseOptions, comment: string | undefined): string | undefined {
+function rewindLead(opts: PlanningPhaseOptions): string | undefined {
   const ref = { projectDir: opts.wctx.projectDir, sessionId: opts.wctx.sessionId };
-  const correction = comment?.trim();
-  if (correction === undefined || correction === '') return undefined;
+  const correction = standingPlanCorrection(opts.rewindPending);
+  if (correction === undefined) return undefined;
   return planRevisedTurn(readSpecFileOrEmpty(ref, PLAN_JSON_FILE), correction);
 }

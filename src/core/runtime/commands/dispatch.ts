@@ -11,8 +11,12 @@ interface CommandExecutionOptions {
   openRunAtRest: boolean;
   applyUnfinished: boolean;
   applying: boolean;
-  /** Called once for a command that SPLITBRIEF refuses, with the reason and the line as typed. */
-  onError: (msg: string, raw: string) => void;
+  /**
+   * Called once for a command that does not run or that fails, with the reason (also the message of
+   * an error that the handler throws), the line as typed, and whether the command was refused or
+   * its handler threw.
+   */
+  onError: (msg: string, raw: string, outcome: 'refused' | 'failed') => void;
 }
 
 export async function executeRuntimeCommand(
@@ -27,7 +31,7 @@ export async function executeRuntimeCommand(
   if (!cmd) {
     const pointer = removedCommandPointer(name);
     if (pointer) {
-      options.onError(`${name} was removed: ${pointer}`, raw);
+      options.onError(`${name} was removed: ${pointer}`, raw, 'refused');
       return;
     }
     const colonSkill = name.startsWith('/skill:') ? name.slice('/skill:'.length) : '';
@@ -37,13 +41,14 @@ export async function executeRuntimeCommand(
       : suggestion
         ? `Did you mean ${suggestion.name}?`
         : 'Type /help for available commands.';
-    options.onError(`Unknown command: ${name}. ${hint}`, raw);
+    options.onError(`Unknown command: ${name}. ${hint}`, raw, 'refused');
     return;
   }
   if (!cmd.validScreens.includes(options.screen)) {
     options.onError(
       `${cmd.name} is only available on the ${cmd.validScreens.join(', ')} screen.`,
       raw,
+      'refused',
     );
     return;
   }
@@ -55,14 +60,19 @@ export async function executeRuntimeCommand(
     applying: options.applying,
   });
   if (blocked !== undefined) {
-    options.onError(blocked, raw);
+    options.onError(blocked, raw, 'refused');
+    return;
+  }
+  if (cmd.kind === 'noarg' && typed !== '') {
+    options.onError(`${cmd.name} takes no argument. Usage: ${cmd.name}`, raw, 'refused');
     return;
   }
   let refusal: unknown;
   try {
     refusal = await (cmd.kind === 'arg' ? cmd.handler(typed || undefined) : cmd.handler());
   } catch (err) {
-    refusal = toErrorMessage(err);
+    options.onError(toErrorMessage(err), raw, 'failed');
+    return;
   }
-  if (typeof refusal === 'string') options.onError(refusal, raw);
+  if (typeof refusal === 'string') options.onError(refusal, raw, 'refused');
 }

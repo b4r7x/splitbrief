@@ -13,7 +13,10 @@ import {
   findLatestConversationRowAction,
   type ConversationRowAction,
 } from '../features/workflow/conversation-rows/row-actions.js';
-import { readConversationRowActions } from '../features/workflow/conversation-rows/read-row-actions.js';
+import {
+  readConversationRowActions,
+  readLatestDiffKey,
+} from '../features/workflow/conversation-rows/read-row-actions.js';
 import { toggleFoldedRows } from '../features/workflow/conversation-rows/toggle-folded-rows.js';
 import { readConversationScrollSnapshot } from '../features/workflow/layout/snapshot.js';
 import { getWorkflowSidebarWidth } from '../features/workflow/layout/rect.js';
@@ -45,6 +48,7 @@ import { refreshSkills } from './refresh-skills.js';
 import { attachImage, detachImage, listAttachments } from '../stores/workflow/attachments.js';
 import { resolveAttachment } from '../core/attachments/resolve.js';
 import { conversationScrollStore } from '../stores/workflow/conversation-scroll.js';
+import { eventsStore } from '../stores/workflow/events.js';
 import { getDefaultDetectionService } from '../engine/detection/service.js';
 import { refreshDetectionForCurrentConfig } from '../engine/detection/store-publication.js';
 import { detectionStore } from '../stores/project/detection.js';
@@ -103,6 +107,7 @@ export interface ConversationScrollMetrics {
 export interface WorkflowCommandPorts {
   requestClearQueue: () => QueueClearCommandResult | Promise<QueueClearCommandResult>;
   getRowActions: () => ReadonlyMap<string, ConversationRowAction>;
+  getLatestDiffKey: () => string | null;
   readScrollMetrics: () => ConversationScrollMetrics;
   resolveCopyValue: (target: CopyTarget) => string | null;
 }
@@ -304,15 +309,13 @@ function toggleLatestActivityBatch(
 }
 
 function toggleLatestDiff(
-  getRowActions: WorkflowCommandPorts['getRowActions'],
+  getLatestDiffKey: WorkflowCommandPorts['getLatestDiffKey'],
 ): ToggleLatestDiffResult {
-  const action = findLatestConversationRowAction(getRowActions(), 'toggle-diff');
-  if (action === null) {
-    return { status: 'unavailable', message: 'No diff is available to expand.' };
-  }
+  const key = getLatestDiffKey();
+  if (key === null) return { status: 'unavailable' };
 
-  const expanded = !conversationScrollStore.get().expandedDiffs.has(action.key);
-  conversationScrollStore.toggleDiff(action.key);
+  const expanded = !conversationScrollStore.get().expandedDiffs.has(key);
+  conversationScrollStore.toggleDiff(key);
   return { status: 'toggled', expanded };
 }
 
@@ -417,7 +420,8 @@ export function buildCommandContext({
     },
     scrollConversation: (target) => scrollConversation(target, workflow.readScrollMetrics),
     toggleLatestActivityBatch: () => toggleLatestActivityBatch(workflow.getRowActions),
-    toggleLatestDiff: () => toggleLatestDiff(workflow.getRowActions),
+    toggleLatestDiff: () => toggleLatestDiff(workflow.getLatestDiffKey),
+    hasLatestDiff: () => workflow.getLatestDiffKey() !== null,
     listBriefs: () => runViewStore.get().briefs.tasks.map(({ id, status }) => ({ id, status })),
     copyTarget: (target) => copyTarget(target, workflow.resolveCopyValue),
     toggleSidebar: () => {
@@ -454,6 +458,7 @@ export function useRuntimeCommands({
           workflow: {
             requestClearQueue,
             getRowActions: readConversationRowActions,
+            getLatestDiffKey: readLatestDiffKey,
             readScrollMetrics: readConversationScrollSnapshot,
             resolveCopyValue,
           },
@@ -462,6 +467,9 @@ export function useRuntimeCommands({
   // The command list embeds the skill id set as `/skills`'s closed options, so it has to be
   // rebuilt whenever that store changes.
   skillsStore.use((s) => s);
+  // The guard of `/diff` reads the transcript, so the list is rebuilt when a row starts or stops
+  // taking the diff toggle.
+  eventsStore.use(() => ctx.hasLatestDiff());
   const commands = createRuntimeCommands(ctx);
   const runtimeChainRef = useRef(Promise.resolve());
   // A typed line left its field at submit: the composer, or the answer field of a question. A
@@ -478,8 +486,9 @@ export function useRuntimeCommands({
         openRunAtRest: isOpenRunAtRest(routerStore.get()),
         applyUnfinished: isApplyUnfinishedAtRest(routerStore.get()),
         applying: applyBefore !== undefined,
-        onError: (message, line) => {
-          feedbackStore.setError(message);
+        onError: (message, line, outcome) => {
+          if (outcome === 'failed') feedbackStore.setError(message);
+          else feedbackStore.setMessage(message);
           if (sentBy === 'answer') {
             const { drafts, index } = questionPromptStore.get();
             if (drafts[index]?.text === '') questionPromptStore.setFocus('answer', line);

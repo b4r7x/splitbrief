@@ -281,6 +281,7 @@ describe('/skills command', () => {
     expect(onError).toHaveBeenCalledExactlyOnceWith(
       'Unknown skills: zzz-typo, yyy-typo',
       '/skills zzz-typo yyy-typo',
+      'refused',
     );
     expect(feedback).toEqual([]);
   });

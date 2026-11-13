@@ -21,7 +21,7 @@ import { warnStderr } from '../../lib/warn.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import { markCancellationRequested } from '../../stores/workflow/actions/interrupt.js';
 import { markWorkflowResumed } from '../../stores/workflow/actions/resume.js';
-import { stopStore } from '../../stores/workflow/stop.js';
+import { stopInProgress, stopStore } from '../../stores/workflow/stop.js';
 import { departureStore, type Departure } from '../../stores/workflow/departure.js';
 import { activeApply } from '../../engine/orchestrator/session-lifecycle/shutdown.js';
 import type {
@@ -35,6 +35,9 @@ import type { SessionRef } from '../../core/types/session-ref.js';
 import { configStore } from '../../stores/project/config.js';
 import { parkLeavesWordsUnread } from '../../core/recovery/typed-words.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
+import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
+import { haltReadsNoWords } from '../../core/run-view/halt.js';
+import { correctionActionFor, NO_CORRECTION_MESSAGE } from './recovery-prompt.js';
 
 type AbortHandler = () => void;
 
@@ -157,14 +160,22 @@ export function consumeBoundaryPause(): BoundaryPark | undefined {
   return stopStore.get().seatChange ? 'seat-change' : undefined;
 }
 
+/**
+ * Whether a saved seat waits for the next review or fix brief. A pause the operator asked for
+ * wins: the seat then waits for the brief boundary of that pause. Reading it clears nothing.
+ */
+export function seatChangeWaits(): boolean {
+  return !pendingBoundaryPause && stopStore.get().seatChange;
+}
+
 export function cancelBoundaryPause(): void {
   pendingBoundaryPause = false;
   stopStore.cancelPause();
 }
 
 /**
- * A seat changed under the running run: the run stops at the next brief boundary and is
- * re-prepared from the saved config there, so the brief after it starts on the new seat.
+ * A seat changed under the running run: the run stops at the next brief or review boundary and is
+ * re-prepared from the saved config there, so the brief or review after it starts on the new seat.
  */
 export function requestSeatChangeAtBoundary(): void {
   stopStore.markSeatChange(true);
@@ -176,9 +187,10 @@ export function spendSeatChange() {
 }
 
 /**
- * The run reached a brief boundary it stops at. `park` when no seat changed: the run parks there
- * as the operator asked. With a seat change the run stops to be re-prepared on the saved seats:
- * it `continue`s at once, or `stop`s at rest when the operator asked for the pause too.
+ * The run reached a brief or review boundary it stops at. `park` when no seat changed: the run
+ * parks there as the operator asked. With a seat change the run stops to be re-prepared on the
+ * saved seats: it `continue`s at once, or `stop`s at rest when the operator asked for the pause
+ * too.
  */
 export function landBoundaryPause(): 'park' | 'continue' | 'stop' {
   const { intent, seatChange } = stopStore.get();
@@ -192,21 +204,13 @@ function passHasSomethingToStop(): boolean {
   return handlers.stop !== undefined || abortHandlers.length > 0 || handlers.cancel !== undefined;
 }
 
-/** A stop was asked for and has not parked or failed yet. Until then a steer is refused. */
-export function stopInProgress(): boolean {
-  const { intent, phase } = stopStore.get();
-  return (
-    intent !== 'none' && intent !== 'pause-after-brief' && phase !== 'parked' && phase !== 'failed'
-  );
-}
-
 // A stop that has nothing to stop is not announced: the byline would report a run terminating
 // while no process was ever asked to.
 export function requestStopNow(): boolean {
   clearPendingSteer();
   const state = stopStore.get();
   if (state.phase === 'parked' || state.phase === 'ended') return false;
-  if (stopInProgress()) return true;
+  if (stopInProgress(state)) return true;
   if (!passHasSomethingToStop()) return false;
   // Announce before calling a handler: an already-idle operation may settle synchronously.
   stopStore.request(state.intent === 'end-run' ? 'end-run' : 'stop-now');
@@ -221,9 +225,7 @@ export function requestStopNow(): boolean {
 // as its reason, and the caller shows it.
 export function requestResume(message: UserMessageInput): string | undefined {
   const stop = stopStore.get();
-  if (stop.intent !== 'none' && stop.intent !== 'pause-after-brief' && stop.phase !== 'parked') {
-    return 'Finish stopping before resuming.';
-  }
+  if (stopInProgress(stop) || stop.phase === 'failed') return 'Finish stopping before resuming.';
   if (stop.phase !== 'parked' && passHasSomethingToStop()) {
     return 'Nothing to resume: the run has not stopped.';
   }
@@ -257,15 +259,25 @@ function steerAtRest(message: UserMessageInput): string | undefined {
  * `/steer <text>` and ctrl+⏎: stop now and continue with the text as the correction. A run already
  * parked resumes here; a live call is stopped and the text held until its park lands, so a steer
  * typed during the stop race is not lost. A waiting plan card or question has nothing to stop and
- * takes the text as its change request or its answer. A run at rest has nothing to stop
- * and continues with the text. A refusal comes back as its one reason, and the caller shows it.
+ * takes the text as its change request or its answer; a halt panel that takes no typed correction
+ * refuses it. A run at rest has nothing to stop and continues with the text. A refusal comes back
+ * as its one reason, and the caller shows it.
  */
 export function requestSteer(message: UserMessageInput): string | undefined {
   if (message.text.trim() === '') return 'Nothing to steer.';
   const stop = stopStore.get();
   if (stop.phase === 'parked') return resumeParkedRun(message) ? undefined : steerAtRest(message);
-  if (stopInProgress()) return 'Finish stopping before steering.';
+  if (stopInProgress(stop)) return 'Finish stopping before steering.';
   if (handlers.waitingPrompt) {
+    // Only the halt panel's own question refuses words: the note an action asks for takes them.
+    const view = runViewStore.get();
+    if (
+      view.halt !== null &&
+      recoveryNoticeStore.get().asking &&
+      correctionActionFor(view.halt.issue, haltReadsNoWords(view)) === undefined
+    ) {
+      return NO_CORRECTION_MESSAGE;
+    }
     handlers.waitingPrompt(message);
     return undefined;
   }
@@ -279,7 +291,7 @@ export function requestSteer(message: UserMessageInput): string | undefined {
     if (resumeParkedRun(message)) return;
     // The caller got its answer when the stop began, so a refusal after the park shows here.
     const refusal = steerAtRest(message);
-    if (refusal !== undefined) feedbackStore.setError(refusal);
+    if (refusal !== undefined) feedbackStore.setMessage(refusal);
   };
   steerUnsubscribe = stopStore.subscribe(resumeSteer);
   resumeSteer();

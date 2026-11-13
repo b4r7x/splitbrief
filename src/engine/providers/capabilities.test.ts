@@ -8,6 +8,8 @@ import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
+import { resetLoggerForTests } from '../../lib/logger.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { RunnerConfig } from '../../core/config/accessors/runner-config.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
@@ -28,6 +30,7 @@ describe('detectCapabilities', () => {
 
   afterEach(() => {
     vi.unstubAllEnvs();
+    resetLoggerForTests();
     cleanupTempDir(toolHome);
   });
 
@@ -227,35 +230,25 @@ describe('detectCapabilities', () => {
     // user with no Ollama used to get `detectContextLength(ollama): fetch
     // failed` — an internal probe name and a bare fetch error — as the first
     // thing the product ever said to them.
-    it('writes nothing to stderr when a local endpoint is not listening', async () => {
-      // process.stderr is a sanctioned global spy — see docs/TESTING.md.
-      const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    it('reports nothing when a local endpoint is not listening', async () => {
+      enableDebugLog(toolHome);
       vi.mocked(globalThis.fetch).mockRejectedValue(new TypeError('fetch failed'));
 
-      try {
-        expect(await detectCapabilities(ollamaConfig())).toBeUndefined();
-        expect(stderr).not.toHaveBeenCalled();
-      } finally {
-        stderr.mockRestore();
-      }
+      expect(await detectCapabilities(ollamaConfig())).toBeUndefined();
+      expect(loggedDiagnostics(toolHome)).toEqual([]);
     });
 
     it('still reports a detection failure that is not an unreachable endpoint', async () => {
-      // process.stderr is a sanctioned global spy — see docs/TESTING.md.
-      const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+      enableDebugLog(toolHome);
       vi.mocked(globalThis.fetch).mockRejectedValue(new Error('malformed provider response'));
 
-      try {
-        await detectCapabilities(ollamaConfig());
+      await detectCapabilities(ollamaConfig());
 
-        expect(stderr).toHaveBeenCalledWith(
-          expect.stringContaining(
-            'Could not read the context length of qwen:7b from Ollama: malformed provider response',
-          ),
-        );
-      } finally {
-        stderr.mockRestore();
-      }
+      expect(loggedDiagnostics(toolHome)).toEqual([
+        expect.stringContaining(
+          'Could not read the context length of qwen:7b from Ollama: malformed provider response',
+        ),
+      ]);
     });
   });
 });
@@ -282,9 +275,9 @@ describe('detectCapabilities against a local server that accepts the read and ne
   it.each(['lm-studio', 'llama-cpp', 'ollama'] as const)(
     'settles %s with no window and no warning once the read passes its bound',
     async (provider) => {
-      // process.stderr is a sanctioned global spy — see docs/TESTING.md. AbortSignal.timeout is the
-      // clock: the test fires the bound once the server holds the request.
-      const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+      // AbortSignal.timeout is the clock: the test fires the bound once the server holds the request.
+      const logDir = createTempDir('detect-capabilities-log');
+      enableDebugLog(logDir);
       const bounds: { ms: number; controller: AbortController }[] = [];
       const timeout = vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms) => {
         const controller = new AbortController();
@@ -315,11 +308,12 @@ describe('detectCapabilities against a local server that accepts the read and ne
           }
 
           expect(await detected).toBeUndefined();
-          expect(stderr).not.toHaveBeenCalled();
+          expect(loggedDiagnostics(logDir)).toEqual([]);
         });
       } finally {
         timeout.mockRestore();
-        stderr.mockRestore();
+        resetLoggerForTests();
+        cleanupTempDir(logDir);
       }
     },
   );

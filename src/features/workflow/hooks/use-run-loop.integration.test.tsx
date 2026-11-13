@@ -1546,7 +1546,7 @@ describe('useRunLoop', () => {
     inst.unmount();
   });
 
-  it('shows the reason when the run at rest refuses to continue after a seat changed under it', async () => {
+  it('shows the reason when the run at rest refuses to continue after a seat changed under it, in the neutral voice', async () => {
     const sessionId = '2026-11-10-seat-change-refused';
     ensureSessionDir(projectDir, sessionId);
     saveState(
@@ -1578,7 +1578,7 @@ describe('useRunLoop', () => {
 
     seatChangedNow();
     await vi.waitFor(() => {
-      expect(feedbackStore.get()).toEqual({ message: reason, isError: true });
+      expect(feedbackStore.get()).toEqual({ message: reason, isError: false });
     });
     expect(continueAtRest).toHaveBeenCalledTimes(1);
 
@@ -1779,6 +1779,30 @@ describe('useRunLoop', () => {
       expect(pausedAtBoundary).toBe('seat-change');
       expect(continueAtRest).toHaveBeenCalledTimes(1);
       expect(run.passes[1]?.prepared.config.implementer).toMatchObject({ tool: 'codex' });
+
+      inst.unmount();
+    });
+
+    it('hands the engine the seat change that waits', async () => {
+      const prepared = savedRun('2026-11-11-seat-change-waits');
+      configStore.__testReset({ projectDir, config: prepared.config });
+      let waitsBeforeSave: boolean | undefined;
+      let waitsAfterSave: boolean | undefined;
+      const run = parkingEngine(async (options) => {
+        waitsBeforeSave = options.sinks.seatChangeWaits?.();
+        await options.callbacks.onContinuationNeeded?.('', 'mid-step', []);
+        waitsAfterSave = options.sinks.seatChangeWaits?.();
+      });
+      const { inst, resume } = await renderParked(prepared, run, []);
+
+      configStore.__testReset({ projectDir, config: CODEX_SEAT_SAVED });
+      resume();
+      await vi.waitFor(() => {
+        expect(settledRun()).not.toBeNull();
+      });
+
+      expect(waitsAfterSave).toBe(true);
+      expect(waitsBeforeSave).toBe(false);
 
       inst.unmount();
     });

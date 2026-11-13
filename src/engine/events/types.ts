@@ -14,7 +14,7 @@ export type EngineEventOf<T extends EngineEvent['type']> = Extract<EngineEvent, 
 
 export type TextChunkMarks = Pick<
   EngineEventOf<'planner_text'>,
-  'messageStart' | 'continues' | 'subagent'
+  'messageStart' | 'continues' | 'subagentId'
 >;
 
 export type EventSink = (event: EngineEvent) => void;

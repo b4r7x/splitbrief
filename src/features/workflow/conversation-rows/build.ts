@@ -18,6 +18,7 @@ import {
 } from './block-cache.js';
 import { eventRowBlock, recoveryRowBlock } from './event-rows/dispatch.js';
 import { checkGroupKey, checkGroupRowBlock } from './check-group-rows.js';
+import { diffToggleKey } from './row-actions.js';
 import { joinsCheckList } from './check-list-spacing.js';
 import { isPlannerTextRenderedAsMarkdown } from './event-rows/planner-text.js';
 import { runnerActivityBatchRowBlock } from './activity-rows.js';
@@ -62,6 +63,7 @@ function buildConversationRowsProjectionWithContext(
   const blocks: ConversationRowBlock[] = [];
   const activeTask = inputs.sections.find((section) => section.type === 'active-task');
   let activeTaskHeaderKey: string | null = null;
+  let latestDiffKey: string | null = null;
   let renderableCount = 0;
   let hasRenderableBlock = false;
   let lastAppendedType: EngineEvent['type'] | undefined;
@@ -157,7 +159,9 @@ function buildConversationRowsProjectionWithContext(
         step.recovery.prompted !== undefined &&
           inputs.expandedDiffs.has(diffEventKey(step.recovery.prompted, step.recovery.firstIndex)),
       );
-      if (block !== null) appendBlock(block);
+      if (block === null) continue;
+      appendBlock(block);
+      latestDiffKey = diffToggleKey(step, ctx.width) ?? latestDiffKey;
       continue;
     }
     const { event, globalIndex } = step;
@@ -191,6 +195,7 @@ function buildConversationRowsProjectionWithContext(
       if (cacheable) rememberEventRowBlock(event, blockKey, block);
     }
     if (block === null) continue;
+    latestDiffKey = diffToggleKey(step, ctx.width) ?? latestDiffKey;
     if (step.historicalTaskHeader === true) {
       const historical = withoutActiveRow(block);
       block = {
@@ -210,7 +215,7 @@ function buildConversationRowsProjectionWithContext(
   }
 
   const totalRows = blocks.reduce((count, block) => count + block.rowCount, 0);
-  return { blocks, renderableCount, totalRows, activeTaskHeaderKey };
+  return { blocks, renderableCount, totalRows, activeTaskHeaderKey, latestDiffKey };
 }
 
 function withoutActiveRow(block: ConversationRowBlock): ConversationRowBlock {

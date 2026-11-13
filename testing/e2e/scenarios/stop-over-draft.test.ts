@@ -1,9 +1,14 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import XtermHeadless from '@xterm/headless';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
+import { sessionDir } from '../../../src/core/paths.js';
+import { readActive } from '../../../src/core/sessions/active-pointer.js';
+import { resolveTheme } from '../../../src/core/theme/resolve.js';
+import { STOP_SHEET_PARKED_LEGEND } from '../../../src/features/workflow/stop/options.js';
 import { reapOrphanRunners } from '../../../src/engine/orchestrator/run/orphan-reaper.js';
+import { glyph } from '../../../src/lib/glyphs.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { trustDeclaredRunners } from '#testing/helpers/runner-trust.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -15,14 +20,20 @@ import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
 import { moveCursorTo } from '../helpers/move-cursor.js';
 import { createStopContinueFixture } from '../helpers/stop-continue-fixture.js';
+import { readForegroundAtText, type TerminalForeground } from '../helpers/terminal-cells.js';
 import { wholeFrames } from '../helpers/whole-frames.js';
 
 const VIEWPORT = { cols: 120, rows: 40 };
 const PAINT = { timeout: 15_000 };
 const RUN = { timeout: 120_000 };
 const ENTER = '\r';
+const SHIFT_ENTER = '\x1b[13;2u';
 const STOPPED = '○ Stopped at the review';
 const WORDS = 'also fix the typo';
+// The child runs with FORCE_COLOR=3 and no answer to the background query, so its screen paints the
+// dark palette in truecolor.
+const SCREEN_THEME = resolveTheme({ variant: 'dark', level: 3, terminalBackground: undefined });
+const TWO_LINE_DRAFT = [WORDS, 'and add the missing test'] as const;
 
 const TOTAL_FILE = 'src/total.mjs';
 const TOTAL_TEST_FILE = 'src/total.test.mjs';
@@ -119,7 +130,11 @@ function prepareRun() {
 }
 
 type Run = ReturnType<typeof prepareRun>;
-type Tui = Readonly<{ screen: () => string; write: (keys: string) => void }>;
+type Tui = Readonly<{
+  screen: () => string;
+  write: (keys: string) => void;
+  foregroundAt: (phrase: string, offset?: number) => TerminalForeground;
+}>;
 
 async function inTui(run: Run, home: string, drive: (tui: Tui) => Promise<void>): Promise<void> {
   const { target, offlinePath } = run;
@@ -175,7 +190,12 @@ async function inTui(run: Run, home: string, drive: (tui: Tui) => Promise<void>)
         exit.resolve(event);
       });
       try {
-        await drive({ screen, write: (keys) => child.write(keys) });
+        await drive({
+          screen,
+          write: (keys) => child.write(keys),
+          foregroundAt: (phrase, offset) =>
+            readForegroundAtText(terminal.buffer.active, phrase, offset),
+        });
       } finally {
         if (outcome === undefined) await terminatePtyProcessGroup(child, exit.promise);
         await reapOrphanRunners(target.projectDir);
@@ -194,7 +214,7 @@ async function inTui(run: Run, home: string, drive: (tui: Tui) => Promise<void>)
 async function whileReviewStops(
   home: string,
   drive: (tui: Tui, run: Run) => Promise<void>,
-  draft?: string,
+  draft?: readonly string[],
 ): Promise<void> {
   const run = prepareRun();
   try {
@@ -206,8 +226,11 @@ async function whileReviewStops(
       write(PTY_SUBMIT_INPUT);
       await vi.waitFor(() => expect(run.reviewCalls()).toBe(1), RUN);
       if (draft !== undefined) {
-        write(draft);
-        await expect.poll(screen, PAINT).toContain(`› ${draft}`);
+        for (const [index, line] of draft.entries()) {
+          if (index > 0) write(SHIFT_ENTER);
+          write(line);
+          await expect.poll(screen, PAINT).toContain(index === 0 ? `› ${line}` : line);
+        }
       }
       write('\x1b');
       await expect.poll(screen, PAINT).toContain('Stop now');
@@ -249,7 +272,7 @@ describe('e2e: a stop that settles under text typed in the composer', {
         await vi.waitFor(() => expect(run.reviewCalls()).toBe(2), RUN);
         expect(run.reviewPrompts()).toContain(WORDS);
       },
-      WORDS,
+      [WORDS],
     );
   });
 
@@ -266,6 +289,81 @@ describe('e2e: a stop that settles under text typed in the composer', {
       });
       expect(run.reviewCalls()).toBe(1);
       expect(screen()).toMatch(/▌ PLAN/);
+    });
+  });
+
+  it('keeps the sentence and the sheet closed when the stop fails, and the byline names the failure', async () => {
+    await whileReviewStops(
+      trustHome.home,
+      async ({ screen }, run) => {
+        const sessionId = readActive(run.target.projectDir);
+        if (sessionId === null) throw new Error('no active session');
+        const dir = sessionDir(run.target.projectDir, sessionId);
+        chmodSync(dir, 0o555);
+        try {
+          run.release();
+          await expect.poll(screen, PAINT).toMatch(/Stop failed|Retry stop/);
+          expect(screen()).not.toContain('Stop options');
+          expect(screen()).toContain('Stop failed · ');
+          expect(screen()).toContain(`› ${WORDS}`);
+        } finally {
+          chmodSync(dir, 0o755);
+        }
+      },
+      [WORDS],
+    );
+  });
+
+  it('shows both draft lines on their own rows under the parked session options', async () => {
+    await whileReviewStops(
+      trustHome.home,
+      async ({ screen, write }, run) => {
+        run.release();
+        await expect.poll(screen, PAINT).toContain(STOPPED);
+        write('\x0b');
+        await expect.poll(screen, PAINT).toContain('Type a command…');
+        write('stop');
+        await expect.poll(screen, PAINT).toMatch(/▌ \/stop/);
+        write(ENTER);
+        await expect.poll(screen, PAINT).toContain('Session options');
+        await expect.poll(screen, PAINT).toContain(TWO_LINE_DRAFT[1]);
+
+        const parked = screen();
+        expect(parked).toContain('Session options');
+        expect(parked).toContain('Resume');
+        expect(parked).toContain('End run');
+        expect(parked).toContain('Back to sessions');
+        expect(parked).toContain(STOP_SHEET_PARKED_LEGEND);
+        const rows = parked.split('\n').map((row) => row.trimEnd());
+        const first = rows.find((row) => row.includes(TWO_LINE_DRAFT[0])) ?? '';
+        const second = rows.find((row) => row.includes(TWO_LINE_DRAFT[1])) ?? '';
+        expect(first).toContain(`› ${TWO_LINE_DRAFT[0]}`);
+        expect(first).not.toContain(TWO_LINE_DRAFT[1]);
+        expect(second).toContain(TWO_LINE_DRAFT[1]);
+        expect(second).not.toContain(TWO_LINE_DRAFT[0]);
+      },
+      TWO_LINE_DRAFT,
+    );
+  });
+
+  it('marks a draft that cannot be saved with the failed mark', async () => {
+    await whileReviewStops(trustHome.home, async ({ screen, write, foregroundAt }, run) => {
+      const sessionId = readActive(run.target.projectDir);
+      if (sessionId === null) throw new Error('no active session');
+      const dir = sessionDir(run.target.projectDir, sessionId);
+      chmodSync(dir, 0o555);
+      try {
+        write('!');
+        const row = `${glyph('statusFailed', 'unicode')} Draft not saved`;
+        await expect.poll(screen, PAINT).toContain(row);
+        const mark = foregroundAt(row);
+        const firstLetter = foregroundAt(row, row.indexOf('Draft not saved'));
+        expect(mark).not.toEqual(firstLetter);
+        expect(mark).toEqual({ mode: 'rgb', color: SCREEN_THEME.error });
+        expect(firstLetter).toEqual({ mode: 'rgb', color: SCREEN_THEME.text });
+      } finally {
+        chmodSync(dir, 0o755);
+      }
     });
   });
 

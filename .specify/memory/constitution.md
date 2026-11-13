@@ -1,5 +1,15 @@
 <!--
 Sync Impact Report
+- Version change: 4.6.1 → 4.7.0. MINOR: Principle V sets no count for the project gate. The planner names the commands that the project's own scripts or CI run to verify a change, as many as the project needs.
+- Modified principles: V.
+- Updated sections: Governance.
+- Templates checked: plan-template.md, spec-template.md and tasks-template.md remain compatible. They name no project gate count.
+- Docs and skills: task contract, configuration, workflow, concepts, features, skills, the changelog and the generated skill gates references updated.
+- Follow-up TODOs: none.
+-->
+
+<!--
+Sync Impact Report
 - Version change: 4.6.0 → 4.6.1. PATCH: Principle V wording matches the brief gate. With `end`, each brief runs its own checks except `render` checks, a consult `verify` runs only the checks it names, and a fix brief also runs the failed checks it answers.
 - Modified principles: V.
 - Updated sections: Governance.
@@ -365,7 +375,7 @@ names, and a fix brief also runs the failed checks it answers. With `task`, each
 task MUST pass its own checks and its required
 due checks before its scheduled review. Before the final review every
 registered check runs, including renders. The planner MUST name the project
-gate in the plan: at most 6 commands that the project's own scripts or CI run
+gate in the plan: the commands that the project's own scripts or CI run
 to verify a change, shown on the plan card. With `validation.end_checks` on,
 SPLITBRIEF MUST run that gate as the reviewer checks before each final review,
 under the reviewer command policy: any installed program of any language,
@@ -577,6 +587,8 @@ chooses checks, and the user sees the gate on the plan card.
 The 4.6.0 amendment changes Principle V. The project gate runs once at the run
 base during the build, and a red reviewer check is compared with that result, so
 the base run leaves the review's critical path.
+The 4.7.0 amendment changes Principle V. The project gate holds the commands
+that the project's own scripts or CI run to verify a change, with no count.
 
 **Amendment procedure**:
 1. Propose changes via `/speckit.constitution` with rationale
@@ -593,4 +605,4 @@ MUST be documented in the plan.md Complexity Tracking table with:
 the violation, why it is needed, and why the simpler alternative
 was rejected.
 
-**Version**: 4.6.1 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-11-01
+**Version**: 4.7.0 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-11-12

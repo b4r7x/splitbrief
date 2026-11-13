@@ -6,7 +6,10 @@ import type {
   ProviderOverrides,
 } from './types.js';
 import type { DetectedModel, ProviderDetection } from '../../core/discovery/detection.js';
-import { API_PROVIDER_CATALOG } from '../../core/providers/api-provider-catalog.js';
+import {
+  API_PROVIDER_CATALOG,
+  LISTED_API_PROVIDER_IDS,
+} from '../../core/providers/api-provider-catalog.js';
 import type { ApiProviderId } from '../../core/providers/api-provider-catalog.js';
 import { getProvider } from './registry.js';
 import { CLI_PROBE_TIMEOUT_MS } from '../constants.js';
@@ -272,8 +275,8 @@ export async function detectProviderCatalogs(
 ): Promise<ProviderCatalogOutcome[]> {
   throwIfAborted(options.signal);
   const outcomes = await Promise.all(
-    Object.values(API_PROVIDER_CATALOG).map((descriptor) =>
-      detectProviderCatalog({ provider: descriptor.id, signal: options.signal }),
+    LISTED_API_PROVIDER_IDS.map((provider) =>
+      detectProviderCatalog({ provider, signal: options.signal }),
     ),
   );
   throwIfAborted(options.signal);

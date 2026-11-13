@@ -16,7 +16,10 @@ const ERROR_PATTERNS: Array<[RegExp | ((msg: string) => boolean), ErrorHint]> = 
   ],
   [
     /model.*not.found|model_not_found|does not exist|couldn't find model/i,
-    { message: 'Model not available', hint: 'Run `ollama pull MODEL` or check your provider.' },
+    {
+      message: 'Model not available',
+      hint: 'Check the model name of this seat, or pick another model.',
+    },
   ],
   [
     /context.length.exceeded|context_length_exceeded/i,

@@ -24,8 +24,8 @@ interface UseDraftSyncParams {
 }
 
 function applyComposerDocument(document: DraftDocument, actions: ComposerDraftActions): void {
-  actions.setDocument(document);
   actions.resetHistory();
+  actions.setDocument(document);
   actions.bumpEpoch();
 }
 

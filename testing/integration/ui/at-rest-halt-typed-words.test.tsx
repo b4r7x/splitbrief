@@ -133,7 +133,7 @@ describe('words typed on a run at rest for a chosen action that reads none', () 
       await vi.waitFor(() => {
         expect(feedbackStore.get()).toEqual({
           message: 'Cannot send words with Accept as is. Clear them.',
-          isError: true,
+          isError: false,
         });
       });
       await vi.waitFor(() => {

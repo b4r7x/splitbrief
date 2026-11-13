@@ -23,6 +23,7 @@ import { configError } from '../../core/config/errors.js';
 import type { Config } from '../../core/schemas/config.js';
 import { editsForSave } from './config-persistence.js';
 import { narrowRecord } from '../../utils/type-guards.js';
+import { installDiagnosticSink } from '../../lib/warn.js';
 
 // A load that throws an error no document on disk produces, such as one with a nested intro line.
 const loadFailure = vi.hoisted(() => ({ error: undefined as unknown }));
@@ -118,10 +119,7 @@ describe('configStore.load', () => {
     configStore.load(tmpDir);
     const config = loadedConfig();
     expect(expectCli(config.planner).tool).toBe('claude-code');
-    const implementer = expectApi(config.implementer);
-    expect(implementer.provider).toBe('ollama');
-    expect(implementer.model).toBe('qwen3-coder:30b');
-    expect(implementer.contextLength).toBeUndefined();
+    expect(config.implementer).toEqual({ kind: 'cli', tool: 'claude-code' });
   });
 
   it('seeds and saves explicit seats when no config file exists', async () => {
@@ -203,10 +201,11 @@ describe('configStore.load', () => {
     expect(config.implementer.model).toBe('qwen3-coder-30b');
   });
 
-  it('prints every retired-value notice once, the retired approve level included', () => {
+  it('keeps every retired-value notice once in its state, the retired approve level included, and prints none', () => {
     writeConfigYaml({
       workflow: { max_retries: 3, approve: 'all', mode: 'standard', task_review: 'none' },
     });
+    chmodSync(join(tmpDir, SPLITBRIEF_DIR, CONFIG_FILE), 0o600);
     const stderrChunks: string[] = [];
     vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
       stderrChunks.push(String(chunk));
@@ -215,18 +214,32 @@ describe('configStore.load', () => {
 
     configStore.load(tmpDir);
 
-    const retired = stderrChunks.filter((chunk) => chunk.includes('was retired'));
-    expect(retired).toHaveLength(5);
-    expect(retired.filter((chunk) => chunk.includes('workflow.approve "all"'))).toHaveLength(1);
-    expect(retired.filter((chunk) => chunk.includes('workflow.max_retries'))).toHaveLength(1);
-    expect(retired.filter((chunk) => chunk.includes('escalation was retired'))).toHaveLength(1);
+    expect(configStore.get().configWarnings).toEqual([
+      { kind: 'retired-value', notice: expect.stringContaining('workflow.mode was retired') },
+      {
+        kind: 'retired-value',
+        notice: expect.stringContaining('workflow.approve "all" was retired'),
+      },
+      {
+        kind: 'retired-value',
+        notice: expect.stringContaining('workflow.task_review was retired'),
+      },
+      {
+        kind: 'retired-value',
+        notice: expect.stringContaining('workflow.max_retries was retired'),
+      },
+      { kind: 'retired-value', notice: expect.stringContaining('escalation was retired') },
+    ]);
+    expect(stderrChunks).toEqual([]);
     vi.restoreAllMocks();
   });
 
-  itUnix('prints stable loader warnings once after resolveEffectiveConfig', () => {
-    writeConfigYaml();
-    const configPath = join(tmpDir, SPLITBRIEF_DIR, CONFIG_FILE);
-    chmodSync(configPath, 0o666);
+  itUnix('keeps the warnings of the load in its state and prints nothing', () => {
+    persistConfigYaml(tmpDir, {
+      planner: { kind: 'cli', tool: 'claude-code' },
+      implementer: UNSIZED_IMPLEMENTER,
+    });
+    chmodSync(join(tmpDir, SPLITBRIEF_DIR, CONFIG_FILE), 0o666);
     const stderrChunks: string[] = [];
     vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
       stderrChunks.push(String(chunk));
@@ -235,10 +248,44 @@ describe('configStore.load', () => {
 
     configStore.load(tmpDir);
 
-    const permissionWarnings = stderrChunks.filter((chunk) => chunk.includes('chmod 600'));
-    expect(permissionWarnings).toHaveLength(1);
+    expect(configStore.get().configWarnings).toEqual([{ kind: 'config-file-permissions' }]);
+    expect(stderrChunks).toEqual([]);
     vi.restoreAllMocks();
   });
+
+  it.each([
+    {
+      flags: { implementer: { apiBase: 'http://127.0.0.1:9/v1', model: 'm' } },
+      line: "--implementer-api-base is ignored: the implementer 'cli' runner does not use it.",
+    },
+    {
+      flags: { planner: { apiBase: 'http://127.0.0.1:9/v1' } },
+      line: "--planner-api-base is ignored: the planner 'cli' runner does not use it.",
+    },
+  ])(
+    'keeps an ignored flag of an interactive first run in its state and prints nothing: $line',
+    ({ flags, line }) => {
+      const stderrChunks: string[] = [];
+      vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+        stderrChunks.push(String(chunk));
+        return true;
+      });
+      const shown: string[] = [];
+
+      configStore.load(tmpDir, flags);
+      const { configWarnings } = configStore.get();
+      const release = installDiagnosticSink((message) => shown.push(message));
+      configStore.setInitialCrew(createDefaultConfig());
+      release();
+
+      expect(configWarnings).toEqual([
+        { kind: 'ignored-flag', notice: line, fix: 'Remove the flag from the command.' },
+      ]);
+      expect(shown).toEqual([]);
+      expect(stderrChunks).toEqual([]);
+      vi.restoreAllMocks();
+    },
+  );
 });
 
 describe('configStore.save', () => {

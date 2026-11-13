@@ -324,8 +324,32 @@ describe('usePickerActions fallback slot', () => {
     await currentActions().confirmProviderSelection('opus', 'low');
 
     expect(saveConfig).not.toHaveBeenCalled();
-    expect(feedbackStore.get().isError).toBe(true);
+    expect(feedbackStore.get().isError).toBe(false);
     expect(feedbackStore.get().message).toMatch(/^BUILD runs .*choose another tool or model$/);
+    expect(overlayStore.get().active).toBe('implementer-fallback-picker');
+    ui.unmount();
+  });
+
+  it('refuses "auto" as a custom model in the neutral voice', async () => {
+    pickerViewStore.open({ kind: 'custom-model' });
+    const configBefore = JSON.stringify(configStore.get().config);
+    const pickerBefore = JSON.stringify(pickerViewStore.get());
+
+    const ui = renderFeature(
+      <CustomModelProbe role="implementer" slot="fallback" toolId="codex" modelName="auto" />,
+    );
+    await flushEffects();
+    ui.stdin.write('\r');
+
+    await vi.waitFor(() => {
+      expect(feedbackStore.get().message).toBe(
+        '"auto" is already offered as the Auto row — select it there.',
+      );
+    });
+    expect(feedbackStore.get().isError).toBe(false);
+    expect(loadConfig(projectDir).revision).toBeNull();
+    expect(JSON.stringify(configStore.get().config)).toBe(configBefore);
+    expect(JSON.stringify(pickerViewStore.get())).toBe(pickerBefore);
     expect(overlayStore.get().active).toBe('implementer-fallback-picker');
     ui.unmount();
   });
@@ -648,7 +672,7 @@ describe('usePickerActions', () => {
     );
   });
 
-  it('says a seat saved in the final review lands after a fix brief or at the next run', async () => {
+  it('says a seat saved in the final review lands at the next review or fix brief', async () => {
     const briefs: Partial<RunBriefs> = {
       tasks: [{ id: 'T001', title: 'first', status: 'done' }],
       currentTask: 1,
@@ -656,7 +680,7 @@ describe('usePickerActions', () => {
     };
 
     expect(await saveBuildSeatUnderRun('final-review', briefs)).toBe(
-      `${CREW_SEAT_LABELS.build} seat changes after a fix brief or at the next run`,
+      `${CREW_SEAT_LABELS.build} seat changes at the next review or fix brief`,
     );
   });
 
@@ -800,8 +824,11 @@ describe('usePickerActions', () => {
     ui.stdin.write('\r');
 
     await vi.waitFor(() => {
-      expect(feedbackStore.get().isError).toBe(true);
+      expect(feedbackStore.get().message).toBe(
+        'inherited-custom belongs to the planner. Remove it from the planner.',
+      );
     });
+    expect(feedbackStore.get().isError).toBe(false);
     expect(configStore.get().config?.planner).toMatchObject({
       customModels: ['inherited-custom'],
     });
@@ -825,7 +852,7 @@ describe('usePickerActions', () => {
     });
     expect(feedbackStore.get()).toEqual({
       message: 'my-model belongs to the planner. Remove it from the planner.',
-      isError: true,
+      isError: false,
     });
     expect(configStore.get().config?.reviewer).toBe('none');
     expect(configStore.get().config?.planner).toMatchObject({ customModels: ['my-model'] });

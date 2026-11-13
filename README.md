@@ -99,12 +99,12 @@ npm install -g command-code       # Command Code (binary `cmd`)
 And an implementer — the weaker **model**. It reaches SPLITBRIEF by either transport, and SPLITBRIEF favours neither:
 
 - **A CLI tool running a smaller model.** Any of the tools above, pointed at a smaller model. The tool writes files itself, in an isolated directory.
-- **An API model.** A local Ollama, LM Studio or llama.cpp server — `ollama pull qwen3-coder:30b`, or a coding model loaded in LM Studio — or any OpenAI-compatible endpoint. The model returns file contents; SPLITBRIEF writes them.
+- **An API model.** Any OpenAI-compatible endpoint. The model returns file contents; SPLITBRIEF writes them.
 
 ```bash
 cd your-project
 splitbrief doctor      # check readiness without making changes or calling models
-splitbrief init        # checks installed CLI tools and reachable providers, then you pick both sides
+splitbrief init        # checks installed CLI tools, then you pick both sides
 splitbrief start "add user authentication with JWT"
 ```
 
@@ -125,9 +125,8 @@ After `splitbrief init` and the first `splitbrief start`, SPLITBRIEF creates a `
 
 Sessions are durable workflow records for resume, history, filtering/search, and artifact review. They are scoped to one workflow each — see [docs/VISION.md](./docs/VISION.md) for the full list of non-goals.
 
-If using Ollama, configure the model's real context window first (for example, set
-`num_ctx` in the model/template you run). To have SPLITBRIEF stop a brief that does
-not fit that window, set a Prompt budget:
+To have SPLITBRIEF stop a brief that does not fit your model's context window, set a
+Prompt budget:
 
 ```bash
 export SPLITBRIEF_CONTEXT_LENGTH=32768
@@ -187,11 +186,12 @@ planner:
 
 implementer:
   kind: api                  # or `kind: cli` with a `tool:`, to run a CLI tool on a smaller model
-  provider: ollama           # catalog ID, or any custom name
-  service: ollama            # write it out on every api runner
-  offering: local            # payg | free-quota | coding-subscription | local
-  model: qwen3-coder:30b
-  apiBase: http://localhost:11434/v1
+  provider: custom-endpoint  # a name of your own
+  service: custom-endpoint   # write it out on every api runner
+  offering: payg             # payg | free-quota | coding-subscription | local
+  model: your-implementer-model
+  apiBase: https://api.example.test/v1
+  apiKey: <paste-your-endpoint-key>
   contextLength: 32768
   temperature: 0.3           # accepted; SPLITBRIEF does not send it to the server
 
@@ -224,7 +224,7 @@ Ten planner backends — seven CLI tools, plus `api`, `shell`, and `agent`:
 | `shell` | shell | configurable | Any stdin/stdout command, see below |
 | `agent` | agent | configurable | Subprocess that writes files directly |
 
-Any CLI tool above is valid as `--planner <tool>` or `--reviewer <tool>`, for example `splitbrief start "add tests" --planner codex --implementer ollama`. The built-in local providers `ollama`, `lm-studio` and `llama-cpp` support PLAN, BUILD and REVIEW, each with its own endpoint and exact model ID. Start the server externally; SPLITBRIEF checks the configured connection.
+Any CLI tool above is valid as `--planner <tool>` or `--reviewer <tool>`, for example `splitbrief start "add tests" --planner claude-code --implementer codex`.
 
 #### Shell planner
 
@@ -257,17 +257,9 @@ The reviewer only reviews: planning, Task Brief compilation, and the consult sta
 
 Anything that speaks the OpenAI chat completions protocol works.
 
-**Built-in** (with default endpoints):
-
-| Provider | Default Base URL | API Key |
-|----------|-----------------|---------|
-| `ollama` | `http://localhost:11434/v1` | Not needed |
-| `lm-studio` | `http://localhost:1234/v1` | Not needed |
-| `llama-cpp` | `http://localhost:8080/v1` | Not needed |
-
 #### Custom providers
 
-Any string works as `provider` when you set `service`, `offering`, `apiBase`, and `apiKey`. Built-in provider IDs spell out the catalog's `service`/`offering` too, and a custom name picks its own:
+Any string works as `provider` when you set `service`, `offering`, `apiBase`, and `apiKey`:
 
 ```yaml
 implementer:
@@ -275,12 +267,12 @@ implementer:
   provider: custom-openai
   service: custom-openai
   offering: payg          # payg | free-quota | coding-subscription | local
-  model: Qwen/Qwen2.5-Coder-32B-Instruct
+  model: your-implementer-model
   apiBase: https://api.example-endpoint.com/v1
   apiKey: your-key
 ```
 
-All three built-ins are local and need no key by default; a secured loopback Ollama daemon accepts exactly `apiKey: env:OLLAMA_LOCAL_API_KEY`. Custom providers must set an inline `apiKey` — an `env:` reference is rejected there.
+Custom providers must set an inline `apiKey` — an `env:` reference is rejected there.
 
 #### CLI tool implementers
 
@@ -316,26 +308,9 @@ SPLITBRIEF loads model metadata from [models.dev](https://models.dev) first. Run
 - For `opencode` and `kilo-code`, prefer automatic selection — leave `model` unset and configure the real default model in the tool itself before launching SPLITBRIEF.
 - Dollar pricing is shown only for real API providers. CLI tools, subscriptions, and local backends are intentionally unpriced.
 
-### By VRAM
-
-| VRAM | Model | Context | Config |
-|------|-------|---------|--------|
-| 8 GB | Qwen 2.5 Coder 3B Q4 | 8K | `contextLength: 8192` |
-| 12 GB | Qwen 2.5 Coder 7B Q4 | 8-16K | `contextLength: 8192` |
-| 16 GB | Qwen 2.5 Coder 14B Q4 | 16-32K | `contextLength: 16384` |
-| 32 GB+ | Qwen3 Coder 30B Q4 | 32K+ | `contextLength: 32768` |
+### Small context windows
 
 When you set a Prompt budget and a file does not fit it, and the Task Brief names a target function, SPLITBRIEF switches from whole-file to function-level context — imports plus that function. If the brief names no function, the file is truncated in the middle instead. Small-context models can still modify large files this way, as long as the brief is specific about where the change goes. With Prompt budget `auto`, the file goes whole.
-
-### Local (free)
-
-| Model | Size (Q4) | Speed |
-|-------|-----------|-------|
-| Qwen 2.5 Coder 7B | ~5 GB | ~35-50 tok/s |
-| Qwen 2.5 Coder 14B | ~9 GB | ~30-40 tok/s |
-| Qwen3 Coder 30B | ~18 GB | ~18-25 tok/s |
-
-Sizes and speeds are indicative for a recent consumer GPU, not measurements taken by this project.
 
 ### API
 

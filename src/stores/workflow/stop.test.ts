@@ -1,6 +1,7 @@
 import { plainUserMessage } from '../../core/types/user-input.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { stopStore } from './stop.js';
+import * as stopModule from './stop.js';
+import { stopStore, type StopIntent, type StopPhase } from './stop.js';
 
 describe('stopStore', () => {
   beforeEach(() => {
@@ -84,4 +85,47 @@ describe('stopStore', () => {
     expect(resolve).not.toHaveBeenCalled();
     expect(stopStore.get().phase).toBe('requested');
   });
+});
+
+describe('stopInProgress', () => {
+  const INTENTS: readonly StopIntent[] = [
+    'none',
+    'stop-now',
+    'pause-after-brief',
+    'end-run',
+    'quit',
+  ];
+  const PHASES: readonly StopPhase[] = [
+    'idle',
+    'requested',
+    'terminating',
+    'forcing',
+    'settling',
+    'parked',
+    'ended',
+    'failed',
+  ];
+  const STOP_INTENTS: readonly StopIntent[] = ['stop-now', 'end-run', 'quit'];
+  const SETTLED_PHASES: readonly StopPhase[] = ['parked', 'ended', 'failed'];
+  const CASES: [string, StopIntent, StopPhase][] = INTENTS.flatMap((intent) =>
+    PHASES.map((phase): [string, StopIntent, StopPhase] => [`${intent} ${phase}`, intent, phase]),
+  );
+
+  it.each(CASES)(
+    'counts a stop as in progress until it parks, ends or fails: %s',
+    (_case, intent, phase) => {
+      const stopping = STOP_INTENTS.includes(intent) && !SETTLED_PHASES.includes(phase);
+
+      expect(stopModule.stopInProgress).toBeTypeOf('function');
+      expect(
+        stopModule.stopInProgress({
+          intent,
+          phase,
+          requestedAt: null,
+          parked: null,
+          seatChange: false,
+        }),
+      ).toBe(stopping);
+    },
+  );
 });

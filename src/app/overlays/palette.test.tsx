@@ -1,7 +1,13 @@
 import { queueCopy } from '../../features/workflow/queue-copy.js';
 import { phaseStage } from '../../core/rail-stages.js';
-import { beforeEach, afterEach, describe, it, expect } from 'vitest';
+import { beforeEach, afterEach, describe, it, expect, onTestFinished, vi } from 'vitest';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
+import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';
+import { resetAllStores } from '#testing/helpers/stores.js';
+import type { EngineEventOf } from '../../engine/events/types.js';
+import { addEvent } from '../../stores/workflow/actions/event.js';
+import { clearSessionScopedStores } from '../../features/workflow/session-stores.js';
+import { useRuntimeCommands } from '../command-context.js';
 import { Box } from 'ink';
 import { render } from 'ink-testing-library';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -87,6 +93,7 @@ function createTestCommands(): RuntimeCommandDef[] {
     scrollConversation: () => ({ status: 'scrolled' }),
     toggleLatestActivityBatch: () => ({ status: 'toggled', expanded: true }),
     toggleLatestDiff: () => ({ status: 'toggled', expanded: true }),
+    hasLatestDiff: () => true,
     listBriefs: () => [],
     toggleSidebar: () => ({ status: 'toggled', visible: true }),
     copyTarget: async () => 'empty',
@@ -140,6 +147,20 @@ function HomeUnderPalette({ commands }: { commands: RuntimeCommandDef[] }) {
         />
       )}
     </Box>
+  );
+}
+
+/** The palette fed by the commands the app builds, as the app root mounts it over the run screen. */
+function RunScreenPalette() {
+  const { commands, handleRuntimeCommand } = useRuntimeCommands({
+    exit: () => {},
+    phase: 'implementing',
+  });
+  return (
+    <CommandPaletteOverlay
+      commands={commands}
+      onRuntimeCommand={(raw) => handleRuntimeCommand(raw, 'workflow', 'row')}
+    />
   );
 }
 
@@ -949,6 +970,60 @@ describe('CommandPaletteOverlay', () => {
       expect(feedbackStore.get().isError, label).toBe(false);
       instance.unmount();
     }
+  });
+
+  async function openRunScreenPaletteOnDiff(done: EngineEventOf<'implementer_generate_done'>) {
+    onTestFinished(resetAllStores);
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    enterWorkflowScreen();
+    addEvent(done);
+    const instance = render(<RunScreenPalette />);
+    onTestFinished(instance.unmount);
+    await vi.waitFor(() => {
+      expect(promptLine(instance.lastFrame() ?? '')).not.toBe('');
+    });
+    await write(instance, 'diff');
+    await vi.waitFor(() => {
+      expect(promptLine(instance.lastFrame() ?? '')).toContain('diff');
+    });
+    return instance;
+  }
+
+  async function runScreenDiffRows(done: EngineEventOf<'implementer_generate_done'>) {
+    const instance = await openRunScreenPaletteOnDiff(done);
+    return commandRows(instance.lastFrame() ?? '');
+  }
+
+  it('offers no /diff on the run screen after a brief whose done row holds no diff', async () => {
+    const rows = await runScreenDiffRows(makeImplementerGenerate());
+
+    expect(rows.filter((row) => row.includes('/diff'))).toEqual([]);
+  });
+
+  it('offers /diff on the run screen after a brief whose done row holds a diff', async () => {
+    const rows = await runScreenDiffRows(
+      makeImplementerGenerate({ diff: '+ export const total = 1;' }),
+    );
+
+    expect(rows.some((row) => row.includes('/diff'))).toBe(true);
+  });
+
+  it('adds /diff to the open palette when a done row with a diff arrives, and takes it out when a new run clears the transcript', async () => {
+    const instance = await openRunScreenPaletteOnDiff(makeImplementerGenerate());
+    const diffRows = () =>
+      commandRows(instance.lastFrame() ?? '').filter((row) => row.includes('/diff'));
+    expect(diffRows()).toEqual([]);
+
+    addEvent(makeImplementerGenerate({ diff: '+ export const total = 1;' }));
+    await vi.waitFor(() => {
+      expect(diffRows()).toHaveLength(1);
+    });
+
+    clearSessionScopedStores();
+    await vi.waitFor(() => {
+      expect(diffRows()).toEqual([]);
+    });
+    expect(promptLine(instance.lastFrame() ?? '')).toContain('diff');
   });
 
   it('gives a long session title the full row instead of the command-name column', async () => {

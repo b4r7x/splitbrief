@@ -337,7 +337,7 @@ describe('WorkflowFooter', () => {
     ui.unmount();
   });
 
-  it('preserves the draft when ctrl+enter is rejected during stopping', async () => {
+  it('preserves the draft when ctrl+enter is rejected during stopping, in the neutral voice', async () => {
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'running' });
     stopStore.__testReset({ intent: 'stop-now', phase: 'terminating' });
@@ -349,7 +349,10 @@ describe('WorkflowFooter', () => {
     ui.stdin.write('\x1b[13;5u');
     await flushEffects();
 
-    expect(feedbackStore.get().message).toBe('Finish stopping before steering.');
+    expect(feedbackStore.get()).toEqual({
+      message: 'Finish stopping before steering.',
+      isError: false,
+    });
     expect(ui.lastFrame()).toContain('keep every word');
     expect(queued).toEqual([]);
     ui.unmount();

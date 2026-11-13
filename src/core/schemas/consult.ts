@@ -21,7 +21,7 @@ const RewriteTaskActionSchema = z.object({
 const SplitTaskActionSchema = z.object({
   ...diagnosis,
   action: z.literal('split-task'),
-  tasks: z.array(TaskSpecSchema).min(2).max(4),
+  tasks: z.array(TaskSpecSchema).min(2),
 });
 
 const VerifyActionSchema = z.object({

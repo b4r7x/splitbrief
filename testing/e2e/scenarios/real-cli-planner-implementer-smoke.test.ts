@@ -72,6 +72,7 @@ describe('real CLI smoke: planner to implementer', () => {
           projectDir,
           feature,
           effectiveConfig: config,
+          configWarnings: [],
           policy: {
             purpose: 'new-workflow',
             interaction: 'headless',

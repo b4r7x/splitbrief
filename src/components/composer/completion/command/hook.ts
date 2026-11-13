@@ -17,7 +17,7 @@ import {
   isOpenRunAtRest,
   routerStore,
 } from '../../../../stores/navigation/router.js';
-import { inputHistoryStore } from '../../../../stores/ui/input-history.js';
+import { composerLiveStore } from '../../../../stores/ui/composer-live.js';
 import { runViewStore } from '../../../../stores/workflow/run-view.js';
 import type { CommandCompletionRow } from './menu.js';
 import { useCompletionSelection } from '../use-completion-selection.js';
@@ -82,6 +82,8 @@ export function useCommandCompletion({
 }: UseCommandCompletionOptions): UseCommandCompletionResult {
   const phase = runViewStore.use((s) => s.phase);
   const config = configStore.use((s) => s.config);
+  const draft = composerLiveStore.use((s) => s.document);
+  const draftHasImage = draft.parts.some((part) => part.kind === 'image');
   const openRunAtRest = routerStore.use(isOpenRunAtRest);
   const applyUnfinished = routerStore.use(isApplyUnfinishedAtRest);
   const guardContext: CommandGuardContext = {
@@ -133,7 +135,8 @@ export function useCommandCompletion({
         )
       : null;
   const argRows = argOptions !== null && argOptions.length > 0 ? argOptions : null;
-  const showSuggestions = commandMode && !suppressed && !disabled && (!hasArgs || argRows !== null);
+  const showSuggestions =
+    commandMode && !suppressed && !disabled && !draftHasImage && (!hasArgs || argRows !== null);
   const argPrefix = argRows === null ? null : `${commandToken} ${argHead}`;
   const matchQuery = argRows === null ? query : argToken.toLowerCase();
   const filtered = showSuggestions
@@ -187,7 +190,6 @@ export function useCommandCompletion({
       // A highlighted command runs; otherwise submit the raw slash line so the dispatcher decides
       // (unknown-command feedback, fuzzy suggestion) instead of silently running the fuzzy guess.
       const command = selected ? `${l.argPrefix ?? ''}${selected.name}` : l.value;
-      inputHistoryStore.push(command);
       setValue('');
       onRuntimeCommand(command);
     },

@@ -35,6 +35,7 @@ import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { inputHistoryStore } from '../../stores/ui/input-history.js';
+import { createDraftDocument } from '../../core/composer/document.js';
 import { composerDraftStore } from '../../stores/ui/composer-draft.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
@@ -2120,7 +2121,9 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
 
   it('plain Up still recalls input history instead of focusing the list', async () => {
     seedSessions(3);
-    inputHistoryStore.push('recalled prompt');
+    inputHistoryStore.pushDocumentSubmission(createDraftDocument('recalled prompt'), {
+      currentScreen: 'home',
+    });
 
     const ui = renderHome();
     await flushEffects();
@@ -2163,10 +2166,14 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
 
   const RETIRED_MODE =
     '⚠ workflow.mode was retired and is ignored: every run plans in one session. Delete workflow.mode.';
+  const UNUSED_TEMPERATURE =
+    'The planner temperature setting is not used: Codex CLI takes no temperature';
+  const UNUSED_VARIANT =
+    'The planner variant setting is not used: Codex CLI has no variant channel';
   const STARTUP_WARNINGS: Record<number, string> = {
-    2: `2 warnings, all shown when you quit · ${RETIRED_MODE}`,
-    3: `3 warnings, all shown when you quit · ${RETIRED_MODE} · ⚠ Skipping session directory 'old runs': invalid session id`,
-    4: `3 warnings, all shown when you quit · ${RETIRED_MODE} · ${RETIRED_MODE}`,
+    2: RETIRED_MODE,
+    3: `${RETIRED_MODE} · ${UNUSED_TEMPERATURE}`,
+    4: `${RETIRED_MODE} · ${UNUSED_TEMPERATURE} · ${UNUSED_VARIANT}`,
   };
 
   async function renderColdCheckUnder(message: string, sessions: number) {

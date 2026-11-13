@@ -3485,10 +3485,13 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
     id: 'workflow-at-rest-crashed-review-check',
     route: { record: CRASHED_REVIEW_CHECK, log: CRASHED_REVIEW_CHECK_LOG },
   }),
-  atRestProjection({
-    id: 'workflow-at-rest-left-isolation',
-    route: { record: AT_REST_LEFT_ISOLATION, log: LEFT_ISOLATION_LOG },
-  }),
+  {
+    ...atRestProjection({
+      id: 'workflow-at-rest-left-isolation',
+      route: { record: AT_REST_LEFT_ISOLATION, log: LEFT_ISOLATION_LOG },
+    }),
+    config: { implementer: LEFT_ISOLATION_IMPLEMENTER },
+  },
   atRestProjection({
     id: 'workflow-at-rest-question',
     route: { record: AT_REST_QUESTION, log: AT_REST_QUESTION_LOG },

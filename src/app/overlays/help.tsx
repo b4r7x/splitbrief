@@ -16,7 +16,7 @@ import {
 import type { Screen } from '../../core/navigation/types.js';
 import { plannerSupportsImages } from '../../engine/providers/capabilities.js';
 import { COMMAND_CATEGORIES, COMMAND_CATEGORY_LABELS } from '../../core/runtime/commands/types.js';
-import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
+import type { CommandGuardContext, RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import {
   isApplyUnfinishedAtRest,
@@ -90,19 +90,28 @@ export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
   const openRunAtRest = routerStore.use(isOpenRunAtRest);
   const applyUnfinished = routerStore.use(isApplyUnfinishedAtRest);
 
+  const guardContext: CommandGuardContext = {
+    phase,
+    plannerSupportsImages: plannerSupportsImages(config, modelCacheStore),
+    openRunAtRest,
+    applyUnfinished,
+    applying: activeApply() !== undefined,
+  };
   const commandItems = buildCommandItems({
     commands,
     screen: currentScreen,
     onRuntimeCommand: () => {},
-    guardContext: {
-      phase,
-      plannerSupportsImages: plannerSupportsImages(config, modelCacheStore),
-      openRunAtRest,
-      applyUnfinished,
-      applying: activeApply() !== undefined,
-    },
+    guardContext,
   });
-  const shortcuts = getShortcutsForScreen(currentScreen, { inputMode });
+  // A key that runs a command is taught only while the guard of that command lets it run.
+  const blockedKeys = new Set(
+    commands
+      .filter((command) => command.guard?.(guardContext) !== undefined)
+      .map((command) => command.shortcut),
+  );
+  const shortcuts = getShortcutsForScreen(currentScreen, { inputMode }).filter(
+    (shortcut) => !blockedKeys.has(shortcut.key),
+  );
 
   const helpRows: HelpRow[] = [
     ...COMMAND_CATEGORIES.flatMap((category) =>

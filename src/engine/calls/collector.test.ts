@@ -392,6 +392,7 @@ describe('collectRunnerCallResult', () => {
       expect.objectContaining({
         code: 'unknown_upstream',
         source: 'jsonl',
+        surface: 'debug',
         parser: 'jsonl',
         upstreamType: 'mystery',
         channel: 'stdout',
@@ -399,6 +400,42 @@ describe('collectRunnerCallResult', () => {
       }),
     );
     expect(JSON.stringify(result)).not.toContain('abcdefghijklmnopqrstuvwxyz');
+  });
+
+  it('keeps an unknown upstream record in the call record on the debug surface', () => {
+    const result = collectRunnerCallResult([
+      { type: 'call_started', ...base },
+      {
+        type: 'call_unknown_upstream',
+        ...base,
+        rawPreview: 'unrecognized record',
+        backendMetadata: {
+          backendKind: 'cli',
+          source: 'jsonl',
+          parser: 'jsonl',
+          channel: 'stdout',
+          upstreamType: 'future',
+        },
+      },
+      {
+        type: 'call_completed',
+        ...base,
+        status: 'completed',
+        ...completedTerminal,
+      },
+    ]);
+
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]).toMatchObject({
+      code: 'unknown_upstream',
+      severity: 'warning',
+      source: 'jsonl',
+      surface: 'debug',
+      parser: 'jsonl',
+      upstreamType: 'future',
+      channel: 'stdout',
+      message: 'unrecognized record',
+    });
   });
 
   it('bounds explicit warnings to the schema message limit', () => {

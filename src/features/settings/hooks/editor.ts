@@ -29,6 +29,7 @@ interface UseSettingsEditorParams {
   onActivateFallback: (item: FallbackSettingsItem) => void;
   pageSize: PageSize<SettingsItem>;
   canActOnIndex: (filtered: SettingsItem[], index: number) => boolean;
+  showDescription: boolean;
 }
 
 interface SettingsEditorState {
@@ -58,10 +59,10 @@ function getCurrentConfig(): Config {
   return current;
 }
 
-/** A read-only row refuses its key and names why, so the reason shows where the help does not. */
-function refuseLocked(def: SettingDef, config: Config): boolean {
+/** A read-only row refuses its key and names why only where the help does not show it. */
+function refuseLocked(def: SettingDef, config: Config, showDescription: boolean): boolean {
   const reason = def.lockedBy?.(config);
-  if (reason !== undefined) feedbackStore.setTransientError(reason);
+  if (reason !== undefined && !showDescription) feedbackStore.setTransientError(reason);
   return reason !== undefined;
 }
 
@@ -103,6 +104,7 @@ export function useSettingsEditor({
   onActivateFallback,
   pageSize,
   canActOnIndex,
+  showDescription,
 }: UseSettingsEditorParams): SettingsEditorState {
   const getValue = (def: SettingDef, source = config): unknown =>
     def.readValue ? def.readValue(source) : getConfigValue(source, def.id);
@@ -116,7 +118,7 @@ export function useSettingsEditor({
   const toggleSetting = (def: SettingDef) => {
     enqueueSave(async () => {
       const currentConfig = getCurrentConfig();
-      if (refuseLocked(def, currentConfig)) return;
+      if (refuseLocked(def, currentConfig, showDescription)) return;
       if (def.kind === 'boolean') {
         await saveSetting(def, !getValue(def, currentConfig));
       } else if (def.kind === 'enum' && def.options) {
@@ -143,7 +145,7 @@ export function useSettingsEditor({
       return;
     }
     const def = item.def;
-    if (refuseLocked(def, config)) return;
+    if (refuseLocked(def, config, showDescription)) return;
     if (def.kind === 'string' || def.kind === 'number') {
       const current = getValue(def);
       editor.startEditing(def.id, current != null ? String(current) : '');

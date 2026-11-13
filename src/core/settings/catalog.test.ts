@@ -3,9 +3,24 @@ import { SETTINGS_DEFS, SETTINGS_SECTIONS } from './catalog.js';
 import { createDefaultConfig } from '../config/load/defaults.js';
 import { getConfigValue } from '../config/accessors/values.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import type { Config } from '../schemas/config.js';
+
+// The default config with an API implementer, so the rows that only an API seat shows have a value.
+const apiConfig: Config = {
+  ...createDefaultConfig(),
+  implementer: {
+    kind: 'api',
+    provider: 'ollama',
+    service: 'ollama',
+    offering: 'local',
+    model: 'qwen3-coder:30b',
+    apiBase: 'http://localhost:11434/v1',
+    temperature: 0.3,
+  },
+};
 
 // Settings whose dot-path is structurally valid but intentionally has no default
-// value. They read as `undefined` on a fresh config, so a non-undefined assertion
+// value. They read as `undefined` on `apiConfig`, so a non-undefined assertion
 // would spuriously fail. A typo'd id would not be in this set and still fail below.
 const OPTIONAL_WITHOUT_DEFAULT = new Set([
   'implementer.contextLength',
@@ -14,13 +29,11 @@ const OPTIONAL_WITHOUT_DEFAULT = new Set([
 ]);
 
 describe('SETTINGS_DEFS id resolution', () => {
-  const config = createDefaultConfig();
-
   for (const def of SETTINGS_DEFS) {
     if (def.readValue) continue;
     if (OPTIONAL_WITHOUT_DEFAULT.has(def.id)) continue;
     it(`resolves "${def.id}" via getConfigValue`, () => {
-      expect(getConfigValue(config, def.id)).not.toBeUndefined();
+      expect(getConfigValue(apiConfig, def.id)).not.toBeUndefined();
     });
   }
 });
@@ -64,7 +77,7 @@ describe('SETTINGS_DEFS applicability', () => {
       implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet' },
     });
     const cliDefs = SETTINGS_DEFS.filter((def) => def.appliesTo?.(cliConfig) ?? true);
-    const apiDefs = SETTINGS_DEFS.filter((def) => def.appliesTo?.(createDefaultConfig()) ?? true);
+    const apiDefs = SETTINGS_DEFS.filter((def) => def.appliesTo?.(apiConfig) ?? true);
 
     expect(apiDefs.some((def) => def.id === 'implementer.temperature')).toBe(true);
     expect(apiDefs.some((def) => def.id === 'implementer.timeout')).toBe(true);
@@ -80,7 +93,7 @@ describe('SETTINGS_DEFS applicability', () => {
     const [contextDef] = contextDefs;
 
     expect(contextDefs).toHaveLength(1);
-    expect(contextDef?.readLabel?.(createDefaultConfig())).toBe('Context length');
+    expect(contextDef?.readLabel?.(apiConfig)).toBe('Context length');
     expect(contextDef?.readLabel?.(cliConfig)).toBe('Prompt budget');
   });
 });
@@ -125,7 +138,7 @@ describe('SETTINGS_DEFS isolation', () => {
       'cli',
       makeConfig({ implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet' } }),
     ],
-    ['api', createDefaultConfig()],
+    ['api', apiConfig],
   ])('shows the isolation row as a choice for a %s build seat', (_kind, config) => {
     expect(isolation?.appliesTo?.(config) ?? true).toBe(true);
     expect(isolation?.kind).toBe('enum');

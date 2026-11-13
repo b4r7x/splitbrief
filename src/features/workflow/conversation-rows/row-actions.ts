@@ -10,7 +10,11 @@ import { buildActivityBatchViewModel } from './activity-batch-model.js';
 import { implementerFailureCard, eventRowBlock, recoveryRowBlock } from './event-rows/dispatch.js';
 import { runnerActivityBatchRowBlock } from './activity-rows.js';
 import { checkGroupKey, checkGroupRowBlock } from './check-group-rows.js';
-import { walkTranscript, type RunnerActivityBatch } from './transcript-walk.js';
+import {
+  walkTranscript,
+  type RunnerActivityBatch,
+  type TranscriptWalkStep,
+} from './transcript-walk.js';
 
 const MIN_ROW_WIDTH = 1;
 
@@ -23,6 +27,27 @@ export function findLatestConversationRowAction(
   type: ConversationRowAction['type'],
 ): ConversationRowAction | null {
   return [...actions.values()].findLast((action) => action.type === type) ?? null;
+}
+
+// The key of the diff toggle that a transcript step takes, or null: a Recovery row with
+// diagnostics, a done brief with a diff, or a failure card whose cause was cut. The row actions and
+// the row model both ask it, so a row that takes the toggle and the latest toggle key agree.
+export function diffToggleKey(
+  step: Extract<TranscriptWalkStep, { kind: 'recovery' | 'event' }>,
+  width: number,
+): string | null {
+  if (step.kind === 'recovery') {
+    const { recovery } = step;
+    return recovery.prompted !== undefined && (recovery.diagnostics?.length ?? 0) > 0
+      ? diffEventKey(recovery.prompted, recovery.firstIndex)
+      : null;
+  }
+  const { event, globalIndex } = step;
+  const expandable =
+    (event.type === 'implementer_generate_done' && (event.diff ?? '') !== '') ||
+    (event.type === 'implementer_generate_failed' &&
+      implementerFailureCard(event, width, false).expandable);
+  return expandable ? diffEventKey(event, globalIndex) : null;
 }
 
 // Maps each actionable transcript row key to its expand/collapse action so a click on the row can
@@ -76,13 +101,12 @@ export function buildConversationRowActions(
       registerFoldRows(block, block.key);
       continue;
     }
+    const key = diffToggleKey(step, ctx.width);
     if (step.kind === 'recovery') {
-      const { recovery } = step;
-      if (recovery.prompted !== undefined && (recovery.diagnostics?.length ?? 0) > 0) {
-        const key = diffEventKey(recovery.prompted, recovery.firstIndex);
+      if (key !== null) {
         const block = recoveryRowBlock(
-          `event-${recovery.firstIndex}-recovery`,
-          recovery,
+          `event-${step.recovery.firstIndex}-recovery`,
+          step.recovery,
           ctx.width,
           inputs.expandedDiffs.has(key),
         );
@@ -94,16 +118,10 @@ export function buildConversationRowActions(
       }
       continue;
     }
-    const { event, globalIndex } = step;
-    const expandable =
-      (event.type === 'implementer_generate_done' && (event.diff ?? '') !== '') ||
-      (event.type === 'implementer_generate_failed' &&
-        implementerFailureCard(event, ctx.width, false).expandable);
-    if (expandable) {
-      const key = diffEventKey(event, globalIndex);
+    if (key !== null) {
       const block = eventRowBlock({
-        event,
-        globalIndex,
+        event: step.event,
+        globalIndex: step.globalIndex,
         ctx,
         expanded: inputs.expandedDiffs.has(key),
         settledSection: step.settledSection,

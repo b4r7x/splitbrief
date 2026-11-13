@@ -44,7 +44,7 @@ import {
   noVisionFeedbackMessage,
 } from './home-hint.js';
 import { useProjectFiles } from './use-project-files.js';
-import { trimDraftDocument, usePasteDrafts } from './use-paste-drafts.js';
+import { isBlankDraft, trimDraftDocument, usePasteDrafts } from './use-paste-drafts.js';
 import {
   computeComposerHintBudget,
   computeComposerInputColumns,
@@ -259,6 +259,7 @@ function ComposerInput({
       if (sessionRef !== null) saveSessionDraft(sessionRef, document);
       else if (currentScreen === 'home') saveHomeDraft(projectDir, document);
     },
+    onDraftBack: () => holdMenus(),
   });
   useEffect(
     () => () => {
@@ -298,7 +299,6 @@ function ComposerInput({
 
   const handleChange = (_value: string, edit: InputEdit) => {
     onReviewInteraction?.();
-    noteEdit();
     for (const paste of pasteQueueRef.current) {
       if (edit.start < paste.at) {
         paste.at =
@@ -311,6 +311,8 @@ function ComposerInput({
       if (edit.caret >= edit.end) setCaretSeed({ epoch: inputEpoch + 1, index: 0 });
       bumpEpoch();
     }
+    // Last, so the lists open over a draft that this edit brought back, as after any edit.
+    noteEdit();
   };
   const setText = (next: string) => {
     for (const paste of pasteQueueRef.current) paste.request.controller.abort();
@@ -334,13 +336,19 @@ function ComposerInput({
   });
   const projectFiles = useProjectFiles(projectDir, listProjectFiles);
 
+  // The one exit of a command, typed or run from the list; `send` is the one exit of a text.
+  const runCommand = (line: string): void => {
+    inputHistoryStore.pushDocumentSubmission(createDraftDocument(line), { currentScreen });
+    onRuntimeCommand(line);
+  };
+
   // A command runs from an answer too, so its list opens there.
   const command = useCommandCompletion({
     commands,
     currentScreen,
     value: mode === 'review' ? '' : view.text,
     setValue: setText,
-    onRuntimeCommand,
+    onRuntimeCommand: runCommand,
     disabled,
     suppressed: menusHeld,
   });
@@ -362,13 +370,13 @@ function ComposerInput({
   const canAttachImage = (): boolean => {
     if (!supportsImages) {
       if (config === null) {
-        feedbackStore.setError(
+        feedbackStore.setMessage(
           'Cannot attach image: the planner cannot see images. Choose a vision model with /crew plan.',
         );
         return false;
       }
       const displayName = resolveSeatDisplayName(config.planner, 'planner', modelCacheStore);
-      feedbackStore.setError(
+      feedbackStore.setMessage(
         noVisionFeedbackMessage(formatSeatIdentity({ seat: config.planner, displayName })),
       );
       return false;
@@ -507,11 +515,7 @@ function ComposerInput({
 
   // One send path for every mode: the serializer decides what the runner reads, and the images it
   // validated are the ones parked for the call. Only the gates in front of it differ.
-  const send = (
-    candidate: DraftDocument,
-    record: boolean,
-    deliverNow?: ComposerProps['onSendNow'],
-  ): boolean => {
+  const send = (candidate: DraftDocument, deliverNow?: ComposerProps['onSendNow']): boolean => {
     // Submitted text crosses this boundary exactly once, so this is where typing residue comes
     // off; the draft itself keeps what was typed, whitespace included.
     const submission = prepareDraftSubmission(trimDraftDocument(candidate), {
@@ -539,7 +543,7 @@ function ComposerInput({
       }
     }
     submittedImageIdsRef.current = submission.message.images.map((image) => image.id);
-    if (record) inputHistoryStore.pushDocumentSubmission(submission.document, { currentScreen });
+    inputHistoryStore.pushDocumentSubmission(submission.document, { currentScreen });
     if (deliverNow === undefined) onSubmit?.(submission);
     return true;
   };
@@ -555,22 +559,29 @@ function ComposerInput({
     const trimmed = trimDraftDocument(document);
     // A command runs in every mode: typed under a question or a recovery menu, it is never the answer.
     if (isCommandDraft(trimmed)) {
-      inputHistoryStore.pushDocumentSubmission(trimmed, { currentScreen });
+      if (trimmed.parts.some((part) => part.kind === 'image')) {
+        feedbackStore.setMessage(
+          onSendNow === undefined
+            ? 'A command sends no image. Remove the image.'
+            : 'A command sends no image. Remove the command, then press ctrl+⏎.',
+        );
+        return;
+      }
       clearDraft();
-      onRuntimeCommand(draftDocumentText(trimmed));
+      runCommand(draftDocumentText(trimmed));
       return;
     }
 
     if (mode !== 'normal') {
-      if (emptyAnswerNotice !== undefined && trimmed.parts.length === 0) {
-        feedbackStore.setError(emptyAnswerNotice);
+      if (emptyAnswerNotice !== undefined && isBlankDraft(document)) {
+        feedbackStore.setMessage(emptyAnswerNotice);
         return;
       }
-      if (send(document, false) && !submitKeepsDraft) clearDraft();
+      if (send(document) && !submitKeepsDraft) clearDraft();
       return;
     }
 
-    if (trimmed.parts.length === 0) {
+    if (isBlankDraft(document)) {
       if (deliverNow === undefined) onEmptySubmit?.();
       return;
     }
@@ -580,7 +591,7 @@ function ComposerInput({
       return;
     }
 
-    if (send(document, true, deliverNow) && !submitKeepsDraft) clearDraft();
+    if (send(document, deliverNow) && !submitKeepsDraft) clearDraft();
   };
 
   const textDraftEmpty = draftLength(document) === 0;

@@ -16,27 +16,40 @@ describe('PlanAnswerSchema', () => {
     expect(PlanAnswerSchema.parse(JSON.parse(JSON.stringify(plan)))).toEqual(plan);
   });
 
-  it('refuses a task id outside TNNN, a task with no suggested file and a fourth question', () => {
+  it('refuses a task id outside TNNN and a task with no suggested file', () => {
     const plan = makePlanProposal();
     const badId = { result: { ...plan, tasks: [{ ...plan.tasks[0], id: 'task-1' }] } };
     expect(PlanAnswerSchema.safeParse(badId).success).toBe(false);
     const noFile = { result: { ...plan, tasks: [{ ...plan.tasks[0], suggestedFiles: [] }] } };
     expect(PlanAnswerSchema.safeParse(noFile).success).toBe(false);
-    const question = { id: 'Q', text: 'Q?', choices: null, default: 'yes' };
-    const four = { result: { kind: 'questions', questions: Array(4).fill(question) } };
-    expect(PlanAnswerSchema.safeParse(four).success).toBe(false);
   });
 
-  it('refuses a gate with more than six commands', () => {
-    const plan = makePlanProposal();
-    const gate = (count: number) =>
-      Array.from({ length: count }, (_, i) => `npm run gate-${i + 1}`);
-    const six = { result: { ...plan, gate: gate(6) } };
-    expect(PlanAnswerSchema.safeParse(six).success).toBe(true);
+  it('parses a round of 4 questions', () => {
+    const questions = Array.from({ length: 4 }, (_, i) => ({
+      id: `Q${i + 1}`,
+      text: `Question ${i + 1}?`,
+      choices: null,
+      default: 'yes',
+    }));
+    const parsed = PlanAnswerSchema.safeParse({ result: { kind: 'questions', questions } });
+    expect(parsed.error?.issues).toBeUndefined();
+    expect(parsed.data?.result).toEqual({ kind: 'questions', questions });
+  });
 
-    const parsed = PlanAnswerSchema.safeParse({ result: { ...plan, gate: gate(7) } });
-    expect(parsed.success).toBe(false);
-    expect(parsed.error?.issues[0]?.path).toEqual(['result', 'gate']);
+  it('parses a gate of 7 commands and keeps its 7 entries in order', () => {
+    const gate = Array.from({ length: 7 }, (_, i) => `npm run gate-${i + 1}`);
+    const parsed = PlanAnswerSchema.safeParse({ result: makePlanProposal({ gate }) });
+    expect(parsed.error?.issues).toBeUndefined();
+    expect(parsed.data?.result).toMatchObject({ kind: 'plan', gate });
+  });
+
+  it('refuses a gate with an empty entry and a round with no question', () => {
+    const emptyEntry = PlanAnswerSchema.safeParse({
+      result: makePlanProposal({ gate: ['npm test', ''] }),
+    });
+    expect(emptyEntry.error?.issues[0]?.path).toEqual(['result', 'gate', 1]);
+    const noQuestion = PlanAnswerSchema.safeParse({ result: { kind: 'questions', questions: [] } });
+    expect(noQuestion.error?.issues[0]?.path).toEqual(['result', 'questions']);
   });
 
   it('spells every task path as the write gate spells a changed file', () => {

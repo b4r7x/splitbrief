@@ -1,6 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
+import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import type { EngineEventOf } from '../../engine/events/types.js';
+import { addEvent } from '../../stores/workflow/actions/event.js';
+import { useRuntimeCommands } from '../command-context.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { controlsStore } from '../../stores/ui/controls.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
@@ -22,6 +26,17 @@ function command(name: string, validScreens: Screen[]): RuntimeCommandDef {
     validScreens,
     handler: () => {},
   };
+}
+
+/** The help of the run screen with the `/diff` command that the app builds. */
+function RunScreenDiffHelp() {
+  const { commands } = useRuntimeCommands({ exit: () => {}, phase: 'implementing' });
+  return (
+    <HelpOverlay
+      currentScreen="workflow"
+      commands={commands.filter((command) => command.name === '/diff')}
+    />
+  );
 }
 
 // The panel is the only thing the overlay draws, so its framed silhouette is the span between the
@@ -81,6 +96,32 @@ describe('HelpOverlay', () => {
     await tick(20);
     expect(allowed.lastFrame() ?? '').toContain('/guarded');
     allowed.unmount();
+  });
+
+  async function runScreenDiffHelp(done: EngineEventOf<'implementer_generate_done'>) {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    addEvent(done);
+    const ui = renderFeature(<RunScreenDiffHelp />);
+    onTestFinished(ui.unmount);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('Keyboard shortcuts');
+    });
+    return ui.lastFrame() ?? '';
+  }
+
+  it('shows neither the /diff row nor the ctrl+d key after a brief whose done row holds no diff', async () => {
+    const frame = await runScreenDiffHelp(makeImplementerGenerate());
+
+    expect(frame.split('\n').filter((line) => /\/diff|ctrl\+d/.test(line))).toEqual([]);
+  });
+
+  it('shows the /diff row and the ctrl+d key after a brief whose done row holds a diff', async () => {
+    const frame = await runScreenDiffHelp(
+      makeImplementerGenerate({ diff: '+ export const total = 1;' }),
+    );
+
+    expect(frame).toContain('/diff');
+    expect(frame).toMatch(/ctrl\+d\s+Toggle diff/);
   });
 
   it('renders the same number of rows whether the document fits or overflows', async () => {

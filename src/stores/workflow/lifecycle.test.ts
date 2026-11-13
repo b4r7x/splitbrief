@@ -698,6 +698,162 @@ describe('runner call stall', () => {
   });
 });
 
+describe('seat retry', () => {
+  beforeEach(() => resetWorkflow());
+
+  it('holds the retry after seat_retry', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+    expect(lifecycleStore.get().retry).toBeNull();
+
+    addEvent({
+      type: 'seat_retry',
+      ts: 2_000,
+      phase: 'implementing',
+      seat: 'build',
+      attempt: 1,
+      delayMs: 1_000,
+    });
+
+    expect(lifecycleStore.get().retry).toEqual({ attempt: 1, delayMs: 1_000 });
+  });
+
+  it('clears the retry when the next call starts', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+    addEvent({
+      type: 'seat_retry',
+      ts: 2_000,
+      phase: 'implementing',
+      seat: 'build',
+      attempt: 1,
+      delayMs: 1_000,
+    });
+
+    addEvent(makeRunnerCallStarted({ ts: 3_000 }));
+
+    expect(runViewStore.get().phase).toBe('implementing');
+    expect(lifecycleStore.get().retry).toBeNull();
+  });
+
+  it('clears the retry on a phase change', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+    addEvent({
+      type: 'seat_retry',
+      ts: 2_000,
+      phase: 'implementing',
+      seat: 'build',
+      attempt: 2,
+      delayMs: 4_000,
+    });
+
+    addEvent(makePlannerStatus({ phase: 'validating-task', ts: 3_000 }));
+
+    expect(runViewStore.get().phase).toBe('validating-task');
+    expect(lifecycleStore.get().retry).toBeNull();
+  });
+
+  it('clears the retry when the run is interrupted', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+    addEvent({
+      type: 'seat_retry',
+      ts: 2_000,
+      phase: 'implementing',
+      seat: 'build',
+      attempt: 1,
+      delayMs: 1_000,
+    });
+
+    addEvent({ type: 'turn_interrupted', ts: 3_000, phase: 'implementing', source: 'user' });
+
+    expect(lifecycleStore.get()).toMatchObject({ status: 'interrupted', retry: null });
+  });
+
+  it('clears the retry when the run is paused', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+    addEvent({
+      type: 'seat_retry',
+      ts: 2_000,
+      phase: 'implementing',
+      seat: 'build',
+      attempt: 1,
+      delayMs: 1_000,
+    });
+
+    markWorkflowPaused();
+
+    expect(lifecycleStore.get()).toMatchObject({ status: 'paused', retry: null });
+  });
+
+  it('clears the retry when the run completes', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+    addEvent({
+      type: 'seat_retry',
+      ts: 2_000,
+      phase: 'implementing',
+      seat: 'build',
+      attempt: 1,
+      delayMs: 1_000,
+    });
+
+    addEvent({ type: 'workflow_complete', ts: 3_000, phase: 'complete' });
+
+    expect(lifecycleStore.get()).toMatchObject({ status: 'complete', retry: null });
+  });
+
+  it('clears the retry when the run is cancelled', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+    addEvent({
+      type: 'seat_retry',
+      ts: 2_000,
+      phase: 'implementing',
+      seat: 'build',
+      attempt: 1,
+      delayMs: 1_000,
+    });
+
+    addEvent({
+      type: 'workflow_cancelled',
+      ts: 3_000,
+      phase: 'implementing',
+      reason: 'user_cancelled',
+    });
+
+    expect(lifecycleStore.get()).toMatchObject({ status: 'cancelled', retry: null });
+  });
+
+  it('clears the retry on reset', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+    addEvent({
+      type: 'seat_retry',
+      ts: 2_000,
+      phase: 'implementing',
+      seat: 'build',
+      attempt: 1,
+      delayMs: 1_000,
+    });
+    expect(lifecycleStore.get().retry).not.toBeNull();
+
+    resetWorkflow();
+
+    expect(lifecycleStore.get().retry).toBeNull();
+  });
+
+  it('clears the retry when the saved state is laid over the log', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+    addEvent({
+      type: 'seat_retry',
+      ts: 2_000,
+      phase: 'implementing',
+      seat: 'build',
+      attempt: 1,
+      delayMs: 1_000,
+    });
+
+    hydrateFromState(makeWorkflowState({ phase: 'implementing' }), false);
+
+    expect(lifecycleStore.get()).toMatchObject({ status: 'paused', restored: true, retry: null });
+  });
+});
+
 describe('brief clock', () => {
   beforeEach(() => resetWorkflow());
 

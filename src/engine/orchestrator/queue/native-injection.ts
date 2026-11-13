@@ -8,8 +8,9 @@ import {
   transitionAndSave,
 } from '../state-ops.js';
 import { claimQueuedMessage, releaseQueuedMessage } from './drain.js';
-import { publishRunnerCallEvent, publishWarningFromError } from '../events.js';
+import { publishDebug, publishInfo, publishRunnerCallEvent } from '../events.js';
 import { isAbortError, throwIfAborted } from '../../../utils/abort.js';
+import { labelError } from '../../../utils/format-errors.js';
 import { formatQueuedMessagePreview } from '../../../core/queue-preview.js';
 import { isQueuedMessagePendingDelivery } from '../../../core/queue-state.js';
 import { phaseStage } from '../../../core/rail-stages.js';
@@ -143,7 +144,16 @@ export async function dispatchNativeInjection(
     });
     setState(next);
     if (aborted) return { status: 'not-delivered', reason: 'aborted' };
-    publishWarningFromError({ bus, phase: getState().phase }, 'native injection failed', err);
+    publishDebug({
+      bus,
+      phase: getState().phase,
+      message: labelError('native injection failed', err),
+    });
+    publishInfo({
+      bus,
+      phase: getState().phase,
+      message: 'Your message stays queued for the next call.',
+    });
     return { status: 'not-delivered', reason: 'failed' };
   } finally {
     releaseQueuedMessage(ref, message.id, 'native');

@@ -171,6 +171,7 @@ describe('three seats on one CLI whose --version hangs', () => {
                 feature: 'hung version',
                 projectDir,
                 effectiveConfig: config,
+                configWarnings: [],
                 signal: new AbortController().signal,
                 policy: {
                   purpose: 'new-workflow',
@@ -237,6 +238,7 @@ describe('a CLI tool written over in place during a run', () => {
       feature: 'rewrite in place',
       projectDir,
       effectiveConfig: config,
+      configWarnings: [],
       signal: new AbortController().signal,
       policy: {
         purpose: 'new-workflow',

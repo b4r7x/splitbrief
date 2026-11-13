@@ -33,6 +33,7 @@ function lifecycleState(overrides: { lastRunnerEventTs?: number | null } = {}): 
     queuedMessageIds: new Set(),
     steerableCall: null,
     stall: null,
+    retry: null,
     lastRunnerEventTs: overrides.lastRunnerEventTs ?? null,
     startedAt: null,
     endedAt: null,

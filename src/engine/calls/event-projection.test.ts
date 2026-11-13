@@ -356,30 +356,32 @@ describe('projectRunnerCallEvent', () => {
   });
 
   it('projects unknown-upstream diagnostics as redacted warnings with parser metadata', () => {
-    const projected = projectRunnerCallEvent(
-      {
-        type: 'call_unknown_upstream',
-        ts: 10,
-        callId: 'call-1',
-        role: 'planner',
+    const event: RunnerCallEvent = {
+      type: 'call_unknown_upstream',
+      ts: 10,
+      callId: 'call-1',
+      role: 'planner',
+      backendKind: 'cli',
+      rawPreview: 'payload sk-abcdefghijklmnopqrstuvwxyz',
+      backendMetadata: {
         backendKind: 'cli',
-        rawPreview: 'payload sk-abcdefghijklmnopqrstuvwxyz',
-        backendMetadata: {
-          backendKind: 'cli',
-          source: 'jsonl',
-          parser: 'jsonl',
-          channel: 'stdout',
-          upstreamType: 'future',
-        },
+        source: 'jsonl',
+        parser: 'jsonl',
+        channel: 'stdout',
+        upstreamType: 'future',
       },
-      { rootDir: '/project', phase: 'planning', sequence: 5 },
-    );
+    };
+    const opts = { rootDir: '/project', phase: 'planning', sequence: 5 } as const;
+
+    const projected = projectRunnerCallEvent(event, opts);
 
     expect(projected).toMatchObject({
       type: 'runner_call_warning',
       warning: {
         code: 'unknown_upstream',
+        severity: 'warning',
         source: 'jsonl',
+        surface: 'debug',
         parser: 'jsonl',
         channel: 'stdout',
         upstreamType: 'future',
@@ -387,6 +389,10 @@ describe('projectRunnerCallEvent', () => {
       },
     });
     expect(JSON.stringify(projected)).not.toContain('abcdefghijklmnopqrstuvwxyz');
+
+    const events = projectRunnerCallEvents(event, opts);
+    expect(events.map((projectedEvent) => projectedEvent.type)).toEqual(['runner_call_warning']);
+    expect(events).toEqual([projected]);
   });
 
   it('bounds projected runner call error messages to the engine event schema limit', () => {

@@ -14,7 +14,6 @@ import { runHeadlessStart } from './streaming.js';
 import { runInteractiveStart } from './interactive.js';
 import type { StartDeps } from './types.js';
 import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
-import { withHeldDiagnostics } from '../../../lib/warn.js';
 
 export const defaultStartDeps: StartDeps = {
   runHeadless,
@@ -30,9 +29,7 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
       .description('Full workflow: the planner plans and reviews, the implementer executes'),
   ).action(async (feature: string | undefined, files: string[], opts: WorkflowOpts) => {
     const headlessMode = opts.json === true ? 'json' : opts.plain === true ? 'plain' : undefined;
-    // The screen shows what an interactive start raises from its first step.
-    const start = () => startCommand({ feature, files, opts, headlessMode, deps });
-    await (headlessMode === undefined ? withHeldDiagnostics(start) : start());
+    await startCommand({ feature, files, opts, headlessMode, deps });
   });
 }
 

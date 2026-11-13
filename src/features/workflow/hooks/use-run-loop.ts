@@ -45,6 +45,7 @@ import {
   clearAllHandlers,
   consumeBoundaryInterrupt,
   consumeBoundaryPause,
+  seatChangeWaits,
   landBoundaryPause,
   requestSeatChangeAtBoundary,
   spendSeatChange,
@@ -56,7 +57,7 @@ import { endRun, endRunError } from '../../../engine/orchestrator/run/close.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { composerLiveStore } from '../../../stores/ui/composer-live.js';
 import { deriveRunStatus } from '../../../core/sessions/run-status.js';
-import { stopStore, takesSeatAtBoundary } from '../../../stores/workflow/stop.js';
+import { stopInProgress, stopStore, takesSeatAtBoundary } from '../../../stores/workflow/stop.js';
 import {
   createProcessScope,
   killProcessScope,
@@ -114,6 +115,11 @@ function isWorkflowAborted(controller: AbortController, ref: { current: boolean 
   return controller.signal.aborted || ref.current;
 }
 
+/** The run opens the stop sheet by itself only over an empty composer: a draft keeps the keys. */
+function openStopSheetOverEmptyComposer(): void {
+  if (composerLiveStore.get().empty) overlayStore.open('stop-sheet');
+}
+
 interface UseRunLoopOptions {
   prepared?: PreparedExecution | undefined;
   /** What the operator typed to continue this run; it seeds the first step of this re-entry. */
@@ -128,8 +134,9 @@ interface UseRunLoopOptions {
   prepareExecution?: PrepareExecutionFn | undefined;
   /**
    * How a run at rest continues: it is re-prepared from the saved config and re-entered in place,
-   * with the words it was continued with. A run that stopped itself at a brief boundary to pick up
-   * a changed seat names that cause. A refusal comes back as its reason, and the caller shows it.
+   * with the words it was continued with. A run that stopped itself at a brief or review boundary
+   * to pick up a changed seat names that cause. A refusal comes back as its reason, and the caller
+   * shows it.
    */
   continueAtRest?:
     | ((
@@ -179,6 +186,7 @@ export function useRunLoop({
       setQueueHandler,
       consumeBoundaryInterrupt,
       consumeBoundaryPause,
+      seatChangeWaits,
       getContinuationResumedAt: () => lifecycleStore.get().resumedAt,
     };
     let stateForRun = inlineState;
@@ -277,7 +285,7 @@ export function useRunLoop({
       await settleRun(session.ref, true);
     };
 
-    // A seat saved under the running brief is picked up at the next brief boundary: the run
+    // A seat saved under the running run is picked up at the next brief or review boundary: the run
     // stops itself there instead of parking, and continues the way a run at rest does, re-prepared
     // from the saved config. A seat saved while the run waits parked is picked up when it continues.
     // A halt runs no brief, so a seat saved while it waits is read when the run re-enters. Both
@@ -452,6 +460,7 @@ export function useRunLoop({
             existingSession: session.ref,
             feature: stateForRun.feature,
             effectiveConfig: entry.config,
+            configWarnings: [],
             policy: runResumePolicy(preparedForRun.runtime),
             signal: controller.signal,
             resumeState: stateForRun,
@@ -518,7 +527,7 @@ export function useRunLoop({
               steerAtBoundary,
               'seat-change',
             );
-            if (refusal !== undefined) feedbackStore.setError(refusal);
+            if (refusal !== undefined) feedbackStore.setMessage(refusal);
           } else await settleRun(session.ref, true);
           return;
         }
@@ -573,7 +582,7 @@ export function useRunLoop({
             }
           })();
         });
-        overlayStore.open('stop-sheet');
+        openStopSheetOverEmptyComposer();
       } else {
         await settleRun(session.ref, true);
       }
@@ -602,15 +611,9 @@ export function useRunLoop({
 
   useEffect(() => {
     const update = () => {
-      const { intent, phase } = stopStore.get();
-      if (
-        intent === 'none' ||
-        intent === 'pause-after-brief' ||
-        phase === 'parked' ||
-        phase === 'ended' ||
-        phase === 'failed'
-      )
-        return;
+      const stop = stopStore.get();
+      if (!stopInProgress(stop)) return;
+      const { phase } = stop;
       const scope = processScopeRef.current;
       if (scope !== undefined && processScopeCount(scope) > 0) {
         if (phase !== 'terminating') stopStore.markTerminating();
@@ -675,10 +678,9 @@ export function useRunLoop({
       } else if (
         routerStore.get().screen === 'workflow' &&
         overlayStore.get().active === 'none' &&
-        composerLiveStore.get().empty &&
         preparationStore.get().kind === 'idle'
       )
-        overlayStore.open('stop-sheet');
+        openStopSheetOverEmptyComposer();
     }
     return record;
   };

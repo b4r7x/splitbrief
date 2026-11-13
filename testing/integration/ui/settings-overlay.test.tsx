@@ -195,7 +195,7 @@ describe('settings overlay integration', () => {
     ui.unmount();
   });
 
-  it('keeps edit mode open and surfaces an error when committing invalid input', async () => {
+  it('keeps edit mode open and shows a neutral note when committing invalid input', async () => {
     writeConfigYaml(dir, { implementer: { timeout: SEEDED_TIMEOUT_MS } });
     configStore.load(dir);
     terminalSizeStore.__testReset({ cols: 100, rows: 60, isSmall: false });
@@ -228,7 +228,7 @@ describe('settings overlay integration', () => {
     await vi.waitFor(() => {
       expect(loadConfig(dir).config.implementer).toMatchObject({ timeout: SEEDED_TIMEOUT_MS });
       const feedback = feedbackStore.get();
-      expect(feedback.isError).toBe(true);
+      expect(feedback.isError).toBe(false);
       expect(feedback.message).toContain('Timeout');
       expect(overlayStore.get().exclusive).toBe(true);
     });
@@ -284,6 +284,15 @@ describe('settings overlay integration', () => {
   it('PageDown moves by visible selectable settings without skipping a section', async () => {
     // Tall enough to seat the whole Workflow section, which the page has to bring on screen.
     terminalSizeStore.__testReset({ cols: 100, rows: 26, isSmall: false });
+    writeConfigYaml(dir, {
+      implementer: {
+        kind: 'api',
+        provider: 'ollama',
+        apiBase: 'http://localhost:11434/v1',
+        model: 'qwen3-coder:30b',
+      },
+    });
+    configStore.load(dir);
     overlayStore.open('settings', 'implementer.temperature');
     const ui = renderFeature(<SettingsOverlay />);
     await flushEffects();

@@ -131,6 +131,15 @@ function mergeIntoLog(
     if (dropped?.[index] === true) continue;
     const row = events[index];
     if (event.continues === true && row?.type === 'runner_call_activity') continue;
+    // A sub-agent's held end also passes the text of other sub-agents that spoke during its hold.
+    if (
+      event.continues === true &&
+      event.subagentId !== undefined &&
+      row?.type === 'planner_text' &&
+      row.subagentId !== undefined &&
+      row.subagentId !== event.subagentId
+    )
+      continue;
     if (row?.type !== 'planner_text' || !joinsTextRow(row, event)) return APPEND_LOG_MERGE;
     const joined = row.text + event.text;
     const text =
@@ -148,7 +157,7 @@ function joinsTextRow(
     !(event.role === 'implementer' && event.messageStart === true) &&
     (row.role ?? 'planner') === (event.role ?? 'planner') &&
     (row.content ?? 'plain') === (event.content ?? 'plain') &&
-    (row.subagent === true) === (event.subagent === true)
+    row.subagentId === event.subagentId
   );
 }
 

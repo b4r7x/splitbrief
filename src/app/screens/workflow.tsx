@@ -173,7 +173,7 @@ export function WorkflowScreen({
   useLayoutEffect(() => {
     reviewSelectedRef.current = 0;
     setReviewSelected(0);
-  }, [reviewArtifact, reviewOwnerToken]);
+  }, [planCardArtifact, reviewOwnerToken]);
   const { focused: planCardFocused, setMenu: setPlanCardFocused } = usePanelFocus(
     String(reviewOwnerToken),
     planCardOpen,
@@ -359,9 +359,16 @@ export function WorkflowScreen({
   // The closed run's ledger is the tail of its own transcript: one scroller, the verdict below the
   // last event the run wrote. The header names the crew that ran it, so the block names it only
   // when the header did not choose the whole model line.
-  const railCellsByForm = {
+  const railWidths = {
     B: useRailCells({
       form: 'B',
+      short: false,
+      buildBlockShown: progressRows > 0,
+      ...(model.railStages !== undefined && { stages: model.railStages }),
+    }),
+    BShort: useRailCells({
+      form: 'B',
+      short: true,
       buildBlockShown: progressRows > 0,
       ...(model.railStages !== undefined && { stages: model.railStages }),
     }),
@@ -374,16 +381,23 @@ export function WorkflowScreen({
   const displayedSeatLines = useHeaderSeatLines();
   const railChoice = selectRailFormAndLine({
     cols,
-    railWidths: railCellsByForm,
+    railWidths,
     modelLineCells: getTerminalCellWidth(seatLineText(displayedSeatLines.model)),
     toolLineCells: getTerminalCellWidth(seatLineText(displayedSeatLines.tool)),
   });
   const railForm = railChoice.form;
-  const railCells = railCellsByForm[railForm];
+  const railCells =
+    railForm === 'C' ? railWidths.C : railChoice.short ? railWidths.BShort : railWidths.B;
   const crewChrome =
     model.crewRecord === undefined
       ? null
-      : recordedCrewHeader({ record: model.crewRecord, form: railForm, railCells, cols });
+      : recordedCrewHeader({
+          record: model.crewRecord,
+          form: railForm,
+          short: railChoice.short,
+          railCells,
+          cols,
+        });
   const closedKey =
     model.closed && model.atRestRecord !== undefined
       ? closedBlockKey(model.atRestRecord.ref.sessionId)

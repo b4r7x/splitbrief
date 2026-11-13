@@ -7,6 +7,7 @@ import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { SPLITBRIEF_DIR } from '../../../src/core/paths.js';
 import { fixCyclesOf } from '../../../src/core/schemas/workflow.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
+import { resolveTheme } from '../../../src/core/theme/resolve.js';
 import { reapOrphanRunners } from '../../../src/engine/orchestrator/run/orphan-reaper.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { trustDeclaredRunners } from '#testing/helpers/runner-trust.js';
@@ -24,9 +25,11 @@ import {
   readState,
   type StopContinueFixture,
 } from '../helpers/stop-continue-fixture.js';
+import { readForegroundAtText, type TerminalForeground } from '../helpers/terminal-cells.js';
 
 const VIEWPORT = { cols: 120, rows: 40 };
-const NONE_ROW = 'Review · none · REVIEW is None, so no seat reviewed this run';
+const NONE_ROW = 'Review · none · no seat reviewed this run';
+const SCREEN_THEME = resolveTheme({ variant: 'dark', level: 3, terminalBackground: undefined });
 
 const TOTAL_FILE = 'src/total.mjs';
 const TOTAL_TEST_FILE = 'src/total.test.mjs';
@@ -122,7 +125,11 @@ test('total adds two numbers', async () => {
 `;
 }
 
-type Tui = Readonly<{ screen: () => string; write: (keys: string) => void }>;
+type Tui = Readonly<{
+  screen: () => string;
+  write: (keys: string) => void;
+  foregroundAt: (phrase: string, offset?: number) => TerminalForeground;
+}>;
 
 /** Writes the fake tools and the config of a run, and returns the file the tools log their calls in. */
 function prepareRun(
@@ -190,7 +197,7 @@ const REVIEW_MOVE = {
 
 /** Moves REVIEW in Settings › Crew, waits for the saved config, and closes Settings. */
 async function moveReview(
-  { screen, write }: Tui,
+  { screen, write }: Pick<Tui, 'screen' | 'write'>,
   target: StopContinueFixture,
   to: keyof typeof REVIEW_MOVE,
 ): Promise<void> {
@@ -198,7 +205,7 @@ async function moveReview(
   write('/crew');
   await expect.poll(screen).toContain('▌ /crew  Who fills each seat');
   write('\r');
-  await expect.poll(screen).toContain('Settings');
+  await expect.poll(screen).toMatch(/^\W*Settings\W*$/m);
   await moveCursorTo(screen, write, '\x1b[B', /▌ REVIEW/);
   write('\r');
   await expect.poll(screen).toContain('REVIEW · tool, model, effort');
@@ -275,7 +282,12 @@ async function inTui(
         exit.resolve(event);
       });
       try {
-        await drive({ screen, write: (keys) => child.write(keys) });
+        await drive({
+          screen,
+          write: (keys) => child.write(keys),
+          foregroundAt: (phrase, offset) =>
+            readForegroundAtText(terminal.buffer.active, phrase, offset),
+        });
       } finally {
         if (outcome === undefined) await terminatePtyProcessGroup(child, exit.promise);
         await reapOrphanRunners(target.projectDir);
@@ -432,13 +444,14 @@ it('e2e: REVIEW None sends a changed merge back to its checks under Apply, and t
   );
   writeConfig(target.projectDir, { ...loadConfig(target.projectDir).config, reviewer: 'none' });
   const draft = 'also fix the typo';
+  const refusal = 'Cannot send words to Apply. Clear them.';
   try {
     await inTui(
       target,
       trustHome.home,
       offlinePath,
       () => {},
-      async ({ screen, write }) => {
+      async ({ screen, write, foregroundAt }) => {
         await expect.poll(screen, { timeout: 60_000 }).toContain('Describe your feature');
         write('add a total helper');
         await expect.poll(screen).toContain('› add a total helper');
@@ -475,11 +488,14 @@ it('e2e: REVIEW None sends a changed merge back to its checks under Apply, and t
           .poll(() => {
             const shown = screen();
             return (
-              shown.includes('Cannot send words to Apply. Clear them.') &&
+              shown.split('\n').filter((row) => row.includes(refusal)).length === 1 &&
               shown.includes(`› ${draft}`)
             );
           })
           .toBe(true);
+        const firstWord = foregroundAt(refusal, 0);
+        expect(firstWord).toEqual(foregroundAt(refusal, 'Cannot '.length));
+        expect(firstWord).toEqual({ mode: 'rgb', color: SCREEN_THEME.textDim });
         expect(screen()).toContain('Checking the merged result');
         expect(readState(target, sessionId).messageQueue).toEqual([]);
 
@@ -803,7 +819,7 @@ function prepareHeldTaskReview(target: StopContinueFixture, proposal: typeof pla
 
 /** Starts the run, stops it during its first task review, and returns the session. `queued` is sent while that review runs. */
 async function stopInTaskReview(
-  { screen, write }: Tui,
+  { screen, write }: Pick<Tui, 'screen' | 'write'>,
   target: StopContinueFixture,
   run: ReturnType<typeof prepareHeldTaskReview>,
   queued?: string,
@@ -1204,6 +1220,12 @@ async function expectWordsRefused(
   await expect.poll(screen).toContain(`› ${NOTE_WORDS}`);
   write(PTY_SUBMIT_INPUT);
   await expect.poll(screen, { timeout: 30_000 }).toContain(NO_CORRECTION);
+  const refusalRow = screen()
+    .split('\n')
+    .find((row) => row.includes(NO_CORRECTION));
+  if (refusalRow === undefined) throw new Error('the refusal is not on screen');
+  expect(refusalRow).not.toContain(`✗ ${NO_CORRECTION}`);
+  expect(refusalRow).not.toContain(`x ${NO_CORRECTION}`);
   await expect.poll(screen).toContain(`› ${NOTE_WORDS}`);
   expect(readState(target, sessionId).pendingRecovery).toEqual(halt);
   expect(run.calls()).toEqual(calls);
@@ -1236,6 +1258,57 @@ it.each(['task', 'end'] as const)(
     }
   },
 );
+
+it('e2e: a failed review refuses Accept as is while the composer holds words, keeps them, and hands the keys to the composer', {
+  timeout: 300_000,
+}, async () => {
+  const target = createStopContinueFixture(() => '');
+  const trustHome = useTrustHome('review-none-accept-refused');
+  const run = prepareFailedReview(target, plan, 'end');
+  const refusal = 'Cannot send words with Accept as is. Clear them.';
+  try {
+    await inTui(
+      target,
+      trustHome.home,
+      run.offlinePath,
+      () => {},
+      async (tui) => {
+        const { screen, write } = tui;
+        const sessionId = await reachFailedReview(tui, target);
+        await expect.poll(screen, { timeout: 10_000 }).toContain('Accept as is');
+        write('\t');
+        await expect.poll(screen, { timeout: 10_000 }).toContain('tab back to the actions');
+        write(NOTE_WORDS);
+        await expect.poll(screen).toContain(`› ${NOTE_WORDS}`);
+        write('\t');
+        await expect.poll(screen, { timeout: 10_000 }).not.toContain('tab back to the actions');
+        const halt = readState(target, sessionId).pendingRecovery;
+        const calls = run.calls();
+
+        await moveCursorTo(screen, write, '\x1b[B', /▌.*Accept as is/);
+        write('\r');
+        await expect.poll(screen, { timeout: 30_000 }).toContain(refusal);
+        const refusalRow = screen()
+          .split('\n')
+          .find((row) => row.includes(refusal));
+        if (refusalRow === undefined) throw new Error('the refusal is not on screen');
+        expect(refusalRow).not.toContain(`✗ ${refusal}`);
+        expect(refusalRow).not.toContain(`x ${refusal}`);
+        await expect.poll(screen).toContain(`› ${NOTE_WORDS}`);
+        await expect.poll(screen, { timeout: 10_000 }).toContain('tab back to the actions');
+        expect(readState(target, sessionId).pendingRecovery).toEqual(halt);
+        expect(run.calls()).toEqual(calls);
+
+        write(' now');
+        await expect.poll(screen).toContain(`› ${NOTE_WORDS} now`);
+      },
+    );
+  } finally {
+    rmSync(run.reviewHold, { force: true });
+    trustHome.restore();
+    cleanupTempDir(target.tmpDir);
+  }
+});
 
 it('e2e: a move to REVIEW None over a failed task review with a brief left sends the words to the next brief', {
   timeout: 300_000,

@@ -208,7 +208,7 @@ describe('dispatchNativeInjection', () => {
     expect(events.some((event) => event.type === 'message_injected_native')).toBe(false);
   });
 
-  it('publishes a warning instead of silently swallowing an injection failure', async () => {
+  it('keeps the message queued, says so in a SPLITBRIEF row and records the cause', async () => {
     const { planner } = fauxPlanner();
     planner.injectUserTurn = async () => {
       throw new Error('socket closed');
@@ -234,9 +234,17 @@ describe('dispatchNativeInjection', () => {
       }),
     ).resolves.toEqual({ status: 'not-delivered', reason: 'failed' });
 
-    const warning = events.find((e) => e.type === 'warning');
-    expect(warning).toBeDefined();
+    expect(loadState({ projectDir, sessionId })?.messageQueue).toEqual([
+      expect.objectContaining({ id: 'msg-1', nativeDeliveryState: 'pending' }),
+    ]);
     expect(events.some((e) => e.type === 'message_injected_native')).toBe(false);
+    expect(events.filter((e) => e.type === 'info')).toEqual([
+      expect.objectContaining({ message: 'Your message stays queued for the next call.' }),
+    ]);
+    expect(events.filter((e) => e.type === 'debug')).toEqual([
+      expect.objectContaining({ message: 'native injection failed: socket closed' }),
+    ]);
+    expect(events.filter((e) => e.type === 'warning')).toEqual([]);
   });
 
   it('books the injected turn token usage into planner accumulators and emits a cost update', async () => {

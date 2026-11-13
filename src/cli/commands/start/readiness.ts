@@ -5,6 +5,7 @@ import type {
   RememberedToolCatalog,
 } from '../../../core/readiness/checks/cli-readiness.js';
 import type { Config } from '../../../core/schemas/config.js';
+import type { EffectiveConfigResult } from '../../../core/config/runtime/effective-config.js';
 import type { AttachedInput } from '../../../core/schemas/attachment.js';
 import type { CliReadinessResult } from '../../../core/schemas/readiness.js';
 import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
@@ -13,6 +14,7 @@ import { CLI_TOOL_IDS, type CliToolId } from '../../../core/runners/cli-tool-cat
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 import {
   formatReadinessBlockers,
+  notAppliedWarnings,
   readinessBlockerPointer,
 } from '../../../core/readiness/format.js';
 import { assertNoLiveSession, clearStaleSession } from '../../../core/sessions/guards.js';
@@ -44,6 +46,7 @@ import type {
 import { rollbackPreparedExecutionOwnership } from '../../../engine/runners/prepared-execution.js';
 import type { CustomRunnerAdmissionPolicy } from '../../../engine/runners/types.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
+import { warnStderr } from '../../../lib/warn.js';
 import type { WorkflowOpts } from '../../../core/types/config-options.js';
 import { resolveRunConfig } from '../../build-overrides.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
@@ -179,14 +182,23 @@ export function assertNoLiveSessionForCli(projectDir: string): void {
 /**
  * The thrown pointer tells the reader to resolve the blockers above it, so the report is always
  * printed first. The stdout contract decides where: a `'structured'` stdout (`--json`, `--plain`)
- * stays machine-readable, so its report goes to stderr.
+ * stays machine-readable, so its report goes to stderr. A command that starts no run names the
+ * `seat` it calls, and its stderr states the flags and settings that seat does not apply.
  */
-export function preparedExecutionOrThrow<Execution = PreparedExecution>(
+export function preparedExecutionOrThrow<
+  Execution extends Readonly<{ report: ReadinessReport }> = PreparedExecution,
+>(
   outcome: PreparationOutcome<Execution>,
   stdout: 'prose' | 'structured',
+  seat?: 'planner' | 'reviewer' | undefined,
 ): Execution {
   switch (outcome.kind) {
     case 'prepared':
+      if (seat !== undefined) {
+        for (const line of notAppliedWarnings(outcome.execution.report, seat).flat()) {
+          warnStderr(line, 'feedback');
+        }
+      }
       return outcome.execution;
     case 'blocked':
       if (stdout === 'prose') console.log(formatReadinessBlockers(outcome.report));
@@ -241,7 +253,7 @@ type StartPreparationInput = Readonly<{
   plannerContext?: string | undefined;
   attachedInputs?: readonly AttachedInput[] | undefined;
   opts: WorkflowOpts;
-  effectiveConfig?: Config | undefined;
+  effectiveConfig?: EffectiveConfigResult | undefined;
   transport: 'interactive' | 'headless';
   emitReadiness: (report: ReadinessReport) => void;
   /** Where an interactive start asks for runner trust; without one it asks on the terminal. */
@@ -258,7 +270,7 @@ type StartPreparationInput = Readonly<{
 export async function prepareStartOutcome(
   input: StartPreparationInput,
 ): Promise<PreparationOutcome> {
-  const config =
+  const { config, warnings } =
     input.effectiveConfig ??
     resolveRunConfig({
       projectDir: input.projectDir,
@@ -270,6 +282,7 @@ export async function prepareStartOutcome(
     projectDir: input.projectDir,
     feature: input.feature,
     effectiveConfig: config,
+    configWarnings: warnings,
     policy: cliPreparationPolicy({
       purpose: 'new-workflow',
       interaction,

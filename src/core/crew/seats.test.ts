@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import type { CrewSeatId } from './identity.js';
 import { LISTED_CLI_TOOL_IDS } from '../runners/cli-tool-catalog.js';
-import { crewCliTools, deriveCrewSeats, probedCliTools, type CrewSeat } from './seats.js';
+import {
+  crewCliTools,
+  deriveCrewSeats,
+  probedCliTools,
+  seatChangeWords,
+  type CrewSeat,
+} from './seats.js';
 
 function seatOf<Id extends CrewSeatId>(
   seats: readonly CrewSeat[],
@@ -125,5 +131,14 @@ describe('probedCliTools', () => {
       'command-code',
       'antigravity',
     ]);
+  });
+});
+
+describe('seatChangeWords', () => {
+  it('says a seat saved in the final review changes at the next review or fix brief', () => {
+    const words = () => seatChangeWords('REVIEW seat', { after: 'review' });
+
+    expect(words).not.toThrow();
+    expect(words()).toBe('REVIEW seat changes at the next review or fix brief');
   });
 });

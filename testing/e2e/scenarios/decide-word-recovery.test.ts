@@ -101,7 +101,10 @@ describe('e2e: a word typed beside a halt', () => {
     screen.stdin.write('\r');
 
     await vi.waitFor(() =>
-      expect(feedbackStore.get().message).toBe('Nothing to send. Tab to choose an action.'),
+      expect(feedbackStore.get()).toEqual({
+        isError: false,
+        message: 'Nothing to send. Tab to choose an action.',
+      }),
     );
     const { events } = await readRunEvents(ref);
     expect(events.filter((event) => event.type === 'recovery_action_selected')).toEqual([]);

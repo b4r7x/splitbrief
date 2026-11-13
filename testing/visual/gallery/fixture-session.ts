@@ -49,8 +49,10 @@ import {
 import { overlayFixtureRegistry } from '../fixtures/overlay-fixtures.js';
 import { screenFixtureRegistry, VISUAL_FIXTURE_PROJECT_DIR } from '../fixtures/screen-fixtures.js';
 import { createWorkflowFixtureAppDeps } from '../fixtures/workflow/setup.js';
-import { workflowFixtureProjections } from '../fixtures/workflow/projections.js';
-import { workflowFixtureRegistry } from '../fixtures/workflow/registry.js';
+import {
+  workflowFixtureProjectionFor,
+  workflowFixtureRegistry,
+} from '../fixtures/workflow/registry.js';
 
 /** The one directory a previewed App may read or write; every fixture port checks against it. */
 export const FIXTURE_SESSION_ROOT = resolve(VISUAL_FIXTURE_PROJECT_DIR);
@@ -266,6 +268,7 @@ function createPreviewCommandContext(): RuntimeCommandContext {
     scrollConversation: () => unavailable,
     toggleLatestActivityBatch: () => unavailable,
     toggleLatestDiff: () => unavailable,
+    hasLatestDiff: () => false,
     listBriefs: () => runViewStore.get().briefs.tasks.map(({ id, status }) => ({ id, status })),
     toggleSidebar: togglePreviewSidebar,
     copyTarget: unavailableInPreview,
@@ -333,13 +336,13 @@ export async function createFixtureSession(input: FixtureSessionInput): Promise<
 
   let disposal: Promise<void> | undefined;
   let activation: Promise<void> | undefined;
-  const { checkConnection, prepareExecution } = fixture;
+  const { prepareExecution } = fixture;
   return {
     scenario,
     checkpoint,
     props: {
       workflowDeps: createWorkflowFixtureAppDeps(
-        workflowFixtureProjections.get(scenario.id),
+        workflowFixtureProjectionFor(scenario.id, checkpoint.id),
         previewSessionSelect,
       ),
       interactionDeps: {
@@ -348,7 +351,6 @@ export async function createFixtureSession(input: FixtureSessionInput): Promise<
           home: { ...previewHome, prepareExecution },
           setup: { ...previewSetup, prepareExecution },
         }),
-        ...(checkConnection !== undefined && { picker: { ...previewPicker, checkConnection } }),
       },
     },
     activate: (write) => {

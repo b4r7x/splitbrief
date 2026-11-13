@@ -240,47 +240,10 @@ function extractMarkdownTable(doc: string, marker: string): string[][] {
   return tableLines.slice(2);
 }
 
-function wrapMinimalApiConfig(runnerYaml: string): unknown {
-  const parsed = YAML.parse(runnerYaml) as Record<string, unknown>;
-  const planner = parsed.planner ?? { kind: 'cli', tool: 'claude-code' };
-  const implementer = parsed.implementer ?? parsed;
-  return {
-    version: 3,
-    planner,
-    implementer,
-    validation: { endChecks: true },
-    workflow: {
-      approve: 'plan',
-      compactionFormat: 'auto',
-    },
-    theme: 'terminal',
-  };
-}
-
-function collectRuntimeRecommendations() {
-  return Object.entries(KNOWN_MODELS).flatMap(([provider, models]) =>
-    (models ?? [])
-      .filter((model) => model.recommendation === 'recommended')
-      .map((model) => ({ provider, model: model.name })),
-  );
-}
-
-function collectRuntimeCompatibleOnlyDefaults() {
-  const admitted = new Set<string>(ADMITTED_API_PROVIDER_IDS);
-  return Object.entries(KNOWN_MODELS).flatMap(([provider, models]) =>
-    (models ?? [])
-      .filter(
-        (model) =>
-          admitted.has(provider) && model.isDefault && model.recommendation === 'compatible-only',
-      )
-      .map((model) => ({ provider, model: model.name })),
-  );
-}
-
 // The verdict table at the end of §18 must name every excluded offering, so the
 // admitted scope stops where it begins.
 function admittedApiSection(doc: string): string {
-  const start = doc.indexOf('## 18. Admitted API providers');
+  const start = doc.indexOf('## 18. API providers');
   const end = doc.indexOf(EXCLUDED_OFFERINGS_HEADING);
   expect(start).toBeGreaterThanOrEqual(0);
   expect(end).toBeGreaterThan(start);
@@ -299,88 +262,16 @@ function containsExcludedProviderId(doc: string, id: string): boolean {
 }
 
 describe('configuration documentation', () => {
-  it('documents every admitted API provider in the provider matrix', () => {
-    const rows = extractMarkdownTable(configurationDoc, '<!-- api-provider-matrix -->');
-    const documentedIds = rows.map((row) => row[0]);
-    expect(documentedIds.toSorted()).toEqual([...ADMITTED_API_PROVIDER_IDS].toSorted());
-  });
-
-  it('loads every tagged minimal API YAML example through the real loader', () => {
-    const blocks = extractTaggedYamlBlocks(configurationDoc, 'config-api-minimal');
-    expect([...blocks.keys()].toSorted()).toEqual([...ADMITTED_API_PROVIDER_IDS].toSorted());
-
-    for (const [providerId, yaml] of blocks) {
-      const config = loadConfigText(YAML.stringify(wrapMinimalApiConfig(yaml)));
-
-      const descriptor = API_PROVIDER_CATALOG[providerId as keyof typeof API_PROVIDER_CATALOG];
-      const runner =
-        descriptor.roles.includes('implementer') && !yaml.includes('planner:')
-          ? config.implementer
-          : config.planner;
-      expect(runner.kind).toBe('api');
-      if (runner.kind !== 'api') continue;
-      expect(runner.provider).toBe(providerId);
-      expect(runner.service).toBe(descriptor.service);
-      expect(runner.offering).toBe(descriptor.offering);
-    }
-  });
-
-  it('keeps three local seat endpoints and exact IDs independent', () => {
-    const yaml = extractTaggedYamlBlocks(configurationDoc, 'config-api-three-seats').get('local');
-    expect(yaml).toBeDefined();
-    if (yaml === undefined) return;
-    const config = loadConfigText(yaml);
-    expect(config.planner).toMatchObject({
-      kind: 'api',
-      provider: 'ollama',
-      service: 'ollama',
-      offering: 'local',
-      apiBase: 'http://localhost:11434/v1',
-      model: 'qwen3-coder:30b',
-    });
-    expect(config.implementer).toMatchObject({
-      kind: 'api',
-      provider: 'lm-studio',
-      service: 'lm-studio',
-      offering: 'local',
-      apiBase: 'http://localhost:1234/v1',
-      model: 'qwen2.5-coder-7b',
-    });
-    expect(config.reviewer).toMatchObject({
-      kind: 'api',
-      provider: 'llama-cpp',
-      service: 'llama-cpp',
-      offering: 'local',
-      apiBase: 'http://localhost:8080/v1',
-      model: 'Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf',
-    });
-  });
-
-  it('keeps runtime recommendation parity in the model catalog table', () => {
-    const rows = extractMarkdownTable(configurationDoc, '<!-- api-model-catalog -->');
-    const documentedRecommended = rows
-      .filter((row) => row[2] === 'recommended')
-      .map((row) => ({ provider: row[0], model: row[1] }));
-    expect(documentedRecommended).toEqual(collectRuntimeRecommendations());
-  });
-
-  it('keeps compatible-only quality failures visible without a recommendation label', () => {
-    const rows = extractMarkdownTable(configurationDoc, '<!-- api-model-catalog -->');
-    const documentedCompatible = rows
-      .filter((row) => row[2] === 'compatible-only')
-      .map((row) => ({ provider: row[0], model: row[1] }));
-
-    for (const entry of collectRuntimeCompatibleOnlyDefaults()) {
-      expect(documentedCompatible).toContainEqual(entry);
-    }
-
-    const recommendedKeys = new Set(
-      rows.filter((row) => row[2] === 'recommended').map((row) => `${row[0]}/${row[1]}`),
+  it('keeps every bundled model row compatible-only, as the model catalog text states', () => {
+    const labels = new Set(
+      Object.values(KNOWN_MODELS).flatMap((models) =>
+        (models ?? []).map((model) => model.recommendation),
+      ),
     );
-    const collidingKeys = documentedCompatible
-      .map((entry) => `${entry.provider}/${entry.model}`)
-      .filter((key) => recommendedKeys.has(key));
-    expect(collidingKeys).toEqual([]);
+    expect([...labels]).toEqual(['compatible-only']);
+    expect(configurationDoc).toContain(
+      'No bundled row is **`recommended`**: every row is **`compatible-only`**',
+    );
   });
 
   it('documents auto as a working CLI model value, not a rejected one', () => {
@@ -459,39 +350,6 @@ describe('configuration documentation', () => {
     expect(genericYaml).not.toMatch(/apiKey:\s*env:/);
     expect(genericYaml).toMatch(/apiKey:\s*<[^>]+>/);
     expect(loadConfigText(`version: 3\n${genericYaml}`).implementer.kind).toBe('api');
-  });
-
-  it('documents credential env names and prefix validation for admitted remote providers', () => {
-    const rows = extractMarkdownTable(configurationDoc, '<!-- api-provider-matrix -->');
-    const byId = new Map(rows.map((row) => [row[0], row]));
-
-    for (const providerId of ADMITTED_API_PROVIDER_IDS) {
-      const descriptor = API_PROVIDER_CATALOG[providerId];
-      const row = byId.get(providerId);
-      expect(row, `missing matrix row for ${providerId}`).toBeDefined();
-      if (row === undefined) continue;
-
-      const cell = (index: number) => row[index]?.replaceAll('`', '') ?? '';
-      expect(cell(1)).toBe(descriptor.service);
-      expect(cell(2)).toBe(descriptor.offering);
-      expect(cell(4)).toBe(descriptor.credentialEnv ?? '—');
-      expect(cell(5)).toBe(descriptor.credentialPrefix ?? '—');
-      expect(cell(6)).toBe(descriptor.roles.join(', '));
-      expect(cell(7)).toBe(descriptor.billing);
-    }
-  });
-
-  it('keeps OLLAMA_API_KEY off the local Ollama credential row', () => {
-    expect(configurationDoc).toContain(
-      '`OLLAMA_API_KEY` is never resolved or sent to local Ollama',
-    );
-    expect(configurationDoc).toContain('`apiKey: env:OLLAMA_LOCAL_API_KEY`');
-    expect(apiKeysDoc).toContain('| Local Ollama | `OLLAMA_LOCAL_API_KEY` |');
-    expect(apiKeysDoc).toContain('`apiKey: env:OLLAMA_LOCAL_API_KEY`');
-    expect(apiKeysDoc).toContain('`OLLAMA_API_KEY` is never accepted or sent locally');
-    expect(apiKeysDoc).not.toContain('| Ollama Cloud | `OLLAMA_API_KEY` |');
-    expect(apiKeysDoc).not.toContain('Optional for secured local/proxy deployments');
-    expect(apiKeysDoc).not.toContain('| Ollama | `OLLAMA_API_KEY` |');
   });
 
   it('documents the required API identity triple and named implementer profiles', () => {

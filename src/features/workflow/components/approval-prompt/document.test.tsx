@@ -85,7 +85,8 @@ describe('DocumentReviewPrompt', () => {
   it.each([
     ['also fix the typo', '⏎ request changes with the typed correction · tab back to the actions'],
     ['/settings', '⏎ runs the command · tab back to the actions'],
-    ['', 'tab back to the actions'],
+    ['', 'tab/⏎ back to the actions'],
+    ['   ', 'tab/⏎ back to the actions'],
   ])(
     'marks no row and says what ⏎ does in the composer that holds the keys over "%s"',
     (draft, legend) => {
@@ -106,12 +107,40 @@ describe('DocumentReviewPrompt', () => {
       expect(
         frame
           .split('\n')
-          .find((line) => line.includes('tab back'))
+          .find((line) => line.includes('back to the actions'))
           ?.replace(/[│┃]/g, '')
           .trim(),
       ).toBe(legend);
     },
   );
+
+  it.each([
+    { cols: 60, legend: '⏎ request changes · tab back to the actions' },
+    { cols: 80, legend: '⏎ request changes with the typed correction · tab back to the actions' },
+    { cols: 120, legend: '⏎ request changes with the typed correction · tab back to the actions' },
+  ])('keeps tab back to the actions under typed words at $cols columns', ({ cols, legend }) => {
+    terminalSizeStore.__testReset({ cols, rows: 40, isSmall: false });
+    composerLiveStore.setDraft(createDraftDocument('also fix the typo'));
+    const frame = frameOf(
+      <DocumentReviewPrompt
+        artifact="plan"
+        confirms={[]}
+        budgetRows={40}
+        selectedIndex={0}
+        draft={null}
+        focused={false}
+      />,
+    );
+
+    expect(
+      frame
+        .split('\n')
+        .find((line) => line.includes('back to the actions'))
+        ?.replace(/[│┃]/g, '')
+        .trim(),
+    ).toBe(legend);
+    expect(frame).not.toContain(REVIEW_DOCUMENT_HINTS);
+  });
 
   // The composer holds the keyboard at the plan card, so a letter types into the draft: a row that
   // advertised one would teach a key that does not exist.

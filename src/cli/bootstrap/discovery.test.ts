@@ -2,6 +2,8 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import * as os from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
+import { resetLoggerForTests } from '../../lib/logger.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -14,7 +16,15 @@ import {
   resolveModelsDevCatalogCachePath,
 } from '../../engine/providers/models-dev-cache/store.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
-import { loadRememberedCatalog } from './discovery.js';
+import { configStore } from '../../stores/project/config.js';
+import { detectionStore } from '../../stores/project/detection.js';
+import { installDiagnosticSink } from '../../lib/warn.js';
+import {
+  awaitBackgroundDiscovery,
+  loadDiscovery,
+  loadRememberedCatalog,
+  teardownDiscovery,
+} from './discovery.js';
 
 vi.mock('node:os', async (original) => ({
   ...(await original<typeof os>()),
@@ -32,6 +42,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  resetLoggerForTests();
   resetAllStores();
   cleanupTempDir(projectDir);
 });
@@ -93,10 +104,64 @@ it('loads the remembered models.dev catalog when there is no tool snapshot', asy
 it('reports a configuration failure when catalog loading cannot continue', async () => {
   mkdirSync(join(projectDir, '.splitbrief'), { recursive: true });
   writeFileSync(join(projectDir, '.splitbrief', 'config.yaml'), 'version: invalid');
-  const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+  enableDebugLog(projectDir);
   await expect(loadRememberedCatalog(projectDir)).resolves.toBeUndefined();
-  expect(stderr.mock.calls.flat().join('')).toContain('Could not load model names');
-  expect(stderr.mock.calls.flat().join('')).toContain('Unsupported config version');
+  const logged = loggedDiagnostics(projectDir).join('\n');
+  expect(logged).toContain('Could not load model names');
+  expect(logged).toContain('Unsupported config version');
   expect(modelCacheStore.getProviderModels('codex')).toBeNull();
   expect(globalThis.fetch).not.toHaveBeenCalled();
+});
+
+it('shows a failed tool check on the feedback line', async () => {
+  writeConfig(projectDir, makeConfig());
+  configStore.load(projectDir);
+  const beginRefresh = vi.spyOn(detectionStore, 'beginRefresh').mockImplementation(() => {
+    throw new Error('probe defect');
+  });
+  const shown: [string, string][] = [];
+  const release = installDiagnosticSink((message, presentation) =>
+    shown.push([message, presentation]),
+  );
+  try {
+    await loadDiscovery(projectDir);
+    await awaitBackgroundDiscovery();
+  } finally {
+    release();
+    teardownDiscovery();
+  }
+
+  expect(beginRefresh).toHaveBeenCalledOnce();
+  expect(shown).toEqual([['Could not check your tools: probe defect', 'feedback']]);
+});
+
+it('shows a failed tool check after a crew change on the feedback line', async () => {
+  writeConfig(projectDir, makeConfig());
+  configStore.load(projectDir);
+  const beginRefresh = vi.spyOn(detectionStore, 'beginRefresh').mockImplementation(() => {
+    throw new Error('probe defect');
+  });
+  const shown: [string, string][] = [];
+  const release = installDiagnosticSink((message, presentation) =>
+    shown.push([message, presentation]),
+  );
+  try {
+    await loadDiscovery(projectDir);
+    await awaitBackgroundDiscovery();
+    const shownAtLoad = shown.length;
+    writeConfig(
+      projectDir,
+      makeConfig({ implementer: { kind: 'cli', tool: 'opencode', model: 'openai/gpt-5' } }),
+    );
+    configStore.load(projectDir);
+    await awaitBackgroundDiscovery();
+
+    expect(beginRefresh).toHaveBeenCalledTimes(2);
+    expect(shown.slice(shownAtLoad)).toEqual([
+      ['Could not check your tools: probe defect', 'feedback'],
+    ]);
+  } finally {
+    release();
+    teardownDiscovery();
+  }
 });

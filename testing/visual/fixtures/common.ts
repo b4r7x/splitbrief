@@ -1,7 +1,6 @@
 import type { CheckpointDefinition, ScenarioDefinition } from '../contracts/catalog.js';
 import type { Viewport } from '../contracts/geometry.js';
 import type { ScenarioId } from '../contracts/identifiers.js';
-import type { LocalConnectionProbe } from '../../../src/features/runners/local-connection-form.js';
 import type { HomeScreenDeps } from '../../../src/app/screens/home.js';
 import { trackProbe } from '../../../src/engine/probe-activity.js';
 
@@ -50,8 +49,6 @@ export interface FixtureLifecycle {
   readonly teardown: FixtureTeardown;
   /** Exercise the mounted view through its ordinary input path. */
   readonly afterMount?: (write: FixtureWrite) => void | Promise<void>;
-  /** This scenario's local connection check, in place of the preview's synthetic catalog. */
-  readonly checkConnection?: LocalConnectionProbe;
   /** The preparation behind a start this scenario submits on home or setup. */
   readonly prepareExecution?: HomeScreenDeps['prepareExecution'];
 }

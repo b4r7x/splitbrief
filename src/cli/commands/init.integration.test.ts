@@ -10,7 +10,6 @@ import { createTempDir, cleanupTempDir, withTempDir } from '#testing/helpers/tem
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { configPath } from '../../core/config/load/document.js';
 import { loadConfig } from '../../core/config/load/io.js';
-import { installDiagnosticSink } from '../../lib/warn.js';
 import { registerInitCommand } from './init.js';
 
 afterEach(() => {
@@ -139,7 +138,7 @@ describe('init --yes diagnostics', () => {
       }
 
       expect(output[0]).toBe(
-        `Warning: --project ${subdir} is inside git repository ${projectDir}; using repository root.\n`,
+        `--project ${subdir} is inside git repository ${projectDir}; using repository root.\n`,
       );
       expect(output.at(-1)).toBe(
         'Run `splitbrief doctor` to check readiness before your first run.',
@@ -149,7 +148,7 @@ describe('init --yes diagnostics', () => {
 });
 
 describe('init on the setup screen', () => {
-  it('shows a --project warning for a folder inside the repository once, on the screen', async () => {
+  it('writes a --project warning for a folder inside the repository to stderr once', async () => {
     await withTempDir('init-project-subdir', async (dir) => {
       const projectDir = realpathSync(dir);
       createTestGitRepo(projectDir);
@@ -162,21 +161,10 @@ describe('init on the setup screen', () => {
         writes.push(String(chunk));
         return true;
       });
-      const shown: string[] = [];
-      const warning = `Warning: --project ${subdir} is inside git repository ${projectDir}; using repository root.`;
+      const warning = `--project ${subdir} is inside git repository ${projectDir}; using repository root.`;
       const program = new Command();
       program.exitOverride();
-      registerInitCommand(program, {
-        initStores: async () => {},
-        renderApp: async () => {
-          const release = installDiagnosticSink((message) => shown.push(message));
-          try {
-            expect(writes).toEqual([]);
-          } finally {
-            release();
-          }
-        },
-      });
+      registerInitCommand(program, { initStores: async () => {}, renderApp: async () => {} });
 
       try {
         await program.parseAsync(['init', '--project', subdir], { from: 'user' });
@@ -184,7 +172,6 @@ describe('init on the setup screen', () => {
         process.stdin.isTTY = wasTty;
       }
 
-      expect(shown).toEqual([warning]);
       expect(writes).toEqual([`${warning}\n`]);
     });
   });

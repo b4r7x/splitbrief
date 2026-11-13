@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Command, InvalidArgumentError } from 'commander';
+import * as apiProviderCatalog from '../core/providers/api-provider-catalog.js';
 import { IMPLEMENTER_API_PROVIDER_IDS } from '../core/providers/api-provider-catalog.js';
 import { IMPLEMENTER_CLI_TOOL_IDS, isListedCliTool } from '../core/runners/cli-tool-catalog.js';
 import { EFFORT_LEVELS, META_PROVIDER_IDS, PLANNER_TOOL_IDS } from '../core/schemas/enums.js';
@@ -262,21 +263,24 @@ describe('--allow-repo-runners', () => {
 
 describe('runner selection help', () => {
   it.each([
-    { label: 'Planner tool', admitted: PLANNER_TOOL_IDS.filter(isListedCliTool) },
-    { label: 'Reviewer tool', admitted: PLANNER_TOOL_IDS.filter(isListedCliTool) },
+    { label: 'Planner tool', admitted: PLANNER_TOOL_IDS },
+    { label: 'Reviewer tool', admitted: PLANNER_TOOL_IDS },
     {
       label: 'Implementer provider',
       admitted: [
         ...IMPLEMENTER_CLI_TOOL_IDS,
         ...IMPLEMENTER_API_PROVIDER_IDS,
         ...META_PROVIDER_IDS,
-      ].filter(isListedCliTool),
+      ],
     },
   ])('$label enumerates every id the catalog lists', ({ label, admitted }) => {
-    expect(idsListedInHelp(label)).toEqual(admitted);
+    expect(apiProviderCatalog.isListedApiProvider).toBeTypeOf('function');
+    expect(idsListedInHelp(label)).toEqual(
+      admitted.filter((id) => isListedCliTool(id) && apiProviderCatalog.isListedApiProvider(id)),
+    );
   });
 
-  it('lists the surviving ids, and no removed one', () => {
+  it('lists the surviving ids, and no removed or unlisted one', () => {
     expect(idsListedInHelp('Planner tool')).toEqual([
       'claude-code',
       'codex',
@@ -285,12 +289,10 @@ describe('runner selection help', () => {
       'cursor',
       'command-code',
       'antigravity',
-      'ollama',
-      'lm-studio',
-      'llama-cpp',
       'shell',
       'agent',
     ]);
+    expect(idsListedInHelp('Reviewer tool')).toEqual(idsListedInHelp('Planner tool'));
     expect(idsListedInHelp('Implementer provider')).toEqual([
       'claude-code',
       'codex',
@@ -299,13 +301,20 @@ describe('runner selection help', () => {
       'cursor',
       'command-code',
       'antigravity',
-      'ollama',
-      'lm-studio',
-      'llama-cpp',
       'shell',
       'agent',
     ]);
   });
+});
+
+describe('unlisted local provider flags', () => {
+  it.each(['--planner', '--reviewer', '--implementer', '--provider'])(
+    'still parses ollama on %s',
+    (flag) => {
+      const key = flag.slice(2);
+      expect(parseWorkflowOptions([flag, 'ollama'])).toMatchObject({ [key]: 'ollama' });
+    },
+  );
 });
 
 describe('effort help', () => {

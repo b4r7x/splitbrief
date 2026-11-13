@@ -12,7 +12,6 @@ import { resolveRunConfig } from '../build-overrides.js';
 import { emitRecoveryAndFailIfPending, recordWriterFor } from '../headless.js';
 import { resolveReviewCadence } from '../../core/config/runtime/resolve.js';
 import { resumeSavedSession } from './continue/resume.js';
-import { withHeldDiagnostics } from '../../lib/warn.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
 
 export interface ResumeDeps {
@@ -73,7 +72,7 @@ export async function resumeCommand(
     emitRecoveryAndFailIfPending({
       state: hydrated.state,
       sessionId,
-      reviewNone: resolveReviewCadence(resolveRunConfig({ projectDir, opts })) === 'none',
+      reviewNone: resolveReviewCadence(resolveRunConfig({ projectDir, opts }).config) === 'none',
       writeRecord: recordWriterFor(opts.plain === true),
     });
   }
@@ -87,10 +86,8 @@ export function registerResumeCommand(
 ): void {
   addWorkflowOptions(program.command('resume').description('Resume the most recent run')).action(
     async (opts: WorkflowOpts) => {
-      // The screen shows what an interactive resume raises from its first step.
-      const resume = async () =>
-        resumeCommand({ ...opts, projectDir: await canonicalizeProjectDir(opts) }, deps);
-      await (opts.json === true || opts.plain === true ? resume() : withHeldDiagnostics(resume));
+      const projectDir = await canonicalizeProjectDir(opts);
+      await resumeCommand({ ...opts, projectDir }, deps);
     },
   );
 }

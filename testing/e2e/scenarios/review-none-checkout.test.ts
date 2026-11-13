@@ -20,7 +20,7 @@ import { createStopContinueFixture, readState } from '../helpers/stop-continue-f
 import { wholeFrames } from '../helpers/whole-frames.js';
 
 const VIEWPORT = { cols: 120, rows: 40 };
-const NONE_ROW = 'Review · none · REVIEW is None, so no seat reviewed this run';
+const NONE_ROW = 'Review · none · no seat reviewed this run';
 const WORDS = 'also fix the typo';
 const REVIEW_REFUSAL = 'Cannot send words to the review. Clear them.';
 const APPLY_REFUSAL = 'Cannot send words to Apply. Clear them.';
@@ -235,7 +235,7 @@ async function moveReviewToNone({ screen, write }: Tui, configPath: string): Pro
   write('/crew');
   await expect.poll(screen).toContain('▌ /crew');
   write('\r');
-  await expect.poll(screen).toContain('Settings');
+  await expect.poll(screen).toMatch(/^\W*Settings\W*$/m);
   await moveCursorTo(screen, write, '\x1b[B', /▌ REVIEW/);
   write('\r');
   await expect.poll(screen).toContain('REVIEW · tool, model, effort');

@@ -1,9 +1,14 @@
+import {
+  API_PROVIDER_CATALOG,
+  LOCAL_API_PROVIDER_IDS,
+} from '../../src/core/providers/api-provider-catalog.js';
 import { isCliToolId } from '../../src/core/runners/cli-tool-catalog.js';
 import type { RunnerRole } from '../../src/core/runners/seat-roles.js';
 import {
   assemblePickerDescriptors,
   buildPickerOptions,
   type PickerOption,
+  type RunnerPickerDescriptor,
   type RunnerPickerOption,
 } from '../../src/features/runners/model-catalog/options.js';
 import type { PickerModelCounts } from '../../src/features/runners/model-catalog/catalog.js';
@@ -68,11 +73,16 @@ export function makeActions(): PickerActions {
   };
 }
 
+// No picker row offers a local service, so the API projection reads these descriptors directly.
+export const LOCAL_API_DESCRIPTORS: readonly RunnerPickerDescriptor[] = LOCAL_API_PROVIDER_IDS.map(
+  (id) => ({ kind: 'api', descriptor: API_PROVIDER_CATALOG[id] }),
+);
+
 /**
  * The option the picker would actually emit for `id`, built by the real
- * descriptor assembly and projection. Tests commit selections through this so a
- * fabricated model policy, billing posture or permission set cannot disagree
- * with the catalog the UI reads.
+ * descriptor assembly and projection, plus the local API services that a config
+ * can name. Tests commit selections through this so a fabricated model policy,
+ * billing posture or permission set cannot disagree with the catalog the UI reads.
  */
 export function realPickerOption(role: RunnerRole, id: string): RunnerPickerOption {
   const option = realPickerOptions(role).find(
@@ -86,7 +96,7 @@ export function realPickerOption(role: RunnerRole, id: string): RunnerPickerOpti
 export function realPickerOptions(role: RunnerRole): PickerOption[] {
   return buildPickerOptions(
     role,
-    assemblePickerDescriptors(),
+    [...assemblePickerDescriptors(), ...LOCAL_API_DESCRIPTORS],
     { cliTools: [], providers: [] },
     undefined,
   );

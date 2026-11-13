@@ -90,7 +90,7 @@ describe('a send the queue refuses', () => {
     await press(ui, '\r');
     await flushEffects();
 
-    expect(feedbackStore.get().message).toBe('Queue full.');
+    expect(feedbackStore.get()).toEqual({ message: 'Queue full.', isError: false });
     expect(composerLiveStore.get().text).toBe(`steer\n${DRAFT}`);
     ui.unmount();
     await flushEffects();
@@ -108,6 +108,7 @@ describe('a send the queue refuses', () => {
     await press(ui, '\r');
     await flushEffects();
 
+    expect(feedbackStore.get()).toEqual({ message: 'Queue full.', isError: false });
     expect(composerLiveStore.get().text).toBe('steer now');
     ui.unmount();
   });
@@ -124,7 +125,10 @@ describe('a send the queue refuses', () => {
     decision.resolve(null);
     await flushEffects();
 
-    expect(feedbackStore.get().message).toBe('Cannot queue message: no active workflow.');
+    expect(feedbackStore.get()).toEqual({
+      message: 'Cannot queue message: no active workflow.',
+      isError: false,
+    });
     expect(composerLiveStore.get().text).toBe('steer now\nnext words');
     ui.unmount();
   });

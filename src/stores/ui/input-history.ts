@@ -84,16 +84,6 @@ function putEntry(
   );
 }
 
-function push(value: string): void {
-  const trimmed = value.trim();
-  if (!trimmed) return;
-  const document = createDraftDocument(trimmed);
-  store.set((state) => {
-    const entries = putEntry(state.entries, document);
-    return entries === null ? state : { ...state, entries };
-  });
-}
-
 function pushDocumentSubmission(
   document: DraftDocument,
   opts: InputHistorySubmissionOptions,
@@ -134,7 +124,6 @@ export function getInputHistoryDocuments(
 
 export const inputHistoryStore = {
   ...storeBase(store),
-  push,
   pushDocumentSubmission,
   hydrate,
 };

@@ -85,10 +85,10 @@ function noPhaseEvent<T extends string>(type: T) {
   });
 }
 
-function operationalMessageEvent<T extends 'info' | 'warning' | 'error', S extends z.ZodRawShape>(
-  type: T,
-  shape: S,
-) {
+function operationalMessageEvent<
+  T extends 'debug' | 'info' | 'warning' | 'error',
+  S extends z.ZodRawShape,
+>(type: T, shape: S) {
   const base = phaseEvent(type).extend({
     ...shape,
     message: z.string(),
@@ -110,6 +110,8 @@ function operationalMessageEvent<T extends 'info' | 'warning' | 'error', S exten
  */
 const briefKept = z.number().int().nonnegative().optional();
 
+/** A state the run handled by itself: the session log keeps it; the screen and stderr do not. */
+const OperationalDebugEventSchema = operationalMessageEvent('debug', {});
 const OperationalInfoEventSchema = operationalMessageEvent('info', { briefKept });
 const OperationalWarningEventSchema = operationalMessageEvent('warning', { briefKept });
 const OperationalErrorEventSchema = operationalMessageEvent('error', {
@@ -126,6 +128,8 @@ function parseWithSchema<T>(schema: z.ZodType<T>, value: unknown): T | null {
 function parseOperationalMessageEvent(value: unknown): EngineEventFromPayloadSchemas | null {
   if (!isRecord(value)) return null;
   switch (value.type) {
+    case 'debug':
+      return parseWithSchema(OperationalDebugEventSchema, value);
     case 'info':
       return parseWithSchema(OperationalInfoEventSchema, value);
     case 'warning':
@@ -286,13 +290,13 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   }),
   phaseEvent('turn_interrupted').extend({
     source: z.enum(['user', 'watchdog']).optional(),
-    /** Where the stop landed: inside the call, or on a boundary — between two briefs, or at a gate. */
+    /** Where the stop landed: inside the call, or on a boundary — between two briefs, before a review, or at a gate. */
     at: StepCutSchema.optional(),
     /** The step the stop parked, as the state records it; absent on logs written before the field. */
     step: StepRefSchema.optional(),
     /**
      * Set when a boundary park only changes a seat: no pause was asked for, the run stops so the
-     * next brief starts on the new seat. Absent for a pause the operator asked for.
+     * next brief or review starts on the new seat. Absent for a pause the operator asked for.
      */
     cause: z.literal('seat-change').optional(),
     /** The files a brief cut mid-step wrote that are still changed, its declared files first; absent when it kept none. */
@@ -378,8 +382,8 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     messageStart: z.boolean().optional(),
     /** The held end of a word: it joins the text row it ends, past the tool rows of its hold. */
     continues: z.literal(true).optional(),
-    /** Text of a sub-agent: it never shares a row with the main text. */
-    subagent: z.literal(true).optional(),
+    /** The sub-agent that wrote the text; absent for the main text and in older logs. */
+    subagentId: CallIdSchema.optional(),
   }),
   phaseEvent('planner_heartbeat').extend({
     elapsedMs: z.number(),
@@ -963,6 +967,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
 
 type EngineEventFromPayloadSchemas =
   | z.infer<typeof EngineEventPayloadSchema>
+  | z.infer<typeof OperationalDebugEventSchema>
   | z.infer<typeof OperationalInfoEventSchema>
   | z.infer<typeof OperationalWarningEventSchema>
   | z.infer<typeof OperationalErrorEventSchema>;

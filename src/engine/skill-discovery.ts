@@ -339,10 +339,7 @@ export async function loadSkillContent(skills: SkillMeta[]): Promise<SkillConten
     }
     if (parseFrontmatter(raw)?.recovered && !warnedMalformed.has(skill.path)) {
       warnedMalformed.add(skill.path);
-      warnStderr(
-        `Skill frontmatter is not valid YAML, recovered by line scan: ${skill.path}`,
-        'log-only',
-      );
+      warnStderr(`Skill frontmatter is not valid YAML, recovered by line scan: ${skill.path}`);
     }
     const { body } = extractFrontmatter(raw);
     const fits = totalChars + body.length <= MAX_SKILL_CHARS;

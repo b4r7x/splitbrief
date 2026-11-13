@@ -52,7 +52,7 @@ describe('resolveImplementerProfiles', () => {
     expect(resolved.defaultProfile).toMatchObject({
       name: 'default',
       label: 'Default implementer',
-      capabilities: { writesFiles: 'extracted-code' },
+      capabilities: { writesFiles: 'direct' },
       config: config.implementer,
       isDefault: true,
     });

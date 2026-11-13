@@ -53,6 +53,7 @@ type ColdObservation = {
   workspace: string;
   previous: string | null;
   fallback: boolean;
+  fallbackWarned: boolean;
   continuation: ImplementerOptions['continuation'];
   stageLeaf: string | null;
   stageUnchanged: boolean | null;
@@ -128,13 +129,16 @@ async function runColdEntry(input: {
   const stop = new AbortController();
   const bus = createEventBus();
   let fallback = false;
+  let fallbackWarned = false;
   bus.subscribe((event) => {
+    if (event.type !== 'debug' && event.type !== 'warning') return;
     if (
-      event.type === 'warning' &&
-      (event.message.includes('repository has no commits') ||
-        event.message.includes('resuming retained staged-copy workspace'))
+      !event.message.includes('repository has no commits') &&
+      !event.message.includes('resuming retained staged-copy workspace')
     )
-      fallback = true;
+      return;
+    if (event.type === 'debug') fallback = true;
+    else fallbackWarned = true;
   });
   const planner = makePlanner({
     typedCall: typedCallPlanAndConsult(
@@ -155,6 +159,7 @@ async function runColdEntry(input: {
       workspace: opts.projectDir,
       previous,
       fallback,
+      fallbackWarned,
       continuation: opts.continuation,
       stageLeaf: record?.location.kind === 'staged-copy' ? record.location.leaf : null,
       stageUnchanged: stageBefore === null ? null : opts.projectDir === stageBefore,
@@ -237,6 +242,7 @@ it.skipIf(!matrixActive)(
     );
     expect(observation.attempt).toBe(expectedAttempt);
     expect(observation.fallback).toBe(true);
+    expect(observation.fallbackWarned).toBe(false);
     if (stage === null) throw new Error('missing retained stage');
     expect(observation.workspace).toBe(stage);
     expect(observation.stageLeaf).not.toBeNull();

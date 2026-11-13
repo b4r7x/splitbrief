@@ -45,6 +45,7 @@ function Harness(props: {
   initialKey: string | undefined;
   activated: CrewSettingsItem[];
   activatedFallbacks?: FallbackSettingsItem[];
+  showDescription?: boolean;
 }) {
   const state = useSettingsEditor({
     config: props.config,
@@ -60,6 +61,7 @@ function Harness(props: {
     },
     pageSize: 20,
     canActOnIndex: () => true,
+    showDescription: props.showDescription ?? true,
   });
   return createElement(
     Text,
@@ -189,6 +191,60 @@ describe('useSettingsEditor', () => {
       ui.unmount();
     },
   );
+
+  it('keeps a locked row and its value with no notice while the help shows the reason', async () => {
+    const config = makeConfig({ reviewer: 'none', validation: { endChecks: true } });
+    seed(config);
+    const items = buildSettingsItems({ config, defs: SETTINGS_DEFS, cliTools: [] });
+    const before = JSON.stringify(configStore.get().config);
+
+    const ui = renderFeature(
+      createElement(Harness, {
+        config,
+        items,
+        initialKey: 'validation.endChecks',
+        activated: [],
+        showDescription: true,
+      }),
+    );
+    await flushEffects();
+    ui.stdin.write(' ');
+    ui.stdin.write('\r');
+    await tick(30);
+
+    expect(JSON.stringify(configStore.get().config)).toBe(before);
+    expect(feedbackStore.get().message).toBeNull();
+    ui.unmount();
+  });
+
+  it('names the reason in a notice while the help is hidden and keeps the value', async () => {
+    const config = makeConfig({ reviewer: 'none', validation: { endChecks: true } });
+    seed(config);
+    const items = buildSettingsItems({ config, defs: SETTINGS_DEFS, cliTools: [] });
+    const before = JSON.stringify(configStore.get().config);
+    const reason = 'Read-only while REVIEW is None: no review runs.';
+
+    const ui = renderFeature(
+      createElement(Harness, {
+        config,
+        items,
+        initialKey: 'validation.endChecks',
+        activated: [],
+        showDescription: false,
+      }),
+    );
+    await flushEffects();
+    ui.stdin.write(' ');
+    await vi.waitFor(() => {
+      expect(feedbackStore.get()).toEqual({ message: reason, isError: true });
+    });
+    ui.stdin.write('\r');
+    await tick(30);
+
+    expect(feedbackStore.get()).toEqual({ message: reason, isError: true });
+    expect(JSON.stringify(configStore.get().config)).toBe(before);
+    ui.unmount();
+  });
 
   it('says nothing when space lands on an api seat', async () => {
     const config = makeConfig({

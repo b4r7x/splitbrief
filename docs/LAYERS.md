@@ -78,7 +78,7 @@ Moral: validators (pure) split from error factories (domain). If a "validator" a
 **What lives here:**
 - `lib/git/` — `simple-git` boundary in `client.ts` (diff, file, ref, repository and entry-merge helpers in sibling modules)
 - `lib/fs.ts` — security-aware filesystem helpers (`ensureSecureDir`, `writeSecureFile`)
-- `lib/warn.ts` — `stderr` formatter
+- `lib/warn.ts` — diagnostic writer: each diagnostic to the debug log, one the user must act on also to the installed sink or `stderr`
 - `lib/process/` — subprocess lifecycle (`spawn`, `errors`, `registry`, `line-buffer`, `command-path`)
 - `lib/terminal/` — terminal I/O (`filtered-stdin/`, `mouse-zones`, `kitty-keyboard` protocol, `hyperlinks`, `background`)
 - `lib/http/policy-fetch.ts` — manual-redirect `fetch` transport; the caller supplies the initial endpoint and the rejection factory, so the module carries no provider knowledge

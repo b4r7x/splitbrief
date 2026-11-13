@@ -177,7 +177,7 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
       if (message.text.trim() !== '') {
         composerDraftStore.requestPrepend(composerLiveStore.get().document);
       }
-      feedbackStore.setError(refusal);
+      feedbackStore.setMessage(refusal);
     };
 
   const continuation = useRunContinue({ prepared, inputMode });

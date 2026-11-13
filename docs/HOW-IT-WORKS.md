@@ -106,7 +106,7 @@ The queue handler shares one run-scoped `SteeringPort` with foreground BUILD, pl
 
 **The planning session** — `runPlanningSession()` (`src/engine/orchestrator/planning/session.ts`) drives the pure loop `runPlanSession()` (`plan-session.ts`):
 
-- the planner answers typed JSON against `PlanAnswerSchema` through `requestTyped`: questions (at most 3 per round, at most 2 rounds) or a plan;
+- the planner answers typed JSON against `PlanAnswerSchema` through `requestTyped`: questions (at most 2 rounds) or a plan;
 - a plan is checked by `checkPlan`, plus the context fit when a Prompt budget is set, and goes back to the planner once if it fails;
 - a plan that passes is compiled: `taskFromSpec` maps its tasks, `plan.json` is written, `plan.md` and `tasks.md` are rendered, and `PLAN_COMPILED` stores it;
 - `runPlanApproval()` opens the plan card when `workflow.approve` is `plan`, then dispatches `BEGIN_IMPLEMENTATION`.

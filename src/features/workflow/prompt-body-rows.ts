@@ -147,12 +147,16 @@ export function promptBodyRows(
   width: number,
 ): PromptBodyLine[] {
   const promptWidth = Math.max(MIN_PROMPT_WIDTH, width);
+  const sourceRows = typeof prompt === 'string' ? undefined : prompt;
   // Rows are masked one by one, so that a quote in one row cannot pair with a quote in another.
   const rows = parsePromptRows(
     typeof prompt === 'string'
       ? clean(prompt, true)
       : promptRowsToString(prompt, (row) => clean(row, true)),
   );
+  // A summary whose cut asked row spent the blank row starts its facts under the headline. The
+  // serialized form cannot say that, so the parsed body takes the source's own leading blank.
+  if (rows[1]?.kind === 'blank' && sourceRows?.[1]?.kind === 'facts') rows.splice(1, 1);
   const headline = rows[0];
   const sourceHeadline = typeof prompt === 'string' ? undefined : prompt[0];
   if (

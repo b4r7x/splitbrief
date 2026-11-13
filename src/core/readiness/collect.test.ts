@@ -800,6 +800,44 @@ describe('collectReadiness config loader warnings', () => {
     );
   });
 
+  it('puts the warnings of a resolved config in the report', async () => {
+    chmodSync(writeMinimalV3Config(tempDir), 0o600);
+
+    const { report } = await collectReadiness({
+      seatImageFact: NO_IMAGE_FACT,
+      projectDir: tempDir,
+      config: makeConfig(),
+      configWarnings: [{ kind: 'config-file-permissions' }],
+    });
+    const configChecks = report.sections.find((section) => section.id === 'config')?.checks ?? [];
+
+    expect(configChecks.map((check) => check.id)).toEqual(['config.loaded', 'config.warning']);
+    expect(configChecks[1]?.summary).toBe(
+      "The file's group or other users can change .splitbrief/config.yaml. SPLITBRIEF still uses it; run chmod 600 on the file to fix this.",
+    );
+  });
+
+  it('names an ignored flag when it loads the config', async () => {
+    chmodSync(writeMinimalV3Config(tempDir), 0o600);
+
+    const { report } = await collectReadiness({
+      seatImageFact: NO_IMAGE_FACT,
+      projectDir: tempDir,
+      opts: { plannerApiKeyEnv: 'PLANNER_KEY' },
+    });
+    const configWarnings = flattenReadinessChecks(report.sections).filter(
+      (check) => check.id === 'config.warning',
+    );
+
+    expect(configWarnings).toEqual([
+      expect.objectContaining({
+        severity: 'warning',
+        summary: "--planner-api-key-env is ignored: the planner 'cli' runner does not use it.",
+        fix: 'Remove the flag from the command.',
+      }),
+    ]);
+  });
+
   it('names each retired workflow key once, the load-mapped approve level included', async () => {
     const configPath = writeMinimalV3Config(tempDir);
     writeFileSync(

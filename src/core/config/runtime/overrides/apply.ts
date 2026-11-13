@@ -7,6 +7,9 @@ import {
   applyPlannerEffort,
   applyReviewerEffort,
   applyRunnerOverrides,
+  REMOVE_FLAG_FIX,
+  type AppliedOverrides,
+  type IgnoredFlag,
 } from './runner.js';
 import type { CLIOverrides } from './schema.js';
 
@@ -23,43 +26,58 @@ function parseOverrideOrThrow<T>(
   return parsed.data;
 }
 
-export function applyCLIOverrides(config: Config, overrides: CLIOverrides): Config {
+export function applyCLIOverrides(config: Config, overrides: CLIOverrides): AppliedOverrides {
   let next = config;
+  const ignoredFlags: IgnoredFlag[] = [];
+  const take = (applied: AppliedOverrides) => {
+    ignoredFlags.push(...applied.ignoredFlags);
+    next = applied.config;
+  };
   if (overrides.planner) {
-    next = applyRunnerOverrides('planner', overrides.planner, next);
+    take(applyRunnerOverrides('planner', overrides.planner, next));
   }
   if (overrides.implementer || overrides.contextLength !== undefined) {
-    next = applyImplementerOverrides(
-      {
-        ...overrides.implementer,
-        ...(overrides.implementer?.contextLength !== undefined ||
-        overrides.contextLength !== undefined
-          ? { contextLength: overrides.implementer?.contextLength ?? overrides.contextLength }
-          : {}),
-      },
-      next,
+    take(
+      applyImplementerOverrides(
+        {
+          ...overrides.implementer,
+          ...(overrides.implementer?.contextLength !== undefined ||
+          overrides.contextLength !== undefined
+            ? { contextLength: overrides.implementer?.contextLength ?? overrides.contextLength }
+            : {}),
+        },
+        next,
+      ),
     );
   }
   if (overrides.reviewer) {
-    next = applyRunnerOverrides('reviewer', overrides.reviewer, next);
+    take(applyRunnerOverrides('reviewer', overrides.reviewer, next));
   }
   if (overrides.plannerEffort !== undefined) {
+    const input = { name: '--planner-effort', fix: REMOVE_FLAG_FIX };
     const effort = parseOverrideOrThrow(
       EffortLevelSchema,
       overrides.plannerEffort,
-      '--planner-effort',
+      input.name,
       EFFORT_LEVELS,
     );
-    next = applyPlannerEffort(next, effort);
+    take(applyPlannerEffort(next, effort, input));
   }
   if (overrides.reviewerEffort !== undefined) {
+    const input = { name: '--reviewer-effort', fix: REMOVE_FLAG_FIX };
     const effort = parseOverrideOrThrow(
       EffortLevelSchema,
       overrides.reviewerEffort,
-      '--reviewer-effort',
+      input.name,
       EFFORT_LEVELS,
     );
-    next = applyReviewerEffort(next, effort);
+    take(applyReviewerEffort(next, effort, input));
   }
-  return next;
+  if (overrides.reviewerSpecEffort !== undefined) {
+    const level = overrides.reviewerSpecEffort;
+    const input = { name: `@${level} in --reviewer`, fix: `Remove @${level} from --reviewer.` };
+    const effort = parseOverrideOrThrow(EffortLevelSchema, level, input.name, EFFORT_LEVELS);
+    take(applyReviewerEffort(next, effort, input));
+  }
+  return { config: next, ignoredFlags };
 }

@@ -13,42 +13,45 @@ const homeEntries = () =>
     draftDocumentText,
   );
 
+const record = (text: string) =>
+  inputHistoryStore.pushDocumentSubmission(createDraftDocument(text), { currentScreen: 'home' });
+
 describe('inputHistoryStore', () => {
   beforeEach(() => {
     inputHistoryStore.reset();
   });
 
   it('ignores blank pushes', () => {
-    inputHistoryStore.push('   ');
+    record('   ');
     expect(homeEntries()).toEqual([]);
   });
 
-  it('trims pushed values and keeps the newest first', () => {
-    inputHistoryStore.push('first');
-    inputHistoryStore.push(' second ');
+  it('keeps the newest first', () => {
+    record('first');
+    record('second');
     expect(homeEntries()).toEqual(['second', 'first']);
   });
 
   it('moves a re-pushed value to the front instead of duplicating it', () => {
-    inputHistoryStore.push('first');
-    inputHistoryStore.push('second');
-    inputHistoryStore.push('first');
+    record('first');
+    record('second');
+    record('first');
     expect(homeEntries()).toEqual(['first', 'second']);
 
-    inputHistoryStore.push('first');
+    record('first');
     expect(homeEntries()).toEqual(['first', 'second']);
   });
 
   it('caps pushed entries at the maximum, dropping the oldest', () => {
     for (let index = 0; index < MAX_INPUT_HISTORY + 2; index++) {
-      inputHistoryStore.push(`item-${index}`);
+      record(`item-${index}`);
     }
     expect(homeEntries()).toHaveLength(MAX_INPUT_HISTORY);
     expect(homeEntries()[0]).toBe(`item-${MAX_INPUT_HISTORY + 1}`);
   });
 
   it('replaces existing entries on hydrate', () => {
-    inputHistoryStore.push('stale');
+    record('stale');
     inputHistoryStore.hydrate(['fresh-a', 'fresh-b']);
     expect(homeEntries()).toEqual(['fresh-a', 'fresh-b']);
   });
@@ -132,7 +135,7 @@ describe('inputHistoryStore', () => {
   });
 
   it('clears entries when hydrated with nothing', () => {
-    inputHistoryStore.push('something');
+    record('something');
     inputHistoryStore.hydrate([]);
     expect(homeEntries()).toEqual([]);
   });

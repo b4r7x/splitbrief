@@ -56,8 +56,8 @@ async function main(): Promise<void> {
 
 main().catch((err) => {
   const message = toErrorMessage(err, { preserveLineBreaks: true });
-  // No-op for fatals before bootstrapStoresSync configures the logger: projectDir is
-  // unknown then, and configuring from cwd would create .splitbrief outside the project.
+  // No-op for a fatal before the logger starts. canonicalizeProjectDir starts it at the git
+  // repository root only: configuring from cwd would create .splitbrief outside the project.
   createLogger('cli').error('fatal', {
     message,
     stack: err instanceof Error ? err.stack : undefined,

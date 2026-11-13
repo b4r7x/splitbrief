@@ -124,6 +124,9 @@ export function correctionActionFor(
   );
 }
 
+/** The refusal of typed words on a halt with no correction action. */
+export const NO_CORRECTION_MESSAGE = 'This halt takes no typed correction. Choose an action.';
+
 /** The composer placeholder on an open halt names what the focused side takes. */
 export function recoveryComposerHint(
   issue: RecoveryIssue,
@@ -243,7 +246,9 @@ export function formatMiddotList(values: string[], max: number): string {
 /**
  * The issue and its facts at the panel's text width; the menu under them holds the actions.
  * `askedRows` puts the asked row before the task and its files, on at most that many rows, for a
- * panel too short to reach it.
+ * panel too short to reach it. A cut asked row with no fact after it takes the blank row under the
+ * headline as one more row of its own. When a fact follows it, the blank row stays, and the panel's
+ * clip drops that row first.
  */
 export function recoveryPromptSummaryRows(
   issue: RecoveryIssue,
@@ -254,21 +259,26 @@ export function recoveryPromptSummaryRows(
   const details = formatDetailLines(issue);
   const room = width - getTerminalCellWidth(FACT_INDENT);
   const asked = details.filter(isAskedDetail);
+  const after = details.filter((detail) => !isAskedDetail(detail));
+  const spendsBlank =
+    askedRows !== undefined &&
+    askedRows > 0 &&
+    subject.length === 0 &&
+    after.length === 0 &&
+    asked.some((detail) => fitAskedDetail(detail, room, askedRows) !== oneLineDisplayText(detail));
+  const askedBudget = askedRows !== undefined && spendsBlank ? askedRows + 1 : askedRows;
   const facts =
-    askedRows === undefined
+    askedBudget === undefined
       ? [...subject, ...details]
-      : [
-          ...asked.map((detail) => fitAskedDetail(detail, room, askedRows)),
-          ...subject,
-          ...details.filter((detail) => !isAskedDetail(detail)),
-        ];
+      : [...asked.map((detail) => fitAskedDetail(detail, room, askedBudget)), ...subject, ...after];
 
   const parts = formatRecoveryHeaderParts(issue);
   const rows: PromptRow[] = [
     { kind: 'headline', tone: 'attention', text: parts.map((part) => part.text).join(''), parts },
   ];
   if (facts.length > 0) {
-    rows.push({ kind: 'blank' }, { kind: 'facts', items: facts, grid: false });
+    if (!spendsBlank) rows.push({ kind: 'blank' });
+    rows.push({ kind: 'facts', items: facts, grid: false });
   }
   return rows;
 }
@@ -444,23 +454,10 @@ function fitFileList(files: string[], room: number): string {
   return `${elidePathMiddle(files[0] ?? '', room - getTerminalCellWidth(tail))}${tail}`;
 }
 
-/**
- * The widest halt a builder writes is retry-exhausted: the last error, the attempts, the bigger
- * worker on offer, what the implementer said, what the planner answered, and the planner's
- * verdict. The budget covers all six, so the two voices are never the rows that fall off.
- * Apply conflicts and partial Apply keep every file detail and the workspace or backup path.
- */
-const MAX_DETAIL_LINES = 6;
-
 function formatDetailLines(issue: RecoveryIssue): string[] {
   const dropQuotedReset = formatResetAt(issue.resetAt) !== undefined;
-  const details =
-    issue.reason === 'apply-conflict' || issue.reason === 'apply-partial'
-      ? issue.details
-      : issue.details
-          .filter((detail) => !detail.startsWith('Worker profile:'))
-          .slice(0, MAX_DETAIL_LINES);
-  return details
+  return issue.details
+    .filter((detail) => !detail.startsWith('Worker profile:'))
     .map(formatDetailLine)
     .map((detail) => (dropQuotedReset ? stripRecoveryResetClause(detail) : detail));
 }

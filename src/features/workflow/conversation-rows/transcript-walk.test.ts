@@ -1305,7 +1305,7 @@ describe('a BUILD call that retries after a network or server failure', () => {
       step.kind === 'event' ? [step.event] : [],
     );
 
-    // Each BUILD attempt followed by a BUILD retry hides its failed row, while the retry rows remain.
+    // A BUILD attempt a retry follows hides its failed row, while the retry events remain.
     expect(eventSteps.filter((event) => event.type === 'implementer_generate_failed')).toEqual([]);
     expect(eventSteps.filter((event) => event.type === 'seat_retry')).toEqual([
       firstRetry,

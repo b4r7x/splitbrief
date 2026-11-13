@@ -7,12 +7,17 @@ import { wireAppMouse } from '../../../src/app/mouse.js';
 import { App, type AppProps } from '../../../src/app/root.js';
 import { canonicalizeProjectDir } from '../../../src/cli/setup.js';
 import { SPLITBRIEF_DIR } from '../../../src/core/paths.js';
+import { taskId } from '../../../src/core/schemas/task.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
 import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
 import { saveState } from '../../../src/core/state/persistence.js';
 import { buildApplyConflictRecoveryIssue } from '../../../src/engine/orchestrator/recovery/builders/apply.js';
 import { saveFinalSession } from '../../../src/engine/orchestrator/session-lifecycle/finalize.js';
 import { readConversationScrollSnapshot } from '../../../src/features/workflow/layout/snapshot.js';
+import {
+  RAIL_SHORT_LABEL,
+  railConnectorString,
+} from '../../../src/features/workflow/layout/chrome-rows.js';
 import { hydrateRun } from '../../../src/features/workflow/run-history.js';
 import { glyph } from '../../../src/lib/glyphs.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
@@ -62,6 +67,22 @@ const TODAYS_CREW = makeConfig({
   implementer: { kind: 'cli', tool: 'antigravity' },
   reviewer: { kind: 'cli', tool: 'codex' },
 });
+
+/** The short-label rail of a run that passed its review and stopped on Apply. */
+const SHORT_FAILED_APPLY_RAIL = [
+  `${glyph('stageDone')} ${RAIL_SHORT_LABEL.plan}`,
+  `${glyph('stageDone')} ${RAIL_SHORT_LABEL.build}`,
+  `${glyph('stageDone')} ${RAIL_SHORT_LABEL.review}`,
+  `${glyph('statusFailed')} ${RAIL_SHORT_LABEL.apply}`,
+].join(railConnectorString());
+
+/** The short-label rail of a finished run whose Apply is the stage it is on. */
+const SHORT_PENDING_APPLY_RAIL = [
+  `${glyph('stageDone')} ${RAIL_SHORT_LABEL.plan}`,
+  `${glyph('stageDone')} ${RAIL_SHORT_LABEL.build}`,
+  `${glyph('stageDone')} ${RAIL_SHORT_LABEL.review}`,
+  `${glyph('stagePending')} ${RAIL_SHORT_LABEL.apply}`,
+].join(railConnectorString());
 
 describe('e2e: the crew strip at a narrow width', () => {
   it('names every seat by its tool on one row at 80 and 60 columns', async () => {
@@ -136,18 +157,105 @@ describe('e2e: the crew strip at a narrow width', () => {
 
     const opened = await openHaltedRun(created, { heading: 'Needs you' });
     try {
-      for (const { cols, rows } of [
-        { cols: 80, rows: 24 },
-        { cols: 60, rows: 18 },
+      // The old assertion pinned the long `Apply` label at 80 columns, where the rail now keeps its
+      // short labels beside the crew line. At 60 columns the one-stage Form C rail wins and paints
+      // the whole word, so the Form B abbreviation `Apl` is not what that width shows.
+      for (const { cols, rows, rail } of [
+        { cols: 80, rows: 24, rail: SHORT_FAILED_APPLY_RAIL },
+        { cols: 60, rows: 18, rail: `${glyph('statusFailed')} Apply` },
       ]) {
         terminalSizeStore.__testReset({ cols, rows, isSmall: true });
         await flushEffects();
         const firstRow = stripAnsiStyles(opened.screen.lastFrame() ?? '').split('\n')[0] ?? '';
-        expect(firstRow, `at ${cols}`).toContain(`${glyph('statusFailed')} Apply`);
+        expect(firstRow, `at ${cols}`).toContain(rail);
         expect(firstRow, `at ${cols}`).toContain('PLAN claude · BUILD claude · REVIEW = PLAN');
         expect(firstRow, `at ${cols}`).not.toContain('Plan');
         expect(firstRow, `at ${cols}`).not.toContain('Build');
       }
+    } finally {
+      opened.screen.unmount();
+      await settleOpenedRuns();
+    }
+  }, 150_000);
+
+  it('keeps the model names beside the one-stage rail at 100 columns when the tool line is longer', async () => {
+    const created = createStopContinueFixture(escapingImplementerScript);
+    fixture = created;
+    const halted = await cli(created, ['start', 'smoke']);
+    expect(halted.exitCode, halted.stderr).toBe(1);
+    const sessionId = readActive(created.projectDir);
+    if (sessionId === null) throw new Error('The halted run saved no session');
+    const ref = { projectDir: created.projectDir, sessionId };
+    const saved = readState(created, sessionId);
+    const issue = buildApplyConflictRecoveryIssue({
+      conflicts: [{ path: 'src/greet.ts', kind: 'text' }],
+      workspacePath: saved.workspace?.path ?? created.projectDir,
+      createdAt: '2026-10-11T00:00:00.000Z',
+    });
+    const awaitingApply = {
+      ...saved,
+      phase: 'complete' as const,
+      reviewStatus: 'passed' as const,
+      tasks: saved.tasks.map((task) => ({ ...task, status: 'done' as const })),
+      pendingRecovery: issue,
+    };
+    saveState(ref, awaitingApply);
+    saveFinalSession({
+      projectDir: ref.projectDir,
+      sessionId: ref.sessionId,
+      feature: awaitingApply.feature,
+      startTime: Date.parse(awaitingApply.startedAt) || Date.now(),
+      summary: makeSummary({
+        feature: awaitingApply.feature,
+        plannerTool: 'custom-endpoint',
+        plannerModel: 'gpt-5.1',
+        implementerTool: 'antigravity',
+        implementerModel: 'auto',
+        reviewerTool: 'custom-endpoint',
+        reviewerModel: 'gpt-5-codex',
+        taskBreakdown: [
+          ...saved.tasks.map((task, index) => ({
+            taskId: task.id,
+            taskTitle: task.title,
+            method: 'local' as const,
+            implementerTokens: 0,
+            escalationTokens: 0,
+            retryCount: 0,
+            tool: 'antigravity',
+            model: index === 0 ? 'gemini-3.8-flash-high' : 'auto',
+          })),
+          {
+            taskId: taskId('T002'),
+            taskTitle: 'Keep the greeting exported',
+            method: 'local' as const,
+            implementerTokens: 0,
+            escalationTokens: 0,
+            retryCount: 0,
+            tool: 'antigravity',
+            model: 'auto',
+          },
+        ],
+      }),
+      state: awaitingApply,
+    });
+    writeFileSync(
+      join(created.projectDir, SPLITBRIEF_DIR, 'config.yaml'),
+      YAML.stringify(TODAYS_CREW),
+      'utf-8',
+    );
+
+    const opened = await openHaltedRun(created, { heading: 'Needs you' });
+    try {
+      terminalSizeStore.__testReset({ cols: 100, rows: 30, isSmall: true });
+      await flushEffects();
+      const firstRow = stripAnsiStyles(opened.screen.lastFrame() ?? '').split('\n')[0] ?? '';
+      expect(firstRow).toContain(`${glyph('statusFailed')} Apply`);
+      expect(firstRow).not.toContain('Plan');
+      expect(firstRow).not.toContain('Build');
+      expect(firstRow).not.toContain('Review');
+      expect(firstRow).toContain(
+        `PLAN GPT-5.1 · BUILD Gemini 3.8 Flash ${glyph('connectorHandoff')} Google Antigravity CLI · REVIEW GPT-5 Codex`,
+      );
     } finally {
       opened.screen.unmount();
       await settleOpenedRuns();
@@ -198,11 +306,12 @@ describe('e2e: the crew strip at a narrow width', () => {
 
       const before = stripAnsiStyles(screen.lastFrame());
       const firstRow = before.split('\n')[0] ?? '';
-      expect(firstRow).toContain(`${glyph('stagePending')} Apply`);
+      expect(firstRow).toContain(SHORT_PENDING_APPLY_RAIL);
       expect(firstRow).toContain('PLAN claude · BUILD claude · REVIEW = PLAN');
       expect(readConversationScrollSnapshot().maxOffset).toBeGreaterThan(0);
 
-      mouse.emit(pointerEvent('press', firstRow.indexOf('Apply') + 1, 1));
+      // The click goes to the short label the rail paints; the old assertion read the long `Apply`.
+      mouse.emit(pointerEvent('press', firstRow.indexOf(RAIL_SHORT_LABEL.apply) + 1, 1));
       await flushEffects();
 
       expect(conversationScrollStore.get().scrollOffset).toBe(0);

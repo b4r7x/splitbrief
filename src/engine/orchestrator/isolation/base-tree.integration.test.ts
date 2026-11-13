@@ -17,10 +17,11 @@ import * as fs from 'node:fs/promises';
 import { basename, isAbsolute, join, relative } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { withApplyRun, type ApplyRun } from '#testing/helpers/apply-run.js';
+import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
 import { createTestGitRepo, recordGitLaunches } from '#testing/helpers/git.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { runBaseTreesRoot } from '../../../core/paths.js';
-import { installDiagnosticSink } from '../../../lib/warn.js';
+import { resetLoggerForTests } from '../../../lib/logger.js';
 import { runBaseIncomplete, runBaseOf, withRunBaseTree } from './base-tree.js';
 
 vi.mock('node:fs/promises', async (importOriginal) => ({
@@ -34,6 +35,7 @@ const FILES = {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  resetLoggerForTests();
 });
 
 function inside(root: string, path: string): boolean {
@@ -331,8 +333,8 @@ describe('withRunBaseTree', { timeout: 60_000 }, () => {
       const stale = join(runBaseTreesRoot(), `base-${gone}-locked`);
       git(run.dir, `worktree add --detach ${JSON.stringify(stale)} HEAD`);
       git(run.dir, `worktree lock ${JSON.stringify(stale)}`);
-      const warnings: string[] = [];
-      const restore = installDiagnosticSink((message) => warnings.push(message));
+      const logDir = createTempDir('base-sweep-log');
+      enableDebugLog(logDir);
       try {
         for (let attempt = 0; attempt < 2; attempt++) {
           const completed = await withRunBaseTree(
@@ -342,13 +344,14 @@ describe('withRunBaseTree', { timeout: 60_000 }, () => {
           );
           expect(completed).toEqual({ result: FILES['src/legacy.ts'], cleanupError: undefined });
         }
+        const warnings = loggedDiagnostics(logDir);
         expect(warnings).toHaveLength(2);
         expect(warnings.every((warning) => warning.includes(stale))).toBe(true);
         expect(warnings.every((warning) => warning.includes('locked'))).toBe(true);
         expect(existsSync(stale)).toBe(true);
         expect(existsSync(join(run.dir, '.git/worktrees', basename(stale)))).toBe(true);
       } finally {
-        restore();
+        cleanupTempDir(logDir);
         git(run.dir, `worktree unlock ${JSON.stringify(stale)}`);
         git(run.dir, `worktree remove --force ${JSON.stringify(stale)}`);
       }
@@ -443,8 +446,8 @@ describe('withRunBaseTree', { timeout: 60_000 }, () => {
     'reports cleanup failure after the callback chooses to %s',
     async (outcome) => {
       await withApplyRun(FILES, { sessionId: 'sess-base-cleanup-fails' }, async (run) => {
-        const warnings: string[] = [];
-        const restore = installDiagnosticSink((message) => warnings.push(message));
+        const logDir = createTempDir('base-cleanup-log');
+        enableDebugLog(logDir);
         const callbackError = new Error('callback failed');
         let tree = '';
         try {
@@ -456,8 +459,9 @@ describe('withRunBaseTree', { timeout: 60_000 }, () => {
           }).catch((err: unknown) => err);
           if (outcome === 'throw') {
             expect(completed).toBe(callbackError);
-            expect(warnings.join('\n')).toContain(tree);
-            expect(warnings.join('\n')).toContain('locked');
+            const warnings = loggedDiagnostics(logDir).join('\n');
+            expect(warnings).toContain(tree);
+            expect(warnings).toContain('locked');
           } else {
             expect(completed).toMatchObject({
               result: 'passed',
@@ -468,7 +472,7 @@ describe('withRunBaseTree', { timeout: 60_000 }, () => {
           expect(existsSync(tree)).toBe(true);
           expect(existsSync(join(run.dir, '.git/worktrees', basename(tree)))).toBe(true);
         } finally {
-          restore();
+          cleanupTempDir(logDir);
           git(run.dir, `worktree unlock ${JSON.stringify(tree)}`);
           git(run.dir, `worktree remove --force ${JSON.stringify(tree)}`);
         }

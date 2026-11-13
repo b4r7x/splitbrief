@@ -1,4 +1,5 @@
 import { plainUserMessage } from '../../../core/types/user-input.js';
+import { createDraftDocument } from '../../../core/composer/document.js';
 import { execFileSync, spawn } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, rmdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -44,6 +45,7 @@ import {
 } from '../../../lib/process/registry.js';
 import { installDiagnosticSink } from '../../../lib/warn.js';
 import { routerStore } from '../../../stores/navigation/router.js';
+import { composerLiveStore } from '../../../stores/ui/composer-live.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
@@ -723,6 +725,35 @@ describe('run-loop stop completion', () => {
     await expectParked(prepared);
     expect(engine).toHaveBeenCalledTimes(1);
   });
+
+  it.each([
+    ['over typed words, and keeps the stop sheet closed', 'also fix the typo', 'none'],
+    ['over an empty composer, and opens the stop sheet', '', 'stop-sheet'],
+  ] as const)(
+    'names the cause in the byline when a stop fails %s',
+    async (_case, draft, overlay) => {
+      const prepared = prepare();
+      const engine = waitingEngine(awaitAbort);
+      mount(prepared, engine);
+      await vi.waitFor(() => expect(engine).toHaveBeenCalledTimes(1));
+      composerLiveStore.setDraft(createDraftDocument(draft));
+      const dir = sessionDir(projectDir, prepared.session.ref.sessionId);
+      const line =
+        'Could not save the run state: permission denied · .splitbrief/sessions/stop-session/state.json';
+      chmodSync(dir, 0o555);
+      try {
+        requestStopNow();
+        await vi.waitFor(() => expect(stopStore.get().phase).toBe('failed'));
+        await vi.waitFor(() =>
+          expect(mounted?.lastFrame()?.replace(/\s+/g, ' ')).toContain(`Stop failed · ${line}`),
+        );
+        expect(overlayStore.get().active).toBe(overlay);
+        expect(composerLiveStore.get().text).toBe(draft);
+      } finally {
+        chmodSync(dir, 0o755);
+      }
+    },
+  );
 
   it.each([
     ['Esc, Ctrl+C or /stop', requestStopNow],

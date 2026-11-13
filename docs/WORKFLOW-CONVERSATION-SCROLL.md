@@ -102,7 +102,7 @@ or the summary of a closed run occupies the transcript tail. The snapshot reads 
 
 Row projection is split from row materialization:
 
-- `getConversationRowsProjection()` computes total row count and renderable count once for the current input identity.
+- `getConversationRowsProjection()` computes total row count, renderable count and the latest diff toggle key once for the current input identity. The `/diff` guard and the `/diff` toggle read that key (`readLatestDiffKey()`), so a key press or a text chunk does not walk the transcript again.
 - `getConversationRowsWindowProjection()` materializes only the visible window returned by `getScrollWindowState()`.
 - Activity batches keep one row per activity identity with `Map`. Tool start, input and completion updates replace that tool use's row; two tool uses with the same displayed text stay distinct. Collapsed mode shows the newest three entries in event order, and pins no warning or error: the header counts the warnings and errors. Expanded mode allocates all activity rows. Session and protocol activities contribute no rows, update counts or disclosure entries. A shell tool call that names no command contributes no row or count either; the row of the same call that names its command stays.
 - Activity producers preserve sanitized text up to the payload limits (512 characters for labels, 2048 for targets and partials). The row formatter fits that text to the current terminal width, so widening the terminal reveals more of a command or path.

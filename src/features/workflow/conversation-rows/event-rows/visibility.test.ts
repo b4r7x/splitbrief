@@ -49,7 +49,7 @@ describe('isTranscriptRowlessEvent', () => {
     ).toBe(true);
   });
 
-  it('keeps a seat retry as a transcript row', () => {
+  it('gives a seat retry no transcript row', () => {
     expect(
       isTranscriptRowlessEvent({
         type: 'seat_retry',
@@ -59,7 +59,7 @@ describe('isTranscriptRowlessEvent', () => {
         attempt: 1,
         delayMs: 2_000,
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('hides a refused seat answer that the seat is asked again for', () => {
@@ -70,6 +70,20 @@ describe('isTranscriptRowlessEvent', () => {
         phase: 'final-review',
         seat: 'reviewer',
         reasons: ['Task T001 is missing from the verdict.'],
+      }),
+    ).toBe(true);
+  });
+
+  it('paints no row for a debug event', () => {
+    expect(
+      isTranscriptRowlessEvent({
+        type: 'debug',
+        ts: 0,
+        phase: 'planning',
+        message:
+          'Planner session expired; the call runs again on a fresh session with the conversation so far.',
+        category: 'planner',
+        code: 'planner_session_expired',
       }),
     ).toBe(true);
   });

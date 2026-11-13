@@ -40,7 +40,7 @@ export async function shutdownWorkflow(opts: WithShutdownHandlersOpts): Promise<
     } catch (err) {
       // The error says what happened to which file; a prefix would claim a failed save over a
       // state that was saved.
-      warnStderr(toErrorMessage(err));
+      warnStderr(toErrorMessage(err), 'feedback');
     }
   }
 }

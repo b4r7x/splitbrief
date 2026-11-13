@@ -13,7 +13,7 @@ import {
 } from '../../../core/rail-stages.js';
 import { stepWord } from '../stop/copy.js';
 import { deriveLiveStatus } from '../display/live-activity.js';
-import { seatWaitSentence } from '../../../core/sessions/seat-wait-line.js';
+import { seatRetrySentence, seatWaitSentence } from '../../../core/sessions/seat-wait-line.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
 import { CREW_SEAT_ROLES, collapsedReviewSeat } from '../../../core/crew/seats.js';
 import { TextSpans } from '../../../components/text-spans.js';
@@ -280,6 +280,14 @@ export function InputFooter({
             tone: stateTone('attention'),
           },
         ];
+  const retrySentence = lifecycle.retry === null ? null : seatRetrySentence(lifecycle.retry);
+  const retryLead: ConversationRowSegment[] =
+    retrySentence === null
+      ? []
+      : [
+          { text: `${frame} `, tone: stateTone('running') },
+          { text: retrySentence, tone: 'textDim' },
+        ];
 
   // An actionable prompt takes precedence over the lifecycle state it interrupted.
   // The stop's own keys are the legend row's job: crowding them onto this row would cost the
@@ -314,22 +322,24 @@ export function InputFooter({
               ? { lead: interruptedLead, hintText: null }
               : seatWait !== null
                 ? { lead: seatWaitLead, hintText: null }
-                : runChecking
-                  ? { lead: runCheckingLead, hintText: null }
-                  : resuming
-                    ? { lead: resumingLead, hintText: null }
-                    : stall !== null
-                      ? {
-                          lead: stalledLead,
-                          hintText: stalledHint,
-                        }
-                      : liveStatus !== null
+                : retrySentence !== null
+                  ? { lead: retryLead, hintText: null }
+                  : runChecking
+                    ? { lead: runCheckingLead, hintText: null }
+                    : resuming
+                      ? { lead: resumingLead, hintText: null }
+                      : stall !== null
                         ? {
-                            lead: liveLead,
-                            leadClock: elapsed,
-                            hintText: null,
+                            lead: stalledLead,
+                            hintText: stalledHint,
                           }
-                        : { lead: stageLead, hintText: null };
+                        : liveStatus !== null
+                          ? {
+                              lead: liveLead,
+                              leadClock: elapsed,
+                              hintText: null,
+                            }
+                          : { lead: stageLead, hintText: null };
 
   const buildBrief = selectBuildMessageBrief(runView.briefs);
   const queuedCopy =

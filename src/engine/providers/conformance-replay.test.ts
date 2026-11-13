@@ -4,7 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { API_PROVIDER_CATALOG } from '../../core/providers/api-provider-catalog.js';
+import {
+  API_PROVIDER_CATALOG,
+  isListedApiProvider,
+} from '../../core/providers/api-provider-catalog.js';
 import { assemblePickerDescriptors } from '../../features/runners/model-catalog/options.js';
 import {
   CandidateEvidence,
@@ -531,7 +534,7 @@ function executeOmitNotApplicable(row: ProviderReplayRow): void {
     const pickerIds = assemblePickerDescriptors()
       .filter((entry) => entry.kind === 'api')
       .map((entry) => entry.descriptor.id);
-    expect(pickerIds).toContain(row.candidateId);
+    expect(pickerIds.includes(row.candidateId)).toBe(isListedApiProvider(row.candidateId));
   }
 }
 

@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import XtermHeadless from '@xterm/headless';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
+import { resolveTheme } from '../../../src/core/theme/resolve.js';
 import { reapOrphanRunners } from '../../../src/engine/orchestrator/run/orphan-reaper.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { trustDeclaredRunners } from '#testing/helpers/runner-trust.js';
@@ -14,11 +15,14 @@ import { PTY_SUBMIT_INPUT } from '../../integration/cli/pty/contract.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
 import { createStopContinueFixture } from '../helpers/stop-continue-fixture.js';
+import { readForegroundAtText, type TerminalForeground } from '../helpers/terminal-cells.js';
 
 const VIEWPORT = { cols: 120, rows: 40 };
 const PAINT = { timeout: 15_000 };
 const RUN = { timeout: 120_000 };
 const REFUSAL = 'Nothing to resume: the run has not stopped.';
+const WITH_WORDS_REFUSAL = '/resume takes no argument. Usage: /resume';
+const SCREEN_THEME = resolveTheme({ variant: 'dark', level: 3, terminalBackground: undefined });
 
 const TOTAL_FILE = 'src/total.mjs';
 const TOTAL_TEST_FILE = 'src/total.test.mjs';
@@ -44,7 +48,11 @@ const REVIEW_REPLY = JSON.stringify(
 );
 
 type HeldCall = 'plan' | 'build';
-type Tui = Readonly<{ screen: () => string; write: (keys: string) => void }>;
+type Tui = Readonly<{
+  screen: () => string;
+  write: (keys: string) => void;
+  foregroundAt: (phrase: string, offset?: number) => TerminalForeground;
+}>;
 
 // The held call waits while the hold file exists, so the test decides when it ends on its own.
 // A call that gets SIGTERM records it in calls.txt.
@@ -164,7 +172,12 @@ async function inTui(run: Run, home: string, drive: (tui: Tui) => Promise<void>)
         exit.resolve(event);
       });
       try {
-        await drive({ screen, write: (keys) => child.write(keys) });
+        await drive({
+          screen,
+          write: (keys) => child.write(keys),
+          foregroundAt: (phrase, offset) =>
+            readForegroundAtText(terminal.buffer.active, phrase, offset),
+        });
       } finally {
         if (outcome === undefined) await terminatePtyProcessGroup(child, exit.promise);
         await reapOrphanRunners(target.projectDir);
@@ -222,3 +235,35 @@ it.each<[string, HeldCall]>([
     }
   },
 );
+
+it('refuses /resume with words by its usage, and the run goes on', {
+  timeout: 200_000,
+}, async () => {
+  const run = setup('build');
+  try {
+    await inTui(run, trustHome.home, async ({ screen, write, foregroundAt }) => {
+      await expect.poll(screen, RUN).toContain('Describe your feature');
+      write('add a total helper');
+      await expect.poll(screen, PAINT).toContain('› add a total helper');
+      write(PTY_SUBMIT_INPUT);
+      await vi.waitFor(() => expect(callsMade(run)).toContain('implement'), RUN);
+
+      write('/resume use zod');
+      await expect.poll(screen, PAINT).toContain('› /resume use zod');
+      write(PTY_SUBMIT_INPUT);
+      await expect.poll(screen, PAINT).toContain(WITH_WORDS_REFUSAL);
+      const firstLetter = foregroundAt(WITH_WORDS_REFUSAL, 0);
+      expect(firstLetter).toEqual(foregroundAt(WITH_WORDS_REFUSAL, '/resume '.length));
+      expect(firstLetter).toEqual({ mode: 'rgb', color: SCREEN_THEME.textDim });
+      await expect.poll(screen, PAINT).toContain('› /resume use zod');
+      expect(callsMade(run)).not.toContain('implement-sigterm');
+
+      unlinkSync(run.hold);
+      await vi.waitFor(() => expect(callsMade(run)).toContain('final-review'), RUN);
+      expect(callsMade(run)).toEqual(['plan', 'implement', 'final-review']);
+    });
+  } finally {
+    if (existsSync(run.hold)) unlinkSync(run.hold);
+    cleanupTempDir(run.target.tmpDir);
+  }
+});

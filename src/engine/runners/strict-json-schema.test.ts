@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { CONSULT_ANSWER_JSON_SCHEMA } from '../../core/schemas/consult.js';
 import { PLAN_ANSWER_JSON_SCHEMA } from '../../core/schemas/plan.js';
+import {
+  REVIEW_ANSWER_JSON_SCHEMA,
+  REVIEW_VERDICT_JSON_SCHEMA,
+} from '../../core/schemas/review.js';
+import { isRecord } from '../../utils/type-guards.js';
 import { isStrictJsonSchema } from './strict-json-schema.js';
 
 const leaf = {
@@ -10,6 +15,16 @@ const leaf = {
   required: ['kind'],
   additionalProperties: false,
 };
+
+function maxItemsPaths(node: unknown, path = '$'): string[] {
+  if (Array.isArray(node)) {
+    return node.flatMap((entry, index) => maxItemsPaths(entry, `${path}[${index}]`));
+  }
+  if (!isRecord(node)) return [];
+  return Object.entries(node).flatMap(([key, value]) =>
+    key === 'maxItems' ? [`${path}.${key}`] : maxItemsPaths(value, `${path}.${key}`),
+  );
+}
 
 describe('isStrictJsonSchema', () => {
   it('accepts a closed object with every key required and a null union for an optional value', () => {
@@ -95,8 +110,18 @@ describe('isStrictJsonSchema', () => {
         $defs: { open: { ...leaf, required: [] } },
       },
     ],
+    ['an array with maxItems', z.toJSONSchema(z.object({ gate: z.array(z.string()).max(6) }))],
   ])('rejects a schema with %s', (_case, json) => {
     expect(isStrictJsonSchema(json)).toBe(false);
+  });
+
+  it.each([
+    ['plan answer', PLAN_ANSWER_JSON_SCHEMA],
+    ['consult answer', CONSULT_ANSWER_JSON_SCHEMA],
+    ['review answer', REVIEW_ANSWER_JSON_SCHEMA],
+    ['review verdict', REVIEW_VERDICT_JSON_SCHEMA],
+  ])('finds no maxItems at any depth of the %s schema', (_name, json) => {
+    expect(maxItemsPaths(json)).toEqual([]);
   });
 
   it('rejects what Zod emits for a discriminated union and an intersection', () => {

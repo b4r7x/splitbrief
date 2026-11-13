@@ -146,6 +146,20 @@ describe('getTerminalCellWidth', () => {
     expect(getTerminalCellWidth('e\u0301cole')).toBe(5);
   });
 
+  it.each([
+    ['ที่ใช้อยู่', 5],
+    ['You → ที่ใช้อยู่ it', 14],
+    ['น้ำ', 2],
+    ['กั', 1],
+  ])('counts no cell for a Thai mark above or below a letter: %s', (text, cells) => {
+    expect(getTerminalCellWidth(text)).toBe(cells);
+  });
+
+  it('counts one cell for the Thai vowel that stands after its letter', () => {
+    expect(getTerminalCellWidth('กำ')).toBe(2);
+    expect(getTerminalCellWidth('กา')).toBe(2);
+  });
+
   it('counts emoji grapheme clusters as two cells', () => {
     expect(getTerminalCellWidth('a👩‍💻🙂b')).toBe(6);
   });
@@ -293,6 +307,10 @@ describe('truncateTerminalDisplayText', () => {
 
   it('truncates emoji-presentation graphemes by their displayed cell width', () => {
     expect(truncateTerminalDisplayText('ab❤️cd', 5)).toBe('ab❤️…');
+  });
+
+  it('cuts a Thai text at the cells it paints', () => {
+    expect(truncateTerminalDisplayText('ที่ใช้อยู่', 5)).toBe('ที่ใช้อยู่');
   });
 
   it('returns the original string when it fits the cell budget', () => {

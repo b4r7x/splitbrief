@@ -15,6 +15,8 @@ import type { SessionSelectDeps } from '../../../src/stores/navigation/session-s
 import { loadOwnerWorkflowState } from '../../../src/core/state/resume-hydration.js';
 import { hydrateRun, readRunHistory } from '../../../src/features/workflow/run-history.js';
 import { writeConfigYaml } from '#testing/helpers/config-io.js';
+import { useRuntimeCommands } from '../../../src/app/command-context.js';
+import type { WorkflowScreenDeps } from '../../../src/features/workflow/hooks/workflow-screen/use-model.js';
 
 const runWorkflow = vi.fn<(opts: RunWorkflowOptions) => Promise<Summary>>();
 const workflowDeps = { runWorkflow };
@@ -26,7 +28,7 @@ const { lifecycleStore } = await import('../../../src/stores/workflow/lifecycle.
 const { runViewStore } = await import('../../../src/stores/workflow/run-view.js');
 const { createInitialState, transition } = await import('../../../src/core/state/machine.js');
 const { saveState } = await import('../../../src/core/state/persistence.js');
-const { requestBoundaryPause, requestResume } = await import(
+const { requestBoundaryPause, requestCancel, requestResume } = await import(
   '../../../src/features/workflow/handlers.js'
 );
 
@@ -34,6 +36,18 @@ const ENTER = '\r';
 
 function workflowStateInResearching(feature: string) {
   return transition(createInitialState(feature), { type: 'START' });
+}
+
+function WorkflowScreenWithCommands({ deps }: { deps: WorkflowScreenDeps }) {
+  const phase = runViewStore.use((state) => state.phase);
+  const model = useRuntimeCommands({ exit: () => {}, phase });
+  return (
+    <WorkflowScreen
+      commands={model.commands}
+      onRuntimeCommand={(raw, sentBy) => model.handleRuntimeCommand(raw, 'workflow', sentBy)}
+      deps={deps}
+    />
+  );
 }
 
 describe('WorkflowScreen lifecycle', () => {
@@ -335,6 +349,90 @@ describe('WorkflowScreen lifecycle', () => {
         'Nothing to resume: the run has not stopped.',
       );
       expect(runWorkflow).toHaveBeenCalledTimes(1);
+      ui.unmount();
+    } finally {
+      cleanupTempDir(projectDir);
+    }
+  });
+
+  it('continues a cancelled run through /resume after the cancelled pass returned', async () => {
+    const projectDir = createTempDir('workflow-screen-resume-after-cancel');
+    try {
+      const sessionId = 'cancelled-planning-returned';
+      const saved = workflowStateInResearching('resume after cancel');
+      saveState({ projectDir, sessionId }, saved);
+      const config = makeConfig();
+      const prepared = prepareWorkflowExecution({
+        projectDir,
+        feature: saved.feature,
+        config,
+        sessionId,
+        resumeState: saved,
+      });
+      configStore.__testReset({ config, projectDir });
+      terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
+      routerStore.navigate({
+        to: 'workflow',
+        run: readRunRecord(prepared.session.ref, false),
+        execution: { kind: 'local', prepared },
+      });
+
+      const firstPass = Promise.withResolvers<void>();
+      const cancelledPassReturns = Promise.withResolvers<void>();
+      const nextPass = Promise.withResolvers<RunWorkflowOptions>();
+      runWorkflow.mockImplementation(async (opts) => {
+        if (runWorkflow.mock.calls.length > 1) {
+          nextPass.resolve(opts);
+          return new Promise<never>(() => {});
+        }
+        firstPass.resolve();
+        await cancelledPassReturns.promise;
+        return makeSummary({ feature: saved.feature });
+      });
+      const sessionSelect: SessionSelectDeps = {
+        applying: () => false,
+        loadResumeState: loadOwnerWorkflowState,
+        prepareResume: async ({ state }) => ({
+          kind: 'prepared',
+          execution: prepareWorkflowExecution({
+            projectDir,
+            feature: state.feature,
+            config,
+            sessionId,
+            resumeState: state,
+          }),
+        }),
+        hydrateRun,
+      };
+
+      const ui = renderFeature(
+        <WorkflowScreenWithCommands deps={{ runWorkflow, sessionSelect }} />,
+      );
+      await firstPass.promise;
+      expect(requestCancel()).toBe(true);
+      cancelledPassReturns.resolve();
+      await vi.waitFor(() => {
+        const settled = routerStore.get();
+        expect(settled.screen === 'workflow' && settled.execution.kind).toBe('at-rest');
+      });
+      await flushEffects();
+
+      ui.stdin.write('/resume');
+      await flushEffects();
+      ui.stdin.write(ENTER);
+
+      await vi.waitFor(() => {
+        expect(runWorkflow).toHaveBeenCalledTimes(2);
+      });
+      const next = await nextPass.promise;
+      const resumable = loadOwnerWorkflowState(prepared.session.ref);
+      if (resumable.kind !== 'loaded') {
+        throw new Error('expected the cancelled run to keep its state');
+      }
+      expect(next.savedState).toEqual(resumable.state);
+      expect(next.savedState).toMatchObject({ feature: saved.feature, phase: saved.phase });
+      expect(next.steer).toBeUndefined();
+
       ui.unmount();
     } finally {
       cleanupTempDir(projectDir);

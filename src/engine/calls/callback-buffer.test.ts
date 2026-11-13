@@ -62,7 +62,7 @@ function callStallCleared(ts: number): RunnerCallEvent {
 }
 
 describe('createRunnerAttemptCallbackBuffer', () => {
-  it('preserves full call attribution in overflow warning and activity events', () => {
+  it('preserves full call attribution in the overflow warning without projecting activity', () => {
     const context = RunnerCallContextSchema.parse({
       ...runnerContext,
       attemptId: 'attempt-1',
@@ -97,10 +97,7 @@ describe('createRunnerAttemptCallbackBuffer', () => {
       phase: 'implementing',
       sequence: 1,
     });
-    expect(projected.map((event) => event.type)).toEqual([
-      'runner_call_warning',
-      'runner_call_activity',
-    ]);
+    expect(projected.map((event) => event.type)).toEqual(['runner_call_warning']);
     for (const event of projected) expect(event).toMatchObject(context);
   });
   it('emits one bounded overflow warning and preserves terminal call events', () => {
@@ -128,7 +125,7 @@ describe('createRunnerAttemptCallbackBuffer', () => {
       code: 'callback_buffer_overflow',
       severity: 'warning',
       source: 'system',
-      surface: 'activity',
+      surface: 'debug',
       message: 'Only the first 12288 live updates or 3 MB of this call are shown.',
     });
     expect(warning.warning.message.length).toBeLessThanOrEqual(RUNNER_CALL_MESSAGE_MAX_LENGTH);

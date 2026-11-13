@@ -353,6 +353,10 @@ describe('buildConsultPrompt', () => {
     expect(prompt).toContain(
       'a rewrite or a split never drops a criterion id; a split never splits a subtask',
     );
+    expect(prompt).toContain(
+      '- `split-task` — `tasks`: 2 or more complete TaskSpecs that together replace the task.',
+    );
+    expect(prompt).not.toContain('2 to 4');
     expect(prompt).toContain('No action undoes one of them.');
     expect(prompt).toContain('This call is read-only');
     expect(prompt).toContain(TASK_CMD_CHECK_RULE);

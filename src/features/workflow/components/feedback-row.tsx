@@ -1,5 +1,5 @@
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
-import { formatCopyResult } from '../../../core/runtime/commands/types.js';
+import { glyph } from '../../../lib/glyphs.js';
 import { Box } from 'ink';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
@@ -78,16 +78,14 @@ export function FeedbackRow({
   // The footer keeps the transcript's grammar: a mark in the mark slot — the legend's pointer, the
   // byline's pip, the composer's border — and every word on the text column its chevron opens on.
   // Every key legend carries the mark, whichever seat it arrived from; a message or a caller's
-  // prose hint leaves the slot empty and still opens on the text column.
+  // prose hint leaves the slot empty and still opens on the text column, and a failure fills it.
   const messageWord = safeMessage ?? '';
   const keyHintFitted = keyHint === '' ? '' : fitKeyLegend(keyHint, legendWidth);
   let word = '';
   let isLegend = false;
-  const copyReceipt = (['native', 'tmux-buffer', 'osc52'] as const).some(
-    (outcome) => messageWord === formatCopyResult(outcome),
-  );
-  // A sheet under the row names its own keys, so above it the row carries a message or nothing.
-  if (!owned || isError || copyReceipt || messageWord === 'Press ctrl+c again to quit') {
+  // A sheet under the row names its own keys, so above it the row carries a message or nothing. A
+  // message keeps the row whether or not a panel owns the keys; only a fallback yields to the panel.
+  if (messageWord !== '' || !owned) {
     if (messageWord !== '')
       word = fitFeedbackMessage(messageWord, { width: cols - MARK_SLOT_CELLS, maxRows: 1 });
     else if (!panelBelow) {
@@ -107,9 +105,19 @@ export function FeedbackRow({
       }
     }
   }
-  const severity = isError ? 'error' : word !== '' ? hintStateSeverity(word) : null;
+  // A failure is its own grammar: the failed mark takes the error ink and the sentence takes the
+  // text ink. A hint that opens with `Failed` keeps the state-word voice.
+  const failed = isError && !isLegend && word !== '';
+  const severity = failed ? null : word !== '' ? hintStateSeverity(word) : null;
   const wordColor = severity === 'error' ? t.error : severity === 'warning' ? t.warning : null;
-  const lead = word === '' ? '' : isLegend ? KEY_LEGEND_LEADING : ' '.repeat(MARK_SLOT_CELLS);
+  const lead =
+    word === ''
+      ? ''
+      : failed
+        ? `${glyph('statusFailed')} `
+        : isLegend
+          ? KEY_LEGEND_LEADING
+          : ' '.repeat(MARK_SLOT_CELLS);
 
   // A sheet under the row is the panel that owns the footer while it is up. A row with no word
   // then has nothing to stand on, so it leaves no blank line between the sheet and the divider.
@@ -118,7 +126,12 @@ export function FeedbackRow({
   return (
     <Box height={1} flexShrink={0}>
       {word &&
-        (wordColor !== null ? (
+        (failed ? (
+          <Text wrap="truncate-end">
+            <Text color={t.error}>{lead}</Text>
+            <Text color={t.text}>{word}</Text>
+          </Text>
+        ) : wordColor !== null ? (
           <StateWordVoice lead={lead} text={word} color={wordColor} />
         ) : (
           <Text color={t.textDim} wrap="truncate-end">

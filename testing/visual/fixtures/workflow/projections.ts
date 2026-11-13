@@ -31,6 +31,8 @@ import {
   checksRunningProjection,
 } from './check-fold-projections.js';
 import { cliStopContinuedProjection } from './cli-stop-continued.js';
+import { approvalDraftDeletedProjection } from './approval-draft-deleted-projection.js';
+import { approvalWordsStayProjection } from './approval-words-stay-projection.js';
 import { taskId, type Check, type Task } from '../../../../src/core/schemas/task.js';
 import { buildRepoChecks } from '../../../../src/core/readiness/checks/repo.js';
 import {
@@ -128,6 +130,7 @@ import { consultFailureLabel } from '../../../../src/engine/orchestrator/task/re
 import {
   planCheckRow,
   publishConsultAnswered,
+  publishDebug,
   publishError,
   publishInfo,
   publishRecoveryActionSelected,
@@ -283,6 +286,11 @@ export interface WorkflowFixtureProjection {
   readonly question?: FixtureQuestion;
   readonly questionPreview?: 'overflow-back' | 'write' | 'closed';
   readonly approval?: FixtureApproval;
+  /**
+   * A gate the fixture opens after its first frame, once the draft is typed: the crop still measures
+   * the panel from these facts, while setup leaves the composer the keys until the gate opens.
+   */
+  readonly approvalAfterMount?: Pick<FixtureApproval, 'actionClass' | 'actionDescription'>;
   readonly review?: FixtureReview;
   /** The artifact the document review panel names, when the projection opens that gate. */
   readonly reviewArtifact?: ReviewArtifact;
@@ -318,6 +326,9 @@ const WORKFLOW_IMPLEMENTATION_ESCALATED_ID = scenarioId('workflow-implementation
 const WORKFLOW_IMPLEMENTATION_NARRATION_ID = scenarioId('workflow-implementation-narration');
 const WORKFLOW_IMPLEMENTATION_SUBAGENT_TEXT_ID = scenarioId(
   'workflow-implementation-subagent-text',
+);
+const WORKFLOW_IMPLEMENTATION_PARALLEL_SUBAGENTS_ID = scenarioId(
+  'workflow-implementation-parallel-subagents',
 );
 const WORKFLOW_IMPLEMENTATION_COMMAND_CODE_ID = scenarioId('workflow-implementation-command-code');
 const WORKFLOW_IMPLEMENTATION_ADJACENT_NARRATION_ID = scenarioId(
@@ -1358,6 +1369,40 @@ const planCheckNoTestFileProjection: WorkflowFixtureProjection = {
   }),
 };
 
+// The brief's own test check names a test file the workspace does not hold, so it failed without a command.
+const briefCheckUnranRedProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-brief-check-unran-red'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  events: [
+    ...touchedNotSuggestedProjection.events.filter(
+      (event) => event.type === 'workflow_started' || event.type === 'tasks_planned',
+    ),
+    ...touchedNotSuggestedProjection.events.filter((event) => event.type === 'task_started'),
+    {
+      type: 'full_suite',
+      ts: FIXED_TS + 390,
+      phase: 'validating-task',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      moment: 'plan',
+      id: 'K1',
+      command: '',
+      status: 'done',
+      passed: false,
+      detail: 'the workspace has no test file for src/loud.test.mjs',
+    },
+    {
+      type: 'checks_run',
+      ts: FIXED_TS + 400,
+      phase: 'validating-task',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      results: [{ id: 'K1', status: 'fail' }],
+    },
+    ...touchedNotSuggestedProjection.events.filter((event) => event.type === 'task_completed'),
+  ],
+};
+
 // The suite was red before the run: the project gate finds `npm test` red at the run base, and the
 // brief's plan check runs the same command with only that failure, so the brief completes.
 const planCheckPreExistingProjection: WorkflowFixtureProjection = {
@@ -1583,8 +1628,9 @@ const completedOrphanRowsProjection: WorkflowFixtureProjection = {
   ],
 };
 
-// Two briefs on a 32K window: the first ran tight, and the live one is over the window, so its row
-// shows the estimate alone. A two-brief plan keeps both rows on the 60x18 frame.
+// Three briefs: the first ran tight on a known 32K window, the second ran tight on a seat whose
+// window SPLITBRIEF only assumed, so its row shows the estimate alone, and the live one is over its
+// window, so its row shows the estimate alone too.
 const taskRowsContextFitProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-task-rows-context-fit'),
   feature: WORKFLOW_FEATURE,
@@ -1592,10 +1638,9 @@ const taskRowsContextFitProjection: WorkflowFixtureProjection = {
   sidebarVisible: false,
   events: [
     { type: 'workflow_started', ts: FIXED_TS, phase: 'implementing', feature: WORKFLOW_FEATURE },
-    { ...FIXTURE_TASKS_PLANNED, total: 2, tasks: FIXTURE_TASKS_PLANNED.tasks.slice(0, 2) },
+    FIXTURE_TASKS_PLANNED,
     {
       ...orphanBriefStarted(FIXTURE_PLANNED_BRIEFS[0], FIXED_TS + 100),
-      total: 2,
       contextFit: 'tight',
       estimatedTokens: 24_310,
       contextLength: 32_768,
@@ -1606,7 +1651,15 @@ const taskRowsContextFitProjection: WorkflowFixtureProjection = {
         { ...FIXTURE_PLANNED_BRIEFS[1], file: WORKFLOW_FIXTURE_SECOND_FILE },
         FIXED_TS + 300,
       ),
-      total: 2,
+      contextFit: 'tight',
+      estimatedTokens: 7_000,
+    },
+    fixtureBriefPassed(FIXTURE_PLANNED_BRIEFS[1], FIXED_TS + 400),
+    {
+      ...orphanBriefStarted(
+        { ...FIXTURE_PLANNED_BRIEFS[2], file: WORKFLOW_FIXTURE_REVIEW_PANEL_FILE },
+        FIXED_TS + 500,
+      ),
       contextFit: 'overflow',
       estimatedTokens: 31_012,
       contextLength: 32_768,
@@ -2867,6 +2920,16 @@ const planCardProjection: WorkflowFixtureProjection = {
   },
 };
 
+// The plan card's confirmation waiting over the words typed during its review phase: no seat
+// takes them, so Enter hands them back under the confirmation and Tab gives it the keys.
+const planCardConfirmWordsProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-plan-card-confirm-words'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: false,
+  events: planCardProjection.events,
+};
+
 // The plan card of a plan whose render checks have no validation.render to run them: the planner
 // kept them after its one repair, so the card opens with the note before anything it confirms.
 const RENDER_NOTE_PLAN = makePlanProposal({
@@ -2992,6 +3055,38 @@ const planCardSessionPathProjection: WorkflowFixtureProjection = {
     source: formatPlanMarkdown(PLAN_CARD_PLAN, []),
     planJson: `${JSON.stringify(PLAN_CARD_PLAN, null, 2)}\n`,
     confirms: planCardProjection.review?.confirms ?? [],
+  },
+};
+
+// The plan card of a plan whose project gate holds 10 commands, 4 of them vitest commands that
+// name their files. The plan has no decision and no protected operation, so the gate starts
+// under the criteria and the card has nothing to confirm.
+const LONG_GATE_PLAN = makePlanProposal({
+  ...PLAN_CARD_PLAN,
+  decisions: [],
+  gate: [
+    'npm run format:check',
+    'npm run typecheck',
+    'npm run lint',
+    'npx --no-install vitest run --project unit src/features/workflow/components/approval-prompt/confirm.test.tsx src/features/workflow/components/approval-prompt/document.test.tsx src/app/screens/workflow.test.tsx src/components/composer/composer.test.tsx testing/visual/catalog.test.ts testing/visual/fixtures.test.tsx',
+    'npx --no-install vitest run --project integration testing/integration/ui/inline-stop-menu.test.tsx',
+    'npx --no-install vitest run --project workflow-screen testing/integration/ui/workflow-key-ownership.test.tsx',
+    'npx --no-install vitest run --config testing/e2e/vitest.e2e.config.ts testing/e2e/scenarios/gate-over-draft.test.ts testing/e2e/scenarios/plan-card-over-draft.test.ts testing/e2e/scenarios/recovery-menu-command.test.ts',
+    'npm run build',
+    'npm run invariants',
+    'npm run skills:check',
+  ],
+  tasks: PLAN_CARD_PLAN.tasks.map((task) => ({ ...task, protectedOperations: null })),
+});
+
+const planCardLongGateProjection: WorkflowFixtureProjection = {
+  ...planCardProjection,
+  scenarioId: scenarioId('workflow-plan-card-long-gate'),
+  review: {
+    filePath: 'testing/visual/fixtures/workflow/plan-card/plan.md',
+    source: formatPlanMarkdown(LONG_GATE_PLAN, []),
+    planJson: `${JSON.stringify(LONG_GATE_PLAN, null, 2)}\n`,
+    confirms: [],
   },
 };
 
@@ -3533,10 +3628,11 @@ const SEAT_FALLBACK = {
 const OLLAMA_LIMIT_WORDS = 'quota exhausted · resets 5pm';
 
 /**
- * The BUILD seat out of quota on the brief's first attempt, as the engine halts it. Six tools were
+ * The BUILD seat out of quota on the brief's first attempt, as the engine halts it. Five tools were
  * detected: more than the three the text prompt names, so the panel's own height is proved to
- * follow its action rows and not the offer. Built when the capture reads it, because the tool's
- * clock resolves against the capture's own clock and zone.
+ * follow its action rows and not the offer. The ready fallback leads, then the detection order.
+ * Built when the capture reads it, because the tool's clock resolves against the capture's own
+ * clock and zone.
  */
 function usageLimitRecoveryIssue(
   overrides: Readonly<
@@ -3562,7 +3658,7 @@ function usageLimitRecoveryIssue(
       currentTool: '',
       from: { tool: 'ollama', model: BASE_IMPLEMENTER.model },
       fallback: SEAT_FALLBACK,
-      detectedTools: ['opencode', 'codex', 'claude-code', 'cursor', 'kilo-code'].map((tool) => ({
+      detectedTools: ['opencode', 'claude-code', 'codex', 'kilo-code', 'cursor'].map((tool) => ({
         tool,
         ready: true,
       })),
@@ -4047,6 +4143,40 @@ const retryExhaustedRecoveryProjection: WorkflowFixtureProjection = {
   events: [],
   config: AGY_CREW,
   resumeState: haltedResumeState(retryExhaustedRecoveryIssue),
+};
+
+/** The brief after a skipped one waits on it: its halt offers Skip task and End run, no correction. */
+const DEPENDENT_TASK = makeTask({
+  id: WORKFLOW_FIXTURE_TASK_ID_2,
+  title: 'Register the bounded fixture projection',
+  suggestedFiles: [WORKFLOW_FIXTURE_SECOND_FILE],
+  dependsOn: [WORKFLOW_FIXTURE_TASK_ID],
+});
+const SKIPPED_DEPENDENCY: Task = { ...HALTED_TASK, status: 'skipped' };
+
+const steerRefusedRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-recovery-steer-refused'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  events: [],
+  resumeState: makeImplState([SKIPPED_DEPENDENCY, DEPENDENT_TASK], {
+    feature: WORKFLOW_FEATURE,
+    startedAt: RESUMED_RUN_STARTED_AT,
+    phase: 'implementing',
+    currentTaskIndex: 1,
+    pendingRecovery: buildDependencyBlockedRecoveryIssue({
+      id: 'rec_visual_dependency_blocked_open',
+      task: DEPENDENT_TASK,
+      blockedByTasks: [SKIPPED_DEPENDENCY],
+      createdAt: new Date(FIXED_TS).toISOString(),
+    }),
+  }),
+};
+
+const commandImageRefusedProjection: WorkflowFixtureProjection = {
+  ...implementationProjection,
+  scenarioId: scenarioId('workflow-command-image-refused'),
 };
 
 /** A halt with four actions, the longest menu a short terminal has to fit. */
@@ -5273,6 +5403,47 @@ const planQuestionsRecoveryProjection: WorkflowFixtureProjection = {
   },
 };
 
+// The same halt with a long third round while a plan correction of the user waits: the panel
+// lists each question where it has the rows, and the line of the correction stays.
+function planQuestionsLongRecoveryIssue(): RecoveryIssue {
+  return buildPlanSessionHaltRecoveryIssue({
+    id: 'rec_visual_plan_questions_long',
+    reason: 'plan-questions-exhausted',
+    phase: 'planning',
+    message: `The planner asked a third round of questions; a session takes ${MAX_QUESTION_ROUNDS}.`,
+    details: [
+      'Which store keeps the greeting?',
+      'Should the CLI print a trailing newline?',
+      'Which locale is the default?',
+      'Does an empty name get an error or a default greeting?',
+      'Should the greeting end with a full stop?',
+      'Which exit code does a refused name give?',
+      'Does the module export a default or a named function?',
+      'Should the help text show an example?',
+      'Your plan correction goes again with this step.',
+    ],
+    createdAt: new Date(FIXED_TS).toISOString(),
+  });
+}
+
+const planQuestionsLongRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-recovery-plan-questions-long'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  get events() {
+    return planQuestionsRecoveryProjection.events;
+  },
+  get resumeState() {
+    return makeWorkflowState({
+      feature: WORKFLOW_FEATURE,
+      startedAt: RESUMED_RUN_STARTED_AT,
+      phase: 'planning',
+      pendingRecovery: planQuestionsLongRecoveryIssue(),
+    });
+  },
+};
+
 const planChecksRecoveryProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_RECOVERY_PLAN_CHECKS_ID,
   feature: WORKFLOW_FEATURE,
@@ -5505,6 +5676,31 @@ const planOutputLimitRecoveryProjection: WorkflowFixtureProjection = {
   config: CODEX_PLAN_CREW,
   get resumeState() {
     return haltedResumeState(planOutputLimitRecoveryIssue());
+  },
+};
+
+// The same halt while a plan correction of the user waits: its last detail says that the
+// correction goes again with the next step.
+function planCorrectionAgainRecoveryIssue(): RecoveryIssue {
+  const issue = planOutputLimitRecoveryIssue();
+  return {
+    ...issue,
+    id: 'rec_visual_plan_correction_again',
+    details: [...issue.details, 'Your plan correction goes again with this step.'],
+  };
+}
+
+const planCorrectionAgainRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-recovery-plan-correction-again'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  get events() {
+    return planOutputLimitRecoveryProjection.events;
+  },
+  config: CODEX_PLAN_CREW,
+  get resumeState() {
+    return haltedResumeState(planCorrectionAgainRecoveryIssue());
   },
 };
 
@@ -6382,8 +6578,126 @@ const implementationSubagentTextProjection: WorkflowFixtureProjection = {
       phase: 'implementing',
       role: 'implementer',
       content: 'markdown',
-      subagent: true,
+      subagentId: 'toolu_a',
       text: 'Found 3.',
+    },
+    {
+      type: 'planner_text',
+      ts: FIXED_TS + 400,
+      phase: 'implementing',
+      role: 'implementer',
+      content: 'markdown',
+      text: 'Done.',
+    },
+  ],
+};
+
+// Two sub-agents speak at the same time: `toolu_b` speaks while `toolu_a` holds the end of a word.
+const implementationParallelSubagentsProjection: WorkflowFixtureProjection = {
+  ...implementationSubagentTextProjection,
+  scenarioId: WORKFLOW_IMPLEMENTATION_PARALLEL_SUBAGENTS_ID,
+  events: [
+    ...implementationSubagentTextProjection.events.slice(0, 5),
+    {
+      type: 'planner_text',
+      ts: FIXED_TS + 200,
+      phase: 'implementing',
+      role: 'implementer',
+      content: 'markdown',
+      text: 'Checking.',
+    },
+    {
+      type: 'runner_call_activity',
+      ts: FIXED_TS + 210,
+      ...CLAUDE_BUILD_CALL,
+      sequence: 1,
+      activityId: 'visual-claude-build:1',
+      stage: 'started',
+      kind: 'task',
+      label: 'task Task',
+      redacted: false,
+    },
+    {
+      type: 'runner_call_activity',
+      ts: FIXED_TS + 220,
+      ...CLAUDE_BUILD_CALL,
+      sequence: 2,
+      activityId: 'visual-claude-build:2',
+      stage: 'started',
+      kind: 'task',
+      label: 'task Task',
+      redacted: false,
+    },
+    {
+      type: 'planner_text',
+      ts: FIXED_TS + 300,
+      phase: 'implementing',
+      role: 'implementer',
+      content: 'markdown',
+      subagentId: 'toolu_a',
+      text: 'Reading the test',
+    },
+    {
+      type: 'planner_text',
+      ts: FIXED_TS + 310,
+      phase: 'implementing',
+      role: 'implementer',
+      content: 'markdown',
+      subagentId: 'toolu_b',
+      text: 'Looking at it.',
+    },
+    {
+      type: 'runner_call_activity',
+      ts: FIXED_TS + 320,
+      ...CLAUDE_BUILD_CALL,
+      sequence: 3,
+      activityId: 'visual-claude-build:3',
+      stage: 'completed',
+      kind: 'read',
+      label: `reading ${WORKFLOW_FIXTURE_SECOND_FILE}`,
+      target: WORKFLOW_FIXTURE_SECOND_FILE,
+      redacted: false,
+    },
+    {
+      type: 'runner_call_activity',
+      ts: FIXED_TS + 330,
+      ...CLAUDE_BUILD_CALL,
+      sequence: 4,
+      activityId: 'visual-claude-build:2',
+      stage: 'completed',
+      kind: 'task',
+      label: 'task Task',
+      redacted: false,
+    },
+    {
+      type: 'planner_text',
+      ts: FIXED_TS + 340,
+      phase: 'implementing',
+      role: 'implementer',
+      content: 'markdown',
+      continues: true,
+      subagentId: 'toolu_a',
+      text: 's',
+    },
+    {
+      type: 'planner_text',
+      ts: FIXED_TS + 350,
+      phase: 'implementing',
+      role: 'implementer',
+      content: 'markdown',
+      subagentId: 'toolu_a',
+      text: 'Found 3.',
+    },
+    {
+      type: 'runner_call_activity',
+      ts: FIXED_TS + 360,
+      ...CLAUDE_BUILD_CALL,
+      sequence: 5,
+      activityId: 'visual-claude-build:1',
+      stage: 'completed',
+      kind: 'task',
+      label: 'task Task',
+      redacted: false,
     },
     {
       type: 'planner_text',
@@ -6924,6 +7238,28 @@ const resumedKeptWorkProjection: WorkflowFixtureProjection = {
   ],
 };
 
+/**
+ * A continue put back the park of a brief that the stop cut, as `initializeWorkflow` does before it
+ * publishes `workflow_resumed`: one SPLITBRIEF row says so, and the brief goes on from that work.
+ */
+const resumedCutBriefProjection: WorkflowFixtureProjection = {
+  ...resumedKeptWorkProjection,
+  scenarioId: scenarioId('workflow-resumed-cut-brief'),
+  events: resumedKeptWorkProjection.events.flatMap((event): EngineEvent[] =>
+    event.type === 'workflow_resumed'
+      ? [
+          {
+            type: 'info',
+            ts: event.ts - 1,
+            phase: event.phase,
+            message: `${WORKFLOW_FIXTURE_TASK_ID} continues where the stop left it.`,
+          },
+          event,
+        ]
+      : [event],
+  ),
+};
+
 const pausedBoundaryProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_PAUSED_BOUNDARY_ID,
   feature: WORKFLOW_FEATURE,
@@ -6964,6 +7300,11 @@ const stoppingProjection: WorkflowFixtureProjection = {
   sidebarVisible: false,
   events: STOPPED_RUN_EVENTS,
   stop: { intent: 'stop-now', phase: 'settling' },
+};
+
+const stopSteerRefusedProjection: WorkflowFixtureProjection = {
+  ...stoppingProjection,
+  scenarioId: scenarioId('workflow-stop-steer-refused'),
 };
 
 function claudeSystemFrame(subtype: string, fields: Record<string, unknown> = {}) {
@@ -7122,8 +7463,8 @@ function planningCallActivity(ts: number, events: readonly RunnerCallEvent[]): E
 
 /**
  * A resumed run whose codex thread is gone, in the events a real run records: the resume fails in
- * the tool's own words, the run says once that it asks again, and a fresh thread answers. No
- * recovery menu opens.
+ * the tool's own words, the run asks again with no row of its own (the session log records it), and
+ * a fresh thread answers. No recovery menu opens.
  */
 const plannerSessionExpiredProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_PLANNER_SESSION_EXPIRED_ID,
@@ -7175,7 +7516,7 @@ const plannerSessionExpiredProjection: WorkflowFixtureProjection = {
         },
       ]),
       ...publishedEvents(FIXED_TS + 200, (bus) =>
-        publishWarning({
+        publishDebug({
           bus,
           phase: 'planning',
           message:
@@ -7509,7 +7850,7 @@ const finalReviewSeatWaitProjection: WorkflowFixtureProjection = {
   },
 };
 
-// The planning call hit two network or server failures: each retry shows as a dim row in the transcript.
+// The planning call hit two network or server failures: the second retry waits on the status line.
 const planningSeatRetryProjection: WorkflowFixtureProjection = {
   ...planningProjection,
   scenarioId: scenarioId('workflow-planning-seat-retry'),
@@ -7534,7 +7875,7 @@ const planningSeatRetryProjection: WorkflowFixtureProjection = {
   ],
 };
 
-// The BUILD call hit two network or server failures: each retry shows as a dim row in the transcript.
+// The BUILD call hit two network or server failures: the second retry waits on the status line.
 const buildSeatRetryProjection: WorkflowFixtureProjection = {
   ...implementationProjection,
   scenarioId: scenarioId('workflow-build-seat-retry'),
@@ -7575,7 +7916,7 @@ const buildSeatRetryProjection: WorkflowFixtureProjection = {
   ],
 };
 
-// The final review call trimmed its input and hit two network or server failures: one trim warning and two dim retry rows.
+// The final review call trimmed its input and hit two network or server failures: one trim warning row and the second retry on the status line.
 const finalReviewSeatRetryProjection: WorkflowFixtureProjection = {
   ...finalReviewProjection,
   scenarioId: scenarioId('workflow-final-review-seat-retry'),
@@ -7826,6 +8167,55 @@ const implementationSearchFolderCalls = (
 const implementationSearchFoldersProjection = toolActivityProjection(
   'workflow-implementation-search-folders',
   implementationSearchFolderCalls,
+);
+
+const implementationReadPathCalls = (
+  callContext: RunnerCallContext,
+  startedAt: number,
+): readonly RunnerCallEvent[] => {
+  const aPath = resolve(VISUAL_FIXTURE_PROJECT_DIR, 'src/a.ts');
+  const bPath = resolve(VISUAL_FIXTURE_PROJECT_DIR, 'src/b.ts');
+  const cPath = resolve(VISUAL_FIXTURE_PROJECT_DIR, 'src/c.ts');
+  return [
+    {
+      ...callContext,
+      ts: startedAt + 1_000,
+      type: 'call_tool_use_done',
+      channel: 'tool',
+      toolUse: {
+        id: 'visual-tool-read-path',
+        name: 'read_file',
+        input: { paths: [aPath] },
+      },
+    },
+    {
+      ...callContext,
+      ts: startedAt + 2_000,
+      type: 'call_tool_use_done',
+      channel: 'tool',
+      toolUse: {
+        id: 'visual-tool-read-paths',
+        name: 'read_file',
+        input: { paths: [aPath, bPath], offset: 12, limit: 30 },
+      },
+    },
+    {
+      ...callContext,
+      ts: startedAt + 3_000,
+      type: 'call_tool_use_done',
+      channel: 'tool',
+      toolUse: {
+        id: 'visual-tool-read-path-range',
+        name: 'read_file',
+        input: { paths: [cPath], offset: 40 },
+      },
+    },
+  ];
+};
+
+const implementationReadPathsProjection = toolActivityProjection(
+  'workflow-implementation-read-paths',
+  implementationReadPathCalls,
 );
 
 // Every brief passed, and the pre-review full suite is ten minutes into `npm test`. No seat is on a
@@ -9005,6 +9395,39 @@ const crewWideProjection: WorkflowFixtureProjection = {
   }),
 };
 
+const applyRecheckWordsRefusedProjection: WorkflowFixtureProjection = {
+  ...applyRecheckReviewNoneProjection,
+  scenarioId: scenarioId('workflow-apply-recheck-words-refused'),
+};
+
+export const crewWideReviewNoneEndProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-crew-wide-review-none'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  config: { ...VISUAL_WIDE_CREW, reviewer: 'none' },
+  get events(): EngineEvent[] {
+    return [
+      ...everyBriefPassed().map((event): EngineEvent => {
+        switch (event.type) {
+          case 'task_started':
+            return {
+              ...event,
+              tool: 'antigravity',
+              model: AGY_BUILD_SEAT.model,
+              axes: seatAxisWords(AGY_BUILD_SEAT),
+            };
+          case 'task_completed':
+            return { ...event, tool: 'antigravity', model: AGY_BUILD_SEAT.model };
+          default:
+            return event;
+        }
+      }),
+      { type: 'workflow_complete', ts: FIXED_TS + 450, phase: 'complete', review: 'none' },
+    ];
+  },
+};
+
 const projections = [
   reviewResumeProjection,
   reviewCheckCrashProjection,
@@ -9082,6 +9505,7 @@ const projections = [
   reviewModelRefusalProjection,
   planInputTooLargeRecoveryProjection,
   planOutputLimitRecoveryProjection,
+  planCorrectionAgainRecoveryProjection,
   balanceSeatSwitchProjection,
   stopSheetRecoveryProjection,
   buildConsultProjection,
@@ -9323,12 +9747,14 @@ const projections = [
   reviewChecksOffProjection,
   reviewNoneEndProjection,
   applyRecheckReviewNoneProjection,
+  applyRecheckWordsRefusedProjection,
   reviewFixNarrowRailProjection,
   taskStatusesProjection,
   implementationEscalatedProjection,
   implementationExtractedCodeProjection,
   implementationNarrationProjection,
   implementationSubagentTextProjection,
+  implementationParallelSubagentsProjection,
   implementationCommandCodeProjection,
   implementationAdjacentNarrationProjection,
   implementationFencedHandBackProjection,
@@ -9338,7 +9764,9 @@ const projections = [
   reviewProjection,
   reviewSubagentRowProjection,
   approvalConfirmProjection,
+  approvalDraftDeletedProjection,
   approvalConfirmOverDraftProjection,
+  approvalWordsStayProjection,
   approvalConfirmSecretProjection,
   { ...approvalConfirmProjection, scenarioId: scenarioId('workflow-approval-confirm-short') },
   approvalConfirmLongPathProjection,
@@ -9346,8 +9774,11 @@ const projections = [
   { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-short') },
   { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-commenting') },
   { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-typed-command') },
+  { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-usage-refused') },
+  { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-steer-row') },
   { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-request-empty') },
   { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-over-draft') },
+  planCardConfirmWordsProjection,
   {
     ...planCompiledProjection,
     scenarioId: scenarioId('workflow-plan-repaired'),
@@ -9366,6 +9797,7 @@ const projections = [
   planCardNoImageReviewerProjection,
   planCardSharedCommandProjection,
   planCardSessionPathProjection,
+  planCardLongGateProjection,
   { ...planCardProjection, scenarioId: scenarioId('workflow-selection-copy') },
   tasksCardProjection,
   questionProjection,
@@ -9407,8 +9839,10 @@ const projections = [
   pausedMidBriefProjection,
   pausedCutSeatProjection,
   resumedKeptWorkProjection,
+  resumedCutBriefProjection,
   pausedBoundaryProjection,
   stoppingProjection,
+  stopSteerRefusedProjection,
   failureProjection,
   movedProjectRunProjection,
   plannerCommandsRefusedProjection,
@@ -9426,6 +9860,7 @@ const projections = [
     ),
   },
   planCheckNoTestFileProjection,
+  briefCheckUnranRedProjection,
   planCheckPreExistingProjection,
 
   completedOrphanRowsProjection,
@@ -9451,6 +9886,8 @@ const projections = [
     ...retryExhaustedRecoveryProjection,
     scenarioId: scenarioId('workflow-recovery-slash-draft'),
   },
+  steerRefusedRecoveryProjection,
+  commandImageRefusedProjection,
   {
     ...retryExhaustedRecoveryProjection,
     scenarioId: scenarioId('workflow-recovery-slash-list'),
@@ -9497,6 +9934,7 @@ const projections = [
   planRunnerCheckFailedRecoveryProjection,
   planChecksRecoveryProjection,
   planQuestionsRecoveryProjection,
+  planQuestionsLongRecoveryProjection,
   planSeatSwappedProjection,
   reviewSeatRecoveryProjection,
   reviewRunnerCheckFailedDriftRecoveryProjection,
@@ -9515,6 +9953,7 @@ const projections = [
   implementationShellWrapperProjection,
   implementationToolDetailsProjection,
   implementationSearchFoldersProjection,
+  implementationReadPathsProjection,
   reviewCheckRunningProjection,
   reviewCheckReusedProjection,
   reviewRenderRunningProjection,
@@ -9585,15 +10024,16 @@ export function getWorkflowFixturePromptRows(
   projection: WorkflowFixtureProjection,
   cols: number,
 ): number {
+  const approval = projection.approval ?? projection.approvalAfterMount;
   const approvalState: ApprovalPromptState =
-    projection.approval === undefined
+    approval === undefined
       ? { status: 'idle' }
       : {
           status: 'pending',
           request: {
             tier: 'confirm',
-            actionClass: projection.approval.actionClass ?? 'package_change',
-            actionDescription: projection.approval.actionDescription,
+            actionClass: approval.actionClass ?? 'package_change',
+            actionDescription: approval.actionDescription,
             taskId: WORKFLOW_FIXTURE_TASK_ID,
             phase: 'reviewing-plan',
           },
@@ -9696,6 +10136,8 @@ export function assertProjectionBounds(projection: WorkflowFixtureProjection): v
       value !== planCardNoImageReviewerProjection.review?.source &&
       value !== planCardSharedCommandProjection.review?.source &&
       value !== planCardSharedCommandProjection.review?.planJson &&
+      value !== planCardLongGateProjection.review?.source &&
+      value !== planCardLongGateProjection.review?.planJson &&
       value !== ANSWERED_QUESTIONS_TEXT &&
       value !== RESUMED_REPORT_TEXT &&
       value !== FIX_CHECK_RETRY_TEXT &&

@@ -311,6 +311,96 @@ describe('InputFooter', () => {
     terminalSizeStore.reset();
   });
 
+  it('shows the retry wait on the status line', () => {
+    chalk.level = 3;
+    const sentence = 'Network or server failure · retry 10 of 10 in 1m 0s';
+    for (const cols of [60, 80, 120]) {
+      eventsStore.__testReset();
+      terminalSizeStore.__testReset({ cols, rows: 24, isSmall: cols < 80 });
+      runViewStore.__testReset({ phase: 'implementing' });
+      lifecycleStore.__testReset({ status: 'running', startedAt: Date.now() - 5_000 });
+      addEvent({
+        type: 'seat_retry',
+        ts: Date.now(),
+        phase: 'implementing',
+        seat: 'build',
+        attempt: 10,
+        delayMs: 60_000,
+      });
+
+      const ui = renderFeature(<InputFooter />, { cols, rows: 24 });
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame, `${cols} columns`).toContain(sentence);
+      expect(getTerminalCellWidth(frame), `${cols} columns`).toBeLessThanOrEqual(cols - 2);
+      expect(ui.lastFrame(), `${cols} columns`).toContain(
+        paint(defaultTheme.accent, `${spinnerFrames()[0]} `).replace('\u001b[39m', ''),
+      );
+      expect(ui.lastFrame(), `${cols} columns`).toContain(
+        paint(defaultTheme.textDim, sentence).replace('\u001b[39m', ''),
+      );
+      ui.unmount();
+      terminalSizeStore.reset();
+    }
+  });
+
+  it('a seat wait wins over a retry', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: Date.now() - 5_000 });
+    addEvent({
+      type: 'seat_retry',
+      ts: Date.now(),
+      phase: 'implementing',
+      seat: 'build',
+      attempt: 1,
+      delayMs: 2_000,
+    });
+    addEvent({
+      type: 'seat_wait_started',
+      ts: Date.now(),
+      phase: 'implementing',
+      seat: 'build',
+      resetAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+      tool: 'OpenAI Codex CLI',
+    });
+
+    const ui = renderFeature(<InputFooter width={120} />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Waiting for OpenAI Codex CLI');
+    expect(frame).not.toContain('Network or server failure');
+    ui.unmount();
+  });
+
+  it('a live status shows again after the retry clears', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    runViewStore.__testReset({
+      phase: 'implementing',
+      phaseFirstSeen: { implementing: Date.now() - 6_000 },
+    });
+    lifecycleStore.__testReset({ status: 'running', startedAt: Date.now() - 6_000 });
+    addEvent({
+      type: 'seat_retry',
+      ts: Date.now(),
+      phase: 'implementing',
+      seat: 'build',
+      attempt: 1,
+      delayMs: 2_000,
+    });
+
+    const retrying = renderFeature(<InputFooter width={120} />);
+    expect(stripAnsiStyles(retrying.lastFrame() ?? '')).toContain(
+      'Network or server failure · retry 1 of 10 in 2s',
+    );
+    retrying.unmount();
+
+    addEvent(makeRunnerCallStarted({ ts: Date.now() }));
+    const live = renderFeature(<InputFooter width={120} />);
+    const frame = stripAnsiStyles(live.lastFrame() ?? '');
+    expect(frame).toContain('Implementing…');
+    expect(frame).not.toContain('Network or server failure');
+    live.unmount();
+  });
+
   it('says one verb for the planning session and names an old chain briefs call', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     runViewStore.__testReset({

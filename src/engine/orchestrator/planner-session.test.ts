@@ -179,13 +179,14 @@ describe('askPlannerSession on a refused thread', () => {
     expect(turns[1]?.priorMessages).toBeDefined();
     expect(loadState(ref)?.plannerSessionId).toBe('S2');
     expect(answer.state.plannerSessionId).toBe('S2');
-    expect(events.filter((event) => event.type === 'warning')).toEqual([
+    expect(events.filter((event) => event.type === 'debug')).toEqual([
       expect.objectContaining({
         category: 'planner',
         code: 'planner_session_refused',
         message: expect.stringContaining('refused the session as too long'),
       }),
     ]);
+    expect(events.filter((event) => event.type === 'warning')).toEqual([]);
   });
 
   it('rethrows the refusal of a call that resumed no thread', async () => {

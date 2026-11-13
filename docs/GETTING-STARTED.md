@@ -13,7 +13,7 @@ Install SPLITBRIEF, choose your tools, and run your first change. This guide cov
 It splits the work an AI normally does in one shot into two roles:
 
 - A **planner** — the stronger of the two, which *thinks*: it reads your repo, asks clarifying questions, and compiles your request into a structured **Task Brief**. Admitted planners (CLI subscriptions, APIs, shells, agents) are listed in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
-- An **implementer** — a weaker **model** that *types*: it executes one task at a time against the brief, and SPLITBRIEF runs the plan's checks and, before the final review, the project gate that the plan names. It reaches SPLITBRIEF over either of two equally supported transports — a CLI tool driving a smaller model, which writes files itself, or an API model, which returns file contents that SPLITBRIEF writes. You pick; SPLITBRIEF favours neither. Admitted implementers and API/local providers are in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) and [CONFIGURATION.md](./CONFIGURATION.md).
+- An **implementer** — a weaker **model** that *types*: it executes one task at a time against the brief, and SPLITBRIEF runs the plan's checks and, before the final review, the project gate that the plan names. It reaches SPLITBRIEF over either of two equally supported transports — a CLI tool driving a smaller model, which writes files itself, or an API model, which returns file contents that SPLITBRIEF writes. You pick; SPLITBRIEF favours neither. Admitted implementers and API providers are in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) and [CONFIGURATION.md](./CONFIGURATION.md).
 
 The orchestrator in the middle owns persistence, validation, retries, escalation, checkpoints, and final review. It persists state at workflow boundaries; an open run stays continuable, a ready run waits for Apply or Discard, and the brief is durable on disk. The implementer never certifies its own work, and the advantage compounds when the two sides come from different labs: a reviewer from another model family does not inherit the implementer's blind spots.
 
@@ -168,7 +168,7 @@ Both sides accept four **runner kinds** behind a unified interface (`cli`, `api`
 
 Every run plans in one session. There are no workflow modes to pick.
 
-1. The planner may ask up to 3 questions per round, for at most 2 rounds. Each question has a default, and an empty `⏎` takes the defaults.
+1. The planner may ask questions, for at most 2 rounds. Each question has a default, and an empty `⏎` takes the defaults.
 2. The planner returns one typed plan: acceptance criteria, checks and tasks. SPLITBRIEF checks it and writes `plan.json`, `plan.md` and `tasks.md` to the session directory. A plan that fails a check goes back to the planner once.
 3. With `workflow.approve: plan` (the default), the plan card opens: approve it, request changes, edit `plan.json`, or end the run. `workflow.approve: none` skips the card and starts the build.
 
@@ -190,7 +190,7 @@ Fastest path from install to a validated run using **admitted** runners only. Fu
 
 **1. Readiness.** `splitbrief doctor` (or `splitbrief doctor --json` for automation) is read-only: no sessions, migrations, or model calls. It surfaces blockers for config, git posture, and configured runners before you spend tokens. Fix every blocker, then continue. `doctor` runs no validation command. During a run, the project gate also runs once at the run base, beside the build, and a red reviewer check is compared with it. SPLITBRIEF reports a failure that your tree already had as pre-existing.
 
-**2. Hybrid recipe (subscription planner + local implementer).** The CLI tool `claude-code` uses your existing Claude Code login — billing posture `subscription-included`; SPLITBRIEF shows spend as unpriced, not as zero cost or local. Pair it with a bundled **`compatible-only`** local row served by LM Studio (`local` billing; no key, traffic stays on loopback). Load the model in LM Studio and start its server first. No bundled model is `recommended` — see the note below:
+**2. Hybrid recipe (subscription planner + API implementer).** The CLI tool `claude-code` uses your existing Claude Code login — billing posture `subscription-included`; SPLITBRIEF shows spend as unpriced, not as zero cost or local. Pair it with a smaller model behind your own OpenAI-compatible endpoint. A custom provider takes its key inline and has no default model, so set the exact model ID that the endpoint serves:
 
 ```yaml
 version: 3
@@ -201,11 +201,12 @@ planner:
 
 implementer:
   kind: api
-  provider: lm-studio
-  service: lm-studio
-  offering: local
-  apiBase: http://localhost:1234/v1
-  model: qwen2.5-coder-7b
+  provider: custom-endpoint
+  service: custom-endpoint
+  offering: payg
+  apiBase: https://api.example.test/v1
+  apiKey: <paste-your-endpoint-key>
+  model: your-implementer-model
   contextLength: 16384
   temperature: 0.3
 
@@ -221,11 +222,11 @@ With `end_checks: true` (the default), SPLITBRIEF runs the project gate that the
 
 **3. Subscription CLI implementer (optional).** To type through the same admitted CLI instead of an API, set `implementer.kind: cli` with `tool: claude-code`. With the default isolation (a git worktree), the child CLI edits files in the run workspace, never your checkout; SPLITBRIEF asks before a protected write stands, and the reviewed result reaches your checkout only when you Apply it. With `workflow.isolation: none` it edits your checkout directly, and the run has no Apply; see [Implementer isolation](./CONFIGURATION.md#implementer-isolation). Posture and auth channels: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md#posture-trust-and-auth).
 
-**4. Named implementer profiles.** Persist multiple implementer backends under `implementerProfiles` — profile names are stable identifiers saved in config and referenced by routing/recovery events. Example: keep `local-qwen` (Ollama) and `local-lmstudio` (the LM Studio row above); set `default` to the profile SPLITBRIEF should pick when routing names none. Schema and persistence rules: [CONFIGURATION.md](./CONFIGURATION.md#optional-implementerprofiles).
+**4. Named implementer profiles.** Persist multiple implementer backends under `implementerProfiles` — profile names are stable identifiers saved in config and referenced by routing/recovery events. Example: keep `small-cloud` (the endpoint above) and `codex-small` (a CLI tool on a smaller model); set `default` to the profile SPLITBRIEF should pick when routing names none. Schema and persistence rules: [CONFIGURATION.md](./CONFIGURATION.md#optional-implementerprofiles).
 
-**5. Billing and privacy.** `subscription-included` CLIs bill through your vendor login; `api-metered` / `provider-dependent` APIs bill per request; `local` providers keep traffic on loopback. SPLITBRIEF does not persist API keys to session artifacts and redacts known secret patterns in protected output — see [API-KEYS.md](./API-KEYS.md).
+**5. Billing and privacy.** `subscription-included` CLIs bill through your vendor login; `api-metered` / `provider-dependent` APIs bill per request. SPLITBRIEF does not persist API keys to session artifacts and redacts known secret patterns in protected output — see [API-KEYS.md](./API-KEYS.md).
 
-**No recommended API models.** Every row in the **compatible-only** model table in [CONFIGURATION.md](./CONFIGURATION.md#bundled-model-catalog) is selectable but carries no SPLITBRIEF quality claim. The LM Studio row above is a working starting point, not a recommendation, and SPLITBRIEF ships no default implementer recipe.
+**No recommended API models.** No bundled model row is `recommended`: every row is **compatible-only** — selectable, with no SPLITBRIEF quality claim (see [CONFIGURATION.md](./CONFIGURATION.md#bundled-model-catalog)). The endpoint above is a starting point, not a recommendation.
 
 For every other planner/implementer combination, swap tools and models via the canonical matrices rather than duplicating lists here.
 

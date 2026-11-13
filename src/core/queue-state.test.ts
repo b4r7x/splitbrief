@@ -18,6 +18,9 @@ describe('messageSeat', () => {
   it('names no review seat for a task review that a move to REVIEW None left pending', () => {
     expect(messageSeat('implementing', true, true, true)).toBe('build');
     expect(messageSeat('final-review', true, true, false)).toBeNull();
+  });
+
+  it('names REVIEW for a due task review of a run with a review seat while a brief is left', () => {
     expect(messageSeat('implementing', true, false, true)).toBe('review');
   });
 

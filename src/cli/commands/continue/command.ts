@@ -89,7 +89,7 @@ async function applyPendingRecoveryAction(args: {
 }): Promise<{ state: WorkflowState; config: Config; seatSwitch?: SwitchedSeat }> {
   const projectDir = args.opts.projectDir;
   if (args.action.action === 'switch-seat') await loadRememberedCatalog(projectDir);
-  const config = resolveRunConfig({ projectDir, opts: args.opts });
+  const { config } = resolveRunConfig({ projectDir, opts: args.opts });
   const result = await applyRecoveryAction({
     projectDir,
     sessionId: args.sessionId,
@@ -224,7 +224,7 @@ export async function continueCommand(
       await settleReadyRun({ ...settled, action: 'discard' });
       return;
     }
-    const config = resolveRunConfig({ projectDir: opts.projectDir, opts });
+    const { config } = resolveRunConfig({ projectDir: opts.projectDir, opts });
     const next = await settleReadyRun({
       ...settled,
       action: 'apply',
@@ -273,7 +273,6 @@ export async function continueCommand(
     return;
   }
 
-  const config = resumed.config ?? resolveRunConfig({ projectDir: opts.projectDir, opts });
   if (resumed.seatSwitch !== undefined && expectedRevision !== undefined) {
     await recordSwitchedSeat(opts.projectDir, resumed.seatSwitch, expectedRevision);
   }
@@ -283,7 +282,7 @@ export async function continueCommand(
     sessionId,
     state: resumed.state,
     opts,
-    config,
+    config: resumed.config,
     deps,
   });
 }

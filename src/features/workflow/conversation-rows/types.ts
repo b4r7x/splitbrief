@@ -76,6 +76,8 @@ export interface ConversationRowBlock {
 export interface ConversationRowsProjection {
   activeTaskHeaderKey: string | null;
   blocks: ConversationRowBlock[];
+  /** The diff toggle key of the last row that takes one (`diffToggleKey`), or null. */
+  latestDiffKey: string | null;
   renderableCount: number;
   totalRows: number;
 }

@@ -2380,6 +2380,34 @@ describe('the Final review heading', () => {
     ).toEqual(['Review T001', 'Plan check K1 · node --test tests/math.test.js · running']);
   });
 
+  it('shows no review heading when a seat retry is the only event of the review', () => {
+    expect(
+      sectionRows([
+        {
+          type: 'active-review',
+          startIndex: 0,
+          items: [
+            {
+              type: 'seat_retry',
+              ts: 3_400,
+              phase: 'implementing',
+              seat: 'review',
+              attempt: 1,
+              delayMs: 2_000,
+            },
+          ],
+          review: {
+            stage: 'review',
+            scope: 'task',
+            afterTaskId: 'T001',
+            fixCyclesBefore: 0,
+            rerunsBefore: 0,
+          },
+        },
+      ]).map(rowText),
+    ).toEqual([]);
+  });
+
   it('a settled brief keeps one blank row between its heading and its body', () => {
     const rows = sectionRows([
       {

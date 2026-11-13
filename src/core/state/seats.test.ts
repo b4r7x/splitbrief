@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { REVIEW_NONE } from '../crew/identity.js';
 import { ensureSessionDir } from '../paths-io.js';
 import { SEATS_FILE, sessionDir } from '../paths.js';
 import { createInitialState, transition } from './machine.js';
@@ -13,6 +14,7 @@ import {
   readSeatIdentityRecord,
   reconcileSeatIdentities,
   recordSeatIdentities,
+  type SeatChange,
   seatIdentitiesFromConfig,
   seatIdentityChanges,
   writeSeatIdentities,
@@ -92,6 +94,35 @@ describe('seatIdentityChanges', () => {
     expect(notice).toBe(
       'PLAN seat changed Codex · gpt-5 → Claude Code · opus; context will be rebuilt',
     );
+  });
+
+  it.each<[string, SeatChange, string]>([
+    [
+      'a REVIEW move to None says no seat reviews the rest of the run',
+      { seat: 'review', before: 'Codex CLI · GPT-6.1 Sol', after: REVIEW_NONE.mark },
+      'REVIEW seat changed Codex CLI · GPT-6.1 Sol → None; no seat reviews the rest of the run',
+    ],
+    [
+      'a REVIEW move off None names the seat that reviews again',
+      { seat: 'review', before: REVIEW_NONE.mark, after: 'Codex CLI · GPT-6.1 Sol' },
+      'REVIEW seat changed None → Codex CLI · GPT-6.1 Sol; the rest of the run uses the new seat',
+    ],
+    [
+      'a REVIEW move between seats keeps the usual consequence',
+      {
+        seat: 'review',
+        before: 'Codex CLI · GPT-6.1 Sol',
+        after: 'Claude Code CLI · Opus 5.5',
+      },
+      'REVIEW seat changed Codex CLI · GPT-6.1 Sol → Claude Code CLI · Opus 5.5; the rest of the run uses the new seat',
+    ],
+    [
+      'a PLAN move promises a rebuilt context',
+      { seat: 'plan', before: 'Codex · gpt-5', after: 'Claude Code · opus' },
+      'PLAN seat changed Codex · gpt-5 → Claude Code · opus; context will be rebuilt',
+    ],
+  ])('names the consequence of a REVIEW change: %s', (_case, change, notice) => {
+    expect(formatSeatChangeNotice(change)).toBe(notice);
   });
 
   it('reports nothing when no seats were recorded', () => {

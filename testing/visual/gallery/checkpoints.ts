@@ -3,8 +3,10 @@ import { flushEffects } from '../../helpers/ink.js';
 import type { CheckpointDefinition, ScenarioDefinition } from '../contracts/catalog.js';
 import { formatViewport, type Viewport } from '../contracts/geometry.js';
 import type { CheckpointPredicate } from '../fixtures/common.js';
-import { workflowFixtureProjections } from '../fixtures/workflow/projections.js';
-import { workflowCheckpointPredicates } from '../fixtures/workflow/registry.js';
+import {
+  workflowCheckpointPredicates,
+  workflowFixtureRegistry,
+} from '../fixtures/workflow/registry.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 
 export interface WaitForCheckpointOptions {
@@ -41,7 +43,7 @@ export function checkpointPredicate(
   scenario: ScenarioDefinition,
   checkpoint: CheckpointDefinition,
 ): CheckpointPredicate {
-  const predicate: CheckpointPredicate | undefined = workflowFixtureProjections.has(scenario.id)
+  const predicate: CheckpointPredicate | undefined = workflowFixtureRegistry.has(scenario.id)
     ? workflowCheckpointPredicates.get(checkpoint.id)
     : ({ output }) => output.includes(checkpoint.marker);
   if (predicate === undefined) {

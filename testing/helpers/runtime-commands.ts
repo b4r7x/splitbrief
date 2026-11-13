@@ -54,6 +54,7 @@ export function makeCtx(overrides: Partial<RuntimeCommandContext> = {}): Runtime
     scrollConversation: () => ({ status: 'scrolled' }),
     toggleLatestActivityBatch: () => ({ status: 'toggled', expanded: true }),
     toggleLatestDiff: () => ({ status: 'toggled', expanded: true }),
+    hasLatestDiff: noopTrue,
     listBriefs: () => [],
     toggleSidebar: () => ({ status: 'toggled', visible: true }),
     copyTarget: async () => 'empty',
@@ -68,7 +69,7 @@ export function runCommandInTest(args: {
   phase?: Phase;
   openRunAtRest?: boolean;
   applyUnfinished?: boolean;
-  onError: (msg: string, raw: string) => void;
+  onError: (msg: string, raw: string, outcome: 'refused' | 'failed') => void;
 }): Promise<void> {
   return executeRuntimeCommand(args.commands, args.raw, {
     screen: args.screen,

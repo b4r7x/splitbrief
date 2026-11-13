@@ -1,7 +1,8 @@
 import { readdirSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ScenarioDefinition } from '../contracts/catalog.js';
-import { viewport } from '../contracts/geometry.js';
+import { isCellRectOnGraphemeBoundaries } from '../contracts/cells.js';
+import { isCellRectInViewport, viewport } from '../contracts/geometry.js';
 import { findVisualScenario, listVisualScenarios } from '../catalog.js';
 import { createCropCellGrid } from '../artifacts/crop.js';
 import { teardownVisualFixture } from '../fixtures/screen-fixtures.js';
@@ -137,6 +138,28 @@ describe('semantic visual locators', { timeout: 90_000 }, () => {
       viewport: VIEWPORT,
       sourceFrameKey: reviewGrid.identity.key,
     });
+  });
+
+  it('resolves every moved-model-line element at 100x30', async () => {
+    const scenario = requireScenario('workflow-ready-seat-moved-model-line');
+    const checkpoint = requireCheckpoint(scenario);
+    const frameViewport = viewport({ cols: 100, rows: 30 });
+    const handle = await mountGalleryScenario({ scenario, checkpoint, viewport: frameViewport });
+    try {
+      const frame = await handle.waitForCheckpoint();
+      const grid = await createFrameGrid(scenario, frameViewport, frame);
+      const header = resolveElementLocator({ scenario, checkpoint, grid, elementId: 'header' });
+      const sidebar = resolveElementLocator({ scenario, checkpoint, grid, elementId: 'sidebar' });
+      for (const locator of [header, sidebar]) {
+        expect(isCellRectInViewport(locator.rect, frameViewport)).toBe(true);
+        expect(isCellRectOnGraphemeBoundaries(grid.cells, locator.rect)).toBe(true);
+        expect(createCropCellGrid({ frame: grid, locator }).rect).toEqual(locator.rect);
+      }
+      expect(sidebar.rect).toEqual(header.rect);
+      expect(header.rect).toMatchObject({ x: 0, y: 0 });
+    } finally {
+      await handle.unmount();
+    }
   });
 
   it('reports invalid names and cross-frame provenance failures', async () => {

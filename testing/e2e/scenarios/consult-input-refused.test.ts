@@ -5,6 +5,7 @@ import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
 import { detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
+import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
@@ -23,6 +24,7 @@ import {
   readState,
   type StopContinueFixture,
 } from '../helpers/stop-continue-fixture.js';
+import { transcriptText } from '../helpers/transcript-text.js';
 
 const GENERATED_FILE = 'src/generated.json';
 
@@ -141,7 +143,12 @@ async function runWithPlannerClaude(refusal: PlanSeatRefusal) {
           return { ...call, namesGenerated: prompt.includes(GENERATED_FILE) };
         })
     : [];
-  return { run, state: readState(target, sessionId), calls };
+  return {
+    run,
+    state: readState(target, sessionId),
+    calls,
+    ref: { projectDir: target.projectDir, sessionId },
+  };
 }
 
 describe('e2e: the planner tool refuses a consult as too long', { timeout: 240_000 }, () => {
@@ -162,7 +169,7 @@ describe('e2e: the planner tool refuses a consult as too long', { timeout: 240_0
   });
 
   it('asks again on a fresh session when the tool refuses the resumed planning thread, and the run continues', async () => {
-    const { run, state, calls } = await runWithPlannerClaude('planner-session');
+    const { run, state, calls, ref } = await runWithPlannerClaude('planner-session');
 
     const refusedAt = calls.findIndex(
       (call) => call.kind === 'consult' && call.resumed === 'planner-session',
@@ -175,6 +182,14 @@ describe('e2e: the planner tool refuses a consult as too long', { timeout: 240_0
       kind: 'ready-to-apply',
       override: false,
     });
+    expect(run.stderr).not.toContain('refused the session as too long');
+    const { events } = await readRunEvents(ref);
+    expect(
+      events
+        .filter((event) => 'code' in event && event.code === 'planner_session_refused')
+        .map((event) => event.type),
+    ).toEqual(['debug']);
+    expect(transcriptText(events)).not.toContain('refused the session as too long');
   });
 
   it('halts without Try again when the tool refuses every consult', async () => {

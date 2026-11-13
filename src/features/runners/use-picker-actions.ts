@@ -174,9 +174,9 @@ function dropClearedImplementerToken(
 }
 
 /**
- * Where a seat saved under a run this process drives takes over: at a brief boundary, where the
- * run re-prepares from the saved config. A start still checking its tools runs on the config it
- * read first, so its first boundary takes the seat.
+ * Where a seat saved under a run this process drives takes over: at a brief or review boundary,
+ * where the run re-prepares from the saved config. A start still checking its tools runs on the
+ * config it read first, so its first boundary takes the seat.
  */
 function runningSeatChangePoint(before: Config, after: Config): SeatChangePoint | undefined {
   if (
@@ -395,7 +395,7 @@ export function usePickerActions(opts: {
           { tool: selection.id, model: modelId ?? undefined },
         )
       ) {
-        feedbackStore.setError(
+        feedbackStore.setMessage(
           `${catalog.roleLabel} runs ${savedSeatIdentity(config, seatRole, 'seat', profile)} now${SOFT_SEP}choose another tool or model`,
         );
         return;
@@ -496,7 +496,9 @@ export function usePickerActions(opts: {
       return reportFailure(async () => {
         if (slot === 'fallback') return;
         if (seatRole === 'reviewer' && configuredReviewerRunner(config) === undefined) {
-          feedbackStore.setError(`${item.id} belongs to the planner. Remove it from the planner.`);
+          feedbackStore.setMessage(
+            `${item.id} belongs to the planner. Remove it from the planner.`,
+          );
           return;
         }
         const updated = removeCustomModel(config, seatRole, item.id, profile);
@@ -530,7 +532,7 @@ export function usePickerActions(opts: {
       return reportFailure(async () => {
         if (view.kind !== 'custom-model') return;
         if (isAutomaticModel(modelName)) {
-          feedbackStore.setError('"auto" is already offered as the Auto row — select it there.');
+          feedbackStore.setMessage('"auto" is already offered as the Auto row — select it there.');
           return;
         }
         const customModelItem = runnerItemOf(catalog.currentItem);

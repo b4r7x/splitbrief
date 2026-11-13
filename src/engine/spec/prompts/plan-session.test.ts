@@ -127,11 +127,12 @@ describe('buildPlanSessionPrompt', () => {
   it('asks for the project gate under the reviewer command policy', () => {
     const prompt = buildPlanSessionPrompt(input);
     expect(prompt).toContain(
-      "- `gate`: the project's own gate, the commands its scripts or CI run to verify a whole change (`npm run release-check`, `make check`, `cargo test`), in the order they run, at most 6. Before the final review SPLITBRIEF runs them in the run workspace as the checks `V1`, `V2`, …, and stops at the first command with new failures. The plan card shows them before the build. Use an empty list when the project has none. Write each command as one installed program and its arguments, run by its name: no shell syntax, no inline code, `npx` only as `npx --no-install <tool>`, no download-and-run launcher, no install or setup command, and no script this run changes. A plan whose gate names a refused command comes back with the reason.",
+      "- `gate`: the project's own gate, the commands its scripts or CI run to verify a whole change (`npm run release-check`, `make check`, `cargo test`), in the order they run. Before the final review SPLITBRIEF runs them in the run workspace as the checks `V1`, `V2`, …, and stops at the first command with new failures. The plan card shows them before the build. Use an empty list when the project has none. Write each command as one installed program and its arguments, run by its name: no shell syntax, no inline code, `npx` only as `npx --no-install <tool>`, no download-and-run launcher, no install or setup command, and no script this run changes. A plan whose gate names a refused command comes back with the reason.",
     );
     expect(prompt).toContain(
       "The ids `V1`, `V2`, … are the project gate's: never give a check one of them.",
     );
+    expect(prompt).not.toContain('at most 6');
   });
 
   it('tells the planner that SPLITBRIEF runs the project gate before the final review', () => {
@@ -186,10 +187,10 @@ describe('buildPlanSessionPrompt', () => {
     expect(schema).toContain("in the stack's test folders");
   });
 
-  it('bounds the questions: three per round, two rounds, each with a default', () => {
+  it('bounds the question rounds at two, states no count of questions for a round, and asks a default for each', () => {
     const prompt = buildPlanSessionPrompt(input);
-    expect(prompt).toContain('at most 3 questions');
     expect(prompt).toContain('at most 2 rounds');
+    expect(prompt).not.toMatch(/(?:at most|up to) \d+ questions/);
     expect(prompt).toContain('`default`');
   });
 

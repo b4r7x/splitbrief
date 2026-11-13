@@ -482,3 +482,141 @@ describe('buildConversationRowActions check groups', () => {
     expect(buildConversationRowActions(inputs).size).toBe(0);
   });
 });
+
+const longCause = `Runner failed ${'while applying the brief '.repeat(8)}raw-end`;
+const quota = 'provider.quota: Insufficient Balance (request_id: spent-b2)';
+const recoveryEvents: EngineEvent[] = [
+  makeRunnerCallActivity({
+    callId: 'spent-build',
+    phase: 'implementing',
+    taskId: taskId('T001'),
+    runnerName: 'opencode',
+    model: 'deepseek/deepseek-flash',
+    kind: 'error',
+    diagnosticPartial: quota,
+  }),
+  makeImplementerGenerate({
+    status: 'failed',
+    ts: 1,
+    model: 'deepseek/deepseek-flash',
+    error: quota,
+  }),
+  {
+    type: 'recovery_prompted',
+    ts: 2,
+    phase: 'implementing',
+    taskId: taskId('T001'),
+    issueId: 'spent-b2',
+    reason: 'runner-usage-limit',
+    headline: 'Balance spent on OpenCode CLI',
+    files: [],
+    affectedTaskIds: [taskId('T001')],
+    availableActions: ['switch-seat'],
+    recommendedAction: 'switch-seat',
+    resumeCommand: 'splitbrief continue',
+  },
+  {
+    type: 'recovery_action_selected',
+    ts: 3,
+    phase: 'implementing',
+    issueId: 'spent-b2',
+    reason: 'runner-usage-limit',
+    action: 'switch-seat',
+    seat: 'build',
+  },
+  {
+    type: 'seat_switched',
+    ts: 4,
+    phase: 'implementing',
+    seat: 'build',
+    from: { tool: 'opencode', model: 'deepseek/deepseek-flash' },
+    to: { tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash', variant: 'high' },
+    cause: 'runner-usage-limit',
+    auto: true,
+    configRevision: 'spent-b2',
+  },
+  {
+    type: 'recovery_resolved',
+    ts: 5,
+    phase: 'implementing',
+    issueId: 'spent-b2',
+    reason: 'runner-usage-limit',
+    action: 'switch-seat',
+    seat: 'build',
+    outcome: 'retry-current-task',
+  },
+];
+
+describe('the latest diff toggle of the row model', () => {
+  it.each<[string, Section<EngineEvent>[], string | null]>([
+    [
+      'a cut failure after a done diff, before a short failure',
+      [
+        {
+          type: 'events',
+          startIndex: 0,
+          items: [
+            makeImplementerGenerate({ status: 'done', diff: '+ earlier', ts: 0 }),
+            makeImplementerGenerate({ status: 'failed', error: longCause, ts: 1 }),
+            makeImplementerGenerate({ status: 'failed', error: 'Short cause', ts: 2 }),
+          ],
+        },
+      ],
+      'implementer_generate_failed:1',
+    ],
+    [
+      'a Recovery row with diagnostics after a done diff',
+      groupEventsIntoSections([
+        makeImplementerGenerate({ status: 'done', diff: '+ earlier', ts: 0 }),
+        ...recoveryEvents,
+      ]),
+      'recovery_prompted:3',
+    ],
+    [
+      'a done diff of a settled brief before an empty diff',
+      [
+        {
+          type: 'completed-task',
+          startIndex: 0,
+          summary: { id: 'T001', title: 'Done', method: 'local', retries: 0, duration: 1 },
+          items: [makeImplementerGenerate({ status: 'done', diff: '+ settled', ts: 0 })],
+        },
+        {
+          type: 'active-task',
+          startIndex: 1,
+          items: [makeImplementerGenerate({ status: 'done', diff: '', ts: 1 })],
+        },
+      ],
+      'implementer_generate_done:0',
+    ],
+    [
+      'no row that takes the toggle',
+      [
+        {
+          type: 'events',
+          startIndex: 0,
+          items: [
+            makeImplementerGenerate({ status: 'failed', error: 'Short cause', ts: 0 }),
+            makeImplementerGenerate({ status: 'done', diff: '', ts: 1 }),
+          ],
+        },
+      ],
+      null,
+    ],
+  ])('is the key of the latest diff row action: %s', (_name, sections, expected) => {
+    const inputs = {
+      sections,
+      expandedDiffs: new Set<string>(),
+      expandedActivityBatches: new Set<string>(),
+      cols: 88,
+      viewportHeight: 20,
+      streaming,
+    };
+
+    expect(
+      findLatestConversationRowAction(buildConversationRowActions(inputs), 'toggle-diff')?.key ??
+        null,
+    ).toBe(expected);
+    expect(buildConversationRowsProjection(inputs).latestDiffKey).toBe(expected);
+  });
+});

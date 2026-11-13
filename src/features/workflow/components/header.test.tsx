@@ -23,6 +23,7 @@ import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { glyph } from '../../../lib/glyphs.js';
+import { getRailStages } from '../../../core/rail-stages.js';
 import {
   formatCollapsedSeatSpansFromIdentities,
   PLANNER_INHERITANCE,
@@ -436,6 +437,43 @@ describe('Header — rail', () => {
     expect(frame).not.toContain('planning');
     instance.unmount();
   });
+
+  it.each([
+    {
+      cols: 60,
+      rail: `${glyph('stagePending')} Apply`,
+      crew: 'PLAN claude · BUILD ollama · REVIEW = PLAN',
+    },
+    {
+      cols: 80,
+      rail: `${glyph('stagePending')} Apl`,
+      crew: 'PLAN claude · BUILD ollama · REVIEW = PLAN',
+    },
+    {
+      cols: 120,
+      rail: `${glyph('stagePending')} Apply`,
+      crew: 'PLAN Claude Code CLI · BUILD Qwen2.5 Coder 7B · REVIEW = PLAN',
+    },
+  ])(
+    'paints the rail variant its one choice picked at $cols columns',
+    async ({ cols, rail, crew }) => {
+      resetStores();
+      terminalSizeStore.__testReset({ cols, rows: 24, isSmall: cols < 120 });
+      configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
+      const ui = renderFeature(
+        <Box paddingX={WORKFLOW_GUTTER_X}>
+          <Header stages={getRailStages('complete', { apply: 'pending' })} />
+        </Box>,
+        { cols, rows: 24 },
+      );
+      await tick();
+      const first = stripAnsiStyles(ui.lastFrame() ?? '').split('\n')[0] ?? '';
+
+      expect(first).toContain(rail);
+      expect(first).toContain(crew);
+      ui.unmount();
+    },
+  );
 
   it('paints the first stage label even when the seat line shares the row', async () => {
     resetStores();

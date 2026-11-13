@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { renderToString } from 'ink';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { AGY_QUOTA_LEAD } from '#testing/helpers/events/agy-quota.js';
+import { flushEffects } from '#testing/helpers/ink.js';
 import { SESSION_LOG_FILE, sessionDir } from '../../../../src/core/paths.js';
 import { toEngineEventEntry } from '../../../../src/core/sessions/log-writer.js';
 import { hydrateRun } from '../../../../src/features/workflow/run-history.js';
@@ -12,6 +13,10 @@ import { saveState } from '../../../../src/core/state/persistence.js';
 import { writeEvidenceLedger } from '../../../../src/core/evidence/ledger-storage.js';
 import { WORKFLOW_STATE_VERSION } from '../../../../src/core/schemas/workflow.js';
 import { getWorkflowSidebarWidth } from '../../../../src/features/workflow/layout/rect.js';
+import {
+  RAIL_SHORT_LABEL,
+  railConnectorString,
+} from '../../../../src/features/workflow/layout/chrome-rows.js';
 import { readConversationScrollSnapshot } from '../../../../src/features/workflow/layout/snapshot.js';
 import {
   getConversationRowsProjection,
@@ -23,10 +28,15 @@ import { displayActivityLabel } from '../../../../src/features/workflow/display/
 import { getSections } from '../../../../src/stores/workflow/actions/sections.js';
 import { conversationScrollStore } from '../../../../src/stores/workflow/conversation-scroll.js';
 import { streamingOutputStore } from '../../../../src/stores/workflow/streaming-output.js';
-import type { CheckpointId } from '../../contracts/identifiers.js';
+import type { CheckpointId, ScenarioId } from '../../contracts/identifiers.js';
 import { checkpointId } from '../../contracts/identifiers.js';
+import { NO_CORRECTION_MESSAGE } from '../../../../src/features/workflow/recovery-prompt.js';
+import { requestSteer } from '../../../../src/features/workflow/handlers.js';
+import { noWordsRefusal } from '../../../../src/core/recovery/typed-words.js';
+import { plainUserMessage } from '../../../../src/core/types/user-input.js';
 import {
   LONG_COMPOSER_DRAFT,
+  PREVIEW_UNAVAILABLE,
   VISUAL_FIXTURE_EPOCH,
   trackSlowProbe,
   type CheckpointPredicate,
@@ -34,11 +44,13 @@ import {
   type FixtureRegistry,
   type FixtureWrite,
 } from '../common.js';
+import { VISUAL_FIXTURE_PROJECT_DIR } from '../screen-fixtures.js';
 import { markWorkflowPaused } from '../../../../src/stores/workflow/actions/pause.js';
 import { lifecycleStore } from '../../../../src/stores/workflow/lifecycle.js';
 import { glyph, type GlyphName } from '../../../../src/lib/glyphs.js';
 import { feedbackStore } from '../../../../src/stores/ui/feedback.js';
 import { composerDraftStore } from '../../../../src/stores/ui/composer-draft.js';
+import { composerLiveStore } from '../../../../src/stores/ui/composer-live.js';
 import { saveSessionDraft } from '../../../../src/stores/ui/session-drafts.js';
 import { routerStore } from '../../../../src/stores/navigation/router.js';
 import { createDraftDocument } from '../../../../src/core/composer/document.js';
@@ -59,6 +71,7 @@ import {
   MOVED_PROJECT_MESSAGE,
   WORKFLOW_FIXTURE_TASK_ID,
   WORKFLOW_FIXTURE_TEXT,
+  crewWideReviewNoneEndProjection,
   workflowFixtureProjections,
   type FixtureStopState,
   type WorkflowFixtureProjection,
@@ -67,6 +80,7 @@ import {
   OUTPUT_LIMIT_READ_FILE,
   OUTPUT_LIMIT_TOOL_OUTPUT_MESSAGE,
 } from './output-limit-projection.js';
+import { seatMovedModelLineProjection } from './seat-moved-model-line.js';
 import { createWorkflowFixtureFactory } from './setup.js';
 
 const PLAN_USAGE_LIMIT_FRAGMENT = "You've used 75%";
@@ -90,9 +104,38 @@ function applyStop(stop: FixtureStopState): void {
 const PLAN_CARD_COMMENT_DRAFT = 'Split the CLI change into a separate task.';
 const PLAN_CARD_OVER_DRAFT = 'also print the greeting in uppercase';
 const TYPED_WORDS = 'keep the old lockfile';
+const REFUSED_WORDS = 'also fix the typo';
+const STEER_REFUSED_LINE = '/steer use the old name';
+const STOP_STEER_REFUSED_LINE = `/steer ${REFUSED_WORDS}`;
+const COMMAND_IMAGE_TEXT = '/steer fix the layout ';
+const COMMAND_IMAGE_LINE = `${COMMAND_IMAGE_TEXT}[image #1]`;
+const COMMAND_IMAGE_REASON = 'A command sends no image. Remove the command, then press ctrl+⏎.';
+const PLAN_CARD_END_DRAFT = '/end now';
+const PLAN_CARD_STEER_DRAFT = '/st';
+const END_USAGE_REFUSAL = '/end takes no argument. Usage: /end';
+const STEER_ROW_DESCRIPTION = 'Send a correction now; a running call stops first';
+const STEER_ROW_START = 'Send a correction now';
 
 function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureFactory {
   const base = createWorkflowFixtureFactory(projection);
+  if (projection.scenarioId === 'workflow-crew-wide-review-none') {
+    return () => {
+      const live = base();
+      let chosen = live;
+      return {
+        ...live,
+        setup: async (context) => {
+          const selected = workflowFixtureProjectionFor(context.scenario.id, context.checkpoint.id);
+          chosen =
+            selected === undefined || selected === projection
+              ? live
+              : createWorkflowFixtureFactory(selected)();
+          await chosen.setup(context);
+        },
+        teardown: () => chosen.teardown(),
+      };
+    };
+  }
   if (projection.scenarioId === 'workflow-plan-card-commenting') {
     return () => ({
       ...base(),
@@ -105,6 +148,37 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
   if (projection.scenarioId === 'workflow-plan-card-typed-command') {
     return () => ({ ...base(), afterMount: () => composerDraftStore.request('e') });
   }
+  // The restored line makes the card wait, so the keys stay in the composer and ⏎ runs it.
+  if (projection.scenarioId === 'workflow-plan-card-usage-refused') {
+    return () => {
+      const lifecycle = base();
+      return {
+        ...lifecycle,
+        setup: async (context) => {
+          await lifecycle.setup(context);
+          const route = routerStore.get();
+          if (route.screen !== 'workflow') throw new Error('The usage fixture needs a run');
+          saveSessionDraft(route.run.ref, createDraftDocument(PLAN_CARD_END_DRAFT));
+        },
+        afterMount: (write) => write.press('\r'),
+      };
+    };
+  }
+  // The same restored line keeps the card up while the command list explains what /steer does.
+  if (projection.scenarioId === 'workflow-plan-card-steer-row') {
+    return () => {
+      const lifecycle = base();
+      return {
+        ...lifecycle,
+        setup: async (context) => {
+          await lifecycle.setup(context);
+          const route = routerStore.get();
+          if (route.screen !== 'workflow') throw new Error('The steer row fixture needs a run');
+          saveSessionDraft(route.run.ref, createDraftDocument(PLAN_CARD_STEER_DRAFT));
+        },
+      };
+    };
+  }
   if (projection.scenarioId === 'workflow-composer-long-draft') {
     return () => ({
       ...base(),
@@ -113,6 +187,47 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
   }
   if (projection.scenarioId === 'workflow-plan-card-request-empty') {
     return () => ({ ...base(), afterMount: () => reviewKeysStore.requestComment() });
+  }
+  // The correction is deleted again, so the composer is empty and the gate is back in charge.
+  if (projection.scenarioId === 'workflow-approval-confirm-draft-deleted') {
+    return () => ({
+      ...base(),
+      afterMount: async (write) => {
+        const approval = projection.approvalAfterMount;
+        if (approval === undefined) {
+          throw new Error('The draft-deleted gate needs its after-mount approval');
+        }
+        await write.press(TYPED_WORDS);
+        void openApprovalPrompt({
+          tier: 'confirm',
+          actionClass: approval.actionClass ?? 'package_change',
+          actionDescription: approval.actionDescription,
+          taskId: WORKFLOW_FIXTURE_TASK_ID,
+          phase: 'implementing',
+        });
+        for (const _ of TYPED_WORDS) await write.press('\b');
+      },
+    });
+  }
+  // Words typed while a plan is in review stay put: that phase takes no queued correction.
+  if (projection.scenarioId === 'workflow-approval-confirm-words-stay') {
+    return () => ({
+      ...base(),
+      afterMount: async (write) => {
+        const approval = projection.approvalAfterMount;
+        if (approval === undefined) {
+          throw new Error('The words-stay gate needs its after-mount approval');
+        }
+        await write.press(TYPED_WORDS);
+        void openApprovalPrompt({
+          tier: 'confirm',
+          actionClass: approval.actionClass ?? 'package_change',
+          actionDescription: approval.actionDescription,
+          taskId: WORKFLOW_FIXTURE_TASK_ID,
+          phase: 'reviewing-plan',
+        });
+      },
+    });
   }
   // The words go through the composer first, so the gate opens over a real draft.
   if (projection.scenarioId === 'workflow-approval-confirm-over-draft') {
@@ -127,6 +242,26 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
           taskId: WORKFLOW_FIXTURE_TASK_ID,
           phase: 'implementing',
         });
+      },
+    });
+  }
+  // The confirmation opens over the words typed in its review phase: no seat takes them, so Enter
+  // hands them back under the pending confirmation and Tab gives it the keys.
+  if (projection.scenarioId === 'workflow-plan-card-confirm-words') {
+    return () => ({
+      ...base(),
+      afterMount: async (write) => {
+        await write.press(TYPED_WORDS);
+        void openApprovalPrompt({
+          tier: 'confirm',
+          actionClass: 'destructive',
+          actionDescription: '.splitbrief/state.json',
+          taskId: WORKFLOW_FIXTURE_TASK_ID,
+          phase: 'reviewing-plan',
+        });
+        await flushEffects();
+        await write.press('\r');
+        await write.press('\t');
       },
     });
   }
@@ -473,6 +608,72 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
       },
     });
   }
+  // The preview's `/steer` stops at its own refusal (`steerRun` in `fixture-session.ts`). Once
+  // the line is back, the fixture puts the halt's reason in its place, as `requestSteer` returns it.
+  if (projection.scenarioId === 'workflow-recovery-steer-refused') {
+    return () => ({
+      ...base(),
+      afterMount: async (write) => {
+        await write.press('/');
+        await write.press(STEER_REFUSED_LINE.slice(1));
+        const refused = Promise.withResolvers<void>();
+        const off = feedbackStore.subscribe(() => {
+          if (feedbackStore.get().message === PREVIEW_UNAVAILABLE) refused.resolve();
+        });
+        await write.press('\r');
+        await refused.promise;
+        off();
+        feedbackStore.setMessage(NO_CORRECTION_MESSAGE);
+      },
+    });
+  }
+  // The line carries its image from the session draft, and the composer refuses it whole: the
+  // command never leaves for a handler, and the word and the image stay where they were typed.
+  if (projection.scenarioId === 'workflow-command-image-refused') {
+    return () => {
+      const lifecycle = base();
+      return {
+        ...lifecycle,
+        setup: async (context) => {
+          await lifecycle.setup(context);
+          const route = routerStore.get();
+          if (route.screen !== 'workflow') throw new Error('The image refusal needs a run');
+          saveSessionDraft(route.run.ref, {
+            version: 1,
+            parts: [
+              { kind: 'text', text: COMMAND_IMAGE_TEXT },
+              {
+                kind: 'image',
+                attachment: {
+                  id: 'att-command-refusal-1',
+                  kind: 'image',
+                  path: `${VISUAL_FIXTURE_PROJECT_DIR}/docs/usage-panel.png`,
+                  mimeType: 'image/png',
+                  sizeBytes: 48_120,
+                },
+              },
+            ],
+          });
+        },
+        afterMount: (write) => write.press('\r'),
+      };
+    };
+  }
+  if (projection.scenarioId === 'workflow-apply-recheck-words-refused') {
+    return () => {
+      const lifecycle = base();
+      return {
+        ...lifecycle,
+        setup: async (context) => {
+          await lifecycle.setup(context);
+          const route = routerStore.get();
+          if (route.screen !== 'workflow') throw new Error('The Apply refusal needs a run');
+          saveSessionDraft(route.run.ref, createDraftDocument(REFUSED_WORDS));
+        },
+        afterMount: () => feedbackStore.setMessage(noWordsRefusal({ kind: 'apply' })),
+      };
+    };
+  }
   if (projection.scenarioId === 'workflow-recovery-long-question-draft') {
     return () => ({
       ...base(),
@@ -525,6 +726,7 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
   }
   const stop = projection.stop;
   if (stop === undefined) return base;
+  const steerRefused = projection.scenarioId === 'workflow-stop-steer-refused';
   return () => {
     const lifecycle = base();
     let off: (() => void) | null = null;
@@ -538,6 +740,25 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
         await lifecycle.setup(context);
         applyStop(stop);
       },
+      ...(steerRefused && {
+        afterMount: async (write: FixtureWrite) => {
+          await write.press('/');
+          await write.press(STOP_STEER_REFUSED_LINE.slice(1));
+          const refused = Promise.withResolvers<void>();
+          const feedbackOff = feedbackStore.subscribe(() => {
+            if (feedbackStore.get().message === PREVIEW_UNAVAILABLE) refused.resolve();
+          });
+          try {
+            await write.press('\r');
+            await refused.promise;
+          } finally {
+            feedbackOff();
+          }
+          const reason = requestSteer(plainUserMessage(REFUSED_WORDS));
+          if (reason === undefined) throw new Error('The stop steer fixture needs its refusal');
+          feedbackStore.setMessage(reason);
+        },
+      }),
       teardown: () => {
         off?.();
         off = null;
@@ -548,8 +769,29 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
   };
 }
 
+export const workflowProjectionRegistry: ReadonlyMap<ScenarioId, WorkflowFixtureProjection> =
+  new Map(
+    [...workflowFixtureProjections.values(), seatMovedModelLineProjection].map((projection) => [
+      projection.scenarioId,
+      projection,
+    ]),
+  );
+
+export function workflowFixtureProjectionFor(
+  scenario: ScenarioId,
+  checkpoint: CheckpointId,
+): WorkflowFixtureProjection | undefined {
+  if (
+    scenario === crewWideReviewNoneEndProjection.scenarioId &&
+    checkpoint === 'crew-wide-review-none-end'
+  ) {
+    return crewWideReviewNoneEndProjection;
+  }
+  return workflowProjectionRegistry.get(scenario);
+}
+
 export const workflowFixtureRegistry: FixtureRegistry = new Map(
-  [...workflowFixtureProjections.values()].map((projection) => [
+  [...workflowProjectionRegistry.values()].map((projection) => [
     projection.scenarioId,
     createStopAwareFactory(projection),
   ]),
@@ -714,7 +956,7 @@ const planCardReady = includesAll(
   'Add a greeting module and expose it from the CLI.',
 );
 
-const REVIEW_NONE_ROW = 'Review · none · REVIEW is None, so no seat reviewed this run';
+const REVIEW_NONE_ROW = 'Review · none · no seat reviewed this run';
 
 function reviewNoneRowOnce(): boolean {
   return workflowTranscriptText().replace(/\s+/g, ' ').split(REVIEW_NONE_ROW).length === 2;
@@ -843,6 +1085,11 @@ const checkpointPredicates = [
       noReviewClaimed(context),
   ],
   [
+    checkpointId('crew-wide-review-none-end'),
+    (context) =>
+      includesAll('REVIEW None')(context) && reviewNoneRowOnce() && noReviewClaimed(context),
+  ],
+  [
     checkpointId('implementation-extracted-code'),
     () => {
       const text = workflowTranscriptText().replace(/\s/g, '');
@@ -866,6 +1113,24 @@ const checkpointPredicates = [
         !text.includes('testFound') &&
         !text.includes('sDone') &&
         !text.includes('sFound')
+      );
+    },
+  ],
+  // The first rows scroll out of a 60x18 transcript, so the frame pins the last two rows, and the
+  // transcript text proves that the text of each sub-agent has its own rows.
+  [
+    checkpointId('implementation-parallel-subagents'),
+    (context) => {
+      const text = workflowTranscriptText();
+      const lines = text.split('\n');
+      const rows = ['Checking.', 'Reading the tests', 'Looking at it.', 'Found 3.', 'Done.'].map(
+        (row) => lines.findIndex((line) => line.trim() === row),
+      );
+      return (
+        includesAll('Found 3.', 'Done.')(context) &&
+        rows.every((row, index) => row > (rows[index - 1] ?? -1)) &&
+        !lines.some((line) => line.includes('Reading the tests') && line.includes('Looking')) &&
+        !text.includes('it.s')
       );
     },
   ],
@@ -1012,6 +1277,20 @@ const checkpointPredicates = [
         "verified · kept the interrupted attempt's work",
         'further change',
       )(context) && /Report {2}done$/m.test(workflowTranscriptText()),
+  ],
+  [
+    checkpointId('resumed-cut-brief'),
+    // One SPLITBRIEF row, never a Warning, says the brief continues; a narrow frame wraps it. Under
+    // 40 rows the rows of the continued brief push that row out of the frame.
+    (context) => {
+      const text = workflowTranscriptText().replace(/\s/g, '');
+      return (
+        includesTranscript("verified · kept the interrupted attempt's work")(context) &&
+        (context.viewport.rows < 40 || context.output.includes(context.checkpoint.marker)) &&
+        text.split('SPLITBRIEFT901continueswherethestopleftit.').length === 2 &&
+        !text.includes('Warning')
+      );
+    },
   ],
   [checkpointId('final-review'), includesAll('3/3 briefs passed', 'Review · OpenAI Codex CLI')],
   [
@@ -1183,6 +1462,18 @@ const checkpointPredicates = [
       noReviewClaimed(context) &&
       excludesAll('reviewing changes')(context),
   ],
+  [
+    checkpointId('apply-recheck-words-refused'),
+    (context) =>
+      includesAll(
+        'Cannot send words to Apply',
+        REFUSED_WORDS,
+        'Checking the merged result',
+      )(context) &&
+      reviewNoneRowOnce() &&
+      noReviewClaimed(context) &&
+      excludesAll('reviewing changes')(context),
+  ],
   [checkpointId('implementation-escalated'), includesAll('briefs passed')],
   [checkpointId('review-fix-narrow-rail'), includesAll('T006')],
   [checkpointId('review-fix-narrow-rail-stop'), includesAll()],
@@ -1199,6 +1490,10 @@ const checkpointPredicates = [
   [checkpointId('plan-check-missing-program'), includesAll('T901 check K4 · npm test', 'mocha')],
   [checkpointId('plan-check-no-test-file'), includesAll('T901 check K4 · failed', 'loud.test.mjs')],
   [
+    checkpointId('brief-check-unran-red'),
+    includesAll('T901 check K1 · failed · the workspace has no test file'),
+  ],
+  [
     checkpointId('plan-check-pre-existing'),
     includesTranscript('T901 check K1', 'src/legacy/report.test.ts'),
   ],
@@ -1213,7 +1508,7 @@ const checkpointPredicates = [
   ],
   [
     checkpointId('task-rows-context-fit'),
-    includesTranscript('~24,310 of 32K context tokens (tight)'),
+    includesTranscript('~24,310 of 32K context tokens (tight)', '~7,000 context tokens (tight)'),
   ],
   // The tiered gate owns this checkpoint: it takes the prompt zone from the document panel, so the
   // panel's own words are never on this frame.
@@ -1238,7 +1533,33 @@ const checkpointPredicates = [
   [checkpointId('approval-confirm'), includesAll('Confirm with a reason')],
   [
     checkpointId('approval-confirm-over-draft'),
-    includesAll(TYPED_WORDS, 'queues the typed correction'),
+    includesAll(TYPED_WORDS, 'tab back to the actions'),
+  ],
+  [
+    checkpointId('approval-confirm-draft-deleted'),
+    (context) =>
+      includesAll(
+        'Destructive action:',
+        'Confirm with a reason',
+        'tab/⏎ back to the actions',
+      )(context) &&
+      composerLiveStore.get().empty &&
+      excludesAll(
+        `${listRowLead('active')}    Confirm`,
+        `${listRowLead('active')}r   Confirm with a reason`,
+        `${listRowLead('active')}x   Deny`,
+      )(context),
+  ],
+  [
+    checkpointId('approval-confirm-words-stay'),
+    (context) =>
+      includesAll(
+        'Trust and run a configured runner:',
+        TYPED_WORDS,
+        'tab back to the actions',
+      )(context) &&
+      composerLiveStore.get().text === TYPED_WORDS &&
+      excludesAll('queues the typed correction', 'queues the correction')(context),
   ],
   [checkpointId('approval-confirm-secret'), includesAll('Confirm with a reason')],
   [checkpointId('approval-confirm-short'), includesAll('Confirm')],
@@ -1269,6 +1590,26 @@ const checkpointPredicates = [
       includesAll(PLAN_CARD_OVER_DRAFT)(context) &&
       excludesAll(`${listRowLead('active')}Approve plan`)(context),
   ],
+  [checkpointId('plan-card-confirm-words'), includesAll('Confirm with a reason', TYPED_WORDS)],
+  [
+    checkpointId('plan-card-usage-refused'),
+    (context) =>
+      planCardReady(context) && includesAll(END_USAGE_REFUSAL, PLAN_CARD_END_DRAFT)(context),
+  ],
+  [
+    checkpointId('plan-card-steer-row'),
+    (context) => {
+      const row = context.output.split('\n').find((line) => line.includes('/steer'));
+      if (row === undefined || !row.includes(STEER_ROW_START)) return false;
+      if (context.viewport.cols >= 120) {
+        return (
+          row.includes(STEER_ROW_DESCRIPTION) &&
+          context.output.includes('Approve plan and start the build')
+        );
+      }
+      return context.viewport.cols >= 80 || row.includes('…');
+    },
+  ],
   [
     checkpointId('plan-repaired'),
     (context) => includesAll()(context) && excludesAll('Warning', 'The plan failed')(context),
@@ -1287,6 +1628,15 @@ const checkpointPredicates = [
   [checkpointId('plan-card-no-image-reviewer'), planCardReady],
   [checkpointId('plan-card-shared-command'), planCardReady],
   [checkpointId('plan-card-session-path'), planCardReady],
+  // A short terminal shows the marked row only. A tall one shows the gate down to its first
+  // long command.
+  [
+    checkpointId('plan-card-long-gate'),
+    (context) =>
+      includesAll()(context) &&
+      (context.viewport.rows < 18 || planCardReady(context)) &&
+      (context.viewport.rows < 40 || context.output.includes('V4: npx --no-install vitest run')),
+  ],
   [
     checkpointId('plan-card-edited'),
     (context) => {
@@ -1333,6 +1683,10 @@ const checkpointPredicates = [
   [checkpointId('paused-cut-seat'), includesAll('⏎ resume', 'Stopped at T')],
   [checkpointId('paused-boundary'), includesAll('briefs complete', 'before T902')],
   [checkpointId('stopping'), includesAll('esc back after stop')],
+  [
+    checkpointId('stop-steer-refused'),
+    includesAll(STOP_STEER_REFUSED_LINE, 'Finishing cleanup and saving'),
+  ],
   [checkpointId('stopping-review'), includesAll('Stopping the review')],
   // A run at rest carries its own name: the marker is the session the record names, which the
   // closed block states in full and the open byline carries. Nothing else is width-stable — the
@@ -1374,12 +1728,27 @@ const checkpointPredicates = [
       if (!includesAll('This halt takes no typed correction', TYPED_WORDS)(context)) return false;
       if (context.viewport.cols > 80) return true;
       const headerRow = context.output.split('\n')[0] ?? '';
-      return (
-        headerRow.includes(`${glyph('statusFailed')} Apply`) &&
-        headerRow.includes('PLAN claude · BUILD claude · REVIEW = PLAN')
-      );
+      const crewLine = headerRow.includes('PLAN claude · BUILD claude · REVIEW = PLAN');
+      if (context.viewport.cols === 80) {
+        const shortRail = [
+          `${glyph('stageDone')} ${RAIL_SHORT_LABEL.plan}`,
+          `${glyph('stageDone')} ${RAIL_SHORT_LABEL.build}`,
+          `${glyph('stageDone')} ${RAIL_SHORT_LABEL.review}`,
+          `${glyph('statusFailed')} ${RAIL_SHORT_LABEL.apply}`,
+        ].join(railConnectorString());
+        return headerRow.includes(shortRail) && crewLine;
+      }
+      return headerRow.includes(`${glyph('statusFailed')} Apply`) && crewLine;
     },
   ],
+  [
+    checkpointId('command-image-refused'),
+    (context) =>
+      includesAll(COMMAND_IMAGE_LINE)(context) &&
+      feedbackStore.get().message === COMMAND_IMAGE_REASON &&
+      (context.viewport.cols < 120 || context.output.includes(COMMAND_IMAGE_REASON)),
+  ],
+  [checkpointId('recovery-steer-refused'), includesAll(STEER_REFUSED_LINE)],
   [
     checkpointId('recovery-apply-conflict'),
     (context) =>
@@ -1518,9 +1887,9 @@ const checkpointPredicates = [
       const headerRow = context.output.split('\n')[0] ?? '';
       if (context.viewport.cols === 120) {
         return (
-          headerRow.includes('○ Apply') &&
+          headerRow.includes(`○ ${RAIL_SHORT_LABEL.apply}`) &&
           headerRow.includes(
-            'PLAN custom-endpoint · BUILD Gemini 3.8 Flash → Google Antigravity CLI · REVIEW custom-endpoint',
+            'PLAN GPT-5.1 · BUILD Gemini 3.8 Flash → Google Antigravity CLI · REVIEW GPT-5 Codex',
           )
         );
       }
@@ -1528,6 +1897,19 @@ const checkpointPredicates = [
         context.output.includes('PLAN GPT-5.1') &&
         (context.viewport.cols !== 160 ||
           headerRow.includes('BUILD Gemini 3.8 Flash → Google Antigravity CLI'))
+      );
+    },
+  ],
+  [
+    checkpointId('ready-seat-moved-model-line'),
+    (context) => {
+      if (!context.output.includes(context.checkpoint.marker)) return false;
+      const headerRow = context.output.split('\n')[0] ?? '';
+      return (
+        headerRow.includes('○ Apply') &&
+        headerRow.includes(
+          'PLAN GPT-5.1 · BUILD Gemini 3.8 Flash → Google Antigravity CLI · REVIEW GPT-5 Codex',
+        )
       );
     },
   ],
@@ -1699,7 +2081,33 @@ const checkpointPredicates = [
       return transcript.includes(context.checkpoint.marker);
     },
   ],
+  // The last detail wraps between the sides of the panel, so the frame is read as one line of
+  // words, with no side and no line break.
+  [
+    checkpointId('recovery-plan-correction-again'),
+    (context) =>
+      includesAll('Planning failed', 'Change PLAN tool', 'Try again')(context) &&
+      stripAnsiStyles(context.output)
+        .replace(/[\s│]+/g, ' ')
+        .includes('Your plan correction goes again with this step.'),
+  ],
   [checkpointId('recovery-plan-questions'), includesAll('Which store keeps the greeting?')],
+  // The line of the correction is whole at each size. A tall panel lists each question.
+  [
+    checkpointId('recovery-plan-questions-long'),
+    (context) => {
+      const words = stripAnsiStyles(context.output).replace(/[\s│]+/g, ' ');
+      return (
+        words.includes('Your plan correction goes again with this step.') &&
+        (context.viewport.cols < 120 ||
+          [
+            'Which store keeps the greeting?',
+            'Does the module export a default or a named function?',
+            'Should the help text show an example?',
+          ].every((question) => words.includes(question)))
+      );
+    },
+  ],
   [checkpointId('recovery-review'), includesAll()],
   [checkpointId('recovery-model-pick'), includesAll('Pick another REVIEW model')],
   [checkpointId('recovery-hint'), includesAll(WORKFLOW_FIXTURE_TEXT.recoveryPlan)],
@@ -1841,7 +2249,28 @@ const checkpointPredicates = [
   ],
   [
     checkpointId('task-review-no-progress'),
-    includesAll('Review T904 made no progress on F1', WORKFLOW_FIXTURE_TEXT.reviewFailed),
+    (context) => {
+      const matches = includesAll(
+        'Review T904 made no progress on F1',
+        WORKFLOW_FIXTURE_TEXT.reviewFailed,
+      );
+      if (!matches(context)) return false;
+      if (context.viewport.cols !== 60 || context.viewport.rows !== 18) return true;
+      // The planner's reason is the only fact, so its cut rows take the blank row under the
+      // headline: three reason rows follow it with no gap, and the last one carries the cut mark.
+      const rows = stripAnsiStyles(context.output)
+        .split('\n')
+        .map((row) => row.replace(/[│|]/gu, '').trim());
+      const headline = rows.findIndex((row) => row.includes('no progress on F1'));
+      if (headline < 0) return false;
+      const reason = rows.slice(headline + 1, headline + 4);
+      return (
+        reason.length === 3 &&
+        reason.every((row) => row.length > 0) &&
+        reason[0]?.startsWith('Planner said: The type test') === true &&
+        reason[2]?.includes('…') === true
+      );
+    },
   ],
   [
     checkpointId('recovery-checks-missing-program'),
@@ -1924,6 +2353,10 @@ const checkpointPredicates = [
     checkpointId('implementation-search-folders'),
     includesAll('renewalWindow · src/loans · *.ts', 'renewalWindow · src/loans/rules'),
   ],
+  [
+    checkpointId('implementation-read-paths'),
+    includesAll('src/a.ts :12-41 · src/b.ts :12-41', 'src/c.ts :40-end'),
+  ],
   [checkpointId('implementation-silent-bare'), includesAll('Implementing…', 'No output for')],
   [
     checkpointId('live-seat-wait'),
@@ -1933,16 +2366,23 @@ const checkpointPredicates = [
   ],
   [checkpointId('planning-seat-wait'), includesAll('Waiting for Claude Code')],
   [checkpointId('final-review-seat-wait'), includesAll('Waiting for OpenAI Codex CLI')],
-  [checkpointId('planning-seat-retry'), includesAll('Network or server failure', 'retry 1 of 10')],
+  [
+    checkpointId('planning-seat-retry'),
+    (context) =>
+      includesAll('Network or server failure', 'retry 2 of 10')(context) &&
+      excludesAll('PLAN  Network')(context),
+  ],
   [
     checkpointId('build-seat-retry'),
     (context) =>
       includesAll('retry 2 of 10')(context) &&
-      excludesAll('BUILD failed', 'BUILD  failed')(context),
+      excludesAll('BUILD failed', 'BUILD  failed', 'BUILD  Network')(context),
   ],
   [
     checkpointId('final-review-seat-retry'),
-    includesAll('Network or server failure', 'retry 1 of 10', 'Review input trimmed'),
+    (context) =>
+      includesAll('Network or server failure', 'retry 2 of 10', 'Review input trimmed')(context) &&
+      excludesAll('REVIEW  Network')(context),
   ],
   [checkpointId('review-check-running'), includesAll('Review · Reviewer check V2')],
   [checkpointId('review-check-reused'), includesAll('Reviewer check V2', 'reused,')],
@@ -2082,7 +2522,12 @@ const checkpointPredicates = [
       context.output.includes('Final review passed') &&
       includesTranscript('Base re-run V1 · npm run e2e')(context),
   ],
-  [checkpointId('planner-session-expired'), includesAll('Planner session expired')],
+  [
+    checkpointId('planner-session-expired'),
+    // The session log keeps the expired thread; the transcript has no row for it.
+    (context) =>
+      includesAll()(context) && !workflowTranscriptText().includes('Planner session expired'),
+  ],
   [
     checkpointId('plan-usage-limit'),
     (context) =>

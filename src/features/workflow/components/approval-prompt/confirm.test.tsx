@@ -18,9 +18,12 @@ import {
   CONFIRM_REASON_OPTIONAL,
   CONFIRM_REASON_UNSTATED,
   CHOOSE_HINTS,
+  PROMPT_COMMAND_LEGEND,
   approvalTitle,
   getApprovalPromptRows,
 } from '../../prompt-rows/approval.js';
+import { composerLiveStore } from '../../../../stores/ui/composer-live.js';
+import { createDraftDocument } from '../../../../core/composer/document.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import { approvalTextWidth } from '../../prompt-rows/measure.js';
 import { fitKeyLegend } from '../../../../core/key-legend.js';
@@ -59,11 +62,14 @@ function makeConfirmRequest(
 beforeEach(() => {
   approvalPromptStore.__testReset();
   overlayStore.reset();
+  composerLiveStore.reset();
 });
 
 afterEach(() => {
   approvalPromptStore.__testReset();
   overlayStore.reset();
+  composerLiveStore.reset();
+  terminalSizeStore.reset();
 });
 
 describe('ApprovalPrompt confirm tier', () => {
@@ -425,6 +431,65 @@ describe('ApprovalPrompt confirm tier', () => {
     ui.stdin.write(ESC);
     await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_denied' });
     ui.unmount();
+  });
+});
+
+describe('unfocused confirmation legends', () => {
+  const REQUEST = makeConfirmRequest('package.json', 'package_change');
+
+  function legendFrame(input: { cols: number; draft: string; queues?: boolean }): string {
+    terminalSizeStore.__testReset({ cols: input.cols, rows: 40 });
+    composerLiveStore.setDraft(createDraftDocument(input.draft));
+    void openApprovalPrompt(REQUEST);
+    const ui = renderFeature(<ApprovalPrompt focused={false} queues={input.queues ?? true} />, {
+      cols: input.cols,
+      rows: 40,
+    });
+    const frame = stripColor(ui.lastFrame());
+    ui.unmount();
+    return frame;
+  }
+
+  function legendRow(frame: string): string | undefined {
+    return frame
+      .split('\n')
+      .map((line) => line.replace(/[│┃|]/g, '').trim())
+      .find((line) => line.includes('back to the actions'));
+  }
+
+  it('names tab and ⏎ back to the actions under an empty composer', () => {
+    const frame = legendFrame({ cols: 80, draft: '' });
+
+    expect(legendRow(frame)).toBe('tab/⏎ back to the actions');
+    expect(frame).not.toContain(CHOOSE_HINTS);
+  });
+
+  it('names tab and ⏎ back to the actions over a draft of spaces', () => {
+    const frame = legendFrame({ cols: 80, draft: '   ' });
+
+    expect(legendRow(frame)).toBe('tab/⏎ back to the actions');
+  });
+
+  it('says ⏎ runs a command under a slash command', () => {
+    const frame = legendFrame({ cols: 80, draft: '/settings' });
+
+    expect(legendRow(frame)).toBe(`${PROMPT_COMMAND_LEGEND} · tab back to the actions`);
+  });
+
+  it('promises no queue for words that no seat takes', () => {
+    const frame = legendFrame({ cols: 80, draft: 'also fix the typo', queues: false });
+
+    expect(legendRow(frame)).toBe('tab back to the actions');
+  });
+
+  it.each([
+    { cols: 60, legend: '⏎ queues the correction · tab back to the actions' },
+    { cols: 80, legend: '⏎ queues the typed correction · tab back to the actions' },
+    { cols: 120, legend: '⏎ queues the typed correction · tab back to the actions' },
+  ])('keeps tab back to the actions under typed words at $cols columns', ({ cols, legend }) => {
+    const frame = legendFrame({ cols, draft: 'also fix the typo' });
+
+    expect(legendRow(frame)).toBe(legend);
   });
 });
 

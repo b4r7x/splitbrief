@@ -256,7 +256,8 @@ describe('skill-blocks', () => {
       expect(consult).toContain(`| \`${action}\` |`);
     }
     expect(consult).toContain('same id and the same criteria');
-    expect(consult).toContain('Replace with 2–4 subtasks');
+    expect(consult).toContain('Replace with 2 or more subtasks.');
+    expect(consult).not.toMatch(/2–4|undefined/);
     expect(consult).toContain('earlier answers on the lineage, across splits and resume');
     for (const action of ['guidance', 'rewrite-task', 'split-task']) {
       expect(consult.split('\n').find((line) => line.startsWith(`| \`${action}\` |`))).toContain(
@@ -282,7 +283,10 @@ describe('skill-blocks', () => {
 
   it('states the reviewer-check rules: project gate, stop rule, base re-run and refusal scope', () => {
     const rules = renderBlock('gate-rules') ?? '';
-    expect(rules).toContain('The plan names the project gate: at most 6 commands');
+    expect(rules).toContain(
+      "The plan names the project gate: the commands that the project's scripts or CI run to verify a change, in order.",
+    );
+    expect(rules).not.toMatch(/at most \d+ commands/);
     expect(rules).toContain('run the project gate before the final review');
     expect(rules).not.toContain('plan call');
     expect(rules).toContain('a plan or task check is never refused for that');

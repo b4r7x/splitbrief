@@ -152,10 +152,10 @@ describe('same target runner rebuilds', () => {
         testCase.role === 'planner'
           ? applyCLIOverrides(makeConfig({ planner: testCase.existing }), {
               planner: { model },
-            }).planner
+            }).config.planner
           : applyCLIOverrides(makeConfig({ implementer: testCase.existing }), {
               implementer: { model },
-            }).implementer;
+            }).config.implementer;
 
       expect(rebuilt).toEqual({ ...testCase.existing, model });
     },
@@ -182,25 +182,27 @@ describe('applyCLIOverrides — unusable provider overrides', () => {
         [role]: { apiBase: 'https://ignored.example.test/v1' },
       });
 
-      expect(result).toBe(config);
-      expect(stderr.mock.calls.map((call) => String(call[0])).join('')).toContain(
-        `--${role}-api-base is ignored: the ${role} '${existing.kind}' runner does not use it.`,
-      );
+      expect(result.config).toBe(config);
+      expect(result.ignoredFlags).toEqual([
+        {
+          notice: `--${role}-api-base is ignored: the ${role} '${existing.kind}' runner does not use it.`,
+          fix: 'Remove the flag from the command.',
+        },
+      ]);
+      expect(stderr).not.toHaveBeenCalled();
     },
   );
 
   it('keeps the inherited reviewer when its API base override is ignored', () => {
-    vi.spyOn(process.stderr, 'write').mockReturnValue(true);
-
     expect(
-      applyCLIOverrides(baseConfig, { reviewer: { apiBase: 'https://ignored.example.test/v1' } }),
+      applyCLIOverrides(baseConfig, { reviewer: { apiBase: 'https://ignored.example.test/v1' } })
+        .config,
     ).toBe(baseConfig);
   });
 
   it.each(['planner', 'implementer', 'reviewer'] as const)(
     'updates the API base on an existing API %s without changing its provider',
     (role) => {
-      const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
       const existing = sameTargetCases.find(
         (testCase) => testCase.existing.kind === 'api',
       )?.existing;
@@ -210,38 +212,43 @@ describe('applyCLIOverrides — unusable provider overrides', () => {
 
       const result = applyCLIOverrides(config, { [role]: { apiBase } });
 
-      expect(result[role]).toEqual({ ...existing, apiBase });
-      expect(stderr.mock.calls.map((call) => String(call[0])).join('')).not.toContain('is ignored');
+      expect(result.config[role]).toEqual({ ...existing, apiBase });
+      expect(result.ignoredFlags).toEqual([]);
     },
   );
 
   it('warns when --implementer-api-key-env is supplied for a CLI runner', () => {
-    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
-    applyCLIOverrides(baseConfig, {
+    const { ignoredFlags } = applyCLIOverrides(baseConfig, {
       implementer: {
         tool: 'claude-code',
         model: 'claude-sonnet-4-5',
         apiKey: 'env:FOO',
       },
     });
-    const output = stderr.mock.calls.map((c) => String(c[0])).join('');
-    expect(output).toMatch(/--implementer-api-key-env is ignored/);
+    expect(ignoredFlags).toEqual([
+      {
+        notice: expect.stringMatching(/^--implementer-api-key-env is ignored/),
+        fix: 'Remove the flag from the command.',
+      },
+    ]);
   });
 
   it('warns when --planner-api-base is supplied for a CLI runner', () => {
-    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
-    applyCLIOverrides(baseConfig, {
+    const { ignoredFlags } = applyCLIOverrides(baseConfig, {
       planner: {
         tool: 'claude-code',
         apiBase: 'https://example.com/v1',
       },
     });
-    const output = stderr.mock.calls.map((c) => String(c[0])).join('');
-    expect(output).toMatch(/--planner-api-base is ignored/);
+    expect(ignoredFlags).toEqual([
+      {
+        notice: expect.stringMatching(/^--planner-api-base is ignored/),
+        fix: 'Remove the flag from the command.',
+      },
+    ]);
   });
 
   it('names the CLI identity and the YAML route when API flags collide with a CLI tool id', () => {
-    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
     const result = applyCLIOverrides(baseConfig, {
       implementer: {
         tool: 'opencode',
@@ -250,9 +257,9 @@ describe('applyCLIOverrides — unusable provider overrides', () => {
         apiKey: 'env:MY_KEY',
       },
     });
-    const output = stderr.mock.calls.map((c) => String(c[0])).join('');
+    const output = result.ignoredFlags.map((flag) => flag.notice).join('\n');
 
-    expect(result.implementer).toEqual({
+    expect(result.config.implementer).toEqual({
       kind: 'cli',
       tool: 'opencode',
       model: 'opencode/test-model',
@@ -267,8 +274,7 @@ describe('applyCLIOverrides — unusable provider overrides', () => {
   });
 
   it('does not warn when api-key-env is supplied for an API runner', () => {
-    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
-    applyCLIOverrides(baseConfig, {
+    const { ignoredFlags } = applyCLIOverrides(baseConfig, {
       implementer: {
         tool: 'ollama',
         model: 'qwen2.5-coder:7b',
@@ -276,18 +282,13 @@ describe('applyCLIOverrides — unusable provider overrides', () => {
         apiKey: 'env:OLLAMA_LOCAL_API_KEY',
       },
     });
-    const output = stderr.mock.calls.map((c) => String(c[0])).join('');
-    expect(output).not.toMatch(/is ignored/);
+    expect(ignoredFlags).toEqual([]);
   });
 });
 
 describe('applyCLIOverrides — runner commands', () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
   it('uses shell config for planner command override without explicit tool', () => {
-    const result = applyCLIOverrides(baseConfig, {
+    const { config: result } = applyCLIOverrides(baseConfig, {
       planner: { command: 'custom-planner' },
     });
 
@@ -298,7 +299,7 @@ describe('applyCLIOverrides — runner commands', () => {
   });
 
   it('uses shell config for implementer command override without explicit tool', () => {
-    const result = applyCLIOverrides(baseConfig, {
+    const { config: result } = applyCLIOverrides(baseConfig, {
       implementer: { command: 'custom-implementer', model: 'custom-model' },
     });
 
@@ -324,13 +325,13 @@ describe('applyCLIOverrides — runner commands', () => {
       },
     });
 
-    const automatic = applyCLIOverrides(config, {
+    const { config: automatic } = applyCLIOverrides(config, {
       implementer: { tool: 'copilot', model: 'auto' },
     });
 
     expect(automatic.implementer).toEqual({ kind: 'cli', tool: 'copilot', model: 'auto' });
 
-    const result = applyCLIOverrides(config, { implementer: { tool: 'copilot' } });
+    const { config: result } = applyCLIOverrides(config, { implementer: { tool: 'copilot' } });
 
     expect(result.implementer).toEqual({ kind: 'cli', tool: 'copilot' });
   });
@@ -348,7 +349,7 @@ describe('applyCLIOverrides — runner commands', () => {
       },
     });
 
-    const result = applyCLIOverrides(config, { implementer: { model: 'auto' } });
+    const { config: result } = applyCLIOverrides(config, { implementer: { model: 'auto' } });
 
     expect(result.implementer).toEqual({
       ...config.implementer,
@@ -366,7 +367,7 @@ describe('applyCLIOverrides — runner commands', () => {
       },
     });
 
-    const result = applyCLIOverrides(config, {
+    const { config: result } = applyCLIOverrides(config, {
       implementer: { model: 'openai/gpt-5.6-mini' },
     });
 
@@ -379,7 +380,7 @@ describe('applyCLIOverrides — runner commands', () => {
   });
 
   it('applies API base and env API key overrides to API implementers', () => {
-    const result = applyCLIOverrides(baseConfig, {
+    const { config: result } = applyCLIOverrides(baseConfig, {
       implementer: {
         tool: 'ollama',
         model: 'qwen2.5-coder:7b',
@@ -400,7 +401,7 @@ describe('applyCLIOverrides — runner commands', () => {
   });
 
   it('applies args and output format overrides to CLI implementers', () => {
-    const result = applyCLIOverrides(baseConfig, {
+    const { config: result } = applyCLIOverrides(baseConfig, {
       implementer: {
         tool: 'opencode',
         model: 'opencode/test-cheap-model',
@@ -441,7 +442,7 @@ describe('applyCLIOverrides — runner commands', () => {
       },
     });
 
-    const result = applyCLIOverrides(config, {
+    const { config: result } = applyCLIOverrides(config, {
       implementer: {
         tool: 'opencode',
         model: 'opencode/test-cheap-model',
@@ -474,7 +475,7 @@ describe('applyCLIOverrides — runner commands', () => {
   });
 
   it('applies planner runner fields without changing implementer config', () => {
-    const result = applyCLIOverrides(baseConfig, {
+    const { config: result } = applyCLIOverrides(baseConfig, {
       planner: {
         tool: 'custom-endpoint',
         model: 'claude-sonnet-4-5',
@@ -496,7 +497,7 @@ describe('applyCLIOverrides — runner commands', () => {
   });
 
   it('applies reviewer runner fields without changing the planner', () => {
-    const result = applyRunnerOverrides(
+    const { config: result } = applyRunnerOverrides(
       'reviewer',
       { tool: 'codex', model: 'gpt-5.4' },
       baseConfig,
@@ -507,14 +508,21 @@ describe('applyCLIOverrides — runner commands', () => {
   });
 
   it('writes the review seat when --reviewer names the planner tool', () => {
-    const result = applyRunnerOverrides('reviewer', { tool: 'claude-code' }, baseConfig);
+    const { config: result } = applyRunnerOverrides(
+      'reviewer',
+      { tool: 'claude-code' },
+      baseConfig,
+    );
 
     expect(result.reviewer).toMatchObject({ kind: 'cli', tool: 'claude-code' });
   });
 
   it('leaves the review seat with the planner when the reviewer override is discarded', () => {
-    vi.spyOn(process.stderr, 'write').mockReturnValue(true);
-    const result = applyRunnerOverrides('reviewer', { apiKey: 'env:MY_KEY' }, baseConfig);
+    const { config: result } = applyRunnerOverrides(
+      'reviewer',
+      { apiKey: 'env:MY_KEY' },
+      baseConfig,
+    );
 
     expect(result.reviewer).toBeUndefined();
   });

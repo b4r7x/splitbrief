@@ -27,6 +27,7 @@ import {
   makeCallbacks,
   makePlanner,
   makeWctx,
+  seatChangeScreen,
 } from '#testing/helpers/orchestrator-factories.js';
 import {
   failedReviewVerdict,
@@ -48,7 +49,7 @@ import type { Planner, TypedCallContext } from '../../planners/types.js';
 import type { ConsultAnswer } from '../../../core/schemas/consult.js';
 import type { WorkflowContext } from '../types.js';
 import { fixCyclesOf, type WorkflowState } from '../../../core/schemas/workflow.js';
-import type { TriageInput, TriageResult } from '../../../core/schemas/review.js';
+import type { ReviewVerdict, TriageInput, TriageResult } from '../../../core/schemas/review.js';
 import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
 import { diagnosePlannerCallFailure } from '../recovery/planner-call-failure.js';
@@ -2450,4 +2451,168 @@ describe('scheduled review steering', () => {
       for (const call of verdicts) expect(call.context.callbacks.steering).toBe(steering);
     },
   );
+});
+
+describe('scheduled review seat change', () => {
+  /**
+   * The task review of T001, the brief that ended, on the run screen. `seatWaits` says if a saved
+   * seat waits after the given count of verdict calls.
+   */
+  async function reviewAfterBrief(
+    seatWaits: (verdictCalls: number) => boolean,
+    verdict: (prompt: string, call: number) => ReviewVerdict,
+  ) {
+    const ref = setupProject();
+    const done = makeTask({ id: 'T001', status: 'done' });
+    const state = makeImplState([done, makeTask({ id: 'T002' })], {
+      currentTaskIndex: 1,
+      changedFilesBaseline: { ...RUN_BASELINE },
+    });
+    saveState(ref, state);
+    writeEvidenceLedger(
+      ref,
+      createEvidenceLedger({
+        sessionId: ref.sessionId,
+        feature: state.feature,
+        tasks: state.tasks,
+      }),
+    );
+    let verdictCalls = 0;
+    const screen = seatChangeScreen(() => seatWaits(verdictCalls));
+    const reviewer = makePlanner({
+      typedCall: typedCallPlanAndReview(
+        () => planFromTasks([]),
+        (prompt, call) => {
+          verdictCalls = call;
+          return verdict(prompt, call);
+        },
+      ),
+    });
+    const callbacks = makeCallbacks({
+      onPlannerReply: vi.fn().mockResolvedValue(plainUserMessage('Keep the API')),
+      onContinuationNeeded: screen.onContinuationNeeded,
+    }).callbacks;
+    const { bus, events } = makeBusRecorder();
+    const wctx = makeWctx({
+      ...ref,
+      bus,
+      callbacks,
+      planner: reviewer,
+      reviewer,
+      sinks: screen.sinks,
+      signal: screen.signal,
+      config: makeNoValidationConfig({
+        workflow: { review: 'task' },
+        validation: { endChecks: true },
+      }),
+    });
+
+    const result = await runScheduledReview({
+      wctx,
+      state,
+      callbacks,
+      afterTaskId: done.id,
+      setTrackedState: vi.fn(),
+    });
+
+    const parks = events.filter((event) => event.type === 'turn_interrupted');
+    return { result, verdictCalls, parks };
+  }
+
+  it('parks for a seat change before a task review runs again after an answer', async () => {
+    // The seat is saved while the first verdict call runs, and that call asks a question.
+    const { result, verdictCalls, parks } = await reviewAfterBrief(
+      (calls) => calls > 0,
+      (prompt, call) => ({
+        ...passingReviewVerdict(prompt),
+        ...(call === 1
+          ? { ask: { question: 'Keep the API?', whyOnlyUserCanAnswer: 'The API is public.' } }
+          : { rejected: [{ findingId: 'A1', reason: 'Keep the approved API.' }] }),
+      }),
+    );
+
+    expect(verdictCalls).toBe(1);
+    expect(result.status).toBe('stopped');
+    expect(parks).toHaveLength(1);
+    expect(parks[0]).toMatchObject({ at: 'boundary', cause: 'seat-change' });
+  });
+
+  it('parks for a seat change before the task review of the brief that ended', async () => {
+    // The seat was saved while the brief ran.
+    const { result, verdictCalls, parks } = await reviewAfterBrief(
+      () => true,
+      (prompt) => passingReviewVerdict(prompt),
+    );
+
+    expect(verdictCalls).toBe(0);
+    expect(result.status).toBe('stopped');
+    expect(result.state.pendingScheduledReview).toEqual({ afterTaskId: 'T001' });
+    expect(parks).toHaveLength(1);
+    expect(parks[0]).toMatchObject({ at: 'boundary', cause: 'seat-change' });
+  });
+
+  it('parks for a seat change before a task review runs again after the answer to a question that a resumed run asks again', async () => {
+    const ref = setupProject();
+    const state: WorkflowState = {
+      ...scheduledReviewState(),
+      review: pendingReview().review,
+      fixCycles: pendingReview().fixCycles,
+      pendingTriage: {
+        inputs: [],
+        question: { question: 'Keep the API?', whyOnlyUserCanAnswer: 'The API is public.' },
+      },
+    };
+    saveState(ref, state);
+    let seatSaved = false;
+    let verdictCalls = 0;
+    const screen = seatChangeScreen(() => seatSaved);
+    const reviewer = makePlanner({
+      typedCall: typedCallPlanAndReview(
+        () => planFromTasks([]),
+        (prompt, call) => {
+          verdictCalls = call;
+          return {
+            ...passingReviewVerdict(prompt),
+            rejected: [{ findingId: 'A1', reason: 'Keep the approved API.' }],
+          };
+        },
+      ),
+    });
+    const callbacks = makeCallbacks({
+      // The seat is saved while the question waits, and then the user answers.
+      onPlannerReply: vi.fn(async () => {
+        seatSaved = true;
+        return plainUserMessage('Keep the API');
+      }),
+      onContinuationNeeded: screen.onContinuationNeeded,
+    }).callbacks;
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runScheduledReview({
+      wctx: makeWctx({
+        ...ref,
+        bus,
+        callbacks,
+        planner: reviewer,
+        reviewer,
+        sinks: screen.sinks,
+        signal: screen.signal,
+        config: makeNoValidationConfig({
+          workflow: { review: 'task' },
+          validation: { endChecks: true },
+        }),
+      }),
+      state,
+      callbacks,
+      setTrackedState: vi.fn(),
+    });
+
+    expect(callbacks.onPlannerReply).toHaveBeenCalledOnce();
+    expect(verdictCalls).toBe(0);
+    expect(result.status).toBe('stopped');
+    const parks = events.filter((event) => event.type === 'turn_interrupted');
+    expect(parks).toHaveLength(1);
+    expect(parks[0]).toMatchObject({ at: 'boundary', cause: 'seat-change' });
+    expect(result.state.pendingScheduledReview).toEqual({ afterTaskId: 'T001' });
+  });
 });

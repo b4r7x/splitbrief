@@ -8,7 +8,9 @@ import { getWorkflowPromptRows } from '../../src/features/workflow/prompt-rows/w
 import { approvalPromptStore } from '../../src/stores/approval-prompt/prompt.js';
 import { configStore } from '../../src/stores/project/config.js';
 import { questionPromptStore } from '../../src/stores/question-prompt/prompt.js';
+import { composerLiveStore } from '../../src/stores/ui/composer-live.js';
 import { controlsStore } from '../../src/stores/ui/controls.js';
+import { feedbackStore } from '../../src/stores/ui/feedback.js';
 import { terminalSizeStore } from '../../src/stores/ui/terminal-size.js';
 import { eventsStore, mergeEventLog } from '../../src/stores/workflow/events.js';
 import { lifecycleStore } from '../../src/stores/workflow/lifecycle.js';
@@ -167,6 +169,33 @@ it('logs the error row of the at-rest left-isolation halt as the product writes 
   expect(messages).toEqual([halt?.message]);
 });
 
+it('names one BUILD seat in the header and in the halt of the left-isolation frame', async () => {
+  const scenario = findVisualScenario('workflow-at-rest-left-isolation');
+  const checkpoint = scenario?.checkpoints[0];
+  if (scenario === undefined || checkpoint === undefined) {
+    throw new Error('Missing at-rest left-isolation scenario');
+  }
+  const ui = await mountGalleryScenario({
+    scenario,
+    checkpoint,
+    viewport: viewport({ cols: 120, rows: 40 }),
+  });
+  try {
+    const frame = stripTerminalControls(await ui.waitForCheckpoint(), {
+      preserveLineBreaks: true,
+    });
+    const header = frame.split('\n')[0] ?? '';
+    expect(header.split('BUILD')).toHaveLength(2);
+    expect(header).toContain('BUILD Gemini 3 Flash');
+    const transcript = workflowTranscriptText().replace(/\s+/g, ' ');
+    expect(transcript).toContain('left the isolation directory');
+    expect(transcript).toContain('Google Antigravity CLI wrote to');
+    expect(frame).not.toContain('Qwen2.5 Coder 7B');
+  } finally {
+    await ui.unmount();
+  }
+});
+
 it('counts the saved final review in the packet and the Review row of every closed run', () => {
   const disagreements: string[] = [];
   for (const projection of workflowFixtureProjections.values()) {
@@ -250,6 +279,33 @@ async function setupProjection(projection: WorkflowFixtureProjection): Promise<F
   const lifecycle = lifecycleFor(projection.scenarioId);
   await lifecycle.setup({ scenario, checkpoint, viewport: VIEWPORT });
   return lifecycle;
+}
+
+interface CapturedGalleryFrame {
+  readonly frame: string;
+  readonly feedback: ReturnType<typeof feedbackStore.get>;
+  readonly events: ReturnType<typeof eventsStore.get>['events'];
+}
+
+async function captureGalleryFrame(id: string, cols = 120): Promise<CapturedGalleryFrame> {
+  const scenario = findVisualScenario(id);
+  const checkpoint = scenario?.checkpoints[0];
+  const renderViewport =
+    scenario?.viewports.find((value) => value.cols === cols) ?? scenario?.viewports[0];
+  if (scenario === undefined || checkpoint === undefined || renderViewport === undefined) {
+    throw new Error(`Missing gallery frame ${id}`);
+  }
+  const handle = await mountGalleryScenario({ scenario, checkpoint, viewport: renderViewport });
+  try {
+    const frame = stripAnsiStyles(await handle.waitForCheckpoint());
+    return { frame, feedback: feedbackStore.get(), events: eventsStore.get().events };
+  } finally {
+    await handle.unmount();
+  }
+}
+
+function startsWithText(frame: string, text: string): boolean {
+  return frame.split('\n').some((line) => line.trimStart().startsWith(text));
 }
 
 async function renderProjection(projection: WorkflowFixtureProjection): Promise<string> {
@@ -1778,6 +1834,28 @@ describe('workflow visual fixtures', () => {
     teardownVisualFixture();
   });
 
+  it('names the confirmation that waits when its review phase takes the typed words', async () => {
+    const scenario = findVisualScenario('workflow-plan-card-confirm-words');
+    const checkpoint = scenario?.checkpoints[0];
+    if (scenario === undefined || checkpoint === undefined) {
+      throw new Error('Missing confirmation-over-words scenario');
+    }
+    const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: VIEWPORT });
+    try {
+      const frame = stripAnsiStyles(await ui.waitForCheckpoint());
+      expect(approvalPromptStore.get().status).toBe('pending');
+      expect(feedbackStore.get()).toEqual({
+        message: 'Confirm or deny the prompt first. Tab back to the actions.',
+        isError: false,
+      });
+      expect(composerLiveStore.get().text).toBe('keep the old lockfile');
+      expect(frame).toContain('Confirm with a reason');
+      expect(frame).toContain('keep the old lockfile');
+    } finally {
+      await ui.unmount();
+    }
+  });
+
   it.each([...workflowFixtureProjections.values()])(
     'renders $scenarioId checkpoint through the production App without starting live work',
     async (projection) => {
@@ -1851,6 +1929,132 @@ describe('workflow visual fixtures', () => {
       }
     },
   );
+
+  it('shows the Apply refusal once and keeps its words in the composer', async () => {
+    const reason = 'Cannot send words to Apply. Clear them.';
+    const apply = await captureGalleryFrame('workflow-apply-recheck-words-refused', 80);
+    expect(apply.feedback).toEqual({ message: reason, isError: false });
+    expect(apply.frame.split(reason)).toHaveLength(2);
+    expect(apply.frame).toContain('also fix the typo');
+    expect(apply.frame).not.toContain('Warning');
+    expect(startsWithText(apply.frame, reason)).toBe(true);
+    expect(apply.events.filter((event) => event.type === 'warning')).toEqual([]);
+
+    const recheck = await captureGalleryFrame('workflow-apply-recheck-review-none', 80);
+    expect(recheck.frame).toContain('3/3 briefs passed');
+    expect(recheck.frame).toContain('/ for a command…');
+    expect(recheck.frame).not.toContain(reason);
+
+    const usage = await captureGalleryFrame('workflow-plan-card-usage-refused');
+    expect(usage.feedback).toEqual({
+      message: '/end takes no argument. Usage: /end',
+      isError: false,
+    });
+    expect(usage.frame.split('/end takes no argument. Usage: /end')).toHaveLength(2);
+    expect(usage.frame).toContain('› /end now');
+    expect(startsWithText(usage.frame, '/end takes no argument. Usage: /end')).toBe(true);
+
+    const palette = await captureGalleryFrame('home-palette-prefill-refused');
+    expect(palette.feedback).toEqual({
+      message: 'Unknown seat: zzz. Valid: plan, build, review',
+      isError: false,
+    });
+    expect(palette.frame.split('Unknown seat: zzz')).toHaveLength(2);
+    expect(palette.frame).toContain('/he');
+    expect(startsWithText(palette.frame, 'Unknown seat: zzz')).toBe(true);
+
+    const draft = await captureGalleryFrame('workflow-draft-not-saved');
+    expect(draft.feedback.isError).toBe(true);
+    expect(startsWithText(draft.frame, `${glyph('statusFailed')} Draft not saved`)).toBe(true);
+
+    const lock = await captureGalleryFrame('workflow-run-lock-not-released');
+    expect(lock.feedback.isError).toBe(true);
+    expect(
+      startsWithText(lock.frame, `${glyph('statusFailed')} Could not release the run lock`),
+    ).toBe(true);
+  }, 60_000);
+
+  it('shows a mistyped command refused on Home with its line back and the command list closed', async () => {
+    const reason = 'Unknown command: /setings. Did you mean /settings?';
+    const typo = await captureGalleryFrame('home-command-typo-refused');
+    expect(typo.feedback).toEqual({ message: reason, isError: false });
+    expect(typo.frame.split(reason)).toHaveLength(2);
+    expect(startsWithText(typo.frame, 'Unknown command: /setings')).toBe(true);
+    expect(typo.frame).toContain(`${glyph('prompt')} /setings`);
+    expect(typo.frame).not.toContain('↑↓ select');
+  });
+
+  it('shows the stop steer refusal neutrally and keeps its command in the composer', async () => {
+    const reason = 'Finish stopping before steering.';
+    const steer = await captureGalleryFrame('workflow-stop-steer-refused', 80);
+    expect(steer.feedback).toEqual({ message: reason, isError: false });
+    expect(steer.frame.split(reason)).toHaveLength(2);
+    expect(steer.frame).toContain('/steer also fix the typo');
+    expect(steer.frame).toContain('Finishing cleanup and saving');
+    expect(steer.frame).not.toContain('Warning');
+    expect(startsWithText(steer.frame, reason)).toBe(true);
+    expect(steer.events.filter((event) => event.type === 'warning')).toEqual([]);
+
+    const halt = await captureGalleryFrame('workflow-recovery-steer-refused');
+    expect(halt.feedback).toEqual({
+      message: 'This halt takes no typed correction. Choose an action.',
+      isError: false,
+    });
+    expect(halt.frame).toContain('/steer use the old name');
+    expect(startsWithText(halt.frame, 'This halt takes no typed correction')).toBe(true);
+
+    const image = await captureGalleryFrame('workflow-command-image-refused');
+    expect(image.feedback).toEqual({
+      message: 'A command sends no image. Remove the command, then press ctrl+⏎.',
+      isError: false,
+    });
+    expect(image.frame).toContain('/steer fix the layout [image #1]');
+    expect(startsWithText(image.frame, 'A command sends no image.')).toBe(true);
+
+    const stopping = await captureGalleryFrame('workflow-stopping');
+    expect(stopping.frame).toContain('Finishing cleanup and saving');
+    expect(stopping.frame).toContain('esc back after stop');
+    expect(stopping.frame).not.toContain(reason);
+
+    const sheet = await captureGalleryFrame('workflow-stop-sheet-recovery');
+    expect(sheet.frame).toContain('Stop options');
+    expect(sheet.frame).toContain('Stop now');
+    expect(sheet.frame).toContain('End run');
+
+    const failedStop = await captureGalleryFrame('workflow-stop-failed-over-draft');
+    expect(failedStop.frame).toContain('Stop failed');
+    expect(failedStop.frame).toContain('also fix the typo');
+
+    const quit = await captureGalleryFrame('workflow-quit-hint');
+    expect(quit.feedback).toEqual({ message: 'Press ctrl+c again to quit', isError: false });
+    expect(startsWithText(quit.frame, 'Press ctrl+c again to quit')).toBe(true);
+
+    const queued = await captureGalleryFrame('workflow-implementation-queued');
+    expect(queued.frame.split('1 queued for BUILD on T003')).toHaveLength(2);
+  }, 60_000);
+
+  it('shows the short None row in the completed wide-crew checkpoint', async () => {
+    const scenario = findVisualScenario('workflow-crew-wide-review-none');
+    const checkpoint = scenario?.checkpoints.find(
+      (candidate) => candidate.id === 'crew-wide-review-none-end',
+    );
+    const renderViewport = scenario?.viewports.find(
+      (value) => value.cols === 120 && value.rows === 40,
+    );
+    if (scenario === undefined || checkpoint === undefined || renderViewport === undefined) {
+      throw new Error('Missing completed wide-crew REVIEW None checkpoint');
+    }
+    const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: renderViewport });
+    try {
+      const frame = stripTerminalControls(await ui.waitForCheckpoint(), {
+        preserveLineBreaks: true,
+      });
+      expect(frame.split('Review · none · no seat reviewed this run')).toHaveLength(2);
+      expect(frame).not.toContain('Inspecting deterministic fixture contract');
+    } finally {
+      await ui.unmount();
+    }
+  });
 
   it('projects prompt rows from the same state rendered by the workflow fixture', async () => {
     const review = workflowFixtureProjections.get(scenarioId('workflow-review'));

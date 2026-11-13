@@ -5,12 +5,10 @@ import {
   reviewPassed,
 } from './review.js';
 import { isTaskCompleted, type Task } from '../../../core/schemas/task.js';
-import { fixCyclesOf, type WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { reviewsAgain } from '../../../core/review/verdict.js';
 import type { Summary } from '../../../core/schemas/summary.js';
-import type { StepRef } from '../../../core/schemas/run-step.js';
-import type { BoundaryPark, WorkflowContext } from '../types.js';
-import { recordSteer } from '../continuation.js';
+import type { WorkflowContext } from '../types.js';
 
 import { buildSummary, type SummaryBase } from '../summary/build.js';
 import { runTaskLoop } from '../task/loop.js';
@@ -31,7 +29,8 @@ import type { UnrunnableCheck } from '../recovery/builders/checks.js';
 import { recordCheckRuns } from '../evidence/record-checks.js';
 import { captureReviewedCandidate } from '../apply/states.js';
 import { bindApplyHandOffs } from '../apply/hand-off.js';
-import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
+import { transitionAndSave } from '../state-ops.js';
+import { parkAtBoundary, takeSeatChangeAtBoundary } from './boundary-park.js';
 import { ensureRunBaselineSnapshot, recordRunSnapshotForRun } from './snapshots.js';
 import { SNAPSHOT_BASELINE_ID } from '../../../core/paths.js';
 import type { PlanningPhaseResult } from '../planning/types.js';
@@ -44,7 +43,6 @@ import { runCodeDir } from '../kept-work.js';
 import { type BaseSplit, splitCommandAtBase, startBaseGate } from '../base-gate.js';
 import { planCheckRow, publishReviewCheck, unranCheckRow } from '../events.js';
 import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
-import { afterLastBrief } from '../../../core/sessions/run-status.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 
 export type RunTasksAndReviewOptions = {
@@ -55,70 +53,6 @@ export type RunTasksAndReviewOptions = {
   setTrackedState: (s: WorkflowState) => void;
   setCurrentTask: (t: Pick<Task, 'suggestedFiles' | 'action'> | undefined) => void;
 };
-
-/**
- * Pause after this brief, held in place. The state records the brief the run
- * will start next, so leaving the screen persists as a boundary park and the
- * run picks up there; `/resume` settles the promise and the loop carries on.
- */
-async function parkAtBoundary(args: {
-  wctx: WorkflowContext;
-  state: WorkflowState;
-  park: BoundaryPark;
-  setTrackedState: (s: WorkflowState) => void;
-}): Promise<{ state: WorkflowState; continued: boolean }> {
-  const { wctx, setTrackedState } = args;
-  const ref = { projectDir: wctx.projectDir, sessionId: wctx.sessionId };
-  const onContinuationNeeded = wctx.callbacks.onContinuationNeeded;
-  const nextTask = args.state.tasks[args.state.currentTaskIndex];
-  const step: StepRef =
-    nextTask === undefined
-      ? afterLastBrief(
-          args.state,
-          resolveReviewCadence(wctx.config) === 'none',
-          fixCyclesOf(args.state).used,
-        )
-      : { kind: 'brief', taskId: nextTask.id, attempt: 0 };
-
-  let state = transitionAndSave(ref, args.state, {
-    type: 'INTERRUPT_STEP',
-    step,
-    source: 'user',
-    cut: 'boundary',
-  });
-  setTrackedState(state);
-  wctx.bus.publish({
-    type: 'turn_interrupted',
-    ts: Date.now(),
-    phase: state.phase,
-    source: 'user',
-    at: 'boundary',
-    step,
-    ...(args.park === 'seat-change' && { cause: 'seat-change' as const }),
-  });
-
-  // No prompt surface means nothing can continue this run in place; the park is
-  // recorded and the run ends, resumable at the brief it stopped before.
-  if (onContinuationNeeded === undefined) return { state, continued: false };
-
-  const steer = await onContinuationNeeded('', 'boundary', []);
-  if (wctx.signal?.aborted) return { state, continued: false };
-  const resumedAt = wctx.sinks.getContinuationResumedAt?.() ?? Date.now();
-  state = transitionAndSave(ref, state, { type: 'RESUME_STEP' });
-  setTrackedState(state);
-  recordSteer({ ...ref, bus: wctx.bus }, state.phase, steer);
-  state = rebaseOnPersistedWorkflowState(ref, state);
-  setTrackedState(state);
-  wctx.bus.publish({
-    type: 'workflow_resumed',
-    ts: Date.now(),
-    phase: state.phase,
-    inProcess: true,
-    resumedAt,
-  });
-  wctx.continuation?.hold(step, steer.text.trim() === '' ? undefined : steer);
-  return { state, continued: true };
-}
 
 /**
  * The prompt section Apply's integration review reads: the checkout hunks the
@@ -494,6 +428,9 @@ async function buildAndReview(args: {
   // exactly like the main loop: the park keeps the next brief or review step, and
   // continuing re-enters it. Returns the stop result when the loop did not complete.
   const runFixTasks = async () => {
+    const boundary = await takeSeatChangeAtBoundary({ wctx, state, setTrackedState });
+    state = boundary.state;
+    if (boundary.stopped) return stopHere();
     let rerun = await runTaskLoop({ wctx, initialState: state, setTrackedState, setCurrentTask });
     state = rerun.state;
     while (rerun.status === 'paused') {
@@ -549,6 +486,9 @@ async function buildAndReview(args: {
   // the same candidate.
   for (;;) {
     if (wctx.signal?.aborted) return stopHere();
+    const boundary = await takeSeatChangeAtBoundary({ wctx, state, setTrackedState });
+    state = boundary.state;
+    if (boundary.stopped) return stopHere();
     const candidate = await captureCandidate();
     const answered = await followPendingReview({
       wctx,
@@ -564,8 +504,8 @@ async function buildAndReview(args: {
       if (answered.next === 'fix') {
         const stopped = await runFixTasks();
         if (stopped !== undefined) return stopped;
-        continue;
       }
+      continue;
     }
     const reviewAgain = reviewsAgain(state, 'final');
     // A review that runs again on the same candidate reads the recheck the candidate already had.

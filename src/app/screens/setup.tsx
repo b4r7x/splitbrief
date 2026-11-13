@@ -8,11 +8,8 @@ import { SOFT_SEP } from '../../core/separators.js';
 import type { CrewLabVerdict } from '../../core/crew/labs.js';
 import type { CrewPreset } from '../../core/crew/presets.js';
 import { type CrewRow, crewRowKey } from '../../core/crew/rows.js';
-import {
-  checkCrewAvailability,
-  selectDetectedDefaultCrew,
-  unavailableCrewSeats,
-} from '../../engine/detection/crew.js';
+import { selectDefaultCrew } from '../../core/crew/default.js';
+import { checkCrewAvailability, unavailableCrewSeats } from '../../engine/detection/crew.js';
 import type { CrewSeat } from '../../core/crew/seats.js';
 import type { PickerDetectionSnapshot } from '../../features/runners/model-catalog/status.js';
 import type { Config } from '../../core/schemas/config.js';
@@ -538,7 +535,7 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
 
   const preparation = useStartPreparation<SetupPreparationInput>({
     prepare: async (input, signal) => {
-      const currentConfig = configStore.get().config;
+      const { config: currentConfig, configWarnings } = configStore.get();
       if (currentConfig === null) {
         return { kind: 'failed', error: appPreparationError.configNotLoaded() };
       }
@@ -546,6 +543,7 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
         projectDir: input.projectDir,
         feature: input.feature,
         effectiveConfig: currentConfig,
+        configWarnings,
         signal,
         policy: {
           ...interactivePreparationPolicy,
@@ -585,7 +583,7 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
       readiness.refreshing
     )
       return;
-    const crew = selectDetectedDefaultCrew(detectionStore.get());
+    const crew = selectDefaultCrew(detectionStore.get());
     if (crew !== null) {
       initialCrewSelected.current = true;
       configStore.setInitialCrew(crew);
@@ -648,7 +646,7 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
     )
       return;
     if (unavailable.length > 0) {
-      feedbackStore.setError('Choose a ready tool and model for each unavailable seat.');
+      feedbackStore.setMessage('Choose a ready tool and model for each unavailable seat.');
       return;
     }
     const result = await configStore.save(finalConfig);

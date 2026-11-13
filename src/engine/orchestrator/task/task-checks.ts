@@ -195,6 +195,7 @@ async function runTaskCheckCommands(
           passed: false,
           ...(run.timedOut !== undefined && { timedOut: run.timedOut }),
           ...(run.reusedAt !== undefined && { reusedAt: run.reusedAt }),
+          ...(run.command === undefined && { detail: run.output }),
           ...split?.counts,
         },
       );

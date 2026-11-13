@@ -89,7 +89,7 @@ export function createBusTextHandler(
       ...(content !== undefined && { content }),
       ...(marks?.messageStart === true && { messageStart: true }),
       ...(marks?.continues === true && { continues: true }),
-      ...(marks?.subagent === true && { subagent: true }),
+      ...(marks?.subagentId !== undefined && { subagentId: marks.subagentId }),
     });
 }
 
@@ -499,6 +499,22 @@ export function publishError(options: PublishOperationalMessageOptions): void {
     }),
     ...(resetAt !== undefined && { resetAt }),
     ...(briefKept !== undefined && { briefKept }),
+  });
+}
+
+export function publishDebug(
+  options: BusContext & { message: string; safety?: OperationalMessageSafety | undefined },
+): void {
+  const { bus, phase, message, safety } = options;
+  bus.publish({
+    type: 'debug',
+    ts: Date.now(),
+    phase,
+    message,
+    ...(safety !== undefined && {
+      category: safety.category,
+      code: safety.code,
+    }),
   });
 }
 

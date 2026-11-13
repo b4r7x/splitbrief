@@ -1,4 +1,6 @@
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { loggedDiagnostics } from '#testing/helpers/debug-log.js';
 import { makeImplementer, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { makePassingTask } from '#testing/helpers/planning-phase.js';
 import { persistReadyExecutionState } from '#testing/helpers/persisted-execution.js';
@@ -11,7 +13,7 @@ import {
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
 import { writeActive } from '../../../src/core/sessions/active-pointer.js';
-import { sessionDir } from '../../../src/core/paths.js';
+import { sessionDir, SPLITBRIEF_DIR } from '../../../src/core/paths.js';
 import {
   readLockfile,
   checkSessionLiveness,
@@ -178,11 +180,12 @@ describe('runHeadless — liveness record (F-261)', () => {
       const session = readSession({ projectDir, sessionId });
       expect(session === null ? null : sessionStatusWord(session)).toBe(status);
       expect(readRunRecord({ projectDir, sessionId }, false).status.kind).toBe('running');
-      const lines = stderrSpy.mock.calls
-        .map(([chunk]: [unknown]) => String(chunk))
-        .filter((line: string) => line.includes('lockfile.json'));
+      // The run sets the debug log up itself, at .splitbrief/logs/debug.log of the project.
+      const lines = loggedDiagnostics(join(projectDir, SPLITBRIEF_DIR, 'logs')).filter((line) =>
+        line.includes('lockfile.json'),
+      );
       expect(lines).toEqual([
-        `Could not release the run lock: permission denied · .splitbrief/sessions/${sessionId}/lockfile.json · other SPLITBRIEF processes can see the run as running for a few more seconds\n`,
+        `Could not release the run lock: permission denied · .splitbrief/sessions/${sessionId}/lockfile.json · other SPLITBRIEF processes can see the run as running for a few more seconds`,
       ]);
     },
     30_000,

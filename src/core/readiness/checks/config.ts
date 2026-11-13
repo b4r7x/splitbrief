@@ -1,12 +1,15 @@
 import { formatConfigLoaderDiagnostics } from '../../config/load/io.js';
-import type { ConfigLoaderDiagnostic } from '../../config/load/io.js';
+import type { EffectiveConfigWarning } from '../../config/runtime/effective-config.js';
 import type { ReadinessDiagnosticStateId } from '../../schemas/readiness.js';
 import type { ReadinessCheck } from '../types.js';
+
+/** A flag or a config setting that SPLITBRIEF does not apply, as the config section states it. */
+export const CONFIG_WARNING_CHECK_ID = 'config.warning';
 
 export interface ConfigReadinessInput {
   state: 'loaded' | 'missing' | 'invalid';
   path: string;
-  warnings: readonly ConfigLoaderDiagnostic[];
+  warnings: readonly EffectiveConfigWarning[];
   error?: string | undefined;
   diagnosticState?: ReadinessDiagnosticStateId | undefined;
 }
@@ -52,8 +55,18 @@ export function buildConfigChecks(configLoad: ConfigReadinessInput): ReadinessCh
     },
   ];
 
-  for (const summary of formatConfigLoaderDiagnostics(configLoad.warnings)) {
-    checks.push({ id: 'config.warning', severity: 'warning', summary });
+  for (const warning of configLoad.warnings) {
+    if (warning.kind !== 'ignored-flag') continue;
+    checks.push({
+      id: CONFIG_WARNING_CHECK_ID,
+      severity: 'warning',
+      summary: warning.notice,
+      fix: warning.fix,
+    });
+  }
+  const diagnostics = configLoad.warnings.filter((warning) => warning.kind !== 'ignored-flag');
+  for (const summary of formatConfigLoaderDiagnostics(diagnostics)) {
+    checks.push({ id: CONFIG_WARNING_CHECK_ID, severity: 'warning', summary });
   }
 
   return checks;

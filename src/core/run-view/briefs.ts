@@ -266,10 +266,10 @@ export function selectFinishedBrief(briefs: BriefFocus): WorkflowTask | null {
 
 /**
  * Where a seat saved now takes over: after the brief that runs or just finished, else after the
- * next brief. The final review has no brief left, so only a fix brief or the next run takes it.
+ * next brief. The final review has no brief left, so the next review pass or fix brief takes it.
  */
 export function selectSeatChangePoint(briefs: BriefFocus, phase: Phase): SeatChangePoint {
-  if (phase === 'final-review') return { after: 'fix-brief-or-next-run' };
+  if (phase === 'final-review') return { after: 'review' };
   const brief = selectRunningBrief(briefs, phase).current ?? selectFinishedBrief(briefs);
   return brief === null ? { after: 'next-brief' } : { after: 'brief', taskId: brief.id };
 }

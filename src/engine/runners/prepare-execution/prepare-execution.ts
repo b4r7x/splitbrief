@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { updateNamedImplementerConfig } from '../../../core/config/accessors/implementer-profiles.js';
+import type { EffectiveConfigWarning } from '../../../core/config/runtime/effective-config.js';
 import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import { applyRunnerPreparationChecks, collectReadiness } from '../../../core/readiness/collect.js';
 import { exemptLiveSessionBlocker } from '../../../core/readiness/checks/repo.js';
@@ -67,6 +68,7 @@ type EvaluatedSlot = Readonly<{
 type PrepareExecutionCommon = Readonly<{
   feature: string;
   effectiveConfig: Config;
+  configWarnings: readonly EffectiveConfigWarning[];
   signal: AbortSignal;
   plannerContext?: string | undefined;
   attachedInputs?: readonly AttachedInput[] | undefined;
@@ -96,6 +98,7 @@ export type PrepareExecutionInput = NewPrepareExecutionInput | ResumePrepareExec
 export type PrepareReviewExecutionInput = Readonly<{
   projectDir: string;
   effectiveConfig: Config;
+  configWarnings: readonly EffectiveConfigWarning[];
   policy: Extract<PreparationPolicy, { purpose: 'review' }>;
   signal: AbortSignal;
   deps?: Partial<PrepareExecutionDependencies> | undefined;
@@ -286,6 +289,7 @@ function exemptReadOnlyBlockers(report: ReadinessReport): ReadinessReport {
 type AdmissionInput = Readonly<{
   projectDir: string;
   effectiveConfig: Config;
+  configWarnings: readonly EffectiveConfigWarning[];
   policy: PreparationPolicy;
   signal: AbortSignal;
   deps?: Partial<PrepareExecutionDependencies> | undefined;
@@ -324,6 +328,7 @@ async function admitRunners(input: AdmissionInput, sink: ReportSink): Promise<Ad
   const collected = await deps.collectReadiness({
     projectDir: input.projectDir,
     config,
+    configWarnings: input.configWarnings,
     interaction: input.policy.interaction,
     roles,
     cliReadiness: [],
@@ -481,6 +486,7 @@ export async function prepareExecution(input: PrepareExecutionInput): Promise<Pr
       {
         projectDir,
         effectiveConfig: input.effectiveConfig,
+        configWarnings: input.configWarnings,
         policy: input.policy,
         signal: input.signal,
         ...(input.deps !== undefined && { deps: input.deps }),
@@ -555,6 +561,7 @@ export async function prepareReviewExecution(
       {
         projectDir: input.projectDir,
         effectiveConfig: input.effectiveConfig,
+        configWarnings: input.configWarnings,
         policy: input.policy,
         signal: input.signal,
         ...(input.deps !== undefined && { deps: input.deps }),

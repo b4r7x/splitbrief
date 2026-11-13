@@ -352,7 +352,7 @@ describe('a previewed App spends fixture effects and no production one', () => {
     // preparation followed, and no real project was opened to find one.
     expect(feedbackStore.get()).toEqual({
       message: 'No saved state to continue.',
-      isError: true,
+      isError: false,
     });
     const route = routerStore.get();
     expect(route.screen === 'workflow' && route.execution.kind).toBe('at-rest');
@@ -379,7 +379,7 @@ describe('a previewed App spends fixture effects and no production one', () => {
   });
 
   it('refreshes, checks and saves a local connection without a process or a write', async () => {
-    const preview = await open('overlay-picker-local-server');
+    const preview = await open('overlay-planner-picker');
     const configFile = join(FIXTURE_SESSION_ROOT, '.splitbrief', 'config.yaml');
     const seeded = readFileSync(configFile, 'utf8');
 

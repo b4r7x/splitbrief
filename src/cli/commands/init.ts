@@ -7,7 +7,6 @@ import { renderApp } from '../render/app.js';
 import { canonicalizeProjectDir, assertInteractiveTty, ensureHeadlessConfig } from '../setup.js';
 import { initStores } from '../bootstrap/init.js';
 import { routerStore } from '../../stores/navigation/router.js';
-import { withHeldDiagnostics } from '../../lib/warn.js';
 import { SPLITBRIEF_DIR, CONFIG_FILE } from '../../core/paths.js';
 
 export interface InitDeps {
@@ -28,9 +27,7 @@ export function registerInitCommand(program: Command, deps: InitDeps = defaultIn
     .option('--reconfigure', 'Overwrite existing config', false)
     .option('--yes', 'Save a detected ready crew without the interactive picker', false)
     .action(async (opts: InitOpts) => {
-      // The setup screen shows what an interactive init raises from its first step.
-      const init = () => initProject(opts, deps);
-      await (opts.yes ? init() : withHeldDiagnostics(init));
+      await initProject(opts, deps);
     });
 }
 

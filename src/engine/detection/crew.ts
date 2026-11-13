@@ -1,13 +1,8 @@
-import { createDefaultConfig } from '../../core/config/load/defaults.js';
 import { readActiveRunner } from '../../core/config/accessors/active-runner.js';
 import { projectRunnerDiscoveryContext } from '../../core/config/accessors/runner-discovery-context.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
-import {
-  detectedSeatReady,
-  selectDefaultCrew,
-  type CrewDetection,
-} from '../../core/crew/default.js';
+import { detectedSeatReady, type CrewDetection } from '../../core/crew/default.js';
 import {
   API_PROVIDER_CATALOG,
   isApiProviderId,
@@ -110,12 +105,6 @@ export function crewDetectionForSeat(input: {
         models: [...(entry.models ?? [])],
       })),
   };
-}
-
-export function selectDetectedDefaultCrew(detection: CrewDiscovery): Config | null {
-  return selectDefaultCrew(
-    crewDetectionForSeat({ config: createDefaultConfig(), role: 'implementer', detection }),
-  );
 }
 
 export function unavailableCrewSeats(input: { config: Config; detection: CrewDiscovery }) {

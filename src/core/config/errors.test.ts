@@ -120,11 +120,15 @@ describe('configError factories', () => {
     expect(err.data).toEqual({ tool: 'made-up', allowed });
   });
 
-  test('unknownProvider includes optional role', () => {
-    const err = configError.unknownProvider('bogus', ['ollama'], 'planner');
+  test('unknownProvider names the provider and the optional role, and no provider list', () => {
+    expect(configError.unknownProvider).toHaveLength(2);
+    const err = configError.unknownProvider('bogus', 'planner');
     expect(err.kind).toBe('config-unknown-provider');
-    expect(err.message).toContain('planner: ');
-    expect(err.data).toEqual({ provider: 'bogus', allowed: ['ollama'], role: 'planner' });
+    expect(err.message).toBe("planner: Unknown provider 'bogus' requires explicit apiBase.");
+    expect(err.data).toEqual({ provider: 'bogus', role: 'planner' });
+    expect(configError.unknownProvider('bogus').message).toBe(
+      "Unknown provider 'bogus' requires explicit apiBase.",
+    );
   });
 
   test('invalidOverride includes field/value/reason', () => {

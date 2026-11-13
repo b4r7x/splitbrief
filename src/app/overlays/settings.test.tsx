@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { writeConfigYaml } from '#testing/helpers/config-io.js';
 import { configStore } from '../../stores/project/config.js';
@@ -15,8 +15,33 @@ import { CREW_SEAT_LABELS, PLANNER_INHERITANCE } from '../../core/crew/identity.
 import { SETTINGS_DEFS } from '../../core/settings/catalog.js';
 import { glyph } from '../../lib/glyphs.js';
 import { listRowLead } from '../../components/list-row.js';
+import { defaultTheme } from '../../components/theme.js';
+import { paint } from '../../core/theme/paint.js';
 import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
 import { SettingsOverlay } from './settings.js';
+
+// The frames carry their SGR escapes only when chalk emits colour at all; a silent terminal would
+// make every colour comparison agree by accident.
+const originalForceColor = vi.hoisted(() => {
+  const saved = process.env['FORCE_COLOR'];
+  process.env['FORCE_COLOR'] = '3';
+  return saved;
+});
+
+afterAll(() => {
+  if (originalForceColor === undefined) delete process.env['FORCE_COLOR'];
+  else process.env['FORCE_COLOR'] = originalForceColor;
+});
+
+/** The SGR parameters a run of text is painted with, read from the escape that opens it. */
+function colorOf(frame: string, text: string): string | undefined {
+  const before = frame.split(text)[0];
+  return before?.split('\u001B[').at(-1)?.split('m')[0];
+}
+
+function inkOf(color: string | undefined): string | undefined {
+  return colorOf(paint(color, 'x'), 'x');
+}
 
 const ESC = String.fromCharCode(27);
 const BEL = String.fromCharCode(7);
@@ -521,6 +546,10 @@ describe('SettingsOverlay', () => {
   describe('a row that REVIEW None makes read-only', () => {
     const REASON = 'Read-only while REVIEW is None: no review runs.';
 
+    function reasonCount(ui: { lastFrame: () => string }): number {
+      return stripAnsiStyles(ui.lastFrame()).split(REASON).length - 1;
+    }
+
     it('advertises no action key on the row', async () => {
       seed({ reviewer: 'none' });
       overlayStore.open('settings', 'validation.endChecks');
@@ -549,7 +578,63 @@ describe('SettingsOverlay', () => {
       await vi.waitFor(() => {
         expect(stripAnsiStyles(ui.lastFrame())).toContain(REASON);
       });
+      expect(reasonCount(ui)).toBe(1);
       expect(feedbackStore.get()).toEqual({ message: REASON, isError: true });
+      expect(configStore.get().config?.validation.endChecks).toBe(true);
+
+      ui.unmount();
+    });
+
+    it.each([
+      [80, 24],
+      [120, 40],
+    ])('shows the lock reason once after ⏎ on a read-only row at %ix%i', async (cols, rows) => {
+      seed({ reviewer: 'none', validation: { endChecks: true } });
+      overlayStore.open('settings', 'validation.endChecks');
+      const ui = renderAt(cols, rows);
+      await flushEffects();
+
+      expect(reasonCount(ui)).toBe(1);
+      expect(stripAnsiStyles(ui.lastFrame())).not.toContain('SPLITBRIEF runs the project gate');
+
+      ui.stdin.write(ENTER);
+      await tick(20);
+
+      expect(reasonCount(ui)).toBe(1);
+      expect(feedbackStore.get()).toEqual({ message: null, isError: false });
+      expect(configStore.get().config?.validation.endChecks).toBe(true);
+
+      ui.unmount();
+    });
+
+    it('refuses Space on a read-only row while the help shows the reason once', async () => {
+      seed({ reviewer: 'none', validation: { endChecks: true } });
+      overlayStore.open('settings', 'validation.endChecks');
+      const ui = renderAt(120, 40);
+      await flushEffects();
+
+      ui.stdin.write(' ');
+      await tick(20);
+
+      expect(reasonCount(ui)).toBe(1);
+      expect(feedbackStore.get()).toEqual({ message: null, isError: false });
+      expect(configStore.get().config?.validation.endChecks).toBe(true);
+
+      ui.unmount();
+    });
+
+    it('refuses a row click on a read-only row while the help shows the reason once', async () => {
+      _resetMouseZones();
+      seed({ reviewer: 'none', validation: { endChecks: true } });
+      overlayStore.open('settings', 'validation.endChecks');
+      const ui = renderAt(120, 40);
+      await flushEffects();
+
+      collectClickableZones({ cols: 120, rows: 40 }).get('list-row:validation.endChecks')?.();
+      await tick(20);
+
+      expect(reasonCount(ui)).toBe(1);
+      expect(feedbackStore.get()).toEqual({ message: null, isError: false });
       expect(configStore.get().config?.validation.endChecks).toBe(true);
 
       ui.unmount();
@@ -588,6 +673,19 @@ describe('SettingsOverlay', () => {
     const frame = stripAnsiStyles(ui.lastFrame());
     expect(frame).toContain(kindLabel);
     expect(frame).not.toContain(def?.label);
+
+    ui.unmount();
+  });
+
+  it('shows a neutral message in the neutral ink, not in the success ink', async () => {
+    const message = 'Unknown command: /setings. Did you mean /settings?';
+    feedbackStore.setMessage(message);
+    const ui = renderAt(120, 40);
+    await flushEffects();
+
+    const frame = ui.lastFrame();
+    expect(stripAnsiStyles(frame)).toContain(message);
+    expect(colorOf(frame, message)).toBe(inkOf(defaultTheme.textDim));
 
     ui.unmount();
   });

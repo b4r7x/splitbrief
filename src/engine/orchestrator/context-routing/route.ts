@@ -85,6 +85,7 @@ export function routeTaskToImplementerProfile(opts: RouteTaskOptions): RoutingDe
         largestOverflow?.untruncatedEstimatedTokens ??
         0,
       contextLength: representative?.contextLength ?? largestOverflow?.contextLength,
+      usedConservativeContextLength: representative?.usedConservativeContextLength ?? false,
       currentCodeTruncated:
         representative?.currentCodeTruncated ?? largestOverflow?.currentCodeTruncated ?? false,
       currentCodeContextMode:
@@ -108,6 +109,7 @@ export function routeTaskToImplementerProfile(opts: RouteTaskOptions): RoutingDe
     estimatedTokens: selected.estimatedTokens,
     untruncatedEstimatedTokens: selected.untruncatedEstimatedTokens,
     contextLength: selected.contextLength,
+    usedConservativeContextLength: selected.usedConservativeContextLength,
     currentCodeTruncated: selected.currentCodeTruncated,
     currentCodeContextMode: selected.currentCodeContextMode,
     reason: selectedReason(selected),

@@ -20,6 +20,7 @@ import {
   makeImplementer,
   makePlanner,
   makeWctx,
+  seatChangeScreen,
 } from '#testing/helpers/orchestrator-factories.js';
 import {
   cannotConsult,
@@ -458,6 +459,102 @@ describe('runTasksAndReview boundary pause', { timeout: 120_000 }, () => {
     expect(result.completed).toBe(true);
   });
 
+  it('parks for a seat change before the final review runs again after an answer', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
+    let reviews = 0;
+    const { events, options } = runOptions({
+      projectDir,
+      sessionId,
+      state: reviewedState(tasks, head, tasks.length),
+      review: (prompt) => {
+        reviews += 1;
+        return {
+          ...passingReviewVerdict(prompt),
+          ...(reviews === 1
+            ? { ask: { question: 'Keep the API?', whyOnlyUserCanAnswer: 'The API is public.' } }
+            : { rejected: [{ findingId: 'A1', reason: 'Keep the approved API.' }] }),
+        };
+      },
+      onComplete: vi.fn(),
+      // The seat is saved while the first review call runs.
+      ...seatChangeScreen(() => reviews > 0),
+    });
+    options.wctx.callbacks.onPlannerReply = async () => plainUserMessage('Keep the API');
+
+    const result = await runTasksAndReview(options);
+
+    const parks = events.filter((e) => e.type === 'turn_interrupted');
+    expect(parks).toHaveLength(1);
+    expect(parks[0]).toMatchObject({
+      at: 'boundary',
+      step: { kind: 'review', cycle: 0 },
+      cause: 'seat-change',
+    });
+    expect(reviews).toBe(1);
+    expect(result.completed).toBe(false);
+  });
+
+  it('parks for a seat change before the final review runs again after the answer to a question that a resumed run asks again', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
+    let seatSaved = false;
+    let reviews = 0;
+    const { events, options } = runOptions({
+      projectDir,
+      sessionId,
+      state: {
+        ...resumedReviewState(tasks, head, 0),
+        pendingTriage: {
+          inputs: [],
+          question: { question: 'Keep the API?', whyOnlyUserCanAnswer: 'The API is public.' },
+        },
+        review: {
+          cycle: 0,
+          verdict: {
+            tasks: [{ id: taskId('T001'), plan: 'met', note: '' }],
+            criteria: [],
+            findings: [],
+          },
+          outcome: 'pass',
+          verification: [],
+          at: '2026-10-04T10:00:00.000Z',
+        },
+      },
+      review: (prompt) => {
+        reviews += 1;
+        return {
+          ...passingReviewVerdict(prompt),
+          rejected: [{ findingId: 'A1', reason: 'Keep the approved API.' }],
+        };
+      },
+      onComplete: vi.fn(),
+      ...seatChangeScreen(() => seatSaved),
+    });
+    // The seat is saved while the question waits, and then the user answers.
+    options.wctx.callbacks.onPlannerReply = async () => {
+      seatSaved = true;
+      return plainUserMessage('Keep the API');
+    };
+
+    const result = await runTasksAndReview(options);
+
+    const parks = events.filter((e) => e.type === 'turn_interrupted');
+    expect(parks).toHaveLength(1);
+    expect(parks[0]).toMatchObject({
+      at: 'boundary',
+      step: { kind: 'review', cycle: 0 },
+      cause: 'seat-change',
+    });
+    expect(reviews).toBe(0);
+    expect(result.completed).toBe(false);
+    // The next entry reviews again on the answer, with no question left to ask.
+    expect(result.state.pendingTriage?.question).toBeUndefined();
+    expect(result.state.pendingTriage?.inputs).toEqual([
+      expect.objectContaining({ id: 'A1', kind: 'answer', text: 'Keep the API' }),
+    ]);
+  });
+
   // Run 2026-10-05-s6-central-checks-and-renders-plus-the-carried-in--3, 19:05 and 20:36: the
   // correction typed at "Paused after T001" reached T002's first prompt only, wrote no
   // user_message, and T006's retry prompt went out without it.
@@ -688,6 +785,56 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
     expect(vi.mocked(implementer.implement).mock.calls.map((call) => call[0].task.id)).toContain(
       'T002',
     );
+  });
+
+  it('takes a seat change before the first fix brief of a fix cycle', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
+    let reviews = 0;
+    const { events, implementer, options } = runOptions({
+      projectDir,
+      sessionId,
+      state: plannedState(tasks, head),
+      review: (prompt) => {
+        reviews += 1;
+        return reviews === 1
+          ? failedReviewVerdict(prompt, 'src/shared/widget.ts drops the error', {
+              taskId: 'T001',
+              file: 'src/shared/widget.ts',
+            })
+          : passingReviewVerdict(prompt);
+      },
+      triage: () => ({
+        fixTasks: [
+          {
+            ...makeTaskSpec({
+              id: 'T002',
+              suggestedFiles: ['src/shared/widget.ts'],
+              checks: [{ id: 'K2', kind: 'cmd', value: 'node --version' }],
+            }),
+            findingIds: ['F1'],
+          },
+        ],
+        rejected: [],
+        ask: null,
+      }),
+      onComplete: vi.fn(),
+      // The seat is saved while the review call that returns the fix task runs.
+      ...seatChangeScreen(() => reviews > 0),
+    });
+
+    const result = await runTasksAndReview(options);
+
+    const parks = events.filter((e) => e.type === 'turn_interrupted');
+    expect(parks).toHaveLength(1);
+    expect(parks[0]).toMatchObject({
+      at: 'boundary',
+      step: { kind: 'brief', taskId: 'T002', attempt: 0 },
+      cause: 'seat-change',
+    });
+    expect(implementer.implement).not.toHaveBeenCalled();
+    expect(reviews).toBe(1);
+    expect(result.completed).toBe(false);
   });
 
   it('a fix task runs the red it answers again, so a still-red fix retries before the next review', async () => {
@@ -1912,6 +2059,56 @@ describe('runTasksAndReview review halt', { timeout: 120_000 }, () => {
     expect(result.completed).toBe(true);
     expect(result.state.reviewStatus).toBe('passed');
     expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it('parks for a seat change before the review that a typed correction starts', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
+    let reviews = 0;
+    const review = (prompt: string) => {
+      reviews += 1;
+      return failedReviewVerdict(prompt, 'src/alpha.ts drops the error', { taskId: 'T001' });
+    };
+    const failed = runOptions({
+      projectDir,
+      sessionId,
+      state: stuckReviewState(tasks, head, ['finding:F1']),
+      review,
+      onComplete: vi.fn(),
+    });
+    const halted = await runTasksAndReview(failed.options);
+    const corrected = await applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state: halted.state,
+      action: 'revise',
+      bus: makeBusRecorder().bus,
+      comment: plainUserMessage('log the error, then rethrow it'),
+    });
+    if (!corrected.ok) throw new Error('the halt did not take the correction');
+    expect(corrected.state.fixCycles?.used).toBe(2);
+    expect(reviews).toBe(1);
+
+    const { events, options } = runOptions({
+      projectDir,
+      sessionId,
+      state: corrected.state,
+      review,
+      onComplete: vi.fn(),
+      // The seat was saved while the review call before the halt ran.
+      ...seatChangeScreen(() => reviews > 0),
+    });
+    const result = await runTasksAndReview(options);
+
+    const parks = events.filter((e) => e.type === 'turn_interrupted');
+    expect(parks).toHaveLength(1);
+    expect(parks[0]).toMatchObject({
+      at: 'boundary',
+      step: { kind: 'review', cycle: 2 },
+      cause: 'seat-change',
+    });
+    expect(reviews).toBe(1);
+    expect(result.completed).toBe(false);
   });
 
   it('a passing review still completes at persisted cycle 2', async () => {

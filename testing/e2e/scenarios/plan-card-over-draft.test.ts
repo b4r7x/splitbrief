@@ -22,6 +22,9 @@ const SCENARIO_TIMEOUT = { timeout: 200_000 };
 const DRAFT = 'also fix the typo';
 const APPROVE_ROW = 'Approve plan and start the build';
 const APPROVE_ACTIVE = `▌ ${APPROVE_ROW}`;
+const REQUEST_ACTIVE = '▌ Request changes (type what to change)';
+const EDIT_ACTIVE = '▌ Edit plan.json';
+const DOWN = '\x1b[B';
 const CTRL_ENTER = '\x1b[13;5u';
 const CTRL_SLASH = '\x1f';
 const CTRL_K = '\x0b';
@@ -306,6 +309,81 @@ it(
   },
 );
 
+// The command typed at the focused card is refused and comes back. The card had the keys before
+// the line came back, so it keeps them.
+it(
+  'gives a refused command back at the plan card and leaves the keys on the card',
+  SCENARIO_TIMEOUT,
+  async () => {
+    await scenario(async (run, { screen, write }) => {
+      const command = '/nosuch';
+      unlinkSync(run.hold);
+      await expect.poll(screen, PATIENCE).toContain(APPROVE_ACTIVE);
+
+      for (const key of command) write(key);
+      await expect.poll(screen, PATIENCE).toContain(`› ${command}`);
+      write(PTY_SUBMIT_INPUT);
+      await expect.poll(screen, PATIENCE).toContain(`Unknown command: ${command}`);
+      await expect.poll(screen, PATIENCE).toContain(`› ${command}`);
+      await expect.poll(screen, PATIENCE).toContain(REQUEST_ACTIVE);
+      expect(screen()).not.toContain('tab/⏎ back to the actions');
+
+      for (const _ of command) write('\x7f');
+      await expect.poll(screen, PATIENCE).toContain(APPROVE_ACTIVE);
+      expect(callsMade(run)).toEqual(['plan 1']);
+    });
+  },
+);
+
+it(
+  'names tab and ⏎ once the draft is deleted, and ⏎ gives the plan card the keys',
+  SCENARIO_TIMEOUT,
+  async () => {
+    await scenario(async (run, tui) => {
+      const { screen, write } = tui;
+      await openCardOverDraft(run, tui, DRAFT);
+      await expect.poll(screen, PATIENCE).toContain('tab back to the actions');
+
+      for (const _ of DRAFT) write('\x7f');
+      await expect.poll(() => screen().includes(`› ${DRAFT}`), PATIENCE).toBe(false);
+      await expect.poll(screen, PATIENCE).toContain('tab/⏎ back to the actions');
+      expect(screen()).not.toContain(APPROVE_ACTIVE);
+
+      write(PTY_SUBMIT_INPUT);
+      await expect.poll(screen, PATIENCE).toContain(APPROVE_ACTIVE);
+      expect(callsMade(run)).not.toContain('plan 2');
+      expect(callsMade(run)).not.toContain('implement');
+    });
+  },
+);
+
+it(
+  'names tab and ⏎ over a draft of spaces, and ⏎ gives the plan card the keys',
+  SCENARIO_TIMEOUT,
+  async () => {
+    await scenario(async (run, tui) => {
+      const { screen, write } = tui;
+      // The marker makes the typed spaces observable, then the backspace leaves them alone.
+      write('   x');
+      await expect
+        .poll(() => (screen().includes('›    x') ? 'echoed' : screen()), PATIENCE)
+        .toBe('echoed');
+      write('\x7f');
+      await expect.poll(() => screen().includes('›    x'), PATIENCE).toBe(false);
+
+      unlinkSync(run.hold);
+      await expect.poll(screen, PATIENCE).toContain(APPROVE_ROW);
+      await expect.poll(screen, PATIENCE).toContain('tab/⏎ back to the actions');
+      expect(screen()).not.toContain(APPROVE_ACTIVE);
+
+      write(PTY_SUBMIT_INPUT);
+      await expect.poll(screen, PATIENCE).toContain(APPROVE_ACTIVE);
+      expect(callsMade(run)).not.toContain('plan 2');
+      expect(callsMade(run)).not.toContain('implement');
+    });
+  },
+);
+
 // An overlay covers the plan card, then closes, and the card is painted again.
 async function throughOverlay({ screen, write }: Tui, open: string, close: string) {
   write(open);
@@ -314,6 +392,28 @@ async function throughOverlay({ screen, write }: Tui, open: string, close: strin
   await expect.poll(screen, PATIENCE).toContain(APPROVE_ROW);
   await expect.poll(screen, PATIENCE).toContain('Waiting for your answer');
 }
+
+it(
+  'keeps the plan card on the row it was moved to when help closes over it',
+  SCENARIO_TIMEOUT,
+  async () => {
+    await scenario(async (run, tui) => {
+      const { screen, write } = tui;
+      unlinkSync(run.hold);
+      await expect.poll(screen, PATIENCE).toContain(APPROVE_ACTIVE);
+
+      write(DOWN);
+      await expect.poll(screen, PATIENCE).toContain(REQUEST_ACTIVE);
+      write(DOWN);
+      await expect.poll(screen, PATIENCE).toContain(EDIT_ACTIVE);
+
+      await throughOverlay(tui, CTRL_SLASH, ESC);
+      expect(screen()).toContain(EDIT_ACTIVE);
+      expect(screen()).not.toContain(APPROVE_ACTIVE);
+      expect(callsMade(run)).not.toContain('implement');
+    });
+  },
+);
 
 it.each([
   ['help', CTRL_SLASH, ESC],
@@ -405,3 +505,19 @@ it(
     });
   },
 );
+
+it('shows a /steer row that is true over the waiting plan card', SCENARIO_TIMEOUT, async () => {
+  await scenario(async (run, tui) => {
+    const { screen, write } = tui;
+    await openCardOverDraft(run, tui, DRAFT);
+    for (let i = 0; i < DRAFT.length; i++) write('\x7f');
+    await expect.poll(screen, PATIENCE).not.toContain(DRAFT);
+
+    write('/st');
+    await expect
+      .poll(screen, PATIENCE)
+      .toContain('Send a correction now; a running call stops first');
+    expect(screen()).toContain('/steer');
+    expect(screen()).not.toContain('Stop now and continue');
+  });
+});

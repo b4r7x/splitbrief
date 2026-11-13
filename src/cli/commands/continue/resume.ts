@@ -91,7 +91,8 @@ export async function resumeSavedSession(args: {
   assertResumeTerminal(opts);
   const { state } = args;
 
-  const config = args.config ?? resolveRunConfig({ projectDir, opts });
+  const resolved = resolveRunConfig({ projectDir, opts });
+  const config = args.config ?? resolved.config;
   const ref = { projectDir, sessionId };
   await loadRememberedCatalog(projectDir);
   reportSeatChanges(ref, config);
@@ -105,6 +106,7 @@ export async function resumeSavedSession(args: {
         existingSession: ref,
         feature: state.feature,
         effectiveConfig: config,
+        configWarnings: resolved.warnings,
         policy: cliPreparationPolicy({ purpose: 'resume', interaction: mode, opts }),
         signal: new AbortController().signal,
         resumeState: state,

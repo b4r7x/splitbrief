@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
+import { LOCAL_API_DESCRIPTORS } from '#testing/helpers/runner-picker.js';
 import { CLI_READINESS_STATES, type ProviderDetection } from '../../../core/discovery/detection.js';
-import {
-  IMPLEMENTER_API_PROVIDER_IDS,
-  PLANNER_API_PROVIDER_IDS,
-} from '../../../core/providers/api-provider-catalog.js';
+import { LOCAL_API_PROVIDER_IDS } from '../../../core/providers/api-provider-catalog.js';
 import {
   CLI_TOOL_CATALOG,
   IMPLEMENTER_CLI_TOOL_IDS,
@@ -16,9 +14,16 @@ import {
 import { SEAT_PICKER_ROLES } from '../../../core/runners/seat-roles.js';
 import { isCurrentRunner } from './catalog.js';
 import { readActiveRunner } from '../../../core/config/accessors/active-runner.js';
-import { assemblePickerDescriptors, buildPickerOptions, type PickerOption } from './options.js';
+import {
+  assemblePickerDescriptors,
+  buildPickerOptions,
+  type PickerOption,
+  type RunnerPickerDescriptor,
+} from './options.js';
 import { deriveModelCatalogCapability } from './posture.js';
 import type { ConfiguredProviderRuntime } from '../../../engine/detection/provider-outcomes.js';
+
+const UNLISTED_LOCAL_IDS: readonly string[] = ['ollama', 'lm-studio', 'llama-cpp'];
 
 function makeImplementerDetection(
   provider: ProviderDetection['provider'],
@@ -50,7 +55,7 @@ function scopedRuntime(input: {
 }
 
 describe('role membership', () => {
-  it('projects planner and implementer catalogs independently from canonical descriptors', () => {
+  it('projects planner and implementer catalogs from the listed descriptors only', () => {
     const descriptors = assemblePickerDescriptors();
     const detections = {
       cliTools: [cliDetectionFor('ready', 'claude-code')],
@@ -67,24 +72,12 @@ describe('role membership', () => {
     const plannerIds = plannerItems.map((item) => item.id);
     const implementerIds = implementerItems.map((item) => item.id);
 
-    expect(plannerIds).toEqual(
-      expect.arrayContaining([
-        'custom-command',
-        ...PLANNER_CLI_TOOL_IDS.filter(isListedCliTool),
-        ...PLANNER_API_PROVIDER_IDS,
-      ]),
+    expect(plannerIds.toSorted()).toEqual(
+      ['custom-command', ...PLANNER_CLI_TOOL_IDS.filter(isListedCliTool)].toSorted(),
     );
-    expect(implementerIds).toEqual(
-      expect.arrayContaining([
-        'custom-command',
-        ...IMPLEMENTER_CLI_TOOL_IDS.filter(isListedCliTool),
-        ...IMPLEMENTER_API_PROVIDER_IDS,
-      ]),
+    expect(implementerIds.toSorted()).toEqual(
+      ['custom-command', ...IMPLEMENTER_CLI_TOOL_IDS.filter(isListedCliTool)].toSorted(),
     );
-    expect(plannerIds).toContain('ollama');
-    expect(plannerIds).toContain('lm-studio');
-    expect(implementerIds).toContain('ollama');
-    expect(implementerIds).toContain('lm-studio');
     expect(plannerItems.every((item) => item.roles.includes('planner'))).toBe(true);
     expect(implementerItems.every((item) => item.roles.includes('implementer'))).toBe(true);
   });
@@ -113,6 +106,43 @@ describe('role membership', () => {
         (item) => item.id,
       );
       expect(ids, role).not.toContain('copilot');
+    }
+  });
+
+  it('offers no local provider row in any seat role, also to a seat that runs one', () => {
+    const descriptors = assemblePickerDescriptors();
+    const detections = {
+      cliTools: [],
+      providers: LOCAL_API_PROVIDER_IDS.map((id) =>
+        makeImplementerDetection(id, { available: true, isLocal: true }),
+      ),
+    };
+    const config = makeConfig({
+      planner: {
+        kind: 'api',
+        provider: 'ollama',
+        apiBase: 'http://localhost:11434/v1',
+        model: 'qwen2.5-coder:7b',
+      },
+      implementer: {
+        kind: 'api',
+        provider: 'ollama',
+        apiBase: 'http://localhost:11434/v1',
+        model: 'qwen2.5-coder:7b',
+      },
+    });
+
+    for (const role of SEAT_PICKER_ROLES) {
+      const seat = role === 'implementer' ? config.implementer : config.planner;
+      for (const current of [undefined, seat]) {
+        const ids = buildPickerOptions(role, descriptors, detections, current).map(
+          (item) => item.id,
+        );
+        expect(
+          ids.filter((id) => UNLISTED_LOCAL_IDS.includes(id)),
+          `${role} ${current === undefined ? 'empty seat' : 'ollama seat'}`,
+        ).toEqual([]);
+      }
     }
   });
 
@@ -154,7 +184,14 @@ describe('effort channel projection', () => {
   });
 
   it('gives an api provider no channel', () => {
-    expect(seatRow('implementer', 'ollama').effortChannel).toBeUndefined();
+    const ollama = buildPickerOptions(
+      'implementer',
+      LOCAL_API_DESCRIPTORS,
+      detections,
+      undefined,
+    ).find((item) => item.id === 'ollama');
+    expect(ollama?.kind).toBe('api');
+    expect(ollama?.effortChannel).toBeUndefined();
   });
 });
 
@@ -185,7 +222,7 @@ describe('status projection', () => {
     (failure) => {
       const options = buildPickerOptions(
         'implementer',
-        assemblePickerDescriptors(),
+        LOCAL_API_DESCRIPTORS,
         {
           cliTools: [],
           providers: [makeImplementerDetection('lm-studio', { available: false })],
@@ -217,7 +254,7 @@ describe('status projection', () => {
     (failure) => {
       const options = buildPickerOptions(
         'implementer',
-        assemblePickerDescriptors(),
+        LOCAL_API_DESCRIPTORS,
         {
           cliTools: [],
           providers: [],
@@ -243,7 +280,7 @@ describe('status projection', () => {
   it('maps local API offline state to unavailable', () => {
     const options = buildPickerOptions(
       'implementer',
-      assemblePickerDescriptors(),
+      LOCAL_API_DESCRIPTORS,
       {
         cliTools: [],
         providers: [
@@ -266,7 +303,7 @@ describe('status projection', () => {
   it('maps ready API detection to ready status', () => {
     const options = buildPickerOptions(
       'implementer',
-      assemblePickerDescriptors(),
+      LOCAL_API_DESCRIPTORS,
       {
         cliTools: [],
         providers: [makeImplementerDetection('ollama', { available: true })],
@@ -295,7 +332,7 @@ describe('status projection', () => {
 
     const implementer = buildPickerOptions(
       'implementer',
-      assemblePickerDescriptors(),
+      LOCAL_API_DESCRIPTORS,
       detections,
       undefined,
     );
@@ -310,7 +347,7 @@ describe('status projection', () => {
   it('does not borrow a generic ready provider detection when scoped outcomes are authoritative', () => {
     const options = buildPickerOptions(
       'implementer',
-      assemblePickerDescriptors(),
+      LOCAL_API_DESCRIPTORS,
       {
         cliTools: [],
         providers: [makeImplementerDetection('ollama', { available: true, hasKey: true })],
@@ -391,7 +428,7 @@ describe('current config visibility', () => {
 
     const options = buildPickerOptions(
       'implementer',
-      assemblePickerDescriptors(),
+      LOCAL_API_DESCRIPTORS,
       {
         cliTools: [],
         providers: [
@@ -498,15 +535,6 @@ describe('reviewer seat', () => {
     );
   });
 
-  it('offers every planner-tier API provider to the reviewer', () => {
-    const apiRows = buildPickerOptions('reviewer', descriptors, detections, undefined)
-      .filter((item) => item.kind === 'api')
-      .map((item) => item.id);
-
-    expect(PLANNER_API_PROVIDER_IDS.length).toBeGreaterThan(0);
-    expect(apiRows.toSorted()).toEqual([...PLANNER_API_PROVIDER_IDS].toSorted());
-  });
-
   it('marks the current reviewer row from the reviewer config, not the planner config', () => {
     const config = makeConfig({
       planner: { kind: 'cli', tool: 'claude-code' },
@@ -547,11 +575,7 @@ describe('tool order', () => {
   };
   const emptyDetections = { cliTools: [], providers: [] };
 
-  function toolOrderIds(options: readonly PickerOption[], filterActive: boolean): string[] {
-    const name = new Map(options.map((item) => [item.id, item.displayName]));
-    const local = ['llama-cpp', 'lm-studio'].toSorted((left, right) =>
-      (name.get(left) ?? left).localeCompare(name.get(right) ?? right),
-    );
+  function toolOrderIds(filterActive: boolean): string[] {
     const body = [
       'codex',
       'claude-code',
@@ -560,8 +584,6 @@ describe('tool order', () => {
       'cursor',
       'antigravity',
       'opencode',
-      'ollama',
-      ...local,
     ];
     return filterActive ? [...body, 'custom-command'] : ['custom-command', ...body];
   }
@@ -575,9 +597,7 @@ describe('tool order', () => {
       );
       expect(options.find((item) => item.id === 'kilo-code')?.status.state).toBe('unverified');
       expect(options.find((item) => item.id === 'cursor')?.status.state).toBe('unavailable');
-      expect(options.find((item) => item.id === 'ollama')?.status.state).toBe('ready');
-      expect(options.find((item) => item.id === 'lm-studio')?.status.state).toBe('unavailable');
-      expect(options.map((item) => item.id)).toEqual(toolOrderIds(options, false));
+      expect(options.map((item) => item.id)).toEqual(toolOrderIds(false));
     }
   });
 
@@ -586,8 +606,31 @@ describe('tool order', () => {
       const options = buildPickerOptions(role, descriptors, detections, undefined, {
         filterActive: true,
       });
-      expect(options.map((item) => item.id)).toEqual(toolOrderIds(options, true));
+      expect(options.map((item) => item.id)).toEqual(toolOrderIds(true));
     }
+  });
+
+  it('keeps API rows after the CLI rows, the ready one first', () => {
+    const cliDescriptors: RunnerPickerDescriptor[] = LISTED_CLI_TOOL_IDS.map((id) => ({
+      kind: 'cli',
+      descriptor: CLI_TOOL_CATALOG[id],
+    }));
+    const options = buildPickerOptions(
+      'implementer',
+      [...cliDescriptors, ...LOCAL_API_DESCRIPTORS],
+      detections,
+      undefined,
+    );
+    const kinds = options.map((item) => item.kind);
+    const apiRows = options.filter((item) => item.kind === 'api');
+
+    expect(kinds.lastIndexOf('cli')).toBeLessThan(kinds.indexOf('api'));
+    expect(apiRows.map((item) => item.id)[0]).toBe('ollama');
+    expect(apiRows.map((item) => item.status.state)).toEqual([
+      'ready',
+      'unavailable',
+      'unavailable',
+    ]);
   });
 
   it('leaves a not-ready current row in its tier while filtering', () => {
@@ -598,7 +641,7 @@ describe('tool order', () => {
     const claude = options.find((item) => item.id === 'claude-code');
     expect(claude?.isCurrent).toBe(true);
     expect(claude?.status.state).toBe('unauthenticated');
-    expect(ids).toEqual(toolOrderIds(options, true));
+    expect(ids).toEqual(toolOrderIds(true));
     expect(ids.indexOf('codex')).toBeLessThan(ids.indexOf('claude-code'));
     expect(ids.indexOf('claude-code')).toBeLessThan(ids.indexOf('cursor'));
   });

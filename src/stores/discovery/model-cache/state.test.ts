@@ -5,6 +5,7 @@ import type {
   DetectedModel,
   ProviderDetection,
 } from '../../../core/discovery/detection.js';
+import { API_PROVIDER_CATALOG } from '../../../core/providers/api-provider-catalog.js';
 import { readClaudeCodeModelOptions } from '../../../core/providers/claude-code-options.js';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
 import { createDetectionService, type DetectionDeps } from '../../../engine/detection/service.js';
@@ -20,10 +21,7 @@ import type {
   DetectionServiceResult,
 } from '../../../engine/detection/service.js';
 import type { ScopedCliCatalogAttempt } from '../../../engine/detection/cli-catalog-outcomes.js';
-import {
-  assemblePickerDescriptors,
-  buildPickerOptions,
-} from '../../../features/runners/model-catalog/options.js';
+import { buildPickerOptions } from '../../../features/runners/model-catalog/options.js';
 
 const ollamaModels: DetectedModel[] = [
   { id: 'qwen2.5:7b', contextLength: 8192, isFree: true },
@@ -1368,7 +1366,7 @@ describe('modelCacheStore', () => {
       ).toMatchObject({ membership: 'stale', isStale: true, isDetected: false });
       const ollama = buildPickerOptions(
         'implementer',
-        assemblePickerDescriptors(),
+        [{ kind: 'api', descriptor: API_PROVIDER_CATALOG.ollama }],
         modelCacheStore.getDetection(),
         undefined,
       ).find((item) => item.id === 'ollama');

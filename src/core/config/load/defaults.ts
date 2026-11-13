@@ -5,7 +5,6 @@ import { API_PROVIDER_CATALOG } from '../../providers/api-provider-catalog.js';
 import { narrowRecord } from '../../../utils/type-guards.js';
 
 export function createDefaultConfig(): Config {
-  const provider = API_PROVIDER_CATALOG.ollama;
   return {
     version: CONFIG_VERSION,
     planner: {
@@ -13,13 +12,8 @@ export function createDefaultConfig(): Config {
       tool: 'claude-code',
     },
     implementer: {
-      kind: 'api',
-      provider: provider.id,
-      service: provider.service,
-      offering: provider.offering,
-      model: 'qwen3-coder:30b',
-      apiBase: getKnownProviderBaseURL(provider.id),
-      temperature: DEFAULT_IMPLEMENTER_TEMPERATURE,
+      kind: 'cli',
+      tool: 'claude-code',
     },
     validation: {
       endChecks: true,
@@ -32,11 +26,24 @@ export function createDefaultConfig(): Config {
   };
 }
 
+// A present implementer block merges with these values, so no config file changes its meaning.
+function implementerBlockDefaults(): Record<string, unknown> {
+  const provider = API_PROVIDER_CATALOG.ollama;
+  return {
+    kind: 'api',
+    provider: provider.id,
+    service: provider.service,
+    offering: provider.offering,
+    model: 'qwen3-coder:30b',
+    apiBase: getKnownProviderBaseURL(provider.id),
+    temperature: DEFAULT_IMPLEMENTER_TEMPERATURE,
+  };
+}
+
 function mergeRunner(
-  loaded: Record<string, unknown> | null,
+  loaded: Record<string, unknown>,
   defaults: Record<string, unknown>,
 ): Record<string, unknown> {
-  if (!loaded) return defaults;
   // When kinds differ, the loaded runner is already self-contained. Merging
   // would leak kind-specific fields (e.g. provider/apiBase from an api default
   // into a cli config).
@@ -59,7 +66,7 @@ const MERGE_HANDLED_KEYS = new Set([
 
 export function mergeWithDefaults(loaded: Record<string, unknown>): Record<string, unknown> {
   const defaults = createDefaultConfig();
-  const implementerDefaults: Record<string, unknown> = { ...defaults.implementer };
+  const implementer = narrowRecord(loaded['implementer']);
 
   // Every remaining key is carried through, known or not: validation is what names a removed key,
   // and a key dropped here would reach it as an absence. The accumulator has no prototype, so a
@@ -73,7 +80,9 @@ export function mergeWithDefaults(loaded: Record<string, unknown>): Record<strin
   return {
     version: CONFIG_VERSION,
     planner: loaded['planner'] ?? defaults.planner,
-    implementer: mergeRunner(narrowRecord(loaded['implementer']), implementerDefaults),
+    implementer: implementer
+      ? mergeRunner(implementer, implementerBlockDefaults())
+      : defaults.implementer,
     ...(loaded['implementerProfiles'] !== undefined && {
       implementerProfiles: loaded['implementerProfiles'],
     }),

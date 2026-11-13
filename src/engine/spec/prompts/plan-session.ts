@@ -1,5 +1,5 @@
 import type { ImplementerWriteMode } from '../../../core/schemas/implementer-config.js';
-import { MAX_GATE_COMMANDS, type PlanProposal } from '../../../core/schemas/plan.js';
+import type { PlanProposal } from '../../../core/schemas/plan.js';
 import { PROTECTED_PATHS_TEXT } from '../../../core/pipeline-spec/scope.js';
 import { PACKAGE_TEST_COMMAND } from '../../../core/validation/stacks/typescript.js';
 import { FILE_TESTS } from '../../orchestrator/planning/sanitize-discovered-validation.js';
@@ -80,7 +80,7 @@ function planRules(approvesPlan: boolean, writesFiles: ImplementerWriteMode): st
   return `- Research the repository read-only. Do not edit, create or delete any file.
 - ${GIT_READ_ONLY_RULE}.
 - Do not invoke a native user-question tool (AskUserQuestion or the like). SPLITBRIEF asks the user.
-- Ask questions only when a decision that only the user can make blocks the plan: at most 3 questions per round, at most ${MAX_QUESTION_ROUNDS} rounds. Give every question a non-empty \`default\`, the answer the plan uses when the user just presses Enter. An answer of the user that asks you to decide is the user's consent to decide that matter yourself: take the default or your best choice, and state it in the plan. Give \`choices\` when the answer is one of a fixed set, else null; the \`default\` of a question with \`choices\` is one of them.
+- Ask questions only when a decision that only the user can make blocks the plan: at most ${MAX_QUESTION_ROUNDS} rounds. Give every question a non-empty \`default\`, the answer the plan uses when the user just presses Enter. An answer of the user that asks you to decide is the user's consent to decide that matter yourself: take the default or your best choice, and state it in the plan. Give \`choices\` when the answer is one of a fixed set, else null; the \`default\` of a question with \`choices\` is one of them.
 - Criteria are the contract. Give each one an id (\`C1\`, \`C2\`, …) and the \`checkIds\` that verify it. Every check id must exist in the run checks or in a task's checks, and every check id is unique. The ids \`V1\`, \`V2\`, … are the project gate's: never give a check one of them.
 - A check is \`test\` (a test file or pattern), \`cmd\` (a command) or \`render\` (a gallery scenario id). ${packageScriptRule(approvesPlan)} ${NODE_CMD_RULE} ${NPX_CMD_RULE}
 - A \`test\` check narrows \`${PACKAGE_TEST_COMMAND}\` to its file (\`${PACKAGE_TEST_COMMAND} -- <file>\`) only when the \`package.json\` test script is one command. A chained script (\`a && b\`) runs whole. To run one test file there, use a \`cmd\` check that runs the project's test runner on the file directly: \`node --test <test file>\`, \`npx --no-install vitest run <test file>\` or \`npx --no-install jest <test file>\`. \`node --check <file>\` checks the syntax of one file. ${fileTestRule()}
@@ -95,7 +95,7 @@ ${direct ? '' : "- Split a behaviour only when its task would not fit the implem
 - \`dependsOn\`: ids of earlier tasks in the same or an earlier batch. No cycles.
 - \`batch\`: 1, 2, …. SPLITBRIEF builds the tasks in the order you list them, so list them in batch order and list each task after the tasks it depends on.
 - A write to a protected path (${PROTECTED_PATHS_TEXT}) waits for the user to confirm it. List every such write the task needs in \`protectedOperations\` as \`{ "path": …, "operation": "write" }\`; the plan approval lists them. Use null when there is none.
-- \`gate\`: the project's own gate, the commands its scripts or CI run to verify a whole change (\`npm run release-check\`, \`make check\`, \`cargo test\`), in the order they run, at most ${MAX_GATE_COMMANDS}. Before the final review SPLITBRIEF runs them in the run workspace as the checks \`V1\`, \`V2\`, …, and stops at the first command with new failures. The plan card shows them before the build. Use an empty list when the project has none. Write each command as one installed program and its arguments, run by its name: no shell syntax, no inline code, \`npx\` only as \`npx --no-install <tool>\`, no download-and-run launcher, no install or setup command, and no script this run changes. A plan whose gate names a refused command comes back with the reason.
+- \`gate\`: the project's own gate, the commands its scripts or CI run to verify a whole change (\`npm run release-check\`, \`make check\`, \`cargo test\`), in the order they run. Before the final review SPLITBRIEF runs them in the run workspace as the checks \`V1\`, \`V2\`, …, and stops at the first command with new failures. The plan card shows them before the build. Use an empty list when the project has none. Write each command as one installed program and its arguments, run by its name: no shell syntax, no inline code, \`npx\` only as \`npx --no-install <tool>\`, no download-and-run launcher, no install or setup command, and no script this run changes. A plan whose gate names a refused command comes back with the reason.
 - \`validation\`: the language and test command you found. A \`test\` check runs that command on its file. \`testPattern\` is a file name pattern with one \`*\`, such as \`*.test.js\` or \`test_*.py\`: no \`/\`, no \`\\\` and no \`..\`. SPLITBRIEF searches beside the changed file and in the stack's test folders. Use null for what you did not find.
 - ${GATES_ARE_SPLITBRIEFS}`;
 }
@@ -104,7 +104,7 @@ export function buildPlanSessionPrompt(input: PlanSessionPromptInput): string {
   return buildPrompt({
     title: 'Plan the change',
     intro:
-      'You are the planner. In this one session you research the repository, decide what to build, and return one typed result: up to 3 questions for the user, or the plan. A weaker implementer builds each task of the plan, and SPLITBRIEF runs the checks.',
+      'You are the planner. In this one session you research the repository, decide what to build, and return one typed result: questions for the user, or the plan. A weaker implementer builds each task of the plan, and SPLITBRIEF runs the checks.',
     sections: [
       { heading: 'Request', body: input.feature },
       { heading: 'Project Context', body: input.projectContext },

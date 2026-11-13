@@ -230,7 +230,7 @@ export function planQuestionsFrom(
               : (question.default ?? ''),
         }))
       : [{ id: 'reply', text, choices: null, default: '' }];
-  return { kind: 'questions', questions: asked.slice(0, 3) };
+  return { kind: 'questions', questions: asked };
 }
 
 /**

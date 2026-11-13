@@ -10,10 +10,7 @@ import {
   resolveReviewerRunner,
 } from '../../core/config/accessors/reviewer-runner.js';
 import { getRunnerCatalogDisplayName } from '../../core/config/accessors/runner-config.js';
-import {
-  emitEffectiveConfigWarnings,
-  resolveEffectiveConfig,
-} from '../../core/config/runtime/effective-config.js';
+import { resolveEffectiveConfig } from '../../core/config/runtime/effective-config.js';
 import type { CLIOverrides } from '../../core/config/runtime/overrides/schema.js';
 import {
   REVIEWS_DIR,
@@ -94,7 +91,7 @@ function seatOverrides(seat: SeatSpec | undefined): CLIOverrides {
   if (seat === undefined) return {};
   return {
     reviewer: { tool: seat.tool, ...(seat.model !== undefined && { model: seat.model }) },
-    ...(seat.effort !== undefined && { reviewerEffort: seat.effort }),
+    ...(seat.effort !== undefined && { reviewerSpecEffort: seat.effort }),
   };
 }
 
@@ -162,8 +159,9 @@ export function registerReviewCommand(program: Command, deps: ReviewCommandDeps 
       // decides it once — the configured block, or the planner holding the seat —
       // and preparation then admits it as the reviewer slot, so the factory has
       // one path to take and no second reading of `config.reviewer` exists.
-      const base = initialInvocation ?? loaded.config;
-      if (resolveReviewerRunner(base).source === 'none' && opts.reviewer === undefined) {
+      const base = initialInvocation?.config ?? loaded.config;
+      const reviewSource = resolveReviewerRunner(base).source;
+      if (reviewSource === 'none' && opts.reviewer === undefined) {
         throw cliError('REVIEW is set to None; pass --reviewer to name a seat for this review.', 1);
       }
       const declared = {
@@ -175,7 +173,6 @@ export function registerReviewCommand(program: Command, deps: ReviewCommandDeps 
         ...(initialInvocation === undefined && { overrides: seatOverrides(opts.reviewer) }),
         loaderDiagnostics: loaded.loaderDiagnostics,
       });
-      emitEffectiveConfigWarnings(projectDir, warnings);
 
       const stamp = reviewStamp(new Date());
       const interaction = process.stdin.isTTY ? 'interactive' : 'headless';
@@ -192,10 +189,14 @@ export function registerReviewCommand(program: Command, deps: ReviewCommandDeps 
         await prepareForCommand({
           projectDir,
           effectiveConfig: config,
+          // A first run applied the seat flags when it chose the crew, so it holds their notices.
+          configWarnings: [...(initialInvocation?.warnings ?? []), ...warnings],
           policy,
           signal: new AbortController().signal,
         }),
         'prose',
+        // A REVIEW that inherits PLAN holds PLAN's settings, under the planner key.
+        reviewSource === 'planner' && opts.reviewer === undefined ? 'planner' : 'reviewer',
       );
 
       const reviewer = await createReviewerForCommand(execution.config, {

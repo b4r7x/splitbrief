@@ -17,7 +17,9 @@ import { ensureSessionDir } from '../../../core/paths-io.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
+import { resetLoggerForTests } from '../../../lib/logger.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
+import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
 import { RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
 import {
   makeBusRecorder,
@@ -586,13 +588,22 @@ describe('closeRunIfOpen on a workspace run before Apply', () => {
       expect(await readWorkspaceRecord(run.ref)).toBeNull();
     }
 
-    async function startCleanupOutput(projectDir: string): Promise<string> {
+    async function startCleanupOutput(
+      projectDir: string,
+    ): Promise<{ stderr: string; diagnostics: string[] }> {
+      const logDir = createTempDir('close-run-log-');
+      dirs.push(logDir);
+      enableDebugLog(logDir);
       const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
       try {
         await removeClosedRunWorkspaces(projectDir);
-        return stderrSpy.mock.calls.map((call) => String(call[0])).join('');
+        return {
+          stderr: stderrSpy.mock.calls.map((call) => String(call[0])).join(''),
+          diagnostics: loggedDiagnostics(logDir),
+        };
       } finally {
         stderrSpy.mockRestore();
+        resetLoggerForTests();
       }
     }
 
@@ -603,7 +614,7 @@ describe('closeRunIfOpen on a workspace run before Apply', () => {
 
       await closeWithoutRemovalWarning(run);
 
-      expect(await startCleanupOutput(run.ref.projectDir)).toBe('');
+      expect(await startCleanupOutput(run.ref.projectDir)).toEqual({ stderr: '', diagnostics: [] });
     });
 
     it('closes two runs of one repository after the first close pruned the entry of the second', {
@@ -624,7 +635,10 @@ describe('closeRunIfOpen on a workspace run before Apply', () => {
       );
       await closeWithoutRemovalWarning(second);
 
-      expect(await startCleanupOutput(first.ref.projectDir)).toBe('');
+      expect(await startCleanupOutput(first.ref.projectDir)).toEqual({
+        stderr: '',
+        diagnostics: [],
+      });
     });
 
     it('deletes the splitbrief/<slug> branch an older version put the run on', {
@@ -910,20 +924,26 @@ describe('removeClosedRunWorkspaces', () => {
     saveState(ref, closedState);
     expect(await readWorkspaceRecord(ref)).not.toBeNull();
 
+    const logDir = createTempDir('close-run-log-');
+    dirs.push(logDir);
+    enableDebugLog(logDir);
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {
       await expect(removeClosedRunWorkspaces(ref.projectDir)).resolves.toBeUndefined();
       expect(stderrSpy).not.toHaveBeenCalled();
+      expect(loggedDiagnostics(logDir)).toEqual([]);
       expect(await readWorkspaceRecord(ref)).toBeNull();
       expect(existsSync(workspaceDir)).toBe(true);
 
       stderrSpy.mockClear();
       await expect(removeClosedRunWorkspaces(ref.projectDir)).resolves.toBeUndefined();
       expect(stderrSpy).not.toHaveBeenCalled();
+      expect(loggedDiagnostics(logDir)).toEqual([]);
       expect(await readWorkspaceRecord(ref)).toBeNull();
       expect(existsSync(workspaceDir)).toBe(true);
     } finally {
       stderrSpy.mockRestore();
+      resetLoggerForTests();
     }
   });
 });

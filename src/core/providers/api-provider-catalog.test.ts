@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as apiProviderCatalog from './api-provider-catalog.js';
 import {
   ADMITTED_API_PROVIDER_IDS,
   API_PROVIDER_CATALOG,
@@ -42,6 +43,28 @@ describe('API provider catalog', () => {
     expect(KNOWN_API_PROVIDER_IDS).toEqual(ADMITTED_API_PROVIDER_IDS);
     expect(LOCAL_API_PROVIDER_IDS).toEqual(['ollama', 'lm-studio', 'llama-cpp']);
     expect(REMOTE_API_PROVIDER_IDS).toEqual([]);
+  });
+
+  it('lists no built-in provider: the three local services run only when a config names them', () => {
+    expect(apiProviderCatalog.LISTED_API_PROVIDER_IDS).toEqual([]);
+  });
+
+  it('reads each local service as unlisted and every other name as listed', () => {
+    expect(apiProviderCatalog.isListedApiProvider).toBeTypeOf('function');
+    expect(
+      Object.fromEntries(
+        ['ollama', 'lm-studio', 'llama-cpp', 'my-endpoint', 'claude-code'].map((id) => [
+          id,
+          apiProviderCatalog.isListedApiProvider(id),
+        ]),
+      ),
+    ).toEqual({
+      ollama: false,
+      'lm-studio': false,
+      'llama-cpp': false,
+      'my-endpoint': true,
+      'claude-code': true,
+    });
   });
 
   it('derives every provider view from the canonical descriptors', () => {

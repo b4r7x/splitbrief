@@ -51,48 +51,59 @@ describe('resolveRunConfig', () => {
     vi.restoreAllMocks();
   });
 
-  itUnix('prints stable loader warnings once in non-interactive resolution', () => {
-    const configPath = writeMinimalV3Config(tempDir);
-    chmodSync(configPath, 0o666);
-    const stderrChunks = captureStderr();
+  itUnix(
+    'returns the loader warning of a non-interactive resolution and writes no stderr line',
+    () => {
+      const configPath = writeMinimalV3Config(tempDir);
+      chmodSync(configPath, 0o666);
+      const stderrChunks = captureStderr();
 
-    resolveRunConfig({ projectDir: tempDir, opts: {} });
+      const { warnings } = resolveRunConfig({ projectDir: tempDir, opts: {} });
 
-    const permissionWarnings = stderrChunks.filter((chunk) => chunk.includes('chmod 600'));
-    expect(permissionWarnings).toHaveLength(1);
-  });
+      expect(warnings).toEqual([{ kind: 'config-file-permissions' }]);
+      expect(stderrChunks).toEqual([]);
+    },
+  );
 
-  it('prints the retired workflow.mode notice once for a config file that still sets a mode', () => {
+  it('returns the retired workflow.mode notice for a config file that still sets a mode and writes no stderr line', () => {
     writeMinimalV3Config(tempDir, ['workflow:', '  mode: instant']);
     const stderrChunks = captureStderr();
 
-    resolveRunConfig({ projectDir: tempDir, opts: {} });
+    const { warnings } = resolveRunConfig({ projectDir: tempDir, opts: {} });
 
-    expect(
-      stderrChunks.filter((chunk) => chunk.includes('workflow.mode was retired')),
-    ).toHaveLength(1);
+    expect(warnings).toEqual([
+      expect.objectContaining({
+        kind: 'retired-value',
+        notice: expect.stringContaining('workflow.mode was retired'),
+      }),
+    ]);
+    expect(stderrChunks).toEqual([]);
   });
 
-  it('tells the retired workflow.mode notice once when the screen already loaded the config', () => {
+  it('returns the retired workflow.mode notice once when the screen already loaded the config, and writes no stderr line', () => {
     writeMinimalV3Config(tempDir, ['workflow:', '  mode: instant']);
     const stderrChunks = captureStderr();
 
     configStore.load(tempDir);
-    resolveRunConfig({ projectDir: tempDir, opts: {} });
+    const { warnings } = resolveRunConfig({ projectDir: tempDir, opts: {} });
 
-    expect(
-      stderrChunks.filter((chunk) => chunk.includes('workflow.mode was retired')),
-    ).toHaveLength(1);
+    expect(warnings).toEqual([
+      expect.objectContaining({
+        kind: 'retired-value',
+        notice: expect.stringContaining('workflow.mode was retired'),
+      }),
+    ]);
+    expect(stderrChunks).toEqual([]);
   });
 
   it('merges CLI overrides over the persisted config', () => {
     writeMinimalV3Config(tempDir);
 
-    const config = resolveRunConfig({
+    const resolved = resolveRunConfig({
       projectDir: tempDir,
       opts: { implementerModel: 'qwen3-coder:30b' },
     });
 
-    expect(config.implementer).toMatchObject({ model: 'qwen3-coder:30b' });
+    expect(resolved).toMatchObject({ config: { implementer: { model: 'qwen3-coder:30b' } } });
   });
 });

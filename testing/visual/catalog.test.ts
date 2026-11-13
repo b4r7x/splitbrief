@@ -31,6 +31,7 @@ import {
 import {
   workflowCheckpointPredicates,
   workflowFixtureRegistry,
+  workflowProjectionRegistry,
   workflowTranscriptText,
 } from './fixtures/workflow/registry.js';
 import { mountGalleryScenario } from './gallery/mount.js';
@@ -174,6 +175,7 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-review-resumed', ['120x40', '80x24', '60x18', '120x60']],
   ['workflow-cli-stop-continued', ['120x40', '80x24', '60x18', '120x60']],
   ['workflow-resumed-kept-work', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-resumed-cut-brief', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-paused-cut-seat', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-base-rerun-long-command', ['140x40', '120x40']],
   ['workflow-check-timed-out', ['120x40']],
@@ -222,6 +224,7 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-ready-to-apply', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-ready-crew-saved', ['120x40', '80x24', '60x18', '160x45', '200x50']],
   ['workflow-ready-seat-moved-auto', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-ready-seat-moved-model-line', ['100x30']],
   ['workflow-at-rest-crashed-build', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-at-rest-apply-conflict', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-at-rest-applying', ['120x40', '80x24', '60x18', '160x45']],
@@ -265,6 +268,7 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-plan-card-edited', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-plan-card-commenting', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-plan-card-typed-command', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-plan-card-steer-row', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-plan-card-request-empty', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-plan-card-render-note', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-plan-card-no-image-reviewer', ['120x40', '80x24', '60x18', '160x45']],
@@ -284,6 +288,10 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-approval-confirm-short', ['80x11', '80x10', '80x9', '80x8', '60x10']],
   ['workflow-approval-confirm-long-path', ['60x10', '60x12', '60x14', '60x15', '60x16', '80x12']],
   ['workflow-plan-card-short', ['80x12', '80x10', '80x9', '80x8', '60x10']],
+  [
+    'workflow-plan-card-long-gate',
+    ['120x40', '80x24', '60x18', '160x45', '80x12', '80x10', '80x9', '80x8', '60x10'],
+  ],
   ['workflow-question-short', ['80x13', '80x11', '80x10', '60x12']],
   ['workflow-planner-question-short', ['80x12', '80x10', '80x9']],
   ['workflow-planner-question-free-short', ['80x10', '80x9', '80x8']],
@@ -394,6 +402,28 @@ describe('visual catalog', () => {
       await handle.unmount();
     }
   });
+
+  it.each(REQUIRED_VIEWPORTS)(
+    'keeps the same-seat refusal visible in the picker byline at $cols x $rows',
+    async (viewport) => {
+      const scenario = findVisualScenario('overlay-fallback-picker-same-seat');
+      const checkpoint = scenario?.checkpoints[0];
+      if (!scenario || !checkpoint) throw new Error('Missing same-seat fallback scenario');
+      const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
+      try {
+        const frame = stripAnsiStyles(await handle.waitForCheckpoint());
+        expect(feedbackStore.get()).toEqual({
+          message: 'BUILD runs OpenAI Codex CLI · GPT-6-Astra now · choose another tool or model',
+          isError: false,
+        });
+        expect(frame).toContain('BUILD runs OpenAI Codex CLI · GPT-6-Astra now');
+        expect(frame).toContain('another tool or model');
+        expect(frame).not.toContain('no --model flag');
+      } finally {
+        await handle.unmount();
+      }
+    },
+  );
 
   it.each([
     ['overlay-picker-version-timeout-signed-out', 'Auth required', 'Sign in to OpenAI Codex CLI'],
@@ -629,9 +659,6 @@ describe('visual catalog', () => {
   });
 
   it('lists idle and filtered tools in one order without group rows', async () => {
-    const localNames = ['llama.cpp', 'LM Studio'].toSorted((left, right) =>
-      left.localeCompare(right),
-    );
     const idleNames = [
       '+ Add custom command…',
       'OpenAI Codex CLI',
@@ -641,8 +668,6 @@ describe('visual catalog', () => {
       'Cursor Agent CLI',
       'Google Antigravity CLI',
       'OpenCode CLI',
-      'Ollama',
-      ...localNames,
     ];
     const filteredNames = [
       'OpenAI Codex CLI',
@@ -669,8 +694,6 @@ describe('visual catalog', () => {
         if (id === 'overlay-picker-tool-order-filter') {
           expect(frame).not.toContain('Cursor Agent CLI');
           expect(frame).not.toContain('Google Antigravity CLI');
-          expect(frame).not.toContain('llama.cpp');
-          expect(frame).not.toContain('LM Studio');
         }
       } finally {
         await handle.unmount();
@@ -810,6 +833,142 @@ describe('visual catalog', () => {
     expect(workflowFixtureRegistry.has(scenarioId(id))).toBe(true);
   });
 
+  it.each([
+    [
+      'workflow-command-image-refused',
+      'command-image-refused',
+      'A command sends no image',
+      'failure',
+    ],
+    ['workflow-plan-card-usage-refused', 'plan-card-usage-refused', 'takes no argument', 'failure'],
+    ['workflow-plan-card-steer-row', 'plan-card-steer-row', 'Send a correction now', 'review'],
+  ] as const)('registers %s with its command checkpoint', (id, checkpoint, marker, kind) => {
+    const scenario = findVisualScenario(id);
+    expect(scenario?.checkpoints[0]).toMatchObject({ id: checkpoint, marker, kind });
+    expect(workflowFixtureRegistry.has(scenarioId(id))).toBe(true);
+    expect(workflowCheckpointPredicates.has(checkpointId(checkpoint))).toBe(true);
+  });
+
+  it('registers the refusal checkpoints beside their base scenarios', () => {
+    const ids = VISUAL_CATALOG.map((scenario) => scenario.id);
+    expect(ids.indexOf(scenarioId('workflow-apply-recheck-words-refused'))).toBe(
+      ids.indexOf(scenarioId('workflow-apply-recheck-review-none')) + 1,
+    );
+    expect(ids.indexOf(scenarioId('workflow-stop-steer-refused'))).toBe(
+      ids.indexOf(scenarioId('workflow-stopping')) + 1,
+    );
+
+    const apply = findVisualScenario('workflow-apply-recheck-words-refused');
+    expect(apply?.checkpoints[0]).toMatchObject({
+      id: 'apply-recheck-words-refused',
+      kind: 'implementation',
+      marker: 'Cannot send words to Apply',
+    });
+    expect(apply?.viewports).toEqual(REQUIRED_VIEWPORTS);
+    expect(apply?.elements.map((element) => element.id)).toEqual([
+      'header',
+      'transcript',
+      'composer',
+    ]);
+    expect(workflowFixtureRegistry.has(scenarioId('workflow-apply-recheck-words-refused'))).toBe(
+      true,
+    );
+    expect(workflowCheckpointPredicates.has(checkpointId('apply-recheck-words-refused'))).toBe(
+      true,
+    );
+
+    const stop = findVisualScenario('workflow-stop-steer-refused');
+    expect(stop?.checkpoints[0]).toMatchObject({
+      id: 'stop-steer-refused',
+      kind: 'implementation',
+      marker: 'Finish stopping before steering',
+    });
+    expect(stop?.viewports).toEqual(REQUIRED_VIEWPORTS);
+    expect(stop?.elements.map((element) => element.id)).toEqual([
+      'header',
+      'transcript',
+      'composer',
+    ]);
+    expect(workflowFixtureRegistry.has(scenarioId('workflow-stop-steer-refused'))).toBe(true);
+    expect(workflowCheckpointPredicates.has(checkpointId('stop-steer-refused'))).toBe(true);
+
+    expect(findVisualScenario('workflow-apply-recheck-review-none')?.checkpoints[0]?.id).toBe(
+      'apply-recheck-review-none',
+    );
+    expect(findVisualScenario('workflow-stopping')?.checkpoints[0]?.id).toBe('stopping');
+  });
+
+  it('keeps the image reason and the command line with its image at 120 columns', async () => {
+    const scenario = findVisualScenario('workflow-command-image-refused');
+    const checkpoint = scenario?.checkpoints[0];
+    const size = scenario?.viewports.find((value) => value.cols === 120 && value.rows === 40);
+    if (!scenario || !checkpoint || !size) throw new Error('Missing image refusal scenario');
+    const handle = await mountGalleryScenario({ scenario, checkpoint, viewport: size });
+    try {
+      const frame = stripAnsiStyles(await handle.waitForCheckpoint());
+      expect(feedbackStore.get()).toEqual({
+        isError: false,
+        message: 'A command sends no image. Remove the command, then press ctrl+⏎.',
+      });
+      expect(frame).toContain('A command sends no image. Remove the command, then press ctrl+⏎.');
+      expect(frame).toContain('/steer fix the layout [image #1]');
+    } finally {
+      await handle.unmount();
+    }
+  });
+
+  it('gives /end with an argument back over the whole plan card at 120 columns', async () => {
+    const scenario = findVisualScenario('workflow-plan-card-usage-refused');
+    const checkpoint = scenario?.checkpoints[0];
+    const size = scenario?.viewports.find((value) => value.cols === 120 && value.rows === 40);
+    if (!scenario || !checkpoint || !size) throw new Error('Missing usage refusal scenario');
+    const handle = await mountGalleryScenario({ scenario, checkpoint, viewport: size });
+    try {
+      const frame = stripAnsiStyles(await handle.waitForCheckpoint());
+      expect(feedbackStore.get()).toEqual({
+        isError: false,
+        message: '/end takes no argument. Usage: /end',
+      });
+      expect(frame).toContain('/end takes no argument. Usage: /end');
+      expect(frame).toContain('› /end now');
+      expect(frame).toContain('Approve plan and start the build');
+    } finally {
+      await handle.unmount();
+    }
+  });
+
+  it.each([120, 160])('shows the whole /steer description at %s columns', async (cols) => {
+    const scenario = findVisualScenario('workflow-plan-card-steer-row');
+    const checkpoint = scenario?.checkpoints[0];
+    const size = scenario?.viewports.find((value) => value.cols === cols);
+    if (!scenario || !checkpoint || !size) throw new Error('Missing steer row scenario');
+    const handle = await mountGalleryScenario({ scenario, checkpoint, viewport: size });
+    try {
+      const frame = stripAnsiStyles(await handle.waitForCheckpoint());
+      const row = frame.split('\n').find((line) => line.includes('/steer'));
+      expect(row).toContain('Send a correction now; a running call stops first');
+      expect(frame).toContain('Approve plan and start the build');
+    } finally {
+      await handle.unmount();
+    }
+  });
+
+  it('keeps the /steer row and the start of its description at 60 columns', async () => {
+    const scenario = findVisualScenario('workflow-plan-card-steer-row');
+    const checkpoint = scenario?.checkpoints[0];
+    const size = scenario?.viewports.find((value) => value.cols === 60 && value.rows === 18);
+    if (!scenario || !checkpoint || !size) throw new Error('Missing steer row scenario');
+    const handle = await mountGalleryScenario({ scenario, checkpoint, viewport: size });
+    try {
+      const frame = stripAnsiStyles(await handle.waitForCheckpoint());
+      const row = frame.split('\n').find((line) => line.includes('/steer'));
+      expect(row).toContain('Send a correction now');
+      expect(row).toContain('…');
+    } finally {
+      await handle.unmount();
+    }
+  });
+
   it('covers Form C with inserted fixes and status words with a sidebar', () => {
     const narrow = findVisualScenario('workflow-review-fix-narrow-rail');
     expect(narrow?.checkpoints[0]?.marker).toBe('4/7 briefs passed');
@@ -821,13 +980,44 @@ describe('visual catalog', () => {
     expect(
       selectRailFormAndLine({
         cols: 22,
-        railWidths: { B: 21, C: 10 },
+        railWidths: { B: 27, BShort: 21, C: 10 },
         modelLineCells: 60,
         toolLineCells: 42,
       }).form,
     ).toBe('C');
     const statuses = findVisualScenario('workflow-task-statuses');
     expect(statuses?.viewports.map(formatViewport)).toEqual(['160x45', '80x24']);
+  });
+
+  it('covers the moved BUILD seat keeping the model line beside the one-stage rail', () => {
+    const scenario = findVisualScenario('workflow-ready-seat-moved-model-line');
+    const moved = findVisualScenario('workflow-ready-seat-moved-auto');
+
+    expect(scenario?.viewports.map(formatViewport)).toEqual(['100x30']);
+    expect(scenario?.checkpoints[0]).toMatchObject({
+      id: 'ready-seat-moved-model-line',
+      kind: 'ready',
+      marker: 'Ready to apply',
+    });
+    expect(scenario?.elements.map((element) => element.id)).toEqual(
+      moved?.elements.map((element) => element.id),
+    );
+    expect(workflowFixtureRegistry.has(scenarioId('workflow-ready-seat-moved-model-line'))).toBe(
+      true,
+    );
+    expect(workflowCheckpointPredicates.has(checkpointId('ready-seat-moved-model-line'))).toBe(
+      true,
+    );
+    const projection = workflowProjectionRegistry.get(
+      scenarioId('workflow-ready-seat-moved-model-line'),
+    );
+    const movedProjection = workflowProjectionRegistry.get(
+      scenarioId('workflow-ready-seat-moved-auto'),
+    );
+    expect(projection).toEqual({
+      ...movedProjection,
+      scenarioId: scenarioId('workflow-ready-seat-moved-model-line'),
+    });
   });
 
   it('covers the running inserted fix pause copy and the sidebar above 120 columns', () => {
@@ -1096,7 +1286,7 @@ describe('visual catalog', () => {
     }
   });
 
-  it('retains fixtures for the changed composer, preparation, usage and local-server surfaces', () => {
+  it('retains fixtures for the changed composer, preparation, usage and picker surfaces', () => {
     for (const id of [
       'home-preparing',
       'home-preparation-failed',
@@ -1120,9 +1310,6 @@ describe('visual catalog', () => {
       'overlay-usage-details-legacy',
       'overlay-usage-details-unpriced',
       'overlay-usage-context-insufficient',
-      'overlay-local-connection-ollama',
-      'overlay-local-connection-lmstudio',
-      'overlay-local-connection-llamacpp',
     ]) {
       expect(findVisualScenario(id), id).toBeDefined();
     }
@@ -1179,32 +1366,6 @@ describe('visual catalog', () => {
     },
   );
 
-  it.each([
-    ['offline', 'Ollama is not reachable'],
-    ['timeout', 'Ollama did not answer'],
-    ['unauthorized', 'LM Studio rejected the token'],
-    ['empty', 'no models installed'],
-    ['missing', 'not in this catalog'],
-    ['loaded', 'loaded'],
-    ['not-loaded', 'not loaded'],
-    ['listed', 'listed'],
-  ])('renders the %s server outcome through the mounted connection check', async (state, text) => {
-    const scenario = findVisualScenario(`overlay-local-connection-${state}`);
-    if (scenario === undefined) throw new Error(`Missing local fixture: ${state}`);
-    const checkpoint = scenario.checkpoints[0];
-    if (checkpoint === undefined) throw new Error('Missing checkpoint');
-    for (const viewport of REQUIRED_VIEWPORTS) {
-      const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
-      try {
-        const frame = stripAnsiStyles(await handle.waitForCheckpoint());
-        expect(frame).toContain(text);
-        expect(frame).toContain('retry');
-        if (state !== 'unauthorized') expect(frame).not.toContain('rejected the token');
-      } finally {
-        await handle.unmount();
-      }
-    }
-  });
   it('covers the exact router screen and overlay unions with unique versioned scenarios', () => {
     const screens = VISUAL_CATALOG.flatMap((scenario) =>
       scenario.surface.kind === 'screen' ? [scenario.surface.screen] : [],
@@ -1253,6 +1414,25 @@ describe('visual catalog', () => {
         SCENARIO_VIEWPORT_EXCEPTIONS.get(scenario.id) ?? REQUIRED_VIEWPORTS.map(formatViewport),
       );
     }
+  });
+
+  it.each([
+    [
+      'workflow-approval-confirm-draft-deleted',
+      'approval-confirm-draft-deleted',
+      'tab/⏎ back to the actions',
+    ],
+    [
+      'workflow-approval-confirm-words-stay',
+      'approval-confirm-words-stay',
+      'tab back to the actions',
+    ],
+  ])('registers %s with its checkpoint at every required viewport', (id, checkpoint, marker) => {
+    const scenario = findVisualScenario(id);
+    expect(scenario?.checkpoints[0]).toMatchObject({ id: checkpoint, kind: 'review', marker });
+    expect(scenario?.viewports).toEqual(REQUIRED_VIEWPORTS);
+    expect(workflowFixtureRegistry.has(scenarioId(id))).toBe(true);
+    expect(workflowCheckpointPredicates.has(checkpointId(checkpoint))).toBe(true);
   });
 
   it('pairs every scenario with a fixture and leaves no fixture unreferenced', () => {

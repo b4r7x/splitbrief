@@ -208,7 +208,11 @@ export function seatIdentityChanges(
 
 export function formatSeatChangeNotice(change: SeatChange): string {
   const consequence =
-    change.seat === 'plan' ? 'context will be rebuilt' : 'the rest of the run uses the new seat';
+    change.seat === 'plan'
+      ? 'context will be rebuilt'
+      : change.seat === 'review' && change.after === REVIEW_NONE.mark
+        ? 'no seat reviews the rest of the run'
+        : 'the rest of the run uses the new seat';
   return `${CREW_SEAT_LABELS[change.seat]} seat changed ${change.before} → ${change.after}; ${consequence}`;
 }
 

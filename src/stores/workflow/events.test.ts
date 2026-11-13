@@ -363,7 +363,7 @@ describe('eventsStore — append via addEvent', () => {
       makeRunnerActivity({ stage: 'started' }),
       makeRunnerActivity({ stage: 'completed' }),
       makePlannerText({ role: 'implementer', text: 's', continues: true }),
-      makePlannerText({ role: 'implementer', text: 'Found 3.', subagent: true }),
+      makePlannerText({ role: 'implementer', text: 'Found 3.', subagentId: 'toolu_a' }),
       makePlannerText({ role: 'implementer', text: 'Done.' }),
     ];
     for (const chunk of chunks) addEvent(chunk);
@@ -398,13 +398,13 @@ describe('eventsStore — append via addEvent', () => {
     const chunks = [
       makePlannerText({ role: 'implementer', text: 'Checking.' }),
       makeRunnerActivity({ stage: 'started' }),
-      makePlannerText({ role: 'implementer', text: 'Reading the test', subagent: true }),
+      makePlannerText({ role: 'implementer', text: 'Reading the test', subagentId: 'toolu_a' }),
       makeRunnerActivity({ activityId: 'call-1:tool:2', stage: 'completed' }),
-      makePlannerText({ role: 'implementer', text: 's', continues: true, subagent: true }),
-      makePlannerText({ role: 'implementer', text: 'Found 3.', subagent: true }),
+      makePlannerText({ role: 'implementer', text: 's', continues: true, subagentId: 'toolu_a' }),
+      makePlannerText({ role: 'implementer', text: 'Found 3.', subagentId: 'toolu_a' }),
       makePlannerText({ role: 'implementer', text: 'Done.' }),
       makeRunnerActivity({ activityId: 'call-1:tool:3', stage: 'completed' }),
-      makePlannerText({ role: 'implementer', text: 'x', continues: true, subagent: true }),
+      makePlannerText({ role: 'implementer', text: 'x', continues: true, subagentId: 'toolu_a' }),
     ];
     for (const chunk of chunks) addEvent(chunk);
 
@@ -418,6 +418,54 @@ describe('eventsStore — append via addEvent', () => {
       'Done.',
       'runner_call_activity',
       'x',
+    ]);
+    expect(mergeEventLog(chunks)).toEqual(live);
+  });
+
+  it('gives each parallel sub-agent its own row and joins its held word end to its own row', () => {
+    const chunks = [
+      makePlannerText({ role: 'implementer', text: 'Checking.' }),
+      makeRunnerActivity({ stage: 'started' }),
+      makePlannerText({ role: 'implementer', text: 'Reading the test', subagentId: 'toolu_a' }),
+      makePlannerText({ role: 'implementer', text: 'Looking at it.', subagentId: 'toolu_b' }),
+      makeRunnerActivity({ activityId: 'call-1:tool:2', stage: 'completed' }),
+      makePlannerText({ role: 'implementer', text: 's', continues: true, subagentId: 'toolu_a' }),
+      makePlannerText({ role: 'implementer', text: 'Found 3.', subagentId: 'toolu_a' }),
+      makePlannerText({ role: 'implementer', text: 'Done.' }),
+    ];
+    for (const chunk of chunks) addEvent(chunk);
+
+    const live = eventsStore.get().events;
+    expect(live.map((event) => (event.type === 'planner_text' ? event.text : event.type))).toEqual([
+      'Checking.',
+      'runner_call_activity',
+      'Reading the tests',
+      'Looking at it.',
+      'runner_call_activity',
+      'Found 3.',
+      'Done.',
+    ]);
+    expect(mergeEventLog(chunks)).toEqual(live);
+  });
+
+  it('keeps a held main word start out of the main row before a sub-agent row', () => {
+    const chunks = [
+      makePlannerText({ role: 'implementer', text: 'Checking.' }),
+      makeRunnerActivity({ stage: 'started' }),
+      makePlannerText({ role: 'implementer', text: 'Found 3.', subagentId: 'toolu_a' }),
+      makeRunnerActivity({ activityId: 'call-1:tool:2', stage: 'completed' }),
+      makePlannerText({ role: 'implementer', text: 's', continues: true }),
+      makePlannerText({ role: 'implementer', text: 'ure.' }),
+    ];
+    for (const chunk of chunks) addEvent(chunk);
+
+    const live = eventsStore.get().events;
+    expect(live.map((event) => (event.type === 'planner_text' ? event.text : event.type))).toEqual([
+      'Checking.',
+      'runner_call_activity',
+      'Found 3.',
+      'runner_call_activity',
+      'sure.',
     ]);
     expect(mergeEventLog(chunks)).toEqual(live);
   });

@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdirSync, rmSync, existsSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
+import { resetLoggerForTests } from '../../../lib/logger.js';
 
 const control = vi.hoisted(() => ({ failWrite: false, failedWrites: 0 }));
 
@@ -61,6 +63,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  resetLoggerForTests();
   if (existsSync(testDir)) rmSync(testDir, { recursive: true, force: true });
 });
 
@@ -94,7 +97,7 @@ describe('startHeartbeat', () => {
     const onRejection = (reason: unknown) => rejections.push(reason);
     process.on('unhandledRejection', onRejection);
 
-    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    enableDebugLog(testDir);
 
     vi.useFakeTimers();
     const stop = startHeartbeat(testDir);
@@ -113,11 +116,11 @@ describe('startHeartbeat', () => {
     // below is a once-only claim over six failures, not an artifact of stopping early.
     expect(control.failedWrites).toBe(FAILING_TICKS + 1);
     expect(rejections).toEqual([]);
-    const warnings = stderrSpy.mock.calls.filter((call) =>
-      String(call[0]).startsWith('Could not update the run lock: no space left on device · '),
+    const warnings = loggedDiagnostics(testDir).filter((line) =>
+      line.startsWith('Could not update the run lock: no space left on device · '),
     );
     expect(warnings.length).toBe(1);
-    expect(String(warnings[0]?.[0])).toContain(
+    expect(warnings[0]).toContain(
       '/lockfile.json · other SPLITBRIEF processes may treat the run as stopped',
     );
   });

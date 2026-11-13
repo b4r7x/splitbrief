@@ -136,13 +136,13 @@ export function probedCliTools(config: Config): readonly CliToolId[] {
 }
 
 /**
- * Where a seat saved under a running run takes over. The run re-reads its seats only at the
- * boundary after a brief, so with no brief left the change waits for a fix brief or the next run.
+ * Where a seat saved under a running run takes over. The run re-reads its seats at the boundary
+ * after a brief, and in the final review before the next review pass or fix brief.
  */
 export type SeatChangePoint =
   | Readonly<{ after: 'brief'; taskId: string }>
   | Readonly<{ after: 'next-brief' }>
-  | Readonly<{ after: 'fix-brief-or-next-run' }>;
+  | Readonly<{ after: 'review' }>;
 
 /** The one wording of a waiting seat change, for the save notice and the composer legend. */
 export function seatChangeWords(subject: string, point: SeatChangePoint): string {
@@ -151,8 +151,8 @@ export function seatChangeWords(subject: string, point: SeatChangePoint): string
       return `${subject} changes after ${point.taskId}`;
     case 'next-brief':
       return `${subject} changes after the next brief`;
-    case 'fix-brief-or-next-run':
-      return `${subject} changes after a fix brief or at the next run`;
+    case 'review':
+      return `${subject} changes at the next review or fix brief`;
     default:
       return assertNever(point);
   }

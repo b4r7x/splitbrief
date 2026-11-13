@@ -254,6 +254,7 @@ async function preparePtyExecution(
     existingSession: ref,
     feature: PTY_FEATURE,
     effectiveConfig: config,
+    configWarnings: [],
     resumeState,
     policy,
     signal: new AbortController().signal,

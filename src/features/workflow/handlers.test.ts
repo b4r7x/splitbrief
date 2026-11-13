@@ -16,6 +16,7 @@ import {
   activeApply,
   trackActiveApply,
 } from '../../engine/orchestrator/session-lifecycle/shutdown.js';
+import * as handlers from './handlers.js';
 import {
   abortTurn,
   cancelBoundaryPause,
@@ -218,6 +219,27 @@ describe('requestBoundaryPause', () => {
     expect(landBoundaryPause()).toBe('continue');
   });
 
+  it('a seat change waits for the engine until it is spent', () => {
+    expect(typeof handlers.seatChangeWaits).toBe('function');
+    expect(handlers.seatChangeWaits()).toBe(false);
+
+    requestSeatChangeAtBoundary();
+    expect(handlers.seatChangeWaits()).toBe(true);
+    expect(handlers.seatChangeWaits()).toBe(true);
+
+    spendSeatChange();
+    expect(handlers.seatChangeWaits()).toBe(false);
+  });
+
+  it('a pause of the user wins over a seat change that waits', () => {
+    expect(typeof handlers.seatChangeWaits).toBe('function');
+    requestBoundaryPause();
+    requestSeatChangeAtBoundary();
+
+    expect(handlers.seatChangeWaits()).toBe(false);
+    expect(consumeBoundaryPause()).toBe('pause');
+  });
+
   it('lands the boundary pause as a park, a continue on the saved seats, or a stop the operator asked for', () => {
     requestBoundaryPause();
     expect(landBoundaryPause()).toBe('park');
@@ -303,6 +325,48 @@ describe('requestResume', () => {
 
     expect(requestResume(plainUserMessage(''))).toBe('Finish stopping before resuming.');
     expect(resume).not.toHaveBeenCalled();
+    expect(feedbackStore.get().message).toBeNull();
+  });
+
+  it('refuses Resume after a failed stop until the stop is retried', () => {
+    const resume = vi.fn(() => undefined);
+    setResumeHandler(resume);
+    setStopHandler(vi.fn());
+
+    for (const intent of ['stop-now', 'pause-after-brief'] as const) {
+      stopStore.__testReset();
+      stopStore.request(intent);
+      stopStore.fail('Disk full');
+
+      expect(requestResume(plainUserMessage(''))).toBe('Finish stopping before resuming.');
+      expect(resume).not.toHaveBeenCalled();
+
+      expect(requestStopNow()).toBe(true);
+      expect(stopStore.get()).toMatchObject({ intent: 'stop-now', phase: 'requested' });
+      expect(requestResume(plainUserMessage(''))).toBe('Finish stopping before resuming.');
+      expect(resume).not.toHaveBeenCalled();
+
+      stopStore.park('mid-brief', 'T001', null);
+      expect(requestResume(plainUserMessage(''))).toBeUndefined();
+      expect(resume).toHaveBeenCalledExactlyOnceWith(plainUserMessage(''));
+      resume.mockClear();
+    }
+
+    expect(feedbackStore.get().message).toBeNull();
+  });
+
+  it('lets an ended stop resume and steer without a finish-stopping reason', () => {
+    const resume = vi.fn(() => undefined);
+    setResumeHandler(resume);
+    stopStore.request('stop-now');
+    stopStore.end();
+    const message = plainUserMessage('keep the greeting API');
+
+    expect(requestResume(message)).toBeUndefined();
+    expect(requestSteer(message)).toBeUndefined();
+
+    expect(resume).toHaveBeenNthCalledWith(1, message);
+    expect(resume).toHaveBeenNthCalledWith(2, message);
     expect(feedbackStore.get().message).toBeNull();
   });
 
@@ -554,7 +618,7 @@ describe('requestSteer', () => {
     expect(feedbackStore.get().message).toBeNull();
   });
 
-  it('shows the reason when the run refuses the words after the stop parked', () => {
+  it('shows the reason when the run refuses the words after the stop parked, in the neutral voice', () => {
     const refusal = 'No saved state to continue.';
     setStopHandler(vi.fn());
     setResumeHandler(() => refusal);
@@ -562,7 +626,7 @@ describe('requestSteer', () => {
     expect(requestSteer(plainUserMessage('also fix the typo'))).toBeUndefined();
     stopStore.park('mid-brief', 'T001', null);
 
-    expect(feedbackStore.get()).toEqual({ message: refusal, isError: true });
+    expect(feedbackStore.get()).toEqual({ message: refusal, isError: false });
   });
 
   it('sends the words to the waiting plan card as its change request and stops nothing', async () => {

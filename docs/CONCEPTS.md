@@ -9,7 +9,7 @@ Shared vocabulary for anyone (human or AI agent) reading the codebase. All terms
 SPLITBRIEF is a CLI that splits AI coding work across two roles:
 
 - A **planner** — an expensive, high-quality model (Claude Code, Codex, GPT-4-class, …) does the *thinking*: researches the codebase and answers one typed plan, whose tasks become the Task Briefs.
-- An **implementer** — a weaker **model**, reached either as a CLI tool running a cheap model or as an API model (Ollama, LM Studio, a custom endpoint) — does the *typing*: turns each task from the list into code, one task at a time. Both transports are first-class; SPLITBRIEF favours neither.
+- An **implementer** — a weaker **model**, reached either as a CLI tool running a cheap model or as an API model (a custom endpoint) — does the *typing*: turns each task from the list into code, one task at a time. Both transports are first-class; SPLITBRIEF favours neither.
 
 The orchestrator in the middle owns the workflow: it runs the planner, persists the plan and the Task Brief transport, walks through tasks, validates each one (its checks, then the reviewer checks before the review), records evidence and checkpoint boundaries, and consults the planner when the implementer gets stuck, on a plan task or a fix task. Git staging and commits belong to the user.
 
@@ -63,7 +63,7 @@ Both the planner and the implementer are configured with a `kind` field. There a
 | Kind | What it is | Example | Write mode as implementer | When to use |
 |------|-----------|---------|---------------------------|-------------|
 | `cli` | A known CLI tool invoked as a subprocess (stream-json or jsonl parsed) | `claude-code`, `codex`, `opencode`, `kilo-code`, `cursor`, `command-code`, `antigravity` | `direct` | Default planner path; uses existing subscriptions. As an implementer, one of the two first-class transports — a known tool pointed at a smaller model |
-| `api` | Any OpenAI-compatible HTTP endpoint | Ollama, LM Studio, custom endpoint | `extracted-code` | The other first-class implementer transport — a weaker model behind an endpoint, local or remote |
+| `api` | Any OpenAI-compatible HTTP endpoint | Custom endpoint | `extracted-code` | The other first-class implementer transport — a weaker model behind an endpoint, local or remote |
 | `shell` | An arbitrary command. Prompt → stdin, code → stdout. No shell/network sandbox | Any custom script | `extracted-code` | Users who want to plug in a tool we don't know |
 | `agent` | A command that writes files directly to disk. No stdout extraction or shell/network sandbox | A complete coding agent used as an implementer | `direct` | When the tool handles file writing itself |
 
@@ -75,7 +75,7 @@ All four kinds implement the same `Planner` / `Implementer` interface (`src/engi
 
 ## Planning session
 
-Every run plans in one typed planning session (`src/engine/orchestrator/planning/session.ts`). The planner may ask up to 3 questions per round, each with a default, for at most 2 rounds; then it answers one typed plan (`PlanAnswerSchema`): criteria, checks and tasks. SPLITBRIEF checks the plan (`checkPlan`, plus the context fit when a Prompt budget is set), sends a failing plan back once, writes `plan.json`, and renders `plan.md` and `tasks.md` from it. There are no workflow modes: `workflow.mode` is a retired key that loads with one notice, and the CLI has no `--mode` flag. Full flow: [WORKFLOW.md §3](./WORKFLOW.md#3-the-planning-session).
+Every run plans in one typed planning session (`src/engine/orchestrator/planning/session.ts`). The planner may ask questions, each with a default, for at most 2 rounds; then it answers one typed plan (`PlanAnswerSchema`): criteria, checks and tasks. SPLITBRIEF checks the plan (`checkPlan`, plus the context fit when a Prompt budget is set), sends a failing plan back once, writes `plan.json`, and renders `plan.md` and `tasks.md` from it. There are no workflow modes: `workflow.mode` is a retired key that loads with one notice, and the CLI has no `--mode` flag. Full flow: [WORKFLOW.md §3](./WORKFLOW.md#3-the-planning-session).
 
 ---
 
@@ -170,7 +170,7 @@ Runs the plan's checks after a brief (`src/engine/orchestrator/validation/run-ch
 A **stack** is the language toolchain a planner `test` check takes its command from — one of five registered rows (TypeScript, JavaScript, Python, Go, Rust) in `src/core/validation/stacks/`, each naming that language's test command, its test file patterns and the marker files that detect it. The command resolves through `config → manifest → discovered → stack default → none`; on a project that matches no stack, a `test` check without `validation.test_command` is `not-runnable` and says so. The **reviewer checks** do not resolve through a stack: the planner names the project gate in the plan, and before the final review SPLITBRIEF runs it as the reviewer checks (`V1`, `V2`, …) under the **reviewer command policy** (`validation.end_checks`, Settings: End-of-run checks). With `reviewer: none` the reviewer checks do not run. That policy runs any installed program of any language and refuses only what breaks a danger rule: shell syntax, a program run by path (the project's root `./gradlew` and `./mvnw` run while this run changed none of their wrapper files), inline code, a download-and-run launcher, a setup command, or a package script, task file, build wrapper or interpreter script this run changed or the run base does not hold. Every refused command gets a named row. A plan `cmd` check keeps the **plan command policy**, whose allowlist holds the package managers, `make` and `just` on a bare `typecheck`, `lint` or `test` target, the tools of the five stacks, and `test -e`, `-f`, `-x` or `-L` on one workspace file.
 
 1. **Plan checks** — with `workflow.review: task`, the brief gate runs the task's checks and its due checks after each hand-back; with `end`, a brief runs its own checks, except renders. Before the final review every registered plan and task check runs, including renders. With `reviewer: none`, a brief runs its own checks, except renders, and no final-review check runs.
-2. **Reviewer checks** — the planner names the project gate in the plan: at most 6 commands that the project's scripts or CI run to verify a change, the reviewer checks `V1`, `V2`, …. The plan card shows them. Before the final review SPLITBRIEF runs them in order under the reviewer command policy, which also refuses a reviewer check whose package script, task file, build wrapper or interpreter script this run changed or the run base does not hold. A task review runs no gate. When the plan names no gate, no reviewer check runs and one row says so. With End-of-run checks off, no reviewer check runs; plan and task checks still run.
+2. **Reviewer checks** — the planner names the project gate in the plan: the commands that the project's scripts or CI run to verify a change, the reviewer checks `V1`, `V2`, …. The plan card shows them. Before the final review SPLITBRIEF runs them in order under the reviewer command policy, which also refuses a reviewer check whose package script, task file, build wrapper or interpreter script this run changed or the run base does not hold. A task review runs no gate. When the plan names no gate, no reviewer check runs and one row says so. With End-of-run checks off, no reviewer check runs; plan and task checks still run.
 3. **Stop rule** — the first reviewer check with new failures stops the list; each later reviewer check reads `not run · <id> failed`.
 
 A test check that resolves to no command is `not-runnable` (not a pass); a required one halts with `required-checks-unrunnable`. When the stack narrows the test command to the check's file and the workspace holds no test file for it, the check fails, so the builder or the reviewer answers it. An explicit `validation.test_command`, a discovered command and a `package.json` test script that chains commands run as written, without adding the check's file, so such a check runs the whole command and can pass.
@@ -184,7 +184,7 @@ A red reviewer check whose failures are also red on a disposable run base copy, 
 On validation failure:
 
 - **Consult first**: a red attempt goes straight to the consult, with its exact errors. There is no local retry. A correction that you send while the checks run goes to the next attempt first, before any consult. `workflow.max_retries` is retired with one notice.
-- **The consult**: one read-only typed call (`requestConsult`, `src/engine/orchestrator/consult/request.ts`; schema `src/core/schemas/consult.ts`). The planner answers it on its own session, for a plan task and for a fix task (`task.fix`); a fix task's consult sends the full prompt. The planner answers exactly one action — `guidance` (one more implementer attempt carrying the instructions), `rewrite-task` (the brief replaced at the same id, `revision` +1, on the files of the failed attempt), `split-task` (2–4 subtasks at the next free ids, dependents re-pointed, on the files of the failed attempt), `verify` (validation and the named checks run with no implementer call; a clean run completes the task as `consulted`) or `ask-user` (the only question the ladder asks). A `blocked` report also goes to the consult.
+- **The consult**: one read-only typed call (`requestConsult`, `src/engine/orchestrator/consult/request.ts`; schema `src/core/schemas/consult.ts`). The planner answers it on its own session, for a plan task and for a fix task (`task.fix`); a fix task's consult sends the full prompt. The planner answers exactly one action — `guidance` (one more implementer attempt carrying the instructions), `rewrite-task` (the brief replaced at the same id, `revision` +1, on the files of the failed attempt), `split-task` (2 or more subtasks at the next free ids, dependents re-pointed, on the files of the failed attempt), `verify` (validation and the named checks run with no implementer call; a clean run completes the task as `consulted`) or `ask-user` (the only question the ladder asks). A `blocked` report also goes to the consult.
 - **Brief history** (`## Brief History`, `src/engine/spec/prompts/consult.ts`): no count stops the consults. Every failed attempt goes back to the planner, and each consult shows the planner its earlier answers, each before the failed attempts that followed it. The planner changes its approach when an earlier answer left the same failure.
 - **Recovery** follows a question that nobody answers, a brief that the planner says cannot be done, or a ladder that cannot continue. The planner never automatically takes over code-writing implementation.
 
@@ -205,7 +205,7 @@ Implementation: `runPlanApproval` (`src/engine/orchestrator/planning/session.ts`
 
 ## Clarifying questions
 
-A planning-session turn answers either `{ kind: 'questions' }` or `{ kind: 'plan' }` (`PlanResultSchema`, `src/core/schemas/plan.ts`). A round carries at most 3 questions, each with a default, and a session takes at most 2 rounds (`MAX_QUESTION_ROUNDS`, `src/engine/orchestrator/planning/plan-session.ts`); a third round halts the run with `plan-questions-exhausted`. An empty `⏎` takes the defaults. After **Decide for me** (`decideForMe`) the run asks no more questions: every later question takes its default.
+A planning-session turn answers either `{ kind: 'questions' }` or `{ kind: 'plan' }` (`PlanResultSchema`, `src/core/schemas/plan.ts`). Each question of a round carries a default, and a session takes at most 2 rounds (`MAX_QUESTION_ROUNDS`, `src/engine/orchestrator/planning/plan-session.ts`); a third round halts the run with `plan-questions-exhausted`. An empty `⏎` takes the defaults. After **Decide for me** (`decideForMe`) the run asks no more questions: every later question takes its default.
 
 The questions are persisted in `state.pendingPlannerConversation` before waiting, and the answers before the next planner call. The answers go back on the same native planner session when the tool has one. Stopping leaves the round pending; recorded answers are not asked again. Headless runs emit `input_required` and exit non-zero instead of answering. See [WORKFLOW.md](./WORKFLOW.md#clarification-questions).
 
@@ -377,11 +377,12 @@ planner:     # discriminated union on `kind` — cli | api | shell | agent
 
 implementer: # same four kinds
   kind: api
-  provider: ollama
-  service: ollama
-  offering: local
-  model: qwen2.5-coder:7b
-  apiBase: http://localhost:11434/v1
+  provider: custom-endpoint
+  service: custom-endpoint
+  offering: payg
+  model: your-implementer-model
+  apiBase: https://api.example.test/v1
+  apiKey: <paste-your-endpoint-key>
 ```
 
 Optional `implementerProfiles` add named implementer configs that task routing and recovery select between, while preserving the same single implementer role. Schemas: `src/core/schemas/planner-config.ts`, `src/core/schemas/implementer-config.ts`. Any config version other than 3 is rejected at load.

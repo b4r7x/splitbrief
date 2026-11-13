@@ -1,7 +1,7 @@
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { readValidatedJson, parseJsonlLine } from './fs.js';
+import { readValidatedJsonResult, parseJsonlLine } from './fs.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 let tmp: string;
@@ -13,47 +13,28 @@ afterEach(() => {
   if (tmp) cleanupTempDir(tmp);
 });
 
-describe('readValidatedJson', () => {
+describe('readValidatedJsonResult', () => {
   const parse = (v: unknown): { n: number } | null =>
     typeof v === 'object' && v !== null && 'n' in v && typeof (v as { n: unknown }).n === 'number'
       ? { n: (v as { n: number }).n }
       : null;
 
-  it('returns the fallback and does not warn when the file is missing', () => {
+  it('tells a missing file from a file that is not JSON and from a value of the wrong shape', () => {
     const dir = makeTmp();
-    const warn = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
-    const result = readValidatedJson(join(dir, 'nope.json'), parse, { n: -1 }, 'label');
-    expect(result).toEqual({ n: -1 });
-    expect(warn).not.toHaveBeenCalled();
-    warn.mockRestore();
-  });
+    const corrupt = join(dir, 'bad.json');
+    writeFileSync(corrupt, '{ not json');
+    const wrongShape = join(dir, 'wrong.json');
+    writeFileSync(wrongShape, JSON.stringify({ other: true }));
 
-  it('parses and returns valid content', () => {
-    const dir = makeTmp();
-    const file = join(dir, 'v.json');
-    writeFileSync(file, JSON.stringify({ n: 7 }));
-    expect(readValidatedJson(file, parse, { n: -1 }, 'label')).toEqual({ n: 7 });
-  });
-
-  it('warns once and returns the fallback when JSON is corrupt', () => {
-    const dir = makeTmp();
-    const file = join(dir, 'bad.json');
-    writeFileSync(file, '{ not json');
-    const warn = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
-    expect(readValidatedJson(file, parse, { n: -1 }, 'corrupt-label')).toEqual({ n: -1 });
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(String(warn.mock.calls[0]?.[0] ?? '')).toContain('corrupt-label');
-    warn.mockRestore();
-  });
-
-  it('warns and returns the fallback when the parser rejects the value', () => {
-    const dir = makeTmp();
-    const file = join(dir, 'wrong.json');
-    writeFileSync(file, JSON.stringify({ other: true }));
-    const warn = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
-    expect(readValidatedJson(file, parse, { n: -1 }, 'schema-label')).toEqual({ n: -1 });
-    expect(warn).toHaveBeenCalledTimes(1);
-    warn.mockRestore();
+    expect(readValidatedJsonResult(join(dir, 'nope.json'), parse)).toEqual({ kind: 'missing' });
+    expect(readValidatedJsonResult(corrupt, parse)).toEqual({
+      kind: 'unreadable',
+      cause: expect.any(SyntaxError),
+    });
+    expect(readValidatedJsonResult(wrongShape, parse)).toEqual({
+      kind: 'unreadable',
+      cause: undefined,
+    });
   });
 });
 

@@ -172,7 +172,6 @@ describe('user-facing text', () => {
         "warnError('writeTerminalSequence: stdout write failed', err);",
         // biome-ignore lint/suspicious/noTemplateCurlyInString: the fixture source must carry a literal template
         'warnError(`detectContextLength(${name})`, err);',
-        "readValidatedJson(path, parse, fallback, 'prefs: failed to read');",
       ].join('\n'),
     );
     write('src/core/prefs.test.ts', "warnError('ui-prefs: failed to read', err);");
@@ -184,7 +183,6 @@ describe('user-facing text', () => {
       'src/core/prefs.ts:3: warning label camelCase name: writeTerminalSequence: stdout write failed',
       'src/core/prefs.ts:4: warning label camelCase name: detectContextLength(x)',
       'src/core/prefs.ts:4: warning label call form: detectContextLength(x)',
-      'src/core/prefs.ts:5: warning label module tag: prefs: failed to read',
     ]);
   });
 
@@ -198,7 +196,6 @@ describe('user-facing text', () => {
         // biome-ignore lint/suspicious/noTemplateCurlyInString: the fixture source must carry a literal template
         'warnStderr(`⚠ ${message}`);',
         'warnStderr(message);',
-        "readValidatedJson(path, parse, fallback, 'Could not read .splitbrief/ui-prefs.json');",
       ].join('\n'),
     );
 

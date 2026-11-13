@@ -57,6 +57,7 @@ export interface RoutingDecision {
   estimatedTokens: number;
   untruncatedEstimatedTokens: number;
   contextLength?: number | undefined;
+  usedConservativeContextLength: boolean;
   currentCodeTruncated: boolean;
   currentCodeContextMode: CurrentCodeContextMode;
   reason: string;

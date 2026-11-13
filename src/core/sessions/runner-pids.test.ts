@@ -3,6 +3,8 @@ import { existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
+import { resetLoggerForTests } from '../../lib/logger.js';
 import { sessionDir } from '../paths.js';
 import {
   recordRunnerPid,
@@ -21,6 +23,7 @@ const itUnix = process.platform === 'win32' ? it.skip : it;
 
 afterEach(() => {
   vi.mocked(existsSync).mockReset();
+  resetLoggerForTests();
   if (tmp) cleanupTempDir(tmp);
 });
 
@@ -83,7 +86,7 @@ describe('runner pid ledger', () => {
     expect(readRunnerPids(ref)).toEqual([{ pid: 111, startTimeMs: 9000 }]);
   });
 
-  it('skips corrupt-JSON and wrong-shape lines but keeps the valid entries, warning on stderr', () => {
+  it('skips corrupt-JSON and wrong-shape lines, keeps the valid entries and writes each skipped line to the debug log', () => {
     tmp = createTempDir('runner-pids-test');
     const ref = { projectDir: tmp, sessionId: '2024-01-01-corrupt' };
     recordRunnerPid(ref, 111, 1000);
@@ -99,18 +102,13 @@ describe('runner pid ledger', () => {
       ].join('\n'),
     );
 
-    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    try {
-      expect(readRunnerPids(ref)).toEqual([
-        { pid: 111, startTimeMs: 1000 },
-        { pid: 222, startTimeMs: 2000 },
-      ]);
-      const warnings = stderr.mock.calls.flat().join('');
-      const skipped = `Warning: skipped a line of .splitbrief/sessions/${ref.sessionId}/runner-pids.jsonl that is not valid: `;
-      expect(warnings.split(skipped)).toHaveLength(3);
-    } finally {
-      stderr.mockRestore();
-    }
+    enableDebugLog(tmp);
+    expect(readRunnerPids(ref)).toEqual([
+      { pid: 111, startTimeMs: 1000 },
+      { pid: 222, startTimeMs: 2000 },
+    ]);
+    const skipped = `Warning: skipped a line of .splitbrief/sessions/${ref.sessionId}/runner-pids.jsonl that is not valid: `;
+    expect(loggedDiagnostics(tmp).filter((line) => line.startsWith(skipped))).toHaveLength(2);
   });
 
   itUnix('refuses to read through a symlinked runner pid ledger', () => {

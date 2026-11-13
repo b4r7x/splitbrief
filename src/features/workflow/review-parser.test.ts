@@ -18,6 +18,7 @@ import { addEvent } from '../../stores/workflow/actions/event.js';
 import { seedBriefs } from '#testing/helpers/stores.js';
 import { makeBriefBoundaryEvents } from '#testing/helpers/events/task.js';
 import { reviewStore } from '../../stores/workflow/review.js';
+import { approvalPromptStore, openApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
 import { setActiveTerminalHandover } from '../../lib/terminal/editor-handover.js';
 import { terminalSequences } from '../../lib/terminal/control.js';
 import { plainAnswer, type UseInputModeResult } from './hooks/use-input-mode.js';
@@ -29,11 +30,13 @@ import {
   type ReviewInputEffects,
   type SpawnEditor,
 } from './review-parser.js';
-import { reviewOpeningPromptMessage } from './review-commands.js';
+import { REVIEW_UNKNOWN_COMMAND_MESSAGE, reviewOpeningPromptMessage } from './review-commands.js';
 
 type EditorOutcome =
   | { kind: 'close'; code: number | null; signal: NodeJS.Signals | null }
   | { kind: 'error'; error: Error };
+
+const CONFIRM_WAITING_NOTE = 'Confirm or deny the prompt first. Tab back to the actions.';
 
 function makeInputMode(mode: UseInputModeResult['mode'] = 'review'): UseInputModeResult {
   return {
@@ -299,6 +302,7 @@ describe('review input effects', () => {
     reviewStore.reset();
     composerDraftStore.reset();
     reviewKeysStore.reset();
+    approvalPromptStore.__testReset();
     clearAllHandlers();
     runViewStore.__testReset({ phase: 'reviewing-briefs' });
     lifecycleStore.__testReset({ status: 'running' });
@@ -321,6 +325,7 @@ describe('review input effects', () => {
     reviewStore.reset();
     lifecycleStore.reset();
     composerLiveStore.reset();
+    approvalPromptStore.__testReset();
     stopStore.__testReset();
     vi.unstubAllEnvs();
     rmSync(tempDir, { recursive: true, force: true });
@@ -473,13 +478,13 @@ describe('review input effects', () => {
       },
       feedback: {
         message: 'Queue full (50 messages). Wait for the current phase to complete.',
-        isError: true,
+        isError: false,
       },
     },
     {
       label: 'no workflow',
       outcome: null,
-      feedback: { message: 'Cannot queue message: no active workflow.', isError: true },
+      feedback: { message: 'Cannot queue message: no active workflow.', isError: false },
     },
   ])(
     'queues live planner input through the supplied enqueue — $label',
@@ -637,6 +642,27 @@ describe('review input effects', () => {
 
     expect(feedbackStore.get()).toEqual({
       message: 'Queue full (50 messages). Wait for the current phase to complete.',
+      isError: false,
+    });
+    expect(composerDraftStore.get().request?.value).toBe('keep me');
+  });
+
+  it('keeps the failure voice when the queue itself fails', async () => {
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
+    const effects = makeEffects(async () => ({
+      status: 'rejected' as const,
+      reason: 'failed' as const,
+      message: 'Cannot queue message: workflow queue failed.',
+    }));
+
+    composerLiveStore.setDraft(createDraftDocument('keep me'));
+    await createReviewInputHandler(makeInputMode('normal'), effects).handleInput(
+      plainUserMessage('keep me'),
+    );
+
+    expect(feedbackStore.get()).toEqual({
+      message: 'Cannot queue message: workflow queue failed.',
       isError: true,
     });
     expect(composerDraftStore.get().request?.value).toBe('keep me');
@@ -644,7 +670,7 @@ describe('review input effects', () => {
 
   it.each([
     ['complete', { message: null, isError: false }],
-    ['reviewing-plan', { message: reviewOpeningPromptMessage(), isError: true }],
+    ['reviewing-plan', { message: reviewOpeningPromptMessage(), isError: false }],
   ] as const)(
     'gives plain words back to the composer in %s, where no seat takes them',
     async (phase, feedback) => {
@@ -665,6 +691,49 @@ describe('review input effects', () => {
       expect(feedbackStore.get()).toEqual(feedback);
     },
   );
+
+  it.each(['reviewing-spec', 'reviewing-plan', 'reviewing-briefs'] as const)(
+    'names the confirmation that waits when words are sent under it in %s',
+    async (phase) => {
+      runViewStore.__testReset({ phase });
+      lifecycleStore.__testReset({ status: 'running' });
+      void openApprovalPrompt({
+        tier: 'confirm',
+        actionClass: 'destructive',
+        actionDescription: '.splitbrief/state.json',
+        phase: 'reviewing-plan',
+      });
+      const effects = makeEffects();
+
+      composerLiveStore.setDraft(createDraftDocument('keep the parser'));
+      await createReviewInputHandler(makeInputMode('normal'), effects).handleInput(
+        plainUserMessage('keep the parser'),
+      );
+
+      expect(effects.enqueue).not.toHaveBeenCalled();
+      expect(composerDraftStore.get().request).toMatchObject({
+        kind: 'prepend',
+        value: 'keep the parser',
+      });
+      expect(feedbackStore.get()).toEqual({ message: CONFIRM_WAITING_NOTE, isError: false });
+    },
+  );
+
+  it('refuses unknown review commands in the neutral voice', async () => {
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
+    const inputMode = makeInputMode('review');
+
+    await createReviewInputHandler(inputMode, makeEffects()).handleInput(
+      plainUserMessage('what now'),
+    );
+
+    expect(inputMode.resolve).not.toHaveBeenCalled();
+    expect(feedbackStore.get()).toEqual({
+      message: REVIEW_UNKNOWN_COMMAND_MESSAGE,
+      isError: false,
+    });
+  });
 
   it('keeps the registered queue handler when no effects are supplied', async () => {
     runViewStore.__testReset({ phase: 'specifying' });

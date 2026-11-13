@@ -1,10 +1,10 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
-import { sessionDir, SESSION_LOG_FILE } from '../../core/paths.js';
+import { sessionDir, SESSION_LOG_FILE, STATE_FILE } from '../../core/paths.js';
 import { createInitialState } from '../../core/state/machine.js';
 import type { ResumeContextHolder } from './types.js';
 import type { RunnerCallContext } from '../calls/types.js';
@@ -161,6 +161,32 @@ describe('applyRebuiltContext', () => {
 
     expect(events.some((e) => e.type === 'warning')).toBe(false);
   });
+
+  it('tells the user to send the queued messages again when the saved state cannot be read', async () => {
+    const { projectDir, sessionId } = setupSession();
+    const outside = createTempDir('resume-context-outside');
+    dirs.push(outside);
+    const outsideSession = join(outside, sessionId);
+    mkdirSync(outsideSession, { recursive: true });
+    writeFileSync(join(outsideSession, STATE_FILE), '{}');
+    writeFileSync(join(outsideSession, SESSION_LOG_FILE), `${messageEntry('user', 'add auth')}\n`);
+    const sessionPath = sessionDir(projectDir, sessionId);
+    rmSync(sessionPath, { recursive: true, force: true });
+    symlinkSync(outsideSession, sessionPath, 'dir');
+
+    const { bus, events } = makeBusRecorder();
+    const resumeHolder: ResumeContextHolder = {
+      messages: [{ role: 'user', content: 'keep me' }],
+    };
+
+    await applyRebuiltContext({ projectDir, sessionId, bus, resumeHolder });
+
+    const warnings = events.flatMap((event) => (event.type === 'warning' ? [event.message] : []));
+    expect(warnings).toEqual([
+      'Your queued messages were not sent to the planner: the saved run state could not be read. Send them again.',
+    ]);
+    expect(resumeHolder.messages).toEqual([{ role: 'user', content: 'keep me' }]);
+  });
 });
 
 describe('autoCompactResumeContext', () => {
@@ -302,7 +328,7 @@ describe('autoCompactResumeContext', () => {
     expect(nextState.tokenUsage.plannerOutput).toBe(60);
   });
 
-  it('emits a warning when structured compaction falls back to freeform text', async () => {
+  it('records a structured compaction that fell back to freeform text as a debug event', async () => {
     const originalEntries = Array.from({ length: 12 }, (_, index) => numberedMessageEntry(index));
     const { projectDir, sessionId } = setupSession(originalEntries);
     const { bus, events } = makeBusRecorder();
@@ -318,8 +344,37 @@ describe('autoCompactResumeContext', () => {
       }),
     });
 
-    const warning = events.find((event) => event.type === 'warning');
-    expect(warning && 'message' in warning ? warning.message : '').toMatch(/invalid JSON/i);
+    expect(events.filter((event) => event.type === 'debug')).toEqual([
+      expect.objectContaining({ message: expect.stringMatching(/invalid JSON/i) }),
+    ]);
+    expect(events.filter((event) => event.type === 'warning')).toEqual([]);
+  });
+
+  it('records a failed auto-compaction as a debug event and keeps the state', async () => {
+    const originalEntries = Array.from({ length: 12 }, (_, index) => numberedMessageEntry(index));
+    const { projectDir, sessionId } = setupSession(originalEntries);
+    const { bus, events } = makeBusRecorder();
+    const state = createInitialState('resume');
+    const timedOut = async () => {
+      throw new Error('summarize timed out');
+    };
+
+    const nextState = await autoCompactResumeContext({
+      projectDir,
+      sessionId,
+      bus,
+      config: { workflow: workflowConfig(10), planner: apiPlannerConfig },
+      state,
+      planner: summarizingPlanner({ summarize: timedOut, summarizeStructured: timedOut }),
+    });
+
+    expect(nextState).toBe(state);
+    expect(events.filter((event) => event.type === 'debug')).toEqual([
+      expect.objectContaining({
+        message: 'Transcript auto-compaction failed: summarize timed out',
+      }),
+    ]);
+    expect(events.filter((event) => event.type === 'warning')).toEqual([]);
   });
 
   it('leaves the transcript untouched when the planner cannot summarize', async () => {

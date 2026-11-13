@@ -166,7 +166,7 @@ describe('createRunnerConfigSchema', () => {
       expect(result.error?.issues).toContainEqual(
         expect.objectContaining({
           path: ['provider'],
-          message: expect.stringContaining(`API provider "${provider}" was removed`),
+          message: `API provider "${provider}" was removed. Configure it as a custom endpoint: set provider/service to your own name plus apiBase and an inline apiKey (docs/CONFIGURATION.md).`,
         }),
       );
     }
@@ -206,9 +206,11 @@ describe('createRunnerConfigSchema', () => {
   });
 
   it('admits the local API providers in every configured seat, with each seat keeping its own endpoint', () => {
-    for (const provider of ['ollama', 'lm-studio'] as const) {
-      const apiBase =
-        provider === 'ollama' ? 'http://127.0.0.1:11434/v1' : 'http://localhost:1234/v1';
+    for (const [provider, apiBase] of [
+      ['ollama', 'http://127.0.0.1:11434/v1'],
+      ['lm-studio', 'http://localhost:1234/v1'],
+      ['llama-cpp', 'http://localhost:8080/v1'],
+    ] as const) {
       const localRunner = {
         kind: 'api' as const,
         provider,

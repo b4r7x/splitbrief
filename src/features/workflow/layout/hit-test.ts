@@ -10,7 +10,6 @@ import {
   type RailStageState,
 } from '../../../core/rail-stages.js';
 import {
-  chooseFormBVariant,
   getChromeContentWidth,
   railConnectorWidth,
   railFormBSegmentWidth,
@@ -109,10 +108,13 @@ export interface RailStageZone {
 }
 
 // Click zones for the rendered rail, computed from the post-truncation layout the renderer uses
-// (the same chooseFormBVariant result and connector widths) so a clipped or short label never
-// becomes a phantom hotspot. Each Form-B zone spans the whole stage segment: marker, gap, label.
+// (the selector's form, its label variant and the connector widths) so a clipped or short label
+// never becomes a phantom hotspot. Each Form-B zone spans the whole stage segment: marker, gap,
+// label.
 export function getRailStageZones(input: {
   form: RailForm;
+  /** Form B's label variant, as the selector chose it beside the crew line. */
+  short: boolean;
   phase: Phase;
   cols: number;
   fraction: string;
@@ -121,6 +123,7 @@ export function getRailStageZones(input: {
   leftCol?: number;
   topRow?: number;
 }): RailStageZone[] {
+  const { short } = input;
   const leftCol = input.leftCol ?? RAIL_CONTENT_LEFT_COL;
   const topRow = input.topRow ?? RAIL_STAGE_FIRST_ROW;
   const tier = resolveGlyphTier();
@@ -154,7 +157,6 @@ export function getRailStageZones(input: {
     ];
   }
 
-  const { short } = chooseFormBVariant(stages, contentWidth, tier);
   const zones: RailStageZone[] = [];
   let cursor = leftCol;
   stages.forEach((state, index) => {

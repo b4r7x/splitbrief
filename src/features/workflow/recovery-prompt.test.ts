@@ -17,7 +17,11 @@ import { buildPlannerCallFailedRecoveryIssue } from '../../engine/orchestrator/r
 import { buildApplyPartialRecoveryIssue } from '../../engine/orchestrator/recovery/builders/apply.js';
 import { formatTruncatedList } from '../../core/formatting.js';
 import { SOFT_SEP } from '../../core/separators.js';
-import { elidePathMiddle, getTerminalCellWidth } from '../../utils/display-text.js';
+import {
+  elidePathMiddle,
+  getTerminalCellWidth,
+  oneLineDisplayText,
+} from '../../utils/display-text.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
@@ -397,14 +401,91 @@ it.each([
 ])('fits asked %s on the rows it is given, at every width', (_label, asked) => {
   for (let width = 24; width <= 100; width += 1) {
     for (const askedRows of [1, 2, 3, 5]) {
-      const issue = makeRecoveryIssue({ details: [asked], files: [] });
-      const rows = promptBodyRows(recoveryPromptSummaryRows(issue, width, askedRows), width);
-      const task = rows.findIndex((row) => row.kind === 'facts-line' && row.text.includes('Task'));
-      const facts = rows.slice(2, task).flatMap((row) => (row.kind === 'facts-line' ? [row] : []));
-      expect(facts, `${width}/${askedRows}`).toHaveLength(askedRows);
-      expect(facts.at(-1)?.text.endsWith('…'), `${width}/${askedRows}`).toBe(true);
+      // The asked row is the summary's only fact, so a cut one takes the blank row: it starts
+      // under the headline and the body gives it askedRows + 1 rows.
+      const issue = makeRecoveryIssue({
+        details: [asked],
+        taskId: undefined,
+        taskTitle: undefined,
+        files: [],
+        affectedTaskIds: [],
+      });
+      const summary = recoveryPromptSummaryRows(issue, width, askedRows);
+      const askedFact = summary[1];
+      expect(askedFact?.kind, `${width}/${askedRows}`).toBe('facts');
+      expect(
+        summary.some((row) => row.kind === 'blank'),
+        `${width}/${askedRows}`,
+      ).toBe(false);
+      const facts = promptBodyRows(summary, width).flatMap((row) =>
+        row.kind === 'facts-line' ? [row.text] : [],
+      );
+      expect(facts, `${width}/${askedRows}`).toHaveLength(askedRows + 1);
+      const fitted = askedFact?.kind === 'facts' ? (askedFact.items[0] ?? '') : '';
+      // A cut at the recovered budget ends on `…`; a text that now fits whole is the whole text.
+      expect(
+        fitted === oneLineDisplayText(asked) || fitted.endsWith('…'),
+        `${width}/${askedRows}`,
+      ).toBe(true);
     }
   }
+});
+
+it('keeps the blank row above an asked row that fits whole', () => {
+  const issue = makeRecoveryIssue({
+    details: ['Question: Which file holds the locales?'],
+    taskId: undefined,
+    taskTitle: undefined,
+    files: [],
+    affectedTaskIds: [],
+  });
+  for (const askedRows of [1, 3]) {
+    const summary = recoveryPromptSummaryRows(issue, 120, askedRows);
+    expect(summary[1], `${askedRows}`).toEqual({ kind: 'blank' });
+    const facts = summary[2];
+    expect(facts?.kind === 'facts' ? facts.items[0] : '', `${askedRows}`).toBe(
+      'Question: Which file holds the locales?',
+    );
+  }
+  // The unbounded form and the question-mode prompt keep the blank row too.
+  expect(recoveryPromptSummaryRows(issue, 120)[1]).toEqual({ kind: 'blank' });
+  expect(promptBodyRows(recoveryPromptSummaryRows(issue, 120, 1), 120)[1]).toEqual({
+    kind: 'blank',
+  });
+  expect(formatRecoveryPrompt(issue).split('\n')[1]).toBe('');
+});
+
+it('keeps the blank row above a cut asked row with task, file and later facts', () => {
+  const issue = makeRecoveryIssue({
+    details: [
+      `Question: ${'Which file holds the locales? '.repeat(4)}`.trimEnd(),
+      'Last error: blocked',
+    ],
+  });
+  const summary = recoveryPromptSummaryRows(issue, 40, 1);
+  expect(summary[1]).toEqual({ kind: 'blank' });
+  const factsRow = summary[2];
+  expect(factsRow?.kind === 'facts' ? factsRow.items : []).toEqual([
+    'Question: Which file holds the locale…',
+    'Task T001 · Fix login validation',
+    'Files src/auth/session.ts',
+    'Last error: blocked',
+  ]);
+});
+
+it('keeps the blank row when an asked row with task and file facts fits whole', () => {
+  const issue = makeRecoveryIssue({
+    details: ['Question: Which file holds the locales?', 'Last error: blocked'],
+  });
+  for (const askedRows of [1, 3]) {
+    const summary = recoveryPromptSummaryRows(issue, 120, askedRows);
+    expect(summary[1], `${askedRows}`).toEqual({ kind: 'blank' });
+    const facts = summary[2];
+    expect(facts?.kind === 'facts' ? facts.items[0] : '', `${askedRows}`).toBe(
+      'Question: Which file holds the locales?',
+    );
+  }
+  expect(recoveryPromptSummaryRows(issue, 120)[1]).toEqual({ kind: 'blank' });
 });
 
 it('cuts an asked row with an open quote by the room alone', () => {
@@ -1030,8 +1111,8 @@ describe('recovery prompt', () => {
     expect(recoveryMenuText('retry-same-worker', baseIssue)).toBe('Try again');
   });
 
-  // At its widest the retry-exhausted builder ends on the two voices and the verdict. A tighter
-  // budget would drop exactly the evidence the halt is for.
+  // At its widest the retry-exhausted builder ends on the two voices and the verdict: the evidence
+  // the halt is for.
   it('keeps both voices and the verdict on the widest retry-exhausted halt', async () => {
     const issue: RecoveryIssue = {
       ...baseIssue,

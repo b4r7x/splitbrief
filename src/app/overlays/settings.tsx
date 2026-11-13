@@ -145,6 +145,7 @@ export function SettingsOverlay() {
     },
     pageSize: getPageSize,
     canActOnIndex,
+    showDescription,
   });
 
   const actionable =

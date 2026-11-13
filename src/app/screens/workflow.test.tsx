@@ -19,6 +19,10 @@ import {
   saveSessionDraft,
 } from '../../stores/ui/session-drafts.js';
 import { departureStore } from '../../stores/workflow/departure.js';
+import { eventsStore } from '../../stores/workflow/events.js';
+import { diffEventKey } from '../../core/sections/event-sections.js';
+import { readLatestDiffKey } from '../../features/workflow/conversation-rows/read-row-actions.js';
+import { makeDiffReadCounter } from '#testing/helpers/events/implementer.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
@@ -44,6 +48,7 @@ import {
 } from '../../features/workflow/layout/chrome-rows.js';
 import { getWorkflowContentRect } from '../../features/workflow/layout/rect.js';
 import { WorkflowScreen } from './workflow.js';
+import type { WorkflowScreenDeps } from '../../features/workflow/hooks/workflow-screen/use-model.js';
 import { questionPromptStore } from '../../stores/question-prompt/prompt.js';
 import { openApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
 import { CommandPaletteOverlay } from '../overlays/palette.js';
@@ -69,6 +74,7 @@ import {
   REVIEW_TYPED_ROW_HINTS,
 } from '../../features/workflow/prompt-rows/approval.js';
 import { testCliSeats } from '#testing/helpers/runner-gate.js';
+import { NO_CORRECTION_MESSAGE } from '../../features/workflow/recovery-prompt.js';
 
 const runWorkflow = vi.fn<(opts: RunWorkflowOptions) => Promise<Summary>>();
 const workflowDeps = { runWorkflow };
@@ -81,9 +87,11 @@ const { inputHeightStore } = await import('../../stores/ui/input-height.js');
 const { inputHistoryStore } = await import('../../stores/ui/input-history.js');
 const { feedbackStore } = await import('../../stores/ui/feedback.js');
 const { composerLiveStore } = await import('../../stores/ui/composer-live.js');
+const { composerDraftStore } = await import('../../stores/ui/composer-draft.js');
 const { stopStore } = await import('../../stores/workflow/stop.js');
 const { COMMANDS_ONLY_NOTICE } = await import('../../components/composer/composer.js');
 const { runViewStore } = await import('../../stores/workflow/run-view.js');
+const { completionStore } = await import('../../stores/ui/completion.js');
 const { useAppKeys } = await import('../keys.js');
 
 const FIXED_TS = 1_783_958_400_000;
@@ -988,6 +996,36 @@ describe('WorkflowScreen showing a run at rest', () => {
     ui.unmount();
   });
 
+  it('gives the /diff guard the row model that the screen built beside the sidebar, before and after a typed key', async () => {
+    openRun();
+    const diff = '+ export const total = 1;';
+    const diffReads = makeDiffReadCounter();
+    const done = diffReads.done(diff, FIXED_TS);
+    eventsStore.__testReset({ events: [done] });
+    terminalSizeStore.__testReset({ cols: 160, rows: 40, isSmall: false });
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />, {
+      cols: 160,
+      rows: 40,
+    });
+    const frame = () => stripAnsiStyles(ui.lastFrame() ?? '');
+    await vi.waitFor(() => {
+      expect(frame()).toContain('Tasks');
+      expect(frame()).toMatch(/src\/test\.ts .* ctrl\+d/);
+      expect(frame()).toContain('Type a correction…');
+    });
+
+    diffReads.reset();
+    expect(readLatestDiffKey()).toBe(diffEventKey(done, 0));
+    expect(diffReads.count()).toBe(0);
+
+    ui.stdin.write('/');
+    await vi.waitFor(() => expect(frame()).toMatch(/> \/ +\|/));
+    expect(readLatestDiffKey()).toBe(diffEventKey(done, 0));
+    expect(diffReads.count()).toBe(0);
+
+    ui.unmount();
+  });
+
   it('keeps a draft that could not be saved at the tail of the transcript through a re-read', async () => {
     openRun();
     addEvent({
@@ -1266,7 +1304,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     await vi.waitFor(() => {
       expect(feedbackStore.get()).toEqual({
         message: 'No saved state to continue.',
-        isError: true,
+        isError: false,
       });
     });
     await vi.waitFor(() => {
@@ -1303,7 +1341,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     await vi.waitFor(() => {
       expect(feedbackStore.get()).toEqual({
         message: 'No saved state to continue.',
-        isError: true,
+        isError: false,
       });
     });
     await flushEffects();
@@ -1738,6 +1776,20 @@ describe('WorkflowScreen showing a run at rest', () => {
     size: { cols: number; rows: number } = { cols: 80, rows: 24 },
     availableActions: RecoveryAction[] = ['skip-current-task', 'end-run'],
   ) {
+    return renderFeature(
+      <WithPalette>
+        <WorkflowScreen
+          commands={[]}
+          onRuntimeCommand={onRuntimeCommand}
+          deps={openDependencyBlockedHalt(availableActions)}
+        />
+      </WithPalette>,
+      size,
+    );
+  }
+
+  /** Opens a run at rest on a dependency halt, and gives the screen deps that continue it. */
+  function openDependencyBlockedHalt(availableActions: RecoveryAction[]): WorkflowScreenDeps {
     const issue = makeRecoveryIssue({
       reason: 'dependency-blocked',
       phase: 'implementing',
@@ -1768,24 +1820,27 @@ describe('WorkflowScreen showing a run at rest', () => {
         runtime: { ...base.runtime, resumeState: halted },
       },
     }));
+    return {
+      runWorkflow,
+      sessionSelect: {
+        applying: () => false,
+        loadResumeState: hydrateResume,
+        prepareResume,
+        hydrateRun: async () => {},
+      },
+    };
+  }
 
-    return renderFeature(
-      <WithPalette>
-        <WorkflowScreen
-          commands={[]}
-          onRuntimeCommand={onRuntimeCommand}
-          deps={{
-            runWorkflow,
-            sessionSelect: {
-              applying: () => false,
-              loadResumeState: hydrateResume,
-              prepareResume,
-              hydrateRun: async () => {},
-            },
-          }}
-        />
-      </WithPalette>,
-      size,
+  /** The halt screen fed by the real command registry, as the app root wires it. */
+  function HaltWithAppCommands({ deps }: { deps: WorkflowScreenDeps }) {
+    const phase = runViewStore.use((state) => state.phase);
+    const model = useRuntimeCommands({ exit: () => {}, phase });
+    return (
+      <WorkflowScreen
+        commands={model.commands}
+        onRuntimeCommand={(raw, sentBy) => model.handleRuntimeCommand(raw, 'workflow', sentBy)}
+        deps={deps}
+      />
     );
   }
 
@@ -1949,6 +2004,105 @@ describe('WorkflowScreen showing a run at rest', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain('Skip task');
     expect(frame).toContain('tab back to the actions');
+    ui.unmount();
+  });
+
+  const NO_CORRECTION = 'This halt takes no typed correction. Choose an action.';
+
+  it('gives back the whole /steer line with its reason on a halt that takes no typed correction', async () => {
+    const ui = renderFeature(
+      <HaltWithAppCommands deps={openDependencyBlockedHalt(['skip-current-task', 'end-run'])} />,
+    );
+    await flushEffects();
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip task');
+    });
+
+    for (const key of '/steer use the old name') {
+      ui.stdin.write(key);
+      await flushEffects();
+    }
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().text).toBe('/steer use the old name');
+      expect(feedbackStore.get()).toEqual({ message: NO_CORRECTION, isError: false });
+    });
+    await flushEffects();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain(NO_CORRECTION);
+    expect(frame).toContain(`${glyph('prompt')} /steer use the old name`);
+    expect(frame).toContain('Skip task');
+    expect(runWorkflow).not.toHaveBeenCalled();
+    ui.unmount();
+  });
+
+  it.each(['reviewing-plan', 'validating-task'] as const)(
+    'lists /steer and /resume with their descriptions in %s',
+    async (phase) => {
+      navigatePreparedWorkflow(projectDir, 'steer description');
+      runWorkflow.mockImplementation(async (opts) => {
+        publishEvent(opts, {
+          type: 'workflow_started',
+          ts: FIXED_TS,
+          phase,
+          feature: 'steer description',
+        });
+        return pendingWorkflow();
+      });
+      const ui = renderFeature(<HaltWithAppCommands deps={workflowDeps} />);
+      await vi.waitFor(() => {
+        expect(runViewStore.get().phase).toBe(phase);
+      });
+      await flushEffects();
+
+      for (const key of '/st') {
+        ui.stdin.write(key);
+        await flushEffects();
+      }
+      const steerFrame = stripAnsiStyles(ui.lastFrame() ?? '');
+      const steerRow = steerFrame.split('\n').find((line) => line.includes('/steer')) ?? '';
+      expect(steerRow).toContain('Send a correction now; a running call stops first');
+
+      for (const _ of '/st') {
+        ui.stdin.write('\b');
+        await flushEffects();
+      }
+      for (const key of '/res') {
+        ui.stdin.write(key);
+        await flushEffects();
+      }
+      const resumeFrame = stripAnsiStyles(ui.lastFrame() ?? '');
+      const resumeRow = resumeFrame.split('\n').find((line) => line.includes('/resume')) ?? '';
+      expect(resumeRow).toContain('Continue a paused or stopped run');
+      ui.unmount();
+    },
+  );
+
+  it('gives back the words sent with ctrl+⏎ as typed, with the reason, on a halt that takes no typed correction', async () => {
+    const ui = renderDependencyBlockedHalt();
+    await flushEffects();
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip task');
+    });
+    ui.stdin.write('\t');
+    await flushEffects();
+
+    for (const key of 'use the old name') {
+      ui.stdin.write(key);
+      await flushEffects();
+    }
+    ui.stdin.write(CTRL_ENTER);
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().text).toBe('use the old name');
+      expect(feedbackStore.get()).toEqual({ message: NO_CORRECTION, isError: false });
+    });
+    await flushEffects();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain(NO_CORRECTION);
+    expect(frame).toContain(`${glyph('prompt')} use the old name`);
+    expect(runWorkflow).not.toHaveBeenCalled();
     ui.unmount();
   });
 
@@ -3557,6 +3711,142 @@ describe('WorkflowScreen when a menu opens over a draft', () => {
     ui.unmount();
   });
 
+  function LiveRunWithAppKeys() {
+    const phase = runViewStore.use((state) => state.phase);
+    const { commands, handleRuntimeCommand } = useRuntimeCommands({
+      exit: () => undefined,
+      phase,
+      createContext: () => makeCtx(),
+    });
+    return (
+      <AppKeysWith>
+        <WorkflowScreen
+          commands={commands}
+          onRuntimeCommand={(raw, sentBy) => handleRuntimeCommand(raw, 'workflow', sentBy)}
+          deps={workflowDeps}
+        />
+      </AppKeysWith>
+    );
+  }
+
+  async function haltLiveRun(end: Parameters<typeof saveState>[1]) {
+    const hold = Promise.withResolvers<void>();
+    runWorkflow.mockImplementation(async (opts) => {
+      publishEvent(opts, {
+        type: 'workflow_started',
+        ts: FIXED_TS,
+        phase: 'implementing',
+        feature: 'ready run',
+      });
+      await hold.promise;
+      saveState(opts.prepared.session.ref, end);
+      return makeSummary({ feature: 'ready run', totalTasks: 1, completedByLocal: 1 });
+    });
+    const ui = renderFeature(<LiveRunWithAppKeys />, { cols: 120, rows: 40 });
+    await vi.waitFor(() => {
+      expect(runViewStore.get().phase).toBe('implementing');
+    });
+    await flushEffects();
+    return { ui, release: hold.resolve };
+  }
+
+  it('paints no command list while the recovery menu holds the keys over a slash draft, and one esc opens Stop options', async () => {
+    const issue = makeRecoveryIssue({
+      reason: 'dependency-blocked',
+      phase: 'implementing',
+      availableActions: ['skip-current-task', 'end-run'],
+      recommendedAction: 'skip-current-task',
+    });
+    const { ui, release } = await haltLiveRun(
+      makeWorkflowState({
+        phase: 'implementing',
+        tasks: [makeTask({ id: 'T001', title: 'Ready brief', status: 'pending' })],
+        pendingRecovery: issue,
+      }),
+    );
+
+    for (const key of '/scr') {
+      ui.stdin.write(key);
+      await flushEffects();
+    }
+    await vi.waitFor(() => {
+      expect(completionStore.get().open).toBe(true);
+    });
+    expect(stripAnsiStyles(ui.lastFrame())).toContain('Scroll conversation');
+    for (const _ of '/scr') {
+      ui.stdin.write('\b');
+      await flushEffects();
+    }
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().empty).toBe(true);
+    });
+
+    release();
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame())).toContain('Skip task');
+    });
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame())).toContain('↑↓ select · ⏎ confirm');
+
+    composerDraftStore.request('/scr');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame())).toContain(
+        '↑↓ select · ⏎ confirm · tab edit the words',
+      );
+    });
+    expect(composerLiveStore.get().text).toBe('/scr');
+    expect(completionStore.get().open).toBe(false);
+    expect(stripAnsiStyles(ui.lastFrame())).not.toContain('Scroll conversation');
+
+    ui.stdin.write('\u001B');
+    await vi.waitFor(() => {
+      expect(overlayStore.get().active).toBe('stop-sheet');
+    });
+    expect(stripAnsiStyles(ui.lastFrame())).toContain('Stop options');
+    ui.unmount();
+  });
+
+  it('leaves the keys in the draft when a second question opens on the same halt', async () => {
+    const issue = makeRecoveryIssue({
+      reason: 'dependency-blocked',
+      phase: 'implementing',
+      availableActions: ['skip-current-task', 'end-run'],
+      recommendedAction: 'skip-current-task',
+    });
+    const { ui, release } = await haltLiveRun(
+      makeWorkflowState({
+        phase: 'implementing',
+        tasks: [makeTask({ id: 'T001', title: 'Ready brief', status: 'pending' })],
+        pendingRecovery: issue,
+      }),
+    );
+
+    release();
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame())).toContain('Skip task');
+    });
+    expect(stripAnsiStyles(ui.lastFrame())).toContain('Choose an action above…');
+
+    ui.stdin.write('\t');
+    await flushEffects();
+    await typeLetters(ui, 'use the old name');
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(feedbackStore.get().message).toBe(NO_CORRECTION_MESSAGE);
+      expect(composerLiveStore.get().text).toBe('use the old name');
+    });
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame())).toContain(
+        'typing goes to the composer · tab back to the actions',
+      );
+    });
+    expect(stripAnsiStyles(ui.lastFrame())).not.toContain(`${listRowLead('active')}s`);
+
+    await typeLetters(ui, ' exactly');
+    expect(runWorkflow).toHaveBeenCalledTimes(1);
+    ui.unmount();
+  });
+
   const APPROVE_ROW = 'Approve plan and start the build';
 
   // The planner holds while the test types, then the plan card opens over what the composer holds.
@@ -3665,7 +3955,19 @@ describe('WorkflowScreen when a menu opens over a draft', () => {
     await vi.waitFor(() => {
       expect(composerLiveStore.get().empty).toBe(true);
     });
-    expect(stripAnsiStyles(ui.lastFrame())).toContain('tab back to the actions');
+    expect(stripAnsiStyles(ui.lastFrame())).toContain('tab/⏎ back to the actions');
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame())).toContain(`${listRowLead('active')}Approve plan`);
+    });
+    expect(outcomes).toEqual([]);
+    ui.unmount();
+  });
+
+  it('names tab and ⏎ over a draft of spaces, and ⏎ gives the plan card the keys', async () => {
+    const { ui, outcomes, first } = await openPlanCardAfter('   ');
+    expect(first).toContain('tab/⏎ back to the actions');
+    expect(first).not.toContain(`${listRowLead('active')}Approve plan`);
     ui.stdin.write('\r');
     await vi.waitFor(() => {
       expect(stripAnsiStyles(ui.lastFrame())).toContain(`${listRowLead('active')}Approve plan`);
@@ -3763,6 +4065,79 @@ describe('WorkflowScreen when a menu opens over a draft', () => {
     await vi.waitFor(() => {
       expect(outcomes).toEqual([{ approved: true }]);
     });
+    ui.unmount();
+  });
+
+  it.each(['help', 'command-palette', 'settings', 'stop-sheet'] as const)(
+    'keeps the highlighted row of the plan card when %s closes',
+    async (overlay) => {
+      const { ui, outcomes } = await openPlanCardAfter('');
+      await flushEffects();
+      ui.stdin.write('\x1b[B');
+      await flushEffects();
+      ui.stdin.write('\x1b[B');
+      await vi.waitFor(() => {
+        expect(stripAnsiStyles(ui.lastFrame())).toContain(`${listRowLead('active')}Edit plan.json`);
+      });
+
+      await openAndCloseOverlay(ui, overlay);
+      expect(stripAnsiStyles(ui.lastFrame())).toContain(`${listRowLead('active')}Edit plan.json`);
+      expect(outcomes).toEqual([]);
+      ui.unmount();
+    },
+  );
+
+  it('starts a new plan card on its first row', async () => {
+    const firstPath = join(projectDir, 'first-plan.md');
+    const secondPath = join(projectDir, 'second-plan.md');
+    writeFileSync(firstPath, 'Greet people by name.', 'utf8');
+    writeFileSync(secondPath, 'Greet people by their full name.', 'utf8');
+    const outcomes: ApprovalReviewResult[] = [];
+    runWorkflow.mockImplementation(async (opts) => {
+      publishEvent(opts, {
+        type: 'workflow_started',
+        ts: FIXED_TS,
+        phase: 'reviewing-plan',
+        feature: 'ready run',
+      });
+      outcomes.push(await opts.callbacks.onApprovalNeeded('plan', firstPath, []));
+      publishEvent(opts, {
+        type: 'planner_text',
+        ts: FIXED_TS + 1,
+        phase: 'reviewing-plan',
+        role: 'planner',
+        content: 'plain',
+        text: 'Second plan opened',
+      });
+      outcomes.push(await opts.callbacks.onApprovalNeeded('plan', secondPath, []));
+      return pendingWorkflow();
+    });
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+      { cols: 120, rows: 40 },
+    );
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame())).toContain('Greet people by name.');
+    });
+
+    await flushEffects();
+    ui.stdin.write('\x1b[B');
+    await flushEffects();
+    ui.stdin.write('\x1b[B');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame())).toContain(`${listRowLead('active')}Edit plan.json`);
+    });
+
+    ui.stdin.write('\x1b[B');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame())).toContain('Greet people by their full name.');
+    });
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame())).toContain(`${listRowLead('active')}Approve plan`);
+    expect(stripAnsiStyles(ui.lastFrame())).not.toContain(`${listRowLead('active')}Edit plan.json`);
+    expect(outcomes).toEqual([{ approved: false, action: 'end-run' }]);
     ui.unmount();
   });
 

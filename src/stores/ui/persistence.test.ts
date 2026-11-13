@@ -76,21 +76,18 @@ describe('loadHistoryFromDisk', () => {
     expect(loadHistoryFromDisk()).toEqual([]);
   });
 
-  it('warns and returns empty array when the history path cannot be read as a file', async () => {
+  it('returns empty array and writes the cause to the debug log when the history path cannot be read as a file', async () => {
     mkdirSync(historyFile, { recursive: true });
-    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const { loadHistoryFromDisk } = await loadModules();
+    const { enableDebugLog, loggedDiagnostics } = await import('#testing/helpers/debug-log.js');
+    enableDebugLog(tmpHome);
 
-    try {
-      const { loadHistoryFromDisk } = await loadModules();
-      expect(loadHistoryFromDisk()).toEqual([]);
-      expect(stderr).toHaveBeenCalledWith(
-        expect.stringContaining(
-          'Could not read ~/.splitbrief/history, so earlier prompts are not available: ',
-        ),
-      );
-    } finally {
-      stderr.mockRestore();
-    }
+    expect(loadHistoryFromDisk()).toEqual([]);
+    expect(loggedDiagnostics(tmpHome)).toContainEqual(
+      expect.stringContaining(
+        'Could not read ~/.splitbrief/history, so earlier prompts are not available: ',
+      ),
+    );
   });
 
   it('ignores blank lines', async () => {
@@ -174,7 +171,9 @@ describe('installHistoryPersistence', () => {
     const { installHistoryPersistence, inputHistoryStore } = await loadModules();
     teardown = installHistoryPersistence();
 
-    inputHistoryStore.push('hello');
+    inputHistoryStore.pushDocumentSubmission(createDraftDocument('hello'), {
+      currentScreen: 'home',
+    });
     expect(existsSync(historyFile)).toBe(false);
 
     vi.advanceTimersByTime(300);
@@ -202,11 +201,17 @@ describe('installHistoryPersistence', () => {
     const { installHistoryPersistence, inputHistoryStore } = await loadModules();
     teardown = installHistoryPersistence();
 
-    inputHistoryStore.push('first');
+    inputHistoryStore.pushDocumentSubmission(createDraftDocument('first'), {
+      currentScreen: 'home',
+    });
     vi.advanceTimersByTime(100);
-    inputHistoryStore.push('second');
+    inputHistoryStore.pushDocumentSubmission(createDraftDocument('second'), {
+      currentScreen: 'home',
+    });
     vi.advanceTimersByTime(100);
-    inputHistoryStore.push('third');
+    inputHistoryStore.pushDocumentSubmission(createDraftDocument('third'), {
+      currentScreen: 'home',
+    });
     vi.advanceTimersByTime(300);
 
     // File holds the most-recent store state (newest-first, deduped).
@@ -217,7 +222,9 @@ describe('installHistoryPersistence', () => {
     const { installHistoryPersistence, inputHistoryStore } = await loadModules();
     teardown = installHistoryPersistence();
 
-    inputHistoryStore.push('token sk-abcdefghijklmnopqrst');
+    inputHistoryStore.pushDocumentSubmission(createDraftDocument('token sk-abcdefghijklmnopqrst'), {
+      currentScreen: 'home',
+    });
     teardown();
     teardown = null;
 
@@ -234,7 +241,9 @@ describe('installHistoryPersistence', () => {
     // real module, not a mock.
     mkdirSync(historyFile, { recursive: true });
 
-    inputHistoryStore.push('hello');
+    inputHistoryStore.pushDocumentSubmission(createDraftDocument('hello'), {
+      currentScreen: 'home',
+    });
     expect(() => vi.advanceTimersByTime(300)).not.toThrow();
   });
 
@@ -242,14 +251,18 @@ describe('installHistoryPersistence', () => {
     const { installHistoryPersistence, inputHistoryStore } = await loadModules();
     const stop = installHistoryPersistence();
 
-    inputHistoryStore.push('pending');
+    inputHistoryStore.pushDocumentSubmission(createDraftDocument('pending'), {
+      currentScreen: 'home',
+    });
     stop();
     vi.advanceTimersByTime(300);
 
     expect(savedTexts()).toEqual(['pending']);
 
     // Further pushes post-teardown do not trigger writes either.
-    inputHistoryStore.push('after-teardown');
+    inputHistoryStore.pushDocumentSubmission(createDraftDocument('after-teardown'), {
+      currentScreen: 'home',
+    });
     vi.advanceTimersByTime(300);
     expect(savedTexts()).toEqual(['pending']);
   });
@@ -258,14 +271,18 @@ describe('installHistoryPersistence', () => {
     const { installHistoryPersistence, inputHistoryStore } = await loadModules();
     const firstStop = installHistoryPersistence();
 
-    inputHistoryStore.push('stale pending');
+    inputHistoryStore.pushDocumentSubmission(createDraftDocument('stale pending'), {
+      currentScreen: 'home',
+    });
     teardown = installHistoryPersistence();
     vi.advanceTimersByTime(300);
 
     expect(savedTexts()).toEqual(['stale pending']);
 
     firstStop();
-    inputHistoryStore.push('active install');
+    inputHistoryStore.pushDocumentSubmission(createDraftDocument('active install'), {
+      currentScreen: 'home',
+    });
     vi.advanceTimersByTime(300);
 
     expect(savedTexts()).toEqual(['active install', 'stale pending']);
@@ -368,22 +385,22 @@ describe('installHistoryPersistence', () => {
   it.each([
     ['truncated JSON', '{"version":1,"entries":[{"version":1,'],
     ['an invalid entry', '{"version":1,"entries":[{"version":2,"parts":"$(touch pwned)"}]}'],
-  ])('warns and starts empty when the versioned envelope holds %s', async (_name, content) => {
-    seedHistoryFile(content);
-    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-
-    try {
+  ])(
+    'starts empty and writes the cause to the debug log when the versioned envelope holds %s',
+    async (_name, content) => {
+      seedHistoryFile(content);
       const { loadHistoryFromDisk } = await loadModules();
+      const { enableDebugLog, loggedDiagnostics } = await import('#testing/helpers/debug-log.js');
+      enableDebugLog(tmpHome);
+
       expect(loadHistoryFromDisk()).toEqual([]);
-      expect(stderr).toHaveBeenCalledWith(
+      expect(loggedDiagnostics(tmpHome)).toContainEqual(
         expect.stringContaining(
           'Could not read ~/.splitbrief/history, so earlier prompts are not available: ',
         ),
       );
       expect(readFileSync(historyFile, 'utf-8')).toBe(content);
       expect(existsSync(join(tmpHome, 'pwned'))).toBe(false);
-    } finally {
-      stderr.mockRestore();
-    }
-  });
+    },
+  );
 });

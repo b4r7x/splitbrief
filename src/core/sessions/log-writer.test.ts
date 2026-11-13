@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import {
   readFileSync,
   existsSync,
@@ -24,6 +24,8 @@ import {
 } from '../payload-bounds.js';
 import { taskId } from '../schemas/task.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
+import { resetLoggerForTests } from '../../lib/logger.js';
 import { SPLITBRIEF_DIR, SESSIONS_DIR } from '../paths.js';
 
 let tmp: string;
@@ -31,6 +33,7 @@ const SESSION_ID = '2024-01-01-test-feature';
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
 afterEach(() => {
+  resetLoggerForTests();
   if (tmp) cleanupTempDir(tmp);
 });
 
@@ -136,13 +139,13 @@ describe('appendEngineEvent', () => {
     expect(SessionLogEventEntrySchema.safeParse(entry).success).toBe(true);
   });
 
-  it('warns to stderr and does not throw when write fails on a read-only session dir', () => {
+  it('writes the cause to the debug log and does not throw when the write fails on a read-only session dir', () => {
     const dir = makeTmp();
     const sessionPath = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID);
     mkdirSync(sessionPath, { recursive: true });
     chmodSync(sessionPath, 0o500);
 
-    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    enableDebugLog(dir);
     try {
       const event = {
         ts: 1000,
@@ -153,12 +156,10 @@ describe('appendEngineEvent', () => {
       expect(() =>
         appendEngineEvent({ projectDir: dir, sessionId: SESSION_ID }, event),
       ).not.toThrow();
-      const output = stderrSpy.mock.calls.map((c) => String(c[0])).join('');
-      expect(output).toBe(
-        `Warning: Could not save the run log: permission denied · .splitbrief/sessions/${SESSION_ID}/session.jsonl\n`,
-      );
+      expect(loggedDiagnostics(dir)).toEqual([
+        `Warning: Could not save the run log: permission denied · .splitbrief/sessions/${SESSION_ID}/session.jsonl`,
+      ]);
     } finally {
-      stderrSpy.mockRestore();
       chmodSync(sessionPath, 0o700);
     }
   });
@@ -202,28 +203,24 @@ describe('createSessionLogAppender', () => {
 
     function appendQuietly(entry: Parameters<ReturnType<typeof createSessionLogAppender>>[0]) {
       const dir = makeTmp();
-      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-      try {
-        createSessionLogAppender({ projectDir: dir, sessionId: SESSION_ID })(entry);
-        return {
-          stderr: stderrSpy.mock.calls.map((c) => String(c[0])).join(''),
-          lines: readFileSync(
-            join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'),
-            'utf-8',
-          )
-            .split('\n')
-            .filter(Boolean)
-            .map((line) => JSON.parse(line)),
-        };
-      } finally {
-        stderrSpy.mockRestore();
-      }
+      enableDebugLog(dir);
+      createSessionLogAppender({ projectDir: dir, sessionId: SESSION_ID })(entry);
+      return {
+        diagnostics: loggedDiagnostics(dir),
+        lines: readFileSync(
+          join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'),
+          'utf-8',
+        )
+          .split('\n')
+          .filter(Boolean)
+          .map((line) => JSON.parse(line)),
+      };
     }
 
     it('is written as it is at the string limit', () => {
       const text = 'x'.repeat(limit);
       const run = appendQuietly({ kind: 'message', ts: '1', role: 'user', text });
-      expect(run.stderr).toBe('');
+      expect(run.diagnostics).toEqual([]);
       expect(run.lines).toEqual([{ kind: 'message', ts: '1', role: 'user', text }]);
     });
 
@@ -237,7 +234,7 @@ describe('createSessionLogAppender', () => {
         role: 'user',
         text: 'x'.repeat(bytes),
       });
-      expect(run.stderr).toBe('');
+      expect(run.diagnostics).toEqual([]);
       expect(run.lines).toHaveLength(1);
       const text: string = run.lines[0]?.text;
       expect(text.endsWith(CALL_CONSUMER_STRING_TRUNCATION_PLACEHOLDER)).toBe(true);
@@ -253,7 +250,7 @@ describe('createSessionLogAppender', () => {
         text: answer,
         qa: [{ question: 'Which log?', answer }],
       });
-      expect(run.stderr).toBe('');
+      expect(run.diagnostics).toEqual([]);
       expect(run.lines[0]?.qa[0].question).toBe('Which log?');
       expect(run.lines[0]?.qa[0].answer.endsWith(CALL_CONSUMER_STRING_TRUNCATION_PLACEHOLDER)).toBe(
         true,
@@ -270,20 +267,16 @@ describe('createSessionLogAppender', () => {
 
   it('drops an oversized entry that is not a user message, with the warning', () => {
     const dir = makeTmp();
-    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    try {
-      createSessionLogAppender({ projectDir: dir, sessionId: SESSION_ID })({
-        kind: 'message',
-        ts: '1',
-        role: 'assistant',
-        text: 'z'.repeat(SESSION_LOG_MAX_ENTRY_BYTES + 1),
-      });
-      expect(stderrSpy.mock.calls.map((c) => String(c[0])).join('')).toBe(
-        `Warning: failed to persist oversized log entry exceeding ${SESSION_LOG_MAX_ENTRY_BYTES} bytes\n`,
-      );
-    } finally {
-      stderrSpy.mockRestore();
-    }
+    enableDebugLog(dir);
+    createSessionLogAppender({ projectDir: dir, sessionId: SESSION_ID })({
+      kind: 'message',
+      ts: '1',
+      role: 'assistant',
+      text: 'z'.repeat(SESSION_LOG_MAX_ENTRY_BYTES + 1),
+    });
+    expect(loggedDiagnostics(dir)).toEqual([
+      `Warning: failed to persist oversized log entry exceeding ${SESSION_LOG_MAX_ENTRY_BYTES} bytes`,
+    ]);
   });
 
   itUnix('refuses to append through a symlinked session log', () => {

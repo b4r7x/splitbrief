@@ -34,7 +34,7 @@ export interface StopState {
   parked: StopParked | null;
   /**
    * A seat was saved under the running run and is not taken yet: the run is re-prepared on it at
-   * the next brief boundary and goes on. It is no stop, so it never sets the intent.
+   * the next brief or review boundary and goes on. It is no stop, so it never sets the intent.
    */
   seatChange: boolean;
   error?: string;
@@ -62,9 +62,9 @@ function request(intent: Exclude<StopIntent, 'none'>): void {
 }
 
 /**
- * Whether the run this process drives takes a seat saved now at a brief boundary: it runs, or it
- * waits parked and goes on at the boundary when it continues. A halt's own picker moves its seat
- * at once, so a halted run waits for no boundary.
+ * Whether the run this process drives takes a seat saved now at a brief or review boundary: it
+ * runs, or it waits parked and goes on at the boundary when it continues. A halt's own picker
+ * moves its seat at once, so a halted run waits for no boundary.
  */
 export function takesSeatAtBoundary(): boolean {
   const { status } = lifecycleStore.get();
@@ -92,6 +92,15 @@ export function keepsPreparedSettings(): boolean {
 /** A stop parked the run inside a call, and the run goes on with that call when it continues. */
 export function parksCutCall({ phase, parked }: StopState): boolean {
   return phase === 'parked' && parked?.kind === 'mid-brief' && parked.resolve !== null;
+}
+
+/**
+ * A stop, an End run or a quit was asked for and has not parked, ended or failed yet: a Resume and
+ * a steer are refused until it settles. A pause after the brief stops nothing, so it is no stop.
+ */
+export function stopInProgress({ intent, phase }: StopState): boolean {
+  if (intent === 'none' || intent === 'pause-after-brief') return false;
+  return phase !== 'parked' && phase !== 'ended' && phase !== 'failed';
 }
 
 function markSeatChange(pending: boolean): void {

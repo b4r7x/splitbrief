@@ -45,7 +45,7 @@ function gate(count: number): string[] {
   return Array.from({ length: count }, () => 'node --version');
 }
 
-/** The planner answers its first plan turn with `gateSize` gate commands, and a later plan turn with six. */
+/** The planner answers each plan turn with `gateSize` gate commands. */
 async function runPlanGate(gateSize: number) {
   fixture = createStopContinueFixture(() => '', { isolation: 'none' });
   const target = fixture;
@@ -62,7 +62,7 @@ async function runPlanGate(gateSize: number) {
   const passing = passingVerdict({ kind: 'final', taskIds: ['T001'], criterionIds: ['C1'] });
   writeFileSync(
     plannerPath,
-    `import { appendFileSync, existsSync } from 'node:fs';
+    `import { appendFileSync } from 'node:fs';
 const chunks = [];
 for await (const chunk of process.stdin) chunks.push(chunk);
 const prompt = Buffer.concat(chunks).toString('utf8');
@@ -71,12 +71,9 @@ let answer;
 if (prompt.includes('# Task Implementation Review') || prompt.includes('# Final Implementation Review')) {
   kind = 'review';
   answer = ${JSON.stringify(passing)};
-} else if (!existsSync(${JSON.stringify(callsPath)})) {
+} else {
   kind = 'plan';
   answer = ${JSON.stringify({ result: { ...plan, gate: gate(gateSize) } })};
-} else {
-  kind = 'plan-again';
-  answer = ${JSON.stringify({ result: { ...plan, gate: gate(6) } })};
 }
 appendFileSync(${JSON.stringify(callsPath)}, JSON.stringify({ kind, prompt }) + '\\n');
 process.stdout.write(JSON.stringify(answer));
@@ -121,27 +118,15 @@ console.log('Implemented T001');
 }
 
 describe('e2e: the project gate the plan names', () => {
-  it('sends a plan with seven gate commands back to the planner and runs only the six of the next plan', async () => {
+  it('runs a plan with seven gate commands as the planner sent it', async () => {
     const { run, state, calls } = await runPlanGate(7);
 
     expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
     expect(run.stderr).not.toContain('did not match its contract');
     expect(run.stderr).not.toContain('Asking the seat again.');
-    expect(calls.map((call) => call.kind)).toEqual(['plan', 'plan-again', 'review']);
-    expect(calls[1]?.prompt).toContain('result.gate: Too big: expected array to have <=6 items');
-    expect(state.phase).toBe('complete');
-    expect(run.stdout).toContain('reviewer check V6: passed');
-    expect(run.stdout).not.toContain('V7');
-  });
-
-  it('runs a plan with six gate commands as the planner sent it', async () => {
-    const { run, state, calls } = await runPlanGate(6);
-
-    expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
-    expect(run.stderr).not.toContain('did not match its contract');
     expect(calls.map((call) => call.kind)).toEqual(['plan', 'review']);
     expect(state.phase).toBe('complete');
-    expect(run.stdout).toContain('reviewer check V6: passed');
+    expect(run.stdout).toContain('reviewer check V7: passed');
   });
 
   it('tells the planner and the final reviewer that SPLITBRIEF runs the project gate the plan names', async () => {

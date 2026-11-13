@@ -89,18 +89,17 @@ export async function applyOfferedSeatSwap(
   if (result.kind === 'unswitched') {
     // Nothing was written, so the halt stays pending and the run stops on it again
     // on the seat it had. A cancellation is the operator's own, reported by the
-    // cancel path; a refused admission and a raced config name their own row.
+    // cancel path; a refused admission and a raced config name why the seat stayed.
+    let reason: string | undefined;
     if (result.outcome === 'conflict') {
-      publishWarning({
-        bus: input.bus,
-        phase: result.state.phase,
-        message: 'config changed meanwhile · the halt stays',
-      });
+      reason = 'the config changed during the switch';
     } else if (result.outcome === 'unadmitted') {
-      const reason =
+      reason =
         result.preparation.kind === 'failed'
           ? `preparing it failed: ${toErrorMessage(result.preparation.error)}`
           : 'it could not be admitted';
+    }
+    if (reason !== undefined) {
       publishWarning({
         bus: input.bus,
         phase: result.state.phase,

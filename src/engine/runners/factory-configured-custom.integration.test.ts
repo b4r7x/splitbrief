@@ -702,6 +702,7 @@ describe('configured custom runner factory behavior', () => {
         projectDir: fixture.projectDir,
         feature: `denied configured ${role} ${contract}`,
         effectiveConfig: config,
+        configWarnings: [],
         signal: new AbortController().signal,
         policy: {
           purpose: 'new-workflow',
