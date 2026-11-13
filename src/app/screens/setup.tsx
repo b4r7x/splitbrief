@@ -645,7 +645,7 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
     )
       return;
     if (unavailable.length > 0) {
-      feedbackStore.setError('Choose a ready tool and model for each unavailable seat.');
+      feedbackStore.setMessage('Choose a ready tool and model for each unavailable seat.');
       return;
     }
     const result = await configStore.save(finalConfig);

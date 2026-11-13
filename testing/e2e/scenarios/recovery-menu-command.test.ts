@@ -114,11 +114,13 @@ it('gives back the whole /steer line with its reason on a halt that takes no typ
   screen.stdin.write('\r');
   await vi.waitFor(() => {
     expect(composerLiveStore.get().text).toBe('/steer use the old name');
-    expect(feedbackStore.get()).toEqual({ message: NO_CORRECTION, isError: true });
+    expect(feedbackStore.get()).toEqual({ message: NO_CORRECTION, isError: false });
   });
   await flushEffects();
   const frame = stripAnsiStyles(screen.lastFrame());
   expect(frame).toContain(NO_CORRECTION);
+  const refusalRow = frame.split('\n').find((line) => line.includes(NO_CORRECTION)) ?? '';
+  expect(refusalRow).not.toContain(glyph('statusFailed'));
   expect(frame).toContain(`${glyph('prompt')} /steer use the old name`);
   expect(completionStore.get().open).toBe(false);
   expect(frame).toContain('Needs you');

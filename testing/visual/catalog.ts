@@ -2497,6 +2497,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
+    // The confirmation the plan card raises waits over the words typed during its review phase.
+    defineScenario({
+      id: 'workflow-plan-card-confirm-words',
+      title: 'Workflow · words typed under the plan card confirmation',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'plan-card-confirm-words',
+        title: 'The confirmation, the words back in the composer and the note naming it',
+        kind: 'question',
+        marker: 'Confirm or deny the prompt first',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
     defineScenario({
       id: 'workflow-plan-repaired',
       title: 'Workflow · revised plan passes its checks',
@@ -6580,7 +6596,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'ready',
         title: 'Unavailable seat shown',
         kind: 'ready',
-        marker: 'choose ready seats',
+        marker: 'Choose a ready tool and model',
       },
       elements: [
         { id: 'header', title: 'Setup header' },
@@ -6946,7 +6962,20 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: 'cleared:',
       },
     ],
-  }),
+  }).concat(
+    defineScenario({
+      id: 'overlay-settings-invalid-number',
+      title: 'Overlay · settings · an invalid number keeps the edit open',
+      surface: overlaySurface('settings', 'home'),
+      checkpoint: {
+        id: 'settings-invalid-number',
+        title: 'The refused edit stays open',
+        kind: 'failure',
+        marker: 'Invalid Context length: enter a number',
+      },
+      elements: [{ id: 'overlay-panel', title: 'Settings panel' }],
+    }),
+  ),
   'planner-picker': overlayGroup({
     overlay: 'planner-picker',
     underlyingScreen: 'home',
@@ -7383,7 +7412,7 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'overlay-fallback-picker-same-seat',
         title: 'Overlay · BUILD fallback · current seat identity refused',
-        marker: PICKER_TITLE_MARKER,
+        marker: 'BUILD runs OpenAI Codex CLI · GPT-6-Astra now',
       },
     ],
   }),

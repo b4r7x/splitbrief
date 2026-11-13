@@ -180,7 +180,7 @@ export function PickerView({
     [inheritanceNotice, isRefreshing ? `${frame} refreshing…` : undefined]
       .filter((line) => line !== undefined)
       .join(SOFT_SEP) || undefined;
-  const saveError = feedbackStore.use((s) => (s.isError ? s.message : null));
+  const notice = feedbackStore.use((s) => s);
 
   const toolId =
     catalog.currentItem !== undefined && includes(CLI_TOOL_IDS, catalog.currentItem.id)
@@ -392,7 +392,7 @@ export function PickerView({
       onConfirm={(left, row) => confirmRightRow(left, row, { actions, auth: authContext })}
       onCancel={() => overlayStore.close()}
       onRefresh={handleRefresh}
-      error={saveError ?? undefined}
+      notice={notice}
       preview={resolvePreview}
       leftProps={{
         items: catalog.items,

@@ -314,7 +314,7 @@ export function createRecoveryDriver(
         const offer = issue.switchSeat;
         const offered = offer?.candidates[0];
         if (offer === undefined || offered === undefined) {
-          feedbackStore.setError('No other tool is offered for this seat.');
+          feedbackStore.setMessage('No other tool is offered for this seat.');
           return null;
         }
         const profile = offer.seat === 'build' ? issue.selectedImplementerProfile : undefined;
@@ -406,7 +406,7 @@ export function createRecoveryDriver(
         const applied = await applyAction(nextPass.correctionAction, reentryCorrection);
         if (applied !== null) return applied;
       } else if (issue.availableActions.every((action) => action === 'end-run')) {
-        feedbackStore.setError(NO_CORRECTION_MESSAGE);
+        feedbackStore.setMessage(NO_CORRECTION_MESSAGE);
       }
     }
 
@@ -490,7 +490,7 @@ export function createRecoveryDriver(
       let correction: UserMessageInput | undefined;
       if (action === null && answer.text.trim() !== '') {
         if (correctionAction === undefined) {
-          feedbackStore.setError(NO_CORRECTION_MESSAGE);
+          feedbackStore.setMessage(NO_CORRECTION_MESSAGE);
           composerDraftStore.requestPrepend(document);
           continue;
         }
@@ -504,7 +504,7 @@ export function createRecoveryDriver(
       // Words typed beside the panel are the note of the action that takes one.
       const draft = composerLiveStore.get();
       if (!draft.empty && leavesWordsUnread(issue.reason, action, stepReadsNone)) {
-        feedbackStore.setError(
+        feedbackStore.setMessage(
           `Cannot send words with ${recoveryActionLabel(action, { reason: issue.reason, reviewNone })}. Clear them.`,
         );
         continue;

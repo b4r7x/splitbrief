@@ -19,7 +19,7 @@ import { reactivateExistingSession } from '../../core/sessions/active-pointer.js
 import { loadState, saveState } from '../../core/state/persistence.js';
 import type { PreparedExecution } from '../../engine/runners/prepared-execution.js';
 import { configStore } from '../../stores/project/config.js';
-import { composerDraftStore } from '../../stores/ui/composer-draft.js';
+import { composerDraftStore, type ComposerDraftRequest } from '../../stores/ui/composer-draft.js';
 import { composerLiveStore } from '../../stores/ui/composer-live.js';
 import { createDraftDocument } from '../../core/composer/document.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
@@ -1366,7 +1366,7 @@ describe('createRecoveryDriver', () => {
 
         expect(feedbackAtPrompt[1]).toEqual({
           message: `Cannot send words with ${label}. Clear them.`,
-          isError: true,
+          isError: false,
         });
         expect(composerDraftStore.get().request).toBeNull();
         if (!result.shouldRun) throw new Error('expected the Apply action to run');
@@ -1395,7 +1395,7 @@ describe('createRecoveryDriver', () => {
 
       expect(feedbackAtPrompt[1]).toEqual({
         message: 'Cannot send words with Re-run Apply. Clear them.',
-        isError: true,
+        isError: false,
       });
       if (!result.shouldRun) throw new Error('expected Re-run Apply to run');
       expect(result.state.messageQueue).toEqual([]);
@@ -1422,7 +1422,7 @@ describe('createRecoveryDriver', () => {
 
       expect(feedbackAtPrompt[1]).toEqual({
         message: 'Cannot send words with Accept as is. Clear them.',
-        isError: true,
+        isError: false,
       });
       expect(result.state?.acceptedAsIs).toBeUndefined();
       expect(composerDraftStore.get().request).toBeNull();
@@ -1436,7 +1436,7 @@ describe('createRecoveryDriver', () => {
 
       expect(feedbackAtPrompt[1]).toEqual({
         message: 'This halt takes no typed correction. Choose an action.',
-        isError: true,
+        isError: false,
       });
       if (!result.shouldRun) throw new Error('expected Restore backup to run');
       expect(result.state.pendingRecovery?.selectedAction).toBe('restore-backup');
@@ -1535,7 +1535,7 @@ describe('createRecoveryDriver', () => {
 
     expect(feedbackAtPrompt[1]).toEqual({
       message: 'This halt takes no typed correction. Choose an action.',
-      isError: true,
+      isError: false,
     });
     expect(composerDraftStore.get().request).toMatchObject({ kind: 'prepend', value: 'end' });
     expect(result.shouldRun).toBe(false);
@@ -1576,7 +1576,7 @@ describe('createRecoveryDriver', () => {
     expect(feedbackAtPrompt).toHaveLength(2);
     expect(feedbackAtPrompt[1]).toEqual({
       message: 'This halt takes no typed correction. Choose an action.',
-      isError: true,
+      isError: false,
     });
     expect(result.shouldRun).toBe(false);
     expect(result.state?.closed?.as).toBe('ended');
@@ -1615,7 +1615,7 @@ describe('createRecoveryDriver', () => {
 
     expect(feedbackAtPrompt[0]).toEqual({
       message: 'This halt takes no typed correction. Choose an action.',
-      isError: true,
+      isError: false,
     });
   });
 
@@ -1875,7 +1875,7 @@ describe('prepared recovery corrections', () => {
 
       await runDriver(prepared, state, inputMode);
 
-      expect(feedbackAtPrompt[1]).toMatchObject({ message: NO_CORRECTION, isError: true });
+      expect(feedbackAtPrompt[1]).toMatchObject({ message: NO_CORRECTION, isError: false });
     });
 
     it('refuses Continue with words in the composer when no brief is left', async () => {
@@ -1887,7 +1887,7 @@ describe('prepared recovery corrections', () => {
 
       expect(feedbackAtPrompt[1]).toMatchObject({
         message: 'Cannot send words with Continue. Clear them.',
-        isError: true,
+        isError: false,
       });
     });
 
@@ -1938,7 +1938,7 @@ describe('prepared recovery corrections', () => {
 
         await runDriver(prepared, state, inputMode);
 
-        expect(feedbackAtPrompt[1]).toMatchObject({ message: NO_CORRECTION, isError: true });
+        expect(feedbackAtPrompt[1]).toMatchObject({ message: NO_CORRECTION, isError: false });
         expect(composerDraftStore.get().request).toMatchObject({ kind: 'prepend' });
       });
 
@@ -1978,7 +1978,7 @@ describe('prepared recovery corrections', () => {
 
         await runDriver(prepared, state, inputMode);
 
-        expect(feedbackAtPrompt[1]).toMatchObject({ message: NO_CORRECTION, isError: true });
+        expect(feedbackAtPrompt[1]).toMatchObject({ message: NO_CORRECTION, isError: false });
       });
 
       it('changes the halt on the view in the same tick, and leaves the run as it is', async () => {
@@ -2228,6 +2228,141 @@ describe('prepared recovery corrections', () => {
         expect(asked.map(({ question }) => question)).toEqual([PANEL, PANEL, NOTE]);
         expect(feedbackAtPrompt[1]).toMatchObject({ message: MALFORMED, isError: true });
         expect(loadState(prepared.session.ref)?.pendingRecovery).toBeUndefined();
+        expect(feedbackStore.get()).toEqual({ message: null, isError: false });
+      });
+
+      it('refuses the note when the file breaks while the note question waits, keeps it, and asks the panel again', async () => {
+        const { prepared, state } = setupOnDisk();
+        const drafts: Array<ComposerDraftRequest | null> = [];
+        const halts: Array<RecoveryIssue | undefined> = [];
+        const { inputMode, asked, feedbackAtPrompt } = recordQuestions(
+          [rowPick('v'), WORDS, rowPick('a')],
+          (at) => {
+            if (at === 2) breakConfigFile(prepared);
+            if (at === 3) {
+              drafts.push(composerDraftStore.get().request);
+              halts.push(loadState(prepared.session.ref)?.pendingRecovery);
+            }
+          },
+        );
+
+        const result = await runDriver(prepared, state, inputMode);
+
+        expect(asked.map(({ question }) => question)).toEqual([PANEL, NOTE, PANEL]);
+        expect(feedbackAtPrompt[2]).toEqual({ message: MALFORMED, isError: true });
+        expect(drafts[0]).toMatchObject({ kind: 'prepend', value: WORDS });
+        expect(halts[0]).toMatchObject({ reason: 'review-failed', status: 'awaiting-user' });
+        expect(halts[0]?.selectedAction).toBeUndefined();
+        expect(result).toMatchObject({ shouldRun: false, state: { closed: { as: 'ended' } } });
+      });
+
+      it('refuses three answers in a row while the file does not load, and End run still ends the run', async () => {
+        const { prepared, state } = setupOnDisk();
+        const drafts: Array<ComposerDraftRequest | null> = [];
+        const halts: Array<RecoveryIssue | undefined> = [];
+        const { inputMode, asked, feedbackAtPrompt } = recordQuestions(
+          [WORDS, rowPick('v'), WORDS, rowPick('a')],
+          (at) => {
+            if (at === 1) breakConfigFile(prepared);
+            drafts.push(composerDraftStore.get().request);
+            halts.push(loadState(prepared.session.ref)?.pendingRecovery);
+            composerDraftStore.clear();
+          },
+        );
+
+        const result = await runDriver(prepared, state, inputMode);
+
+        expect(asked.map(({ question }) => question)).toEqual([PANEL, PANEL, PANEL, PANEL]);
+        expect(feedbackAtPrompt.slice(1)).toEqual([
+          { message: MALFORMED, isError: true },
+          { message: MALFORMED, isError: true },
+          { message: MALFORMED, isError: true },
+        ]);
+        expect(drafts.map((draft) => draft?.kind ?? null)).toEqual([
+          null,
+          'prepend',
+          null,
+          'prepend',
+        ]);
+        expect(drafts.map((draft) => draft?.value ?? null)).toEqual([null, WORDS, null, WORDS]);
+        expect(halts.map((halt) => halt?.status)).toEqual([
+          'awaiting-user',
+          'awaiting-user',
+          'awaiting-user',
+          'awaiting-user',
+        ]);
+        expect(halts.map((halt) => halt?.selectedAction)).toEqual([
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+        ]);
+        expect(result).toMatchObject({ shouldRun: false, state: { closed: { as: 'ended' } } });
+      });
+
+      it('asks the note again after a move to None and back to the seat, and sends it as the correction', async () => {
+        const { prepared, state } = setupSeatedTaskReview(false);
+        hydrateFromState(state, false);
+        const note = Promise.withResolvers<QuestionAnswer>();
+        const { inputMode, asked } = recordQuestions(
+          [rowPick('v'), note.promise, rowPick('v'), WORDS],
+          (at) => {
+            if (at === 3) {
+              configStore.__testReset({
+                projectDir: prepared.session.ref.projectDir,
+                config: prepared.sourceConfig,
+              });
+            }
+          },
+        );
+
+        const running = runDriver(prepared, state, inputMode);
+        await vi.waitFor(() => {
+          expect(asked.map(({ question }) => question)).toEqual([PANEL, NOTE]);
+        });
+        moveReviewToNone(prepared);
+        const result = await running;
+
+        expect(asked.map(({ question }) => question)).toEqual([PANEL, NOTE, PANEL, NOTE]);
+        expect(asked.map(({ reviewNone }) => reviewNone)).toEqual([false, false, true, false]);
+        if (!result.shouldRun) throw new Error('expected the correction to run');
+        expect(result.correctionTaken).toBe(true);
+        expect(result.steer).toBeUndefined();
+        expect(result.state.pendingTriage?.inputs).toHaveLength(1);
+        expect(result.state.pendingTriage?.inputs[0]).toMatchObject({
+          kind: 'defect',
+          source: 'user',
+          text: WORDS,
+        });
+        expect(runViewStore.get().reviewNone).toBe(false);
+      });
+
+      it('acts on REVIEW None once the file loads again as None', async () => {
+        const { prepared, state } = setupOnDisk();
+        const { projectDir } = prepared.session.ref;
+        const drafts: Array<ComposerDraftRequest | null> = [];
+        const { inputMode, asked, feedbackAtPrompt } = recordQuestions(
+          [WORDS, WORDS, rowPick('a')],
+          (at) => {
+            if (at === 1) breakConfigFile(prepared);
+            if (at === 2) {
+              drafts.push(composerDraftStore.get().request);
+              writeConfig(projectDir, { ...prepared.sourceConfig, reviewer: 'none' });
+            }
+            if (at === 3) drafts.push(composerDraftStore.get().request);
+          },
+        );
+
+        const result = await runDriver(prepared, state, inputMode);
+
+        expect(asked.map(({ question }) => question)).toEqual([PANEL, PANEL, PANEL]);
+        expect(asked.map(({ reviewNone }) => reviewNone)).toEqual([false, false, true]);
+        expect(feedbackAtPrompt[1]).toEqual({ message: MALFORMED, isError: true });
+        expect(feedbackAtPrompt[2]).toEqual({ message: NO_CORRECTION, isError: false });
+        expect(drafts).toHaveLength(2);
+        expect(drafts[0]).toMatchObject({ kind: 'prepend', value: WORDS });
+        expect(drafts[1]).toMatchObject({ kind: 'prepend', value: WORDS });
+        expect(result).toMatchObject({ shouldRun: false, state: { closed: { as: 'ended' } } });
       });
 
       it.each([false, true])(

@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { renderToString } from 'ink';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { AGY_QUOTA_LEAD } from '#testing/helpers/events/agy-quota.js';
+import { flushEffects } from '#testing/helpers/ink.js';
 import { SESSION_LOG_FILE, sessionDir } from '../../../../src/core/paths.js';
 import { toEngineEventEntry } from '../../../../src/core/sessions/log-writer.js';
 import { hydrateRun } from '../../../../src/features/workflow/run-history.js';
@@ -241,6 +242,26 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
           taskId: WORKFLOW_FIXTURE_TASK_ID,
           phase: 'implementing',
         });
+      },
+    });
+  }
+  // The confirmation opens over the words typed in its review phase: no seat takes them, so Enter
+  // hands them back under the pending confirmation and Tab gives it the keys.
+  if (projection.scenarioId === 'workflow-plan-card-confirm-words') {
+    return () => ({
+      ...base(),
+      afterMount: async (write) => {
+        await write.press(TYPED_WORDS);
+        void openApprovalPrompt({
+          tier: 'confirm',
+          actionClass: 'destructive',
+          actionDescription: '.splitbrief/state.json',
+          taskId: WORKFLOW_FIXTURE_TASK_ID,
+          phase: 'reviewing-plan',
+        });
+        await flushEffects();
+        await write.press('\r');
+        await write.press('\t');
       },
     });
   }
@@ -1386,6 +1407,7 @@ const checkpointPredicates = [
       includesAll(PLAN_CARD_OVER_DRAFT)(context) &&
       excludesAll(`${listRowLead('active')}Approve plan`)(context),
   ],
+  [checkpointId('plan-card-confirm-words'), includesAll('Confirm with a reason', TYPED_WORDS)],
   [
     checkpointId('plan-card-usage-refused'),
     (context) =>

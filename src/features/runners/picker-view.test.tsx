@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import {
   makeActions,
@@ -18,6 +18,7 @@ import { SOFT_SEP } from '../../core/separators.js';
 import { glyph } from '../../lib/glyphs.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
+import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { configStore } from '../../stores/project/config.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
@@ -805,6 +806,112 @@ describe('PickerView previews', () => {
     expect(implementerUi.lastFrame() ?? '').toContain('BUILD');
     expect(implementerUi.lastFrame() ?? '').not.toContain('REVIEW');
     implementerUi.unmount();
+  });
+});
+
+describe('PickerView feedback', () => {
+  const refusal = 'BUILD runs OpenAI Codex CLI · GPT-5.4 now · choose another tool or model';
+  const saveFailure = 'Saved BUILD failed · .splitbrief/config.yaml is not writable';
+  const codex = pickerItem({
+    id: 'codex',
+    displayName: 'OpenAI Codex CLI',
+    kind: 'cli',
+    roles: ['planner', 'implementer'],
+    modelPolicy: 'optional',
+    billing: 'subscription-included',
+    permissions: readyPermissions,
+    status: { state: 'ready', remediation: null },
+    available: true,
+    isCurrent: true,
+  });
+
+  function feedbackCatalog(): PickerCatalog {
+    return pickerCatalog({
+      items: [codex],
+      rightModels: [{ id: 'gpt-5.4', displayName: 'GPT-5.4' }],
+      currentItem: codex,
+      selectedItemId: codex.id,
+      roleLabel: 'BUILD',
+      modelCounts: { ...zeroCounts, confirmed: 1 },
+    });
+  }
+
+  function renderFeedbackPicker(viewport = { cols: 140, rows: 40 }) {
+    return renderFeature(
+      <PickerView
+        role="implementer"
+        slot="fallback"
+        catalog={feedbackCatalog()}
+        actions={makeActions()}
+      />,
+      viewport,
+    );
+  }
+
+  beforeEach(() => {
+    resetAllStores();
+    terminalSizeStore.__testReset({ cols: 140, rows: 40, isSmall: false });
+    configStore.__testReset({ projectDir: '/tmp/project', config: makeConfig() });
+    overlayStore.open('implementer-fallback-picker');
+  });
+
+  afterEach(() => {
+    feedbackStore.reset();
+  });
+
+  it('shows a neutral refusal on the byline in place of the tool line', async () => {
+    const ui = renderFeedbackPicker();
+    await flushEffects();
+    expect(ui.lastFrame() ?? '').toContain('from codex debug models');
+
+    feedbackStore.setMessage(refusal);
+    await flushEffects();
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain(refusal);
+    expect(frame).not.toContain('from codex debug models');
+    expect(feedbackStore.get()).toEqual({ message: refusal, isError: false });
+
+    feedbackStore.setMessage(null);
+    await flushEffects();
+    expect(ui.lastFrame() ?? '').toContain('from codex debug models');
+    ui.unmount();
+  });
+
+  it('keeps save failures in the error voice', async () => {
+    const ui = renderFeedbackPicker();
+    await flushEffects();
+    expect(ui.lastFrame() ?? '').toContain('from codex debug models');
+
+    feedbackStore.setError(saveFailure);
+    await flushEffects();
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain(saveFailure);
+    expect(frame).not.toContain('from codex debug models');
+    expect(feedbackStore.get()).toEqual({ message: saveFailure, isError: true });
+    ui.unmount();
+  });
+
+  it('shows a refusal on the byline at 50 columns in each voice', async () => {
+    terminalSizeStore.__testReset({ cols: 50, rows: 40 });
+    const ui = renderFeedbackPicker({ cols: 50, rows: 40 });
+    await flushEffects();
+    expect(ui.lastFrame() ?? '').toContain('BUILD fallback');
+    expect(ui.lastFrame() ?? '').not.toContain('BUILD runs');
+
+    feedbackStore.setError(refusal);
+    await flushEffects();
+    expect(ui.lastFrame() ?? '').toContain('BUILD runs');
+
+    feedbackStore.setMessage(null);
+    await flushEffects();
+    expect(ui.lastFrame() ?? '').not.toContain('BUILD runs');
+
+    feedbackStore.setMessage(refusal);
+    await flushEffects();
+    expect(ui.lastFrame() ?? '').toContain('BUILD runs');
+    ui.unmount();
   });
 });
 

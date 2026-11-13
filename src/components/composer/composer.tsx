@@ -364,13 +364,13 @@ function ComposerInput({
   const canAttachImage = (): boolean => {
     if (!supportsImages) {
       if (config === null) {
-        feedbackStore.setError(
+        feedbackStore.setMessage(
           'Cannot attach image: the planner cannot see images. Choose a vision model with /crew plan.',
         );
         return false;
       }
       const displayName = resolveSeatDisplayName(config.planner, 'planner', modelCacheStore);
-      feedbackStore.setError(
+      feedbackStore.setMessage(
         noVisionFeedbackMessage(formatSeatIdentity({ seat: config.planner, displayName })),
       );
       return false;
@@ -573,7 +573,7 @@ function ComposerInput({
 
     if (mode !== 'normal') {
       if (emptyAnswerNotice !== undefined && isBlankDraft(document)) {
-        feedbackStore.setError(emptyAnswerNotice);
+        feedbackStore.setMessage(emptyAnswerNotice);
         return;
       }
       if (send(document, false) && !submitKeepsDraft) clearDraft();

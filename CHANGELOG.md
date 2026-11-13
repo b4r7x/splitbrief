@@ -114,6 +114,7 @@
 - A key or a command that the run cannot take now shows its reason in plain text, not in the colour of an error. Only a failure shows the error mark.
 - A failure on the run screen shows `✗` in front of its sentence, in place of a red first word.
 - Settings and the setup screen show a saved change or the reason of a refused command in dim text, not in green.
+- A refusal on the recovery panel, in the composer, at the review prompt, on the setup screen, in settings and in the model picker shows as a plain note, not as an error. Nothing failed: the line says what to do next.
 
 ### Removed
 
@@ -687,6 +688,7 @@
 - A `tight` brief row names the context window only when it is known.
 - A run with REVIEW set to None ends on `Review · none · no seat reviewed this run`, which fits a narrow terminal.
 - `splitbrief continue` after a move to REVIEW None says that no seat reviews the rest of the run.
+- Words sent during a spec, plan or brief review while a confirmation prompt waits now show `Confirm or deny the prompt first. Tab back to the actions.`, not a note that a review prompt is opening.
 
 ## [0.1.0] - 2026-08-07
 

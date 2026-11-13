@@ -711,6 +711,10 @@ describe('SetupScreen', () => {
       await continueSetup(ui);
       expect(existsSync(configPath(projectDir))).toBe(false);
       expect(routerStore.get().screen).toBe('setup');
+      expect(feedbackStore.get()).toEqual({
+        message: 'Choose a ready tool and model for each unavailable seat.',
+        isError: false,
+      });
       expect(ui.lastFrame() ?? '').toContain('Choose a ready tool and model');
       ui.unmount();
     });

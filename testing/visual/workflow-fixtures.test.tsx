@@ -8,6 +8,7 @@ import { getWorkflowPromptRows } from '../../src/features/workflow/prompt-rows/w
 import { approvalPromptStore } from '../../src/stores/approval-prompt/prompt.js';
 import { configStore } from '../../src/stores/project/config.js';
 import { questionPromptStore } from '../../src/stores/question-prompt/prompt.js';
+import { composerLiveStore } from '../../src/stores/ui/composer-live.js';
 import { controlsStore } from '../../src/stores/ui/controls.js';
 import { feedbackStore } from '../../src/stores/ui/feedback.js';
 import { terminalSizeStore } from '../../src/stores/ui/terminal-size.js';
@@ -1831,6 +1832,28 @@ describe('workflow visual fixtures', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     teardownVisualFixture();
+  });
+
+  it('names the confirmation that waits when its review phase takes the typed words', async () => {
+    const scenario = findVisualScenario('workflow-plan-card-confirm-words');
+    const checkpoint = scenario?.checkpoints[0];
+    if (scenario === undefined || checkpoint === undefined) {
+      throw new Error('Missing confirmation-over-words scenario');
+    }
+    const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: VIEWPORT });
+    try {
+      const frame = stripAnsiStyles(await ui.waitForCheckpoint());
+      expect(approvalPromptStore.get().status).toBe('pending');
+      expect(feedbackStore.get()).toEqual({
+        message: 'Confirm or deny the prompt first. Tab back to the actions.',
+        isError: false,
+      });
+      expect(composerLiveStore.get().text).toBe('keep the old lockfile');
+      expect(frame).toContain('Confirm with a reason');
+      expect(frame).toContain('keep the old lockfile');
+    } finally {
+      await ui.unmount();
+    }
   });
 
   it.each([...workflowFixtureProjections.values()])(

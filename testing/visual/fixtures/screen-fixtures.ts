@@ -686,6 +686,11 @@ export function createSetupFixture(
         for (const key of ['\x1b[A', '\x1b[A', '\x1b[A', '\r']) await write.press(key);
       },
     }),
+    ...(state === 'unavailable' && {
+      afterMount: async (write) => {
+        for (const key of ['\x1b[B', '\x1b[B', '\x1b[B', '\r']) await write.press(key);
+      },
+    }),
     teardown: async () => {
       await releaseToolChecks?.();
       restoreFetch?.();

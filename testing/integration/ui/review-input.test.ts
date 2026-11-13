@@ -237,7 +237,7 @@ describe('createReviewInputHandler – idle / other phases', () => {
 
     expect(enqueue).not.toHaveBeenCalled();
     expect(feedbackStore.get()).toMatchObject({
-      isError: true,
+      isError: false,
       message: expect.stringContaining('Review prompt is opening'),
     });
   });
@@ -250,7 +250,7 @@ describe('createReviewInputHandler – idle / other phases', () => {
     await handleInput(plainUserMessage('why is nothing happening'));
 
     expect(feedbackStore.get()).toMatchObject({
-      isError: true,
+      isError: false,
       message: `Review prompt is opening. Once active, use: ${REVIEW_HINT}`,
     });
   });

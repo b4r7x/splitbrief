@@ -2910,6 +2910,16 @@ const planCardProjection: WorkflowFixtureProjection = {
   },
 };
 
+// The plan card's confirmation waiting over the words typed during its review phase: no seat
+// takes them, so Enter hands them back under the confirmation and Tab gives it the keys.
+const planCardConfirmWordsProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-plan-card-confirm-words'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: false,
+  events: planCardProjection.events,
+};
+
 // The plan card of a plan whose render checks have no validation.render to run them: the planner
 // kept them after its one repair, so the card opens with the note before anything it confirms.
 const RENDER_NOTE_PLAN = makePlanProposal({
@@ -9616,6 +9626,7 @@ const projections = [
   { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-steer-row') },
   { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-request-empty') },
   { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-over-draft') },
+  planCardConfirmWordsProjection,
   {
     ...planCompiledProjection,
     scenarioId: scenarioId('workflow-plan-repaired'),

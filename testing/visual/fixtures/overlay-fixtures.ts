@@ -109,6 +109,7 @@ import {
   seedRoutedCrew,
   setupVisualFixture,
   teardownVisualFixture,
+  BASE_IMPLEMENTER,
   LONG_SESSION_ID,
   retainUnremovableDraft,
   RUN_LOCK_NOT_RELEASED,
@@ -1229,6 +1230,14 @@ const createSettingsReviewNoneLockedEnterFixture: FixtureFactory = () => ({
     await flushEffects();
   },
 });
+const createSettingsInvalidNumberFixture: FixtureFactory = () => ({
+  ...createOverlayFixture({ overlay: 'settings', focus: 'implementer.contextLength' }),
+  afterMount: async (write) => {
+    await write.press('\r');
+    for (const _ of String(BASE_IMPLEMENTER.contextLength)) await write.press('\x7f');
+    await write.press('\r');
+  },
+});
 const createSettingsFallbackReviewNoneFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'settings',
@@ -2155,7 +2164,7 @@ const createFallbackPickerSameSeatFixture: FixtureFactory = () => ({
       seat: BUILD_CODEX_SEAT,
       displayName: resolveSeatDisplayName(BUILD_CODEX_SEAT, 'implementer', modelCacheStore),
     });
-    feedbackStore.setError(`BUILD runs ${identity} now${SOFT_SEP}choose another tool or model`);
+    feedbackStore.setMessage(`BUILD runs ${identity} now${SOFT_SEP}choose another tool or model`);
   },
 });
 const STOP_SHEET_TS = 1_783_958_400_000;
@@ -3019,6 +3028,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
     scenarioId('overlay-settings-review-none-locked-enter'),
     createSettingsReviewNoneLockedEnterFixture,
   ],
+  [scenarioId('overlay-settings-invalid-number'), createSettingsInvalidNumberFixture],
   [scenarioId('overlay-settings-fallback-review-none'), createSettingsFallbackReviewNoneFixture],
   [scenarioId('overlay-settings-saved'), createSettingsSavedFixture],
   [scenarioId('overlay-settings-saved-during-run'), createSettingsSavedDuringRunFixture],

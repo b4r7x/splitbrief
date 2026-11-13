@@ -52,14 +52,15 @@ export interface TwoColumnPickerProps<L extends FilterableItem, R extends { id: 
   /** The byline under the columns. Each line of its text starts a row of its own. */
   preview?: ((ctx: PreviewContext<L, R>) => string | undefined) | undefined;
   /**
-   * An error standing right now, such as a save the config refused. The overlay hides the
-   * composer that would carry it, so it takes the byline until it clears.
+   * The notice standing right now, in its voice: a refusal, or a save the config refused. The
+   * overlay hides the composer that would carry it, so it takes the byline at every width until
+   * it clears.
    */
-  error?: string | undefined;
+  notice?: Readonly<{ message: string | null; isError: boolean }> | undefined;
 }
 
 const PREVIEW_MIN_COLS = 50;
-/** The byline's rows: the preview's, and an error's when one stands. */
+/** The byline's rows: the preview's, and a notice's when one stands. */
 const BYLINE_ROWS = 2;
 
 /**
@@ -293,7 +294,7 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
   onCancel,
   onRefresh,
   preview,
-  error,
+  notice,
 }: TwoColumnPickerProps<L, R>) {
   const t = useTheme();
   const [{ cols, rows }] = useStores(terminalSizeStore);
@@ -377,6 +378,13 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
       ? undefined
       : sanitizeTerminalDisplayText(rawPreview, { preserveLineBreaks: true });
   const showPreview = previewText !== undefined && previewText !== '' && cols > PREVIEW_MIN_COLS;
+  const byline =
+    notice === undefined || notice.message === null
+      ? { lines: showPreview ? bylineLines(previewText, totalBoxWidth) : [' '], color: t.textDim }
+      : {
+          lines: bylineLines(sanitizeTerminalDisplayText(notice.message), totalBoxWidth),
+          color: notice.isError ? t.error : t.textDim,
+        };
   const leftEmptyText = `No ${(leftProps.label ?? 'items').toLowerCase()} match`;
   const wheelStep = (direction: 'up' | 'down'): 1 | -1 => (direction === 'up' ? -1 : 1);
 
@@ -499,17 +507,8 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
         marginTop={1}
         flexDirection="column"
       >
-        {(error === undefined
-          ? showPreview
-            ? bylineLines(previewText, totalBoxWidth)
-            : [' ']
-          : bylineLines(sanitizeTerminalDisplayText(error), totalBoxWidth)
-        ).map((line, rowIndex) => (
-          <Text
-            key={rowIndex}
-            color={error === undefined ? t.textDim : t.error}
-            wrap="truncate-end"
-          >
+        {byline.lines.map((line, rowIndex) => (
+          <Text key={rowIndex} color={byline.color} wrap="truncate-end">
             {line}
           </Text>
         ))}

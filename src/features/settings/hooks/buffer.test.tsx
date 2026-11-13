@@ -59,7 +59,7 @@ describe('useEditBuffer commit on invalid input', () => {
     resetAllStores();
   });
 
-  it('keeps edit mode open and surfaces an error for empty numeric values', async () => {
+  it('keeps edit mode open and shows a neutral note for empty numeric values', async () => {
     const committed: CommittedEdit[] = [];
     const ui = renderFeature(<Harness def={numberDef} initialValue="3" committed={committed} />);
     await flushEffects();
@@ -71,13 +71,13 @@ describe('useEditBuffer commit on invalid input', () => {
 
     expect(committed).toHaveLength(0);
     expect(ui.lastFrame() ?? '').toContain('active=true');
-    expect(feedbackStore.get().isError).toBe(true);
+    expect(feedbackStore.get().isError).toBe(false);
     expect(feedbackStore.get().message).toContain('Context length');
 
     ui.unmount();
   });
 
-  it('keeps edit mode open and surfaces an error for empty string values', async () => {
+  it('keeps edit mode open and shows a neutral note for empty string values', async () => {
     const committed: CommittedEdit[] = [];
     const ui = renderFeature(
       <Harness def={stringDef} initialValue="npm test" committed={committed} />,
@@ -95,7 +95,7 @@ describe('useEditBuffer commit on invalid input', () => {
     expect(ui.lastFrame() ?? '').toContain('active=true');
 
     const feedback = feedbackStore.get();
-    expect(feedback.isError).toBe(true);
+    expect(feedback.isError).toBe(false);
     expect(feedback.message).toContain('Test command');
 
     ui.unmount();

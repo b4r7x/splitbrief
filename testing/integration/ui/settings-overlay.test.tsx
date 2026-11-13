@@ -195,7 +195,7 @@ describe('settings overlay integration', () => {
     ui.unmount();
   });
 
-  it('keeps edit mode open and surfaces an error when committing invalid input', async () => {
+  it('keeps edit mode open and shows a neutral note when committing invalid input', async () => {
     writeConfigYaml(dir, { implementer: { timeout: SEEDED_TIMEOUT_MS } });
     configStore.load(dir);
     terminalSizeStore.__testReset({ cols: 100, rows: 60, isSmall: false });
@@ -228,7 +228,7 @@ describe('settings overlay integration', () => {
     await vi.waitFor(() => {
       expect(loadConfig(dir).config.implementer).toMatchObject({ timeout: SEEDED_TIMEOUT_MS });
       const feedback = feedbackStore.get();
-      expect(feedback.isError).toBe(true);
+      expect(feedback.isError).toBe(false);
       expect(feedback.message).toContain('Timeout');
       expect(overlayStore.get().exclusive).toBe(true);
     });

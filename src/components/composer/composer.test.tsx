@@ -1215,6 +1215,7 @@ describe('Composer image attach gate', () => {
 
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain('/crew plan');
+    expect(feedbackStore.get().isError).toBe(false);
     expect(attachmentsStore.peek()).toEqual([]);
     ui.unmount();
   });

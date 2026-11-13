@@ -381,6 +381,28 @@ describe('visual catalog', () => {
     }
   });
 
+  it.each(REQUIRED_VIEWPORTS)(
+    'keeps the same-seat refusal visible in the picker byline at $cols x $rows',
+    async (viewport) => {
+      const scenario = findVisualScenario('overlay-fallback-picker-same-seat');
+      const checkpoint = scenario?.checkpoints[0];
+      if (!scenario || !checkpoint) throw new Error('Missing same-seat fallback scenario');
+      const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
+      try {
+        const frame = stripAnsiStyles(await handle.waitForCheckpoint());
+        expect(feedbackStore.get()).toEqual({
+          message: 'BUILD runs OpenAI Codex CLI · GPT-6-Astra now · choose another tool or model',
+          isError: false,
+        });
+        expect(frame).toContain('BUILD runs OpenAI Codex CLI · GPT-6-Astra now');
+        expect(frame).toContain('another tool or model');
+        expect(frame).not.toContain('no --model flag');
+      } finally {
+        await handle.unmount();
+      }
+    },
+  );
+
   it.each([
     ['overlay-picker-version-timeout-signed-out', 'Auth required', 'Sign in to OpenAI Codex CLI'],
     ['overlay-picker-version-timeout-signed-in', 'Unverified', 'Verify OpenAI Codex CLI against'],
