@@ -774,12 +774,19 @@ describe('runHeadless — the run\u2019s terminal outcome sets the exit code', (
       exitCode: 1,
       message: 'Final review failed with 0 blocking findings; see review.md',
     });
+    expect(stderrSpy.mock.calls.map((call: unknown[]) => String(call[0])).join('')).toContain(
+      [
+        `Run ${sessionId} is ready to apply.`,
+        `Apply with: splitbrief continue ${sessionId} --action apply-as-is`,
+        `Discard with: splitbrief continue ${sessionId} --action discard`,
+      ].join('\n'),
+    );
     expect(records()).toEqual([
       {
         type: 'ready_to_apply',
         sessionId,
         override: true,
-        applyCommand: `splitbrief continue ${sessionId} --action apply`,
+        applyCommand: `splitbrief continue ${sessionId} --action apply-as-is`,
         discardCommand: `splitbrief continue ${sessionId} --action discard`,
       },
       {
@@ -837,7 +844,7 @@ describe('runHeadless — the run\u2019s terminal outcome sets the exit code', (
         type: 'ready_to_apply',
         sessionId,
         override: true,
-        applyCommand: `splitbrief continue ${sessionId} --action apply`,
+        applyCommand: `splitbrief continue ${sessionId} --action apply-as-is`,
         discardCommand: `splitbrief continue ${sessionId} --action discard`,
       },
       {

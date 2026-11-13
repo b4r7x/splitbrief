@@ -371,7 +371,11 @@ export async function continueWithCorrection(
     let config = loadConfig(projectDir).config;
     if (action !== undefined) {
       const parsed = parseContinueActionOption(action);
-      if (parsed.action === 'apply' || parsed.action === 'discard')
+      if (
+        parsed.action === 'apply' ||
+        parsed.action === 'apply-as-is' ||
+        parsed.action === 'discard'
+      )
         throw new Error(`'${action}' does not answer a halt`);
       const answered = await applyRecoveryAction({
         projectDir,

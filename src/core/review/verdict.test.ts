@@ -1010,6 +1010,75 @@ describe('what an Accept as is leaves open', () => {
       });
     },
   );
+
+  it.each([
+    {
+      form: 'no red check',
+      accepted: { findings: ['Missing test', 'The error is not logged'] },
+      sentence: 'Run accepted as is with 2 open findings: Missing test; The error is not logged.',
+    },
+    {
+      form: 'a red check and an open finding',
+      accepted: { redChecks: [v1], findings: ['a'] },
+      sentence:
+        'Run accepted as is with 1 red check and 1 open finding: V1 failed · npm test · Error: 2 specs failed; a.',
+    },
+    {
+      form: 'a red check and no open finding',
+      accepted: { redChecks: [v1], findings: [] },
+      sentence:
+        'Run accepted as is with 1 red check: V1 failed · npm test · Error: 2 specs failed.',
+    },
+    {
+      form: 'your note',
+      accepted: { findings: ['Review input is 9 characters'], note: 'Checked by hand' },
+      sentence:
+        'Run accepted as is with 1 open finding: Review input is 9 characters. Your note: Checked by hand.',
+    },
+    {
+      form: "the planner's note",
+      accepted: {
+        findings: ['Keep the old error'],
+        note: 'The error type is public API',
+        by: 'planner' as const,
+      },
+      sentence:
+        "Run accepted as is with 1 open finding: Keep the old error. Planner's note: The error type is public API.",
+    },
+    {
+      form: 'findings and a note that end with a full stop',
+      accepted: {
+        findings: ['Missing test.', 'The error is not logged.'],
+        note: 'Checked by hand.',
+      },
+      sentence:
+        'Run accepted as is with 2 open findings: Missing test; The error is not logged. Your note: Checked by hand.',
+    },
+    {
+      form: 'a finding and a note that end with a question mark',
+      accepted: { findings: ['Is the cap right?'], note: 'Why review this?' },
+      sentence:
+        'Run accepted as is with 1 open finding: Is the cap right? Your note: Why review this?',
+    },
+    {
+      form: 'red checks, a finding and a note of more than one line',
+      accepted: {
+        redChecks: [
+          { id: 'K004', lastLine: 'src/a.ts(3,1): TS2322.' },
+          { id: 'V1', command: 'npm run lint &&\n  npm test' },
+        ],
+        findings: ['Edge case missing\nUnicode input is not covered'],
+        note: 'Checked\nby hand',
+      },
+      sentence:
+        'Run accepted as is with 2 red checks and 1 open finding: K004 failed · src/a.ts(3,1): TS2322; V1 failed · npm run lint && npm test; Edge case missing Unicode input is not covered. Your note: Checked by hand.',
+    },
+  ])('says an accept with $form in one sentence', ({ accepted, sentence }) => {
+    expect(verdictModule.acceptedSentence).toBeTypeOf('function');
+    expect(verdictModule.acceptedSentence({ at: '2026-09-01T00:00:00.000Z', ...accepted })).toBe(
+      sentence,
+    );
+  });
 });
 
 describe('findingFacts', () => {

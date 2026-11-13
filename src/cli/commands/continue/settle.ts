@@ -20,7 +20,7 @@ export async function settleReadyRun(
     sessionId: string;
     state: WorkflowState;
     json: boolean;
-  } & ({ action: 'discard' } | { action: 'apply'; reviewNone: boolean }),
+  } & ({ action: 'discard' } | { action: 'apply' | 'apply-as-is'; reviewNone: boolean }),
 ): Promise<WorkflowState | undefined> {
   const { projectDir, sessionId, state, json } = input;
   const ref = { projectDir, sessionId };
@@ -44,7 +44,12 @@ export async function settleReadyRun(
 
   // Apply has no stop: a signal lets it finish and write its exit record, then the process exits.
   const { stopped, value: result } = await withHeadlessStop(() =>
-    runApplyAtRest({ wctx: { projectDir, sessionId, bus }, state, reviewNone: input.reviewNone }),
+    runApplyAtRest({
+      wctx: { projectDir, sessionId, bus },
+      state,
+      reviewNone: input.reviewNone,
+      overrideConfirmed: input.action === 'apply-as-is',
+    }),
   );
   switch (result.outcome) {
     case 'applied':
@@ -65,11 +70,9 @@ export async function settleReadyRun(
         return undefined;
       }
       return result.state;
+    // `continueCommand` refuses the plain word on a run accepted as is before Apply is asked, and
+    // `apply-as-is` is the confirmation, so Apply does not come back to ask for one.
     case 'needs-confirmation':
-      throw cliError(
-        `Run ${sessionId} was accepted as is; confirm Apply on the run screen with /run accept confirm.`,
-        1,
-      );
     case 'halted':
       emitRecoveryAndFailIfPending({
         state: result.state,

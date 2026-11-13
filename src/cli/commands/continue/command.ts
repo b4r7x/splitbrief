@@ -7,10 +7,12 @@ import { cliError } from '../../errors.js';
 import { sessionError } from '../../../core/sessions/errors.js';
 import { loadRunRecord } from '../../../core/sessions/run-record.js';
 import { defaultRunRecordDeps } from '../../../core/sessions/run-record-io.js';
-import { recordWriterFor, runHeadless } from '../../headless.js';
+import { emitReadyToApply, recordWriterFor, runHeadless } from '../../headless.js';
 import { resolveSessionAlias } from '../../sessions/aliases.js';
-import { assertSessionExists } from '../../sessions/resolve.js';
+import { applyCommand, assertSessionExists } from '../../sessions/resolve.js';
 import { readActive } from '../../../core/sessions/active-pointer.js';
+import { deriveRunStatus } from '../../../core/sessions/run-status.js';
+import { acceptedCounts, acceptedSentence } from '../../../core/review/verdict.js';
 import type { WorkflowOpts } from '../../../core/types/config-options.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
@@ -33,6 +35,7 @@ import {
   endRunError,
   closedChangesSuffix,
 } from '../../../engine/orchestrator/run/close.js';
+import { finalizeRunAtRest } from '../../../engine/orchestrator/session-lifecycle/finalize.js';
 
 export interface ContinueDeps {
   initStores: typeof initStores;
@@ -207,10 +210,14 @@ export async function continueCommand(
       throw cliError(err.message, 1);
     });
     resumed = { state: closure.state };
-  } else if (action?.action === 'apply' || action?.action === 'discard') {
+  } else if (
+    action?.action === 'apply' ||
+    action?.action === 'apply-as-is' ||
+    action?.action === 'discard'
+  ) {
     if (record.status.kind !== 'ready-to-apply') {
       throw cliError(
-        `Run ${sessionId} is not ready to apply; --action ${action.action} settles a run whose review passed in its workspace.`,
+        `Run ${sessionId} is not ready to apply; --action ${action.action} settles a run ${action.action === 'apply-as-is' ? 'that was accepted as is' : 'whose review passed'} in its workspace.`,
         1,
       );
     }
@@ -224,14 +231,51 @@ export async function continueCommand(
       await settleReadyRun({ ...settled, action: 'discard' });
       return;
     }
+    // `apply-as-is` is the confirmation of a run accepted as is, so each word applies only its own
+    // run: the other word is refused here, before Apply is asked.
+    const accepted = hydrated.state.acceptedAsIs;
+    if (action.action === 'apply' && accepted !== undefined) {
+      throw cliError(
+        `Run ${sessionId} was accepted as is with ${acceptedCounts(accepted).phrase}; apply it as is with: ${applyCommand(sessionId, hydrated.state)}`,
+        1,
+      );
+    }
+    if (action.action === 'apply-as-is' && accepted === undefined) {
+      throw cliError(
+        `Run ${sessionId} was not accepted as is; apply it with: ${applyCommand(sessionId, hydrated.state)}`,
+        1,
+      );
+    }
     const { config } = resolveRunConfig({ projectDir: opts.projectDir, opts });
+    if (accepted !== undefined) process.stderr.write(`${acceptedSentence(accepted)}\n`);
     const next = await settleReadyRun({
       ...settled,
-      action: 'apply',
+      action: action.action,
       reviewNone: resolveReviewCadence(config) === 'none',
     });
     if (next === undefined) return;
     resumed = { state: next, config };
+  } else if (action?.action === 'accept-as-is') {
+    // Only the accept of a task review leaves the run open. That run goes on, so it needs the
+    // terminal every continue that goes on needs, asked before the accept writes.
+    if (hydrated.state.phase === 'implementing') assertResumeTerminal(opts);
+    resumed = await applyPendingRecoveryAction({
+      sessionId,
+      state: hydrated.state,
+      action,
+      opts,
+    });
+    const accepted = resumed.state.acceptedAsIs;
+    if (
+      accepted !== undefined &&
+      deriveRunStatus({ state: resumed.state, liveness: 'not-alive', reviewNone: false }).kind !==
+        'open'
+    ) {
+      // The accept settled the run, so it gets the record every other ending gets.
+      finalizeRunAtRest({ ref: { projectDir: opts.projectDir, sessionId }, state: resumed.state });
+      process.stderr.write(`${acceptedSentence(accepted)}\n`);
+      if (emitReadyToApply(resumed.state, sessionId, writeRecord)) return;
+    }
   } else if (action?.action === 'restore-backup') {
     // The answered restore is finished by Apply at rest, so it reports what it put back the way
     // Apply reports what it wrote, and the run is then ready to apply.
@@ -264,9 +308,12 @@ export async function continueCommand(
           });
   }
 
-  // `end-run` is the one action that does not carry the run on: the close is
-  // recorded and there is nothing left to re-enter.
-  if (resumed.state.closed !== undefined) {
+  // A closed run has nothing left to re-enter: `end-run` recorded the close, or `accept-as-is`
+  // settled a run with no workspace.
+  if (
+    deriveRunStatus({ state: resumed.state, liveness: 'not-alive', reviewNone: false }).kind ===
+    'closed'
+  ) {
     console.log(
       `Run ${sessionId} closed.${closedChangesSuffix({ projectDir: opts.projectDir, sessionId }, resumed.state)}`,
     );

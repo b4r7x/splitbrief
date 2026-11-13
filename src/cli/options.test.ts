@@ -148,9 +148,21 @@ describe('parseContinueActionOption', () => {
     expect(parseContinueActionOption('restore')).toEqual({ action: 'restore-backup' });
   });
 
-  it('exits 2 on an action it does not offer', () => {
+  it.each([
+    { word: 'accept-as-is', option: { action: 'accept-as-is' } },
+    { word: 'apply-as-is', option: { action: 'apply-as-is' } },
+  ])('takes $word, the word of its run screen row', ({ word, option }) => {
+    expect(() => parseContinueActionOption(word)).not.toThrow();
+    expect(parseContinueActionOption(word)).toEqual(option);
+  });
+
+  it('exits 2 on an action it does not offer and names each action it offers', () => {
     expect(() => parseContinueActionOption('abort')).toThrowError(
-      expect.objectContaining({ exitCode: 2 }),
+      expect.objectContaining({
+        exitCode: 2,
+        message:
+          "'abort' is not a continue action. Use skip, retry, restore, switch-seat:<tool>[:<model>][@<effort>], accept-as-is, end-run, apply, apply-as-is, or discard.",
+      }),
     );
   });
 
@@ -191,7 +203,7 @@ describe('parseContinueActionOption', () => {
 
   it('describes continue actions with the seat grammar the parser accepts', async () => {
     const description =
-      'skip, retry, restore, switch-seat:<tool>[:<model>][@<effort>], or end-run answer recovery; apply and discard settle a run that is ready to apply';
+      'skip, retry, restore, switch-seat:<tool>[:<model>][@<effort>], accept-as-is, or end-run answer recovery; apply, apply-as-is and discard settle a run that is ready to apply';
     const help = addWorkflowOptions(new Command('continue')).helpInformation().replace(/\s+/g, ' ');
 
     expect(help).toContain(description);

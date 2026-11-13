@@ -1254,7 +1254,7 @@ Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `cont
 | `--plain` | Headless: plain lines instead of NDJSON, no TUI; the line shapes are in [CLI-REFERENCE.md §Plain output stream](./CLI-REFERENCE.md#plain-output-stream---plain). Refuses to run alongside `--json` (exit `2`) | start, resume, continue |
 | `--yolo` | Removed; passing it fails with a removed-flag error | none |
 | `--skills <ids>` | Comma-separated skill ids to attach to every seat (unknown id → exit `2`); on resume and continue, for that continue only | start (headless), resume, continue |
-| `--action <action>` | Apply an action to the pending recovery before continuing: `skip`, `retry`, or `switch-seat:<tool>[:<model>][@<word>]`, where `@<word>` is the variant on opencode or kilo-code and the effort on other tools | continue |
+| `--action <action>` | Answer the pending recovery before continuing: `skip`, `retry`, `restore`, `accept-as-is`, `end-run`, or `switch-seat:<tool>[:<model>][@<word>]`, where `@<word>` is the variant on opencode or kilo-code and the effort on other tools. Settle a run that is ready to apply: `apply`, `apply-as-is` or `discard`. Each word is in [CLI-REFERENCE.md §splitbrief continue](./CLI-REFERENCE.md#splitbrief-continue) | continue |
 | `--on-seat-down <policy>` | Headless: `halt` stops on a seat-down halt; `switch` applies the seat's declared `fallback`. Unset applies a declared fallback too. See [Seat down](./APPROVAL-AND-RECOVERY.md#seat-down) | start, resume, continue |
 | `--reconfigure` | Overwrite existing config | init |
 

@@ -292,6 +292,20 @@ export function acceptedNote(
   return `${owner}: ${oneLineDisplayText(accepted.note)}`;
 }
 
+/**
+ * An Accept as is in one sentence, then its note: the counts, each red check line and each open
+ * finding, each on one row. The one home of `Run accepted as is with`.
+ */
+export function acceptedSentence(accepted: NonNullable<WorkflowState['acceptedAsIs']>): string {
+  const open = [...(accepted.redChecks ?? []).map(redCheckLine), ...accepted.findings].map(
+    oneLineDisplayText,
+  );
+  const note = acceptedNote(accepted);
+  const clause = (text: string): string => text.replace(/\.$/, '');
+  const sentence = (text: string): string => (/[.!?]$/.test(text) ? text : `${text}.`);
+  return `Run accepted as is with ${acceptedCounts(accepted).phrase}: ${sentence(open.map(clause).join('; '))}${note === undefined ? '' : ` ${sentence(note)}`}`;
+}
+
 export function reviewOutcomeWord(outcome: ReviewOutcome): 'pass' | 'pass_with_notes' | 'fail' {
   return outcome.kind === 'pass-with-notes' ? 'pass_with_notes' : outcome.kind;
 }

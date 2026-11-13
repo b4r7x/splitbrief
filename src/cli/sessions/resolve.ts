@@ -14,16 +14,17 @@ export function assertSessionExists(projectDir: string, sessionId: string): void
   }
 }
 
-export function applyCommand(sessionId: string): string {
-  return `${continueRunCommand(sessionId)} --action apply`;
+/** The command that applies a ready run: a run that was accepted as is takes `apply-as-is`. */
+export function applyCommand(sessionId: string, state: WorkflowState): string {
+  return `${continueRunCommand(sessionId)} --action ${state.acceptedAsIs === undefined ? 'apply' : 'apply-as-is'}`;
 }
 
 export function discardCommand(sessionId: string): string {
   return `${continueRunCommand(sessionId)} --action discard`;
 }
 
-export function readyToApplyMessage(sessionId: string): string {
-  return `Run ${sessionId} is ready to apply.\nApply with: ${applyCommand(sessionId)}\nDiscard with: ${discardCommand(sessionId)}`;
+export function readyToApplyMessage(sessionId: string, state: WorkflowState): string {
+  return `Run ${sessionId} is ready to apply.\nApply with: ${applyCommand(sessionId, state)}\nDiscard with: ${discardCommand(sessionId)}`;
 }
 
 export function assertResumableState(state: WorkflowState, sessionId: string): void {
@@ -32,6 +33,6 @@ export function assertResumableState(state: WorkflowState, sessionId: string): v
     throw cliError(`Run ${sessionId} is closed (${status.as}); nothing to resume.`, 1);
   }
   if (status.kind === 'ready-to-apply') {
-    throw cliError(readyToApplyMessage(sessionId), 1);
+    throw cliError(readyToApplyMessage(sessionId, state), 1);
   }
 }

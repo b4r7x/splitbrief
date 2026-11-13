@@ -729,7 +729,7 @@ review: passed
 done: 2 tasks
 ```
 
-**The four actions `continue` can take:**
+**The actions `continue` can take on a halt:**
 
 | `--action` | What it does |
 |---|---|
@@ -737,9 +737,28 @@ done: 2 tasks
 | `retry` | `retry-same-worker` — resets the brief and reruns it in a fresh worker context |
 | `restore` | `restore-backup` — after a partial Apply (`apply-partial`), puts back the checkout files Apply replaced, from the Apply backup |
 | `switch-seat:<tool>[:<model>]` | Moves the blocked seat to another detected tool, then reruns the brief there — the answer to a quota halt |
+| `accept-as-is` | On a halt that offers **Accept as is**, records the accept with the open findings and each red check. A worktree or staged-copy run is then ready to apply, and a checkout run closes. The run does not go on. |
 | `end-run` | Closes an open run and starts nothing. Unapplied workspace changes stay in `run.patch`; checkout-mode changes stay on disk. Refuses an unfinished Apply: restore or retry Apply first. |
 
-**Variations:** `--action` is a `continue` flag; `resume` has no equivalent, and a bare `splitbrief resume --plain` on a session with a pending recovery prints the same three lines and exits `1`. An action the issue does not allow exits `1` and names the actions it does allow; a value that is not a continue action exits `2` with `'<value>' is not a continue action. Use skip, retry, restore, switch-seat:<tool>[:<model>], end-run, apply, or discard.` A recovery whose recommended action is a row of the recovery panel prints `Continue with: splitbrief continue <session>, then choose <row> in the recovery panel` instead — `Continue`, for example — with no `[--plain|--json]`, because the panel needs the TUI.
+**Accept a failed final review:** when the halt offers **Accept as is**, two commands keep the result without a TUI:
+
+```bash
+splitbrief continue 2026-09-13-rate-limiter --action accept-as-is
+splitbrief continue 2026-09-13-rate-limiter --action apply-as-is
+```
+
+The first command records the accept and exits `0`. On stderr it prints the accept in one sentence, then the lines that apply or discard the run:
+
+```
+Run accepted as is with 1 red check and 1 open finding: V1 failed · npm test · Error: 2 specs failed; The signup route accepts an empty address.
+Run 2026-09-13-rate-limiter is ready to apply.
+Apply with: splitbrief continue 2026-09-13-rate-limiter --action apply-as-is
+Discard with: splitbrief continue 2026-09-13-rate-limiter --action discard
+```
+
+The second command prints the same sentence first, and the word is the confirmation. Apply then runs as it does for `--action apply`. On an accepted run, `--action apply` exits `1` and names `--action apply-as-is`. A checkout run has no Apply: the first command closes it and prints `Run <id> closed.`.
+
+**Variations:** `--action` is a `continue` flag; `resume` has no equivalent, and a bare `splitbrief resume --plain` on a session with a pending recovery prints the same three lines and exits `1`. An action the issue does not allow exits `1` with `Recovery action "<action>" is not available for <reason>.` With `--json`, the `recovery_required` record of the halt lists the actions that the halt offers in `availableActions`. A value that is not a continue action exits `2` with `'<value>' is not a continue action. Use skip, retry, restore, switch-seat:<tool>[:<model>][@<effort>], accept-as-is, end-run, apply, apply-as-is, or discard.` A recovery whose recommended action is a row of the recovery panel prints `Continue with: splitbrief continue <session>, then choose <row> in the recovery panel` instead — `Continue`, for example — with no `[--plain|--json]`, because the panel needs the TUI.
 
 **See also:** [docs/CLI-REFERENCE.md](./CLI-REFERENCE.md#splitbrief-continue), [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md).
 

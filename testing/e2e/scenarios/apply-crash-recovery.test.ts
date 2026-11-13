@@ -242,13 +242,13 @@ describe('Apply killed mid-write', { timeout: 240_000 }, () => {
       timeoutMs: CLI_TIMEOUT_MS,
     });
     expect(restored.exitCode, restored.stderr).toBe(0);
+    const ready = readState(target, sessionId);
     expect(restored.stderr).toContain(
-      `Restored 1 file in your checkout.\n${readyToApplyMessage(sessionId)}`,
+      `Restored 1 file in your checkout.\n${readyToApplyMessage(sessionId, ready)}`,
     );
     expect(readFileSync(target.greetPath, 'utf8')).toBe(ORIGINAL_GREET);
     expect(existsSync(target.markerPath)).toBe(false);
     expect(writeTemporaries(target)).toEqual([]);
-    const ready = readState(target, sessionId);
     expect(ready.applying).toBeUndefined();
     expect(ready.pendingRecovery).toBeUndefined();
     expect(ready.closed).toBeUndefined();

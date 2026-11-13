@@ -159,20 +159,20 @@ export function emitReadyToApply(
   sessionId: string,
   writeRecord: RecordWriter,
 ): boolean {
-  const status =
-    state === null ? null : deriveRunStatus({ state, liveness: 'not-alive', reviewNone: false });
-  if (status?.kind !== 'ready-to-apply') return false;
+  if (state === null) return false;
+  const status = deriveRunStatus({ state, liveness: 'not-alive', reviewNone: false });
+  if (status.kind !== 'ready-to-apply') return false;
   writeRecord(
     {
       type: 'ready_to_apply',
       sessionId,
       override: status.override,
-      applyCommand: applyCommand(sessionId),
+      applyCommand: applyCommand(sessionId, state),
       discardCommand: discardCommand(sessionId),
     },
     process.stdout,
   );
-  process.stderr.write(`${readyToApplyMessage(sessionId)}\n`);
+  process.stderr.write(`${readyToApplyMessage(sessionId, state)}\n`);
   return true;
 }
 

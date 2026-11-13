@@ -303,7 +303,7 @@ A resumable stop publishes `turn_interrupted`. The operations reducer clears com
 
 Run changes in a worktree or staged-copy workspace await Apply. A seat switch can save the crew in `.splitbrief/config.yaml` before Apply. See [Seat down](./APPROVAL-AND-RECOVERY.md#seat-down) for this write.
 
-Apply writes an assessed run result into your checkout once. A checkout-mode run (`workflow.isolation: none`) has no Apply; see [Closing a checkout run](#run-status). Use [the result menu](./FEATURES.md#run-result-menu) or [`/run accept`](./SLASH-COMMANDS-REFERENCE.md#run-acceptreject). An override follows [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is).
+Apply writes an assessed run result into your checkout once. A checkout-mode run (`workflow.isolation: none`) has no Apply; see [Closing a checkout run](#run-status). Use [the result menu](./FEATURES.md#run-result-menu) or [`/run accept`](./SLASH-COMMANDS-REFERENCE.md#run-acceptreject). Without the run screen, use `splitbrief continue <id> --action apply`, or `--action apply-as-is` for a run accepted as is. An override follows [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is).
 
 Apply merges the current checkout into the run workspace. It uses the three states defined in [HOW-IT-WORKS.md](./HOW-IT-WORKS.md#run-workspace-and-apply). The checkout receives no candidate writes during this merge.
 
@@ -554,7 +554,7 @@ Recovery actions:
 | `retry-later` | A *Seat down* action, offered only when the halt names a reset: the seat waits for that reset, then the run continues |
 | `revise` | Clears recovery and queues the operator's correction for the next planner turn; on `review-failed`, records the correction and runs another review fix cycle |
 | `continue` | Offered only on a saved halt on a retired reason: resolves the halt, and the run goes on |
-| `accept-as-is` | Records an Accept as is override at final review, with the open findings and each red check. Not offered while an Apply input blocks. Workspace runs become ready to apply; checkout runs and older runs without a workspace close. See [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is). |
+| `accept-as-is` | Records an Accept as is override at final review, with the open findings and each red check. Not offered while an Apply input blocks. Workspace runs become ready to apply; checkout runs and older runs without a workspace close. Without the run screen: `splitbrief continue <id> --action accept-as-is`. See [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is). |
 | `restore-backup` | Restores a partial Apply through its backup. See [Partial Apply recovery](./APPROVAL-AND-RECOVERY.md#partial-apply-recovery). |
 | `skip-current-task` | Records evidence, restores the files the brief changed since its task-start snapshot and, when the skip ends a rewrite or a split, the files of the replaced attempts, marks task `skipped`, advances index |
 | `end-run` | Uses the shared close path. Refuses an unfinished Apply: restore or retry Apply first. Unapplied workspace work stays in `run.patch`; a checkout-mode run writes no patch. The run closes as `ended` or `discarded`. See [Apply](#apply). |

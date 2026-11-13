@@ -354,10 +354,10 @@ describe('e2e: brief escalation', { timeout: 240_000 }, () => {
     });
 
     expect(continued.exitCode, `${continued.stdout}\n${continued.stderr}`).toBe(0);
-    expect(continued.stderr).toContain(readyToApplyMessage(sessionId));
+    const state = readState(target, sessionId);
+    expect(continued.stderr).toContain(readyToApplyMessage(sessionId, state));
     expect(readCalls(callsPath)).toEqual([...HALT_CALLS, 'final-review']);
 
-    const state = readState(target, sessionId);
     expect(state.pendingRecovery).toBeUndefined();
     expect(state.tasks.map((task) => ({ id: task.id, status: task.status }))).toEqual([
       { id: 'T001', status: 'done' },

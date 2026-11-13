@@ -20,6 +20,9 @@ import { routerStore } from '../../../stores/navigation/router.js';
 import { skillsStore } from '../../../stores/project/skills.js';
 import { fixCyclesOf, type WorkflowState } from '../../../core/schemas/workflow.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR, sessionDir } from '../../../core/paths.js';
+import { readSpecFile, writeSpecFile } from '../../../core/paths-io.js';
+import { buildReviewFailedRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/task.js';
+import { buildReviewInputTooLargeRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/review-input.js';
 import type { PrepareExecutionInput } from '../../../engine/runners/prepare-execution/prepare-execution.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
@@ -1206,16 +1209,32 @@ describe('continueCommand', () => {
   });
 });
 
-describe('continueCommand --action apply|discard|end-run', () => {
+describe('continueCommand --action accept-as-is|apply|apply-as-is|discard|end-run', () => {
   const SESSION_ID = '2026-10-04-ready-run';
   const FIVE = 'one\ntwo\nthree\nfour\nfive\n';
   const read = (root: string, file: string): string => readFileSync(join(root, file), 'utf8');
+  const HALTED_AT = '2026-10-04T00:00:00.000Z';
+  const ACCEPTED = {
+    at: HALTED_AT,
+    findings: ['missing test'],
+    redChecks: [{ id: 'V1', command: 'npm test', lastLine: 'Error: 2 specs failed' }],
+  } satisfies NonNullable<WorkflowState['acceptedAsIs']>;
+  const ACCEPTED_SENTENCE =
+    'Run accepted as is with 1 red check and 1 open finding: V1 failed · npm test · Error: 2 specs failed; missing test.';
+  const APPLY_AS_IS = `splitbrief continue ${SESSION_ID} --action apply-as-is`;
+  const stateFile = (projectDir: string): string =>
+    readFileSync(join(sessionDir(projectDir, SESSION_ID), 'state.json'), 'utf8');
 
   beforeEach(() => {
     resetAllStores();
     headlessRuns = [];
     renderRuns = [];
     deps = createDeps();
+  });
+
+  afterEach(() => {
+    if (tmp) cleanupTempDir(tmp);
+    tmp = '';
   });
 
   function saveReady(run: ApplyRun, overrides: Partial<WorkflowState> = {}): void {
@@ -1229,6 +1248,108 @@ describe('continueCommand --action apply|discard|end-run', () => {
         ...overrides,
       }),
     );
+  }
+
+  /**
+   * A final review that failed on one finding while the check V1 is red: the halt that offers
+   * Accept as is. `review.md` holds what the review wrote.
+   */
+  function saveRedHalt(projectDir: string, overrides: Partial<WorkflowState> = {}): void {
+    const ref = { projectDir, sessionId: SESSION_ID };
+    saveState(
+      ref,
+      makeWorkflowState({
+        ...RUN_CREW,
+        phase: 'complete',
+        reviewStatus: 'failed',
+        tasks: [makeTask({ status: 'done' })],
+        review: {
+          cycle: 0,
+          at: HALTED_AT,
+          outcome: 'fail',
+          verification: [],
+          redInputs: [{ id: 'V1.1', text: 'npm test failed in src/hello.test.ts' }],
+          verdict: {
+            tasks: [{ id: makeTask().id, plan: 'met', note: '' }],
+            criteria: [],
+            findings: [
+              {
+                id: 'F1',
+                kind: 'defect',
+                severity: 'blocking',
+                taskId: null,
+                file: null,
+                line: null,
+                text: 'missing test',
+                acceptance: null,
+                checkIds: null,
+                criterionId: null,
+              },
+            ],
+          },
+        },
+        pendingTriage: {
+          inputs: [
+            {
+              id: 'V1.1',
+              kind: 'defect',
+              source: 'check',
+              text: 'npm test failed in src/hello.test.ts',
+              file: 'src/hello.test.ts',
+              checkIds: ['V1'],
+              command: 'npm test',
+              output: 'RUN v4\nError: 2 specs failed\n',
+            },
+          ],
+        },
+        pendingRecovery: buildReviewFailedRecoveryIssue({
+          blocking: 2,
+          phase: 'complete',
+          createdAt: HALTED_AT,
+          acceptAsIs: true,
+        }),
+        ...overrides,
+      }),
+    );
+    writeSpecFile(ref, 'review.md', '### Verdict\n\nfail\n');
+  }
+
+  /** A stopped run with no workspace: its briefs wrote into the project folder. */
+  function stoppedProject(): string {
+    const projectDir = makeTmpProject();
+    writeLockfile(makeSessionDir(projectDir, SESSION_ID), {
+      exitedAt: Date.now(),
+      sessionId: SESSION_ID,
+    });
+    return projectDir;
+  }
+
+  /** A task review too large to send, halted between two briefs: its accept skips that review. */
+  function saveTooLargeTaskReview(projectDir: string): RecoveryIssue {
+    const issue = buildReviewInputTooLargeRecoveryIssue({
+      phase: 'implementing',
+      failure: {
+        kind: 'input-too-large',
+        figures: { unit: 'characters', size: 900_000, limit: 400_000 },
+        promptSize: { characters: 900_000 },
+        changeFile: '.splitbrief/reviews/run-1.diff',
+        workspaceDir: projectDir,
+      },
+      tool: 'codex',
+      acceptAsIs: true,
+      createdAt: HALTED_AT,
+    });
+    saveState(
+      { projectDir, sessionId: SESSION_ID },
+      makeWorkflowState({
+        ...RUN_CREW,
+        phase: 'implementing',
+        tasks: [makeTask({ status: 'done' }), makeTask({ id: 'T002', dependsOn: ['T001'] })],
+        pendingScheduledReview: { afterTaskId: makeTask().id },
+        pendingRecovery: issue,
+      }),
+    );
+    return issue;
   }
 
   /** What the command wrote to each stream; stdout belongs to the NDJSON records alone. */
@@ -1249,10 +1370,14 @@ describe('continueCommand --action apply|discard|end-run', () => {
     };
   }
 
-  function settle(run: ApplyRun, action: 'apply' | 'discard' | 'restore'): Promise<void> {
-    return continueCommand(
+  async function settle(
+    run: Pick<ApplyRun, 'dir'>,
+    action: 'accept-as-is' | 'apply' | 'apply-as-is' | 'discard' | 'restore',
+    flags: { json?: true } = { json: true },
+  ): Promise<void> {
+    await continueCommand(
       SESSION_ID,
-      { projectDir: run.dir, json: true, action: parseContinueActionOption(action) },
+      { projectDir: run.dir, ...flags, action: parseContinueActionOption(action) },
       deps,
     );
   }
@@ -1439,15 +1564,16 @@ describe('continueCommand --action apply|discard|end-run', () => {
             output.restore();
           }
 
-          expect(output.stderr()).toContain(`${said}\n${readyToApplyMessage(SESSION_ID)}\n`);
+          const state = loadState({ projectDir: run.dir, sessionId: SESSION_ID });
+          if (state === null) throw new Error('The restored run has no saved state');
+          expect(output.stderr()).toContain(`${said}\n${readyToApplyMessage(SESSION_ID, state)}\n`);
           if (edited !== undefined)
             expect(output.stderr()).toContain('left as you changed them: a.txt');
           expect(read(run.dir, 'a.txt')).toBe(a);
           expect(read(run.dir, 'b.txt')).toBe('base b\n');
-          const state = loadState({ projectDir: run.dir, sessionId: SESSION_ID });
-          expect(
-            state && deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' }).kind,
-          ).toBe('ready-to-apply');
+          expect(deriveRunStatus({ reviewNone: false, state, liveness: 'not-alive' }).kind).toBe(
+            'ready-to-apply',
+          );
           expect(headlessRuns).toHaveLength(0);
           expect(renderRuns).toHaveLength(0);
         },
@@ -1547,32 +1673,233 @@ describe('continueCommand --action apply|discard|end-run', () => {
     });
   });
 
-  it('asks for the confirmation on the run screen before it applies a run accepted as is', async () => {
+  it('refuses a plain apply on a run accepted as is and names --action apply-as-is', async () => {
     await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
       writeFileSync(join(run.ws, 'b.txt'), 'created by the run\n');
-      saveReady(run, {
-        reviewStatus: 'failed',
-        acceptedAsIs: { at: '2026-10-04T00:00:00.000Z', findings: ['missing test'] },
-      });
+      saveReady(run, { reviewStatus: 'failed', acceptedAsIs: ACCEPTED });
+      const before = stateFile(run.dir);
+      const output = captureOutput();
 
-      await expect(settle(run, 'apply')).rejects.toMatchObject({
-        exitCode: 1,
-        message: expect.stringContaining('/run accept confirm'),
-      });
+      try {
+        await expect(settle(run, 'apply')).rejects.toMatchObject({
+          exitCode: 1,
+          message: `Run ${SESSION_ID} was accepted as is with 1 red check and 1 open finding; apply it as is with: ${APPLY_AS_IS}`,
+        });
+      } finally {
+        output.restore();
+      }
+
+      expect(output.stderr()).toBe('');
+      expect(output.stdout()).toBe('');
+      expect(stateFile(run.dir)).toBe(before);
       expect(existsSync(join(run.dir, 'b.txt'))).toBe(false);
-      expect(loadState({ projectDir: run.dir, sessionId: SESSION_ID })?.closed).toBeUndefined();
     });
   });
 
-  it.each(['apply', 'discard'] as const)(
+  it('applies a run accepted as is on apply-as-is: what the accept left open comes before the Apply line', async () => {
+    await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
+      writeFileSync(join(run.ws, 'b.txt'), 'created by the run\n');
+      saveReady(run, { reviewStatus: 'failed', acceptedAsIs: ACCEPTED });
+      const ref = { projectDir: run.dir, sessionId: SESSION_ID };
+      const output = captureOutput();
+
+      try {
+        await expect(settle(run, 'apply-as-is')).resolves.toBeUndefined();
+      } finally {
+        output.restore();
+      }
+
+      expect(output.stderr()).toBe(`${ACCEPTED_SENTENCE}\nApplied 1 file to your checkout.\n`);
+      expect(output.stdout()).toBe('');
+      expect(read(run.dir, 'b.txt')).toBe('created by the run\n');
+      expect(loadState(ref)?.closed?.as).toBe('applied');
+      expect(readSession(ref)?.apply).toBe('applied');
+      expect(headlessRuns).toHaveLength(0);
+      expect(renderRuns).toHaveLength(0);
+    });
+  });
+
+  it('refuses apply-as-is on a ready run that was not accepted as is and names --action apply', async () => {
+    await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
+      writeFileSync(join(run.ws, 'b.txt'), 'created by the run\n');
+      saveReady(run);
+      const before = stateFile(run.dir);
+      const output = captureOutput();
+
+      try {
+        await expect(settle(run, 'apply-as-is')).rejects.toMatchObject({
+          exitCode: 1,
+          message: `Run ${SESSION_ID} was not accepted as is; apply it with: splitbrief continue ${SESSION_ID} --action apply`,
+        });
+      } finally {
+        output.restore();
+      }
+
+      expect(output.stderr()).toBe('');
+      expect(output.stdout()).toBe('');
+      expect(stateFile(run.dir)).toBe(before);
+      expect(existsSync(join(run.dir, 'b.txt'))).toBe(false);
+    });
+  });
+
+  it('accepts the failed final review of a worktree run as is: the red check is recorded and the run is ready to apply as is', async () => {
+    await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
+      writeFileSync(join(run.ws, 'b.txt'), 'created by the run\n');
+      saveRedHalt(run.dir, { workspace: run.workspace });
+      const ref = { projectDir: run.dir, sessionId: SESSION_ID };
+      const output = captureOutput();
+
+      try {
+        await expect(settle(run, 'accept-as-is')).resolves.toBeUndefined();
+      } finally {
+        output.restore();
+      }
+
+      const state = loadState(ref);
+      expect(state?.acceptedAsIs).toEqual({ ...ACCEPTED, at: expect.any(String) });
+      expect(state?.pendingRecovery).toBeUndefined();
+      expect(
+        output
+          .stdout()
+          .trimEnd()
+          .split('\n')
+          .map((line) => JSON.parse(line)),
+      ).toEqual([
+        expect.objectContaining({
+          type: 'ready_to_apply',
+          sessionId: SESSION_ID,
+          override: true,
+          applyCommand: APPLY_AS_IS,
+        }),
+      ]);
+      expect(output.stderr()).toBe(
+        `${ACCEPTED_SENTENCE}\nRun ${SESSION_ID} is ready to apply.\nApply with: ${APPLY_AS_IS}\nDiscard with: splitbrief continue ${SESSION_ID} --action discard\n`,
+      );
+      expect(readSession(ref)?.apply).toBe('ready');
+      expect(readSpecFile(ref, 'review.md')).toContain(
+        '- V1 failed · npm test · Error: 2 specs failed',
+      );
+      expect(existsSync(join(run.dir, 'b.txt'))).toBe(false);
+      expect(headlessRuns).toHaveLength(0);
+      expect(renderRuns).toHaveLength(0);
+    });
+  });
+
+  it('accepts the failed final review of a run with no workspace as is, with no terminal: the run closes', async () => {
+    const projectDir = stoppedProject();
+    const ref = { projectDir, sessionId: SESSION_ID };
+    reactivateExistingSession(ref);
+    saveRedHalt(projectDir);
+    delete (process.stdin as { isTTY?: boolean }).isTTY;
+    const output = captureOutput();
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    let logged: string[] = [];
+
+    try {
+      await expect(settle({ dir: projectDir }, 'accept-as-is', {})).resolves.toBeUndefined();
+    } finally {
+      logged = logSpy.mock.calls.map((call) => call.join(' '));
+      logSpy.mockRestore();
+      output.restore();
+    }
+
+    expect(logged).toEqual([`Run ${SESSION_ID} closed. The files it wrote are still on disk.`]);
+    expect(output.stderr()).toBe(`${ACCEPTED_SENTENCE}\n`);
+    expect(output.stdout()).toBe('');
+    expect(loadState(ref)?.acceptedAsIs).toEqual({ ...ACCEPTED, at: expect.any(String) });
+    expect(loadState(ref)?.pendingRecovery).toBeUndefined();
+    expect(readSession(ref)?.status).toBe('complete');
+    expect(readActive(projectDir)).toBeNull();
+    expect(headlessRuns).toHaveLength(0);
+    expect(renderRuns).toHaveLength(0);
+  });
+
+  it.each([
+    {
+      on: 'a halt that does not offer the row',
+      halt: (run: ApplyRun) =>
+        saveRedHalt(run.dir, {
+          workspace: run.workspace,
+          pendingRecovery: buildReviewFailedRecoveryIssue({
+            blocking: 2,
+            phase: 'complete',
+            createdAt: HALTED_AT,
+          }),
+        }),
+      message: 'Recovery action "accept-as-is" is not available for review-failed.',
+    },
+    {
+      on: 'a ready run with no halt',
+      halt: (run: ApplyRun) => saveReady(run),
+      message: 'No pending recovery issue is available.',
+    },
+  ])('refuses accept-as-is on $on and writes nothing', async ({ halt, message }) => {
+    await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
+      writeFileSync(join(run.ws, 'b.txt'), 'created by the run\n');
+      halt(run);
+      const before = stateFile(run.dir);
+      const output = captureOutput();
+
+      try {
+        await expect(settle(run, 'accept-as-is')).rejects.toMatchObject({ exitCode: 1, message });
+      } finally {
+        output.restore();
+      }
+
+      expect(output.stderr()).toBe('');
+      expect(output.stdout()).toBe('');
+      expect(stateFile(run.dir)).toBe(before);
+      expect(read(run.dir, 'a.txt')).toBe(FIVE);
+      expect(existsSync(join(run.dir, 'b.txt'))).toBe(false);
+      expect(headlessRuns).toHaveLength(0);
+    });
+  });
+
+  it('accepts a task review too large to send and carries the run on', async () => {
+    const projectDir = stoppedProject();
+    const issue = saveTooLargeTaskReview(projectDir);
+    const output = captureOutput();
+
+    try {
+      await expect(settle({ dir: projectDir }, 'accept-as-is')).resolves.toBeUndefined();
+    } finally {
+      output.restore();
+    }
+
+    expect(headlessRuns).toHaveLength(1);
+    const resumed = headlessRuns[0]?.state;
+    expect(resumed?.phase).toBe('implementing');
+    expect(resumed?.pendingRecovery).toBeUndefined();
+    expect(resumed?.pendingScheduledReview).toBeUndefined();
+    expect(resumed?.acceptedAsIs).toEqual({ at: expect.any(String), findings: [issue.message] });
+    expect(output.stderr()).not.toContain('Run accepted as is');
+  });
+
+  it('refuses the accept of a task review too large to send without a terminal before the accept writes', async () => {
+    const projectDir = stoppedProject();
+    saveTooLargeTaskReview(projectDir);
+    const before = stateFile(projectDir);
+    delete (process.stdin as { isTTY?: boolean }).isTTY;
+
+    await expect(settle({ dir: projectDir }, 'accept-as-is', {})).rejects.toMatchObject({
+      exitCode: 1,
+      message: expect.stringContaining('interactive mode needs a TTY — use --json or --plain'),
+    });
+    expect(stateFile(projectDir)).toBe(before);
+    expect(headlessRuns).toHaveLength(0);
+    expect(renderRuns).toHaveLength(0);
+  });
+
+  it.each([
+    ['apply', 'whose review passed'],
+    ['apply-as-is', 'that was accepted as is'],
+    ['discard', 'whose review passed'],
+  ] as const)(
     'refuses --action %s on a run that is not ready to apply',
-    async (action) => {
-      const projectDir = makeTmpProject();
-      const sessionId = `2025-04-01-not-ready-${action}`;
-      const sessDir = makeSessionDir(projectDir, sessionId);
-      writeLockfile(sessDir, { exitedAt: Date.now(), sessionId });
+    async (action, settles) => {
+      const projectDir = stoppedProject();
       saveState(
-        { projectDir, sessionId },
+        { projectDir, sessionId: SESSION_ID },
         {
           ...createInitialState('test-feature'),
           ...RUN_CREW,
@@ -1580,18 +1907,13 @@ describe('continueCommand --action apply|discard|end-run', () => {
           tasks: [makeTask()],
         },
       );
+      const before = stateFile(projectDir);
 
-      await expect(
-        continueCommand(
-          sessionId,
-          { projectDir, json: true, action: parseContinueActionOption(action) },
-          deps,
-        ),
-      ).rejects.toMatchObject({
+      await expect(settle({ dir: projectDir }, action)).rejects.toMatchObject({
         exitCode: 1,
-        message: expect.stringContaining('is not ready to apply'),
+        message: `Run ${SESSION_ID} is not ready to apply; --action ${action} settles a run ${settles} in its workspace.`,
       });
-      expect(loadState({ projectDir, sessionId })?.closed).toBeUndefined();
+      expect(stateFile(projectDir)).toBe(before);
       expect(headlessRuns).toHaveLength(0);
     },
   );

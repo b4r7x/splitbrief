@@ -7,8 +7,7 @@ import { awaitsApply, isAnsweredApplyRecovery } from '../../../core/sessions/run
 import { diffFileEntries } from '../../../lib/git/entry-diff.js';
 import { error, matches } from '../../../utils/error.js';
 import { countNoun } from '../../../utils/pluralize.js';
-import { oneLineDisplayText } from '../../../utils/display-text.js';
-import { acceptedCounts, acceptedNote, redCheckLine } from '../../../core/review/verdict.js';
+import { acceptedSentence } from '../../../core/review/verdict.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import {
@@ -154,16 +153,12 @@ function askOverrideConfirmation(input: ApplyInput): ApplyResult | undefined {
   ) {
     return undefined;
   }
-  const redChecks = accepted.redChecks ?? [];
-  const open = [...redChecks.map(redCheckLine), ...accepted.findings].map(oneLineDisplayText);
-  const note = acceptedNote(accepted);
-  const clause = (text: string): string => text.replace(/\.$/, '');
-  const sentence = (text: string): string => (/[.!?]$/.test(text) ? text : `${text}.`);
-  const reason = redChecks.length > 0 ? 'The red checks still fail' : 'No review checked them';
+  const reason =
+    (accepted.redChecks ?? []).length > 0 ? 'The red checks still fail' : 'No review checked them';
   publishWarning({
     bus: wctx.bus,
     phase: state.phase,
-    message: `Run accepted as is with ${acceptedCounts(accepted).phrase}: ${sentence(open.map(clause).join('; '))}${note === undefined ? '' : ` ${sentence(note)}`} ${reason}; Apply needs one confirmation (/run accept confirm).`,
+    message: `${acceptedSentence(accepted)} ${reason}; Apply needs one confirmation (/run accept confirm).`,
     safety: { category: 'recovery', code: 'apply_override_unconfirmed' },
   });
   return { outcome: 'needs-confirmation', state };
