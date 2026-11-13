@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PassThrough } from 'node:stream';
+import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { resetLoggerForTests } from '../logger.js';
 import {
   installTerminalOutputErrorGuard,
   isBrokenOutputError,
@@ -188,10 +191,12 @@ describe('terminal control', () => {
   it('warns instead of crashing when the async write callback reports a non-pipe error', () => {
     const fatal: NodeJS.ErrnoException = new Error('write ENOSPC');
     fatal.code = 'ENOSPC';
-    const warnings: string[] = [];
+    const logDir = createTempDir('terminal-control-log-');
+    enableDebugLog(logDir);
+    const stderr: string[] = [];
     const originalStderrWrite = process.stderr.write.bind(process.stderr);
     process.stderr.write = ((chunk: string) => {
-      warnings.push(chunk);
+      stderr.push(chunk);
       return true;
     }) as typeof process.stderr.write;
     process.stdout.write = ((
@@ -205,11 +210,13 @@ describe('terminal control', () => {
 
     try {
       expect(() => writeTerminalSequence(terminalSequences.showCursor)).not.toThrow();
+      expect(stderr).toEqual([]);
+      expect(loggedDiagnostics(logDir)).toEqual(['Could not write to the terminal: write ENOSPC']);
     } finally {
       process.stderr.write = originalStderrWrite;
+      resetLoggerForTests();
+      cleanupTempDir(logDir);
     }
-
-    expect(warnings.join('')).toContain('write ENOSPC');
   });
 
   it('swallows broken-pipe error events on both stdout and stderr', () => {

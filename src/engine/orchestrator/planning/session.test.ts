@@ -13,7 +13,7 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { setupProject } from '#testing/helpers/planning-phase.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { debugLogEntries, enableDebugLog } from '#testing/helpers/debug-log.js';
+import { debugLogEntries, enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
 import { resetLoggerForTests } from '../../../lib/logger.js';
 import { scriptedTypedCall } from '#testing/helpers/typed-planner.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
@@ -1819,7 +1819,8 @@ describe('a question round the user answers in their own words', () => {
         expect.objectContaining(answered(1, 'use-jwt-for-auth')),
       ]);
       expect(readFileSync(logFile, 'utf8')).not.toContain('use-jwt-for-auth');
-      expect(stderr.mock.calls.map(([text]) => String(text)).join('')).toContain(SESSION_LOG_FILE);
+      expect(stderr).not.toHaveBeenCalled();
+      expect(loggedDiagnostics(run.projectDir).join('\n')).toContain(SESSION_LOG_FILE);
     } finally {
       stderr.mockRestore();
     }
