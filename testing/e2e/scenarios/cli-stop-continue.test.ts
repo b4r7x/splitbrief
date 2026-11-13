@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
+import { STATE_FILE, sessionDir } from '../../../src/core/paths.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
 import { groupEventsIntoSections } from '../../../src/core/sections/event-sections.js';
 import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
@@ -33,6 +34,7 @@ import {
 
 /** How long the first codex call holds if no stop ends it; a backstop, not a pace. */
 const HOLD_MS = 120_000;
+const CUT_CONTINUES = 'T001 continues where the stop left it.';
 
 let fixture: StopContinueFixture | undefined;
 let restorePath: (() => void) | undefined;
@@ -196,5 +198,45 @@ describe('stop a CLI implementer call → continue', { timeout: 240_000 }, () =>
     expect(rows.some((row) => row.includes('current turn interrupted: stopped by you'))).toBe(true);
     expect(rows.some((row) => row.includes('1 update  interrupted'))).toBe(true);
     expect(rows.some((row) => row.includes('Run continued'))).toBe(true);
+  });
+
+  it('continues a brief whose park a halt cleared, in one SPLITBRIEF row', async () => {
+    const target = await codexFixture();
+
+    const parked = await startAndSignal(target, 'SIGINT', target.isolationTreesDir);
+    expect(parked.exitCode).toBe(130);
+    expect(readState(target, parked.sessionId).interruptedStep?.cut).toBe('mid-step');
+    // A re-entry that cleared the park, then a halt and a stop before the brief's next call.
+    const statePath = join(sessionDir(target.projectDir, parked.sessionId), STATE_FILE);
+    writeFileSync(
+      statePath,
+      JSON.stringify({
+        ...JSON.parse(readFileSync(statePath, 'utf8')),
+        interruptedStep: undefined,
+      }),
+    );
+
+    const resumed = await continueRun(target);
+    expect(resumed.exitCode, resumed.stderr).toBe(0);
+    expect(resumed.stderr).not.toContain('mid-attempt');
+    expect(resumed.stderr.split('\n').filter((line) => line === CUT_CONTINUES)).toHaveLength(1);
+    expect(readState(target, parked.sessionId).tasks[0]?.status).toBe('done');
+
+    const ref = { projectDir: target.projectDir, sessionId: parked.sessionId };
+    const events = (await readRunEvents(ref)).events;
+    expect(
+      events.filter((event) => event.type === 'info' && event.message === CUT_CONTINUES),
+    ).toHaveLength(1);
+    expect(
+      events.some(
+        (event) => event.type === 'warning' && event.message.includes('T001 was stopped'),
+      ),
+    ).toBe(false);
+
+    const rows = await transcriptRows(ref);
+    const cutRows = rows.filter((row) => row.includes(CUT_CONTINUES));
+    expect(cutRows).toHaveLength(1);
+    expect(cutRows[0]).toContain('SPLITBRIEF');
+    expect(rows.join('\n')).not.toContain('mid-attempt');
   });
 });

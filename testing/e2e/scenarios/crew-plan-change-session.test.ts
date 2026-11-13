@@ -200,9 +200,7 @@ describe('e2e: a PLAN seat moved with /crew before a killed run continues', {
       expect.objectContaining({ type: 'seat_switched', seat: 'plan', cause: 'crew-changed' }),
     );
     expect(
-      events.filter(
-        (event) => event.type === 'warning' && event.code === 'planner_session_expired',
-      ),
+      events.filter((event) => 'code' in event && event.code === 'planner_session_expired'),
     ).toEqual([]);
     const calls = readLines<PlanSeatCall>(claudeCalls);
     expect(calls.filter((call) => call.resumed !== null)).toEqual([]);

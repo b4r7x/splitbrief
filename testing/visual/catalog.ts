@@ -1478,6 +1478,23 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-resumed-cut-brief',
+      title: 'Workflow · a cut brief that continues where the stop left it, in one SPLITBRIEF row',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'resumed-cut-brief',
+        title: 'Cut brief continued with one SPLITBRIEF row',
+        kind: 'implementation',
+        marker: 'continues where the stop left it',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-final-review',
       title: 'Workflow · final review running',
       surface: screenSurface('workflow'),
@@ -5852,13 +5869,14 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-planner-session-expired',
-      title: 'Workflow · a planner thread that expired, asked again on a fresh one',
+      title:
+        'Workflow · a planner thread that expired, asked again on a fresh one with no row of its own',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'planner-session-expired',
         title: 'Expired thread asked again on a fresh session',
         kind: 'planning',
-        marker: 'Planner session expired',
+        marker: 'Reading the export module',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

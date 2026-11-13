@@ -100,6 +100,7 @@
 - The model list in the picker, the provider scan on home and setup, the Check of a local server and the check of an API seat wait up to one minute instead of two or five seconds. A provider that answers after six seconds is now found, not failed. After ten seconds the screen names the provider and the check, also while a run checks its seat at its start or before a brief. Esc stops the check; during a run, the run's stop ends it.
 - The workflow sidebar shows no waiting row. Before the plan names its briefs, the Tasks panel shows only `No tasks yet`. The header and the line under the composer show the stage.
 - **Fewer warning rows.** A plan that goes back to the planner once, an output limit of a tool call, and a format pass that rewrote files no longer show a warning row. With `SPLITBRIEF_DEBUG` set, the [debug log](./docs/TROUBLESHOOTING.md#debug-environment-variables) records them; for a format pass it names the files.
+- **No warning for a state that the run handles by itself.** Examples are a planner thread that runs again on a fresh session and a compaction that saved a plain summary. These no longer show a Warning row or a stderr line under `--plain`. The session log keeps them. A brief that continues where a stop left it, and a queued message that waits for the next call, now show as a plain SPLITBRIEF row.
 - The activity list no longer shows a warning for an unknown upstream record or for the live-update limit of a call.
 - A retry after a network or server failure shows on the status line and leaves no row in the transcript.
 - **No warnings that you cannot act on.** An optional file that SPLITBRIEF cannot read, such as a remembered model list or a saved session summary, and a cleanup that did not finish no longer show a warning row. They also no longer show a count line such as `2 warnings, all shown when you quit` when the screen opens, or print a line on the terminal after you quit or in a headless command such as `start --plain` or `status`. With `SPLITBRIEF_DEBUG` set, the [debug log](./docs/TROUBLESHOOTING.md#debug-environment-variables) records them. A warning that asks you to act, such as a tool process that may keep running, still shows.
@@ -136,6 +137,7 @@
 - `workflow.git.create_branch` and the *Create branch* setting. `false` still loads and changes nothing. `true` fails the load with a message to delete the key.
 - The `required` key on a check. Every check must pass. A plan or a saved run that still holds the key loads, and SPLITBRIEF ignores the key.
 - **Breaking — `--json` stream.** The recovery event no longer has a top-level `attempts` key. The `Attempts: N` row of its details stays.
+- **Breaking — `--json` stream.** A state that the run handles by itself is now a `debug` event, not a `warning` event. A brief that continues where a stop left it is now an `info` event with no `code`.
 
 ### Fixed
 

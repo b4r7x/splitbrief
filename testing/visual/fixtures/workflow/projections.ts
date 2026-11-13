@@ -124,6 +124,7 @@ import { consultFailureLabel } from '../../../../src/engine/orchestrator/task/re
 import {
   planCheckRow,
   publishConsultAnswered,
+  publishDebug,
   publishError,
   publishInfo,
   publishRecoveryActionSelected,
@@ -7231,6 +7232,28 @@ const resumedKeptWorkProjection: WorkflowFixtureProjection = {
   ],
 };
 
+/**
+ * A continue put back the park of a brief that the stop cut, as `initializeWorkflow` does before it
+ * publishes `workflow_resumed`: one SPLITBRIEF row says so, and the brief goes on from that work.
+ */
+const resumedCutBriefProjection: WorkflowFixtureProjection = {
+  ...resumedKeptWorkProjection,
+  scenarioId: scenarioId('workflow-resumed-cut-brief'),
+  events: resumedKeptWorkProjection.events.flatMap((event): EngineEvent[] =>
+    event.type === 'workflow_resumed'
+      ? [
+          {
+            type: 'info',
+            ts: event.ts - 1,
+            phase: event.phase,
+            message: `${WORKFLOW_FIXTURE_TASK_ID} continues where the stop left it.`,
+          },
+          event,
+        ]
+      : [event],
+  ),
+};
+
 const pausedBoundaryProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_PAUSED_BOUNDARY_ID,
   feature: WORKFLOW_FEATURE,
@@ -7434,8 +7457,8 @@ function planningCallActivity(ts: number, events: readonly RunnerCallEvent[]): E
 
 /**
  * A resumed run whose codex thread is gone, in the events a real run records: the resume fails in
- * the tool's own words, the run says once that it asks again, and a fresh thread answers. No
- * recovery menu opens.
+ * the tool's own words, the run asks again with no row of its own (the session log records it), and
+ * a fresh thread answers. No recovery menu opens.
  */
 const plannerSessionExpiredProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_PLANNER_SESSION_EXPIRED_ID,
@@ -7487,7 +7510,7 @@ const plannerSessionExpiredProjection: WorkflowFixtureProjection = {
         },
       ]),
       ...publishedEvents(FIXED_TS + 200, (bus) =>
-        publishWarning({
+        publishDebug({
           bus,
           phase: 'planning',
           message:
@@ -9809,6 +9832,7 @@ const projections = [
   pausedMidBriefProjection,
   pausedCutSeatProjection,
   resumedKeptWorkProjection,
+  resumedCutBriefProjection,
   pausedBoundaryProjection,
   stoppingProjection,
   stopSteerRefusedProjection,

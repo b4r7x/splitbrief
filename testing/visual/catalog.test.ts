@@ -175,6 +175,7 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-review-resumed', ['120x40', '80x24', '60x18', '120x60']],
   ['workflow-cli-stop-continued', ['120x40', '80x24', '60x18', '120x60']],
   ['workflow-resumed-kept-work', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-resumed-cut-brief', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-paused-cut-seat', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-base-rerun-long-command', ['140x40', '120x40']],
   ['workflow-check-timed-out', ['120x40']],

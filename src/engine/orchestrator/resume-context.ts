@@ -5,13 +5,14 @@ import type { Planner, PriorMessage } from '../planners/types.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { typedRunnerCallErrorCode } from '../implementers/pipeline/call-result.js';
 import { isSessionExpiredError } from '../session-expiry.js';
-import { publishWarning, publishWarningFromError } from './events.js';
+import { publishDebug, publishWarning } from './events.js';
 import { buildResumeContext } from './transcript/rebuild.js';
 import { compactResumeTranscript, keepRecentCountForThreshold } from './transcript/compaction.js';
 import { addUsageAndSave } from './state-ops.js';
 import { resolveCompactionFormat } from '../../core/schemas/compaction.js';
 import { publishRunnerCallEvent } from './events.js';
 import { isAbortError } from '../../utils/abort.js';
+import { labelError } from '../../utils/format-errors.js';
 
 export type ApplyRebuiltContextOpts = {
   projectDir: string;
@@ -61,7 +62,7 @@ export async function autoCompactResumeContext(
           event,
         ),
       onFallback: () =>
-        publishWarning({
+        publishDebug({
           bus: opts.bus,
           phase: 'researching',
           message: 'Structured compaction returned invalid JSON; saved freeform summary instead.',
@@ -75,11 +76,11 @@ export async function autoCompactResumeContext(
     );
   } catch (err) {
     if (opts.signal?.aborted || isAbortError(err)) return opts.state;
-    publishWarningFromError(
-      { bus: opts.bus, phase: 'researching' },
-      'Transcript auto-compaction failed',
-      err,
-    );
+    publishDebug({
+      bus: opts.bus,
+      phase: 'researching',
+      message: labelError('Transcript auto-compaction failed', err),
+    });
     return opts.state;
   }
 }
@@ -126,7 +127,7 @@ export async function withFreshSessionReissue<T>(opts: {
     const expired = isSessionExpiredError(err);
     const refused = typedRunnerCallErrorCode(err) === 'input-too-large';
     if (!resumed || signal?.aborted || !(expired || refused)) throw err;
-    publishWarning({
+    publishDebug({
       bus,
       phase: state.phase,
       message: expired

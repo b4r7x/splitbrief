@@ -74,6 +74,20 @@ describe('isTranscriptRowlessEvent', () => {
     ).toBe(true);
   });
 
+  it('paints no row for a debug event', () => {
+    expect(
+      isTranscriptRowlessEvent({
+        type: 'debug',
+        ts: 0,
+        phase: 'planning',
+        message:
+          'Planner session expired; the call runs again on a fresh session with the conversation so far.',
+        category: 'planner',
+        code: 'planner_session_expired',
+      }),
+    ).toBe(true);
+  });
+
   it('is true for row-less event types and false for visible rows', () => {
     const heartbeat: EngineEvent = {
       type: 'planner_heartbeat',

@@ -53,7 +53,9 @@ import type {
 } from '../types.js';
 import { buildSummary, type SummaryBase } from '../summary/build.js';
 import {
+  publishDebug,
   publishError,
+  publishInfo,
   publishPlannerStatus,
   publishRecoveryResolved,
   publishWorkflowConfig,
@@ -701,7 +703,7 @@ async function settleStaleHalt(args: {
     action: 'continue',
     outcome: 'continued',
   });
-  publishWarning({
+  publishDebug({
     bus,
     phase: resolved.phase,
     message: 'The halt this run saved no longer applies; continuing.',
@@ -725,7 +727,7 @@ function realignPassedTaskIndex(bus: EventBus, state: WorkflowState): WorkflowSt
   const task = state.tasks[index];
   if (task === undefined) return state;
   const cut = state.interruptedStep;
-  publishWarning({
+  publishDebug({
     bus,
     phase: state.phase,
     message: `The saved run pointed at ${stale.id}, which already passed; continuing at ${task.id}.`,
@@ -770,12 +772,10 @@ async function restoreUnresumedBriefCut(args: {
     { type: 'RESTORE_BRIEF_PARK', ...cut },
     { expectedRevision: state.stateRevision },
   );
-  publishWarning({
+  publishInfo({
     bus,
     phase: restored.phase,
-    taskId: cut.step.taskId,
-    message: `${cut.step.taskId} was stopped mid-attempt and has not run since; it continues where it stopped.`,
-    safety: { category: 'recovery', code: 'cut_brief_park_restored' },
+    message: `${cut.step.taskId} continues where the stop left it.`,
   });
   return restored;
 }

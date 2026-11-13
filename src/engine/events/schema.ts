@@ -85,10 +85,10 @@ function noPhaseEvent<T extends string>(type: T) {
   });
 }
 
-function operationalMessageEvent<T extends 'info' | 'warning' | 'error', S extends z.ZodRawShape>(
-  type: T,
-  shape: S,
-) {
+function operationalMessageEvent<
+  T extends 'debug' | 'info' | 'warning' | 'error',
+  S extends z.ZodRawShape,
+>(type: T, shape: S) {
   const base = phaseEvent(type).extend({
     ...shape,
     message: z.string(),
@@ -110,6 +110,8 @@ function operationalMessageEvent<T extends 'info' | 'warning' | 'error', S exten
  */
 const briefKept = z.number().int().nonnegative().optional();
 
+/** A state the run handled by itself: the session log keeps it; the screen and stderr do not. */
+const OperationalDebugEventSchema = operationalMessageEvent('debug', {});
 const OperationalInfoEventSchema = operationalMessageEvent('info', { briefKept });
 const OperationalWarningEventSchema = operationalMessageEvent('warning', { briefKept });
 const OperationalErrorEventSchema = operationalMessageEvent('error', {
@@ -126,6 +128,8 @@ function parseWithSchema<T>(schema: z.ZodType<T>, value: unknown): T | null {
 function parseOperationalMessageEvent(value: unknown): EngineEventFromPayloadSchemas | null {
   if (!isRecord(value)) return null;
   switch (value.type) {
+    case 'debug':
+      return parseWithSchema(OperationalDebugEventSchema, value);
     case 'info':
       return parseWithSchema(OperationalInfoEventSchema, value);
     case 'warning':
@@ -963,6 +967,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
 
 type EngineEventFromPayloadSchemas =
   | z.infer<typeof EngineEventPayloadSchema>
+  | z.infer<typeof OperationalDebugEventSchema>
   | z.infer<typeof OperationalInfoEventSchema>
   | z.infer<typeof OperationalWarningEventSchema>
   | z.infer<typeof OperationalErrorEventSchema>;

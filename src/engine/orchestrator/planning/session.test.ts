@@ -306,10 +306,12 @@ describe('the planning thread', () => {
     expect(run.prompts[2]).toContain('Round 1: which module?');
     expect(run.events).toContainEqual(
       expect.objectContaining({
-        type: 'warning',
+        type: 'debug',
+        code: 'planner_session_expired',
         message: expect.stringMatching(/^Planner session expired/),
       }),
     );
+    expect(run.events.filter((event) => event.type === 'warning')).toEqual([]);
     expect(run.result.disposition).toBe('ready-for-tasks');
     expect(run.result.state.plannerSessionId ?? null).toBeNull();
   });

@@ -225,6 +225,19 @@ describe('parseEngineEvent', () => {
     expect(parseEngineEvent(invalid)).toBeNull();
   });
 
+  it('parses a debug message event with its category and code', () => {
+    const debug = {
+      type: 'debug',
+      ts: 1,
+      phase: 'planning',
+      message: 'm',
+      category: 'planner',
+      code: 'planner_session_expired',
+    };
+
+    expect(parseEngineEvent(debug)).toEqual(debug);
+  });
+
   it('accepts explicit cache fields on task token events', () => {
     expect(
       parseEngineEvent({

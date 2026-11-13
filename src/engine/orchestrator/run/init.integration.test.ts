@@ -39,6 +39,7 @@ import type { EngineEvent, EventBus } from '../../events/types.js';
 import { createEventBus } from '../../events/bus.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../events/workflow-cancel.js';
 import { readRunEvents } from '../../events/replay.js';
+import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
 import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
@@ -1537,6 +1538,62 @@ describe('initializeWorkflow — a brief killed while its runner was building', 
       expect(tracked.current).toMatchObject({ tasks: [{ id: 'T001', status: 'in_progress' }] });
     });
   });
+
+  it('puts the park of a cut brief back and says in a SPLITBRIEF row that it continues', async () => {
+    await withTempDir('splitbrief-init-cut-brief-restored', async (projectDir) => {
+      createTestGitRepo(projectDir, { 'src/two.ts': 'original' });
+      writeFileSync(join(projectDir, 'src/two.ts'), 'half written before the stop');
+      const feature = 'continue a brief whose park a halt cleared';
+      const sessionId = 'session-init-cut-brief-restored';
+      ensureSessionDir(projectDir, sessionId);
+      const cut: EngineEvent = {
+        type: 'turn_interrupted',
+        ts: Date.parse('2026-01-01T00:00:00.000Z'),
+        phase: 'implementing',
+        source: 'user',
+        at: 'mid-step',
+        step: { kind: 'brief', taskId: taskId('T001'), attempt: 1 },
+      };
+      createJsonlSink({ projectDir, sessionId })(cut);
+      const events: EngineEvent[] = [];
+
+      const { init, tracked } = await initializeTestWorkflow({
+        projectDir,
+        sessionId,
+        feature,
+        eventSink: (event) => events.push(event),
+        savedState: {
+          ...createInitialState(feature),
+          phase: 'implementing',
+          tasks: [makeTask({ id: 'T001', status: 'in_progress', suggestedFiles: ['src/two.ts'] })],
+          currentTaskIndex: 0,
+          attempt: 1,
+          changedFilesBaseline: {
+            head: null,
+            fingerprints: {},
+            activeTaskSnapshot: {
+              head: 'HEAD',
+              files: ['src/two.ts'],
+              dirtyFileContents: { 'src/two.ts': 'original' },
+            },
+          },
+        },
+      });
+
+      expect(init.ok).toBe(true);
+      expect(tracked.current).toMatchObject({
+        tasks: [{ id: 'T001', status: 'in_progress' }],
+        interruptedStep: { step: { kind: 'brief', taskId: 'T001', attempt: 1 }, cut: 'mid-step' },
+      });
+      expect(readFileSync(join(projectDir, 'src/two.ts'), 'utf-8')).toBe(
+        'half written before the stop',
+      );
+      expect(events.filter((event) => event.type === 'info')).toEqual([
+        expect.objectContaining({ message: 'T001 continues where the stop left it.' }),
+      ]);
+      expect(events.filter((event) => event.type === 'warning')).toEqual([]);
+    });
+  });
 });
 
 describe('initializeWorkflow — a cut step that names a passed brief', () => {
@@ -1598,11 +1655,11 @@ describe('initializeWorkflow — a cut step that names a passed brief', () => {
       expect(readFileSync(join(projectDir, 'src/running.ts'), 'utf-8')).toBe(
         'half written before the stop',
       );
-      expect(
-        events
-          .filter((e): e is Extract<EngineEvent, { type: 'warning' }> => e.type === 'warning')
-          .map((e) => e.message),
-      ).toContain('The saved run pointed at T002, which already passed; continuing at T003.');
+      const realigned = 'The saved run pointed at T002, which already passed; continuing at T003.';
+      expect(events.filter((e) => e.type === 'debug').map((e) => e.message)).toContain(realigned);
+      expect(events.filter((e) => e.type === 'warning').map((e) => e.message)).not.toContain(
+        realigned,
+      );
     });
   });
 
@@ -1631,11 +1688,11 @@ describe('initializeWorkflow — a cut step that names a passed brief', () => {
 
       expect(init.ok).toBe(true);
       expect(tracked.current).toMatchObject({ currentTaskIndex: 2 });
-      expect(
-        events
-          .filter((e): e is Extract<EngineEvent, { type: 'warning' }> => e.type === 'warning')
-          .map((e) => e.message),
-      ).toContain('The saved run pointed at T001, which already passed; continuing at T003.');
+      const realigned = 'The saved run pointed at T001, which already passed; continuing at T003.';
+      expect(events.filter((e) => e.type === 'debug').map((e) => e.message)).toContain(realigned);
+      expect(events.filter((e) => e.type === 'warning').map((e) => e.message)).not.toContain(
+        realigned,
+      );
     });
   });
 });
@@ -2386,13 +2443,13 @@ describe('initializeWorkflow — a file halt saved before the run workspace', ()
           action: 'continue',
           outcome: 'continued',
         });
+        const settled = 'The halt this run saved no longer applies; continuing.';
+        expect(events.filter((event) => event.type === 'debug')).toContainEqual(
+          expect.objectContaining({ message: settled, code: 'stale_file_halt_resolved' }),
+        );
         expect(
-          events
-            .filter((event): event is Extract<EngineEvent, { type: 'warning' }> => {
-              return event.type === 'warning';
-            })
-            .map((event) => event.message),
-        ).toContain('The halt this run saved no longer applies; continuing.');
+          events.filter((event) => event.type === 'warning').map((event) => event.message),
+        ).not.toContain(settled);
       });
     },
   );

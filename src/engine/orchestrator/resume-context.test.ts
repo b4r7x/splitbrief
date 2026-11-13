@@ -328,7 +328,7 @@ describe('autoCompactResumeContext', () => {
     expect(nextState.tokenUsage.plannerOutput).toBe(60);
   });
 
-  it('emits a warning when structured compaction falls back to freeform text', async () => {
+  it('records a structured compaction that fell back to freeform text as a debug event', async () => {
     const originalEntries = Array.from({ length: 12 }, (_, index) => numberedMessageEntry(index));
     const { projectDir, sessionId } = setupSession(originalEntries);
     const { bus, events } = makeBusRecorder();
@@ -344,8 +344,37 @@ describe('autoCompactResumeContext', () => {
       }),
     });
 
-    const warning = events.find((event) => event.type === 'warning');
-    expect(warning && 'message' in warning ? warning.message : '').toMatch(/invalid JSON/i);
+    expect(events.filter((event) => event.type === 'debug')).toEqual([
+      expect.objectContaining({ message: expect.stringMatching(/invalid JSON/i) }),
+    ]);
+    expect(events.filter((event) => event.type === 'warning')).toEqual([]);
+  });
+
+  it('records a failed auto-compaction as a debug event and keeps the state', async () => {
+    const originalEntries = Array.from({ length: 12 }, (_, index) => numberedMessageEntry(index));
+    const { projectDir, sessionId } = setupSession(originalEntries);
+    const { bus, events } = makeBusRecorder();
+    const state = createInitialState('resume');
+    const timedOut = async () => {
+      throw new Error('summarize timed out');
+    };
+
+    const nextState = await autoCompactResumeContext({
+      projectDir,
+      sessionId,
+      bus,
+      config: { workflow: workflowConfig(10), planner: apiPlannerConfig },
+      state,
+      planner: summarizingPlanner({ summarize: timedOut, summarizeStructured: timedOut }),
+    });
+
+    expect(nextState).toBe(state);
+    expect(events.filter((event) => event.type === 'debug')).toEqual([
+      expect.objectContaining({
+        message: 'Transcript auto-compaction failed: summarize timed out',
+      }),
+    ]);
+    expect(events.filter((event) => event.type === 'warning')).toEqual([]);
   });
 
   it('leaves the transcript untouched when the planner cannot summarize', async () => {

@@ -502,6 +502,22 @@ export function publishError(options: PublishOperationalMessageOptions): void {
   });
 }
 
+export function publishDebug(
+  options: BusContext & { message: string; safety?: OperationalMessageSafety | undefined },
+): void {
+  const { bus, phase, message, safety } = options;
+  bus.publish({
+    type: 'debug',
+    ts: Date.now(),
+    phase,
+    message,
+    ...(safety !== undefined && {
+      category: safety.category,
+      code: safety.code,
+    }),
+  });
+}
+
 export function publishInfo(
   options: BusContext & { message: string; briefKept?: number | undefined },
 ): void {

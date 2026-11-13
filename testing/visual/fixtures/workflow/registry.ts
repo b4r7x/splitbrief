@@ -1205,6 +1205,20 @@ const checkpointPredicates = [
         'further change',
       )(context) && /Report {2}done$/m.test(workflowTranscriptText()),
   ],
+  [
+    checkpointId('resumed-cut-brief'),
+    // One SPLITBRIEF row, never a Warning, says the brief continues; a narrow frame wraps it. Under
+    // 40 rows the rows of the continued brief push that row out of the frame.
+    (context) => {
+      const text = workflowTranscriptText().replace(/\s/g, '');
+      return (
+        includesTranscript("verified · kept the interrupted attempt's work")(context) &&
+        (context.viewport.rows < 40 || context.output.includes(context.checkpoint.marker)) &&
+        text.split('SPLITBRIEFT901continueswherethestopleftit.').length === 2 &&
+        !text.includes('Warning')
+      );
+    },
+  ],
   [checkpointId('final-review'), includesAll('3/3 briefs passed', 'Review · OpenAI Codex CLI')],
   [
     checkpointId('final-review-findings'),
@@ -2357,7 +2371,12 @@ const checkpointPredicates = [
       context.output.includes('Final review passed') &&
       includesTranscript('Base re-run V1 · npm run e2e')(context),
   ],
-  [checkpointId('planner-session-expired'), includesAll('Planner session expired')],
+  [
+    checkpointId('planner-session-expired'),
+    // The session log keeps the expired thread; the transcript has no row for it.
+    (context) =>
+      includesAll()(context) && !workflowTranscriptText().includes('Planner session expired'),
+  ],
   [
     checkpointId('plan-usage-limit'),
     (context) =>

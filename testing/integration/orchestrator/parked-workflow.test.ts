@@ -60,6 +60,7 @@ it.each(['initial', 'consult'] as const)(
       workspace: string;
       previous: string | null;
       fallback: boolean;
+      fallbackWarned: boolean;
       continuation: ImplementerOptions['continuation'];
       gitAbsent: boolean;
     }> = [];
@@ -67,13 +68,16 @@ it.each(['initial', 'consult'] as const)(
       const stop = new AbortController();
       const bus = createEventBus();
       let fallback = false;
+      let fallbackWarned = false;
       bus.subscribe((event) => {
+        if (event.type !== 'debug' && event.type !== 'warning') return;
         if (
-          event.type === 'warning' &&
-          (event.message.includes('repository has no commits') ||
-            event.message.includes('resuming retained staged-copy workspace'))
+          !event.message.includes('repository has no commits') &&
+          !event.message.includes('resuming retained staged-copy workspace')
         )
-          fallback = true;
+          return;
+        if (event.type === 'debug') fallback = true;
+        else fallbackWarned = true;
       });
       const planner = makePlanner({
         typedCall: typedCallPlanAndConsult(
@@ -90,6 +94,7 @@ it.each(['initial', 'consult'] as const)(
           workspace: opts.projectDir,
           previous,
           fallback,
+          fallbackWarned,
           continuation: opts.continuation,
           gitAbsent: !existsSync(join(opts.projectDir, '.git')),
         });
@@ -144,7 +149,7 @@ it.each(['initial', 'consult'] as const)(
     expect.soft(observed[2]?.previous).toBe('entry-0\nentry-1\n');
     for (const entry of observed) {
       expect(entry.attempt).toBe(expectedAttempt);
-      expect(entry).toMatchObject({ fallback: true, gitAbsent: true });
+      expect(entry).toMatchObject({ fallback: true, fallbackWarned: false, gitAbsent: true });
     }
     for (const entry of observed.slice(1)) {
       expect(entry.continuation?.partial).toBe('');

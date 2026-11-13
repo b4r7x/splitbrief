@@ -173,7 +173,7 @@ Several sinks can subscribe to the bus. The JSONL, logger and call-evidence sink
 
 **Stdout JSON sink** (`src/engine/events/sinks/stdout-json.ts`) — writes public NDJSON records to stdout. Live events pass the same payload bounds as every other external consumer before they are wrapped as `{ "type": "event", "data": <EngineEvent> }`; readiness, recovery, final-review, warning, and error records use their own top-level `type`. Only subscribed in `--json` headless mode.
 
-**Stdout text sink** (`src/engine/events/sinks/stdout-text.ts`) — the `--plain` projection of the same stream: `phase:`, `task <id>:`, `stalled:`, `review:` and `done:` lines and nothing else, so a script can read a run with `grep`. It folds each event into its own run view with `reduceRunView`, the same fold the TUI reads, and writes a `phase:` line when the view's phase changes. A `task <id>:` line reads the checks its brief last ran from that view, and the `done:` line reads the completed count. Cost is reported in tokens, not dollars, because a sink holds no price catalog. Only subscribed in `--plain` headless mode, and exactly one of the two stdout sinks is ever installed — `attachRunSinks()` picks by `opts.plain`. Under `--plain` one more sink writes each `warning` and `info` event's bounded message to stderr.
+**Stdout text sink** (`src/engine/events/sinks/stdout-text.ts`) — the `--plain` projection of the same stream: `phase:`, `task <id>:`, `stalled:`, `review:` and `done:` lines and nothing else, so a script can read a run with `grep`. It folds each event into its own run view with `reduceRunView`, the same fold the TUI reads, and writes a `phase:` line when the view's phase changes. A `task <id>:` line reads the checks its brief last ran from that view, and the `done:` line reads the completed count. Cost is reported in tokens, not dollars, because a sink holds no price catalog. Only subscribed in `--plain` headless mode, and exactly one of the two stdout sinks is ever installed — `attachRunSinks()` picks by `opts.plain`. Under `--plain` one more sink writes each `warning` and `info` event's bounded message to stderr. A `debug` event reaches neither the screen nor stderr.
 
 Each `review_completed` prints one `review:` line with its scope, task anchor when present, verdict, and available blocking count. `workflow_complete` prints the run's `done:` line. It prints no review line, except `review: none (REVIEW is None)` before `done:` on a run with REVIEW None.
 
@@ -337,7 +337,7 @@ A message that REVIEW read also goes to the next fix brief's BUILD call. Its rev
 
 `commitQueueMessagesDrained` and `drainQueue` accept optional `seat` and `taskId` fields and include them in `queue_drained`. Older events without these fields still render during replay.
 
-**Native injection.** `dispatchNativeInjection()` in `src/engine/orchestrator/queue/native-injection.ts` runs only while PLAN owns the phase. A Claude Code planner can receive pending messages through `planner.injectUserTurn()` in its native session. The queue handler attempts native injection when no matching call is attached or the offer is `deferred`. An `uncertain` offer skips native injection and keeps the message for the next planner prompt.
+**Native injection.** `dispatchNativeInjection()` in `src/engine/orchestrator/queue/native-injection.ts` runs only while PLAN owns the phase. A Claude Code planner can receive pending messages through `planner.injectUserTurn()` in its native session. The queue handler attempts native injection when no matching call is attached or the offer is `deferred`. An `uncertain` offer skips native injection and keeps the message for the next planner prompt. A failed injection keeps the message queued, shows the `SPLITBRIEF` row `Your message stays queued for the next call.`, and records the cause as a `debug` event.
 
 Messages stay in the queue history. Only confirmed native delivery marks `deliveredViaNative`. A session that is not ready leaves the message pending, regardless of usage counters. Prompt acknowledgement drains only the supplied message IDs. Messages that arrive during a call stay pending until their delivery.
 
@@ -596,9 +596,10 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 // next call reads `answering again`. Older logs carry a `warning` with code `seat_answer_refused`.
 { type: 'seat_answer_refused'; seat: 'planner' | 'reviewer'; reasons: string[] }
 
-// Operational message — `warning` and `info` have the same shape without `resetAt`;
+// Operational message — `debug`, `info` and `warning` have the same shape without `resetAt`;
 // `resetAt` is the ISO instant a usage-limit halt's quota comes back. `info` is a status
-// line, such as the planning session's `The revised plan passes its checks.`
+// line, such as the planning session's `The revised plan passes its checks.` `debug` is a
+// state that the run handled by itself: it paints no row and `--plain` prints nothing for it.
 { type: 'error'; message: string; category?: string; code?: string; resetAt?: string }
 ```
 
