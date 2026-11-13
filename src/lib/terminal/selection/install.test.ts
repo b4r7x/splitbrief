@@ -2,9 +2,9 @@ import { PassThrough } from 'node:stream';
 import XtermHeadless from '@xterm/headless';
 import UnicodeGraphemes from '@xterm/addon-unicode-graphemes';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { CopyOutcome } from '../clipboard/clipboard.js';
-import type { MouseEvent } from './filtered-stdin/types.js';
-import { installTerminalSelection } from './selection.js';
+import type { CopyOutcome } from '../../clipboard/clipboard.js';
+import type { MouseEvent } from '../filtered-stdin/types.js';
+import { installTerminalSelection } from './install.js';
 
 const cleanup: (() => void)[] = [];
 afterEach(() => {

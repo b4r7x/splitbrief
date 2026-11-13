@@ -1,12 +1,12 @@
-import { getTerminalCellWidth } from '../display-text.js';
-import { highlightMarkdownCode, type MarkdownHighlightSpan } from './highlight.js';
-import { measureSegments, wrapSegments } from './layout-segments.js';
+import { getTerminalCellWidth } from '../../display-text.js';
+import { highlightMarkdownCode, type MarkdownHighlightSpan } from '../highlight.js';
+import { measureSegments, wrapSegments } from './segments.js';
 import type {
   MarkdownCodeBlock,
   MarkdownLayoutGlyphs,
   MarkdownLayoutLine,
   MarkdownLayoutSegment,
-} from './types.js';
+} from '../types.js';
 
 const MIN_HANGING_CODE_CELLS = 8;
 // Info strings that name no language. They label the fence with nothing the reader does not

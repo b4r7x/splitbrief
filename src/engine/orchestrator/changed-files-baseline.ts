@@ -8,7 +8,7 @@ import { readHeadSha } from '../../lib/git/repository.js';
 import { isInternalGitStatusPath } from '../../core/paths.js';
 import { isENOENT } from '../../lib/process/errors.js';
 import { isProcessOutputSink } from '../../lib/process/stdio-sinks.js';
-import { assertExistingPathConfined, assertPathConfined } from '../../lib/path-confinement.js';
+import { assertExistingPathConfined, assertPathConfined } from '../../lib/fs/confinement.js';
 import { sha256Hex } from '../../utils/sha256.js';
 import { isInDeclaredSet, taskDeclaredPatterns } from '../../core/scope/declared-set.js';
 import type { Task } from '../../core/schemas/task.js';

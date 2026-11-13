@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { borderStyleFor } from '../../../lib/glyphs.js';
 import { elidePathMiddle, getTerminalCellWidth } from '../../../utils/display-text.js';
 import { Divider } from '../../../components/divider.js';
-import { projectRelativePathLabel } from '../../../utils/path-links.js';
+import { projectRelativePathLabel } from '../../../utils/path/links.js';
 import { configStore } from '../../../stores/project/config.js';
 
 interface FramePanelProps {

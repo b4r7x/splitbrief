@@ -4,7 +4,7 @@ import type { WorkflowContext } from '../types.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { getFailedTaskIds, getSkippedTaskIds } from '../../../core/state/selectors.js';
 import { uniqueSortedIds } from '../../../utils/collections.js';
-import { nowIso } from '../../../utils/format-time.js';
+import { nowIso } from '../../../utils/format/time.js';
 import { raisePendingRecovery } from '../state-ops.js';
 import { buildDependencyBlockedRecoveryIssue } from '../recovery/builders/task.js';
 

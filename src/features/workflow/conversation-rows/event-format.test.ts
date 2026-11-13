@@ -3,7 +3,7 @@ import { taskId } from '../../../core/schemas/task.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
-import { wrapHard } from '../../../utils/wrap.js';
+import { wrapHard } from '../../../utils/display-text/wrap.js';
 import {
   formatTaskStartedParts,
   fullSuiteNameRows,

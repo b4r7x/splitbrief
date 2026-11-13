@@ -1,7 +1,7 @@
 import { posix } from 'node:path';
 import type { Config } from '../../../core/schemas/config.js';
 import type { TaskSpec } from '../../../core/schemas/plan.js';
-import { normalizeProjectRelativePath } from '../../../utils/path-patterns.js';
+import { normalizeProjectRelativePath } from '../../../utils/path/patterns.js';
 import type { DiscoveredValidation } from '../../../core/schemas/workflow.js';
 import {
   readManifestCommands,
@@ -17,7 +17,7 @@ import {
 import type { Phase } from '../../../core/schemas/enums.js';
 import { createLogger } from '../../../lib/logger.js';
 import { runCommand } from '../../../lib/process/spawn/run-command.js';
-import { labelError } from '../../../utils/format-errors.js';
+import { labelError } from '../../../utils/format/errors.js';
 import { parseShellCommand } from '../../../utils/parse-shell-command.js';
 import type { EventBus } from '../../events/types.js';
 import { publishWarning } from '../events.js';

@@ -9,7 +9,7 @@ import {
   inlineTokenToSegment,
   measureSegments,
   trimTrailingSpace,
-} from './layout-segments.js';
+} from './layout/segments.js';
 import type {
   MarkdownInlineToken,
   MarkdownLayoutGlyphs,

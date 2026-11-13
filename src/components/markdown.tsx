@@ -5,8 +5,8 @@ import { sanitizeTerminalDisplayText } from '../utils/display-text.js';
 import { markdownLayoutGlyphs } from '../lib/glyphs.js';
 import { osc8Hyperlink, terminalSupportsHyperlinks } from '../lib/terminal/hyperlinks.js';
 import { parseMarkdownBlocks } from '../utils/markdown/block-parser.js';
-import { layoutMarkdown } from '../utils/markdown/layout.js';
-import { resolveMarkdownLinkTarget } from '../utils/path-links.js';
+import { layoutMarkdown } from '../utils/markdown/layout/document.js';
+import { resolveMarkdownLinkTarget } from '../utils/path/links.js';
 import { assertNever } from '../utils/type-guards.js';
 import type {
   MarkdownHeadingDepth,

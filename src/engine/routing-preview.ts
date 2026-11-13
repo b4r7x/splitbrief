@@ -15,7 +15,7 @@ import type { ModelCacheAccessor } from './providers/model/resolution.js';
 import { buildProjectLanguageContext } from './spec/prompts/language-context.js';
 import type { PlanContext } from './spec/prompt-formatter.js';
 import { isENOENT } from '../lib/process/errors.js';
-import { assertWritablePathConfined } from '../lib/path-confinement.js';
+import { assertWritablePathConfined } from '../lib/fs/confinement.js';
 
 function previewProjectContext(projectDir: string, skillsContext: string | undefined) {
   return {

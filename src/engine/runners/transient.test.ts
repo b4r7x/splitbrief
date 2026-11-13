@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { throwMappedError } from '../streaming/stream-errors.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { toErrorMessage } from '../../utils/format/errors.js';
 import { isTransientSeatFailure, withSeatRetry, type SeatAttempt } from './transient.js';
 
 afterEach(() => {

@@ -3,7 +3,7 @@ import type {
   TaskSummaryState,
 } from '../../../../components/task-summary.js';
 import type { ReviewStage, StageSummary } from '../../../../core/sections/event-sections.js';
-import { formatDuration } from '../../../../utils/format-time.js';
+import { formatDuration } from '../../../../utils/format/time.js';
 import { countNoun } from '../../../../utils/pluralize.js';
 import { CREW_SEAT_ROLES } from '../../../../core/crew/seats.js';
 import { formatStageLabel } from '../../../../core/phase-display.js';

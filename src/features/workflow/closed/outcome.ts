@@ -8,7 +8,7 @@ import {
   segmentsForRowText,
   truncateTerminalDisplayText,
 } from '../../../utils/display-text.js';
-import { formatTime } from '../../../utils/format-time.js';
+import { formatTime } from '../../../utils/format/time.js';
 import { countNoun } from '../../../utils/pluralize.js';
 import { formatApplyRestoreCounts } from '../../../core/runtime/commands/messages.js';
 import { scopeCleanSegment, unwrittenReviewText, type CopyTone } from './copy.js';

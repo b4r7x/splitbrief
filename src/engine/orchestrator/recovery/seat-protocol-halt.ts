@@ -4,7 +4,7 @@ import type { Phase } from '../../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { nowIso } from '../../../utils/format-time.js';
+import { nowIso } from '../../../utils/format/time.js';
 import type { SeatProtocolError } from '../../runners/typed-output.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import { buildSeatProtocolErrorRecoveryIssue } from './builders/seat-protocol.js';

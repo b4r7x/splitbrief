@@ -3,7 +3,7 @@ import { SOFT_SEP } from '../../../core/separators.js';
 import { stateTone, type StateMeaning } from '../../../core/theme/state-tone.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
 import { segmentsForRowText, truncateTerminalDisplayText } from '../../../utils/display-text.js';
-import { formatDuration } from '../../../utils/format-time.js';
+import { formatDuration } from '../../../utils/format/time.js';
 import { COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT } from './activity-batch-model.js';
 import { fullSuiteOutcomeWord, fullSuiteTime, fullSuiteTone } from './event-format.js';
 import { fullSuiteRowBlock } from './event-rows/execution.js';

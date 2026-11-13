@@ -7,7 +7,7 @@ import {
   formatDiscoveryRefreshFeedback,
   type DiscoveryRefreshSummary,
 } from '../../core/runtime/commands/types.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { toErrorMessage } from '../../utils/format/errors.js';
 
 const defaultRefresh = (projectDir: string | undefined): Promise<DiscoveryRefreshSummary> =>
   refreshDetectionForCurrentConfig({

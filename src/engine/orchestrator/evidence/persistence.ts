@@ -5,7 +5,7 @@ import type { WorkflowContext } from '../types.js';
 import { publishError, publishWarning } from '../events.js';
 import { raisePendingRecovery } from '../state-ops.js';
 import { createRecoveryIssue } from '../recovery/builders/issue.js';
-import { nowIso } from '../../../utils/format-time.js';
+import { nowIso } from '../../../utils/format/time.js';
 import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
 import { mutateEvidenceLedger, readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { isOwnRunWorkspace } from '../isolation/remove-worktree.js';

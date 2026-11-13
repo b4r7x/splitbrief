@@ -6,7 +6,7 @@ import type {
   RunnerCallUsage,
 } from './types.js';
 import { RUNNER_CALL_MESSAGE_MAX_LENGTH } from './schema.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { toErrorMessage } from '../../utils/format/errors.js';
 import { escapeRegExp } from '../../utils/regexp.js';
 import { isRecord } from '../../utils/type-guards.js';
 

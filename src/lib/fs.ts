@@ -17,7 +17,7 @@ import { randomBytes } from 'node:crypto';
 import { readdir, readFile, lstat, writeFile, rename, rm } from 'node:fs/promises';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { error, matches } from '../utils/error.js';
-import { assertWritablePathConfined } from './path-confinement.js';
+import { assertWritablePathConfined } from './fs/confinement.js';
 import { isNodeError } from './process/errors.js';
 
 export function readJsonSafe(path: string): unknown | null {

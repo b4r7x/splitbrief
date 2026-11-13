@@ -45,7 +45,7 @@ import type {
 } from '../../../engine/runners/prepared-execution.js';
 import { rollbackPreparedExecutionOwnership } from '../../../engine/runners/prepared-execution.js';
 import type { CustomRunnerAdmissionPolicy } from '../../../engine/runners/types.js';
-import { toErrorMessage } from '../../../utils/format-errors.js';
+import { toErrorMessage } from '../../../utils/format/errors.js';
 import { warnStderr } from '../../../lib/warn.js';
 import type { WorkflowOpts } from '../../../core/types/config-options.js';
 import { resolveRunConfig } from '../../build-overrides.js';

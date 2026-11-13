@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { listProjectFiles } from '../../lib/file-listing.js';
+import { listProjectFiles } from '../../lib/fs/listing.js';
 import { SPLITBRIEF_DIR, SESSIONS_DIR } from '../../core/paths.js';
 import { projectFilesStore } from '../../stores/ui/project-files.js';
 

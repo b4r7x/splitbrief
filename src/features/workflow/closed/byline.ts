@@ -15,7 +15,7 @@ import {
   segmentsForRowText,
 } from '../../../utils/display-text.js';
 import { countNoun } from '../../../utils/pluralize.js';
-import { formatDatedClock, formatElapsedClock } from '../../../utils/format-time.js';
+import { formatDatedClock, formatElapsedClock } from '../../../utils/format/time.js';
 import type { DepartureKind } from '../../../stores/workflow/departure.js';
 import { stepWord, stopPoint } from '../stop/copy.js';
 import { statusLeavesWordsUnread } from '../../../core/recovery/typed-words.js';

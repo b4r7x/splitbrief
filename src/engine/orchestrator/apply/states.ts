@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { isInternalGitStatusPath, SNAPSHOT_BASELINE_ID } from '../../../core/paths.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { fsError } from '../../../lib/fs.js';
-import { assertPathConfined, pathConfinementError } from '../../../lib/path-confinement.js';
+import { assertPathConfined, pathConfinementError } from '../../../lib/fs/confinement.js';
 import { isENOENT, isNodeError } from '../../../lib/process/errors.js';
 import { error } from '../../../utils/error.js';
 import { sha256Hex } from '../../../utils/sha256.js';

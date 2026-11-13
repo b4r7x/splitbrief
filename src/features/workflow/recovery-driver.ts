@@ -40,7 +40,7 @@ import { composerLiveStore } from '../../stores/ui/composer-live.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { toErrorMessage } from '../../utils/format/errors.js';
 import type { QuestionAnswer, UseInputModeResult } from './hooks/use-input-mode.js';
 import { updateWaitingHalt } from '../../stores/workflow/actions/hydrate.js';
 import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';

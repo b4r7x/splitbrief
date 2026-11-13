@@ -11,7 +11,7 @@ import { EVIDENCE_FILE } from '../../../core/paths.js';
 import { sessionRelativePath } from '../../../core/sessions/ownership-marker.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { warnError } from '../../../lib/warn.js';
-import { nowIso } from '../../../utils/format-time.js';
+import { nowIso } from '../../../utils/format/time.js';
 import {
   captureChangedFilesBaseline,
   changedFilesSinceBaseline,

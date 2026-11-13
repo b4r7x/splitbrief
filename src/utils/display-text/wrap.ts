@@ -1,5 +1,5 @@
 import wrapAnsi from 'wrap-ansi';
-import { getTerminalCellWidth, splitTerminalGraphemes } from './display-text.js';
+import { getTerminalCellWidth, splitTerminalGraphemes } from '../display-text.js';
 
 export function wrapHard(text: string, width: number): string {
   return wrapAnsi(text, width, { trim: false, hard: true });

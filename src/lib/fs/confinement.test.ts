@@ -10,7 +10,7 @@ import {
   isInsideRoot,
   isPathConfined,
   nearestExistingAncestor,
-} from './path-confinement.js';
+} from './confinement.js';
 
 const ROOT = '/safe/root/dir';
 const itUnix = process.platform === 'win32' ? it.skip : it;

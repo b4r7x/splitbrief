@@ -9,7 +9,7 @@ import {
   filePathUrl,
   projectRelativePathLabel,
   resolveMarkdownLinkTarget,
-} from '../../../../utils/path-links.js';
+} from '../../../../utils/path/links.js';
 import type { ConversationRowSegment, ConversationRowTone } from '../types.js';
 import {
   workflowMarkdownParts,

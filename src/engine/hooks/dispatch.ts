@@ -9,7 +9,7 @@ import { spawnWithTimeout } from '../../lib/process/spawn/progress.js';
 import { isENOENT, processError } from '../../lib/process/errors.js';
 import { startsWithEventPlaceholder, substituteEventFields } from './substitute.js';
 import type { HookOutcome, HookContext, HookPayload } from './types.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { toErrorMessage } from '../../utils/format/errors.js';
 import { boundConsumerPayload } from '../../core/payload-bounds.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { throwIfAborted } from '../../utils/abort.js';

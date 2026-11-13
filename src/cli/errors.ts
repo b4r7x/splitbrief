@@ -1,5 +1,5 @@
 import { error, matches, type AppError } from '../utils/error.js';
-import { toErrorMessage } from '../utils/format-errors.js';
+import { toErrorMessage } from '../utils/format/errors.js';
 import { isRecord } from '../utils/type-guards.js';
 
 export type CliError = AppError<'cli-error', { exitCode: number }> & {

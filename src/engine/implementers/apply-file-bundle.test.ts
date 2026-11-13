@@ -24,8 +24,8 @@ type WriteHook = (path: string) => void | Promise<void>;
 let beforeWrite: WriteHook | undefined;
 let afterWrite: WriteHook | undefined;
 
-vi.mock('../../lib/confined-fs.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../lib/confined-fs.js')>();
+vi.mock('../../lib/fs/confined.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/fs/confined.js')>();
   return {
     ...actual,
     confinedCreateFile: async (dir: string, path: string, content: string) => {

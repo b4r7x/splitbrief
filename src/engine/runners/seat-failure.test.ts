@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { classifyHaltSignature } from '../../core/pipeline-spec/halts.js';
 import { runnerCallOutcome, thrownSeatFailure } from '../implementers/pipeline/call-result.js';
 import { throwMappedError } from '../streaming/stream-errors.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { toErrorMessage } from '../../utils/format/errors.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import {
   CURSOR_MODEL_REFUSAL,

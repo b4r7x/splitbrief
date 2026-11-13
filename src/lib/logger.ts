@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { redactSecrets } from '../utils/redact.js';
-import { confinedAppendFileSync } from './confined-fs.js';
+import { confinedAppendFileSync } from './fs/confined.js';
 import { rejectSymlinkTarget } from './fs.js';
 
 export interface Logger {

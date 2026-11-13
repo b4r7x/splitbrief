@@ -67,7 +67,7 @@ import {
   type ProcessScope,
 } from '../../../lib/process/registry.js';
 import { closeApprovalPrompt } from '../../../stores/approval-prompt/prompt.js';
-import { toErrorMessage } from '../../../utils/format-errors.js';
+import { toErrorMessage } from '../../../utils/format/errors.js';
 import { error } from '../../../utils/error.js';
 import type { UseInputModeResult } from './use-input-mode.js';
 import { buildPromptCallbacks } from '../prompt-callbacks.js';

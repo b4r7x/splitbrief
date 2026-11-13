@@ -21,7 +21,7 @@ import { loadState } from '../../../core/state/persistence.js';
 import { lineageIdOf } from '../../../core/state/task-insert.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
-import { nowIso } from '../../../utils/format-time.js';
+import { nowIso } from '../../../utils/format/time.js';
 
 type CheckEntryMeta = {
   workspaceSnapshotId?: string | undefined;

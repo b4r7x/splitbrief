@@ -6,7 +6,7 @@ import {
 } from '../types.js';
 import { assertNever, includes } from '../../../../utils/type-guards.js';
 import { isRunLivePhase } from '../../../phases.js';
-import { toErrorMessage } from '../../../../utils/format-errors.js';
+import { toErrorMessage } from '../../../../utils/format/errors.js';
 import { countNoun } from '../../../../utils/pluralize.js';
 import {
   APPLY_RUNNING_REFUSAL,

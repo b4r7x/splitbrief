@@ -31,8 +31,8 @@ import {
   getRunnerModelName,
 } from '../../core/config/accessors/runner-config.js';
 import { error } from '../../utils/error.js';
-import { nowIso } from '../../utils/format-time.js';
-import { labelError } from '../../utils/format-errors.js';
+import { nowIso } from '../../utils/format/time.js';
+import { labelError } from '../../utils/format/errors.js';
 import { writeConfinedSecureFileAsync } from '../../lib/fs.js';
 import { warnError } from '../../lib/warn.js';
 import { isAbortError, throwIfAborted } from '../../utils/abort.js';

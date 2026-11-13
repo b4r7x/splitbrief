@@ -1,7 +1,7 @@
 import type { CrewSeatId } from '../../core/crew/identity.js';
 import { resolveReviewCadence } from '../../core/config/runtime/resolve.js';
 import type { Config } from '../../core/schemas/config.js';
-import { wrapPathAware } from '../../utils/wrap.js';
+import { wrapPathAware } from '../../utils/display-text/wrap.js';
 import type { SettingsItem } from './items.js';
 
 export interface HelpLine {

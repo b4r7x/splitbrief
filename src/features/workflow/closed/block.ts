@@ -8,8 +8,8 @@ import {
   stripTerminalControls,
   truncateTerminalDisplayText,
 } from '../../../utils/display-text.js';
-import { filePathUrl } from '../../../utils/path-links.js';
-import { wrapPathAware } from '../../../utils/wrap.js';
+import { filePathUrl } from '../../../utils/path/links.js';
+import { wrapPathAware } from '../../../utils/display-text/wrap.js';
 import { foldRow, foldRowKey } from '../conversation-rows/fold-row.js';
 import { segmentedRow } from '../conversation-rows/row-format/rows.js';
 import { rowLeadingCells } from '../conversation-rows/row-markers.js';

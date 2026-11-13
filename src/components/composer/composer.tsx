@@ -70,8 +70,8 @@ import {
   nameDraftsNotRemoved,
   reportDraftNotSaved,
 } from '../../stores/ui/session-drafts.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
-import type { listProjectFiles } from '../../lib/file-listing.js';
+import { toErrorMessage } from '../../utils/format/errors.js';
+import type { listProjectFiles } from '../../lib/fs/listing.js';
 
 const MAX_REFERENCE_SUGGESTIONS = 8;
 

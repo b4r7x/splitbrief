@@ -4,7 +4,7 @@ import type {
 } from '../../../../components/markdown.js';
 import type { Theme } from '../../../../core/theme/palette.js';
 import { assertNever } from '../../../../utils/type-guards.js';
-import { filePathUrl, projectRelativePathLabel } from '../../../../utils/path-links.js';
+import { filePathUrl, projectRelativePathLabel } from '../../../../utils/path/links.js';
 import { workflowMarkdownParts, type WorkflowMarkdownPart } from './workflow-markers.js';
 import { workflowStatusTone } from './conversation-segments.js';
 import { colorForTone } from '../../../../core/theme/tone-color.js';

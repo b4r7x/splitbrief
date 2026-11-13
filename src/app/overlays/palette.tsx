@@ -28,7 +28,7 @@ import { sessionsStore } from '../../stores/project/sessions.js';
 import { COMMAND_CATEGORY_LABELS } from '../../core/runtime/commands/types.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { overlayRect, type OverlayDensity } from '../../core/navigation/overlay-rect.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { toErrorMessage } from '../../utils/format/errors.js';
 import { handleSessionSelect } from '../../stores/navigation/session-select.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { navigateIndex } from '../../utils/indexing.js';

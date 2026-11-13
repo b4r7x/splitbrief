@@ -12,7 +12,7 @@ import { isGitRepo, getRepoToplevel } from '../lib/git/repository.js';
 import { reapOrphanRunners } from '../engine/orchestrator/run/orphan-reaper.js';
 import { removeClosedRunWorkspaces } from '../engine/orchestrator/run/close.js';
 import { cliError } from './errors.js';
-import { setProjectRoot, toErrorMessage } from '../utils/format-errors.js';
+import { setProjectRoot, toErrorMessage } from '../utils/format/errors.js';
 import { initLogger } from '../core/logger.js';
 import { warnStderr } from '../lib/warn.js';
 import type { WorkflowOpts } from '../core/types/config-options.js';

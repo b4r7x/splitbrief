@@ -23,8 +23,8 @@ import {
 import { captureBundleBaseline } from '../bundle-baseline.js';
 import { parseFileBundle } from '../parse-file-bundle.js';
 import { applyFileBundle } from '../apply-file-bundle.js';
-import { assertPathConfined } from '../../../lib/path-confinement.js';
-import { toErrorMessage } from '../../../utils/format-errors.js';
+import { assertPathConfined } from '../../../lib/fs/confinement.js';
+import { toErrorMessage } from '../../../utils/format/errors.js';
 import { formatErrorWithHint } from '../../error-hints.js';
 import {
   formatImplementerSystemPreamble,

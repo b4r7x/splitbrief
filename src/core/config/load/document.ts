@@ -14,7 +14,7 @@ import { SPLITBRIEF_DIR, CONFIG_FILE, getSplitbriefPath } from '../../paths.js';
 import { ensureGitignore } from '../../../lib/fs.js';
 import { checkIgnoredPaths } from '../../../lib/git/files.js';
 import type { ConfigRevision, ExpectedConfigRevision } from '../../../lib/confined-fs-atomic.js';
-import { assertWritablePathConfined, pathConfinementError } from '../../../lib/path-confinement.js';
+import { assertWritablePathConfined, pathConfinementError } from '../../../lib/fs/confinement.js';
 import { isENOENT, isNodeError } from '../../../lib/process/errors.js';
 import { configError } from '../errors.js';
 import { loadedKey } from './transform.js';

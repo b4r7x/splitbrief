@@ -2,7 +2,7 @@ import type { AttachedInput } from '../../../../core/schemas/attachment.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
 import { configStore } from '../../../../stores/project/config.js';
 import { getTerminalCellWidth, stripTerminalControls } from '../../../../utils/display-text.js';
-import { projectRelativePathLabel } from '../../../../utils/path-links.js';
+import { projectRelativePathLabel } from '../../../../utils/path/links.js';
 import { compositeBlock, rowsBlock, wrappedTextBlock } from '../row-block-compose.js';
 import { row } from '../row-format/rows.js';
 import { wrappedPrefixedRowTexts } from '../row-format/text.js';

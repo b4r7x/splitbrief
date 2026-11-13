@@ -5,7 +5,7 @@ import {
 } from '../../../core/review/fix-task.js';
 import { realpathOrResolve } from '../../../core/trust/path-classification.js';
 import { captureText, type ProcessOutputCapture } from '../../../lib/process/errors.js';
-import { normalizeProjectRelativePath } from '../../../utils/path-patterns.js';
+import { normalizeProjectRelativePath } from '../../../utils/path/patterns.js';
 import { redactSecrets } from '../../../utils/redact.js';
 import { truncateByChars } from '../../../utils/truncate.js';
 import { failingTestKey, parseFailingTests, readNodeTap } from './test-failures.js';

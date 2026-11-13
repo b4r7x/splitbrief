@@ -20,7 +20,7 @@ import {
   readHeadSha,
 } from '../../../lib/git/repository.js';
 import { warnError } from '../../../lib/warn.js';
-import { addWorkspaceRoot, toErrorMessage } from '../../../utils/format-errors.js';
+import { addWorkspaceRoot, toErrorMessage } from '../../../utils/format/errors.js';
 import { countNoun } from '../../../utils/pluralize.js';
 import {
   createRunnerSandboxEnv,

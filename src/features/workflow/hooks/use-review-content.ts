@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import fs from 'node:fs/promises';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { reviewStore, type ReviewSource } from '../../../stores/workflow/review.js';
-import { labelError } from '../../../utils/format-errors.js';
+import { labelError } from '../../../utils/format/errors.js';
 
 type ReviewContentReader = (
   path: string,

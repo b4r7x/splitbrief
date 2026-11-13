@@ -1,14 +1,14 @@
 import XtermHeadless from '@xterm/headless';
 import { UnicodeGraphemesAddon } from './grapheme-addon.js';
-import type { CopyOutcome } from '../clipboard/clipboard.js';
-import type { MouseEvent, MouseListener } from './filtered-stdin/types.js';
+import type { CopyOutcome } from '../../clipboard/clipboard.js';
+import type { MouseEvent, MouseListener } from '../filtered-stdin/types.js';
 import {
   renderSelection,
   selectionText,
   snapshotTerminalFrame,
   type SelectionPoint,
   type TerminalFrame,
-} from './selection-frame.js';
+} from './frame.js';
 
 interface SelectionGesture {
   phase: 'pressed' | 'dragging' | 'selected';

@@ -6,7 +6,7 @@ import { seatChangeWords, type SeatChangePoint } from '../../../core/crew/seats.
 import type { RunRecord } from '../../../core/sessions/run-record.js';
 import type { RunningSuiteStage } from '../../../stores/workflow/operations/state.js';
 import type { StopIntent, StopParkKind, StopPhase } from '../../../stores/workflow/stop.js';
-import { formatElapsedClock } from '../../../utils/format-time.js';
+import { formatElapsedClock } from '../../../utils/format/time.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { suiteStatusParts } from '../display/phase-verb.js';
 import { stateTone, type StateTone } from '../../../core/theme/state-tone.js';

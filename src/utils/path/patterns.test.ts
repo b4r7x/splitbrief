@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { matchesGlob, normalizeProjectRelativePath, scopePathPatterns } from './path-patterns.js';
+import { matchesGlob, normalizeProjectRelativePath, scopePathPatterns } from './patterns.js';
 
 describe('scopePathPatterns', () => {
   it('extracts exactly the backticked path from a prose bullet', () => {

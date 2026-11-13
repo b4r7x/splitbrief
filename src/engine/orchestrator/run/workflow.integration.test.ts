@@ -86,7 +86,7 @@ import { runTrackedWorkflow, settleTrackedWorkflows } from '#testing/helpers/tra
 import type { RunWorkflowOptions } from './init.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../events/workflow-cancel.js';
 import { error } from '../../../utils/error.js';
-import { toErrorMessage } from '../../../utils/format-errors.js';
+import { toErrorMessage } from '../../../utils/format/errors.js';
 import { parsePreparedConfig, type RunnerGate } from '../../runners/prepared-execution.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';

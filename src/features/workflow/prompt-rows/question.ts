@@ -2,7 +2,7 @@ import { countPromptBodyRows } from '../prompt-body-rows.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import { questionDefault, questionOptions } from '../../../stores/question-prompt/prompt.js';
 import { getTerminalCellWidth, sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
-import { wrapHard } from '../../../utils/wrap.js';
+import { wrapHard } from '../../../utils/display-text/wrap.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 
 export const QUESTION_PROMPT_HORIZONTAL_CHROME = 4;

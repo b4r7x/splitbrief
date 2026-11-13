@@ -3,7 +3,7 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { warnStderr } from '../../../lib/warn.js';
 import { killAllProcesses } from '../../../lib/process/registry.js';
-import { toErrorMessage } from '../../../utils/format-errors.js';
+import { toErrorMessage } from '../../../utils/format/errors.js';
 import { withSignalHandlers } from '../signals.js';
 import { commitWorkflowState, readWorkflowStateHead, stateOpsError } from '../state-ops.js';
 

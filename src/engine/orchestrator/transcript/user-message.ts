@@ -6,7 +6,7 @@ import type { QueuedMessage } from '../../../core/schemas/workflow.js';
 import { createSessionLogAppender } from '../../../core/sessions/log-writer.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { UserMessageInput } from '../../../core/types/user-input.js';
-import { nowIso } from '../../../utils/format-time.js';
+import { nowIso } from '../../../utils/format/time.js';
 import type { EventBus } from '../../events/types.js';
 import { publishUserMessage } from '../events.js';
 import { recordResumeUserMessage } from '../state-ops.js';

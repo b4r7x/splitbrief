@@ -1,4 +1,4 @@
-import { fileErrorReason, fileFailure, toErrorMessage } from '../../utils/format-errors.js';
+import { fileErrorReason, fileFailure, toErrorMessage } from '../../utils/format/errors.js';
 import { error, matches, type AppError } from '../../utils/error.js';
 import { continueRunCommand } from '../recovery/resume-command.js';
 import { SOFT_SEP } from '../separators.js';

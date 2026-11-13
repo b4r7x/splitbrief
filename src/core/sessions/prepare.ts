@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { linkSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { confinedEnsureDir } from '../../lib/confined-fs.js';
+import { confinedEnsureDir } from '../../lib/fs/confined.js';
 import { SECURE_DIR_MODE, SECURE_FILE_MODE, writeSecureFile } from '../../lib/fs.js';
-import { assertWritablePathConfined } from '../../lib/path-confinement.js';
+import { assertWritablePathConfined } from '../../lib/fs/confinement.js';
 import { isNodeError } from '../../lib/process/errors.js';
 import { isRecord } from '../../utils/type-guards.js';
 import type { DeepReadonly } from '../config/accessors/runner-config.js';

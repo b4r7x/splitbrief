@@ -1,7 +1,7 @@
 import type { Check, Task } from '../../core/schemas/task.js';
 import type { TaskSpec } from '../../core/schemas/plan.js';
-import { confinedExists } from '../../lib/confined-fs.js';
-import { isPathConfined } from '../../lib/path-confinement.js';
+import { confinedExists } from '../../lib/fs/confined.js';
+import { isPathConfined } from '../../lib/fs/confinement.js';
 import { error } from '../../utils/error.js';
 
 const planTaskError = {

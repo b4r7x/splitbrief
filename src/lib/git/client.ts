@@ -1,6 +1,6 @@
 import { simpleGit, type SimpleGit } from 'simple-git';
 import { error } from '../../utils/error.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { toErrorMessage } from '../../utils/format/errors.js';
 import { resolveBareCommandOnPath } from '../process/command-path.js';
 
 // simple-git rejects a binary outside its custom-binary rule; keep the bare name then.

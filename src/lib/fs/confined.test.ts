@@ -2,7 +2,7 @@ import { afterEach, describe, it, expect } from 'vitest';
 import { chmodSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { confinedReadFile, confinedReadFileAsync, confinedReplaceFile } from './confined-fs.js';
+import { confinedReadFile, confinedReadFileAsync, confinedReplaceFile } from './confined.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 const tmpDirs: string[] = [];

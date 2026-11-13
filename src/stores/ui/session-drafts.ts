@@ -6,7 +6,7 @@ import { sessionError } from '../../core/sessions/errors.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { warnStderr } from '../../lib/warn.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { toErrorMessage } from '../../utils/format/errors.js';
 import { createStore, storeBase } from '../create-store.js';
 import { routerStore } from '../navigation/router.js';
 import { feedbackStore } from './feedback.js';

@@ -3,7 +3,7 @@ import { relative } from 'node:path';
 import { replacedFilesSavedIn } from '../../../core/runtime/commands/messages.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import { loadState } from '../../../core/state/persistence.js';
-import { labelError } from '../../../utils/format-errors.js';
+import { labelError } from '../../../utils/format/errors.js';
 import { pluralize } from '../../../utils/pluralize.js';
 import { publishWarning, publishWarningFromError } from '../events.js';
 import { inferTaskOwnChangedFiles } from '../changed-files-baseline.js';

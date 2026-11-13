@@ -9,7 +9,7 @@ import type { ActionClass, Phase } from '../../../core/schemas/enums.js';
 import type { ApprovalPromptState } from '../../../stores/approval-prompt/prompt.js';
 import type { TieredApprovalRequest } from '../../../core/approval/types.js';
 import { PLAN_JSON_FILE } from '../../../core/paths.js';
-import { wrapHard } from '../../../utils/wrap.js';
+import { wrapHard } from '../../../utils/display-text/wrap.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { countNoun } from '../../../utils/pluralize.js';
 import { REVIEW_DECORATION_ROWS } from '../layout/rect.js';

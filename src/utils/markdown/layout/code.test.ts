@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
-import { getTerminalCellWidth } from '../display-text.js';
-import { glyph, markdownLayoutGlyphs } from '../../lib/glyphs.js';
-import { parseMarkdownBlocks } from './block-parser.js';
-import { layoutMarkdown } from './layout.js';
-import type { MarkdownLayoutLine } from './types.js';
+import { getTerminalCellWidth } from '../../display-text.js';
+import { glyph, markdownLayoutGlyphs } from '../../../lib/glyphs.js';
+import { parseMarkdownBlocks } from '../block-parser.js';
+import { layoutMarkdown } from './document.js';
+import type { MarkdownLayoutLine } from '../types.js';
 
 // These expectations spell the unicode tier out literally, so the tier is pinned here rather
 // than left to whether the process running the suite happens to own a TTY.

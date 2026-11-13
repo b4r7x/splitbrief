@@ -11,7 +11,7 @@ import { checksSummary } from '../../../core/validation/checks-summary.js';
 import { planCheckName } from '../../../core/validation/plan-check-name.js';
 import { reusedNote } from '../../../core/validation/reused-note.js';
 import { oneLineDisplayText, stripTerminalControls } from '../../../utils/display-text.js';
-import { formatDuration, formatElapsedClock } from '../../../utils/format-time.js';
+import { formatDuration, formatElapsedClock } from '../../../utils/format/time.js';
 import { boundEngineEventForConsumer } from '../bound.js';
 import type { EngineEvent, EventSink } from '../types.js';
 

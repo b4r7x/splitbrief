@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDuration, formatElapsedClock } from './format-time.js';
+import { formatDuration, formatElapsedClock } from './time.js';
 
 describe('formatDuration', () => {
   it.each([

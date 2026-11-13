@@ -7,7 +7,7 @@ import { configStore } from '../../../stores/project/config.js';
 import { glyph, markdownLayoutGlyphs } from '../../../lib/glyphs.js';
 import { getTerminalCellWidth, sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { parseMarkdownBlocks } from '../../../utils/markdown/block-parser.js';
-import { layoutMarkdown } from '../../../utils/markdown/layout.js';
+import { layoutMarkdown } from '../../../utils/markdown/layout/document.js';
 import { colorForTone } from '../../../core/theme/tone-color.js';
 import {
   beginMarkdownConversationRowsProjectionPass,

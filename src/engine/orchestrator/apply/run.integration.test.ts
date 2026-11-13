@@ -49,7 +49,7 @@ import { runTasksAndReview } from '../run/task-execution.js';
 import { activeApply } from '../session-lifecycle/shutdown.js';
 import { readWorkspaceRecord } from '../isolation/retention.js';
 import { captureReviewedCandidate, readApplyEntry } from './states.js';
-import { toErrorMessage } from '../../../utils/format-errors.js';
+import { toErrorMessage } from '../../../utils/format/errors.js';
 
 vi.mock('../approval/staged-project.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../approval/staged-project.js')>();

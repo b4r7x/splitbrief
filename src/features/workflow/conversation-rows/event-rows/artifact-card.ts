@@ -1,6 +1,6 @@
 import { configStore } from '../../../../stores/project/config.js';
 import type { EngineEventOf } from '../../../../engine/events/types.js';
-import { filePathUrl, projectRelativePathLabel } from '../../../../utils/path-links.js';
+import { filePathUrl, projectRelativePathLabel } from '../../../../utils/path/links.js';
 import {
   getTerminalCellWidth,
   truncateTerminalDisplayText,

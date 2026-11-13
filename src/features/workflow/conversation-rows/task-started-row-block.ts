@@ -6,7 +6,7 @@ import { formatTaskStartedParts } from './event-format.js';
 import type { ConversationRow, ConversationRowBlock, ConversationRowSegment } from './types.js';
 import { segmentedRow } from './row-format/rows.js';
 import { sanitizeRowDisplayText } from './row-format/text.js';
-import { wrapPathAware } from '../../../utils/wrap.js';
+import { wrapPathAware } from '../../../utils/display-text/wrap.js';
 import { wrapWidthFor } from './row-markers.js';
 import { compositeBlock, wrappedSegmentsBlock } from './row-block-compose.js';
 

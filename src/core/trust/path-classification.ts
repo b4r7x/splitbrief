@@ -1,6 +1,6 @@
 import { lstatSync, realpathSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
-import { isInsideRoot } from '../../lib/path-confinement.js';
+import { isInsideRoot } from '../../lib/fs/confinement.js';
 import { resolveBareCommandOnPath } from '../../lib/process/command-path.js';
 import { readPackageJson } from '../project-meta.js';
 import { parseShellCommand } from '../../utils/parse-shell-command.js';

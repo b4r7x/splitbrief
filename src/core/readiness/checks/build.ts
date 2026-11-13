@@ -12,7 +12,7 @@ import { buildRunnerChecks } from './runners.js';
 import { buildContextChecks } from './context.js';
 import { buildValidationChecks } from './validation.js';
 import { buildRepoChecks } from './repo.js';
-import { nowIso } from '../../../utils/format-time.js';
+import { nowIso } from '../../../utils/format/time.js';
 import type { Config } from '../../schemas/config.js';
 import type { CliReadinessResult } from '../../schemas/readiness.js';
 import type { ReadinessReport, ReadinessSection } from '../types.js';

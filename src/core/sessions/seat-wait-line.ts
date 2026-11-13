@@ -1,4 +1,4 @@
-import { formatTime } from '../../utils/format-time.js';
+import { formatTime } from '../../utils/format/time.js';
 import { CREW_SEAT_LABELS } from '../crew/identity.js';
 import { BOUNDS } from '../pipeline-spec/bounds.js';
 import { getRunnerIdentityDisplayName } from '../providers/catalog.js';

@@ -23,7 +23,7 @@ import { processError } from '../../lib/process/errors.js';
 import { spawnWithStdin } from '../../lib/process/spawn/line-stream.js';
 import type { SpawnPipeFatalSignal } from '../../lib/process/spawn/lifecycle.js';
 import { error, matches } from '../../utils/error.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { toErrorMessage } from '../../utils/format/errors.js';
 import { isCredentialEnvironmentName, redactSecrets } from '../../utils/redact.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { getLineParser } from './output-parsers.js';

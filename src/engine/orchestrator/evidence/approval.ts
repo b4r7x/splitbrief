@@ -8,7 +8,7 @@ import {
   withAppendedApproval,
   withAppendedRejection,
 } from '../../../core/evidence/ledger-state.js';
-import { nowIso } from '../../../utils/format-time.js';
+import { nowIso } from '../../../utils/format/time.js';
 
 export type RecordRejectionEvidenceInput = {
   ledger: EvidenceLedger;

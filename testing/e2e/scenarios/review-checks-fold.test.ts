@@ -6,7 +6,7 @@ import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { reapOrphanRunners } from '../../../src/engine/orchestrator/run/orphan-reaper.js';
-import { formatDuration } from '../../../src/utils/format-time.js';
+import { formatDuration } from '../../../src/utils/format/time.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { trustDeclaredRunners } from '#testing/helpers/runner-trust.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';

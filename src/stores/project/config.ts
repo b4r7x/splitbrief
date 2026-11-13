@@ -18,7 +18,7 @@ import type { Config } from '../../core/schemas/config.js';
 import type { ImplementerConfig } from '../../core/schemas/implementer-config.js';
 import { configError } from '../../core/config/errors.js';
 import { SOFT_SEP } from '../../core/separators.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { toErrorMessage } from '../../utils/format/errors.js';
 import { feedbackStore } from '../ui/feedback.js';
 import { configErrorLines } from './save-feedback.js';
 import { selectInitialCrew } from '../../core/crew/default.js';

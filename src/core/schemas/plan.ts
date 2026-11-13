@@ -5,7 +5,7 @@
  */
 import { posix } from 'node:path';
 import { z } from 'zod';
-import { normalizeProjectRelativePath } from '../../utils/path-patterns.js';
+import { normalizeProjectRelativePath } from '../../utils/path/patterns.js';
 import { CheckSchema, ProtectedOperationSchema, TaskIdSchema } from './task.js';
 
 /** A plan path spelled as the write gate names a changed file: `./a.ts` and `b/../a.ts` are `a.ts`. */

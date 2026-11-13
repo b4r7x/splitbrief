@@ -6,7 +6,7 @@ import {
 } from '../../utils/display-text.js';
 import { countNoun } from '../../utils/pluralize.js';
 import { assertNever } from '../../utils/type-guards.js';
-import { wrapHard } from '../../utils/wrap.js';
+import { wrapHard } from '../../utils/display-text/wrap.js';
 import type { ConversationRowSegment } from './conversation-rows/types.js';
 import {
   FACT_INDENT,

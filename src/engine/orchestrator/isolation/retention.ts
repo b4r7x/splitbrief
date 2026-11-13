@@ -23,12 +23,12 @@ import {
 } from '../../../core/sessions/confinement.js';
 import { writeConfinedSecureFileAsync, writeSecureFile } from '../../../lib/fs.js';
 import { createLogger } from '../../../lib/logger.js';
-import { assertPathConfined } from '../../../lib/path-confinement.js';
+import { assertPathConfined } from '../../../lib/fs/confinement.js';
 import { isENOENT } from '../../../lib/process/errors.js';
 import { isAbortError } from '../../../utils/abort.js';
 import { canonicalJSON } from '../../../utils/canonical-json.js';
 import { error, matches } from '../../../utils/error.js';
-import { toErrorMessage } from '../../../utils/format-errors.js';
+import { toErrorMessage } from '../../../utils/format/errors.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { workflowCancelledReasonFromSignal } from '../../events/workflow-cancel.js';
 import type { EventBus } from '../../events/types.js';

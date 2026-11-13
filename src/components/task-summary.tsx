@@ -7,7 +7,7 @@ import type { TaskCompletionMethod } from '../core/schemas/enums.js';
 import { methodWord } from '../core/sessions/display.js';
 import { classifyTaskCompletionMethod } from '../core/task-completion.js';
 import { SOFT_SEP } from '../core/separators.js';
-import { formatDuration } from '../utils/format-time.js';
+import { formatDuration } from '../utils/format/time.js';
 import {
   elidePathMiddle,
   getTerminalCellWidth,

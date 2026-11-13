@@ -4,7 +4,7 @@ import type { EvidenceCommandRun } from '../../../core/schemas/evidence.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { warnError } from '../../../lib/warn.js';
-import { nowIso } from '../../../utils/format-time.js';
+import { nowIso } from '../../../utils/format/time.js';
 import { deserializeChangedFilesBaseline } from '../changed-files-baseline.js';
 import { getOrCreateLedger } from '../evidence/persistence.js';
 import { currentCandidateId } from '../evidence/record-checks.js';

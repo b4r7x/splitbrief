@@ -16,7 +16,7 @@ import {
 } from '../../core/sessions/planner-reissue.js';
 import { publishRunnerCallEvent } from './events.js';
 import { isAbortError } from '../../utils/abort.js';
-import { labelError } from '../../utils/format-errors.js';
+import { labelError } from '../../utils/format/errors.js';
 
 export type ApplyRebuiltContextOpts = {
   projectDir: string;

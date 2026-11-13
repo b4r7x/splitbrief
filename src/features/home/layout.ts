@@ -1,5 +1,5 @@
 import { overlayWidth } from '../../core/navigation/overlay-rect.js';
-import { wrapHard } from '../../utils/wrap.js';
+import { wrapHard } from '../../utils/display-text/wrap.js';
 import { MARK_SLOT_CELLS } from '../../components/row-leading.js';
 import { getLogoTier, getLogoHeight, getLogoWidth, type LogoTier } from './logo.js';
 

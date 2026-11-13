@@ -2,7 +2,7 @@ import { CREW_SEAT_LABELS, PLANNER_INHERITANCE } from '../../../../core/crew/ide
 import type { Task, TaskId } from '../../../../core/schemas/task.js';
 import { lineageAttemptsOf, type WorkflowState } from '../../../../core/schemas/workflow.js';
 import { uniqueSorted } from '../../../../utils/collections.js';
-import { scopePathPatterns } from '../../../../utils/path-patterns.js';
+import { scopePathPatterns } from '../../../../utils/path/patterns.js';
 import { withoutRunBanners } from '../../validation/extract-failure-keys.js';
 import { summarizeText } from './issue.js';
 

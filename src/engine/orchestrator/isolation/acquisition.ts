@@ -8,7 +8,7 @@ import type { SnapshotManifest } from '../../../core/schemas/snapshot.js';
 import { stripGitignoreBookkeeping } from '../approval/staged-project.js';
 import { isInternalGitStatusPath, sessionDir, SNAPSHOT_BASELINE_ID } from '../../../core/paths.js';
 import { writeConfinedSecureFileAsync } from '../../../lib/fs.js';
-import { assertPathConfined, isInsideRoot } from '../../../lib/path-confinement.js';
+import { assertPathConfined, isInsideRoot } from '../../../lib/fs/confinement.js';
 import { error } from '../../../utils/error.js';
 import {
   type AcquisitionBaseline,

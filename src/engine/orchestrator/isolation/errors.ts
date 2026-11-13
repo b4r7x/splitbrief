@@ -1,5 +1,5 @@
 import { error } from '../../../utils/error.js';
-import { labelError } from '../../../utils/format-errors.js';
+import { labelError } from '../../../utils/format/errors.js';
 import { redactSecrets } from '../../../utils/redact.js';
 
 export const worktreeError = {

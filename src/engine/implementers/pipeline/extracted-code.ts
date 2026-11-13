@@ -1,6 +1,6 @@
 import type { Task } from '../../../core/schemas/task.js';
-import { confinedExists, confinedReadFileAsync } from '../../../lib/confined-fs.js';
-import { pathConfinementError } from '../../../lib/path-confinement.js';
+import { confinedExists, confinedReadFileAsync } from '../../../lib/fs/confined.js';
+import { pathConfinementError } from '../../../lib/fs/confinement.js';
 import { matches } from '../../../utils/error.js';
 import { extractCode } from '../../parsers/response-extractor.js';
 import { applyCode, hasApplicablePatch } from '../apply.js';

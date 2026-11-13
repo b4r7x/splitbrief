@@ -31,7 +31,7 @@ import type { SeatIdentity } from '../providers/seat-identity.js';
 import { sessionError } from '../sessions/errors.js';
 import { SPLITBRIEF_DIR, SESSIONS_DIR, SEATS_FILE } from '../paths.js';
 import type { SessionRef } from '../types/session-ref.js';
-import { confinedReadFile, confinedWriteFile } from '../../lib/confined-fs.js';
+import { confinedReadFile, confinedWriteFile } from '../../lib/fs/confined.js';
 import { assertSessionDirConfined } from '../sessions/confinement.js';
 import { loadState } from './persistence.js';
 

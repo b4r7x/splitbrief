@@ -3,7 +3,7 @@ import {
   sanitizeTerminalDiagnosticText,
   sanitizeTerminalDisplayText,
 } from '../../utils/display-text.js';
-import { formatElapsedClock } from '../../utils/format-time.js';
+import { formatElapsedClock } from '../../utils/format/time.js';
 
 export const spawnError = {
   streamsUnavailable: () => error('process-streams-unavailable', 'Process streams not available'),

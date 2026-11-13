@@ -15,7 +15,7 @@ import {
   type SeatFailureSource,
 } from '../../runners/seat-failure.js';
 import { isRecord } from '../../../utils/type-guards.js';
-import { toErrorMessage } from '../../../utils/format-errors.js';
+import { toErrorMessage } from '../../../utils/format/errors.js';
 
 export const ABORTED_OUTCOME_TEXT = 'Aborted';
 

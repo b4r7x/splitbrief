@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { getSplitbriefPath, UI_PREFS_FILE } from './paths.js';
 import { readValidatedJsonResult, writeSecureFile } from '../lib/fs.js';
 import { warnError } from '../lib/warn.js';
-import { projectRelativePathLabel } from '../utils/path-links.js';
+import { projectRelativePathLabel } from '../utils/path/links.js';
 
 export interface UiPrefs {
   sidebarVisible: boolean;

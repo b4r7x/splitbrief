@@ -14,7 +14,7 @@ import {
   assertWritablePathConfined,
   pathConfinementError,
   reachesControlPlane,
-} from '../../../lib/path-confinement.js';
+} from '../../../lib/fs/confinement.js';
 import { isENOENT } from '../../../lib/process/errors.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { error } from '../../../utils/error.js';

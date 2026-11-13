@@ -7,7 +7,7 @@ import type {
   EvidenceCommandRun,
   EvidenceCheckEntry,
 } from '../schemas/evidence.js';
-import { nowIso } from '../../utils/format-time.js';
+import { nowIso } from '../../utils/format/time.js';
 import { hashTaskBrief } from './brief-hash.js';
 
 export function emptyEvidenceTask(task: Task): EvidenceTask {

@@ -5,7 +5,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { StagedWorkspaceLeafSchema } from '../../../core/schemas/retained-workspace.js';
 import { transition } from '../../../core/state/machine.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
-import { toErrorMessage } from '../../../utils/format-errors.js';
+import { toErrorMessage } from '../../../utils/format/errors.js';
 import { error, matches } from '../../../utils/error.js';
 import type { EventBus } from '../../events/types.js';
 import { recordInterruptedCalls } from '../../calls/interrupted.js';

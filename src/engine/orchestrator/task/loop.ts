@@ -30,8 +30,8 @@ import { publishError, publishTasksPlanned, publishWarning } from '../events.js'
 import { checkDependencyGate } from './dependency-gate.js';
 import { selectRoutingProfile } from './routing-selection.js';
 import { absorbAcceptedFiles } from './post-task.js';
-import { nowIso } from '../../../utils/format-time.js';
-import { toErrorMessage } from '../../../utils/format-errors.js';
+import { nowIso } from '../../../utils/format/time.js';
+import { toErrorMessage } from '../../../utils/format/errors.js';
 import { buildImplementerUnavailableRecoveryIssue } from '../recovery/builders/task.js';
 import { runScheduledReview } from '../run/review.js';
 import { recordCheckoutRunSnapshot } from '../run/snapshots.js';

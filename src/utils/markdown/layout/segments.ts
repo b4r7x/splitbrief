@@ -2,9 +2,9 @@ import {
   getTerminalCellWidth,
   splitTerminalGraphemes,
   wrapTerminalGraphemes,
-} from '../display-text.js';
-import { assertNever } from '../type-guards.js';
-import type { MarkdownInlineToken, MarkdownLayoutLine, MarkdownLayoutSegment } from './types.js';
+} from '../../display-text.js';
+import { assertNever } from '../../type-guards.js';
+import type { MarkdownInlineToken, MarkdownLayoutLine, MarkdownLayoutSegment } from '../types.js';
 
 type WrapMode = 'word' | 'hard';
 

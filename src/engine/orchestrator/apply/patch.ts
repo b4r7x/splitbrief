@@ -11,7 +11,7 @@ import {
 import type { SnapshotFileEntry, SnapshotManifest } from '../../../core/schemas/snapshot.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { gitBinary } from '../../../lib/git/client.js';
-import { assertPathConfined, assertWritablePathConfined } from '../../../lib/path-confinement.js';
+import { assertPathConfined, assertWritablePathConfined } from '../../../lib/fs/confinement.js';
 import { isENOENT } from '../../../lib/process/errors.js';
 import { error } from '../../../utils/error.js';
 import { resolveValidatedBlobPath } from '../../snapshots/blob-resolver.js';

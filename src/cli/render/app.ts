@@ -4,7 +4,7 @@ import type { createElement } from 'react';
 import { installDiagnosticSink, warnError } from '../../lib/warn.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { copyToClipboard } from '../../lib/clipboard/clipboard.js';
-import { installTerminalSelection } from '../../lib/terminal/selection.js';
+import { installTerminalSelection } from '../../lib/terminal/selection/install.js';
 import { createFilteredStdin } from '../../lib/terminal/filtered-stdin/create.js';
 import type { FilteredStdin } from '../../lib/terminal/filtered-stdin/types.js';
 import { setActiveFilteredStdin } from '../../lib/terminal/filtered-stdin/active.js';
@@ -26,7 +26,7 @@ import {
   setActiveTerminalHandover,
   suspendTerminalForEditor,
 } from '../../lib/terminal/editor-handover.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { toErrorMessage } from '../../utils/format/errors.js';
 import { holdSlowProbeLines } from '../slow-probe-line.js';
 import { resolveRenderInputConfig } from './input-config.js';
 import { createEditorOutput } from './editor-output.js';

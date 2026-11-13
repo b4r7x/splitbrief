@@ -14,7 +14,7 @@ import type { RailStageState } from '../../../core/rail-stages.js';
 import type { SeatLineSpan } from '../../../core/crew/identity.js';
 import { getChromeContentWidth, WORKFLOW_GUTTER_X, type RailForm } from '../layout/chrome-rows.js';
 import type { readClipboardImage as readSystemClipboardImage } from '../../../core/attachments/clipboard-image.js';
-import type { listProjectFiles as listFiles } from '../../../lib/file-listing.js';
+import type { listProjectFiles as listFiles } from '../../../lib/fs/listing.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { selectBuildMessageBrief } from '../../../core/run-view/briefs.js';

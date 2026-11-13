@@ -21,7 +21,7 @@ import {
   assertProjectWritablePathConfined,
   CONTROL_PLANE_SEGMENTS,
   pathConfinementError,
-} from '../../../../lib/path-confinement.js';
+} from '../../../../lib/fs/confinement.js';
 import { isENOENT, isNodeError } from '../../../../lib/process/errors.js';
 import { sha256Hex } from '../../../../utils/sha256.js';
 import { collectTrackedFiles } from '../../../snapshots/files.js';

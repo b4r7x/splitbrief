@@ -1,4 +1,4 @@
-import { formatWallClock } from '../../utils/format-time.js';
+import { formatWallClock } from '../../utils/format/time.js';
 
 /**
  * A check result SPLITBRIEF took from an earlier run of the same command on the same files: when

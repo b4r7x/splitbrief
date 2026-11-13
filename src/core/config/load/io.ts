@@ -19,7 +19,7 @@ import {
 } from './document.js';
 import { SPLITBRIEF_DIR, CONFIG_FILE } from '../../paths.js';
 import { checkConfigPermissions } from '../../../lib/fs.js';
-import { confinedWriteFile, confinedEnsureDir } from '../../../lib/confined-fs.js';
+import { confinedWriteFile, confinedEnsureDir } from '../../../lib/fs/confined.js';
 import {
   confinedAtomicWriteFile,
   type ConfigRevision,

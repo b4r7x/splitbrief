@@ -22,7 +22,7 @@ import { hashFiles } from '../../../change-detection.js';
 import { error } from '../../../../utils/error.js';
 import { sha256Hex } from '../../../../utils/sha256.js';
 import { SECURE_FILE_MODE } from '../../../../lib/fs.js';
-import { pathConfinementError } from '../../../../lib/path-confinement.js';
+import { pathConfinementError } from '../../../../lib/fs/confinement.js';
 import { readConfinedProjectFile } from './contents.js';
 import { uniqueProjectFiles } from './types.js';
 import {

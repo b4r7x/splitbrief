@@ -21,7 +21,7 @@ import { messageSeat } from '../../core/queue-state.js';
 import { operationsStore, selectScheduledReview } from '../../stores/workflow/operations/state.js';
 import { selectBuildMessageBrief } from '../../core/run-view/briefs.js';
 import { queueCopy } from './queue-copy.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { toErrorMessage } from '../../utils/format/errors.js';
 import {
   resumeTerminalAfterEditor,
   suspendTerminalForEditor,

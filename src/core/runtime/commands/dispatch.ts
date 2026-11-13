@@ -2,7 +2,7 @@ import type { Phase } from '../../schemas/enums.js';
 import type { Screen } from '../../navigation/types.js';
 import type { RuntimeCommandDef } from './types.js';
 import { findRuntimeCommand, removedCommandPointer, suggestRuntimeCommand } from './lookup.js';
-import { toErrorMessage } from '../../../utils/format-errors.js';
+import { toErrorMessage } from '../../../utils/format/errors.js';
 
 interface CommandExecutionOptions {
   screen: Screen;

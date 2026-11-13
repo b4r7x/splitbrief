@@ -20,8 +20,8 @@ import {
   setProcessLedger,
   type ProcessScope,
 } from '../../../lib/process/registry.js';
-import { toErrorMessage } from '../../../utils/format-errors.js';
-import { nowIso } from '../../../utils/format-time.js';
+import { toErrorMessage } from '../../../utils/format/errors.js';
+import { nowIso } from '../../../utils/format/time.js';
 import { error } from '../../../utils/error.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { warnError, warnStderr } from '../../../lib/warn.js';

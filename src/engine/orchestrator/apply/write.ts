@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { toErrorMessage } from '../../../utils/format-errors.js';
+import { toErrorMessage } from '../../../utils/format/errors.js';
 import { promoteStagedChanges } from '../approval/staged-project.js';
 import { transitionAndSave } from '../state-ops.js';
 import type { WorkflowPersistenceContext } from '../types.js';

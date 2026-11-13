@@ -20,7 +20,7 @@ import { TextSpans } from '../../../components/text-spans.js';
 import { runnerSilenceMs, silenceTail, silenceText } from '../display/build-progress.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { SOFT_SEP } from '../../../core/separators.js';
-import { formatElapsedClock } from '../../../utils/format-time.js';
+import { formatElapsedClock } from '../../../utils/format/time.js';
 import {
   selectBuildMessageBrief,
   selectRunningBrief,

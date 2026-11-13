@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { filePathUrl, projectRelativePathLabel, resolveMarkdownLinkTarget } from './path-links.js';
+import { filePathUrl, projectRelativePathLabel, resolveMarkdownLinkTarget } from './links.js';
 
 describe('projectRelativePathLabel', () => {
   it.each([

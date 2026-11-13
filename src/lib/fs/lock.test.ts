@@ -10,7 +10,7 @@ import {
 } from 'node:fs';
 import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { lockSibling, withFileLock } from './file-lock.js';
+import { lockSibling, withFileLock } from './lock.js';
 
 let dir: string;
 

@@ -4,7 +4,7 @@ import {
   splitTerminalGraphemes,
   segmentsForRowText,
 } from '../../../../utils/display-text.js';
-import { wrapHard } from '../../../../utils/wrap.js';
+import { wrapHard } from '../../../../utils/display-text/wrap.js';
 import { SPLITBRIEF_IDENTITY } from '../../../../core/identity.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
 import type { ConversationRowSegment, ConversationRowTone } from '../types.js';

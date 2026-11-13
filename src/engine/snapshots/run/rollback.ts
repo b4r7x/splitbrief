@@ -6,7 +6,7 @@ import {
   assertExistingPathConfined,
   assertPathConfined,
   assertWritablePathConfined,
-} from '../../../lib/path-confinement.js';
+} from '../../../lib/fs/confinement.js';
 import type { RejectRunSnapshotResult } from '../../../core/runtime/commands/types.js';
 import { runRejectFacts } from '../../../core/runtime/commands/messages.js';
 import { resolveValidatedBlobPath } from '../blob-resolver.js';

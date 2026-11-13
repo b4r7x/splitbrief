@@ -14,15 +14,15 @@ import {
   assertPathConfined,
   assertWritablePathConfined,
   pathConfinementError,
-} from './path-confinement.js';
+} from './confinement.js';
 import {
   writeSecureFile,
   ensureSecureDir,
   nameWriteTarget,
   rejectSymlinkTargetAsync,
   SECURE_FILE_MODE,
-} from './fs.js';
-import { isENOENT } from './process/errors.js';
+} from '../fs.js';
+import { isENOENT } from '../process/errors.js';
 
 function isPathConfinementReadError(err: unknown): boolean {
   return (

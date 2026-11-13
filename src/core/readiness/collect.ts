@@ -24,7 +24,7 @@ import {
 import { isGitRepo, hasCommits, getInProgressGitOp } from '../../lib/git/repository.js';
 import { getGitStatus } from '../../lib/git/files.js';
 import { getCurrentBranch } from '../../lib/git/refs.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { toErrorMessage } from '../../utils/format/errors.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { buildReadinessReport } from './checks/build.js';
 import { buildIsolationChecks } from './checks/isolation.js';

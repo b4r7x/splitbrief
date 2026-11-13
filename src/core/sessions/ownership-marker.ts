@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import {
   assertExistingPathConfined,
   assertWritablePathConfined,
-} from '../../lib/path-confinement.js';
+} from '../../lib/fs/confinement.js';
 import { isNodeError } from '../../lib/process/errors.js';
 import { error, type AppError } from '../../utils/error.js';
 import { isRecord } from '../../utils/type-guards.js';

@@ -64,7 +64,7 @@ import type { Config } from '../../../src/core/schemas/config.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
 import type { SkillMeta } from '../../../src/core/skills/types.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
-import { listProjectFiles } from '../../../src/lib/file-listing.js';
+import { listProjectFiles } from '../../../src/lib/fs/listing.js';
 import { saveState } from '../../../src/core/state/persistence.js';
 import { seatIdentitiesFromConfig, writeSeatIdentities } from '../../../src/core/state/seats.js';
 import type { ModelsDevCatalog } from '../../../src/core/schemas/models-dev.js';

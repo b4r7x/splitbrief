@@ -38,7 +38,7 @@ import { glyph } from '../../lib/glyphs.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { useStores } from '../../stores/use-stores.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { toErrorMessage } from '../../utils/format/errors.js';
 import type { PickerOption } from './model-catalog/options.js';
 
 /** The connection the seat configured itself; a review seat never reads the planner's. */

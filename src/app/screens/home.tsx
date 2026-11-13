@@ -62,7 +62,7 @@ import { ApprovalPrompt } from '../../features/workflow/components/approval-prom
 import { fitCheckingRow } from '../../features/workflow/input-footer-byline.js';
 import { approvalPromptStore, closeApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
 import type { readClipboardImage } from '../../core/attachments/clipboard-image.js';
-import type { listProjectFiles } from '../../lib/file-listing.js';
+import type { listProjectFiles } from '../../lib/fs/listing.js';
 
 const DEFAULT_HOME_HINT = `/help${SOFT_SEP}/crew${SOFT_SEP}/settings${SOFT_SEP}/skills${SOFT_SEP}ctrl+k commands`;
 const HOME_HINT = `/help${SOFT_SEP}/crew${SOFT_SEP}/settings${SOFT_SEP}/skills${SOFT_SEP}ctrl+r recent${SOFT_SEP}ctrl+k commands`;

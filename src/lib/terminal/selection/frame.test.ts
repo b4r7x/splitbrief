@@ -1,7 +1,7 @@
 import XtermHeadless from '@xterm/headless';
 import { UnicodeGraphemesAddon } from '@xterm/addon-unicode-graphemes';
 import { afterEach, describe, expect, it } from 'vitest';
-import { renderSelection, selectionText, snapshotTerminalFrame } from './selection-frame.js';
+import { renderSelection, selectionText, snapshotTerminalFrame } from './frame.js';
 
 const terminals: XtermHeadless.Terminal[] = [];
 

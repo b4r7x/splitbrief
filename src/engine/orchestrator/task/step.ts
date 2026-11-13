@@ -4,7 +4,7 @@ import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 
 import type { WorkflowContext } from '../types.js';
 import { recordTaskUsage } from '../tokens.js';
-import { toErrorMessage, labelError } from '../../../utils/format-errors.js';
+import { toErrorMessage, labelError } from '../../../utils/format/errors.js';
 import { sessionError } from '../../../core/sessions/errors.js';
 import { isAbortError } from '../../../utils/abort.js';
 import { publishError, publishTaskValidating } from '../events.js';
@@ -27,7 +27,7 @@ import {
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import { denialMessage } from './attempt-gate.js';
 import { buildApprovalDeniedRecoveryIssue } from '../recovery/builders/task.js';
-import { nowIso } from '../../../utils/format-time.js';
+import { nowIso } from '../../../utils/format/time.js';
 import { retryAndRecord, consultHandedBackToLoop, continueLadder } from './retry.js';
 import { recordSteerCorrection } from '../queue/build-corrections.js';
 import { runPreTaskHooksAndPublish } from './pre-task.js';

@@ -15,7 +15,7 @@ import { sessionsStore } from '../../stores/project/sessions.js';
 import { routerStore, type RouteData } from '../../stores/navigation/router.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { toErrorMessage } from '../../utils/format/errors.js';
 import { continueRunCommand } from '../../core/recovery/resume-command.js';
 import { warnStderr } from '../../lib/warn.js';
 import type { Phase } from '../../core/schemas/enums.js';

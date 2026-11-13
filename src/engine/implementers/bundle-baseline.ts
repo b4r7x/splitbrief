@@ -1,5 +1,5 @@
-import { confinedFileIdentity } from '../../lib/confined-fs.js';
-import { assertModelWritablePathConfined } from '../../lib/path-confinement.js';
+import { confinedFileIdentity } from '../../lib/fs/confined.js';
+import { assertModelWritablePathConfined } from '../../lib/fs/confinement.js';
 import type { Task } from '../../core/schemas/task.js';
 import { readConfinedEntry } from '../orchestrator/approval/file-snapshots/entry.js';
 import { FILE_BUNDLE_MAX_FILES, type BundleBaseline } from './file-bundle.js';

@@ -16,7 +16,7 @@ import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
 import type { SessionRef } from '../../../src/core/types/session-ref.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
-import { toErrorMessage } from '../../../src/utils/format-errors.js';
+import { toErrorMessage } from '../../../src/utils/format/errors.js';
 import type {
   OrchestratorCallbacks,
   WorkflowSinks,

@@ -2,7 +2,7 @@ import {
   matchesGlob,
   normalizeProjectRelativePath,
   scopePathPatterns,
-} from '../../utils/path-patterns.js';
+} from '../../utils/path/patterns.js';
 import type { Task } from '../schemas/task.js';
 
 /** A planner-approved scope bullet names its path, root-level files included; a bare backticked identifier is prose. */

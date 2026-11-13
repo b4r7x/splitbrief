@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { basename } from 'node:path';
-import { resolveFromProject } from '../../utils/path-patterns.js';
+import { resolveFromProject } from '../../utils/path/patterns.js';
 
 const PATH_PATTERN = /(?:\.{1,2}\/)?(?:[\w./-]+\/)?[\w-]+\.(tsx|ts|jsx|js|py|go|rs)\b/g;
 

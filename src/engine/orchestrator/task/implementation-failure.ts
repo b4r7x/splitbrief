@@ -4,7 +4,7 @@ import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/
 import type { TokenUsage, TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { WorkflowContext } from '../types.js';
 import type { runImplementation } from './run-implementation.js';
-import { nowIso } from '../../../utils/format-time.js';
+import { nowIso } from '../../../utils/format/time.js';
 import { publishError } from '../events.js';
 import { raiseBriefHalt } from '../state-ops.js';
 import {

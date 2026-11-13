@@ -3,7 +3,7 @@ import {
   truncateTerminalDisplayText,
   truncateTerminalDisplayTextMiddle,
 } from '../../../../utils/display-text.js';
-import { wrapPathAware } from '../../../../utils/wrap.js';
+import { wrapPathAware } from '../../../../utils/display-text/wrap.js';
 import { wrapWidthFor } from '../row-markers.js';
 import type {
   ConversationRow,

@@ -8,8 +8,8 @@ import {
   assertSessionDirConfined,
 } from '../../../core/sessions/confinement.js';
 import { CallIdSchema } from '../../calls/schema.js';
-import { confinedEnsureDir } from '../../../lib/confined-fs.js';
-import { assertPathConfined } from '../../../lib/path-confinement.js';
+import { confinedEnsureDir } from '../../../lib/fs/confined.js';
+import { assertPathConfined } from '../../../lib/fs/confinement.js';
 import { error } from '../../../utils/error.js';
 import { validateSafeIdentifier } from '../../../utils/validate-identifier.js';
 import type {

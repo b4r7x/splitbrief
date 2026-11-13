@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, join, relative } from 'node:path';
-import { isPathConfined } from '../../../lib/path-confinement.js';
+import { isPathConfined } from '../../../lib/fs/confinement.js';
 import { isTestPatternSafe } from '../test-discovery.js';
 import { goStack } from './go.js';
 import { javascriptStack } from './javascript.js';

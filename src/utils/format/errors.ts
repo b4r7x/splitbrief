@@ -1,8 +1,8 @@
 import {
   sanitizeTerminalDiagnosticText,
   type TerminalDiagnosticTextOptions,
-} from './display-text.js';
-import { projectRelativePathLabel } from './path-links.js';
+} from '../display-text.js';
+import { projectRelativePathLabel } from '../path/links.js';
 
 let projectRoot: string | undefined;
 const workspaceRoots: string[] = [];

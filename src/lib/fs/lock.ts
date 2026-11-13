@@ -9,8 +9,8 @@ import {
 } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { dirname } from 'node:path';
-import { ensureSecureDir, nameWriteTarget } from './fs.js';
-import { canSignalProcess } from './process/liveness.js';
+import { ensureSecureDir, nameWriteTarget } from '../fs.js';
+import { canSignalProcess } from '../process/liveness.js';
 
 const LOCK_SUFFIX = '.lock';
 const LOCK_MAX_ATTEMPTS = 100;

@@ -1,4 +1,4 @@
-import { toErrorMessage } from '../utils/format-errors.js';
+import { toErrorMessage } from '../utils/format/errors.js';
 import { error } from '../utils/error.js';
 
 export const SESSION_EXPIRED_PATTERNS: readonly RegExp[] = [

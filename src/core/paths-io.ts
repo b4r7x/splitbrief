@@ -16,12 +16,12 @@ import {
   confinedExists,
   confinedReadFile,
   confinedWriteFile,
-} from '../lib/confined-fs.js';
-import { assertPathConfined, assertModelWritablePathConfined } from '../lib/path-confinement.js';
+} from '../lib/fs/confined.js';
+import { assertPathConfined, assertModelWritablePathConfined } from '../lib/fs/confinement.js';
 import { validateSafeIdentifier } from '../utils/validate-identifier.js';
-import { nowIso } from '../utils/format-time.js';
+import { nowIso } from '../utils/format/time.js';
 import { error, matches } from '../utils/error.js';
-import { fileErrorReason } from '../utils/format-errors.js';
+import { fileErrorReason } from '../utils/format/errors.js';
 import { sessionError } from './sessions/errors.js';
 
 export const pathError = {

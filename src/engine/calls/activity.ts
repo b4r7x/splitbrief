@@ -5,7 +5,7 @@ import { countNoun } from '../../utils/pluralize.js';
 import { redactSecretsWithMetadata } from '../../utils/redact.js';
 import { stripTerminalControls } from '../../utils/display-text.js';
 import { sha256Hex } from '../../utils/sha256.js';
-import { projectRelativePathLabel } from '../../utils/path-links.js';
+import { projectRelativePathLabel } from '../../utils/path/links.js';
 import { shellCommandFromText } from '../../utils/shell-quote.js';
 import { assertNever, isRecord } from '../../utils/type-guards.js';
 import {

@@ -10,7 +10,7 @@ import {
 import { claimQueuedMessage, releaseQueuedMessage } from './drain.js';
 import { publishDebug, publishInfo, publishRunnerCallEvent } from '../events.js';
 import { isAbortError, throwIfAborted } from '../../../utils/abort.js';
-import { labelError } from '../../../utils/format-errors.js';
+import { labelError } from '../../../utils/format/errors.js';
 import { formatQueuedMessagePreview } from '../../../core/queue-preview.js';
 import { isQueuedMessagePendingDelivery } from '../../../core/queue-state.js';
 import { phaseStage } from '../../../core/rail-stages.js';

@@ -26,7 +26,7 @@ import {
   TREES_DIR,
 } from '../../../core/paths.js';
 import { createGitClient } from '../../../lib/git/client.js';
-import { isInsideRoot } from '../../../lib/path-confinement.js';
+import { isInsideRoot } from '../../../lib/fs/confinement.js';
 import { installDiagnosticSink } from '../../../lib/warn.js';
 import {
   getChangedFilesSinceSnapshot,

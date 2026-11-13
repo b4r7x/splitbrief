@@ -3,8 +3,8 @@ import { type ActionClass, PROTECTED_ACTION_CLASSES } from '../../../core/schema
 import type { ApprovalTier } from '../../../core/approval/types.js';
 import { SPLITBRIEF_DIR } from '../../../core/paths.js';
 import { isInDeclaredSet } from '../../../core/scope/declared-set.js';
-import { isInsideRoot, isPathConfined } from '../../../lib/path-confinement.js';
-import { matchesGlob } from '../../../utils/path-patterns.js';
+import { isInsideRoot, isPathConfined } from '../../../lib/fs/confinement.js';
+import { matchesGlob } from '../../../utils/path/patterns.js';
 
 export type ClassifyInput = {
   actionDescription: string;

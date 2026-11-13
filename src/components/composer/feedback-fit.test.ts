@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { elidePathMiddle, getTerminalCellWidth } from '../../utils/display-text.js';
-import { wrapHard } from '../../utils/wrap.js';
+import { wrapHard } from '../../utils/display-text/wrap.js';
 import { fitFeedbackMessage } from './feedback-fit.js';
 
 const E_ACUTE = 'e\u0301';

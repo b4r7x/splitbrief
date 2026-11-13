@@ -7,7 +7,7 @@ import { blockingRedInputs } from '../../../core/review/verdict.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { sessionError } from '../../../core/sessions/errors.js';
 import { isAbortError } from '../../../utils/abort.js';
-import { nowIso } from '../../../utils/format-time.js';
+import { nowIso } from '../../../utils/format/time.js';
 import { consultAnswerDetail } from '../../spec/prompts/consult.js';
 import { requestConsult } from '../consult/request.js';
 import { publishError } from '../events.js';

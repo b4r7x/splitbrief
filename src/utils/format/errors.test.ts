@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { beforeEach, describe, expect, test } from 'vitest';
-import { addWorkspaceRoot, labelError, setProjectRoot, toErrorMessage } from './format-errors.js';
+import { addWorkspaceRoot, labelError, setProjectRoot, toErrorMessage } from './errors.js';
 
 const fileError = (message: string, fields: Record<string, string>) =>
   Object.assign(new Error(message), fields);

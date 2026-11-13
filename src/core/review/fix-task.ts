@@ -1,4 +1,4 @@
-import { normalizeProjectRelativePath } from '../../utils/path-patterns.js';
+import { normalizeProjectRelativePath } from '../../utils/path/patterns.js';
 import { REVIEW_CHECK_ID } from '../schemas/review.js';
 import { isTaskSettled, type Check, type Task } from '../schemas/task.js';
 

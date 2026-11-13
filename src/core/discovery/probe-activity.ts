@@ -1,4 +1,4 @@
-import { formatTime } from '../../utils/format-time.js';
+import { formatTime } from '../../utils/format/time.js';
 import { getRunnerIdentityDisplayName } from '../providers/catalog.js';
 import { CLI_TOOL_CATALOG, CLI_TOOL_IDS, type CliToolId } from '../runners/cli-tool-catalog.js';
 

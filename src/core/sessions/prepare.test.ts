@@ -18,7 +18,7 @@ vi.mock('node:fs', async (importOriginal) => {
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSessionLockfile } from '#testing/helpers/factories/session-lockfile.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { lockSibling } from '../../lib/file-lock.js';
+import { lockSibling } from '../../lib/fs/lock.js';
 import { activeFile, LOCKFILE, READINESS_FILE, sessionDir, STATE_FILE } from '../paths.js';
 import { createInitialState } from '../state/machine.js';
 import { readActive, writeActive, type PreparedNewSession } from './active-pointer.js';

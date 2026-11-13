@@ -7,7 +7,7 @@ import { error, matches } from '../../utils/error.js';
 import { isNodeError } from '../../lib/process/errors.js';
 import { createLogger } from '../../lib/logger.js';
 import { warnStderr } from '../../lib/warn.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { toErrorMessage } from '../../utils/format/errors.js';
 
 const repomapCacheError = {
   dbPathEscapes: (dbPath: string) =>

@@ -26,7 +26,7 @@ import { classifySeatFailure, type SeatFailureClassification } from '../../runne
 import { getRunnerCatalogDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { loadSeatSwapContext } from '../recovery/seat-swap-context.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
-import { nowIso } from '../../../utils/format-time.js';
+import { nowIso } from '../../../utils/format/time.js';
 import { TIMEOUTS } from '../../../core/pipeline-spec/timeouts.js';
 import { consultAttemptError, guidanceInstructions } from './consult-guidance.js';
 import type {

@@ -5,7 +5,7 @@ import {
   confinedReadFile,
   confinedUnlinkSync,
   confinedWriteFile,
-} from '../../lib/confined-fs.js';
+} from '../../lib/fs/confined.js';
 import { sanitizePasteBody } from '../../lib/terminal/filtered-stdin/paste.js';
 import { draftLength, normalizeDraftDocument } from '../composer/document.js';
 import { sessionDir } from '../paths.js';

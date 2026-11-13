@@ -6,7 +6,7 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
 import { reviewStore } from '../../stores/workflow/review.js';
-import { labelError } from '../../utils/format-errors.js';
+import { labelError } from '../../utils/format/errors.js';
 import { PLAN_JSON_FILE } from '../../core/paths.js';
 import { reviewArtifactForPhase } from './prompt-rows/approval.js';
 

@@ -1,7 +1,7 @@
 import { PLAN_JSON_FILE } from '../paths.js';
 import { writeSpecFile, type SpecFileRef } from '../paths-io.js';
 import { PlanProposalSchema, type PlanProposal } from '../schemas/plan.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { toErrorMessage } from '../../utils/format/errors.js';
 
 export function writePlanJson(ref: SpecFileRef, plan: PlanProposal): void {
   writeSpecFile(ref, PLAN_JSON_FILE, `${JSON.stringify(plan, null, 2)}\n`, null);

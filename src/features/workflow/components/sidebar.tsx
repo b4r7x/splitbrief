@@ -45,7 +45,7 @@ import { useRunningSeats } from '../hooks/use-running-seats.js';
 import { resolvedSeatModel } from '../display/running-seats.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { TextSpans } from '../../../components/text-spans.js';
-import { wrapHard } from '../../../utils/wrap.js';
+import { wrapHard } from '../../../utils/display-text/wrap.js';
 
 interface SidebarProps {
   width: number;

@@ -96,7 +96,7 @@ import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../lib/terminal/typeahead-grace.js
 import { navigateIndex } from '../../utils/indexing.js';
 import { sessionSelectDeps } from '../prepare-resume.js';
 import type { readClipboardImage } from '../../core/attachments/clipboard-image.js';
-import type { listProjectFiles } from '../../lib/file-listing.js';
+import type { listProjectFiles } from '../../lib/fs/listing.js';
 import { createDraftDocument } from '../../core/composer/document.js';
 import { prepareDraftSubmission, type DraftSubmission } from '../../core/composer/submission.js';
 import { plannerSupportsImages } from '../../engine/providers/capabilities.js';

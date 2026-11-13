@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getTerminalCellWidth } from './display-text.js';
+import { getTerminalCellWidth } from '../display-text.js';
 import { wrapHard, wrapPathAware } from './wrap.js';
 
 describe('wrapPathAware', () => {

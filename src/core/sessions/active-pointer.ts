@@ -24,11 +24,11 @@ import {
   nameWriteTarget,
   rejectSymlinkTarget,
 } from '../../lib/fs.js';
-import { withFileLock } from '../../lib/file-lock.js';
+import { withFileLock } from '../../lib/fs/lock.js';
 import {
   assertExistingPathConfined,
   assertWritablePathConfined,
-} from '../../lib/path-confinement.js';
+} from '../../lib/fs/confinement.js';
 import { isNodeError } from '../../lib/process/errors.js';
 import type { SessionRef } from '../types/session-ref.js';
 import { sessionError } from './errors.js';

@@ -9,7 +9,7 @@ import {
   isMarkdownYamlContinuationLine as isYamlContinuationLine,
   parseMarkdownYamlKey as parseYamlKey,
 } from '../../../../utils/markdown/grammar.js';
-import { layoutMarkdown, markdownLayoutTail } from '../../../../utils/markdown/layout.js';
+import { layoutMarkdown, markdownLayoutTail } from '../../../../utils/markdown/layout/document.js';
 import { repairMarkdownTailChunk } from '../../../../utils/markdown/repair.js';
 import type { MarkdownLayoutTail } from '../../../../utils/markdown/types.js';
 import {

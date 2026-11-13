@@ -19,7 +19,7 @@ import { formatStageLabel } from '../../../core/phase-display.js';
 import { formatScoreSummaryParts } from '../../../core/formatting.js';
 import { SESSIONS_DIR, SPLITBRIEF_DIR } from '../../../core/paths.js';
 import { arrowSep, SOFT_SEP } from '../../../core/separators.js';
-import { formatTime } from '../../../utils/format-time.js';
+import { formatTime } from '../../../utils/format/time.js';
 import { countNoun } from '../../../utils/pluralize.js';
 import type { SetAside } from '../../../core/schemas/review.js';
 import { findingFacts, setAsideLabel, setAsideLine } from '../../../core/review/verdict.js';

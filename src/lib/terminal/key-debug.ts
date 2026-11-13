@@ -3,7 +3,7 @@ import { appendFileSync, lstatSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
-import { confinedAppendFileSync, confinedEnsureDir } from '../confined-fs.js';
+import { confinedAppendFileSync, confinedEnsureDir } from '../fs/confined.js';
 
 export type KeyDebugLogTarget =
   | { kind: 'project'; projectDir: string; relativeDir: string; filePrefix: string }

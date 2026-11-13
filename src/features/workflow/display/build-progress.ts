@@ -10,7 +10,7 @@ import {
   truncateTerminalDisplayText,
   segmentsForRowText,
 } from '../../../utils/display-text.js';
-import { formatElapsedClock, formatTime } from '../../../utils/format-time.js';
+import { formatElapsedClock, formatTime } from '../../../utils/format/time.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import type { LifecycleState } from '../../../stores/workflow/lifecycle.js';
 import {

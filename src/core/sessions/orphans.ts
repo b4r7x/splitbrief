@@ -1,8 +1,8 @@
 import { existsSync, lstatSync, readdirSync, renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { assertWritablePathConfined } from '../../lib/path-confinement.js';
+import { assertWritablePathConfined } from '../../lib/fs/confinement.js';
 import { warnError } from '../../lib/warn.js';
-import { projectRelativePathLabel } from '../../utils/path-links.js';
+import { projectRelativePathLabel } from '../../utils/path/links.js';
 import {
   isValidSessionId,
   READINESS_FILE,

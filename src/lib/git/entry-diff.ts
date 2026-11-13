@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { assertPathConfined } from '../path-confinement.js';
+import { assertPathConfined } from '../fs/confinement.js';
 import { error } from '../../utils/error.js';
 import { gitBinary } from './client.js';
 

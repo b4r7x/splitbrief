@@ -4,7 +4,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createRunIsolation } from './create.js';
-import { setProjectRoot, toErrorMessage } from '../../../utils/format-errors.js';
+import { setProjectRoot, toErrorMessage } from '../../../utils/format/errors.js';
 
 const dirs: string[] = [];
 afterEach(() => {

@@ -1,4 +1,4 @@
-import { wrapHard, wrapPathAware } from '../../../utils/wrap.js';
+import { wrapHard, wrapPathAware } from '../../../utils/display-text/wrap.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 
 export const MIN_TEXT_WIDTH = 1;

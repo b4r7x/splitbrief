@@ -60,10 +60,10 @@ import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
-import { wrapPathAware } from '../../utils/wrap.js';
+import { wrapPathAware } from '../../utils/display-text/wrap.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { isAbortError } from '../../utils/abort.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { toErrorMessage } from '../../utils/format/errors.js';
 import { FeedbackNotice, layoutFeedbackNotice } from '../../components/feedback-notice.js';
 import { appPreparationError, interactivePreparationPolicy } from '../prepare-resume.js';
 

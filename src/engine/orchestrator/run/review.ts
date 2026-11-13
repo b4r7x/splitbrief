@@ -15,7 +15,7 @@ import { requireReviewSeat } from '../../../core/config/accessors/reviewer-runne
 import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
 import { getRunnerCatalogDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { REVIEW_FILE } from '../../../core/paths.js';
-import { nowIso } from '../../../utils/format-time.js';
+import { nowIso } from '../../../utils/format/time.js';
 import { error } from '../../../utils/error.js';
 import { publishError } from '../events.js';
 import { recordUserMessage } from '../transcript/user-message.js';

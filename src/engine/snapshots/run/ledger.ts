@@ -10,7 +10,7 @@ import { RunSnapshotLedgerSchema } from '../../../core/schemas/snapshot.js';
 import { RUN_LEDGER_FILE, sessionDir, snapshotsDir } from '../../../core/paths.js';
 import { writeConfinedSecureFileAsync } from '../../../lib/fs.js';
 import { error } from '../../../utils/error.js';
-import { nowIso } from '../../../utils/format-time.js';
+import { nowIso } from '../../../utils/format/time.js';
 import { isENOENT } from '../../../lib/process/errors.js';
 import { readManifest } from '../manifest.js';
 

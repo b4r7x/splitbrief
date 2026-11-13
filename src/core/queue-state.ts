@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Phase } from './schemas/enums.js';
 import type { QueuedMessage, WorkflowState } from './schemas/workflow.js';
 import type { UserMessageInput } from './types/user-input.js';
-import { nowIso } from '../utils/format-time.js';
+import { nowIso } from '../utils/format/time.js';
 import { phaseStage } from './rail-stages.js';
 
 /**

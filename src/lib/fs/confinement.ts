@@ -1,6 +1,6 @@
 import { realpathSync, lstatSync } from 'node:fs';
 import { resolve, isAbsolute, sep, win32, relative, dirname } from 'node:path';
-import { error, matches } from '../utils/error.js';
+import { error, matches } from '../../utils/error.js';
 
 export const CONTROL_PLANE_SEGMENTS: ReadonlySet<string> = new Set(['.git', '.splitbrief']);
 

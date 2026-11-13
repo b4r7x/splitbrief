@@ -3,7 +3,7 @@ import type { Task } from '../../core/schemas/task.js';
 import { validateTaskPath } from '../../core/paths-io.js';
 import { writeConfinedSecureFileAsync } from '../../lib/fs.js';
 import { isENOENT } from '../../lib/process/errors.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { toErrorMessage } from '../../utils/format/errors.js';
 
 const searchReplaceRegex = /<<<<<<< SEARCH\r?\n([\s\S]*?)=======\r?\n([\s\S]*?)>>>>>>> REPLACE/g;
 // Line-anchored: a whole-file rewrite that merely mentions the token inside a string or regex

@@ -1,9 +1,9 @@
 import { relative } from 'node:path';
-import { resolveFromProject } from '../../utils/path-patterns.js';
+import { resolveFromProject } from '../../utils/path/patterns.js';
 import { mkdir, stat } from 'node:fs/promises';
 import { warnError } from '../../lib/warn.js';
 import { createLogger } from '../../lib/logger.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { toErrorMessage } from '../../utils/format/errors.js';
 import { uniqueInOrder } from '../../utils/collections.js';
 import { initParser, parseFile } from './parse.js';
 import { createParseCache } from './cache.js';

@@ -22,7 +22,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { queuedUserMessage } from '../../../core/queue-state.js';
 import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
 import { assertNever } from '../../../utils/type-guards.js';
-import { toErrorMessage } from '../../../utils/format-errors.js';
+import { toErrorMessage } from '../../../utils/format/errors.js';
 import type { EventBus } from '../../events/types.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { loadConfig } from '../../../core/config/load/io.js';

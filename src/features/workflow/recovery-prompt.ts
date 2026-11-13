@@ -25,7 +25,7 @@ import {
   oneLineDisplayText,
   truncateTerminalDisplayText,
 } from '../../utils/display-text.js';
-import { wrapHard } from '../../utils/wrap.js';
+import { wrapHard } from '../../utils/display-text/wrap.js';
 import {
   readRecoveryContext,
   recoveryContextCauseWords,

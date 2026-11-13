@@ -1,4 +1,4 @@
-import { toErrorMessage } from '../utils/format-errors.js';
+import { toErrorMessage } from '../utils/format/errors.js';
 import { sanitizeTerminalDiagnosticText } from '../utils/display-text.js';
 import { createLogger } from './logger.js';
 

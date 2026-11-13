@@ -3,7 +3,7 @@ import type { EvidenceLedger } from '../schemas/evidence.js';
 import { EvidenceLedgerSchema } from '../schemas/evidence.js';
 import { EVIDENCE_FILE, sessionDir } from '../paths.js';
 import { readJsonSafe, writeSecureFile } from '../../lib/fs.js';
-import { lockSibling, withFileLock } from '../../lib/file-lock.js';
+import { lockSibling, withFileLock } from '../../lib/fs/lock.js';
 import { evidenceError } from './errors.js';
 import type { SessionRef } from '../types/session-ref.js';
 import { error } from '../../utils/error.js';

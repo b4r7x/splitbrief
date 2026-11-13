@@ -1,5 +1,5 @@
 import { error } from '../../utils/error.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { toErrorMessage } from '../../utils/format/errors.js';
 import { formatErrorWithHint } from '../error-hints.js';
 import { parseUsageLimitReset } from '../runners/usage-limit.js';
 import { redactSecrets } from '../../utils/redact.js';

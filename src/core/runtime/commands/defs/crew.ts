@@ -7,7 +7,7 @@ import {
   type RuntimeCommandContext,
 } from '../types.js';
 import { includes } from '../../../../utils/type-guards.js';
-import { toErrorMessage } from '../../../../utils/format-errors.js';
+import { toErrorMessage } from '../../../../utils/format/errors.js';
 
 export function crewCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
   return [

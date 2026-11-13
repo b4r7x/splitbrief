@@ -3,7 +3,7 @@ import {
   loadOwnerWorkflowState,
   type OwnedResumeState,
 } from '../../core/state/resume-hydration.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { toErrorMessage } from '../../utils/format/errors.js';
 
 export type ResumeHydration = OwnedResumeState;
 

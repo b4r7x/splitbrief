@@ -13,7 +13,7 @@ import {
   apiContextRecoveryFacts,
   readApiContextDiagnostic,
 } from '../../providers/api-context-diagnostic.js';
-import { labelError, toErrorMessage } from '../../../utils/format-errors.js';
+import { labelError, toErrorMessage } from '../../../utils/format/errors.js';
 import { isAbortError } from '../../../utils/abort.js';
 import { recoveryActionLabel } from '../../../core/recovery/action-label.js';
 import { sessionError } from '../../../core/sessions/errors.js';

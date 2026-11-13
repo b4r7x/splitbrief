@@ -33,7 +33,7 @@ import {
   snapshotApiInvocationIdentity,
   type ApiInvocationEvidence,
 } from '../../runners/invocation-identity.js';
-import { toErrorMessage } from '../../../utils/format-errors.js';
+import { toErrorMessage } from '../../../utils/format/errors.js';
 import { redactSecrets } from '../../../utils/redact.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import { StreamChunkSchema, type StreamChoiceDelta, recordInvalidOpenAiChunk } from './chunk.js';

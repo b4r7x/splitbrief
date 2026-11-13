@@ -17,7 +17,7 @@ import {
 import { seatIdentitiesFromConfig, seatIdentityChanges } from '../../core/state/seats.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { error } from '../../utils/error.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { toErrorMessage } from '../../utils/format/errors.js';
 import type { CustomCommandRunnerKind } from '../../core/config/custom-commands.js';
 
 import {

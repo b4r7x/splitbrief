@@ -33,7 +33,7 @@ import {
 import type { CliReadinessResult } from '../../schemas/readiness.js';
 import type { ReadinessCheck, SeatNamer } from '../types.js';
 import { assertNever } from '../../../utils/type-guards.js';
-import { toErrorMessage } from '../../../utils/format-errors.js';
+import { toErrorMessage } from '../../../utils/format/errors.js';
 import { runnerAvailabilityCheck, type RunnerAvailabilityFact } from './availability.js';
 import {
   configuredCliReadinessChecks,

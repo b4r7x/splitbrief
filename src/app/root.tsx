@@ -25,7 +25,7 @@ import type { PickerEffectDeps } from '../features/runners/use-picker-actions.js
 import type { AppKeyDeps } from './keys.js';
 import type { RuntimeCommandContext } from '../core/runtime/commands/types.js';
 import type { readClipboardImage } from '../core/attachments/clipboard-image.js';
-import type { listProjectFiles } from '../lib/file-listing.js';
+import type { listProjectFiles } from '../lib/fs/listing.js';
 
 /**
  * Every effect the interactive surfaces reach for, named at the one place that composes

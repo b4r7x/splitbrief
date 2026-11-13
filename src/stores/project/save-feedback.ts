@@ -1,7 +1,7 @@
 import { IGNORE_RULE_ADDED } from '../../core/config/load/document.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { assertNever } from '../../utils/type-guards.js';
-import { fileErrorReason, toErrorMessage } from '../../utils/format-errors.js';
+import { fileErrorReason, toErrorMessage } from '../../utils/format/errors.js';
 import { feedbackStore } from '../ui/feedback.js';
 import type { ConfigSaveResult } from './config.js';
 

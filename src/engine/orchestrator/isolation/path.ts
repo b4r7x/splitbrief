@@ -13,7 +13,7 @@ import {
   isInsideRoot,
   nearestExistingAncestor,
   pathConfinementError,
-} from '../../../lib/path-confinement.js';
+} from '../../../lib/fs/confinement.js';
 import { worktreeError } from './errors.js';
 
 const WORKTREE_NAME_RE = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,63}$/;

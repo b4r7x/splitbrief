@@ -9,10 +9,10 @@ import {
   realpathSync,
 } from 'node:fs';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { assertExistingPathConfined } from '../../lib/path-confinement.js';
+import { assertExistingPathConfined } from '../../lib/fs/confinement.js';
 import { resolveBareCommandOnPath } from '../../lib/process/command-path.js';
 import { canonicalJSON } from '../../utils/canonical-json.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { toErrorMessage } from '../../utils/format/errors.js';
 import { sha256Hex } from '../../utils/sha256.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { readPackageJson } from '../project-meta.js';

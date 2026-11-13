@@ -6,7 +6,7 @@ import {
   isInsideRoot,
   nearestExistingAncestor,
   pathConfinementError,
-} from '../../lib/path-confinement.js';
+} from '../../lib/fs/confinement.js';
 import { SPLITBRIEF_DIR, SESSIONS_DIR, validateSessionId } from '../paths.js';
 import { error, matches } from '../../utils/error.js';
 

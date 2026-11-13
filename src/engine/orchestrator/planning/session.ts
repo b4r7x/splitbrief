@@ -37,7 +37,7 @@ import { resumeStep } from '../../../core/sessions/run-status.js';
 import { readManifestCommands } from '../../../core/validation/manifest-commands.js';
 import { detectStack } from '../../../core/validation/stacks/registry.js';
 import { createLogger } from '../../../lib/logger.js';
-import { nowIso } from '../../../utils/format-time.js';
+import { nowIso } from '../../../utils/format/time.js';
 import { buildRepoMap } from '../../codebase/repomap.js';
 import { absolutePathsNamed } from '../../planners/api-context.js';
 import { buildProjectContextMarkdown } from '../../planners/context.js';

@@ -3,7 +3,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
 import type { RoutingDecision } from '../context-routing/types.js';
 import type { ResolvedImplementerProfile } from '../../../core/config/accessors/implementer-profiles.js';
-import { nowIso } from '../../../utils/format-time.js';
+import { nowIso } from '../../../utils/format/time.js';
 import { raisePendingRecovery } from '../state-ops.js';
 import { publishError } from '../events.js';
 import { buildRouteTaskOptions } from '../context-routing/route-input.js';

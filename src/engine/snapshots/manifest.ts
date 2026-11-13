@@ -11,7 +11,7 @@ import {
   SNAPSHOT_MANIFEST_FILE,
 } from '../../core/paths.js';
 import { writeConfinedSecureFileAsync } from '../../lib/fs.js';
-import { assertExistingPathConfined } from '../../lib/path-confinement.js';
+import { assertExistingPathConfined } from '../../lib/fs/confinement.js';
 import { error } from '../../utils/error.js';
 import { isENOENT } from '../../lib/process/errors.js';
 import { validateSafeIdentifier } from '../../utils/validate-identifier.js';

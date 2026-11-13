@@ -15,14 +15,14 @@ import { SECURE_FILE_MODE } from '../../lib/fs.js';
 import {
   assertExistingPathConfined,
   assertWritablePathConfined,
-} from '../../lib/path-confinement.js';
+} from '../../lib/fs/confinement.js';
 import type { EventBus } from '../events/types.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import { acquireSnapshotLock } from './lock.js';
 import { hashFile, walkProjectEntries } from './files.js';
 import { encodeSnapshotPath, generateSnapshotId } from './path-codec.js';
 import { hasBaseline, readManifest, writeManifest } from './manifest.js';
-import { nowIso } from '../../utils/format-time.js';
+import { nowIso } from '../../utils/format/time.js';
 
 export type CreateSnapshotOptions = {
   projectDir: string;

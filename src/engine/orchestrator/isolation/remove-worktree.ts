@@ -9,7 +9,7 @@ import { createGitClient, type GitClient } from '../../../lib/git/client.js';
 import { getGitCommonDir } from '../../../lib/git/repository.js';
 import { isENOENT, isNodeError } from '../../../lib/process/errors.js';
 import { clearWorkspaceRecord, stagedWorkspaceRoot, retentionError } from './retention.js';
-import { isInsideRoot } from '../../../lib/path-confinement.js';
+import { isInsideRoot } from '../../../lib/fs/confinement.js';
 import {
   gitignoreDiffersOnlyBySplitbriefBookkeeping,
   shouldIgnoreWorktreeUncommittedPath,

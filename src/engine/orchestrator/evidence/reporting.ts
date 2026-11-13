@@ -1,7 +1,7 @@
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { EvidenceLedger, EvidenceFinalReviewStatus } from '../../../core/schemas/evidence.js';
 import { EVIDENCE_FILE, REVIEW_FILE } from '../../../core/paths.js';
-import { nowIso } from '../../../utils/format-time.js';
+import { nowIso } from '../../../utils/format/time.js';
 
 export type RecordFinalReviewEvidenceInput = {
   ledger: EvidenceLedger;

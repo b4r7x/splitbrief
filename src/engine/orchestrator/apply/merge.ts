@@ -1,7 +1,7 @@
 import { lstat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { mergeFileEntries } from '../../../lib/git/entry-merge.js';
-import { assertPathConfined } from '../../../lib/path-confinement.js';
+import { assertPathConfined } from '../../../lib/fs/confinement.js';
 import { isENOENT } from '../../../lib/process/errors.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import {

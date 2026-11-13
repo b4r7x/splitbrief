@@ -7,7 +7,7 @@ import { getGitCommonDir } from '../../../lib/git/repository.js';
 import { isENOENT } from '../../../lib/process/errors.js';
 import { canSignalProcess } from '../../../lib/process/liveness.js';
 import { warnError } from '../../../lib/warn.js';
-import { labelError } from '../../../utils/format-errors.js';
+import { labelError } from '../../../utils/format/errors.js';
 import { redactSecrets } from '../../../utils/redact.js';
 import { reconcileWorkspaceToBase } from './acquisition.js';
 import { initWorktreeSubmodules } from './create-worktree.js';

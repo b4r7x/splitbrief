@@ -6,7 +6,7 @@ import {
   graphemes,
   truncateTerminalDisplayTextMiddleAtWords,
 } from '../../utils/display-text.js';
-import { widestPathAwareUnit, wrapPathAware } from '../../utils/wrap.js';
+import { widestPathAwareUnit, wrapPathAware } from '../../utils/display-text/wrap.js';
 
 export interface FeedbackMessageParts {
   prefix: string;

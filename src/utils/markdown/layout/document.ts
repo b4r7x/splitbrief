@@ -10,12 +10,12 @@ import type {
   MarkdownLayoutGlyphs,
   MarkdownLayoutTail,
   MarkdownListItem,
-} from './types.js';
-import { getTerminalCellWidth } from '../display-text.js';
-import { layoutCodeBlockLines } from './layout-code.js';
-import { inlineTokenToSegment, measureSegments, wrapSegments } from './layout-segments.js';
-import { layoutMarkdownTable } from './layout-table.js';
-import { assertNever } from '../type-guards.js';
+} from '../types.js';
+import { getTerminalCellWidth } from '../../display-text.js';
+import { layoutCodeBlockLines } from './code.js';
+import { inlineTokenToSegment, measureSegments, wrapSegments } from './segments.js';
+import { layoutMarkdownTable } from '../layout-table.js';
+import { assertNever } from '../../type-guards.js';
 
 interface LayoutOptions {
   width: number;

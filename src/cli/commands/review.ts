@@ -38,12 +38,12 @@ import type { ArtifactApprovalReview } from '../../engine/runners/types.js';
 import { buildFinalReviewPrompt, reviewChangeText } from '../../engine/spec/prompts/review.js';
 import { runCommandSeatCall } from '../../engine/orchestrator/escalation/seat-wait.js';
 import { seatReadsChangeFile } from '../../core/runners/capabilities.js';
-import { confinedWriteFile } from '../../lib/confined-fs.js';
+import { confinedWriteFile } from '../../lib/fs/confined.js';
 import { writeConfinedSecureFileAsync } from '../../lib/fs.js';
 import { getCurrentDiff, getDiffSince } from '../../lib/git/diff.js';
 import { getGitStatus } from '../../lib/git/files.js';
 import { sanitizeTerminalDisplayText, stripTerminalControls } from '../../utils/display-text.js';
-import { nowIso } from '../../utils/format-time.js';
+import { nowIso } from '../../utils/format/time.js';
 import {
   promptCustomRunnerArtifactApproval,
   promptCustomRunnerDisclosure,

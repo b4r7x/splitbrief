@@ -13,7 +13,7 @@ import { narrowRecord } from '../../utils/type-guards.js';
 import { sha256Hex } from '../../utils/sha256.js';
 import { rejectSymlinkTarget } from '../../lib/fs.js';
 import type { ConfigRevision } from '../../lib/confined-fs-atomic.js';
-import { assertExistingPathConfined } from '../../lib/path-confinement.js';
+import { assertExistingPathConfined } from '../../lib/fs/confinement.js';
 import { assertSessionDirConfined } from '../sessions/confinement.js';
 
 type StateCacheEntry = { mtimeMs: number; size: number; state: WorkflowState };

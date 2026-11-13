@@ -13,7 +13,7 @@ import type { CheckRunResult } from '../validation/run-checks.js';
 import type { ValidationCommandRunner } from '../validation/types.js';
 import { runPreValidationGate } from './pre-validation-gate.js';
 import { runTaskChecks } from './task-checks.js';
-import { nowIso } from '../../../utils/format-time.js';
+import { nowIso } from '../../../utils/format/time.js';
 import { withAttemptRestoreScope } from './restore-scope.js';
 
 type BriefGateContext = Pick<

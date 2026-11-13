@@ -7,7 +7,7 @@ import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { useAppKeys, type AppKeyDeps } from '../../../src/app/keys.js';
 import { FeedbackRow } from '../../../src/features/workflow/components/feedback-row.js';
-import { installTerminalSelection } from '../../../src/lib/terminal/selection.js';
+import { installTerminalSelection } from '../../../src/lib/terminal/selection/install.js';
 import { createFilteredStdin } from '../../../src/lib/terminal/filtered-stdin/create.js';
 import { setActiveFilteredStdin } from '../../../src/lib/terminal/filtered-stdin/active.js';
 import type { CopyOutcome } from '../../../src/lib/clipboard/clipboard.js';

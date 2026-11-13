@@ -6,11 +6,11 @@ import type { TaskStatus } from '../../../core/schemas/enums.js';
 import type { WorkflowContext } from '../types.js';
 import type { RetryAttemptFailure } from '../escalation/types.js';
 
-import { toErrorMessage } from '../../../utils/format-errors.js';
+import { toErrorMessage } from '../../../utils/format/errors.js';
 import { sessionError } from '../../../core/sessions/errors.js';
 import { retentionError } from '../isolation/retention.js';
 import { isAbortError } from '../../../utils/abort.js';
-import { nowIso } from '../../../utils/format-time.js';
+import { nowIso } from '../../../utils/format/time.js';
 import { publishError, publishWarning } from '../events.js';
 import { handleRetryAndEscalation } from '../escalation/handle.js';
 import type { BlockedReport } from '../escalation/step.js';

@@ -2,8 +2,8 @@ import type { Dirent } from 'node:fs';
 import { readdir, access } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isRecord } from '../../utils/type-guards.js';
-import { confinedExists, confinedReadFile } from '../../lib/confined-fs.js';
-import { pathConfinementError } from '../../lib/path-confinement.js';
+import { confinedExists, confinedReadFile } from '../../lib/fs/confined.js';
+import { pathConfinementError } from '../../lib/fs/confinement.js';
 import { matches } from '../../utils/error.js';
 
 const isPathEscape = matches('path-confined-escape');

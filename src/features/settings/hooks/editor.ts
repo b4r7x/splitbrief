@@ -5,7 +5,7 @@ import {
   reportConfigSaveFailure,
 } from '../../../stores/project/save-feedback.js';
 import { keepsPreparedSettings } from '../../../stores/workflow/stop.js';
-import { toErrorMessage } from '../../../utils/format-errors.js';
+import { toErrorMessage } from '../../../utils/format/errors.js';
 import type { SettingDef } from '../../../core/settings/catalog.js';
 import { matchesFilter, settingChangeWords, settingSaveSubject } from '../presentation.js';
 import type { SettingsItem } from '../items.js';

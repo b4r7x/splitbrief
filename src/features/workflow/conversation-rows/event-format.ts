@@ -11,7 +11,7 @@ import type {
   ValidationStages,
   ValidationStageSkips,
 } from '../../../engine/events/types.js';
-import { formatDuration } from '../../../utils/format-time.js';
+import { formatDuration } from '../../../utils/format/time.js';
 import { formatContextLength } from '../../../core/formatting.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../../utils/display-text.js';

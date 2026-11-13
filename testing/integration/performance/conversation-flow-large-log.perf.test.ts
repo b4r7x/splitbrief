@@ -17,7 +17,7 @@ import {
 } from '../../../src/features/workflow/conversation-rows/markdown-rows.js';
 import { markdownLayoutGlyphs } from '../../../src/lib/glyphs.js';
 import { parseMarkdownBlocks } from '../../../src/utils/markdown/block-parser.js';
-import { layoutMarkdown } from '../../../src/utils/markdown/layout.js';
+import { layoutMarkdown } from '../../../src/utils/markdown/layout/document.js';
 import type { MarkdownLayout } from '../../../src/utils/markdown/types.js';
 
 const GLYPHS = markdownLayoutGlyphs();

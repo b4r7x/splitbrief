@@ -24,7 +24,7 @@ import { readRunnerPids } from '../core/sessions/runner-pids.js';
 import { canSignalProcess } from '../lib/process/liveness.js';
 import { killOrphanRunner, plantOrphanRunner } from '#testing/helpers/orphan-runner.js';
 import { isCliError } from './errors.js';
-import { toErrorMessage } from '../utils/format-errors.js';
+import { toErrorMessage } from '../utils/format/errors.js';
 import { execFileSync } from 'node:child_process';
 import type { WorkflowState } from '../core/schemas/workflow.js';
 import { createInitialState, transition } from '../core/state/machine.js';

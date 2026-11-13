@@ -14,7 +14,7 @@ import {
   usageLimitStep,
   USAGE_LIMIT_WINDOWS,
 } from '../../core/recovery/usage-limit-step.js';
-import { formatDuration } from '../../utils/format-time.js';
+import { formatDuration } from '../../utils/format/time.js';
 import { isRecord, optionalString } from '../../utils/type-guards.js';
 import { parsedMalformedRecordWarning, parsedUnknownRecordWarning } from './parser-warnings.js';
 
