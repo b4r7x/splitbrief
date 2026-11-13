@@ -188,3 +188,44 @@ it('keeps a sub-agent word whole when its own tool row comes before the end of t
     cleanupTempDir(target.tmpDir);
   }
 });
+
+const PARALLEL_HOLD_STDOUT = stdoutOf([
+  ...partialMessage(['Checking.']),
+  ...toolUse('toolu_a', 'Task'),
+  ...toolUse('toolu_b', 'Task'),
+  ...partialMessage(['Reading the tests'], 'toolu_a'),
+  ...partialMessage(['Looking at it.'], 'toolu_b'),
+  ...toolUse('toolu_r', 'Read', 'toolu_b'),
+  toolResult('toolu_r', 'toolu_b'),
+  ...partialMessage(['Found 3.'], 'toolu_a'),
+  toolResult('toolu_a'),
+  toolResult('toolu_b'),
+  ...partialMessage(['Done.']),
+  result('Done.'),
+]);
+
+it('gives each parallel sub-agent its own row and keeps its held word end in that row', async () => {
+  const target = createStopContinueFixture(agentSeatScript(PARALLEL_HOLD_STDOUT), {
+    isolation: 'none',
+  });
+  vi.stubEnv('SEAT_API_KEY', 'sk-test-0123456789abcdef');
+  try {
+    const { events } = await runKeyedAgentSeat(target);
+    const lines = transcriptText(events).split('\n');
+    const rowOf = (text: string) => lines.filter((line) => line.includes(text));
+
+    expect(rowOf('Reading the tests')).toHaveLength(1);
+    expect(rowOf('Reading the tests')[0]).not.toContain('Looking');
+    expect(rowOf('Looking at it.')).toHaveLength(1);
+    expect(rowOf('Looking at it.')[0]).not.toMatch(/it\.s|Reading/);
+    const subagentText = (id: string) =>
+      events.flatMap((event) =>
+        event.type === 'planner_text' && event.subagentId === id ? [event.text] : [],
+      );
+    expect(subagentText('toolu_a')).toEqual(['Reading the test', 's', 'Found 3.']);
+    expect(subagentText('toolu_b')).toEqual(['Looking at it.']);
+  } finally {
+    vi.unstubAllEnvs();
+    cleanupTempDir(target.tmpDir);
+  }
+});

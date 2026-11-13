@@ -89,7 +89,7 @@ export function createBusTextHandler(
       ...(content !== undefined && { content }),
       ...(marks?.messageStart === true && { messageStart: true }),
       ...(marks?.continues === true && { continues: true }),
-      ...(marks?.subagent === true && { subagent: true }),
+      ...(marks?.subagentId !== undefined && { subagentId: marks.subagentId }),
     });
 }
 

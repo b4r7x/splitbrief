@@ -1043,6 +1043,24 @@ const checkpointPredicates = [
       );
     },
   ],
+  // The first rows scroll out of a 60x18 transcript, so the frame pins the last two rows, and the
+  // transcript text proves that the text of each sub-agent has its own rows.
+  [
+    checkpointId('implementation-parallel-subagents'),
+    (context) => {
+      const text = workflowTranscriptText();
+      const lines = text.split('\n');
+      const rows = ['Checking.', 'Reading the tests', 'Looking at it.', 'Found 3.', 'Done.'].map(
+        (row) => lines.findIndex((line) => line.trim() === row),
+      );
+      return (
+        includesAll('Found 3.', 'Done.')(context) &&
+        rows.every((row, index) => row > (rows[index - 1] ?? -1)) &&
+        !lines.some((line) => line.includes('Reading the tests') && line.includes('Looking')) &&
+        !text.includes('it.s')
+      );
+    },
+  ],
   [checkpointId('implementation-command-code'), includesTranscript('src/app.ts', 'npm test')],
   [checkpointId('implementation-adjacent-narration'), implementerMarkdown('src/fixture.ts')],
   [checkpointId('implementation-fenced-handback'), implementerMarkdown('src/row.ts')],

@@ -1238,6 +1238,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-implementation-parallel-subagents',
+      title: 'Workflow · two build sub-agents speaking at the same time',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'implementation-parallel-subagents',
+        title: 'The text of each sub-agent on its own rows',
+        kind: 'implementation',
+        marker: 'BUILD activity',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-implementation-command-code',
       title: 'Workflow · a Command Code build call reading, editing and running a command',
       surface: screenSurface('workflow'),

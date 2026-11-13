@@ -378,8 +378,8 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     messageStart: z.boolean().optional(),
     /** The held end of a word: it joins the text row it ends, past the tool rows of its hold. */
     continues: z.literal(true).optional(),
-    /** Text of a sub-agent: it never shares a row with the main text. */
-    subagent: z.literal(true).optional(),
+    /** The sub-agent that wrote the text; absent for the main text and in older logs. */
+    subagentId: CallIdSchema.optional(),
   }),
   phaseEvent('planner_heartbeat').extend({
     elapsedMs: z.number(),

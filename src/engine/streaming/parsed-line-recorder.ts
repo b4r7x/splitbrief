@@ -71,7 +71,7 @@ export function createParsedLineRecorder(opts: {
   ): void {
     const accepted = acceptTextDelta(textDelta);
     if (accepted.text.length > 0 && contributesToRunnerResult(channel)) {
-      opts.onText?.(accepted.text, subagentId === undefined ? marks : { ...marks, subagent: true });
+      opts.onText?.(accepted.text, subagentId === undefined ? marks : { ...marks, subagentId });
     }
     opts.recorder.text({
       channel,

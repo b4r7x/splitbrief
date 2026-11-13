@@ -142,7 +142,10 @@ function createCliTextReconciler(
 
 export async function invokeCliAdapter(opts: InvokeCliOptions): Promise<RunnerCallResult> {
   const forwardText = createCliTextForwarder((text, outputOpts, event) => {
-    opts.onOutput?.(text, outputOpts);
+    opts.onOutput?.(
+      text,
+      event.subagentId === undefined ? outputOpts : { ...outputOpts, subagentId: event.subagentId },
+    );
     if (event.subagentId !== undefined) {
       opts.onCallEvent?.({ ...event, text, semantics: 'delta' });
     }

@@ -137,6 +137,7 @@ async function run(opts: {
 }) {
   const output: string[] = [];
   const messageStarts: boolean[] = [];
+  const subagentIds: (string | undefined)[] = [];
   const events: RunnerCallEvent[] = [];
   const result = await invokeCliAdapter({
     adapter: claudeCodeImplementerAdapter,
@@ -146,11 +147,12 @@ async function run(opts: {
     onOutput: (text, opts) => {
       output.push(text);
       messageStarts.push(opts?.messageStart === true);
+      subagentIds.push(opts?.subagentId);
     },
     onCallEvent: (event) => events.push(event),
     ...(opts.idle !== undefined && { idle: opts.idle }),
   });
-  return { result, output, messageStarts, events };
+  return { result, output, messageStarts, subagentIds, events };
 }
 
 function occurrences(haystack: string, needle: string): number {
@@ -420,6 +422,60 @@ describe('invokeCliAdapter streaming a Claude Code capture', () => {
       expect(activityRows(events).some((event) => event.label === 'system activity')).toBe(false);
     },
   );
+
+  itUnix('gives the text of each parallel sub-agent its own id', async () => {
+    const assistant = (content: Record<string, unknown>[], parent: string | null = null) =>
+      JSON.stringify({
+        type: 'assistant',
+        message: { role: 'assistant', content },
+        parent_tool_use_id: parent,
+        session_id: SESSION_ID,
+      });
+    const toolUse = (id: string, name: string, parent: string | null = null) =>
+      assistant([{ type: 'tool_use', id, name, input: {} }], parent);
+    const toolResult = (id: string, parent: string | null = null) =>
+      JSON.stringify({
+        type: 'user',
+        message: {
+          role: 'user',
+          content: [{ type: 'tool_result', tool_use_id: id, content: 'ok' }],
+        },
+        parent_tool_use_id: parent,
+        session_id: SESSION_ID,
+      });
+    const mainMessage = (text: string) => [
+      streamEvent({ type: 'message_start', message: { role: 'assistant', content: [] } }),
+      streamEvent({ type: 'content_block_start', content_block: { type: 'text', text: '' } }),
+      textDelta(text),
+      assistant([{ type: 'text', text }]),
+      streamEvent({ type: 'content_block_stop' }),
+    ];
+    const { output, subagentIds } = await run({
+      script: EMIT_ALL,
+      lines: [
+        ...mainMessage('Checking.'),
+        toolUse('toolu_a', 'Task'),
+        toolUse('toolu_b', 'Task'),
+        assistant([{ type: 'text', text: 'Reading the tests.' }], 'toolu_a'),
+        assistant([{ type: 'text', text: 'Looking at it.' }], 'toolu_b'),
+        toolUse('toolu_r', 'Read', 'toolu_b'),
+        toolResult('toolu_r', 'toolu_b'),
+        assistant([{ type: 'text', text: 'Found 3.' }], 'toolu_a'),
+        toolResult('toolu_a'),
+        toolResult('toolu_b'),
+        ...mainMessage('Done.'),
+        JSON.stringify({ type: 'result', session_id: SESSION_ID, result: 'Done.' }),
+      ],
+    });
+
+    expect(output.map((text, index) => [text, subagentIds[index]])).toEqual([
+      ['Checking.', undefined],
+      ['Reading the tests.', 'toolu_a'],
+      ['Looking at it.', 'toolu_b'],
+      ['Found 3.', 'toolu_a'],
+      ['Done.', undefined],
+    ]);
+  });
 
   itUnix(
     'marks the next assistant message after a final snapshot without repeating deltas',

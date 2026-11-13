@@ -123,7 +123,9 @@ Events cover the full workflow lifecycle. A few examples:
 - `task_started` / `task_completed` / `task_full_fail` — task lifecycle with timing, method, retries
 - `review_started` / `review_completed` — review lifecycle with scope, seat, verdict, findings, and timing
 - `planner_text` — streaming planner output chunks. Planner document chunks set
-  `content: 'markdown'`; plain logs omit it or use `content: 'plain'`.
+  `content: 'markdown'`; plain logs omit it or use `content: 'plain'`. The text of a
+  sub-agent carries `subagentId`, the tool's id for that sub-agent; the main text and
+  older logs have none.
 - `runner_call_*` — normalized planner/implementer/backend call lifecycle, text deltas, usage, raw tool-use, safe activity, session IDs, artifacts, warnings, errors, and completion, plus `runner_call_heartbeat`: a frame with nothing to show that still proves the tool is working, such as Claude Code's thinking-token estimates, at most one a second per call. A heartbeat moves the Build progress block's freshness clock (`lastRunnerEventTs`, `src/stores/workflow/lifecycle.ts`), paints no row, and stays out of `session.jsonl`
 - `cost_update` — cumulative token usage after each planner or implementer call
 

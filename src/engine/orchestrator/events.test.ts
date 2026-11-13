@@ -59,6 +59,18 @@ describe('createBusTextHandler', () => {
     expect(events[0]).toMatchObject({ type: 'planner_text', text: 'drafting the plan' });
     expect('role' in (events[0] as Record<string, unknown>)).toBe(false);
   });
+
+  it('puts the sub-agent id on the text event and keeps it through the event schema', () => {
+    const { bus, events } = makeBusRecorder();
+    const handler = createBusTextHandler({ bus, phase: 'implementing' }, { role: 'implementer' });
+
+    handler('Found', { subagentId: 'toolu_a', continues: true });
+    handler('Done.');
+
+    expect(events[0]).toMatchObject({ subagentId: 'toolu_a', continues: true });
+    expect(parseEngineEvent(events[0])).toMatchObject({ subagentId: 'toolu_a', continues: true });
+    expect('subagentId' in (events[1] as Record<string, unknown>)).toBe(false);
+  });
 });
 
 describe('implementer call activity', () => {

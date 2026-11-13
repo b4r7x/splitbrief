@@ -115,7 +115,7 @@ async function invokeSeat(
     onOutput: (chunk, marks) => {
       output.push(chunk);
       order.push(
-        `text ${chunk}${marks?.continues === true ? ' +continues' : ''}${marks?.subagent === true ? ' +subagent' : ''}`,
+        `text ${chunk}${marks?.continues === true ? ' +continues' : ''}${marks?.subagentId === undefined ? '' : ` +subagent ${marks.subagentId}`}`,
       );
     },
     onCallEvent: (event) => {
@@ -423,7 +423,7 @@ describe('a sub-agent speaks while the main text holds a key prefix', () => {
       'text test',
       'tool Task',
       'text s +continues',
-      'text Found 3. +subagent',
+      'text Found 3. +subagent toolu_a',
       'text Done.',
     ]);
   });
@@ -486,10 +486,10 @@ describe('a sub-agent text holds a key prefix across its own tool use', () => {
 
     expect(order).toEqual([
       'text Checking.',
-      'text Reading the test +subagent',
+      'text Reading the test +subagent toolu_a',
       'tool Read',
-      'text s +continues +subagent',
-      'text Found 3. +subagent',
+      'text s +continues +subagent toolu_a',
+      'text Found 3. +subagent toolu_a',
       'tool Task',
       'text Done.',
     ]);
@@ -512,9 +512,9 @@ describe('a sub-agent text holds a key prefix across its own tool use', () => {
 
     expect(order).toEqual([
       'text Checking.',
-      'text Reading the test +subagent',
+      'text Reading the test +subagent toolu_a',
       'tool Read',
-      'text ***REDACTED*** +continues +subagent',
+      'text ***REDACTED*** +continues +subagent toolu_a',
       'tool Task',
       'text Done.',
     ]);
@@ -565,9 +565,45 @@ describe('a sub-agent text holds a key prefix across its own tool use', () => {
       'tool Read',
       'tool Task',
       'text s +continues',
-      'text Reading the test +subagent',
-      'text s +continues +subagent',
-      'text Found 3. +subagent',
+      'text Reading the test +subagent toolu_a',
+      'text s +continues +subagent toolu_a',
+      'text Found 3. +subagent toolu_a',
+      'text Done.',
+    ]);
+  });
+});
+
+describe('two sub-agents speak while one holds a key prefix', () => {
+  const keyEnv = { ...process.env, SEAT_API_KEY: 'sk-test-0123456789abcdef' };
+
+  it('marks the text of each sub-agent with its own id', async () => {
+    const { order } = await invokeSeat(
+      lines([
+        ...partialMessage(['Checking.']),
+        ...toolUse('toolu_a', 'Task'),
+        ...toolUse('toolu_b', 'Task'),
+        ...partialMessage(['Reading the tests'], 'toolu_a'),
+        ...partialMessage(['Looking at it.'], 'toolu_b'),
+        ...toolUse('toolu_r', 'Read', 'toolu_b'),
+        toolResult('toolu_r', 'toolu_b'),
+        ...partialMessage(['Found 3.'], 'toolu_a'),
+        toolResult('toolu_a'),
+        toolResult('toolu_b'),
+        ...partialMessage(['Done.']),
+        result('Done.'),
+      ]),
+      keyEnv,
+    );
+
+    expect(order).toEqual([
+      'text Checking.',
+      'text Reading the test +subagent toolu_a',
+      'text Looking at it. +subagent toolu_b',
+      'tool Read',
+      'text s +continues +subagent toolu_a',
+      'text Found 3. +subagent toolu_a',
+      'tool Task',
+      'tool Task',
       'text Done.',
     ]);
   });
