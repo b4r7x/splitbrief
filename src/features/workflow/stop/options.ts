@@ -1,7 +1,12 @@
-import { isApplyUnfinishedAtRest, routerStore } from '../../../stores/navigation/router.js';
+import {
+  isApplyUnfinishedAtRest,
+  routerStore,
+  type RouteData,
+} from '../../../stores/navigation/router.js';
 import { composerLiveStore } from '../../../stores/ui/composer-live.js';
 import { selectRunningBrief, selectTaskListView } from '../../../core/run-view/briefs.js';
-import { stopStore } from '../../../stores/workflow/stop.js';
+import type { RunView } from '../../../core/run-view/reduce.js';
+import { stopStore, type StopState } from '../../../stores/workflow/stop.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { activeApply } from '../../../engine/orchestrator/session-lifecycle/shutdown.js';
 import { changedFileCount } from '../closed/projections.js';
@@ -96,8 +101,22 @@ export function stopSheetRows(input: StopSheetInput): StopRow[] {
   return rows;
 }
 
-export function readStopMenuRows(): StopRow[] {
-  const stop = stopStore.get();
+/** What the stop menu reads: the stop, the route, the run view, this process's Apply, the draft. */
+export interface StopMenuInput {
+  readonly stop: Pick<StopState, 'phase' | 'intent' | 'parked'>;
+  readonly route: RouteData;
+  readonly view: Pick<
+    RunView,
+    'briefs' | 'phase' | 'briefKept' | 'reviewNone' | 'stopKept' | 'halt'
+  >;
+  /** This process applies the run. */
+  readonly applying: boolean;
+  /** The composer holds a draft. */
+  readonly hasDraft: boolean;
+}
+
+export function stopMenuRows(input: StopMenuInput): StopRow[] {
+  const { stop, route } = input;
   if (stop.phase === 'failed')
     return [
       {
@@ -106,16 +125,15 @@ export function readStopMenuRows(): StopRow[] {
         consequence: 'retry cleanup and saving; do not start new work',
       },
     ];
-  const route = routerStore.get();
   const atRest = route.screen === 'workflow' && route.execution.kind === 'at-rest';
   // A process that holds the run is applying it or driving it, and this process's Apply cannot be
   // cut: nothing here may continue, stop or end it.
-  if ((atRest && route.run.status.kind === 'running') || activeApply() !== undefined)
+  if ((atRest && route.run.status.kind === 'running') || input.applying)
     return [
       {
         id: 'leave',
         label: 'Back to sessions',
-        consequence: hasDraft()
+        consequence: input.hasDraft
           ? 'return home; keep the run and draft'
           : 'return home; keep the run',
       },
@@ -142,7 +160,7 @@ export function readStopMenuRows(): StopRow[] {
               {
                 id: 'resume' as const,
                 label: 'Resume',
-                consequence: hasDraft()
+                consequence: input.hasDraft
                   ? 'continue this run; keep the unsent draft'
                   : 'continue this run',
               },
@@ -152,7 +170,7 @@ export function readStopMenuRows(): StopRow[] {
                     {
                       id: 'end-run' as const,
                       label: 'End run',
-                      consequence: runHasChanges()
+                      consequence: runHasChanges(input)
                         ? 'close this run; keep changes'
                         : 'close this run',
                     },
@@ -162,7 +180,7 @@ export function readStopMenuRows(): StopRow[] {
       {
         id: 'leave',
         label: 'Back to sessions',
-        consequence: hasDraft()
+        consequence: input.hasDraft
           ? 'return home; keep the run and draft'
           : 'return home; keep the run',
       },
@@ -176,17 +194,17 @@ export function readStopMenuRows(): StopRow[] {
         consequence: 'return to sessions once cleanup and saving finish',
       },
     ];
-  const { briefs, phase, briefKept, reviewNone } = runViewStore.get();
+  const { briefs, phase, briefKept, reviewNone, halt } = input.view;
   const brief = selectRunningBrief(briefs, phase);
   const rows = stopSheetRows({
     currentTaskId: brief.current?.id ?? null,
     nextTaskId: brief.next?.id ?? null,
-    hasChanges: runHasChanges(),
+    hasChanges: runHasChanges(input),
     boundaryPauseRequested: stop.intent === 'pause-after-brief',
     briefKept,
     reviewNone,
   });
-  const issue = runViewStore.get().halt?.issue ?? null;
+  const issue = halt?.issue ?? null;
   // A halt offers only the actions it accepts: an unfinished Apply's halt refuses End run.
   return issue === null
     ? rows
@@ -202,14 +220,16 @@ export function readStopMenuRows(): StopRow[] {
  * no others. Without a stop to say so, a brief that started or failed may have written, unless a
  * revert, a restore or a denial left none of its writes changed.
  */
-function runHasChanges(): boolean {
-  const { briefs, phase, stopKept, briefKept } = runViewStore.get();
+function runHasChanges({
+  stop,
+  route,
+  view: { briefs, phase, stopKept, briefKept },
+}: StopMenuInput): boolean {
   const view = selectTaskListView(briefs);
   if (view.finished > 0) return true;
-  const route = routerStore.get();
   const record =
     route.screen === 'workflow' && route.execution.kind === 'at-rest' ? route.run : null;
-  const kept = stopKeptFiles(stopStore.get().parked, record, stopKept);
+  const kept = stopKeptFiles(stop.parked, record, stopKept);
   if (kept !== null) return kept.length > 0;
   return (selectRunningBrief(briefs, phase).current !== null && briefKept !== 0) || view.failed > 0;
 }
@@ -224,10 +244,21 @@ export function stopSheetFooter(input: { hasChanges: boolean; hasDraft: boolean 
   return null;
 }
 
-export function readStopSheetFooter(): string | null {
-  return stopSheetFooter({ hasChanges: runHasChanges(), hasDraft: hasDraft() });
+export function stopMenuFooter(input: StopMenuInput): string | null {
+  return stopSheetFooter({ hasChanges: runHasChanges(input), hasDraft: input.hasDraft });
 }
 
-function hasDraft(): boolean {
-  return !composerLiveStore.get().empty;
+/** The stop menu input as the stores hold it now, for a reader outside render. */
+export function readStopMenuInput(): StopMenuInput {
+  return {
+    stop: stopStore.get(),
+    route: routerStore.get(),
+    view: runViewStore.get(),
+    applying: activeApply() !== undefined,
+    hasDraft: !composerLiveStore.get().empty,
+  };
+}
+
+export function readStopMenuRows(): StopRow[] {
+  return stopMenuRows(readStopMenuInput());
 }

@@ -82,6 +82,20 @@ describe('StopMenu', () => {
     expect(frame).not.toContain('Pause after this brief');
     ui.unmount();
   });
+
+  it('repaints its rows when a pause is requested with the menu open', async () => {
+    seedRunningBrief();
+    const ui = renderFeature(<StopMenu />);
+    await flushEffects();
+    expect(ui.lastFrame()).toContain('Pause after this brief');
+
+    stopStore.request('pause-after-brief');
+    await flushEffects();
+
+    expect(ui.lastFrame()).toContain('Keep running');
+    expect(ui.lastFrame()).not.toContain('Pause after this brief');
+    ui.unmount();
+  });
 });
 
 describe('StopMenu changes copy', () => {

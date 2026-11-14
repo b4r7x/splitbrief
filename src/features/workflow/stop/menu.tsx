@@ -1,13 +1,7 @@
-import { routerStore } from '../../../stores/navigation/router.js';
-import { readStopMenuRows, readStopSheetFooter } from './options.js';
 import { StopSheet } from './sheet.js';
-import { stopStore } from '../../../stores/workflow/stop.js';
-import { useStores } from '../../../stores/use-stores.js';
-import { runViewStore } from '../../../stores/workflow/run-view.js';
-import { composerLiveStore } from '../../../stores/ui/composer-live.js';
+import { useStopMenuRows } from './use-menu-rows.js';
 
 export function StopMenu({ height }: { height?: number | undefined }) {
-  useStores(stopStore, routerStore, runViewStore, composerLiveStore);
-
-  return <StopSheet height={height} rows={readStopMenuRows()} footer={readStopSheetFooter()} />;
+  const { rows, footer } = useStopMenuRows();
+  return <StopSheet height={height} rows={rows} footer={footer} />;
 }

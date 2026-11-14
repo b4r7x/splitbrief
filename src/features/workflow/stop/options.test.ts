@@ -11,6 +11,8 @@ import { stopStore } from '../../../stores/workflow/stop.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { taskId } from '../../../core/schemas/task.js';
+import { EMPTY_BRIEFS, type RunBriefs } from '../../../core/run-view/briefs.js';
+import { EMPTY_RUN_VIEW } from '../../../core/run-view/reduce.js';
 import {
   activeApply,
   trackActiveApply,
@@ -23,8 +25,11 @@ import {
 import {
   STOP_SHEET_LEGEND,
   STOP_SHEET_PARKED_LEGEND,
+  readStopMenuInput,
   readStopMenuRows,
-  readStopSheetFooter,
+  stopMenuFooter,
+  stopMenuRows,
+  type StopMenuInput,
   stopSheetFooter,
   stopSheetRows,
 } from './options.js';
@@ -161,6 +166,103 @@ describe('stopSheetRows', () => {
     expect(rows({ hasChanges: true }).at(-1)?.consequence).toBe(
       'stop execution; close this run; keep changes',
     );
+  });
+});
+
+describe('stopMenuRows', () => {
+  const IDLE: StopMenuInput = {
+    stop: { phase: 'idle', intent: 'none', parked: null },
+    route: { screen: 'home' },
+    view: EMPTY_RUN_VIEW,
+    applying: false,
+    hasDraft: false,
+  };
+  const ON_T002: RunBriefs = {
+    ...EMPTY_BRIEFS,
+    tasks: [
+      { id: 'T001', title: 'One', status: 'done' },
+      { id: 'T002', title: 'Two', status: 'in_progress' },
+      { id: 'T003', title: 'Three', status: 'pending' },
+    ],
+    currentTask: 2,
+    totalTasks: 3,
+  };
+  const parkedOn = (kept: readonly string[]): StopMenuInput['stop'] => ({
+    phase: 'parked',
+    intent: 'stop-now',
+    parked: { kind: 'mid-brief', taskId: 'T002', resolve: null, kept },
+  });
+
+  it('offers only Retry stop once the stop failed', () => {
+    const rows = stopMenuRows({ ...IDLE, stop: { ...IDLE.stop, phase: 'failed' } });
+
+    expect(rows.map((row) => row.id)).toEqual(['retry-stop']);
+  });
+
+  it('offers only the way back while this process applies the run, keeping the draft', () => {
+    expect(stopMenuRows({ ...IDLE, applying: true, hasDraft: true })).toEqual([
+      {
+        id: 'leave',
+        label: 'Back to sessions',
+        consequence: 'return home; keep the run and draft',
+      },
+    ]);
+  });
+
+  it('pauses after the running brief and keeps the changes of the finished one', () => {
+    const rows = stopMenuRows({
+      ...IDLE,
+      view: { ...EMPTY_RUN_VIEW, phase: 'implementing', briefs: ON_T002 },
+    });
+
+    expect(rows.map((row) => [row.id, row.consequence])).toEqual([
+      ['stop-now', 'stop execution; keep partial changes'],
+      ['pause-after-brief', 'finish T002 including checks and review; do not start T003'],
+      ['end-run', 'stop execution; close this run; keep changes'],
+    ]);
+  });
+
+  it('keeps only the rows the halt accepts', () => {
+    const rows = stopMenuRows({
+      ...IDLE,
+      view: {
+        ...EMPTY_RUN_VIEW,
+        phase: 'implementing',
+        briefs: ON_T002,
+        halt: {
+          issue: makeRecoveryIssue({ availableActions: ['retry-same-worker'] }),
+          at: { kind: 'review', cycle: 0 },
+        },
+      },
+    });
+
+    expect(rows.map((row) => row.id)).toEqual(['stop-now']);
+  });
+
+  it('waits for the stop it carries out', () => {
+    const rows = stopMenuRows({
+      ...IDLE,
+      stop: { phase: 'requested', intent: 'stop-now', parked: null },
+    });
+
+    expect(rows.map((row) => [row.id, row.label])).toEqual([['leave', 'Back after stop']]);
+  });
+
+  it('offers Resume and End run on a parked run, with the files and the draft it keeps', () => {
+    const rows = stopMenuRows({ ...IDLE, stop: parkedOn(['src/b.ts']), hasDraft: true });
+
+    expect(rows.map((row) => [row.id, row.consequence])).toEqual([
+      ['resume', 'continue this run; keep the unsent draft'],
+      ['end-run', 'close this run; keep changes'],
+      ['leave', 'return home; keep the run and draft'],
+    ]);
+  });
+
+  it('names in the footer what the parked run keeps', () => {
+    expect(stopMenuFooter({ ...IDLE, stop: parkedOn(['src/b.ts']), hasDraft: true })).toBe(
+      'Changes and draft stay.',
+    );
+    expect(stopMenuFooter({ ...IDLE, stop: parkedOn([]) })).toBeNull();
   });
 });
 
@@ -437,7 +539,7 @@ describe('Session options after a stop cut a brief', () => {
   it('names nothing kept when the cut brief had written nothing, as the byline says', () => {
     stopStore.park('mid-brief', 'T001', null, []);
 
-    expect(readStopSheetFooter()).toBeNull();
+    expect(stopMenuFooter(readStopMenuInput())).toBeNull();
     expect(readStopMenuRows().find((row) => row.id === 'end-run')?.consequence).toBe(
       'close this run',
     );
@@ -446,7 +548,7 @@ describe('Session options after a stop cut a brief', () => {
   it('keeps changes when the cut brief had written files', () => {
     stopStore.park('mid-brief', 'T001', null, ['src/sum.js']);
 
-    expect(readStopSheetFooter()).toBe('Changes stay.');
+    expect(stopMenuFooter(readStopMenuInput())).toBe('Changes stay.');
     expect(readStopMenuRows().find((row) => row.id === 'end-run')?.consequence).toBe(
       'close this run; keep changes',
     );
@@ -469,9 +571,9 @@ describe('Session options after a stop cut a brief', () => {
     };
 
     atRest();
-    expect(readStopSheetFooter()).toBeNull();
+    expect(stopMenuFooter(readStopMenuInput())).toBeNull();
     atRest(['src/sum.js']);
-    expect(readStopSheetFooter()).toBe('Changes stay.');
+    expect(stopMenuFooter(readStopMenuInput())).toBe('Changes stay.');
   });
 });
 
@@ -483,7 +585,7 @@ describe('the draft in the stop rows and footer', () => {
   it('promises a draft only while the composer holds one', () => {
     stopStore.park('mid-brief', 'T001', null, []);
 
-    expect(readStopSheetFooter()).toBeNull();
+    expect(stopMenuFooter(readStopMenuInput())).toBeNull();
     expect(readStopMenuRows().find((row) => row.id === 'leave')?.consequence).toBe(
       'return home; keep the run',
     );
@@ -493,7 +595,7 @@ describe('the draft in the stop rows and footer', () => {
 
     composerLiveStore.setDraft(createDraftDocument('note'));
 
-    expect(readStopSheetFooter()).toBe('Draft stays.');
+    expect(stopMenuFooter(readStopMenuInput())).toBe('Draft stays.');
     expect(readStopMenuRows().find((row) => row.id === 'leave')?.consequence).toBe(
       'return home; keep the run and draft',
     );
@@ -530,7 +632,7 @@ describe('the stop sheet after a revert or a restore of the running brief', () =
     return {
       stopNow: rows.find((row) => row.id === 'stop-now')?.consequence,
       endRun: rows.find((row) => row.id === 'end-run')?.consequence,
-      footer: readStopSheetFooter(),
+      footer: stopMenuFooter(readStopMenuInput()),
     };
   };
   const KEPT = {
