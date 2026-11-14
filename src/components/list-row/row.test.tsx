@@ -3,13 +3,13 @@ import { Box } from 'ink';
 import { render } from 'ink-testing-library';
 import { afterAll, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
-import { glyph } from '../lib/glyphs.js';
-import { ELLIPSIS } from '../utils/display-text/truncate.js';
-import { ListGroupHeader, ListRow } from './list-row/row.js';
-import { listRowLead } from './list-row/lead.js';
-import { defaultTheme, ThemeProvider } from './theme.js';
-import { resolveTheme } from '../core/theme/resolve.js';
-import { paint } from '../core/theme/paint.js';
+import { glyph } from '../../lib/glyphs.js';
+import { ELLIPSIS } from '../../utils/display-text/truncate.js';
+import { ListGroupHeader, ListRow } from './row.js';
+import { listRowLead } from './lead.js';
+import { defaultTheme, ThemeProvider } from '../theme.js';
+import { resolveTheme } from '../../core/theme/resolve.js';
+import { paint } from '../../core/theme/paint.js';
 
 const originalForceColor = vi.hoisted(() => {
   const saved = process.env['FORCE_COLOR'];

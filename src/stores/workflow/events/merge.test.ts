@@ -1,20 +1,19 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { MAX_EVENTS, MAX_MERGED_TEXT_LENGTH, mergeEvent, mergeEventLog } from './events/merge.js';
-import { projectEventForTuiEventLog } from './events/project.js';
-import { eventsStore } from './events/state.js';
-import { addEvent } from './actions/event.js';
-import { resetWorkflow } from './actions/reset.js';
-import { markCancellationRequested } from './actions/interrupt.js';
-import { taskId } from '../../core/schemas/task.js';
-import type { EngineEvent, EngineEventOf } from '../../engine/events/types.js';
-import { parseEngineEvent } from '../../engine/events/schema.js';
-import type { RunnerCallWarningInput } from '../../engine/calls/types.js';
-import { normalizeRunnerCallWarning } from '../../engine/calls/warnings.js';
+import { MAX_EVENTS, MAX_MERGED_TEXT_LENGTH, mergeEvent, mergeEventLog } from './merge.js';
+import { eventsStore } from './state.js';
+import { addEvent } from '../actions/event.js';
+import { resetWorkflow } from '../actions/reset.js';
+import { markCancellationRequested } from '../actions/interrupt.js';
+import { operationsStore } from '../operations/state.js';
+import { taskId } from '../../../core/schemas/task.js';
+import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
+import { parseEngineEvent } from '../../../engine/events/schema.js';
+import type { RunnerCallWarningInput } from '../../../engine/calls/types.js';
+import { normalizeRunnerCallWarning } from '../../../engine/calls/warnings.js';
 import { makePlannerText, makePlannerStatus } from '#testing/helpers/events/planner.js';
 import {
   makeRunnerCallActivity,
   makeRunnerCallCompleted,
-  makeRunnerCallHeartbeat,
 } from '#testing/helpers/events/runner-call.js';
 import {
   makeTaskStart,
@@ -22,7 +21,7 @@ import {
   makeRetry,
   makeCostUpdate,
 } from '#testing/helpers/events/task.js';
-import { operationsStore } from './operations/state.js';
+import { makeRunnerActivity } from '#testing/helpers/events/workflow-activity.js';
 
 function makeRunnerTextDelta(
   overrides?: Partial<EngineEventOf<'runner_call_text_delta'>>,
@@ -104,20 +103,6 @@ function makeRunnerError(
     nativeSessionId: null,
     ...overrides,
   };
-}
-
-function makeRunnerActivity(
-  overrides?: Partial<EngineEventOf<'runner_call_activity'>>,
-): EngineEventOf<'runner_call_activity'> {
-  return makeRunnerCallActivity({
-    ts: 1_200,
-    phase: 'implementing',
-    sequence: 3,
-    activityId: 'call-1:tool:1',
-    label: 'running npm test',
-    target: 'npm test',
-    ...overrides,
-  });
 }
 
 function makeFullSuite(
@@ -1107,80 +1092,6 @@ describe('eventsStore — append via addEvent', () => {
       const events = eventsStore.get().events;
       expect(events).toHaveLength(1);
       expect((events[0] as { text: string }).text).toBe('ab');
-    });
-  });
-});
-
-describe('projectEventForTuiEventLog', () => {
-  it('drops runner_call_stalled and runner_call_stall_cleared', () => {
-    expect(
-      projectEventForTuiEventLog({
-        type: 'runner_call_stalled',
-        ts: 1000,
-        phase: 'implementing',
-        callId: 'call-1',
-        role: 'implementer',
-        backendKind: 'cli',
-        sequence: 1,
-        silentMs: 60_000,
-      }),
-    ).toBeNull();
-    expect(
-      projectEventForTuiEventLog({
-        type: 'runner_call_stall_cleared',
-        ts: 2000,
-        phase: 'implementing',
-        callId: 'call-1',
-        role: 'implementer',
-        backendKind: 'cli',
-        sequence: 2,
-      }),
-    ).toBeNull();
-  });
-
-  it('drops runner_call_heartbeat, which only moves the freshness clock', () => {
-    expect(projectEventForTuiEventLog(makeRunnerCallHeartbeat())).toBeNull();
-  });
-
-  it('keeps the description and the line count of a command activity', () => {
-    const description = 'Count the action flags\nand show the changed files\u001b[31m';
-    expect(
-      projectEventForTuiEventLog(makeRunnerActivity({ description, moreLines: 2 })),
-    ).toMatchObject({
-      description: 'Count the action flags and show the changed files',
-      moreLines: 2,
-      redacted: true,
-    });
-  });
-
-  it('keeps the end of a finished call without its session, usage or runner', () => {
-    expect(
-      projectEventForTuiEventLog(
-        makeRunnerCallCompleted({
-          taskId: taskId('T001'),
-          runnerName: 'codex',
-          model: 'gpt-5-mini',
-          usage: { inputTokens: 1, outputTokens: 2 },
-          nativeSessionId: 'native-session-1',
-        }),
-      ),
-    ).toEqual({
-      type: 'runner_call_completed',
-      ts: 2_500,
-      phase: 'implementing',
-      taskId: 'T001',
-      callId: 'call-1',
-      role: 'implementer',
-      backendKind: 'cli',
-      sequence: 2,
-      status: 'completed',
-      error: null,
-      partial: false,
-      startedAt: 1_000,
-      endedAt: 2_500,
-      durationMs: 1_500,
-      usage: null,
-      nativeSessionId: null,
     });
   });
 });

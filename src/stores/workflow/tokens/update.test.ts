@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { updateTokens } from './tokens/update.js';
-import { tokensStore } from './tokens/state.js';
-import { addEvent } from './actions/event.js';
-import { markCancellationRequested } from './actions/interrupt.js';
-import { resetWorkflow } from './actions/reset.js';
+import { updateTokens } from './update.js';
+import { tokensStore } from './state.js';
+import { addEvent } from '../actions/event.js';
+import { markCancellationRequested } from '../actions/interrupt.js';
+import { resetWorkflow } from '../actions/reset.js';
 import { makeCostUpdate } from '#testing/helpers/events/task.js';
-import { taskId } from '../../core/schemas/task.js';
-import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
-import type { EngineEvent } from '../../engine/events/types.js';
+import { taskId } from '../../../core/schemas/task.js';
+import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
+import type { EngineEvent } from '../../../engine/events/types.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 type TaskTokensEvent = Extract<EngineEvent, { type: 'task_tokens' }> & Partial<TaskTokenUsage>;

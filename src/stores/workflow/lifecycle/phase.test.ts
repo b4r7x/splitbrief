@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { lifecycleStore } from './lifecycle/state.js';
-import { updateStall } from './lifecycle/phase.js';
-import { runViewStore } from './run-view.js';
-import { addEvent } from './actions/event.js';
-import { markWorkflowPaused } from './actions/pause.js';
-import { resetWorkflow } from './actions/reset.js';
-import { hydrateFromState } from './actions/hydrate.js';
-import { loadEvents } from './actions/load.js';
+import { lifecycleStore } from './state.js';
+import { updateStall } from './phase.js';
+import { runViewStore } from '../run-view.js';
+import { addEvent } from '../actions/event.js';
+import { markWorkflowPaused } from '../actions/pause.js';
+import { resetWorkflow } from '../actions/reset.js';
+import { hydrateFromState } from '../actions/hydrate.js';
+import { loadEvents } from '../actions/load.js';
 import { makePlannerStatus, makePlannerText } from '#testing/helpers/events/planner.js';
 import {
   makeRunnerCallActivity,
@@ -23,7 +23,7 @@ import {
   makeTaskSkipped,
   makeTaskStart,
 } from '#testing/helpers/events/task.js';
-import { taskId } from '../../core/schemas/task.js';
+import { taskId } from '../../../core/schemas/task.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 
