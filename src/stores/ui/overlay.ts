@@ -10,6 +10,10 @@ interface OverlayState {
 
 const initial: OverlayState = { active: 'none', exclusive: false, stack: [] };
 
+export function selectHasOverlay(state: OverlayState): boolean {
+  return state.active !== 'none';
+}
+
 const store = createStore<OverlayState>(initial);
 
 export const overlayStore = {

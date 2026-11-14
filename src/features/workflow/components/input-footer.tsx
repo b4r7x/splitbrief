@@ -5,7 +5,11 @@ import { useStores } from '../../../stores/use-stores.js';
 import { configStore } from '../../../stores/project/config.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { routerStore } from '../../../stores/navigation/router.js';
-import { CHECKING_TOOLS_STAGE, preparationStore } from '../../../stores/navigation/preparation.js';
+import {
+  CHECKING_TOOLS_STAGE,
+  preparationStore,
+  selectCheckingStage,
+} from '../../../stores/navigation/preparation.js';
 import {
   getActiveRailStage,
   railStageSeat,
@@ -114,9 +118,7 @@ export function InputFooter({
 
   // Re-entering a run at rest checks its tools first. That wait belongs on this row — the run
   // itself stays on screen, the composer beside it stays live, and the word is the request's own.
-  const checkingStage = preparationStore.use((state) =>
-    state.kind === 'checking' ? state.stage : null,
-  );
+  const checkingStage = preparationStore.use(selectCheckingStage);
 
   const display = deriveWorkflowDisplay({
     status: lifecycle.status,

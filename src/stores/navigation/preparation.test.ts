@@ -19,7 +19,7 @@ import {
   type PreparedExecution,
 } from '../../engine/runners/prepared-execution.js';
 import { terminalSizeStore } from '../ui/terminal-size.js';
-import { preparationStore, type PreparationRequest } from './preparation.js';
+import { preparationStore, selectCheckingStage, type PreparationRequest } from './preparation.js';
 import { routerStore } from './router.js';
 import { testCliSeats } from '#testing/helpers/runner-gate.js';
 
@@ -152,6 +152,24 @@ describe('preparationStore', () => {
     await b.handle.promise;
     expect(preparationStore.get()).toMatchObject({ kind: 'blocked', attempt: b.handle.attempt });
     expect(a.onPrepared).not.toHaveBeenCalled();
+  });
+
+  it('selectCheckingStage gives the stage only while the attempt is checking', async () => {
+    expect(selectCheckingStage(preparationStore.get())).toBeNull();
+
+    const blocked = heldAttempt('start');
+    expect(selectCheckingStage(preparationStore.get())).toBe('Checking tools');
+    blocked.outcome.resolve({ kind: 'blocked', report: report() });
+    await blocked.handle.promise;
+    expect(preparationStore.get()).toMatchObject({ kind: 'blocked', stage: 'Checking tools' });
+    expect(selectCheckingStage(preparationStore.get())).toBeNull();
+
+    const failed = heldAttempt('continue');
+    expect(selectCheckingStage(preparationStore.get())).toBe('Checking tools');
+    failed.outcome.resolve({ kind: 'failed', error: new Error('A failed') });
+    await failed.handle.promise;
+    expect(preparationStore.get()).toMatchObject({ kind: 'failed', stage: 'Checking tools' });
+    expect(selectCheckingStage(preparationStore.get())).toBeNull();
   });
 });
 

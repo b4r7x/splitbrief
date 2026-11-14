@@ -9,7 +9,7 @@ import {
   sessionSelectStore,
 } from '../stores/navigation/session-select.js';
 import { approvalPromptStore, closeApprovalPrompt } from '../stores/prompts/approval.js';
-import { overlayStore } from '../stores/ui/overlay.js';
+import { overlayStore, selectHasOverlay } from '../stores/ui/overlay.js';
 
 /**
  * The page belongs to a continuation only while there is something to do on it: an approval to
@@ -25,7 +25,7 @@ export function useSessionPreparationTakesPage(): boolean {
 export function SessionPreparation() {
   const state = sessionSelectStore.use((snapshot) => snapshot.preparation);
   const approvalPending = approvalPromptStore.use((snapshot) => snapshot.status === 'pending');
-  const hasOverlay = overlayStore.use((snapshot) => snapshot.active !== 'none');
+  const hasOverlay = overlayStore.use(selectHasOverlay);
   const takesPage = useSessionPreparationTakesPage();
 
   useEffect(

@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { approvalPromptStore } from '../../../../stores/prompts/approval.js';
-import { overlayStore } from '../../../../stores/ui/overlay.js';
+import { overlayStore, selectHasOverlay } from '../../../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import {
   confirmCardFits,
@@ -55,7 +55,7 @@ export function ApprovalPrompt({
   const [generation, setGeneration] = useState(0);
   const cols = terminalSizeStore.use((s) => s.cols);
   const rows = terminalSizeStore.use((s) => s.rows);
-  const hasOverlay = overlayStore.use((s) => s.active !== 'none');
+  const hasOverlay = overlayStore.use(selectHasOverlay);
 
   const isActive = state.status === 'pending' && !hasOverlay && focused;
   const promptIdentity = state.status === 'pending' ? state.resolve : null;

@@ -21,9 +21,9 @@ import { useSlowProbeText } from '../../hooks/use-slow-probe-text.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { inputHeightStore } from '../../stores/ui/input-height.js';
 import { detectionStore } from '../../stores/discovery/detection.js';
-import { overlayStore } from '../../stores/ui/overlay.js';
+import { overlayStore, selectHasOverlay } from '../../stores/ui/overlay.js';
 import { routerStore } from '../../stores/navigation/router.js';
-import { preparationStore } from '../../stores/navigation/preparation.js';
+import { preparationStore, selectCheckingStage } from '../../stores/navigation/preparation.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
 import { configStore } from '../../stores/project/config.js';
 import { saveHomeDraft } from '../../stores/ui/session-drafts.js';
@@ -91,7 +91,7 @@ export function HomeScreen({
   listProjectFiles,
 }: HomeScreenProps) {
   const theme = useTheme();
-  const hasOverlay = overlayStore.use((s) => s.active !== 'none');
+  const hasOverlay = overlayStore.use(selectHasOverlay);
   const [{ cols, rows }, { sessions, totalCount }, { projectDir }, dock] = useStores(
     terminalSizeStore,
     sessionsStore,
@@ -141,9 +141,7 @@ export function HomeScreen({
   const isPreparing = preparationState.kind === 'preparing';
   // The word is the submitted request's, not this screen's — a check launched by the CLI before
   // the mount is the same wait, and Home is the screen it lands on.
-  const checkingStage = preparationStore.use((state) =>
-    state.kind === 'checking' ? state.stage : null,
-  );
+  const checkingStage = preparationStore.use(selectCheckingStage);
   const showPreparationPanel =
     approvalPending || preparationState.kind === 'blocked' || preparationState.kind === 'failed';
   const preliminaryLayout = getHomeLayout({

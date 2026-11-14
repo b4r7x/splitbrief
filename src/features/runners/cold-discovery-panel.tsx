@@ -6,7 +6,7 @@ import { BOOT_MANIFEST_TITLE, TOOL_CHECK_FAILED_TITLE } from '../../core/discove
 import { overlayRect } from '../../core/navigation/overlay-rect.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
-import { overlayStore } from '../../stores/ui/overlay.js';
+import { overlayStore, selectHasOverlay } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { BootManifest } from './boot-manifest.js';
 import { ToolRollCall } from './tool-roll-call.js';
@@ -27,7 +27,7 @@ export function DiscoveryPanel({
   onOpenSettings,
 }: DiscoveryPanelProps) {
   const t = useTheme();
-  const hasOverlay = overlayStore.use((snapshot) => snapshot.active !== 'none');
+  const hasOverlay = overlayStore.use(selectHasOverlay);
   const feedback = feedbackStore.use((snapshot) => snapshot);
   const { cols, rows } = terminalSizeStore.use((size) => size);
   const { innerWidth } = overlayRect({ cols, rows, density: 'compact' });

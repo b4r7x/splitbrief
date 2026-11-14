@@ -32,7 +32,7 @@ import {
 } from '../../../../engine/orchestrator/session-lifecycle/shutdown.js';
 import { configStore } from '../../../../stores/project/config.js';
 import { skillsStore } from '../../../../stores/project/skills.js';
-import { overlayStore } from '../../../../stores/ui/overlay.js';
+import { overlayStore, selectHasOverlay } from '../../../../stores/ui/overlay.js';
 import { routerStore } from '../../../../stores/navigation/router.js';
 import {
   continueRunInPlace,
@@ -79,7 +79,7 @@ interface UseWorkflowScreenOptions {
 export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenOptions) {
   const [skills] = useStores(skillsStore);
   const selectedSkillMetas = skills.available.filter((m) => skills.selected.has(m.id));
-  const hasOverlay = overlayStore.use((s) => s.active !== 'none');
+  const hasOverlay = overlayStore.use(selectHasOverlay);
   const route = routerStore.use((s) => s);
   const workflowRoute = route.screen === 'workflow' ? route : undefined;
   const record = workflowRoute?.run;

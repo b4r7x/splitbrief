@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { overlayStore } from './overlay.js';
+import { overlayStore, selectHasOverlay } from './overlay.js';
 
 describe('overlayStore', () => {
   beforeEach(() => overlayStore.reset());
@@ -135,6 +135,20 @@ describe('overlayStore', () => {
     expect(overlayStore.get().exclusive).toBe(true);
     overlayStore.setExclusive(false);
     expect(overlayStore.get().exclusive).toBe(false);
+  });
+
+  it('selectHasOverlay holds while any overlay is open, also with one stacked beneath', () => {
+    expect(selectHasOverlay(overlayStore.get())).toBe(false);
+
+    overlayStore.open('settings', 'planner.tool');
+    expect(selectHasOverlay(overlayStore.get())).toBe(true);
+
+    overlayStore.open('planner-picker', 'models');
+    overlayStore.close();
+    expect(selectHasOverlay(overlayStore.get())).toBe(true);
+
+    overlayStore.close();
+    expect(selectHasOverlay(overlayStore.get())).toBe(false);
   });
 
   it('reset clears active, focus, exclusive, and the whole stack', () => {

@@ -31,7 +31,7 @@ import { observePreparationCleanup } from '../../features/start-preparation/obse
 import { useStartPreparation } from '../../features/start-preparation/use-start-preparation.js';
 import { approvalPromptStore, closeApprovalPrompt } from '../../stores/prompts/approval.js';
 import { routerStore } from '../../stores/navigation/router.js';
-import { preparationStore } from '../../stores/navigation/preparation.js';
+import { preparationStore, selectCheckingStage } from '../../stores/navigation/preparation.js';
 import { readRunRecord } from '../../core/sessions/run/record-io.js';
 import { sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { configStore } from '../../stores/project/config.js';
@@ -44,7 +44,7 @@ import {
 import { detectionStore } from '../../stores/discovery/detection.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
-import { overlayStore } from '../../stores/ui/overlay.js';
+import { overlayStore, selectHasOverlay } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { wrapPathAware } from '../../utils/display-text/wrap.js';
@@ -128,7 +128,7 @@ function CrewStep({ noConfig, note, status, inert = false, onContinue, onExit }:
   const config = configStore.useConfig();
   const { rows: crewRows, verdict, presets, signedOut } = useCrew();
   const { cols, rows: terminalRows } = terminalSizeStore.use((state) => state);
-  const hasOverlay = overlayStore.use((snapshot) => snapshot.active !== 'none');
+  const hasOverlay = overlayStore.use(selectHasOverlay);
   const feedback = feedbackStore.use((state) => state);
   const detection = detectionStore.use((state) => state);
   const persisted = configStore.use((state) => state.diskConfig);
@@ -353,12 +353,10 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
     state.screen === 'setup' ? state.allowRepoRunners : undefined,
   );
   const approvalPending = approvalPromptStore.use((state) => state.status === 'pending');
-  const hasOverlay = overlayStore.use((state) => state.active !== 'none');
+  const hasOverlay = overlayStore.use(selectHasOverlay);
   // Moving into work is the same wait as anywhere else: the crew panel stays where it is and its
   // fixed hint row states the check, rather than a second fullscreen loader taking the screen.
-  const checkingStage = preparationStore.use((state) =>
-    state.kind === 'checking' ? state.stage : null,
-  );
+  const checkingStage = preparationStore.use(selectCheckingStage);
   const { frame: preparationFrame } = useSpinnerFrame(checkingStage !== null);
   const slowProbe = useSlowProbeText();
   const [step, setStep] = useState<Step>('discovery');

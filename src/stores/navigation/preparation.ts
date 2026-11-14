@@ -47,6 +47,10 @@ type Checking = Readonly<{
 
 export const CHECKING_TOOLS_STAGE = 'Checking tools';
 
+export function selectCheckingStage(state: PreparationState): string | null {
+  return state.kind === 'checking' ? state.stage : null;
+}
+
 const store = createStore<PreparationState>({ kind: 'idle' });
 let lastAttempt = 0;
 let checking: Checking | undefined;

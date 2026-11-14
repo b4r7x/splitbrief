@@ -12,7 +12,7 @@ import {
   overlayRect,
   type OverlayDensity,
 } from '../../core/navigation/overlay-rect.js';
-import { overlayStore } from '../../stores/ui/overlay.js';
+import { overlayStore, selectHasOverlay } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { useStores } from '../../stores/use-stores.js';
 import type { StartPreparationState } from './use-start-preparation.js';
@@ -45,7 +45,7 @@ export function StartPreparationPanel({
 }: StartPreparationPanelProps) {
   const t = useTheme();
   const [{ cols, rows }] = useStores(terminalSizeStore);
-  const hasOverlay = overlayStore.use((snapshot) => snapshot.active !== 'none');
+  const hasOverlay = overlayStore.use(selectHasOverlay);
   const actionable = state.kind === 'blocked' || state.kind === 'failed';
   const isActive = actionable && !hasOverlay && approvalPrompt === undefined;
 
